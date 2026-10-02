@@ -86,37 +86,46 @@ function githubSlug(text) {
     .replaceAll(' ', '-');
 }
 
-const XML_ENTITIES = new Map([
+/** Named entities decoded without a full HTML entity table (names are case-sensitive). */
+const BASIC_ENTITIES = new Map([
   ['amp', '&'],
   ['lt', '<'],
   ['gt', '>'],
   ['quot', '"'],
   ['apos', "'"],
+  ['AMP', '&'],
+  ['LT', '<'],
+  ['GT', '>'],
+  ['QUOT', '"'],
 ]);
 
 /**
- * Decodes the XML entities and numeric character references that marked leaves
- * in text tokens. Other named entities would need a full HTML entity table, so
- * they are reported instead (write the literal character in the Markdown).
+ * Decodes character references the way CommonMark does: numeric references of
+ * 1–7 decimal or 1–6 hex digits, plus the basic named entities. Any other named
+ * entity would need the full HTML table, so it is passed to `onUnknown` (and kept).
  */
 function decodeEntities(text, onUnknown) {
-  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]*);/gi, (match, name) => {
+  return text.replace(/&(#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[A-Za-z][A-Za-z0-9]{0,31});/g, (match, name) => {
     if (name[0] === '#') {
       const code = name[1] === 'x' || name[1] === 'X' ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
-      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+      return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : '\uFFFD';
     }
-    const decoded = XML_ENTITIES.get(name.toLowerCase());
+    const decoded = BASIC_ENTITIES.get(name);
     if (decoded === undefined) onUnknown(match);
     return decoded ?? match;
   });
 }
 
-/** Plain text of inline tokens, as GitHub sees it for slugs (markup removed, entities decoded). */
+/**
+ * Plain text of inline tokens, as GitHub sees it for slugs: markup removed and
+ * character references decoded once. Text tokens are decoded from their raw
+ * source, because marked has already decoded some references in `text`.
+ */
 function plainText(tokens, onUnknownEntity = () => {}) {
   return tokens
     .map((token) => {
       if (Array.isArray(token.tokens)) return plainText(token.tokens, onUnknownEntity);
-      if (token.type === 'text') return decodeEntities(token.text ?? '', onUnknownEntity);
+      if (token.type === 'text') return decodeEntities(token.raw ?? token.text ?? '', onUnknownEntity);
       return token.text ?? '';
     })
     .join('');
@@ -165,7 +174,7 @@ async function discoverDocuments() {
 
   const chapters = await list(SPEC_DIR, CHAPTER_FILE, '"NN-lowercase-name.md"');
   const adrs = await list(ADR_DIR, ADR_FILE, '"NNNN-lowercase-name.md"');
-  if (chapters.length === 0) throw new BuildError(`No specification chapters found in ${SPEC_DIR}/.`);
+  if (chapters.length === 0) problem(null, `${SPEC_DIR}/ contains no chapters ("NN-lowercase-name.md" files)`);
 
   return [
     { file: `${SPEC_DIR}/README.md`, key: 'spec', kind: 'intro', levelOffset: 1, title: 'About this specification' },
@@ -176,24 +185,34 @@ async function discoverDocuments() {
 }
 
 /**
- * GitHub anchors of a Markdown file that is not on the page, including GitHub's
- * "-1", "-2" suffixes for repeated headings. Cached per file.
+ * GitHub anchors of a Markdown file that is not on the page. Repeated headings
+ * get suffixes the way github-slugger assigns them ("a", "a-1", "a-2", and a
+ * heading literally titled "A 1" after two "A"s becomes "a-1-1"). If a heading
+ * uses a named entity this build cannot decode, its anchor cannot be computed
+ * reliably, so the file is marked `uncertain` and anchors into it are not checked.
+ * Cached per file.
  */
 const externalAnchorCache = new Map();
 function githubAnchorsOf(absolutePath) {
-  let anchors = externalAnchorCache.get(absolutePath);
-  if (!anchors) {
-    anchors = new Set();
-    const seen = new Map();
+  let result = externalAnchorCache.get(absolutePath);
+  if (!result) {
+    const anchors = new Set();
+    const occurrences = new Map();
+    let uncertain = false;
     for (const heading of headingTokens(lexer.lexer(readFileSync(absolutePath, 'utf8')))) {
-      const slug = githubSlug(plainText(heading.tokens).trim());
-      const count = seen.get(slug) ?? 0;
-      seen.set(slug, count + 1);
-      anchors.add(count === 0 ? slug : `${slug}-${count}`);
+      const original = githubSlug(plainText(heading.tokens, () => (uncertain = true)).trim());
+      let slug = original;
+      while (occurrences.has(slug)) {
+        occurrences.set(original, occurrences.get(original) + 1);
+        slug = `${original}-${occurrences.get(original)}`;
+      }
+      occurrences.set(slug, 0);
+      anchors.add(slug);
     }
-    externalAnchorCache.set(absolutePath, anchors);
+    result = { anchors, uncertain };
+    externalAnchorCache.set(absolutePath, result);
   }
-  return anchors;
+  return result;
 }
 
 /**
@@ -235,9 +254,20 @@ function resolveHref(href, doc, docsByFile, pendingAnchors) {
   const hashIndex = href.indexOf('#');
   const beforeHash = hashIndex === -1 ? href : href.slice(0, hashIndex);
   const fragment = hashIndex === -1 ? '' : safeDecode(doc, href, href.slice(hashIndex + 1));
-  // A query (e.g. "?plain=1") only changes how GitHub displays a file; the target is the same.
-  const target = safeDecode(doc, href, beforeHash.split('?')[0]);
+  // A query (e.g. "?plain=1") only changes how GitHub displays a file. It is kept on
+  // links to GitHub and ignored for documents on the page.
+  const queryIndex = beforeHash.indexOf('?');
+  const query = queryIndex === -1 ? '' : beforeHash.slice(queryIndex + 1);
+  const target = safeDecode(doc, href, queryIndex === -1 ? beforeHash : beforeHash.slice(0, queryIndex));
   if (fragment === null || target === null) return broken;
+  if (target.includes('\\')) {
+    problem(doc, `link "${href}" uses a backslash; use "/" between path segments`);
+    return broken;
+  }
+  if (query && !/^[A-Za-z0-9_.-]+=[A-Za-z0-9_.-]*(&[A-Za-z0-9_.-]+=[A-Za-z0-9_.-]*)*$/.test(query)) {
+    problem(doc, `link "${href}" has a query string the site cannot pass through`);
+    return broken;
+  }
 
   // An anchor equal to a document's GitHub title slug means "the top of that document".
   const anchorIn = (targetDoc) => {
@@ -264,20 +294,35 @@ function resolveHref(href, doc, docsByFile, pendingAnchors) {
   }
 
   const absolute = path.join(REPO_DIR, ...repoPath.split('/'));
+  const relative = path.relative(REPO_DIR, absolute);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    problem(doc, `link "${href}" points outside the repository`);
+    return broken;
+  }
   if (!existsSync(absolute)) {
     problem(doc, `link "${href}" points to "${repoPath}", which does not exist`);
     return broken;
   }
   const isDirectory = statSync(absolute).isDirectory();
-  // Heading anchors into other Markdown files are checked against GitHub's slugs.
-  // Fragments on other files (e.g. "LICENSE#L5" line anchors) are left to GitHub.
-  if (fragment && !isDirectory && repoPath.endsWith('.md') && !githubAnchorsOf(absolute).has(fragment)) {
-    problem(doc, `link "${href}" points to a heading that does not exist in "${repoPath}"`);
+  const lineAnchor = /^L\d+(-L\d+)?$/.test(fragment);
+  const sourceView = /(^|&)plain=1(&|$)/.test(query);
+  if (fragment && !isDirectory && repoPath.endsWith('.md')) {
+    // Rendered Markdown has heading anchors; the source view (?plain=1) has line anchors.
+    if (sourceView) {
+      if (!lineAnchor) problem(doc, `link "${href}" uses ?plain=1, which only supports line anchors such as #L10`);
+    } else {
+      const { anchors, uncertain } = githubAnchorsOf(absolute);
+      if (!uncertain && !anchors.has(fragment)) {
+        problem(doc, `link "${href}" points to a heading that does not exist in "${repoPath}"`);
+      }
+    }
   }
+  // Fragments on other files (e.g. "LICENSE#L5" line anchors) are left to GitHub.
   const view = isDirectory ? 'tree' : 'blob';
   const encodedPath = repoPath.split('/').map(encodeURIComponent).join('/');
+  const encodedQuery = query ? `?${query}` : '';
   const encodedFragment = fragment ? `#${encodeURIComponent(fragment)}` : '';
-  return { url: `${REPO_URL}/${view}/HEAD/${encodedPath}${encodedFragment}`, external: true };
+  return { url: `${REPO_URL}/${view}/HEAD/${encodedPath}${encodedQuery}${encodedFragment}`, external: true };
 }
 
 /** Renders one document to HTML and records its headings for the table of contents. */
@@ -288,7 +333,11 @@ function renderDocument(doc, source, context) {
   let currentHeadingId = doc.key;
   const base = new Renderer();
   const reportEntity = (entity) =>
-    problem(doc, `heading uses the HTML entity "${entity}"; write the character itself instead`);
+    problem(
+      doc,
+      `heading uses "${entity}", which the site cannot decode; write the character itself ` +
+        '(or escape the ampersand as "\\&" if it is not an entity)',
+    );
 
   const marked = new Marked({
     gfm: true,

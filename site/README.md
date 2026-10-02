@@ -10,9 +10,11 @@ generated page.
 ## Build locally
 
 Requirements: Node.js 22.13 or later, and pnpm. The exact pnpm version is
-pinned in the root `package.json`. Run `corepack enable` once to have
-[Corepack](https://nodejs.org/api/corepack.html) provide it, or install pnpm 11
-yourself.
+pinned in the root `package.json`. Either install pnpm 11 directly, or run
+`corepack enable` once to have [Corepack](https://nodejs.org/api/corepack.html)
+fetch the pinned version. Corepack needs Node.js 22.14 or later (older versions
+cannot verify current pnpm signatures), and Node.js 25 and later no longer
+bundle it (`npm install --global corepack`).
 
 ```sh
 pnpm install --frozen-lockfile
@@ -32,7 +34,8 @@ The build fails, listing every problem at once, when:
   to GitHub)
 * a link is not `https://` (other than links to files in the repository)
 * a Markdown file or subfolder in `docs/spec/` or `docs/adr/` would be left off
-  the page (chapters must be named `NN-name.md` and decisions `NNNN-name.md`)
+  the page (chapters must be named `NN-lowercase-name.md` and decisions
+  `NNNN-lowercase-name.md`, using lowercase letters, digits and hyphens)
 * a document contains raw HTML or images (the page renders Markdown only), or a
   heading uses a named HTML entity other than `&amp;`, `&lt;`, `&gt;`, `&quot;` or
   `&apos;` (numeric references such as `&#169;` are fine)
@@ -49,7 +52,8 @@ Links to other repository files point to GitHub.
 ## Publishing
 
 [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) builds the site
-on every push and pull request that touches the docs or the site, and deploys
+on every push and pull request that touches `docs/`, `site/`, `LICENSE`,
+`SECURITY.md`, the Node/pnpm configuration or the workflow itself, and deploys
 it from the repository's default branch.
 
 One-time setup by a repository admin:
@@ -58,9 +62,8 @@ One-time setup by a repository admin:
 2. **Actions → Pages → Run workflow** on the default branch.
 
 The site is then live at `https://joellogan.github.io/Blocks_To_CPP/`. After
-that, every push to the default branch that changes the docs, the site or its
-build configuration redeploys it. Pushes that change only other files do not
-run the workflow.
+that, every push to the default branch that changes any of those files
+redeploys it. Pushes that change only other files do not run the workflow.
 
 ## Security
 

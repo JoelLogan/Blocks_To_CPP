@@ -4,6 +4,7 @@ name: CI
 
 on:
   push:
+    branches: ["**"] # every branch (work happens on branches before a PR exists); not tags
   pull_request:
   schedule:
     - cron: "41 5 * * 1" # Mondays 05:41 UTC: catch advisories published since the last change

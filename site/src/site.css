@@ -78,6 +78,9 @@
 
   --gutter: clamp(1rem, 4vw, 2.5rem);
   --topbar-h: 3.5rem;
+  /* Height of the sticky bar including its border and safe area; site.js replaces it
+     with the measured height, which grows if the bar ever wraps (e.g. large text). */
+  --topbar-offset: calc(var(--topbar-h) + 1px + env(safe-area-inset-top, 0px));
   --radius: 0.5rem;
 }
 
@@ -132,7 +135,7 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  scroll-padding-top: calc(var(--topbar-h) + 1rem);
+  scroll-padding-top: calc(var(--topbar-offset) + 1rem);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -274,7 +277,7 @@ main:focus {
   border-color: var(--accent);
 }
 
-@media (max-width: 34rem) {
+@media (max-width: 38rem) {
   .brand-tag,
   .topbar-links a[href="#spec"],
   .topbar-links a[href="#adrs"] {
@@ -323,9 +326,9 @@ main {
   .sidebar {
     display: block;
     position: sticky;
-    top: calc(var(--topbar-h) + env(safe-area-inset-top, 0px));
+    top: var(--topbar-offset);
     align-self: start;
-    max-height: calc(100vh - var(--topbar-h) - env(safe-area-inset-top, 0px));
+    max-height: calc(100vh - var(--topbar-offset));
     overflow-y: auto;
     padding-block: 2rem;
     overscroll-behavior: contain;

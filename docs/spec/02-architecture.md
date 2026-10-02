@@ -27,7 +27,7 @@
 │  │  Blockly workspace + b2c extensions (custom fields, connection checker,      │                            │
 │  │        │          renderer theme, quick-insert, mutators)                    │                            │
 │  │        ▼                                                                     │                            │
-│  │  Workspace ⇄ BDM sync layer ─────────► b2c-core (WASM): validate, analyse,   │                            │
+│  │  Workspace ↔ BDM sync layer ─────────► b2c-core (WASM): validate, analyse,   │                            │
 │  │                                        generate preview C++ + source map,    │                            │
 │  │                                        parse expression slots, scope queries │                            │
 │  └───────────────────────────────┬──────────────────────────────────────────────┘                            │

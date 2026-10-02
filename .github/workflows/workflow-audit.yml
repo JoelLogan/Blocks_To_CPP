@@ -1,9 +1,15 @@
-# Audits GitHub Actions workflows with zizmor (docs/spec/08-security.md §8.9) whenever
-# they change, and weekly to catch newly published audit rules.
+# Audits GitHub Actions workflows with zizmor (docs/spec/08-security.md §8.9).
+# - On changes to .github/: offline audits, which are deterministic.
+# - Weekly and on manual runs: online audits too, which query GitHub for newly
+#   published advisories against the actions we use (for example a pinned action
+#   version that later turns out to be vulnerable).
+# The zizmor version is pinned below. When Dependabot updates zizmor-action, bump
+# `version:` to the newest version listed in that action's support/versions file.
 name: Workflow audit
 
 on:
   push:
+    branches: ["**"]
     paths:
       - ".github/**"
   pull_request:
@@ -38,6 +44,7 @@ jobs:
         with:
           version: 1.30.1
           persona: auditor
-          # Offline audits need no token; SARIF upload would need security-events: write.
-          online-audits: false
+          # Online audits read public advisories with the read-only job token.
+          online-audits: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+          # Uploading SARIF would need security-events: write; results show in the job log.
           advanced-security: false

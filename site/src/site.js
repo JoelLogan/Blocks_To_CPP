@@ -98,13 +98,31 @@
       }
     }
 
-    // The active heading is the last one whose top has scrolled above 30% of the
-    // viewport. It is recomputed from the scroll position (at most once per frame),
-    // so jumps that skip over headings still update the highlight.
+    // After a jump to a heading in the contents (a link click or a URL with a #hash),
+    // that heading stays current until the reader scrolls by themselves, even if the
+    // page cannot scroll it all the way to the top (near the end of the page).
+    var pinned = null;
+    function pinToHash() {
+      var id = decodeURIComponent(window.location.hash.slice(1));
+      pinned = linksById.has(id) ? id : null;
+    }
+    function unpin() {
+      pinned = null;
+    }
+
+    // Otherwise the current heading is the last one that has reached the reading line
+    // just below the sticky top bar (where in-page jumps place headings). This is
+    // recomputed from the scroll position at most once per frame, so jumps that skip
+    // over headings still update the highlight.
     function update() {
+      if (pinned) {
+        activate(pinned);
+        return;
+      }
+      var line = (parseFloat(window.getComputedStyle(document.documentElement).scrollPaddingTop) || 72) + 8;
       var candidate = null;
       for (var i = 0; i < headings.length; i += 1) {
-        if (headings[i].getBoundingClientRect().top <= window.innerHeight * 0.3) {
+        if (headings[i].getBoundingClientRect().top <= line) {
           candidate = headings[i];
         } else {
           break;
@@ -124,8 +142,25 @@
     }
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule);
-    window.addEventListener('hashchange', schedule);
+    window.addEventListener('hashchange', function () {
+      pinToHash();
+      schedule();
+    });
+    ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(function (type) {
+      window.addEventListener(type, unpin, { passive: true });
+    });
+    pinToHash();
     update();
+  }
+
+  /** Keeps the scroll offset for in-page jumps equal to the sticky bar's real height. */
+  function setUpTopbarOffset() {
+    var bar = document.querySelector('.topbar');
+    if (!bar || !('ResizeObserver' in window)) return;
+    new ResizeObserver(function () {
+      var height = Math.ceil(bar.getBoundingClientRect().height);
+      document.documentElement.style.setProperty('--topbar-offset', height + 'px');
+    }).observe(bar);
   }
 
   /**
@@ -228,6 +263,7 @@
   }
 
   setUpThemeToggle();
+  setUpTopbarOffset();
   setUpScrollSpy();
   setUpScrollRegions();
   setUpCopyButtons();
