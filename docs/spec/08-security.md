@@ -314,13 +314,13 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
 |---------|--------|
 | **Minimal dependencies** | Each new dependency needs a PR justification covering purpose, maintenance health, licence, size and transitive count. Prefer the standard library and platform APIs. |
 | **Lockfiles** | `Cargo.lock` and `pnpm-lock.yaml` are committed. CI uses `cargo --locked` and `pnpm install --frozen-lockfile`. |
-| **pnpm 11 hardening** | `minimumReleaseAge: 10080` (7 days) to avoid freshly published compromised versions; `allowBuilds` allowlist (dependency install scripts are otherwise blocked); `blockExoticSubdeps: true` (no git/tarball transitive deps) |
+| **pnpm 11 hardening** (`pnpm-workspace.yaml`) | `minimumReleaseAge: 10080` (7 days) to avoid freshly published compromised versions, with `minimumReleaseAgeStrict` (a too-new version fails the install instead of being exempted); `trustPolicy: no-downgrade` (fail if a version's publishing provenance is weaker than earlier versions'); `allowBuilds` allowlist with `strictDepBuilds` (an unlisted install script fails the install); `blockExoticSubdeps: true` (no git/tarball transitive deps) |
 | **cargo-deny** | `advisories` (deny), `licenses` (allowlist), `bans` (duplicate/forbidden crates), `sources` (crates.io only) |
 | **Vulnerability scanning** | RustSec via `cargo-deny`/`cargo-audit`, `pnpm audit`, **OSV-Scanner** across both ecosystems, **CodeQL** (JS/TS, Rust, Actions), GitHub Dependabot alerts |
 | **Updates** | Dependabot for cargo, npm and github-actions (weekly, grouped). Security updates are raised immediately and are merged with priority after review. |
 | **CI hardening** | Actions pinned by full commit SHA; `permissions: {}` by default with per-job least privilege; `persist-credentials: false`; no `pull_request_target` with PR checkout; **zizmor** workflow audits; **OpenSSF Scorecard** |
 | **Secrets** | gitleaks in CI, GitHub secret scanning + push protection. Signing keys live only in a protected `release` environment with required reviewers. |
-| **Reproducibility** | Pinned Rust (`rust-toolchain.toml`) and Node/pnpm (`packageManager`, `.node-version`) versions; `SOURCE_DATE_EPOCH`; `--remap-path-prefix` |
+| **Reproducibility** | Pinned Rust toolchain (`rust-toolchain.toml`), exact pnpm version (`packageManager`) and Node.js major version (`.node-version`, so CI picks up Node security patches); `SOURCE_DATE_EPOCH`; `--remap-path-prefix` |
 | **Provenance** | CycloneDX SBOMs (Rust + npm) and GitHub artifact attestations (SLSA build provenance) attached to every release |
 | **Unsafe Rust** | `#![forbid(unsafe_code)]` everywhere except platform modules in `b2c-process`. `cargo-geiger` report in CI. Every `unsafe` needs `// SAFETY:` and CODEOWNERS review. |
 

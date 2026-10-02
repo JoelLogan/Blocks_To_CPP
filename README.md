@@ -47,3 +47,7 @@ Blocks2Cpp is licensed under the [Apache License, Version 2.0](LICENSE).
 Unless you explicitly state otherwise, any contribution you intentionally
 submit for inclusion in this project is licensed under the same terms,
 without any additional terms or conditions.
+
+The font files in [`site/src/fonts/`](site/src/fonts/) are not covered by the
+Apache License. They are © The Atkinson Hyperlegible Next Project Authors and
+licensed under the [SIL Open Font License 1.1](site/src/fonts/OFL.txt).

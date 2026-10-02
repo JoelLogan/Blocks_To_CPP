@@ -31,7 +31,7 @@
       <a href="#spec">Spec</a>
       <a href="#adrs">Decisions</a>
       <a href="{{REPO_URL}}" class="external">GitHub</a>
-      <button type="button" class="theme-toggle" id="theme-toggle" hidden>Theme: System</button>
+      <button type="button" class="theme-toggle" id="theme-toggle" hidden><span class="theme-prefix">Theme: </span><span class="theme-value">System</span></button>
     </nav>
   </div>
 </header>
@@ -74,7 +74,7 @@
           <div class="blk blk-io">print <span class="blk-slot">"Total: "</span> <span class="blk-slot">total</span> <span class="blk-plus">⊕</span></div>
         </div>
         <div class="hero-arrow" aria-hidden="true">generates</div>
-        <pre class="hero-code" tabindex="0" aria-label="Generated C++"><code><span class="tok-pp">#include &lt;iostream&gt;</span>
+        <pre class="hero-code" tabindex="0" role="group" aria-label="Generated C++"><code><span class="tok-pp">#include &lt;iostream&gt;</span>
 
 <span class="tok-kw">int</span> main() {
     <span class="tok-kw">int</span> total = <span class="tok-num">0</span>;

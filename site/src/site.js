@@ -8,7 +8,7 @@
 
   var THEME_KEY = 'b2c-theme';
   var THEMES = ['system', 'light', 'dark'];
-  var THEME_LABELS = { system: 'Theme: System', light: 'Theme: Light', dark: 'Theme: Dark' };
+  var THEME_NAMES = { system: 'System', light: 'Light', dark: 'Dark' };
 
   function readTheme() {
     try {
@@ -39,25 +39,26 @@
     }
   }
 
-  /** Theme button: cycles System → Light → Dark. */
+  /** Theme button: cycles System → Light → Dark. Its label reads "Theme: <name>". */
   function setUpThemeToggle() {
     var button = document.getElementById('theme-toggle');
-    if (!button) return;
+    var value = button && button.querySelector('.theme-value');
+    if (!button || !value) return;
     var current = readTheme();
-    button.textContent = THEME_LABELS[current];
+    value.textContent = THEME_NAMES[current];
     button.hidden = false;
     button.addEventListener('click', function () {
       current = THEMES[(THEMES.indexOf(current) + 1) % THEMES.length];
       applyTheme(current);
       writeTheme(current);
-      button.textContent = THEME_LABELS[current];
+      value.textContent = THEME_NAMES[current];
     });
   }
 
   /** Highlights the section being read in the sidebar and opens its chapter. */
   function setUpScrollSpy() {
     var toc = document.getElementById('toc-sidebar');
-    if (!toc || !('IntersectionObserver' in window)) return;
+    if (!toc) return;
 
     var linksById = new Map();
     toc.querySelectorAll('a[href^="#"]').forEach(function (link) {
@@ -97,32 +98,64 @@
       }
     }
 
-    // The active heading is the last one whose top has scrolled above 30% of the viewport.
-    var visible = new Set();
-    var observer = new IntersectionObserver(
-      function (entries) {
-        entries.forEach(function (entry) {
-          if (entry.isIntersecting) {
-            visible.add(entry.target);
-          } else {
-            visible.delete(entry.target);
-          }
-        });
-        var candidate = null;
-        for (var i = 0; i < headings.length; i += 1) {
-          if (headings[i].getBoundingClientRect().top <= window.innerHeight * 0.3) {
-            candidate = headings[i];
-          } else {
-            break;
-          }
+    // The active heading is the last one whose top has scrolled above 30% of the
+    // viewport. It is recomputed from the scroll position (at most once per frame),
+    // so jumps that skip over headings still update the highlight.
+    function update() {
+      var candidate = null;
+      for (var i = 0; i < headings.length; i += 1) {
+        if (headings[i].getBoundingClientRect().top <= window.innerHeight * 0.3) {
+          candidate = headings[i];
+        } else {
+          break;
         }
-        activate((candidate || headings[0]).id);
-      },
-      { rootMargin: '0px 0px -70% 0px', threshold: [0, 1] }
-    );
-    headings.forEach(function (heading) {
-      observer.observe(heading);
+      }
+      activate((candidate || headings[0]).id);
+    }
+
+    var pending = false;
+    function schedule() {
+      if (pending) return;
+      pending = true;
+      window.requestAnimationFrame(function () {
+        pending = false;
+        update();
+      });
+    }
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    window.addEventListener('hashchange', schedule);
+    update();
+  }
+
+  /**
+   * Code blocks and tables are focusable so keyboard users can scroll them. Only
+   * keep them in the tab order while their content actually overflows.
+   */
+  function setUpScrollRegions() {
+    if (!('ResizeObserver' in window)) return;
+    var regions = document.querySelectorAll('.table-wrap[tabindex], .code-block pre[tabindex], .hero-code[tabindex]');
+    function check(region) {
+      if (region.scrollWidth > region.clientWidth + 1) {
+        region.setAttribute('tabindex', '0');
+      } else if (region !== document.activeElement) {
+        region.removeAttribute('tabindex');
+      }
+    }
+    var observer = new ResizeObserver(function (entries) {
+      entries.forEach(function (entry) {
+        check(entry.target);
+      });
     });
+    regions.forEach(function (region) {
+      observer.observe(region);
+    });
+    // A web font swap can change content width without resizing the box.
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function () {
+        regions.forEach(check);
+      });
+    }
   }
 
   /** Adds a Copy button to every code block. */
@@ -196,6 +229,7 @@
 
   setUpThemeToggle();
   setUpScrollSpy();
+  setUpScrollRegions();
   setUpCopyButtons();
   setUpMobileToc();
 })();

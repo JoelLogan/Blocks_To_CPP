@@ -73,7 +73,8 @@
   --step-1: 1.25rem;
   --step-2: 1.5rem;
   --step-3: 2.125rem;
-  --step-4: clamp(2.75rem, 7vw, 4.25rem);
+  /* Hero title: sized from its column (cqi), so it never breaks mid-word. */
+  --step-4: clamp(2.25rem, 15cqi, 4.25rem);
 
   --gutter: clamp(1rem, 4vw, 2.5rem);
   --topbar-h: 3.5rem;
@@ -201,10 +202,11 @@ main:focus {
 
 .topbar-inner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  max-width: 82rem;
+  max-width: 86rem;
   min-height: var(--topbar-h);
   margin: 0 auto;
   padding-inline: var(--gutter);
@@ -212,11 +214,11 @@ main:focus {
 
 .brand {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 0.5rem;
   color: var(--ink);
   text-decoration: none;
-  min-width: 0;
 }
 
 .brand-mark {
@@ -241,6 +243,7 @@ main:focus {
 .topbar-links {
   display: flex;
   align-items: center;
+  margin-left: auto;
   gap: clamp(0.75rem, 2vw, 1.5rem);
   font-size: var(--step--1);
 }
@@ -279,12 +282,25 @@ main:focus {
   }
 }
 
+/* Keep the bar on one row at the narrowest widths (WCAG reflow at 320px):
+   the button keeps its full accessible name, "Theme: …". */
+@media (max-width: 22.5rem) {
+  .theme-prefix {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
 /* ---- Layout ---------------------------------------------------------------- */
 
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  max-width: 82rem;
+  max-width: 86rem;
   margin: 0 auto;
   padding-inline: var(--gutter);
 }
@@ -300,7 +316,7 @@ main {
 
 @media (min-width: 64rem) {
   .layout {
-    grid-template-columns: 17.5rem minmax(0, 1fr);
+    grid-template-columns: 16rem minmax(0, 1fr);
     gap: clamp(2rem, 4vw, 4rem);
   }
 
@@ -354,7 +370,13 @@ main {
 
 .toc a[aria-current="location"] {
   background: var(--current);
+  box-shadow: inset 3px 0 0 var(--accent);
   font-weight: 700;
+}
+
+/* The sidebar scrolls, which would clip an outside focus ring. */
+.toc a:focus-visible {
+  outline-offset: -3px;
 }
 
 .toc-num {
@@ -422,7 +444,7 @@ main {
   border-bottom: 1px solid var(--rule);
 }
 
-@media (min-width: 52rem) {
+@media (min-width: 54rem) {
   .hero {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
     align-items: center;
@@ -431,6 +453,13 @@ main {
 
 .hero-text {
   min-width: 0;
+  container-type: inline-size;
+}
+
+@media (min-width: 64rem) and (max-width: 76rem) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .eyebrow {
@@ -445,6 +474,7 @@ main {
 .hero h1 {
   margin: 0;
   font-size: var(--step-4);
+  overflow-wrap: normal;
   font-weight: 800;
   line-height: 1;
   letter-spacing: -0.03em;
@@ -708,8 +738,8 @@ main {
   border-top: 1px solid var(--rule);
 }
 
-.doc-adr,
-.doc-adr + .doc-adr {
+.doc + .doc-adr,
+.doc-adr {
   border-top: 0;
   padding-top: 1rem;
 }
@@ -722,7 +752,6 @@ h6 {
   position: relative;
   line-height: 1.25;
   text-wrap: balance;
-  scroll-margin-top: calc(var(--topbar-h) + 1rem);
 }
 
 h2 {
@@ -864,6 +893,10 @@ blockquote > :last-child {
   font-size: 0.8125rem;
 }
 
+.code-bar:empty {
+  display: none;
+}
+
 .code-lang {
   color: var(--ink-muted);
   font-weight: 700;
@@ -937,13 +970,16 @@ td code {
 }
 
 /* Task lists (definition-of-done checklists). */
-li:has(> input[type="checkbox"]) {
+li:has(> .task-box),
+li:has(> p > .task-box) {
   list-style: none;
 }
 
-input[type="checkbox"] {
-  margin: 0 0.5rem 0 -1.4rem;
-  accent-color: var(--accent);
+.task-box {
+  display: inline-block;
+  width: 1.4rem;
+  margin-left: -1.4rem;
+  color: var(--ink-muted);
 }
 
 /* ---- Footer ------------------------------------------------------------------ */
@@ -956,7 +992,7 @@ input[type="checkbox"] {
 }
 
 .footer-inner {
-  max-width: 82rem;
+  max-width: 86rem;
   margin: 0 auto;
   padding-inline: var(--gutter);
   padding-block: 1.5rem 2rem;

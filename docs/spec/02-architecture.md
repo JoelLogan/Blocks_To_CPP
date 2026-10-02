@@ -18,31 +18,31 @@
 ## 2.2 High-level component diagram
 
 ```
-┌───────────────────────────────── Desktop application (one OS process tree) ─────────────────────────────────┐
-│                                                                                                             │
-│  ┌──────────────── Webview (untrusted-content zone, strict CSP) ────────────────┐                           │
-│  │                                                                              │                           │
-│  │  React UI shell ── panels, menus, dialogs, settings, problems, console       │                           │
-│  │        │                                                                     │                           │
-│  │  Blockly workspace + b2c extensions (custom fields, connection checker,      │                           │
-│  │        │          renderer theme, quick-insert, mutators)                    │                           │
-│  │        ▼                                                                     │                           │
-│  │  Workspace ⇄ BDM sync layer ─────────► b2c-core (WASM): validate, analyse,   │                           │
-│  │                                        generate preview C++ + source map,    │                           │
-│  │                                        parse expression slots, scope queries │                           │
-│  └───────────────────────────────┬──────────────────────────────────────────────┘                           │
-│                                  │  Tauri IPC (typed commands + channels; capability-restricted;            │
+┌───────────────────────────────── Desktop application (one OS process tree) ──────────────────────────────────┐
+│                                                                                                              │
+│  ┌──────────────── Webview (untrusted-content zone, strict CSP) ────────────────┐                            │
+│  │                                                                              │                            │
+│  │  React UI shell ── panels, menus, dialogs, settings, problems, console       │                            │
+│  │        │                                                                     │                            │
+│  │  Blockly workspace + b2c extensions (custom fields, connection checker,      │                            │
+│  │        │          renderer theme, quick-insert, mutators)                    │                            │
+│  │        ▼                                                                     │                            │
+│  │  Workspace ⇄ BDM sync layer ─────────► b2c-core (WASM): validate, analyse,   │                            │
+│  │                                        generate preview C++ + source map,    │                            │
+│  │                                        parse expression slots, scope queries │                            │
+│  └───────────────────────────────┬──────────────────────────────────────────────┘                            │
+│                                  │  Tauri IPC (typed commands + channels; capability-restricted;             │
 │                                  │  isolation pattern; no fs/shell plugins exposed)                          │
-│  ┌───────────────────────────────▼──────────────────────────────────────────────┐                           │
-│  │  Rust backend (trusted zone)                                                 │                           │
-│  │   commands/   thin IPC handlers: input validation, opaque handles            │                           │
+│  ┌───────────────────────────────▼──────────────────────────────────────────────┐                            │
+│  │  Rust backend (trusted zone)                                                 │                            │
+│  │   commands/   thin IPC handlers: input validation, opaque handles            │                            │
 │  │   b2c-build   build orchestration, cache, incremental, sessions              │──► spawns ──► g++ (system) │
-│  │   b2c-toolchain  discovery, probing, argv construction, diagnostics parsing  │                           │
+│  │   b2c-toolchain  discovery, probing, argv construction, diagnostics parsing  │                            │
 │  │   b2c-process    spawn, PTY, Job Objects / process groups, limits            │──► spawns ──► user program │
 │  │   b2c-core (native) authoritative validate → analyse → generate              │               (in PTY)     │
-│  │   settings, trust store, recent files, autosave, logs                        │                           │
-│  └──────────────────────────────────────────────────────────────────────────────┘                           │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│  │   settings, trust store, recent files, autosave, logs                        │                            │
+│  └──────────────────────────────────────────────────────────────────────────────┘                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Trust boundaries:**

@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "packageManager": "pnpm@11.27.1",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "scripts": {
     "site:build": "pnpm --filter @blocks2cpp/site run build"

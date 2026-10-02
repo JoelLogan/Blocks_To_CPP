@@ -78,11 +78,15 @@ GitHub Actions workflows. All actions are SHA-pinned and least-privilege
 |----------|---------|------|
 | `ci.yml` | PR, push to `main` | `lint` (rustfmt, clippy, eslint, prettier, markdownlint, `tsc --noEmit`) · `test-rust` (ubuntu, windows) · `test-web` · `wasm` (build + size budget) · `golden` (GCC matrix) · `e2e` (ubuntu, windows) · `docs` (lychee link check, generated reference up to date) · `security` (cargo-deny, pnpm audit, osv-scanner, gitleaks, security suite) · `fuzz-smoke` |
 | `codeql.yml` | PR, push, weekly | CodeQL: JavaScript/TypeScript, Rust, GitHub Actions |
-| `workflow-audit.yml` | PR touching `.github/` | zizmor |
-| `pages.yml` | PR, push touching `docs/` or `site/` | Build the specification website (fails on broken links, raw HTML or missing anchors); deploy to GitHub Pages from the default branch |
+| `workflow-audit.yml` | PR and push touching `.github/`, weekly | zizmor (auditor persona) |
+| `pages.yml` | PR and push touching `docs/`, `site/`, `LICENSE`, `SECURITY.md` or the Node/pnpm config; manual dispatch | Build the specification website (fails on broken links or anchors, unpublished docs and raw HTML); deploy to GitHub Pages from the default branch |
 | `nightly.yml` | Daily | Extended fuzzing, full OSV scan, E2E on both OSes, benchmarks |
 | `weekly.yml` | Weekly | `cargo-mutants`, OpenSSF Scorecard, dependency health report |
 | `release.yml` | Signed tag `v*` | Build and bundle (Windows MSI/NSIS, Linux AppImage/deb/rpm), sign, SBOMs, provenance attestations, draft GitHub Release. Runs in the protected `release` environment. |
+
+**Implemented so far:** `pages.yml`, `workflow-audit.yml`, and the `security` job of `ci.yml`
+(`pnpm audit` on every push and pull request, plus a weekly run). The remaining workflows and jobs
+arrive with the code they check (milestones M0–M1).
 
 ## 9.4 Documentation
 

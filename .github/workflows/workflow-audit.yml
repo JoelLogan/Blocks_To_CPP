@@ -1,0 +1,43 @@
+# Audits GitHub Actions workflows with zizmor (docs/spec/08-security.md §8.9) whenever
+# they change, and weekly to catch newly published audit rules.
+name: Workflow audit
+
+on:
+  push:
+    paths:
+      - ".github/**"
+  pull_request:
+    paths:
+      - ".github/**"
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: workflow-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # check out the workflows to audit
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        # The action runs a zizmor container image pinned by digest for the requested version.
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          version: 1.30.1
+          persona: auditor
+          # Offline audits need no token; SARIF upload would need security-events: write.
+          online-audits: false
+          advanced-security: false

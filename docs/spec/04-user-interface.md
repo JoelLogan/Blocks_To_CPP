@@ -6,9 +6,9 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
-│ ☰  Guessing Game ▾   │ main ✕ │ player ✕ │ ＋ │        [Debug ▾]  ▶ Run   ■ Stop   🔨   ⚙  │  ← title/tool bar
+│ ☰  Guessing Game ▾   │ main ✕ │ player ✕ │ + │        [Debug ▾]  ▶ Run   ■ Stop   Build   ⚙  │  ← toolbar
 ├──────────┬───────────────────────────────────────────────────────────┬───────────────────────┤
-│ ● Program│  🔍 search   ⤢ tidy   ◱ collapse all          zoom − ＋ ⟲  │  C++   Outline   Help │
+│ ● Program│  Find   ⤢ tidy   ◱ collapse all          zoom − + ⟲       │  C++   Outline   Help │
 │ ● Vars   │                                                           │ ───────────────────── │
 │ ● Math   │                                                           │ 1 #include <iostream> │
 │ ● Logic  │            Blockly workspace (Zelos renderer)             │ 2                     │
@@ -21,9 +21,9 @@
 │ ● Types  │                                                           │                       │
 │ …        │                                                           │                       │
 ├──────────┴───────────────────────────────────────────────────────────┴───────────────────────┤
-│  Console  │  Problems (2)  │  Build output  │                                   ⬚ ↕ ✕         │  ← bottom dock
+│  Console  │  Problems (2)  │  Build output  │                                   ⤢ ↕ ✕        │  ← dock
 │  Guess a number from 1 to 100!                                                               │
-│  Your guess: 50▌                                                                              │
+│  Your guess: 50_                                                                             │
 ├──────────────────────────────────────────────────────────────────────────────────────────────┤
 │ ✔ g++ 15.2.0 (MSYS2 UCRT64)  │  C++20  │  Debug  │  ⚠ Contains Raw C++ (1)  │  Saved 10:42   │  ← status bar
 └──────────────────────────────────────────────────────────────────────────────────────────────┘

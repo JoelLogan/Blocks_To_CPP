@@ -1,0 +1,44 @@
+# Continuous integration (docs/spec/09-quality-and-delivery.md §9.3). For now it holds
+# the dependency security job; build, lint and test jobs arrive with the code.
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "41 5 * * 1" # Mondays 05:41 UTC: catch advisories published since the last change
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  security:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # check out the lockfile to audit
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Verify the lockfile installs under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies for known vulnerabilities
+        run: pnpm audit

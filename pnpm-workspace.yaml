@@ -4,12 +4,16 @@ packages:
 
 # Refuse package versions published less than 7 days ago (in minutes).
 minimumReleaseAge: 10080
-# Fail instead of silently falling back when a version is too new.
+# Never auto-exempt a too-new version: pnpm fails in CI and other non-interactive runs
+# (ERR_PNPM_NO_MATURE_MATCHING_VERSION) and asks before adding a minimumReleaseAgeExclude
+# entry in a terminal. This is the default once minimumReleaseAge is set; it is kept
+# explicit so it cannot be lost.
 minimumReleaseAgeStrict: true
 # Fail if a package's publishing trust evidence is weaker than earlier versions.
 trustPolicy: no-downgrade
 # Transitive dependencies may not come from git URLs or tarballs.
 blockExoticSubdeps: true
-# No dependency may run install scripts unless listed here with `true`.
+# No dependency may run install scripts unless listed here with `true`;
+# strictDepBuilds makes an unlisted build script fail the install instead of being skipped.
 allowBuilds: {}
 strictDepBuilds: true

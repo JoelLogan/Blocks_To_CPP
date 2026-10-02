@@ -2,3 +2,11 @@ Blocks2Cpp
 Copyright 2026 The Blocks2Cpp Authors
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party components
+----------------------
+
+Atkinson Hyperlegible Next (site/src/fonts/*.woff2), used by the specification
+website. Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors
+(https://github.com/googlefonts/atkinson-hyperlegible-next).
+Licensed under the SIL Open Font License, Version 1.1 (site/src/fonts/OFL.txt).

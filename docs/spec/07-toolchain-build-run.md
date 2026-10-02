@@ -4,8 +4,8 @@
 
 ## 7.1 Supported toolchains
 
-| | Minimum | Recommended | Notes |
-|---|---------|-------------|-------|
+| Toolchain | Minimum | Recommended | Notes |
+|-----------|---------|-------------|-------|
 | GCC (g++) | **11** | **13+** | 11: C++20 core, `-fdiagnostics-plain-output`. 13: `std::format`, SARIF diagnostics. 14: `<print>`, `-fhardened`. 15: `-fdiagnostics-add-output`. |
 | Windows flavours | MinGW-w64 (UCRT or MSVCRT runtime): MSYS2, WinLibs, TDM-GCC 10+, Scoop/Chocolatey `mingw`, Strawberry Perl's bundled GCC | MSYS2 UCRT64 | Cygwin GCC is detected and **warned against** (binaries need `cygwin1.dll`). Legacy mingw.org (`C:\MinGW`) is flagged as outdated. |
 | Linux | Distro GCC, `g++-NN` side-by-side versions, RHEL `gcc-toolset-N`, Homebrew-on-Linux | Distro GCC 13+ | |
