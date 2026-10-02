@@ -100,6 +100,7 @@ Blocks_To_CPP/
 │   ├── adr/                        # architecture decision records
 │   ├── user-guide/                 # end-user documentation (built into a static site)
 │   └── reference/                  # generated: block reference, diagnostics reference
+├── site/                           # specification website generator (GitHub Pages), see site/README.md
 ├── .github/                        # workflows, dependabot, CODEOWNERS, templates
 ├── Cargo.toml                      # Cargo workspace
 ├── pnpm-workspace.yaml             # pnpm workspace
@@ -213,10 +214,10 @@ structurally impossible.
 
 | Data | Windows | Linux |
 |------|---------|-------|
-| Settings, trust store, recent files | `%APPDATA%\BlocksToCpp\` | `$XDG_CONFIG_HOME/blocks-to-cpp/` |
-| Build cache | `%LOCALAPPDATA%\BlocksToCpp\builds\` | `$XDG_CACHE_HOME/blocks-to-cpp/builds/` |
-| Autosave / crash recovery | `%LOCALAPPDATA%\BlocksToCpp\recovery\` | `$XDG_STATE_HOME/blocks-to-cpp/recovery/` |
-| Logs (rotating, local only) | `%LOCALAPPDATA%\BlocksToCpp\logs\` | `$XDG_STATE_HOME/blocks-to-cpp/logs/` |
+| Settings, trust store, recent files | `%APPDATA%\Blocks2Cpp\` | `$XDG_CONFIG_HOME/blocks2cpp/` |
+| Build cache | `%LOCALAPPDATA%\Blocks2Cpp\builds\` | `$XDG_CACHE_HOME/blocks2cpp/builds/` |
+| Autosave / crash recovery | `%LOCALAPPDATA%\Blocks2Cpp\recovery\` | `$XDG_STATE_HOME/blocks2cpp/recovery/` |
+| Logs (rotating, local only) | `%LOCALAPPDATA%\Blocks2Cpp\logs\` | `$XDG_STATE_HOME/blocks2cpp/logs/` |
 
 All of these directories are created with owner-only permissions (`0700` on
 Linux; on Windows they inherit the user-profile ACL, which already excludes

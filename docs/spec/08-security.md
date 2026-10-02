@@ -4,7 +4,7 @@
 
 ## 8.1 Scope and assumptions
 
-Blocks to C++ is a **development tool**. Its purpose is to compile and run
+Blocks2Cpp is a **development tool**. Its purpose is to compile and run
 native code on the user's machine with the user's privileges. Security work
 therefore focuses on **making sure nothing runs or changes that the user did
 not knowingly ask for**, and on not adding new weaknesses to the user's

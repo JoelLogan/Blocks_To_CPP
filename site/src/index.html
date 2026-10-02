@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="color-scheme" content="light dark">
+<title>Blocks2Cpp Specification</title>
+<meta name="description" content="Technical specification for Blocks2Cpp, a Scratch-style block editor for Windows and Linux that generates readable C++ and compiles it with the system g++.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Blocks2Cpp Specification">
+<meta property="og:description" content="A Scratch-style block editor that turns snap-together blocks into real, readable C++ and compiles it with your own g++.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/site.css?v={{CSS_VERSION}}">
+<script src="assets/theme-init.js?v={{THEME_JS_VERSION}}"></script>
+<script src="assets/site.js?v={{JS_VERSION}}" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#top" aria-label="Blocks2Cpp specification, back to top">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M4 6a3 3 0 0 1 3-3h4l2 2.5h6L21 3h4a3 3 0 0 1 3 3v15a3 3 0 0 1-3 3h-4l-2 2.5h-6L11 24H7a3 3 0 0 1-3-3Z"/></svg>
+      <span class="brand-name">Blocks2Cpp</span>
+      <span class="brand-tag">Specification</span>
+    </a>
+    <nav class="topbar-links" aria-label="Site">
+      <a href="#spec">Spec</a>
+      <a href="#adrs">Decisions</a>
+      <a href="{{REPO_URL}}" class="external">GitHub</a>
+      <button type="button" class="theme-toggle" id="theme-toggle" hidden>Theme: System</button>
+    </nav>
+  </div>
+</header>
+
+<div class="layout" id="top">
+  <aside class="sidebar">
+    <nav class="toc" id="toc-sidebar" aria-label="Table of contents">
+{{TOC_SIDEBAR}}
+    </nav>
+  </aside>
+
+  <main id="main" tabindex="-1">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-text">
+        <p class="eyebrow">Technical specification · Draft v0.1</p>
+        <h1 id="hero-title">Blocks2Cpp</h1>
+        <p class="lede">A Scratch-style editor for Windows and Linux. Snap blocks together and get real, readable C++, compiled by the g++ already on your computer.</p>
+        <dl class="facts">
+          <div><dt>Platforms</dt><dd>Windows 10+ and Linux</dd></div>
+          <div><dt>Compiler</dt><dd>Your own g++ 11+</dd></div>
+          <div><dt>Licence</dt><dd>Apache-2.0</dd></div>
+          <div><dt>Status</dt><dd>Design phase</dd></div>
+        </dl>
+        <p class="hero-actions">
+          <a class="button button-primary" href="#ch01">Start reading</a>
+          <a class="button" href="#ch08">Security model</a>
+        </p>
+      </div>
+
+      <figure class="hero-figure">
+        <div class="blocks" role="img" aria-label="Five blocks: when program starts; create int variable total equal to 0; for i from 1 through 10, change total by i; print Total and total.">
+          <div class="blk blk-hat blk-program">when program starts</div>
+          <div class="blk blk-vars">create <span class="blk-field">int ▾</span> <span class="blk-field">total</span> = <span class="blk-slot">0</span></div>
+          <div class="blk-c blk-loops">
+            <div class="blk-c-head">for <span class="blk-field">i</span> from <span class="blk-slot">1</span> <span class="blk-field">through ▾</span> <span class="blk-slot">10</span></div>
+            <div class="blk-c-arm"></div>
+            <div class="blk-c-mouth"><div class="blk blk-vars">change <span class="blk-field">total</span> by <span class="blk-slot">i</span></div></div>
+            <div class="blk-c-foot"></div>
+          </div>
+          <div class="blk blk-io">print <span class="blk-slot">"Total: "</span> <span class="blk-slot">total</span> <span class="blk-plus">⊕</span></div>
+        </div>
+        <div class="hero-arrow" aria-hidden="true">generates</div>
+        <pre class="hero-code" tabindex="0" aria-label="Generated C++"><code><span class="tok-pp">#include &lt;iostream&gt;</span>
+
+<span class="tok-kw">int</span> main() {
+    <span class="tok-kw">int</span> total = <span class="tok-num">0</span>;
+    <span class="tok-kw">for</span> (<span class="tok-kw">int</span> i = <span class="tok-num">1</span>; i &lt;= <span class="tok-num">10</span>; ++i) {
+        total += i;
+    }
+    std::cout &lt;&lt; <span class="tok-str">"Total: "</span> &lt;&lt; total &lt;&lt; <span class="tok-str">'\n'</span>;
+    <span class="tok-kw">return</span> <span class="tok-num">0</span>;
+}</code></pre>
+        <figcaption>Five blocks and the C++ they generate. The code is ordinary, readable C++.</figcaption>
+      </figure>
+    </section>
+
+    <details class="toc-mobile">
+      <summary>Contents</summary>
+      <nav class="toc" aria-label="Table of contents (menu)">
+{{TOC_MOBILE}}
+      </nav>
+    </details>
+
+{{CONTENT}}
+  </main>
+</div>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p>Blocks2Cpp is licensed under the <a href="{{REPO_URL}}/blob/HEAD/LICENSE" class="external">Apache License 2.0</a>. This page is generated from the Markdown in <a href="{{REPO_URL}}/tree/HEAD/docs" class="external">docs/</a>, built from {{COMMIT}}.</p>
+    <p>Set in <a href="assets/fonts/OFL.txt">Atkinson Hyperlegible Next</a> (SIL Open Font License 1.1). No trackers, no third-party requests.</p>
+  </div>
+</footer>
+</body>
+</html>

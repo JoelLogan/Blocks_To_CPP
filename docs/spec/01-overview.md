@@ -4,7 +4,7 @@
 
 ## 1.1 Product summary
 
-**Blocks to C++** (working name, short form `b2c`) is a desktop application for
+**Blocks2Cpp** (short form `b2c`) is a desktop application for
 Windows and Linux. You build programs by dragging and snapping together blocks,
 much like [Scratch](https://scratch.mit.edu). Under the hood every block
 arrangement is translated into **real, readable, standard C++**. That C++ is

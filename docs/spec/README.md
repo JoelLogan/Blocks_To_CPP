@@ -1,10 +1,10 @@
-# Blocks to C++: Technical Specification
+# Blocks2Cpp: Technical Specification
 
 > **Status:** Draft v0.1 (2026-10-02). This is a living document. Every
 > behaviour-changing PR updates the relevant chapter, and significant decisions
 > are recorded as [ADRs](../adr/README.md).
 
-Blocks to C++ is a Scratch-style drag-and-drop editor for Windows and Linux
+Blocks2Cpp is a Scratch-style drag-and-drop editor for Windows and Linux
 that turns blocks into real, readable C++. It compiles that C++ with the
 user's own g++ and runs it in a built-in terminal.
 
@@ -21,7 +21,7 @@ user's own g++ and runs it in a built-in terminal.
 | 7 | [Toolchain, compilation and execution](07-toolchain-build-run.md) | g++ discovery and probing, flags, libraries, build directory and caching, diagnostics mapping, running in a PTY, event side channel, debugger, CLI |
 | 8 | [Security design and threat model](08-security.md) | Scope, trust boundaries, workspace trust, injection-proof codegen, compiler/filesystem/process/webview hardening, supply chain, releases, threat table, continuous security process |
 | 9 | [Quality, testing, documentation and delivery](09-quality-and-delivery.md) | Engineering standards, test strategy, CI, documentation policy, versioning, releases |
-| 10 | [Roadmap, risks and open questions](10-roadmap.md) | Milestones M0–M6, risks, decisions needed from the owner |
+| 10 | [Roadmap, risks and product decisions](10-roadmap.md) | Milestones M0–M6, risks, product decisions (decided and proposed) |
 
 ## Reading paths
 

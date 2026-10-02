@@ -1,4 +1,4 @@
-# 10. Roadmap, Risks and Open Questions
+# 10. Roadmap, Risks and Product Decisions
 
 > Status: **Draft v0.1**
 
@@ -104,15 +104,18 @@ once GCC support matures.
 | Dependency compromise (npm ecosystem) | Medium | High | §8.9 controls: minimum release age, build-script allowlist, minimal dependencies, scanners |
 | Users trust malicious shared projects | Medium | High | Clear trust UX, Raw C++ visibility, Mark-of-the-Web warnings, sandbox option post-1.0 |
 
-## 10.3 Open questions (owner decisions needed)
+## 10.3 Product decisions
 
-| # | Question | Proposed default |
-|---|----------|------------------|
-| Q1 | **License** for the project | Apache-2.0 (patent grant; matches Blockly). MIT is the simpler alternative. |
-| Q2 | **Product name** ("Blocks to C++" is a working name) | Keep it until branding work |
-| Q3 | Default C++ standard for new projects | C++20 (supported by every toolchain we accept, GCC 11+) |
-| Q4 | Offer *"use namespace std"* beginner mode by default? | No. Explicit `std::` teaches real-world style; there is a per-project toggle. |
-| Q5 | Bundle or download a toolchain on Windows in 1.0? | No. Guided setup only; a verified installer comes post-1.0. |
-| Q6 | Minimum Windows version | Windows 10 1809 (ConPTY, WebView2) |
-| Q7 | Update checks | Opt-in, asked on first run |
-| Q8 | Primary audience emphasis (learners vs. power users) for default UI | Learner-first defaults (friendly labels, advanced hidden), one switch to expert mode |
+Decisions marked **Decided** were made by the project owner. **Proposed**
+items are the defaults we build toward until the owner says otherwise.
+
+| # | Question | Decision / proposed default | Status |
+|---|----------|-----------------------------|--------|
+| Q1 | **License** for the project | **Apache-2.0** (includes a patent grant; matches Blockly). See [`LICENSE`](../../LICENSE). | Decided 2026-10-02 |
+| Q2 | **Product name** | **Blocks2Cpp**, with the short form `b2c` for the CLI, crates and C++ namespace | Decided 2026-10-02 |
+| Q3 | Default C++ standard for new projects | C++20 (supported by every toolchain we accept, GCC 11+) | Proposed |
+| Q4 | Offer *"use namespace std"* beginner mode by default? | No. Explicit `std::` teaches real-world style; there is a per-project toggle. | Proposed |
+| Q5 | Bundle or download a toolchain on Windows in 1.0? | **No.** Guided setup only; a verified installer helper is a post-1.0 candidate. | Decided 2026-10-02 |
+| Q6 | Minimum Windows version | Windows 10 1809 (ConPTY, WebView2) | Proposed |
+| Q7 | Update checks | Opt-in, asked on first run | Proposed |
+| Q8 | Primary audience emphasis (learners vs. power users) for default UI | Learner-first defaults (friendly labels, advanced hidden), one switch to expert mode | Proposed |

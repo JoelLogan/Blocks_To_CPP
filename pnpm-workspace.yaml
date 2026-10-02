@@ -1,0 +1,15 @@
+# pnpm workspace and supply-chain policy (docs/spec/08-security.md §8.9).
+packages:
+  - site
+
+# Refuse package versions published less than 7 days ago (in minutes).
+minimumReleaseAge: 10080
+# Fail instead of silently falling back when a version is too new.
+minimumReleaseAgeStrict: true
+# Fail if a package's publishing trust evidence is weaker than earlier versions.
+trustPolicy: no-downgrade
+# Transitive dependencies may not come from git URLs or tarballs.
+blockExoticSubdeps: true
+# No dependency may run install scripts unless listed here with `true`.
+allowBuilds: {}
+strictDepBuilds: true

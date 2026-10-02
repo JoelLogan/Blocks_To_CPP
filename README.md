@@ -1,8 +1,8 @@
-# Blocks to C++
+# Blocks2Cpp
 
 **Build real C++ programs by snapping blocks together.**
 
-Blocks to C++ is a Scratch-style, drag-and-drop programming environment for
+Blocks2Cpp is a Scratch-style, drag-and-drop programming environment for
 **Windows and Linux**. Every block arrangement becomes clean, readable,
 standard C++. That C++ is compiled with the **g++ already on your system** and
 run in a built-in terminal.
@@ -30,6 +30,7 @@ run in a built-in terminal.
 
 | Document | Description |
 |----------|-------------|
+| [Specification website](https://joellogan.github.io/Blocks_To_CPP/) | The whole specification and decision records on one page, built from `docs/` by [`site/`](site/README.md) |
 | [Specification](docs/spec/README.md) | Architecture, block language, project format, translation pipeline, toolchain/build/run, security model, quality process, roadmap |
 | [Architecture Decision Records](docs/adr/README.md) | Why key technical choices were made |
 | [Security policy](SECURITY.md) | How to report vulnerabilities |
@@ -42,4 +43,7 @@ CodeMirror 6 · xterm.js · system g++ 11+ (13+ recommended).
 
 ## Licence
 
-To be decided; see [open question Q1](docs/spec/10-roadmap.md#103-open-questions-owner-decisions-needed).
+Blocks2Cpp is licensed under the [Apache License, Version 2.0](LICENSE).
+Unless you explicitly state otherwise, any contribution you intentionally
+submit for inclusion in this project is licensed under the same terms,
+without any additional terms or conditions.

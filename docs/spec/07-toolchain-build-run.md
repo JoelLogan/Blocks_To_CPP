@@ -243,7 +243,7 @@ settings**, never in projects:
      in its editor.
 4. **Generator bug detection.** Code generated from non-raw blocks should
    never fail to compile when the analyser reported no errors. If it does,
-   the diagnostic is labelled *"This looks like a bug in Blocks to C++"* and
+   the diagnostic is labelled *"This looks like a bug in Blocks2Cpp"* and
    offers *Copy bug report* (a sanitised report with the minimal block
    subtree, generated C++ and g++ version, copied to the clipboard; nothing is
    sent anywhere).

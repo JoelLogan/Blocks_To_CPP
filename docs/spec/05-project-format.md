@@ -30,7 +30,7 @@ A project is a **single JSON file** with the extension `.b2c`.
 
 ```json
 {
-  "format": "blocks-to-cpp/project",
+  "format": "blocks2cpp/project",
   "formatVersion": 1,
   "generator": { "app": "0.1.0", "catalog": "1.0.0" },
   "project": {
@@ -165,7 +165,7 @@ Further rules:
 * `formatVersion` is an integer. `b2c-model` contains a chain of pure
   migrations `v(n) → v(n+1)`, each with golden-file tests.
 * On load: if `formatVersion` is newer than supported, refuse with *"This
-  project was made with a newer version of Blocks to C++ (needs ≥ X)"*. If it
+  project was made with a newer version of Blocks2Cpp (needs ≥ X)"*. If it
   is older, migrate in memory, and save in the new format only after the
   user's explicit save (a `.b2c.bak` of the original is kept beside it).
 * Block-level migrations (`v` per block) follow the same pattern
@@ -224,10 +224,10 @@ comment `pinned`. The hash is used for:
 
 Copying blocks puts two representations on the clipboard: a text/plain
 rendering of the generated C++ (useful for pasting into chat or an editor),
-and a custom `application/x-blocks-to-cpp+json` payload:
+and a custom `application/x-blocks2cpp+json` payload:
 
 ```json
-{ "format": "blocks-to-cpp/clipboard", "formatVersion": 1, "catalog": "1.0.0", "blocks": [ … ] }
+{ "format": "blocks2cpp/clipboard", "formatVersion": 1, "catalog": "1.0.0", "blocks": [ … ] }
 ```
 
 Pasting runs the **same validator and limits as file loading**. Pasted blocks
