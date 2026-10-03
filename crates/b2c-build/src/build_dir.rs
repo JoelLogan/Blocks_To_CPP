@@ -215,16 +215,26 @@ fn ensure_plain_dir(path: &Path) -> Result<(), BuildDirError> {
     Ok(())
 }
 
-/// Creates one directory level (owner-only on Unix), or checks that an
-/// existing one is a real directory.
-fn create_private_dir(path: &Path) -> Result<(), BuildDirError> {
-    let mut builder = fs::DirBuilder::new();
+/// A non-recursive directory builder; owner-only (`0700`) on Unix. On Windows
+/// new folders inherit the per-user cache folder's ACL.
+fn private_dir_builder() -> fs::DirBuilder {
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt as _;
+        let mut builder = fs::DirBuilder::new();
         builder.mode(0o700);
+        builder
     }
-    match builder.create(path) {
+    #[cfg(not(unix))]
+    {
+        fs::DirBuilder::new()
+    }
+}
+
+/// Creates one directory level (owner-only on Unix), or checks that an
+/// existing one is a real directory.
+fn create_private_dir(path: &Path) -> Result<(), BuildDirError> {
+    match private_dir_builder().create(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => ensure_plain_dir(path),
         Err(source) => Err(BuildDirError::Io {
