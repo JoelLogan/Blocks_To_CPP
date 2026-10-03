@@ -1,0 +1,654 @@
+---
+source: crates/b2c-lang/tests/snapshots.rs
+expression: snapshot(&a)
+---
+{
+  "standard": "c++20",
+  "modules": [
+    {
+      "id": "mod_0",
+      "name": "main",
+      "items": [
+        {
+          "kind": {
+            "function": {
+              "symbol": "sym_area",
+              "params": [
+                {
+                  "symbol": "sym_w",
+                  "mode": "copy",
+                  "origin": {
+                    "module": "mod_0",
+                    "block": "fn_area",
+                    "part": {
+                      "kind": "field",
+                      "name": "params[0]"
+                    }
+                  }
+                },
+                {
+                  "symbol": "sym_h",
+                  "mode": "copy",
+                  "origin": {
+                    "module": "mod_0",
+                    "block": "fn_area",
+                    "part": {
+                      "kind": "field",
+                      "name": "params[1]"
+                    }
+                  }
+                }
+              ],
+              "ret": "double",
+              "body": {
+                "stmts": [
+                  {
+                    "kind": {
+                      "return": {
+                        "value": {
+                          "kind": {
+                            "binary": {
+                              "op": "mul",
+                              "lhs": {
+                                "kind": {
+                                  "var": "sym_w"
+                                },
+                                "ty": "double",
+                                "origin": {
+                                  "module": "mod_0",
+                                  "block": "b0001",
+                                  "part": {
+                                    "kind": "tokens",
+                                    "input": "VALUE",
+                                    "start": 0,
+                                    "end": 1
+                                  }
+                                }
+                              },
+                              "rhs": {
+                                "kind": {
+                                  "var": "sym_h"
+                                },
+                                "ty": "double",
+                                "origin": {
+                                  "module": "mod_0",
+                                  "block": "b0001",
+                                  "part": {
+                                    "kind": "tokens",
+                                    "input": "VALUE",
+                                    "start": 2,
+                                    "end": 3
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "ty": "double",
+                          "origin": {
+                            "module": "mod_0",
+                            "block": "b0001",
+                            "part": {
+                              "kind": "tokens",
+                              "input": "VALUE",
+                              "start": 0,
+                              "end": 3
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "origin": {
+                      "module": "mod_0",
+                      "block": "b0001",
+                      "part": {
+                        "kind": "whole"
+                      }
+                    },
+                    "comment": null
+                  }
+                ]
+              }
+            }
+          },
+          "origin": {
+            "module": "mod_0",
+            "block": "fn_area",
+            "part": {
+              "kind": "whole"
+            }
+          },
+          "comment": "Area of a rectangle"
+        },
+        {
+          "kind": {
+            "function": {
+              "symbol": "sym_bump",
+              "params": [
+                {
+                  "symbol": "sym_n",
+                  "mode": "editable",
+                  "origin": {
+                    "module": "mod_0",
+                    "block": "fn_bump",
+                    "part": {
+                      "kind": "field",
+                      "name": "params[0]"
+                    }
+                  }
+                }
+              ],
+              "ret": "void",
+              "body": {
+                "stmts": [
+                  {
+                    "kind": {
+                      "compound_assign": {
+                        "target": "sym_n",
+                        "op": "add",
+                        "value": {
+                          "kind": {
+                            "int": {
+                              "repr": "1",
+                              "ty": "int"
+                            }
+                          },
+                          "ty": "int",
+                          "origin": {
+                            "module": "mod_0",
+                            "block": "b0019",
+                            "part": {
+                              "kind": "whole"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "origin": {
+                      "module": "mod_0",
+                      "block": "b0020",
+                      "part": {
+                        "kind": "whole"
+                      }
+                    },
+                    "comment": null
+                  }
+                ]
+              }
+            }
+          },
+          "origin": {
+            "module": "mod_0",
+            "block": "fn_bump",
+            "part": {
+              "kind": "whole"
+            }
+          },
+          "comment": null
+        },
+        {
+          "kind": {
+            "main": {
+              "body": {
+                "stmts": [
+                  {
+                    "kind": {
+                      "var_decl": {
+                        "symbol": "sym_a",
+                        "init": {
+                          "kind": {
+                            "call": {
+                              "function": "sym_area",
+                              "args": [
+                                {
+                                  "kind": {
+                                    "float": {
+                                      "repr": "2.5",
+                                      "ty": "double"
+                                    }
+                                  },
+                                  "ty": "double",
+                                  "origin": {
+                                    "module": "mod_0",
+                                    "block": "b0002",
+                                    "part": {
+                                      "kind": "whole"
+                                    }
+                                  }
+                                },
+                                {
+                                  "kind": {
+                                    "int": {
+                                      "repr": "4",
+                                      "ty": "int"
+                                    }
+                                  },
+                                  "ty": "int",
+                                  "origin": {
+                                    "module": "mod_0",
+                                    "block": "b0003",
+                                    "part": {
+                                      "kind": "tokens",
+                                      "input": "ARG1",
+                                      "start": 0,
+                                      "end": 1
+                                    }
+                                  }
+                                }
+                              ]
+                            }
+                          },
+                          "ty": "double",
+                          "origin": {
+                            "module": "mod_0",
+                            "block": "b0003",
+                            "part": {
+                              "kind": "whole"
+                            }
+                          }
+                        },
+                        "is_const": false,
+                        "written_auto": false
+                      }
+                    },
+                    "origin": {
+                      "module": "mod_0",
+                      "block": "b0004",
+                      "part": {
+                        "kind": "whole"
+                      }
+                    },
+                    "comment": null
+                  },
+                  {
+                    "kind": {
+                      "var_decl": {
+                        "symbol": "sym_count",
+                        "init": {
+                          "kind": {
+                            "int": {
+                              "repr": "0",
+                              "ty": "int"
+                            }
+                          },
+                          "ty": "int",
+                          "origin": {
+                            "module": "mod_0",
+                            "block": "b0005",
+                            "part": {
+                              "kind": "whole"
+                            }
+                          }
+                        },
+                        "is_const": false,
+                        "written_auto": false
+                      }
+                    },
+                    "origin": {
+                      "module": "mod_0",
+                      "block": "b0006",
+                      "part": {
+                        "kind": "whole"
+                      }
+                    },
+                    "comment": null
+                  },
+                  {
+                    "kind": {
+                      "eval": {
+                        "expr": {
+                          "kind": {
+                            "call": {
+                              "function": "sym_bump",
+                              "args": [
+                                {
+                                  "kind": {
+                                    "var": "sym_count"
+                                  },
+                                  "ty": "int",
+                                  "origin": {
+                                    "module": "mod_0",
+                                    "block": "b0007",
+                                    "part": {
+                                      "kind": "whole"
+                                    }
+                                  }
+                                }
+                              ]
+                            }
+                          },
+                          "ty": "void",
+                          "origin": {
+                            "module": "mod_0",
+                            "block": "b0008",
+                            "part": {
+                              "kind": "whole"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "origin": {
+                      "module": "mod_0",
+                      "block": "b0008",
+                      "part": {
+                        "kind": "whole"
+                      }
+                    },
+                    "comment": null
+                  },
+                  {
+                    "kind": {
+                      "for_range": {
+                        "var": "sym_i",
+                        "from": {
+                          "kind": {
+                            "int": {
+                              "repr": "1",
+                              "ty": "int"
+                            }
+                          },
+                          "ty": "int",
+                          "origin": {
+                            "module": "mod_0",
+                            "block": "b0009",
+                            "part": {
+                              "kind": "whole"
+                            }
+                          }
+                        },
+                        "to": {
+                          "kind": {
+                            "int": {
+                              "repr": "3",
+                              "ty": "int"
+                            }
+                          },
+                          "ty": "int",
+                          "origin": {
+                            "module": "mod_0",
+                            "block": "b0010",
+                            "part": {
+                              "kind": "whole"
+                            }
+                          }
+                        },
+                        "step": null,
+                        "direction": "up_inclusive",
+                        "body": {
+                          "stmts": [
+                            {
+                              "kind": {
+                                "print": {
+                                  "items": [
+                                    {
+                                      "kind": {
+                                        "join": [
+                                          {
+                                            "kind": {
+                                              "str": "Round "
+                                            },
+                                            "ty": "string",
+                                            "origin": {
+                                              "module": "mod_0",
+                                              "block": "b0011",
+                                              "part": {
+                                                "kind": "whole"
+                                              }
+                                            }
+                                          },
+                                          {
+                                            "kind": {
+                                              "var": "sym_i"
+                                            },
+                                            "ty": "int",
+                                            "origin": {
+                                              "module": "mod_0",
+                                              "block": "b0012",
+                                              "part": {
+                                                "kind": "whole"
+                                              }
+                                            }
+                                          }
+                                        ]
+                                      },
+                                      "ty": "string",
+                                      "origin": {
+                                        "module": "mod_0",
+                                        "block": "b0013",
+                                        "part": {
+                                          "kind": "whole"
+                                        }
+                                      }
+                                    }
+                                  ],
+                                  "separator": "none",
+                                  "newline": true,
+                                  "stream": "out"
+                                }
+                              },
+                              "origin": {
+                                "module": "mod_0",
+                                "block": "b0014",
+                                "part": {
+                                  "kind": "whole"
+                                }
+                              },
+                              "comment": null
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "origin": {
+                      "module": "mod_0",
+                      "block": "b0015",
+                      "part": {
+                        "kind": "whole"
+                      }
+                    },
+                    "comment": null
+                  },
+                  {
+                    "kind": {
+                      "print": {
+                        "items": [
+                          {
+                            "kind": {
+                              "var": "sym_a"
+                            },
+                            "ty": "double",
+                            "origin": {
+                              "module": "mod_0",
+                              "block": "b0016",
+                              "part": {
+                                "kind": "whole"
+                              }
+                            }
+                          },
+                          {
+                            "kind": {
+                              "var": "sym_count"
+                            },
+                            "ty": "int",
+                            "origin": {
+                              "module": "mod_0",
+                              "block": "b0017",
+                              "part": {
+                                "kind": "whole"
+                              }
+                            }
+                          }
+                        ],
+                        "separator": "none",
+                        "newline": true,
+                        "stream": "out"
+                      }
+                    },
+                    "origin": {
+                      "module": "mod_0",
+                      "block": "b0018",
+                      "part": {
+                        "kind": "whole"
+                      }
+                    },
+                    "comment": null
+                  }
+                ]
+              }
+            }
+          },
+          "origin": {
+            "module": "mod_0",
+            "block": "main",
+            "part": {
+              "kind": "whole"
+            }
+          },
+          "comment": null
+        }
+      ]
+    }
+  ],
+  "symbols": {
+    "symbols": {
+      "sym_a": {
+        "name": "a",
+        "kind": {
+          "variable": {
+            "is_const": false
+          }
+        },
+        "ty": "double",
+        "origin": {
+          "module": "mod_0",
+          "block": "b0004",
+          "part": {
+            "kind": "field",
+            "name": "NAME"
+          }
+        }
+      },
+      "sym_area": {
+        "name": "area",
+        "kind": {
+          "function": {
+            "params": [
+              "sym_w",
+              "sym_h"
+            ]
+          }
+        },
+        "ty": "double",
+        "origin": {
+          "module": "mod_0",
+          "block": "fn_area",
+          "part": {
+            "kind": "field",
+            "name": "NAME"
+          }
+        }
+      },
+      "sym_bump": {
+        "name": "bump",
+        "kind": {
+          "function": {
+            "params": [
+              "sym_n"
+            ]
+          }
+        },
+        "ty": "void",
+        "origin": {
+          "module": "mod_0",
+          "block": "fn_bump",
+          "part": {
+            "kind": "field",
+            "name": "NAME"
+          }
+        }
+      },
+      "sym_count": {
+        "name": "count",
+        "kind": {
+          "variable": {
+            "is_const": false
+          }
+        },
+        "ty": "int",
+        "origin": {
+          "module": "mod_0",
+          "block": "b0006",
+          "part": {
+            "kind": "field",
+            "name": "NAME"
+          }
+        }
+      },
+      "sym_h": {
+        "name": "h",
+        "kind": {
+          "parameter": {
+            "mode": "copy"
+          }
+        },
+        "ty": "double",
+        "origin": {
+          "module": "mod_0",
+          "block": "fn_area",
+          "part": {
+            "kind": "field",
+            "name": "params[1]"
+          }
+        }
+      },
+      "sym_i": {
+        "name": "i",
+        "kind": "loop_variable",
+        "ty": "int",
+        "origin": {
+          "module": "mod_0",
+          "block": "b0015",
+          "part": {
+            "kind": "field",
+            "name": "VAR"
+          }
+        }
+      },
+      "sym_n": {
+        "name": "n",
+        "kind": {
+          "parameter": {
+            "mode": "editable"
+          }
+        },
+        "ty": "int",
+        "origin": {
+          "module": "mod_0",
+          "block": "fn_bump",
+          "part": {
+            "kind": "field",
+            "name": "params[0]"
+          }
+        }
+      },
+      "sym_w": {
+        "name": "w",
+        "kind": {
+          "parameter": {
+            "mode": "copy"
+          }
+        },
+        "ty": "double",
+        "origin": {
+          "module": "mod_0",
+          "block": "fn_area",
+          "part": {
+            "kind": "field",
+            "name": "params[0]"
+          }
+        }
+      }
+    }
+  }
+}
+--- diagnostics ---
