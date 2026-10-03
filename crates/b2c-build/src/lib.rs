@@ -7,5 +7,7 @@
 pub mod build_dir;
 pub mod frontend;
 
-pub use build_dir::{BuildDir, BuildDirError, default_cache_root, write_generated_files, write_if_changed};
+pub use build_dir::{
+    BuildDir, BuildDirError, default_cache_root, sandbox_dir, write_generated_files, write_if_changed,
+};
 pub use frontend::{Frontend, FrontendOptions, Stage, run_frontend};

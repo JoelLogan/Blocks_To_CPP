@@ -187,6 +187,29 @@ pub fn write_generated_files(dir: &Path, project: &GeneratedProject) -> Result<V
     Ok(sources)
 }
 
+/// Creates (or reuses) `<cache_root>/sandbox/<project>/`, the working
+/// directory for programs whose project chooses the sandbox folder
+/// (spec §7.6.2). Created like the build directory: one level at a time,
+/// owner-only on Unix, never through a link.
+///
+/// # Errors
+/// Fails when a folder cannot be created, or when a path below the cache
+/// root exists but is a link or not a directory.
+pub fn sandbox_dir(cache_root: &Path, project: &ProjectId) -> Result<PathBuf, BuildDirError> {
+    fs::create_dir_all(cache_root).map_err(|source| BuildDirError::Io {
+        action: "create the cache folder",
+        path: cache_root.to_path_buf(),
+        source,
+    })?;
+    ensure_plain_dir(cache_root)?;
+    let mut dir = cache_root.to_path_buf();
+    for component in ["sandbox", project.as_str()] {
+        dir.push(component);
+        create_private_dir(&dir)?;
+    }
+    Ok(dir)
+}
+
 /// Whether `name` is a plain generated file name: `[a-z0-9_-]{1,64}` followed
 /// by `.cpp` or `.hpp`.
 fn is_generated_file_name(name: &str) -> bool {
@@ -400,6 +423,17 @@ mod tests {
                 .is_err()
         );
         assert_eq!(fs::read_to_string(&target).unwrap(), "keep me");
+    }
+
+    #[test]
+    fn sandbox_folders_are_per_project() {
+        let cache = tempfile::tempdir().unwrap();
+        let first = sandbox_dir(cache.path(), &project_id()).unwrap();
+        assert!(first.is_dir());
+        assert!(first.ends_with("sandbox/prj_test"));
+        assert_eq!(sandbox_dir(cache.path(), &project_id()).unwrap(), first);
+        let other = sandbox_dir(cache.path(), &ProjectId::new("prj_other").unwrap()).unwrap();
+        assert_ne!(other, first);
     }
 
     #[cfg(unix)]
