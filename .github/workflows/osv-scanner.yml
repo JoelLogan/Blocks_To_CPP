@@ -21,6 +21,11 @@ jobs:
       security-events: write # upload results to code scanning
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
     with:
+      runs-on: ubuntu-24.04
+      # The scan always runs and fails on known vulnerabilities. Uploading the
+      # results to code scanning needs a public repository or GitHub Code
+      # Security (then set the repository variable B2C_CODE_SCANNING to "true").
+      upload-sarif: ${{ github.event.repository.visibility == 'public' || vars.B2C_CODE_SCANNING == 'true' }}
       scan-args: |-
         --recursive
         ./

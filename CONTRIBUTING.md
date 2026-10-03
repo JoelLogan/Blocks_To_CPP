@@ -61,7 +61,8 @@ references, `site/` the specification website.
 The pull request template has the checklist (tests, docs, changelog, security
 questions, accessibility). CI must be green: format, Clippy, tests on Linux and
 Windows, the WebAssembly build of the compiler crates, `cargo deny`,
-CodeQL, OSV-Scanner, secret scanning and the website build.
+OSV-Scanner, secret scanning and the website build, plus CodeQL where code
+scanning is available ([spec §9.3](docs/spec/09-quality-and-delivery.md)).
 
 ## Reporting security issues
 

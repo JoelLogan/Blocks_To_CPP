@@ -18,9 +18,14 @@ concurrency:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
+    # Code scanning needs a public repository or GitHub Code Security (then set
+    # the repository variable B2C_CODE_SCANNING to "true"); CodeQL's licence
+    # also limits it to those cases for private code.
+    if: ${{ github.event.repository.visibility == 'public' || vars.B2C_CODE_SCANNING == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
+      actions: read # read workflow run details (required on private repositories)
       contents: read # check out the repository
       security-events: write # upload code scanning results
     strategy:
