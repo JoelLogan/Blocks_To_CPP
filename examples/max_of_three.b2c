@@ -1,0 +1,351 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_max_of_three",
+    "name": "Largest of Three",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b005",
+            "type": "func.define",
+            "v": 1,
+            "extra": {
+              "params": [
+                {
+                  "sym": "s_a",
+                  "name": "a",
+                  "type": "int",
+                  "mode": "copy"
+                },
+                {
+                  "sym": "s_b",
+                  "name": "b",
+                  "type": "int",
+                  "mode": "copy"
+                },
+                {
+                  "sym": "s_c",
+                  "name": "c",
+                  "type": "int",
+                  "mode": "copy"
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_max",
+                "name": "largest"
+              },
+              "RETURNS": "int"
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b004",
+                  "type": "control.if",
+                  "v": 1,
+                  "extra": {
+                    "elseIfCount": 1,
+                    "hasElse": true
+                  },
+                  "inputs": {
+                    "COND0": {
+                      "expr": [
+                        {
+                          "ref": "s_a"
+                        },
+                        {
+                          "op": ">="
+                        },
+                        {
+                          "ref": "s_b"
+                        },
+                        {
+                          "op": "and"
+                        },
+                        {
+                          "ref": "s_a"
+                        },
+                        {
+                          "op": ">="
+                        },
+                        {
+                          "ref": "s_c"
+                        }
+                      ]
+                    },
+                    "COND1": {
+                      "expr": [
+                        {
+                          "ref": "s_b"
+                        },
+                        {
+                          "op": ">="
+                        },
+                        {
+                          "ref": "s_c"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b001",
+                        "type": "func.return",
+                        "v": 1,
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "ref": "s_a"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "DO1": [
+                      {
+                        "id": "b002",
+                        "type": "func.return",
+                        "v": 1,
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "ref": "s_b"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "ELSE": [
+                      {
+                        "id": "b003",
+                        "type": "func.return",
+                        "v": 1,
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "ref": "s_c"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "x": 400,
+            "y": 40
+          },
+          {
+            "id": "b013",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b006",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "int",
+                    "NAME": {
+                      "sym": "s_x",
+                      "name": "x"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b007",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "int",
+                    "NAME": {
+                      "sym": "s_y",
+                      "name": "y"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b008",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "int",
+                    "NAME": {
+                      "sym": "s_z",
+                      "name": "z"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b009",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "ref": "s_x"
+                    },
+                    "MODE": "keep_asking"
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "First: "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b010",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "ref": "s_y"
+                    },
+                    "MODE": "keep_asking"
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "Second: "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b011",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "ref": "s_z"
+                    },
+                    "MODE": "keep_asking"
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "Third: "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b012",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Largest: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_max"
+                        },
+                        {
+                          "op": "("
+                        },
+                        {
+                          "ref": "s_x"
+                        },
+                        {
+                          "op": ","
+                        },
+                        {
+                          "ref": "s_y"
+                        },
+                        {
+                          "op": ","
+                        },
+                        {
+                          "ref": "s_z"
+                        },
+                        {
+                          "op": ")"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

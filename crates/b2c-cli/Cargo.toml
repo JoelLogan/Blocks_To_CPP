@@ -17,6 +17,7 @@ b2c-build.workspace = true
 b2c-ir.workspace = true
 b2c-model.workspace = true
 clap.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

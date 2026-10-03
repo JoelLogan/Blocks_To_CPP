@@ -71,9 +71,11 @@ Blocks_To_CPP/
 │       ├── src-tauri/              # Tauri shell (thin): commands, state, capabilities/
 │       └── e2e/                    # WebDriver end-to-end tests (tauri-driver)
 ├── crates/
+│   ├── b2c-ir/                     # shared contracts: IDs, diagnostics, typed text [wasm + native, forbid(unsafe)]
+│   │                               #   leaves, types, SAST, source maps
 │   ├── b2c-model/                  # BDM types, schema, limits, migrations          [wasm + native, forbid(unsafe)]
 │   ├── b2c-catalog/                # catalog + library-pack loading, type metadata  [wasm + native, forbid(unsafe)]
-│   ├── b2c-lang/                   # SAST, types, symbols, lowering, analysis,      [wasm + native, forbid(unsafe)]
+│   ├── b2c-lang/                   # lowering to the SAST, symbols, analysis,       [wasm + native, forbid(unsafe)]
 │   │                               #   expression parser, lints
 │   ├── b2c-codegen/                # CAST, emitter, pretty-printer, includes,       [wasm + native, forbid(unsafe)]
 │   │                               #   source maps, export (CMake/Make)
@@ -113,8 +115,15 @@ Blocks_To_CPP/
 
 **Layering rules (enforced in CI by dependency checks):**
 
-* `b2c-model` ← `b2c-catalog` ← `b2c-lang` ← `b2c-codegen` ← (`b2c-core-wasm`, `b2c-build`)
-* The compiler crates (`model`, `catalog`, `lang`, `codegen`) do **no I/O**:
+* `b2c-ir` ← `b2c-model` ← `b2c-catalog`; `b2c-model` ← `b2c-lang`;
+  `b2c-ir` ← `b2c-codegen`; (`b2c-catalog`, `b2c-lang`, `b2c-codegen`) ←
+  (`b2c-core-wasm`, `b2c-build`).
+* `b2c-ir` holds the types that cross a stage boundary: validated IDs,
+  diagnostics, the typed text leaves of [§6.8.2](06-compiler-pipeline.md#682-typed-text-parse-dont-validate),
+  value types, the Semantic AST and source maps. Because the SAST lives there,
+  `b2c-lang` and `b2c-codegen` do not depend on each other and can change
+  independently.
+* The compiler crates (`ir`, `model`, `catalog`, `lang`, `codegen`) do **no I/O**:
   no filesystem, no processes, no clock and no randomness. They are pure
   functions of their inputs, which makes them deterministic,
   WASM-compatible and easy to fuzz.

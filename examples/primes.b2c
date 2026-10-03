@@ -1,0 +1,476 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_primes",
+    "name": "Prime Numbers",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b009",
+            "type": "func.define",
+            "v": 1,
+            "extra": {
+              "params": [
+                {
+                  "sym": "s_n",
+                  "name": "n",
+                  "type": "int",
+                  "mode": "copy"
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_is_prime",
+                "name": "isPrime"
+              },
+              "RETURNS": "bool"
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b002",
+                  "type": "control.if",
+                  "v": 1,
+                  "extra": {
+                    "elseIfCount": 0,
+                    "hasElse": false
+                  },
+                  "inputs": {
+                    "COND0": {
+                      "expr": [
+                        {
+                          "ref": "s_n"
+                        },
+                        {
+                          "op": "<"
+                        },
+                        {
+                          "num": "2"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b001",
+                        "type": "func.return",
+                        "v": 1,
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "kw": "false"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b003",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "int",
+                    "NAME": {
+                      "sym": "s_d",
+                      "name": "divisor"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "2"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b007",
+                  "type": "control.while",
+                  "v": 1,
+                  "fields": {
+                    "MODE": "while"
+                  },
+                  "inputs": {
+                    "COND": {
+                      "expr": [
+                        {
+                          "ref": "s_d"
+                        },
+                        {
+                          "op": "*"
+                        },
+                        {
+                          "ref": "s_d"
+                        },
+                        {
+                          "op": "<="
+                        },
+                        {
+                          "ref": "s_n"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b005",
+                        "type": "control.if",
+                        "v": 1,
+                        "extra": {
+                          "elseIfCount": 0,
+                          "hasElse": false
+                        },
+                        "inputs": {
+                          "COND0": {
+                            "expr": [
+                              {
+                                "ref": "s_n"
+                              },
+                              {
+                                "op": "%"
+                              },
+                              {
+                                "ref": "s_d"
+                              },
+                              {
+                                "op": "=="
+                              },
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b004",
+                              "type": "func.return",
+                              "v": 1,
+                              "inputs": {
+                                "VALUE": {
+                                  "expr": [
+                                    {
+                                      "kw": "false"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "id": "b006",
+                        "type": "var.change",
+                        "v": 1,
+                        "fields": {
+                          "VAR": {
+                            "ref": "s_d"
+                          }
+                        },
+                        "inputs": {
+                          "BY": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b008",
+                  "type": "func.return",
+                  "v": 1,
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "kw": "true"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "x": 400,
+            "y": 40
+          },
+          {
+            "id": "b019",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b010",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "int",
+                    "NAME": {
+                      "sym": "s_count",
+                      "name": "count"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b016",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "sym": "s_k",
+                      "name": "k"
+                    },
+                    "DIRECTION": "through"
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "num": "50"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b015",
+                        "type": "control.if",
+                        "v": 1,
+                        "extra": {
+                          "elseIfCount": 0,
+                          "hasElse": false
+                        },
+                        "inputs": {
+                          "COND0": {
+                            "expr": [
+                              {
+                                "ref": "s_is_prime"
+                              },
+                              {
+                                "op": "("
+                              },
+                              {
+                                "ref": "s_k"
+                              },
+                              {
+                                "op": ")"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b012",
+                              "type": "control.if",
+                              "v": 1,
+                              "extra": {
+                                "elseIfCount": 0,
+                                "hasElse": false
+                              },
+                              "inputs": {
+                                "COND0": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_count"
+                                    },
+                                    {
+                                      "op": ">"
+                                    },
+                                    {
+                                      "num": "0"
+                                    }
+                                  ]
+                                }
+                              },
+                              "statements": {
+                                "DO0": [
+                                  {
+                                    "id": "b011",
+                                    "type": "io.print",
+                                    "v": 1,
+                                    "extra": {
+                                      "itemCount": 1
+                                    },
+                                    "fields": {
+                                      "SEP": "none",
+                                      "NEWLINE": false,
+                                      "STREAM": "out"
+                                    },
+                                    "inputs": {
+                                      "ITEM0": {
+                                        "expr": [
+                                          {
+                                            "str": " "
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "id": "b013",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "SEP": "none",
+                                "NEWLINE": false,
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_k"
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "id": "b014",
+                              "type": "var.change",
+                              "v": 1,
+                              "fields": {
+                                "VAR": {
+                                  "ref": "s_count"
+                                }
+                              },
+                              "inputs": {
+                                "BY": {
+                                  "expr": [
+                                    {
+                                      "num": "1"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b017",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": ""
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b018",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 3
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Found "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_count"
+                        }
+                      ]
+                    },
+                    "ITEM2": {
+                      "expr": [
+                        {
+                          "str": " primes"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

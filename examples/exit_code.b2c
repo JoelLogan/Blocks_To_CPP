@@ -1,0 +1,150 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_exit_code",
+    "name": "Exit Code",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b003",
+            "type": "func.define",
+            "v": 1,
+            "extra": {
+              "params": []
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_stop",
+                "name": "stopEarly"
+              },
+              "RETURNS": "void"
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b001",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Stopping early"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b002",
+                  "type": "program.exit",
+                  "v": 1,
+                  "inputs": {
+                    "CODE": {
+                      "expr": [
+                        {
+                          "num": "3"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "x": 400,
+            "y": 40
+          },
+          {
+            "id": "b007",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b004",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Checking..."
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b005",
+                  "type": "func.call_stmt",
+                  "v": 1,
+                  "extra": {
+                    "argCount": 0
+                  },
+                  "fields": {
+                    "FUNC": {
+                      "ref": "s_stop"
+                    }
+                  }
+                },
+                {
+                  "id": "b006",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "This line is never printed"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

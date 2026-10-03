@@ -1,0 +1,3 @@
+Get wet: true
+Stay inside
+Cold: false

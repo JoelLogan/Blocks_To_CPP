@@ -1,6 +1,6 @@
 # 6. Translation Pipeline: Blocks → C++
 
-> Status: **Draft v0.1** · Crates: `b2c-model`, `b2c-catalog`, `b2c-lang`, `b2c-codegen` · Related ADR: [0003](../adr/0003-rust-core-native-and-wasm.md)
+> Status: **Draft v0.1** · Crates: `b2c-ir` (shared types), `b2c-model`, `b2c-catalog`, `b2c-lang`, `b2c-codegen` · Related ADR: [0003](../adr/0003-rust-core-native-and-wasm.md)
 
 ## 6.1 Overview
 
@@ -15,6 +15,10 @@
   ⑥ Desugar & order            b2c-codegen   SAST → C++ AST (CAST), dependency ordering, header split → Cast
   ⑦ Emit                       b2c-codegen   pretty-print, includes, helpers, source map            → GeneratedProject
 ```
+
+The types passed between stages (the SAST, symbols, typed text leaves,
+diagnostics and source maps) live in `b2c-ir`, so each stage depends only on
+the contract it consumes, not on the crate that produced it.
 
 Every stage is a **pure, deterministic function**: no I/O, no clock, no
 randomness, and no global mutable state. The same code runs natively in the

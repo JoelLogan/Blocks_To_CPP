@@ -1,0 +1,152 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_temperature",
+    "name": "Temperature Converter",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b005",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b001",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "double",
+                    "NAME": {
+                      "sym": "s_c",
+                      "name": "celsius"
+                    },
+                    "CONST": false
+                  }
+                },
+                {
+                  "id": "b002",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "ref": "s_c"
+                    },
+                    "MODE": "keep_asking"
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "Temperature in Celsius: "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b003",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "double",
+                    "NAME": {
+                      "sym": "s_f",
+                      "name": "fahrenheit"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "ref": "s_c"
+                        },
+                        {
+                          "op": "*"
+                        },
+                        {
+                          "num": "9"
+                        },
+                        {
+                          "op": "/"
+                        },
+                        {
+                          "num": "5"
+                        },
+                        {
+                          "op": "+"
+                        },
+                        {
+                          "num": "32"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b004",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 4
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "ref": "s_c"
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "str": "°C is "
+                        }
+                      ]
+                    },
+                    "ITEM2": {
+                      "expr": [
+                        {
+                          "ref": "s_f"
+                        }
+                      ]
+                    },
+                    "ITEM3": {
+                      "expr": [
+                        {
+                          "str": "°F"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

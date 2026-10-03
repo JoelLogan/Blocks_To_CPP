@@ -1,0 +1,137 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_tricky_text",
+    "name": "Tricky Text",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b006",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b001",
+                  "type": "io.print",
+                  "v": 1,
+                  "comment": {
+                    "text": "This comment ends with a backslash \\"
+                  },
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Quote: \" Backslash: \\ Tab:\tend"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b002",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Question marks: ??/ ??= ok"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b003",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Unicode: héllo ✓ — 日本"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b005",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Letter: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "block": {
+                        "id": "b004",
+                        "type": "text.char",
+                        "v": 1,
+                        "fields": {
+                          "VALUE": "A"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

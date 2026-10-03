@@ -1,0 +1,258 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_weather",
+    "name": "Weather Advice",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b012",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b006",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "bool",
+                    "NAME": {
+                      "sym": "s_raining",
+                      "name": "raining"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "block": {
+                        "id": "b005",
+                        "type": "logic.boolean",
+                        "v": 1,
+                        "fields": {
+                          "VALUE": "true"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b007",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "bool",
+                    "NAME": {
+                      "sym": "s_umbrella",
+                      "name": "umbrella"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "kw": "false"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b008",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "double",
+                    "NAME": {
+                      "sym": "s_temp",
+                      "name": "temperature"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "12.5"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b009",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Get wet: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "block": {
+                        "id": "b002",
+                        "type": "logic.operation",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 2
+                        },
+                        "fields": {
+                          "OP": "and"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "ref": "s_raining"
+                              }
+                            ]
+                          },
+                          "ITEM1": {
+                            "block": {
+                              "id": "b001",
+                              "type": "logic.not",
+                              "v": 1,
+                              "inputs": {
+                                "A": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_umbrella"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b010",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "block": {
+                        "id": "b003",
+                        "type": "logic.ternary",
+                        "v": 1,
+                        "inputs": {
+                          "COND": {
+                            "expr": [
+                              {
+                                "ref": "s_raining"
+                              }
+                            ]
+                          },
+                          "THEN": {
+                            "expr": [
+                              {
+                                "str": "Stay inside"
+                              }
+                            ]
+                          },
+                          "ELSE": {
+                            "expr": [
+                              {
+                                "str": "Go out"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b011",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Cold: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "block": {
+                        "id": "b004",
+                        "type": "math.compare",
+                        "v": 1,
+                        "fields": {
+                          "OP": "lt"
+                        },
+                        "inputs": {
+                          "A": {
+                            "expr": [
+                              {
+                                "ref": "s_temp"
+                              }
+                            ]
+                          },
+                          "B": {
+                            "expr": [
+                              {
+                                "num": "5"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

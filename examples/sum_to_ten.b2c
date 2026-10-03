@@ -1,0 +1,138 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_sum_to_ten",
+    "name": "Sum to Ten",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b005",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b001",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "int",
+                    "NAME": {
+                      "sym": "s_total",
+                      "name": "total"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b003",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "sym": "s_i",
+                      "name": "i"
+                    },
+                    "DIRECTION": "through"
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "num": "10"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b002",
+                        "type": "var.change",
+                        "v": 1,
+                        "fields": {
+                          "VAR": {
+                            "ref": "s_total"
+                          }
+                        },
+                        "inputs": {
+                          "BY": {
+                            "expr": [
+                              {
+                                "ref": "s_i"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b004",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Total: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_total"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

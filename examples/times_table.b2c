@@ -1,0 +1,193 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_times_table",
+    "name": "Times Table",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b006",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b005",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "sym": "s_row",
+                      "name": "row"
+                    },
+                    "DIRECTION": "through"
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "num": "5"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b004",
+                        "type": "control.for_range",
+                        "v": 1,
+                        "fields": {
+                          "VAR": {
+                            "sym": "s_col",
+                            "name": "col"
+                          },
+                          "DIRECTION": "through"
+                        },
+                        "inputs": {
+                          "FROM": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          },
+                          "TO": {
+                            "expr": [
+                              {
+                                "num": "5"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "BODY": [
+                            {
+                              "id": "b003",
+                              "type": "control.if",
+                              "v": 1,
+                              "extra": {
+                                "elseIfCount": 0,
+                                "hasElse": true
+                              },
+                              "inputs": {
+                                "COND0": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_col"
+                                    },
+                                    {
+                                      "op": "<"
+                                    },
+                                    {
+                                      "num": "5"
+                                    }
+                                  ]
+                                }
+                              },
+                              "statements": {
+                                "DO0": [
+                                  {
+                                    "id": "b001",
+                                    "type": "io.print",
+                                    "v": 1,
+                                    "extra": {
+                                      "itemCount": 2
+                                    },
+                                    "fields": {
+                                      "SEP": "none",
+                                      "NEWLINE": false,
+                                      "STREAM": "out"
+                                    },
+                                    "inputs": {
+                                      "ITEM0": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_row"
+                                          },
+                                          {
+                                            "op": "*"
+                                          },
+                                          {
+                                            "ref": "s_col"
+                                          }
+                                        ]
+                                      },
+                                      "ITEM1": {
+                                        "expr": [
+                                          {
+                                            "str": " "
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                ],
+                                "ELSE": [
+                                  {
+                                    "id": "b002",
+                                    "type": "io.print",
+                                    "v": 1,
+                                    "extra": {
+                                      "itemCount": 1
+                                    },
+                                    "fields": {
+                                      "SEP": "none",
+                                      "NEWLINE": true,
+                                      "STREAM": "out"
+                                    },
+                                    "inputs": {
+                                      "ITEM0": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_row"
+                                          },
+                                          {
+                                            "op": "*"
+                                          },
+                                          {
+                                            "ref": "s_col"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_countdown",
+    "name": "Countdown",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b004",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b002",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "sym": "s_i",
+                      "name": "i"
+                    },
+                    "DIRECTION": "down_to"
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "num": "10"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b001",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 1
+                        },
+                        "fields": {
+                          "SEP": "none",
+                          "NEWLINE": true,
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "ref": "s_i"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b003",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Liftoff!"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

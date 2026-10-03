@@ -1,0 +1,117 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_greeting",
+    "name": "Greeting",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b005",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b001",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "std::string",
+                    "NAME": {
+                      "sym": "s_name",
+                      "name": "name"
+                    },
+                    "CONST": false
+                  }
+                },
+                {
+                  "id": "b002",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "ref": "s_name"
+                    },
+                    "MODE": "keep_asking"
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "What is your name? "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b004",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "block": {
+                        "id": "b003",
+                        "type": "text.join",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 3
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "Hello, "
+                              }
+                            ]
+                          },
+                          "ITEM1": {
+                            "expr": [
+                              {
+                                "ref": "s_name"
+                              }
+                            ]
+                          },
+                          "ITEM2": {
+                            "expr": [
+                              {
+                                "str": "!"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,312 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_fizzbuzz",
+    "name": "FizzBuzz",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b013",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b012",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "sym": "s_i",
+                      "name": "i"
+                    },
+                    "DIRECTION": "through"
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "num": "15"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b011",
+                        "type": "control.if",
+                        "v": 1,
+                        "extra": {
+                          "elseIfCount": 2,
+                          "hasElse": true
+                        },
+                        "inputs": {
+                          "COND0": {
+                            "block": {
+                              "id": "b002",
+                              "type": "math.compare",
+                              "v": 1,
+                              "fields": {
+                                "OP": "eq"
+                              },
+                              "inputs": {
+                                "A": {
+                                  "block": {
+                                    "id": "b001",
+                                    "type": "math.arithmetic",
+                                    "v": 1,
+                                    "fields": {
+                                      "OP": "mod"
+                                    },
+                                    "inputs": {
+                                      "A": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_i"
+                                          }
+                                        ]
+                                      },
+                                      "B": {
+                                        "expr": [
+                                          {
+                                            "num": "15"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                "B": {
+                                  "expr": [
+                                    {
+                                      "num": "0"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "COND1": {
+                            "block": {
+                              "id": "b005",
+                              "type": "math.compare",
+                              "v": 1,
+                              "fields": {
+                                "OP": "eq"
+                              },
+                              "inputs": {
+                                "A": {
+                                  "block": {
+                                    "id": "b004",
+                                    "type": "math.arithmetic",
+                                    "v": 1,
+                                    "fields": {
+                                      "OP": "mod"
+                                    },
+                                    "inputs": {
+                                      "A": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_i"
+                                          }
+                                        ]
+                                      },
+                                      "B": {
+                                        "expr": [
+                                          {
+                                            "num": "3"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                "B": {
+                                  "expr": [
+                                    {
+                                      "num": "0"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "COND2": {
+                            "block": {
+                              "id": "b008",
+                              "type": "math.compare",
+                              "v": 1,
+                              "fields": {
+                                "OP": "eq"
+                              },
+                              "inputs": {
+                                "A": {
+                                  "block": {
+                                    "id": "b007",
+                                    "type": "math.arithmetic",
+                                    "v": 1,
+                                    "fields": {
+                                      "OP": "mod"
+                                    },
+                                    "inputs": {
+                                      "A": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_i"
+                                          }
+                                        ]
+                                      },
+                                      "B": {
+                                        "expr": [
+                                          {
+                                            "num": "5"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                "B": {
+                                  "expr": [
+                                    {
+                                      "num": "0"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b003",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "SEP": "none",
+                                "NEWLINE": true,
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "str": "FizzBuzz"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ],
+                          "DO1": [
+                            {
+                              "id": "b006",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "SEP": "none",
+                                "NEWLINE": true,
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "str": "Fizz"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ],
+                          "DO2": [
+                            {
+                              "id": "b009",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "SEP": "none",
+                                "NEWLINE": true,
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "str": "Buzz"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ],
+                          "ELSE": [
+                            {
+                              "id": "b010",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "SEP": "none",
+                                "NEWLINE": true,
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_i"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

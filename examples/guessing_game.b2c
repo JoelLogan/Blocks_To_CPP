@@ -1,0 +1,279 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_guessing_game",
+    "name": "Guessing Game",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b011",
+            "type": "program.main",
+            "v": 1,
+            "comment": {
+              "text": "Spec §3.13.1: the guessing game."
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b002",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "int",
+                    "NAME": {
+                      "sym": "s_secret",
+                      "name": "secret"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "block": {
+                        "id": "b001",
+                        "type": "math.random_int",
+                        "v": 1,
+                        "inputs": {
+                          "LOW": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          },
+                          "HIGH": {
+                            "expr": [
+                              {
+                                "num": "100"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b003",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "int",
+                    "NAME": {
+                      "sym": "s_guess",
+                      "name": "guess"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b004",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "SEP": "none",
+                    "NEWLINE": true,
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Guess a number from 1 to 100!"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b010",
+                  "type": "control.while",
+                  "v": 1,
+                  "fields": {
+                    "MODE": "until"
+                  },
+                  "inputs": {
+                    "COND": {
+                      "expr": [
+                        {
+                          "ref": "s_guess"
+                        },
+                        {
+                          "op": "=="
+                        },
+                        {
+                          "ref": "s_secret"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b005",
+                        "type": "io.ask",
+                        "v": 1,
+                        "fields": {
+                          "VAR": {
+                            "ref": "s_guess"
+                          },
+                          "MODE": "keep_asking"
+                        },
+                        "inputs": {
+                          "PROMPT": {
+                            "expr": [
+                              {
+                                "str": "Your guess: "
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b009",
+                        "type": "control.if",
+                        "v": 1,
+                        "extra": {
+                          "elseIfCount": 1,
+                          "hasElse": true
+                        },
+                        "inputs": {
+                          "COND0": {
+                            "expr": [
+                              {
+                                "ref": "s_guess"
+                              },
+                              {
+                                "op": "<"
+                              },
+                              {
+                                "ref": "s_secret"
+                              }
+                            ]
+                          },
+                          "COND1": {
+                            "expr": [
+                              {
+                                "ref": "s_guess"
+                              },
+                              {
+                                "op": ">"
+                              },
+                              {
+                                "ref": "s_secret"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b006",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "SEP": "none",
+                                "NEWLINE": true,
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "str": "Too low!"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ],
+                          "DO1": [
+                            {
+                              "id": "b007",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "SEP": "none",
+                                "NEWLINE": true,
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "str": "Too high!"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ],
+                          "ELSE": [
+                            {
+                              "id": "b008",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "SEP": "none",
+                                "NEWLINE": true,
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "str": "Correct!"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

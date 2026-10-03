@@ -1,0 +1,272 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_average",
+    "name": "Average",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b011",
+            "type": "program.main",
+            "v": 1,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b001",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "int",
+                    "NAME": {
+                      "sym": "s_count",
+                      "name": "count"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b002",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "ref": "s_count"
+                    },
+                    "MODE": "keep_asking"
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "How many numbers? "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b003",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "TYPE": "double",
+                    "NAME": {
+                      "sym": "s_sum",
+                      "name": "sum"
+                    },
+                    "CONST": false
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0.0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b007",
+                  "type": "control.repeat",
+                  "v": 1,
+                  "inputs": {
+                    "TIMES": {
+                      "expr": [
+                        {
+                          "ref": "s_count"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b004",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "TYPE": "double",
+                          "NAME": {
+                            "sym": "s_value",
+                            "name": "value"
+                          },
+                          "CONST": false
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "num": "0.0"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b005",
+                        "type": "io.ask",
+                        "v": 1,
+                        "fields": {
+                          "VAR": {
+                            "ref": "s_value"
+                          },
+                          "MODE": "keep_asking"
+                        },
+                        "inputs": {
+                          "PROMPT": {
+                            "expr": [
+                              {
+                                "str": "Number: "
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b006",
+                        "type": "var.set",
+                        "v": 1,
+                        "fields": {
+                          "VAR": {
+                            "ref": "s_sum"
+                          }
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "ref": "s_sum"
+                              },
+                              {
+                                "op": "+"
+                              },
+                              {
+                                "ref": "s_value"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b010",
+                  "type": "control.if",
+                  "v": 1,
+                  "extra": {
+                    "elseIfCount": 0,
+                    "hasElse": true
+                  },
+                  "inputs": {
+                    "COND0": {
+                      "expr": [
+                        {
+                          "ref": "s_count"
+                        },
+                        {
+                          "op": ">"
+                        },
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b008",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 2
+                        },
+                        "fields": {
+                          "SEP": "none",
+                          "NEWLINE": true,
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "Average: "
+                              }
+                            ]
+                          },
+                          "ITEM1": {
+                            "expr": [
+                              {
+                                "ref": "s_sum"
+                              },
+                              {
+                                "op": "/"
+                              },
+                              {
+                                "ref": "s_count"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "ELSE": [
+                      {
+                        "id": "b009",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 1
+                        },
+                        "fields": {
+                          "SEP": "none",
+                          "NEWLINE": true,
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "No numbers"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}
