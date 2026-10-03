@@ -43,6 +43,13 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
 
+      # Platform-specific code (process containment, file permissions) is
+      # linted for Windows too; checking needs no Windows linker.
+      - name: Clippy (Windows target)
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+          cargo clippy --locked --all-targets --target x86_64-pc-windows-gnu -- -D warnings
+
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
