@@ -94,6 +94,27 @@ impl Default for CodegenOptions {
 /// `b2c_support.hpp` when helpers are placed in a header and any module uses
 /// one. The source map has one entry per file, in the same order.
 pub fn generate(program: &Program, options: &CodegenOptions) -> GeneratedProject {
+    generate_with_report(program, options).project
+}
+
+/// What [`generate_with_report`] produced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Generation {
+    /// The generated files and source map.
+    pub project: GeneratedProject,
+    /// How many error placeholders (`0 /* error */`, `/* error */;`, or an
+    /// `int /* error */` type) the output contains. It is zero for every
+    /// program the analyser accepts; anything else means part of the program
+    /// could not be generated (a bug in Blocks2Cpp, or input past the
+    /// generator's nesting limit), so the output must not be compiled.
+    pub placeholders: usize,
+}
+
+/// Generates C++ like [`generate`] and also reports how many error
+/// placeholders were needed. Build tools use this to refuse output that
+/// would compile but not do what the blocks say.
+pub fn generate_with_report(program: &Program, options: &CodegenOptions) -> Generation {
+    let mut placeholders = 0_usize;
     let mut files = Vec::new();
     let mut maps = Vec::new();
     let mut used_paths = BTreeSet::new();
@@ -102,15 +123,16 @@ pub fn generate(program: &Program, options: &CodegenOptions) -> GeneratedProject
         let lowered = lower::lower_module(program, module);
         helpers_used.extend(lowered.usage.helpers.iter().copied());
         let path = source_path(module, &mut used_paths);
-        let (contents, ranges) = emit::source_file(&lowered, &module.name, options);
+        let source = emit::source_file(&lowered, &module.name, options);
+        placeholders = placeholders.saturating_add(source.placeholders);
         maps.push(FileMap {
             path: path.clone(),
-            ranges,
+            ranges: source.ranges,
         });
         files.push(GeneratedFile {
             path,
             kind: FileKind::Source,
-            contents,
+            contents: source.contents,
         });
     }
     if options.helper_placement == HelperPlacement::Header && !helpers_used.is_empty() {
@@ -126,12 +148,15 @@ pub fn generate(program: &Program, options: &CodegenOptions) -> GeneratedProject
             contents,
         });
     }
-    GeneratedProject {
-        files,
-        source_map: SourceMap {
-            version: SOURCE_MAP_VERSION,
-            files: maps,
+    Generation {
+        project: GeneratedProject {
+            files,
+            source_map: SourceMap {
+                version: SOURCE_MAP_VERSION,
+                files: maps,
+            },
         },
+        placeholders,
     }
 }
 

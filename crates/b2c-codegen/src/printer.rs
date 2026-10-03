@@ -26,7 +26,14 @@ pub(crate) struct Printer {
     /// indentation, for continuation lines.
     align_next: Option<u32>,
     ranges: Vec<MappedRange>,
+    /// How many error placeholders (`/* error */`) were written.
+    placeholders: usize,
 }
+
+/// The marker every error placeholder contains. It can only come from
+/// [`Printer::fixed`], whose text is chosen by the generator, so counting it
+/// there never mistakes user text (a string or comment) for a placeholder.
+pub(crate) const PLACEHOLDER_MARK: &str = "/* error */";
 
 /// Converts a length to a column delta, saturating (files never get near 4 GiB).
 fn to_u32(len: usize) -> u32 {
@@ -45,7 +52,13 @@ impl Printer {
             at_line_start: true,
             align_next: None,
             ranges: Vec::new(),
+            placeholders: 0,
         }
+    }
+
+    /// How many error placeholders have been written so far.
+    pub(crate) fn placeholders(&self) -> usize {
+        self.placeholders
     }
 
     /// Appends text that contains no line break. Indentation is written lazily
@@ -83,6 +96,9 @@ impl Printer {
     /// Writes text chosen by the generator (keywords, punctuation, standard
     /// names, support-helper code).
     pub(crate) fn fixed(&mut self, text: &'static str) {
+        if text.contains(PLACEHOLDER_MARK) {
+            self.placeholders += 1;
+        }
         self.write_raw(text);
     }
 

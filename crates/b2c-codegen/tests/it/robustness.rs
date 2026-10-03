@@ -447,3 +447,30 @@ proptest! {
         prop_assert_eq!(generate(&program, &options("Random")), first);
     }
 }
+
+#[test]
+fn placeholders_are_counted() {
+    let b = Builder::new();
+    let x = b.var("x", Type::Error);
+    let broken = b.expr(ExprKind::Var(missing()), Type::Int);
+    let main = b.main(vec![b.declare(&x, Some(broken.clone())), b.print(vec![broken])]);
+    let program = b.program(vec![main]);
+    let report = b2c_codegen::generate_with_report(&program, &options("Broken"));
+    let text = render(&report.project);
+    assert!(report.placeholders > 0, "{text}");
+    assert_eq!(report.placeholders, text.matches("/* error */").count(), "{text}");
+    assert_eq!(report.project, generate(&program, &options("Broken")));
+}
+
+#[test]
+fn user_text_that_looks_like_a_placeholder_is_not_counted() {
+    let b = Builder::new();
+    let main = b.main(vec![crate::builder::commented(
+        b.print_text("/* error */"),
+        "/* error */ here",
+    )]);
+    let report = b2c_codegen::generate_with_report(&b.program(vec![main]), &options("/* error */"));
+    let text = render(&report.project);
+    assert_eq!(text.matches("/* error */").count(), 3, "{text}");
+    assert_eq!(report.placeholders, 0, "{text}");
+}

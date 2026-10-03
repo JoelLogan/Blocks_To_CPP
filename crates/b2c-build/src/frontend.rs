@@ -5,10 +5,14 @@
 //! depends only on the input bytes and the options.
 
 use b2c_codegen::{CodegenOptions, HelperPlacement};
-use b2c_ir::Diagnostic;
 use b2c_ir::sast::Program;
 use b2c_ir::source_map::GeneratedProject;
+use b2c_ir::{DiagSource, Diagnostic, Location};
 use b2c_model::Document;
+
+/// The generator needed error placeholders for a program the analyser
+/// accepted (docs/reference/diagnostics/generator.md).
+pub const GENERATOR_INCOMPLETE: &str = "B2C-E0701";
 
 /// How far the pipeline got.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -19,7 +23,7 @@ pub enum Stage {
     Resolve,
     /// Analysis reported errors; no C++ was generated.
     Analyze,
-    /// C++ was generated.
+    /// Code generation ran (`generated` is absent if it reported an error).
     Generate,
 }
 
@@ -51,7 +55,7 @@ pub struct Frontend {
     pub document: Option<Document>,
     /// The analysed program (absent when loading or resolving failed).
     pub program: Option<Program>,
-    /// The generated C++ (present only when there were no errors).
+    /// The generated C++ (present only when no stage reported an error).
     pub generated: Option<GeneratedProject>,
     /// Every diagnostic from every stage that ran, in pipeline order.
     pub diagnostics: Vec<Diagnostic>,
@@ -114,12 +118,26 @@ pub fn run_frontend(bytes: &[u8], options: &FrontendOptions) -> Frontend {
         indent_width: 4,
         helper_placement: options.helper_placement,
     };
-    let generated = b2c_codegen::generate(&analysis.program, &codegen_options);
+    let generation = b2c_codegen::generate_with_report(&analysis.program, &codegen_options);
+    // Code with placeholders compiles but does not do what the blocks say, so
+    // it is never handed on (spec §7.5.3 "generator bug detection").
+    let generated = if generation.placeholders == 0 {
+        Some(generation.project)
+    } else {
+        diagnostics.push(Diagnostic::error(
+            GENERATOR_INCOMPLETE,
+            DiagSource::Generator,
+            Location::project(),
+            "Part of this program could not be turned into C++, so it was not built. This looks like a bug \
+             in Blocks2Cpp; please report it with the project file.",
+        ));
+        None
+    };
     Frontend {
         stage: Stage::Generate,
         document: Some(document),
         program: Some(analysis.program),
-        generated: Some(generated),
+        generated,
         diagnostics,
     }
 }

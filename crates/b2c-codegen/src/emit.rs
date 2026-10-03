@@ -105,12 +105,18 @@ fn helper_namespace(p: &mut crate::printer::Printer, used: &BTreeSet<Helper>) {
     p.newline();
 }
 
-/// Prints a module's source file. Returns the text and its source-map ranges.
-pub(crate) fn source_file(
-    module: &LoweredModule,
-    module_name: &str,
-    options: &CodegenOptions,
-) -> (String, Vec<MappedRange>) {
+/// A printed source file.
+pub(crate) struct SourceFile {
+    /// The text.
+    pub(crate) contents: String,
+    /// Its source-map ranges.
+    pub(crate) ranges: Vec<MappedRange>,
+    /// How many error placeholders it contains.
+    pub(crate) placeholders: usize,
+}
+
+/// Prints a module's source file.
+pub(crate) fn source_file(module: &LoweredModule, module_name: &str, options: &CodegenOptions) -> SourceFile {
     let mut p = crate::printer::Printer::new(options.indent_width);
     file_header(&mut p, options, &Subject::Module(module_name));
     let helpers_used = &module.usage.helpers;
@@ -144,7 +150,13 @@ pub(crate) fn source_file(
         emitter.p.section();
         emitter.definition(function);
     }
-    emitter.p.finish()
+    let placeholders = emitter.p.placeholders();
+    let (contents, ranges) = emitter.p.finish();
+    SourceFile {
+        contents,
+        ranges,
+        placeholders,
+    }
 }
 
 /// Prints the shared support header with the given helpers.
