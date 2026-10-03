@@ -67,17 +67,103 @@ pub struct Ident(Box<str>);
 
 /// C++ keywords (up to C++26), alternative tokens and contextual keywords.
 const KEYWORDS: &[&str] = &[
-    "alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand", "bitor", "bool", "break", "case",
-    "catch", "char", "char16_t", "char32_t", "char8_t", "class", "co_await", "co_return", "co_yield",
-    "compl", "concept", "const", "const_cast", "consteval", "constexpr", "constinit", "continue",
-    "contract_assert", "decltype", "default", "delete", "do", "double", "dynamic_cast", "else", "enum",
-    "explicit", "export", "extern", "false", "final", "float", "for", "friend", "goto", "if", "import",
-    "inline", "int", "long", "module", "mutable", "namespace", "new", "noexcept", "not", "not_eq",
-    "nullptr", "operator", "or", "or_eq", "override", "private", "protected", "public", "register",
-    "reinterpret_cast", "requires", "return", "short", "signed", "sizeof", "static", "static_assert",
-    "static_cast", "struct", "switch", "template", "this", "thread_local", "throw", "true", "try",
-    "typedef", "typeid", "typename", "union", "unsigned", "using", "virtual", "void", "volatile",
-    "wchar_t", "while", "xor", "xor_eq",
+    "alignas",
+    "alignof",
+    "and",
+    "and_eq",
+    "asm",
+    "auto",
+    "bitand",
+    "bitor",
+    "bool",
+    "break",
+    "case",
+    "catch",
+    "char",
+    "char16_t",
+    "char32_t",
+    "char8_t",
+    "class",
+    "co_await",
+    "co_return",
+    "co_yield",
+    "compl",
+    "concept",
+    "const",
+    "const_cast",
+    "consteval",
+    "constexpr",
+    "constinit",
+    "continue",
+    "contract_assert",
+    "decltype",
+    "default",
+    "delete",
+    "do",
+    "double",
+    "dynamic_cast",
+    "else",
+    "enum",
+    "explicit",
+    "export",
+    "extern",
+    "false",
+    "final",
+    "float",
+    "for",
+    "friend",
+    "goto",
+    "if",
+    "import",
+    "inline",
+    "int",
+    "long",
+    "module",
+    "mutable",
+    "namespace",
+    "new",
+    "noexcept",
+    "not",
+    "not_eq",
+    "nullptr",
+    "operator",
+    "or",
+    "or_eq",
+    "override",
+    "private",
+    "protected",
+    "public",
+    "register",
+    "reinterpret_cast",
+    "requires",
+    "return",
+    "short",
+    "signed",
+    "sizeof",
+    "static",
+    "static_assert",
+    "static_cast",
+    "struct",
+    "switch",
+    "template",
+    "this",
+    "thread_local",
+    "throw",
+    "true",
+    "try",
+    "typedef",
+    "typeid",
+    "typename",
+    "union",
+    "unsigned",
+    "using",
+    "virtual",
+    "void",
+    "volatile",
+    "wchar_t",
+    "while",
+    "xor",
+    "xor_eq",
 ];
 
 /// Names the generator itself uses at global or `std` scope.
@@ -443,7 +529,11 @@ impl Comment {
                     }
                 }
                 let trimmed = text.trim_end();
-                let mut encoded = if trimmed.is_empty() { String::from("//") } else { format!("// {trimmed}") };
+                let mut encoded = if trimmed.is_empty() {
+                    String::from("//")
+                } else {
+                    format!("// {trimmed}")
+                };
                 if encoded.ends_with('\\') {
                     encoded.push_str(" //");
                 }
@@ -522,11 +612,21 @@ impl NumLit {
         match ty {
             NumType::Int | NumType::LongLong => {
                 let value = parse_integer(text).ok_or_else(syntax)?;
-                let max = if ty == NumType::Int { i128::from(i32::MAX) } else { i128::from(i64::MAX) };
+                let max = if ty == NumType::Int {
+                    i128::from(i32::MAX)
+                } else {
+                    i128::from(i64::MAX)
+                };
                 if value > max {
-                    return Err(NumError::OutOfRange { text: text.to_owned(), ty: ty.cpp_name() });
+                    return Err(NumError::OutOfRange {
+                        text: text.to_owned(),
+                        ty: ty.cpp_name(),
+                    });
                 }
-                Ok(Self { repr: value.to_string().into(), ty })
+                Ok(Self {
+                    repr: value.to_string().into(),
+                    ty,
+                })
             }
             NumType::Double => {
                 if let Some(value) = parse_integer(text) {
@@ -542,8 +642,10 @@ impl NumLit {
                     return Err(syntax());
                 }
                 let value: f64 = cleaned.parse().map_err(|_| syntax())?;
-                Self::from_f64(value)
-                    .ok_or_else(|| NumError::OutOfRange { text: text.to_owned(), ty: ty.cpp_name() })
+                Self::from_f64(value).ok_or_else(|| NumError::OutOfRange {
+                    text: text.to_owned(),
+                    ty: ty.cpp_name(),
+                })
             }
         }
     }
@@ -552,9 +654,15 @@ impl NumLit {
     pub fn int(value: i32) -> Self {
         if value < 0 {
             // Negative literals do not exist in C++; callers negate with unary minus.
-            Self { repr: i64::from(value).unsigned_abs().to_string().into(), ty: NumType::Int }
+            Self {
+                repr: i64::from(value).unsigned_abs().to_string().into(),
+                ty: NumType::Int,
+            }
         } else {
-            Self { repr: value.to_string().into(), ty: NumType::Int }
+            Self {
+                repr: value.to_string().into(),
+                ty: NumType::Int,
+            }
         }
     }
 
@@ -565,7 +673,10 @@ impl NumLit {
         }
         // Rust's `{:?}` prints the shortest text that round-trips and always
         // includes a `.` or an exponent, which is valid C++ double syntax.
-        Some(Self { repr: format!("{value:?}").into(), ty: NumType::Double })
+        Some(Self {
+            repr: format!("{value:?}").into(),
+            ty: NumType::Double,
+        })
     }
 
     /// The literal as C++ source text.
@@ -590,17 +701,18 @@ fn strip_separators(text: &str) -> Option<String> {
 /// Parses a non-negative integer literal; `None` if it is not one.
 fn parse_integer(text: &str) -> Option<i128> {
     let cleaned = strip_separators(text)?;
-    let (digits, radix) = if let Some(rest) = cleaned.strip_prefix("0x").or_else(|| cleaned.strip_prefix("0X")) {
-        (rest, 16)
-    } else if let Some(rest) = cleaned.strip_prefix("0b").or_else(|| cleaned.strip_prefix("0B")) {
-        (rest, 2)
-    } else {
-        // A leading zero would make C++ read the number as octal.
-        if cleaned.len() > 1 && cleaned.starts_with('0') {
-            return None;
-        }
-        (cleaned.as_str(), 10)
-    };
+    let (digits, radix) =
+        if let Some(rest) = cleaned.strip_prefix("0x").or_else(|| cleaned.strip_prefix("0X")) {
+            (rest, 16)
+        } else if let Some(rest) = cleaned.strip_prefix("0b").or_else(|| cleaned.strip_prefix("0B")) {
+            (rest, 2)
+        } else {
+            // A leading zero would make C++ read the number as octal.
+            if cleaned.len() > 1 && cleaned.starts_with('0') {
+                return None;
+            }
+            (cleaned.as_str(), 10)
+        };
     if digits.is_empty() || digits.len() > 128 || !digits.chars().all(|c| c.is_digit(radix)) {
         return None;
     }
@@ -670,7 +782,10 @@ impl RawCode {
         if text.contains('\0') {
             return Err(LiteralError::Nul);
         }
-        Ok(Self { text: text.into(), provenance })
+        Ok(Self {
+            text: text.into(),
+            provenance,
+        })
     }
 
     /// The raw text.
@@ -732,7 +847,10 @@ mod tests {
     fn namespace_scope_names() {
         for clash in ["abs", "time", "y1", "index", "exit", "printf"] {
             let ident = Ident::new(clash).unwrap();
-            assert_eq!(ident.check_namespace_scope(), Err(IdentError::GlobalClash(clash.into())));
+            assert_eq!(
+                ident.check_namespace_scope(),
+                Err(IdentError::GlobalClash(clash.into()))
+            );
         }
         assert!(Ident::new("greet").unwrap().check_namespace_scope().is_ok());
     }
@@ -758,7 +876,10 @@ mod tests {
         assert_eq!(enc("\u{85}"), r#""\u0085""#);
         assert_eq!(enc("\u{E0041}"), r#""\U000E0041""#);
         assert_eq!(enc("it's"), r#""it's""#);
-        assert_eq!(enc(r#""); std::system("x"); //"#), r#""\"); std::system(\"x\"); //""#);
+        assert_eq!(
+            enc(r#""); std::system("x"); //"#),
+            r#""\"); std::system(\"x\"); //""#
+        );
         assert_eq!(StrLit::new("a\0b"), Err(LiteralError::Nul));
     }
 
@@ -795,9 +916,14 @@ mod tests {
         assert_eq!(p("0b101010", NumType::Int).as_deref(), Ok("42"));
         assert_eq!(p("1'000'000", NumType::Int).as_deref(), Ok("1000000"));
         assert_eq!(p("2147483647", NumType::Int).as_deref(), Ok("2147483647"));
-        assert!(matches!(p("2147483648", NumType::Int), Err(NumError::OutOfRange { .. })));
+        assert!(matches!(
+            p("2147483648", NumType::Int),
+            Err(NumError::OutOfRange { .. })
+        ));
         assert_eq!(p("2147483648", NumType::LongLong).as_deref(), Ok("2147483648"));
-        for bad in ["", "-1", "1.5", "0x", "08", "1''0", "'1", "1e5", "abc", "1u", "0x1G"] {
+        for bad in [
+            "", "-1", "1.5", "0x", "08", "1''0", "'1", "1e5", "abc", "1u", "0x1G",
+        ] {
             assert!(matches!(p(bad, NumType::Int), Err(NumError::Syntax(_))), "{bad}");
         }
         assert_eq!(p("3.14", NumType::Double).as_deref(), Ok("3.14"));
@@ -807,9 +933,15 @@ mod tests {
         assert_eq!(p("1e-3", NumType::Double).as_deref(), Ok("0.001"));
         assert_eq!(p("2.5E+2", NumType::Double).as_deref(), Ok("250.0"));
         for bad in [".", "e5", "1e", "1.2.3", "1e+", "-2.0", "1.0f", "inf", "nan"] {
-            assert!(matches!(p(bad, NumType::Double), Err(NumError::Syntax(_))), "{bad}");
+            assert!(
+                matches!(p(bad, NumType::Double), Err(NumError::Syntax(_))),
+                "{bad}"
+            );
         }
-        assert!(matches!(p("1e400", NumType::Double), Err(NumError::OutOfRange { .. })));
+        assert!(matches!(
+            p("1e400", NumType::Double),
+            Err(NumError::OutOfRange { .. })
+        ));
         assert_eq!(NumLit::int(1).as_str(), "1");
         assert!(NumLit::from_f64(f64::NAN).is_none());
     }

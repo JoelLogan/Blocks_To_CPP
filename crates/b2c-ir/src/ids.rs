@@ -21,7 +21,11 @@ fn validate(value: &str) -> Result<(), IdError> {
     let ok = !value.is_empty()
         && value.len() <= MAX_ID_LEN
         && value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
-    if ok { Ok(()) } else { Err(IdError(value.chars().take(40).collect())) }
+    if ok {
+        Ok(())
+    } else {
+        Err(IdError(value.chars().take(40).collect()))
+    }
 }
 
 macro_rules! define_id {

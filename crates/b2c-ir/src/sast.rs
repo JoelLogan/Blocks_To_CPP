@@ -49,12 +49,20 @@ pub struct Origin {
 impl Origin {
     /// The whole of a block.
     pub fn whole(module: ModuleId, block: BlockId) -> Self {
-        Self { module, block, part: Part::Whole }
+        Self {
+            module,
+            block,
+            part: Part::Whole,
+        }
     }
 
     /// The diagnostic location for this origin.
     pub fn location(&self) -> Location {
-        Location { module: Some(self.module.clone()), block: Some(self.block.clone()), part: self.part.clone() }
+        Location {
+            module: Some(self.module.clone()),
+            block: Some(self.block.clone()),
+            part: self.part.clone(),
+        }
     }
 }
 

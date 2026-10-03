@@ -91,7 +91,11 @@ impl SourceMap {
             .min_by_key(|r| {
                 (
                     r.end.line - r.start.line,
-                    if r.end.line == r.start.line { r.end.column.saturating_sub(r.start.column) } else { 0 },
+                    if r.end.line == r.start.line {
+                        r.end.column.saturating_sub(r.start.column)
+                    } else {
+                        0
+                    },
                 )
             })
     }
@@ -103,7 +107,12 @@ impl SourceMap {
         file.ranges
             .iter()
             .filter(|r| r.start.line <= line && line <= r.end.line)
-            .min_by_key(|r| (r.end.line - r.start.line, r.end.column.saturating_sub(r.start.column)))
+            .min_by_key(|r| {
+                (
+                    r.end.line - r.start.line,
+                    r.end.column.saturating_sub(r.start.column),
+                )
+            })
     }
 }
 
@@ -127,15 +136,25 @@ mod tests {
             version: 1,
             files: vec![FileMap {
                 path: "main.cpp".into(),
-                ranges: vec![range(3, 1, 10, 2, "outer"), range(5, 5, 5, 30, "inner"), range(5, 9, 5, 14, "tiny")],
+                ranges: vec![
+                    range(3, 1, 10, 2, "outer"),
+                    range(5, 5, 5, 30, "inner"),
+                    range(5, 9, 5, 14, "tiny"),
+                ],
             }],
         };
-        let at = |line, column| map.lookup("main.cpp", Position { line, column }).map(|r| r.block.as_str());
+        let at = |line, column| {
+            map.lookup("main.cpp", Position { line, column })
+                .map(|r| r.block.as_str())
+        };
         assert_eq!(at(5, 10), Some("tiny"));
         assert_eq!(at(5, 20), Some("inner"));
         assert_eq!(at(7, 1), Some("outer"));
         assert_eq!(at(11, 1), None);
         assert_eq!(map.lookup("other.cpp", Position { line: 5, column: 10 }), None);
-        assert_eq!(map.lookup_line("main.cpp", 5).map(|r| r.block.as_str()), Some("tiny"));
+        assert_eq!(
+            map.lookup_line("main.cpp", 5).map(|r| r.block.as_str()),
+            Some("tiny")
+        );
     }
 }

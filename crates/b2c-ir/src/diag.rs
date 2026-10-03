@@ -82,12 +82,20 @@ pub struct Location {
 impl Location {
     /// A location with no module or block (whole project).
     pub fn project() -> Self {
-        Self { module: None, block: None, part: Part::Whole }
+        Self {
+            module: None,
+            block: None,
+            part: Part::Whole,
+        }
     }
 
     /// The whole of a block.
     pub fn block(module: Option<ModuleId>, block: BlockId) -> Self {
-        Self { module, block: Some(block), part: Part::Whole }
+        Self {
+            module,
+            block: Some(block),
+            part: Part::Whole,
+        }
     }
 
     /// Returns this location pointing at a different part of the same block.
@@ -180,7 +188,10 @@ impl Diagnostic {
     /// Adds a related location.
     #[must_use]
     pub fn with_related(mut self, location: Location, message: impl Into<String>) -> Self {
-        self.related.push(Related { location, message: message.into() });
+        self.related.push(Related {
+            location,
+            message: message.into(),
+        });
         self
     }
 }
