@@ -81,38 +81,36 @@ pub struct MappedRange {
 
 impl SourceMap {
     /// Finds the innermost range containing a position, for mapping compiler
-    /// diagnostics to blocks. Ranges are nested, so the innermost one is the
-    /// shortest range that contains the position.
+    /// diagnostics to blocks.
+    ///
+    /// Ranges are properly nested, so the ranges containing a position form a
+    /// chain and the innermost one starts last (and, among ranges with the
+    /// same start, ends first).
     pub fn lookup(&self, path: &str, position: Position) -> Option<&MappedRange> {
         let file = self.files.iter().find(|f| f.path == path)?;
         file.ranges
             .iter()
             .filter(|r| r.start <= position && position < r.end)
-            .min_by_key(|r| {
-                (
-                    r.end.line - r.start.line,
-                    if r.end.line == r.start.line {
-                        r.end.column.saturating_sub(r.start.column)
-                    } else {
-                        0
-                    },
-                )
-            })
+            .max_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)))
     }
 
-    /// Finds the innermost range on a line when only the line is known (e.g.
-    /// linker or runtime stack traces).
+    /// Finds the range for a whole line when only the line is known (e.g.
+    /// linker errors or runtime stack traces): the outermost range that
+    /// starts on that line (usually the statement written there), or, on a
+    /// continuation line, the innermost range that covers it.
     pub fn lookup_line(&self, path: &str, line: u32) -> Option<&MappedRange> {
         let file = self.files.iter().find(|f| f.path == path)?;
-        file.ranges
+        let starting_here = file
+            .ranges
             .iter()
-            .filter(|r| r.start.line <= line && line <= r.end.line)
-            .min_by_key(|r| {
-                (
-                    r.end.line - r.start.line,
-                    r.end.column.saturating_sub(r.start.column),
-                )
-            })
+            .filter(|r| r.start.line == line)
+            .min_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)));
+        starting_here.or_else(|| {
+            file.ranges
+                .iter()
+                .filter(|r| r.start.line <= line && line <= r.end.line)
+                .max_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)))
+        })
     }
 }
 
@@ -138,8 +136,12 @@ mod tests {
                 path: "main.cpp".into(),
                 ranges: vec![
                     range(3, 1, 10, 2, "outer"),
+                    range(4, 5, 4, 20, "before"),
                     range(5, 5, 5, 30, "inner"),
                     range(5, 9, 5, 14, "tiny"),
+                    range(5, 9, 5, 12, "tinier"),
+                    range(6, 5, 8, 6, "multi"),
+                    range(6, 9, 8, 2, "multi_inner"),
                 ],
             }],
         };
@@ -147,14 +149,20 @@ mod tests {
             map.lookup("main.cpp", Position { line, column })
                 .map(|r| r.block.as_str())
         };
-        assert_eq!(at(5, 10), Some("tiny"));
+        assert_eq!(at(5, 10), Some("tinier"));
+        assert_eq!(at(5, 13), Some("tiny"));
         assert_eq!(at(5, 20), Some("inner"));
-        assert_eq!(at(7, 1), Some("outer"));
+        assert_eq!(at(6, 6), Some("multi"));
+        assert_eq!(at(7, 1), Some("multi_inner"));
+        assert_eq!(at(8, 3), Some("multi"));
+        assert_eq!(at(9, 1), Some("outer"));
         assert_eq!(at(11, 1), None);
         assert_eq!(map.lookup("other.cpp", Position { line: 5, column: 10 }), None);
-        assert_eq!(
-            map.lookup_line("main.cpp", 5).map(|r| r.block.as_str()),
-            Some("tiny")
-        );
+        let on_line = |line| map.lookup_line("main.cpp", line).map(|r| r.block.as_str());
+        assert_eq!(on_line(5), Some("inner"));
+        assert_eq!(on_line(4), Some("before"));
+        assert_eq!(on_line(7), Some("multi_inner"));
+        assert_eq!(on_line(9), Some("outer"));
+        assert_eq!(on_line(11), None);
     }
 }

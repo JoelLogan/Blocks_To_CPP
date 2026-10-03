@@ -254,27 +254,36 @@ configuration that bans `Printer::write_str` outside the token module.
 
 ## 6.9 Source maps
 
-Every emitted CAST node with an `origin` records its output range:
+Every emitted CAST node with an `origin` records its output range
+(`b2c_ir::source_map`; written next to the build as `sourcemap.json`):
 
 ```json
 {
   "version": 1,
-  "blocks": ["blk_Qm81", "blk_P1", "…"],
   "files": [
     { "path": "main.cpp",
-      "ranges": [ [3, 1, 18, 2, 0, "whole"], [9, 13, 9, 27, 0, "input:COND0"], [10, 13, 10, 45, 1, "whole"] ] }
+      "ranges": [
+        { "start": { "line": 3, "column": 1 }, "end": { "line": 18, "column": 2 },
+          "module": "mod_main", "block": "b001", "part": { "kind": "whole" } },
+        { "start": { "line": 9, "column": 13 }, "end": { "line": 9, "column": 27 },
+          "module": "mod_main", "block": "b004", "part": { "kind": "input", "name": "COND0" } }
+      ] }
   ]
 }
 ```
 
-Each range is `[startLine, startCol, endLine, endCol, blockIndex, part]`
-(1-based, columns in UTF-8 bytes to match GCC's column units, which the
-frontend converts for display).
+Positions are 1-based; columns count UTF-8 bytes to match GCC's column units
+(the frontend converts them for display). `end` is exclusive. Within a file,
+ranges are sorted by start and properly nested: every item, parameter,
+statement (with its comment lines and nested bodies) and expression has one.
 
-* **Diagnostic lookup:** find the **innermost** range containing the location
-  (ranges are stored sorted, and lookup is a binary search plus a stack walk).
-  An unmapped location (e.g. inside a support helper) attaches to the nearest
-  enclosing mapped range, or to the module.
+* **Diagnostic lookup:** find the **innermost** range containing the location.
+  Because ranges nest, the ranges containing a position form a chain, and the
+  innermost is the one that starts last. When only a line is known (linker
+  errors, stack traces), the outermost range starting on that line (usually
+  the statement) is used, or the innermost range covering a continuation
+  line. An unmapped location (e.g. inside a support helper) attaches to the
+  module.
 * **Raw code:** ranges inside Raw C++ blocks map to the raw block plus a line
   offset, so the Raw editor can underline the exact line.
 * The editor uses the same map for hover highlighting and click-to-block.

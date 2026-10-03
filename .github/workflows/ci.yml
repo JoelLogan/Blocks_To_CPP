@@ -83,6 +83,8 @@ jobs:
 
       - name: Test
         run: cargo test --locked
+        env:
+          B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
 
   wasm:
     name: Compiler crates build for WebAssembly
