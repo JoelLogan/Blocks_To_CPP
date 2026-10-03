@@ -54,7 +54,7 @@ A project is a **single JSON file** with the extension `.b2c`.
       "libraries": [ "sfml-graphics" ],
       "packs": [ { "id": "std", "version": "^1.0" } ]
     },
-    "run": { "args": ["--easy"], "workingDirectory": "project", "stdinFile": null }
+    "run": { "args": ["--easy"], "workingDirectory": "project" }
   },
   "modules": [
     {
@@ -155,6 +155,13 @@ Further rules:
 * **Strings must be valid UTF-8** with no NUL. Text fields reject C0 controls
   other than `\t` and `\n`, and reject Unicode bidi controls (see
   [08 §8.4](08-security.md#84-code-injection-through-block-content)).
+* **Library-pack references** have an ID matching `[a-z][a-z0-9_-]{0,63}`
+  (pack IDs name folders, so they can never carry a path) and a version
+  requirement made only of SemVer-requirement characters; a pack may be
+  listed only once.
+* **Module names** match `[a-z][a-z0-9_-]{0,63}`, are unique ignoring case,
+  and are never Windows device names (`con`, `nul`, `com1`, … including the
+  superscript-digit forms), because they become file names.
 * In the frontend, JSON is never parsed into objects that are used as
   prototypes or merged into other objects. The WASM validator returns fresh,
   typed data. `__proto__`, `constructor` and `prototype` keys are rejected

@@ -41,13 +41,18 @@ as possible. Building, however, requires stages ①–⑤ to report zero errors.
 
 ## 6.2 Stage ① Load and validate
 
-* `serde_json` with a custom wrapper that **rejects duplicate keys** and
-  enforces the depth limit while parsing. The limits from
+* A strict JSON parser of our own that **rejects duplicate keys** at every
+  level (reporting where they are), enforces the depth limit and a cap on the
+  number of values while parsing, and gives a line and column for every
+  error. The limits from
   [05 §5.6](05-project-format.md#56-validation-limits) are checked before
   allocation-heavy work (the size check happens before parsing).
 * Strongly typed structs with `deny_unknown_fields`. Field values are decoded
-  into enums and newtypes, never left as untyped JSON.
-* Migrations run on the typed model (`formatVersion` chain).
+  into enums and newtypes, never left as untyped JSON. The decoder reports
+  every problem it finds, not just the first.
+* Format migrations (the `formatVersion` chain) run on the parsed JSON tree
+  before decoding, because an older file may not fit the current types. The
+  upgraded tree then goes through the full decoder and validation.
 * Output: `Document`, plus load diagnostics (`B2C-E01xx`).
 
 ## 6.3 Stage ② Resolve catalog

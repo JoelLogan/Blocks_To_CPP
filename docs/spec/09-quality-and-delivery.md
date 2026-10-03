@@ -94,8 +94,9 @@ The OSV scan itself always runs and fails on known vulnerabilities.
 
 **Implemented so far:** `pages.yml`, `workflow-audit.yml`, `codeql.yml`, `osv-scanner.yml`,
 `scorecard.yml`, and in `ci.yml` the `lint`, `test` (Ubuntu and Windows, with g++), `wasm`,
-`deny`, `docs` (diagnostic codes documented), `secrets` (gitleaks) and `security` (`pnpm audit`)
-jobs. The rest arrive with the milestones whose code they check: the web and E2E jobs with the
+`deny`, `docs` (diagnostic codes documented), `secrets` (gitleaks), `security` (`pnpm audit`) and
+`fuzz` (a 60-second libFuzzer run per target, seeded with the examples and the malicious-project
+suite) jobs. The rest arrive with the milestones whose code they check: the web and E2E jobs with the
 editor, `nightly.yml` and `weekly.yml` once there is code to fuzz and benchmark, and
 `release.yml` before the first signed release (M6).
 
