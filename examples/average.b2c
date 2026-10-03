@@ -10,6 +10,37 @@
     "name": "Average",
     "language": {
       "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
     }
   },
   "modules": [
@@ -22,6 +53,8 @@
             "id": "b011",
             "type": "program.main",
             "v": 1,
+            "x": 40,
+            "y": 40,
             "statements": {
               "BODY": [
                 {
@@ -29,12 +62,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "int",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_count",
                       "name": "count"
                     },
-                    "CONST": false
+                    "TYPE": "int"
                   },
                   "inputs": {
                     "VALUE": {
@@ -51,10 +84,10 @@
                   "type": "io.ask",
                   "v": 1,
                   "fields": {
+                    "MODE": "keep_asking",
                     "VAR": {
                       "ref": "s_count"
-                    },
-                    "MODE": "keep_asking"
+                    }
                   },
                   "inputs": {
                     "PROMPT": {
@@ -71,12 +104,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "double",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_sum",
                       "name": "sum"
                     },
-                    "CONST": false
+                    "TYPE": "double"
                   },
                   "inputs": {
                     "VALUE": {
@@ -108,12 +141,12 @@
                         "type": "var.declare",
                         "v": 1,
                         "fields": {
-                          "TYPE": "double",
+                          "CONST": false,
                           "NAME": {
                             "sym": "s_value",
                             "name": "value"
                           },
-                          "CONST": false
+                          "TYPE": "double"
                         },
                         "inputs": {
                           "VALUE": {
@@ -130,10 +163,10 @@
                         "type": "io.ask",
                         "v": 1,
                         "fields": {
+                          "MODE": "keep_asking",
                           "VAR": {
                             "ref": "s_value"
-                          },
-                          "MODE": "keep_asking"
+                          }
                         },
                         "inputs": {
                           "PROMPT": {
@@ -206,8 +239,8 @@
                           "itemCount": 2
                         },
                         "fields": {
-                          "SEP": "none",
                           "NEWLINE": true,
+                          "SEP": "none",
                           "STREAM": "out"
                         },
                         "inputs": {
@@ -243,8 +276,8 @@
                           "itemCount": 1
                         },
                         "fields": {
-                          "SEP": "none",
                           "NEWLINE": true,
+                          "SEP": "none",
                           "STREAM": "out"
                         },
                         "inputs": {
@@ -261,9 +294,7 @@
                   }
                 }
               ]
-            },
-            "x": 40,
-            "y": 40
+            }
           }
         ]
       }

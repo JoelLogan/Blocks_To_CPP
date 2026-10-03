@@ -10,6 +10,37 @@
     "name": "Sum to Ten",
     "language": {
       "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
     }
   },
   "modules": [
@@ -22,6 +53,8 @@
             "id": "b005",
             "type": "program.main",
             "v": 1,
+            "x": 40,
+            "y": 40,
             "statements": {
               "BODY": [
                 {
@@ -29,12 +62,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "int",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_total",
                       "name": "total"
                     },
-                    "CONST": false
+                    "TYPE": "int"
                   },
                   "inputs": {
                     "VALUE": {
@@ -51,11 +84,11 @@
                   "type": "control.for_range",
                   "v": 1,
                   "fields": {
+                    "DIRECTION": "through",
                     "VAR": {
                       "sym": "s_i",
                       "name": "i"
-                    },
-                    "DIRECTION": "through"
+                    }
                   },
                   "inputs": {
                     "FROM": {
@@ -105,8 +138,8 @@
                     "itemCount": 2
                   },
                   "fields": {
-                    "SEP": "none",
                     "NEWLINE": true,
+                    "SEP": "none",
                     "STREAM": "out"
                   },
                   "inputs": {
@@ -127,9 +160,7 @@
                   }
                 }
               ]
-            },
-            "x": 40,
-            "y": 40
+            }
           }
         ]
       }

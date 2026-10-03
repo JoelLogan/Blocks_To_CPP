@@ -17,6 +17,9 @@ thiserror.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+# Tests compare the loader with serde_json; with this feature serde_json also
+# parses floats with correct rounding, like the loader does. Tests only.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 
 [lints]
 workspace = true

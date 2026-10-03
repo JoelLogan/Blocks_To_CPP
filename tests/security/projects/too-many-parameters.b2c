@@ -1,0 +1,178 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_security",
+    "name": "Security test",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_print",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Hello"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b_fn",
+            "type": "func.define",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "extra": {
+              "params": [
+                {
+                  "mode": "copy",
+                  "name": "p0",
+                  "sym": "s_p0",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p1",
+                  "sym": "s_p1",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p2",
+                  "sym": "s_p2",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p3",
+                  "sym": "s_p3",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p4",
+                  "sym": "s_p4",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p5",
+                  "sym": "s_p5",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p6",
+                  "sym": "s_p6",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p7",
+                  "sym": "s_p7",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p8",
+                  "sym": "s_p8",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p9",
+                  "sym": "s_p9",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p10",
+                  "sym": "s_p10",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p11",
+                  "sym": "s_p11",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p12",
+                  "sym": "s_p12",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p13",
+                  "sym": "s_p13",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p14",
+                  "sym": "s_p14",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p15",
+                  "sym": "s_p15",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p16",
+                  "sym": "s_p16",
+                  "type": "int"
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_fn",
+                "name": "f"
+              },
+              "RETURNS": "void"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

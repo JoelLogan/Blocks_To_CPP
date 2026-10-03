@@ -10,6 +10,37 @@
     "name": "Largest of Three",
     "language": {
       "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
     }
   },
   "modules": [
@@ -22,25 +53,27 @@
             "id": "b005",
             "type": "func.define",
             "v": 1,
+            "x": 400,
+            "y": 40,
             "extra": {
               "params": [
                 {
-                  "sym": "s_a",
+                  "mode": "copy",
                   "name": "a",
-                  "type": "int",
-                  "mode": "copy"
+                  "sym": "s_a",
+                  "type": "int"
                 },
                 {
-                  "sym": "s_b",
+                  "mode": "copy",
                   "name": "b",
-                  "type": "int",
-                  "mode": "copy"
+                  "sym": "s_b",
+                  "type": "int"
                 },
                 {
-                  "sym": "s_c",
+                  "mode": "copy",
                   "name": "c",
-                  "type": "int",
-                  "mode": "copy"
+                  "sym": "s_c",
+                  "type": "int"
                 }
               ]
             },
@@ -153,14 +186,14 @@
                   }
                 }
               ]
-            },
-            "x": 400,
-            "y": 40
+            }
           },
           {
             "id": "b013",
             "type": "program.main",
             "v": 1,
+            "x": 40,
+            "y": 40,
             "statements": {
               "BODY": [
                 {
@@ -168,12 +201,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "int",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_x",
                       "name": "x"
                     },
-                    "CONST": false
+                    "TYPE": "int"
                   },
                   "inputs": {
                     "VALUE": {
@@ -190,12 +223,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "int",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_y",
                       "name": "y"
                     },
-                    "CONST": false
+                    "TYPE": "int"
                   },
                   "inputs": {
                     "VALUE": {
@@ -212,12 +245,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "int",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_z",
                       "name": "z"
                     },
-                    "CONST": false
+                    "TYPE": "int"
                   },
                   "inputs": {
                     "VALUE": {
@@ -234,10 +267,10 @@
                   "type": "io.ask",
                   "v": 1,
                   "fields": {
+                    "MODE": "keep_asking",
                     "VAR": {
                       "ref": "s_x"
-                    },
-                    "MODE": "keep_asking"
+                    }
                   },
                   "inputs": {
                     "PROMPT": {
@@ -254,10 +287,10 @@
                   "type": "io.ask",
                   "v": 1,
                   "fields": {
+                    "MODE": "keep_asking",
                     "VAR": {
                       "ref": "s_y"
-                    },
-                    "MODE": "keep_asking"
+                    }
                   },
                   "inputs": {
                     "PROMPT": {
@@ -274,10 +307,10 @@
                   "type": "io.ask",
                   "v": 1,
                   "fields": {
+                    "MODE": "keep_asking",
                     "VAR": {
                       "ref": "s_z"
-                    },
-                    "MODE": "keep_asking"
+                    }
                   },
                   "inputs": {
                     "PROMPT": {
@@ -297,8 +330,8 @@
                     "itemCount": 2
                   },
                   "fields": {
-                    "SEP": "none",
                     "NEWLINE": true,
+                    "SEP": "none",
                     "STREAM": "out"
                   },
                   "inputs": {
@@ -340,9 +373,7 @@
                   }
                 }
               ]
-            },
-            "x": 40,
-            "y": 40
+            }
           }
         ]
       }

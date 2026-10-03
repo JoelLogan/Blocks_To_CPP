@@ -10,6 +10,37 @@
     "name": "Guessing Game",
     "language": {
       "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
     }
   },
   "modules": [
@@ -22,6 +53,8 @@
             "id": "b011",
             "type": "program.main",
             "v": 1,
+            "x": 40,
+            "y": 40,
             "comment": {
               "text": "Spec §3.13.1: the guessing game."
             },
@@ -32,12 +65,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "int",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_secret",
                       "name": "secret"
                     },
-                    "CONST": false
+                    "TYPE": "int"
                   },
                   "inputs": {
                     "VALUE": {
@@ -46,17 +79,17 @@
                         "type": "math.random_int",
                         "v": 1,
                         "inputs": {
-                          "LOW": {
-                            "expr": [
-                              {
-                                "num": "1"
-                              }
-                            ]
-                          },
                           "HIGH": {
                             "expr": [
                               {
                                 "num": "100"
+                              }
+                            ]
+                          },
+                          "LOW": {
+                            "expr": [
+                              {
+                                "num": "1"
                               }
                             ]
                           }
@@ -70,12 +103,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "int",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_guess",
                       "name": "guess"
                     },
-                    "CONST": false
+                    "TYPE": "int"
                   },
                   "inputs": {
                     "VALUE": {
@@ -95,8 +128,8 @@
                     "itemCount": 1
                   },
                   "fields": {
-                    "SEP": "none",
                     "NEWLINE": true,
+                    "SEP": "none",
                     "STREAM": "out"
                   },
                   "inputs": {
@@ -138,10 +171,10 @@
                         "type": "io.ask",
                         "v": 1,
                         "fields": {
+                          "MODE": "keep_asking",
                           "VAR": {
                             "ref": "s_guess"
-                          },
-                          "MODE": "keep_asking"
+                          }
                         },
                         "inputs": {
                           "PROMPT": {
@@ -199,8 +232,8 @@
                                 "itemCount": 1
                               },
                               "fields": {
-                                "SEP": "none",
                                 "NEWLINE": true,
+                                "SEP": "none",
                                 "STREAM": "out"
                               },
                               "inputs": {
@@ -223,8 +256,8 @@
                                 "itemCount": 1
                               },
                               "fields": {
-                                "SEP": "none",
                                 "NEWLINE": true,
+                                "SEP": "none",
                                 "STREAM": "out"
                               },
                               "inputs": {
@@ -247,8 +280,8 @@
                                 "itemCount": 1
                               },
                               "fields": {
-                                "SEP": "none",
                                 "NEWLINE": true,
+                                "SEP": "none",
                                 "STREAM": "out"
                               },
                               "inputs": {
@@ -268,9 +301,7 @@
                   }
                 }
               ]
-            },
-            "x": 40,
-            "y": 40
+            }
           }
         ]
       }

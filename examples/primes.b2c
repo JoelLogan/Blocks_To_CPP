@@ -10,6 +10,37 @@
     "name": "Prime Numbers",
     "language": {
       "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
     }
   },
   "modules": [
@@ -22,13 +53,15 @@
             "id": "b009",
             "type": "func.define",
             "v": 1,
+            "x": 400,
+            "y": 40,
             "extra": {
               "params": [
                 {
-                  "sym": "s_n",
+                  "mode": "copy",
                   "name": "n",
-                  "type": "int",
-                  "mode": "copy"
+                  "sym": "s_n",
+                  "type": "int"
                 }
               ]
             },
@@ -88,12 +121,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "int",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_d",
                       "name": "divisor"
                     },
-                    "CONST": false
+                    "TYPE": "int"
                   },
                   "inputs": {
                     "VALUE": {
@@ -220,14 +253,14 @@
                   }
                 }
               ]
-            },
-            "x": 400,
-            "y": 40
+            }
           },
           {
             "id": "b019",
             "type": "program.main",
             "v": 1,
+            "x": 40,
+            "y": 40,
             "statements": {
               "BODY": [
                 {
@@ -235,12 +268,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "int",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_count",
                       "name": "count"
                     },
-                    "CONST": false
+                    "TYPE": "int"
                   },
                   "inputs": {
                     "VALUE": {
@@ -257,11 +290,11 @@
                   "type": "control.for_range",
                   "v": 1,
                   "fields": {
+                    "DIRECTION": "through",
                     "VAR": {
                       "sym": "s_k",
                       "name": "k"
-                    },
-                    "DIRECTION": "through"
+                    }
                   },
                   "inputs": {
                     "FROM": {
@@ -342,8 +375,8 @@
                                       "itemCount": 1
                                     },
                                     "fields": {
-                                      "SEP": "none",
                                       "NEWLINE": false,
+                                      "SEP": "none",
                                       "STREAM": "out"
                                     },
                                     "inputs": {
@@ -367,8 +400,8 @@
                                 "itemCount": 1
                               },
                               "fields": {
-                                "SEP": "none",
                                 "NEWLINE": false,
+                                "SEP": "none",
                                 "STREAM": "out"
                               },
                               "inputs": {
@@ -414,8 +447,8 @@
                     "itemCount": 1
                   },
                   "fields": {
-                    "SEP": "none",
                     "NEWLINE": true,
+                    "SEP": "none",
                     "STREAM": "out"
                   },
                   "inputs": {
@@ -436,8 +469,8 @@
                     "itemCount": 3
                   },
                   "fields": {
-                    "SEP": "none",
                     "NEWLINE": true,
+                    "SEP": "none",
                     "STREAM": "out"
                   },
                   "inputs": {
@@ -465,9 +498,7 @@
                   }
                 }
               ]
-            },
-            "x": 40,
-            "y": 40
+            }
           }
         ]
       }

@@ -1,0 +1,466 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_security",
+    "name": "Security test",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_print",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Hello"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b_fn",
+            "type": "func.define",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "extra": {
+              "params": [
+                {
+                  "mode": "copy",
+                  "name": "p0",
+                  "sym": "s_p0",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p1",
+                  "sym": "s_p1",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p2",
+                  "sym": "s_p2",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p3",
+                  "sym": "s_p3",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p4",
+                  "sym": "s_p4",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p5",
+                  "sym": "s_p5",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p6",
+                  "sym": "s_p6",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p7",
+                  "sym": "s_p7",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p8",
+                  "sym": "s_p8",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p9",
+                  "sym": "s_p9",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p10",
+                  "sym": "s_p10",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p11",
+                  "sym": "s_p11",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p12",
+                  "sym": "s_p12",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p13",
+                  "sym": "s_p13",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p14",
+                  "sym": "s_p14",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p15",
+                  "sym": "s_p15",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p16",
+                  "sym": "s_p16",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p17",
+                  "sym": "s_p17",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p18",
+                  "sym": "s_p18",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p19",
+                  "sym": "s_p19",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p20",
+                  "sym": "s_p20",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p21",
+                  "sym": "s_p21",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p22",
+                  "sym": "s_p22",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p23",
+                  "sym": "s_p23",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p24",
+                  "sym": "s_p24",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p25",
+                  "sym": "s_p25",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p26",
+                  "sym": "s_p26",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p27",
+                  "sym": "s_p27",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p28",
+                  "sym": "s_p28",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p29",
+                  "sym": "s_p29",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p30",
+                  "sym": "s_p30",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p31",
+                  "sym": "s_p31",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p32",
+                  "sym": "s_p32",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p33",
+                  "sym": "s_p33",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p34",
+                  "sym": "s_p34",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p35",
+                  "sym": "s_p35",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p36",
+                  "sym": "s_p36",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p37",
+                  "sym": "s_p37",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p38",
+                  "sym": "s_p38",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p39",
+                  "sym": "s_p39",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p40",
+                  "sym": "s_p40",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p41",
+                  "sym": "s_p41",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p42",
+                  "sym": "s_p42",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p43",
+                  "sym": "s_p43",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p44",
+                  "sym": "s_p44",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p45",
+                  "sym": "s_p45",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p46",
+                  "sym": "s_p46",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p47",
+                  "sym": "s_p47",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p48",
+                  "sym": "s_p48",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p49",
+                  "sym": "s_p49",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p50",
+                  "sym": "s_p50",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p51",
+                  "sym": "s_p51",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p52",
+                  "sym": "s_p52",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p53",
+                  "sym": "s_p53",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p54",
+                  "sym": "s_p54",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p55",
+                  "sym": "s_p55",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p56",
+                  "sym": "s_p56",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p57",
+                  "sym": "s_p57",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p58",
+                  "sym": "s_p58",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p59",
+                  "sym": "s_p59",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p60",
+                  "sym": "s_p60",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p61",
+                  "sym": "s_p61",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p62",
+                  "sym": "s_p62",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p63",
+                  "sym": "s_p63",
+                  "type": "int"
+                },
+                {
+                  "mode": "copy",
+                  "name": "p64",
+                  "sym": "s_p64",
+                  "type": "int"
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_fn",
+                "name": "f"
+              },
+              "RETURNS": "void"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

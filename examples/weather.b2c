@@ -10,6 +10,37 @@
     "name": "Weather Advice",
     "language": {
       "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
     }
   },
   "modules": [
@@ -22,6 +53,8 @@
             "id": "b012",
             "type": "program.main",
             "v": 1,
+            "x": 40,
+            "y": 40,
             "statements": {
               "BODY": [
                 {
@@ -29,12 +62,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "bool",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_raining",
                       "name": "raining"
                     },
-                    "CONST": false
+                    "TYPE": "bool"
                   },
                   "inputs": {
                     "VALUE": {
@@ -54,12 +87,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "bool",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_umbrella",
                       "name": "umbrella"
                     },
-                    "CONST": false
+                    "TYPE": "bool"
                   },
                   "inputs": {
                     "VALUE": {
@@ -76,12 +109,12 @@
                   "type": "var.declare",
                   "v": 1,
                   "fields": {
-                    "TYPE": "double",
+                    "CONST": false,
                     "NAME": {
                       "sym": "s_temp",
                       "name": "temperature"
                     },
-                    "CONST": false
+                    "TYPE": "double"
                   },
                   "inputs": {
                     "VALUE": {
@@ -101,8 +134,8 @@
                     "itemCount": 2
                   },
                   "fields": {
-                    "SEP": "none",
                     "NEWLINE": true,
+                    "SEP": "none",
                     "STREAM": "out"
                   },
                   "inputs": {
@@ -161,8 +194,8 @@
                     "itemCount": 1
                   },
                   "fields": {
-                    "SEP": "none",
                     "NEWLINE": true,
+                    "SEP": "none",
                     "STREAM": "out"
                   },
                   "inputs": {
@@ -179,17 +212,17 @@
                               }
                             ]
                           },
-                          "THEN": {
-                            "expr": [
-                              {
-                                "str": "Stay inside"
-                              }
-                            ]
-                          },
                           "ELSE": {
                             "expr": [
                               {
                                 "str": "Go out"
+                              }
+                            ]
+                          },
+                          "THEN": {
+                            "expr": [
+                              {
+                                "str": "Stay inside"
                               }
                             ]
                           }
@@ -206,8 +239,8 @@
                     "itemCount": 2
                   },
                   "fields": {
-                    "SEP": "none",
                     "NEWLINE": true,
+                    "SEP": "none",
                     "STREAM": "out"
                   },
                   "inputs": {
@@ -247,9 +280,7 @@
                   }
                 }
               ]
-            },
-            "x": 40,
-            "y": 40
+            }
           }
         ]
       }

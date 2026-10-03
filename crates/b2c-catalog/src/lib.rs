@@ -17,7 +17,13 @@
 //!   `repeat` counts and `when` flags; `extra` keys unknown, missing (when no
 //!   default) or out of range; `params` rows well-formed.
 
+mod codes;
+mod definitions;
+mod migrate;
+mod resolve;
 pub mod schema;
+
+use std::sync::OnceLock;
 
 use b2c_ir::Diagnostic;
 use b2c_model::Document;
@@ -36,13 +42,49 @@ pub struct Catalog {
     pub blocks: std::collections::BTreeMap<String, BlockDef>,
 }
 
-/// The built-in core catalog.
+/// The built-in core catalog, parsed and checked on first use.
+///
+/// The catalog files are compiled in, so they cannot fail at run time unless
+/// they were shipped broken; tests make sure they are not. Should that happen
+/// anyway, the broken parts are left out and [`resolve`] reports the blocks
+/// that use them, instead of panicking.
 pub fn core_catalog() -> &'static Catalog {
-    todo!("implemented in milestone M1")
+    static CORE: OnceLock<Catalog> = OnceLock::new();
+    CORE.get_or_init(|| definitions::build(&definitions::CORE_FILES).0)
 }
 
 /// Checks a document against the catalog and fills absent inputs from defaults.
+///
+/// Returns the completed copy of the document and every problem found
+/// (`DiagSource::Catalog`, codes `B2C-E06xx`), in document order. Blocks saved
+/// with an older version of their definition are upgraded by the catalog's
+/// block migrations first (spec §3.11.3). Besides absent value inputs (filled
+/// with the catalog's default tokens), absent fields and absent `count`/`flag`
+/// extras that have catalog defaults are filled in too, so later stages see
+/// complete, current blocks. Blocks whose type is unknown, or that cannot be
+/// upgraded, are kept unchanged (their children are still checked). The
+/// catalog's own definitions are checked as well, so a hand-made [`Catalog`]
+/// with a broken definition produces `B2C-E0620` instead of a panic.
+/// Resolving the completed document again reports the same problems and
+/// changes nothing.
+///
+/// ```
+/// let bytes = br#"{
+///   "format": "blocks2cpp/project", "formatVersion": 1,
+///   "generator": {"app": "0.1.0", "catalog": "1.0.0"},
+///   "project": {"id": "prj_demo", "name": "Demo", "language": {"standard": "c++20"}},
+///   "modules": [{"id": "mod_main", "name": "main", "workspace": {"blocks": [
+///     {"id": "b_main", "type": "program.main", "v": 1,
+///      "statements": {"BODY": [{"id": "b_print", "type": "io.print", "v": 1}]}}
+///   ]}}]
+/// }"#;
+/// let document = b2c_model::load(bytes).expect("a valid project");
+/// let (completed, diagnostics) = b2c_catalog::resolve(&document, b2c_catalog::core_catalog());
+/// assert!(diagnostics.is_empty());
+/// // The print block got its default item, "Hello, world!".
+/// let print = &completed.modules[0].workspace.blocks[0].statements["BODY"][0];
+/// assert!(print.inputs.contains_key("ITEM0"));
+/// ```
 pub fn resolve(document: &Document, catalog: &Catalog) -> (Document, Vec<Diagnostic>) {
-    let _ = (document, catalog);
-    todo!("implemented in milestone M1")
+    resolve::run(document, catalog)
 }

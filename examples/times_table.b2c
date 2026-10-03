@@ -10,6 +10,37 @@
     "name": "Times Table",
     "language": {
       "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
     }
   },
   "modules": [
@@ -22,6 +53,8 @@
             "id": "b006",
             "type": "program.main",
             "v": 1,
+            "x": 40,
+            "y": 40,
             "statements": {
               "BODY": [
                 {
@@ -29,11 +62,11 @@
                   "type": "control.for_range",
                   "v": 1,
                   "fields": {
+                    "DIRECTION": "through",
                     "VAR": {
                       "sym": "s_row",
                       "name": "row"
-                    },
-                    "DIRECTION": "through"
+                    }
                   },
                   "inputs": {
                     "FROM": {
@@ -58,11 +91,11 @@
                         "type": "control.for_range",
                         "v": 1,
                         "fields": {
+                          "DIRECTION": "through",
                           "VAR": {
                             "sym": "s_col",
                             "name": "col"
-                          },
-                          "DIRECTION": "through"
+                          }
                         },
                         "inputs": {
                           "FROM": {
@@ -115,8 +148,8 @@
                                       "itemCount": 2
                                     },
                                     "fields": {
-                                      "SEP": "none",
                                       "NEWLINE": false,
+                                      "SEP": "none",
                                       "STREAM": "out"
                                     },
                                     "inputs": {
@@ -152,8 +185,8 @@
                                       "itemCount": 1
                                     },
                                     "fields": {
-                                      "SEP": "none",
                                       "NEWLINE": true,
+                                      "SEP": "none",
                                       "STREAM": "out"
                                     },
                                     "inputs": {
@@ -182,9 +215,7 @@
                   }
                 }
               ]
-            },
-            "x": 40,
-            "y": 40
+            }
           }
         ]
       }

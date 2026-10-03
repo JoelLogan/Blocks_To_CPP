@@ -9,10 +9,15 @@
 //!
 //! Pure functions only: no I/O, compiles for `wasm32-unknown-unknown`.
 
+mod codes;
+mod decode;
 pub mod document;
+mod json;
 pub mod limits;
 mod load;
+mod migrate;
 mod save;
+mod text_rules;
 
 pub use document::*;
 pub use load::{LoadError, load};
