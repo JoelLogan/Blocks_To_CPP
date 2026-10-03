@@ -324,8 +324,10 @@ impl StrLit {
     pub fn to_cpp(&self) -> String {
         let mut out = String::with_capacity(self.0.len() + 2);
         out.push('"');
+        let mut previous = None;
         for c in self.0.chars() {
-            encode_literal_char(c, '"', &mut out);
+            encode_literal_char(c, '"', previous, &mut out);
+            previous = Some(c);
         }
         out.push('"');
         out
@@ -369,7 +371,7 @@ impl CharLit {
     /// Encodes the value as a C++ character literal, including the quotes.
     pub fn to_cpp(self) -> String {
         let mut out = String::from("'");
-        encode_literal_char(self.0, '\'', &mut out);
+        encode_literal_char(self.0, '\'', None, &mut out);
         out.push('\'');
         out
     }
@@ -450,10 +452,15 @@ pub fn is_invisible(c: char) -> bool {
 }
 
 /// Appends the C++ encoding of one literal character (spec §8.4.2 table).
-fn encode_literal_char(c: char, quote: char, out: &mut String) {
+///
+/// `previous` is the character before it in the same literal. A `?` that
+/// follows another `?` is escaped, so the output never contains `??` and
+/// cannot form a trigraph, while ordinary prompts such as `"Age? "` stay
+/// readable.
+fn encode_literal_char(c: char, quote: char, previous: Option<char>, out: &mut String) {
     match c {
         '\\' => out.push_str("\\\\"),
-        '?' => out.push_str("\\?"),
+        '?' if previous == Some('?') => out.push_str("\\?"),
         '\n' => out.push_str("\\n"),
         '\t' => out.push_str("\\t"),
         '\r' => out.push_str("\\r"),
@@ -534,7 +541,10 @@ impl Comment {
                 } else {
                     format!("// {trimmed}")
                 };
-                if encoded.ends_with('\\') {
+                // A trailing `\` would splice the next line into the comment;
+                // a trailing `??/` would too if trigraphs were enabled, and
+                // GCC's -Wtrigraphs (part of -Wall) warns about it.
+                if encoded.ends_with('\\') || encoded.ends_with("??/") {
                     encoded.push_str(" //");
                 }
                 encoded
@@ -868,7 +878,10 @@ mod tests {
         assert_eq!(enc("Hello, world!"), r#""Hello, world!""#);
         assert_eq!(enc(r#"say "hi" \ ok"#), r#""say \"hi\" \\ ok""#);
         assert_eq!(enc("a\nb\tc\rd"), r#""a\nb\tc\rd""#);
-        assert_eq!(enc("??/"), r#""\?\?/""#);
+        assert_eq!(enc("??/"), r#""?\?/""#);
+        assert_eq!(enc("???="), r#""?\?\?=""#);
+        assert_eq!(enc("Age? "), r#""Age? ""#);
+        assert_eq!(enc("? ?"), r#""? ?""#);
         assert_eq!(enc("\u{1}BC"), r#""\001BC""#);
         assert_eq!(enc("\u{7f}"), r#""\177""#);
         assert_eq!(enc("héllo ✓"), "\"héllo ✓\"");
@@ -889,7 +902,7 @@ mod tests {
         assert_eq!(CharLit::new("'").unwrap().to_cpp(), r"'\''");
         assert_eq!(CharLit::new("\"").unwrap().to_cpp(), "'\"'");
         assert_eq!(CharLit::new("\n").unwrap().to_cpp(), r"'\n'");
-        assert_eq!(CharLit::new("?").unwrap().to_cpp(), r"'\?'");
+        assert_eq!(CharLit::new("?").unwrap().to_cpp(), "'?'");
         assert_eq!(CharLit::new("é"), Err(LiteralError::NotAscii('é')));
         assert_eq!(CharLit::new("ab"), Err(LiteralError::NotOneChar));
         assert_eq!(CharLit::new(""), Err(LiteralError::NotOneChar));
@@ -906,6 +919,7 @@ mod tests {
         assert_eq!(lines("bidi \u{202E}evil"), vec!["// bidi <U+202E>evil"]);
         assert_eq!(lines(""), vec!["//"]);
         assert_eq!(lines("*/ ok /*"), vec!["// */ ok /*"]);
+        assert_eq!(lines("what??/"), vec!["// what??/ //"]);
     }
 
     #[test]
@@ -966,6 +980,7 @@ mod tests {
             for line in Comment::new(&s).unwrap().to_cpp_lines() {
                 prop_assert!(line.starts_with("//"));
                 prop_assert!(!line.trim_end().ends_with('\\'));
+                prop_assert!(!line.trim_end().ends_with("??/"));
                 prop_assert!(!line.chars().any(|c| (c.is_control() && c != '\t') || is_invisible(c)));
             }
         }

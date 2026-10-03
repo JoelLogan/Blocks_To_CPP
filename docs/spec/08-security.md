@@ -133,7 +133,7 @@ Encoder for `StrLit` (UTF-8 input; **NUL is rejected** at validation):
 |-------|--------|--------|
 | `\` | `\\` | |
 | `"` | `\"` | |
-| `?` | `\?` | Prevents trigraph sequences (`??/`) if trigraphs were ever enabled |
+| `?` directly after another `?` | `\?` | The output never contains `??`, so it cannot form a trigraph (`??/`) even if trigraphs were ever enabled. A lone `?` stays as it is, so prompts read naturally (`"Age? "`) |
 | newline, tab, carriage return | `\n`, `\t`, `\r` | |
 | Other C0 controls U+0001–U+001F and U+007F | **3-digit octal** `\001` | `\x` escapes are *greedy*: `"\x41BC"` is a single, out-of-range escape (verified with GCC 13). Octal escapes stop at 3 digits. |
 | Bidi controls (U+061C, U+200E–U+200F, U+202A–U+202E, U+2066–U+2069), all format characters (Unicode category Cf: zero-width spaces/joiners, U+FEFF, …), C1 controls U+0080–U+009F, U+0085, U+2028, U+2029 | `\uXXXX` universal character names | Defeats **Trojan Source** (CVE-2021-42574) visual reordering and invisible text, while preserving the exact runtime string |
@@ -160,7 +160,10 @@ Block comments become `//` lines. The encoder:
    spaces**, splices the next physical line into the comment in GCC. Verified
    with GCC 13: `// note \␠` followed by `x = 2;` silently swallowed the
    assignment. Without this rule, a comment could hide the next statement
-   from the compiler while it stays visible in the block view.
+   from the compiler while it stays visible in the block view. A line ending
+   in `??/` gets the same sentinel: it would splice the next line if
+   trigraphs were enabled, and GCC's `-Wtrigraphs` (part of `-Wall`) warns
+   about it.
 4. Never emits `/*` block comments, so there is no `*/` termination to
    attack.
 

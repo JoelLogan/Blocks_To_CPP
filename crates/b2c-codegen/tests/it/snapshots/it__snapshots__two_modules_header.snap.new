@@ -1,5 +1,6 @@
 ---
 source: crates/b2c-codegen/tests/it/snapshots.rs
+assertion_line: 25
 expression: render(&project)
 ---
 ==> main.cpp <==

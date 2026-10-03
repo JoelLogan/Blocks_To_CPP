@@ -107,17 +107,10 @@ impl Printer {
     }
 
     /// Writes a comment as `//` lines at the current indentation, each followed
-    /// by a line break.
-    ///
-    /// A line that ends with `??/` gets the sentinel ` //`: trigraphs are off
-    /// in every supported standard, but GCC's `-Wtrigraphs` (part of `-Wall`)
-    /// still warns about a `??/` that would splice the next line.
+    /// by a line break. The encoder guards lines that end in `\` or `??/`.
     pub(crate) fn comment(&mut self, comment: &Comment) {
         for line in comment.to_cpp_lines() {
             self.write_raw(&line);
-            if line.ends_with("??/") {
-                self.fixed(" //");
-            }
             self.newline();
         }
     }
