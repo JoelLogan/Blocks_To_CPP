@@ -1,0 +1,526 @@
+---
+source: crates/b2c-lang/tests/snapshots.rs
+expression: snapshot(&a)
+---
+{
+  "standard": "c++20",
+  "modules": [
+    {
+      "id": "mod_0",
+      "name": "main",
+      "items": [
+        {
+          "kind": {
+            "main": {
+              "body": {
+                "stmts": [
+                  {
+                    "kind": {
+                      "var_decl": {
+                        "symbol": "sym_secret",
+                        "init": {
+                          "kind": {
+                            "random_int": {
+                              "low": {
+                                "kind": {
+                                  "int": {
+                                    "repr": "1",
+                                    "ty": "int"
+                                  }
+                                },
+                                "ty": "int",
+                                "origin": {
+                                  "module": "mod_0",
+                                  "block": "b0001",
+                                  "part": {
+                                    "kind": "whole"
+                                  }
+                                }
+                              },
+                              "high": {
+                                "kind": {
+                                  "int": {
+                                    "repr": "100",
+                                    "ty": "int"
+                                  }
+                                },
+                                "ty": "int",
+                                "origin": {
+                                  "module": "mod_0",
+                                  "block": "b0002",
+                                  "part": {
+                                    "kind": "whole"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "ty": "int",
+                          "origin": {
+                            "module": "mod_0",
+                            "block": "b0003",
+                            "part": {
+                              "kind": "whole"
+                            }
+                          }
+                        },
+                        "is_const": false,
+                        "written_auto": false
+                      }
+                    },
+                    "origin": {
+                      "module": "mod_0",
+                      "block": "b0004",
+                      "part": {
+                        "kind": "whole"
+                      }
+                    },
+                    "comment": null
+                  },
+                  {
+                    "kind": {
+                      "var_decl": {
+                        "symbol": "sym_guess",
+                        "init": {
+                          "kind": {
+                            "int": {
+                              "repr": "0",
+                              "ty": "int"
+                            }
+                          },
+                          "ty": "int",
+                          "origin": {
+                            "module": "mod_0",
+                            "block": "b0005",
+                            "part": {
+                              "kind": "whole"
+                            }
+                          }
+                        },
+                        "is_const": false,
+                        "written_auto": false
+                      }
+                    },
+                    "origin": {
+                      "module": "mod_0",
+                      "block": "b0006",
+                      "part": {
+                        "kind": "whole"
+                      }
+                    },
+                    "comment": null
+                  },
+                  {
+                    "kind": {
+                      "print": {
+                        "items": [
+                          {
+                            "kind": {
+                              "str": "Guess a number from 1 to 100!"
+                            },
+                            "ty": "string",
+                            "origin": {
+                              "module": "mod_0",
+                              "block": "b0007",
+                              "part": {
+                                "kind": "whole"
+                              }
+                            }
+                          }
+                        ],
+                        "separator": "none",
+                        "newline": true,
+                        "stream": "out"
+                      }
+                    },
+                    "origin": {
+                      "module": "mod_0",
+                      "block": "b0008",
+                      "part": {
+                        "kind": "whole"
+                      }
+                    },
+                    "comment": null
+                  },
+                  {
+                    "kind": {
+                      "while": {
+                        "cond": {
+                          "kind": {
+                            "binary": {
+                              "op": "eq",
+                              "lhs": {
+                                "kind": {
+                                  "var": "sym_guess"
+                                },
+                                "ty": "int",
+                                "origin": {
+                                  "module": "mod_0",
+                                  "block": "b0018",
+                                  "part": {
+                                    "kind": "tokens",
+                                    "input": "COND",
+                                    "start": 0,
+                                    "end": 1
+                                  }
+                                }
+                              },
+                              "rhs": {
+                                "kind": {
+                                  "var": "sym_secret"
+                                },
+                                "ty": "int",
+                                "origin": {
+                                  "module": "mod_0",
+                                  "block": "b0018",
+                                  "part": {
+                                    "kind": "tokens",
+                                    "input": "COND",
+                                    "start": 2,
+                                    "end": 3
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "ty": "bool",
+                          "origin": {
+                            "module": "mod_0",
+                            "block": "b0018",
+                            "part": {
+                              "kind": "tokens",
+                              "input": "COND",
+                              "start": 0,
+                              "end": 3
+                            }
+                          }
+                        },
+                        "until": true,
+                        "body": {
+                          "stmts": [
+                            {
+                              "kind": {
+                                "ask": {
+                                  "prompt": {
+                                    "kind": {
+                                      "str": "Your guess: "
+                                    },
+                                    "ty": "string",
+                                    "origin": {
+                                      "module": "mod_0",
+                                      "block": "b0009",
+                                      "part": {
+                                        "kind": "whole"
+                                      }
+                                    }
+                                  },
+                                  "target": "sym_guess",
+                                  "mode": "keep_asking"
+                                }
+                              },
+                              "origin": {
+                                "module": "mod_0",
+                                "block": "b0010",
+                                "part": {
+                                  "kind": "whole"
+                                }
+                              },
+                              "comment": null
+                            },
+                            {
+                              "kind": {
+                                "if": {
+                                  "branches": [
+                                    {
+                                      "cond": {
+                                        "kind": {
+                                          "binary": {
+                                            "op": "lt",
+                                            "lhs": {
+                                              "kind": {
+                                                "var": "sym_guess"
+                                              },
+                                              "ty": "int",
+                                              "origin": {
+                                                "module": "mod_0",
+                                                "block": "b0017",
+                                                "part": {
+                                                  "kind": "tokens",
+                                                  "input": "COND0",
+                                                  "start": 0,
+                                                  "end": 1
+                                                }
+                                              }
+                                            },
+                                            "rhs": {
+                                              "kind": {
+                                                "var": "sym_secret"
+                                              },
+                                              "ty": "int",
+                                              "origin": {
+                                                "module": "mod_0",
+                                                "block": "b0017",
+                                                "part": {
+                                                  "kind": "tokens",
+                                                  "input": "COND0",
+                                                  "start": 2,
+                                                  "end": 3
+                                                }
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "ty": "bool",
+                                        "origin": {
+                                          "module": "mod_0",
+                                          "block": "b0017",
+                                          "part": {
+                                            "kind": "tokens",
+                                            "input": "COND0",
+                                            "start": 0,
+                                            "end": 3
+                                          }
+                                        }
+                                      },
+                                      "body": {
+                                        "stmts": [
+                                          {
+                                            "kind": {
+                                              "print": {
+                                                "items": [
+                                                  {
+                                                    "kind": {
+                                                      "str": "Too low!"
+                                                    },
+                                                    "ty": "string",
+                                                    "origin": {
+                                                      "module": "mod_0",
+                                                      "block": "b0011",
+                                                      "part": {
+                                                        "kind": "whole"
+                                                      }
+                                                    }
+                                                  }
+                                                ],
+                                                "separator": "none",
+                                                "newline": true,
+                                                "stream": "out"
+                                              }
+                                            },
+                                            "origin": {
+                                              "module": "mod_0",
+                                              "block": "b0012",
+                                              "part": {
+                                                "kind": "whole"
+                                              }
+                                            },
+                                            "comment": null
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "cond": {
+                                        "kind": {
+                                          "binary": {
+                                            "op": "gt",
+                                            "lhs": {
+                                              "kind": {
+                                                "var": "sym_guess"
+                                              },
+                                              "ty": "int",
+                                              "origin": {
+                                                "module": "mod_0",
+                                                "block": "b0017",
+                                                "part": {
+                                                  "kind": "tokens",
+                                                  "input": "COND1",
+                                                  "start": 0,
+                                                  "end": 1
+                                                }
+                                              }
+                                            },
+                                            "rhs": {
+                                              "kind": {
+                                                "var": "sym_secret"
+                                              },
+                                              "ty": "int",
+                                              "origin": {
+                                                "module": "mod_0",
+                                                "block": "b0017",
+                                                "part": {
+                                                  "kind": "tokens",
+                                                  "input": "COND1",
+                                                  "start": 2,
+                                                  "end": 3
+                                                }
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "ty": "bool",
+                                        "origin": {
+                                          "module": "mod_0",
+                                          "block": "b0017",
+                                          "part": {
+                                            "kind": "tokens",
+                                            "input": "COND1",
+                                            "start": 0,
+                                            "end": 3
+                                          }
+                                        }
+                                      },
+                                      "body": {
+                                        "stmts": [
+                                          {
+                                            "kind": {
+                                              "print": {
+                                                "items": [
+                                                  {
+                                                    "kind": {
+                                                      "str": "Too high!"
+                                                    },
+                                                    "ty": "string",
+                                                    "origin": {
+                                                      "module": "mod_0",
+                                                      "block": "b0013",
+                                                      "part": {
+                                                        "kind": "whole"
+                                                      }
+                                                    }
+                                                  }
+                                                ],
+                                                "separator": "none",
+                                                "newline": true,
+                                                "stream": "out"
+                                              }
+                                            },
+                                            "origin": {
+                                              "module": "mod_0",
+                                              "block": "b0014",
+                                              "part": {
+                                                "kind": "whole"
+                                              }
+                                            },
+                                            "comment": null
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ],
+                                  "else_body": {
+                                    "stmts": [
+                                      {
+                                        "kind": {
+                                          "print": {
+                                            "items": [
+                                              {
+                                                "kind": {
+                                                  "str": "Correct!"
+                                                },
+                                                "ty": "string",
+                                                "origin": {
+                                                  "module": "mod_0",
+                                                  "block": "b0015",
+                                                  "part": {
+                                                    "kind": "whole"
+                                                  }
+                                                }
+                                              }
+                                            ],
+                                            "separator": "none",
+                                            "newline": true,
+                                            "stream": "out"
+                                          }
+                                        },
+                                        "origin": {
+                                          "module": "mod_0",
+                                          "block": "b0016",
+                                          "part": {
+                                            "kind": "whole"
+                                          }
+                                        },
+                                        "comment": null
+                                      }
+                                    ]
+                                  }
+                                }
+                              },
+                              "origin": {
+                                "module": "mod_0",
+                                "block": "b0017",
+                                "part": {
+                                  "kind": "whole"
+                                }
+                              },
+                              "comment": null
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "origin": {
+                      "module": "mod_0",
+                      "block": "b0018",
+                      "part": {
+                        "kind": "whole"
+                      }
+                    },
+                    "comment": null
+                  }
+                ]
+              }
+            }
+          },
+          "origin": {
+            "module": "mod_0",
+            "block": "main",
+            "part": {
+              "kind": "whole"
+            }
+          },
+          "comment": null
+        }
+      ]
+    }
+  ],
+  "symbols": {
+    "symbols": {
+      "sym_guess": {
+        "name": "guess",
+        "kind": {
+          "variable": {
+            "is_const": false
+          }
+        },
+        "ty": "int",
+        "origin": {
+          "module": "mod_0",
+          "block": "b0006",
+          "part": {
+            "kind": "field",
+            "name": "NAME"
+          }
+        }
+      },
+      "sym_secret": {
+        "name": "secret",
+        "kind": {
+          "variable": {
+            "is_const": false
+          }
+        },
+        "ty": "int",
+        "origin": {
+          "module": "mod_0",
+          "block": "b0004",
+          "part": {
+            "kind": "field",
+            "name": "NAME"
+          }
+        }
+      }
+    }
+  }
+}
+--- diagnostics ---

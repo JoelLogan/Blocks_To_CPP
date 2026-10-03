@@ -14,8 +14,12 @@ b2c-model.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+# End-to-end test: analysed examples must generate C++ that g++ accepts.
+b2c-codegen.workspace = true
 proptest.workspace = true
 insta.workspace = true
+# Examples test: fills absent inputs from the catalog defaults, as resolve does.
+toml.workspace = true
 
 [lints]
 workspace = true

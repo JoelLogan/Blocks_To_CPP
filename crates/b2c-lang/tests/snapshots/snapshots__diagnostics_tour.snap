@@ -1,0 +1,18 @@
+---
+source: crates/b2c-lang/tests/snapshots.rs
+expression: render_all(&a)
+---
+error B2C-E0410 at fn_half: `half` must give back a whole number, but it can reach its end without a 'return' block. Add a 'return' block at the end (or on every path).
+error B2C-E0301 at b0001: `x` needs a whole number, but this is text. Text is not turned into a number automatically.
+error B2C-E0303 at b0003 VALUE[0..3]: Text can't be added with +. Use the 'join' block to put text and other values together.
+error B2C-E0201 at b0004 field VAR: This refers to a variable or function that doesn't exist (any more). Choose another one, or create it again.
+error B2C-E0202 at b0006 ITEM0[0..1]: `y` is used before it is created. Move this block below the block that creates `y`.
+error B2C-E0517 at b0007 field VALUE: `3000000000` is too large for a whole number (the largest is 2147483647). Write it as a decimal number, such as 3000000000.0, if you need it.
+error B2C-E0440 at b0009 COND0[1..2]: `=` changes a variable, which an expression can't do. Use a 'set' block to change a variable, or `==` to compare.
+warning B2C-W0510 at b0010 VALUE[0..3]: This divides two whole numbers, so the result is a whole number too (7 / 2 gives 3), even though a decimal number is wanted here. Write one of them as a decimal number (7.0 / 2) to get the exact result.
+warning B2C-W0511 at b0012 COND0[0..3]: Checking decimal numbers for exact equality is unreliable because of rounding (0.1 + 0.2 is not exactly 0.3). Check whether their difference is very small instead.
+error B2C-E0401 at b0011: 'leave loop' can only be used inside a loop.
+warning B2C-W0518 at b0013: `x` needs a whole number, but this is a decimal number, so the part after the decimal point will be dropped. Use the 'convert' block to show that this is intended.
+error B2C-E0306 at b0017: `half` needs 1 value, but 2 are given.
+info B2C-I0513 at b0020: This 'forever' loop never stops: there is no 'leave loop', 'return' or 'stop program' block inside it. That is fine if the program should run until it is closed.
+warning B2C-W0502 at b0022: This block can never run: the program never gets past the block before it, which always returns, stops the program, leaves or skips the loop, or repeats forever. Remove this block or move it.

@@ -138,11 +138,13 @@ dependencies = [
 name = "b2c-lang"
 version = "0.1.0"
 dependencies = [
+ "b2c-codegen",
  "b2c-ir",
  "b2c-model",
  "insta",
  "proptest",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
