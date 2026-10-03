@@ -1,4 +1,4 @@
-# Keeps pinned GitHub Actions and npm dependencies current (docs/spec/08-security.md §8.9).
+# Keeps pinned GitHub Actions, Cargo and npm dependencies current (docs/spec/08-security.md §8.9).
 # Updates wait 7 days after release, matching the pnpm minimumReleaseAge policy.
 version: 2
 updates:
@@ -10,6 +10,17 @@ updates:
       default-days: 7
     groups:
       github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      cargo-dependencies:
         patterns:
           - "*"
 

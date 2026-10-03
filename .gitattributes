@@ -1,0 +1,11 @@
+# Normalise line endings in the repository; generated C++ and project files use LF.
+* text=auto eol=lf
+
+*.woff2 binary
+*.png binary
+*.ico binary
+
+# Generated files: collapse in diffs.
+Cargo.lock linguist-generated=true
+pnpm-lock.yaml linguist-generated=true
+crates/b2c-ir/src/reserved_names.rs linguist-generated=true

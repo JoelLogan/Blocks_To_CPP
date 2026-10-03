@@ -1,0 +1,26 @@
+# Known-vulnerability scan of every lockfile (Cargo.lock, pnpm-lock.yaml) with
+# OSV-Scanner (docs/spec/08-security.md §8.9).
+name: OSV-Scanner
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  schedule:
+    - cron: "7 6 * * *" # daily 06:07 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  scan:
+    name: Scan lockfiles
+    permissions:
+      actions: read # the reusable workflow reads its own artifacts
+      contents: read # check out the repository
+      security-events: write # upload results to code scanning
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+    with:
+      scan-args: |-
+        --recursive
+        ./

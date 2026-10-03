@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest a block, a C++ feature or an improvement.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The program or task you are trying to build, and what gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How blocks could support it, and the C++ you would expect them to generate.
