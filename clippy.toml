@@ -1,0 +1,10 @@
+doc-valid-idents = ["Blocks2Cpp", "WebAssembly", "TypeScript", "AddressSanitizer", "UndefinedBehaviorSanitizer", "SemVer", ".."]
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-print-in-tests = true
+allow-dbg-in-tests = true
+
+disallowed-methods = [
+  { path = "std::process::Command::new", reason = "spawn processes only through b2c-process (docs/spec/08-security.md §8.5)" },
+]

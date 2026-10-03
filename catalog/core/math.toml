@@ -1,0 +1,105 @@
+# Math (docs/spec/03-block-language.md §3.7.3).
+
+[[block]]
+id = "math.number"
+version = 1
+category = "math"
+shape = "reporter"
+label = { friendly = "%VALUE", cpp = "%VALUE" }
+lowering = "builtin"
+help = "A number, such as 42 or 3.14."
+
+[[block.field]]
+name = "VALUE"
+kind = "number"
+default = "0"
+
+[[block]]
+id = "math.arithmetic"
+version = 1
+category = "math"
+shape = "reporter"
+label = { friendly = "%A %OP %B", cpp = "%A %OP %B" }
+lowering = "builtin"
+help = "Adds, subtracts, multiplies or divides two numbers, or gives the remainder."
+
+[[block.field]]
+name = "OP"
+kind = "dropdown"
+options = [["+", "add"], ["−", "sub"], ["×", "mul"], ["÷", "div"], ["mod", "mod"]]
+default = "add"
+
+[[block.input]]
+name = "A"
+check = "number"
+default = [{ num = "0" }]
+
+[[block.input]]
+name = "B"
+check = "number"
+default = [{ num = "0" }]
+
+[[block]]
+id = "math.compare"
+version = 1
+category = "math"
+shape = "predicate"
+label = { friendly = "%A %OP %B", cpp = "%A %OP %B" }
+lowering = "builtin"
+help = "Compares two values."
+
+[[block.field]]
+name = "OP"
+kind = "dropdown"
+options = [["<", "lt"], ["≤", "le"], [">", "gt"], ["≥", "ge"], ["=", "eq"], ["≠", "ne"]]
+default = "lt"
+
+[[block.input]]
+name = "A"
+check = "any"
+default = [{ num = "0" }]
+
+[[block.input]]
+name = "B"
+check = "any"
+default = [{ num = "0" }]
+
+[[block]]
+id = "math.random_int"
+version = 1
+category = "math"
+shape = "reporter"
+label = { friendly = "random integer from %LOW to %HIGH", cpp = "b2c::random_int(%LOW, %HIGH)" }
+lowering = "builtin"
+headers = ["<random>"]
+help = "A random whole number between the two values, including both."
+
+[[block.input]]
+name = "LOW"
+check = "integer"
+default = [{ num = "1" }]
+
+[[block.input]]
+name = "HIGH"
+check = "integer"
+default = [{ num = "6" }]
+
+[[block]]
+id = "math.convert"
+version = 1
+category = "math"
+shape = "reporter"
+label = { friendly = "%VALUE as %TO", cpp = "static_cast<%TO>(%VALUE)" }
+lowering = "builtin"
+help = "Converts a number to another number type, e.g. a decimal to a whole number."
+
+[[block.field]]
+name = "TO"
+kind = "type"
+types = ["int", "double"]
+default = "int"
+
+[[block.input]]
+name = "VALUE"
+check = "number"
+default = [{ num = "0" }]

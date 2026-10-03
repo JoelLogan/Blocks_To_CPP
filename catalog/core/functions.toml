@@ -1,0 +1,93 @@
+# Functions (docs/spec/03-block-language.md §3.7.7).
+
+[[block]]
+id = "func.define"
+version = 1
+category = "functions"
+shape = "definition"
+label = { friendly = "define %NAME with … returns %RETURNS", cpp = "%RETURNS %NAME(…) { … }" }
+lowering = "builtin"
+help = "Defines a function: a named group of blocks you can use again."
+
+[[block.field]]
+name = "NAME"
+kind = "symbol_decl"
+
+[[block.field]]
+name = "RETURNS"
+kind = "type"
+types = ["void", "int", "double", "bool", "char", "std::string"]
+default = "void"
+
+[[block.extra]]
+name = "params"
+kind = "params"
+max = 16
+types = ["int", "double", "bool", "char", "std::string"]
+
+[[block.statement]]
+name = "BODY"
+
+[[block]]
+id = "func.call"
+version = 1
+category = "functions"
+shape = "reporter"
+label = { friendly = "%FUNC %ARG …", cpp = "%FUNC(%ARG, …)" }
+lowering = "builtin"
+help = "Calls a function and uses its result."
+
+[[block.field]]
+name = "FUNC"
+kind = "symbol_ref"
+
+[[block.extra]]
+name = "argCount"
+kind = "count"
+min = 0
+max = 16
+default = "0"
+
+[[block.input]]
+name = "ARG"
+check = "any"
+repeat = { count = "argCount" }
+
+[[block]]
+id = "func.call_stmt"
+version = 1
+category = "functions"
+shape = "statement"
+label = { friendly = "%FUNC %ARG …", cpp = "%FUNC(%ARG, …);" }
+lowering = "builtin"
+help = "Calls a function."
+
+[[block.field]]
+name = "FUNC"
+kind = "symbol_ref"
+
+[[block.extra]]
+name = "argCount"
+kind = "count"
+min = 0
+max = 16
+default = "0"
+
+[[block.input]]
+name = "ARG"
+check = "any"
+repeat = { count = "argCount" }
+
+[[block]]
+id = "func.return"
+version = 1
+category = "functions"
+shape = "statement"
+label = { friendly = "return %VALUE", cpp = "return %VALUE;" }
+lowering = "builtin"
+help = "Leaves the function, giving back a value if the function returns one."
+
+[[block.input]]
+name = "VALUE"
+check = "any"
+optional = true

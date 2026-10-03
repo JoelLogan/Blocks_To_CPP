@@ -1,0 +1,102 @@
+# Variables (docs/spec/03-block-language.md §3.7.2).
+
+[[block]]
+id = "var.declare"
+version = 1
+category = "variables"
+shape = "statement"
+label = { friendly = "create %TYPE variable %NAME = %VALUE %CONST", cpp = "%TYPE %NAME = %VALUE;" }
+lowering = "builtin"
+help = "Creates a variable. It can be used by the blocks after it in the same place."
+
+[[block.field]]
+name = "TYPE"
+kind = "type"
+types = ["int", "double", "bool", "char", "std::string", "auto"]
+default = "int"
+
+[[block.field]]
+name = "NAME"
+kind = "symbol_decl"
+
+[[block.field]]
+name = "CONST"
+kind = "checkbox"
+default = false
+
+[[block.input]]
+name = "VALUE"
+check = "any"
+optional = true
+
+[[block]]
+id = "var.set"
+version = 1
+category = "variables"
+shape = "statement"
+label = { friendly = "set %VAR to %VALUE", cpp = "%VAR = %VALUE;" }
+lowering = "builtin"
+help = "Gives a variable a new value."
+
+[[block.field]]
+name = "VAR"
+kind = "symbol_ref"
+
+[[block.input]]
+name = "VALUE"
+check = "any"
+
+[[block]]
+id = "var.change"
+version = 1
+category = "variables"
+shape = "statement"
+label = { friendly = "change %VAR by %BY", cpp = "%VAR += %BY;" }
+lowering = "builtin"
+help = "Adds to a variable."
+
+[[block.field]]
+name = "VAR"
+kind = "symbol_ref"
+
+[[block.input]]
+name = "BY"
+check = "number"
+default = [{ num = "1" }]
+
+[[block]]
+id = "var.update"
+version = 1
+category = "variables"
+shape = "statement"
+label = { friendly = "%VAR %OP %VALUE", cpp = "%VAR %OP %VALUE;" }
+lowering = "builtin"
+help = "Updates a variable with an operator, such as multiplying it."
+
+[[block.field]]
+name = "VAR"
+kind = "symbol_ref"
+
+[[block.field]]
+name = "OP"
+kind = "dropdown"
+options = [["+=", "add"], ["-=", "sub"], ["*=", "mul"], ["/=", "div"], ["%=", "mod"]]
+default = "add"
+
+[[block.input]]
+name = "VALUE"
+check = "number"
+default = [{ num = "1" }]
+
+[[block]]
+id = "var.get"
+version = 1
+category = "variables"
+shape = "reporter"
+label = { friendly = "%VAR", cpp = "%VAR" }
+lowering = "builtin"
+help = "The value of a variable."
+
+[[block.field]]
+name = "VAR"
+kind = "symbol_ref"

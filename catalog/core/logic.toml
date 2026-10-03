@@ -1,0 +1,82 @@
+# Logic (docs/spec/03-block-language.md §3.7.3).
+
+[[block]]
+id = "logic.boolean"
+version = 1
+category = "logic"
+shape = "predicate"
+label = { friendly = "%VALUE", cpp = "%VALUE" }
+lowering = "builtin"
+help = "True or false."
+
+[[block.field]]
+name = "VALUE"
+kind = "dropdown"
+options = [["true", "true"], ["false", "false"]]
+default = "true"
+
+[[block]]
+id = "logic.operation"
+version = 1
+category = "logic"
+shape = "predicate"
+label = { friendly = "%ITEM %OP …", cpp = "%ITEM && …" }
+lowering = "builtin"
+help = "True when all (and) or any (or) of the conditions are true."
+
+[[block.field]]
+name = "OP"
+kind = "dropdown"
+options = [["and", "and"], ["or", "or"]]
+default = "and"
+
+[[block.extra]]
+name = "itemCount"
+kind = "count"
+min = 2
+max = 32
+default = "2"
+
+[[block.input]]
+name = "ITEM"
+check = "bool"
+repeat = { count = "itemCount" }
+default = [{ kw = "true" }]
+
+[[block]]
+id = "logic.not"
+version = 1
+category = "logic"
+shape = "predicate"
+label = { friendly = "not %A", cpp = "!%A" }
+lowering = "builtin"
+help = "True when the condition is false."
+
+[[block.input]]
+name = "A"
+check = "bool"
+default = [{ kw = "true" }]
+
+[[block]]
+id = "logic.ternary"
+version = 1
+category = "logic"
+shape = "reporter"
+label = { friendly = "if %COND then %THEN else %ELSE", cpp = "%COND ? %THEN : %ELSE" }
+lowering = "builtin"
+help = "One of two values, depending on a condition."
+
+[[block.input]]
+name = "COND"
+check = "bool"
+default = [{ kw = "true" }]
+
+[[block.input]]
+name = "THEN"
+check = "any"
+default = [{ num = "0" }]
+
+[[block.input]]
+name = "ELSE"
+check = "any"
+default = [{ num = "0" }]

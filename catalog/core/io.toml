@@ -1,0 +1,66 @@
+# Input / Output (docs/spec/03-block-language.md §3.7.6).
+
+[[block]]
+id = "io.print"
+version = 1
+category = "io"
+shape = "statement"
+label = { friendly = "print %ITEM … %SEP %NEWLINE", cpp = "std::cout << %ITEM << …;" }
+lowering = "builtin"
+headers = ["<iostream>"]
+help = "Shows values in the console."
+
+[[block.field]]
+name = "SEP"
+kind = "dropdown"
+options = [["no separator", "none"], ["spaces", "space"], ["commas", "comma"]]
+default = "none"
+
+[[block.field]]
+name = "NEWLINE"
+kind = "checkbox"
+default = true
+
+[[block.field]]
+name = "STREAM"
+kind = "dropdown"
+options = [["output", "out"], ["error stream", "err"]]
+default = "out"
+
+[[block.extra]]
+name = "itemCount"
+kind = "count"
+min = 1
+max = 32
+default = "1"
+
+[[block.input]]
+name = "ITEM"
+check = "any"
+repeat = { count = "itemCount" }
+default = [{ str = "Hello, world!" }]
+
+[[block]]
+id = "io.ask"
+version = 1
+category = "io"
+shape = "statement"
+label = { friendly = "ask %PROMPT and save answer in %VAR (%MODE)", cpp = "std::cin >> %VAR;" }
+lowering = "builtin"
+headers = ["<iostream>", "<string>"]
+help = "Asks the user to type something and stores it in a variable."
+
+[[block.field]]
+name = "VAR"
+kind = "symbol_ref"
+
+[[block.field]]
+name = "MODE"
+kind = "dropdown"
+options = [["keep asking until valid", "keep_asking"], ["simple", "simple"]]
+default = "keep_asking"
+
+[[block.input]]
+name = "PROMPT"
+check = "text"
+optional = true

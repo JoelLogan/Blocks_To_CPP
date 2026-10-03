@@ -1,0 +1,66 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "Apache-2.0"
+repository = "https://github.com/JoelLogan/Blocks_To_CPP"
+publish = false
+
+[workspace.dependencies]
+# Internal crates (layering: docs/spec/02-architecture.md §2.3).
+b2c-model = { path = "crates/b2c-model" }
+b2c-catalog = { path = "crates/b2c-catalog" }
+b2c-ir = { path = "crates/b2c-ir" }
+b2c-lang = { path = "crates/b2c-lang" }
+b2c-codegen = { path = "crates/b2c-codegen" }
+b2c-toolchain = { path = "crates/b2c-toolchain" }
+b2c-process = { path = "crates/b2c-process" }
+b2c-build = { path = "crates/b2c-build" }
+
+# Third-party crates. Every addition needs a justification in the PR (spec §8.9).
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+toml = { version = "1.1.6", default-features = false, features = ["parse", "serde", "std"] }
+thiserror = "2.0.21"
+sha2 = "0.11.0"
+clap = { version = "4.6.7", features = ["derive"] }
+tempfile = "3.27.0"
+rustix = { version = "1.1.5", features = ["process"] }
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+] }
+
+# Test-only.
+proptest = "1.11.0"
+insta = "1.48.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+disallowed_methods = "deny"
+
+[profile.release]
+debug = false
+strip = "symbols"

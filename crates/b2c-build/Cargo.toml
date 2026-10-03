@@ -1,0 +1,29 @@
+[package]
+name = "b2c-build"
+description = "Blocks2Cpp build and run orchestration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+b2c-ir.workspace = true
+b2c-model.workspace = true
+b2c-catalog.workspace = true
+b2c-lang.workspace = true
+b2c-codegen.workspace = true
+b2c-toolchain.workspace = true
+b2c-process.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

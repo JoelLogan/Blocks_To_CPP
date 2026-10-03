@@ -1,0 +1,53 @@
+# Text (docs/spec/03-block-language.md §3.7.4).
+
+[[block]]
+id = "text.literal"
+version = 1
+category = "text"
+shape = "reporter"
+label = { friendly = "\"%VALUE\"", cpp = "\"%VALUE\"" }
+lowering = "builtin"
+headers = ["<string>"]
+help = "A piece of text."
+
+[[block.field]]
+name = "VALUE"
+kind = "text"
+default = ""
+
+[[block]]
+id = "text.char"
+version = 1
+category = "text"
+shape = "reporter"
+label = { friendly = "letter '%VALUE'", cpp = "'%VALUE'" }
+lowering = "builtin"
+help = "A single character, such as 'a'."
+
+[[block.field]]
+name = "VALUE"
+kind = "text"
+default = "a"
+
+[[block]]
+id = "text.join"
+version = 1
+category = "text"
+shape = "reporter"
+label = { friendly = "join %ITEM …", cpp = "%ITEM + …" }
+lowering = "builtin"
+headers = ["<string>"]
+help = "Joins text and numbers into one piece of text."
+
+[[block.extra]]
+name = "itemCount"
+kind = "count"
+min = 2
+max = 32
+default = "2"
+
+[[block.input]]
+name = "ITEM"
+check = "any"
+repeat = { count = "itemCount" }
+default = [{ str = "" }]

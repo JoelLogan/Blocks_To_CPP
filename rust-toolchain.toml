@@ -1,0 +1,6 @@
+# Pinned toolchain (docs/spec/09-quality-and-delivery.md §9.1). Bump deliberately.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

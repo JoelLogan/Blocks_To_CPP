@@ -1,0 +1,144 @@
+# Control and loops (docs/spec/03-block-language.md §3.7.5).
+
+[[block]]
+id = "control.if"
+version = 1
+category = "control"
+shape = "statement"
+label = { friendly = "if %COND then %DO else if … else %ELSE", cpp = "if (%COND) { … } else { … }" }
+lowering = "builtin"
+help = "Runs blocks only when a condition is true. Add else-if and else parts with ⊕."
+
+[[block.extra]]
+name = "elseIfCount"
+kind = "count"
+min = 0
+max = 32
+default = "0"
+
+[[block.extra]]
+name = "hasElse"
+kind = "flag"
+max = 1
+default = false
+
+[[block.input]]
+name = "COND"
+check = "bool"
+repeat = { count = "elseIfCount", plus = 1 }
+default = [{ kw = "true" }]
+
+[[block.statement]]
+name = "DO"
+repeat = { count = "elseIfCount", plus = 1 }
+
+[[block.statement]]
+name = "ELSE"
+when = "hasElse"
+
+[[block]]
+id = "control.while"
+version = 1
+category = "loops"
+shape = "statement"
+label = { friendly = "repeat %MODE %COND", cpp = "while (%COND) { … }" }
+lowering = "builtin"
+help = "Repeats blocks while a condition is true, or until it becomes true."
+
+[[block.field]]
+name = "MODE"
+kind = "dropdown"
+options = [["while", "while"], ["until", "until"]]
+default = "while"
+
+[[block.input]]
+name = "COND"
+check = "bool"
+default = [{ kw = "true" }]
+
+[[block.statement]]
+name = "BODY"
+
+[[block]]
+id = "control.repeat"
+version = 1
+category = "loops"
+shape = "statement"
+label = { friendly = "repeat %TIMES times", cpp = "for (int i = 0; i < %TIMES; ++i) { … }" }
+lowering = "builtin"
+help = "Repeats blocks a number of times."
+
+[[block.input]]
+name = "TIMES"
+check = "integer"
+default = [{ num = "10" }]
+
+[[block.statement]]
+name = "BODY"
+
+[[block]]
+id = "control.for_range"
+version = 1
+category = "loops"
+shape = "statement"
+label = { friendly = "for %VAR from %FROM %DIRECTION %TO step %STEP", cpp = "for (int %VAR = %FROM; …; …) { … }" }
+lowering = "builtin"
+help = "Counts from one number to another, running blocks for each value."
+
+[[block.field]]
+name = "VAR"
+kind = "symbol_decl"
+
+[[block.field]]
+name = "DIRECTION"
+kind = "dropdown"
+options = [["to", "to"], ["through", "through"], ["down to", "down_to"]]
+default = "to"
+
+[[block.input]]
+name = "FROM"
+check = "integer"
+default = [{ num = "0" }]
+
+[[block.input]]
+name = "TO"
+check = "integer"
+default = [{ num = "10" }]
+
+[[block.input]]
+name = "STEP"
+check = "integer"
+optional = true
+
+[[block.statement]]
+name = "BODY"
+
+[[block]]
+id = "control.forever"
+version = 1
+category = "loops"
+shape = "statement"
+label = { friendly = "forever", cpp = "while (true) { … }" }
+lowering = "builtin"
+help = "Repeats blocks forever (use stop or break to leave)."
+
+[[block.statement]]
+name = "BODY"
+
+[[block]]
+id = "control.break"
+version = 1
+category = "loops"
+shape = "statement"
+label = { friendly = "leave loop", cpp = "break;" }
+lowering = "builtin"
+help = "Leaves the innermost loop."
+
+[[block]]
+id = "control.continue"
+version = 1
+category = "loops"
+shape = "statement"
+label = { friendly = "skip to next round", cpp = "continue;" }
+lowering = "builtin"
+help = "Skips the rest of this round of the innermost loop."

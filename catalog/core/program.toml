@@ -1,0 +1,28 @@
+# Program structure (docs/spec/03-block-language.md §3.7.1).
+
+[[block]]
+id = "program.main"
+version = 1
+category = "program"
+shape = "hat"
+label = { friendly = "when program starts", cpp = "int main()" }
+lowering = "builtin"
+help = "The program starts here. A project has exactly one of these blocks."
+
+[[block.statement]]
+name = "BODY"
+
+[[block]]
+id = "program.exit"
+version = 1
+category = "program"
+shape = "statement"
+label = { friendly = "stop program with exit code %CODE", cpp = "return %CODE / std::exit(%CODE)" }
+lowering = "builtin"
+headers = ["<cstdlib>"]
+help = "Ends the program. Exit code 0 means success."
+
+[[block.input]]
+name = "CODE"
+check = "integer"
+default = [{ num = "0" }]
