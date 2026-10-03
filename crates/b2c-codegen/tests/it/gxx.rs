@@ -191,7 +191,50 @@ fn run_path(path: &Path, stdin: &[u8]) -> Run {
     writer.join().unwrap();
     Run {
         status,
-        stdout: stdout.join().unwrap(),
-        stderr: stderr.join().unwrap(),
+        stdout: undo_text_mode(stdout.join().unwrap()),
+        stderr: undo_text_mode(stderr.join().unwrap()),
+    }
+}
+
+/// On Windows, a program's standard streams are in text mode, so every `\n`
+/// it writes arrives as `\r\n`. Text mode only ever inserts a `\r` before a
+/// `\n`, so replacing each `\r\n` with `\n` gives back exactly the bytes
+/// the program wrote (a written `\r\n` arrives as `\r\r\n` and comes back
+/// as `\r\n`). Elsewhere the bytes are returned unchanged.
+fn undo_text_mode(bytes: Vec<u8>) -> Vec<u8> {
+    if !cfg!(windows) {
+        return bytes;
+    }
+    restore_newlines(&bytes)
+}
+
+/// Replaces every `\r\n` with `\n`, scanning left to right.
+fn restore_newlines(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut rest = bytes;
+    while let Some((&first, tail)) = rest.split_first() {
+        if first == b'\r' && tail.first() == Some(&b'\n') {
+            out.push(b'\n');
+            rest = &tail[1..];
+        } else {
+            out.push(first);
+            rest = tail;
+        }
+    }
+    out
+}
+
+#[test]
+fn text_mode_is_undone_exactly() {
+    // What a program writes, and what arrives through a Windows text-mode stream.
+    for written in [&b"a\nb"[..], b"\r\n", b"x\r", b"\r\r\n\n", b"", b"no newline"] {
+        let mut arrived = Vec::new();
+        for &byte in written {
+            if byte == b'\n' {
+                arrived.push(b'\r');
+            }
+            arrived.push(byte);
+        }
+        assert_eq!(restore_newlines(&arrived), written);
     }
 }
