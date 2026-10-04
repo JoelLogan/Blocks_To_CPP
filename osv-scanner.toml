@@ -1,0 +1,24 @@
+# Tracked exceptions for OSV-Scanner (docs/spec/08-security.md §8.9).
+#
+# Each entry names an advisory that does not affect Blocks2Cpp, says why, and
+# expires: after `ignoreUntil` the scan fails again until someone re-checks
+# it (and either removes the entry because a fix is available, or renews it
+# with a new reason). Never add an entry for a high or critical advisory in a
+# shipped dependency; that blocks a release (§8.10).
+
+# glib 0.18: the Iterator impls of glib::VariantStrIter are unsound. glib is
+# part of gtk-rs 0.18, which webkit2gtk 2.0 (Tauri's webview on Linux)
+# requires, so it cannot move to the fixed glib 0.20 yet. Nothing in the
+# dependency tree calls VariantStrIter (checked 2026-10-04), and the app never
+# passes untrusted GVariants to glib.
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+ignoreUntil = 2027-01-04T00:00:00Z
+reason = "Unsound glib::VariantStrIter, unused in the dependency tree; glib 0.18 is pinned by Tauri's Linux webview (webkit2gtk 2.0)."
+
+# proc-macro-error is unmaintained (no vulnerability). It runs only at build
+# time, inside glib-macros and gtk3-macros of gtk-rs 0.18.
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+ignoreUntil = 2027-01-04T00:00:00Z
+reason = "Unmaintained build-time proc-macro helper used by gtk-rs 0.18 macros; not a vulnerability."
