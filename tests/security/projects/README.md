@@ -63,7 +63,7 @@ rest of the project valid, so that the file tests one thing.
 | `hat-inside-statement.b2c` | T1 | A second `when program starts` inside the first | accepted | `B2C-E0604` |  |
 | `homoglyph-identifier.b2c` | T3 | A name with a Cyrillic `о` that looks like `score` | accepted | clean | The analyser accepts only ASCII names (08 §8.4.1) |
 | `huge-coordinates.b2c` | T5 | Canvas coordinates beyond ±10⁷ (and beyond 32 bits) | `B2C-E0129` | — |  |
-| `huge-format-version.b2c` | T5 | A `formatVersion` beyond 32 bits | `B2C-E0109` | — |  |
+| `huge-format-version.b2c` | T5 | A `formatVersion` beyond 32 bits (refused as a newer format, never truncated) | `B2C-E0108` | — |  |
 | `huge-number.b2c` | T5 | A number (`1e400`) too large for any number type | `B2C-E0103` | — |  |
 | `huge-params-list.b2c` | T5 | A function with 65 parameter rows | `B2C-E0131` | — |  |
 | `huge-variadic-count.b2c` | T5 | A ⊕ count of 4,294,967,295 parts (the editor would build that many inputs) | `B2C-E0131` | — |  |
@@ -112,6 +112,9 @@ rest of the project valid, so that the file tests one thing.
 | `raw-cpp-block.b2c` | T2 | A Raw C++ block (not available in this version) | accepted | `B2C-E0601` |  |
 | `run-args-shell.b2c` | T2 | Shell syntax in program arguments | accepted | clean | Arguments are an argv list, never a shell command (07 §7.6) |
 | `statement-in-value-input.b2c` | T1 | A statement block plugged into a value input | accepted | `B2C-E0604` |  |
+| `tag-characters-in-block-type.b2c` | T4/T7 | Invisible Unicode tag characters (U+E0001–U+E007F, "ASCII smuggling") hiding `rm -rf` in a block type | accepted | `B2C-E0601` | The message shows them as `\u{E00XX}` escapes |
+| `tag-characters-in-module-name.b2c` | T4/T7/T9 | The same hidden text in a module name | `B2C-E0117` | — |  |
+| `tag-characters-in-string-literal.b2c` | T4 | The same hidden text in a string literal | accepted | clean | `StrLit` writes them as `\U000E00XX` (08 §8.4.2) |
 | `terminal-escape-in-name.b2c` | T4/T7 | Terminal escape sequences in the project name | `B2C-E0125` | — |  |
 | `too-many-modules.b2c` | T5 | 257 modules (each becomes a file) | `B2C-E0120` | — |  |
 | `too-many-parameters.b2c` | T5 | 17 parameters where the catalog allows 16 | accepted | `B2C-E0613` |  |

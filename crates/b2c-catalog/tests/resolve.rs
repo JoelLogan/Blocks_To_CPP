@@ -353,7 +353,7 @@ fn e0610_statements() {
         [
             "This block has no part \"BODY\" for other blocks. Remove it or check its spelling.",
             "This block has no part \"DO2\": it has 2 DO part(s), set by \"extra.elseIfCount\".",
-            "This block has a \"ELSE\" part, but \"extra.hasElse\" is false, so it has no such part. Set \"extra.hasElse\" to true or remove the part.",
+            "This block has the part \"ELSE\", but \"extra.hasElse\" is false, so it has no such part. Set \"extra.hasElse\" to true or remove the part.",
         ]
     );
     // With hasElse, ELSE is fine.
@@ -444,11 +444,11 @@ fn e0613_and_e0614_parameters() {
             ),
             (
                 "B2C-E0614",
-                "Parameter 1 of this block has the type the text \"float\", but parameters can only be \"int\", \"double\", \"bool\", \"char\" or \"std::string\"."
+                "Parameter 1 of this block has the type \"float\", but parameters can only be \"int\", \"double\", \"bool\", \"char\" or \"std::string\"."
             ),
             (
                 "B2C-E0614",
-                "Parameter 2 of this block has the mode the text \"rvalue\", but the mode must be \"copy\", \"editable\" or \"read_only\"."
+                "Parameter 2 of this block has the mode \"rvalue\", but the mode must be \"copy\", \"editable\" or \"read_only\"."
             ),
             (
                 "B2C-E0614",

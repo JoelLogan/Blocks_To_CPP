@@ -87,6 +87,7 @@ fn sorted(mut document: Document) -> Document {
 /// invisible format characters (hostile text is quoted with escapes).
 fn is_unsafe_to_show(c: char) -> bool {
     c.is_control()
+        || b2c_ir::text::is_invisible(c)
         || matches!(c,
             '\u{00AD}' | '\u{061C}' | '\u{180E}'
             | '\u{200B}'..='\u{200F}'
@@ -185,5 +186,6 @@ fn codes_are_read_from_cells() {
     assert!(codes_in("accepted").is_empty());
     assert!(is_unsafe_to_show('\u{202e}'));
     assert!(is_unsafe_to_show('\u{1b}'));
+    assert!(is_unsafe_to_show('\u{e0041}'), "invisible tag characters");
     assert!(!is_unsafe_to_show('é'));
 }

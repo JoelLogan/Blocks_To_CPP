@@ -337,7 +337,7 @@ impl Resolver<'_> {
                 Some(Value::String(t)) if extra.types.contains(t) => {}
                 other => problems.push(format!(
                     "has the type {}, but parameters can only be {}",
-                    other.map_or_else(|| String::from("nothing"), describe),
+                    describe_choice(other),
                     list(extra.types.iter().map(String::as_str))
                 )),
             }
@@ -345,7 +345,7 @@ impl Resolver<'_> {
                 Some(Value::String(m)) if PARAM_MODES.contains(&m.as_str()) => {}
                 other => problems.push(format!(
                     "has the mode {}, but the mode must be {}",
-                    other.map_or_else(|| String::from("nothing"), describe),
+                    describe_choice(other),
                     list(PARAM_MODES)
                 )),
             }
@@ -568,7 +568,7 @@ impl Resolver<'_> {
                 };
                 match extras.get(flag) {
                     Some(Resolved::Flag(false)) => Some(Some(format!(
-                        "This block has a {} part, but \"extra.{flag}\" is false, so it has no such part. Set \"extra.{flag}\" to true or remove the part.",
+                        "This block has the part {}, but \"extra.{flag}\" is false, so it has no such part. Set \"extra.{flag}\" to true or remove the part.",
                         quote(name)
                     ))),
                     _ => Some(None),
@@ -648,6 +648,16 @@ fn describe(value: &Value) -> String {
     }
 }
 
+/// Describes the value of a setting that must be one of a list of names:
+/// `"float"` for text, otherwise like [`describe`].
+fn describe_choice(value: Option<&Value>) -> String {
+    match value {
+        None => String::from("nothing"),
+        Some(Value::String(text)) => quote(text),
+        Some(other) => describe(other),
+    }
+}
+
 /// Describes a field value for a message.
 fn describe_field(value: &FieldValue) -> String {
     match value {
@@ -658,9 +668,14 @@ fn describe_field(value: &FieldValue) -> String {
     }
 }
 
-/// Characters that must not be shown raw in a message.
+/// Characters that must not be shown raw in a message: controls and every
+/// invisible character the C++ encoders escape
+/// ([`b2c_ir::text::is_invisible`], which covers all format characters,
+/// including the invisible "tag" characters that can smuggle hidden text),
+/// plus a few more that render as nothing.
 fn is_unsafe_to_show(c: char) -> bool {
     c.is_control()
+        || b2c_ir::text::is_invisible(c)
         || matches!(c,
             '\u{00AD}' | '\u{061C}' | '\u{180E}'
             | '\u{200B}'..='\u{200F}'
@@ -779,6 +794,12 @@ mod tests {
     fn quoting_and_lists() {
         assert_eq!(quote("a\u{202e}\"b"), "\"a\\u{202E}\\\"b\"");
         assert_eq!(quote(&"x".repeat(50)), format!("\"{}…\"", "x".repeat(40)));
+        // Every format character is escaped, such as the invisible tag
+        // characters (which can carry hidden text), U+0600 and U+1D173.
+        assert_eq!(
+            quote("a\u{e0001}\u{e0041}\u{600}\u{1d173}b"),
+            "\"a\\u{E0001}\\u{E0041}\\u{0600}\\u{1D173}b\""
+        );
         assert_eq!(list([]), "nothing");
         assert_eq!(list(["a"]), "\"a\"");
         assert_eq!(list(["a", "b", "c"]), "\"a\", \"b\" or \"c\"");
@@ -788,5 +809,8 @@ mod tests {
         assert_eq!(describe(&Value::Array(vec![])), "a list");
         assert_eq!(describe(&serde_json::json!({})), "an object");
         assert_eq!(describe_field(&FieldValue::Bool(true)), "true");
+        assert_eq!(describe_choice(None), "nothing");
+        assert_eq!(describe_choice(Some(&Value::from("float"))), "\"float\"");
+        assert_eq!(describe_choice(Some(&Value::from(3))), "3");
     }
 }

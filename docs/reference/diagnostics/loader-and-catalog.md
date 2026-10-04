@@ -33,10 +33,12 @@ crafted file for most of these codes.
 ### B2C-E0101: the project file is too large
 
 Project files can be at most 32 MiB. The size is checked before the file is
-read, so an oversized file cannot use up memory. Real projects are far
-smaller (typically under 1 MiB).
+parsed, and Blocks2Cpp stops reading a file one byte after the limit, so an
+oversized file cannot use up memory (which is also why the message does not
+say how large the file is). Real projects are far smaller (typically under
+1 MiB).
 
-> The project file is 40000000 bytes, but project files can be at most 33554432 bytes (32 MiB).
+> The project file is larger than 33554432 bytes (32 MiB), the most a project file can be.
 
 **Fix:** check that you opened the right file. Split a very large program
 into several projects.
@@ -109,8 +111,9 @@ file is not a JSON object at all.
 ### B2C-E0108: made with a newer version of Blocks2Cpp
 
 The project uses a newer file format than this version of Blocks2Cpp
-understands. It is refused as a whole instead of being half loaded, so
-nothing in it is lost or misread.
+understands (any whole number above the current format version, however
+large). It is refused as a whole instead of being half loaded, so nothing in
+it is lost or misread.
 
 > This project was made with a newer version of Blocks2Cpp (needs ≥ 0.3.0; it uses project format 2, and this version reads format 1). Update Blocks2Cpp to open it.
 
@@ -157,6 +160,7 @@ saved by Blocks2Cpp.
 
 A value has the wrong kind (text where a number belongs, for example), is
 not one of the allowed choices, or is a number out of range for its key.
+`"x-ext"`, when present, must be an object.
 
 > "project.run.workingDirectory" should be one of "project" or "sandbox", but it is the text "/etc".
 
@@ -530,7 +534,7 @@ The block has a statement list its definition does not have, a numbered list
 beyond its ⊕ count, or a list that its settings switch off (such as `ELSE`
 on an `if` block without an else part).
 
-> This block has a "ELSE" part, but "extra.hasElse" is false, so it has no such part. Set "extra.hasElse" to true or remove the part.
+> This block has the part "ELSE", but "extra.hasElse" is false, so it has no such part. Set "extra.hasElse" to true or remove the part.
 
 **Fix:** remove the statement list, or change the block's settings.
 
@@ -569,7 +573,7 @@ A row of a function's parameter list is not an object with exactly `"sym"`
 (a symbol ID), `"name"`, `"type"` (one of the allowed parameter types) and
 `"mode"` (`"copy"`, `"editable"` or `"read_only"`).
 
-> Parameter 2 of this block has the mode the text "rvalue", but the mode must be "copy", "editable" or "read_only".
+> Parameter 2 of this block has the mode "rvalue", but the mode must be "copy", "editable" or "read_only".
 
 **Fix:** correct the parameter in the function's settings.
 

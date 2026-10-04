@@ -418,6 +418,24 @@ fn e0123_too_long() {
     );
 }
 
+#[test]
+fn e0123_name_length_counts_characters() {
+    // 40 two-byte characters are 80 bytes but only 40 characters: within the
+    // limit (whether such a name is a valid identifier is the analyser's
+    // business). The message never contradicts the limit.
+    let mut document = base();
+    main_block(&mut document)["statements"]["BODY"][1]["fields"]["NAME"]["name"] = json!("é".repeat(40));
+    document["modules"][0]["workspace"]["blocks"][1]["extra"]["params"][0]["name"] = json!("é".repeat(40));
+    loads(&document);
+    main_block(&mut document)["statements"]["BODY"][1]["fields"]["NAME"]["name"] = json!("é".repeat(65));
+    let diagnostics = failure(&bytes(&document));
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "\"fields.NAME.name\" in this block is 65 characters long, but names can be at most 64."
+    );
+}
+
 // --- E0124–E0127: text rules and reserved keys ----------------------------
 
 #[test]
@@ -448,7 +466,7 @@ fn e0124_to_e0126_text_rules_in_every_kind_of_string() {
             ),
             (
                 "B2C-E0125",
-                "\"comment.text\" in this block contains a escape (U+001B), which is not allowed in project text. Only tabs and new lines are allowed."
+                "\"comment.text\" in this block contains an escape character (U+001B), which is not allowed in project text. Only tabs and new lines are allowed."
             ),
             (
                 "B2C-E0126",
@@ -484,6 +502,15 @@ fn e0127_reserved_keys_outside_x_ext() {
     let diagnostics = failure(&bytes(&document));
     assert_eq!(diagnostics.len(), 4, "{diagnostics:#?}");
     assert!(diagnostics.iter().all(|d| d.code.0 == "B2C-E0127"));
+    // Also in single-key objects (tokens, define values) that are rejected
+    // as a whole for having two keys.
+    let mut document = base();
+    print_block(&mut document)["inputs"]["ITEM0"]["expr"][0] = json!({"str": "hi", "__proto__": {"x": 1}});
+    document["project"]["build"] = json!({"defines": [{"name": "A", "value": {"int": 1, "constructor": 2}}]});
+    assert_eq!(
+        codes(&document),
+        ["B2C-E0112", "B2C-E0127", "B2C-E0112", "B2C-E0127"]
+    );
     // Inside x-ext they are preserved, never interpreted.
     let mut document = base();
     document["x-ext"] = json!({"__proto__": {"constructor": {"prototype": 1}}});
@@ -640,9 +667,9 @@ fn e0136_and_e0137_packs() {
 #[test]
 fn e0135_free_form_budget() {
     let mut document = base();
-    document["x-ext"] = Value::Array(vec![json!(0); 499_000]);
+    document["x-ext"] = json!({ "list": Value::Array(vec![json!(0); 499_000]) });
     loads(&document);
-    document["x-ext"] = Value::Array(vec![json!(0); 500_001]);
+    document["x-ext"] = json!({ "list": Value::Array(vec![json!(0); 500_001]) });
     assert_eq!(codes(&document), ["B2C-E0135"]);
 }
 
@@ -665,4 +692,21 @@ fn x_ext_is_preserved_as_is() {
     let ext = json!({"b": [1, 2.5, -3, true, null, "text"], "a": {"nested": {}}});
     document["x-ext"] = ext.clone();
     assert_eq!(loads(&document).ext, Some(ext));
+}
+
+#[test]
+fn x_ext_must_be_an_object() {
+    // Spec §5.6: "x-ext" is an object of tooling metadata.
+    for ext in [json!(5), json!("text"), json!([1, 2]), json!(true)] {
+        let mut document = base();
+        document["x-ext"] = ext;
+        let diagnostics = failure(&bytes(&document));
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code.0, "B2C-E0112");
+        assert!(
+            diagnostics[0]
+                .message
+                .starts_with("\"x-ext\" should be an object, but it is")
+        );
+    }
 }

@@ -54,16 +54,17 @@ pub(crate) fn check(text: &str) -> TextProblems {
     problems
 }
 
-/// A short name for a control character, for messages.
+/// A short name for a control character with its article ("a carriage
+/// return", "an escape character"), for messages.
 pub(crate) fn control_name(c: char) -> &'static str {
     match c {
-        '\r' => "carriage return",
-        '\u{1b}' => "escape",
-        '\u{8}' => "backspace",
-        '\u{b}' => "vertical tab",
-        '\u{c}' => "form feed",
-        '\u{7}' => "bell",
-        _ => "control character",
+        '\r' => "a carriage return",
+        '\u{1b}' => "an escape character",
+        '\u{8}' => "a backspace",
+        '\u{b}' => "a vertical tab",
+        '\u{c}' => "a form feed",
+        '\u{7}' => "a bell character",
+        _ => "a control character",
     }
 }
 
@@ -87,10 +88,14 @@ pub(crate) fn bidi_name(c: char) -> &'static str {
 }
 
 /// Characters that must not be shown raw in a message: controls (C0, DEL,
-/// C1), bidi controls and other invisible format characters.
+/// C1), bidi controls and every other invisible character the C++ encoders
+/// escape ([`b2c_ir::text::is_invisible`]: all format characters, including
+/// the invisible "tag" characters U+E0020–U+E007F that can smuggle hidden
+/// text, and noncharacters), plus a few more that render as nothing.
 fn is_unsafe_to_show(c: char) -> bool {
     c.is_control()
         || is_bidi_control(c)
+        || b2c_ir::text::is_invisible(c)
         || matches!(c,
             '\u{00AD}' | '\u{180E}'
             | '\u{200B}'..='\u{200D}'
@@ -175,8 +180,9 @@ mod tests {
         assert!(problems.nul);
         assert_eq!(problems.control, Some('\r'));
         assert_eq!(problems.bidi, Some('\u{202e}'));
-        assert_eq!(control_name('\r'), "carriage return");
-        assert_eq!(control_name('\u{1}'), "control character");
+        assert_eq!(control_name('\r'), "a carriage return");
+        assert_eq!(control_name('\u{1b}'), "an escape character");
+        assert_eq!(control_name('\u{1}'), "a control character");
     }
 
     #[test]
@@ -189,5 +195,11 @@ mod tests {
         );
         assert_eq!(quote(&"x".repeat(100)), format!("\"{}…\"", "x".repeat(40)));
         assert_eq!(quote("\u{feff}\u{200b}\u{85}"), "\"\\u{FEFF}\\u{200B}\\u{0085}\"");
+        // Every format character is escaped, such as the invisible tag
+        // characters (which can carry hidden text), U+0600 and U+1D173.
+        assert_eq!(
+            quote("a\u{e0001}\u{e0041}\u{600}\u{1d173}\u{fffe}b"),
+            "\"a\\u{E0001}\\u{E0041}\\u{0600}\\u{1D173}\\u{FFFE}b\""
+        );
     }
 }

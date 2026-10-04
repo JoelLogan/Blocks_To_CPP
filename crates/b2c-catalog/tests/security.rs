@@ -78,6 +78,7 @@ fn cases() -> Vec<(String, bool, Expected)> {
 /// Characters a message must never show raw.
 fn is_unsafe_to_show(c: char) -> bool {
     c.is_control()
+        || b2c_ir::text::is_invisible(c)
         || matches!(c,
             '\u{00AD}' | '\u{061C}' | '\u{180E}'
             | '\u{200B}'..='\u{200F}'

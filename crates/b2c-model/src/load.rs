@@ -81,11 +81,13 @@ pub fn load(bytes: &[u8]) -> Result<Document, LoadError> {
 /// Step 1: size, UTF-8 and no byte order mark.
 fn check_bytes(bytes: &[u8]) -> Result<&str, LoadError> {
     if bytes.len() > MAX_FILE_BYTES {
+        // No exact size: callers stop reading one byte past the limit (so a
+        // huge file cannot exhaust memory), so `bytes.len()` is usually not
+        // the size of the file.
         return Err(LoadError::single(
             codes::FILE_TOO_LARGE,
             format!(
-                "The project file is {} bytes, but project files can be at most {MAX_FILE_BYTES} bytes (32 MiB).",
-                bytes.len()
+                "The project file is larger than {MAX_FILE_BYTES} bytes (32 MiB), the most a project file can be."
             ),
         ));
     }
@@ -238,7 +240,7 @@ fn check_header(root: Json) -> Result<Json, LoadError> {
         }
     }
     let version = match root.get("formatVersion") {
-        Some(Json::Number(n)) => n.as_u64().and_then(|n| u32::try_from(n).ok()),
+        Some(Json::Number(n)) => n.as_u64(),
         _ => None,
     };
     let Some(version) = version else {
@@ -249,7 +251,9 @@ fn check_header(root: Json) -> Result<Json, LoadError> {
             ),
         ));
     };
-    if version > CURRENT_FORMAT_VERSION {
+    // Any whole number above the current version is a newer format, even
+    // one beyond 32 bits (spec §5.7).
+    if version > u64::from(CURRENT_FORMAT_VERSION) {
         let needs = saved_by(&root)
             .map(|app| format!("needs ≥ {app}; "))
             .unwrap_or_default();
@@ -260,6 +264,8 @@ fn check_header(root: Json) -> Result<Json, LoadError> {
             ),
         ));
     }
+    // At most `CURRENT_FORMAT_VERSION` now, so it fits.
+    let version = u32::try_from(version).unwrap_or(CURRENT_FORMAT_VERSION);
     migrate::upgrade(root, version).map_err(|error| {
         let message = match error {
             MigrationError::NoPath { from } => format!(
@@ -291,6 +297,13 @@ mod tests {
         let mut huge = vec![b' '; MAX_FILE_BYTES + 1];
         huge[0] = b'{';
         assert_eq!(codes_of(&huge), [codes::FILE_TOO_LARGE]);
+        // Callers read at most one byte past the limit, so the message must
+        // not claim that the truncated input's length is the file's size.
+        let error = load(&huge).unwrap_err();
+        assert_eq!(
+            error.diagnostics[0].message,
+            "The project file is larger than 33554432 bytes (32 MiB), the most a project file can be."
+        );
     }
 
     #[test]
@@ -364,6 +377,15 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.diagnostics[0].message.contains("(it uses project format 2"));
+        // A whole number beyond 32 bits is a newer format too, not "no valid
+        // formatVersion".
+        let error = load(br#"{"format": "blocks2cpp/project", "formatVersion": 4294967296}"#).unwrap_err();
+        assert_eq!(error.diagnostics[0].code.0, codes::NEWER_FORMAT);
+        assert!(
+            error.diagnostics[0]
+                .message
+                .contains("it uses project format 4294967296,")
+        );
     }
 
     #[test]

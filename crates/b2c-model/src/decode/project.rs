@@ -92,7 +92,16 @@ impl<'a> Decoder<'a> {
         let generator = self.required(entries, "generator", Self::generator);
         let project = self.required(entries, "project", Self::project);
         let modules = self.required(entries, "modules", Self::modules);
-        let ext = self.nullable(entries, "x-ext", |d, v| d.untyped(v, true));
+        // "x-ext" is an object of tooling metadata (spec §5.6); what is
+        // inside it is preserved without being interpreted.
+        let ext = self.nullable(entries, "x-ext", |d, v| {
+            if matches!(v, Json::Object(_)) {
+                d.untyped(v, true)
+            } else {
+                d.wrong(v, "an object");
+                None
+            }
+        });
         Some(Document {
             format: format?,
             format_version: format_version?,
@@ -301,6 +310,7 @@ impl<'a> Decoder<'a> {
         };
         let [(kind, inner)] = &**entries else {
             self.wrong(value, EXPECTED);
+            self.reserved_keys_in(entries);
             return None;
         };
         match &**kind {

@@ -475,14 +475,16 @@ impl<'a> Decoder<'a> {
         }
     }
 
+    /// Names are limited in characters, like identifiers (the text itself is
+    /// already limited in bytes); the message gives the same count.
     fn check_name_length(&mut self, name: &str) -> bool {
-        if name.len() <= MAX_IDENT_LEN {
+        let length = name.chars().count();
+        if length <= MAX_IDENT_LEN {
             return true;
         }
         let message = format!(
-            "{} is {} characters long, but names can be at most {MAX_IDENT_LEN}.",
+            "{} is {length} characters long, but names can be at most {MAX_IDENT_LEN}.",
             self.subject(),
-            name.chars().count()
         );
         self.report(codes::TOO_LONG, message);
         false
@@ -590,6 +592,7 @@ impl<'a> Decoder<'a> {
         };
         let [(kind, inner)] = &**entries else {
             self.wrong(value, EXPECTED);
+            self.reserved_keys_in(entries);
             return None;
         };
         if !TOKEN_KINDS.contains(&&**kind) {

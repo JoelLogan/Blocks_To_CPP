@@ -416,7 +416,10 @@ fn document() -> impl Strategy<Value = Document> {
         (text(), text()),
         project(),
         vec(workspace(), 1..3),
-        option::of(free_json(false).prop_filter("null x-ext reads back as absent", |v| !v.is_null())),
+        // "x-ext" is always an object (spec §5.6).
+        option::of(
+            btree_map(key(), free_json(false), 0..4).prop_map(|map| Value::Object(map.into_iter().collect())),
+        ),
     )
         .prop_map(|((app, catalog), project, workspaces, ext)| {
             let mut numbering = Numbering {

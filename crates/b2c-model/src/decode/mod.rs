@@ -249,6 +249,17 @@ impl<'a> Decoder<'a> {
         Some(entries)
     }
 
+    /// Reports the reserved keys of an object that is rejected as a whole
+    /// (such as a token with two keys), so they are named like everywhere
+    /// else.
+    fn reserved_keys_in(&mut self, entries: Entries<'a>) {
+        for (key, _) in entries {
+            if RESERVED_KEYS.contains(&&**key) {
+                self.reserved_key(key);
+            }
+        }
+    }
+
     fn reserved_key(&mut self, key: &str) {
         let message = format!(
             "{} uses the key {}, which is not allowed in project files because it could be used to tamper with the editor.",
@@ -362,7 +373,7 @@ impl<'a> Decoder<'a> {
         }
         if let Some(c) = problems.control {
             let message = format!(
-                "{lead} contains a {} (U+{:04X}), which is not allowed in project text. Only tabs and new lines are allowed.",
+                "{lead} contains {} (U+{:04X}), which is not allowed in project text. Only tabs and new lines are allowed.",
                 text_rules::control_name(c),
                 u32::from(c)
             );
