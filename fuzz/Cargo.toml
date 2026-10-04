@@ -1,5 +1,6 @@
-# Fuzz targets for the project loader and the resolve stage
-# (docs/spec/09-quality-and-delivery.md §9.2, docs/spec/08-security.md §8.13).
+# Fuzz targets for the project loader, the pure pipeline and the typed text
+# encoders (docs/spec/09-quality-and-delivery.md §9.2, docs/spec/08-security.md
+# §8.4 and §8.13). Only pure crates: nothing here does I/O.
 #
 # Not part of the main workspace: libFuzzer needs a nightly toolchain and
 # sanitizer flags. Run with `cargo +nightly fuzz run <target>` from the
@@ -18,8 +19,11 @@ cargo-fuzz = true
 [dependencies]
 # libFuzzer bindings for cargo-fuzz; the fuzzing harness only, never shipped.
 libfuzzer-sys = "=0.4.13"
+b2c-ir = { path = "../crates/b2c-ir" }
 b2c-model = { path = "../crates/b2c-model" }
 b2c-catalog = { path = "../crates/b2c-catalog" }
+b2c-lang = { path = "../crates/b2c-lang" }
+b2c-codegen = { path = "../crates/b2c-codegen" }
 
 # Its own workspace, so the main workspace's `crates/*` glob and its lints
 # do not apply and `cargo` commands at the root ignore this package.
@@ -46,6 +50,20 @@ bench = false
 [[bin]]
 name = "roundtrip"
 path = "fuzz_targets/roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frontend"
+path = "fuzz_targets/frontend.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "encoders"
+path = "fuzz_targets/encoders.rs"
 test = false
 doc = false
 bench = false

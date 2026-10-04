@@ -21,10 +21,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "b2c-codegen"
+version = "0.1.0"
+dependencies = [
+ "b2c-ir",
+ "serde",
+]
+
+[[package]]
 name = "b2c-fuzz"
 version = "0.0.0"
 dependencies = [
  "b2c-catalog",
+ "b2c-codegen",
+ "b2c-ir",
+ "b2c-lang",
  "b2c-model",
  "libfuzzer-sys",
 ]
@@ -35,6 +46,15 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "thiserror",
+]
+
+[[package]]
+name = "b2c-lang"
+version = "0.1.0"
+dependencies = [
+ "b2c-ir",
+ "b2c-model",
+ "serde_json",
 ]
 
 [[package]]

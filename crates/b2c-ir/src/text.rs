@@ -647,7 +647,7 @@ impl NumLit {
                         ty: ty.cpp_name(),
                     });
                 }
-                let cleaned = strip_separators(text).ok_or_else(syntax)?;
+                let cleaned = strip_separators(text, 10).ok_or_else(syntax)?;
                 if !is_decimal_float(&cleaned) {
                     return Err(syntax());
                 }
@@ -700,33 +700,43 @@ impl NumLit {
     }
 }
 
-/// Removes C++14 digit separators, rejecting misplaced ones.
-fn strip_separators(text: &str) -> Option<String> {
-    if text.starts_with('\'') || text.ends_with('\'') || text.contains("''") {
-        return None;
+/// Removes C++14 digit separators, rejecting misplaced ones. As in C++, a `'`
+/// must stand between two digits of `radix`: not first or last, not next to
+/// another `'`, a base prefix (`0x'1`), a decimal point (`1.'5`) or an
+/// exponent (`1e'5`), all of which GCC rejects.
+fn strip_separators(text: &str, radix: u32) -> Option<String> {
+    let bytes = text.as_bytes();
+    let is_digit = |index: Option<usize>| {
+        index
+            .and_then(|index| bytes.get(index))
+            .is_some_and(|&b| char::from(b).is_digit(radix))
+    };
+    for (index, &b) in bytes.iter().enumerate() {
+        if b == b'\'' && !(is_digit(index.checked_sub(1)) && is_digit(Some(index + 1))) {
+            return None;
+        }
     }
     Some(text.replace('\'', ""))
 }
 
 /// Parses a non-negative integer literal; `None` if it is not one.
 fn parse_integer(text: &str) -> Option<i128> {
-    let cleaned = strip_separators(text)?;
-    let (digits, radix) =
-        if let Some(rest) = cleaned.strip_prefix("0x").or_else(|| cleaned.strip_prefix("0X")) {
-            (rest, 16)
-        } else if let Some(rest) = cleaned.strip_prefix("0b").or_else(|| cleaned.strip_prefix("0B")) {
-            (rest, 2)
-        } else {
-            // A leading zero would make C++ read the number as octal.
-            if cleaned.len() > 1 && cleaned.starts_with('0') {
-                return None;
-            }
-            (cleaned.as_str(), 10)
-        };
+    let (digits, radix) = if let Some(rest) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        (rest, 16)
+    } else if let Some(rest) = text.strip_prefix("0b").or_else(|| text.strip_prefix("0B")) {
+        (rest, 2)
+    } else {
+        (text, 10)
+    };
+    let digits = strip_separators(digits, radix)?;
+    // A leading zero would make C++ read the number as octal.
+    if radix == 10 && digits.len() > 1 && digits.starts_with('0') {
+        return None;
+    }
     if digits.is_empty() || digits.len() > 128 || !digits.chars().all(|c| c.is_digit(radix)) {
         return None;
     }
-    i128::from_str_radix(digits, radix).ok()
+    i128::from_str_radix(&digits, radix).ok()
 }
 
 /// Checks C++ decimal floating-point syntax (without suffix or sign).
@@ -958,6 +968,36 @@ mod tests {
         ));
         assert_eq!(NumLit::int(1).as_str(), "1");
         assert!(NumLit::from_f64(f64::NAN).is_none());
+    }
+
+    /// A digit separator must stand between two digits, as in C++ (found by
+    /// the `encoders` fuzz target: `.'02` was accepted as `0.02`).
+    #[test]
+    fn digit_separators_stand_between_digits() {
+        let p = |s: &str, t| NumLit::parse(s, t).map(|n| n.as_str().to_owned());
+        for (good, ty, value) in [
+            ("1'000", NumType::Int, "1000"),
+            ("0x1'e", NumType::Int, "30"),
+            ("0b1'0", NumType::Int, "2"),
+            ("1'0", NumType::Double, "10.0"),
+            ("1'000.5", NumType::Double, "1000.5"),
+            ("1.0'5", NumType::Double, "1.05"),
+            (".5'5", NumType::Double, "0.55"),
+            ("1e1'0", NumType::Double, "10000000000.0"),
+        ] {
+            assert_eq!(p(good, ty).as_deref(), Ok(value), "{good}");
+        }
+        for bad in ["0x'1", "0X'F", "0b'1", "0'x1", "0x1'", "1'a", "0'1"] {
+            assert!(matches!(p(bad, NumType::Int), Err(NumError::Syntax(_))), "{bad}");
+        }
+        for bad in [
+            ".'02", "1'.5", "1.'5", "1'e5", "1e'5", "1e+'5", "1.5'", "0x'1", "1'.",
+        ] {
+            assert!(
+                matches!(p(bad, NumType::Double), Err(NumError::Syntax(_))),
+                "{bad}"
+            );
+        }
     }
 
     proptest! {

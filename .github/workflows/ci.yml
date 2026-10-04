@@ -214,11 +214,18 @@ jobs:
           mkdir -p "$RUNNER_TEMP/corpus"
           cp examples/*.b2c tests/security/projects/*.b2c "$RUNNER_TEMP/corpus/"
 
+      # The project-file targets share the seeded corpus; `encoders` takes
+      # text, not project files, so it has its own corpus and dictionary.
       - name: Fuzz each target for 60 seconds
         run: |
-          for target in load resolve roundtrip; do
-            cargo "+$FUZZ_TOOLCHAIN" fuzz run "$target" "$RUNNER_TEMP/corpus" -- \
-              -dict=fuzz/b2c.dict -max_len=65536 -max_total_time=60
+          mkdir -p "$RUNNER_TEMP/corpus-encoders"
+          for target in load resolve roundtrip frontend encoders; do
+            corpus="$RUNNER_TEMP/corpus" dict=fuzz/b2c.dict max_len=65536
+            if [ "$target" = encoders ]; then
+              corpus="$RUNNER_TEMP/corpus-encoders" dict=fuzz/encoders.dict max_len=1024
+            fi
+            cargo "+$FUZZ_TOOLCHAIN" fuzz run "$target" "$corpus" -- \
+              "-dict=$dict" "-max_len=$max_len" -max_total_time=60
           done
 
   deny:
