@@ -8,7 +8,8 @@
 
 use std::path::{Path, PathBuf};
 
-use b2c_ir::Diagnostic;
+use b2c_ir::{DiagSource, Diagnostic, Location, Severity};
+use b2c_toolchain::codes::NOT_RUNNABLE;
 use b2c_toolchain::discovery::{Candidate, DiscoveryEnv, discover, explicit_candidate};
 use b2c_toolchain::probe::{ProbeOptions, Toolchain, probe};
 use b2c_toolchain::target::Platform;
@@ -27,6 +28,22 @@ pub enum ToolchainChoice {
     Auto,
     /// This g++ (an absolute path).
     Path(PathBuf),
+}
+
+/// Probes a compiler, turning a failure to check it at all into a
+/// diagnostic.
+fn probe_candidate(candidate: &Candidate) -> Result<Toolchain, Diagnostic> {
+    probe(&candidate.path, &ProbeOptions::default()).map_err(|error| {
+        Diagnostic::error(
+            NOT_RUNNABLE,
+            DiagSource::Toolchain,
+            Location::project(),
+            format!(
+                "The compiler {} could not be checked: {error}.",
+                candidate.found_as.display()
+            ),
+        )
+    })
 }
 
 /// Probe results remembered between runs.
@@ -56,20 +73,20 @@ impl ProbeCache {
 
     /// The probe result for `candidate`, from the cache when it is still
     /// current, otherwise by probing (and remembering) it.
-    fn toolchain(&mut self, candidate: &Candidate) -> Option<Toolchain> {
+    fn toolchain(&mut self, candidate: &Candidate) -> Result<Toolchain, Diagnostic> {
         if let Some(cached) = self
             .entries
             .iter()
             .find(|toolchain| toolchain.path() == candidate.path && toolchain.is_current())
         {
-            return Some(cached.clone());
+            return Ok(cached.clone());
         }
-        let probed = probe(&candidate.path, &ProbeOptions::default()).ok()?;
+        let probed = probe_candidate(candidate)?;
         self.entries
             .retain(|toolchain| toolchain.path() != candidate.path);
         self.entries.push(probed.clone());
         self.changed = true;
-        Some(probed)
+        Ok(probed)
     }
 
     /// Writes the cache back if it changed. Failing to save it only means
@@ -95,6 +112,13 @@ pub(crate) enum Selected {
     Unusable(Vec<Diagnostic>),
 }
 
+/// The warnings and notes to show with a usable toolchain.
+fn usable(candidate: &Candidate, toolchain: Toolchain) -> Selected {
+    let mut notes = candidate.warnings.clone();
+    notes.extend(toolchain.problems.iter().cloned());
+    Selected::Usable(Box::new(toolchain), notes)
+}
+
 /// Chooses the toolchain for a build.
 pub(crate) fn select(choice: &ToolchainChoice, cache_root: &Path) -> Selected {
     let mut cache = ProbeCache::open(cache_root);
@@ -102,35 +126,41 @@ pub(crate) fn select(choice: &ToolchainChoice, cache_root: &Path) -> Selected {
         ToolchainChoice::Path(path) => match explicit_candidate(path, Platform::host()) {
             Err(diagnostic) => Selected::Unusable(vec![diagnostic]),
             Ok(candidate) => match cache.toolchain(&candidate) {
-                Some(toolchain) if toolchain.is_usable() => {
-                    let mut notes = candidate.warnings;
-                    notes.extend(toolchain.problems.iter().cloned());
-                    Selected::Usable(Box::new(toolchain), notes)
-                }
-                Some(toolchain) => {
+                Ok(toolchain) if toolchain.is_usable() => usable(&candidate, toolchain),
+                Ok(toolchain) => {
                     let mut problems = candidate.warnings;
                     problems.extend(toolchain.problems);
                     Selected::Unusable(problems)
                 }
-                None => Selected::Unusable(vec![b2c_toolchain::codes::no_toolchain()]),
+                Err(problem) => Selected::Unusable(vec![problem]),
             },
         },
         ToolchainChoice::Auto => {
             let candidates = discover(&DiscoveryEnv::from_process(vec![cache_root.to_path_buf()]));
-            let usable = candidates.iter().find_map(|candidate| {
-                cache
-                    .toolchain(candidate)
-                    .filter(Toolchain::is_usable)
-                    .map(|toolchain| (candidate, toolchain))
-            });
-            match usable {
-                Some((candidate, toolchain)) => {
-                    let mut notes = candidate.warnings.clone();
-                    notes.extend(toolchain.problems.iter().cloned());
-                    Selected::Usable(Box::new(toolchain), notes)
+            // Why each compiler that was found was rejected, so the user can
+            // fix the one they meant to use.
+            let mut rejected = Vec::new();
+            let mut chosen = None;
+            for candidate in &candidates {
+                match cache.toolchain(candidate) {
+                    Ok(toolchain) if toolchain.is_usable() => {
+                        chosen = Some(usable(candidate, toolchain));
+                        break;
+                    }
+                    Ok(toolchain) => rejected.extend(
+                        toolchain
+                            .problems
+                            .into_iter()
+                            .filter(|problem| problem.severity == Severity::Error),
+                    ),
+                    Err(problem) => rejected.push(problem),
                 }
-                None => Selected::Unusable(vec![b2c_toolchain::codes::no_toolchain()]),
             }
+            chosen.unwrap_or_else(|| {
+                let mut problems = vec![b2c_toolchain::codes::no_toolchain()];
+                problems.extend(rejected);
+                Selected::Unusable(problems)
+            })
         }
     };
     cache.save();
@@ -164,7 +194,7 @@ pub fn list_toolchains(cache_root: Option<&Path>) -> Vec<ToolchainReport> {
         .map(|candidate| {
             let toolchain = match cache.as_mut() {
                 Some(cache) => cache.toolchain(candidate),
-                None => probe(&candidate.path, &ProbeOptions::default()).ok(),
+                None => probe_candidate(candidate),
             };
             report(candidate, toolchain)
         })
@@ -175,18 +205,21 @@ pub fn list_toolchains(cache_root: Option<&Path>) -> Vec<ToolchainReport> {
     reports
 }
 
-fn report(candidate: &Candidate, toolchain: Option<Toolchain>) -> ToolchainReport {
+fn report(candidate: &Candidate, toolchain: Result<Toolchain, Diagnostic>) -> ToolchainReport {
     let mut problems = candidate.warnings.clone();
-    let Some(toolchain) = toolchain else {
-        problems.push(b2c_toolchain::codes::no_toolchain());
-        return ToolchainReport {
-            path: candidate.found_as.clone(),
-            version: None,
-            target: None,
-            standards: Vec::new(),
-            usable: false,
-            problems,
-        };
+    let toolchain = match toolchain {
+        Ok(toolchain) => toolchain,
+        Err(problem) => {
+            problems.push(problem);
+            return ToolchainReport {
+                path: candidate.found_as.clone(),
+                version: None,
+                target: None,
+                standards: Vec::new(),
+                usable: false,
+                problems,
+            };
+        }
     };
     let standards = &toolchain.capabilities.standards;
     let supported = [

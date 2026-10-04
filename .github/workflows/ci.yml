@@ -93,6 +93,12 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
 
+      # Shows what `b2c` finds and why a compiler is rejected; informational,
+      # so it never fails the job (the tests below do).
+      - name: Show the compilers Blocks2Cpp finds
+        shell: bash
+        run: cargo run --locked --quiet -p b2c-cli -- toolchains || true
+
       - name: Test
         run: cargo test --locked
         env:

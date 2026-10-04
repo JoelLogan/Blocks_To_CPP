@@ -24,6 +24,10 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+// Failures to choose a toolchain are user-facing `Diagnostic`s (about 170
+// bytes), made once per build; boxing them would add noise without benefit.
+#![allow(clippy::result_large_err)]
+
 pub mod build_dir;
 mod compile;
 pub mod frontend;
