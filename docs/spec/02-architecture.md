@@ -113,7 +113,7 @@ Blocks_To_CPP/
 └── README.md
 ```
 
-**Layering rules (enforced in CI by dependency checks):**
+**Layering rules (enforced in CI by `tools/check-layering.py`):**
 
 * `b2c-ir` ← `b2c-model` ← `b2c-catalog`; `b2c-model` ← `b2c-lang`;
   `b2c-ir` ← `b2c-codegen`; (`b2c-catalog`, `b2c-lang`, `b2c-codegen`) ←

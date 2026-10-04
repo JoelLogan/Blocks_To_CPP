@@ -43,6 +43,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
 
+      # Which crates may depend on which, and that the pure compiler crates
+      # use no I/O crates (docs/spec/02-architecture.md §2.3).
+      - name: Crate layering rules
+        run: python3 tools/check-layering.py
+
       # The fuzz targets live in their own workspace (fuzz/); make sure they
       # still build with the pinned stable toolchain.
       - name: Check the fuzz targets
