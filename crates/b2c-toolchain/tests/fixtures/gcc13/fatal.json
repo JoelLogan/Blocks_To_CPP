@@ -1,0 +1,1 @@
+[{"kind": "fatal error", "message": "missing_header.hpp: No such file or directory", "children": [], "column-origin": 1, "locations": [{"caret": {"file": "src/fatal.cpp", "line": 1, "display-column": 10, "byte-column": 10, "column": 10}, "finish": {"file": "src/fatal.cpp", "line": 1, "display-column": 29, "byte-column": 29, "column": 29}}], "escape-source": false}]

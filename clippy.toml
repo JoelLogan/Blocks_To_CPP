@@ -1,4 +1,4 @@
-doc-valid-idents = ["Blocks2Cpp", "WebAssembly", "TypeScript", "AddressSanitizer", "UndefinedBehaviorSanitizer", "SemVer", ".."]
+doc-valid-idents = ["Blocks2Cpp", "WebAssembly", "TypeScript", "AddressSanitizer", "LeakSanitizer", "UndefinedBehaviorSanitizer", "SemVer", ".."]
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
