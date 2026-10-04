@@ -22,9 +22,10 @@ run in a built-in terminal.
   compiler flags never come from project files, and block text can't inject
   code.
 
-> **Project status:** the compiler works from the command line (milestone M1
-> of the [roadmap](docs/spec/10-roadmap.md)); the desktop editor is next. The
-> full technical specification is in [`docs/spec/`](docs/spec/README.md).
+> **Project status:** the compiler works from the command line, and the
+> desktop app opens with an empty block canvas (milestones M0 and M1 of the
+> [roadmap](docs/spec/10-roadmap.md)). The block editor itself is next (M2).
+> The full technical specification is in [`docs/spec/`](docs/spec/README.md).
 
 ## Try it
 
@@ -43,6 +44,15 @@ cargo build --release -p b2c-cli
 
 [`examples/`](examples/README.md) has 15 projects to try, and
 [`docs/reference/cli.md`](docs/reference/cli.md) describes every command.
+
+The desktop app shell also needs [Node.js](https://nodejs.org) 22.13 or newer
+with [pnpm](https://pnpm.io), and on Linux the WebKitGTK libraries
+([details](apps/desktop/README.md#requirements)):
+
+```sh
+pnpm install
+pnpm desktop:dev      # open the app, reloading as you edit
+```
 
 ## Documentation
 

@@ -26,4 +26,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - The `b2c` command-line tool: `check`, `generate`, `build`, `run`,
   `toolchains`, `migrate` and `fmt`.
 - Fifteen example projects with golden tests, a malicious-project regression
-  suite, fuzz targets, and CI on Linux and Windows with security scanning.
+  suite, fuzz targets, and CI on Linux (GCC 11, 13 and 15) and Windows (MSYS2)
+  with security scanning.
+- The desktop app shell (milestone M0): a Tauri 2 window with an empty Blockly
+  canvas (Zelos renderer) and placeholder panels, hardened with the specified
+  Content Security Policy, the isolation pattern and minimal capabilities, and
+  built and checked in CI on Linux and Windows.

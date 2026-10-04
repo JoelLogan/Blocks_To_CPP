@@ -1,0 +1,15 @@
+<!doctype html>
+<!--
+  The isolation application (docs/spec/08-security.md §8.8). Tauri loads it in a
+  sandboxed iframe and passes every IPC message from the editor through
+  `window.__TAURI_ISOLATION_HOOK__` before the backend sees it.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Blocks2Cpp IPC isolation</title>
+  </head>
+  <body>
+    <script src="index.js"></script>
+  </body>
+</html>

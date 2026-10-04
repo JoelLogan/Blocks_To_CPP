@@ -1,0 +1,33 @@
+[package]
+name = "blocks2cpp-desktop"
+description = "The Blocks2Cpp desktop app: a thin Tauri 2 shell around the block editor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# Every dependency needs a justification (docs/spec/08-security.md §8.9); see
+# apps/desktop/README.md. Keep `tauri` on the same minor version as the
+# `@tauri-apps/api` and `@tauri-apps/cli` packages in ../package.json.
+[build-dependencies]
+# `isolation` must match the isolation pattern in tauri.conf.json (tauri-build checks it).
+tauri-build = { version = "2.7.0", features = ["isolation"] }
+
+[dependencies]
+# Features: the WebView2/WebKitGTK runtime (`wry`), compressed embedded assets,
+# the isolation pattern, modern Windows controls and X11 on Linux. Left out on
+# purpose: `dynamic-acl` (capabilities are fixed at build time), `devtools` (so
+# release builds have no web inspector), `tray-icon`, and `dbus` (unused, and it
+# would need libdbus to build).
+tauri = { version = "2.12.0", default-features = false, features = [
+  "wry",
+  "compression",
+  "isolation",
+  "common-controls-v6",
+  "x11",
+] }
+
+[lints]
+workspace = true

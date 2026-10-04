@@ -1,0 +1,181 @@
+/*
+ * The window layout (docs/spec/04-user-interface.md §4.1) and the colour tokens.
+ * System fonts only: the app loads nothing from the network (docs/spec/08-security.md §8.8).
+ */
+
+:root {
+  color-scheme: light dark;
+  --b2c-font:
+    system-ui, 'Segoe UI', Ubuntu, Cantarell, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+
+  --b2c-bg: #ffffff;
+  --b2c-surface: #f0f2f7;
+  --b2c-border: #d5dae5;
+  --b2c-text: #1b2130;
+  --b2c-text-muted: #5a6478;
+  --b2c-accent: #ff9f1c;
+  --b2c-toolbar-bg: #1d2b4f;
+  --b2c-toolbar-text: #ffffff;
+  /* Matches the Blockly theme in src/editor/BlocklyWorkspace.tsx. */
+  --b2c-canvas: #f7f8fb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --b2c-bg: #11141b;
+    --b2c-surface: #1b1f29;
+    --b2c-border: #2e3442;
+    --b2c-text: #e6e9f0;
+    --b2c-text-muted: #a3abbd;
+    --b2c-toolbar-bg: #151c30;
+    --b2c-canvas: #191d26;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--b2c-bg);
+  color: var(--b2c-text);
+  font-family: var(--b2c-font);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow: hidden;
+}
+
+.shell {
+  display: grid;
+  height: 100%;
+  grid-template-columns: 200px minmax(0, 1fr) 320px;
+  grid-template-rows: auto minmax(0, 1fr) 160px auto;
+  grid-template-areas:
+    'toolbar toolbar toolbar'
+    'toolbox workspace code'
+    'dock dock dock'
+    'status status status';
+}
+
+.toolbar {
+  grid-area: toolbar;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--b2c-toolbar-bg);
+  color: var(--b2c-toolbar-text);
+}
+
+.app-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.app-name::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 2px;
+  background: var(--b2c-accent);
+}
+
+.toolbox-panel,
+.code-panel {
+  background: var(--b2c-surface);
+  overflow: auto;
+}
+
+.toolbox-panel {
+  grid-area: toolbox;
+  border-right: 1px solid var(--b2c-border);
+}
+
+.code-panel {
+  grid-area: code;
+  border-left: 1px solid var(--b2c-border);
+}
+
+.workspace {
+  grid-area: workspace;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: var(--b2c-canvas);
+}
+
+/* Blockly needs a sized, positioned container. */
+.blockly-host {
+  position: absolute;
+  inset: 0;
+}
+
+.dock {
+  grid-area: dock;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--b2c-border);
+  background: var(--b2c-bg);
+  overflow: auto;
+}
+
+.dock-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--b2c-border);
+  background: var(--b2c-surface);
+}
+
+.dock-tab {
+  padding: 6px 14px;
+  color: var(--b2c-text-muted);
+}
+
+.dock-tab:first-child {
+  color: var(--b2c-text);
+  box-shadow: inset 0 -2px 0 var(--b2c-accent);
+}
+
+.dock .placeholder-text {
+  padding: 0 14px;
+}
+
+.status-bar {
+  grid-area: status;
+  display: flex;
+  gap: 16px;
+  padding: 3px 12px;
+  border-top: 1px solid var(--b2c-border);
+  background: var(--b2c-surface);
+  color: var(--b2c-text-muted);
+  font-size: 12px;
+}
+
+.panel-placeholder {
+  padding: 12px 14px;
+}
+
+.panel-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--b2c-text-muted);
+}
+
+.placeholder-text {
+  margin: 8px 0;
+  color: var(--b2c-text-muted);
+}

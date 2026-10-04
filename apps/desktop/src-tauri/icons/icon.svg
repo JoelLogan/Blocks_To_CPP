@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Source of the app icon. apps/desktop/README.md explains how to regenerate the PNG and ICO files. -->
+  <rect x="32" y="32" width="960" height="960" rx="208" fill="#1d2b4f"/>
+  <!-- Lower block (blue), drawn first so the upper block's tab sits in its notch. -->
+  <path fill="#4c97ff" d="M216 492 H272 l24 28 h72 l24 -28 H704 a24 24 0 0 1 24 24 V732 a24 24 0 0 1 -24 24 H392 l-24 28 h-72 l-24 -28 H216 a24 24 0 0 1 -24 -24 V516 a24 24 0 0 1 24 -24 Z"/>
+  <rect x="272" y="584" width="320" height="84" rx="42" fill="#ffffff" fill-opacity="0.92"/>
+  <!-- Upper block (orange) with "C++". -->
+  <path fill="#ff9f1c" d="M216 240 H272 l24 28 h72 l24 -28 H808 a24 24 0 0 1 24 24 V468 a24 24 0 0 1 -24 24 H392 l-24 28 h-72 l-24 -28 H216 a24 24 0 0 1 -24 -24 V264 a24 24 0 0 1 24 -24 Z"/>
+  <path d="M386 324 A72 72 0 1 0 386 420" fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round"/>
+  <rect x="452" y="355" width="104" height="34" rx="10" fill="#ffffff"/>
+  <rect x="487" y="320" width="34" height="104" rx="10" fill="#ffffff"/>
+  <rect x="604" y="355" width="104" height="34" rx="10" fill="#ffffff"/>
+  <rect x="639" y="320" width="34" height="104" rx="10" fill="#ffffff"/>
+</svg>

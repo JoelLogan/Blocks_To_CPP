@@ -1,6 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "apps/desktop/src-tauri"]
+# A plain `cargo build`, `test` or `clippy` at the root builds the compiler crates and the CLI
+# only, so it needs no webview libraries. The desktop app is built with `-p blocks2cpp-desktop`
+# (see apps/desktop/README.md and .github/workflows/desktop.yml).
+default-members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"

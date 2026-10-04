@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Blocks2Cpp",
+  "version": "../package.json",
+  "identifier": "org.blocks2cpp.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Blocks2Cpp",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 560,
+        "center": true,
+        "create": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
+      "dangerousDisableAssetCspModification": ["style-src"],
+      "freezePrototype": true,
+      "pattern": {
+        "use": "isolation",
+        "options": {
+          "dir": "isolation"
+        }
+      },
+      "capabilities": ["main-window"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis", "appimage", "deb", "rpm"],
+    "category": "DeveloperTool",
+    "shortDescription": "Build real C++ programs by snapping blocks together",
+    "longDescription": "Blocks2Cpp is a Scratch-style block editor that turns blocks into readable, standard C++ and compiles it with the g++ already on your system.",
+    "publisher": "The Blocks2Cpp authors",
+    "copyright": "Copyright The Blocks2Cpp authors. Licensed under the Apache License, Version 2.0.",
+    "license": "Apache-2.0",
+    "licenseFile": "../../../LICENSE",
+    "homepage": "https://github.com/JoelLogan/Blocks_To_CPP",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ]
+  }
+}

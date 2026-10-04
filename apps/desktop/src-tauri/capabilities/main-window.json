@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "What the editor window may call in the backend: only our own commands, and no core or plugin permissions (docs/spec/08-security.md §8.8).",
+  "local": true,
+  "windows": ["main"],
+  "permissions": ["allow-app-version"]
+}

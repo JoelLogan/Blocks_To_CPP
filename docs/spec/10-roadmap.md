@@ -4,15 +4,18 @@
 
 ## 10.1 Milestones
 
-> **Implementation status (2026-10-04).** The headless compiler of **M1** is
-> implemented: loading and validating projects, the block catalog, analysis,
-> C++ generation with source maps, toolchain discovery and probing, building
-> with g++ and running programs, all behind the `b2c` command-line tool
+> **Implementation status (2026-10-04).** **M1** is done: loading and
+> validating projects, the block catalog, analysis, C++ generation with source
+> maps, toolchain discovery and probing, building with g++ and running
+> programs, all behind the `b2c` command-line tool
 > ([reference](../reference/cli.md)). Fifteen example projects pass the golden
-> tests on Linux (GCC 13) and Windows (MSYS2 UCRT64), together with the
-> malicious-project suite and fuzz smoke tests. Still open: the M0 desktop
-> shell (Tauri with an empty Blockly canvas), branch protection, and the
-> GCC 11/15 test matrix of the M1 exit criterion.
+> tests on Linux with GCC 11, 13 and 15 and on Windows with MSYS2 UCRT64,
+> together with the malicious-project suite and fuzz smoke tests. **M0** is
+> done apart from branch protection, a repository setting: the desktop shell
+> ([apps/desktop](../../apps/desktop/README.md)) is a Tauri 2 window with an
+> empty Blockly canvas, the specified Content Security Policy, the isolation
+> pattern and minimal capabilities, built and start-checked in CI on Linux and
+> Windows.
 
 Each milestone ends with a demo, a threat-model review
 ([08 §8.13](08-security.md#813-continuous-security-process)) and updated
