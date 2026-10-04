@@ -101,6 +101,8 @@ pub const LIBRARIES_UNSUPPORTED: &str = "B2C-E0702";
 const COMPILER_FAILED: &str = "C:failed";
 /// The compiler hit its time or memory limit.
 const COMPILER_LIMIT: &str = "C:limit";
+/// The compiler crashed (an internal compiler error).
+const COMPILER_CRASHED: &str = "C:crashed";
 
 /// Builds a project: generates C++, then compiles and links it with g++ in
 /// the build cache. Nothing is compiled again when the generated sources and
@@ -244,8 +246,10 @@ fn compile(
         &HostEnv::from_process(&[]),
     );
     for step in &steps {
-        if !run_step(step, &dir, &env, &generated.source_map, diagnostics)? {
-            return Ok(BuildOutcome::ProjectErrors);
+        match run_step(step, &dir, &env, &generated.source_map, diagnostics)? {
+            StepResult::Succeeded => {}
+            StepResult::Failed => return Ok(BuildOutcome::ProjectErrors),
+            StepResult::Crashed => return Ok(BuildOutcome::ToolchainProblem),
         }
     }
     restrict_permissions(&executable);
@@ -253,22 +257,34 @@ fn compile(
     Ok(BuildOutcome::Built { executable })
 }
 
-/// Runs one compiler step and records its messages. Returns whether it
-/// succeeded.
+/// How one compiler step ended.
+enum StepResult {
+    Succeeded,
+    /// It failed; the recorded diagnostics say why.
+    Failed,
+    /// The compiler crashed, so the compiler, not the project, is at fault.
+    Crashed,
+}
+
+/// Runs one compiler step and records its messages.
 fn run_step(
     step: &CompilerCommand,
     dir: &BuildDir,
     env: &CompilerEnv,
     source_map: &SourceMap,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Result<bool, BuildError> {
-    let command = step.process_command(&dir.diag_dir(), env, None)?;
-    let captured = b2c_process::run_captured(&command)?;
-    let parsed = step.read_diagnostics(&dir.diag_dir(), &captured.stderr);
-    let mapped = map_messages(&parsed, source_map, &dir.gen_dir());
-    let explained = mapped
-        .iter()
-        .any(|diagnostic| diagnostic.severity == Severity::Error);
+) -> Result<StepResult, BuildError> {
+    let mut run = run_once(step, dir, env, source_map)?;
+    if run.crashed() {
+        // Some GCC releases crash only while writing SARIF or JSON
+        // diagnostics; plain text avoids that code.
+        if let Some(plain) = step.with_plain_diagnostics() {
+            run = run_once(&plain, dir, env, source_map)?;
+        }
+    }
+    let crashed = run.crashed();
+    let explained = run.explained();
+    let StepRun { captured, mapped } = run;
     diagnostics.extend(mapped);
     if captured.timed_out || captured.too_many_processes {
         diagnostics.push(Diagnostic::error(
@@ -277,13 +293,23 @@ fn run_step(
             Location::project(),
             "The compiler ran out of time or memory while building this program.",
         ));
-        return Ok(false);
+        return Ok(StepResult::Failed);
     }
     if captured.status.success() {
-        return Ok(true);
+        return Ok(StepResult::Succeeded);
     }
-    if !explained {
-        let mut diagnostic = Diagnostic::error(
+    if explained {
+        return Ok(StepResult::Failed);
+    }
+    let mut diagnostic = if crashed {
+        Diagnostic::error(
+            COMPILER_CRASHED,
+            DiagSource::Compiler,
+            Location::project(),
+            "The compiler crashed (an internal compiler error in g++) while building this program. This is a bug in g++, not in your project; try a different g++ version.",
+        )
+    } else {
+        Diagnostic::error(
             COMPILER_FAILED,
             DiagSource::Compiler,
             Location::project(),
@@ -291,11 +317,52 @@ fn run_step(
                 "The compiler stopped without explaining why ({}).",
                 captured.status.describe()
             ),
-        );
-        diagnostic.raw = Some(String::from_utf8_lossy(&captured.stderr).into_owned());
-        diagnostics.push(diagnostic);
+        )
+    };
+    diagnostic.raw = Some(String::from_utf8_lossy(&captured.stderr).into_owned());
+    diagnostics.push(diagnostic);
+    Ok(if crashed {
+        StepResult::Crashed
+    } else {
+        StepResult::Failed
+    })
+}
+
+/// One run of a compiler step: its output and its messages, mapped to
+/// blocks.
+struct StepRun {
+    captured: b2c_process::Captured,
+    mapped: Vec<Diagnostic>,
+}
+
+impl StepRun {
+    /// Whether any message is an error.
+    fn explained(&self) -> bool {
+        self.mapped
+            .iter()
+            .any(|diagnostic| diagnostic.severity == Severity::Error)
     }
-    Ok(false)
+
+    /// Whether the compiler crashed without reporting an error first.
+    fn crashed(&self) -> bool {
+        !self.captured.status.success()
+            && !self.captured.timed_out
+            && !self.explained()
+            && String::from_utf8_lossy(&self.captured.stderr).contains("internal compiler error")
+    }
+}
+
+fn run_once(
+    step: &CompilerCommand,
+    dir: &BuildDir,
+    env: &CompilerEnv,
+    source_map: &SourceMap,
+) -> Result<StepRun, BuildError> {
+    let command = step.process_command(&dir.diag_dir(), env, None)?;
+    let captured = b2c_process::run_captured(&command)?;
+    let parsed = step.read_diagnostics(&dir.diag_dir(), &captured.stderr);
+    let mapped = map_messages(&parsed, source_map, &dir.gen_dir());
+    Ok(StepRun { captured, mapped })
 }
 
 /// `<config>-<hash8>`: one build folder per configuration, toolchain and

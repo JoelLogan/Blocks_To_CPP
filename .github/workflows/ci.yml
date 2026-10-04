@@ -157,7 +157,7 @@ jobs:
         run: cargo run --locked --quiet -p b2c-cli -- toolchains || true
 
       - name: Test
-        run: cargo test --locked -p b2c-lang -p b2c-codegen -p b2c-build -p b2c-cli
+        run: cargo test --locked --no-fail-fast -p b2c-lang -p b2c-codegen -p b2c-build -p b2c-cli
         env:
           B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
 

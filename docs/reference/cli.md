@@ -78,7 +78,7 @@ already formatted (exit code `1` if not), which is useful in CI.
 | `0` | Success |
 | `1` | The project has errors (or, for `fmt --check`, is not formatted) |
 | `2` | Usage problem: bad arguments, or a file that cannot be read or written |
-| `3` | Toolchain problem: no suitable g++ found, or it is broken |
+| `3` | Toolchain problem: no suitable g++ found, it is broken, or it crashed |
 
 `b2c run` returns the **program's own exit code**, except:
 

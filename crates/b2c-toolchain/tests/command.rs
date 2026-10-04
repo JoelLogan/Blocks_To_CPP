@@ -221,6 +221,57 @@ fn gcc14_uses_fhardened() {
 }
 
 #[test]
+fn gcc14_debug_builds_use_single_hardening_flags() {
+    // -fhardened would turn on _FORTIFY_SOURCE and _GLIBCXX_ASSERTIONS, which
+    // an unoptimised build with AddressSanitizer cannot have (-Whardened).
+    let tc = toolchain(
+        "/usr/bin/g++-14",
+        "x86_64-linux-gnu",
+        14,
+        DiagnosticsFormat::SarifFile,
+    );
+    let args = strings(
+        &plan(&tc, &debug())
+            .compile_and_link(Path::new("/g/main.cpp"), Path::new("/o/main"))
+            .args,
+    );
+    for flag in ["-O0", "-D_GLIBCXX_ASSERTIONS", "-fstack-protector-strong", "-pie"] {
+        assert!(args.contains(&flag.to_owned()), "{flag} missing from {args:?}");
+    }
+    for flag in ["-fhardened", "-D_FORTIFY_SOURCE=3"] {
+        assert!(!args.contains(&flag.to_owned()), "{flag} in {args:?}");
+    }
+}
+
+#[test]
+fn structured_diagnostics_can_be_swapped_for_plain_text() {
+    for (major, format, removed) in [
+        (
+            13,
+            DiagnosticsFormat::SarifFile,
+            "-fdiagnostics-format=sarif-file",
+        ),
+        (11, DiagnosticsFormat::Json, "-fdiagnostics-format=json"),
+        (15, DiagnosticsFormat::AddOutputSarif, "-fdiagnostics-add-output="),
+    ] {
+        let tc = toolchain("/usr/bin/g++", "x86_64-linux-gnu", major, format);
+        let step = plan(&tc, &debug()).compile_and_link(Path::new("/g/main.cpp"), Path::new("/o/main"));
+        let plain = step.with_plain_diagnostics().unwrap();
+        let args = strings(&plain.args);
+        assert!(!args.iter().any(|a| a.starts_with(removed)), "{args:?}");
+        assert_eq!(
+            args.iter().filter(|a| *a == "-fdiagnostics-plain-output").count(),
+            1,
+            "{args:?}"
+        );
+        assert_eq!(args.len(), step.args.len(), "only the format flag changes");
+        assert_eq!(plain.format, DiagnosticsFormat::Plain);
+        assert_eq!(plain.sarif_file, None);
+        assert!(plain.with_plain_diagnostics().is_none());
+    }
+}
+
+#[test]
 fn gcc15_writes_sarif_beside_text() {
     let tc = toolchain(
         "/usr/bin/g++-15",

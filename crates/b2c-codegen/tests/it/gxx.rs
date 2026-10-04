@@ -14,16 +14,38 @@ use std::time::{Duration, Instant};
 use b2c_ir::source_map::{FileKind, GeneratedProject};
 use tempfile::TempDir;
 
-/// Warning flags every generated file must compile cleanly with.
-pub(crate) const WARNINGS: &[&str] = &[
+/// Warning flags every generated file must compile cleanly with, plus
+/// `-Wbidi-chars=any` on GCC 12 and newer ([`warnings`]).
+const WARNINGS: &[&str] = &[
     "-Wall",
     "-Wextra",
     "-Wpedantic",
     "-Werror",
     "-Wshadow",
     "-Wconversion",
-    "-Wbidi-chars=any",
 ];
+
+/// [`WARNINGS`] for the g++ on `PATH`.
+fn warnings() -> Vec<&'static str> {
+    let bidi = (major_version() >= 12).then_some("-Wbidi-chars=any");
+    WARNINGS.iter().copied().chain(bidi).collect()
+}
+
+/// The major version of the g++ on `PATH` (0 if unknown).
+fn major_version() -> u32 {
+    static MAJOR: OnceLock<u32> = OnceLock::new();
+    *MAJOR.get_or_init(|| {
+        command("g++")
+            .arg("-dumpfullversion")
+            .output()
+            .ok()
+            .and_then(|output| {
+                let version = String::from_utf8_lossy(&output.stdout).into_owned();
+                version.trim().split('.').next()?.parse().ok()
+            })
+            .unwrap_or(0)
+    })
+}
 
 /// How long a test program may run.
 const RUN_TIMEOUT: Duration = Duration::from_secs(20);
@@ -81,11 +103,12 @@ pub(crate) fn syntax_check(project: &GeneratedProject, standard: &str) {
         return;
     }
     let dir = write_files(project);
+    let warnings = warnings();
     let std_flag = format!("-std={standard}");
     for file in project.files.iter().filter(|f| f.kind == FileKind::Source) {
         let path = dir.path().join(&file.path);
         let mut args: Vec<&std::ffi::OsStr> = vec![std_flag.as_ref()];
-        args.extend(WARNINGS.iter().map(std::ffi::OsStr::new));
+        args.extend(warnings.iter().map(std::ffi::OsStr::new));
         args.extend([
             "-fsyntax-only".as_ref(),
             "-I".as_ref(),
@@ -126,6 +149,7 @@ pub(crate) fn build(project: &GeneratedProject, extra: &[&str]) -> Option<Execut
         return None;
     }
     let dir = write_files(project);
+    let warnings = warnings();
     let path = dir.path().join("program");
     let sources: Vec<PathBuf> = project
         .files
@@ -134,7 +158,7 @@ pub(crate) fn build(project: &GeneratedProject, extra: &[&str]) -> Option<Execut
         .map(|f| dir.path().join(&f.path))
         .collect();
     let mut args: Vec<&std::ffi::OsStr> = vec!["-std=c++20".as_ref(), "-O0".as_ref()];
-    args.extend(WARNINGS.iter().chain(extra).map(std::ffi::OsStr::new));
+    args.extend(warnings.iter().chain(extra).map(std::ffi::OsStr::new));
     args.extend(["-I".as_ref(), dir.path().as_os_str()]);
     args.extend(sources.iter().map(|p| p.as_os_str()));
     args.extend(["-o".as_ref(), path.as_os_str()]);

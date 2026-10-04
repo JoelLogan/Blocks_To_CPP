@@ -480,12 +480,15 @@ impl CommandPlan {
     ) {
         let hardening = &inputs.toolchain.capabilities.hardening;
         let mut dropped: Vec<&str> = Vec::new();
+        // glibc only fortifies optimised code (and warns otherwise), and
+        // fortified functions hide errors from AddressSanitizer.
+        let fortify = !debug_like && !address;
         match platform {
-            Platform::Linux if hardening.fhardened => self.both_flag("-fhardened"),
+            // -fhardened includes _FORTIFY_SOURCE and _GLIBCXX_ASSERTIONS, so
+            // GCC warns (-Whardened) when a debug build cannot have them.
+            Platform::Linux if hardening.fhardened && fortify => self.both_flag("-fhardened"),
             Platform::Linux => {
-                // glibc only fortifies optimised code (and warns otherwise),
-                // and fortified functions hide errors from AddressSanitizer.
-                if !debug_like && !address {
+                if fortify {
                     if hardening.fortify_source {
                         self.compile_flag("-U_FORTIFY_SOURCE");
                         self.compile_flag(if major >= 12 {
@@ -579,6 +582,42 @@ impl CompilerCommand {
             .envs(env.vars.iter().cloned())
             .limits(compiler_limits(timeout.unwrap_or(DEFAULT_COMPILE_TIMEOUT)));
         Ok(command)
+    }
+
+    /// The same step with plain-text diagnostics instead of SARIF or JSON,
+    /// or `None` if it already uses plain text.
+    ///
+    /// Some GCC releases crash ("internal compiler error") while writing
+    /// structured diagnostics for a valid program: GCC 13 with
+    /// `-fdiagnostics-format=sarif-file` and `-Wextra`, for a function that
+    /// returns a `std::string` and ignores a parameter. Builds retry such a
+    /// step with this.
+    #[must_use]
+    pub fn with_plain_diagnostics(&self) -> Option<Self> {
+        if self.format == DiagnosticsFormat::Plain {
+            return None;
+        }
+        let mut replaced = false;
+        let args = self
+            .args
+            .iter()
+            .filter_map(|arg| {
+                let text = arg.to_string_lossy();
+                if text.starts_with("-fdiagnostics-format=") || text.starts_with("-fdiagnostics-add-output=")
+                {
+                    (!std::mem::replace(&mut replaced, true))
+                        .then(|| OsString::from("-fdiagnostics-plain-output"))
+                } else {
+                    Some(arg.clone())
+                }
+            })
+            .collect();
+        Some(Self {
+            program: self.program.clone(),
+            args,
+            format: DiagnosticsFormat::Plain,
+            sarif_file: None,
+        })
     }
 
     /// Parses this step's diagnostics: the SARIF file in `working_dir` (read

@@ -186,9 +186,10 @@ impl LibraryProfile {
     /// ```
     /// use b2c_toolchain::flags::{LibraryProfile, LinkName, Subsystem};
     ///
+    /// let sfml = std::env::temp_dir().join("sfml"); // any absolute folder
     /// let profile = LibraryProfile::new(
-    ///     vec!["/opt/sfml/include".into()],
-    ///     vec!["/opt/sfml/lib".into()],
+    ///     vec![sfml.join("include")],
+    ///     vec![sfml.join("lib")],
     ///     vec![LinkName::new("sfml-graphics")?],
     ///     vec![],
     ///     Subsystem::Console,
@@ -290,8 +291,17 @@ pub struct PkgConfigFlags {
 /// ```
 /// use b2c_toolchain::flags::filter_pkg_config;
 ///
+/// # let root = if cfg!(windows) { "C:/" } else { "/" };
+/// # let output = format!("-I{root}usr/include/SDL2 -D_REENTRANT -lSDL2 -fplugin={root}tmp/evil.so");
+/// # let sdl = format!("-I{root}usr/include/SDL2");
+/// # /*
 /// let flags = filter_pkg_config("-I/usr/include/SDL2 -D_REENTRANT -lSDL2 -fplugin=/tmp/evil.so");
+/// # */
+/// # let flags = filter_pkg_config(&output);
+/// # /*
 /// assert_eq!(flags.compile, ["-I/usr/include/SDL2", "-D_REENTRANT"]);
+/// # */
+/// # assert_eq!(flags.compile, [sdl.as_str(), "-D_REENTRANT"]);
 /// assert_eq!(flags.link, ["-lSDL2"]);
 /// assert_eq!(flags.dropped.len(), 1);
 /// ```

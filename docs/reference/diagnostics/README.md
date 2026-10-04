@@ -31,6 +31,7 @@ These messages have codes starting with `C:` instead of `B2C-`:
 | `C:link` | A linker error, for example an undefined reference |
 | `C:limit` | The compiler ran out of time or memory |
 | `C:failed` | The compiler failed without saying why (its output is attached) |
+| `C:crashed` | g++ itself crashed (an internal compiler error). This is a bug in that g++ release, not in the project; `b2c` exits with `3`. Builds first retry with plain-text messages, which avoids known crashes in GCC 13's SARIF output |
 | `C:truncated` | There were more messages than can be shown |
 
 The original compiler text is always attached. Blocks the analyser accepts
