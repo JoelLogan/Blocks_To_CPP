@@ -1,13 +1,14 @@
 //! Commands that only need the pure pipeline: `check`, `generate`, `fmt` and
 //! `migrate`.
 
+use std::io::IsTerminal as _;
 use std::path::Path;
 
 use b2c_build::{FrontendOptions, run_frontend};
 
 use super::{err, fail, out};
 use crate::project_file::{self, shown};
-use crate::report::{self, BlockIndex};
+use crate::report::{self, BlockIndex, json_terminal_safe};
 use crate::{Format, Status};
 
 /// `b2c check`: report every problem; succeed when there are no errors.
@@ -148,7 +149,14 @@ pub(crate) fn migrate(path: &Path, in_place: bool) -> Status {
     if in_place {
         write_back(path, &canonical)
     } else {
-        out(&canonical);
+        // Project text may hold control and invisible characters. Escaped,
+        // the JSON is the same but cannot drive the terminal; piped output
+        // stays byte for byte canonical.
+        if std::io::stdout().is_terminal() {
+            out(&json_terminal_safe(&canonical));
+        } else {
+            out(&canonical);
+        }
         Status::Success
     }
 }

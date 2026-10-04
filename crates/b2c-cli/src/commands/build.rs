@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use b2c_build::{
-    BuildOutcome, BuildReport, BuildRequest, Configuration, ProgramExit, ProgramInput, RunRequest,
-    ToolchainChoice,
+    BuildError, BuildOutcome, BuildReport, BuildRequest, Configuration, ProgramExit, ProgramInput,
+    RunRequest, ToolchainChoice,
 };
 use b2c_ir::{Diagnostic, Severity};
 use b2c_model::WorkingDirectory;
@@ -25,10 +25,14 @@ impl From<Config> for Configuration {
     }
 }
 
-/// The cache folder: `--cache-dir`, or the per-user default.
+/// The cache folder: `--cache-dir` (made absolute, as the compiler's working
+/// folder inside it must be), or the per-user default.
 fn cache_root(cache_dir: Option<&Path>) -> Result<PathBuf, Status> {
     match cache_dir {
-        Some(dir) => Ok(dir.to_path_buf()),
+        Some(dir) => std::path::absolute(dir).map_err(|error| {
+            fail(&format!("cannot use the cache folder {}: {error}", shown(dir)));
+            Status::Usage
+        }),
         None => b2c_build::default_cache_root().ok_or_else(|| {
             fail("cannot find a folder for the build cache; pass --cache-dir <dir>");
             Status::Usage
@@ -66,7 +70,11 @@ fn build_project(
     };
     let report = b2c_build::build(&bytes, &request).map_err(|error| {
         fail(&terminal_safe(&error.to_string()));
-        Status::Usage
+        match error {
+            // The compiler exists (it was probed) but could not be started.
+            BuildError::Process(_) => Status::Toolchain,
+            BuildError::BuildDir(_) => Status::Usage,
+        }
     })?;
     // Notes (a sanitizer the compiler lacks, and so on) would repeat on every
     // build; `b2c check --format json` and the app show them.
@@ -99,13 +107,13 @@ pub(crate) fn build(
     match report.outcome {
         BuildOutcome::Built { executable } => {
             let shown_path = match out_path {
-                Some(destination) => match std::fs::copy(&executable, destination) {
-                    Ok(_) => destination.to_path_buf(),
+                Some(destination) => match install(&executable, destination) {
+                    Ok(()) => destination.to_path_buf(),
                     Err(error) => {
-                        fail(&format!(
+                        fail(&terminal_safe(&format!(
                             "cannot copy the program to {}: {error}",
                             shown(destination)
-                        ));
+                        )));
                         return Status::Usage;
                     }
                 },
@@ -117,6 +125,14 @@ pub(crate) fn build(
         BuildOutcome::ProjectErrors => Status::ProjectErrors,
         BuildOutcome::ToolchainProblem => Status::Toolchain,
     }
+}
+
+/// Copies the built program to `destination` like every other file `b2c`
+/// writes: atomically, never through a link, and executable.
+fn install(executable: &Path, destination: &Path) -> Result<(), String> {
+    let contents = std::fs::read(executable).map_err(|error| error.to_string())?;
+    let destination = std::path::absolute(destination).map_err(|error| error.to_string())?;
+    b2c_build::write_executable(&destination, &contents).map_err(|error| error.to_string())
 }
 
 /// `b2c run`: build if needed, then run the program with the terminal (or

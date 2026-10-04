@@ -31,15 +31,34 @@ pub(crate) fn terminal_safe(text: &str) -> String {
     out
 }
 
+/// [`terminal_safe`] for JSON text: each unsafe character (outside the JSON
+/// structure they can only occur inside strings) becomes a `\uXXXX` escape,
+/// so the text still means the same JSON value.
+pub(crate) fn json_terminal_safe(json: &str) -> String {
+    let mut out = String::with_capacity(json.len());
+    for c in json.chars() {
+        if (c.is_control() && c != '\n' && c != '\t') || is_invisible_format(c) {
+            let mut units = [0_u16; 2];
+            for unit in c.encode_utf16(&mut units) {
+                let _ = write!(out, "\\u{unit:04x}");
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Characters that change how text is displayed without being visible
-/// (bidirectional controls, zero-width characters, word joiner, BOM).
+/// (bidirectional controls, zero-width characters, word joiner, BOM, tags).
 fn is_invisible_format(c: char) -> bool {
     matches!(c,
         '\u{00AD}' | '\u{061C}' | '\u{180E}'
         | '\u{200B}'..='\u{200F}'
         | '\u{2028}'..='\u{202E}'
         | '\u{2060}'..='\u{206F}'
-        | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}')
+        | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}'
+        | '\u{E0000}'..='\u{E007F}')
 }
 
 /// Block IDs to block type IDs, for friendlier locations.
@@ -253,6 +272,23 @@ mod tests {
         assert_eq!(terminal_safe("\u{9b}31m"), "\\u{009B}31m");
         assert_eq!(terminal_safe("line\nnext\ttab é ✓"), "line\nnext\ttab é ✓");
         assert_eq!(terminal_safe("cr\rlf"), "cr\\u{000D}lf");
+    }
+
+    #[test]
+    fn json_keeps_its_meaning_but_cannot_drive_the_terminal() {
+        let value = serde_json::json!({"name": "Hi\u{9b}2J\u{202E}\u{E0041}\u{2028}ok", "n": 1});
+        let json = serde_json::to_string_pretty(&value).unwrap();
+        let safe = json_terminal_safe(&json);
+        assert!(safe.chars().all(|c| c == '\n' || !c.is_control()), "{safe}");
+        assert!(
+            safe.contains("Hi\\u009b2J\\u202e\\udb40\\udc41\\u2028ok"),
+            "{safe}"
+        );
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&safe).unwrap(), value);
+        assert_eq!(
+            json_terminal_safe("{\n  \"a\": \"é ✓\"\n}"),
+            "{\n  \"a\": \"é ✓\"\n}"
+        );
     }
 
     #[test]

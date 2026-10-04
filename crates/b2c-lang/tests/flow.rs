@@ -212,6 +212,16 @@ fn use_before_assignment() {
     ]);
     assert_clean(&a);
 
+    // Assigned in one branch, read in another: no path assigns it first.
+    let a = run_main(vec![
+        declare("int", "x", None),
+        if_else(
+            vec![(e("true"), vec![set("x", num("1"))])],
+            Some(vec![print(vec![get("x")])]),
+        ),
+    ]);
+    assert_codes(&a, &["B2C-W0503"]);
+
     // Assigned later in a loop: the value may come from the previous round.
     let a = run_main(vec![
         declare("int", "last", None),
@@ -549,4 +559,23 @@ fn blocks_that_expand_too_deeply_are_reported() {
     assert_clean(&a);
     let project = b2c_codegen::generate(&a.program, &b2c_codegen::CodegenOptions::default());
     assert!(!project.files[0].contents.contains("/* error */"));
+}
+
+/// Many variables created without a value, followed by many branches: the
+/// flow checks used to copy their state for every branch, which took minutes
+/// for a large (but allowed) project.
+#[test]
+fn flow_checks_stay_fast_with_many_variables_and_branches() {
+    const N: usize = 8_000;
+    let mut body: Vec<_> = (0..N).map(|i| declare("int", &format!("v{i}"), None)).collect();
+    body.extend((0..N).map(|_| if_then(e("true"), vec![])));
+    let started = std::time::Instant::now();
+    let a = run_main(body);
+    let elapsed = started.elapsed();
+    assert!(
+        a.diagnostics.iter().all(|d| d.severity != Severity::Error),
+        "{}",
+        render_all(&a)
+    );
+    assert!(elapsed < std::time::Duration::from_secs(20), "took {elapsed:?}");
 }

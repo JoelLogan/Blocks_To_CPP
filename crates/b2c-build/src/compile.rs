@@ -202,6 +202,7 @@ fn compile(
     let configuration = request.configuration.settings(document);
     let key = config_key(request.configuration, toolchain, configuration, document);
     let dir = BuildDir::create(&request.cache_root, &document.project.id, &key)?;
+    let _lock = dir.lock()?;
     let sources = dir.write_generated(generated)?;
     if let Ok(json) = serde_json::to_vec_pretty(&generated.source_map) {
         write_if_changed(&dir.root().join("sourcemap.json"), &json)?;

@@ -55,12 +55,29 @@ pub(crate) fn check_item(item: &Item, symbols: &SymbolTable, diags: &mut Diags) 
 }
 
 /// Definite-assignment state for scalar variables created without a value.
-#[derive(Debug, Clone, Default)]
+///
+/// After branches (`if` arms, a loop body) the state is the union of the
+/// state before them and each branch's state at its end. Instead of copying
+/// the whole state for every branch, which made long programs with many
+/// variables quadratic, changes are logged: a branch is undone afterwards and
+/// what it added is applied once all branches are done ([`State::undo`],
+/// [`State::apply`]).
+#[derive(Debug, Default)]
 struct State {
     /// Variables created without a value.
     tracked: BTreeSet<SymbolId>,
     /// Tracked variables that may have been given a value (or were reported).
     assigned: BTreeSet<SymbolId>,
+    /// Every change, oldest first.
+    log: Vec<Change>,
+}
+
+/// One change to a [`State`].
+#[derive(Debug)]
+enum Change {
+    Tracked(SymbolId),
+    Assigned(SymbolId),
+    Unassigned(SymbolId),
 }
 
 impl State {
@@ -69,9 +86,66 @@ impl State {
         self.tracked.contains(sym) && !self.assigned.contains(sym)
     }
 
-    fn merge(&mut self, other: State) {
-        self.tracked.extend(other.tracked);
-        self.assigned.extend(other.assigned);
+    fn track(&mut self, sym: &SymbolId) {
+        if self.tracked.insert(sym.clone()) {
+            self.log.push(Change::Tracked(sym.clone()));
+        }
+    }
+
+    fn assign(&mut self, sym: &SymbolId) {
+        if self.assigned.insert(sym.clone()) {
+            self.log.push(Change::Assigned(sym.clone()));
+        }
+    }
+
+    fn unassign(&mut self, sym: &SymbolId) {
+        if self.assigned.remove(sym) {
+            self.log.push(Change::Unassigned(sym.clone()));
+        }
+    }
+
+    /// A point to [`undo`](Self::undo) to.
+    fn mark(&self) -> usize {
+        self.log.len()
+    }
+
+    /// Undoes every change since `mark`, returning the variables added since
+    /// then that were still there.
+    fn undo(&mut self, mark: usize) -> Vec<Change> {
+        let changes = self.log.split_off(mark);
+        let added = changes
+            .iter()
+            .filter_map(|change| match change {
+                Change::Tracked(sym) if self.tracked.contains(sym) => Some(Change::Tracked(sym.clone())),
+                Change::Assigned(sym) if self.assigned.contains(sym) => Some(Change::Assigned(sym.clone())),
+                _ => None,
+            })
+            .collect();
+        for change in changes.into_iter().rev() {
+            match change {
+                Change::Tracked(sym) => {
+                    self.tracked.remove(&sym);
+                }
+                Change::Assigned(sym) => {
+                    self.assigned.remove(&sym);
+                }
+                Change::Unassigned(sym) => {
+                    self.assigned.insert(sym);
+                }
+            }
+        }
+        added
+    }
+
+    /// Adds what branches added (from [`undo`](Self::undo)).
+    fn apply(&mut self, added: Vec<Change>) {
+        for change in added {
+            match change {
+                Change::Tracked(sym) => self.track(&sym),
+                Change::Assigned(sym) => self.assign(&sym),
+                Change::Unassigned(_) => {}
+            }
+        }
     }
 }
 
@@ -110,14 +184,14 @@ impl Flow<'_> {
                     self.self_reference(init, &decl.symbol);
                     self.uses(init, state);
                 } else if self.symbols.get(&decl.symbol).is_some_and(|s| is_scalar(&s.ty)) {
-                    state.tracked.insert(decl.symbol.clone());
-                    state.assigned.remove(&decl.symbol);
+                    state.track(&decl.symbol);
+                    state.unassign(&decl.symbol);
                 }
                 true
             }
             StmtKind::Assign { target, value } => {
                 self.uses(value, state);
-                state.assigned.insert(target.clone());
+                state.assign(target);
                 true
             }
             StmtKind::CompoundAssign { target, value, .. } => {
@@ -192,7 +266,7 @@ impl Flow<'_> {
                 if let Some(prompt) = prompt {
                     self.uses(prompt, state);
                 }
-                state.assigned.insert(target.clone());
+                state.assign(target);
                 true
             }
         }
@@ -205,24 +279,22 @@ impl Flow<'_> {
         state: &mut State,
     ) -> bool {
         let mut completes = false;
-        let mut outcomes = Vec::with_capacity(branches.len() + 1);
+        let mut added = Vec::new();
         for branch in branches {
             self.uses(&branch.cond, state);
-            let mut inner = state.clone();
-            completes |= self.list(&branch.body, &mut inner);
-            outcomes.push(inner);
+            let mark = state.mark();
+            completes |= self.list(&branch.body, state);
+            added.extend(state.undo(mark));
         }
         match else_body {
             Some(body) => {
-                let mut inner = state.clone();
-                completes |= self.list(body, &mut inner);
-                outcomes.push(inner);
+                let mark = state.mark();
+                completes |= self.list(body, state);
+                added.extend(state.undo(mark));
             }
             None => completes = true,
         }
-        for outcome in outcomes {
-            state.merge(outcome);
-        }
+        state.apply(added);
         completes
     }
 
@@ -231,15 +303,18 @@ impl Flow<'_> {
     fn enter_loop(&self, body: &Block, state: &mut State) {
         let mut assigned = BTreeSet::new();
         self.assignments(body, &mut assigned);
-        state.assigned.extend(assigned);
+        for sym in &assigned {
+            state.assign(sym);
+        }
     }
 
     fn loop_body(&mut self, body: &Block, state: &mut State) {
-        let mut inner = state.clone();
+        let mark = state.mark();
         self.loop_depth += 1;
-        self.list(body, &mut inner);
+        self.list(body, state);
         self.loop_depth -= 1;
-        state.merge(inner);
+        let added = state.undo(mark);
+        state.apply(added);
     }
 
     /// Every variable a block may assign.
@@ -335,7 +410,9 @@ impl Flow<'_> {
                         _ => self.uses(arg, state),
                     }
                 }
-                state.assigned.extend(assigned);
+                for sym in &assigned {
+                    state.assign(sym);
+                }
             }
             _ => {
                 for child in children(expr) {
@@ -350,14 +427,14 @@ impl Flow<'_> {
         if state.unassigned(sym) {
             self.report_unassigned(sym, stmt.origin.location());
         }
-        state.assigned.insert(sym.clone());
+        state.assign(sym);
     }
 
     /// A read of `sym` by an expression.
     fn read_at(&mut self, sym: &SymbolId, expr: &Expr, state: &mut State) {
         if state.unassigned(sym) {
             self.report_unassigned(sym, expr.origin.location());
-            state.assigned.insert(sym.clone());
+            state.assign(sym);
         }
     }
 

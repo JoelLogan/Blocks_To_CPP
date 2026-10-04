@@ -41,16 +41,18 @@ Generates C++ and compiles it with g++ into the build cache, then prints the
 path of the executable. Nothing is recompiled when neither the generated C++
 nor the compiler command changed. Errors and warnings are printed; notes
 (such as a sanitizer the compiler does not offer) are left out. `--out` also copies the executable to a path of your
-choice. `--toolchain` picks a g++ by absolute path; otherwise `b2c` uses the
-first suitable g++ it finds (see `b2c toolchains`). Compiler errors are mapped
-back to the blocks that produced the code.
+choice (atomically, never through a symbolic link, and executable). `--toolchain` picks a g++ by absolute path; otherwise `b2c` uses the
+first suitable g++ it finds (see `b2c toolchains`). `--cache-dir` keeps the
+build cache in another folder instead of the per-user one
+(`%LOCALAPPDATA%\Blocks2Cpp\cache` on Windows, `~/.cache/blocks2cpp` on Linux).
+Compiler errors are mapped back to the blocks that produced the code.
 
 ### `b2c run`
 
 Builds the project (reusing the cache when nothing changed) and runs it. The
 program's output goes straight to your terminal. Its input comes from your
 terminal, or from a file with `--stdin`. `--timeout` stops the program after
-a while, for example `500ms`, `10s` or `2m`. Everything after `--` is passed
+a while, for example `500ms`, `10s` or `2m` (from 1ms up to 24h). Everything after `--` is passed
 to the program as its arguments.
 
 ### `b2c toolchains`
@@ -64,6 +66,9 @@ again only when the compiler file changes.
 
 Upgrades a project file written by an older version of Blocks2Cpp to the
 current format. It prints the result, or rewrites the file with `--in-place`.
+Printed to a terminal, control and invisible characters in project text are
+shown as JSON `\uXXXX` escapes (the same JSON value); piped output is the
+file exactly.
 
 ### `b2c fmt`
 
@@ -78,7 +83,7 @@ already formatted (exit code `1` if not), which is useful in CI.
 | `0` | Success |
 | `1` | The project has errors (or, for `fmt --check`, is not formatted) |
 | `2` | Usage problem: bad arguments, or a file that cannot be read or written |
-| `3` | Toolchain problem: no suitable g++ found, it is broken, or it crashed |
+| `3` | Toolchain problem: no suitable g++ found, it is broken or cannot be started, or it crashed |
 
 `b2c run` returns the **program's own exit code**, except:
 

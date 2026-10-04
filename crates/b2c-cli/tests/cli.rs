@@ -270,6 +270,47 @@ fn build_copies_the_executable() {
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     let run = Command::new(&out).output().unwrap();
     assert_eq!(text(&run.stdout), "Hello, world!\n");
+
+    // `--out` never writes through a link.
+    #[cfg(unix)]
+    {
+        let victim = cache.path().join("victim.txt");
+        std::fs::write(&victim, "keep me").unwrap();
+        let link = cache.path().join("link");
+        std::os::unix::fs::symlink(&victim, &link).unwrap();
+        let output = b2c(&[
+            "build",
+            example("hello_world").to_str().unwrap(),
+            "--cache-dir",
+            cache.path().to_str().unwrap(),
+            "--out",
+            link.to_str().unwrap(),
+        ]);
+        assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
+    }
+}
+
+#[test]
+fn a_relative_cache_folder_works() {
+    if !have_gxx() {
+        return;
+    }
+    let folder = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_b2c"))
+        .args([
+            "run",
+            example("hello_world").to_str().unwrap(),
+            "--cache-dir",
+            "cache",
+        ])
+        .current_dir(folder.path())
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(stdout(&output), "Hello, world!\n");
+    assert!(folder.path().join("cache/builds").is_dir());
 }
 
 #[test]

@@ -48,8 +48,8 @@ pub(crate) fn parse_duration(text: &str) -> Result<Duration, String> {
         .parse()
         .map_err(|_| format!("{number:?} is not a number"))?;
     let seconds = value * unit_seconds;
-    if !seconds.is_finite() || seconds <= 0.0 || seconds > 86_400.0 {
-        return Err(String::from("the timeout must be more than 0 and at most 24h"));
+    if !seconds.is_finite() || !(0.001..=86_400.0).contains(&seconds) {
+        return Err(String::from("the timeout must be at least 1ms and at most 24h"));
     }
     Ok(Duration::from_secs_f64(seconds))
 }
@@ -66,7 +66,7 @@ mod tests {
         assert_eq!(parse_duration("2m"), Ok(Duration::from_mins(2)));
         assert_eq!(parse_duration("1h"), Ok(Duration::from_hours(1)));
         for bad in [
-            "", "10", "s", "-1s", "0s", "NaNs", "infs", "25h", "1e400s", "10 s",
+            "", "10", "s", "-1s", "0s", "NaNs", "infs", "25h", "1e400s", "10 s", "1e-300s", "0.5ms",
         ] {
             assert!(parse_duration(bad).is_err(), "{bad}");
         }

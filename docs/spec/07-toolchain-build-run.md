@@ -158,7 +158,8 @@ settings**, never in projects:
 ### 7.5.1 Build directory
 
 ```
-<cache>/builds/<projectId>/<config>-<optionsHash8>/
+<cache>/builds/<projectFolder>/<config>-<optionsHash8>/
+├── lock                     held by the build using this folder
 ├── gen/                     generated sources (rewritten only when content changes)
 │   ├── main.cpp  main.hpp  player.cpp  player.hpp  b2c_support.hpp
 ├── ide/                     IDE-only init unit and trace header (never exported)
@@ -174,6 +175,15 @@ settings**, never in projects:
   are owner-only on Linux.
 * File names derive only from validated module names
   (`[a-z0-9_-]{1,64}`, lower-cased). They never come from user text.
+* `<projectFolder>` (also used for the sandbox folder, §7.6.2) is the project
+  ID in lower case plus the first 8 hex digits of the SHA-256 of its exact
+  spelling, for example `prj_hello-1a2b3c4d`. IDs that differ only in case
+  never share a folder on a case-insensitive file system, and no ID can name
+  a Windows device (`CON`, `NUL`, `COM1`, …).
+* A build holds an exclusive lock on `lock` from checking whether the program
+  is up to date until it records the result, so two builds of the same project
+  at once (two copies of a project file keep its ID) never leave an
+  executable that does not match its recorded inputs.
 * **Object cache key** = SHA-256(toolchain fingerprint ‖ normalised argv
   without output paths ‖ TU contents ‖ contents of all generated project
   headers ‖ support header). System headers are covered by the toolchain

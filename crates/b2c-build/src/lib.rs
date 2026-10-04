@@ -35,7 +35,8 @@ mod run;
 mod toolchains;
 
 pub use build_dir::{
-    BuildDir, BuildDirError, default_cache_root, sandbox_dir, write_generated_files, write_if_changed,
+    BuildDir, BuildDirError, default_cache_root, sandbox_dir, write_executable, write_generated_files,
+    write_if_changed,
 };
 pub use compile::{
     BuildError, BuildOutcome, BuildReport, BuildRequest, Configuration, LIBRARIES_UNSUPPORTED, build,
