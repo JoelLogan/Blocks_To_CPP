@@ -14,12 +14,14 @@ fn system32() -> PathBuf {
     PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32")
 }
 
-/// `cmd.exe /d /c <script>` with only `SystemRoot` in its environment.
+/// `cmd.exe /d /c <script>` with only `SystemRoot` and a `PATH` of System32
+/// (so the script can start `findstr` and `ping`) in its environment.
 fn cmd(script: &str) -> Command {
     let mut command = Command::new(system32().join("cmd.exe"), std::env::temp_dir()).unwrap();
     command
         .args(["/d", "/c", script])
-        .env("SystemRoot", std::env::var_os("SystemRoot").unwrap());
+        .env("SystemRoot", std::env::var_os("SystemRoot").unwrap())
+        .env("PATH", system32());
     command
 }
 
