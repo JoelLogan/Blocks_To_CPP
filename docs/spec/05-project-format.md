@@ -71,6 +71,11 @@ A project is a **single JSON file** with the extension `.b2c`.
 }
 ```
 
+`options.usingNamespaceStd` (*Textbook style*: `using namespace std;` in
+every generated `.cpp`, [06 §6.14](06-compiler-pipeline.md#614-standard-names-and-using-namespace))
+is `false` when absent and is written only when `true`, like
+`language.gnuExtensions`, so files that do not use it are unchanged.
+
 Every option is a **closed enum or a validated scalar**. There is no field
 for free-form compiler flags, paths or commands ([ADR-0005](../adr/0005-no-compiler-flags-in-projects.md)).
 `defines` take validated identifiers and typed values (`int`, `bool`, `string`

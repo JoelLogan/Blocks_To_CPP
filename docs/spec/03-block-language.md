@@ -424,7 +424,7 @@ the C++ view and in the class block's `⚙`). Copy/move special members can be
 |-------|-----------|
 | `namespace [geometry] { definitions }` | `namespace geometry { … }` |
 | `use header [<cmath> ▾]` | `#include <cmath>`. Usually unnecessary, because includes are computed automatically. The dropdown offers standard headers, library-pack headers and project modules only. |
-| `use namespace [std ▾] here` | `using namespace std;`. Allowed only inside a function or in a `.cpp` file scope, never in a header (enforced). |
+| `use namespace [std ▾] in this file` (module top level) · `use namespace [std ▾] here` (inside a function) | `using namespace std;` for this module's `.cpp`, or from this point to the end of the statement list. The dropdown offers `std`, the standard sub-namespaces of the project's standard (`std::chrono`, `std::this_thread`, `std::filesystem`; `std::numbers`, `std::ranges`, `std::views` from C++20) and the module's top-level namespaces. Never in a header or a class or namespace block (enforced). The project setting *Textbook style* does the same for every `.cpp`. How names are then spelled, and the few that must be renamed: [06 §6.14](06-compiler-pipeline.md#614-standard-names-and-using-namespace). |
 | `check at compile time <cond> ("message")` | `static_assert(cond, "message");` |
 | Block comment (Blockly comment bubble) | `// comment` lines above the statement (sanitised, [08 §8.4.3](08-security.md#843-comments)) |
 
@@ -488,8 +488,9 @@ helpers in the `b2c` namespace: `random_int`, `random_real`, `ask<T>`, `trim`,
 * Edited in a CodeMirror modal with C++ highlighting. Shown on the canvas with
   a hazard-striped border, a `C++` badge, and the first line as a preview.
 * **Not parsed by our analyser** beyond tokenisation (used for rename
-  tracking and bidi/invisible-character checks). They are treated as opaque,
-  g++ checks them, and diagnostics still map back to the block.
+  tracking, bidi/invisible-character checks and the `using namespace` checks of
+  [06 §6.14.9](06-compiler-pipeline.md#6149-raw-c)). They are treated as
+  opaque, g++ checks them, and diagnostics still map back to the block.
 * **Trust impact.** A project containing Raw C++ shows a persistent
   `Contains Raw C++ (n)` indicator, and the Restricted Mode dialog lists the
   raw blocks for review ([08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode)).

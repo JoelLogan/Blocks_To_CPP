@@ -12,6 +12,7 @@ decision changes, a new ADR supersedes the old one, and the old one is marked
 | [0003](0003-rust-core-native-and-wasm.md) | One Rust compiler core, built natively and as WebAssembly | Accepted |
 | [0004](0004-project-format.md) | Project format: editor-independent, versioned JSON with array statement lists | Accepted |
 | [0005](0005-no-compiler-flags-in-projects.md) | Project files never contain compiler flags, paths or commands | Accepted |
+| [0006](0006-using-namespace.md) | `using namespace`: a project setting and a block, with exact name rules | Accepted |
 
 ## Template
 

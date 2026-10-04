@@ -187,7 +187,7 @@ items are the defaults we build toward until the owner says otherwise.
 | Q1 | **License** for the project | **Apache-2.0** (includes a patent grant; matches Blockly). See [`LICENSE`](../../LICENSE). | Decided 2026-10-02 |
 | Q2 | **Product name** | **Blocks2Cpp**, with the short form `b2c` for the CLI, crates and C++ namespace | Decided 2026-10-02 |
 | Q3 | Default C++ standard for new projects | **C++20** (supported by every toolchain we accept, GCC 11+) | Decided 2026-10-04 |
-| Q4 | Offer *"use namespace std"* beginner mode by default? | **No.** Explicit `std::` teaches real-world style; there is a per-project toggle. | Decided 2026-10-04 |
+| Q4 | Offer *"use namespace std"* beginner mode by default? | **No.** Explicit `std::` teaches real-world style. There is a per-project toggle (*Textbook style*) and a `use namespace` block for one module or function, with exact name rules ([ADR-0006](../adr/0006-using-namespace.md)). | Decided 2026-10-04 |
 | Q5 | Bundle or download a toolchain on Windows in 1.0? | **No.** Guided setup only; a verified installer helper is a post-1.0 candidate. | Decided 2026-10-02 |
 | Q6 | Minimum Windows version | **Windows 10 1809** (ConPTY, WebView2). To be revisited as support for Windows 10 ends (WebView2, MSYS2 and GitHub's runners). | Decided 2026-10-04 |
 | Q7 | Update checks | **Opt-in**, asked on first run | Decided 2026-10-04 |
