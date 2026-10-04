@@ -16,3 +16,24 @@ used in the sources has no entry.
 Severity: **E** errors block building, **W** warnings point at likely mistakes,
 **I** notes are informational. The code ranges follow
 [spec §6.12](../../spec/06-compiler-pipeline.md#612-diagnostics-model).
+
+## Messages from g++ and the linker (`C:*`)
+
+When g++ or the linker reports something, Blocks2Cpp shows it on the block
+that produced the code, using the source map
+([spec §7.5.3](../../spec/07-toolchain-build-run.md#753-diagnostics-capture-and-mapping)).
+These messages have codes starting with `C:` instead of `B2C-`:
+
+| Code | Meaning |
+|------|---------|
+| `C:-W<name>` | A g++ warning or error controlled by that option, for example `C:-Wunused-variable` |
+| `C:error` | A g++ error with no option |
+| `C:link` | A linker error, for example an undefined reference |
+| `C:limit` | The compiler ran out of time or memory |
+| `C:failed` | The compiler failed without saying why (its output is attached) |
+| `C:truncated` | There were more messages than can be shown |
+
+The original compiler text is always attached. Blocks the analyser accepts
+should never produce C++ that g++ rejects, so a `C:` error is labelled as a
+probable bug in Blocks2Cpp; please report it with the project file.
+

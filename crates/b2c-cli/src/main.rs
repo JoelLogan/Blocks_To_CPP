@@ -31,6 +31,15 @@ enum Format {
     Json,
 }
 
+/// Which build configuration to use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Config {
+    /// Fast to build, easy to debug.
+    Debug,
+    /// Optimised.
+    Release,
+}
+
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Check a project for problems without building it.
@@ -51,6 +60,52 @@ enum Command {
         /// Leave out the "edit the blocks, not this file" banner.
         #[arg(long)]
         export: bool,
+    },
+    /// Compile a project into an executable.
+    Build {
+        /// The project file (`.b2c`).
+        project: PathBuf,
+        /// Build configuration.
+        #[arg(long, value_enum, default_value_t = Config::Debug)]
+        config: Config,
+        /// The g++ to use (an absolute path); found automatically when omitted.
+        #[arg(long)]
+        toolchain: Option<PathBuf>,
+        /// Copy the finished executable to this path.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// The build cache folder (defaults to the per-user cache).
+        #[arg(long)]
+        cache_dir: Option<PathBuf>,
+    },
+    /// Build a project if needed, then run it.
+    Run {
+        /// The project file (`.b2c`).
+        project: PathBuf,
+        /// Build configuration.
+        #[arg(long, value_enum, default_value_t = Config::Debug)]
+        config: Config,
+        /// The g++ to use (an absolute path); found automatically when omitted.
+        #[arg(long)]
+        toolchain: Option<PathBuf>,
+        /// Feed this file to the program's input instead of the terminal.
+        #[arg(long)]
+        stdin: Option<PathBuf>,
+        /// Stop the program after this long, e.g. `500ms`, `10s`, `2m`.
+        #[arg(long, value_parser = commands::parse_duration)]
+        timeout: Option<std::time::Duration>,
+        /// The build cache folder (defaults to the per-user cache).
+        #[arg(long)]
+        cache_dir: Option<PathBuf>,
+        /// Arguments passed to the program.
+        #[arg(last = true)]
+        args: Vec<std::ffi::OsString>,
+    },
+    /// List the C++ compilers found on this computer.
+    Toolchains {
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
     },
     /// Upgrade a project file to the current format.
     Migrate {
@@ -76,6 +131,13 @@ enum Status {
     Success,
     ProjectErrors,
     Usage,
+    Toolchain,
+    /// `b2c run` stopped the program at `--timeout`.
+    TimedOut,
+    /// `b2c run` could not build or start the program.
+    RunFailed,
+    /// `b2c run`: the program's own exit code, passed on unchanged.
+    Program(i32),
 }
 
 impl From<Status> for ExitCode {
@@ -84,6 +146,12 @@ impl From<Status> for ExitCode {
             Status::Success => 0,
             Status::ProjectErrors => 1,
             Status::Usage => 2,
+            Status::Toolchain => 3,
+            Status::TimedOut => 124,
+            Status::RunFailed => 125,
+            // Only reached on Unix, where exit codes are 0–255; main() passes
+            // other codes on through std::process::exit.
+            Status::Program(code) => u8::try_from(code & 0xFF).unwrap_or(1),
         })
     }
 }
@@ -100,9 +168,47 @@ fn main() -> ExitCode {
     let status = match cli.command {
         Command::Check { project, format } => commands::check(&project, format),
         Command::Generate { project, out, export } => commands::generate(&project, &out, export),
+        Command::Build {
+            project,
+            config,
+            toolchain,
+            out,
+            cache_dir,
+        } => commands::build(
+            &project,
+            config,
+            toolchain.as_deref(),
+            out.as_deref(),
+            cache_dir.as_deref(),
+        ),
+        Command::Run {
+            project,
+            config,
+            toolchain,
+            stdin,
+            timeout,
+            cache_dir,
+            args,
+        } => commands::run(
+            &project,
+            config,
+            toolchain.as_deref(),
+            stdin.as_deref(),
+            timeout,
+            cache_dir.as_deref(),
+            &args,
+        ),
+        Command::Toolchains { format } => commands::toolchains(format),
         Command::Migrate { project, in_place } => commands::migrate(&project, in_place),
         Command::Fmt { project, check } => commands::fmt(&project, check),
     };
     let _ = std::io::stdout().flush();
+    if let Status::Program(code) = status
+        && u8::try_from(code).is_err()
+    {
+        // A Windows status such as 0xC0000005 does not fit ExitCode::from(u8).
+        let _ = std::io::stderr().flush();
+        std::process::exit(code);
+    }
     status.into()
 }

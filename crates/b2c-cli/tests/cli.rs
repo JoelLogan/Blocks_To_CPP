@@ -23,12 +23,45 @@ fn b2c(args: &[&str]) -> Output {
         .unwrap()
 }
 
+/// Standard output as text. On Windows a program's output is in text mode
+/// (each `\n` arrives as `\r\n`), which this undoes exactly.
 fn stdout(output: &Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned()
+    text(&output.stdout)
+}
+
+fn text(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes).into_owned();
+    if cfg!(windows) {
+        text.replace("\r\n", "\n")
+    } else {
+        text
+    }
 }
 
 fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+/// Whether a g++ is on PATH. Build and run tests are skipped without one,
+/// unless `B2C_REQUIRE_GXX` is set (as in CI), when they fail instead.
+fn have_gxx() -> bool {
+    let found = Command::new("g++")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok();
+    assert!(
+        found || std::env::var_os("B2C_REQUIRE_GXX").is_none(),
+        "B2C_REQUIRE_GXX is set but g++ was not found"
+    );
+    found
+}
+
+fn fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
 }
 
 #[test]
@@ -44,6 +77,10 @@ fn usage_errors_exit_with_2() {
     assert_eq!(b2c(&[]).status.code(), Some(2));
     assert_eq!(b2c(&["frobnicate"]).status.code(), Some(2));
     assert_eq!(b2c(&["check"]).status.code(), Some(2));
+    assert_eq!(
+        b2c(&["run", "x.b2c", "--timeout", "forever"]).status.code(),
+        Some(2)
+    );
 }
 
 #[test]
@@ -167,4 +204,107 @@ fn migrate_prints_the_canonical_document() {
         stdout(&output),
         std::fs::read_to_string(example("hello_world")).unwrap()
     );
+}
+
+#[test]
+fn run_prints_output_and_returns_the_exit_code() {
+    if !have_gxx() {
+        return;
+    }
+    let cache = tempfile::tempdir().unwrap();
+    let cache_dir = cache.path().to_str().unwrap();
+    let output = b2c(&[
+        "run",
+        example("hello_world").to_str().unwrap(),
+        "--cache-dir",
+        cache_dir,
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(stdout(&output), "Hello, world!\n");
+
+    let output = b2c(&[
+        "run",
+        example("exit_code").to_str().unwrap(),
+        "--cache-dir",
+        cache_dir,
+    ]);
+    assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
+}
+
+#[test]
+fn run_feeds_stdin_from_a_file() {
+    if !have_gxx() {
+        return;
+    }
+    let cache = tempfile::tempdir().unwrap();
+    let input = repo_root().join("tests/golden/greeting/stdin.txt");
+    let output = b2c(&[
+        "run",
+        example("greeting").to_str().unwrap(),
+        "--cache-dir",
+        cache.path().to_str().unwrap(),
+        "--stdin",
+        input.to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(stdout(&output), "What is your name? Hello, Ada Lovelace!\n");
+}
+
+#[test]
+fn build_copies_the_executable() {
+    if !have_gxx() {
+        return;
+    }
+    let cache = tempfile::tempdir().unwrap();
+    let out = cache
+        .path()
+        .join(if cfg!(windows) { "hello.exe" } else { "hello" });
+    let output = b2c(&[
+        "build",
+        example("hello_world").to_str().unwrap(),
+        "--cache-dir",
+        cache.path().to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let run = Command::new(&out).output().unwrap();
+    assert_eq!(text(&run.stdout), "Hello, world!\n");
+}
+
+#[test]
+fn run_stops_a_program_at_the_timeout() {
+    if !have_gxx() {
+        return;
+    }
+    let cache = tempfile::tempdir().unwrap();
+    let started = std::time::Instant::now();
+    let output = b2c(&[
+        "run",
+        fixture("forever.b2c").to_str().unwrap(),
+        "--cache-dir",
+        cache.path().to_str().unwrap(),
+        "--timeout",
+        "1s",
+    ]);
+    assert_eq!(output.status.code(), Some(124), "{}", stderr(&output));
+    assert!(started.elapsed() < std::time::Duration::from_mins(1));
+}
+
+#[test]
+fn run_returns_125_when_the_project_cannot_build() {
+    if !have_gxx() {
+        return;
+    }
+    let cache = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let bad = dir.path().join("bad.b2c");
+    std::fs::write(&bad, "{}").unwrap();
+    let output = b2c(&[
+        "run",
+        bad.to_str().unwrap(),
+        "--cache-dir",
+        cache.path().to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(125), "{}", stderr(&output));
 }

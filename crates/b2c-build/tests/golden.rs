@@ -8,7 +8,12 @@
 //!   warnings, and the generated C++ matches the checked-in copy
 //!   (`tests/golden/<name>/<file>.cpp`); run with `B2C_UPDATE_GOLDEN=1` to
 //!   rewrite those copies after an intended change, then review the diff;
-//! * generating twice gives byte-identical output.
+//! * generating twice gives byte-identical output;
+//! * the program builds with g++ (the debug configuration, so with run-time
+//!   checks such as sanitizers where the compiler has them) and, run with
+//!   `stdin.txt` as its input, prints exactly `stdout.txt` (or matches the
+//!   regular expression in `stdout.regex`) and exits with `exit_code.txt`.
+//!   Without g++ this test is skipped, unless `B2C_REQUIRE_GXX` is set.
 
 // Test helpers fail the test by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -16,7 +21,10 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use b2c_build::{FrontendOptions, run_frontend};
+use b2c_build::{
+    BuildOutcome, BuildRequest, Configuration, FrontendOptions, ProgramExit, ProgramInput, RunRequest,
+    ToolchainChoice, run_frontend, run_program_captured,
+};
 use b2c_ir::Severity;
 use b2c_ir::source_map::GeneratedProject;
 
@@ -136,5 +144,114 @@ fn generation_is_deterministic() {
             (Err(failure), _) | (_, Err(failure)) => failures.push(failure),
         }
     }
+    finish(&failures);
+}
+
+/// How long one example program may run.
+const RUN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Whether g++ is available; panics when it is not but `B2C_REQUIRE_GXX`
+/// is set (as in CI).
+fn have_gxx() -> bool {
+    let found = std::env::var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path)
+            .any(|dir| dir.join(if cfg!(windows) { "g++.exe" } else { "g++" }).is_file())
+    });
+    assert!(
+        found || std::env::var_os("B2C_REQUIRE_GXX").is_none(),
+        "B2C_REQUIRE_GXX is set but g++ was not found"
+    );
+    found
+}
+
+/// Standard output as text; Windows text mode turns each `\n` into `\r\n`,
+/// which this undoes exactly.
+fn output_text(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes).into_owned();
+    if cfg!(windows) {
+        text.replace("\r\n", "\n")
+    } else {
+        text
+    }
+}
+
+/// Builds and runs one example, describing any mismatch.
+fn check_run(example: &Example, cache: &Path) -> Result<(), String> {
+    let project = std::fs::read(&example.project).unwrap();
+    let request = BuildRequest {
+        configuration: Configuration::Debug,
+        toolchain: ToolchainChoice::Auto,
+        cache_root: cache.to_path_buf(),
+        frontend: FrontendOptions::default(),
+    };
+    let report =
+        b2c_build::build(&project, &request).map_err(|error| format!("{}: {error}", example.name))?;
+    let BuildOutcome::Built { executable } = report.outcome else {
+        return Err(format!("{}: not built: {:#?}", example.name, report.diagnostics));
+    };
+    let warnings: Vec<_> = report
+        .diagnostics
+        .iter()
+        .filter(|d| d.severity != Severity::Info)
+        .collect();
+    if !warnings.is_empty() {
+        return Err(format!("{}: build warnings: {warnings:#?}", example.name));
+    }
+    let run = run_program_captured(&RunRequest {
+        executable,
+        args: Vec::new(),
+        input: ProgramInput::Bytes(std::fs::read(example.golden.join("stdin.txt")).unwrap()),
+        timeout: Some(RUN_TIMEOUT),
+        working_directory: example.golden.clone(),
+    })
+    .map_err(|error| format!("{}: {error}", example.name))?;
+    let stdout = output_text(&run.stdout);
+    let expected_code: i32 = std::fs::read_to_string(example.golden.join("exit_code.txt"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    if run.exit != ProgramExit::Code(expected_code) {
+        return Err(format!(
+            "{}: ended with {:?}, expected exit code {expected_code}; stderr:\n{}",
+            example.name,
+            run.exit,
+            output_text(&run.stderr)
+        ));
+    }
+    let regex_file = example.golden.join("stdout.regex");
+    if regex_file.is_file() {
+        let pattern = std::fs::read_to_string(&regex_file).unwrap();
+        let regex = regex::Regex::new(&format!("^(?s:{})$", pattern.trim_end_matches('\n'))).unwrap();
+        if !regex.is_match(&stdout) {
+            return Err(format!(
+                "{}: output does not match {}:\n{stdout}",
+                example.name,
+                regex_file.display()
+            ));
+        }
+    } else {
+        let expected = std::fs::read_to_string(example.golden.join("stdout.txt")).unwrap();
+        if stdout != expected {
+            return Err(format!(
+                "{}: output differs.\n--- expected\n{expected}--- got\n{stdout}",
+                example.name
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn examples_run_with_the_expected_output() {
+    if !have_gxx() {
+        return;
+    }
+    // One cache for all examples, so the compiler is probed once.
+    let cache = tempfile::tempdir().unwrap();
+    let failures: Vec<String> = examples()
+        .iter()
+        .filter_map(|example| check_run(example, cache.path()).err())
+        .collect();
     finish(&failures);
 }

@@ -181,6 +181,65 @@ pub(crate) fn render_json(file: &str, diagnostics: &[Diagnostic]) -> String {
     json
 }
 
+#[derive(Serialize)]
+struct ToolchainsJson<'a> {
+    version: u32,
+    toolchains: &'a [b2c_build::ToolchainReport],
+}
+
+/// Renders `b2c toolchains --format json`:
+/// `{"version":1,"toolchains":[…]}` plus a newline.
+pub(crate) fn render_toolchains_json(toolchains: &[b2c_build::ToolchainReport]) -> String {
+    let report = ToolchainsJson {
+        version: JSON_FORMAT_VERSION,
+        toolchains,
+    };
+    let mut json = serde_json::to_string(&report).unwrap_or_else(|_| String::from("{}"));
+    json.push('\n');
+    json
+}
+
+/// Renders `b2c toolchains` as text: one line per compiler, followed by its
+/// problems.
+pub(crate) fn render_toolchains_text(toolchains: &[b2c_build::ToolchainReport]) -> String {
+    let mut out = String::new();
+    if toolchains.is_empty() {
+        out.push_str(
+            "No g++ was found. Install GCC 11 or newer (on Windows, MSYS2 UCRT64 or WinLibs) and make sure \
+             g++ is on PATH, or pass --toolchain <path to g++>.\n",
+        );
+    }
+    for toolchain in toolchains {
+        let mut details = Vec::new();
+        if let Some(version) = &toolchain.version {
+            details.push(format!("GCC {version}"));
+        }
+        if let Some(target) = &toolchain.target {
+            details.push(target.clone());
+        }
+        if !toolchain.standards.is_empty() {
+            details.push(toolchain.standards.join(", "));
+        }
+        let state = if toolchain.usable { "ready" } else { "not usable" };
+        let _ = writeln!(
+            out,
+            "{}  {}  ({state})",
+            toolchain.path.display(),
+            details.join("  ")
+        );
+        for problem in &toolchain.problems {
+            let _ = writeln!(
+                out,
+                "  {}[{}]: {}",
+                severity_label(problem.severity),
+                problem.code.0,
+                problem.message
+            );
+        }
+    }
+    terminal_safe(&out)
+}
+
 #[cfg(test)]
 mod tests {
     use b2c_ir::{BlockId, DiagSource, ModuleId};

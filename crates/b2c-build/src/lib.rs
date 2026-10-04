@@ -3,11 +3,41 @@
 //!
 //! * [`frontend`]: the pure part, project bytes to generated C++.
 //! * [`build_dir`]: the per-project build directory and safe file writing.
+//! * [`build`]: the front end, then g++ in the build cache.
+//! * [`run_program`] / [`run_program_captured`]: running what was built.
+//! * [`list_toolchains`]: the compilers on this computer.
+//!
+//! ```no_run
+//! use b2c_build::{BuildOutcome, BuildRequest, Configuration, FrontendOptions, ToolchainChoice};
+//!
+//! let project = std::fs::read("examples/hello_world.b2c")?;
+//! let request = BuildRequest {
+//!     configuration: Configuration::Debug,
+//!     toolchain: ToolchainChoice::Auto,
+//!     cache_root: b2c_build::default_cache_root().expect("a cache folder"),
+//!     frontend: FrontendOptions::default(),
+//! };
+//! let report = b2c_build::build(&project, &request)?;
+//! if let BuildOutcome::Built { executable } = report.outcome {
+//!     println!("built {}", executable.display());
+//! }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 
 pub mod build_dir;
+mod compile;
 pub mod frontend;
+mod run;
+mod toolchains;
 
 pub use build_dir::{
     BuildDir, BuildDirError, default_cache_root, sandbox_dir, write_generated_files, write_if_changed,
 };
-pub use frontend::{Frontend, FrontendOptions, Stage, run_frontend};
+pub use compile::{
+    BuildError, BuildOutcome, BuildReport, BuildRequest, Configuration, LIBRARIES_UNSUPPORTED, build,
+};
+pub use frontend::{Frontend, FrontendOptions, GENERATOR_INCOMPLETE, Stage, run_frontend};
+pub use run::{
+    CapturedRun, ProgramExit, ProgramInput, RunError, RunRequest, run_program, run_program_captured,
+};
+pub use toolchains::{ToolchainChoice, ToolchainReport, list_toolchains};

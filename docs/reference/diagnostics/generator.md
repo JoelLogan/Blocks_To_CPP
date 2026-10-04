@@ -23,3 +23,17 @@ the project file.*
 attack someone, otherwise open an issue) and attach the project file. As a
 workaround, look for very deeply nested blocks or expressions and split them
 into smaller pieces, for example by storing a part in a variable first.
+
+## B2C-E0702: libraries are not supported yet
+
+**Severity:** error · **Source:** generator
+
+**What it means:** the project's build settings list libraries (resolved
+through machine-local library profiles, spec §7.4.4). This version of
+Blocks2Cpp cannot build projects that use them yet.
+
+**Example message:** *This project uses libraries, which this version of
+Blocks2Cpp cannot build yet.*
+
+**How to fix:** remove the libraries from the project's build settings, or
+use a newer version of Blocks2Cpp.
