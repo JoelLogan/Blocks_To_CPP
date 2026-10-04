@@ -22,9 +22,27 @@ run in a built-in terminal.
   compiler flags never come from project files, and block text can't inject
   code.
 
-> **Project status:** design phase. The full technical specification is in
-> [`docs/spec/`](docs/spec/README.md). Implementation follows the roadmap in
-> [`docs/spec/10-roadmap.md`](docs/spec/10-roadmap.md).
+> **Project status:** the compiler works from the command line (milestone M1
+> of the [roadmap](docs/spec/10-roadmap.md)); the desktop editor is next. The
+> full technical specification is in [`docs/spec/`](docs/spec/README.md).
+
+## Try it
+
+You need [Rust](https://rustup.rs) and g++ 11 or newer (on Windows,
+[MSYS2](https://www.msys2.org)'s UCRT64 g++). The pinned Rust toolchain is
+installed automatically.
+
+```sh
+cargo build --release -p b2c-cli
+./target/release/b2c run examples/hello_world.b2c        # build and run
+./target/release/b2c run examples/guessing_game.b2c      # an interactive program
+./target/release/b2c generate examples/fizzbuzz.b2c --out generated   # see the C++
+./target/release/b2c check examples/primes.b2c           # check without building
+./target/release/b2c toolchains                          # the compilers found
+```
+
+[`examples/`](examples/README.md) has 15 projects to try, and
+[`docs/reference/cli.md`](docs/reference/cli.md) describes every command.
 
 ## Documentation
 
@@ -33,9 +51,11 @@ run in a built-in terminal.
 | [Specification website](https://joellogan.github.io/Blocks_To_CPP/) | The whole specification and decision records on one page, built from `docs/` by [`site/`](site/README.md) |
 | [Specification](docs/spec/README.md) | Architecture, block language, project format, translation pipeline, toolchain/build/run, security model, quality process, roadmap |
 | [Architecture Decision Records](docs/adr/README.md) | Why key technical choices were made |
+| [Command-line tool](docs/reference/cli.md) | `b2c check`, `generate`, `build`, `run`, `toolchains`, `migrate` and `fmt` |
+| [Diagnostics reference](docs/reference/diagnostics/README.md) | Every message Blocks2Cpp can show, with examples and fixes |
 | [Security policy](SECURITY.md) | How to report vulnerabilities |
 
-## Planned technology
+## Technology
 
 Tauri 2 (Rust backend + system webview) · Blockly (Zelos renderer) · React +
 TypeScript · a Rust compiler core compiled natively and to WebAssembly ·

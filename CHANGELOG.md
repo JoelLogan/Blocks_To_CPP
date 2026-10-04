@@ -13,3 +13,17 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - Rust workspace with the shared contracts of the compiler pipeline: validated
   IDs, the diagnostics model, injection-safe C++ text encoders, the Semantic AST,
   source maps, the project file model and the milestone-M1 block catalog.
+- Project loading with every validation rule of the format, canonical saving
+  and content hashing; the block catalog and its resolve stage.
+- The analyser: lowering of the 32 milestone-M1 blocks, expression slots,
+  scoping, types, flow checks and lints, with 46 documented diagnostics.
+- C++ generation: readable, deterministic code with source maps and support
+  helpers for random numbers and safe input.
+- Toolchain discovery and probing, safe compiler commands and environment,
+  and parsing of g++ diagnostics in SARIF, JSON and text.
+- Process control that stops whole process trees (process groups on Linux,
+  Job Objects on Windows).
+- The `b2c` command-line tool: `check`, `generate`, `build`, `run`,
+  `toolchains`, `migrate` and `fmt`.
+- Fifteen example projects with golden tests, a malicious-project regression
+  suite, fuzz targets, and CI on Linux and Windows with security scanning.

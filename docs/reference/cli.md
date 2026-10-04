@@ -38,7 +38,9 @@ no errors.
 ### `b2c build`
 
 Generates C++ and compiles it with g++ into the build cache, then prints the
-path of the executable. `--out` also copies the executable to a path of your
+path of the executable. Nothing is recompiled when neither the generated C++
+nor the compiler command changed. Errors and warnings are printed; notes
+(such as a sanitizer the compiler does not offer) are left out. `--out` also copies the executable to a path of your
 choice. `--toolchain` picks a g++ by absolute path; otherwise `b2c` uses the
 first suitable g++ it finds (see `b2c toolchains`). Compiler errors are mapped
 back to the blocks that produced the code.
@@ -54,7 +56,9 @@ to the program as its arguments.
 ### `b2c toolchains`
 
 Lists the g++ compilers found on this computer, with their version, target,
-supported C++ standards and any problems.
+supported C++ standards and any problems. Checking a compiler builds a few
+tiny test programs, so the results are kept in the build cache and checked
+again only when the compiler file changes.
 
 ### `b2c migrate`
 
