@@ -61,5 +61,6 @@ pub mod discovery;
 pub mod env;
 pub mod fingerprint;
 pub mod flags;
+pub mod paths;
 pub mod probe;
 pub mod target;

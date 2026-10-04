@@ -145,7 +145,7 @@ pub fn discover(env: &DiscoveryEnv) -> Vec<Candidate> {
     let excluded: Vec<PathBuf> = env
         .excluded
         .iter()
-        .map(|dir| std::fs::canonicalize(dir).unwrap_or_else(|_| dir.clone()))
+        .map(|dir| crate::paths::canonical(dir).unwrap_or_else(|_| dir.clone()))
         .collect();
     let mut seen = HashSet::new();
     let mut found = Vec::new();
@@ -153,7 +153,7 @@ pub fn discover(env: &DiscoveryEnv) -> Vec<Candidate> {
         if !dir.is_absolute() || is_network_path(&dir) {
             continue;
         }
-        let Ok(canonical_dir) = std::fs::canonicalize(&dir) else {
+        let Ok(canonical_dir) = crate::paths::canonical(&dir) else {
             continue;
         };
         if is_excluded(&canonical_dir, &excluded) {
@@ -205,7 +205,7 @@ pub fn explicit_candidate(path: &Path, platform: Platform) -> Result<Candidate, 
             "only .exe programs can be used (never .bat or .cmd scripts)",
         ));
     }
-    let canonical = std::fs::canonicalize(path).map_err(|_| refuse("the file does not exist"))?;
+    let canonical = crate::paths::canonical(path).map_err(|_| refuse("the file does not exist"))?;
     let Some(canonical) = accept(&canonical, platform) else {
         return Err(refuse("it is not an executable program file"));
     };
@@ -361,7 +361,7 @@ fn file_names(platform: Platform) -> Vec<String> {
 /// Canonicalises a candidate and checks that it is an executable regular
 /// file. Returns the canonical path.
 fn accept(candidate: &Path, platform: Platform) -> Option<PathBuf> {
-    let canonical = std::fs::canonicalize(candidate).ok()?;
+    let canonical = crate::paths::canonical(candidate).ok()?;
     let metadata = std::fs::metadata(&canonical).ok()?;
     if !metadata.is_file() {
         return None;
@@ -481,7 +481,7 @@ mod tests {
     #[test]
     fn linux_search_order_and_versioned_names() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let root = crate::paths::canonical(dir.path()).unwrap();
         tool(&root.join("usr/bin/g++-13"));
         tool(&root.join("usr/bin/g++"));
         tool(&root.join("usr/local/bin/g++-12"));
@@ -512,7 +512,7 @@ mod tests {
     #[test]
     fn relative_path_entries_are_never_searched() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let root = crate::paths::canonical(dir.path()).unwrap();
         tool(&root.join("project/g++"));
         let mut env = linux_env(&root);
         env.path = vec![
@@ -528,7 +528,7 @@ mod tests {
     #[test]
     fn excluded_folders_are_never_searched_or_accepted() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let root = crate::paths::canonical(dir.path()).unwrap();
         tool(&root.join("project/bin/g++"));
         let mut env = linux_env(&root);
         env.path = vec![root.join("project/bin")];
@@ -545,7 +545,7 @@ mod tests {
     #[test]
     fn symlinks_are_canonicalised_and_deduplicated() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let root = crate::paths::canonical(dir.path()).unwrap();
         tool(&root.join("usr/bin/x86_64-linux-gnu-g++-13"));
         std::os::unix::fs::symlink("x86_64-linux-gnu-g++-13", root.join("usr/bin/g++")).unwrap();
         std::os::unix::fs::symlink("x86_64-linux-gnu-g++-13", root.join("usr/bin/g++-13")).unwrap();
@@ -561,7 +561,7 @@ mod tests {
     #[test]
     fn non_executables_and_directories_are_skipped() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let root = crate::paths::canonical(dir.path()).unwrap();
         std::fs::create_dir_all(root.join("usr/bin/g++")).unwrap();
         std::fs::create_dir_all(root.join("usr/local/bin")).unwrap();
         std::fs::write(root.join("usr/local/bin/g++"), b"data").unwrap();
@@ -571,7 +571,7 @@ mod tests {
     #[test]
     fn windows_well_known_locations() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let root = crate::paths::canonical(dir.path()).unwrap();
         let profile = root.join("Users/ada");
         let local = profile.join("AppData/Local");
         let program_data = root.join("ProgramData");
@@ -622,7 +622,7 @@ mod tests {
     #[test]
     fn explicit_paths() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let root = crate::paths::canonical(dir.path()).unwrap();
         let gxx = root.join("custom/x86_64-linux-gnu-g++-14");
         tool(&gxx);
         let candidate = explicit_candidate(&gxx, Platform::Linux).unwrap();

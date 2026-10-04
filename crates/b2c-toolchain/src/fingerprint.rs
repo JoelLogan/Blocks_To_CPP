@@ -48,7 +48,7 @@ impl Fingerprint {
     /// Any I/O error, or `InvalidInput` if the path is not a regular file or
     /// is larger than 512 MiB.
     pub fn compute(path: &Path) -> io::Result<Self> {
-        let path = std::fs::canonicalize(path)?;
+        let path = crate::paths::canonical(path)?;
         let mut file = File::open(&path)?;
         let metadata = file.metadata()?;
         if !metadata.is_file() {

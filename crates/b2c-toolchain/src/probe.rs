@@ -318,7 +318,7 @@ pub fn probe(path: &Path, options: &ProbeOptions) -> Result<Toolchain, ProbeErro
         None => builder.tempdir(),
     }
     .map_err(ProbeError::TempDir)?;
-    let temp_path = std::fs::canonicalize(temp.path()).map_err(ProbeError::TempDir)?;
+    let temp_path = crate::paths::canonical(temp.path()).map_err(ProbeError::TempDir)?;
     let bin_dir = fingerprint
         .path
         .parent()
