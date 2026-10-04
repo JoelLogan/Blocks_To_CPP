@@ -239,10 +239,15 @@ rendering of the generated C++ (useful for pasting into chat or an editor),
 and a custom `application/x-blocks2cpp+json` payload:
 
 ```json
-{ "format": "blocks2cpp/clipboard", "formatVersion": 1, "catalog": "1.0.0", "blocks": [ … ] }
+{ "format": "blocks2cpp/clipboard", "formatVersion": 1, "catalog": "1.0.0", "blocks": [ … ],
+  "refs": { "<symbol id>": { "name": "geo::area", "kind": "function" } } }
 ```
 
+`refs` records the qualified name and kind of each symbol that the copied
+blocks refer to but do not declare.
+
 Pasting runs the **same validator and limits as file loading**. Pasted blocks
-get fresh IDs, and symbol references are re-resolved by name in the target
-scope. A paste that contains Raw C++ shows an inline notice: *"Pasted content
+get fresh IDs, and symbol references are re-resolved by qualified name in the
+target scope ([06 §6.14.11](06-compiler-pipeline.md#61411-names-typed-in-slots)).
+A paste that contains Raw C++ shows an inline notice: *"Pasted content
 includes Raw C++ – review before running."*

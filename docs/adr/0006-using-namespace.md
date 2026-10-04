@@ -33,7 +33,8 @@ forbids them would make the setting painful to turn on.
 Three independent design studies each built a complete rule set and proved it
 with compiled programs (114, 88 and 127 cases on g++ 11–14, C++17/20/23).
 Three adversarial reviewers then attacked the merged design with another 200+
-programs, also on clang with libstdc++ and libc++.
+programs, also on clang with libstdc++ and libc++, and a second round attacked
+the revised rules with about 100 more.
 
 1. **Reject every clashing name.** The generated code looks exactly like a
    textbook, and the generator stays simple. But turning the setting on forces
@@ -63,25 +64,35 @@ Option 3, specified in [06 §6.14](../spec/06-compiler-pipeline.md#614-standard-
 * In multi-module `.cpp` files, file directives are the first lines of an
   anonymous namespace. Then `::name` reaches the module's own non-shared names
   exactly, because qualified lookup stops at the anonymous namespace that
-  declares the name.
+  declares the name. `E0213` guarantees that nothing else in that namespace
+  declares it, including library packs that put a directive at global scope
+  and, through a build-time probe, headers included by Raw C++.
 * A generated table of standard names (the union over GCC 11–15 and every
   supported standard) drives every decision. Raw C++ and library packs get
   explicit checks.
 
 ## Consequences
 
-* Turning Textbook style on never breaks a project, apart from namespace-scope
-  types and namespaces named like standard ones, which the preview lists with
-  suggested names and renames in one undo step.
+* Turning Textbook style on never breaks a project silently. It can require
+  renames of namespace-scope types and namespaces named like standard ones, and
+  `::` or `std::` insertions in Raw C++ whose meaning the directive would
+  change (`E0218`). The preview lists both and applies them, after
+  confirmation, in one undo step.
 * Generated code mixes spellings where the user's names meet standard names
   (`::count`, `std::count` kept next to a user's `count`). Hovers explain each
   case.
 * The work also fixed problems that exist without any directive:
-  * calls to user functions captured by argument-dependent lookup;
-  * a global function hidden by a class member;
-  * members of dependent base classes, now written `this->m`;
-  * overload sets split between shared and non-shared declarations (`E0213`);
-  * the anonymous-namespace layout inside user namespaces.
+  * calls to user functions captured by argument-dependent lookup, including
+    hidden friends;
+  * a global function hidden by a class member or a local;
+  * members of dependent base classes, now written `this->m` or `D::m`;
+  * overload sets split between shared and non-shared declarations, or
+    between user code and library packs (`E0213`);
+  * the anonymous-namespace layout inside user namespaces;
+  * one dependency order for all declarations, so default member
+    initialisers can use globals and functions;
+  * placing Raw C++ declarations where both generated and raw code can use
+    them.
 * New maintenance: the standard-name table must be regenerated for each GCC
   release (a CI job per version checks it), and packs need generated name
   lists.

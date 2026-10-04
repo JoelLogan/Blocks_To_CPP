@@ -152,12 +152,13 @@ enum Expr {
 * **Lints** (each individually configurable): integer division into a
   floating-point context (`W0510`), `==` on floating-point values (`W0511`),
   signed/unsigned comparison (`W0512`), `forever` without an exit (`I0513`),
-  the name-spelling checks of [§6.14](#614-standard-names-and-using-namespace)
-  (`E0213`, `E0215`–`E0218`, `I0523`, `I0524`, `W0525`; `E0514`, a
-  `use namespace` block in code emitted into a header, is an error that cannot
-  be turned off), raw `new` without a matching
+  the name-spelling notes of [§6.14](#614-standard-names-and-using-namespace)
+  (`I0523`, `I0524`, `W0525`), raw `new` without a matching
   owner (`W0515`), capturing locals by reference in a detached context
   (`W0516`), literal overflow (`E0517`).
+* **Name-spelling errors** of [§6.14](#614-standard-names-and-using-namespace)
+  cannot be turned off, because without them the generated code would not mean
+  what the blocks say: `E0213`, `E0215`–`E0218` and `E0514`.
 
 ## 6.7 Ordering and declarations
 
@@ -168,23 +169,48 @@ Users never have to think about declaration order. Per translation unit:
 2. **Support helpers** used by this TU (inline section or `#include
    "b2c_support.hpp"`), then the file's `using namespace` directives, if any
    ([§6.14.3](#6143-where-directives-go)).
-3. **Type definitions**, topologically sorted by *completeness dependencies*:
-   by-value fields, base classes and `std::array<T, N>` require a complete
-   type, while pointers, references and smart pointers need only a forward
-   declaration. A by-value cycle produces error `E0420` (*"Player contains a
-   Team which contains a Player; make one of them a pointer or
-   reference"*). Ties are broken by name.
-4. **Forward declarations** of all free functions and function templates (so
-   call order never matters) and of classes that are only referenced
-   indirectly.
-5. **Global variables**, topologically sorted by initialiser dependencies.
-   Cycles produce error `E0421`.
-6. **Function and method definitions.** Methods are defined inside the class
+3. **Declarations**, in one topological order over: forward declarations of
+   classes that are only referenced indirectly, type definitions, declarations
+   of all free functions and function templates (so call order never matters),
+   global variable and constant definitions, and top-level Raw C++
+   declarations blocks.
+   * A type definition depends on the complete types of its by-value fields,
+     base classes and `std::array<T, N>` elements (pointers, references and
+     smart pointers need only a forward declaration). It also depends on the
+     declaration of every function, variable and constant that its default
+     member initialisers, in-class static member initialisers, array bounds,
+     template arguments and its methods' default arguments use.
+   * A function declaration depends on what its default arguments use; its
+     parameter and return types need only forward declarations.
+   * A global variable or constant depends on its complete type and on
+     everything its initialiser uses.
+   * A top-level Raw C++ declarations block depends on every user type,
+     function, variable and constant whose name occurs in it as an identifier
+     token. A user declaration that uses an external function or type
+     (*Declare external …*) depends on the raw blocks that declare that name
+     ([§6.14.9](#6149-raw-c)).
+   * A by-value cycle produces error `E0420` (*"Player contains a Team which
+     contains a Player; make one of them a pointer or reference"*); any other
+     cycle produces `E0421`.
+   * When several declarations are ready, raw blocks come first (by block
+     `id`), so a specialisation such as `std::hash<Point>` directly follows
+     `Point`. Then come class forward declarations, constants, types,
+     functions and variables, each sorted by name.
+4. **Function and method definitions.** Methods are defined inside the class
    body when every type they use is complete at that point and every free
    function and global variable they refer to is already declared
    ([§6.14.4](#6144-emission-order-for-qualified-names)). Otherwise they are
-   emitted **out of line** after all classes (`void Player::attack(Team& t) {
-   … }`). Free functions are sorted by name, and `main` comes last.
+   emitted **out of line** after all declarations
+   (`void Player::attack(Team& t) { … }`). A method of a shared non-template class whose body contains a
+   `use namespace … here` block is always emitted out of line in the module's
+   `.cpp` ([§6.14.3](#6143-where-directives-go)). Free functions are sorted by
+   name, and `main` comes last.
+
+Top-level Raw C++ declarations are always emitted at global scope. In a
+multi-module `.cpp` the anonymous namespace is closed before a raw block and
+reopened after it. When the file has directives, its code always opens with
+the anonymous-namespace block that holds them
+([§6.14.3](#6143-where-directives-go)), and later blocks still see them.
 
 Ordering never depends on canvas position, so moving blocks around never
 changes the generated code.
@@ -258,6 +284,11 @@ configuration that bans `Printer::write_str` outside the token module.
   default, or Allman), pointer alignment (`int* p` default), spaces in
   template brackets (never).
 * Output always ends with exactly one newline and has no trailing whitespace.
+* A `:` is always followed by a space when the next token begins with `::`
+  (conditional operator, range-`for`, `case` labels, base clauses, bit-field
+  widths, member initialiser lists): `c ? 1 : ::count`, `for (int v : ::data)`,
+  because `:::` lexes as `::` `:`. `<::` needs no space, because C++11 lexes it
+  as `<` `::`.
 * File header comment (the second line is omitted in *Export*). There are no
   timestamps.
 
@@ -406,7 +437,7 @@ without them, generated code calls the same functions and prints the same
 output. Raw C++ is opaque text, so it is checked (§6.14.9) rather than
 rewritten. Every rule below was established with compiled test programs on
 g++ 11–14 and clang 18 (with libstdc++ and libc++), C++17/20/23, in three
-independent design studies and an adversarial review (§6.14.13).
+independent design studies and two rounds of adversarial review (§6.14.13).
 
 ### 6.14.1 Terms
 
@@ -423,7 +454,10 @@ independent design studies and an adversarial review (§6.14.13).
   after it.
 * The **nominated names** at a point are the names that the namespaces whose
   directives are in effect there declare: from the standard-name table
-  (§6.14.8) for standard namespaces, from the symbol table for user namespaces.
+  (§6.14.8) for standard namespaces, and for user namespaces from the symbol
+  table plus every identifier token of a Raw C++ block placed inside one of the
+  namespace's blocks (such a block can declare members that the analyser cannot
+  see).
 
 ### 6.14.2 One lookup model decides every spelling
 
@@ -442,9 +476,16 @@ entity (for a function, exactly its overload set). Otherwise it is written:
 * `geo::name` for a member of user namespace `geo`, with `::geo::name` when
   `geo` itself is contested;
 * `Side::left` for an unscoped enumerator;
-* `this->m` for a member inherited from a base class that depends on a
-  template parameter (always, because lookup never searches such a base: with a
-  directive, a plain `max(a, b)` there silently means `std::max`).
+* for a member inherited from a base class that depends on a template
+  parameter, always, because lookup never searches such a base (with a
+  directive, a plain `max(a, b)` there silently means `std::max`):
+  * `this->m` for a non-static member used in a non-static member function,
+    constructor or destructor, or in a lambda that captures `this`;
+  * `D::m` otherwise, where `D` is the class being defined (static members,
+    static member functions, static data member initialisers, lambdas that do
+    not capture `this`);
+  * with explicit template arguments, `this->template m<…>(…)` or
+    `D::template m<…>(…)`.
 
 **Functions are never left to overload resolution.** A reference to a user,
 external or library-pack function whose name is also a nominated name at that
@@ -453,13 +494,31 @@ written `::f(…)` or `geo::f(…)`, even when overload resolution would pick th
 user's function today: with `using namespace std;`, `max(1.5, 2.5)` calls
 `std::max<double>` instead of the user's `int max(int, int)`.
 
+**Classes the analyser cannot see into.** Library-pack metadata lists the
+methods and fields a pack class exposes to blocks, not every member it has
+([03 §3.11.2](03-block-language.md#3112-template-lowering-library-blocks)
+rule 4), and external and opaque types have no member list at all. So a
+reference to a namespace-scope function or variable from inside a class that
+has, directly or indirectly, a library-pack, external or opaque base is always
+written `::f` or `geo::f`, with or without directives. This covers its member
+bodies (also out of line), default member initialisers, and lambdas and nested
+classes inside it.
+
 The spelling is recorded in the typed SAST and printed by the generator.
 Because the same model runs with and without directives, turning Textbook style
 off never removes a qualification that is still needed: a global `max` called
 from a method of a class that has its own `max` member is `::max(…)` either way.
 Locals, parameters, members and template parameters are found before nominated
-names and are written plainly. Info `I0524` explains a `::` once per
-declaration and offers an optional rename.
+names and are written plainly. A namespace-scope entity hidden by a local,
+parameter or member is written `::name` or `geo::name`, so `E0205` remains only
+for a hidden local, parameter or member, which C++ cannot qualify (until this
+model lands in M3, `E0205` covers every hidden name). Info `I0524` explains a
+`::` once per declaration and offers an optional rename.
+
+In an out-of-line member definition the class name in the declarator is
+written plainly unless it is contested. When it needs `::`, the definition
+uses a trailing return type (`auto ::Point::mirror() const -> ::Point`),
+because `::Point ::Point::mirror()` parses as one qualified name.
 
 ### 6.14.3 Where directives go
 
@@ -468,9 +527,13 @@ declaration and offers an optional rename.
    spells every standard name in full). A `use namespace … here` block in any
    body that is emitted into a header is error `E0514`: shared function
    templates (including functions with `auto` parameters), every member of a
-   shared class template, in-class method bodies of shared classes, and lambdas
-   in initialisers of shared constants or in default arguments of shared
-   functions.
+   shared class template, and lambdas in initialisers of shared constants, in
+   default member initialisers of shared classes or in default arguments of
+   shared functions. A method of a shared non-template class whose body
+   contains such a block is defined out of line in the module's `.cpp`
+   ([§6.7](#67-ordering-and-declarations) step 4), so it is not `E0514`. A
+   library pack can put a directive in front of header code, which §6.14.10
+   covers.
 2. **File directives** (Textbook style and file blocks) are written once per
    namespace per `.cpp`, after every `#include`, after the inline
    support-helper section and after any top-level Raw C++ `#include` block
@@ -486,27 +549,31 @@ declaration and offers an optional rename.
      module's own non-shared names exactly: qualified lookup stops at the
      anonymous namespace, which declares the name, before following its
      directive (and that is exact only because of `E0213`, §6.14.7). With the
-     directive at global scope, `::name` would be ambiguous for non-shared
-     names.
-   * A user namespace that no included header declares is first declared empty
-     (`namespace geo {}`) right after the helpers, so that its directive can
-     join the others. A file block naming a namespace declared in another
-     module's header adds that header's `#include`.
+     directive at global scope, `::name` would also find the nominated
+     namespace's names for non-shared names (which is why §6.14.10 restricts
+     packs that nominate a namespace).
+   * Every user namespace that a `use namespace` block of the module names
+     (file or statement block) and that no included header declares is first
+     declared empty (`namespace geo {}`) right after the helpers, so its
+     directive can join the others and a statement directive never precedes
+     its namespace. A block naming a namespace declared in another module's
+     header adds that header's `#include`.
    * Non-shared members of a user namespace are emitted as
      `namespace geo { namespace { … } }`, never as `namespace { namespace geo
      { … } }`, which would make `geo` ambiguous whenever `geo` also has shared
-     members. The opening anonymous namespace holds only the module's non-shared
-     global-namespace definitions.
+     members. Anonymous-namespace blocks at global scope hold only the
+     module's non-shared global-namespace definitions; they are closed around
+     Raw C++ declarations ([§6.7](#67-ordering-and-declarations)).
    * Textbook style writes the directive only in `.cpp` files that include a
      standard header (directly, through `b2c_support.hpp` or through a project
-     header); an explicit `use namespace std in this file` block in a file with
-     none adds `#include <cstddef>`. The IDE init unit
+     header, not counting the `<cstddef>` below). An explicit
+     `use namespace [std]` block (`in this file` or `here`) in a file with none
+     adds `#include <cstddef>`, so the namespace is declared. The IDE init unit
      ([07 §7.6.3](07-toolchain-build-run.md#763-ide-init-unit)) never has one.
 3. **Statement directives** are written at the block's position. Every
    control-flow body is braced, so the C++ scope is exactly the block's
-   statement list. A body that contains `use namespace [geo] here` is emitted
-   after `geo`'s first block (moved out of line if it would otherwise come
-   earlier, as for a body that needs a complete type).
+   statement list. The namespace a statement block names is always declared
+   before any function body (rule 2).
 4. **Placement.** `use namespace … in this file` sits directly on the canvas
    (a module's top level), and `use namespace … here` is a statement block, so
    it can only be in the statement list of a function, method, constructor,
@@ -514,14 +581,18 @@ declaration and offers an optional rename.
    namespace block, where a directive would leak into every later reopening of
    the namespace. The block shapes enforce this, and a hand-edited file gets the
    catalog's `E0604` (block in the wrong place).
-5. **Redundant blocks.** At each point one source puts a namespace in effect,
-   chosen in this order: Textbook style, then the file block with the smallest
-   block `id`, then the innermost enclosing statement block. Every other block
-   for the same namespace at that point (a duplicate file block, or a
-   `use namespace [geo]` block inside namespace `geo`) emits nothing and gets
+5. **Redundant blocks.** A `use namespace` block is redundant when, at its own
+   position, it is inside that namespace or another source's directive already
+   covers it. Sources count in this order: Textbook style (only in files where
+   it writes the directive), then the file block with the smallest block `id`,
+   then the outermost earlier statement block whose region contains the
+   position. A redundant block emits nothing and gets
    info `I0523` (already in use); it takes effect again when its source goes
-   away. In the source map, the directive line belongs to the source in effect:
-   the block, or the project setting (clicking it opens Project settings).
+   away. Examples are a duplicate file block, a statement block inside the
+   region of another statement block or of a file directive, and a
+   `use namespace [geo] here` block in a function inside namespace `geo`. In
+   the source map, the directive line belongs to the source in effect: the
+   block, or the project setting (clicking it opens Project settings).
 6. **What can be nominated.** Only top-level user namespaces (nominating a
    nested one can silently replace a global during lookup). Library-pack
    namespaces are not offered. `std::numbers`, `std::ranges` and `std::views`
@@ -536,13 +607,14 @@ declaration and offers an optional rename.
 A qualified name (`::name`, `geo::name`, `Side::left`) in a template is bound
 where the template is defined, and in a region an undeclared `::name` silently
 means `std::name`. So every qualified reference is emitted after a declaration
-of its entity: function templates are forward-declared together with the other
-free functions ([§6.7](#67-ordering-and-declarations) step 4), and the bodies of
-in-class methods and class-template members that refer to a user function or
-global variable are emitted out of line after those declarations (§6.7 step 6).
-The generator checks this and refuses to emit a qualified reference that
-precedes its entity's declaration (an internal error, reported like a
-placeholder).
+of its entity. Declarations follow the dependency order of
+[§6.7](#67-ordering-and-declarations) step 3, which covers function templates,
+default arguments, default member initialisers, in-class initialisers and array
+bounds. The bodies of in-class methods and class-template members that refer to
+a user function or global variable are emitted out of line after all
+declarations (§6.7 step 4). The generator checks this and refuses to emit a
+qualified reference that precedes its entity's declaration (an internal error,
+reported like a placeholder).
 
 ### 6.14.5 Spelling standard names
 
@@ -595,10 +667,12 @@ parameter and return types of function types. A call to a user function `f` is
 written `::f(…)` or `geo::f(…)`:
 
 * when an associated namespace of an argument, other than `f`'s own, declares a
-  function named `f` (standard namespaces, including sub-namespaces and
-  `__gnu_cxx`, per the standard-name table; library packs per their metadata,
-  which lists the function names of each pack namespace; user namespaces per
-  the symbol table); or
+  function named `f`, including a hidden friend of one of its classes (a friend
+  function defined in a class, which only argument-dependent lookup finds):
+  standard namespaces, including sub-namespaces and `__gnu_cxx`, per the
+  standard-name table; library packs per their metadata, which lists the
+  function names and hidden friends of each pack namespace (§6.14.10); user
+  namespaces per the symbol table; or
 * when an argument's type depends on a template parameter or is `auto`.
 
 This applies whatever the settings, and a call spelled `geo::f(…)` this way
@@ -614,10 +688,12 @@ class derived from
 * Error **`E0215`**: a type declared at namespace scope (global, anonymous or a
   user namespace) whose name is a nominated name at a point where it is
   referred to (for example `list`, `pair`, `byte`), and a user namespace whose
-  name a nominated namespace declares as a namespace, class or class or alias
-  template (for example `chrono`). Qualifying type names would need fragile
-  spellings (out-of-line definitions such as `auto ::array::origin() -> Point`),
-  and GCC silently resolves some of them to the standard entity: class template
+  name a nominated namespace declares as a namespace or a type (a class,
+  enumeration or type alias, or a class or alias template; for example
+  `chrono`, `string`, `byte`), because a name before `::` is looked up among
+  namespaces and types. Qualifying type names would need fragile spellings
+  (out-of-line definitions such as `auto ::array::origin() -> Point`), and GCC
+  silently resolves some of them to the standard entity: class template
   argument deduction picks `std::pair` for the user's global `pair`, and a user
   type named like a standard namespace is taken as that namespace before `::`.
   Member types and user namespaces named like standard functions (`count`,
@@ -630,15 +706,37 @@ class derived from
   capitalised or the new name is taken, the fix appends `2`, `3`, … and
   re-validates; when the clash is with a nominated user namespace, the first
   fix offered is *Remove this `use namespace` block*.
-* Error **`E0213`**, needed with or without directives: a module's non-shared
-  namespace-scope name must not equal any name declared directly in the global
-  namespace of its translation unit: the module's own shared names (an overload
-  set may not be split between shared and non-shared), shared names of every
-  module whose header is included directly or transitively, library-pack
-  globals, the standard headers' C globals (`GLOBAL_NAMES`; the
-  `Ident::check_namespace_scope` rule applies to anonymous-namespace names too),
-  and top-level Raw C++ declarations. Quick fixes: share all overloads, or
-  rename. `::name` reaches a non-shared name exactly only because of this rule.
+* Error **`E0213`**, needed with or without directives: a name that user
+  blocks define at namespace scope (not with *Declare external …*) must not
+  also be declared by anything else that its spelling `::name` or `geo::name`
+  would reach. Those declarations are:
+  * for every name in the global namespace or a module's anonymous namespace:
+    library-pack globals and the declared names of top-level Raw C++
+    declarations blocks (§6.14.9), whatever their signatures (`::draw(depth)`
+    cannot separate the user's `draw(int)` from a pack's `draw(double)`), and
+    the standard headers' C globals (`GLOBAL_NAMES`; the
+    `Ident::check_namespace_scope` rule applies to anonymous-namespace names
+    too);
+  * for a module's non-shared name, also the module's own shared names (an
+    overload set may not be split between shared and non-shared) and the
+    shared names of every module whose header is included directly or
+    transitively. In a translation unit that includes a library pack that
+    nominates a namespace (§6.14.10), the global namespace nominates it too, so
+    a non-shared function, variable or constant must also not be named like
+    anything that namespace declares (for `std`, the names of the project's
+    standard);
+  * for a non-shared member of user namespace `geo` (emitted in
+    `namespace geo { namespace { … } }`): `geo`'s shared members declared by
+    the module's own header or by any header it includes, directly or
+    transitively;
+  * when building, the names that a header included by a Raw C++ block, or a
+    library pack without a complete list of its global names, puts into the
+    global namespace (found by the probe of §6.14.9).
+
+  `::name` and `geo::name` reach a user entity exactly only because of this
+  rule. Names in different namespaces never clash: a non-shared `geo::count`
+  next to a global `count` is fine. Quick fixes: share all overloads (for a
+  non-shared name), or rename.
 * Names that cannot be renamed never get `E0215`: library-pack globals of every
   kind and types declared with *Declare external type*. When contested they are
   written `::name`, also as the first component of a qualified name (`::byte`,
@@ -659,10 +757,15 @@ its kind (namespace, type, class template, function, object) and the first
 standard that has it, for messages. Names are found by compile probes
 (`namespace p { using std::NAME; }`, `namespace a = std::NAME;`), never by
 parsing headers; probes are run in chunks, and a probe that crashes the
-compiler counts as "no". A CI job per GCC version fails when the probed names
-are not all in the checked-in table. Spelling decisions (§6.14.2, §6.14.5,
-§6.14.6) use the union over all standards, which can only add a harmless
-`std::` or `::`; `E0215` uses the names of the project's standard.
+compiler counts as "no". Hidden friends cannot be probed, so the table also
+lists, as functions, every identifier that follows `friend` in the
+preprocessed headers (a superset, which can only add a harmless `::`). A CI
+job per GCC version fails when the probed names are not all in the checked-in
+table. Spelling decisions for functions, variables, enumerators and standard
+names (§6.14.2, §6.14.5, §6.14.6) use the union over all standards, which can
+only add a harmless `std::` or `::`. Type and namespace names, like `E0215`,
+use the names of the project's standard, so a type that keeps its name in a
+C++17 project (`span`) is written plainly.
 
 When the selected toolchain is newer than the table, a background job (not one
 of the 10-second probes of [07 §7.3](07-toolchain-build-run.md#73-capability-probing))
@@ -679,6 +782,19 @@ Raw C++ is emitted verbatim in the region of its position and may rely on the
 directive (`cout << …` in a raw statement compiles inside a region). Because the
 analyser cannot see into it, these rules apply:
 
+* **Declared names.** The analyser recognises the names a raw block declares
+  from its tokens:
+  * an identifier at bracket depth 0 of the block (the body of
+    `extern "C" { … }` counts as depth 0), not after `::`, `.` or `->`,
+    that directly follows an identifier, a type keyword, `using`, `namespace`,
+    `>`, `*`, `&` or `,` and is directly followed by `(`, `[`, `=`, `;`, `,` or
+    `{`;
+  * a name after `struct`, `class`, `union` or `enum`, unless it is only
+    forward-declared (`struct Point;`);
+  * every macro name of `#define`.
+
+  Recognition errs towards finding too many names, which can only cause an
+  `E0213` that a rename resolves.
 * Error **`E0217`**: Raw C++ must not produce a using-directive, a
   using-enum-declaration or a using-declaration at namespace or block scope.
   Member using-declarations in a class body (`using Base::Base;`), alias
@@ -686,47 +802,84 @@ analyser cannot see into it, these rules apply:
   (`namespace fs = std::filesystem;`) are allowed. Raw C++ also must not
   declare a namespace named `std` except at global scope (a `std::hash`
   specialisation), and must not reopen a namespace that a `use namespace` block
-  nominates.
-* `#include` is allowed only in a top-level Raw C++ declarations block, which
-  is emitted right after the generated `#include` lines, before the helpers and
-  the directives, so the included file is never inside a region (`E0217`
-  elsewhere). The analyser cannot see what such a header declares; it may even
-  contain `using namespace std;`, as many course headers do. So in a
-  translation unit with such a block, no standard name is shortened and every
-  reference to a user namespace-scope name is qualified as in §6.14.2, with or
-  without a directive (`W0525` explains this on the block). The same applies to
-  a library pack whose metadata does not list all its global names. The check runs on the
-  macro-expanded output when building: the generator preprocesses each `.cpp`
-  with the selected g++ and maps line markers back to the raw block. The editor
-  checks raw tokens beforehand, including `#define` replacement lists and the
-  joined text of adjacent raw blocks.
-* Error **`E0218`**: inside a region, a raw identifier (not after `::`, `.`
-  or `->`, and not declared in the same raw block) that names a contested user
-  function, or a raw call `name(` of a C global that is also in the
-  standard-name table: the directive can make it call a different function (raw
-  `max(price, cost)` calls the user's function without the directive and
-  `std::max<double>` with it; raw `abs(-2.5)` returns 2 without and 2.5 with).
+  nominates. (A raw block placed inside one of that namespace's own blocks is
+  allowed; its identifiers count as nominated names, §6.14.1.) The check runs
+  on the macro-expanded output when building: the generator preprocesses each
+  `.cpp` with the selected g++ and maps line markers back to the raw block. The
+  editor checks raw tokens beforehand, including `#define` replacement lists
+  and the joined text of adjacent raw blocks.
+* **`#include`** is allowed only in a top-level Raw C++ declarations block that
+  contains nothing but preprocessor lines (`#include`, `#define`, `#undef`,
+  `#pragma` and conditional directives) and comments. Anywhere else it is
+  `E0217`, with the quick fix *Move the `#include` lines into a C++
+  declarations block of their own*. Such a block is emitted right after the
+  generated `#include` lines, before the helpers and the directives, so the
+  included file is never inside a region. The analyser cannot see what the
+  header declares; it may even contain `using namespace std;`, as many course
+  headers do. So in a translation unit with such a block:
+  * no standard name is shortened, and every reference to a user
+    namespace-scope name is qualified as in §6.14.2, with or without a
+    directive (`W0525` explains this on the block);
+  * when building, the generator compiles one probe made of the file's
+    `#include` lines (generated and raw) followed by
+    `namespace b2c_probe { using ::N; }` for each of the module's non-shared
+    namespace-scope names N, and by `char N;` for each name the module
+    declares directly in the global namespace, in chunks as in §6.14.8. A
+    non-shared name whose probe compiles, or a global name whose probe fails,
+    is declared or made visible at global scope by an included file. That is
+    `E0213`, reported on the declaration and on the raw block (*"`legacy.h`
+    also declares `count`"*).
+
+  A translation unit that includes a library pack without a complete list of
+  its global names is treated the same way (§6.14.10).
+* Error **`E0218`**: a raw identifier (not after `::`, `.` or `->`, and not
+  declared in the same raw block) that names a function, called or used as a
+  value, whose meaning a directive can change. Inside a region, that is a
+  nominated name that is also declared at namespace scope by a user function,
+  a library-pack function, a function declared by another Raw C++ block, or a
+  C global (`GLOBAL_NAMES`). In a translation unit whose region the analyser
+  cannot know (one with a raw `#include` or a pack without a complete list of
+  global names), the same applies everywhere to every name in the
+  standard-name table. Examples:
+  * raw `max(price, cost)` calls the user's function without the directive and
+    `std::max<double>` with it;
+  * raw `abs(-2.5)` returns 2 without it and 2.5 with it on libstdc++;
+  * `transform(…, toupper)` stops compiling.
+
   Quick fixes insert `::` or `std::`, each shown as a diff and applied after
-  confirmation.
+  confirmation. For a C global only `std::` is offered, because `::abs` names
+  different overloads in libstdc++ and libc++.
 * Identifiers in raw text count as declarations for §6.14.5 (1), so generated
   code next to them keeps `std::`.
-* Top-level Raw C++ declarations are emitted at global scope after the opening
-  anonymous-namespace block, never inside it.
+* Top-level Raw C++ declarations are emitted at global scope, never inside an
+  anonymous namespace, in the dependency order of
+  [§6.7](#67-ordering-and-declarations) step 3.
 * Warning `W0525`: raw code inside a region that mentions any other contested
   user name (suggesting `::name`), and raw code outside every region that uses
   a standard function or object name unqualified and does not declare it.
 
 ### 6.14.10 Library packs
 
-* Pack metadata lists the pack's global names and the function names in each of
-  its namespaces, generated by compile probes when the pack is built and
-  checked when it is loaded. Without that list, no standard function name is
-  shortened in a translation unit that includes the pack.
+* Pack metadata lists the pack's global names, the function names in each of
+  its namespaces, and the hidden friends of its classes (every identifier that
+  follows `friend` in its preprocessed headers). It is generated by compile
+  probes when the pack is built and checked when the pack is loaded. Without
+  that list, a translation unit that includes the pack is treated like one with
+  a raw `#include` (§6.14.9).
 * A pack whose headers nominate a namespace (for example a header that contains
   `using namespace std;`, as some course libraries do) is detected at pack load
-  and must declare `nominates = ["std"]`; a translation unit that includes it
-  has a file region for that namespace from the `#include` on, whatever the
-  settings. A pack whose headers nominate any other namespace is rejected.
+  and must declare `nominates = ["std"]`. A pack whose headers nominate any
+  other namespace is rejected. A translation unit that includes such a pack has
+  a std file region from the `#include` on, whatever the settings. That
+  directive is at global scope, so:
+  * in a multi-module project, a non-shared name in that translation unit must
+    not be a standard name (`E0213`, §6.14.7), because `::name` would also find
+    the standard entity;
+  * project headers are included after pack headers (§6.7 step 1). So when any
+    module includes such a pack, the code of every generated header is
+    analysed as if it were in a std region: contested references are written
+    `::f(…)`, `geo::f(…)` and `Side::left`, and `E0215` applies to the types
+    they name. Standard names in headers are still written in full.
 
 ### 6.14.11 Names typed in slots
 
@@ -735,10 +888,14 @@ resolved by the same lookup model. If two or more candidates remain where
 lookup stops (user or nominated, from any namespaces), it is error `E0216`,
 with one quick fix per candidate (`::name`, `geo::name`, `std::name`,
 `std::chrono::name`). Explicit `::x`, `std::x` and `geo::x` resolve directly and
-are kept. `E0216` is reported only while text is being resolved: stored tokens
-keep their symbol IDs and are never re-resolved, and re-resolution by name
-(paste, snippets, Quick Insert) keeps the kind of the original target, so a
-reference to a user symbol re-binds only to user symbols.
+are kept. `E0216` is reported only while typed text is being resolved: stored
+tokens, and tokens of a slot that the user did not edit, keep their symbol IDs
+and are never re-resolved. Re-resolution by name (paste, snippets, Quick
+Insert) uses the target's qualified name recorded in the payload (`::count`,
+`geo::area`, `std::max`), never its shortened spelling. It binds only to an
+entity with that qualified name, of the same kind, that is visible at the new
+position (for a module's non-shared name, the target module's own entity);
+otherwise the reference is `E0201`, naming the original.
 
 ### 6.14.12 Turning Textbook style on and off; export
 
@@ -776,10 +933,14 @@ reference to a user symbol re-binds only to user symbols.
   compiles with every supported GCC and standard and prints the same output.
   Projects with Raw C++ must also have every raw block whose output differs
   listed by the preview of §6.14.12.
-* The compiled cases of the design studies and the adversarial review (about
-  400 programs: placement, layouts, every kind of name, argument-dependent
-  lookup, emission order, Raw C++, library packs, multi-module projects) as
-  regression tests on GCC 11–15, with clang and libc++ for exported code.
+* The compiled cases of the design studies and the two adversarial review
+  rounds (about 500 programs: placement, layouts, every kind of name,
+  argument-dependent lookup, emission order, Raw C++, library packs,
+  multi-module projects) as regression tests on GCC 11–15, with clang and
+  libc++ for exported code.
+* The build probe of §6.14.9 against headers that declare a module's names,
+  that contain `using namespace std;` and that contain `using std::max;`, in
+  single-module and multi-module projects.
 * A torture test per GCC and standard: every table name that is a valid user
   name (passes `Ident::new` and `check_namespace_scope`) is declared as a user
   global variable, function and enumerator, at global scope and in the

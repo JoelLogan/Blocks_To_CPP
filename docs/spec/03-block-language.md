@@ -458,8 +458,8 @@ Clear organisation is a core requirement, not polish:
     generation, which is useful for experiments. The C++ view shows nothing
     for it.
 11. **Snippets.** Save a selection as a reusable snippet (stored per-user).
-    Inserting it remaps symbol IDs and resolves references by name in the
-    target scope.
+    Inserting it remaps symbol IDs and resolves references by qualified name
+    in the target scope ([06 §6.14.11](06-compiler-pipeline.md#61411-names-typed-in-slots)).
 
 ## 3.9 Support helpers
 
