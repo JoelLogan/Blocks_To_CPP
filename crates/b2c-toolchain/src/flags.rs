@@ -837,6 +837,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn pkg_config_is_allowlisted() {
         let flags = filter_pkg_config(
@@ -848,6 +849,33 @@ mod tests {
             ["-pthread", "-I/usr/include/a b", "-isystem/opt/x", "-DX", "-DY=2"]
         );
         assert_eq!(flags.link, ["-pthread", "-L/usr/lib", "-lfoo"]);
+        assert_pkg_config_dropped(&flags);
+    }
+
+    /// The same on Windows, where absolute folders have a drive letter (as
+    /// MSYS2's pkg-config prints them).
+    #[cfg(windows)]
+    #[test]
+    fn pkg_config_is_allowlisted() {
+        let flags = filter_pkg_config(
+            "-pthread -IC:/msys64/include/a\\ b -isystem C:/opt/x -isystem rel -DX -DY=2 -D1BAD \
+             -LC:/msys64/lib -lfoo -l-bad -Lrelative -Wl,-plugin,x -fplugin=y -O2 C:/msys64/lib/libz.a",
+        );
+        assert_eq!(
+            flags.compile,
+            [
+                "-pthread",
+                "-IC:/msys64/include/a b",
+                "-isystemC:/opt/x",
+                "-DX",
+                "-DY=2"
+            ]
+        );
+        assert_eq!(flags.link, ["-pthread", "-LC:/msys64/lib", "-lfoo"]);
+        assert_pkg_config_dropped(&flags);
+    }
+
+    fn assert_pkg_config_dropped(flags: &PkgConfigFlags) {
         // -isystem rel, -D1BAD, -l-bad, -Lrelative, -Wl,…, -fplugin, -O2, the archive.
         assert_eq!(flags.dropped.len(), 8, "{:#?}", flags.dropped);
         assert!(

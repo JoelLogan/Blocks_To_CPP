@@ -465,7 +465,15 @@ mod tests {
     fn names(found: &[Candidate], root: &Path) -> Vec<String> {
         found
             .iter()
-            .map(|c| c.found_as.strip_prefix(root).unwrap().display().to_string())
+            // `/`-separated on every host, so expectations read the same.
+            .map(|c| {
+                c.found_as
+                    .strip_prefix(root)
+                    .unwrap()
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
+            })
             .collect()
     }
 
