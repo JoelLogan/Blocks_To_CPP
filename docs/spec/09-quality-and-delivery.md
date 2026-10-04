@@ -93,7 +93,8 @@ and the OSV upload run when the repository is public, or when the repository var
 The OSV scan itself always runs and fails on known vulnerabilities.
 
 **Implemented so far:** `pages.yml`, `workflow-audit.yml`, `codeql.yml`, `osv-scanner.yml`,
-`scorecard.yml`, and in `ci.yml` the `lint`, `test` (Ubuntu and Windows, with g++), `wasm`,
+`scorecard.yml`, and in `ci.yml` the `lint`, `test` (Ubuntu with GCC 13 and Windows with MSYS2), `gcc`
+(GCC 11 and 15 in containers, for the crates that compile C++), `wasm`,
 `deny`, `docs` (diagnostic codes documented), `secrets` (gitleaks), `security` (`pnpm audit`) and
 `fuzz` (a 60-second libFuzzer run per target, seeded with the examples and the malicious-project
 suite) jobs. The rest arrive with the milestones whose code they check: the web and E2E jobs with the

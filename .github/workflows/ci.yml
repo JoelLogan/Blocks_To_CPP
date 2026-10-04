@@ -104,6 +104,63 @@ jobs:
         env:
           B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
 
+  # The oldest supported GCC (b2c_toolchain::probe::MIN_GCC_MAJOR) and the
+  # newest, next to the Linux job's GCC 13 (spec §9.2, golden end-to-end), in
+  # the official gcc images pinned by digest. Only the crates that compile C++
+  # are tested here; the others do not depend on the compiler.
+  gcc:
+    name: Test with GCC ${{ matrix.gcc }} (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gcc: "11"
+            image: gcc:11@sha256:63aaebc5db8930a70241051619cba77781a5466fb3e4dc99d2ff3b752cb715f2 # 11.5.0
+          - gcc: "15"
+            image: gcc:15@sha256:ead103e6d03b69232962d467f3520c3f70b6718c69ff71efcc08efe9011fadb6 # 15.3.0
+    container:
+      image: ${{ matrix.image }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      # The images have no Rust; rustup-init is pinned and its checksum checked.
+      RUSTUP_VERSION: 1.29.1
+      RUSTUP_INIT_SHA256: dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install rustup
+        run: |
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            --output /tmp/rustup-init \
+            "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init"
+          echo "${RUSTUP_INIT_SHA256}  /tmp/rustup-init" | sha256sum --check --strict
+          chmod +x /tmp/rustup-init
+          /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain none
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+
+      - name: Show g++ version
+        run: g++ --version
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Show the compilers Blocks2Cpp finds
+        run: cargo run --locked --quiet -p b2c-cli -- toolchains || true
+
+      - name: Test
+        run: cargo test --locked -p b2c-lang -p b2c-codegen -p b2c-build -p b2c-cli
+        env:
+          B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
+
   wasm:
     name: Compiler crates build for WebAssembly
     runs-on: ubuntu-24.04
