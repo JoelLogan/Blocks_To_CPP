@@ -393,6 +393,10 @@ b2c fmt       <project.b2c> [--check]
 * The CLI does not consult the GUI trust store. Running `b2c build` on a named
   file is an explicit user decision, like running `make`. This is documented
   prominently.
+* Lint levels come from the project file and the machine's `settings.json`,
+  exactly as in the app ([06 §6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints)).
+  A machine without a settings file, such as a CI runner, uses the project's
+  levels.
 * **Exit codes:** `0` success; `1` project errors; `2` usage (including an
   input file that cannot be read); `3` toolchain problem. `b2c run` returns the
   program's own exit code, `124` if `--timeout` stopped it, `125` if it could

@@ -138,7 +138,8 @@ readers, high contrast, the toolchain matrix) and updated documentation.
   Presentation modes. Dock layout (swap, split, remembered). Light, Dark and
   High Contrast themes with a checked colour-blind-safe category palette.
 * Code style options in the generator (braces, indentation, pointer
-  alignment, line width) and per-lint settings. Build and run settings
+  alignment, line width) and lint levels (in the project file, overridden
+  per machine; Q9). Build and run settings
   (compile timeout, cache size, Windows link mode, memory and process caps
   for runs). The start-page example gallery and full template set.
   *Help → Export diagnostics bundle*.
@@ -192,3 +193,4 @@ items are the defaults we build toward until the owner says otherwise.
 | Q6 | Minimum Windows version | **Windows 10 1809** (ConPTY, WebView2). To be revisited as support for Windows 10 ends (WebView2, MSYS2 and GitHub's runners). | Decided 2026-10-04 |
 | Q7 | Update checks | **Opt-in**, asked on first run | Decided 2026-10-04 |
 | Q8 | Primary audience emphasis (learners vs. power users) for default UI | **Learner-first** defaults (friendly labels, advanced hidden), one switch to expert mode | Decided 2026-10-04 |
+| Q9 | Where are lint levels stored? | **In the project file** (`project.lints`), **overridable in each user's machine settings**; the machine value wins when both are set. Errors cannot be changed. See [06 §6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints). | Decided 2026-10-04 |

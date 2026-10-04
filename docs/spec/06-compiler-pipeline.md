@@ -149,16 +149,34 @@ enum Expr {
   outside a loop (`E0401`), unreachable statements after
   `return`/`break`/`throw` (`W0502`), use before initialisation for scalars
   (`W0503`), use after `move` (`W0504`), `rethrow` outside a catch (`E0402`).
-* **Lints** (each individually configurable): integer division into a
-  floating-point context (`W0510`), `==` on floating-point values (`W0511`),
-  signed/unsigned comparison (`W0512`), `forever` without an exit (`I0513`),
-  the name-spelling notes of [§6.14](#614-standard-names-and-using-namespace)
-  (`I0523`, `I0524`, `W0525`), raw `new` without a matching
-  owner (`W0515`), capturing locals by reference in a detached context
-  (`W0516`), literal overflow (`E0517`).
-* **Name-spelling errors** of [§6.14](#614-standard-names-and-using-namespace)
-  cannot be turned off, because without them the generated code would not mean
-  what the blocks say: `E0213`, `E0215`–`E0218` and `E0514`.
+* **Lints:** integer division into a floating-point context (`W0510`), `==`
+  on floating-point values (`W0511`), signed/unsigned comparison (`W0512`),
+  `forever` without an exit (`I0513`), raw `new` without a matching owner
+  (`W0515`), capturing locals by reference in a detached context (`W0516`),
+  and the name-spelling notes of
+  [§6.14](#614-standard-names-and-using-namespace) (`I0523`, `I0524`,
+  `W0525`). Literal overflow (`E0517`) is an error.
+* **Lint levels.** Every analyser warning and info code (`W05xx` and
+  `I05xx`, including the flow checks above) can be set to `off`, `info`,
+  `warning` or `error`:
+  * in the project file (`project.lints`,
+    [05 §5.3](05-project-format.md#53-top-level-structure)), for everyone who
+    opens the project;
+  * in the machine settings (`settings.json`,
+    [05 §5.9](05-project-format.md#59-machine-local-data)), for every project
+    on that computer.
+
+  The machine value wins when both are set, and a code set in neither keeps
+  its default level. A code at `error` blocks Run and makes `b2c check` fail
+  like any other error; a code at `off` is not reported. The analyser takes
+  the effective levels as an input and never reads either file itself. Levels
+  never change the generated code, so they are not part of the project hash
+  ([05 §5.11](05-project-format.md#511-content-hash)).
+* **Errors cannot be turned off or lowered.** The analyser reports an error
+  only when g++ would reject the generated code or the code would not mean
+  what the blocks say. That includes literal overflow (`E0517`) and the
+  name-spelling errors of [§6.14](#614-standard-names-and-using-namespace)
+  (`E0213`, `E0215`–`E0218` and `E0514`).
 
 ## 6.7 Ordering and declarations
 
@@ -379,7 +397,7 @@ statement (with its comment lines and nested bodies) and expression has one.
 ```rust
 pub struct Diagnostic {
     pub code: DiagCode,             // e.g. B2C-E0201, or GCC-mapped "C:<option or hash>"
-    pub severity: Severity,         // Error | Warning | Info
+    pub severity: Severity,         // Error | Warning | Info, after lint levels (§6.6)
     pub message: MessageKey,        // i18n key + typed args; rendered in the UI
     pub primary: Location,          // block + part (+ token range)
     pub related: Vec<(Location, MessageKey)>,
@@ -403,7 +421,8 @@ pub struct Diagnostic {
 
 Every code has an entry in `docs/reference/diagnostics/` (generated from the
 message catalog plus hand-written explanations). CI fails if a code lacks
-documentation.
+documentation. A code keeps its letter when a lint level changes its
+severity: `W0510` set to `error` is still `W0510`.
 
 ## 6.13 Performance in the editor
 

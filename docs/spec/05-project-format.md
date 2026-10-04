@@ -76,6 +76,20 @@ every generated `.cpp`, [06 §6.14](06-compiler-pipeline.md#614-standard-names-a
 is `false` when absent and is written only when `true`, like
 `language.gnuExtensions`, so files that do not use it are unchanged.
 
+`project.lints` sets lint levels for everyone who opens the project
+([06 §6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints)):
+`"lints": { "W0510": "error", "I0513": "off" }`.
+
+* Each key is an analyser warning or info code (`W05` or `I05` followed by
+  two digits), and each value is `off`, `info`, `warning` or `error`. Any
+  other key or value is a load error.
+* A code that this version does not know (from a newer version) is kept on
+  save and ignored, with an info notice.
+* The machine settings can override each entry, and the machine value wins
+  (§5.9).
+* The object is written only when it has entries, so files that do not use
+  it are unchanged.
+
 Every option is a **closed enum or a validated scalar**. There is no field
 for free-form compiler flags, paths or commands ([ADR-0005](../adr/0005-no-compiler-flags-in-projects.md)).
 `defines` take validated identifiers and typed values (`int`, `bool`, `string`
@@ -197,7 +211,7 @@ Further rules:
 
 | File | Contents | Schema |
 |------|----------|--------|
-| `settings.json` | UI preferences, code style, default standard, selected toolchain ID, *advanced extra compiler flags* (still filtered, [08 §8.5](08-security.md#85-compiler-invocation-safety)), environment pass-through list | Versioned JSON, validated on load. Invalid values are reset to defaults with a notice. |
+| `settings.json` | UI preferences, code style, default standard, selected toolchain ID, lint levels for every project on this computer (same shape as `project.lints`, §5.3; they win over the project's), *advanced extra compiler flags* (still filtered, [08 §8.5](08-security.md#85-compiler-invocation-safety)), environment pass-through list | Versioned JSON, validated on load. Invalid values are reset to defaults with a notice. |
 | `toolchains.json` | Discovered and manually added toolchains, with probe results and fingerprints | Re-probed when a fingerprint changes |
 | `trust.json` | Trusted project records `{projectId, canonicalPath, rawCodeHashAtGrant, grantedAt}` and trusted folders | Validated on load; a corrupt file means "nothing is trusted". Other processes running as the same user are out of scope ([08 §8.1](08-security.md#81-scope-and-assumptions)). |
 | `libraries.json` | Library profiles: `name → {includeDirs[], libDirs[], linkNames[], runtimeDirs[]}` | Paths are chosen via dialog only |
@@ -223,7 +237,8 @@ Further rules:
 
 `projectHash = SHA-256(canonical serialisation with layout-only keys removed)`.
 Layout-only keys are `x`, `y`, `viewport`, `frames`, `notes`, `collapsed` and
-comment `pinned`. The hash is used for:
+comment `pinned`. `project.lints` is removed too, because lint levels never
+change the generated code. The hash is used for:
 
 * **Build-cache keys**, together with the toolchain fingerprint and resolved
   build options
