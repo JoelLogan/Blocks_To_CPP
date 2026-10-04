@@ -77,13 +77,20 @@ Each diagnostic has:
   *Add `return`*)
 * **Show C++ compiler message** to reveal the raw g++ text
 * a **Learn more** link to the diagnostics reference (bundled offline docs)
-* for a warning or info, **Change level…** (off, info, warning, error), either
-  *for this project* (saved in the project file as one undo step) or *on this
-  computer* (saved in the machine settings, for every project)
+* for an analyser warning or info code (`W05xx` or `I05xx`), at whatever
+  level it is shown, **Change level…**: off, info, warning, error or *not set*,
+  either *for this project* (a change to the project: one undo step, saved
+  with it) or *on this computer* (saved at once in the machine settings, for
+  every project; Undo does not reverse it). *Not set* removes the entry, so
+  the project's level or the default applies again. When this computer
+  already sets the code, choosing a level *for this project* says that this
+  computer's level still applies here. g++ and toolchain messages have no
+  level.
 
 Project settings and the Settings page each list every lint with its default
-level. When this computer overrides a project's level, Project settings shows
-both (*"Project: error · This computer: off"*), because the machine value wins
+level, and each entry can be set back to *not set*. When this computer
+overrides a project's level, Project settings shows both (*"Project: error ·
+This computer: off"*), because the machine value wins
 ([06 §6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints)).
 
 ## 4.5 Console (integrated terminal)

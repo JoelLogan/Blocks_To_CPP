@@ -139,7 +139,8 @@ readers, high contrast, the toolchain matrix) and updated documentation.
   High Contrast themes with a checked colour-blind-safe category palette.
 * Code style options in the generator (braces, indentation, pointer
   alignment, line width) and lint levels (in the project file, overridden
-  per machine; Q9). Build and run settings
+  per machine; Q9), with a malicious-project test that a project file cannot
+  lower `W0520`. Build and run settings
   (compile timeout, cache size, Windows link mode, memory and process caps
   for runs). The start-page example gallery and full template set.
   *Help → Export diagnostics bundle*.

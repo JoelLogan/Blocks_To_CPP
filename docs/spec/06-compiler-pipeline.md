@@ -167,16 +167,20 @@ enum Expr {
     on that computer.
 
   The machine value wins when both are set, and a code set in neither keeps
-  its default level. A code at `error` blocks Run and makes `b2c check` fail
-  like any other error; a code at `off` is not reported. The analyser takes
-  the effective levels as an input and never reads either file itself. Levels
-  never change the generated code, so they are not part of the project hash
+  its default level. The project file cannot lower `W0520` (hidden characters
+  in Raw C++), because that warning defends against the file itself
+  ([05 §5.3](05-project-format.md#53-top-level-structure)). A code at `error`
+  blocks Run and makes `b2c check` fail like any other error; a code at `off`
+  is not reported. The analyser takes the effective levels as an input and
+  never reads either file itself. Levels never change the generated code, so
+  they are not part of the project hash
   ([05 §5.11](05-project-format.md#511-content-hash)).
-* **Errors cannot be turned off or lowered.** The analyser reports an error
-  only when g++ would reject the generated code or the code would not mean
+* **Errors (`E` codes) cannot be turned off or lowered.** An `E` code means
+  that g++ would reject the generated code or that the code would not mean
   what the blocks say. That includes literal overflow (`E0517`) and the
   name-spelling errors of [§6.14](#614-standard-names-and-using-namespace)
-  (`E0213`, `E0215`–`E0218` and `E0514`).
+  (`E0213`, `E0215`–`E0218` and `E0514`). A `W` or `I` code raised to `error`
+  can be lowered again, and the machine value still wins.
 
 ## 6.7 Ordering and declarations
 
@@ -924,11 +928,15 @@ otherwise the reference is `E0201`, naming the original.
   C++ blocks whose meaning or compilation depends on the setting (`E0218`,
   `W0525`). *Rename all and turn on* applies the renames, the confirmed Raw C++
   insertions and the option as one undo step.
-* Turning it off never creates an error in blocks. Raw C++ that relies on the
-  directive is listed (`W0525`), with *Insert `std::`* (confirmed per match) or
-  *Keep a `use namespace std here` block* in each affected function; turning it
-  off without fixing them is allowed but shown as breaking the build. Changing
-  the project's C++ standard is previewed the same way.
+* Turning it off never creates an error in blocks, unless `W0525` is set to
+  `error`. Raw C++ that relies on the directive is listed (`W0525`), with
+  *Insert `std::`* (confirmed per match) or *Keep a `use namespace std here`
+  block* in each affected function; turning it off without fixing them is
+  allowed but shown as breaking the build. Changing the project's C++ standard
+  is previewed the same way.
+* These previews ignore lint levels ([§6.6](#66-stage--types-flow-checks-and-lints)):
+  they list every `E0218` and `W0525` match, even when `W0525` is set to
+  `off`.
 * Export writes exactly what the build compiles. When any exported `.cpp`
   contains a directive, the README says so, says that headers never contain
   one, and says that names were checked against the standard library of GCC

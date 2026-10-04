@@ -194,7 +194,9 @@ It is range-checked against the target type; overflow is error `E0517`.
 * Raw C++ is opaque by design, and is visible, badged and trust-gated (§8.3).
 * The Raw editor and code panel render bidi and invisible characters as
   visible placeholders. The analyser warns (`W0520`) and g++ runs with
-  `-Wbidi-chars=any`.
+  `-Wbidi-chars=any`. A project file cannot lower `W0520`
+  ([05 §5.3](05-project-format.md#53-top-level-structure)); only the user's
+  own machine settings can.
 
 ## 8.5 Compiler invocation safety
 

@@ -273,6 +273,10 @@ atomic rename after a successful compile, so the cache cannot be corrupted.
 * The project is **trusted** ([08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode)).
 * A successful build exists whose `projectHash` and options match. Otherwise
   Run builds first.
+* The analyser reports no errors with the current lint levels
+  ([06 §6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints)).
+  Lint levels are not part of the project hash, so this is checked even when
+  a matching build exists. It applies to ⟲ Run again too.
 
 ### 7.6.2 Spawning
 
@@ -380,10 +384,10 @@ sequences, and mixing with user output is fragile.
 ## 7.9 Command-line interface
 
 ```
-b2c check     <project.b2c> [--format text|json]
-b2c generate  <project.b2c> --out <dir> [--export]
-b2c build     <project.b2c> [--config debug|release] [--toolchain <g++ path>] [--out <file>]
-b2c run       <project.b2c> [--config …] [--stdin <file>] [--timeout <dur>] [-- <program args>…]
+b2c check     <project.b2c> [--format text|json] [--no-machine-lints]
+b2c generate  <project.b2c> --out <dir> [--export] [--no-machine-lints]
+b2c build     <project.b2c> [--config debug|release] [--toolchain <g++ path>] [--out <file>] [--no-machine-lints]
+b2c run       <project.b2c> [--config …] [--stdin <file>] [--timeout <dur>] [--no-machine-lints] [-- <program args>…]
 b2c toolchains [--format text|json]
 b2c migrate   <project.b2c> [--in-place]
 b2c fmt       <project.b2c> [--check]
@@ -395,8 +399,11 @@ b2c fmt       <project.b2c> [--check]
   prominently.
 * Lint levels come from the project file and the machine's `settings.json`,
   exactly as in the app ([06 §6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints)).
-  A machine without a settings file, such as a CI runner, uses the project's
-  levels.
+  The CLI reads only the lint levels from that file and never writes it. A
+  file or entry that is not valid gets a warning on standard error and is not
+  used. A machine without a settings file, such as a CI runner, uses the
+  project's levels, and so does `--no-machine-lints`, so a teacher can check
+  exactly as CI does.
 * **Exit codes:** `0` success; `1` project errors; `2` usage (including an
   input file that cannot be read); `3` toolchain problem. `b2c run` returns the
   program's own exit code, `124` if `--timeout` stopped it, `125` if it could

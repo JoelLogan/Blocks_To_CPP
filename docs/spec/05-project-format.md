@@ -81,10 +81,18 @@ is `false` when absent and is written only when `true`, like
 `"lints": { "W0510": "error", "I0513": "off" }`.
 
 * Each key is an analyser warning or info code (`W05` or `I05` followed by
-  two digits), and each value is `off`, `info`, `warning` or `error`. Any
-  other key or value is a load error.
+  two digits, without the `B2C-` prefix), and each value is `off`, `info`,
+  `warning` or `error`. Any other key or value is a load error.
+* The project file can raise `W0520` (hidden characters in Raw C++) but
+  cannot lower it, because that warning defends against the file itself
+  ([08 §8.4.6](08-security.md#846-raw-c-and-hidden-text-defences)). A lower
+  level for `W0520` is a load error. The machine settings can still change
+  it.
 * A code that this version does not know (from a newer version) is kept on
-  save and ignored, with an info notice.
+  save and ignored. `b2c-lang`, which owns the list of codes, reports it as
+  info `I0526` on the project (*"This project sets a level for `W0599`, which
+  this version of Blocks2Cpp does not know. It is ignored."*). The file still
+  opens.
 * The machine settings can override each entry, and the machine value wins
   (§5.9).
 * The object is written only when it has entries, so files that do not use
@@ -216,6 +224,11 @@ Further rules:
 | `trust.json` | Trusted project records `{projectId, canonicalPath, rawCodeHashAtGrant, grantedAt}` and trusted folders | Validated on load; a corrupt file means "nothing is trusted". Other processes running as the same user are out of scope ([08 §8.1](08-security.md#81-scope-and-assumptions)). |
 | `libraries.json` | Library profiles: `name → {includeDirs[], libDirs[], linkNames[], runtimeDirs[]}` | Paths are chosen via dialog only |
 | `recent.json` | Recent project paths (opaque IDs exposed to the UI) | |
+
+In `settings.json`, a lint entry with an invalid key or value is dropped with
+a notice, and the other entries are kept. A code in the right form that this
+version does not know is kept on save and ignored, as in the project file, so
+an older version never deletes levels that a newer one wrote.
 
 ## 5.10 Saving and recovery
 
