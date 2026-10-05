@@ -80,3 +80,15 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - More tests from mutation testing: the mutants it found missed in the
   project-file parser, the decoder and the toolchain code are now caught, and
   the few equivalent ones are excluded with a reason each.
+- The desktop app's backend (crate `b2c-app`): every IPC command without
+  Tauri, with project open, save and close, workspace trust, builds and runs,
+  toolchains, settings and the recent list, and start-up work that never
+  delays the first window.
+- Recovery snapshots for unsaved work, kept per app instance with locks so
+  several instances never take each other's snapshots.
+- Review fixes: on Windows, trust compares only ASCII letter case in paths,
+  so a lookalike folder name is never trusted; a build returns its ID at once
+  and can be cancelled while it waits for the compiler search or runs the
+  front end; the program that was just built survives cache eviction; ended
+  runs release their terminals; and dynamically linked Windows programs find
+  the compiler's DLLs.

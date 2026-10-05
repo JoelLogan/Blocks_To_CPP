@@ -18,10 +18,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use b2c_build::cache;
-use b2c_build::toolchains::Chosen;
 use b2c_build::{
-    BuildJob, BuildRecord, FrontendOptions, PtySize, RunEnvOptions, RunSpec, StaleReason, ToolchainForBuild,
-    run_environment, run_frontend, sandbox_dir,
+    BuildJob, BuildRecord, FrontendOptions, PtySize, RunEnvOptions, RunSpec, StaleReason, run_environment,
+    run_frontend, sandbox_dir,
 };
 use b2c_ipc::dto::{
     BuildCacheClearResponse, BuildCancelRequest, BuildEvent, BuildStartRequest, BuildStartResponse, Empty,
@@ -37,13 +36,6 @@ use crate::errors::io_error;
 use crate::projects::lock;
 
 /// The toolchain for a build, from the registry's choice.
-fn for_build(chosen: Chosen) -> ToolchainForBuild {
-    match chosen {
-        Chosen::Ready { toolchain, notes } => ToolchainForBuild::Ready { toolchain, notes },
-        Chosen::Unavailable { diagnostics } => ToolchainForBuild::Unavailable { diagnostics },
-    }
-}
-
 /// The analyser's errors for `document`, as the build would count them.
 fn analyser_errors(document: &Document, indent_width: u8) -> usize {
     let text = b2c_model::to_canonical_json(document);
@@ -80,10 +72,12 @@ impl Backend {
     /// A project in Restricted Mode is refused before anything else happens:
     /// no build folder is created and no process starts. Otherwise the
     /// project's running program is stopped first (Windows locks a running
-    /// program's file), its active build is cancelled, and the toolchain is
-    /// chosen: the selected one checked again, else discovery order, never a
-    /// compiler inside the project's folder. Choosing can wait for a running
-    /// discovery or probe a changed compiler, so this can take seconds.
+    /// program's file), its active build is cancelled, and the build starts;
+    /// the `buildId` is returned at once (07 §7.5.4). The toolchain is chosen
+    /// on the build's thread, only for a project without errors: the selected
+    /// one checked again, else discovery order, never a compiler inside the
+    /// project's folder. That choice can wait for a running discovery or probe
+    /// a changed compiler; cancelling the build ends the wait.
     ///
     /// # Errors
     /// The document's errors (`payloadTooLarge`, `invalidDocument`,
@@ -113,12 +107,16 @@ impl Backend {
         let key = request.handle.to_string();
         self.runs.stop_project(&key);
         let selected = self.selected_toolchain();
-        let toolchain = for_build(self.toolchains.choose(selected.as_ref(), project_dir.as_deref()));
+        let registry = Arc::clone(&self.toolchains);
         let job = BuildJob {
             project_key: key,
             document: request.document.into_bytes(),
             configuration: request.config.into(),
-            toolchain,
+            toolchain: Box::new(move |cancel| {
+                registry
+                    .choose_cancellable(selected.as_ref(), project_dir.as_deref(), cancel)
+                    .into()
+            }),
             frontend: self.frontend_options(),
             ide: true,
         };
@@ -257,6 +255,7 @@ impl Backend {
                 platform: Platform::host(),
                 sanitizers: record.sanitizers,
                 leak_detection: record.leak_detection,
+                toolchain_bin: record.toolchain_bin.as_deref(),
             },
         );
         let spec = RunSpec {

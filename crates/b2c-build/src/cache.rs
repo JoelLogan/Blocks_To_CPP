@@ -1005,6 +1005,13 @@ mod tests {
         // Held: a second claim fails without waiting.
         assert!(claim(entry.path()).unwrap().is_none());
         drop(lock);
-        assert!(claim(entry.path()).unwrap().is_some());
+        // Released. A process another test thread forks at this moment shares
+        // the lock's open file until it execs, so the lock can look held for
+        // a moment longer; allow for that.
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while claim(entry.path()).unwrap().is_none() {
+            assert!(std::time::Instant::now() < until, "the released lock stayed held");
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 }

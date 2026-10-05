@@ -470,13 +470,16 @@ fn instances_never_undo_each_other() {
     );
     assert_eq!(first.evaluate(&identity("prj_a", &a, 1)), NO_RECORD);
 
-    // Many instances granting at once lose nothing.
-    let paths: Vec<PathBuf> = (0..32)
+    // Several instances granting at once lose nothing. Every grant waits
+    // its turn for the lock (at most 5 s) and rewrites the file durably,
+    // which takes about 200 ms on the Windows runners, so the load is kept
+    // to what a few app instances could cause: 4 instances, 3 grants each.
+    let paths: Vec<PathBuf> = (0..12)
         .map(|index| fixture.project_file(&format!("p{index}.b2c")))
         .collect();
     let trust_file = Arc::new(fixture.trust_file.clone());
     let threads: Vec<_> = paths
-        .chunks(4)
+        .chunks(3)
         .map(|chunk| {
             let chunk = chunk.to_vec();
             let trust_file = Arc::clone(&trust_file);
@@ -500,7 +503,10 @@ fn instances_never_undo_each_other() {
             path.display()
         );
     }
-    assert_eq!(fixture.json()["projects"].as_array().unwrap().len(), 33);
+    assert_eq!(
+        fixture.json()["projects"].as_array().unwrap().len(),
+        paths.len() + 1
+    );
 }
 
 /// A change waits for another instance's change, and gives up after a

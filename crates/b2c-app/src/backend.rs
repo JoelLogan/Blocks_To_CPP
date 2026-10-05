@@ -343,20 +343,22 @@ impl Backend {
     }
 
     /// Runs cache eviction after each finished build (on the build's thread,
-    /// after its `finished` event was sent).
+    /// after its `finished` event was sent), keeping the build's own folder:
+    /// the program that was just built is about to be run.
     fn install_build_hook(self: &Arc<Self>) {
         let weak: Weak<Self> = Arc::downgrade(self);
-        self.builds.set_on_finished(Box::new(move |_record| {
+        self.builds.set_on_finished(Box::new(move |record| {
             if let Some(backend) = weak.upgrade() {
-                backend.evict_cache();
+                backend.evict_cache(record.build_dir.as_deref());
             }
         }));
     }
 
-    /// Prunes and evicts the build cache with the current size cap.
-    pub(crate) fn evict_cache(&self) {
+    /// Prunes and evicts the build cache with the current size cap, never
+    /// deleting the entry `keep`.
+    pub(crate) fn evict_cache(&self, keep: Option<&Path>) {
         let policy = EvictionPolicy::with_max_bytes(self.settings.get().build_cache.max_bytes);
-        match cache::prune_and_evict(self.cache_root(), &policy, SystemTime::now()) {
+        match cache::prune_and_evict_keeping(self.cache_root(), &policy, SystemTime::now(), keep) {
             Ok(report) => tracing::debug!(
                 removed = report.removed,
                 freed_bytes = report.freed_bytes,
