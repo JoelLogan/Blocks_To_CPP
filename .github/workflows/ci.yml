@@ -25,7 +25,7 @@ jobs:
   lint:
     name: Format and lint
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: read # check out the repository
     steps:
@@ -59,6 +59,24 @@ jobs:
         run: |
           rustup target add x86_64-pc-windows-gnu
           cargo clippy --locked --all-targets --target x86_64-pc-windows-gnu -- -D warnings
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      # Every Markdown file of the repository, with the rules in
+      # .markdownlint-cli2.jsonc (default rules; long lines and table padding
+      # allowed; no inline HTML).
+      - name: Markdown lint
+        run: pnpm exec markdownlint-cli2
 
   test:
     name: Test (${{ matrix.os }})
@@ -166,12 +184,113 @@ jobs:
         env:
           B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
 
-  wasm:
-    name: Compiler crates build for WebAssembly
+  # Line coverage of the Rust code (docs/spec/09-quality-and-delivery.md §9.2):
+  # at least 80% over all default workspace members, and at least 90% over the
+  # core compiler crates together. Measured once, with g++ so the tests that
+  # compile C++ run instead of skipping. Tests that spawn our own binaries
+  # must keep LLVM_PROFILE_FILE in the child's environment (the `b2c` CLI
+  # tests inherit it), or those runs are not counted.
+  coverage:
+    name: Coverage gates (Rust)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
     permissions:
       contents: read # check out the repository
+    env:
+      CARGO_LLVM_COV_VERSION: 0.9.1
+      # The core compiler crates (docs/spec/02-architecture.md §2.3).
+      CORE_CRATES: -p b2c-ir -p b2c-model -p b2c-catalog -p b2c-lang -p b2c-codegen
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show g++ version
+        run: g++ --version
+
+      - name: Install the pinned Rust toolchain and the LLVM tools
+        run: |
+          rustup toolchain install
+          rustup component add llvm-tools
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked --version "$CARGO_LLVM_COV_VERSION"
+
+      - name: Run the tests with coverage instrumentation
+        run: cargo llvm-cov --locked --no-report
+        env:
+          B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
+
+      # The report and the summary come before the gates, so they exist even
+      # when a gate fails.
+      - name: Write the lcov report and the job summary
+        run: |
+          set -euo pipefail
+          cargo llvm-cov report --lcov --output-path "$RUNNER_TEMP/lcov.info"
+          cargo llvm-cov report --json --summary-only --output-path "$RUNNER_TEMP/all.json"
+          # shellcheck disable=SC2086 # CORE_CRATES expands to several -p arguments
+          cargo llvm-cov report $CORE_CRATES --json --summary-only --output-path "$RUNNER_TEMP/core.json"
+          python3 - "$RUNNER_TEMP/all.json" "$RUNNER_TEMP/core.json" >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          import json, re, sys
+          from collections import defaultdict
+
+          def load(path):
+              with open(path, encoding="utf-8") as f:
+                  return json.load(f)["data"][0]
+
+          def pct(covered, count):
+              return f"{100 * covered / count:.1f}%" if count else "n/a"
+
+          everything, core = (load(path) for path in sys.argv[1:3])
+          print("## Rust line coverage\n")
+          print("| Scope | Lines | Covered | Coverage | Gate |")
+          print("|---|---:|---:|---:|---:|")
+          for name, data, gate in (("All default members", everything, 80), ("Core compiler crates", core, 90)):
+              lines = data["totals"]["lines"]
+              print(f"| {name} | {lines['count']} | {lines['covered']} | {pct(lines['covered'], lines['count'])} | {gate}% |")
+          crates = defaultdict(lambda: [0, 0])
+          for file in everything["files"]:
+              match = re.search(r"(?:^|/)crates/([^/]+)/", file["filename"])
+              name = match.group(1) if match else "other"
+              crates[name][0] += file["summary"]["lines"]["count"]
+              crates[name][1] += file["summary"]["lines"]["covered"]
+          print("\n| Crate | Lines | Covered | Coverage |")
+          print("|---|---:|---:|---:|")
+          for name, (count, covered) in sorted(crates.items()):
+              print(f"| `{name}` | {count} | {covered} | {pct(covered, count)} |")
+          EOF
+
+      - name: Upload the lcov report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lcov
+          path: ${{ runner.temp }}/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: "Gate: all default members, at least 80% of lines"
+        run: cargo llvm-cov report --summary-only --fail-under-lines 80
+
+      # Only the core crates' files count here (CORE_CRATES expands to their
+      # -p arguments).
+      - name: "Gate: core compiler crates, at least 90% of lines"
+        if: ${{ !cancelled() }}
+        run: cargo llvm-cov report $CORE_CRATES --summary-only --fail-under-lines 90
+
+  wasm:
+    name: WebAssembly build and size budget
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read # check out the repository
+    env:
+      # wasm-opt from binaryen, pinned by release and checked against the
+      # SHA-256 published with it, like rustup-init in the gcc job.
+      BINARYEN_VERSION: "133"
+      BINARYEN_SHA256: 2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489
+      # ADR-0003: at most 2 MB after `wasm-opt -Oz`, read strictly as bytes.
+      WASM_BUDGET_BYTES: "2000000"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -181,16 +300,86 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
 
-      # The pure compiler crates must stay free of I/O (ADR-0003).
+      # The pure compiler crates and the WebAssembly facade must stay free of
+      # I/O (ADR-0003).
       - name: Check wasm32 build
         run: >-
           cargo check --locked --target wasm32-unknown-unknown
-          -p b2c-ir -p b2c-model -p b2c-catalog -p b2c-lang -p b2c-codegen
+          -p b2c-ir -p b2c-model -p b2c-catalog -p b2c-lang -p b2c-codegen -p b2c-core-wasm
+
+      # The CLI must be the exact version of the wasm-bindgen crate in
+      # Cargo.lock, or the generated glue does not match the module.
+      - name: Install wasm-bindgen-cli (the version in Cargo.lock)
+        run: |
+          set -euo pipefail
+          version=$(python3 -c 'import tomllib; print(next(p["version"] for p in tomllib.load(open("Cargo.lock", "rb"))["package"] if p["name"] == "wasm-bindgen"))')
+          echo "wasm-bindgen $version"
+          cargo install wasm-bindgen-cli --locked --version "$version"
+
+      - name: Install wasm-opt (binaryen)
+        run: |
+          set -euo pipefail
+          archive="binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/${archive}"
+          echo "${BINARYEN_SHA256}  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" "binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt"
+          echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      # cargo build (profile wasm-release), wasm-bindgen --target web, then
+      # wasm-opt -Oz, into packages/b2c-core-wasm/pkg/.
+      - name: Build the WebAssembly package
+        run: |
+          wasm-opt --version
+          pnpm --filter @blocks2cpp/b2c-core-wasm build
+
+      - name: Check the size budget
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          raw=target/wasm32-unknown-unknown/wasm-release/b2c_core_wasm.wasm
+          optimised=(packages/b2c-core-wasm/pkg/*.wasm)
+          if [ ! -f "$raw" ] || [ "${#optimised[@]}" -ne 1 ]; then
+            echo "::error::Expected $raw and exactly one .wasm in packages/b2c-core-wasm/pkg/"
+            exit 1
+          fi
+          raw_bytes=$(stat --format=%s "$raw")
+          opt_bytes=$(stat --format=%s "${optimised[0]}")
+          gzip_bytes=$(gzip -9 --stdout "${optimised[0]}" | wc -c)
+          {
+            echo "## WebAssembly core size"
+            echo
+            echo "| Build | Bytes |"
+            echo "|---|---:|"
+            echo "| Raw (cargo, wasm-release) | $raw_bytes |"
+            echo "| After wasm-opt -Oz | $opt_bytes |"
+            echo "| After wasm-opt, gzip -9 (reported only) | $gzip_bytes |"
+            echo "| Budget (after wasm-opt) | $WASM_BUDGET_BYTES |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$opt_bytes" -gt "$WASM_BUDGET_BYTES" ]; then
+            echo "::error::The optimised WebAssembly core is $opt_bytes bytes, over the budget of $WASM_BUDGET_BYTES"
+            exit 1
+          fi
+          echo "The optimised WebAssembly core is $opt_bytes bytes (budget $WASM_BUDGET_BYTES)"
 
   fuzz:
     name: Fuzz smoke test (60 s per target)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # About 11 targets at 60 s each, plus their builds and the tool setup.
+    timeout-minutes: 45
     permissions:
       contents: read # check out the repository
     env:
@@ -209,23 +398,77 @@ jobs:
           rustup toolchain install "$FUZZ_TOOLCHAIN" --profile minimal
           cargo "+$FUZZ_TOOLCHAIN" install cargo-fuzz --version "$CARGO_FUZZ_VERSION" --locked
 
-      - name: Seed the corpus with the examples and the security suite
-        run: |
-          mkdir -p "$RUNNER_TEMP/corpus"
-          cp examples/*.b2c tests/security/projects/*.b2c "$RUNNER_TEMP/corpus/"
-
-      # The project-file targets share the seeded corpus; `encoders` takes
-      # text, not project files, so it has its own corpus and dictionary.
+      # Every target `cargo fuzz list` prints, so new targets need no change
+      # here. Each uses fuzz/<target>.dict, or fuzz/b2c.dict when it has none,
+      # and starts from its own corpus (fuzz/README.md):
+      # * project-file targets: the examples and the security suite;
+      # * encoders and unknown targets: empty;
+      # * diagnostics parsers: the recorded g++ output under
+      #   crates/b2c-toolchain/tests/fixtures/ (diag_output adds its mode byte
+      #   and joins standard error and the SARIF file with \0sarif\0). Their
+      #   -max_len is left to libFuzzer, as GCC's SARIF files are ~300 KiB.
       - name: Fuzz each target for 60 seconds
         run: |
-          mkdir -p "$RUNNER_TEMP/corpus-encoders"
-          for target in load resolve roundtrip frontend encoders; do
-            corpus="$RUNNER_TEMP/corpus" dict=fuzz/b2c.dict max_len=65536
-            if [ "$target" = encoders ]; then
-              corpus="$RUNNER_TEMP/corpus-encoders" dict=fuzz/encoders.dict max_len=1024
-            fi
-            cargo "+$FUZZ_TOOLCHAIN" fuzz run "$target" "$corpus" -- \
-              "-dict=$dict" "-max_len=$max_len" -max_total_time=60
+          set -euo pipefail
+          shopt -s nullglob
+          fixtures=crates/b2c-toolchain/tests/fixtures
+          # Copies files into $dir as <fixture folder>-<file name>.
+          copy_tagged() {
+            local file
+            for file in "$@"; do
+              cp "$file" "$dir/$(basename "$(dirname "$file")")-$(basename "$file")"
+            done
+          }
+          seed() {
+            case "$target" in
+              load | resolve | roundtrip | frontend | clipboard)
+                cp examples/*.b2c tests/security/projects/*.b2c "$dir/"
+                if [ "$target" = clipboard ]; then
+                  for file in tests/security/clipboard/*.json; do cp "$file" "$dir/"; done
+                fi
+                ;;
+              diag_sarif) copy_tagged "$fixtures"/*/*.sarif ;;
+              diag_json) copy_tagged "$fixtures"/*/*.json ;;
+              diag_text) copy_tagged "$fixtures"/*/*.txt ;;
+              diag_output)
+                for sarif in "$fixtures"/*/*.sarif; do
+                  base=${sarif%.sarif}
+                  tag="$(basename "$(dirname "$base")")-$(basename "$base")"
+                  for mode in 004 005; do
+                    { printf "\\$mode"; cat "$base.sarif-stderr.txt"; printf '\000sarif\000'; cat "$sarif"; } \
+                      > "$dir/$tag-$mode"
+                  done
+                done
+                for json in "$fixtures"/*/*.json; do
+                  tag="$(basename "$(dirname "$json")")-$(basename "${json%.json}")"
+                  { printf '\002'; cat "$json"; } > "$dir/$tag-002"
+                done
+                for plain in "$fixtures"/*/*.plain.txt; do
+                  tag="$(basename "$(dirname "$plain")")-$(basename "${plain%.plain.txt}")"
+                  { printf '\003'; cat "$plain"; } > "$dir/$tag-003"
+                  { printf '\001'; cat "$plain"; } > "$dir/$tag-001"
+                done
+                ;;
+              *) ;;
+            esac
+          }
+          targets=$(cargo "+$FUZZ_TOOLCHAIN" fuzz list)
+          echo "Targets: $targets"
+          for target in $targets; do
+            dir="$RUNNER_TEMP/corpus/$target"
+            mkdir -p "$dir"
+            seed
+            dict="fuzz/$target.dict"
+            [ -f "$dict" ] || dict=fuzz/b2c.dict
+            args=("-dict=$dict" -max_total_time=60)
+            case "$target" in
+              encoders) args+=(-max_len=1024) ;;
+              diag_*) ;;
+              *) args+=(-max_len=65536) ;;
+            esac
+            echo "::group::$target ($(find "$dir" -type f | wc -l) seeds, $dict)"
+            cargo "+$FUZZ_TOOLCHAIN" fuzz run "$target" "$dir" -- "${args[@]}"
+            echo "::endgroup::"
           done
 
   deny:
@@ -246,10 +489,13 @@ jobs:
           command: check
           arguments: --all-features --locked
 
+  # API docs, generated files and links (docs/spec/09-quality-and-delivery.md
+  # §9.3 and §9.4). The checks are independent, so each runs even when an
+  # earlier one failed, and the job reports all of them.
   docs:
-    name: Diagnostics reference is complete
+    name: Docs, generated files and links
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
       contents: read # check out the repository
     steps:
@@ -257,9 +503,110 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # the link check compares with the base commit
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
 
       - name: Every diagnostic code is documented
         run: python3 tools/check-diagnostics-docs.py
+
+      # The default members (crates/*); the desktop crate needs WebKitGTK and
+      # is built in desktop.yml. A broken intra-doc link fails the build.
+      - name: API docs build without warnings (rustdoc)
+        if: ${{ !cancelled() }}
+        run: cargo doc --locked --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+      # packages/ipc-types and the isolation allowlist are generated from the
+      # Rust IPC contract (b2c-ipc) and committed (docs/spec/02-architecture.md
+      # §2.5); regenerating must change nothing, new files included.
+      - name: IPC types and isolation allowlist are up to date
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cargo test --locked -p b2c-ipc --features ts --test generate
+          paths=(packages/ipc-types
+            apps/desktop/src-tauri/isolation/allowlist.generated.js
+            apps/desktop/src-tauri/isolation-tests/samples.generated.json)
+          if [ -n "$(git status --porcelain --untracked-files=all -- "${paths[@]}")" ]; then
+            git status --short --untracked-files=all -- "${paths[@]}"
+            git diff -- "${paths[@]}"
+            echo "::error::Generated IPC files are stale: run 'cargo test -p b2c-ipc --features ts --test generate' and commit the result"
+            exit 1
+          fi
+
+      - name: Set up pnpm (version from package.json)
+        if: ${{ !cancelled() }}
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        if: ${{ !cancelled() }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install dependencies under the supply-chain policy
+        if: ${{ !cancelled() }}
+        run: pnpm install --frozen-lockfile
+
+      # catalog/ is exported by b2c-catalog as packages/catalog-gen/catalog.json,
+      # from which catalog-gen generates the Blockly definitions and the block
+      # reference (docs/spec/09-quality-and-delivery.md §9.4).
+      - name: Catalog export, Blockly definitions and block reference are up to date
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cargo test --locked -p b2c-catalog --test export
+          pnpm --filter @blocks2cpp/catalog-gen run generate
+          paths=(packages/catalog-gen/catalog.json packages/blockly-ext/src/generated docs/reference/blocks)
+          if [ -n "$(git status --porcelain --untracked-files=all -- "${paths[@]}")" ]; then
+            git status --short --untracked-files=all -- "${paths[@]}"
+            git diff -- "${paths[@]}"
+            echo "::error::Generated catalog files are stale: run 'cargo test -p b2c-catalog --test export' and 'pnpm --filter @blocks2cpp/catalog-gen run generate', and commit the result"
+            exit 1
+          fi
+
+      # Pull requests and pushes check external links only when Markdown (or
+      # this check's configuration) changed, so an unrelated change is not
+      # failed by a site that is down; scheduled and manual runs always check.
+      - name: Decide whether to check external links
+        id: links
+        if: ${{ !cancelled() }}
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          case "$EVENT" in
+            pull_request) base=$PR_BASE ;;
+            push) base=$PUSH_BEFORE ;;
+            *) base="" ;;
+          esac
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            # Scheduled or manual run, a new branch, or no usable base.
+            check=true
+          elif git diff --name-only "$base" HEAD -- '*.md' lychee.toml .github/workflows/ci.yml | grep -q .; then
+            check=true
+          else
+            check=false
+          fi
+          echo "Check external links: $check"
+          echo "check=$check" >> "$GITHUB_OUTPUT"
+
+      # lychee.toml: 3 retries; 200, 206 and 429 accepted; local hosts and
+      # example.com excluded. No token, so nothing private can be reached.
+      - name: External links (lychee)
+        if: ${{ !cancelled() && steps.links.outputs.check == 'true' }}
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          args: --config lychee.toml --no-progress './**/*.md'
+          token: ""
+          fail: true
+          jobSummary: true
 
   secrets:
     name: Secret scan (gitleaks)

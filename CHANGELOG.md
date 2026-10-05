@@ -32,3 +32,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   canvas (Zelos renderer) and placeholder panels, hardened with the specified
   Content Security Policy, the isolation pattern and minimal capabilities, and
   built and checked in CI on Linux and Windows.
+- More CI quality gates: API docs built with warnings denied, Markdown lint,
+  an external link check, line-coverage gates (80% for all Rust code, 90% for
+  the compiler crates), a size budget for the WebAssembly core, checks that
+  generated files are up to date, and fuzz targets for the g++ diagnostics
+  parsers, seeded with recorded GCC 11 and GCC 13 output.
