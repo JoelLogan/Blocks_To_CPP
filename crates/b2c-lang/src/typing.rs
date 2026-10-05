@@ -9,15 +9,22 @@ use b2c_ir::sast::Expr;
 use b2c_ir::sast::{BinaryOp, ExprKind};
 use b2c_ir::types::Type;
 
-/// How a value of one type converts to another when it is assigned, used to
-/// initialise a variable, passed as an argument or returned (spec §3.5.3).
+/// How a value of one type converts to another when it initialises a
+/// variable, is passed as an argument or is returned (spec §3.5.3).
 ///
-/// This is the analyser's own rule, published so that the editor's
-/// connection checker refuses exactly what the analyser reports as an error:
-/// only [`Conversion::Invalid`] is an error (`B2C-E0301`, or `B2C-E0305` for a
-/// value that is `void`); [`Conversion::Narrowing`] (`B2C-W0518`) and
-/// [`Conversion::BoolNumber`] (`B2C-W0519`) are warnings; the others are
-/// silent.
+/// This is the analyser's own rule for those sites, published so that the
+/// editor's connection checker refuses exactly what the analyser reports as
+/// an error: only [`Conversion::Invalid`] is an error (`B2C-E0301`, or
+/// `B2C-E0305` for a value that is `void`); [`Conversion::Narrowing`]
+/// (`B2C-W0518`) and [`Conversion::BoolNumber`] (`B2C-W0519`) are warnings;
+/// the others are silent.
+///
+/// Other sites differ. `set` (assignment) uses this rule but also accepts a
+/// `char` for a `std::string` variable, as C++ does (`s = 'a';` compiles,
+/// `std::string s = 'a';` does not), although [`conversion`] calls that
+/// [`Conversion::Invalid`]. `change by` has rules of its own, and an input
+/// with a catalog check class (such as the `text` prompt of `ask`) follows
+/// that class, not this rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Conversion {
     /// The same type, or [`Type::Error`] on either side: the error is already
@@ -84,6 +91,8 @@ impl Conversion {
 /// assert_eq!(conversion(&Type::Double, &Type::Int), Conversion::Narrowing);
 /// assert_eq!(conversion(&Type::String, &Type::Int), Conversion::Invalid);
 /// assert_eq!(conversion(&Type::Error, &Type::String), Conversion::Same);
+/// // Not for initialising; `set` accepts it anyway (see [`Conversion`]).
+/// assert_eq!(conversion(&Type::Char, &Type::String), Conversion::Invalid);
 /// ```
 pub fn conversion(from: &Type, to: &Type) -> Conversion {
     use Type as T;

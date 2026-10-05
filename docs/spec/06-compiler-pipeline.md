@@ -158,7 +158,12 @@ dropdown never offers a symbol the analyser would reject:
 * `symbol_infos()` lists every symbol, and `block_types()` gives the static
   type of each value block, which the editor's connection checker uses
   together with `conversion(from, to)`, the analyser's own conversion rule
-  (`same`, `widening`, `narrowing`, `boolNumber` or `invalid`).
+  (`same`, `widening`, `narrowing`, `boolNumber` or `invalid`). That rule
+  covers initialising a variable, passing an argument and returning a value.
+  `set` (assignment) also accepts a `char` for a `std::string` variable, as
+  C++ does, although `conversion` calls that `invalid`; `change by` has rules
+  of its own; and an input with a catalog check class (such as `ask`'s `text`
+  prompt) follows that class.
 
 `SymbolInfo` lives in `b2c-ir`, and its JSON is the same everywhere (WASM, IPC
 and tests):

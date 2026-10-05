@@ -34,8 +34,9 @@
 //! (spec §6.5): [`Analysis::symbols_in_scope`] lists the symbols a block may
 //! refer to, [`Analysis::symbol_infos`] every symbol, and
 //! [`Analysis::block_types`] the static type of each value block. Together
-//! with [`conversion`], the analyser's own conversion rule, they let the
-//! editor offer and connect only what the analyser accepts.
+//! with [`conversion`], the analyser's own conversion rule (see its type,
+//! [`Conversion`], for the sites it covers), they let the editor offer and
+//! connect only what the analyser accepts.
 
 mod access;
 mod codes;
