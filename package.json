@@ -12,5 +12,8 @@
     "desktop:dev": "pnpm --filter @blocks2cpp/desktop run tauri dev",
     "desktop:build": "pnpm --filter @blocks2cpp/desktop run tauri build",
     "desktop:check": "pnpm --filter @blocks2cpp/desktop run typecheck && pnpm --filter @blocks2cpp/desktop run lint && pnpm --filter @blocks2cpp/desktop run format:check"
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "0.23.3"
   }
 }

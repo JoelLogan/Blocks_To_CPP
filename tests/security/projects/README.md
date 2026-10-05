@@ -70,7 +70,7 @@ rest of the project valid, so that the file tests one thing.
 | `huge-zoom.b2c` | T5 | A viewport zoom of 10³⁰⁸ | `B2C-E0130` | — |  |
 | `id-injection.b2c` | T7 | Markup in a block ID | `B2C-E0113` | — |  |
 | `injection-block-type.b2c` | T3 | A block type containing code | accepted | `B2C-E0601` |  |
-| `injection-comment-splice.b2c` | T3/T4 | Comments ending in `\` or `??/` that would splice the next line | accepted | clean | `Comment` adds the ` //` sentinel (08 §8.4.3) |
+| `injection-comment-splice.b2c` | T3/T4 | Comments ending in `\` or `??/` that would splice the next line | accepted | clean | `Comment` adds a space and the `//` sentinel (08 §8.4.3) |
 | `injection-dropdown.b2c` | T3 | A dropdown value containing code | accepted | `B2C-E0607` |  |
 | `injection-identifier.b2c` | T3 | A variable name containing code | accepted | clean | The analyser rejects the name (`Ident`, 08 §8.4.1) |
 | `injection-number-field.b2c` | T3 | A number field containing code | accepted | clean | `NumLit` accepts only the literal grammar (08 §8.4.4) |

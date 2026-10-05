@@ -37,4 +37,3 @@ These messages have codes starting with `C:` instead of `B2C-`:
 The original compiler text is always attached. Blocks the analyser accepts
 should never produce C++ that g++ rejects, so a `C:` error is labelled as a
 probable bug in Blocks2Cpp; please report it with the project file.
-
