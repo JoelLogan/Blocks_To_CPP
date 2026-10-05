@@ -55,3 +55,15 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   accessible dialogs); the C++ code panel with source-map highlighting, the
   Problems list, the console and the build output; and build-cache eviction
   (2 GiB limit by default, 30-day pruning, Clear build cache).
+- Builds run as cancellable sessions with progress, record a build manifest
+  instead of a build stamp, compile modules in parallel, and link a small IDE
+  unit (UTF-8 console on Windows) into app builds only; the Windows cache root
+  is `%LOCALAPPDATA%\Blocks2Cpp`.
+- Run sessions for the editor's console: terminal or pipe mode, batched output
+  with flood protection, rate-limited input, friendly exit messages and
+  sanitizer report summaries.
+- Stronger containment: compilers and programs run in cgroup v2 scopes on
+  Linux when a user service manager is available (otherwise a process group
+  with an RSS watchdog), stale scopes are cleaned up at start-up, and captured
+  runs on Windows inherit only an explicit list of handles. Compilers stopped
+  for memory now report a limit, not a compiler crash.

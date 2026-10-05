@@ -244,6 +244,12 @@ settings**, never in projects:
   next to it. Before a program starts, `run_start` reads it again and checks
   the executable's size and SHA-256 (`staleBuild` on a mismatch). It replaces
   M1's build stamp; `sourcemap.json` stays.
+* A build is **up to date** when the manifest matches the project hash, the
+  toolchain and the IDE flag, the executable matches its recorded size and
+  hash, and no generated or IDE file changed on disk. A build that has to
+  rewrite any of those files deletes the manifest first, so a new generator
+  version that produces different code for the same project hash always
+  recompiles.
 * **Object cache key** = SHA-256(toolchain fingerprint ‖ normalised argv
   without output paths ‖ TU contents ‖ contents of all generated project
   headers ‖ support header). System headers are covered by the toolchain
@@ -312,18 +318,29 @@ settings**, never in projects:
 * **cgroup v2 scopes.** When the app starts, it checks once that cgroup v2
   controllers exist, that `systemd-run` exists at `/usr/bin/systemd-run` or
   `/bin/systemd-run` (an absolute path, never `PATH`), that
-  `XDG_RUNTIME_DIR` is set, and that a trial scope succeeds within 5 s. If
-  so, each compiler (and each program, §7.6.2) runs as
-  `systemd-run --user --scope --quiet --collect --unit=b2c-build-<appPid>-<16 hex> -p MemoryMax=4G -p MemorySwapMax=0 -p TasksMax=32 -- <g++> <args>`.
-  The scope also catches processes that leave the process group.
+  `XDG_RUNTIME_DIR` is set, and that a trial scope
+  (`systemd-run … -- cat /proc/self/cgroup`, which also shows where the
+  manager creates scopes) succeeds within 5 s. If so, each compiler (and each
+  program, §7.6.2) runs as
+  `systemd-run --user --scope --quiet --collect --expand-environment=no --unit=b2c-build-<appPid>-<16 hex> -p MemoryMax=4G -p MemorySwapMax=0 -p TasksMax=32 -- <g++> <args>`.
+  `--expand-environment=no` (systemd 254 and later; left out for older
+  versions, which reject it) stops `systemd-run` from expanding `$VARS` in the
+  arguments. The scope also catches processes that leave the process group.
+  `TasksMax` counts threads as well as processes. Without the `memory` or
+  `pids` controller in the scope, the same limits fall back to the watchdogs
+  below, counting the scope's processes.
 * `systemd-run` needs `XDG_RUNTIME_DIR` (and `DBUS_SESSION_BUS_ADDRESS`, when
   set) to reach the user's service manager. These two are the only variables
   added to the compiler's allowlisted environment, and only when a scope is
-  used.
+  used; `systemd-run` itself also sets `INVOCATION_ID`.
 * Stopping writes `1` to the scope's `cgroup.kill`, falling back to `SIGKILL`
   for every process in `cgroup.procs` until it is empty. An `oom_kill` in
   `memory.events` is reported as running out of memory (a `C:limit`
-  diagnostic for compilers).
+  diagnostic for compilers). After `--collect` has removed an empty scope, a
+  run that failed counts as out of memory when the parent folder's
+  hierarchical `oom_kill` count grew while it ran; an out-of-memory kill in a
+  sibling group at the same moment can therefore be misreported, which is
+  harmless.
 * **Fallback.** Without cgroups, the compiler runs in its own process group
   with `RLIMIT_AS`, and an **RSS watchdog** adds up the resident memory
   (`VmRSS` in `/proc`) of the group's processes every 100 ms and kills the
@@ -337,7 +354,7 @@ settings**, never in projects:
 
 | GCC | Mechanism | Human-readable text |
 | ----- | ----------- | --------------------- |
-| 15+ | `-fdiagnostics-add-output=sarif:file=<tu>.sarif` | Kept on stderr as normal |
+| 15+ | `-fdiagnostics-add-output=sarif:file=<tu>.sarif`; when one invocation compiles several sources, `sarif:version=2.1` without `file=`, so GCC names one file per source | Kept on stderr as normal |
 | 13–14 | `-fdiagnostics-format=sarif-file` (writes `<source>.sarif` into the working directory) | Reconstructed from SARIF |
 | 11–12 | `-fdiagnostics-format=json` (stderr) | Reconstructed from JSON |
 | other / unknown | `-fdiagnostics-plain-output`, parsing `file:line:col: severity: message [-Woption]` + `note:` continuation lines | Raw text |
@@ -385,7 +402,11 @@ atomic rename after a successful compile, so the cache cannot be corrupted.
   progress, diagnostics and exactly one `finished` event through its channel
   ([02 §2.5](02-architecture.md#25-ipc-surface)). The record of a build
   (outcome, project hash, executable, the document it built) is kept until
-  its project closes.
+  its project closes, at most 8 per project: older build IDs become unknown
+  (`unknownBuild`).
+* Progress counts translation units. A single-unit build, compiled and linked
+  in one invocation, reports `compile` 0/1, then `compile` 1/1 and `link`
+  1/1.
 
 ## 7.6 Running programs
 
@@ -511,7 +532,10 @@ carries the status, a closed `crash` kind and this message
 message then summarises the report, for example *Crashed:
 heap-buffer-overflow (AddressSanitizer)*, and the `exit` event carries
 `{ tool, kind }`. Mapping the report to blocks through its stack frames, and
-naming the function, arrive in M5. The scanner is fuzzed.
+naming the function, arrive in M5. The scanner is fuzzed. LeakSanitizer
+reports (`ERROR: LeakSanitizer`) are not matched in M2, so a Debug program
+that only leaks shows *Finished with exit code 23*; whether to summarise them
+is decided with the M5 runtime diagnostics.
 
 ### 7.6.5 Run limits
 
@@ -522,6 +546,13 @@ naming the function, arrive in M5. The scanner is fuzzed.
   ≤ 16 ms. If the frontend falls behind, intermediate output beyond the
   scrollback cap is dropped with a *"… 1,204,331 lines skipped"* marker,
   so the UI never freezes.
+* **Memory and process limits** stop the program at once (no grace period).
+  Its `exit` event then reports `crash: outOfMemory` with *Crashed: the
+  program ran out of memory*, or `crash: resourceLimit` with *Stopped: the
+  program started too many processes*, rather than the signal that ended it.
+  A program the system's out-of-memory killer ends inside its cgroup scope
+  is reported the same way. In M2 programs have no caps, so only the system
+  can end one this way.
 
 How the flood protection works ([02 §2.5](02-architecture.md#25-ipc-surface)):
 
@@ -531,11 +562,22 @@ How the flood protection works ([02 §2.5](02-architecture.md#25-ipc-surface)):
   `console.scrollbackLines` lines (at most 8 MiB) and counts the lines it
   drops. When the acknowledgements catch up, it sends a `skipped` event with
   the exact count, then the kept tail. Without acknowledgements the backend
-  still keeps only the tail, so its memory stays bounded.
+  still keeps only the tail, so its memory stays bounded. The console also
+  counts as behind when more than 1,024 batches are unacknowledged, so a
+  console that never acknowledges costs bounded memory even when output only
+  trickles.
+* The `skipped` count is the number of line breaks dropped. A single line
+  longer than 8 MiB can be cut without its break, so `lines` can be 0.
+* An acknowledgement after the program ended succeeds (late acknowledgements
+  are normal); `run_input`, `run_resize` and `run_stop` then give
+  `notRunning`. An acknowledgement above the last batch sent gives
+  `invalidRequest`. The last 64 ended runs are remembered, so calls for them
+  give `notRunning` rather than `unknownRun`.
 * The `exit` event always follows the last output batch: its `afterSeq` names
   the number of batches before it.
 * **Input** (`run_input`) is at most 64 KiB per call and is rate-limited to
-  200 calls and 1 MiB per second per program.
+  200 calls and 1 MiB per second per program. At most 64 calls wait for a
+  program that is not reading its input; more give `rateLimited`.
 * At most 8 programs run at once in the app, and one per project.
 * Program input and output are never written to the log.
 

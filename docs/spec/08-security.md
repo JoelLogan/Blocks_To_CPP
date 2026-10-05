@@ -350,9 +350,10 @@ It is range-checked against the target type; overflow is error `E0517`.
   (`KILL_ON_JOB_CLOSE`) and only then resumed, so it cannot start anything
   outside the job. A program in a pseudo console inherits no handles; in pipe
   mode it gets exactly its three pipe ends through
-  `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. Captured compiler runs move to the same
-  path (handle list, suspended start, job); if that does not fit into M2, the
-  gap is recorded in the milestone's threat-model review.
+  `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. Captured compiler runs take the same
+  path (`CreateProcessW` with a handle list, suspended start, job). The CLI's
+  `b2c run`, which shares the terminal, keeps the standard library's spawn
+  with a suspended start and the job.
 * The platform calls sit in `b2c_process::os` as safe wrappers with
   `// SAFETY:` comments: `atomic_replace`, `harden_dll_search` and
   `open_https_url`. The app and the CLI call `harden_dll_search` as the first

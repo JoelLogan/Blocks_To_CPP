@@ -11,6 +11,10 @@
 //!   finish successfully, the message summarises the report instead, for
 //!   example *Crashed: heap-buffer-overflow (AddressSanitizer)*: a sanitizer
 //!   ends the program with exit code 1, which alone would say nothing.
+//! * A program that ran out of memory (the system's out-of-memory killer
+//!   ended a process of its cgroup scope, or a memory cap stopped it) or
+//!   that went over a process limit is reported as that, not as the signal
+//!   that ended it: `SIGKILL` alone would read *Killed*.
 
 use b2c_ipc::dto::{
     Crash as IpcCrash, ExitStatus as IpcStatus, SanitizerKind, SanitizerReport, SanitizerTool,
@@ -46,13 +50,22 @@ pub(crate) fn decode(exit: &PtyExit, report: Option<&sanitizer::SanitizerReport>
             message: program.describe(),
         };
     }
-    let message = match report {
-        Some(report) if sanitizer.is_some() && !exit.status.success() => report.summary(),
-        _ => program.describe(),
+    let limit = if exit.out_of_memory {
+        Some(Crash::OutOfMemory)
+    } else if exit.too_many_processes {
+        Some(Crash::ResourceLimit)
+    } else {
+        None
+    };
+    let message = match (limit, report) {
+        (Some(Crash::OutOfMemory), _) => String::from("Crashed: the program ran out of memory"),
+        (Some(_), _) => String::from("Stopped: the program started too many processes"),
+        (None, Some(report)) if sanitizer.is_some() && !exit.status.success() => report.summary(),
+        (None, _) => program.describe(),
     };
     ExitReport {
         status: ipc_status(exit.status),
-        crash: exit.status.crash().map(ipc_crash),
+        crash: limit.or_else(|| exit.status.crash()).map(ipc_crash),
         sanitizer,
         message,
     }
@@ -112,6 +125,7 @@ mod tests {
             duration: Duration::from_millis(5),
             timed_out: false,
             too_many_processes: false,
+            out_of_memory: false,
         }
     }
 
@@ -223,6 +237,41 @@ mod tests {
         );
         assert_eq!(malformed.sanitizer, None);
         assert_eq!(malformed.message, "Finished with exit code 1");
+    }
+
+    #[test]
+    fn limits_are_reported_rather_than_the_kill() {
+        let oom = decode(
+            &PtyExit {
+                out_of_memory: true,
+                ..pty_exit(ExitStatus::Signaled(9))
+            },
+            Some(&report(sanitizer::Tool::Address, "out-of-memory")),
+        );
+        assert_eq!(oom.status, IpcStatus::Signaled { signal: 9 });
+        assert_eq!(oom.crash, Some(IpcCrash::OutOfMemory));
+        assert_eq!(oom.message, "Crashed: the program ran out of memory");
+
+        let forks = decode(
+            &PtyExit {
+                too_many_processes: true,
+                ..pty_exit(ExitStatus::Signaled(9))
+            },
+            None,
+        );
+        assert_eq!(forks.crash, Some(IpcCrash::ResourceLimit));
+        assert_eq!(forks.message, "Stopped: the program started too many processes");
+
+        // Stopping wins: the user asked for it.
+        let stopped = decode(
+            &PtyExit {
+                stopped: true,
+                out_of_memory: true,
+                ..pty_exit(ExitStatus::Signaled(9))
+            },
+            None,
+        );
+        assert_eq!(stopped.status, IpcStatus::Stopped);
     }
 
     #[test]

@@ -1097,7 +1097,7 @@ fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<S
             diagnostics: Vec::new(),
         });
     }
-    if captured.timed_out || captured.too_many_processes {
+    if captured.timed_out || captured.too_many_processes || captured.out_of_memory {
         mapped.push(Diagnostic::error(
             COMPILER_LIMIT,
             DiagSource::Compiler,
@@ -1168,8 +1168,12 @@ impl StepRun {
 
     /// Whether the compiler crashed without reporting an error first.
     fn crashed(&self) -> bool {
+        // A compiler stopped by a limit is not a crash, even when g++ reports
+        // the killed cc1plus as an "internal compiler error: Killed".
         !self.captured.status.success()
             && !self.captured.timed_out
+            && !self.captured.too_many_processes
+            && !self.captured.out_of_memory
             && !self.captured.cancelled
             && !self.explained()
             && String::from_utf8_lossy(&self.captured.stderr).contains("internal compiler error")
@@ -1455,6 +1459,32 @@ mod tests {
     use b2c_ir::{BlockId, ModuleId, Part};
 
     use super::*;
+
+    fn killed_compiler(out_of_memory: bool) -> StepRun {
+        StepRun {
+            captured: b2c_process::Captured {
+                status: b2c_process::ExitStatus::Signaled(9),
+                stdout: Vec::new(),
+                stderr: b"g++: internal compiler error: Killed signal terminated program cc1plus\n".to_vec(),
+                stdout_truncated: false,
+                stderr_truncated: false,
+                duration: std::time::Duration::from_secs(1),
+                timed_out: false,
+                cancelled: false,
+                too_many_processes: false,
+                out_of_memory,
+            },
+            mapped: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_compiler_stopped_for_memory_is_not_a_crash() {
+        // g++ reports a cc1plus killed by the memory limit as an "internal
+        // compiler error"; that is a limit (C:limit), not a g++ bug.
+        assert!(killed_compiler(false).crashed());
+        assert!(!killed_compiler(true).crashed());
+    }
 
     fn gen_dir() -> PathBuf {
         PathBuf::from(if cfg!(windows) {
