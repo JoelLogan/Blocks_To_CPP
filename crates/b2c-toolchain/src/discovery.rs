@@ -524,6 +524,32 @@ mod tests {
         assert!(discover(&env).is_empty());
     }
 
+    /// A relative folder from any source (here [`DiscoveryEnv::extra_dirs`])
+    /// would resolve against the current directory, which a project can
+    /// control: it is skipped even when it leads to a real compiler.
+    #[cfg(unix)]
+    #[test]
+    fn relative_extra_folders_are_never_searched() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::paths::canonical(dir.path()).unwrap();
+        tool(&root.join("bin/g++"));
+        // `../../…/<root>/bin`, relative to the current directory.
+        let current = crate::paths::canonical(&std::env::current_dir().unwrap()).unwrap();
+        let mut relative: PathBuf = current.components().skip(1).map(|_| "..").collect();
+        relative.push(root.strip_prefix("/").unwrap().join("bin"));
+        assert!(relative.is_relative());
+        assert!(relative.join("g++").is_file(), "{}", relative.display());
+
+        let mut env = linux_env(&root);
+        env.extra_dirs = vec![relative];
+        assert!(discover(&env).is_empty());
+        // The same folder given as an absolute path is searched.
+        env.extra_dirs = vec![root.join("bin")];
+        let found = discover(&env);
+        assert_eq!(names(&found, &root), ["bin/g++"]);
+        assert_eq!(found[0].source, CandidateSource::Extra);
+    }
+
     #[cfg(unix)]
     #[test]
     fn excluded_folders_are_never_searched_or_accepted() {
@@ -619,6 +645,19 @@ mod tests {
         assert_eq!(warned[0].warnings[0].code.0, codes::LEGACY_MINGW);
     }
 
+    /// Network shares (`\\server\share`, also in the verbatim `\\?\UNC\` form)
+    /// are never searched; drive paths are ordinary folders.
+    #[cfg(windows)]
+    #[test]
+    fn windows_network_paths_are_recognised() {
+        for network in [r"\\server\share\bin\g++.exe", r"\\?\UNC\server\share\bin\g++.exe"] {
+            assert!(is_network_path(Path::new(network)), "{network}");
+        }
+        for local in [r"C:\msys64\ucrt64\bin\g++.exe", r"\\?\C:\msys64\bin", r"\bin"] {
+            assert!(!is_network_path(Path::new(local)), "{local}");
+        }
+    }
+
     #[test]
     fn explicit_paths() {
         let dir = tempfile::tempdir().unwrap();
@@ -636,5 +675,32 @@ mod tests {
         let script = root.join("custom/g++.bat");
         tool(&script);
         assert!(explicit_candidate(&script, Platform::Windows).is_err());
+    }
+
+    /// On Windows only `.exe` programs can be chosen (in any letter case);
+    /// a script is refused for being one, before the file is even looked at.
+    #[test]
+    fn explicit_windows_paths_must_be_exe_programs() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::paths::canonical(dir.path()).unwrap();
+        let exe = root.join("w64/bin/x86_64-w64-mingw32-g++.EXE");
+        tool(&exe);
+        let candidate = explicit_candidate(&exe, Platform::Windows).unwrap();
+        assert_eq!(candidate.path, exe);
+        assert_eq!(candidate.found_as, exe);
+        assert_eq!(candidate.source, CandidateSource::Explicit);
+
+        let script = root.join("w64/bin/g++.bat");
+        tool(&script);
+        for refused in [script, root.join("missing/g++.cmd"), root.join("w64/bin/g++")] {
+            let error = explicit_candidate(&refused, Platform::Windows).unwrap_err();
+            assert_eq!(error.code.0, codes::BAD_TOOLCHAIN_PATH);
+            assert!(
+                error.message.contains("only .exe programs can be used"),
+                "{}: {}",
+                refused.display(),
+                error.message
+            );
+        }
     }
 }
