@@ -19,6 +19,10 @@ pub const MAX_STRING_BYTES: usize = 64 * 1024;
 pub const MAX_RAW_CPP_BYTES: usize = 256 * 1024;
 /// Maximum identifier length (enforced again by `b2c_ir::text::Ident`).
 pub const MAX_IDENT_LEN: usize = 64;
+/// Maximum length, in characters, of a qualified name such as `geo::area`
+/// in a clipboard payload's `refs` (spec §5.12). A name of
+/// [`MAX_IDENT_LEN`] characters inside 14 namespaces of that length fits.
+pub const MAX_QUALIFIED_NAME_LEN: usize = 1024;
 /// Maximum number of parts in a variadic (`⊕`) block.
 pub const MAX_VARIADIC_PARTS: usize = 64;
 /// Maximum absolute canvas coordinate.

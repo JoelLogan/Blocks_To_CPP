@@ -18,9 +18,9 @@ mod common;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use b2c_ir::{DiagSource, Diagnostic, Severity};
+use b2c_ir::{DiagSource, Severity};
 use b2c_model::{Document, load, to_canonical_json};
-use common::repo_root;
+use common::{assert_messages_are_safe, codes_in, is_unsafe_to_show, repo_root};
 
 /// What the loader must do with a file.
 #[derive(Debug, PartialEq, Eq)]
@@ -40,14 +40,6 @@ struct Case {
 
 fn suite_dir() -> PathBuf {
     repo_root().join("tests/security/projects")
-}
-
-/// The `B2C-…` codes written in backticks in a table cell.
-fn codes_in(cell: &str) -> BTreeSet<String> {
-    cell.split('`')
-        .filter(|piece| piece.starts_with("B2C-"))
-        .map(str::to_owned)
-        .collect()
 }
 
 /// The rows of the README table.
@@ -81,38 +73,6 @@ fn sorted(mut document: Document) -> Document {
         module.workspace.blocks.sort_by(|a, b| a.id.cmp(&b.id));
     }
     document
-}
-
-/// Characters a message must never show raw: controls, bidi controls and
-/// invisible format characters (hostile text is quoted with escapes).
-fn is_unsafe_to_show(c: char) -> bool {
-    c.is_control()
-        || b2c_ir::text::is_invisible(c)
-        || matches!(c,
-            '\u{00AD}' | '\u{061C}' | '\u{180E}'
-            | '\u{200B}'..='\u{200F}'
-            | '\u{2028}'..='\u{202E}'
-            | '\u{2060}'..='\u{206F}'
-            | '\u{FEFF}')
-}
-
-/// Every message is short and free of characters that could hide or fake
-/// text in a terminal or the UI.
-fn assert_messages_are_safe(file: &str, diagnostics: &[Diagnostic]) {
-    let texts = diagnostics
-        .iter()
-        .flat_map(|d| std::iter::once(&d.message).chain(d.related.iter().map(|r| &r.message)));
-    for text in texts {
-        assert!(
-            !text.chars().any(is_unsafe_to_show),
-            "{file}: a message shows an unsafe character: {text:?}"
-        );
-        assert!(
-            text.len() < 1024,
-            "{file}: a message is {} bytes long",
-            text.len()
-        );
-    }
 }
 
 #[test]

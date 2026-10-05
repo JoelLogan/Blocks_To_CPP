@@ -166,6 +166,7 @@ fn leaf() -> impl Strategy<Value = Block> {
             fields,
             inputs,
             statements: BTreeMap::new(),
+            stack: Vec::new(),
         })
 }
 

@@ -164,6 +164,7 @@ fn leaf_block() -> impl Strategy<Value = Block> {
                 fields,
                 inputs,
                 statements: BTreeMap::new(),
+                stack: Vec::new(),
             },
         )
 }
@@ -194,12 +195,19 @@ fn position() -> impl Strategy<Value = i32> {
     -10_000_000..=10_000_000i32
 }
 
+/// A top-level block, sometimes with a loose stack below it (ADR-0011).
 fn top_level_block() -> impl Strategy<Value = Block> {
-    (block(), option::of((position(), position()))).prop_map(|(mut block, at)| {
-        block.x = at.map(|(x, _)| x);
-        block.y = at.map(|(_, y)| y);
-        block
-    })
+    (
+        block(),
+        option::of((position(), position())),
+        prop_oneof![3 => Just(Vec::new()), 1 => vec(block(), 1..3)],
+    )
+        .prop_map(|(mut block, at, stack)| {
+            block.x = at.map(|(x, _)| x);
+            block.y = at.map(|(_, y)| y);
+            block.stack = stack;
+            block
+        })
 }
 
 fn frame() -> impl Strategy<Value = Frame> {
@@ -408,6 +416,9 @@ impl Numbering {
                 self.block(child);
             }
         }
+        for child in &mut block.stack {
+            self.block(child);
+        }
     }
 }
 
@@ -500,6 +511,7 @@ fn any_json() -> impl Strategy<Value = Value> {
                 "fields",
                 "inputs",
                 "statements",
+                "stack",
                 "extra",
                 "expr",
                 "block",

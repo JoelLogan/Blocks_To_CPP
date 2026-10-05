@@ -133,6 +133,7 @@ mod tests {
             fields: [("OLD".to_owned(), FieldValue::Text("x".into()))].into(),
             inputs: BTreeMap::new(),
             statements: BTreeMap::new(),
+            stack: Vec::new(),
         }
     }
 

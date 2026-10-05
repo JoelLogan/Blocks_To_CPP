@@ -8,6 +8,7 @@
 //! finds, pointing at the block when there is one, and recovers so that later
 //! parts of the file are still checked.
 
+mod clipboard;
 mod project;
 mod workspace;
 
@@ -37,6 +38,39 @@ const RESERVED_KEYS: [&str; 3] = ["__proto__", "constructor", "prototype"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Invalid;
 
+/// What is being decoded. Both kinds of input follow the same rules; this
+/// only changes the words of the messages that talk about the input as a
+/// whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Origin {
+    /// A `.b2c` project file (spec §5.3).
+    Project,
+    /// A clipboard payload (spec §5.12).
+    Clipboard,
+}
+
+impl Origin {
+    /// The subject of a message about the input as a whole.
+    pub(crate) fn whole(self) -> &'static str {
+        match self {
+            Self::Project => "The project file",
+            Self::Clipboard => "The pasted data",
+        }
+    }
+}
+
+/// Where a block sits, which decides the canvas-only keys it may have.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Placement {
+    /// Directly on a canvas, or directly in a clipboard payload: may have
+    /// `x`, `y` and a `stack`.
+    Canvas,
+    /// In another block's value input or statement list.
+    Nested,
+    /// An element of a top-level block's `stack` (ADR-0011).
+    Stacked,
+}
+
 /// One step of the path to the value being decoded.
 #[derive(Debug, Clone, Copy)]
 enum Seg<'a> {
@@ -51,6 +85,7 @@ type Entries<'a> = &'a [(Box<str>, Json)];
 /// for project-wide uniqueness checks.
 pub(crate) struct Decoder<'a> {
     diags: Diags,
+    origin: Origin,
     path: Vec<Seg<'a>>,
     module: Option<ModuleId>,
     block: Option<BlockId>,
@@ -70,10 +105,11 @@ pub(crate) struct Decoder<'a> {
 }
 
 impl<'a> Decoder<'a> {
-    /// A decoder that adds to `diags`.
-    pub(crate) fn new(diags: Diags) -> Self {
+    /// A decoder for `origin` that adds to `diags`.
+    pub(crate) fn new(diags: Diags, origin: Origin) -> Self {
         Self {
             diags,
+            origin,
             path: Vec::new(),
             module: None,
             block: None,
@@ -198,7 +234,7 @@ impl<'a> Decoder<'a> {
         } else {
             let path = Self::render(&self.path);
             if path.is_empty() {
-                String::from("The project file")
+                String::from(self.origin.whole())
             } else {
                 format!("\"{path}\"")
             }
@@ -261,8 +297,12 @@ impl<'a> Decoder<'a> {
     }
 
     fn reserved_key(&mut self, key: &str) {
+        let place = match self.origin {
+            Origin::Project => "project files",
+            Origin::Clipboard => "pasted blocks",
+        };
         let message = format!(
-            "{} uses the key {}, which is not allowed in project files because it could be used to tamper with the editor.",
+            "{} uses the key {}, which is not allowed in {place} because it could be used to tamper with the editor.",
             self.subject(),
             quote(key)
         );
@@ -488,9 +528,14 @@ impl<'a> Decoder<'a> {
         if self.untyped_values > MAX_UNTYPED_VALUES {
             if !self.untyped_limit_reported {
                 self.untyped_limit_reported = true;
-                let message = format!(
-                    "This project stores more than {MAX_UNTYPED_VALUES} values of free-form data in \"extra\" and \"x-ext\", which is far more than any real project needs."
-                );
+                let message = match self.origin {
+                    Origin::Project => format!(
+                        "This project stores more than {MAX_UNTYPED_VALUES} values of free-form data in \"extra\" and \"x-ext\", which is far more than any real project needs."
+                    ),
+                    Origin::Clipboard => format!(
+                        "The pasted data stores more than {MAX_UNTYPED_VALUES} values of free-form data in \"extra\", which is far more than any real blocks need."
+                    ),
+                };
                 self.diags
                     .error(codes::TOO_MUCH_EXTRA_DATA, Location::project(), message);
             }

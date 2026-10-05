@@ -10,6 +10,12 @@ of the [translation pipeline](../../spec/06-compiler-pipeline.md#61-overview):
   one (at most 1,000, then `B2C-E0199`). Problems with the bytes, the JSON
   syntax and the format header stop loading right away, because everything
   after them would be guesswork.
+
+  Pasted blocks ([spec §5.12](../../spec/05-project-format.md#512-clipboard-format))
+  go through the same checks with the same codes, so a paste with any of
+  these problems inserts nothing. Their messages say "the pasted data"
+  instead of "the project file". One code exists only for pastes:
+  `B2C-E0138`, data that is not Blocks2Cpp clipboard data.
 * **`B2C-E06xx`: catalog.** `b2c-catalog` checks every block against its
   definition in the block catalog ([spec §6.3](../../spec/06-compiler-pipeline.md#63-stage--resolve-catalog)).
   The project still opens, with the problem shown on the block, but it cannot
@@ -26,7 +32,9 @@ is in, such as `"fields.NAME.name" in this block`.
 
 The malicious-project regression suite in
 [`tests/security/projects/`](../../../tests/security/projects/README.md) has a
-crafted file for most of these codes.
+crafted file for most of these codes, and
+[`tests/security/clipboard/`](../../../tests/security/clipboard/README.md) has
+crafted clipboard payloads.
 
 ## Loading the project file (`B2C-E01xx`)
 
@@ -117,6 +125,11 @@ it is lost or misread.
 
 > This project was made with a newer version of Blocks2Cpp (needs ≥ 0.3.0; it uses project format 2, and this version reads format 1). Update Blocks2Cpp to open it.
 
+Blocks copied in a newer version of Blocks2Cpp can use a newer clipboard
+format, and are refused the same way when pasted:
+
+> These blocks were copied from a newer version of Blocks2Cpp (they use clipboard format 2, and this version reads format 1). Update Blocks2Cpp to paste them.
+
 **Fix:** update Blocks2Cpp.
 
 ### B2C-E0109: the format version is invalid
@@ -160,11 +173,17 @@ saved by Blocks2Cpp.
 
 A value has the wrong kind (text where a number belongs, for example), is
 not one of the allowed choices, or is a number out of range for its key.
-`"x-ext"`, when present, must be an object.
+`"x-ext"`, when present, must be an object. A block's `"stack"` (the blocks
+stacked below a loose block on the canvas) is never an empty list: a block
+with nothing below it has no `"stack"` key, so every project has one
+spelling.
 
 > "project.run.workingDirectory" should be one of "project" or "sandbox", but it is the text "/etc".
 
-**Fix:** use one of the values the message lists.
+> "stack" in this block is an empty list. Leave "stack" out when no blocks are stacked below the block.
+
+**Fix:** use one of the values the message lists, or remove an empty
+`"stack"`.
 
 ### B2C-E0113: invalid ID
 
@@ -321,11 +340,14 @@ by them ("prototype pollution").
 ### B2C-E0128: canvas position on a nested block
 
 Only blocks directly on a module's canvas have a position (`"x"` and `"y"`);
-blocks inside other blocks are placed by their parent.
+blocks inside other blocks are placed by their parent, and blocks in a
+`"stack"` sit below the block that holds the stack.
 
 > This block is inside another block, so it cannot have a canvas position ("x" and "y"). Remove them.
 
-**Fix:** remove `"x"` and `"y"` from the nested block.
+> This block is stacked below another block, so it cannot have a canvas position ("x" and "y"). Remove them.
+
+**Fix:** remove `"x"` and `"y"` from the nested or stacked block.
 
 ### B2C-E0129: coordinate out of range
 
@@ -408,6 +430,37 @@ cannot contain paths.
 > The library pack "std" is listed more than once. Keep only one entry for it.
 
 **Fix:** keep one entry, with the version requirement you want.
+
+### B2C-E0138: not Blocks2Cpp clipboard data
+
+Only for pastes. The pasted data is JSON, but its `"format"` is not
+`"blocks2cpp/clipboard"`, it has no `"format"`, or it is not a JSON object at
+all. Data copied from another program, and whole project files, are refused:
+a paste only accepts blocks copied in Blocks2Cpp
+([spec §5.12](../../spec/05-project-format.md#512-clipboard-format)).
+
+> The pasted data is not Blocks2Cpp blocks: its "format" is "blockly/clipboard", not "blocks2cpp/clipboard".
+
+> The pasted data is a whole Blocks2Cpp project, not copied blocks. Open it as a project instead.
+
+**Fix:** copy the blocks in Blocks2Cpp and paste again. To use a project
+file, open it.
+
+### B2C-E0139: blocks stacked below a block that is not on the canvas
+
+A block that sits directly on a module's canvas, with no place in a program
+yet, can keep the statement blocks attached below it in its `"stack"` (and
+so can a block directly in pasted data). Blocks inside other blocks, and
+blocks that are themselves in a stack, cannot have a stack: their
+statements belong in a statement list. (Whether the block holding the stack
+is a statement block is checked later, against the catalog.)
+
+> This block is inside another block, so it cannot have a "stack": only a block directly on the canvas can have blocks stacked below it. Move the stacked blocks into the statement list they belong to.
+
+> This block is itself in a "stack", so it cannot have a "stack" of its own. Put all the stacked blocks in the stack of the first block.
+
+**Fix:** move the stacked blocks into the statement list they belong to,
+or into the stack of the first block of the canvas stack.
 
 ### B2C-E0199: more problems than are listed
 
