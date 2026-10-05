@@ -14,11 +14,16 @@
 //!   never from the current directory or `PATH` (DLL planting, §8.7).
 //! * [`open_https_url`]: opens one of the app's fixed help links in the
 //!   user's browser (§8.8: no arbitrary URLs, nothing from the webview).
+//! * [`open_read_nonblocking`]: opens a file for reading so that a FIFO
+//!   swapped in by someone else can never block the open (§8.6). It needs
+//!   neither of the above, only open flags the standard library does not
+//!   name; they come from `rustix`, which this crate already uses.
 //!
 //! The Windows code is in a private submodule, the only place here where
 //! `unsafe` is allowed; every `unsafe` block carries a `// SAFETY:` comment.
 //! The Unix side needs no `unsafe` at all.
 
+use std::fs::File;
 use std::io;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -85,6 +90,39 @@ pub fn directory_syncs() -> u64 {
 #[cfg_attr(not(unix), allow(dead_code))]
 fn count_directory_sync() {
     DIRECTORY_SYNCS.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Opens `path` for reading without ever waiting in the open itself.
+///
+/// A plain [`File::open`] of a FIFO (named pipe) waits until another process
+/// opens it for writing, which may be never. Checking the path first does
+/// not prevent that: whoever can write the folder can swap a FIFO in between
+/// the check and the open. Code that reads files from folders other people
+/// may write (project folders, which may be shared or synced) therefore
+/// opens them with this function and then checks the opened file through
+/// its handle ([`File::metadata`]), refusing anything that is not a regular
+/// file.
+///
+/// * **Unix:** `open(2)` with `O_RDONLY | O_NONBLOCK | O_NOCTTY` (plus
+///   `O_CLOEXEC`, as for every file the standard library opens): a FIFO
+///   opens at once, and a terminal never becomes this process's controlling
+///   terminal. Links are followed. The handle stays non-blocking, which
+///   changes nothing for regular files: reading one never fails with
+///   `WouldBlock`.
+/// * **Windows:** [`File::open`]. There are no FIFOs in the file system
+///   there (named pipes have their own namespace, `\\.\pipe\`).
+///
+/// # Errors
+/// The error of the open, for example [`io::ErrorKind::NotFound`].
+pub fn open_read_nonblocking(path: &Path) -> io::Result<File> {
+    #[cfg(unix)]
+    {
+        unix::open_read_nonblocking(path)
+    }
+    #[cfg(not(unix))]
+    {
+        File::open(path)
+    }
 }
 
 /// Restricts where this process loads DLLs from, to prevent DLL planting

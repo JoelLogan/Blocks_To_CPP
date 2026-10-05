@@ -1,13 +1,59 @@
 //! The OS helpers of `b2c_process::os`: atomic replacement (both platforms),
-//! DLL search hardening (Windows, run in CI) and the link opener's URL
-//! check.
+//! non-blocking opens, DLL search hardening (Windows, run in CI) and the
+//! link opener's URL check.
 // Test helpers fail the test by panicking.
 #![allow(clippy::unwrap_used)]
 
 use std::fs;
+use std::io::Read as _;
 
 use b2c_process::ProcessError;
-use b2c_process::os::{atomic_replace, harden_dll_search, open_https_url};
+use b2c_process::os::{atomic_replace, harden_dll_search, open_https_url, open_read_nonblocking};
+
+#[test]
+fn regular_files_open_and_read_normally() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("project.b2c");
+    let contents = vec![b'x'; 256 * 1024];
+    fs::write(&path, &contents).unwrap();
+    let mut file = open_read_nonblocking(&path).unwrap();
+    assert!(file.metadata().unwrap().is_file());
+    let mut read = Vec::new();
+    file.read_to_end(&mut read).unwrap();
+    assert_eq!(read, contents);
+    assert_eq!(
+        open_read_nonblocking(&dir.path().join("missing"))
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::NotFound
+    );
+}
+
+/// A FIFO that no process ever opens for writing: a plain `File::open`
+/// would wait forever. The open must return at once, and the handle must
+/// show what it is, so the caller can refuse it.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_fifo_without_a_writer_opens_at_once() {
+    use std::os::unix::fs::FileTypeExt as _;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use rustix::fs::{CWD, Mode, mkfifoat};
+
+    let dir = tempfile::tempdir().unwrap();
+    let fifo = dir.path().join("fifo");
+    mkfifoat(CWD, &fifo, Mode::RUSR | Mode::WUSR).unwrap();
+    let (done, opened) = mpsc::channel();
+    std::thread::spawn(move || {
+        let file = open_read_nonblocking(&fifo).unwrap();
+        done.send(file.metadata().unwrap().file_type().is_fifo()).unwrap();
+    });
+    let is_fifo = opened
+        .recv_timeout(Duration::from_secs(30))
+        .expect("opening the FIFO blocked");
+    assert!(is_fifo);
+}
 
 #[test]
 fn replaces_an_existing_file() {

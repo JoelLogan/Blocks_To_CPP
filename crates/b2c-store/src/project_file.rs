@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use b2c_model::limits::MAX_FILE_BYTES;
 use sha2::{Digest as _, Sha256};
 
-use crate::atomic::{Backup, write_atomic};
+use crate::atomic::{Backup, write_atomic_keeping_mode};
 use crate::error::{ReadError, StoreError};
 use crate::ids::hex_lower;
 use crate::read::read_bounded;
@@ -26,19 +26,20 @@ pub fn read_project(path: &Path) -> Result<Vec<u8>, ReadError> {
 
 /// Saves a project's canonical bytes (`b2c_model::to_canonical_json`)
 /// atomically, keeping the previous version as `<name>.b2c.bak`
-/// (05 §5.10; see [`write_atomic`]).
+/// (05 §5.10; see [`write_atomic_keeping_mode`]). On Unix a saved project
+/// keeps the permission bits the user gave it; a new one is `0600`.
 ///
 /// # Errors
 /// [`StoreError::Invalid`] when `canonical` is larger than
 /// [`MAX_PROJECT_BYTES`] (it could never be opened again); otherwise as
-/// [`write_atomic`].
+/// [`write_atomic_keeping_mode`].
 pub fn save_project(path: &Path, canonical: &[u8]) -> Result<(), StoreError> {
     if canonical.len() > MAX_FILE_BYTES {
         return Err(StoreError::Invalid(
             "the project is larger than 32 MiB, the most a project file can be",
         ));
     }
-    write_atomic(path, canonical, Backup::KeepPrevious)
+    write_atomic_keeping_mode(path, canonical, Backup::KeepPrevious)
 }
 
 /// The SHA-256 of `bytes`: the baseline for external-change detection.

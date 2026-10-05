@@ -1,9 +1,11 @@
 //! Size-bounded reads (08 §8.6: "files are read up to limit + 1 bytes, so
 //! oversized files are rejected without being fully loaded").
 
-use std::fs::{self, File};
+use std::fs;
 use std::io::Read as _;
 use std::path::Path;
+
+use b2c_process::os::open_read_nonblocking;
 
 use crate::error::ReadError;
 use crate::fs_checks::same_file;
@@ -11,11 +13,16 @@ use crate::fs_checks::same_file;
 /// Reads a whole regular file of at most `limit` bytes.
 ///
 /// Only regular files are read (after following links): a folder, device,
-/// pipe or socket is [`ReadError::NotAFile`], checked *before* opening, so
-/// opening a pipe can never block. The file is then opened, checked again
-/// (it must still be the same regular file) and read through a `take` of
-/// `limit + 1` bytes, so a file that grows, or a huge file whose size was
-/// not reported correctly, still costs at most `limit + 1` bytes of memory.
+/// pipe or socket is [`ReadError::NotAFile`]. The path is checked first, so
+/// such a file in place is refused without being opened, and so is a file
+/// already larger than `limit`. Someone who can write the folder may swap
+/// the file between that check and the open, so the file is opened with
+/// [`open_read_nonblocking`] (a FIFO swapped in opens at once instead of
+/// waiting for a writer that never comes) and checked again through the
+/// handle: it must still be the same regular file. It is then read through
+/// a `take` of `limit + 1` bytes, so a file that grows, or a huge file whose
+/// size was not reported correctly, still costs at most `limit + 1` bytes of
+/// memory.
 ///
 /// # Errors
 /// [`ReadError::NotFound`] when the file does not exist,
@@ -36,7 +43,7 @@ pub fn read_bounded(path: &Path, limit: u64) -> Result<Vec<u8>, ReadError> {
     if before.len() > limit {
         return Err(ReadError::TooLarge { limit });
     }
-    let file = File::open(path).map_err(io)?;
+    let file = open_read_nonblocking(path).map_err(io)?;
     let opened = file.metadata().map_err(ReadError::Io)?;
     if !opened.is_file() || !same_file(&before, &opened) {
         return Err(ReadError::NotAFile);
@@ -105,6 +112,18 @@ mod tests {
             read_bounded(Path::new("/dev/null"), 10),
             Err(ReadError::NotAFile)
         ));
+    }
+
+    /// A FIFO without a writer (a blocking open would never return); the
+    /// race where one is swapped in after the check is in tests/store.rs.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn fifos_are_not_read() {
+        use rustix::fs::{CWD, Mode, mkfifoat};
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("fifo");
+        mkfifoat(CWD, &fifo, Mode::RUSR | Mode::WUSR).unwrap();
+        assert!(matches!(read_bounded(&fifo, 10), Err(ReadError::NotAFile)));
     }
 
     #[cfg(unix)]

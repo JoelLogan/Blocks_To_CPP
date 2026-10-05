@@ -2,12 +2,15 @@
 //!
 //! Every file the app writes for itself or for the user (projects,
 //! settings, the recent list, trust, toolchains, recovery snapshots, build
-//! manifests) goes through [`write_atomic`]:
+//! manifests) goes through [`write_atomic`], or for project files
+//! [`write_atomic_keeping_mode`]:
 //!
 //! 1. a temporary file is created **in the same folder** with a random name,
 //!    exclusively (`O_EXCL`, so an existing file or link is never opened)
 //!    and owner-only (`0600` on Unix), by the `tempfile` crate;
-//! 2. the bytes are written, flushed and `fsync`ed;
+//! 2. the bytes are written and flushed, the file gets its final permission
+//!    bits on Unix (`0600`, or for a project the bits of the file it
+//!    replaces), and it is `fsync`ed;
 //! 3. the temporary file is renamed over the target by
 //!    [`b2c_process::os::atomic_replace`]: `MoveFileExW(REPLACE_EXISTING |
 //!    WRITE_THROUGH)` on Windows, `rename(2)` and a directory `fsync` on Unix.
@@ -16,11 +19,15 @@
 //! the temporary file is removed on every error. With
 //! [`Backup::KeepPrevious`] the previous version is first copied to
 //! `<name>.bak` the same way (its own temporary file, then a rename), so a
-//! link planted at `<name>.bak` is replaced, never followed.
+//! link planted at `<name>.bak` is replaced, never followed. The previous
+//! version is opened without blocking and checked through its handle, so a
+//! FIFO swapped in at the target is refused instead of hanging the save.
 
 use std::fs::{self, File, Metadata, Permissions};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
+
+use b2c_process::os::open_read_nonblocking;
 
 use crate::error::StoreError;
 use crate::fs_checks::{is_link, same_file};
@@ -33,6 +40,16 @@ pub enum Backup {
     /// Copy the current file (if there is one) to `<name>.bak` first, one
     /// generation (see [`backup_path`]).
     KeepPrevious,
+}
+
+/// The permission bits a written file (and its `.bak`) gets on Unix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModePolicy {
+    /// Always `0600` ([`write_atomic`]).
+    OwnerOnly,
+    /// The bits of the file it replaces; `0600` for a new file
+    /// ([`write_atomic_keeping_mode`]).
+    KeepExisting,
 }
 
 /// The backup of `target` that [`Backup::KeepPrevious`] writes: the same
@@ -56,36 +73,54 @@ pub fn backup_path(target: &Path) -> Result<PathBuf, StoreError> {
 /// symbolic link or junction (on Windows, any name-surrogate reparse point),
 /// or a folder, at `target` is refused and left alone. (Other reparse
 /// points, such as the placeholders of a cloud-synced folder, are ordinary
-/// files here.) A replaced file keeps its permission bits on Unix (a project
-/// the user made group-readable stays so); a new file is `0600`.
+/// files here.)
+///
+/// On Unix the file (and its `.bak`) is always owner-only, `0600`, even when
+/// the file it replaces had wider permissions: every machine-local file is
+/// `0600` (02 §2.7, 08 §8.6). Project files, whose permissions are the
+/// user's choice, are written with [`write_atomic_keeping_mode`] instead.
 ///
 /// # Errors
 /// [`StoreError::Invalid`] when `target` has no file name or parent folder;
-/// [`StoreError::Link`] when `target` is not a regular file; and
+/// [`StoreError::Link`] when `target` is not a regular file (also when it is
+/// swapped for something else while its `.bak` copy is made); and
 /// [`StoreError::Io`] when any step fails. On error `target` is unchanged
 /// (except, on Unix, when only the final directory sync failed) and no
 /// temporary file is left behind; with [`Backup::KeepPrevious`] the backup
 /// may already have been updated.
 pub fn write_atomic(target: &Path, bytes: &[u8], backup: Backup) -> Result<(), StoreError> {
-    write_atomic_with_hook(target, bytes, backup, &mut |_| Ok(()))
+    write_atomic_with_hook(target, bytes, backup, ModePolicy::OwnerOnly, &mut |_| Ok(()))
 }
 
-/// [`write_atomic`] with a hook called after the temporary file is complete
-/// and synced, right before the rename; it gets the temporary file's path.
-/// An error from the hook aborts the write as if the rename had failed, so
-/// tests can inject a fault (or a crash) at the worst moment.
+/// [`write_atomic`] for the user's own files (project files and their
+/// `.bak`): on Unix a replaced file keeps its permission bits, so a project
+/// the user made group-readable stays so; a new file is `0600`. Never use it
+/// for machine-local files, which must always be `0600`.
+///
+/// # Errors
+/// As [`write_atomic`].
+pub fn write_atomic_keeping_mode(target: &Path, bytes: &[u8], backup: Backup) -> Result<(), StoreError> {
+    write_atomic_with_hook(target, bytes, backup, ModePolicy::KeepExisting, &mut |_| Ok(()))
+}
+
+/// [`write_atomic`] (or [`write_atomic_keeping_mode`], by `policy`) with a
+/// hook called after the temporary file is complete and synced, right before
+/// the rename; it gets the temporary file's path. An error from the hook
+/// aborts the write as if the rename had failed, so tests can inject a fault
+/// (or a crash) at the worst moment.
 pub(crate) fn write_atomic_with_hook(
     target: &Path,
     bytes: &[u8],
     backup: Backup,
+    policy: ModePolicy,
     before_rename: &mut dyn FnMut(&Path) -> io::Result<()>,
 ) -> Result<(), StoreError> {
     let dir = parent_dir(target)?;
     let existing = inspect_target(target)?;
     if let (Backup::KeepPrevious, Some(metadata)) = (backup, &existing) {
-        copy_to_backup(target, metadata, &backup_path(target)?, dir)?;
+        copy_to_backup(target, metadata, &backup_path(target)?, dir, policy)?;
     }
-    let permissions = existing.as_ref().and_then(kept_permissions);
+    let permissions = file_permissions(policy, existing.as_ref());
     let temp = write_temp(dir, target, permissions, &mut |file| file.write_all(bytes))?;
     before_rename(&temp).map_err(|source| StoreError::io("write the file", target, source))?;
     replace(temp, target)
@@ -113,25 +148,38 @@ fn inspect_target(target: &Path) -> Result<Option<Metadata>, StoreError> {
     }
 }
 
-/// The permissions a file replacing one with `metadata` gets: the same
-/// permission bits on Unix; elsewhere the temporary file's defaults.
+/// The permissions of a file written under `policy` that replaces the file
+/// described by `existing` (`None` for a new file): on Unix `0600`, or the
+/// replaced file's permission bits under [`ModePolicy::KeepExisting`];
+/// elsewhere `None`, so the temporary file keeps its defaults (on Windows,
+/// the ACL inherited from its folder).
 #[allow(clippy::unnecessary_wraps)] // `None` on Windows
-fn kept_permissions(metadata: &Metadata) -> Option<Permissions> {
+fn file_permissions(policy: ModePolicy, existing: Option<&Metadata>) -> Option<Permissions> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
-        Some(Permissions::from_mode(metadata.permissions().mode() & 0o777))
+        let mode = match (policy, existing) {
+            (ModePolicy::KeepExisting, Some(metadata)) => metadata.permissions().mode() & 0o777,
+            _ => 0o600,
+        };
+        Some(Permissions::from_mode(mode))
     }
     #[cfg(not(unix))]
     {
-        let _ = metadata;
+        let _ = (policy, existing);
         None
     }
 }
 
 /// Copies the current `target` (described by `metadata`) to `backup`
 /// through a temporary file and a rename.
-fn copy_to_backup(target: &Path, metadata: &Metadata, backup: &Path, dir: &Path) -> Result<(), StoreError> {
+fn copy_to_backup(
+    target: &Path,
+    metadata: &Metadata,
+    backup: &Path,
+    dir: &Path,
+    policy: ModePolicy,
+) -> Result<(), StoreError> {
     // A folder (or similar) at the backup path is left alone; a link there
     // is simply replaced by the rename.
     if let Ok(existing) = fs::symlink_metadata(backup)
@@ -140,7 +188,10 @@ fn copy_to_backup(target: &Path, metadata: &Metadata, backup: &Path, dir: &Path)
     {
         return Err(StoreError::link(backup));
     }
-    let mut source = File::open(target).map_err(|source| StoreError::io("read the file", target, source))?;
+    // Opened without blocking: a FIFO swapped in since `metadata` was taken
+    // opens at once (and is refused below) instead of waiting for a writer.
+    let mut source =
+        open_read_nonblocking(target).map_err(|source| StoreError::io("read the file", target, source))?;
     let opened = source
         .metadata()
         .map_err(|source| StoreError::io("read the file", target, source))?;
@@ -148,9 +199,12 @@ fn copy_to_backup(target: &Path, metadata: &Metadata, backup: &Path, dir: &Path)
     if !opened.is_file() || !same_file(metadata, &opened) {
         return Err(StoreError::link(target));
     }
-    let temp = write_temp(dir, backup, kept_permissions(metadata), &mut |file| {
-        io::copy(&mut source, file).map(|_| ())
-    })?;
+    let temp = write_temp(
+        dir,
+        backup,
+        file_permissions(policy, Some(metadata)),
+        &mut |file| io::copy(&mut source, file).map(|_| ()),
+    )?;
     replace(temp, backup)
 }
 
@@ -167,7 +221,7 @@ fn write_temp(
         .prefix(".b2c-")
         .suffix(".tmp")
         .tempfile_in(dir)
-        .map_err(|source| StoreError::io("create a temporary file", target, source))?;
+        .map_err(|source| StoreError::io("create a temporary file", target, without_path(&source)))?;
     let (mut file, path) = temp.into_parts();
     let write = |file: &mut File| -> io::Result<()> {
         write_contents(file)?;
@@ -183,6 +237,18 @@ fn write_temp(
     // On error `path` is dropped on return, which removes the temporary file.
     written.map_err(|source| StoreError::io("write the file", target, source))?;
     Ok(path)
+}
+
+/// An error like `error` but without a path in its text. `tempfile` wraps
+/// the errors of creating a file in one whose text ends in `at path
+/// "/the/folder/.b2c-….tmp"`, and no store error may show a path (08 §8.11;
+/// the path stays in [`StoreError::Io`]'s `path` field, for the debug log).
+/// The result keeps the OS error code when `error` is a plain OS error, and
+/// otherwise (as for `tempfile`'s wrapped errors) only the error kind.
+fn without_path(error: &io::Error) -> io::Error {
+    error
+        .raw_os_error()
+        .map_or_else(|| io::Error::from(error.kind()), io::Error::from_raw_os_error)
 }
 
 /// Renames the complete temporary file over `target`.
@@ -244,13 +310,19 @@ mod tests {
         let target = dir.path().join("game.b2c");
         fs::write(&target, b"old").unwrap();
         let mut seen = None;
-        let result = write_atomic_with_hook(&target, b"new", Backup::None, &mut |temp| {
-            // The temporary file is complete at this point.
-            assert_eq!(fs::read(temp).unwrap(), b"new");
-            assert_eq!(temp.parent(), Some(dir.path()));
-            seen = Some(temp.to_path_buf());
-            Err(io::Error::other("simulated crash"))
-        });
+        let result = write_atomic_with_hook(
+            &target,
+            b"new",
+            Backup::None,
+            ModePolicy::OwnerOnly,
+            &mut |temp| {
+                // The temporary file is complete at this point.
+                assert_eq!(fs::read(temp).unwrap(), b"new");
+                assert_eq!(temp.parent(), Some(dir.path()));
+                seen = Some(temp.to_path_buf());
+                Err(io::Error::other("simulated crash"))
+            },
+        );
         assert!(matches!(result, Err(StoreError::Io { .. })));
         assert_eq!(fs::read(&target).unwrap(), b"old");
         assert!(!seen.unwrap().exists());
@@ -264,7 +336,13 @@ mod tests {
         fs::write(&target, b"old").unwrap();
         // Removing the folder's entry from under the temporary file makes
         // the rename itself fail.
-        let result = write_atomic_with_hook(&target, b"new", Backup::None, &mut |temp| fs::remove_file(temp));
+        let result = write_atomic_with_hook(
+            &target,
+            b"new",
+            Backup::None,
+            ModePolicy::OwnerOnly,
+            &mut |temp| fs::remove_file(temp),
+        );
         assert!(matches!(result, Err(StoreError::Io { .. })));
         assert_eq!(fs::read(&target).unwrap(), b"old");
         assert_eq!(listing(dir.path()), ["game.b2c"]);
@@ -302,6 +380,32 @@ mod tests {
         assert_eq!(fs::read(&target).unwrap(), b"old");
     }
 
+    /// `tempfile` adds the temporary file's full path to its errors; store
+    /// errors must not show it (08 §8.11), anywhere in the error chain.
+    #[test]
+    fn errors_never_show_the_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("secret-project").join("game.b2c");
+        let error = write_atomic(&target, b"x", Backup::None).unwrap_err();
+        let StoreError::Io { path, source, .. } = &error else {
+            panic!("{error:?}");
+        };
+        assert_eq!(path, &target);
+        assert_eq!(source.kind(), io::ErrorKind::NotFound);
+        let mut next: Option<&dyn std::error::Error> = Some(&error);
+        while let Some(current) = next {
+            let text = current.to_string();
+            assert!(
+                !text.contains("secret-project") && !text.contains(".tmp"),
+                "{text}"
+            );
+            next = current.source();
+        }
+        // Plain OS errors keep their code.
+        let os = io::Error::from_raw_os_error(2);
+        assert_eq!(without_path(&os).raw_os_error(), Some(2));
+    }
+
     #[cfg(unix)]
     #[test]
     fn links_at_the_target_are_refused_and_not_followed() {
@@ -337,17 +441,34 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn new_files_are_owner_only_and_replaced_files_keep_their_mode() {
+    fn machine_local_files_are_always_owner_only() {
         use std::os::unix::fs::PermissionsExt as _;
         let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("trust.json");
         write_atomic(&target, b"{}", Backup::None).unwrap();
         assert_eq!(mode(&target), 0o600);
+        // A file someone made wider is replaced by an owner-only one, and so
+        // is its backup.
+        fs::set_permissions(&target, Permissions::from_mode(0o666)).unwrap();
+        write_atomic(&target, b"[]", Backup::KeepPrevious).unwrap();
+        assert_eq!(mode(&target), 0o600);
+        assert_eq!(mode(&dir.path().join("trust.json.bak")), 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn projects_keep_their_mode_and_new_ones_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let dir = tempfile::tempdir().unwrap();
+        let new = dir.path().join("new.b2c");
+        write_atomic_keeping_mode(&new, b"new", Backup::KeepPrevious).unwrap();
+        assert_eq!(mode(&new), 0o600);
         let project = dir.path().join("shared.b2c");
         fs::write(&project, b"old").unwrap();
         fs::set_permissions(&project, Permissions::from_mode(0o640)).unwrap();
-        write_atomic(&project, b"new", Backup::KeepPrevious).unwrap();
+        write_atomic_keeping_mode(&project, b"new", Backup::KeepPrevious).unwrap();
         assert_eq!(mode(&project), 0o640);
         assert_eq!(mode(&dir.path().join("shared.b2c.bak")), 0o640);
     }

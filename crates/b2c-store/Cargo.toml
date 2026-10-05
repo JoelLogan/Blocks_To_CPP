@@ -22,5 +22,9 @@ thiserror.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# Test-only: `mkfifoat` for the FIFO-swap race test (tests/store.rs).
+rustix = { workspace = true, features = ["fs"] }
+
 [lints]
 workspace = true
