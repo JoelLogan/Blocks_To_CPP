@@ -248,6 +248,7 @@ fn host_env(sanitizers: bool) -> Vec<(OsString, OsString)> {
             platform: Platform::host(),
             sanitizers,
             leak_detection: false,
+            toolchain_bin: None,
         },
     )
 }
@@ -899,6 +900,7 @@ mod linux {
                     platform: Platform::Linux,
                     sanitizers,
                     leak_detection: true,
+                    toolchain_bin: None,
                 },
             );
             let (_, console) = start(&sessions, spec);

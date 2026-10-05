@@ -105,8 +105,12 @@ pub struct BuildRecord {
     /// Whether the toolchain's leak detection works (`detect_leaks=0`
     /// otherwise, `B2C-T1021`).
     pub leak_detection: bool,
-    /// The toolchain's `bin` folder (for a dynamically linked program's DLLs
-    /// on Windows).
+    /// The toolchain's `bin` folder when the program is linked dynamically
+    /// against the compiler's runtime DLLs: only on Windows, when static
+    /// linking does not work with the toolchain (`B2C-T1013`). A run puts
+    /// it first on `PATH` (`RunEnvOptions::toolchain_bin`, 07 §7.6.2).
+    /// `None` for a statically linked program, on Linux, and when the build
+    /// stopped before the toolchain was known.
     pub toolchain_bin: Option<PathBuf>,
     /// Whether the program contains the IDE init unit.
     pub ide: bool,

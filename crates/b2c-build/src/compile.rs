@@ -9,7 +9,8 @@
 //!
 //! 1. runs the front end on the project bytes (load, resolve, analyse,
 //!    generate; 06 §6.1) and stops with *project errors* if any stage
-//!    reported an error, before any compiler is chosen or started;
+//!    reported an error, before any compiler is chosen or started (a
+//!    session's cancellation token is checked between the stages);
 //! 2. checks the toolchain's fingerprint again and probes a changed compiler
 //!    once more (`B2C-T1009`, 07 §7.2, 08 §8.5);
 //! 3. prepares `<cache>/builds/<project>/<config>-<hash8>/`, waits for its
@@ -25,7 +26,9 @@
 //! 7. maps every compiler and linker message to the blocks through the source
 //!    map (07 §7.5.3), sorted by translation unit, so the order never
 //!    depends on which compiler finished first;
-//! 8. on success records the manifest atomically; on failure or
+//! 8. on success records the manifest atomically and marks the folder as
+//!    used again (so it is the most recently used entry when eviction runs
+//!    after the build; an up-to-date build does the same); on failure or
 //!    cancellation deletes the executable and the objects it was making.
 
 use std::path::{Path, PathBuf};
@@ -44,10 +47,11 @@ use b2c_toolchain::diagnostics::{CompilerMessage, MessageOrigin, MessageSeverity
 use b2c_toolchain::env::{CompilerEnv, HostEnv, compiler_env};
 use b2c_toolchain::flags::{ExtraFlags, ValidDefine};
 use b2c_toolchain::probe::{ProbeError, ProbeOptions, Toolchain, probe};
+use b2c_toolchain::target::Platform;
 use sha2::{Digest as _, Sha256};
 
 use crate::build_dir::{BuildDir, BuildDirError, is_device_name, write_generated_tracked, write_if_changed};
-use crate::frontend::{FrontendOptions, run_frontend};
+use crate::frontend::{FrontendOptions, run_frontend_cancellable};
 use crate::ide;
 use crate::manifest::{self, ManifestInputs, ManifestStep, ManifestToolchain, StepKind};
 use crate::session::{RecordOutcome, ToolchainForBuild};
@@ -192,7 +196,7 @@ pub fn build(project: &[u8], request: &BuildRequest) -> Result<BuildReport, Buil
         ide: request.ide,
         cache_root: &request.cache_root,
     };
-    let choose = || match select(&request.toolchain, &request.cache_root) {
+    let choose = |_: &CancelToken| match select(&request.toolchain, &request.cache_root) {
         Selected::Usable(toolchain, notes) => ToolchainForBuild::Ready { toolchain, notes },
         Selected::Unusable(diagnostics) => ToolchainForBuild::Unavailable { diagnostics },
     };
@@ -278,17 +282,21 @@ pub(crate) struct JobResult {
     pub(crate) sanitizers: bool,
     /// Whether the toolchain's leak detection works.
     pub(crate) leak_detection: bool,
-    /// The toolchain's `bin` folder.
+    /// The toolchain's `bin` folder, for a dynamically linked program only
+    /// (see `BuildRecord::toolchain_bin`).
     pub(crate) toolchain_bin: Option<PathBuf>,
 }
 
-/// Runs one build (see the module documentation). `toolchain` is called
-/// only when the project has no errors. Every event goes to `emit`; the
-/// outcome is in the result. Never panics; cancelling `cancel` stops the
-/// build at the next step and kills a running compiler (after a 2 s grace).
+/// Runs one build (see the module documentation). `toolchain` is called,
+/// with `cancel`, only when the project has no errors. Every event goes to
+/// `emit`; the outcome is in the result. Never panics; cancelling `cancel`
+/// stops the build at the next step (the front end checks it between its
+/// stages) and kills a running compiler (after a 2 s grace). A build whose
+/// token fired ends as [`RecordOutcome::Cancelled`] whatever the step it
+/// was in found.
 pub(crate) fn run_build_job(
     input: &JobInput<'_>,
-    toolchain: impl FnOnce() -> ToolchainForBuild,
+    toolchain: impl FnOnce(&CancelToken) -> ToolchainForBuild,
     cancel: &CancelToken,
     emit: &mut dyn FnMut(JobEvent),
 ) -> JobResult {
@@ -382,7 +390,7 @@ impl Reporter<'_> {
 /// The front end and the choice of toolchain; then [`compile_project`].
 fn run_job(
     input: &JobInput<'_>,
-    toolchain: impl FnOnce() -> ToolchainForBuild,
+    toolchain: impl FnOnce(&CancelToken) -> ToolchainForBuild,
     cancel: &CancelToken,
     reporter: &mut Reporter<'_>,
     result: &mut JobResult,
@@ -392,7 +400,16 @@ fn run_job(
     }
     reporter.progress(BuildStage::Generate, 0, 1);
     let generate_started = Instant::now();
-    let frontend = run_frontend(input.document, input.frontend);
+    // Cancelled while generating: `cancelled`, even for a project with
+    // errors (07 §7.5.4).
+    let Some(frontend) = run_frontend_cancellable(input.document, input.frontend, cancel) else {
+        tracing::info!(
+            stage = "generate",
+            duration_ms = elapsed_ms(generate_started),
+            "cancelled while generating C++"
+        );
+        return Ok(RecordOutcome::Cancelled);
+    };
     result.project_hash = frontend.project_hash;
     let errors = frontend.has_errors();
     tracing::info!(
@@ -421,7 +438,7 @@ fn with_toolchain(
     input: &JobInput<'_>,
     document: &Document,
     generated: &GeneratedProject,
-    toolchain: impl FnOnce() -> ToolchainForBuild,
+    toolchain: impl FnOnce(&CancelToken) -> ToolchainForBuild,
     cancel: &CancelToken,
     reporter: &mut Reporter<'_>,
     result: &mut JobResult,
@@ -429,7 +446,13 @@ fn with_toolchain(
     if cancel.is_cancelled() {
         return Ok(RecordOutcome::Cancelled);
     }
-    let (toolchain, mut notes) = match toolchain() {
+    // Choosing can wait for a toolchain discovery; a build cancelled
+    // meanwhile ends as cancelled, whatever was chosen.
+    let chosen = toolchain(cancel);
+    if cancel.is_cancelled() {
+        return Ok(RecordOutcome::Cancelled);
+    }
+    let (toolchain, mut notes) = match chosen {
         ToolchainForBuild::Ready { toolchain, notes } => (toolchain, notes),
         ToolchainForBuild::Unavailable { diagnostics } => {
             reporter.diagnostics(diagnostics);
@@ -462,7 +485,7 @@ fn with_toolchain(
             .as_str(),
     );
     result.leak_detection = toolchain.capabilities.sanitizers.leak_detection;
-    result.toolchain_bin = Some(toolchain.bin_dir().to_path_buf());
+    result.toolchain_bin = dynamic_runtime_dir(&toolchain);
 
     let defines = project_defines(document, &mut notes);
     if b2c_ir::has_errors(&notes) {
@@ -488,6 +511,17 @@ fn with_toolchain(
         key: &key,
     };
     compile_project(input, &project, notes, cancel, reporter, result)
+}
+
+/// The folder a program built with `toolchain` needs on `PATH` to run: the
+/// toolchain's `bin` folder on Windows when static linking does not work
+/// with it, so the program is linked dynamically against the compiler's
+/// runtime DLLs (`B2C-T1013`, 07 §7.6.2). `None` for a statically linked
+/// program and on Linux. The builds here always ask for static linking
+/// (`LinkMode::Static`), which `CommandPlan` drops exactly in that case.
+fn dynamic_runtime_dir(toolchain: &Toolchain) -> Option<PathBuf> {
+    (toolchain.platform() == Platform::Windows && !toolchain.capabilities.static_link)
+        .then(|| toolchain.bin_dir().to_path_buf())
 }
 
 /// The outcome of checking a toolchain's fingerprint before a build.
@@ -582,9 +616,7 @@ fn compile_project(
         reporter.diagnostics(notes);
         return Ok(RecordOutcome::Cancelled);
     };
-    if let Err(error) = dir.touch() {
-        tracing::debug!(error = %error, "could not mark the build folder as used");
-    }
+    mark_used(&dir);
 
     let extra = ExtraFlags::none();
     let mut inputs = BuildInputs::new(
@@ -618,6 +650,10 @@ fn compile_project(
         result.project_hash.unwrap_or_default(),
     )?;
     if prepared.up_to_date {
+        // Marked again while the lock is held, so the finished program is
+        // the most recently used entry when eviction runs right after the
+        // build (07 §7.5.1), even if other entries were used meanwhile.
+        mark_used(&dir);
         result.executable = Some(prepared.executable);
         return Ok(RecordOutcome::UpToDate);
     }
@@ -628,9 +664,19 @@ fn compile_project(
         .as_ref()
         .is_ok_and(|outcome| *outcome == RecordOutcome::Built)
     {
+        // As above: the manifest is written and the lock still held.
+        mark_used(&dir);
         result.executable = Some(prepared.executable);
     }
     outcome
+}
+
+/// Marks the build folder as used now (its `lock` file's modification time,
+/// the recency that cache eviction goes by). Failing to is only logged.
+fn mark_used(dir: &BuildDir) {
+    if let Err(error) = dir.touch() {
+        tracing::debug!(error = %error, "could not mark the build folder as used");
+    }
 }
 
 /// A manifest file that could not be removed.
@@ -1918,6 +1964,25 @@ mod tests {
             },
             problems: Vec::new(),
         }
+    }
+
+    /// Only a Windows program that cannot be linked statically needs the
+    /// toolchain's folder on `PATH` (07 §7.6.2).
+    #[test]
+    fn only_dynamically_linked_windows_programs_need_the_toolchain_folder() {
+        let linux = fake_toolchain();
+        assert!(!linux.capabilities.static_link);
+        assert_eq!(dynamic_runtime_dir(&linux), None);
+        let mut windows = fake_toolchain();
+        windows.target = b2c_toolchain::target::Target::parse("x86_64-w64-mingw32");
+        windows.fingerprint.path = PathBuf::from("/opt/mingw64/bin/g++.exe");
+        assert_eq!(windows.platform(), Platform::Windows);
+        assert_eq!(
+            dynamic_runtime_dir(&windows),
+            Some(PathBuf::from("/opt/mingw64/bin"))
+        );
+        windows.capabilities.static_link = true;
+        assert_eq!(dynamic_runtime_dir(&windows), None);
     }
 
     /// Every input of the folder name changes it; the rest of the document

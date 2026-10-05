@@ -10,11 +10,14 @@
 //! here that changes the generated code is part of the build folder's
 //! options hash (07 §7.5.1).
 
+use std::convert::Infallible;
+
 use b2c_codegen::{CodegenOptions, HelperPlacement};
 use b2c_ir::sast::Program;
 use b2c_ir::source_map::GeneratedProject;
 use b2c_ir::{DiagSource, Diagnostic, Location};
 use b2c_model::Document;
+use b2c_process::CancelToken;
 
 /// The generator needed error placeholders for a program the analyser
 /// accepted (docs/reference/diagnostics/generator.md).
@@ -110,45 +113,77 @@ impl Frontend {
 /// produced only for a project without errors (spec §6.1: building requires
 /// stages ①–⑤ to report zero errors).
 pub fn run_frontend(bytes: &[u8], options: &FrontendOptions) -> Frontend {
+    let Ok(frontend) = run_stages(bytes, options, &mut || Ok::<(), Infallible>(()));
+    frontend
+}
+
+/// [`run_frontend`] for a build session: `None` once `cancel` has fired. The
+/// token is checked after loading, after resolving and after analysing, so
+/// a cancelled build (one replaced by a newer build of its project, for
+/// example) stops within one stage instead of generating C++ nobody wants
+/// (`docs/spec/07-toolchain-build-run.md` §7.5.4).
+pub(crate) fn run_frontend_cancellable(
+    bytes: &[u8],
+    options: &FrontendOptions,
+    cancel: &CancelToken,
+) -> Option<Frontend> {
+    let mut checkpoint = || if cancel.is_cancelled() { Err(()) } else { Ok(()) };
+    run_stages(bytes, options, &mut checkpoint)
+        .ok()
+        .filter(|_| !cancel.is_cancelled())
+}
+
+/// The stages of [`run_frontend`]. `checkpoint` is called after each of
+/// load, resolve and analyse that reported no error, before the next stage
+/// starts; when it returns an error, nothing more runs and that error is
+/// returned.
+fn run_stages<E>(
+    bytes: &[u8],
+    options: &FrontendOptions,
+    checkpoint: &mut dyn FnMut() -> Result<(), E>,
+) -> Result<Frontend, E> {
     let loaded = match b2c_model::load(bytes) {
         Ok(document) => document,
         Err(error) => {
-            return Frontend {
+            return Ok(Frontend {
                 stage: Stage::Load,
                 document: None,
                 project_hash: None,
                 program: None,
                 generated: None,
                 diagnostics: error.diagnostics,
-            };
+            });
         }
     };
     let project_hash = Some(b2c_model::content_hash(&loaded));
+    checkpoint()?;
 
     let (document, mut diagnostics) = b2c_catalog::resolve(&loaded, b2c_catalog::core_catalog());
     if b2c_ir::has_errors(&diagnostics) {
-        return Frontend {
+        return Ok(Frontend {
             stage: Stage::Resolve,
             document: Some(document),
             project_hash,
             program: None,
             generated: None,
             diagnostics,
-        };
+        });
     }
+    checkpoint()?;
 
     let analysis = b2c_lang::analyze(&document);
     diagnostics.extend(analysis.diagnostics);
     if b2c_ir::has_errors(&diagnostics) {
-        return Frontend {
+        return Ok(Frontend {
             stage: Stage::Analyze,
             document: Some(document),
             project_hash,
             program: Some(analysis.program),
             generated: None,
             diagnostics,
-        };
+        });
     }
+    checkpoint()?;
 
     let codegen_options = CodegenOptions {
         project_name: document.project.name.clone(),
@@ -172,14 +207,14 @@ pub fn run_frontend(bytes: &[u8], options: &FrontendOptions) -> Frontend {
         ));
         None
     };
-    Frontend {
+    Ok(Frontend {
         stage: Stage::Generate,
         document: Some(document),
         project_hash,
         program: Some(analysis.program),
         generated,
         diagnostics,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -257,5 +292,50 @@ mod tests {
         let broken = run_frontend(b"{", &FrontendOptions::default());
         assert_eq!(broken.stage, Stage::Load);
         assert_eq!(broken.project_hash, None);
+    }
+
+    /// The checkpoint runs between the stages, and stops the pipeline at
+    /// once when it fails (a cancelled build stops within one stage).
+    #[test]
+    fn checkpoints_come_after_load_resolve_and_analyse() {
+        let options = FrontendOptions::default();
+        let mut calls = 0;
+        let complete = run_stages(HELLO, &options, &mut || {
+            calls += 1;
+            Ok::<(), ()>(())
+        });
+        assert_eq!(calls, 3);
+        assert_eq!(complete.map(|frontend| frontend.stage), Ok(Stage::Generate));
+        for stop_at in 1..=3 {
+            let mut calls = 0;
+            let stopped = run_stages(HELLO, &options, &mut || {
+                calls += 1;
+                if calls == stop_at { Err(stop_at) } else { Ok(()) }
+            });
+            assert_eq!(stopped.err(), Some(stop_at));
+            assert_eq!(calls, stop_at, "nothing runs after a failed checkpoint");
+        }
+        // A project that does not load reaches no checkpoint.
+        let mut calls = 0;
+        let broken = run_stages(b"{", &options, &mut || {
+            calls += 1;
+            Err(())
+        });
+        assert_eq!(broken.map(|frontend| frontend.stage), Ok(Stage::Load));
+        assert_eq!(calls, 0);
+    }
+
+    #[test]
+    fn a_cancelled_token_stops_the_front_end() {
+        let options = FrontendOptions::default();
+        let cancel = CancelToken::new();
+        assert_eq!(
+            run_frontend_cancellable(HELLO, &options, &cancel),
+            Some(run_frontend(HELLO, &options))
+        );
+        cancel.cancel();
+        assert_eq!(run_frontend_cancellable(HELLO, &options, &cancel), None);
+        // Even a project with errors gives nothing once cancelled.
+        assert_eq!(run_frontend_cancellable(b"{", &options, &cancel), None);
     }
 }

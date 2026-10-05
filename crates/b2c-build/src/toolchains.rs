@@ -35,6 +35,9 @@
 //!   is missing, unusable or inside the project's folder gives the warning
 //!   `B2C-T1022` and falls back, never silently; any compiler inside the
 //!   project's folder is refused (`B2C-T1002`, binary planting, 08 §8.5).
+//!   A build session chooses with [`ToolchainRegistry::choose_cancellable`],
+//!   which stops waiting for a discovery, and stops probing, as soon as the
+//!   build is cancelled.
 //!
 //! The command-line tool keeps its own simpler entry points
 //! ([`ToolchainChoice`] for `b2c build --toolchain`, [`list_toolchains`] for
@@ -62,6 +65,7 @@ use b2c_ipc::dto::{
     ToolchainSource,
 };
 use b2c_ir::{DiagSource, Diagnostic, Location, Severity};
+use b2c_process::CancelToken;
 use b2c_toolchain::codes::{self, SelectionProblem};
 use b2c_toolchain::discovery::{Candidate, CandidateSource, DiscoveryEnv, discover, explicit_candidate};
 use b2c_toolchain::env::HostEnv;
@@ -89,6 +93,10 @@ pub const MAX_PARALLEL_PROBES: usize = 4;
 /// How long [`ToolchainRegistry::choose`] waits for a running discovery
 /// before it chooses from what is known.
 pub const DISCOVERY_WAIT: Duration = Duration::from_secs(30);
+
+/// How often [`ToolchainRegistry::choose_cancellable`] looks at the build's
+/// cancellation token while it waits for a discovery.
+const CANCEL_POLL: Duration = Duration::from_millis(50);
 
 /// Probes a compiler. [`RealProber`] runs g++; tests substitute their own.
 pub trait Prober: Send + Sync {
@@ -302,7 +310,7 @@ impl ToolchainRegistry {
         manual_name_allowed(path, platform).map_err(|refusal| vec![refusal])?;
         let candidate = explicit_candidate(path, platform).map_err(|refusal| vec![refusal])?;
         let probe = self
-            .probe_candidate(&candidate, default_jobs())
+            .probe_candidate(&candidate, default_jobs(), None)
             .map_err(|failure| vec![failure])?;
         let entry = Entry::new(ToolchainSource::Manual, candidate.found_as, probe);
         let added = entry_dto(&entry, None);
@@ -329,12 +337,45 @@ impl ToolchainRegistry {
     /// most [`DISCOVERY_WAIT`]), or runs one when none has run yet, and
     /// tries again.
     pub fn choose(&self, selected: Option<&ToolchainId>, project_dir: Option<&Path>) -> Chosen {
+        self.choose_with(selected, project_dir, None, |project| {
+            self.await_discovery(project)
+        })
+    }
+
+    /// [`ToolchainRegistry::choose`] for a build session, on its thread,
+    /// with the build's cancellation token (`BuildJob::toolchain`). Once
+    /// `cancel` fires it stops waiting for a discovery (it looks every
+    /// 50 ms) and stops probing a changed compiler, and returns what it has;
+    /// the build then ends as cancelled. When no discovery has run yet, it
+    /// starts one on a background thread (as
+    /// [`ToolchainRegistry::spawn_discovery`] does) and waits for it, so a
+    /// cancelled build never leaves a discovery half done.
+    pub fn choose_cancellable(
+        self: &Arc<Self>,
+        selected: Option<&ToolchainId>,
+        project_dir: Option<&Path>,
+        cancel: &CancelToken,
+    ) -> Chosen {
+        self.choose_with(selected, project_dir, Some(cancel), |project| {
+            self.await_discovery_cancellable(project, cancel)
+        })
+    }
+
+    /// [`ToolchainRegistry::choose`] with a way to wait for discoveries and
+    /// an optional cancellation token for the probes.
+    fn choose_with(
+        &self,
+        selected: Option<&ToolchainId>,
+        project_dir: Option<&Path>,
+        cancel: Option<&CancelToken>,
+        await_discovery: impl FnOnce(Option<&Path>) -> bool,
+    ) -> Chosen {
         let project =
             project_dir.map(|dir| b2c_toolchain::paths::canonical(dir).unwrap_or_else(|_| dir.to_path_buf()));
         let project = project.as_deref();
-        let mut attempt = self.attempt(selected, project);
-        if attempt.wants_discovery() && self.await_discovery(project) {
-            attempt = self.attempt(selected, project);
+        let mut attempt = self.attempt(selected, project, cancel);
+        if attempt.wants_discovery() && !is_cancelled(cancel) && await_discovery(project) {
+            attempt = self.attempt(selected, project, cancel);
         }
         attempt.into_chosen()
     }
@@ -540,7 +581,7 @@ impl ToolchainRegistry {
                         probed: false,
                     };
                 };
-                let updated = match self.probe_candidate(&candidate, jobs) {
+                let updated = match self.probe_candidate(&candidate, jobs, None) {
                     Ok(probe) => Entry::new(ToolchainSource::Manual, entry.found_as, probe),
                     Err(_) => entry,
                 };
@@ -554,12 +595,22 @@ impl ToolchainRegistry {
     }
 
     /// Probes a candidate; its location warnings come first in the result's
-    /// problems.
+    /// problems. `cancel` stops the probe early.
     ///
     /// # Errors
-    /// The `B2C-T1003` diagnostic when it cannot be probed at all.
-    fn probe_candidate(&self, candidate: &Candidate, jobs: usize) -> Result<Toolchain, Diagnostic> {
-        match self.prober.probe(&candidate.path, &self.probe_options(jobs)) {
+    /// The `B2C-T1003` diagnostic when it cannot be probed at all (also when
+    /// it was cancelled).
+    fn probe_candidate(
+        &self,
+        candidate: &Candidate,
+        jobs: usize,
+        cancel: Option<&CancelToken>,
+    ) -> Result<Toolchain, Diagnostic> {
+        let options = ProbeOptions {
+            cancel: cancel.cloned(),
+            ..self.probe_options(jobs)
+        };
+        match self.prober.probe(&candidate.path, &options) {
             Ok(mut toolchain) => {
                 let mut problems = candidate.warnings.clone();
                 problems.append(&mut toolchain.problems);
@@ -573,7 +624,7 @@ impl ToolchainRegistry {
     /// [`ToolchainRegistry::probe_candidate`], or when that fails an
     /// unusable record that says why (and is probed again next time).
     fn probe_or_unprobed(&self, candidate: &Candidate, jobs: usize) -> Toolchain {
-        self.probe_candidate(candidate, jobs)
+        self.probe_candidate(candidate, jobs, None)
             .unwrap_or_else(|failure| unprobed(candidate, failure))
     }
 
@@ -609,17 +660,22 @@ impl ToolchainRegistry {
 
     /// `entry` as it is now: unchanged, or probed again because its
     /// fingerprint changed (with the `B2C-T1009` note), which also updates
-    /// the list.
+    /// the list. `cancel` stops that probe early.
     ///
     /// # Errors
     /// The `B2C-T1002` or `B2C-T1003` diagnostic when its file is gone or
-    /// it cannot be probed.
-    fn current(&self, entry: &Entry) -> Result<(Entry, Vec<Diagnostic>), Diagnostic> {
+    /// it cannot be probed (or the probe was cancelled; the list is then
+    /// left as it was).
+    fn current(
+        &self,
+        entry: &Entry,
+        cancel: Option<&CancelToken>,
+    ) -> Result<(Entry, Vec<Diagnostic>), Diagnostic> {
         if entry.probe.is_current() {
             return Ok((entry.clone(), Vec::new()));
         }
         let candidate = explicit_candidate(entry.path(), Platform::host())?;
-        let probe = self.probe_candidate(&candidate, default_jobs())?;
+        let probe = self.probe_candidate(&candidate, default_jobs(), cancel)?;
         let fresh = Entry::new(entry.source, entry.found_as.clone(), probe);
         // An entry that could not be probed before has no real fingerprint:
         // it did not change, it was only checked for the first time.
@@ -636,8 +692,14 @@ impl ToolchainRegistry {
         Ok((fresh, notes))
     }
 
-    /// One pass of [`ToolchainRegistry::choose`] over the list as it is.
-    fn attempt(&self, selected: Option<&ToolchainId>, project: Option<&Path>) -> Attempt {
+    /// One pass of [`ToolchainRegistry::choose`] over the list as it is. Once
+    /// `cancel` fires, no further entry is checked.
+    fn attempt(
+        &self,
+        selected: Option<&ToolchainId>,
+        project: Option<&Path>,
+        cancel: Option<&CancelToken>,
+    ) -> Attempt {
         let entries = self.lock().entries.clone();
         let mut attempt = Attempt::default();
         if let Some(id) = selected {
@@ -647,7 +709,7 @@ impl ToolchainRegistry {
                     attempt.selection = Some(SelectionProblem::InsideProject);
                     attempt.rejected.push(codes::inside_project(entry.path()));
                 }
-                Some(entry) => match self.current(entry) {
+                Some(entry) => match self.current(entry, cancel) {
                     Ok((fresh, notes)) if fresh.probe.is_usable() => {
                         attempt.chosen = Some((fresh, notes));
                         return attempt;
@@ -664,11 +726,14 @@ impl ToolchainRegistry {
             }
         }
         for entry in entries.iter().filter(|entry| Some(&entry.id) != selected) {
+            if is_cancelled(cancel) {
+                break;
+            }
             if is_inside(entry.path(), project) {
                 attempt.rejected.push(codes::inside_project(entry.path()));
                 continue;
             }
-            match self.current(entry) {
+            match self.current(entry, cancel) {
                 Ok((fresh, notes)) if fresh.probe.is_usable() => {
                     attempt.chosen = Some((fresh, notes));
                     return attempt;
@@ -686,24 +751,13 @@ impl ToolchainRegistry {
     fn await_discovery(&self, project: Option<&Path>) -> bool {
         let state = self.lock();
         if state.scanning > 0 {
-            let (state, wait) = self
-                .idle
-                .wait_timeout_while(state, DISCOVERY_WAIT, |state| state.scanning > 0)
-                .unwrap_or_else(PoisonError::into_inner);
-            drop(state);
-            if wait.timed_out() {
-                tracing::warn!(
-                    "toolchain discovery is taking long; choosing from the toolchains known so far"
-                );
-            }
-            return true;
+            return self.wait_for_scans(state, None);
         }
         if state.scanned {
             return false;
         }
-        let mut excluded = state.last_excluded.clone();
+        let excluded = excluded_for(&state, project);
         drop(state);
-        excluded.extend(project.map(Path::to_path_buf));
         self.begin_scan();
         let _running = ScanGuard {
             registry: self,
@@ -712,6 +766,73 @@ impl ToolchainRegistry {
         self.scan(&excluded);
         true
     }
+
+    /// [`ToolchainRegistry::await_discovery`] that gives up as soon as
+    /// `cancel` fires (returning false), and runs a missing discovery on a
+    /// background thread, so the wait for it can be cancelled too.
+    fn await_discovery_cancellable(self: &Arc<Self>, project: Option<&Path>, cancel: &CancelToken) -> bool {
+        let state = self.lock();
+        if state.scanning > 0 {
+            return self.wait_for_scans(state, Some(cancel));
+        }
+        if state.scanned {
+            return false;
+        }
+        let excluded = excluded_for(&state, project);
+        drop(state);
+        self.spawn_discovery(excluded, Box::new(|| {}));
+        self.wait_for_scans(self.lock(), Some(cancel))
+    }
+
+    /// Waits until no scan is running, at most [`DISCOVERY_WAIT`]. With a
+    /// `cancel` token it also looks at the token every [`CANCEL_POLL`] and
+    /// gives up once it fired. Returns whether there may be anything new to
+    /// try: true when the scans ended or the wait timed out, false when
+    /// cancelled.
+    fn wait_for_scans(&self, mut state: MutexGuard<'_, State>, cancel: Option<&CancelToken>) -> bool {
+        let started = Instant::now();
+        loop {
+            if state.scanning == 0 {
+                return true;
+            }
+            if is_cancelled(cancel) {
+                return false;
+            }
+            let Some(remaining) = DISCOVERY_WAIT
+                .checked_sub(started.elapsed())
+                .filter(|remaining| !remaining.is_zero())
+            else {
+                drop(state);
+                tracing::warn!(
+                    "toolchain discovery is taking long; choosing from the toolchains known so far"
+                );
+                return true;
+            };
+            let slice = if cancel.is_some() {
+                remaining.min(CANCEL_POLL)
+            } else {
+                remaining
+            };
+            state = self
+                .idle
+                .wait_timeout(state, slice)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+}
+
+/// Whether the optional token has fired.
+fn is_cancelled(cancel: Option<&CancelToken>) -> bool {
+    cancel.is_some_and(CancelToken::is_cancelled)
+}
+
+/// What a scan that `choose` starts excludes: what the last scan excluded,
+/// and the project's folder.
+fn excluded_for(state: &State, project: Option<&Path>) -> Vec<PathBuf> {
+    let mut excluded = state.last_excluded.clone();
+    excluded.extend(project.map(Path::to_path_buf));
+    excluded
 }
 
 /// The DTO of an entry.
@@ -1027,11 +1148,11 @@ impl ToolchainRegistry {
             .find(|entry| entry.path() == candidate.path)
             .cloned();
         let (entry, notes) = match known {
-            Some(entry) => match self.current(&entry) {
+            Some(entry) => match self.current(&entry, None) {
                 Ok(current) => current,
                 Err(failure) => return Selected::Unusable(vec![failure]),
             },
-            None => match self.probe_candidate(&candidate, default_jobs()) {
+            None => match self.probe_candidate(&candidate, default_jobs(), None) {
                 Ok(probe) => {
                     let entry = Entry::new(ToolchainSource::Manual, candidate.found_as, probe);
                     let mut state = self.lock();

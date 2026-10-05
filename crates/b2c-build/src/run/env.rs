@@ -10,6 +10,7 @@
 //! | `TERM=xterm-256color` | Linux: the console is xterm.js, whatever terminal started the app |
 //! | `ASAN_OPTIONS=halt_on_error=1:detect_leaks=1` | sanitizer builds (`detect_leaks=0` where leak detection does not work, `B2C-T1021`) |
 //! | `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1` | sanitizer builds |
+//! | the toolchain's `bin` folder first on `PATH` | Windows, for a program linked dynamically against the compiler's DLLs (`B2C-T1013`) |
 //!
 //! Removed: `B2C_*`, `TAURI_*`, `WEBVIEW2_*`, `WEBKIT_*`, `APPDIR`, `APPIMAGE`,
 //! `ARGV0` and `OWD` (names compared without case on Windows, as Windows
@@ -18,12 +19,13 @@
 
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
+use std::path::Path;
 
 use b2c_toolchain::target::Platform;
 
 /// What decides the extra variables of a run's environment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RunEnvOptions {
+pub struct RunEnvOptions<'a> {
     /// The platform the program runs on (it decides `TERM` and how names
     /// compare).
     pub platform: Platform,
@@ -33,6 +35,11 @@ pub struct RunEnvOptions {
     /// Whether AddressSanitizer's leak detection works where the program runs
     /// (the toolchain probe's `leak_detection`).
     pub leak_detection: bool,
+    /// On Windows, a folder to put first on `PATH`: the build record's
+    /// `toolchain_bin` (`record.toolchain_bin.as_deref()`), which is set
+    /// only for a program linked dynamically against the compiler's runtime
+    /// DLLs. Ignored on Linux.
+    pub toolchain_bin: Option<&'a Path>,
 }
 
 /// The value of `TERM` on Linux: the console is xterm.js.
@@ -62,7 +69,12 @@ const INTERNAL_NAMES: &[&str] = &["APPDIR", "APPIMAGE", "ARGV0", "OWD"];
 /// * for sanitizer builds, `ASAN_OPTIONS=`[`ASAN_OPTIONS`] (or
 ///   [`ASAN_OPTIONS_NO_LEAKS`] where leak detection does not work,
 ///   `B2C-T1021`) and `UBSAN_OPTIONS=`[`UBSAN_OPTIONS`], replacing the user's
-///   own values.
+///   own values;
+/// * on Windows, [`RunEnvOptions::toolchain_bin`] before the user's `PATH`
+///   (separated by `;`; the existing variable keeps its spelling, `Path` for
+///   example, and is created when there is none), so a dynamically linked
+///   program finds the compiler's DLLs before any other copy. A folder
+///   whose name contains `;` cannot be put on `PATH` and is left out.
 ///
 /// The internal variables are `B2C_*`, `TAURI_*`, `WEBVIEW2_*`, `WEBKIT_*`,
 /// `APPDIR`, `APPIMAGE`, `ARGV0` and `OWD`; on Windows names compare without
@@ -80,14 +92,19 @@ const INTERNAL_NAMES: &[&str] = &["APPDIR", "APPIMAGE", "ARGV0", "OWD"];
 ///
 /// let host = [("HOME", "/home/ada"), ("B2C_LOG", "debug"), ("TERM", "screen")]
 ///     .map(|(name, value)| (OsString::from(name), OsString::from(value)));
-/// let options = RunEnvOptions { platform: Platform::Linux, sanitizers: false, leak_detection: true };
+/// let options = RunEnvOptions {
+///     platform: Platform::Linux,
+///     sanitizers: false,
+///     leak_detection: true,
+///     toolchain_bin: None,
+/// };
 /// let env = run_environment(host, &options);
 /// assert_eq!(env, [("HOME", "/home/ada"), ("TERM", "xterm-256color")]
 ///     .map(|(name, value)| (OsString::from(name), OsString::from(value))));
 /// ```
 pub fn run_environment(
     host: impl IntoIterator<Item = (OsString, OsString)>,
-    options: &RunEnvOptions,
+    options: &RunEnvOptions<'_>,
 ) -> Vec<(OsString, OsString)> {
     let windows = options.platform == Platform::Windows;
     let key = |name: &OsStr| {
@@ -119,7 +136,30 @@ pub fn run_environment(
         set("ASAN_OPTIONS", asan);
         set("UBSAN_OPTIONS", UBSAN_OPTIONS);
     }
+    if windows && let Some(folder) = options.toolchain_bin {
+        prepend_to_path(&mut env, folder.as_os_str());
+    }
     env.into_values().collect()
+}
+
+/// Puts `folder` first on the Windows `PATH` in `env` (keyed by upper-case
+/// name), keeping the existing variable's spelling. A folder that cannot be
+/// one `PATH` entry (empty, or with `;` or NUL in it) is left out.
+fn prepend_to_path(env: &mut BTreeMap<OsString, (OsString, OsString)>, folder: &OsStr) {
+    let bytes = folder.as_encoded_bytes();
+    if bytes.is_empty() || bytes.contains(&b';') || bytes.contains(&0) {
+        tracing::debug!("the toolchain folder cannot be put on PATH");
+        return;
+    }
+    let (name, old) = env
+        .remove(OsStr::new("PATH"))
+        .unwrap_or_else(|| (OsString::from("PATH"), OsString::new()));
+    let mut value = folder.to_os_string();
+    if !old.is_empty() {
+        value.push(";");
+        value.push(&old);
+    }
+    env.insert(OsString::from("PATH"), (name, value));
 }
 
 /// Whether a variable can be given to a program at all.
@@ -158,11 +198,12 @@ mod tests {
             .collect()
     }
 
-    fn options(platform: Platform, sanitizers: bool, leak_detection: bool) -> RunEnvOptions {
+    fn options(platform: Platform, sanitizers: bool, leak_detection: bool) -> RunEnvOptions<'static> {
         RunEnvOptions {
             platform,
             sanitizers,
             leak_detection,
+            toolchain_bin: None,
         }
     }
 
@@ -262,6 +303,41 @@ mod tests {
         ]);
         let env = run_environment(host, &options(Platform::Linux, false, true));
         assert_eq!(env, vars(&[("LANG", "en_GB.UTF-8"), ("TERM", TERM)]));
+    }
+
+    #[test]
+    fn the_toolchain_folder_goes_first_on_the_windows_path() {
+        let bin = Path::new(r"C:\msys64\ucrt64\bin");
+        let with_bin = |platform| RunEnvOptions {
+            toolchain_bin: Some(bin),
+            ..options(platform, false, true)
+        };
+        // The existing variable keeps its spelling, whatever its case.
+        let host = vars(&[("Path", r"C:\Windows;C:\Tools"), ("HOME", "x")]);
+        let env = run_environment(host.clone(), &with_bin(Platform::Windows));
+        assert_eq!(
+            get(&env, "Path"),
+            Some(OsStr::new(r"C:\msys64\ucrt64\bin;C:\Windows;C:\Tools"))
+        );
+        assert_eq!(get(&env, "PATH"), None);
+        assert_eq!(env.len(), 2);
+        // Without a PATH, one is made.
+        let env = run_environment(vars(&[("HOME", "x")]), &with_bin(Platform::Windows));
+        assert_eq!(get(&env, "PATH"), Some(bin.as_os_str()));
+        // A statically linked program (no folder) leaves PATH alone, and so
+        // does Linux.
+        let env = run_environment(host.clone(), &options(Platform::Windows, false, true));
+        assert_eq!(get(&env, "Path"), Some(OsStr::new(r"C:\Windows;C:\Tools")));
+        let linux = vars(&[("PATH", "/usr/bin")]);
+        let env = run_environment(linux, &with_bin(Platform::Linux));
+        assert_eq!(get(&env, "PATH"), Some(OsStr::new("/usr/bin")));
+        // A folder that would split into two entries is left out.
+        let odd = RunEnvOptions {
+            toolchain_bin: Some(Path::new(r"C:\a;b\bin")),
+            ..options(Platform::Windows, false, true)
+        };
+        let env = run_environment(host, &odd);
+        assert_eq!(get(&env, "Path"), Some(OsStr::new(r"C:\Windows;C:\Tools")));
     }
 
     proptest! {

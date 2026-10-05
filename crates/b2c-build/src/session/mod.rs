@@ -19,9 +19,17 @@
 //! A project has at most one active build: starting another one for the
 //! same project key cancels the earlier one, which then finishes as
 //! `cancelled` (the new one waits for the build folder's lock, which the
-//! cancelled one releases at once). Cancelling kills the compiler's process
-//! tree (`SIGTERM`, then `SIGKILL` after 2 s on Linux; the Job Object on
-//! Windows) and deletes partial outputs and the manifest.
+//! cancelled one releases at once). A cancelled session stops at its next
+//! check: between the front end's stages (load, resolve, analyse), while
+//! the toolchain is being chosen, while it waits for the build folder's
+//! lock, and between compiler steps. Cancelling kills the compiler's
+//! process tree (`SIGTERM`, then `SIGKILL` after 2 s on Linux; the Job
+//! Object on Windows) and deletes partial outputs and the manifest.
+//!
+//! The compiler is chosen on the session's thread, after
+//! [`BuildSessions::start`] has returned the ID, and only for a project
+//! without errors ([`BuildJob::toolchain`]), so a choice that waits for a
+//! toolchain discovery never delays `build_start` and can be cancelled.
 //!
 //! The record of each build ([`BuildRecord`]) is kept until its project is
 //! forgotten, at most [`MAX_RECORDS_PER_PROJECT`] per project (older ones are
@@ -49,12 +57,15 @@ use b2c_toolchain::probe::Toolchain;
 pub use self::record::{BuildRecord, RecordOutcome, StaleReason};
 use crate::compile::{Configuration, JobEvent, JobInput, JobResult, elapsed_ms, run_build_job};
 use crate::frontend::FrontendOptions;
+use crate::toolchains::Chosen;
 
 /// The most build records kept per project; older ones are dropped.
 pub const MAX_RECORDS_PER_PROJECT: usize = 8;
 
-/// The toolchain a build uses, chosen by the caller (the app's toolchain
-/// registry) before the build starts.
+/// The toolchain a build uses, chosen by the caller's
+/// [`BuildJob::toolchain`] (in the app, the toolchain registry's
+/// [`crate::toolchains::ToolchainRegistry::choose_cancellable`], whose
+/// [`Chosen`] converts with `into()`).
 #[derive(Debug, Clone)]
 pub enum ToolchainForBuild {
     /// A usable toolchain, with warnings and notes about it to show (for
@@ -75,8 +86,33 @@ pub enum ToolchainForBuild {
     },
 }
 
+impl From<Chosen> for ToolchainForBuild {
+    fn from(chosen: Chosen) -> Self {
+        match chosen {
+            Chosen::Ready { toolchain, notes } => Self::Ready { toolchain, notes },
+            Chosen::Unavailable { diagnostics } => Self::Unavailable { diagnostics },
+        }
+    }
+}
+
 /// One build to run.
-#[derive(Debug, Clone)]
+///
+/// ```no_run
+/// # use std::sync::Arc;
+/// # use b2c_build::{BuildJob, Configuration, FrontendOptions};
+/// # use b2c_build::toolchains::ToolchainRegistry;
+/// # fn job(registry: Arc<ToolchainRegistry>, bytes: Vec<u8>) -> BuildJob {
+/// BuildJob {
+///     project_key: String::from("ph_1"),
+///     document: bytes,
+///     configuration: Configuration::Debug,
+///     // Runs on the session's thread, only for a project without errors.
+///     toolchain: Box::new(move |cancel| registry.choose_cancellable(None, None, cancel).into()),
+///     frontend: FrontendOptions::default(),
+///     ide: true,
+/// }
+/// # }
+/// ```
 pub struct BuildJob {
     /// The project the build belongs to (for example its handle): one
     /// active build per key, and [`BuildSessions::forget_project`] drops its
@@ -87,12 +123,31 @@ pub struct BuildJob {
     pub document: Vec<u8>,
     /// Debug or release.
     pub configuration: Configuration,
-    /// The compiler.
-    pub toolchain: ToolchainForBuild,
+    /// Chooses the compiler. It is called at most once, on the session's
+    /// thread after [`BuildSessions::start`] has returned, and only when the
+    /// front end found no errors, with the build's cancellation token. It
+    /// may take a while (waiting for a toolchain discovery, probing a
+    /// changed compiler) and should return soon after the token fires; the
+    /// build then ends as `cancelled` whatever it returned.
+    pub toolchain: Box<dyn FnOnce(&CancelToken) -> ToolchainForBuild + Send>,
     /// How C++ is generated (the indent width comes from the settings).
     pub frontend: FrontendOptions,
     /// Link the IDE init unit (the app's builds do).
     pub ide: bool,
+}
+
+impl std::fmt::Debug for BuildJob {
+    /// The document's length, not its bytes; the toolchain choice is not
+    /// shown.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BuildJob")
+            .field("project_key", &self.project_key)
+            .field("document", &format_args!("{} bytes", self.document.len()))
+            .field("configuration", &self.configuration)
+            .field("frontend", &self.frontend)
+            .field("ide", &self.ide)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A hook called when a build finishes (for example cache eviction).
@@ -286,8 +341,14 @@ impl BuildSessions {
     }
 
     /// Sets the hook called with every finished build's record, on the
-    /// session's thread, after its `finished` event was sent (the app runs
-    /// cache eviction there). A later call replaces it.
+    /// session's thread, after its `finished` event was sent. A later call
+    /// replaces it.
+    ///
+    /// The app runs cache eviction there, keeping the build's own folder so
+    /// the program that was just built is never deleted before it runs:
+    /// [`crate::cache::prune_and_evict_keeping`] (or
+    /// [`crate::cache::evict_to_cap_keeping`]) with
+    /// `record.build_dir.as_deref()`.
     pub fn set_on_finished(&self, hook: Box<dyn Fn(&BuildRecord) + Send + Sync>) {
         let hook: FinishedHook = Arc::from(hook);
         *self
@@ -350,7 +411,7 @@ fn run_session(
         }
     };
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_build_job(&input, move || toolchain, cancel, &mut emit)
+        run_build_job(&input, toolchain, cancel, &mut emit)
     }))
     .unwrap_or_else(|_| {
         tracing::error!("a build session panicked; it is reported as failed");

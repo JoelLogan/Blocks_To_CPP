@@ -575,7 +575,7 @@ fn files_are_owner_only_and_links_are_refused() {
     assert_eq!(fs::read(&target).unwrap(), b"");
 }
 
-/// Paths are compared ignoring letter case on Windows (08 §8.3.1).
+/// Paths are compared ignoring ASCII letter case on Windows (08 §8.3.1).
 #[cfg(windows)]
 #[test]
 fn windows_paths_are_compared_ignoring_case() {
@@ -583,8 +583,8 @@ fn windows_paths_are_compared_ignoring_case() {
     let store = fixture.open();
     let game = fixture.project_file("Games/Guess.b2c");
     store.grant_project(&identity("prj_game", &game, 1)).unwrap();
-    let lower = PathBuf::from(game.to_str().unwrap().to_lowercase());
-    let upper = PathBuf::from(game.to_str().unwrap().to_uppercase());
+    let lower = PathBuf::from(game.to_str().unwrap().to_ascii_lowercase());
+    let upper = PathBuf::from(game.to_str().unwrap().to_ascii_uppercase());
     assert_eq!(store.evaluate(&identity("prj_game", &lower, 1)), TRUSTED_PROJECT);
     assert_eq!(store.evaluate(&identity("prj_game", &upper, 1)), TRUSTED_PROJECT);
     // The verbatim form of the same path matches too.
@@ -599,10 +599,51 @@ fn windows_paths_are_compared_ignoring_case() {
     // Folders too.
     let games = canonical_path(&fixture.projects.join("Games")).unwrap();
     store.grant_folder(&games).unwrap();
-    let nested = PathBuf::from(games.to_str().unwrap().to_uppercase()).join("NEW.B2C");
+    let nested = PathBuf::from(games.to_str().unwrap().to_ascii_uppercase()).join("NEW.B2C");
     assert_eq!(store.evaluate(&identity("prj_new", &nested, 1)), TRUSTED_FOLDER);
     assert!(store.folder_covering(&nested).is_some());
-    let lower_folder = PathBuf::from(games.to_str().unwrap().to_lowercase());
+    let lower_folder = PathBuf::from(games.to_str().unwrap().to_ascii_lowercase());
     store.grant_folder(&lower_folder).unwrap();
     assert_eq!(fixture.json()["folders"].as_array().unwrap().len(), 1);
+}
+
+/// Only ASCII letters are folded (08 §8.3.1): a folder or file whose name
+/// differs from a trusted one by a letter that Unicode upper-cases to the
+/// same letter but Windows file systems keep apart (dotless `ı`, long `ſ`,
+/// newer case pairs such as Georgian Mkhedruli and Mtavruli) is another
+/// place and is not trusted. On other systems paths compare byte for byte,
+/// so this holds everywhere. The lookalikes are never created on disk; the
+/// store compares paths without touching it.
+#[test]
+fn lookalike_names_of_trusted_folders_and_files_are_not_trusted() {
+    let fixture = Fixture::new();
+    let store = fixture.open();
+    for (name, lookalike) in [
+        ("Assignments", "Assıgnments"),
+        ("Class", "Claſs"),
+        ("\u{10D0}", "\u{1C90}"),
+    ] {
+        fs::create_dir(fixture.projects.join(name)).unwrap();
+        let trusted = canonical_path(&fixture.projects.join(name)).unwrap();
+        store.grant_folder(&trusted).unwrap();
+        let inside = trusted.join("week1.b2c");
+        assert_eq!(
+            store.evaluate(&identity("prj_week", &inside, 1)),
+            TRUSTED_FOLDER,
+            "{name}"
+        );
+        let outside = fixture.projects.join(lookalike).join("week1.b2c");
+        assert_eq!(
+            store.evaluate(&identity("prj_week", &outside, 1)),
+            NO_RECORD,
+            "{lookalike}"
+        );
+        assert_eq!(store.folder_covering(&outside), None, "{lookalike}");
+    }
+
+    let class = fixture.project_file("Class.b2c");
+    store.grant_project(&identity("prj_class", &class, 1)).unwrap();
+    assert_eq!(store.evaluate(&identity("prj_class", &class, 1)), TRUSTED_PROJECT);
+    let lookalike = fixture.projects.join("Claſs.b2c");
+    assert_eq!(store.evaluate(&identity("prj_class", &lookalike, 1)), NO_RECORD);
 }
