@@ -126,9 +126,9 @@ fn check_text(what: &str, text: &str) {
 }
 
 /// Splits a `diag_output` input after its mode byte into standard error and
-/// the SARIF file: everything before the first [`SARIF_SEPARATOR`] is
-/// standard error. With `with_sarif`, what follows the separator (empty if
-/// there is none) is the SARIF file; without it, the whole input is standard
+/// the SARIF file. With `with_sarif`, standard error is everything before the
+/// first [`SARIF_SEPARATOR`] and the SARIF file everything after it (an empty
+/// file when there is no separator); without it, the whole input is standard
 /// error and there is no SARIF file.
 pub fn split_output_input(rest: &[u8], with_sarif: bool) -> (&[u8], Option<&[u8]>) {
     if !with_sarif {

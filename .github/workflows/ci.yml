@@ -272,11 +272,12 @@ jobs:
       - name: "Gate: all default members, at least 80% of lines"
         run: cargo llvm-cov report --summary-only --fail-under-lines 80
 
-      # Only the core crates' files count here (CORE_CRATES expands to their
-      # -p arguments).
+      # Only the core crates' files count here.
       - name: "Gate: core compiler crates, at least 90% of lines"
         if: ${{ !cancelled() }}
-        run: cargo llvm-cov report $CORE_CRATES --summary-only --fail-under-lines 90
+        run: |
+          # shellcheck disable=SC2086 # CORE_CRATES expands to several -p arguments
+          cargo llvm-cov report $CORE_CRATES --summary-only --fail-under-lines 90
 
   wasm:
     name: WebAssembly build and size budget
@@ -412,12 +413,21 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           fixtures=crates/b2c-toolchain/tests/fixtures
+          separator="$RUNNER_TEMP/sarif-separator"
+          printf '\000sarif\000' > "$separator"
           # Copies files into $dir as <fixture folder>-<file name>.
           copy_tagged() {
             local file
             for file in "$@"; do
               cp "$file" "$dir/$(basename "$(dirname "$file")")-$(basename "$file")"
             done
+          }
+          # output_seed NAME MODE FILE...: a diag_output seed, the mode byte
+          # (three octal digits) followed by the files.
+          output_seed() {
+            local name=$1 mode=$2
+            shift 2
+            { printf '%b' "\\0$mode"; cat "$@"; } > "$dir/$name"
           }
           seed() {
             case "$target" in
@@ -435,18 +445,17 @@ jobs:
                   base=${sarif%.sarif}
                   tag="$(basename "$(dirname "$base")")-$(basename "$base")"
                   for mode in 004 005; do
-                    { printf "\\$mode"; cat "$base.sarif-stderr.txt"; printf '\000sarif\000'; cat "$sarif"; } \
-                      > "$dir/$tag-$mode"
+                    output_seed "$tag-$mode" "$mode" "$base.sarif-stderr.txt" "$separator" "$sarif"
                   done
                 done
                 for json in "$fixtures"/*/*.json; do
                   tag="$(basename "$(dirname "$json")")-$(basename "${json%.json}")"
-                  { printf '\002'; cat "$json"; } > "$dir/$tag-002"
+                  output_seed "$tag-002" 002 "$json"
                 done
                 for plain in "$fixtures"/*/*.plain.txt; do
                   tag="$(basename "$(dirname "$plain")")-$(basename "${plain%.plain.txt}")"
-                  { printf '\003'; cat "$plain"; } > "$dir/$tag-003"
-                  { printf '\001'; cat "$plain"; } > "$dir/$tag-001"
+                  output_seed "$tag-003" 003 "$plain"
+                  output_seed "$tag-001" 001 "$plain"
                 done
                 ;;
               *) ;;
