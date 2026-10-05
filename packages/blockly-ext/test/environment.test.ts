@@ -17,8 +17,24 @@ afterEach(() => {
 });
 
 describe('the blockly-ext test environment', () => {
-  it('loads the package entry point', () => {
-    expect(Object.keys(blocklyExt)).toEqual([]);
+  it('loads the package entry point with its public API', () => {
+    for (const name of [
+      'registerB2cBlocks',
+      'installIdGenerator',
+      'newId',
+      'setEditorServices',
+      'exprShadowState',
+      'readExprShadow',
+      'setTokenHighlight',
+      'sanitizeFieldText',
+      'visibleInvisibles',
+      'MUTATOR_FOR_BLOCK',
+      'CATEGORY_STYLE',
+      'b2cLightTheme',
+      'b2cDarkTheme',
+    ]) {
+      expect(blocklyExt, name).toHaveProperty(name);
+    }
   });
 
   it('runs Blockly headless and injected with Zelos', () => {

@@ -24,3 +24,6 @@
 - [ ] No new dependency, or the justification is in this description
 - [ ] No new process spawn or file write, or it follows §8.5–8.7
 - [ ] User text reaches generated C++ only through `b2c_ir::text`
+- [ ] Custom Blockly fields, tooltips and other block rendering follow the
+      [custom field review checklist](../docs/security/custom-field-review-checklist.md)
+      (`docs/security/custom-field-review-checklist.md`), or none changed
