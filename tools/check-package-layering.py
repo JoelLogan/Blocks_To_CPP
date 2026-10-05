@@ -20,8 +20,9 @@ patterns in pnpm-workspace.yaml) and fails when:
   not referenced with the `workspace:` protocol (otherwise pnpm could fetch a
   same-named package from the registry), or an @blocks2cpp/ name is not a
   workspace package (docs/spec/08-security.md §8.9);
-* a package is not private, defines an install lifecycle script (pnpm runs
-  those on every install), or is new and has no rules here yet.
+* a package is not private, defines a lifecycle script that pnpm runs by
+  itself (on install or rebuild; see INSTALL_SCRIPTS), or is new and has no
+  rules here yet.
 
 Run from the repository root: python3 tools/check-package-layering.py
 Check the checker itself:      python3 tools/check-package-layering.py --self-test
@@ -82,9 +83,24 @@ BUILD_TIME_ONLY = {CATALOG_GEN}
 RUNTIME_SECTIONS = ("dependencies", "peerDependencies", "optionalDependencies")
 DEV_SECTIONS = ("devDependencies",)
 
-# Scripts that pnpm runs by itself on install. Build steps belong in scripts
-# that are run on purpose.
-INSTALL_SCRIPTS = ("preinstall", "install", "postinstall", "prepare")
+# Scripts that pnpm runs by itself. Build steps belong in scripts that are run
+# on purpose. pnpm 11 runs, for every workspace package on install: preinstall,
+# install, postinstall, preprepare, prepare and postprepare; for the root
+# package before an install: pnpm:devPreinstall; for an injected workspace
+# package (dependenciesMeta) on install: prepublishOnly; and on `pnpm rebuild`:
+# prepublish. None of them has a use in private packages, so every package is
+# checked for all of them.
+INSTALL_SCRIPTS = (
+    "preinstall",
+    "install",
+    "postinstall",
+    "preprepare",
+    "prepare",
+    "postprepare",
+    "prepublish",
+    "prepublishOnly",
+    "pnpm:devPreinstall",
+)
 
 # An exact version: no ranges, tags, URLs, git or file references.
 EXACT_VERSION = re.compile(
@@ -192,8 +208,8 @@ def check_package(package: Package, workspace_names: set[str]) -> list[str]:
     for script in INSTALL_SCRIPTS:
         if isinstance(scripts, dict) and script in scripts:
             problems.append(
-                f'{name}: the "{script}" script would run on every pnpm install; '
-                "make it a script that is run on purpose"
+                f'{name}: the "{script}" script would run by itself when pnpm installs '
+                "or rebuilds; make it a script that is run on purpose"
             )
 
     allowed_workspace = ALLOWED_WORKSPACE_DEPS[name]
@@ -392,7 +408,27 @@ SELF_TEST_CASES = [
     (
         "an install script",
         _set("packages/b2c-core-wasm", "scripts", "postinstall", "node scripts/build.mjs"),
-        f'{CORE_WASM}: the "postinstall" script would run on every pnpm install',
+        f'{CORE_WASM}: the "postinstall" script would run by itself',
+    ),
+    (
+        "a script after prepare, which pnpm also runs on install",
+        _set("packages/ipc-types", "scripts", "postprepare", "node fetch.mjs"),
+        f'{IPC_TYPES}: the "postprepare" script would run by itself',
+    ),
+    (
+        "a script before prepare, which pnpm also runs on install",
+        _set("apps/desktop", "scripts", "preprepare", "node fetch.mjs"),
+        f'{DESKTOP}: the "preprepare" script would run by itself',
+    ),
+    (
+        "the root's pre-install hook",
+        _set(".", "scripts", "pnpm:devPreinstall", "node fetch.mjs"),
+        f'{REPOSITORY_ROOT}: the "pnpm:devPreinstall" script would run by itself',
+    ),
+    (
+        "a script pnpm runs when it injects a workspace package",
+        _set("packages/blockly-ext", "scripts", "prepublishOnly", "node fetch.mjs"),
+        f'{BLOCKLY_EXT}: the "prepublishOnly" script would run by itself',
     ),
     (
         "the root uses a workspace package",

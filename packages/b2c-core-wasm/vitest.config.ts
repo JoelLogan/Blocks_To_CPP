@@ -13,7 +13,9 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.d.ts'],
-      reporter: ['text', 'lcov'],
+      // lcov for CI's coverage artifact, json-summary for its job summary (desktop.yml).
+      reporter: ['text', 'lcov', 'json-summary'],
+      reportsDirectory: 'coverage',
       thresholds: { lines: 75 },
     },
   },

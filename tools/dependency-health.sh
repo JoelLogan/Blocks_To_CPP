@@ -22,11 +22,14 @@
 #
 # Usage: tools/dependency-health.sh [--output FILE] [--today YYYY-MM-DD]
 #                                   [--expiry-days N]
+#        tools/dependency-health.sh --self-test
 #
 #   --output FILE      append the report to FILE (default: $GITHUB_STEP_SUMMARY
 #                      when it is set, otherwise standard output)
 #   --today DATE       the date expiry is counted from (default: today, UTC)
 #   --expiry-days N    the warning window for exceptions, 1 to 365 (default 14)
+#   --self-test        check the report itself, with stand-ins for cargo-deny
+#                      and pnpm that report findings or fail
 
 set -euo pipefail
 
@@ -35,6 +38,90 @@ usage() {
     exit 2
 }
 
+# Runs this script with stand-ins for cargo-deny and pnpm first on PATH and
+# checks the outcome: findings in every section give a complete report and
+# exit status 0; a tool that fails gives a section marked "Not produced" and
+# exit status 1. The stand-ins report the way the real tools do: cargo-deny
+# writes JSON lines to standard error and exits with one bit per check that
+# found errors (advisories 1, bans 2), and `pnpm outdated` exits with 1 when
+# something is outdated.
+self_test() {
+    self_test_dir="$(mktemp -d)"
+    trap 'rm -rf "$self_test_dir"' EXIT
+    local bin="$self_test_dir/bin" failures=0 report
+    mkdir "$bin"
+    cat > "$bin/cargo-deny" << 'STUB'
+#!/bin/sh
+case "$*" in
+*"check advisories")
+    echo '{"type":"diagnostic","fields":{"code":"unmaintained","message":"m","advisory":{"id":"RUSTSEC-2099-0001","package":"old","title":"old is unmaintained","informational":"unmaintained"},"graphs":[{"Krate":{"name":"old","version":"1.0.0"}}]}}' >&2
+    echo '{"type":"summary","fields":{"advisories":{"errors":1,"warnings":0,"notes":0,"helps":0}}}' >&2
+    exit 1
+    ;;
+*"check bans")
+    if [ -n "${STUB_BANS_BROKEN:-}" ]; then
+        echo "error: the configuration could not be read" >&2
+        exit 2
+    fi
+    echo '{"type":"diagnostic","fields":{"code":"duplicate","message":"found 2 duplicate entries for crate a","graphs":[{"Krate":{"name":"a","version":"1.0.0"}},{"Krate":{"name":"a","version":"2.0.0"}}]}}' >&2
+    echo '{"type":"diagnostic","fields":{"code":"banned","message":"crate b = 1.0.0 is explicitly banned"}}' >&2
+    echo '{"type":"summary","fields":{"bans":{"errors":1,"warnings":1,"notes":0,"helps":0}}}' >&2
+    exit 2
+    ;;
+esac
+echo "unexpected arguments: $*" >&2
+exit 101
+STUB
+    cat > "$bin/pnpm" << 'STUB'
+#!/bin/sh
+echo '{"left-pad":{"current":"1.0.0","wanted":"1.0.0","latest":"1.3.0","isDeprecated":false,"dependencyType":"devDependencies","dependentPackages":[{"name":"@blocks2cpp/desktop"}]}}'
+exit 1
+STUB
+    chmod +x "$bin/cargo-deny" "$bin/pnpm"
+
+    # Writes one report to $1 (with the extra variables $2...) and prints the
+    # script's exit status.
+    report_status() {
+        local file="$1" status=0
+        shift
+        env "$@" PATH="$bin:$PATH" GITHUB_ACTIONS= "${BASH_SOURCE[0]}" --output "$file" \
+            --today 2026-01-05 > "$self_test_dir/log" 2>&1 || status=$?
+        echo "$status"
+    }
+    expect() {
+        local what="$1"
+        shift
+        if ! "$@"; then
+            echo "FAILED: $what" >&2
+            failures=$((failures + 1))
+        fi
+    }
+
+    report="$self_test_dir/findings.md"
+    expect "findings exit with status 0" test "$(report_status "$report")" = 0
+    expect "the advisory is listed" grep -q "RUSTSEC-2099-0001" "$report"
+    expect "the outdated package is listed" grep -q "left-pad" "$report"
+    expect "the duplicate is counted" grep -q '^\*\*1\*\* crate with more than one version' "$report"
+    expect "the banned crate is listed" grep -q "crate b = 1.0.0 is explicitly banned" "$report"
+    expect "every section is produced" test "$(grep -c "Not produced" "$report")" = 0
+
+    report="$self_test_dir/broken.md"
+    expect "a failed tool exits with status 1" test "$(report_status "$report" STUB_BANS_BROKEN=1)" = 1
+    expect "the failed section is marked" grep -qF "**Not produced:** \`cargo deny check bans\`" "$report"
+    expect "the tool's error is shown" grep -q "the configuration could not be read" "$report"
+    expect "the other sections are produced" grep -q "RUSTSEC-2099-0001" "$report"
+
+    if [ "$failures" -ne 0 ]; then
+        echo "dependency-health self-test: $failures check(s) failed" >&2
+        exit 1
+    fi
+    echo "dependency-health self-test passed."
+    exit 0
+}
+
+if [ "$#" -eq 1 ] && [ "$1" = --self-test ]; then
+    self_test
+fi
 output="${GITHUB_STEP_SUMMARY:-}"
 today="$(date -u +%Y-%m-%d)"
 expiry_days=14
@@ -215,8 +302,14 @@ def table(header, rows):
     print()
 
 
-def deny_lines(name):
-    """cargo-deny's JSON lines, or None when it did not finish the check."""
+def deny_lines(name, bit):
+    """cargo-deny's JSON lines, or None when it did not finish the check.
+
+    cargo-deny's exit status has one bit per check that found errors
+    (advisories 1, bans 2, licenses 4, sources 8), so `bit` is the status of a
+    finished run of this check with findings; any other non-zero status is a
+    failure of the tool.
+    """
     records, summary = [], None
     for line in read(name, "err").splitlines():
         line = line.strip()
@@ -230,7 +323,7 @@ def deny_lines(name):
             summary = record
         elif record.get("type") == "diagnostic":
             records.append(record.get("fields", {}))
-    if summary is None or status(name) not in (0, 1):
+    if summary is None or status(name) not in (0, bit):
         return None
     return records
 
@@ -276,7 +369,7 @@ if advisory_config == "deny.toml":
     print("**Note:** deny.toml could not be widened, so unmaintained and unsound crates are listed")
     print("only where deny.toml's own scopes include them.")
     print()
-records = deny_lines("advisories")
+records = deny_lines("advisories", 1)
 if records is None:
     tool_failed("advisories", "advisories", "`cargo deny check advisories`")
 else:
@@ -349,7 +442,7 @@ else:
 # 3. Duplicate crate versions.
 print("### Crates in more than one version")
 print()
-records = deny_lines("bans")
+records = deny_lines("bans", 2)
 if records is None:
     tool_failed("bans", "bans", "`cargo deny check bans`")
 else:
