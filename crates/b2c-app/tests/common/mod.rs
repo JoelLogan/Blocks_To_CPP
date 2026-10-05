@@ -352,6 +352,18 @@ pub enum Compiler {
     Spy,
     /// A `g++` script that waits `seconds` and then runs the real g++.
     Slow(u32),
+    /// Discovery searches the real g++'s own folder. Windows uses this
+    /// instead of [`Compiler::Spy`]: a script cannot stand in for `g++.exe`
+    /// there, and a copied driver would not find its own programs.
+    Real,
+}
+
+impl Compiler {
+    /// The spawn spy where scripts can wrap g++, otherwise the real g++
+    /// ([`TestApp::spawned`] then looks for the program it built).
+    pub fn spy() -> Self {
+        if cfg!(unix) { Self::Spy } else { Self::Real }
+    }
 }
 
 /// A backend whose folders are all inside one temporary directory, with
@@ -380,9 +392,13 @@ impl TestApp {
         let real = gxx().map(|path| path.display().to_string());
         let marker = root_path.join("spawned");
         let run_real = real.map_or_else(|| String::from("exit 1"), |real| format!("exec '{real}' \"$@\""));
+        let scope = match (compiler, gxx()) {
+            (Compiler::Real, Some(real)) => real.parent().map_or_else(|| bin.clone(), Path::to_path_buf),
+            _ => bin.clone(),
+        };
         #[cfg(unix)]
         match compiler {
-            Compiler::None => {}
+            Compiler::None | Compiler::Real => {}
             Compiler::Spy => {
                 write_script(
                     &bin,
@@ -406,7 +422,7 @@ impl TestApp {
             BackendConfig {
                 dirs: dirs.clone(),
                 app_version: "0.1.0",
-                discovery_scope: DiscoveryScope::Only(vec![bin]),
+                discovery_scope: DiscoveryScope::Only(vec![scope]),
                 cwd: Some(cwd),
             },
             dialogs.clone(),
@@ -454,7 +470,7 @@ impl TestApp {
 
     /// Whether the spawn spy ran.
     pub fn spawned(&self) -> bool {
-        self.root().join("spawned").exists()
+        self.root().join("spawned").exists() || (cfg!(windows) && contains_exe(&self.dirs.builds()))
     }
 
     /// Whether anything was written below the build cache's `builds/`.
@@ -536,4 +552,20 @@ pub fn run_sinks() -> (Arc<RecordingBytes>, Arc<RecordingSink<RunEvent>>) {
 /// A recording app-event channel.
 pub fn app_sink() -> Arc<RecordingSink<AppEvent>> {
     Arc::new(RecordingSink::new())
+}
+
+/// Whether `dir` holds an `.exe` file at any depth (links are not followed).
+fn contains_exe(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| {
+        entries.filter_map(Result::ok).any(|entry| {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => contains_exe(&path),
+                Ok(kind) if kind.is_file() => path
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("exe")),
+                _ => false,
+            }
+        })
+    })
 }

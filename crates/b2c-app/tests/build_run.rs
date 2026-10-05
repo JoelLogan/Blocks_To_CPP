@@ -107,7 +107,7 @@ fn trust(app: &TestApp, handle: &Handle) {
 
 #[test]
 fn restricted_projects_are_never_built() {
-    let app = TestApp::with(Compiler::Spy, TestProber::new());
+    let app = TestApp::with(Compiler::spy(), TestProber::new());
     app.wait_discovery();
     let path = app.write("hello.b2c", example_text("hello_world").as_bytes());
     let opened = app.open(&path);
@@ -144,7 +144,7 @@ fn a_new_project_builds_and_runs_in_its_sandbox() {
     if gxx().is_none() {
         return;
     }
-    let app = TestApp::with(Compiler::Spy, TestProber::new());
+    let app = TestApp::with(Compiler::spy(), TestProber::new());
     let created = app
         .backend
         .project_new(ProjectNewRequest {
@@ -198,7 +198,7 @@ fn run_start_checks_its_preconditions() {
     if gxx().is_none() {
         return;
     }
-    let app = TestApp::with(Compiler::Spy, TestProber::new());
+    let app = TestApp::with(Compiler::spy(), TestProber::new());
     let created = app
         .backend
         .project_new(ProjectNewRequest {
@@ -325,7 +325,7 @@ fn closing_a_project_kills_its_program() {
     if gxx().is_none() {
         return;
     }
-    let app = TestApp::with(Compiler::Spy, TestProber::new());
+    let app = TestApp::with(Compiler::spy(), TestProber::new());
     let path = app.write("game.b2c", example_text("guessing_game").as_bytes());
     let opened = app.open(&path);
     trust(&app, &opened.handle);
@@ -408,7 +408,7 @@ fn the_build_generates_what_the_preview_shows() {
     if gxx().is_none() {
         return;
     }
-    let app = TestApp::with(Compiler::Spy, TestProber::new());
+    let app = TestApp::with(Compiler::spy(), TestProber::new());
     for (indent, width) in [
         (b2c_core_wasm::options::IndentWidth::Two, 2),
         (b2c_core_wasm::options::IndentWidth::Four, 4),
