@@ -36,7 +36,9 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** a block or expression refers to a variable or function that is
   declared nowhere in the project. This happens when the block that created
-  it was deleted, or when a project file was edited by hand.
+  it was deleted, or when a project file was edited by hand. Pasting reports
+  it too, for a pasted block that refers to a variable or function with no
+  match where it was pasted; the message then names the original.
 * **Example:** the `create [int] [score]` block was deleted, but
   `print (score)` still refers to it.
 * **Message:** "This refers to a variable or function that doesn't exist (any

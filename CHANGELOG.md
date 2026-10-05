@@ -67,3 +67,16 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   with an RSS watchdog), stale scopes are cleaned up at start-up, and captured
   runs on Windows inherit only an explicit list of handles. Compilers stopped
   for memory now report a limit, not a compiler crash.
+- The app's toolchain list: background discovery that never delays start-up,
+  compilers added by hand, a remembered choice that is checked again before
+  each build (new warning `B2C-T1022` when it falls back), and the Linux
+  distribution for setup instructions.
+- Machine-local trust store (`trust.json`) with project and folder trust,
+  safe across several app instances; the Windows Mark-of-the-Web check; and
+  size-rotating local logs (5 × 5 MiB).
+- The WebAssembly core answers the editor's scope, type and conversion
+  questions and makes and checks clipboard payloads, with fresh IDs and
+  references bound again where blocks are pasted.
+- More tests from mutation testing: the mutants it found missed in the
+  project-file parser, the decoder and the toolchain code are now caught, and
+  the few equivalent ones are excluded with a reason each.

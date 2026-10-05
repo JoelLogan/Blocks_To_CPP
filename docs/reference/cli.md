@@ -71,6 +71,9 @@ tiny test programs, so the results are kept in `toolchains.json` and checked
 again only when the compiler file changes. The file is shared with the app:
 it is in `%LOCALAPPDATA%\Blocks2Cpp\` on Windows and in
 `$XDG_CONFIG_HOME/blocks2cpp/` (normally `~/.config/blocks2cpp/`) on Linux.
+Compilers added by hand in the app are listed too, and a compiler you name
+with `--toolchain` that is not in the list yet is remembered there as added
+by hand.
 
 ### `b2c migrate`
 

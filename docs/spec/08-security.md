@@ -119,7 +119,9 @@ decision the user makes explicitly, once, per project.**
 * **Folder trust** covers a canonical folder and everything below it,
   compared by path components (case-insensitively on Windows). It stores no
   hash, so a project in a trusted folder is not re-flagged after an outside
-  change; the user trusted everything there.
+  change; the user trusted everything there. A whole drive or the file-system
+  root cannot be trusted as a folder, and paths with `.` or `..` parts never
+  match a record.
 * **Revoking** (`trust_revoke`) removes only the project's own record. A
   project inside a trusted folder stays trusted, and the response says that
   the trust comes from the folder, so the UI can explain why.

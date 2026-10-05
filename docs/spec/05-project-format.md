@@ -346,8 +346,18 @@ the bare array that M1 wrote, counts as empty, and discovery fills it again.
 `rawCodeHashAtGrant` is the security hash of
 [08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode), and times
 are RFC 3339 in UTC. A missing, oversized or invalid file means nothing is
-trusted; the next grant writes a valid file. A path that is not valid Unicode
-cannot be recorded, so such a project cannot be trusted.
+trusted; the next grant writes a valid file. A file that exists but cannot be
+read at all is never overwritten. A path that is not valid Unicode cannot be
+recorded, so such a project cannot be trusted.
+
+* A path holds at most one project record. At most 10,000 project and 1,000
+  folder records are kept, paths are at most 8 KiB, and the file never grows
+  past its read limit: the records granted longest ago are dropped first.
+* Every change re-reads the file and replaces it atomically while holding an
+  exclusive lock on `trust.json.lock` next to it (waiting at most 5 s), so
+  several app instances never undo each other's grants. Every trust check
+  reads the file again, so a revocation in one instance holds in all of them.
+* A whole drive or the file-system root cannot be trusted as a folder.
 
 **`recent.json`** (read limit 1 MiB): `{ format: "blocks2cpp/recent",
 formatVersion: 1, entries: [{ id, path, projectName, lastOpenedAt }] }`,
@@ -493,3 +503,7 @@ includes Raw C++ – review before running."*
   ([06 §6.14.11](06-compiler-pipeline.md#61411-names-typed-in-slots)). A
   reference that finds no match stays a reference and gets `B2C-E0201`,
   naming the original symbol.
+* Until namespaces arrive (M3), a qualified name is the plain name for
+  variables, parameters and loop variables, and `::name` for functions.
+* A paste target is the canvas, the start of a statement list or a value
+  input, or the position directly after a block; scope is evaluated there.

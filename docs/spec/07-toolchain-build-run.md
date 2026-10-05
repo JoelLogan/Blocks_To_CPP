@@ -79,8 +79,8 @@ settings survives them.
 ## 7.3 Capability probing
 
 Probes run once per fingerprint, in parallel. Each probe has a 10 s timeout and
-runs in a private temporary directory with the sanitised environment from
-§7.5.2. Results are stored in `toolchains.json` in the machine folder
+runs in a private temporary directory (inside the owner-only
+`<cache>/probe-tmp/`) with the sanitised environment from §7.5.2. Results are stored in `toolchains.json` in the machine folder
 ([02 §2.7](02-architecture.md#27-persistence-locations); format in
 [05 §5.9](05-project-format.md#59-machine-local-data)), which the app and the
 CLI share.
