@@ -1,6 +1,8 @@
-# Fuzz targets for the project loader, the pure pipeline and the typed text
-# encoders (docs/spec/09-quality-and-delivery.md §9.2, docs/spec/08-security.md
-# §8.4 and §8.13). Only pure crates: nothing here does I/O.
+# Fuzz targets for the project loader, the pure pipeline, the typed text
+# encoders and the compiler-diagnostics parsers
+# (docs/spec/09-quality-and-delivery.md §9.2, docs/spec/08-security.md §8.4 and
+# §8.13). No target performs I/O: they call pure functions only (from
+# b2c-toolchain, only the `parse_*` diagnostics functions).
 #
 # Not part of the main workspace: libFuzzer needs a nightly toolchain and
 # sanitizer flags. Run with `cargo +nightly fuzz run <target>` from the
@@ -24,6 +26,8 @@ b2c-model = { path = "../crates/b2c-model" }
 b2c-catalog = { path = "../crates/b2c-catalog" }
 b2c-lang = { path = "../crates/b2c-lang" }
 b2c-codegen = { path = "../crates/b2c-codegen" }
+# For its pure diagnostics parsers only (`b2c_toolchain::diagnostics`).
+b2c-toolchain = { path = "../crates/b2c-toolchain" }
 
 # Its own workspace, so the main workspace's `crates/*` glob and its lints
 # do not apply and `cargo` commands at the root ignore this package.
@@ -64,6 +68,34 @@ bench = false
 [[bin]]
 name = "encoders"
 path = "fuzz_targets/encoders.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diag_sarif"
+path = "fuzz_targets/diag_sarif.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diag_json"
+path = "fuzz_targets/diag_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diag_text"
+path = "fuzz_targets/diag_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diag_output"
+path = "fuzz_targets/diag_output.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,41 @@
+# lychee link-check configuration (docs/spec/09-quality-and-delivery.md §9.3,
+# ci.yml `docs` job). Run from the repository root:
+#
+#   lychee --no-progress './**/*.md'
+#
+# lychee reads this file from the working directory. Files that .gitignore
+# lists (node_modules, target, site/dist, agent worktrees) are skipped, and
+# links inside code blocks are not checked.
+
+# Patient with slow or briefly failing servers before a link counts as broken.
+max_retries = 3
+retry_wait_time = 2
+timeout = 20
+max_concurrency = 16
+
+# 206: partial content (some servers answer GET with a range). 429: rate
+# limited, which says nothing about the link (the check runs without a
+# GitHub token, so github.com rate-limits it).
+accept = ["200", "206", "429"]
+
+# Only web and file links; mail addresses are not checked.
+scheme = ["https", "http", "file"]
+
+exclude = [
+  # The app's own origins and local servers: not reachable from CI.
+  '^https?://localhost([:/?#]|$)',
+  '^https?://127\.0\.0\.1([:/?#]|$)',
+  '^https?://([a-z0-9-]+\.)*tauri\.localhost([:/?#]|$)',
+  '^https?://([a-z0-9-]+\.)*ipc\.localhost([:/?#]|$)',
+  # Placeholder domain used in examples.
+  '^https?://([a-z0-9-]+\.)*example\.com([:/?#]|$)',
+]
+exclude_loopback = true
+
+exclude_path = [
+  '(^|/)node_modules/',
+  '(^|/)target/',
+  '(^|/)site/dist/',
+  '(^|/)fuzz/(corpus|artifacts)/',
+  '(^|/)\.claude/',
+]

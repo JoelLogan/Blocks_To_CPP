@@ -1,3 +1,6 @@
+<!-- A pull request description sits under its title, so its sections start at level 2. -->
+<!-- markdownlint-disable-file first-line-heading -->
+
 ## What and why
 
 <!-- What does this change do, and why? Link the issue or spec section. -->
