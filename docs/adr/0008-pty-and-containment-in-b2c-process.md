@@ -1,6 +1,6 @@
 # ADR-0008: Our own PTY and containment layer in `b2c-process`
 
-* Status: Proposed (M2 is built on it; the owner confirms the point marked *owner to confirm*)
+* Status: Accepted (confirmed by the owner on 2026-10-05)
 * Date: 2026-10-05
 
 ## Context
@@ -66,7 +66,7 @@ For Linux cgroups:
 
 ## Decision
 
-* **Owner to confirm:** no `portable-pty`. PTY sessions are implemented in
+* **No `portable-pty`.** PTY sessions are implemented in
   `b2c-process` as described in option 2, with `IoMode::{Pty, Pipes}` and
   `ContainmentLevel::{JobObject, Cgroup, ProcessGroupOnly}` reported to the
   UI ([07 §7.6.2](../spec/07-toolchain-build-run.md#762-spawning)).

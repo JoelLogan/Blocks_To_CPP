@@ -1,6 +1,6 @@
 # ADR-0011: Loose blocks stay errors, and loose stacks are saved intact
 
-* Status: Proposed (M2 is built on it; the owner confirms it)
+* Status: Accepted (confirmed by the owner on 2026-10-05)
 * Date: 2026-10-05
 
 ## Context

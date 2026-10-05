@@ -1,6 +1,6 @@
 # ADR-0007: Backend crates and a generated IPC contract
 
-* Status: Proposed (M2 is built on it; the owner confirms the point marked *owner to confirm*)
+* Status: Accepted (confirmed by the owner on 2026-10-05)
 * Date: 2026-10-05
 
 ## Context
@@ -90,7 +90,7 @@ For the TypeScript types:
   checked at startup.
 * **Machine-local file locations** ([02 §2.7](../spec/02-architecture.md#27-persistence-locations)):
   `settings.json` and `recent.json` stay in `%APPDATA%\Blocks2Cpp\` on
-  Windows. **Owner to confirm:** `trust.json` and `toolchains.json` go to
+  Windows. `trust.json` and `toolchains.json` go to
   `%LOCALAPPDATA%\Blocks2Cpp\` instead of `%APPDATA%`, because both are bound
   to this machine ([05 §5.8](../spec/05-project-format.md#58-what-is-deliberately-not-stored-in-a-project)):
   trust records name canonical paths, and toolchain records name compilers and
@@ -113,5 +113,5 @@ For the TypeScript types:
 * `tools/check-layering.py`, CODEOWNERS and the layering table gain the three
   crates. `b2c-build` may depend on `b2c-store` and `b2c-ipc`, and the CLI on
   `b2c-store`.
-* If the owner keeps `trust.json` in `%APPDATA%`, only `b2c_store::Dirs` and
-  02 §2.7 change; nothing else depends on which folder it is.
+* Only `b2c_store::Dirs` and 02 §2.7 know which folder holds `trust.json`;
+  nothing else depends on it.

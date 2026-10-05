@@ -1,6 +1,6 @@
 # ADR-0009: End-to-end tooling under the pnpm policy, and the test seams
 
-* Status: Proposed (M2 is built on it; the owner confirms the points marked *owner to confirm*)
+* Status: Accepted (confirmed by the owner on 2026-10-05)
 * Date: 2026-10-05
 
 ## Context
@@ -47,14 +47,14 @@ chosen instead.
 
 ## Decision
 
-* **Owner to confirm:** the E2E suite uses **selenium-webdriver** with
+* The E2E suite uses **selenium-webdriver** with
   **Vitest** as its runner, driving **`tauri-driver`** (installed with
   `cargo install --locked` at a pinned version). Linux uses `WebKitWebDriver`
   (the distribution's `webkit2gtk-driver`) under `xvfb`. Windows uses
   `msedgedriver` matching the installed WebView2 version, downloaded from
   Microsoft's official endpoint and version-checked. WebdriverIO is
   reconsidered when its dependency chain passes the policy again.
-* **Owner to confirm:** `eslint-plugin-react` is not used, for the same policy
+* **`eslint-plugin-react` is not used**, for the same policy
   reason. Its one security rule, `react/no-danger`, is replaced by a
   `no-restricted-syntax` rule on `dangerouslySetInnerHTML`; `react-hooks`,
   `jsx-a11y`, `no-unsanitized` and the `no-restricted-*` bans stay
