@@ -54,4 +54,32 @@ pub enum ProcessError {
     /// The run was cancelled before the program started.
     #[error("cancelled before the program started")]
     Cancelled,
+    /// No pseudo-terminal could be created (Linux: `/dev/ptmx`; Windows: the
+    /// pseudo console). Nothing was started; [`crate::spawn_piped`] is the
+    /// fallback.
+    #[error("cannot create a terminal for the program: {0}")]
+    Pty(#[source] io::Error),
+    /// A terminal size with a side of 0 or more than
+    /// [`crate::PtySize::MAX_SIDE`] characters.
+    #[error("a terminal of {cols} columns and {rows} rows is not possible")]
+    InvalidPtySize {
+        /// The requested columns.
+        cols: u16,
+        /// The requested rows.
+        rows: u16,
+    },
+    /// Resizing the terminal failed. The program keeps running with the old
+    /// size.
+    #[error("cannot resize the terminal: {0}")]
+    Resize(#[source] io::Error),
+    /// The command cannot be handed to the operating system as given (for
+    /// example an argument containing a NUL character, or a Windows command
+    /// line longer than 32,767 characters). Nothing was started.
+    #[error("cannot run {}: {reason}", program.display())]
+    InvalidCommand {
+        /// The program.
+        program: PathBuf,
+        /// What is wrong, in plain English.
+        reason: &'static str,
+    },
 }

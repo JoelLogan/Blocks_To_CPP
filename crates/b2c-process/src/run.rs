@@ -239,16 +239,9 @@ fn start(command: &Command, mode: Mode) -> Result<Running, ProcessError> {
         return Err(ProcessError::Cancelled);
     }
     let program = command.program().to_path_buf();
-    // The single place in Blocks2Cpp where a process is created
-    // (`docs/spec/08-security.md` §8.5): an absolute program, an argv list,
-    // an explicit directory and a cleared environment.
-    #[allow(clippy::disallowed_methods)]
-    let mut std_command = std::process::Command::new(&program);
-    std_command
-        .args(command.get_args())
-        .current_dir(command.working_dir())
-        .env_clear()
-        .envs(command.get_envs());
+    // An absolute program, an argv list, an explicit directory and a cleared
+    // environment (`docs/spec/08-security.md` §8.5).
+    let mut std_command = command.to_std();
     let mut bytes = None;
     let stdin = match command.get_stdin() {
         Stdin::Null => Stdio::null(),

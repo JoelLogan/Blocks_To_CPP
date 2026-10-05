@@ -3,13 +3,18 @@
 //!
 //! This is the only crate in Blocks2Cpp that starts processes. Everything
 //! else (the compiler, probe programs, the user's program) goes through the
-//! two entry points here:
+//! entry points here:
 //!
 //! * [`run_captured`]: runs a command with its standard output and error
 //!   captured in memory (up to a cap), for the compiler, toolchain probes and
 //!   golden tests;
 //! * [`run_interactive`]: runs a command attached to this process's terminal
-//!   (standard output and error inherited), for `b2c run`.
+//!   (standard output and error inherited), for `b2c run`;
+//! * [`spawn_pty`] and [`spawn_piped`]: start an interactive *session* for
+//!   the IDE's console: the program runs in a pseudo-terminal (openpty on
+//!   Linux, `ConPTY` on Windows) or, as a fallback, with pipes, and the caller
+//!   streams its output, writes its input, resizes the terminal and stops it
+//!   through the returned [`PtyChild`].
 //!
 //! # Rules
 //!
@@ -26,14 +31,18 @@
 //! * The whole process tree is stopped on timeout or cancellation, and any
 //!   process the program left behind is stopped when it exits:
 //!   * **Linux/Unix:** the child runs in a new process group, which is killed
-//!     as a whole (`SIGKILL`; interactive runs get `SIGTERM` first and a grace
-//!     period). See [`ProcessGroup`] for the one exception: interactive runs
-//!     attached to a terminal.
+//!     as a whole (`SIGKILL`; interactive runs and sessions get `SIGTERM`
+//!     first and a grace period, and captured runs do when
+//!     [`Limits::grace`] is set). See [`ProcessGroup`] for the one
+//!     exception: interactive runs attached to a terminal. Sessions lead a
+//!     new session (`setsid`), so their process group ID is their process
+//!     ID; [`ContainmentLevel`] says how complete this is.
 //!   * **Windows:** the child is created suspended, assigned to a Job Object
 //!     with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and only then resumed, so no
 //!     descendant can be created outside the job. The job is terminated on
 //!     timeout, cancellation and exit, and closing it (even when this process
-//!     dies) kills everything still in it.
+//!     dies) kills everything still in it. Sessions inherit no handles but
+//!     their own terminal or pipe ends (an explicit handle list).
 //! * Optional resource limits: see [`Limits`] for exactly what is enforced on
 //!   each platform.
 //!
@@ -56,6 +65,15 @@
 //! # }
 //! # Ok::<(), b2c_process::ProcessError>(())
 //! ```
+//!
+//! # Unsafe code
+//!
+//! This is the only crate allowed to contain `unsafe`
+//! (`docs/spec/02-architecture.md` §2.3), and only in the platform modules
+//! that call the operating system: `platform/windows.rs` (Job Objects),
+//! `pty/windows.rs` (`ConPTY`, `CreateProcessW`, pipes) and `pty/unix.rs` (the
+//! `pre_exec` hook that makes a session's program a session leader). Every
+//! `unsafe` block has a `// SAFETY:` comment and CODEOWNERS review.
 
 #![deny(unsafe_code)]
 
@@ -66,11 +84,13 @@ mod error;
 mod platform;
 #[cfg(target_os = "linux")]
 mod procfs;
+mod pty;
 mod run;
 mod status;
 
 pub use cancel::CancelToken;
 pub use command::{Command, DEFAULT_INTERACTIVE_GRACE, DEFAULT_OUTPUT_CAP, Limits, ProcessGroup, Stdin};
 pub use error::ProcessError;
+pub use pty::{ContainmentLevel, IoMode, PtyChild, PtyExit, PtySize, PtyWriter, spawn_piped, spawn_pty};
 pub use run::{Captured, Finished, run_captured, run_interactive};
 pub use status::{Crash, ExitStatus};
