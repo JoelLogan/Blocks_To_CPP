@@ -22,3 +22,14 @@ reason = "Unsound glib::VariantStrIter, unused in the dependency tree; glib 0.18
 id = "RUSTSEC-2024-0370"
 ignoreUntil = 2027-01-04T00:00:00Z
 reason = "Unmaintained build-time proc-macro helper used by gtk-rs 0.18 macros; not a vulnerability."
+
+# braces <=3.0.3: stack exhaustion on deeply nested brace patterns, with no
+# fixed release yet (checked 2026-10-05). It is reached only through
+# markdownlint-cli2 (a dev-only Markdown lint), which expands the globs in our
+# own .markdownlint-cli2.jsonc; nothing user-supplied reaches it, and it is
+# never shipped. The same advisory is excepted for `pnpm audit` in
+# pnpm-workspace.yaml (auditConfig.ignoreGhsas).
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2027-01-04T00:00:00Z
+reason = "braces stack exhaustion; dev-only, reached through markdownlint-cli2 expanding our own glob patterns; no fixed release yet."

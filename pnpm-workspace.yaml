@@ -19,3 +19,13 @@ blockExoticSubdeps: true
 # strictDepBuilds makes an unlisted build script fail the install instead of being skipped.
 allowBuilds: {}
 strictDepBuilds: true
+
+# Tracked `pnpm audit` exceptions (docs/spec/08-security.md §8.9). Each one names the
+# only path that reaches the package and is reviewed by its date.
+auditConfig:
+  ignoreGhsas:
+    # braces <=3.0.3 stack exhaustion on deeply nested brace patterns, no fixed release yet.
+    # Reached only through markdownlint-cli2 (dev-only Markdown lint), whose patterns come
+    # from our own .markdownlint-cli2.jsonc; nothing user-supplied is expanded. Review by
+    # 2027-01-04 or as soon as a fixed braces release exists.
+    - GHSA-vfj7-8cjw-p6xm
