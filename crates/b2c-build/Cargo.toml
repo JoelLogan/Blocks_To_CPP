@@ -16,8 +16,10 @@ b2c-lang.workspace = true
 b2c-codegen.workspace = true
 b2c-toolchain.workspace = true
 b2c-process.workspace = true
+# toolchains.json in the machine folder and the build manifest, written atomically (05 §5.9-5.10).
 b2c-store.workspace = true
-# The IPC contract: build and run sessions report through its sinks, events, IDs and errors.
+# The IPC contract: build and run sessions report through its sinks, events, IDs and errors, and
+# the app's toolchain commands return its DTOs and IDs (02 §2.5).
 b2c-ipc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -27,6 +29,7 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+insta.workspace = true
 proptest.workspace = true
 regex.workspace = true
 

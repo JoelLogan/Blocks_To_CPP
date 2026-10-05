@@ -180,6 +180,7 @@ dependencies = [
  "b2c-process",
  "b2c-store",
  "b2c-toolchain",
+ "insta",
  "proptest",
  "regex",
  "serde",

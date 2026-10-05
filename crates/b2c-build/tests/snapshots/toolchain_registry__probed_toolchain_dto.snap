@@ -1,0 +1,37 @@
+---
+source: crates/b2c-build/tests/toolchain_registry.rs
+expression: json
+---
+{
+  "id": "<ToolchainId::for_driver(canonical path)>",
+  "version": "13.3.0",
+  "target": "x86_64-linux-gnu",
+  "flavor": "System",
+  "displayPath": "/usr/bin/g++",
+  "source": "path",
+  "usable": true,
+  "selected": true,
+  "capabilities": {
+    "standards": [
+      "c++17",
+      "c++20",
+      "c++23"
+    ],
+    "stdFormat": true,
+    "sanitizers": true,
+    "sarif": true
+  },
+  "problems": [
+    {
+      "code": "B2C-T1021",
+      "severity": "info",
+      "message": "AddressSanitizer works, but its leak detection does not.",
+      "primary": {
+        "part": {
+          "kind": "whole"
+        }
+      },
+      "source": "toolchain"
+    }
+  ]
+}

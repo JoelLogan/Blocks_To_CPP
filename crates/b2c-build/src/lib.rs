@@ -13,7 +13,8 @@
 //! * [`RunSessions`]: the IDE's running programs, in a pseudo-terminal with
 //!   streamed, flood-protected output, input, resizing, Stop and exit
 //!   decoding; [`run_environment`] gives their environment.
-//! * [`list_toolchains`]: the compilers on this computer.
+//! * [`list_toolchains`]: the compilers on this computer; [`toolchains`]:
+//!   the app's toolchain list and choice ([`toolchains::ToolchainRegistry`]).
 //!
 //! ```no_run
 //! use b2c_build::{BuildOutcome, BuildRequest, Configuration, FrontendOptions, ToolchainChoice};
@@ -45,7 +46,7 @@ pub mod ide;
 mod manifest;
 mod run;
 pub mod session;
-mod toolchains;
+pub mod toolchains;
 
 pub use build_dir::{
     BuildDir, BuildDirError, default_cache_root, sandbox_dir, write_executable, write_generated_files,
