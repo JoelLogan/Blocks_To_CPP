@@ -373,8 +373,10 @@ impl Running {
     fn stop_tree(&mut self, grace: Duration) -> Result<(), ProcessError> {
         if !grace.is_zero() {
             self.tree.stop();
-            let until = Instant::now() + grace;
-            while Instant::now() < until {
+            // `checked_add` so that an absurd grace cannot panic here; with no
+            // representable deadline the wait ends when the tree exits.
+            let until = Instant::now().checked_add(grace);
+            while until.is_none_or(|until| Instant::now() < until) {
                 if self.exited()? {
                     break;
                 }

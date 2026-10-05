@@ -431,13 +431,38 @@ fn interactive_timeout_kills_tree(group: ProcessGroup) {
     let finished = run_interactive(&command).unwrap();
     assert!(finished.timed_out);
     assert!(start.elapsed() < Duration::from_secs(10));
-    // `sh` dies of the polite SIGTERM.
-    assert_eq!(finished.status, ExitStatus::Signaled(15));
+    // `sh` dies of the polite SIGTERM. In the shared-group case `sh` can
+    // instead see its `sleep` die of SIGTERM first and exit with 128 + 15
+    // before the signal reaches `sh` itself; both mean the polite stop
+    // ended the tree.
+    assert!(
+        matches!(
+            finished.status,
+            ExitStatus::Signaled(15) | ExitStatus::Exited(143)
+        ),
+        "unexpected status {:?} ({group:?})",
+        finished.status
+    );
     let grandchild = read_pid(&pid_file);
     assert!(
         is_gone(grandchild),
         "grandchild {grandchild} survived ({group:?})"
     );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn an_absurd_grace_does_not_panic_the_stop() {
+    // `sleep` ends at the polite SIGTERM, so the endless grace never matters.
+    let mut command = sh("exec sleep 30");
+    command.limits(Limits {
+        timeout: Some(Duration::from_millis(200)),
+        grace: Some(Duration::MAX),
+        ..Limits::default()
+    });
+    let finished = run_interactive(&command).unwrap();
+    assert!(finished.timed_out);
+    assert_eq!(finished.status, ExitStatus::Signaled(15));
 }
 
 #[cfg(target_os = "linux")]
