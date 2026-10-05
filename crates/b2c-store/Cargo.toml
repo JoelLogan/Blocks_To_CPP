@@ -1,6 +1,6 @@
 [package]
 name = "b2c-store"
-description = "Blocks2Cpp machine-local storage: per-user folders, atomic writes, bounded reads, settings and recent projects"
+description = "Blocks2Cpp machine-local storage: per-user folders, atomic writes, bounded reads, settings, recent projects, the trust store, Mark-of-the-Web and rotating logs"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
