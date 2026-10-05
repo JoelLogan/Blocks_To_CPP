@@ -190,7 +190,55 @@ fn a_new_project_builds_and_runs_in_its_sandbox() {
         exit_status(&wait_exit(&run_events)),
         ExitStatus::Exited { code: 0 }
     );
-    assert!(output.concat().is_empty());
+    // Nothing visible: a Windows pseudo console still paints the screen (clear,
+    // cursor, title) for a program that prints nothing.
+    let shown = visible_text(&output.concat());
+    assert!(shown.trim().is_empty(), "{shown:?}");
+}
+
+/// `bytes` without terminal escape sequences (CSI `ESC [ … final`, OSC
+/// `ESC ] … BEL` or `ESC ] … ESC \`, and two-byte `ESC x`) and without
+/// other control characters except line breaks.
+fn visible_text(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let mut shown = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            if !c.is_control() || c == '\n' {
+                shown.push(c);
+            }
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' || (c == '\u{1b}' && chars.next_if_eq(&'\\').is_some()) {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    shown
+}
+
+#[test]
+fn visible_text_drops_terminal_sequences() {
+    let painted = "\u{1b}[?9001h\u{1b}[?25l\u{1b}[2J\u{1b}[m\u{1b}[H\u{1b}]0;C:\\a.exe\u{7}\u{1b}[?25h";
+    assert_eq!(visible_text(painted.as_bytes()), "");
+    assert_eq!(
+        visible_text(b"\x1b[1mhi\x1b[0m\r\nthere\x1b]0;t\x1b\\"),
+        "hi\nthere"
+    );
 }
 
 #[test]
