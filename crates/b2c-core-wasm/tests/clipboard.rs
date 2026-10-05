@@ -22,7 +22,7 @@ use std::path::PathBuf;
 
 use b2c_core_wasm::{PreviewOptions, Session};
 use b2c_model::IdSource as _;
-use common::{codes, example, examples, file, is_unsafe_to_show, parse, preview, repo_root};
+use common::{codes, example, examples, file, is_unsafe_to_show, names, parse, preview, repo_root};
 use proptest::prelude::*;
 use proptest::sample::Index;
 use serde_json::{Value, json};
@@ -552,6 +552,173 @@ fn the_target_decides_what_is_visible() {
         unresolved(&target("mod_main", None, None)),
         json!([{"sym": "s_guess", "name": "guess"}])
     );
+}
+
+#[test]
+fn a_paste_after_a_disabled_statement_sees_its_position() {
+    // 05 §5.12: scope is evaluated at the target. A disabled statement is
+    // not analysed, but the place after it is in a list that is.
+    let game = example("guessing_game");
+    let (payload, _) = copy(&game, &["b009"]); // if guess < secret …
+    let mut value: Value = serde_json::from_str(&game).unwrap();
+    find_mut(&mut value, "b004").unwrap()["disabled"] = json!(true);
+    let disabled = value.to_string();
+    let after = target("mod_main", Some("b004"), None);
+
+    // In the same document: the references keep their symbols, with no
+    // diagnostic, and the analyser agrees once the blocks are in place.
+    preview(&disabled, 4);
+    let pasted = paste_ok(&payload, &disabled, &after, 21);
+    assert_eq!(pasted["unresolved"], json!([]));
+    assert_eq!(pasted["diagnostics"], json!([]));
+    let result = preview(&insert(&disabled, 0, Some("b004"), None, &pasted["blocks"]), 4);
+    assert_eq!(result["buildable"], true, "{:?}", errors(&result));
+    // Into one of its value inputs, the same.
+    let inside = paste_ok(
+        &payload,
+        &disabled,
+        &target("mod_main", Some("b004"), Some("ITEM0")),
+        22,
+    );
+    assert_eq!(inside["unresolved"], json!([]));
+    // Its own dropdowns are filled: what is declared before it.
+    preview(&disabled, 4);
+    let here: Value = serde_json::from_str(&b2c_core_wasm::symbols_in_scope("b004", None)).unwrap();
+    assert_eq!(names(&here), ["guess", "secret"]);
+
+    // Into another document whose symbols have other IDs: bound by name.
+    let renamed = disabled
+        .replace("s_guess", "t_guess")
+        .replace("s_secret", "t_secret");
+    let pasted = paste_ok(&payload, &renamed, &after, 23);
+    assert_eq!(pasted["unresolved"], json!([]));
+    let text = pasted["blocks"].to_string();
+    assert!(text.contains("t_guess") && text.contains("t_secret"), "{text}");
+    assert!(!text.contains("s_guess") && !text.contains("s_secret"), "{text}");
+
+    // A block inside a disabled block is still not reached: its place sees
+    // what the canvas sees (no functions here).
+    let mut value: Value = serde_json::from_str(&renamed).unwrap();
+    find_mut(&mut value, "b010").unwrap()["disabled"] = json!(true);
+    let pasted = paste_ok(
+        &payload,
+        &value.to_string(),
+        &target("mod_main", Some("b005"), None),
+        24,
+    );
+    assert_eq!(
+        pasted["unresolved"],
+        json!([{"sym": "s_guess", "name": "guess"}, {"sym": "s_secret", "name": "secret"}])
+    );
+}
+
+#[test]
+fn a_renamed_original_is_kept_where_it_is_visible() {
+    // 05 §5.12, 06 §6.14.11: when no visible symbol has the recorded name, a
+    // reference whose own symbol is visible there with the same kind keeps
+    // it, even though it was renamed since the copy.
+    let game = example("guessing_game");
+    let (payload, _) = copy(&game, &["b009"]);
+    let tries = game.replace("\"name\": \"guess\"", "\"name\": \"tries\"");
+    assert_ne!(tries, game);
+    let at = target("mod_main", Some("b005"), None);
+    let pasted = paste_ok(&payload, &tries, &at, 25);
+    assert_eq!(pasted["unresolved"], json!([]));
+    assert_eq!(pasted["diagnostics"], json!([]));
+    assert!(pasted["blocks"].to_string().contains("s_guess"));
+    let result = preview(&insert(&tries, 0, Some("b005"), None, &pasted["blocks"]), 4);
+    assert_eq!(result["buildable"], true, "{:?}", errors(&result));
+    assert!(
+        file(&result, "main.cpp")
+            .unwrap()
+            .matches("tries < secret")
+            .count()
+            >= 2
+    );
+
+    // Projects made from the same example share symbol IDs: a paste binds
+    // the same way, silently, to whatever that symbol is called there.
+    let other = other_document()
+        .replace("t_guess", "s_guess")
+        .replace("\"name\": \"guess\"", "\"name\": \"attempt\"");
+    let pasted = paste_ok(&payload, &other, &target("mod_main", Some("c2"), None), 26);
+    assert_eq!(pasted["unresolved"], json!([]));
+    assert_eq!(pasted["diagnostics"], json!([]));
+    let text = pasted["blocks"].to_string();
+    assert!(text.contains("s_guess") && text.contains("t_secret"), "{text}");
+
+    // Another visible symbol with the recorded name wins over the original.
+    let mut value: Value = serde_json::from_str(&tries).unwrap();
+    let (items, at_b004) = list_holding(&mut value, "b004").unwrap();
+    items.insert(
+        at_b004,
+        json!({"id": "c9", "type": "var.declare", "v": 1,
+               "fields": {"CONST": false, "NAME": {"sym": "t_guess", "name": "guess"}, "TYPE": "int"},
+               "inputs": {"VALUE": {"expr": [{"num": "1"}]}}}),
+    );
+    let both = value.to_string();
+    let pasted = paste_ok(&payload, &both, &at, 27);
+    assert_eq!(pasted["unresolved"], json!([]));
+    let text = pasted["blocks"].to_string();
+    assert!(text.contains("t_guess") && !text.contains("s_guess"), "{text}");
+}
+
+#[test]
+fn a_pasted_stack_is_unstacked_inside_a_statement_list() {
+    // A copied loose stack is one block with `stack` (ADR-0011). Inside a
+    // statement list (or after a block), the stacked blocks follow their
+    // head, since a nested block cannot have a `stack` (B2C-E0139).
+    let mut value: Value = serde_json::from_str(&example("guessing_game")).unwrap();
+    let print = |id: &str, text: &str| {
+        json!({"id": id, "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+               "fields": {"NEWLINE": true, "SEP": "none", "STREAM": "out"},
+               "inputs": {"ITEM0": {"expr": [{"str": text}]}}})
+    };
+    let mut head = print("L1", "one");
+    head["x"] = json!(500);
+    head["y"] = json!(40);
+    head["stack"] = json!([print("L2", "two"), print("L3", "three")]);
+    value["modules"][0]["workspace"]["blocks"]
+        .as_array_mut()
+        .unwrap()
+        .push(head);
+    let document = value.to_string();
+    let (payload, _) = copy(&document, &["L1"]);
+    // The loose stack itself is an error (B2C-E0604); the pastes add none.
+    let before = errors(&preview(&document, 4));
+    assert_eq!(before.len(), 1, "{before:?}");
+
+    for (block, input) in [(Some("b011"), Some("BODY")), (Some("b004"), None)] {
+        let pasted = paste_ok(&payload, &document, &target("mod_main", block, input), 28);
+        let blocks = pasted["blocks"].as_array().unwrap();
+        assert_eq!(blocks.len(), 3, "{pasted}");
+        assert!(blocks.iter().all(|b| b.get("stack").is_none()), "{pasted}");
+        let texts: Vec<&str> = blocks
+            .iter()
+            .map(|b| b["inputs"]["ITEM0"]["expr"][0]["str"].as_str().unwrap())
+            .collect();
+        assert_eq!(texts, ["one", "two", "three"]);
+        let after = insert(&document, 0, block, input, &pasted["blocks"]);
+        let loaded = parse(&b2c_core_wasm::load(after.as_bytes()));
+        assert_eq!(loaded["ok"], true, "{}", loaded["diagnostics"]);
+        let result = preview(&after, 4);
+        assert_eq!(errors(&result), before);
+        let main = file(&result, "main.cpp").unwrap();
+        let (one, two, three) = (
+            main.find("\"one\"").unwrap(),
+            main.find("\"two\"").unwrap(),
+            main.find("\"three\"").unwrap(),
+        );
+        assert!(one < two && two < three, "{main}");
+    }
+
+    // On the canvas the stack stays one block with `stack`.
+    let pasted = paste_ok(&payload, &document, &target("mod_main", None, None), 29);
+    let blocks = pasted["blocks"].as_array().unwrap();
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0]["stack"].as_array().unwrap().len(), 2);
+    let after = insert(&document, 0, None, None, &pasted["blocks"]);
+    assert_eq!(parse(&b2c_core_wasm::load(after.as_bytes()))["ok"], true);
 }
 
 #[test]

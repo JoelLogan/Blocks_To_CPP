@@ -27,3 +27,10 @@ pub const MAX_QUALIFIED_NAME_LEN: usize = 1024;
 pub const MAX_VARIADIC_PARTS: usize = 64;
 /// Maximum absolute canvas coordinate.
 pub const MAX_COORDINATE: i32 = 10_000_000;
+/// Largest magnitude of a preprocessor define's `int` value and of every
+/// number in free-form data (`extra`, `x-ext`): 2^53 − 1, JavaScript's
+/// `Number.MAX_SAFE_INTEGER`. The editor holds the document as JavaScript
+/// numbers, which keep every whole number up to this size exactly; a larger
+/// one would change on its way through the editor, and with it the program
+/// or the security hash.
+pub const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;

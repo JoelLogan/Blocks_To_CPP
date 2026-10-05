@@ -22,6 +22,8 @@ A project is a **single JSON file** with the extension `.b2c`.
 * **Canonical serialisation:** object keys are written in schema order, and
   arrays keep semantic order (statement order, ⊕ slot order). Top-level
   blocks are sorted by `id`; their canvas position is data, not order.
+  Numbers in free-form data are written as `JSON.stringify` writes them
+  ([§5.6](#56-validation-limits)).
 * Why one file: it is easy to share, email or submit, it has no zip-slip or
   path-traversal surface, and multiple modules still map to multiple
   generated C++ files.
@@ -201,12 +203,22 @@ pastes and IPC payloads alike:
 | Identifier length | 64 | |
 | Variadic parts per block | 64 | |
 | Numeric coordinates | ±10⁷ | |
+| Define `int` values | ±(2⁵³ − 1) | The editor holds the document as JavaScript numbers, which keep whole numbers only up to this size exactly (`B2C-E0112`) |
+| Numbers in `extra` and `x-ext` | ±(2⁵³ − 1) | As above; every larger float is a whole number too (`B2C-E0112`) |
 
 Further rules:
 
 * **Unknown keys are rejected** (`deny_unknown_fields`), except inside an
   explicit `"x-ext"` object reserved for forward-compatible tooling metadata,
   which is preserved but never interpreted.
+* **Numbers in free-form data** (`extra` and `x-ext`) are read as JavaScript
+  reads them, because the editor holds the document as JavaScript values: a
+  whole number written with a fraction or an exponent (`1.0`, `2e3`) is
+  stored as that integer, and the canonical writer writes the other numbers
+  as `JSON.stringify` does (`0.5`, `0.0000015`, `1e-7`). With the limits
+  above, a document that has been through the editor (`JSON.parse`, then
+  `JSON.stringify`) saves to the same text and content hash, and its defines
+  keep their values.
 * **Duplicate JSON keys are rejected.** Many parsers silently take the last
   value, which allows ambiguity attacks.
 * **Strings must be valid UTF-8** with no NUL. Text fields reject C0 controls
@@ -500,10 +512,25 @@ includes Raw C++ – review before running."*
   declared inside the pasted blocks is rewritten to its new ID.
 * A reference to a symbol declared outside the pasted blocks is bound again by
   qualified name and kind among the symbols in scope at the paste target
-  ([06 §6.14.11](06-compiler-pipeline.md#61411-names-typed-in-slots)). A
-  reference that finds no match stays a reference and gets `B2C-E0201`,
+  ([06 §6.14.11](06-compiler-pipeline.md#61411-names-typed-in-slots)). When
+  no symbol in scope has that name, a reference whose original symbol (the
+  same symbol ID) is in scope there with the same kind keeps it, even when it
+  was renamed since the copy, so copy, rename and paste within one project
+  needs no fix. Symbol IDs are stable but not unique across projects:
+  projects made from the same example or template share them, so a block
+  pasted from one into another binds such a reference silently to the
+  symbol with its ID, whatever that symbol is called there. A reference that
+  finds no match (or several) stays a reference and gets `B2C-E0201`,
   naming the original symbol.
 * Until namespaces arrive (M3), a qualified name is the plain name for
   variables, parameters and loop variables, and `::name` for functions.
 * A paste target is the canvas, the start of a statement list or a value
   input, or the position directly after a block; scope is evaluated there.
+  A disabled statement in a list the analyser reaches has the scope of its
+  position ([06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes));
+  a block the analyser does not reach (loose, or inside a disabled block)
+  has the canvas's scope.
+* `paste_prepare` returns the blocks ready to insert at the target, in order.
+  On a canvas a copied stack stays one block with `stack`; in or after a
+  block, the stacked blocks follow their head as ordinary blocks and no
+  block has `stack`, since a nested block cannot have one (`B2C-E0139`).

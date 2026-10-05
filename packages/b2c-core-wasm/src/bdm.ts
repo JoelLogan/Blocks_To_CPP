@@ -7,9 +7,13 @@
  * Optional keys are the ones the canonical writer leaves out when they are empty or `false`; every
  * other key is always present in a loaded document.
  *
- * Numbers: JSON numbers become JavaScript numbers, which are exact only up to 2^53. The loader
- * keeps larger integers exactly (in `defines` and `x-ext`), so code that edits a document must
- * leave values it does not understand untouched rather than re-create them.
+ * Numbers: JSON numbers become JavaScript numbers, and every number of a loaded document is one
+ * that JavaScript holds exactly (05 §5.6). The loader refuses a define's `int` value and a number
+ * in `extra` or `x-ext` beyond ±(2^53 − 1) (`Number.MAX_SAFE_INTEGER`), stores a whole free-form
+ * number as an integer (`1.0` is `1`), and the canonical writer writes free-form floats as
+ * `JSON.stringify` does. So the document survives `JSON.parse` and `JSON.stringify` unchanged:
+ * `canonical(JSON.stringify(load(t).document))` gives the same text and hash as `canonical(t)`.
+ * The other numbers (versions, coordinates, zoom) are typed and range-checked.
  */
 
 /** The value of the top-level `format` key. */
@@ -93,7 +97,10 @@ export interface BdmBuildConfiguration {
   hardening: boolean;
 }
 
-/** A preprocessor define with a typed value; the backend builds the `-D` argument itself. */
+/**
+ * A preprocessor define with a typed value; the backend builds the `-D` argument itself. An `int`
+ * is a whole number within ±(2^53 − 1) (`Number.isSafeInteger`); the loader refuses others.
+ */
 export interface BdmDefine {
   name: string;
   value: { int: number } | { bool: boolean } | { string: string };

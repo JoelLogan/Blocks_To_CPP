@@ -57,8 +57,10 @@ answer is about the document on screen. With `input` null (or a value input) it 
 visible at the block; with one of the block's statement inputs (`BODY`, `DO0`, `ELSE`, …), what is
 visible at the start of that list, including a loop's counter and a function's parameters. It
 answers `[]` before a successful preview (a preview whose document does not load forgets the
-analysis) and for blocks the analyser does not reach. `conversionTable()` lets the connection
-checker refuse exactly the connections the analyser would report (`invalid`).
+analysis) and for blocks the analyser does not reach (inside a disabled block, loose, or nested
+too deeply); a disabled statement in a list the analyser reaches answers for its position.
+`conversionTable()` lets the connection checker refuse exactly the connections the analyser would
+report (`invalid`).
 
 ### Clipboard
 
@@ -79,14 +81,21 @@ The editor uses the DOM `copy`, `cut` and `paste` events with `application/x-blo
   limits and `B2C-E01xx` codes as a project file** (a payload that is not clipboard data is
   `B2C-E0138`), gives every block and every symbol the blocks declare a fresh ID that the document
   does not use, and binds the other references again by qualified name and kind among the symbols
-  visible at `target`. A reference whose original symbol is visible there keeps it; one that
-  finds no match (or several) stays a reference to its original symbol, is listed in
-  `unresolved`, and gets a `B2C-E0201` diagnostic naming the original.
+  visible at `target`. When no visible symbol has the recorded name, a reference whose original
+  symbol is visible there with the same kind keeps it, even when it was renamed since the copy
+  (so projects that share symbol IDs, such as copies of one example, bind such references
+  silently, whatever the symbol is called there). One that finds no match (or several) stays a
+  reference to its original symbol, is listed in `unresolved`, and gets a `B2C-E0201`
+  diagnostic naming the original.
+  - The `blocks` are ready to insert as they are. On the canvas a copied loose stack stays one
+    block with `stack`; in or after a block, its stacked blocks follow the head in `blocks` and
+    no block has `stack` (a block inside another one cannot have one, `B2C-E0139`).
   - `target` is `{module, block, input}`: `block: null` is the module's canvas (only functions are
     visible); a `block` with an `input` is the start of that statement list (or that value
     input); a `block` with `input: null` is the place **directly after** the block in its list,
-    where a variable the block itself creates is visible. A block the analyser does not reach
-    (disabled or loose) sees what the canvas sees.
+    where a variable the block itself creates is visible. A disabled statement in a list the
+    analyser reaches has the scope of its position; a block the analyser does not reach (inside a
+    disabled block, or loose) sees what the canvas sees.
   - `seedHex` is 64 hex digits of fresh randomness; use `randomSeedHex()` (from
     `crypto.getRandomValues`) for every paste or duplicate. The core itself uses no randomness, so
     the same seed always gives the same IDs.

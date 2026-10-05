@@ -178,12 +178,24 @@ stacked below a loose block on the canvas) is never an empty list: a block
 with nothing below it has no `"stack"` key, so every project has one
 spelling.
 
+A preprocessor define's `int` value, and every number in free-form data
+(a block's `"extra"` and `"x-ext"`), must be between -9007199254740991 and
+9007199254740991 (±(2⁵³ − 1)). The editor holds the project as JavaScript
+numbers, which keep whole numbers only up to that size exactly: a larger
+one would silently change on its way through the editor, and with it the
+program or the project's security hash.
+
 > "project.run.workingDirectory" should be one of "project" or "sandbox", but it is the text "/etc".
 >
 > "stack" in this block is an empty list. Leave "stack" out when no blocks are stacked below the block.
+>
+> "project.build.defines[0].value.int" should be a whole number from -9007199254740991 to 9007199254740991, but it is the number 9007199254740993.
+>
+> "x-ext.a" is the number 9007199254740992, but numbers in free-form data must be between -9007199254740991 and 9007199254740991, which the editor can hold exactly.
 
-**Fix:** use one of the values the message lists, or remove an empty
-`"stack"`.
+**Fix:** use one of the values the message lists, remove an empty
+`"stack"`, or use a smaller number (or text, in `"x-ext"`, for a large ID or
+count that a tool needs to keep exactly).
 
 ### B2C-E0113: invalid ID
 
