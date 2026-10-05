@@ -14,6 +14,9 @@
 //!    or single compile-and-link step.
 //! 5. [`env`](mod@env): the compiler's allowlisted environment (§7.5.2).
 //! 6. [`diagnostics`]: parse what g++ and the linker reported (§7.5.3).
+//! 7. [`sanitizer`]: find the first AddressSanitizer or
+//!    UndefinedBehaviorSanitizer report in a running program's output
+//!    (§7.6.4).
 //!
 //! Every problem is reported as a [`b2c_ir::Diagnostic`] with a
 //! `B2C-T1xxx` code from [`codes`].
@@ -63,4 +66,5 @@ pub mod fingerprint;
 pub mod flags;
 pub mod paths;
 pub mod probe;
+pub mod sanitizer;
 pub mod target;

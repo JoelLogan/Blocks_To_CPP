@@ -214,6 +214,12 @@ pub(crate) fn run(
             fail("the program was stopped because it ran longer than --timeout");
             Status::TimedOut
         }
+        // Only IDE sessions are stopped by the user; `run_program` never
+        // reports it.
+        Ok(ProgramExit::Stopped) => {
+            fail("the program was stopped");
+            Status::RunFailed
+        }
         Err(error) => {
             fail(&terminal_safe(&error.to_string()));
             Status::RunFailed

@@ -1,8 +1,9 @@
 # Fuzz targets for the project loader, the pure pipeline, the typed text
-# encoders and the compiler-diagnostics parsers
+# encoders, the compiler-diagnostics parsers and the sanitizer report scanner
 # (docs/spec/09-quality-and-delivery.md §9.2, docs/spec/08-security.md §8.4 and
 # §8.13). No target performs I/O: they call pure functions only (from
-# b2c-toolchain, only the `parse_*` diagnostics functions).
+# b2c-toolchain, only the `parse_*` diagnostics functions and the pure
+# `sanitizer::Detector`).
 #
 # Not part of the main workspace: libFuzzer needs a nightly toolchain and
 # sanitizer flags. Run with `cargo +nightly fuzz run <target>` from the
@@ -26,7 +27,8 @@ b2c-model = { path = "../crates/b2c-model" }
 b2c-catalog = { path = "../crates/b2c-catalog" }
 b2c-lang = { path = "../crates/b2c-lang" }
 b2c-codegen = { path = "../crates/b2c-codegen" }
-# For its pure diagnostics parsers only (`b2c_toolchain::diagnostics`).
+# For its pure diagnostics parsers (`b2c_toolchain::diagnostics`) and sanitizer
+# report scanner (`b2c_toolchain::sanitizer`) only.
 b2c-toolchain = { path = "../crates/b2c-toolchain" }
 
 # Its own workspace, so the main workspace's `crates/*` glob and its lints
@@ -103,6 +105,13 @@ bench = false
 [[bin]]
 name = "clipboard"
 path = "fuzz_targets/clipboard.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sanitizer_report"
+path = "fuzz_targets/sanitizer_report.rs"
 test = false
 doc = false
 bench = false
