@@ -1,7 +1,7 @@
 //! Supervising a session's program on a background thread: exit detection,
 //! whole-tree cleanup, stop with a grace period, cancellation, timeout and
-//! the process watchdog. Platform-neutral; the platform modules supply the
-//! [`Supervised`] program and the [`Tree`].
+//! the process and memory watchdogs. Platform-neutral; the platform modules
+//! supply the [`Supervised`] program and the [`Tree`].
 //!
 //! # Process ID safety (Unix)
 //!
@@ -19,6 +19,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::cancel::CancelToken;
+use crate::containment::Breach;
 use crate::platform::Tree;
 use crate::status::ExitStatus;
 
@@ -31,7 +32,7 @@ const FIRST_POLL: Duration = Duration::from_millis(1);
 const MAX_POLL: Duration = Duration::from_millis(25);
 /// Shortest pause, so a deadline that has just passed cannot spin the loop.
 const MIN_PAUSE: Duration = Duration::from_micros(100);
-/// How often the process-count watchdog looks at the tree.
+/// How often the process and memory watchdogs look at the tree.
 const WATCHDOG_INTERVAL: Duration = Duration::from_millis(100);
 
 /// The program of a session, as the supervisor thread owns it.
@@ -58,8 +59,19 @@ enum StopReason {
     Stopped,
     /// The command's wall-clock timeout.
     TimedOut,
-    /// The process-count watchdog.
+    /// The process limit.
     TooManyProcesses,
+    /// A memory limit.
+    OutOfMemory,
+}
+
+impl From<Breach> for StopReason {
+    fn from(breach: Breach) -> Self {
+        match breach {
+            Breach::Processes => Self::TooManyProcesses,
+            Breach::Memory => Self::OutOfMemory,
+        }
+    }
 }
 
 /// A failure to watch the program, kept in a copyable form so every
@@ -100,13 +112,12 @@ struct State {
     kill_at: Option<Instant>,
 }
 
-/// How the supervisor enforces the command's limits.
+/// How the supervisor enforces the command's limits (the process and
+/// memory limits are the [`Tree`]'s own watchdog).
 #[derive(Debug, Clone)]
 pub(crate) struct Supervision {
     /// Wall-clock limit.
     pub(crate) timeout: Option<Duration>,
-    /// Maximum processes in the tree (counted where the platform can).
-    pub(crate) processes: Option<u32>,
     /// The command's cancellation token: cancelling it stops the program
     /// like [`Shared::stop`].
     pub(crate) cancel: Option<CancelToken>,
@@ -265,14 +276,23 @@ pub(crate) fn start<P: Supervised>(
     Err(error)
 }
 
-/// The exit record for a program that ended at `ended` with `status`.
+/// The exit record for a program that ended at `ended` with `status`. The
+/// first reason the session stopped it wins; a program that was not stopped
+/// can still have hit a limit (the system refused it memory or a process).
 fn exit_record(shared: &Shared, state: &State, status: ExitStatus, ended: Instant) -> PtyExit {
+    let reason = match state.reason {
+        Some(reason) => Some(reason),
+        None if shared.tree.out_of_memory(!status.success()) => Some(StopReason::OutOfMemory),
+        None if shared.tree.process_limit_hit() => Some(StopReason::TooManyProcesses),
+        None => None,
+    };
     PtyExit {
         status,
-        stopped: state.reason == Some(StopReason::Stopped),
+        stopped: reason == Some(StopReason::Stopped),
         duration: ended.saturating_duration_since(shared.started),
-        timed_out: state.reason == Some(StopReason::TimedOut),
-        too_many_processes: state.reason == Some(StopReason::TooManyProcesses),
+        timed_out: reason == Some(StopReason::TimedOut),
+        too_many_processes: reason == Some(StopReason::TooManyProcesses),
+        out_of_memory: reason == Some(StopReason::OutOfMemory),
     }
 }
 
@@ -283,6 +303,7 @@ fn supervise<P: Supervised>(shared: &Shared, mut program: P, supervision: &Super
     let deadline = supervision
         .timeout
         .and_then(|timeout| shared.started.checked_add(timeout));
+    let watches = shared.tree.watches();
     let mut poll = FIRST_POLL;
     let mut next_watchdog = shared.started + WATCHDOG_INTERVAL;
     let mut state = shared.lock();
@@ -317,14 +338,13 @@ fn supervise<P: Supervised>(shared: &Shared, mut program: P, supervision: &Super
                 shared.begin_stop(&mut state, StopReason::Stopped, now);
             } else if deadline.is_some_and(|deadline| now >= deadline) {
                 shared.begin_stop(&mut state, StopReason::TimedOut, now);
-            } else if let Some(max) = supervision.processes
-                && now >= next_watchdog
-            {
+            } else if watches && now >= next_watchdog {
                 next_watchdog = now + WATCHDOG_INTERVAL;
-                let max = usize::try_from(max).unwrap_or(usize::MAX);
-                if shared.tree.process_count().is_some_and(|count| count > max) {
-                    state.reason = Some(StopReason::TooManyProcesses);
+                // A limit is a hard stop: no grace period.
+                if let Some(breach) = shared.tree.watchdog() {
+                    state.reason = Some(StopReason::from(breach));
                     state.stopping = true;
+                    state.kill_at = None;
                     shared.tree.kill();
                 }
             }

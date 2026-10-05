@@ -9,14 +9,14 @@
 //!   [`PtyChild`] from the platform parts;
 //! * `session`: the platform-neutral supervisor thread (exit detection,
 //!   whole-tree cleanup, stop with a grace period, cancellation, timeout and
-//!   the process watchdog);
+//!   the process and memory watchdogs);
 //! * `unix`: `/dev/ptmx` terminals (in UTF-8 mode) or pipes, and the
 //!   `pre_exec` hook that gives the program default signal handling and
-//!   makes it a session leader (`setsid`, `TIOCSCTTY`);
-//! * `windows`: `ConPTY` or pipes, `CreateProcessW` with an attribute list,
-//!   and the Job Object assigned while the program is suspended;
-//! * `cmdline`: the pure Windows command-line quoting and environment block,
-//!   compiled (and tested) on every platform.
+//!   makes it a session leader (`setsid`, `TIOCSCTTY`); on Linux the program
+//!   may run in a cgroup v2 scope (`src/containment/`);
+//! * `windows`: `ConPTY` or pipes, `CreateProcessW` with an attribute list
+//!   (`platform/create.rs`), and the Job Object assigned while the program
+//!   is suspended.
 
 use std::fmt;
 use std::io::{self, Read, Write};
@@ -25,13 +25,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use crate::command::{Command, DEFAULT_INTERACTIVE_GRACE, Stdin};
+use crate::containment::ContainmentLevel;
 use crate::error::ProcessError;
 use crate::status::ExitStatus;
 
 mod session;
-
-#[cfg(any(windows, test))]
-mod cmdline;
 
 #[cfg(unix)]
 #[allow(unsafe_code)] // `pre_exec` and the child's signal reset; see the SAFETY comments there.
@@ -102,21 +100,6 @@ pub enum IoMode {
     Pipes,
 }
 
-/// How completely a session's process tree is contained, for the run
-/// status (`docs/spec/08-security.md` §8.14 item 3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ContainmentLevel {
-    /// Windows: a Job Object; nothing in the tree can leave it, and closing
-    /// the app kills the tree.
-    JobObject,
-    /// Linux: a cgroup v2 scope, which also holds processes that left the
-    /// process group (double-forked or `setsid` children).
-    Cgroup,
-    /// Linux without a usable cgroup v2 scope: the process group only. A
-    /// program that deliberately leaves its group can outlive Stop.
-    ProcessGroupOnly,
-}
-
 /// How a session's program ended.
 #[allow(clippy::struct_excessive_bools)] // independent facts about one run
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,9 +116,16 @@ pub struct PtyExit {
     pub duration: Duration,
     /// Whether the command's [`crate::Limits::timeout`] stopped the program.
     pub timed_out: bool,
-    /// Whether the process-count watchdog stopped the program (Linux; see
+    /// Whether the process limit stopped the program (see
     /// [`crate::Limits`]).
     pub too_many_processes: bool,
+    /// Whether the program ran out of memory: a memory limit (for a user's
+    /// program, [`crate::Limits::rss_limit`]) stopped it, or the system
+    /// stopped one of its processes for going over the limit (see
+    /// [`crate::Limits`]). Like `stopped`, `timed_out` and
+    /// `too_many_processes`, at most one of the four is set: the first reason
+    /// the program was stopped for.
+    pub out_of_memory: bool,
 }
 
 /// Writes to a session's program: keystrokes in PTY mode, standard input in
@@ -172,6 +162,8 @@ impl Write for PtyWriter {
 ///
 /// # Containment
 ///
+/// [`PtyChild::containment`] says which of these the program got.
+///
 /// * **Linux/Unix:** the program leads a new session (`setsid`), so its
 ///   process group ID equals its process ID and the whole group is
 ///   signalled at once. In PTY mode the terminal is its controlling terminal,
@@ -179,9 +171,18 @@ impl Write for PtyWriter {
 ///   Ctrl+C in a real terminal. The program starts with no signal blocked
 ///   and with `SIGINT`, `SIGTERM` and the other signals a console program
 ///   relies on at their default action, even when this process ignores them
-///   (as under `nohup`). A process that deliberately leaves the group
-///   (`setsid`, a double fork) is out of reach:
-///   [`ContainmentLevel::ProcessGroupOnly`].
+///   (as under `nohup`).
+///   * With [`crate::Containment::Auto`] where cgroup v2 user scopes are
+///     available ([`ContainmentLevel::Cgroup`]), the program also runs in a
+///     transient scope of its own (`systemd-run --user --scope`, which
+///     executes it in place: same process ID, session and terminal). Stop,
+///     kill, drop and the program's exit kill everything in the scope,
+///     including processes that left the group (`setsid`, a double fork).
+///     The program's environment then also holds `XDG_RUNTIME_DIR`,
+///     `DBUS_SESSION_BUS_ADDRESS` and `INVOCATION_ID` (see
+///     [`crate::containment_level`]).
+///   * Otherwise a process that deliberately leaves the group is out of
+///     reach: [`ContainmentLevel::ProcessGroupOnly`].
 /// * **Windows:** the program is created suspended, put into a Job Object
 ///   with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and only then resumed, so no
 ///   descendant can escape and the tree dies with the job, even when this
@@ -221,6 +222,7 @@ pub struct PtyChild {
     terminal: platform::Terminal,
     mode: IoMode,
     pid: u32,
+    containment: ContainmentLevel,
     program: PathBuf,
 }
 
@@ -239,9 +241,11 @@ impl fmt::Debug for PtyChild {
 /// The command's arguments, working directory and environment are used as
 /// given (add `TERM` yourself). Its standard input must be [`Stdin::Null`]:
 /// input comes from [`PtyChild::writer`]. The program always runs in a new
-/// session or process group ([`crate::ProcessGroup`] is ignored).
+/// session or process group ([`crate::ProcessGroup`] is ignored), on Linux
+/// in a cgroup scope where [`crate::Containment`] allows one.
 /// [`crate::Limits`] apply as for [`crate::run_interactive`] (timeout,
-/// memory, processes, grace); the output caps do not.
+/// memory, `rss_limit`, processes, grace); the output caps do not. Use
+/// `rss_limit`, not `memory`, for a user's program (see [`crate::Limits`]).
 ///
 /// ```
 /// # #[cfg(unix)] {
@@ -310,7 +314,6 @@ fn start(command: &Command, io: Io) -> Result<PtyChild, ProcessError> {
     };
     let supervision = session::Supervision {
         timeout: limits.timeout,
-        processes: limits.processes,
         cancel: command.get_cancel().cloned(),
     };
     session::start(&shared, spawned.program, supervision).map_err(|source| ProcessError::Spawn {
@@ -327,6 +330,7 @@ fn start(command: &Command, io: Io) -> Result<PtyChild, ProcessError> {
             Io::Pipes => IoMode::Pipes,
         },
         pid: spawned.pid,
+        containment: spawned.level,
         program,
     })
 }
@@ -365,9 +369,10 @@ impl PtyChild {
 
     /// Stops the program's whole tree: `SIGTERM` to the process group, then
     /// `SIGKILL` after [`crate::Limits::grace`] (default
-    /// [`DEFAULT_INTERACTIVE_GRACE`], 2 s) for anything still running; a
-    /// grace too long to represent (such as [`Duration::MAX`]) never forces
-    /// the kill, which [`PtyChild::kill`] then does.
+    /// [`DEFAULT_INTERACTIVE_GRACE`], 2 s) for anything still running in the
+    /// group or the program's cgroup scope; a grace too long to represent
+    /// (such as [`Duration::MAX`]) never forces the kill, which
+    /// [`PtyChild::kill`] then does.
     /// Windows terminates the Job Object at once. Returns immediately; the
     /// exit is reported by [`PtyChild::wait`] with [`PtyExit::stopped`] set.
     /// Does nothing once the program has ended.
@@ -405,9 +410,11 @@ impl PtyChild {
         self.mode
     }
 
-    /// How completely the program's tree is contained.
+    /// How completely the program's tree is contained: the level this
+    /// session actually got (the run status shows it,
+    /// `docs/spec/08-security.md` §8.14 item 3).
     pub fn containment(&self) -> ContainmentLevel {
-        platform::CONTAINMENT
+        self.containment
     }
 
     /// The program's process ID (on Linux also its process group and

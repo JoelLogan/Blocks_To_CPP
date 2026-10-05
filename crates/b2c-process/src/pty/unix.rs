@@ -37,14 +37,12 @@ use rustix::pty::{OpenptFlags, grantpt, openpt, unlockpt};
 use rustix::termios::{Winsize, tcsetwinsize};
 
 use super::session::{Shared, Supervised};
-use super::{ContainmentLevel, Io, PtySize};
+use super::{Io, PtySize};
 use crate::command::Command;
+use crate::containment::{self, ContainmentLevel, Kind};
 use crate::error::ProcessError;
 use crate::platform::{self, Placement, Tree};
 use crate::status::ExitStatus;
-
-/// What Unix sessions guarantee without a cgroup scope.
-pub(super) const CONTAINMENT: ContainmentLevel = ContainmentLevel::ProcessGroupOnly;
 
 /// After the program ended, how long the output reader waits for
 /// end-of-file while no output arrives before it gives up (a process that
@@ -70,16 +68,20 @@ pub(super) struct Spawned {
     pub(super) output: OutputEnd,
     pub(super) input: InputEnd,
     pub(super) terminal: Terminal,
+    pub(super) level: ContainmentLevel,
 }
 
-/// Starts `command` in a new session, connected as `io` says.
+/// Starts `command` in a new session, connected as `io` says; on Linux in a
+/// cgroup scope when [`containment::plan`] gives it one (`systemd-run`
+/// then runs in the new session and executes the program in place).
 pub(super) fn spawn(command: &Command, io: Io) -> Result<Spawned, ProcessError> {
     let program = command.program().to_path_buf();
     let spawn_error = |source: io::Error| ProcessError::Spawn {
         program: program.clone(),
         source,
     };
-    let mut std_command = command.to_std();
+    let plan = containment::plan(command, Kind::Run)?;
+    let mut std_command = plan.command.to_std();
     let (output, input, master) = match io {
         Io::Pty(size) => {
             let (master, slave) = open_terminal(size).map_err(ProcessError::Pty)?;
@@ -124,7 +126,7 @@ pub(super) fn spawn(command: &Command, io: Io) -> Result<Spawned, ProcessError> 
     let mut child = spawned.map_err(spawn_error)?;
     let started = Instant::now();
     let pid = child.id();
-    let tree = match platform::contain(&mut child, Placement::NewGroup, command.get_limits()) {
+    let tree = match platform::contain(&mut child, Placement::NewGroup, plan.tree) {
         Ok(tree) => tree,
         Err(source) => {
             abandon(&mut child);
@@ -139,6 +141,7 @@ pub(super) fn spawn(command: &Command, io: Io) -> Result<Spawned, ProcessError> 
         output: OutputEnd(output),
         input: InputEnd(input),
         terminal: Terminal { master },
+        level: plan.level,
     })
 }
 

@@ -1,16 +1,18 @@
 //! Running a command: spawning, supervising (timeout, cancellation,
-//! watchdog) and collecting the result.
+//! watchdogs) and collecting the result.
 
 use std::fs::File;
-use std::io::{self, IsTerminal as _};
-use std::process::{Child, Stdio};
+use std::io::{self, IsTerminal as _, Read, Write};
+use std::path::PathBuf;
+use std::process::Stdio;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::capture::{Reader, spawn_writer};
 use crate::command::{Command, DEFAULT_INTERACTIVE_GRACE, ProcessGroup, Stdin};
+use crate::containment::{self, Breach, Kind, Plan};
 use crate::error::ProcessError;
-use crate::platform::{self, Placement, Tree};
+use crate::platform::{self, Placement, Process, Tree};
 use crate::status::ExitStatus;
 
 /// Shortest and longest pause between checks on a running child. Polling
@@ -19,7 +21,7 @@ use crate::status::ExitStatus;
 /// process ID can never have been reused.
 const FIRST_POLL: Duration = Duration::from_millis(1);
 const MAX_POLL: Duration = Duration::from_millis(25);
-/// How often the process-count watchdog looks at the tree.
+/// How often the process and memory watchdogs look at the tree.
 const WATCHDOG_INTERVAL: Duration = Duration::from_millis(100);
 /// How long to wait for the output pipes to close after the program ended.
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
@@ -45,12 +47,18 @@ pub struct Captured {
     pub timed_out: bool,
     /// Whether a [`crate::CancelToken`] stopped the program.
     pub cancelled: bool,
-    /// Whether the process-count watchdog stopped the program (Linux; see
+    /// Whether the process limit stopped the program (see
     /// [`crate::Limits`]).
     pub too_many_processes: bool,
+    /// Whether the program ran out of memory: a memory limit stopped it, or
+    /// the system killed one of its processes for going over the limit (see
+    /// [`crate::Limits`]). Like the three flags above, at most one of them
+    /// is set: the first reason the run was stopped for.
+    pub out_of_memory: bool,
 }
 
 /// The result of [`run_interactive`].
+#[allow(clippy::struct_excessive_bools)] // independent facts about one run
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Finished {
     /// How the program ended.
@@ -61,8 +69,10 @@ pub struct Finished {
     pub timed_out: bool,
     /// Whether a [`crate::CancelToken`] stopped the program.
     pub cancelled: bool,
-    /// Whether the process-count watchdog stopped the program.
+    /// Whether the process limit stopped the program.
     pub too_many_processes: bool,
+    /// Whether the program ran out of memory (see [`Captured::out_of_memory`]).
+    pub out_of_memory: bool,
 }
 
 /// Runs `command` to completion with standard output and error captured.
@@ -70,9 +80,14 @@ pub struct Finished {
 /// Both streams are read on helper threads while the program runs, so it
 /// can never block on a full pipe; each keeps at most its cap and flags the
 /// rest as truncated. On timeout or cancellation the whole tree is killed at
-/// once (unless [`crate::Limits::grace`] asks for a polite `SIGTERM` first).
-/// When the program exits, anything it left running in its tree is killed
-/// too.
+/// once (unless [`crate::Limits::grace`] asks for a polite `SIGTERM` first);
+/// a process or memory limit kills it at once. When the program exits,
+/// anything it left running in its tree is killed too.
+///
+/// With [`crate::Containment::Auto`] on Linux, the run gets a cgroup v2
+/// scope of its own when [`crate::containment_level`] is
+/// [`crate::ContainmentLevel::Cgroup`]. On Windows the program inherits
+/// exactly its three standard handles.
 ///
 /// ```
 /// # #[cfg(unix)] {
@@ -98,15 +113,15 @@ pub struct Finished {
 /// executable, unreadable input file), cannot be put under control, or was
 /// cancelled before it started.
 pub fn run_captured(command: &Command) -> Result<Captured, ProcessError> {
-    let mut running = start(command, Mode::Captured)?;
-    let stdout = running.child.stdout.take();
-    let stderr = running.child.stderr.take();
+    let (running, outputs) = start(command, Mode::Captured)?;
     let limits = command.get_limits();
-    let readers = stdout
+    let readers = outputs
+        .stdout
         .map(|pipe| Reader::spawn("stdout", pipe, limits.stdout_cap))
         .transpose()
         .and_then(|out| {
-            let err = stderr
+            let err = outputs
+                .stderr
                 .map(|pipe| Reader::spawn("stderr", pipe, limits.stderr_cap))
                 .transpose()?;
             Ok((out, err))
@@ -141,7 +156,8 @@ pub fn run_captured(command: &Command) -> Result<Captured, ProcessError> {
         duration: supervised.duration,
         timed_out: supervised.reason == Some(StopReason::Timeout),
         cancelled: supervised.reason == Some(StopReason::Cancelled),
-        too_many_processes: supervised.reason == Some(StopReason::Processes),
+        too_many_processes: supervised.too_many_processes,
+        out_of_memory: supervised.out_of_memory,
     })
 }
 
@@ -152,7 +168,8 @@ pub fn run_captured(command: &Command) -> Result<Captured, ProcessError> {
 /// On timeout or cancellation the tree gets `SIGTERM`, then `SIGKILL` after
 /// [`crate::Limits::grace`] (default [`DEFAULT_INTERACTIVE_GRACE`]) on Unix;
 /// Windows terminates the job at once. See [`ProcessGroup`] for how terminal
-/// input and Ctrl+C keep working on Unix.
+/// input and Ctrl+C keep working on Unix. Interactive runs never get a
+/// cgroup scope (see [`crate::Containment`]).
 ///
 /// ```no_run
 /// use std::time::Duration;
@@ -175,14 +192,15 @@ pub fn run_captured(command: &Command) -> Result<Captured, ProcessError> {
 /// # Errors
 /// As for [`run_captured`].
 pub fn run_interactive(command: &Command) -> Result<Finished, ProcessError> {
-    let running = start(command, Mode::Interactive)?;
+    let (running, _) = start(command, Mode::Interactive)?;
     let supervised = running.supervise(command, DEFAULT_INTERACTIVE_GRACE)?;
     Ok(Finished {
         status: supervised.status,
         duration: supervised.duration,
         timed_out: supervised.reason == Some(StopReason::Timeout),
         cancelled: supervised.reason == Some(StopReason::Cancelled),
-        too_many_processes: supervised.reason == Some(StopReason::Processes),
+        too_many_processes: supervised.too_many_processes,
+        out_of_memory: supervised.out_of_memory,
     })
 }
 
@@ -197,14 +215,31 @@ enum StopReason {
     Timeout,
     Cancelled,
     Processes,
+    Memory,
+}
+
+impl From<Breach> for StopReason {
+    fn from(breach: Breach) -> Self {
+        match breach {
+            Breach::Processes => Self::Processes,
+            Breach::Memory => Self::Memory,
+        }
+    }
 }
 
 /// A started, contained child.
 struct Running {
-    child: Child,
+    process: Process,
     tree: Tree,
-    program: std::path::PathBuf,
+    program: PathBuf,
     started: Instant,
+}
+
+/// This process's ends of a captured run's output pipes.
+#[derive(Default)]
+struct Outputs {
+    stdout: Option<Box<dyn Read + Send>>,
+    stderr: Option<Box<dyn Read + Send>>,
 }
 
 /// What supervision observed.
@@ -212,6 +247,8 @@ struct Supervised {
     status: ExitStatus,
     duration: Duration,
     reason: Option<StopReason>,
+    too_many_processes: bool,
+    out_of_memory: bool,
 }
 
 /// Decides the process-group placement (see [`ProcessGroup`]).
@@ -233,23 +270,59 @@ fn placement(command: &Command, mode: Mode) -> Placement {
     }
 }
 
-/// Spawns and contains the child.
-fn start(command: &Command, mode: Mode) -> Result<Running, ProcessError> {
+/// Spawns and contains the child: on Linux possibly in a cgroup scope
+/// ([`containment::plan`]); on Windows captured runs are created with an
+/// explicit handle list (`platform::spawn_captured`).
+fn start(command: &Command, mode: Mode) -> Result<(Running, Outputs), ProcessError> {
     if command.get_cancel().is_some_and(crate::CancelToken::is_cancelled) {
         return Err(ProcessError::Cancelled);
     }
+    let kind = match mode {
+        Mode::Captured => Kind::Build,
+        Mode::Interactive => Kind::Interactive,
+    };
+    let plan = containment::plan(command, kind)?;
+    #[cfg(windows)]
+    {
+        if mode == Mode::Captured {
+            return start_created(command, &plan);
+        }
+    }
+    start_std(command, plan, mode)
+}
+
+/// Starts a captured run on Windows (see `platform::spawn_captured`).
+#[cfg(windows)]
+fn start_created(command: &Command, plan: &Plan) -> Result<(Running, Outputs), ProcessError> {
+    let spawned = platform::spawn_captured(&plan.command, &plan.tree)?;
+    let running = Running {
+        process: spawned.process,
+        tree: spawned.tree,
+        program: command.program().to_path_buf(),
+        started: Instant::now(),
+    };
+    let running = feed_input(running, command, spawned.stdin)?;
+    Ok((
+        running,
+        Outputs {
+            stdout: Some(Box::new(spawned.stdout)),
+            stderr: Some(Box::new(spawned.stderr)),
+        },
+    ))
+}
+
+/// Starts a run with the standard library's spawn (every run on Unix,
+/// interactive runs on Windows).
+fn start_std(command: &Command, plan: Plan, mode: Mode) -> Result<(Running, Outputs), ProcessError> {
     let program = command.program().to_path_buf();
     // An absolute program, an argv list, an explicit directory and a cleared
-    // environment (`docs/spec/08-security.md` §8.5).
-    let mut std_command = command.to_std();
-    let mut bytes = None;
+    // environment (`docs/spec/08-security.md` §8.5); `plan.command` is the
+    // command itself or `systemd-run` wrapping it.
+    let mut std_command = plan.command.to_std();
     let stdin = match command.get_stdin() {
         Stdin::Null => Stdio::null(),
         Stdin::Inherit => Stdio::inherit(),
-        Stdin::Bytes(data) => {
-            bytes = Some(data.clone());
-            Stdio::piped()
-        }
+        Stdin::Bytes(_) => Stdio::piped(),
         Stdin::File(path) => match File::open(path) {
             Ok(file) => Stdio::from(file),
             Err(source) => {
@@ -273,7 +346,15 @@ fn start(command: &Command, mode: Mode) -> Result<Running, ProcessError> {
         source,
     })?;
     let started = Instant::now();
-    let tree = match platform::contain(&mut child, placement, command.get_limits()) {
+    let input = child.stdin.take();
+    let mut outputs = Outputs::default();
+    if let Some(pipe) = child.stdout.take() {
+        outputs.stdout = Some(Box::new(pipe));
+    }
+    if let Some(pipe) = child.stderr.take() {
+        outputs.stderr = Some(Box::new(pipe));
+    }
+    let tree = match platform::contain(&mut child, placement, plan.tree) {
         Ok(tree) => tree,
         Err(source) => {
             let _ = child.kill();
@@ -281,14 +362,25 @@ fn start(command: &Command, mode: Mode) -> Result<Running, ProcessError> {
             return Err(ProcessError::Containment { program, source });
         }
     };
-    let mut running = Running {
-        child,
+    let running = Running {
+        process: Process::from_std(child),
         tree,
         program,
         started,
     };
-    if let (Some(bytes), Some(pipe)) = (bytes, running.child.stdin.take())
-        && let Err(source) = spawn_writer(pipe, bytes)
+    Ok((feed_input(running, command, input)?, outputs))
+}
+
+/// Writes the command's [`Stdin::Bytes`] to the child's input pipe on a
+/// thread of its own; if that thread cannot be started, the run is
+/// abandoned.
+fn feed_input<W: Write + Send + 'static>(
+    running: Running,
+    command: &Command,
+    pipe: Option<W>,
+) -> Result<Running, ProcessError> {
+    if let (Stdin::Bytes(bytes), Some(pipe)) = (command.get_stdin(), pipe)
+        && let Err(source) = spawn_writer(pipe, bytes.clone())
     {
         let program = running.program.clone();
         running.abandon();
@@ -301,11 +393,12 @@ impl Running {
     /// Kills the tree and reaps the child after a setup failure.
     fn abandon(mut self) {
         self.tree.kill();
-        let _ = self.child.wait();
+        self.process.discard();
     }
 
     /// Waits for the child, enforcing the timeout, cancellation and the
-    /// process watchdog, then cleans up the tree and reaps the child.
+    /// process and memory watchdogs, then cleans up the tree and reaps the
+    /// child.
     fn supervise(mut self, command: &Command, default_grace: Duration) -> Result<Supervised, ProcessError> {
         let limits = command.get_limits();
         let deadline = limits
@@ -313,6 +406,7 @@ impl Running {
             .and_then(|timeout| self.started.checked_add(timeout));
         let grace = limits.grace.unwrap_or(default_grace);
         let cancel = command.get_cancel();
+        let watches = self.tree.watches();
         let mut poll = FIRST_POLL;
         let mut next_watchdog = self.started + WATCHDOG_INTERVAL;
         let mut reason = None;
@@ -327,18 +421,21 @@ impl Running {
                 reason = Some(StopReason::Cancelled);
             } else if deadline.is_some_and(|deadline| now >= deadline) {
                 reason = Some(StopReason::Timeout);
-            } else if let Some(max) = limits.processes
-                && now >= next_watchdog
-            {
+            } else if watches && now >= next_watchdog {
                 next_watchdog = now + WATCHDOG_INTERVAL;
-                let max = usize::try_from(max).unwrap_or(usize::MAX);
-                if self.tree.process_count().is_some_and(|count| count > max) {
-                    reason = Some(StopReason::Processes);
-                }
+                reason = self.tree.watchdog().map(StopReason::from);
             }
-            if reason.is_some() {
-                self.stop_tree(grace)?;
-                break;
+            match reason {
+                // A limit is a hard stop: no grace period.
+                Some(StopReason::Processes | StopReason::Memory) => {
+                    self.tree.kill();
+                    break;
+                }
+                Some(StopReason::Timeout | StopReason::Cancelled) => {
+                    self.stop_tree(grace)?;
+                    break;
+                }
+                None => {}
             }
             let mut pause = poll;
             if let Some(deadline) = deadline {
@@ -349,20 +446,30 @@ impl Running {
         }
         // Anything the child left running goes too, before it is reaped.
         self.tree.after_exit();
-        let status = self.child.wait().map_err(|source| ProcessError::Wait {
+        let status = self.process.wait().map_err(|source| ProcessError::Wait {
             program: self.program.clone(),
             source,
         })?;
         let ended = ended.unwrap_or_else(Instant::now);
+        // The first reason wins: a run stopped for another reason is not
+        // also reported as over a limit. A run that ended by itself may
+        // still have hit one (the system refused it memory or a process).
+        let (too_many_processes, out_of_memory) = match reason {
+            Some(reason) => (reason == StopReason::Processes, reason == StopReason::Memory),
+            None if self.tree.out_of_memory(!status.success()) => (false, true),
+            None => (self.tree.process_limit_hit(), false),
+        };
         Ok(Supervised {
-            status: ExitStatus::from_std(status),
+            status,
             duration: ended.saturating_duration_since(self.started),
             reason,
+            too_many_processes,
+            out_of_memory,
         })
     }
 
     fn exited(&mut self) -> Result<bool, ProcessError> {
-        platform::has_exited(&mut self.child).map_err(|source| ProcessError::Wait {
+        self.process.has_exited().map_err(|source| ProcessError::Wait {
             program: self.program.clone(),
             source,
         })

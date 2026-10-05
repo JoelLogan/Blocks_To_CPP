@@ -14,8 +14,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use b2c_process::{
-    CancelToken, Captured, Command, ContainmentLevel, Crash, ExitStatus, IoMode, Limits, ProcessError,
-    PtyChild, PtyExit, PtySize, Stdin, run_captured, spawn_piped, spawn_pty,
+    CancelToken, Captured, Command, Containment, ContainmentLevel, Crash, ExitStatus, IoMode, Limits,
+    ProcessError, PtyChild, PtyExit, PtySize, Stdin, containment_level, run_captured, spawn_piped, spawn_pty,
 };
 
 const SIZE: PtySize = PtySize { cols: 100, rows: 30 };
@@ -161,7 +161,10 @@ fn kill_pid(pid: i32) {
 fn the_program_sees_a_terminal() {
     let mut child = spawn_pty(&sh("test -t 0 && test -t 1 && test -t 2 && echo is-a-tty"), SIZE).unwrap();
     assert_eq!(child.mode(), IoMode::Pty);
-    assert_eq!(child.containment(), ContainmentLevel::ProcessGroupOnly);
+    // The level this system offers: a cgroup scope where the user's
+    // service manager gives one (CI's test-cgroup job), else the group.
+    assert_eq!(child.containment(), containment_level());
+    assert_ne!(child.containment(), ContainmentLevel::JobObject);
     let output = Collector::start(&mut child);
     assert!(output.finish().contains("is-a-tty\r\n"), "{:?}", output.text());
     let exit = child.wait().unwrap();
@@ -514,13 +517,14 @@ fn an_escaped_process_cannot_hold_the_output_open() {
     // The shell waits until the background process has left its session
     // (field 6 of its stat line, the session ID, is its own PID); otherwise
     // the group cleanup at the shell's exit could kill it first.
-    let mut child = spawn_pty(
-        &sh("/usr/bin/setsid /bin/sleep 30 & p=$!; \
-             while [ \"$(cut -d' ' -f6 /proc/$p/stat)\" != \"$p\" ]; do sleep 0.01; done; \
-             echo \"escaped $p\""),
-        SIZE,
-    )
-    .unwrap();
+    // Only without a cgroup scope can a process escape the session (a
+    // scope kills it when the program exits; tests/containment.rs).
+    let mut command = sh("/usr/bin/setsid /bin/sleep 30 & p=$!; \
+                          while [ \"$(cut -d' ' -f6 /proc/$p/stat)\" != \"$p\" ]; do sleep 0.01; done; \
+                          echo \"escaped $p\"");
+    command.containment(Containment::ProcessGroupOnly);
+    let mut child = spawn_pty(&command, SIZE).unwrap();
+    assert_eq!(child.containment(), ContainmentLevel::ProcessGroupOnly);
     let output = Collector::start(&mut child);
     let exit = child.wait().unwrap();
     assert!(exit.status.success());

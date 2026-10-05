@@ -186,9 +186,66 @@ jobs:
       - name: Show the compilers Blocks2Cpp finds
         run: cargo run --locked --quiet -p b2c-cli -- toolchains || true
 
+      # b2c-process too: the containers have no systemd, so its containment
+      # tests exercise the fallback (process group, RLIMIT_AS, RSS watchdog).
       - name: Test
-        run: cargo test --locked --no-fail-fast -p b2c-lang -p b2c-codegen -p b2c-build -p b2c-cli
+        run: cargo test --locked --no-fail-fast -p b2c-process -p b2c-lang -p b2c-codegen -p b2c-build -p b2c-cli
         env:
+          B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
+
+  # Linux cgroup v2 containment (docs/spec/07-toolchain-build-run.md §7.5.2,
+  # §7.6.2; ADR-0008). Lingering starts a user systemd instance for the
+  # runner's user, so captured runs and sessions go through
+  # `systemd-run --user --scope`. B2C_REQUIRE_CGROUP makes the cgroup tests
+  # fail rather than skip; every other job exercises the fallback, where they
+  # are skipped with a logged reason.
+  test-cgroup:
+    name: Test with cgroup v2 scopes (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read # check out the repository
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show g++ version
+        run: g++ --version
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      # Waits up to 60 s for user@<uid>.service and its bus; the next step
+      # fails clearly if they never come up.
+      - name: Start the user's service manager
+        run: |
+          sudo loginctl enable-linger "$USER"
+          uid="$(id -u)"
+          runtime="/run/user/${uid}"
+          for _ in $(seq 1 60); do
+            if systemctl is-active --quiet "user@${uid}.service" && [ -S "${runtime}/bus" ]; then
+              break
+            fi
+            sleep 1
+          done
+          systemctl status "user@${uid}.service" --no-pager || true
+          echo "XDG_RUNTIME_DIR=${runtime}" >> "$GITHUB_ENV"
+
+      # Informational: which controllers the manager delegates (without
+      # `memory` and `pids` the limits fall back to the watchdogs inside the
+      # scope), and a trial scope like the one detection runs.
+      - name: Show the scopes the user's manager creates
+        run: |
+          uid="$(id -u)"
+          cat "/sys/fs/cgroup/user.slice/user-${uid}.slice/user@${uid}.service/cgroup.controllers" || true
+          systemd-run --user --scope --quiet --collect -- /bin/cat /proc/self/cgroup
+
+      - name: Test
+        run: cargo test --locked --no-fail-fast -p b2c-process -p b2c-build
+        env:
+          B2C_REQUIRE_CGROUP: "1" # fail, rather than skip, the cgroup tests
           B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
 
   # Line coverage of the Rust code (docs/spec/09-quality-and-delivery.md §9.2):
