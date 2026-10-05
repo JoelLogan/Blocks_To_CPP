@@ -31,6 +31,9 @@ beforeAll(() => {
       matches: false,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
+      // xterm.js 5.5 (the console, shown while a project is open) uses the older listener API.
+      addListener: () => undefined,
+      removeListener: () => undefined,
     }) as unknown as MediaQueryList;
   vi.stubGlobal(
     'ResizeObserver',
