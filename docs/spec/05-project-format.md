@@ -1,11 +1,11 @@
 # 5. Project Format and Persistence
 
-> Status: **Draft v0.1** · Related ADR: [0004](../adr/0004-project-format.md), [0005](../adr/0005-no-compiler-flags-in-projects.md)
+> Status: **Draft v0.1** · Related ADRs: [0004](../adr/0004-project-format.md), [0005](../adr/0005-no-compiler-flags-in-projects.md), [0007](../adr/0007-backend-crates-and-ipc-contract.md), [0011](../adr/0011-loose-blocks-in-m2.md)
 
 ## 5.1 Requirements
 
 | # | Requirement |
-|---|-------------|
+| --- | ------------- |
 | F1 | Human-readable, diff- and merge-friendly (projects live happily in git) |
 | F2 | **Editor-independent.** Not Blockly's serialisation, so we can upgrade or replace Blockly without breaking files. |
 | F3 | Versioned with forward migrations. Newer-format files are refused with a clear message, never half-loaded. |
@@ -130,10 +130,12 @@ escaped by the emitter), which become `-D` arguments built by the backend.
 ```
 
 | Key | Meaning |
-|-----|---------|
+| ----- | --------- |
 | `id` | Unique within the project. `[A-Za-z0-9_]{1,32}`, generated as a random 96-bit base62 string with a type prefix. |
 | `type`, `v` | Catalog block ID and version. Unknown type → load error naming the missing pack. Older `v` → migration. |
 | `x`, `y` | Present only on top-level blocks (integers, clamped to ±10⁷). |
+| `collapsed`, `disabled` | Written only when `true`. `disabled` means the user disabled the block (Blockly's *manually disabled* reason); Blockly's other reasons for disabling a block are never saved. |
+| `stack` | Only on a top-level *statement* block: the statement blocks attached below it on the canvas, in order (see *Loose blocks* below). |
 | `fields` | Field values: strings, numbers, booleans or symbol declarations (`{"sym": "sym_x", "name": "score"}`). Each value is validated against the catalog field kind. |
 | `inputs` | Value inputs: either `{"block": …}` (a nested reporter) or `{"expr": [tokens]}` (an expression slot, [03 §3.4](03-block-language.md#34-expression-slots)). An absent input means the catalog default (shadow). |
 | `statements` | Statement inputs as **arrays** of blocks. |
@@ -145,6 +147,34 @@ function becomes JSON nested 500 levels deep. That breaks recursion-limited
 parsers and invites stack-exhaustion attacks. Arrays keep nesting depth equal
 to the **logical** nesting of the program (if-in-loop-in-function), which is
 small and bounded.
+
+**Loose blocks.** The editor saves whatever is on the canvas, including blocks
+that are not inside the program or a function
+([ADR-0011](../adr/0011-loose-blocks-in-m2.md)):
+
+* A loose block is an ordinary top-level block with `x` and `y`. Catalog
+  resolution reports a top-level statement, reporter or predicate as
+  `B2C-E0604` (*block in the wrong place*), an error, so the project cannot be
+  built until the block is moved into the program or a function, or deleted.
+  The analyser treats loose blocks as outside the program: they are not
+  lowered, declare no symbols and generate no code.
+* A **loose stack** of statements is saved intact: its first block is the
+  top-level block, and `"stack": [ … ]` holds the statement blocks attached
+  below it, in order. Stack elements are ordinary block nodes without `x`,
+  `y` or a `stack` of their own; blocks nested in their inputs follow the
+  normal rules. A stack element's depth is its head's depth, and stacked
+  blocks count toward every limit of §5.6.
+* `stack` on a nested block or on a stack element is a load error, and so is
+  an empty `stack` (it is never written, so the canonical form has one
+  spelling). `stack` on a block whose catalog shape is not *statement* is an
+  error found when the blocks are checked against the catalog (stage ② of
+  [06 §6.3](06-compiler-pipeline.md#63-stage--resolve-catalog)), because the
+  loader does not know block shapes.
+* A loose stack is reported once, as `E0604` on its head block; the stacked
+  blocks are checked against the catalog like any other block but get no
+  placement error of their own.
+* `stack` is content: it is part of the canonical serialisation and of the
+  project hash (§5.11).
 
 ## 5.5 Symbols
 
@@ -160,7 +190,7 @@ Enforced in `b2c-model` **before** any other processing, on files, clipboard
 pastes and IPC payloads alike:
 
 | Limit | Default | Rationale |
-|-------|---------|-----------|
+| ------- | --------- | ----------- |
 | File / payload size | 32 MiB | Typical projects are < 1 MiB |
 | JSON nesting depth | 128 | Logical program nesting rarely exceeds 20 |
 | Total blocks | 100,000 | Far above the 5,000-block performance target |
@@ -208,7 +238,7 @@ Further rules:
 ## 5.8 What is deliberately **not** stored in a project
 
 | Not stored | Stored instead | Why |
-|------------|----------------|-----|
+| ------------ | ---------------- | ----- |
 | Compiler path, flags, `-I`/`-L` paths | Machine settings, library profiles | Project files can come from anyone; flags like `-fplugin`, `-B` and `-wrapper` execute code ([08 §8.5](08-security.md#85-compiler-invocation-safety)). |
 | Trust decisions | Trust store (machine-local) | A file must not be able to vouch for itself. |
 | Absolute paths of any kind | — | Privacy and portability |
@@ -218,7 +248,7 @@ Further rules:
 ## 5.9 Machine-local data
 
 | File | Contents | Schema |
-|------|----------|--------|
+| ------ | ---------- | -------- |
 | `settings.json` | UI preferences, code style, default standard, selected toolchain ID, lint levels for every project on this computer (same shape as `project.lints`, §5.3; they win over the project's), *advanced extra compiler flags* (still filtered, [08 §8.5](08-security.md#85-compiler-invocation-safety)), environment pass-through list | Versioned JSON, validated on load. Invalid values are reset to defaults with a notice. |
 | `toolchains.json` | Discovered and manually added toolchains, with probe results and fingerprints | Re-probed when a fingerprint changes |
 | `trust.json` | Trusted project records `{projectId, canonicalPath, rawCodeHashAtGrant, grantedAt}` and trusted folders | Validated on load; a corrupt file means "nothing is trusted". Other processes running as the same user are out of scope ([08 §8.1](08-security.md#81-scope-and-assumptions)). |
@@ -230,6 +260,91 @@ a notice, and the other entries are kept. A code in the right form that this
 version does not know is kept on save and ignored, as in the project file, so
 an older version never deletes levels that a newer one wrote.
 
+Where each file lives is in [02 §2.7](02-architecture.md#27-persistence-locations).
+Every file is JSON with a `format` tag and an integer `formatVersion`, is read
+with a size limit (at most *limit + 1* bytes, so an oversized file is rejected
+without being loaded), is validated strictly, and is written atomically
+(§5.10) with owner-only permissions. Only the backend reads or writes them;
+nothing in them ever comes from, or goes into, a project file. The shapes
+below are the M2 versions (`libraries.json` comes with library profiles in
+M4).
+
+**`settings.json`** (read limit 1 MiB):
+
+```json
+{
+  "format": "blocks2cpp/settings",
+  "formatVersion": 1,
+  "codeStyle": { "indentWidth": 4 },
+  "run": { "onErrors": "disableRun" },
+  "console": { "scrollbackLines": 10000 },
+  "toolchain": { "selectedId": null },
+  "newProject": { "standard": "c++20" },
+  "buildCache": { "maxBytes": 2147483648 }
+}
+```
+
+| Key | Values | Default |
+| --- | --- | --- |
+| `codeStyle.indentWidth` | `2` or `4` | `4` |
+| `run.onErrors` | `disableRun` or `showProblems` ([04 §4.4](04-user-interface.md#44-diagnostics-ux)) | `disableRun` |
+| `console.scrollbackLines` | 1,000–100,000 | 10,000 |
+| `toolchain.selectedId` | `null` or a toolchain ID (`tc_` + 16 hex digits) | `null` |
+| `newProject.standard` | `c++17`, `c++20`, `c++23` or `c++26` | `c++20` |
+| `buildCache.maxBytes` | 256 MiB to 1 TiB | 2 GiB |
+
+* A missing file means the defaults. A file that is not valid JSON means the
+  defaults with a notice; the file is rewritten at the next change. A single
+  invalid value is reset to its default with a notice naming its key, and the
+  other values are kept.
+* Keys this version does not know are kept verbatim when the file is saved.
+  A file with a newer `formatVersion` is read for the keys this version knows,
+  with a notice, and its other keys are kept when it is saved.
+* `settings_get` returns the full settings with defaults filled in, plus the
+  notices (`{ key, reason }`, with `reason` one of `invalidValue`,
+  `corruptFile`, `newerVersion`). `settings_update` accepts only `codeStyle`,
+  `run` and `console`, each partial, and rejects any other key. Only
+  `toolchain_select` changes `toolchain.selectedId`. Updates are serialised
+  and return the full new settings.
+* The keys of later milestones, `lints` (M5) and the extra flags and
+  `envPassthrough` (M4, [10 §10.1](10-roadmap.md#101-milestones)), are kept
+  verbatim when present until then.
+
+**`toolchains.json`** (read limit 4 MiB): `{ format: "blocks2cpp/toolchains",
+formatVersion: 1, toolchains: [{ source, probe }] }`, where `source` is
+`discovered` or `manual` and `probe` is a probed toolchain (fingerprint,
+version, target, capabilities and problems,
+[07 §7.3](07-toolchain-build-run.md#73-capability-probing)). It is a cache:
+an unreadable file, or the bare array that M1 wrote, counts as empty, and
+discovery fills it again.
+
+**`trust.json`** (read limit 4 MiB):
+
+```json
+{
+  "format": "blocks2cpp/trust",
+  "formatVersion": 1,
+  "projects": [
+    { "projectId": "prj_4kq9Xb2LmT7pRz1s", "canonicalPath": "/home/ada/games/guess.b2c",
+      "rawCodeHashAtGrant": "<64 lower-case hex digits>", "grantedAt": "2026-10-05T09:30:00Z" }
+  ],
+  "folders": [ { "canonicalPath": "/home/ada/games", "grantedAt": "2026-10-05T09:31:00Z" } ]
+}
+```
+
+`rawCodeHashAtGrant` is the security hash of
+[08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode), and times
+are RFC 3339 in UTC. A missing, oversized or invalid file means nothing is
+trusted; the next grant writes a valid file. A path that is not valid Unicode
+cannot be recorded, so such a project cannot be trusted.
+
+**`recent.json`** (read limit 1 MiB): `{ format: "blocks2cpp/recent",
+formatVersion: 1, entries: [{ id, path, projectName, lastOpenedAt }] }`,
+newest first and at most 10. `id` is the `recentId` the UI uses
+(`rc_` + 32 hex digits); an entry keeps its ID when it moves to the front. The
+UI gets the name, a display form of the path and the time, never a path it
+could send back ([02 §2.5](02-architecture.md#25-ipc-surface)).
+
 ## 5.10 Saving and recovery
 
 * **Atomic save.** Serialise → write to a temporary file in the **same
@@ -237,14 +352,64 @@ an older version never deletes levels that a newer one wrote.
   rename over the target (`MoveFileExW(MOVEFILE_REPLACE_EXISTING |
   MOVEFILE_WRITE_THROUGH)` on Windows, `rename(2)` + directory `fsync` on
   Linux). A crash leaves either the old file or the new file, never a mix.
+  Projects, `settings.json`, `trust.json`, `recent.json`, `toolchains.json`,
+  recovery snapshots and build manifests are all written this way; the
+  temporary file is removed when anything fails.
 * Before overwriting, the previous version is kept as `<name>.b2c.bak`
-  (one generation, configurable).
+  (one generation, configurable). The `.bak` file is written through its own
+  temporary file and rename, so a link planted at the `.bak` path is replaced,
+  never followed. In M2 the number of generations is fixed at one.
+* **Save responses.** `project_save` returns `savedAt`, an RFC 3339 UTC
+  timestamp, and `hash`, the lower-case hex SHA-256 of the bytes written. That
+  hash becomes the baseline for detecting outside changes.
 * **Autosave** writes recovery snapshots to the recovery directory (never next
   to the project) every 30 s while dirty. Snapshots are deleted on a clean
   save or close.
 * **External change detection.** If the file changes on disk while open
   (detected by a file watcher and a hash check before save), the user chooses
   *Reload* or *Keep mine (save as…)*.
+
+**Recovery snapshots.** The recovery directory
+([02 §2.7](02-architecture.md#27-persistence-locations)) holds one folder per
+running app instance:
+
+```text
+<recovery>/
+├── <instanceId>.lock                 held exclusively by that instance while it runs
+└── <instanceId>/                     instanceId: 32 hex digits, new for each start
+    ├── <snapshotId>.b2c              the document, as the editor last sent it
+    └── <snapshotId>.json             metadata
+```
+
+* The metadata is `{ formatVersion: 1, projectId, projectName, hasPath,
+  boundPath, savedAt, appVersion, trustedAtWrite, securityHash }`: `boundPath`
+  is the project's file or `null` for a project never saved,
+  `trustedAtWrite` says whether the project was trusted when the snapshot was
+  written, and `securityHash` is its security hash
+  ([08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode)). It is
+  read with a 64 KiB limit, and the document with the project limit of §5.6.
+* Each project has one snapshot per instance (its `snapshotId`, `sn_` + 32 hex
+  digits, stays the same while it is open), replaced atomically with mode
+  `0600`. It is deleted when the project is saved cleanly or closed.
+* Several instances of the app may run at once. Each holds an exclusive lock
+  on its own `.lock` file, and only snapshots whose instance lock is free,
+  that is, of instances that have exited or crashed, are offered for restore.
+  Empty, unlocked instance folders are removed.
+* A restored snapshot opens as a project bound to its `boundPath` (or to no
+  path) and is trusted only under the rules of
+  [08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode).
+* Project content never goes into logs.
+
+**External changes.** For each open project with a file, the backend watches
+the file's parent folder. Events are debounced for 300 ms per project; then
+the file is hashed again (with the size limit), and only a SHA-256 that
+differs from the baseline counts as a change. A deleted or renamed file
+counts as changed (`deleted: true`), and then *Reload* is not available. The
+frontend is told through the `projectChangedOnDisk` app event
+([02 §2.5](02-architecture.md#25-ipc-surface)), once per change. The app's own
+saves update the baseline first, so they never notify. `project_save` checks
+the hash again before writing and refuses with `changedOnDisk` when it
+differs; M2 has no *overwrite anyway*.
 
 ## 5.11 Content hash
 
@@ -256,9 +421,14 @@ change the generated code. The hash is used for:
 * **Build-cache keys**, together with the toolchain fingerprint and resolved
   build options
 * **Run staleness checks**: Run uses the binary only if it matches the current
-  hash
-* **Trust**: a trusted project whose Raw C++ or library requirements change
-  *outside the app* is re-flagged ([08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode))
+  hash. The build records it in `build-manifest.json`
+  ([07 §7.5.1](07-toolchain-build-run.md#751-build-directory)), and the
+  `finished` build event reports it.
+
+Trust uses a narrower hash of its own, the **security hash** over Raw C++
+text, libraries, packs and defines only, so that ordinary edits never touch
+trust and a trusted project whose security-relevant content changes *outside
+the app* is re-flagged ([08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode)).
 
 ## 5.12 Clipboard format
 
@@ -272,10 +442,36 @@ and a custom `application/x-blocks2cpp+json` payload:
 ```
 
 `refs` records the qualified name and kind of each symbol that the copied
-blocks refer to but do not declare.
+blocks refer to but do not declare. `kind` is `variable`, `parameter`,
+`loopVariable` or `function`. Copied blocks have no `x` or `y`, and a copied
+stack of statements is one block with `stack` (§5.4).
 
 Pasting runs the **same validator and limits as file loading**. Pasted blocks
 get fresh IDs, and symbol references are re-resolved by qualified name in the
 target scope ([06 §6.14.11](06-compiler-pipeline.md#61411-names-typed-in-slots)).
 A paste that contains Raw C++ shows an inline notice: *"Pasted content
 includes Raw C++ – review before running."*
+
+**Transport and validation:**
+
+* The editor uses the webview's own `copy`, `cut` and `paste` events, writing
+  and reading `application/x-blocks2cpp+json` and `text/plain` through the
+  event's `DataTransfer`, with an in-memory copy as the fallback inside the
+  app. There is no clipboard plugin and no backend command.
+* The payload is made and checked by the WASM core: `clipboard_make` builds
+  it from the selected blocks (and cuts their C++ from the last preview,
+  whole blocks only, for `text/plain`), and `paste_prepare` loads it with
+  `b2c_model::load_clipboard`, which uses the same strict JSON parser, limits,
+  text rules and block decoder as `load`, with the same `B2C-E01xx` codes. A
+  payload whose `format` is not `blocks2cpp/clipboard` is refused
+  (`B2C-E0138`), and a newer `formatVersion` gives `B2C-E0108`.
+* Fresh block and symbol IDs come from a seeded generator in Rust
+  (`SeededIds`): the frontend passes 256 random bits from
+  `crypto.getRandomValues`, so the WASM core itself uses no randomness. IDs
+  already used in the document are skipped, and every reference to a symbol
+  declared inside the pasted blocks is rewritten to its new ID.
+* A reference to a symbol declared outside the pasted blocks is bound again by
+  qualified name and kind among the symbols in scope at the paste target
+  ([06 §6.14.11](06-compiler-pipeline.md#61411-names-typed-in-slots)). A
+  reference that finds no match stays a reference and gets `B2C-E0201`,
+  naming the original symbol.

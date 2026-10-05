@@ -1,10 +1,10 @@
 # 6. Translation Pipeline: Blocks → C++
 
-> Status: **Draft v0.1** · Crates: `b2c-ir` (shared types), `b2c-model`, `b2c-catalog`, `b2c-lang`, `b2c-codegen` · Related ADR: [0003](../adr/0003-rust-core-native-and-wasm.md)
+> Status: **Draft v0.1** · Crates: `b2c-ir` (shared types), `b2c-model`, `b2c-catalog`, `b2c-lang`, `b2c-codegen` · Related ADRs: [0003](../adr/0003-rust-core-native-and-wasm.md), [0010](../adr/0010-wasm-delivery-under-the-csp.md)
 
 ## 6.1 Overview
 
-```
+```text
  .b2c JSON / IPC payload / clipboard
         │
   ① Load & validate            b2c-model     limits, schema, UTF-8/text rules, migrations          → Document
@@ -25,6 +25,20 @@ randomness, and no global mutable state. The same code runs natively in the
 backend and CLI, and as WebAssembly in the editor. A stage that finds errors
 still produces output where it can, so the editor can always show as much C++
 as possible. Building, however, requires stages ①–⑤ to report zero errors.
+
+**The live preview is best-effort.** Once stage ① succeeds, the editor's
+preview (`b2c-core-wasm`) continues through catalog and analyser errors and
+always returns C++, with `/* error */` placeholders where a part could not be
+generated, and `buildable: false`. Only a load failure gives no files. The
+analyser must never panic on a document whose resolution failed; a test runs
+it on every file of the security suite that loads, and on the examples with a
+dangling reference added. The preview
+composes the stages exactly as the build does (`b2c_build::run_frontend`):
+the same generator options, with the workspace's app version, the banner, the
+inline helpers and the indent width from the settings. Two tests keep them
+equal: the preview's files must match the golden files of `tests/golden/`,
+and `b2c-app` compares the preview's files with the build's `gen/` files for
+every example at indent widths 2 and 4.
 
 **Core invariants:**
 
@@ -125,6 +139,40 @@ enum Expr {
 * Exposes a **scope query API** to the editor:
   `symbols_in_scope(block_id, input) -> Vec<SymbolInfo>`. It feeds variable
   dropdowns, Quick Insert and the member block.
+
+**Scope query.** `b2c_lang::Analysis` answers from an index recorded while
+lowering, from the same scope stack the analyser resolves names with, so a
+dropdown never offers a symbol the analyser would reject:
+
+* `symbols_in_scope(block, None)`, or with the name of a value input or
+  field, gives what is visible **at the block**: declarations before it in the
+  same and the enclosing statement lists, a loop's counter inside its body,
+  the parameters inside their function, and every function (definition order
+  never matters).
+* `symbols_in_scope(block, Some(statement input))` gives what is visible at
+  the **start of that statement list**, including the loop counter and
+  parameters that the block itself declares.
+* Declarations in disabled blocks are left out. An unknown block, or one
+  outside the SAST (a loose block), gives an empty list. The result is sorted
+  by name, then by ID.
+* `symbol_infos()` lists every symbol, and `block_types()` gives the static
+  type of each value block, which the editor's connection checker uses
+  together with `conversion(from, to)`, the analyser's own conversion rule
+  (`same`, `widening`, `narrowing`, `boolNumber` or `invalid`).
+
+`SymbolInfo` lives in `b2c-ir`, and its JSON is the same everywhere (WASM, IPC
+and tests):
+
+```json
+{ "id": "s_guess", "name": "guess", "kind": "variable", "isConst": false,
+  "type": "int", "module": "mod_main", "declBlock": "b003" }
+```
+
+`kind` is `variable` (with `isConst`), `parameter` (with `mode`: `copy`,
+`editable` or `read_only`), `loopVariable`, or `function` (with `params`, the
+parameter symbol IDs, and `returns`, a type). Types are `void`, `bool`,
+`char`, `int`, `double`, `string` or `error`. The WASM core answers scope
+queries from the analysis cached by its last preview.
 
 ## 6.6 Stage ⑤ Types, flow checks and lints
 
@@ -241,7 +289,7 @@ changes the generated code.
 `⚙`) goes into `module.hpp`:
 
 | Construct | `module.hpp` | `module.cpp` |
-|-----------|--------------|--------------|
+| ----------- | -------------- | -------------- |
 | Shared struct/class/enum/alias | full definition | out-of-line non-template method bodies |
 | Shared function | declaration | definition |
 | Shared template function / class | full definition | — |
@@ -379,7 +427,7 @@ statement (with its comment lines and nested bodies) and expression has one.
 
 *Export as C++ project* (UI and `b2c generate --export`) writes:
 
-```
+```text
 <chosen folder>/<project-slug>/
 ├── src/                 # generated .cpp / .hpp (no "do not edit" banner)
 ├── CMakeLists.txt       # cmake ≥ 3.20, CXX_STANDARD from project, warnings, link libs by name
@@ -412,7 +460,7 @@ pub struct Diagnostic {
 ```
 
 | Code range | Area |
-|------------|------|
+| ------------ | ------ |
 | `E01xx` | Loading / format / migration |
 | `E02xx`, `W05xx` | Names, scopes, lints |
 | `E03xx` | Types and conversions |
@@ -438,7 +486,20 @@ severity: `W0510` set to `error` is still `W0510`.
 * The WASM module (~1–2 MB, optimised with `wasm-opt -Oz`) is loaded once.
   Data crosses the JS ↔ WASM boundary as compact JSON. If profiling shows
   boundary costs dominate, it can switch to a binary format (`postcard`).
+* **Delivery under the CSP** ([ADR-0010](../adr/0010-wasm-delivery-under-the-csp.md)):
+  `connect-src` forbids fetching the `.wasm` file, so the build embeds the
+  optimised bytes as base64 in a separate JavaScript chunk that the app
+  imports lazily from `'self'`. The bytes are instantiated asynchronously
+  (`WebAssembly.instantiate` through wasm-bindgen's init), which
+  `'wasm-unsafe-eval'` allows; they are never fetched and never put in a
+  `data:` URL. After a WebAssembly trap the module is instantiated afresh.
+* **Size budget:** at most 2,000,000 bytes after `wasm-opt -Oz`, checked in
+  CI; the gzip size is reported only.
 * Modules over 2,000 blocks run analysis in a Web Worker.
+* **In M2** the analysis runs on the main thread, for the whole module on
+  each debounced change, behind an asynchronous API. The per-block cache and
+  the Web Worker come in M5, or earlier if the 1,000-block benchmark in the
+  webview misses the N4 target.
 
 ## 6.14 Standard names and `using namespace`
 
@@ -934,7 +995,7 @@ otherwise the reference is `E0201`, naming the original.
   block* in each affected function; turning it off without fixing them is
   allowed but shown as breaking the build. Changing the project's C++ standard
   is previewed the same way.
-* These previews ignore lint levels ([§6.6](#66-stage--types-flow-checks-and-lints)):
+* These previews ignore lint levels ([§6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints)):
   they list every `E0218` and `W0525` match, even when `W0525` is set to
   `off`.
 * Export writes exactly what the build compiles. When any exported `.cpp`
