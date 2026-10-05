@@ -53,12 +53,32 @@ examine_re = [
   '^crates/b2c-process/src/command\.rs:.*\bcheck_program\b',
 ]
 
-# Truly equivalent mutants (matched by name without the line and column, so
-# that edits elsewhere in the file do not break the match):
+# Truly equivalent mutants. Each is matched by name without the line and
+# column where the name is unique, so that edits elsewhere in the file do not
+# break the match. Where it is not, the line or column is part of the match;
+# then an edit that moves the code makes the equivalent mutant itself show up
+# as missed again (never a different one silently), and the number is updated.
 exclude_re = [
   # `NumLit::int`: `value < 0` and `value <= 0` differ only for 0, where both
   # branches write the literal "0".
   '^crates/b2c-ir/src/text\.rs:\d+:\d+: replace < with <= in NumLit::int$',
+  # `check_program` refuses `!is_exe || name.ends_with('.') || name.ends_with(' ')`.
+  # The mutant at the second `||` reads `!is_exe || (… && …)`, which differs
+  # only when the name is an `.exe` *and* ends with a dot or space. That
+  # cannot happen: `Path::extension` is the text after the last dot, so an
+  # `.exe` name always ends in `e` or `E`. (The other `||`, column 20, is
+  # tested.)
+  '^crates/b2c-process/src/command\.rs:\d+:43: replace \|\| with && in check_program$',
+  # `ExtraFlags::none` is defined as `Self::default()`.
+  '^crates/b2c-toolchain/src/flags\.rs:\d+:\d+: replace ExtraFlags::none -> Self with Default::default\(\)$',
+  # Windows-only code, which the weekly job's Linux runner does not compile or
+  # cannot reach, so the mutant changes nothing there. ci.yml's Windows test
+  # job runs the Windows tests of these functions.
+  # - `is_network_path` is `false` on every other platform already.
+  '^crates/b2c-toolchain/src/discovery\.rs:\d+:\d+: replace is_network_path -> bool with false$',
+  # - the `#[cfg(not(unix))]` `is_executable`, whose body is `true` (line 386;
+  #   the `#[cfg(unix)]` function of the same name, just above, is tested).
+  '^crates/b2c-toolchain/src/discovery\.rs:386:5: replace is_executable -> bool with false$',
 ]
 
 # The weekly job splits the mutants over several runners with `--shard k/n`.
