@@ -1,0 +1,72 @@
+/* The toolbar's main menu (MainMenu.tsx), in the app's colour tokens (app.css). */
+
+.main-menu {
+  position: relative;
+  flex: none;
+}
+
+.main-menu-button {
+  min-width: 32px;
+  justify-content: center;
+  padding: 3px 8px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.main-menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--b2c-border);
+  border-radius: 8px;
+  background: var(--b2c-surface-raised);
+  color: var(--b2c-text);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+}
+
+.main-menu-list:focus-visible {
+  outline: none;
+}
+
+.main-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.main-menu-item:hover,
+.main-menu-item:focus-visible {
+  background: var(--b2c-surface);
+}
+
+/* More specific than the toolbar's own focus colour, which is meant for its dark background. */
+.main-menu-list .main-menu-item:focus-visible {
+  outline: 2px solid var(--b2c-focus);
+  outline-offset: -2px;
+}
+
+.main-menu-shortcut {
+  color: var(--b2c-text-muted);
+  font-size: 12px;
+}
+
+.main-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--b2c-border);
+}
