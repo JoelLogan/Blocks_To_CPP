@@ -50,3 +50,4 @@ export * from './theme';
 export * from './generated/catalog';
 export * from './mutators';
 export * from './checker';
+export * from './icons';
