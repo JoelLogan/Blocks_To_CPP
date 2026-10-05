@@ -1,0 +1,38 @@
+[package]
+name = "b2c-app"
+description = "Blocks2Cpp backend services: one method per IPC command, with no Tauri dependency"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# Every dependency needs a justification (docs/spec/08-security.md §8.9). No new
+# third-party crate: everything below is already a workspace dependency.
+[dependencies]
+b2c-ir.workspace = true
+b2c-model.workspace = true
+# Build and run sessions, the toolchain registry, the build cache and the OS helpers.
+b2c-build.workspace = true
+# The host platform of a run's environment and the probe types of the toolchain registry.
+b2c-toolchain.workspace = true
+# Settings, recent projects, the trust store, Mark-of-the-Web and project file I/O.
+b2c-store.workspace = true
+# The IPC contract: requests, responses, events, IDs, errors and limits.
+b2c-ipc.workspace = true
+# Reading the `formatVersion` of an opened file (migrated projects).
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# One debug span per command, without content (docs/spec/08-security.md §8.11).
+tracing.workspace = true
+
+[dev-dependencies]
+# The generation-parity test: the editor preview's files equal the build's (01 P3).
+b2c-core-wasm.workspace = true
+proptest.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
