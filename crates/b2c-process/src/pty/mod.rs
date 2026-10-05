@@ -10,8 +10,9 @@
 //! * `session`: the platform-neutral supervisor thread (exit detection,
 //!   whole-tree cleanup, stop with a grace period, cancellation, timeout and
 //!   the process watchdog);
-//! * `unix`: `/dev/ptmx` terminals or pipes, and the `pre_exec` hook that
-//!   makes the program a session leader (`setsid`, `TIOCSCTTY`);
+//! * `unix`: `/dev/ptmx` terminals (in UTF-8 mode) or pipes, and the
+//!   `pre_exec` hook that gives the program default signal handling and
+//!   makes it a session leader (`setsid`, `TIOCSCTTY`);
 //! * `windows`: `ConPTY` or pipes, `CreateProcessW` with an attribute list,
 //!   and the Job Object assigned while the program is suspended;
 //! * `cmdline`: the pure Windows command-line quoting and environment block,
@@ -33,7 +34,7 @@ mod session;
 mod cmdline;
 
 #[cfg(unix)]
-#[allow(unsafe_code)] // `pre_exec` only; see the SAFETY comment there.
+#[allow(unsafe_code)] // `pre_exec` and the child's signal reset; see the SAFETY comments there.
 mod unix;
 #[cfg(unix)]
 use unix as platform;
@@ -175,7 +176,10 @@ impl Write for PtyWriter {
 ///   process group ID equals its process ID and the whole group is
 ///   signalled at once. In PTY mode the terminal is its controlling terminal,
 ///   so byte `0x03` written to it reaches the program as `SIGINT`, like
-///   Ctrl+C in a real terminal. A process that deliberately leaves the group
+///   Ctrl+C in a real terminal. The program starts with no signal blocked
+///   and with `SIGINT`, `SIGTERM` and the other signals a console program
+///   relies on at their default action, even when this process ignores them
+///   (as under `nohup`). A process that deliberately leaves the group
 ///   (`setsid`, a double fork) is out of reach:
 ///   [`ContainmentLevel::ProcessGroupOnly`].
 /// * **Windows:** the program is created suspended, put into a Job Object
@@ -190,7 +194,9 @@ impl Write for PtyWriter {
 ///
 /// In PTY mode the program sees a terminal on standard input, output and
 /// error (`isatty` is true) of the requested size; the terminal echoes input
-/// and ends output lines with `\r\n`, as any terminal does. In pipe mode
+/// and ends output lines with `\r\n`, as any terminal does, and on Linux it
+/// is in UTF-8 mode (`IUTF8`), so Backspace (`0x7f`) erases a whole UTF-8
+/// character from the line being typed. In pipe mode
 /// standard output and error are merged into the one reader.
 ///
 /// The reader blocks until output is available. After the program has
@@ -359,7 +365,9 @@ impl PtyChild {
 
     /// Stops the program's whole tree: `SIGTERM` to the process group, then
     /// `SIGKILL` after [`crate::Limits::grace`] (default
-    /// [`DEFAULT_INTERACTIVE_GRACE`], 2 s) for anything still running.
+    /// [`DEFAULT_INTERACTIVE_GRACE`], 2 s) for anything still running; a
+    /// grace too long to represent (such as [`Duration::MAX`]) never forces
+    /// the kill, which [`PtyChild::kill`] then does.
     /// Windows terminates the Job Object at once. Returns immediately; the
     /// exit is reported by [`PtyChild::wait`] with [`PtyExit::stopped`] set.
     /// Does nothing once the program has ended.

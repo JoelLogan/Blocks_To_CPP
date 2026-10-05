@@ -94,7 +94,9 @@ struct State {
     reason: Option<StopReason>,
     /// Whether the polite stop request (`SIGTERM`) has been sent.
     stopping: bool,
-    /// When the polite request turns into a forced kill.
+    /// When the polite request turns into a forced kill; `None` when no
+    /// kill is due (not stopping, already killed, or a grace period that
+    /// ends beyond what an [`Instant`] can represent).
     kill_at: Option<Instant>,
 }
 
@@ -126,7 +128,9 @@ pub(crate) struct Shared {
 
 impl Shared {
     /// The state of a program started at `started`, whose tree is `tree`.
-    /// `grace` is the time between the polite stop request and the kill.
+    /// `grace` is the time between the polite stop request and the kill;
+    /// one too long to represent (such as [`Duration::MAX`]) means the kill
+    /// never comes.
     pub(crate) fn new(tree: Tree, started: Instant, grace: Duration) -> Arc<Self> {
         Arc::new(Self {
             tree,
@@ -198,7 +202,11 @@ impl Shared {
     }
 
     /// Records `reason` (unless an earlier one exists) and sends the polite
-    /// stop request, once.
+    /// stop request, once. It runs on the caller's thread for
+    /// [`Shared::stop`] and on the supervisor thread for the token and the
+    /// timeout, so it must not panic: a grace period that ends beyond what
+    /// an [`Instant`] can represent means no forced kill, as an overflowing
+    /// timeout means no timeout.
     fn begin_stop(&self, state: &mut State, reason: StopReason, now: Instant) {
         state.reason.get_or_insert(reason);
         if state.stopping {
@@ -209,7 +217,7 @@ impl Shared {
             self.tree.kill();
         } else {
             self.tree.stop();
-            state.kill_at = Some(now + self.grace);
+            state.kill_at = now.checked_add(self.grace);
         }
     }
 }

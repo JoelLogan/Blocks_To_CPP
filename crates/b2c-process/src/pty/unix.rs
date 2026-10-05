@@ -2,14 +2,18 @@
 //! program leading a session of its own.
 //!
 //! The terminal is opened here (`posix_openpt`, `grantpt`, `unlockpt`, then
-//! the peer with `TIOCGPTPEER`, or by name on kernels before 4.13), sized
-//! with `TIOCSWINSZ`, and its slave side becomes the program's standard
-//! input, output and error. In the child, between `fork` and `exec`, the
-//! program calls `setsid` (a new session and process group, so `pgid ==
-//! pid`) and in PTY mode `TIOCSCTTY` (the terminal becomes its controlling
-//! terminal, so `0x03` is delivered as `SIGINT` to its foreground group).
-//! That hook is the only `unsafe` code here: `pre_exec` itself is unsafe
-//! because the closure runs in a forked copy of a multi-threaded process.
+//! the peer with `TIOCGPTPEER`, or by name on kernels before 4.13), put in
+//! UTF-8 mode (`IUTF8`, Linux), sized with `TIOCSWINSZ`, and its slave side
+//! becomes the program's standard input, output and error. In the child,
+//! between `fork` and `exec`, the program resets the signals a console
+//! program relies on to their default action and unblocks every signal (an
+//! ignored signal survives `exec`, and this process may have inherited
+//! ignored ones), then calls `setsid` (a new session and process group, so
+//! `pgid == pid`) and in PTY mode `TIOCSCTTY` (the terminal becomes its
+//! controlling terminal, so `0x03` is delivered as `SIGINT` to its
+//! foreground group). That hook is the only `unsafe` code here: `pre_exec`
+//! itself is unsafe because the closure runs in a forked copy of a
+//! multi-threaded process, and the signal calls go through `libc`.
 //!
 //! This process keeps only the master side (or its pipe ends), non-blocking
 //! and close-on-exec. Reads and writes wait in `poll`, so they can notice
@@ -19,9 +23,11 @@
 //! (the standard library's start-up code sets that).
 
 use std::io::{self, Read};
+use std::mem::MaybeUninit;
 use std::os::fd::OwnedFd;
 use std::os::unix::process::CommandExt as _;
 use std::process::{Child, Stdio};
+use std::ptr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -159,8 +165,31 @@ fn open_terminal(size: PtySize) -> io::Result<(OwnedFd, OwnedFd)> {
     unlockpt(&master)?;
     let slave = open_slave(&master)?;
     set_cloexec(&slave)?;
+    set_utf8(&slave)?;
     tcsetwinsize(&master, winsize(size))?;
     Ok((master, slave))
+}
+
+/// Puts the terminal in UTF-8 mode (`IUTF8`), as terminal emulators do: the
+/// console sends UTF-8, and in canonical mode the line discipline then
+/// erases a whole character on Backspace (`VERASE`), not only its last byte,
+/// which would leave a broken UTF-8 sequence in the line the program reads.
+/// The kernel's default terminal settings leave it off.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn set_utf8(slave: &OwnedFd) -> io::Result<()> {
+    use rustix::termios::{InputModes, OptionalActions, tcgetattr, tcsetattr};
+    let mut termios = tcgetattr(slave)?;
+    termios.input_modes |= InputModes::IUTF8;
+    tcsetattr(slave, OptionalActions::Now, &termios)?;
+    Ok(())
+}
+
+/// Other systems' line disciplines have no UTF-8 mode, or are not
+/// supported (`docs/spec/01-overview.md`, N1).
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+#[allow(clippy::unnecessary_wraps)] // same signature as the Linux version
+fn set_utf8(_slave: &OwnedFd) -> io::Result<()> {
+    Ok(())
 }
 
 /// The systems that open terminals close-on-exec atomically.
@@ -249,10 +278,12 @@ fn winsize(size: PtySize) -> Winsize {
 }
 
 /// Makes the child lead a new session (and so a new process group) before
-/// it runs the program; with `controlling_terminal`, its standard input (the
+/// it runs the program, with default signal handling (see
+/// [`reset_signals`]); with `controlling_terminal`, its standard input (the
 /// terminal's slave side) becomes its controlling terminal.
 fn new_session(command: &mut std::process::Command, controlling_terminal: bool) {
     let setup = move || -> io::Result<()> {
+        reset_signals()?;
         rustix::process::setsid().map_err(os_error)?;
         if controlling_terminal {
             rustix::process::ioctl_tiocsctty(rustix::stdio::stdin()).map_err(os_error)?;
@@ -260,18 +291,72 @@ fn new_session(command: &mut std::process::Command, controlling_terminal: bool) 
         Ok(())
     };
     // SAFETY: the closure runs in the child between `fork` and `exec`, where
-    // only async-signal-safe operations are allowed. It makes two system
-    // calls (`setsid`, and `ioctl(0, TIOCSCTTY, 0)`) through rustix, which
-    // issues them directly without locks or allocation; it captures only a
-    // `bool`, touches no shared state, and builds its error with
-    // `io::Error::from_raw_os_error`, which does not allocate. Standard
-    // input is already the terminal's slave side at that point (std
-    // redirects the standard descriptors before running the closure), and
-    // the child is not a process group leader (no `process_group` is set),
-    // so `setsid` succeeds.
+    // only async-signal-safe operations are allowed. It calls `signal`,
+    // `sigemptyset` and `pthread_sigmask` (all on the POSIX list of
+    // async-signal-safe functions; see `reset_signals`), then makes two
+    // system calls (`setsid`, and `ioctl(0, TIOCSCTTY, 0)`) through rustix,
+    // which issues them directly without locks or allocation. It captures
+    // only a `bool`, touches no shared state, and builds its errors with
+    // `io::Error::from_raw_os_error` or `io::Error::last_os_error`, neither
+    // of which allocates. Standard input is already the terminal's slave
+    // side at that point (std redirects the standard descriptors before
+    // running the closure), and the child is not a process group leader (no
+    // `process_group` is set), so `setsid` succeeds.
     unsafe {
         command.pre_exec(setup);
     }
+}
+
+/// The signals a console program relies on finding at their default
+/// action: the terminal's (`SIGINT` for Ctrl+C, `SIGQUIT`, `SIGHUP` and the
+/// job-control stops), Stop's `SIGTERM`, `SIGPIPE`, `SIGALRM`, and
+/// `SIGCHLD` (ignoring it breaks the program's own `wait`). A process
+/// started by `nohup`, or as a background job of a non-interactive shell
+/// (`app &` in a script), has some of them ignored, and an ignored signal
+/// survives `fork` and `exec`: without the reset, Ctrl+C would do nothing
+/// and Stop would always wait for the forced kill.
+const DEFAULT_SIGNALS: [libc::c_int; 10] = [
+    libc::SIGHUP,
+    libc::SIGINT,
+    libc::SIGQUIT,
+    libc::SIGTERM,
+    libc::SIGPIPE,
+    libc::SIGALRM,
+    libc::SIGCHLD,
+    libc::SIGTSTP,
+    libc::SIGTTIN,
+    libc::SIGTTOU,
+];
+
+/// Gives the program default signal handling, as a terminal emulator does:
+/// [`DEFAULT_SIGNALS`] at their default action and no signal blocked (the
+/// standard library also empties the mask today, but only as a detail of
+/// its own). Only for the child between `fork` and `exec`: in this process
+/// it would undo the app's own signal settings.
+fn reset_signals() -> io::Result<()> {
+    for signal in DEFAULT_SIGNALS {
+        // SAFETY: `signal` is async-signal-safe (POSIX), and every entry of
+        // `DEFAULT_SIGNALS` is a valid signal whose action may be changed;
+        // `SIG_DFL` installs no handler.
+        if unsafe { libc::signal(signal, libc::SIG_DFL) } == libc::SIG_ERR {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    let mut none = MaybeUninit::<libc::sigset_t>::uninit();
+    // SAFETY: `sigemptyset` initialises the set `none` points to (it cannot
+    // fail for a valid pointer), and `pthread_sigmask` then reads it; the
+    // old mask is not wanted, so that pointer is null. Both functions are
+    // async-signal-safe (POSIX), and the forked child has a single thread,
+    // so its mask is the whole process's.
+    let error = unsafe {
+        libc::sigemptyset(none.as_mut_ptr());
+        libc::pthread_sigmask(libc::SIG_SETMASK, none.as_ptr(), ptr::null_mut())
+    };
+    // `pthread_sigmask` returns the error number rather than setting errno.
+    if error != 0 {
+        return Err(io::Error::from_raw_os_error(error));
+    }
+    Ok(())
 }
 
 /// An error number as an `io::Error`, without allocating (safe after

@@ -1,7 +1,7 @@
 //! Sessions on Windows (run on the windows-2025 runner in CI; `ConPTY` works
 //! headless there): an echo round trip through the pseudo console, resizing,
-//! Ctrl+C, the Job Object on stop and on drop, the explicit handle list of
-//! pipe mode, and complete output.
+//! Ctrl+C, the Job Object on stop and on drop, the explicit handle list and
+//! input of pipe mode, and complete output.
 #![cfg(windows)]
 // Helper functions outside `#[test]`s fail the test by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -315,15 +315,29 @@ fn exit_codes_and_stop_are_reported() {
 
 #[test]
 fn pipe_mode_delivers_input() {
-    let mut child = spawn_piped(&system_program("findstr.exe", &["x"])).unwrap();
+    // The program must answer while it runs: a session cannot end its input
+    // yet (that comes with M3), so a program that only writes at the end of
+    // its input would never answer. findstr, for example, buffers its output
+    // when it goes to a pipe. cmd.exe does no such buffering: `set /p` reads
+    // one line from standard input and `echo` writes the answer straight to
+    // the pipe, then cmd exits. The builder quotes the script as one argument
+    // without escapes, `"set /p line=& echo got !line!"`, and since `&`
+    // stands between its two quotes, cmd /c drops just those two quotes and
+    // runs the text as written (the same script as the pseudo-console test
+    // above; see also the command-line unit tests).
+    let mut child = spawn_piped(&system_program(
+        "cmd.exe",
+        &["/d", "/v:on", "/c", "set /p line=& echo got !line!"],
+    ))
+    .unwrap();
+    assert_eq!(child.mode(), IoMode::Pipes);
+    // The line waits in the pipe until `set /p` reads it.
+    child.writer().write_all(b"hello\r\n").unwrap();
     let output = Collector::start(&mut child);
-    child
-        .writer()
-        .write_all(b"one\r\nx marks the spot\r\nthree\r\n")
-        .unwrap();
-    output.wait_for("x marks the spot");
-    child.stop();
-    wait_within(&mut child, PATIENCE);
+    output.wait_for("got hello");
+    let exit = wait_within(&mut child, PATIENCE);
+    assert_eq!(exit.status, ExitStatus::Exited(0));
+    assert!(!exit.stopped);
     output.finish();
 }
 

@@ -17,6 +17,10 @@ thiserror.workspace = true
 # session reader and writer (`event`); see src/pty/unix.rs. `fs` gives the
 # open flags of os::open_read_nonblocking (src/os/unix.rs).
 rustix = { workspace = true, features = ["event", "fs", "pty", "stdio", "termios"] }
+# `signal` and `pthread_sigmask`, to give a session's program default signal
+# handling between fork and exec (src/pty/unix.rs); rustix has no
+# signal-action API.
+libc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # The workspace features plus Toolhelp, used to resume the main thread of a

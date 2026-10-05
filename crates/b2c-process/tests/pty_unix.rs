@@ -14,8 +14,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use b2c_process::{
-    CancelToken, Command, ContainmentLevel, Crash, ExitStatus, IoMode, Limits, ProcessError, PtyChild,
-    PtyExit, PtySize, Stdin, spawn_piped, spawn_pty,
+    CancelToken, Captured, Command, ContainmentLevel, Crash, ExitStatus, IoMode, Limits, ProcessError,
+    PtyChild, PtyExit, PtySize, Stdin, run_captured, spawn_piped, spawn_pty,
 };
 
 const SIZE: PtySize = PtySize { cols: 100, rows: 30 };
@@ -222,6 +222,128 @@ fn ctrl_c_interrupts_the_program() {
     assert_eq!(exit.status.describe(), "Stopped by Ctrl+C (SIGINT).");
     assert!(!exit.stopped);
     output.finish();
+}
+
+/// The signals a session resets to their default action in the program.
+#[cfg(target_os = "linux")]
+const RESET_SIGNALS: [rustix::process::Signal; 10] = {
+    use rustix::process::Signal;
+    [
+        Signal::HUP,
+        Signal::INT,
+        Signal::QUIT,
+        Signal::PIPE,
+        Signal::ALARM,
+        Signal::TERM,
+        Signal::CHILD,
+        Signal::TSTP,
+        Signal::TTIN,
+        Signal::TTOU,
+    ]
+};
+
+/// The signal set on the line `field:` of a `/proc/<pid>/status` text (bit
+/// `n - 1` stands for signal `n`).
+#[cfg(target_os = "linux")]
+fn signal_set(status: &str, field: &str) -> u64 {
+    let line = status
+        .lines()
+        .find_map(|line| line.strip_prefix(field)?.strip_prefix(':'))
+        .unwrap_or_else(|| panic!("no {field} line in {status:?}"));
+    u64::from_str_radix(line.trim(), 16).unwrap()
+}
+
+/// The bits of `signals` in a `/proc/<pid>/status` signal set.
+#[cfg(target_os = "linux")]
+fn bits(signals: &[rustix::process::Signal]) -> u64 {
+    signals
+        .iter()
+        .map(|signal| 1_u64 << (signal.as_raw() - 1))
+        .fold(0, |set, bit| set | bit)
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn programs_start_with_default_signals() {
+    // The program reads its own status: nothing blocked, and none of the
+    // signals a console program relies on ignored, whatever this process
+    // inherited (see the next test).
+    let mut command = Command::new("/bin/cat", std::env::temp_dir()).unwrap();
+    command.arg("/proc/self/status");
+    let mut child = spawn_pty(&command, SIZE).unwrap();
+    let output = Collector::start(&mut child);
+    let status = output.finish();
+    assert!(child.wait().unwrap().status.success());
+    assert_eq!(signal_set(&status, "SigBlk"), 0, "{status}");
+    assert_eq!(
+        signal_set(&status, "SigIgn") & bits(&RESET_SIGNALS),
+        0,
+        "{status}"
+    );
+}
+
+/// Runs `script` with `sh -c` in this process's environment, with SIGINT,
+/// SIGQUIT, SIGHUP and SIGTERM ignored; `$0` is this test binary and `$@`
+/// is `args`.
+fn with_signals_ignored(script: &str, args: &[&str]) -> Captured {
+    let mut command = Command::new("/bin/sh", std::env::temp_dir()).unwrap();
+    command
+        .args(["-c", &format!("trap '' INT QUIT HUP TERM; {script}")])
+        .arg(std::env::current_exe().unwrap())
+        .args(args)
+        .envs(std::env::vars_os())
+        .timeout(PATIENCE * 3);
+    let captured = run_captured(&command).unwrap();
+    assert!(!captured.timed_out, "{script} timed out");
+    captured
+}
+
+/// An ignored signal survives `exec`, so the app can start with SIGINT and
+/// SIGQUIT ignored (a background job of a non-interactive shell, as in
+/// `app &` from a script) or SIGHUP ignored (`nohup`). Its programs must
+/// not inherit that, or Ctrl+C would do nothing: this runs the Ctrl+C test
+/// (on Linux also the test above) again in a copy of this test binary that
+/// ignores SIGINT, SIGQUIT, SIGHUP and SIGTERM.
+#[test]
+fn ctrl_c_works_even_when_this_process_ignores_sigint() {
+    let mut tests = vec!["ctrl_c_interrupts_the_program"];
+    #[cfg(target_os = "linux")]
+    {
+        use rustix::process::Signal;
+        tests.push("programs_start_with_default_signals");
+        // The premise: a program started that way has them ignored.
+        let premise = with_signals_ignored("exec /bin/cat /proc/self/status", &[]);
+        let status = String::from_utf8_lossy(&premise.stdout);
+        let expected = bits(&[Signal::INT, Signal::QUIT, Signal::HUP, Signal::TERM]);
+        assert_eq!(signal_set(&status, "SigIgn") & expected, expected, "{status}");
+    }
+    let rerun = with_signals_ignored("exec \"$0\" --exact --test-threads=1 \"$@\"", &tests);
+    let report = String::from_utf8_lossy(&rerun.stdout);
+    assert!(
+        rerun.status.success(),
+        "{report}\n{}",
+        String::from_utf8_lossy(&rerun.stderr)
+    );
+    // The filters matched: the tests did run.
+    assert!(
+        report.contains(&format!("test result: ok. {} passed", tests.len())),
+        "{report}"
+    );
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[test]
+fn backspace_erases_a_whole_utf8_character() {
+    // The console sends UTF-8, and 0x7f for Backspace. Like a terminal
+    // emulator, the session's terminal is in UTF-8 mode (IUTF8), so the line
+    // discipline erases both bytes of `é`, not just the last one (which
+    // would leave a lone 0xC3 in the line the program reads).
+    let mut child = spawn_pty(&sh("read line; printf %s \"$line\" | od -An -tx1"), SIZE).unwrap();
+    let output = Collector::start(&mut child);
+    child.writer().write_all("a\u{e9}\x7f\r".as_bytes()).unwrap();
+    let text = output.finish();
+    assert!(child.wait().unwrap().status.success());
+    assert!(text.ends_with(" 61\r\n"), "{text:?}");
 }
 
 #[test]
@@ -515,6 +637,42 @@ fn the_timeout_stops_the_session() {
     assert!(exit.timed_out);
     assert!(!exit.stopped);
     assert!(exit.duration >= Duration::from_millis(250), "{:?}", exit.duration);
+    output.finish();
+}
+
+#[test]
+fn a_grace_period_too_long_to_reach_never_forces_the_kill() {
+    let limits = Limits {
+        grace: Some(Duration::MAX),
+        ..Limits::default()
+    };
+    // Stopped by the supervisor thread (the cancel token): SIGTERM ends a
+    // cooperative program, and the session reports it.
+    let token = CancelToken::new();
+    let mut command = sh("sleep 600");
+    command.limits(limits.clone()).cancel_token(&token);
+    let mut child = spawn_pty(&command, SIZE).unwrap();
+    let output = Collector::start(&mut child);
+    token.cancel();
+    let exit = wait_within(&mut child, PATIENCE);
+    assert!(exit.stopped);
+    assert_eq!(exit.status, ExitStatus::Signaled(15));
+    output.finish();
+
+    // Stopped by the caller: a program that ignores SIGTERM keeps running,
+    // as the forced kill would come after the end of time; kill() ends it.
+    let mut command = sh("trap '' TERM; echo ready; sleep 600");
+    command.limits(limits);
+    let mut child = spawn_pty(&command, SIZE).unwrap();
+    let output = Collector::start(&mut child);
+    output.wait_for("ready\r\n");
+    child.stop();
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(child.try_wait().unwrap(), None);
+    child.kill();
+    let exit = wait_within(&mut child, PATIENCE);
+    assert!(exit.stopped);
+    assert_eq!(exit.status, ExitStatus::Signaled(9));
     output.finish();
 }
 
