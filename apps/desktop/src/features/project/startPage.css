@@ -1,0 +1,195 @@
+/*
+ * The start page (docs/spec/04-user-interface.md §4.10), in the app's colour tokens (app.css).
+ * Targets are at least 24×24 px and focus stays visible (§4.8).
+ */
+
+.start-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+
+.start-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.start-title {
+  margin: 0;
+  font-size: 24px;
+}
+
+.start-intro {
+  margin: 0;
+  color: var(--b2c-text-muted);
+}
+
+.start-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.start-section-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.start-note {
+  margin: 0;
+  color: var(--b2c-text-muted);
+}
+
+.start-templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.start-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 230px;
+  min-height: 88px;
+  padding: 12px 14px;
+  border: 1px solid var(--b2c-border);
+  border-radius: 8px;
+  background: var(--b2c-surface-raised);
+  color: var(--b2c-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.start-card:hover {
+  border-color: var(--b2c-primary);
+}
+
+.start-card-title {
+  font-weight: 700;
+}
+
+.start-card-text {
+  color: var(--b2c-text-muted);
+  font-size: 13px;
+}
+
+.start-card[aria-disabled='true'],
+.recent-open[aria-disabled='true'],
+.recent-remove[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recent-item {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.recent-open {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--b2c-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.recent-open:hover {
+  border-color: var(--b2c-border);
+  background: var(--b2c-surface);
+}
+
+.recent-name {
+  font-weight: 600;
+}
+
+.recent-details {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--b2c-text-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* User text is isolated, so bidirectional characters in it cannot reorder the page. */
+.recent-name bdi,
+.recent-path bdi {
+  unicode-bidi: isolate;
+}
+
+.recent-remove {
+  flex: none;
+  min-width: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--b2c-text-muted);
+  font: inherit;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.recent-remove:hover {
+  border-color: var(--b2c-border);
+  color: var(--b2c-text);
+}
+
+.start-load-failure {
+  align-self: stretch;
+  padding: 12px 16px;
+  border: 1px solid var(--b2c-error);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: var(--b2c-surface);
+}
+
+.start-load-failure p {
+  margin: 0;
+}
+
+.load-problems {
+  margin: 0;
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+
+.load-problem-code {
+  font-weight: 700;
+}
+
+.start-status {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--b2c-text-muted);
+}
