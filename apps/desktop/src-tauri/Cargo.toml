@@ -8,12 +8,38 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+# The adapter is a library (commands, channels, dialogs, window, logging), so the
+# mock-runtime tests in tests/ can build the same app; main.rs only calls `run()`.
+[lib]
+name = "blocks2cpp_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "blocks2cpp-desktop"
+path = "src/main.rs"
+# The binary has no API of its own; documenting it would collide with the library's docs.
+doc = false
+
+# The scripted dialogs exist only in end-to-end builds.
+[[test]]
+name = "e2e_hooks"
+required-features = ["e2e-hooks"]
+
+[features]
+# End-to-end test seams (docs/adr/0009-e2e-tooling-and-test-seams.md): scripted
+# native dialogs, every folder under one test root, and a fixed toolchain search.
+# Off by default; src/e2e.rs refuses to compile it without debug assertions, so it
+# can never reach a release build.
+e2e-hooks = []
+
 # Every dependency needs a justification (docs/spec/08-security.md §8.9); see
 # apps/desktop/README.md. Keep `tauri` on the same minor version as the
 # `@tauri-apps/api` and `@tauri-apps/cli` packages in ../package.json.
 [build-dependencies]
 # `isolation` must match the isolation pattern in tauri.conf.json (tauri-build checks it).
 tauri-build = { version = "2.7.0", features = ["isolation"] }
+# The command table: build.rs gives every command its own permission.
+b2c-ipc.workspace = true
 
 [dependencies]
 # Features: the WebView2/WebKitGTK runtime (`wry`), compressed embedded assets,
@@ -28,6 +54,25 @@ tauri = { version = "2.12.0", default-features = false, features = [
   "common-controls-v6",
   "x11",
 ] }
+# Native open, save and trust dialogs, called from Rust only (no JS permission).
+tauri-plugin-dialog.workspace = true
+# The backend services behind every command, and the contract they speak.
+b2c-app.workspace = true
+b2c-ipc.workspace = true
+# The app's folders (Dirs), the rotating log file and RFC 3339 timestamps.
+b2c-store.workspace = true
+# Where toolchain discovery looks (DiscoveryScope), for end-to-end tests.
+b2c-build.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+# The mock runtime (`tauri::test`), for command and channel tests without a webview.
+tauri = { version = "2.12.0", default-features = false, features = ["test"] }
+tempfile.workspace = true
 
 [lints]
 workspace = true

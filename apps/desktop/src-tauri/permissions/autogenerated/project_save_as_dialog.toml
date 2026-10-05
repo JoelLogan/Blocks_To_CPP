@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-project-save-as-dialog"
+description = "Enables the project_save_as_dialog command without any pre-configured scope."
+commands.allow = ["project_save_as_dialog"]
+
+[[permission]]
+identifier = "deny-project-save-as-dialog"
+description = "Denies the project_save_as_dialog command without any pre-configured scope."
+commands.deny = ["project_save_as_dialog"]
