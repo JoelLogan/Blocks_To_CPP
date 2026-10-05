@@ -33,7 +33,8 @@ errors (warnings are allowed) or `1` when there are.
 Writes the generated C++ files into the `--out` folder, creating it if
 needed. Each file is rewritten only when its content changed. `--export`
 leaves out the "edit the blocks, not this file" banner. The project must have
-no errors.
+no errors. The C++ is always indented with 4 spaces: `b2c` does not read the
+app's code style setting.
 
 ### `b2c build`
 
@@ -43,8 +44,15 @@ nor the compiler command changed. Errors and warnings are printed; notes
 (such as a sanitizer the compiler does not offer) are left out. `--out` also copies the executable to a path of your
 choice (atomically, never through a symbolic link, and executable). `--toolchain` picks a g++ by absolute path; otherwise `b2c` uses the
 first suitable g++ it finds (see `b2c toolchains`). `--cache-dir` keeps the
-build cache in another folder instead of the per-user one
-(`%LOCALAPPDATA%\Blocks2Cpp\cache` on Windows, `~/.cache/blocks2cpp` on Linux).
+build cache in another folder instead of the per-user one. By default builds
+go to `%LOCALAPPDATA%\Blocks2Cpp\builds\` on Windows and to
+`$XDG_CACHE_HOME/blocks2cpp/builds/` (normally `~/.cache/blocks2cpp/builds/`)
+on Linux, the same cache the app uses
+([spec §2.7](../spec/02-architecture.md#27-persistence-locations)). Earlier
+versions used `%LOCALAPPDATA%\Blocks2Cpp\cache\` on Windows; that folder is
+no longer used and can be deleted. `b2c` never deletes entries from the cache;
+the app removes old ones. Builds made by `b2c` and by the app are kept apart,
+because only the app's builds include its console helpers.
 Compiler errors are mapped back to the blocks that produced the code.
 
 ### `b2c run`
@@ -59,8 +67,10 @@ to the program as its arguments.
 
 Lists the g++ compilers found on this computer, with their version, target,
 supported C++ standards and any problems. Checking a compiler builds a few
-tiny test programs, so the results are kept in the build cache and checked
-again only when the compiler file changes.
+tiny test programs, so the results are kept in `toolchains.json` and checked
+again only when the compiler file changes. The file is shared with the app:
+it is in `%LOCALAPPDATA%\Blocks2Cpp\` on Windows and in
+`$XDG_CONFIG_HOME/blocks2cpp/` (normally `~/.config/blocks2cpp/`) on Linux.
 
 ### `b2c migrate`
 
@@ -79,7 +89,7 @@ already formatted (exit code `1` if not), which is useful in CI.
 ## Exit codes
 
 | Code | Meaning |
-|------|---------|
+| ------ | --------- |
 | `0` | Success |
 | `1` | The project has errors (or, for `fmt --check`, is not formatted) |
 | `2` | Usage problem: bad arguments, or a file that cannot be read or written |
@@ -88,7 +98,7 @@ already formatted (exit code `1` if not), which is useful in CI.
 `b2c run` returns the **program's own exit code**, except:
 
 | Code | Meaning |
-|------|---------|
+| ------ | --------- |
 | `124` | The program was stopped by `--timeout` |
 | `125` | The program could not be built or started (the reason is printed) |
 | `128 + N` | Linux: the program was killed by signal `N` (for example `139` for a segmentation fault) |

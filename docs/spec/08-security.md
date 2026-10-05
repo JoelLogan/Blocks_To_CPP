@@ -1,6 +1,6 @@
 # 8. Security Design and Threat Model
 
-> Status: **Draft v0.1** · Reviewed at every milestone and whenever a trust boundary changes. The reporting policy is in [/SECURITY.md](../../SECURITY.md).
+> Status: **Draft v0.1** · Reviewed at every milestone and whenever a trust boundary changes. The reporting policy is in [/SECURITY.md](../../SECURITY.md) · Related ADRs: [0007](../adr/0007-backend-crates-and-ipc-contract.md), [0008](../adr/0008-pty-and-containment-in-b2c-process.md), [0010](../adr/0010-wasm-delivery-under-the-csp.md)
 
 ## 8.1 Scope and assumptions
 
@@ -37,20 +37,20 @@ system.
 ## 8.2 Assets, actors and trust boundaries
 
 | Asset | Why it matters |
-|-------|----------------|
+| ------- | ---------------- |
 | User's files and accounts (everything the user can access) | Running code has full user privileges |
 | User's projects | Integrity (no silent corruption or injection), availability |
 | Settings, trust store, toolchain selection | Control which code runs and how it is compiled |
 | Our release artifacts and update channel | A compromise would reach every user |
 
 | Actor | Capabilities |
-|-------|--------------|
+| ------- | -------------- |
 | **Project author (untrusted)** | Fully controls the contents of a `.b2c` file, clipboard payloads and library packs the user installs |
 | **Remote web content** | None: the app loads no remote content (§8.8) |
 | **Dependency / CI attacker** | Could tamper with npm/crates packages, GitHub Actions or build infrastructure |
 | **Local user** | Trusted; owns the machine |
 
-```
+```text
  untrusted ─────────────────────────────────────────────────────────────────────────────────► trusted
  .b2c file / clipboard / pack ─[B1: validator]─► webview ─[B2: IPC + capabilities]─► Rust backend
                                                                                       │
@@ -78,7 +78,8 @@ decision the user makes explicitly, once, per project.**
   offers **Trust this project**, **Trust everything in this folder**, or
   **Stay in Restricted Mode**.
 * **Mark-of-the-Web:** on Windows, files whose `Zone.Identifier` stream says
-  they came from the Internet (zone 3) get an additional, stronger warning.
+  they came from the Internet (zone 3 or higher) get an additional, stronger
+  warning.
 * **Re-check on outside change:** the trust record stores a hash of
   security-relevant content: all Raw C++ text, library requirements, pack
   references and defines. If those change **outside the app** (detected at
@@ -87,6 +88,78 @@ decision the user makes explicitly, once, per project.**
 * **Library packs installed by the user are code.** Installing one shows its
   manifest, block templates and requested libraries, and requires explicit
   confirmation. Packs bundled with the app are part of the signed release.
+
+### 8.3.1 How trust is decided
+
+* **The trust store** is `trust.json` in the machine folder
+  ([05 §5.9](05-project-format.md#59-machine-local-data)). Only the backend
+  writes it, and only in three cases: after the native trust dialog, at the
+  first save of a project created in the app, and when a trusted project is
+  saved in the app (to record its new security hash). A missing or corrupt
+  file means nothing is trusted.
+* **The security hash** (`b2c_model::security_hash`) is SHA-256 over the
+  ASCII bytes `b2c-trust-v1`, a line feed, and then the compact JSON object
+  `{"rawCpp": […], "libraries": […], "packs": […], "defines": […]}`:
+  * `rawCpp`: `[blockId, fieldName, text]` for every text field of every block
+    whose type starts with `raw.`, in all modules, nested or not, disabled or
+    not, sorted by block ID and then field name;
+  * `libraries`: the project's library names, sorted;
+  * `packs`: the pack references `{id, version}`, sorted by ID and then
+    version;
+  * `defines`: the project's defines in file order, in their file shape.
+
+  It is stored as lower-case hex in `rawCodeHashAtGrant`. Moving blocks,
+  comments and ordinary block edits never change it.
+* **Matching.** A project record applies only when both the project ID and
+  the canonical path are equal (paths compared case-insensitively on
+  Windows). The project is trusted when the hash is equal too. When the ID and
+  path match but the hash differs, its security-relevant content changed
+  outside the app, and it opens restricted (*changed outside*). A copy of a
+  trusted file at another path has no record (*no record*).
+* **Folder trust** covers a canonical folder and everything below it,
+  compared by path components (case-insensitively on Windows). It stores no
+  hash, so a project in a trusted folder is not re-flagged after an outside
+  change; the user trusted everything there.
+* **Revoking** (`trust_revoke`) removes only the project's own record. A
+  project inside a trusted folder stays trusted, and the response says that
+  the trust comes from the folder, so the UI can explain why.
+* **New projects** (`project_new`) are trusted in memory (*created here*), so
+  they can be built and run before the first save; until then their build
+  folder is keyed by the project ID and they run in their sandbox folder. The
+  first save records trust for the chosen path. *Save as* of a trusted
+  project records trust for the new path; *Save as* of a restricted project
+  leaves it restricted.
+* **Restored snapshots** ([05 §5.10](05-project-format.md#510-saving-and-recovery)):
+  a snapshot of a project that was never saved restores as trusted (*created
+  here*). A snapshot with a file path restores as trusted only when that
+  path's trust record still exists and either its hash equals the snapshot's
+  security hash or the snapshot was written while the project was trusted.
+  Every other snapshot restores in Restricted Mode.
+* **What the dialog lists.** The dialog lists the Raw C++ blocks, the library
+  requirements and the file-system blocks (`b2c_model::security_summary`) of
+  the latest document the backend received for the project (when it was
+  opened, saved, built or snapshotted), and granting trust records that
+  document's security hash.
+* **The dialog itself** is raised from Rust with `tauri-plugin-dialog`'s Rust
+  API; the webview has no dialog permission. It offers the three choices as
+  buttons if the pinned version supports custom labels, and otherwise asks two
+  native questions in turn (*Trust this project?*, then *This project only,
+  or everything in this folder?*). On Linux it uses the GTK3 backend without
+  D-Bus. The plugin is a new dependency justified under §8.9; using its
+  dialog library (`rfd`) directly is the fallback. Cancelling is the same as
+  staying in Restricted Mode, and `trust_grant` then returns the unchanged
+  trust. There is at most one `trust_grant` per project every 2 s, and one
+  native dialog at a time.
+* **Mark-of-the-Web.** The backend reads the file's `Zone.Identifier` stream
+  (at most 64 KiB) and parses `ZoneId` in its `[ZoneTransfer]` section
+  strictly. A zone of 3 or higher (Internet, Restricted sites) marks the
+  project, and the dialog shows the stronger warning. It never changes the
+  trust state by itself, and a missing stream or a parse failure means no
+  mark.
+* **What the UI is told:** `{ state, source, restrictedReason, markOfTheWeb }`,
+  with `state` `trusted` or `restricted`, `source` `createdHere`, `project`,
+  `folder` or `null`, and `restrictedReason` `noRecord`, `changedOutside` or
+  `null`. Trust is evaluated again on every open, reload and restore.
 
 ## 8.4 Code injection through block content
 
@@ -130,7 +203,7 @@ An identifier is accepted only if **all** of these hold:
 Encoder for `StrLit` (UTF-8 input; **NUL is rejected** at validation):
 
 | Input | Output | Reason |
-|-------|--------|--------|
+| ------- | -------- | -------- |
 | `\` | `\\` | |
 | `"` | `\"` | |
 | `?` directly after another `?` | `\?` | The output never contains `??`, so it cannot form a trigraph (`??/`) even if trigraphs were ever enabled. A lone `?` stays as it is, so prompts read naturally (`"Age? "`) |
@@ -155,8 +228,8 @@ Block comments become `//` lines. The encoder:
    from ending early and turning the rest of the text into code.
 2. Replaces controls, bidi characters and Cf characters with visible
    placeholders (`<U+202E>`).
-3. Trims trailing whitespace. **If a line then ends with `\`, it appends the
-   sentinel ` //`.** A backslash at the end of a line, **even when followed by
+3. Trims trailing whitespace. **If a line then ends with `\`, it appends a
+   space and the sentinel `//`.** A backslash at the end of a line, **even when followed by
    spaces**, splices the next physical line into the comment in GCC. Verified
    with GCC 13: `// note \␠` followed by `x = 2;` silently swallowed the
    assignment. Without this rule, a comment could hide the next statement
@@ -193,7 +266,8 @@ It is range-checked against the target type; overflow is error `E0517`.
 
 * Raw C++ is opaque by design, and is visible, badged and trust-gated (§8.3).
 * The Raw editor and code panel render bidi and invisible characters as
-  visible placeholders. The analyser warns (`W0520`) and g++ runs with
+  visible placeholders, and so do block fields and tooltips
+  ([04 §4.3](04-user-interface.md#43-code-panel-live-c)). The analyser warns (`W0520`) and g++ runs with
   `-Wbidi-chars=any`. A project file cannot lower `W0520`
   ([05 §5.3](05-project-format.md#53-top-level-structure)); only the user's
   own machine settings can.
@@ -201,7 +275,7 @@ It is range-checked against the target type; overflow is error `E0517`.
 ## 8.5 Compiler invocation safety
 
 | Threat | Mitigation |
-|--------|------------|
+| -------- | ------------ |
 | Code execution through flags (`-fplugin=`, `-B`, `-wrapper`, `-specs=`, `@file`, linker plugins) | **Project files cannot contain flags** ([ADR-0005](../adr/0005-no-compiler-flags-in-projects.md)). The backend builds argv from closed enums. Machine-local extra flags go through a denylist **and** a native confirmation ([07 §7.4.5](07-toolchain-build-run.md#745-machine-local-extra-flags-advanced)). |
 | File writes through flags (`-o`, `-MF`, `-save-temps`, `-fdump-*`) | Same as above. Output paths are always backend-generated inside the build directory. |
 | Shell injection | No shell anywhere. `Vec<OsString>` argv. Clippy `disallowed_methods` bans `std::process::Command` outside `b2c-process`. |
@@ -235,6 +309,18 @@ It is range-checked against the target type; overflow is error `E0517`.
 * **Temporary files:** the `tempfile` crate (random names, exclusive
   creation, `0600`), always in private directories, never in shared `/tmp`
   paths with predictable names.
+* **Machine-local data** ([02 §2.7](02-architecture.md#27-persistence-locations)):
+  every folder is created one level at a time, without following links, with
+  mode `0700` on Linux (Windows: the user-profile ACL), and every file is
+  `0600`. Every machine-local file (settings, trust, recent files,
+  toolchains, recovery snapshots, build manifests) is written atomically, and
+  the `.bak` copy of a project through its own temporary file, so a link
+  planted at the `.bak` path is replaced, never followed. Every read is
+  size-bounded (1 MiB for settings and recent files, 4 MiB for trust and
+  toolchains, the project limit for documents) and reads only regular files.
+* **No overwriting changed files:** `project_save` re-hashes the file before
+  writing and refuses when it changed outside the app since it was opened or
+  last saved ([05 §5.10](05-project-format.md#510-saving-and-recovery)).
 
 ## 8.7 Process execution safety
 
@@ -258,11 +344,33 @@ It is range-checked against the target type; overflow is error `E0517`.
   as *"Run in sandbox"* for untrusted projects and is explicitly labelled as
   reducing risk, not eliminating it.
 
+**How M2 implements these** ([ADR-0008](../adr/0008-pty-and-containment-in-b2c-process.md)):
+
+* On Windows a program is created suspended, assigned to its Job Object
+  (`KILL_ON_JOB_CLOSE`) and only then resumed, so it cannot start anything
+  outside the job. A program in a pseudo console inherits no handles; in pipe
+  mode it gets exactly its three pipe ends through
+  `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. Captured compiler runs move to the same
+  path (handle list, suspended start, job); if that does not fit into M2, the
+  gap is recorded in the milestone's threat-model review.
+* The platform calls sit in `b2c_process::os` as safe wrappers with
+  `// SAFETY:` comments: `atomic_replace`, `harden_dll_search` and
+  `open_https_url`. The app and the CLI call `harden_dll_search` as the first
+  statement of `main`; if it fails, a warning is logged and startup continues.
+* `open_https_url` accepts only a URL that starts with `https://` and is
+  printable ASCII of at most 2,048 characters without spaces or quotes. On
+  Linux it runs `/usr/bin/xdg-open` or `/bin/xdg-open` (an absolute path, never
+  `PATH`) with the URL as the only argument, in its own process group; on
+  Windows it calls `ShellExecuteW`. It is reached only through
+  `open_help_link` (§8.8).
+* Every build and run tree is killed when the app quits or exits; see
+  §8.14 for what happens after a crash of the app itself.
+
 ## 8.8 Webview and IPC hardening
 
 **Content Security Policy** (release builds):
 
-```
+```text
 default-src 'none';
 script-src 'self' 'wasm-unsafe-eval';
 style-src 'self' 'unsafe-inline';
@@ -274,7 +382,9 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
 ```
 
 * `'wasm-unsafe-eval'` permits compiling our bundled WASM core only. It does
-  **not** permit JavaScript `eval`.
+  **not** permit JavaScript `eval`. The core's bytes are embedded in a
+  lazily imported script from `'self'`, because `connect-src` forbids
+  fetching them ([ADR-0010](../adr/0010-wasm-delivery-under-the-csp.md)).
 * `style-src 'unsafe-inline'` is a **tracked exception**: Blockly injects its
   stylesheet at runtime. Inline *styles* do not execute script. We will remove
   the exception if Blockly supports nonce or constructable-stylesheet
@@ -283,6 +393,18 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
   there are no remote fonts. Navigation away from the app origin is blocked,
   and new windows are denied. Help links open in the OS browser through
   `open_help_link` with fixed IDs only.
+
+**Help links.** `open_help_link` maps a closed set of IDs to fixed URLs and
+opens them from Rust (§8.7); the webview has no opener permission and cannot
+pass a URL:
+
+| `linkId` | URL |
+| --- | --- |
+| `msys2Install` | `https://www.msys2.org/` |
+| `winlibs` | `https://winlibs.com/` |
+| `diagnosticsReference` | The published diagnostics reference of the project's documentation (the exact URL is in `b2c_ipc::LinkId`) |
+
+Links to individual diagnostic codes and bundled offline help come in M5.
 
 **Tauri configuration:**
 
@@ -296,12 +418,41 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
 * Every command re-validates its input (`deny_unknown_fields`, size limits,
   enum checks) and is rate-limited where relevant (`run_input`).
 
+In detail ([02 §2.5](02-architecture.md#25-ipc-surface)):
+
+* **Capabilities.** `capabilities/main-window.json` applies to the window
+  `main` only (local content) and lists exactly one `allow-<command>`
+  permission per registered command. It grants no `core:*` permission, so the
+  webview can neither `listen()` to events nor use the window API (the dirty
+  marker is therefore shown inside the app, not in the title), and no `fs`,
+  `shell`, `http`, `process`, `dialog` or opener permission.
+* **The isolation hook** loads three scripts: the allowlist generated from
+  `b2c-ipc` (`allowlist.generated.js`), the validator (`validate.js`) and the
+  hook. For every message it checks the command name and then the exact set
+  of top-level keys (Tauri itself ignores extra ones), accepts only plain
+  objects, rejects `__proto__`, `constructor` and `prototype` keys at any
+  depth, and checks types, string lengths (a document at most 33,554,432
+  UTF-16 units, program input at most 87,384 characters), ID formats, integer
+  ranges and enum values. Channel arguments must look like
+  `__CHANNEL__:<1–10 digits>`. Tauri's internal `plugin:__TAURI_CHANNEL__|fetch`
+  with a `null` payload is allowed, because large channel messages are
+  delivered through it. Anything else throws, so the message is never sent.
+  The hook has its own tests with a valid sample of every command and every
+  kind of malformed message.
+* **The backend re-validates everything** (`b2c_ipc::decode`) and enforces the
+  resource bounds: 32 open projects, 8 running programs, one native dialog at
+  a time, one `trust_grant` per project every 2 s, and 200 calls and 1 MiB
+  per second of program input.
+* `freezePrototype` is on, and `dangerousDisableAssetCspModification` is limited
+  to `style-src`, as in M0.
+
 **Frontend coding rules** (enforced by ESLint and CI):
 
 * Banned: `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`,
   `eval`, `new Function`, string-argument `setTimeout`/`setInterval`, and
   React `dangerouslySetInnerHTML` (`eslint-plugin-no-unsanitized`,
-  `react/no-danger`, `no-restricted-properties`).
+  `no-restricted-syntax` and `no-restricted-properties` rules;
+  `eslint-plugin-react` is not used, see [ADR-0009](../adr/0009-e2e-tooling-and-test-seams.md)).
 * User content (block text, comments, compiler output, program output) is
   always rendered as **text**: React text nodes, SVG text nodes in Blockly
   fields, and xterm.js cells. Custom Blockly fields and tooltips go through a
@@ -309,14 +460,23 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
 * Help pages are rendered from our Markdown **at build time** with a
   sanitising renderer. No Markdown or HTML is rendered from project content.
 * xterm.js: OSC 52 (clipboard) is disabled. OSC 8 links require
-  confirmation and only open `http`/`https`.
+  confirmation and only open `http`/`https`. In M2 the confirmation only
+  shows the URL with a *Copy link* button; nothing is opened.
 * Trusted Types: evaluated in report-only mode on WebView2, and enforced once
   Blockly runs cleanly under it.
+
+**The Trusted Types trial (M2).** The backend adds the response header
+`Content-Security-Policy-Report-Only: require-trusted-types-for 'script'` to
+the app's own HTML responses, in every build; the enforced CSP is unchanged.
+The frontend counts `securitypolicyviolation` events, recording only the
+directive, never sample text. E2E builds expose the counts, and the Windows
+E2E job writes them to its summary. WebKitGTK may ignore the header, so the
+trial is meaningful on WebView2.
 
 ## 8.9 Supply chain
 
 | Control | Detail |
-|---------|--------|
+| --------- | -------- |
 | **Minimal dependencies** | Each new dependency needs a PR justification covering purpose, maintenance health, licence, size and transitive count. Prefer the standard library and platform APIs. |
 | **Lockfiles** | `Cargo.lock` and `pnpm-lock.yaml` are committed. CI uses `cargo --locked` and `pnpm install --frozen-lockfile`. |
 | **pnpm 11 hardening** (`pnpm-workspace.yaml`) | `minimumReleaseAge: 10080` (7 days) to avoid freshly published compromised versions, with `minimumReleaseAgeStrict` (a too-new version fails the install instead of being exempted); `trustPolicy: no-downgrade` (fail if a version's publishing provenance is weaker than earlier versions'); `allowBuilds` allowlist with `strictDepBuilds` (an unlisted install script fails the install); `blockExoticSubdeps: true` (no git/tarball transitive deps) |
@@ -346,8 +506,16 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
 
 * No telemetry and no analytics. There is no network access except opt-in
   update checks and user-clicked links.
-* Local logs rotate (5 × 5 MB) and contain no project contents. Paths appear
+* Local logs rotate (5 × 5 MiB) and contain no project contents. Paths appear
   only at debug log level.
+* **Log format (M2):** JSON lines with an RFC 3339 UTC timestamp, the level,
+  the target, the span fields and the message. The files are `blocks2cpp.log`
+  and, after rotation at 5 MiB, `blocks2cpp.1.log` to `blocks2cpp.4.log`
+  (five files at most), each `0600` in the `0700` logs folder
+  ([02 §2.7](02-architecture.md#27-persistence-locations)). The default level
+  is `info`; `B2C_LOG=debug` raises it. No level ever records project
+  content: no block text, generated C++, compiler output, or program input or
+  output. A panic hook logs the panic's location, not its message.
 * *Help → Export diagnostics bundle* collects logs, toolchain info and
   settings (no project content unless ticked) into a file the user can review
   before sharing.
@@ -355,7 +523,7 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
 ## 8.12 Threat summary
 
 | ID | Threat | Vector | Mitigations | Residual |
-|----|--------|--------|-------------|----------|
+| ---- | -------- | -------- | ------------- | ---------- |
 | T1 | Code runs on project open | Malicious `.b2c` | No build/run on open; Restricted Mode; parser limits | — |
 | T2 | Code runs at compile time | Hostile Raw C++, flags | Trust gate before build; no flags in projects; argv from enums | User trusts a malicious project |
 | T3 | Injection via block text | Crafted strings/comments/identifiers | Typed encoders (§8.4), re-printing from AST, property tests and fuzzing | Generator bug (mitigated by tests) |
@@ -363,7 +531,7 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
 | T5 | Parser DoS / memory exhaustion | Huge or deep JSON, duplicate keys | Size/depth/count limits before allocation; flat statement arrays | — |
 | T6 | Prototype pollution (frontend) | `__proto__` keys | Keys rejected; data validated in WASM into fresh typed objects | — |
 | T7 | XSS in webview | Project text, compiler/program output | Text-only rendering, strict CSP, ESLint bans, isolation pattern | Webview engine bugs |
-| T8 | IPC abuse after XSS | Calls to backend commands | Opaque handles; no path parameters; native dialogs for trust and flag changes; backend re-validation | — |
+| T8 | IPC abuse after XSS | Calls to backend commands | Opaque handles; no path parameters; native dialogs for trust and flag changes; isolation hook with a generated allowlist; backend re-validation; rate limits and resource bounds | Oversized bodies parsed by Tauri before the handler (accepted, see below) |
 | T9 | Path traversal / overwrite | Module names, export, symlinks | Name validation; containment checks; no-follow; manifest-based export | — |
 | T10 | Binary planting | `g++.exe` in project folder or CWD | Never searched; absolute canonical paths; fingerprinting | Same-user malware |
 | T11 | Environment tampering | `CPATH`, `LD_PRELOAD`, … | Allowlisted environment for the compiler | — |
@@ -373,6 +541,13 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
 | T15 | Dependency compromise | npm/crates | Lockfiles, min release age, build-script allowlist, scanners, review | Undetected zero-day compromise |
 | T16 | CI / release compromise | Workflow injection, stolen keys | Pinned actions, least privilege, zizmor, protected environments, attestations | — |
 | T17 | Malicious update | Update channel | Signature verification, HTTPS, no downgrade, opt-in | Signing-key compromise |
+
+**Accepted IPC exposure.** Tauri parses an IPC message body before our
+handler runs, so the backend's own size check (§8.8) comes after that parse.
+The isolation hook rejects oversized documents and program input before they
+are sent, which leaves this exposure to a compromised webview on the same
+machine that bypasses the hook. That is accepted for M2. Reading raw request
+bodies in the handlers is adopted only if profiling shows a need.
 
 **Malicious-project regression suite:** `tests/security/projects/` holds a
 crafted `.b2c` file for **every** threat above that a file can express:
@@ -384,12 +559,28 @@ safely), and the suite runs on every PR.
 ## 8.13 Continuous security process
 
 | Cadence | Activity |
-|---------|----------|
+| --------- | ---------- |
 | **Every PR** | CodeQL · cargo-deny · `pnpm audit` · OSV-Scanner · Clippy (`-D warnings`, security-relevant lints) · ESLint security rules · gitleaks · zizmor (when workflows change) · fuzz smoke run (60 s per target) · escaping property tests · malicious-project suite · security checklist in the PR template (new IPC? new `unsafe`? new dependency? new file write?) |
-| **Nightly** | Extended fuzzing (30 min per target, with a persisted corpus) · full OSV scan against the default branch · E2E security tests on Windows and Linux |
-| **Weekly** | Dependabot update PRs · OpenSSF Scorecard · review of open security alerts (triaged within the week) |
+| **Nightly** | Extended fuzzing (30 min per target, with a persisted corpus) · full OSV scan against the default branch (`osv-scanner.yml`, daily) · E2E security tests on Windows and Linux |
+| **Weekly** | Dependabot update PRs · OpenSSF Scorecard · review of open security alerts (triaged within the week) · mutation testing of the encoders and validators · dependency health report · `cargo-geiger` report of `unsafe` use |
 | **Per milestone** | Threat-model review (this document) · manual review of all new IPC commands, `unsafe` blocks and file/process code paths · dependency licence and health review |
 | **Per release** | Release gate (§8.10) · SBOM + provenance · signed artifacts |
+
+**Nightly E2E security tests** run in the real app on both systems
+([09 §9.2](09-quality-and-delivery.md#92-testing-strategy)) and check that:
+
+1. every file in `tests/security/projects/` is rejected or opens in
+   Restricted Mode, and no compiler process is ever started;
+2. `build_start` and `run_start` called directly through Tauri's internal
+   invoke on a restricted project are refused with `restricted`;
+3. an unknown command is dropped by the isolation hook;
+4. unknown fields, an oversized document, program input over 64 KiB, an
+   out-of-range terminal size and forged handles are refused;
+5. HTML and script text in a project's strings and comments is shown
+   literally and runs nothing (a canary global stays unset);
+6. navigation to an external URL and `window.open` are blocked;
+7. a trust-relevant change made outside the app (editing `trust.json`, or a
+   define in the project file) returns the project to Restricted Mode.
 
 **Vulnerability handling.** Reports come in through GitHub private
 vulnerability reporting ([/SECURITY.md](../../SECURITY.md)). Fixes are
@@ -406,6 +597,10 @@ CVE where applicable), and noted in the changelog.
 3. **Linux process escape without cgroups.** A program that daemonises can
    outlive *Stop* when cgroup v2 user scopes are unavailable. This is
    documented, and the run status shows when containment is "process group
-   only".
+   only". The same applies when the app itself crashes: the app kills every
+   build and run when it quits normally, but it does not use
+   `PR_SET_PDEATHSIG`, so after a crash a program can keep running. With
+   cgroups, the next start of the app kills the `b2c-*` scopes whose owner has
+   died; without them, a process group can outlive the crash.
 4. **Same-user malware** can tamper with anything we store. This is outside
    any user-space application's control.
