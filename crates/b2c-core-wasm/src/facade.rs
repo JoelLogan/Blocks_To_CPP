@@ -10,15 +10,20 @@
 //! tests guard that: the generated `main.cpp` of every example equals its
 //! golden file (`tests/golden/`, written by the build's tests), and the
 //! backend compares preview and build output at both indent widths.
+//!
+//! The preview also reports what the analysis knows for the editor: every
+//! symbol and the static type of each value block. The analysis itself is
+//! kept by a [`crate::Session`] for the scope query and the clipboard;
+//! [`preview_document`] keeps nothing.
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 
 use b2c_codegen::{CodegenOptions, HelperPlacement};
 use b2c_ir::source_map::{GeneratedFile, SourceMap};
-use b2c_ir::{BlockId, DiagSource, Diagnostic, Location, Type, has_errors};
+use b2c_ir::{BlockId, DiagSource, Diagnostic, Location, SymbolInfo, Type, has_errors};
+use b2c_lang::Analysis;
 use b2c_model::{Document, LoadError};
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 
 use crate::options::PreviewOptions;
 
@@ -88,7 +93,7 @@ pub fn canonical_document(document_json: &str) -> Result<Canonical, LoadError> {
     let document = b2c_model::load(document_json.as_bytes())?;
     Ok(Canonical {
         text: b2c_model::to_canonical_json(&document),
-        hash: hex(&b2c_model::content_hash(&document)),
+        hash: b2c_model::hex(&b2c_model::content_hash(&document)),
     })
 }
 
@@ -107,17 +112,6 @@ pub enum Stage {
     /// No earlier stage reported an error (generation itself may still have
     /// needed placeholders, reported as [`GENERATOR_INCOMPLETE`]).
     Generate,
-}
-
-/// The element type of [`Preview::symbols`] until the scope query arrives
-/// (milestone M2, wave 2): it has no values, so the list is always empty.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NoSymbol {}
-
-impl Serialize for NoSymbol {
-    fn serialize<S: Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
-        match *self {}
-    }
 }
 
 /// Everything the live preview shows.
@@ -141,16 +135,19 @@ pub struct Preview {
     /// The content hash of the loaded document (the `hash` of
     /// [`canonical_document`]); absent only when loading failed.
     pub content_hash: Option<String>,
-    /// Static types of value blocks. Always empty until the scope query
-    /// arrives (milestone M2, wave 2).
+    /// The static type of each value block of the program, by block ID
+    /// ([`b2c_lang::Analysis::block_types`]): what the connection checker
+    /// and the `var.get`/`func.call` output types use. Blocks outside the
+    /// program (disabled or loose) are not listed; empty when loading
+    /// failed.
     pub block_types: BTreeMap<BlockId, Type>,
-    /// The program's symbols. Always empty until the scope query arrives
-    /// (milestone M2, wave 2).
-    pub symbols: Vec<NoSymbol>,
+    /// Every symbol of the program, sorted by name, then ID
+    /// ([`b2c_lang::Analysis::symbol_infos`]); empty when loading failed.
+    pub symbols: Vec<SymbolInfo>,
 }
 
 impl Preview {
-    fn load_failed(diagnostics: Vec<Diagnostic>) -> Self {
+    pub(crate) fn load_failed(diagnostics: Vec<Diagnostic>) -> Self {
         Self {
             stage: Stage::Load,
             diagnostics,
@@ -182,28 +179,63 @@ impl Preview {
 /// Only a load failure gives no files. Never panics: the stages it calls
 /// turn every problem in the document into diagnostics.
 pub fn preview_document(document_json: &str, options: &PreviewOptions) -> Preview {
-    let loaded = match b2c_model::load(document_json.as_bytes()) {
-        Ok(document) => document,
-        Err(error) => return Preview::load_failed(error.diagnostics),
-    };
-    let content_hash = hex(&b2c_model::content_hash(&loaded));
-
-    let (document, mut diagnostics) = b2c_catalog::resolve(&loaded, b2c_catalog::core_catalog());
-    let mut first_failure = has_errors(&diagnostics).then_some(Stage::Resolve);
-
-    let analysis = b2c_lang::analyze(&document);
-    diagnostics.extend(analysis.diagnostics);
-    if first_failure.is_none() && has_errors(&diagnostics) {
-        first_failure = Some(Stage::Analyze);
+    match run_pipeline(document_json.as_bytes(), *options) {
+        Ok(run) => run.preview,
+        Err(error) => Preview::load_failed(error.diagnostics),
     }
+}
 
-    let codegen_options = CodegenOptions {
-        project_name: document.project.name.clone(),
+/// A preview with the analysis behind it, which the [`crate::Session`]
+/// keeps for the scope query and the clipboard.
+#[derive(Debug, Clone)]
+pub(crate) struct PipelineRun {
+    /// What the preview shows.
+    pub(crate) preview: Preview,
+    /// The analysis of the resolved document (its diagnostics are moved
+    /// into [`Preview::diagnostics`], so they are empty here).
+    pub(crate) analysis: Analysis,
+    /// The content hash of the loaded document.
+    pub(crate) content_hash: [u8; 32],
+    /// The options the files were generated with.
+    pub(crate) codegen_options: CodegenOptions,
+}
+
+/// The options a build would generate code with for this project, at the
+/// given indent width.
+pub(crate) fn codegen_options(project_name: &str, options: PreviewOptions) -> CodegenOptions {
+    CodegenOptions {
+        project_name: project_name.to_owned(),
         app_version: String::from(APP_VERSION),
         do_not_edit_banner: true,
         indent_width: options.indent_width.spaces(),
         helper_placement: HelperPlacement::Inline,
-    };
+    }
+}
+
+/// Resolves and analyses a loaded document (stages ② to ⑥), returning the
+/// analysis and the catalog's diagnostics.
+pub(crate) fn analyse(loaded: &Document) -> (Document, Vec<Diagnostic>, Analysis) {
+    let (document, diagnostics) = b2c_catalog::resolve(loaded, b2c_catalog::core_catalog());
+    let analysis = b2c_lang::analyze(&document);
+    (document, diagnostics, analysis)
+}
+
+/// The whole preview pipeline on untrusted bytes (see [`preview_document`]).
+///
+/// # Errors
+/// The loader's problems when the bytes are not a valid project.
+pub(crate) fn run_pipeline(bytes: &[u8], options: PreviewOptions) -> Result<PipelineRun, LoadError> {
+    let loaded = b2c_model::load(bytes)?;
+    let content_hash = b2c_model::content_hash(&loaded);
+
+    let (document, mut diagnostics, mut analysis) = analyse(&loaded);
+    let mut first_failure = has_errors(&diagnostics).then_some(Stage::Resolve);
+    diagnostics.append(&mut analysis.diagnostics);
+    if first_failure.is_none() && has_errors(&diagnostics) {
+        first_failure = Some(Stage::Analyze);
+    }
+
+    let codegen_options = codegen_options(&document.project.name, options);
     let generation = b2c_codegen::generate_with_report(&analysis.program, &codegen_options);
     let stage = first_failure.unwrap_or_else(|| {
         if generation.placeholders > 0 {
@@ -218,27 +250,23 @@ pub fn preview_document(document_json: &str, options: &PreviewOptions) -> Previe
     });
     let buildable = !has_errors(&diagnostics) && generation.placeholders == 0;
 
-    Preview {
+    let preview = Preview {
         stage,
         diagnostics,
         files: generation.project.files,
         source_map: Some(generation.project.source_map),
         buildable,
         placeholders: generation.placeholders,
-        content_hash: Some(content_hash),
-        block_types: BTreeMap::new(),
-        symbols: Vec::new(),
-    }
-}
-
-/// Lower-case hex digits of a byte string.
-pub(crate) fn hex(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len().saturating_mul(2));
-    for byte in bytes {
-        // Writing to a String cannot fail.
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
+        content_hash: Some(b2c_model::hex(&content_hash)),
+        block_types: analysis.block_types(),
+        symbols: analysis.symbol_infos(),
+    };
+    Ok(PipelineRun {
+        preview,
+        analysis,
+        content_hash,
+        codegen_options,
+    })
 }
 
 #[cfg(test)]
@@ -246,12 +274,6 @@ mod tests {
     use super::*;
 
     const HELLO: &str = include_str!("../../../examples/hello_world.b2c");
-
-    #[test]
-    fn hex_is_lower_case_and_two_digits_per_byte() {
-        assert_eq!(hex(&[]), "");
-        assert_eq!(hex(&[0x00, 0x0f, 0xa0, 0xff]), "000fa0ff");
-    }
 
     #[test]
     fn version_matches_the_crates() {
@@ -279,6 +301,7 @@ mod tests {
         assert!(preview.buildable);
         assert_eq!(preview.placeholders, 0);
         assert_eq!(preview.files.len(), 1);
+        // hello_world declares nothing and has no value blocks.
         assert!(preview.block_types.is_empty());
         assert!(preview.symbols.is_empty());
         let canonical = canonical_document(HELLO).unwrap();
@@ -293,6 +316,8 @@ mod tests {
         assert!(preview.files.is_empty());
         assert!(preview.source_map.is_none());
         assert!(preview.content_hash.is_none());
+        assert!(preview.symbols.is_empty());
+        assert!(preview.block_types.is_empty());
         assert!(!preview.buildable);
         assert_eq!(preview.diagnostics.len(), 1);
         assert!(load_document(b"{").is_err());

@@ -18,7 +18,9 @@
 
 mod common;
 
-use common::{codes, examples, file, has_errors, native_generation, parse, preview, repo_root};
+use common::{
+    codes, examples, file, has_errors, native_analysis, native_generation, parse, preview, repo_root,
+};
 use serde_json::Value;
 
 #[test]
@@ -91,14 +93,28 @@ fn preview_files_and_source_map_equal_the_native_pipeline() {
 }
 
 #[test]
-fn preview_reports_the_content_hash_and_empty_scope_data() {
+fn preview_reports_the_content_hash_symbols_and_block_types() {
+    let mut typed = 0;
     for example in examples() {
         let result = preview(&example.text, 4);
         let canonical = parse(&b2c_core_wasm::canonical(&example.text));
         assert_eq!(result["contentHash"], canonical["hash"], "{}", example.name);
-        assert_eq!(result["blockTypes"], Value::Object(serde_json::Map::new()));
-        assert_eq!(result["symbols"], Value::Array(Vec::new()));
+        let analysis = native_analysis(&example.text);
+        assert_eq!(
+            result["symbols"],
+            serde_json::to_value(analysis.symbol_infos()).unwrap(),
+            "{}",
+            example.name
+        );
+        assert_eq!(
+            result["blockTypes"],
+            serde_json::to_value(analysis.block_types()).unwrap(),
+            "{}",
+            example.name
+        );
+        typed += result["blockTypes"].as_object().unwrap().len();
     }
+    assert!(typed > 0, "no example has a typed value block");
 }
 
 #[test]

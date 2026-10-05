@@ -129,6 +129,85 @@ fn the_malicious_project_suite_through_every_export() {
     }
 }
 
+/// Every block ID in a document's JSON.
+fn block_ids(value: &Value, out: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            if let (Some(Value::String(id)), Some(_)) = (map.get("id"), map.get("type")) {
+                out.push(id.clone());
+            }
+            map.values().for_each(|v| block_ids(v, out));
+        }
+        Value::Array(items) => items.iter().for_each(|v| block_ids(v, out)),
+        _ => {}
+    }
+}
+
+#[test]
+fn the_malicious_project_suite_through_scope_and_clipboard() {
+    let seed = "5a".repeat(32);
+    for case in cases() {
+        let bytes = std::fs::read(suite_dir().join(&case.file)).unwrap();
+        let Ok(text) = String::from_utf8(bytes) else {
+            continue;
+        };
+        preview(&text, 4);
+        let made = parse(&b2c_core_wasm::clipboard_make(&text, "[]"));
+        if let Some(expected) = &case.loader {
+            // Nothing is kept from a document that does not load.
+            assert_eq!(
+                b2c_core_wasm::symbols_in_scope("b001", None),
+                "[]",
+                "{}",
+                case.file
+            );
+            assert_eq!(made["ok"], false, "{}", case.file);
+            let found: BTreeSet<String> = codes(&made["diagnostics"]).into_iter().collect();
+            assert_eq!(&found, expected, "{}", case.file);
+            continue;
+        }
+        assert_eq!(made["ok"], true, "{}", case.file);
+        let document: Value = serde_json::from_str(&text).unwrap();
+        let mut ids = Vec::new();
+        block_ids(&document, &mut ids);
+        ids.sort();
+        ids.dedup();
+        for id in &ids {
+            for input in [None, Some(String::from("BODY"))] {
+                let output = b2c_core_wasm::symbols_in_scope(id, input);
+                let symbols: Value = serde_json::from_str(&output).unwrap();
+                for symbol in symbols.as_array().unwrap() {
+                    assert_text_is_safe(&case.file, "a symbol name", symbol["name"].as_str().unwrap());
+                }
+            }
+        }
+        // Copy every top-level block and paste it all back onto the canvas.
+        let top: Vec<&str> = document["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|m| m["workspace"]["blocks"].as_array().unwrap())
+            .map(|b| b["id"].as_str().unwrap())
+            .collect();
+        let made = parse(&b2c_core_wasm::clipboard_make(
+            &text,
+            &serde_json::to_string(&top).unwrap(),
+        ));
+        assert_eq!(made["ok"], true, "{}: {}", case.file, made["diagnostics"]);
+        if let Some(code) = made.get("text") {
+            assert_text_is_safe(&case.file, "the copied C++", code.as_str().unwrap());
+        }
+        let module = document["modules"][0]["id"].as_str().unwrap();
+        let target = json!({"module": module, "block": null, "input": null}).to_string();
+        let output = b2c_core_wasm::paste_prepare(made["payload"].as_str().unwrap(), &text, &target, &seed);
+        assert!(
+            output.starts_with(r#"{"ok":true,"#),
+            "{}: {output:.300}",
+            case.file
+        );
+    }
+}
+
 #[test]
 fn oversized_input_is_refused_before_parsing() {
     let mut text = String::from("{\"format\": \"blocks2cpp/project\", \"pad\": \"");

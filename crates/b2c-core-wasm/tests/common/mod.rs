@@ -85,6 +85,29 @@ pub(crate) fn file<'a>(preview: &'a Value, path: &str) -> Option<&'a str> {
         .map(|f| f["contents"].as_str().unwrap())
 }
 
+/// The analysis composed directly from the crates (load, resolve,
+/// analyse), for comparing with the facade.
+pub(crate) fn native_analysis(text: &str) -> b2c_lang::Analysis {
+    let loaded = b2c_model::load(text.as_bytes()).unwrap();
+    let (document, _) = b2c_catalog::resolve(&loaded, b2c_catalog::core_catalog());
+    b2c_lang::analyze(&document)
+}
+
+/// An example by file stem.
+pub(crate) fn example(name: &str) -> String {
+    std::fs::read_to_string(repo_root().join("examples").join(format!("{name}.b2c"))).unwrap()
+}
+
+/// The names in a JSON list of symbols, in order.
+pub(crate) fn names(symbols: &Value) -> Vec<String> {
+    symbols
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
 /// The front half of the pipeline composed directly from the crates (load,
 /// resolve, analyse, generate), for comparing with the facade.
 pub(crate) fn native_generation(text: &str, indent_width: u8) -> b2c_codegen::Generation {
