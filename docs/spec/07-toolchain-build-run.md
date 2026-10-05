@@ -260,7 +260,10 @@ settings**, never in projects:
   used entries while the cache is larger than `buildCache.maxBytes` (default
   2 GiB, [05 §5.9](05-project-format.md#59-machine-local-data)). At startup it
   also removes entries unused for 30 days.
-* An entry whose lock is held (a build or run is using it) is skipped. Links
+* The most recently used entry is never evicted for size, and a run holds a
+  shared lock on its entry's `lock` file for as long as it runs. An entry
+  whose lock is held (a build or run is using it) is skipped, and so is an
+  entry whose `lock` is a link or not a regular file. Links
   and junctions are never followed, every folder is checked to lie inside the
   canonical cache root before it is deleted, and project folders left empty
   are removed. Only `builds/` is touched: `sandbox/` and `toolchains.json`

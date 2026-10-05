@@ -456,7 +456,7 @@ In detail ([02 §2.5](02-architecture.md#25-ipc-surface)):
 * User content (block text, comments, compiler output, program output) is
   always rendered as **text**: React text nodes, SVG text nodes in Blockly
   fields, and xterm.js cells. Custom Blockly fields and tooltips go through a
-  review checklist.
+  review checklist ([custom-field-review-checklist.md](../security/custom-field-review-checklist.md)).
 * Help pages are rendered from our Markdown **at build time** with a
   sanitising renderer. No Markdown or HTML is rendered from project content.
 * xterm.js: OSC 52 (clipboard) is disabled. OSC 8 links require

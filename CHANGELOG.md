@@ -48,3 +48,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `B2C-E0139`), and loose block stacks are saved intact (`stack`).
 - Nightly fuzzing with a kept corpus, and weekly mutation testing and
   dependency-health reports.
+- Desktop editor building blocks (milestone M2): Blockly blocks generated from
+  the catalog with Zelos shapes, light and dark themes and custom fields that
+  show text literally; a type-aware connection checker and the variadic
+  mutators; the app shell (start-up, state store, layout, toolbar, Run gating,
+  accessible dialogs); the C++ code panel with source-map highlighting, the
+  Problems list, the console and the build output; and build-cache eviction
+  (2 GiB limit by default, 30-day pruning, Clear build cache).
