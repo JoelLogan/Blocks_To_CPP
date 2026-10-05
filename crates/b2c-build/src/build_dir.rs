@@ -470,6 +470,46 @@ mod tests {
         }
     }
 
+    /// Generated names may use lower-case letters, digits, `_` and `-`, with
+    /// a stem of up to 64 characters; only sources are returned for compiling.
+    #[test]
+    fn accepts_every_generated_file_name_shape() {
+        let folder = tempfile::tempdir().unwrap();
+        let longest = format!("{}.cpp", "a".repeat(64));
+        let names = [
+            ("main.cpp", FileKind::Source),
+            ("b2c_runtime.hpp", FileKind::Header),
+            ("module-2.cpp", FileKind::Source),
+            ("x9_y-z.hpp", FileKind::Header),
+            (longest.as_str(), FileKind::Source),
+        ];
+        let project = GeneratedProject {
+            files: names
+                .iter()
+                .map(|&(path, kind)| GeneratedFile {
+                    path: path.to_owned(),
+                    kind,
+                    contents: String::new(),
+                })
+                .collect(),
+            source_map: SourceMap::default(),
+        };
+        let sources = write_generated_files(folder.path(), &project).unwrap();
+        let expected: Vec<PathBuf> = ["main.cpp", "module-2.cpp", longest.as_str()]
+            .iter()
+            .map(|name| folder.path().join(name))
+            .collect();
+        assert_eq!(sources, expected);
+        assert!(folder.path().join("b2c_runtime.hpp").is_file());
+        assert!(folder.path().join("x9_y-z.hpp").is_file());
+
+        let too_long = format!("{}.cpp", "a".repeat(65));
+        assert!(matches!(
+            write_generated_files(folder.path(), &generated(&too_long, "")),
+            Err(BuildDirError::BadFileName { .. })
+        ));
+    }
+
     #[cfg(unix)]
     #[test]
     fn refuses_symlinked_directories_and_files() {
@@ -561,6 +601,176 @@ mod tests {
             ));
             assert_eq!(fs::read_to_string(&victim).unwrap(), "keep me");
         }
+    }
+
+    /// Set in the environment of the child process that reports
+    /// [`default_cache_root`] (see [`cache_root_with`]).
+    const CACHE_ROOT_PROBE: &str = "B2C_TEST_CACHE_ROOT_PROBE";
+
+    /// Runs this test binary again with exactly the variables `env` (nothing
+    /// is inherited; changing this process's environment would race with
+    /// other tests), running only [`cache_root_probe`], and returns the cache
+    /// root the child found.
+    fn cache_root_with(env: &[(&str, &str)]) -> Option<PathBuf> {
+        let exe = std::env::current_exe().unwrap();
+        let mut command = b2c_process::Command::new(exe, std::env::temp_dir()).unwrap();
+        command
+            .args(["--exact", "build_dir::tests::cache_root_probe", "--nocapture"])
+            .env(CACHE_ROOT_PROBE, "1")
+            .envs(env.iter().copied())
+            .timeout(std::time::Duration::from_mins(1));
+        // Variables the child needs to run at all (Windows) or that a
+        // coverage run uses to collect the child's counters.
+        for name in ["SystemRoot", "LLVM_PROFILE_FILE"] {
+            if let Some(value) = std::env::var_os(name) {
+                command.env(name, value);
+            }
+        }
+        let captured = b2c_process::run_captured(&command).unwrap();
+        let stdout = String::from_utf8_lossy(&captured.stdout);
+        assert!(
+            captured.status.success(),
+            "{stdout}{}",
+            String::from_utf8_lossy(&captured.stderr)
+        );
+        let reported = stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("cache root: "))
+            .unwrap_or_else(|| panic!("no cache root reported:\n{stdout}"));
+        serde_json::from_str(reported).unwrap()
+    }
+
+    /// Not a check of its own: in the child process started by
+    /// [`cache_root_with`] it prints [`default_cache_root`]. In an ordinary
+    /// test run it does nothing.
+    #[test]
+    fn cache_root_probe() {
+        if std::env::var_os(CACHE_ROOT_PROBE).is_some() {
+            println!(
+                "cache root: {}",
+                serde_json::to_string(&default_cache_root()).unwrap()
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_root_follows_xdg_cache_home_then_home() {
+        let root = cache_root_with;
+        assert_eq!(
+            root(&[("XDG_CACHE_HOME", "/xdg/cache"), ("HOME", "/home/ada")]),
+            Some(PathBuf::from("/xdg/cache/blocks2cpp"))
+        );
+        // A relative or empty XDG_CACHE_HOME is ignored, as the XDG Base
+        // Directory specification says.
+        for xdg in ["cache", ""] {
+            assert_eq!(
+                root(&[("XDG_CACHE_HOME", xdg), ("HOME", "/home/ada")]),
+                Some(PathBuf::from("/home/ada/.cache/blocks2cpp")),
+                "{xdg:?}"
+            );
+        }
+        assert_eq!(
+            root(&[("HOME", "/home/ada")]),
+            Some(PathBuf::from("/home/ada/.cache/blocks2cpp"))
+        );
+        // No usable variable: no cache root (and never one relative to the
+        // working directory). LOCALAPPDATA is for Windows only.
+        assert_eq!(root(&[("HOME", "ada")]), None);
+        assert_eq!(root(&[("XDG_CACHE_HOME", "cache"), ("HOME", "")]), None);
+        assert_eq!(root(&[("LOCALAPPDATA", "/local")]), None);
+        assert_eq!(root(&[]), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cache_root_follows_localappdata() {
+        let root = cache_root_with;
+        assert_eq!(
+            root(&[("LOCALAPPDATA", r"C:\Users\Ada\AppData\Local")]),
+            Some(PathBuf::from(r"C:\Users\Ada\AppData\Local\Blocks2Cpp\cache"))
+        );
+        assert_eq!(root(&[("LOCALAPPDATA", r"AppData\Local")]), None);
+        assert_eq!(
+            root(&[("XDG_CACHE_HOME", r"C:\xdg"), ("HOME", r"C:\Users\Ada")]),
+            None
+        );
+        assert_eq!(root(&[]), None);
+    }
+
+    /// Only identical bytes leave a file alone: a change that keeps the
+    /// length is written, and a replaced file keeps its permissions.
+    #[test]
+    fn same_length_changes_are_written() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("main.cpp");
+        write_if_changed(&path, b"int a = 1;\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+        }
+        write_if_changed(&path, b"int b = 2;\n").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"int b = 2;\n");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o640);
+        }
+    }
+
+    /// A folder or a file where the other belongs is refused, and other
+    /// errors are reported by the step that failed.
+    #[test]
+    fn wrong_kinds_and_failed_steps_are_reported() {
+        let cache = tempfile::tempdir().unwrap();
+        let file = cache.path().join("file");
+        fs::write(&file, "").unwrap();
+        assert!(matches!(
+            ensure_plain_dir(&file),
+            Err(BuildDirError::NotADirectory { .. })
+        ));
+        assert!(matches!(
+            create_private_dir(&file),
+            Err(BuildDirError::NotADirectory { .. })
+        ));
+        // Below a file, creating the folder itself fails (it is not an
+        // existing folder to check).
+        assert!(matches!(
+            create_private_dir(&file.join("sub")),
+            Err(BuildDirError::Io {
+                action: "create the folder",
+                ..
+            })
+        ));
+        // A folder where a generated file belongs is not replaced.
+        assert!(matches!(
+            write_if_changed(cache.path(), b"x"),
+            Err(BuildDirError::NotAFile { .. })
+        ));
+        // Below a file, looking at the target fails (on Unix with "not a
+        // directory"; Windows reports such a path as not found).
+        let below_file = write_if_changed(&file.join("main.cpp"), b"x");
+        #[cfg(unix)]
+        assert!(
+            matches!(
+                below_file,
+                Err(BuildDirError::Io {
+                    action: "inspect",
+                    ..
+                })
+            ),
+            "{below_file:?}"
+        );
+        #[cfg(not(unix))]
+        assert!(below_file.is_err());
+
+        // A file where the `builds` folder belongs.
+        fs::write(cache.path().join("builds"), "").unwrap();
+        assert!(matches!(
+            BuildDir::create(cache.path(), &project_id(), "debug"),
+            Err(BuildDirError::NotADirectory { .. })
+        ));
     }
 
     #[cfg(unix)]

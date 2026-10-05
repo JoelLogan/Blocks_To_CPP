@@ -53,6 +53,14 @@ examine_re = [
   '^crates/b2c-process/src/command\.rs:.*\bcheck_program\b',
 ]
 
+# Truly equivalent mutants (matched by name without the line and column, so
+# that edits elsewhere in the file do not break the match):
+exclude_re = [
+  # `NumLit::int`: `value < 0` and `value <= 0` differ only for 0, where both
+  # branches write the literal "0".
+  '^crates/b2c-ir/src/text\.rs:\d+:\d+: replace < with <= in NumLit::int$',
+]
+
 # The weekly job splits the mutants over several runners with `--shard k/n`.
 # Round-robin gives every shard a similar mix of fast (b2c-ir) and slow
 # (b2c-model, b2c-build) mutants; `cargo mutants --shard k/n` locally runs

@@ -974,6 +974,194 @@ mod tests {
         assert!(NumLit::from_f64(f64::NAN).is_none());
     }
 
+    /// The accessors give back exactly what was validated, and the type names
+    /// are the C++ spellings that error messages use.
+    #[test]
+    fn accessors_return_the_validated_values() {
+        let ident = Ident::new("score").unwrap();
+        assert_eq!(ident.as_str(), "score");
+        assert_eq!(ident.to_string(), "score");
+        assert_eq!(format!("[{ident}]"), "[score]");
+        assert_eq!(Ident::main().as_str(), "main");
+        assert_eq!(StrLit::new("say \"hi\"\n").unwrap().value(), "say \"hi\"\n");
+        assert_eq!(CharLit::new("x").unwrap().value(), 'x');
+        assert_eq!(Comment::new("a\r\nb */").unwrap().text(), "a\r\nb */");
+        let raw = RawCode::new("std::cout << 1;", RawProvenance::CatalogTemplate).unwrap();
+        assert_eq!(raw.text(), "std::cout << 1;");
+        assert_eq!(raw.provenance(), RawProvenance::CatalogTemplate);
+
+        assert_eq!(NumType::Int.cpp_name(), "int");
+        assert_eq!(NumType::LongLong.cpp_name(), "long long");
+        assert_eq!(NumType::Double.cpp_name(), "double");
+        assert_eq!(
+            NumLit::parse("7", NumType::LongLong).unwrap().num_type(),
+            NumType::LongLong
+        );
+        let error = |text: &str, ty| NumLit::parse(text, ty).unwrap_err().to_string();
+        assert_eq!(
+            error("2147483648", NumType::Int),
+            "`2147483648` does not fit in int"
+        );
+        assert_eq!(
+            error("9223372036854775808", NumType::LongLong),
+            "`9223372036854775808` does not fit in long long"
+        );
+        assert_eq!(error("1e400", NumType::Double), "`1e400` does not fit in double");
+    }
+
+    /// Deserialising applies the same rules as the constructors: `main` and
+    /// `b2c…` names only in their generator forms, nothing else that
+    /// [`Ident::new`] refuses.
+    #[test]
+    fn identifiers_deserialize_with_the_constructor_rules() {
+        let load = |name: &str| serde_json::from_value::<Ident>(serde_json::Value::from(name));
+        assert_eq!(load("score").unwrap(), Ident::new("score").unwrap());
+        assert_eq!(load("main").unwrap(), Ident::main());
+        assert_eq!(load("b2c_tmp1").unwrap(), Ident::generated("b2c_tmp1").unwrap());
+        for bad in [
+            "", "class", "9lives", "a__b", "NULL", "std", "B2C_X", "b2c__x", "naïve",
+        ] {
+            assert!(load(bad).is_err(), "{bad:?}");
+        }
+        let ident = Ident::new("total_2").unwrap();
+        assert_eq!(serde_json::to_value(&ident).unwrap(), "total_2");
+
+        let lit = |text: &str| serde_json::from_value::<StrLit>(serde_json::Value::from(text));
+        assert_eq!(lit("Hi").unwrap().value(), "Hi");
+        assert!(lit("a\0b").is_err());
+        let ch = |text: &str| serde_json::from_value::<CharLit>(serde_json::Value::from(text));
+        assert_eq!(ch("?").unwrap().value(), '?');
+        assert!(ch("ab").is_err());
+    }
+
+    /// The text limits of 05 §5.6: 64 KiB for string and comment text,
+    /// 256 KiB for Raw C++, both inclusive.
+    #[test]
+    fn text_length_limits_are_exact() {
+        const TEXT: usize = 64 * 1024;
+        const RAW: usize = 256 * 1024;
+        let at = "a".repeat(TEXT);
+        let over = "a".repeat(TEXT + 1);
+        assert_eq!(StrLit::new(&at).unwrap().value().len(), TEXT);
+        assert_eq!(StrLit::new(&over), Err(LiteralError::TooLong));
+        assert_eq!(Comment::new(&at).unwrap().text().len(), TEXT);
+        assert_eq!(Comment::new(&over), Err(LiteralError::TooLong));
+        // A multi-byte character counts by its bytes.
+        let wide_over = format!("{}é", "a".repeat(TEXT - 1));
+        assert_eq!(StrLit::new(&wide_over), Err(LiteralError::TooLong));
+
+        let raw = |len: usize| RawCode::new(&"a".repeat(len), RawProvenance::RawBlock);
+        assert_eq!(raw(RAW).unwrap().text().len(), RAW);
+        assert_eq!(raw(RAW + 1), Err(LiteralError::TooLong));
+        assert_eq!(
+            RawCode::new("a\0b", RawProvenance::RawBlock),
+            Err(LiteralError::Nul)
+        );
+    }
+
+    /// Every range of [`INVISIBLE_RANGES`] is found from its first to its last
+    /// code point, and the code points just outside it are not (they are
+    /// ordinary characters: no two ranges touch).
+    #[test]
+    fn invisible_ranges_are_found_at_both_ends() {
+        let char_at = |cp: u32| char::from_u32(cp);
+        for &(lo, hi) in INVISIBLE_RANGES {
+            for cp in [lo, hi] {
+                let c = char_at(cp).unwrap();
+                assert!(is_invisible(c), "U+{cp:04X}");
+            }
+            for cp in [lo - 1, hi + 1] {
+                if let Some(c) = char_at(cp) {
+                    assert!(!is_invisible(c), "U+{cp:04X}");
+                }
+            }
+        }
+        // Some of the ends spelled out: the first C1 control, the soft hyphen,
+        // the Arabic letter mark, the zero-width space, the right-to-left
+        // override (Trojan Source) and the word joiner.
+        for c in [
+            '\u{80}',
+            '\u{9F}',
+            '\u{AD}',
+            '\u{61C}',
+            '\u{200B}',
+            '\u{202E}',
+            '\u{2060}',
+            '\u{10FFFF}',
+        ] {
+            assert!(is_invisible(c), "{c:?}");
+        }
+        for c in [
+            '\0', 'a', '\u{7F}', '\u{A0}', '\u{AC}', '\u{AE}', '\u{2065}', 'é', '✓',
+        ] {
+            assert!(!is_invisible(c), "{c:?}");
+        }
+    }
+
+    /// Integer and literal-length limits, at and one past each bound.
+    #[test]
+    fn numeric_limits_are_exact() {
+        let p = |s: &str, t| NumLit::parse(s, t).map(|n| n.as_str().to_owned());
+        let out_of_range = |s: &str, t| matches!(NumLit::parse(s, t), Err(NumError::OutOfRange { .. }));
+        let syntax = |s: &str, t| matches!(NumLit::parse(s, t), Err(NumError::Syntax(_)));
+
+        assert_eq!(p("0", NumType::Int).as_deref(), Ok("0"));
+        assert_eq!(p("0", NumType::Double).as_deref(), Ok("0.0"));
+        assert_eq!(p("0x7FFFFFFF", NumType::Int).as_deref(), Ok("2147483647"));
+        assert!(out_of_range("0x80000000", NumType::Int));
+        assert_eq!(
+            p("9223372036854775807", NumType::LongLong).as_deref(),
+            Ok("9223372036854775807")
+        );
+        assert!(out_of_range("9223372036854775808", NumType::LongLong));
+
+        // At most 128 digits after the base prefix (leading zeros count).
+        let binary = |digits: usize| format!("0b{}1", "0".repeat(digits - 1));
+        assert_eq!(p(&binary(128), NumType::Int).as_deref(), Ok("1"));
+        assert!(syntax(&binary(129), NumType::Int));
+        let hex = |digits: usize| format!("0x{}F", "0".repeat(digits - 1));
+        assert_eq!(p(&hex(128), NumType::LongLong).as_deref(), Ok("15"));
+        assert!(syntax(&hex(129), NumType::LongLong));
+
+        // At most 400 bytes of literal text.
+        let zeros = |len: usize| format!("0.{}", "0".repeat(len - 2));
+        assert_eq!(p(&zeros(400), NumType::Double).as_deref(), Ok("0.0"));
+        assert!(syntax(&zeros(401), NumType::Double));
+    }
+
+    /// Literals the generator asks for: a negative value gives the literal of
+    /// its magnitude (the caller adds the unary minus).
+    #[test]
+    fn generator_integer_literals() {
+        for (value, text) in [
+            (0, "0"),
+            (1, "1"),
+            (42, "42"),
+            (-1, "1"),
+            (-42, "42"),
+            (i32::MAX, "2147483647"),
+            (i32::MIN, "2147483648"),
+        ] {
+            let lit = NumLit::int(value);
+            assert_eq!(lit.as_str(), text, "{value}");
+            assert_eq!(lit.num_type(), NumType::Int);
+        }
+    }
+
+    /// The decimal floating-point grammar on its own: Rust's `f64` parser
+    /// would refuse some of these anyway, but the grammar must not rely on it.
+    #[test]
+    fn decimal_float_grammar() {
+        for good in ["1.5", "1.", ".5", "1e5", "1E+5", "1.5e-10", "0.0"] {
+            assert!(is_decimal_float(good), "{good}");
+        }
+        for bad in [
+            "", ".", "1", "e5", "1e", "1e+", "1e-", "1ex", "1e5x", "1.e", "1.5x", "x.5", "1.2.3", "+1.5",
+        ] {
+            assert!(!is_decimal_float(bad), "{bad}");
+        }
+    }
+
     /// A digit separator must stand between two digits, as in C++ (found by
     /// the `encoders` fuzz target: `.'02` was accepted as `0.02`).
     #[test]
