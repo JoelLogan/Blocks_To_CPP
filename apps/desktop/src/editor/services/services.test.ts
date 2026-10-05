@@ -172,11 +172,11 @@ describe('installing the services', () => {
       dialogs: fieldDialogs(dialogs),
     });
     expect(getEditorServices().symbols).toBe(services.symbols);
-    void getEditorServices().dialogs.prompt('Name?', 'value');
+    void getEditorServices().dialogs?.prompt('Name?', 'value');
     expect(prompt).toHaveBeenCalledWith({ message: 'Name?', defaultValue: 'value' });
-    void getEditorServices().dialogs.confirm('Sure?');
+    void getEditorServices().dialogs?.confirm('Sure?');
     expect(confirm).toHaveBeenCalledWith({ message: 'Sure?' });
-    void getEditorServices().dialogs.alert('Done');
+    void getEditorServices().dialogs?.alert('Done');
     expect(alert).toHaveBeenCalledWith({ message: 'Done' });
 
     uninstall();

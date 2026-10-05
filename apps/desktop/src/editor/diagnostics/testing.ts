@@ -176,7 +176,13 @@ export function editorContext(
   selectBlock: (id: string, opts?: SelectBlockOptions) => void = () => undefined,
   moduleId: () => string = () => 'mod_main',
 ): EditorContext {
-  return { workspace, store: useAppStore, core: NO_CORE, selectBlock, activeModuleId: moduleId };
+  return {
+    workspace,
+    store: useAppStore,
+    core: () => NO_CORE,
+    selectBlock,
+    activeModuleId: moduleId,
+  };
 }
 
 /**

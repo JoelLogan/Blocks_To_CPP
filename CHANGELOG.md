@@ -91,6 +91,20 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   their data, so an unchanged project saves byte for byte), with a live C++
   preview 50 ms after each change, fresh symbol IDs for duplicated and pasted
   blocks, and a module switcher.
+- The editor's toolbox: the catalog's categories in a continuous, Scratch-style
+  toolbox with presets, and Variables, Loops and My Blocks categories that follow
+  the scope at the selected block.
+- Problems on blocks: a badge with a shape per severity, an outline and a mark
+  on the exact part, for live and last-build diagnostics (dimmed once the
+  project changed), and two-way highlighting between blocks, the C++ view and
+  the Problems list.
+- Review fixes: the scope query answers at disabled blocks; pasting into a
+  statement list unstacks loose stacks; numbers JavaScript cannot hold exactly
+  are refused on load, and free-form floats are saved in JavaScript's form; the
+  console no longer traps the keyboard (Ctrl+Tab leaves it while a program
+  runs) and shows dropped output; dialogs and docks keep keyboard focus; long
+  expression tooltips are cut; and the editor reads the WebAssembly core anew
+  after a crash recovery.
 - Review fixes: on Windows, trust compares only ASCII letter case in paths,
   so a lookalike folder name is never trusted; a build returns its ID at once
   and can be cancelled while it waits for the compiler search or runs the

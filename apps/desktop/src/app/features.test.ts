@@ -84,8 +84,8 @@ describe('installAll', () => {
 });
 
 describe('the lists later waves extend', () => {
-  it('start empty', () => {
-    expect(EDITOR_PLUGINS).toEqual([]);
+  it('hold the editor plugins in attach order, and no features yet', () => {
+    expect(EDITOR_PLUGINS.map((plugin) => plugin.name)).toEqual(['toolbox', 'diagnostics']);
     const uninstall = installFeatures(context());
     expect(uninstall).toBeTypeOf('function');
     uninstall();

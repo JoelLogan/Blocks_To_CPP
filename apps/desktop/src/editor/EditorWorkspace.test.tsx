@@ -12,12 +12,7 @@ import { EDITOR_PLUGINS } from '../app/editorPlugins';
 import { resetAppStore, useAppStore } from '../app/store';
 import { documentFixture, projectFixture } from '../app/testing/fixtures';
 import { expectNoAxeViolations } from '../test/axe';
-import {
-  attachEditor,
-  EditorWorkspace,
-  editorInjectOptions,
-  INITIAL_TOOLBOX,
-} from './EditorWorkspace';
+import { attachEditor, EditorWorkspace, editorInjectOptions } from './EditorWorkspace';
 import { createCoreHost } from './preview/coreHost';
 import { registerEditorBlocks } from './services';
 import { present } from './sync/testing';
@@ -96,6 +91,8 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', FakeResizeObserver);
   // A core that never starts: these tests are about the component, not the preview.
   setCore(null);
+  // The app's own plugins are tested in their packages; these tests add their own.
+  EDITOR_PLUGINS.length = 0;
 });
 
 afterEach(() => {
@@ -188,7 +185,8 @@ describe('the block editor', () => {
     const { unmount } = render(<EditorWorkspace />);
     expect(order).toEqual(['attach toolbox', 'attach diagnostics']);
     expect((context as EditorContext | null)?.activeModuleId()).toBe('mod_main');
-    expect(() => context?.core.version()).toThrow('has not started');
+    // The core has not started in this test, and the context reads it on every call.
+    expect((context as EditorContext | null)?.core()).toBeNull();
     unmount();
     expect(order).toEqual([
       'attach toolbox',
@@ -228,20 +226,17 @@ describe('the block editor', () => {
 });
 
 describe('the initial toolbox and the inject options', () => {
-  it('lists every catalog category that has blocks, with its style', () => {
-    const contents = (
-      INITIAL_TOOLBOX as {
-        contents: { name: string; categorystyle: string; contents: unknown[] }[];
-      }
-    ).contents;
-    expect(contents.map((category) => category.name)).toContain('Program');
-    for (const category of contents) {
-      expect(category.categorystyle).toMatch(/^b2c_/);
-      expect(category.contents.length).toBeGreaterThan(0);
-    }
+  it('start with every catalog category and the continuous toolbox', () => {
     const options = editorInjectOptions(Blockly.Themes.Zelos);
+    const contents = (options.toolbox as { contents: { name: string }[] }).contents;
+    expect(contents.map((category) => category.name)).toContain('Program');
     expect(options.zoom).toMatchObject({ minScale: 0.1, maxScale: 4 });
-    expect(options.plugins).toEqual({ connectionChecker: 'b2c_checker' });
+    expect(options.plugins).toEqual({
+      connectionChecker: 'b2c_checker',
+      toolbox: 'b2c_continuous_toolbox',
+      flyoutsVerticalToolbox: 'b2c_continuous_flyout',
+      metricsManager: 'b2c_continuous_metrics',
+    });
   });
 
   it('attaches to an injected workspace and starts the core early', async () => {

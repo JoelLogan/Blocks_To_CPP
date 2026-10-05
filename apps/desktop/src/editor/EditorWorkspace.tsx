@@ -6,13 +6,7 @@
  * It publishes the {@link EditorHandle} features use, and attaches the editor plugins
  * (`EDITOR_PLUGINS`: the toolbox, the diagnostics, the clipboard).
  */
-import {
-  B2C_CHECKER_NAME,
-  b2cDarkTheme,
-  b2cLightTheme,
-  TOOLBOX,
-  toolboxCategoryStyle,
-} from '@blocks2cpp/blockly-ext';
+import { B2C_CHECKER_NAME, b2cDarkTheme, b2cLightTheme } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { useEffect, useRef } from 'react';
 
@@ -29,7 +23,7 @@ import { EDITOR_PLUGINS } from '../app/editorPlugins';
 import { useAppStore } from '../app/store';
 import { BLOCKLY_MEDIA_DIR } from './media';
 import { ModuleSwitcher } from './modules/ModuleSwitcher';
-import { appCoreHost, type CoreHost, liveCore } from './preview/coreHost';
+import { appCoreHost, type CoreHost } from './preview/coreHost';
 import type { PreviewService } from './preview/service';
 import {
   createSymbolServices,
@@ -42,6 +36,7 @@ import { withoutEvents } from './sync/bdmToWorkspace';
 import { MAX_ZOOM, MIN_ZOOM } from './sync/limits';
 import { clearWorkspace } from './sync/traverse';
 import { EditorSession } from './sync/session';
+import { toolboxInjectOptions } from './toolbox';
 
 /**
  * Where Blockly loads its images and cursors from: the dev server serves them straight from the
@@ -50,32 +45,19 @@ import { EditorSession } from './sync/session';
  */
 const MEDIA_PATH = import.meta.env.DEV ? '/node_modules/blockly/media/' : `/${BLOCKLY_MEDIA_DIR}/`;
 
-/**
- * The toolbox the workspace starts with: every catalog category with its blocks, without presets.
- * Blockly can only replace a toolbox of the same kind, so the toolbox plugin (milestone M2 wave 3)
- * replaces this one with `workspace.updateToolbox(categoryToolbox)`, adding presets and the dynamic
- * Variables and My Blocks categories.
- */
-export const INITIAL_TOOLBOX: Blockly.utils.toolbox.ToolboxDefinition = {
-  kind: 'categoryToolbox',
-  contents: TOOLBOX.filter((category) => category.entries.length > 0).map((category) => ({
-    kind: 'category',
-    name: category.name,
-    categorystyle: toolboxCategoryStyle(category.id),
-    contents: category.entries.map((entry) => ({ kind: 'block', type: entry.block })),
-  })),
-};
-
 /** The options the workspace is injected with, in the given theme. */
 export function editorInjectOptions(theme: Blockly.Theme): Blockly.BlocklyOptions {
+  const toolbox = toolboxInjectOptions();
   return {
     renderer: 'zelos',
     theme,
     media: MEDIA_PATH,
     sounds: false,
     trashcan: true,
-    toolbox: INITIAL_TOOLBOX,
-    plugins: { connectionChecker: B2C_CHECKER_NAME },
+    // The starting toolbox and the continuous toolbox's classes, which Blockly picks only at
+    // inject time; the toolbox plugin then fills in presets, Variables and My Blocks.
+    toolbox: toolbox.toolbox,
+    plugins: { connectionChecker: B2C_CHECKER_NAME, ...toolbox.plugins },
     grid: { spacing: 24, length: 2, colour: '#8f98ab55', snap: true },
     move: { scrollbars: true, drag: true, wheel: true },
     // The project format's zoom range (05 §5.3), so a saved view is shown as it was saved.
@@ -145,7 +127,8 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
   const context: EditorContext = {
     workspace,
     store: deps.store,
-    core: liveCore(deps.host),
+    // A getter, never an instance: after a trap the host publishes a new core.
+    core: () => deps.host.current(),
     selectBlock: (id, options) => {
       session.selectBlock(id, options);
     },

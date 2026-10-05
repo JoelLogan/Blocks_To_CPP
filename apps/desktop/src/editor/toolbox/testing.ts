@@ -337,7 +337,7 @@ export function editorContext(workspace: Blockly.WorkspaceSvg, core: CoreWasm): 
   return {
     workspace,
     store: useAppStore,
-    core,
+    core: () => core,
     selectBlock: () => undefined,
     activeModuleId: () => useAppStore.getState().project?.activeModuleId ?? 'mod_main',
   };

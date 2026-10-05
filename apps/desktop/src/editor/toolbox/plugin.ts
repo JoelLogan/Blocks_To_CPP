@@ -11,7 +11,6 @@
 import type { CoreWasm } from '@blocks2cpp/b2c-core-wasm';
 import * as Blockly from 'blockly/core';
 
-import { getCore } from '../../app/core';
 import { dialogs as appDialogs } from '../../app/dialogs/instance';
 import type { DialogService, DialogTextOptions } from '../../app/dialogs/service';
 import type { EditorContext, EditorPlugin } from '../../app/editor-types';
@@ -156,7 +155,7 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   registerToolboxComponents();
   const { workspace, store } = context;
   const dialogs = withBlocklyFocus(options.dialogs ?? appDialogs);
-  const symbols = analysisSymbolSource(store, () => getCore() ?? context.core);
+  const symbols = analysisSymbolSource(store, () => context.core());
   const selection = new SelectionTracker(workspace);
   /** The selection the dynamic categories were last built for (`undefined`: not built yet). */
   let listedFor: string | null | undefined;
