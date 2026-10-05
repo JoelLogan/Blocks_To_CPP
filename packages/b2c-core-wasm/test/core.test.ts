@@ -14,6 +14,10 @@ function fakeGlue(overrides: Partial<GlueFunctions> = {}): GlueFunctions {
     load: vi.fn(() => '{"ok":false,"diagnostics":[]}'),
     canonical: vi.fn(() => '{"ok":false,"diagnostics":[]}'),
     preview: vi.fn(() => '{"stage":"load","diagnostics":[],"files":[]}'),
+    symbols_in_scope: vi.fn(() => '[]'),
+    conversion_table: vi.fn(() => '[{"from":"int","to":"double","conversion":"widening"}]'),
+    clipboard_make: vi.fn(() => '{"ok":true,"payload":"{}","diagnostics":[]}'),
+    paste_prepare: vi.fn(() => '{"ok":false,"unresolved":[],"diagnostics":[]}'),
     ...overrides,
   };
 }
@@ -125,6 +129,71 @@ describe('createCore', () => {
     expect(handle.trapped).toBe(true);
   });
 
+  it('passes scope and clipboard arguments as the core expects them', () => {
+    const glue = fakeGlue();
+    const { core } = createCore(glue);
+    expect(core.symbolsInScope('b005', null)).toEqual([]);
+    expect(core.symbolsInScope('b010', 'BODY')).toEqual([]);
+    expect(glue.symbols_in_scope).toHaveBeenNthCalledWith(1, 'b005', null);
+    expect(glue.symbols_in_scope).toHaveBeenNthCalledWith(2, 'b010', 'BODY');
+    expect(core.conversionTable()).toEqual([{ from: 'int', to: 'double', conversion: 'widening' }]);
+    expect(core.clipboardMake('{"doc":1}', ['b1', 'b2'])).toEqual({
+      ok: true,
+      payload: '{}',
+      diagnostics: [],
+    });
+    expect(glue.clipboard_make).toHaveBeenCalledWith('{"doc":1}', '["b1","b2"]');
+    // Only the known keys of the target cross, whatever else the object carries.
+    const target = {
+      module: 'mod_main',
+      block: null,
+      input: null,
+      extra: '<script>',
+      __proto__: { polluted: true },
+    } as const;
+    expect(core.pastePrepare('payload', 'doc', target, 'ab'.repeat(32))).toEqual({
+      ok: false,
+      unresolved: [],
+      diagnostics: [],
+    });
+    expect(glue.paste_prepare).toHaveBeenCalledWith(
+      'payload',
+      'doc',
+      '{"module":"mod_main","block":null,"input":null}',
+      'ab'.repeat(32),
+    );
+  });
+
+  it('turns error envelopes of list results into CoreError', () => {
+    const { core } = createCore(
+      fakeGlue({
+        symbols_in_scope: () => '{"error":{"kind":"internal","message":"busy"}}',
+        conversion_table: () => '{"ok":true}',
+        clipboard_make: () => '{"error":{"kind":"invalidArguments","message":"bad ids"}}',
+        paste_prepare: () => '[]',
+      }),
+    );
+    expect(() => core.symbolsInScope('b', null)).toThrow(
+      expect.objectContaining({ kind: 'internal', message: 'symbolsInScope: busy' }) as Error,
+    );
+    expect(() => core.conversionTable()).toThrow(
+      expect.objectContaining({
+        kind: 'protocol',
+        message: 'conversionTable: the core returned something other than a list',
+      }) as Error,
+    );
+    expect(() => core.clipboardMake('{}', [])).toThrow(
+      expect.objectContaining({ kind: 'invalidArguments' }) as Error,
+    );
+    expect(() => core.pastePrepare('', '', { module: 'm', block: null, input: null }, '')).toThrow(
+      expect.objectContaining({ kind: 'protocol' }) as Error,
+    );
+    for (const response of ['not json', '"text"', '7', 'null']) {
+      const { core: other } = createCore(fakeGlue({ symbols_in_scope: () => response }));
+      expect(() => other.symbolsInScope('b', null)).toThrow(CoreError);
+    }
+  });
+
   it('keeps oversized input bounded', () => {
     const glue = fakeGlue();
     const { core } = createCore(glue);
@@ -138,6 +207,22 @@ describe('createCore', () => {
     core.preview(text, { indentWidth: 4 });
     expect(vi.mocked(glue.canonical).mock.calls[0]?.[0].length).toBe(MAX_DOCUMENT_BYTES + 1);
     expect(vi.mocked(glue.preview).mock.calls[0]?.[0].length).toBe(MAX_DOCUMENT_BYTES + 1);
+
+    core.pastePrepare(text, text, { module: 'm', block: null, input: null }, text);
+    const [payload, document, , seed] = vi.mocked(glue.paste_prepare).mock.calls[0] ?? [];
+    expect([payload?.length, document?.length, seed?.length]).toEqual([
+      MAX_DOCUMENT_BYTES + 1,
+      MAX_DOCUMENT_BYTES + 1,
+      MAX_DOCUMENT_BYTES + 1,
+    ]);
+    core.clipboardMake(text, []);
+    expect(vi.mocked(glue.clipboard_make).mock.calls[0]?.[0].length).toBe(MAX_DOCUMENT_BYTES + 1);
+    core.symbolsInScope(text, text);
+    const [block, input] = vi.mocked(glue.symbols_in_scope).mock.calls[0] ?? [];
+    expect([block?.length, input?.length]).toEqual([
+      MAX_DOCUMENT_BYTES + 1,
+      MAX_DOCUMENT_BYTES + 1,
+    ]);
 
     // Input within the limit is passed unchanged.
     const small = new Uint8Array([1, 2, 3]);

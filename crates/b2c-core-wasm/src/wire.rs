@@ -4,12 +4,15 @@
 //! Should encoding fail anyway (a bug: the types here always serialise), the
 //! result is the [`FacadeError::Encode`] envelope instead.
 
-use b2c_ir::Diagnostic;
-use b2c_model::{Document, LoadError};
+use b2c_ir::{Diagnostic, SymbolInfo};
+use b2c_model::{Block, Document, LoadError};
 use serde::Serialize;
 
-use crate::error::FacadeError;
+use crate::clipboard::Unresolved;
+use crate::error::{FacadeError, Failure};
 use crate::facade::{Canonical, Preview, VersionInfo};
+use crate::scope::ConversionRow;
+use crate::session::{ClipboardMade, Pasted};
 
 /// Encodes a value, or the encode-error envelope when that fails.
 fn encode<T: Serialize>(value: &T) -> String {
@@ -41,17 +44,21 @@ pub(crate) fn error(failure: &FacadeError) -> String {
     })
 }
 
-/// A failed load: `{"ok": false, "diagnostics": [...]}`.
+/// Input that did not load: `{"ok": false, "diagnostics": [...]}`.
 #[derive(Serialize)]
-struct Failure<'a> {
+struct NotLoaded<'a> {
     ok: bool,
     diagnostics: &'a [Diagnostic],
 }
 
 fn failure(problem: &LoadError) -> String {
-    encode(&Failure {
+    not_loaded(&problem.diagnostics)
+}
+
+fn not_loaded(diagnostics: &[Diagnostic]) -> String {
+    encode(&NotLoaded {
         ok: false,
-        diagnostics: &problem.diagnostics,
+        diagnostics,
     })
 }
 
@@ -103,6 +110,75 @@ pub(crate) fn canonical(result: &Result<Canonical, LoadError>) -> String {
 
 pub(crate) fn preview(preview: &Preview) -> String {
     encode(preview)
+}
+
+/// `[SymbolInfo, …]`.
+pub(crate) fn symbols(symbols: &[SymbolInfo]) -> String {
+    encode(&symbols)
+}
+
+/// `[{"from", "to", "conversion"}, …]`.
+pub(crate) fn conversion_table(rows: &[ConversionRow]) -> String {
+    encode(&rows)
+}
+
+/// `{"ok": true, "payload": "…", "text"?: "…", "diagnostics": []}`, the
+/// failure `{"ok": false, "diagnostics": [...]}`, or the error envelope.
+pub(crate) fn clipboard_made(result: &Result<ClipboardMade, Failure>) -> String {
+    #[derive(Serialize)]
+    struct Success<'a> {
+        ok: bool,
+        payload: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        text: Option<&'a str>,
+        diagnostics: [Diagnostic; 0],
+    }
+    match result {
+        Ok(made) => encode(&Success {
+            ok: true,
+            payload: &made.payload,
+            text: made.text.as_deref(),
+            diagnostics: [],
+        }),
+        Err(Failure::Diagnostics(diagnostics)) => not_loaded(diagnostics),
+        Err(Failure::Error(failure)) => error(failure),
+    }
+}
+
+/// `{"ok": true, "blocks": [...], "unresolved": [{"sym", "name"}],
+/// "diagnostics": [...]}`, the failure `{"ok": false, "unresolved": [],
+/// "diagnostics": [...]}`, or the error envelope.
+///
+/// The blocks are written in their serde shape, which is the project file
+/// shape (05 §5.4); they have no canvas position.
+pub(crate) fn pasted(result: &Result<Pasted, Failure>) -> String {
+    #[derive(Serialize)]
+    struct Success<'a> {
+        ok: bool,
+        blocks: &'a [Block],
+        unresolved: &'a [Unresolved],
+        diagnostics: &'a [Diagnostic],
+    }
+    #[derive(Serialize)]
+    struct Refused<'a> {
+        ok: bool,
+        unresolved: [Unresolved; 0],
+        diagnostics: &'a [Diagnostic],
+    }
+    match result {
+        Ok(pasted) => encode(&Success {
+            ok: true,
+            blocks: &pasted.blocks,
+            unresolved: &pasted.unresolved,
+            diagnostics: &pasted.diagnostics,
+        }),
+        Err(Failure::Diagnostics(diagnostics)) => encode(&Refused {
+            ok: false,
+            unresolved: [],
+            diagnostics,
+        }),
+        Err(Failure::Error(failure)) => error(failure),
+    }
 }
 
 /// Removes the whitespace between JSON tokens (outside strings).

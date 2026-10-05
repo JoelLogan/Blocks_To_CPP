@@ -13,14 +13,19 @@ export class CoreTrap extends Error {
 
 /**
  * Why a call failed without stopping the instance:
- * - `invalidOptions`: the core refused the arguments (for example preview options);
+ * - `invalidOptions`: the core refused the preview options;
+ * - `invalidArguments`: the core refused another argument: a malformed or oversized block ID
+ *   list, paste target or seed, or one that names a module or block the document does not have;
  * - `encode`: the core could not encode its result (a bug);
+ * - `internal`: the core could not finish for another reason that is a bug (for example no fresh
+ *   ID could be found);
  * - `protocol`: the core returned something the wrapper does not understand (a bug, or a wrapper
  *   built for another version of the core);
  * - `init`: the core could not be started (the module is missing, corrupt, or cannot be
  *   compiled under the page's content security policy).
  */
-export type CoreErrorKind = 'invalidOptions' | 'encode' | 'protocol' | 'init';
+export type CoreErrorKind =
+  'invalidOptions' | 'invalidArguments' | 'encode' | 'internal' | 'protocol' | 'init';
 
 /** A call or the start-up failed; see `kind`. The instance itself, if any, is still usable. */
 export class CoreError extends Error {

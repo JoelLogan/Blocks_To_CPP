@@ -23,6 +23,19 @@ export interface Glue {
   canonical(document_json: string): string;
   /** `b2c_core_wasm::preview`. */
   preview(document_json: string, options_json: string): string;
+  /** `b2c_core_wasm::symbols_in_scope`. */
+  symbols_in_scope(block_id: string, input?: string | null): string;
+  /** `b2c_core_wasm::conversion_table`. */
+  conversion_table(): string;
+  /** `b2c_core_wasm::clipboard_make`. */
+  clipboard_make(document_json: string, block_ids_json: string): string;
+  /** `b2c_core_wasm::paste_prepare`. */
+  paste_prepare(
+    clipboard_text: string,
+    document_json: string,
+    target_json: string,
+    seed_hex: string,
+  ): string;
 }
 
 /** Creates fresh glue state, not yet bound to an instance. */

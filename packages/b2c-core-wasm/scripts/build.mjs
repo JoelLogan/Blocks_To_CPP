@@ -41,11 +41,24 @@ const STEM = 'b2c_core_wasm';
  */
 const EXPECTED_EXPORTS = [
   'export function canonical(document_json: string): string;',
+  'export function clipboard_make(document_json: string, block_ids_json: string): string;',
+  'export function conversion_table(): string;',
   'export function load(bytes: Uint8Array): string;',
+  'export function paste_prepare(clipboard_text: string, document_json: string, target_json: string, seed_hex: string): string;',
   'export function preview(document_json: string, options_json: string): string;',
+  'export function symbols_in_scope(block_id: string, input?: string | null): string;',
   'export function version(): string;',
 ];
-const EXPORTED_FUNCTIONS = ['canonical', 'load', 'preview', 'version'];
+const EXPORTED_FUNCTIONS = [
+  'canonical',
+  'clipboard_make',
+  'conversion_table',
+  'load',
+  'paste_prepare',
+  'preview',
+  'symbols_in_scope',
+  'version',
+];
 
 /**
  * The WebAssembly features rustc 1.97 enables for wasm32-unknown-unknown (LLVM's generic CPU),
@@ -245,7 +258,7 @@ function wrapGlue(source, bindgenVersion) {
     '// WebAssembly instance gets its own glue state (see src/loader.ts).',
     'export function createGlue() {',
     body.trim(),
-    '  return { init: __wbg_init, version, load, canonical, preview };',
+    `  return { init: __wbg_init, ${EXPORTED_FUNCTIONS.join(', ')} };`,
     '}',
     '',
   ].join('\n');

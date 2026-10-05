@@ -120,8 +120,17 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     );
     const saved = core.canonical(exampleText(name));
     expect(saved.ok && preview.contentHash === saved.hash).toBe(true);
-    expect(preview.blockTypes).toEqual({});
-    expect(preview.symbols).toEqual([]);
+    // Scope data of the program (the exact values are checked natively and in
+    // scope-clipboard.test.ts): static types, and symbols sorted by name.
+    const types = ['void', 'bool', 'char', 'int', 'double', 'string', 'error'];
+    for (const type of Object.values(preview.blockTypes)) {
+      expect(types).toContain(type);
+    }
+    const symbolNames = preview.symbols.map((symbol) => symbol.name);
+    expect(symbolNames).toEqual([...symbolNames].sort());
+    for (const symbol of preview.symbols) {
+      expect(types).toContain(symbol.type);
+    }
   });
 
   it('indents with two spaces when asked', () => {
