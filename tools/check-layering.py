@@ -35,6 +35,8 @@ ALLOWED_WORKSPACE_DEPS = {
     "b2c-cli": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain"},
     # The IPC contract: types, IDs and decoding only (no Tauri, no services).
     "b2c-ipc": {"b2c-ir", "b2c-model"},
+    # The Tauri-free backend services behind every IPC command.
+    "b2c-app": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain", "b2c-store", "b2c-ipc"},
     # The desktop shell holds no business logic: it adapts IPC to the build
     # and toolchain layers (and may use their shared types).
     "blocks2cpp-desktop": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain"},
@@ -49,6 +51,9 @@ ALLOWED_DEV_DEPS = {
     # the resolve stage completes them, including documents it rejects (the
     # editor's preview analyses those too).
     ("b2c-lang", "b2c-catalog"),
+    # The backend's generation-parity test compares the editor preview's files
+    # with the build's generated files.
+    ("b2c-app", "b2c-core-wasm"),
 }
 
 # The pure compiler crates and the external crates they may use. Anything

@@ -168,6 +168,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "b2c-app"
+version = "0.1.0"
+dependencies = [
+ "b2c-build",
+ "b2c-core-wasm",
+ "b2c-ipc",
+ "b2c-ir",
+ "b2c-model",
+ "b2c-store",
+ "b2c-toolchain",
+ "proptest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
 name = "b2c-build"
 version = "0.1.0"
 dependencies = [

@@ -65,3 +65,15 @@ pub use run::{
 };
 pub use session::{BuildJob, BuildRecord, BuildSessions, RecordOutcome, StaleReason, ToolchainForBuild};
 pub use toolchains::{ToolchainChoice, ToolchainReport, list_toolchains};
+
+/// The version of the block catalog the app builds with (`app_info`, and the
+/// `generator.catalog` of new projects).
+pub use b2c_catalog::CATALOG_VERSION;
+
+/// Operating-system helpers for the desktop app and the command-line tool, so
+/// neither needs a direct dependency on `b2c-process`
+/// (`docs/spec/08-security.md` §8.5, §8.8 and §8.14).
+pub mod os {
+    pub use b2c_process::os::{harden_dll_search, open_https_url};
+    pub use b2c_process::{ContainmentLevel, cleanup_stale_scopes, containment_level};
+}
