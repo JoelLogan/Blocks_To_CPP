@@ -422,7 +422,7 @@ impl Layout {
             return false;
         };
         let components: Vec<Component<'_>> = relative.components().collect();
-        if components.len() != depth || !components.iter().all(|c| matches!(c, Component::Normal(_))) {
+        if components.len() != depth || !components.iter().all(is_plain_name) {
             return false;
         }
         let mut level = self.builds.clone();
@@ -440,6 +440,19 @@ impl Layout {
                 .strip_prefix(&self.builds)
                 .is_ok_and(|inside| inside.components().count() == depth)
         })
+    }
+}
+
+/// A single plain name: a normal component with no separator inside it. On
+/// Windows the cache root is a verbatim (`\\?\`) path, after which `/` is not
+/// a separator and `..` is not special, so `a/../b` would otherwise count as
+/// one normal component.
+fn is_plain_name(component: &Component<'_>) -> bool {
+    match component {
+        Component::Normal(name) => name
+            .to_str()
+            .is_some_and(|name| name != "." && name != ".." && !name.contains(['/', '\\'])),
+        _ => false,
     }
 }
 
