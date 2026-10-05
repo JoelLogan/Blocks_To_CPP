@@ -20,6 +20,7 @@ report (which quotes the user's code)
 | `diag_sarif` | arbitrary bytes to `b2c_toolchain::diagnostics::parse_sarif` (the SARIF file of GCC 13+) | no panic, no unbounded allocation, deterministic; the diagnostics bounds below; only compiler messages; `parse_output` with this file and empty standard error gives the same messages (none when the file is rejected) |
 | `diag_json` | arbitrary bytes to `parse_gcc_json` (GCC 10–14 JSON) and to `parse_output` in the JSON format (the array mixed with the driver's and linker's text) | no panic or stack overflow on deep nesting, deterministic; the diagnostics bounds below; an accepted array gives only compiler messages and reads the same through `parse_output` |
 | `diag_text` | arbitrary bytes, as UTF-8 with invalid sequences replaced, to `parse_text` (plain text and linker messages) | no panic, deterministic; the diagnostics bounds below; a symbol only on linker messages; `truncated` only when a list is full; `parse_output` reads plain standard error, and standard error without a usable SARIF file, exactly like this |
+| `sanitizer_report` | a byte choosing the chunk sizes, then arbitrary program output to `b2c_toolchain::sanitizer::Detector` in those chunks (the scanner for AddressSanitizer and UndefinedBehaviorSanitizer reports, 07 §7.6.4) | no panic, no unbounded allocation, at most 4 KiB of line state; the same report however the output is cut; a kind matching `[a-z0-9-]{1,64}`; the first report wins |
 | `diag_output` | a mode byte choosing the format (bits 0–1: `AddOutputSarif`, `SarifFile`, `Json`, `Plain`) and whether a SARIF file is passed (bit 2), then standard error and, after a `\0sarif\0` separator, the SARIF file, to `parse_output` | deterministic; the diagnostics bounds below; exactly the documented combination: the SARIF file's messages, then only the driver's and linker's text messages, or the text fallback, or JSON with the SARIF file ignored |
 
 The diagnostics bounds, checked on every message and note
@@ -33,7 +34,7 @@ line numbers.
 This folder is its own Cargo workspace: libFuzzer needs a nightly toolchain,
 so the main workspace never builds it. No target performs I/O: the targets
 call pure functions of the compiler crates and, from `b2c-toolchain`, only
-the `parse_*` diagnostics parsers.
+the `parse_*` diagnostics parsers and the sanitizer report scanner.
 
 Each target uses the dictionary `fuzz/<target>.dict` when there is one and
 `fuzz/b2c.dict` otherwise. CI's per-PR smoke run (`.github/workflows/ci.yml`,
@@ -89,6 +90,14 @@ f=crates/b2c-toolchain/tests/fixtures/gcc13/link
 { printf '\005'; cat "$f.sarif-stderr.txt"; printf '\000sarif\000'; cat "$f.sarif"; } > fuzz/corpus/diag_output/link-sarif
 { printf '\002'; cat "$f.json"; } > fuzz/corpus/diag_output/link-json
 cargo +nightly fuzz run diag_output fuzz/corpus/diag_output -- -dict=fuzz/diag_output.dict
+```
+
+`sanitizer_report` starts from an empty corpus; its dictionary holds the
+report markers and terminal escapes:
+
+```sh
+mkdir -p fuzz/corpus/sanitizer_report
+cargo +nightly fuzz run sanitizer_report fuzz/corpus/sanitizer_report -- -dict=fuzz/sanitizer_report.dict
 ```
 
 Add `-max_total_time=60` for the per-PR smoke run and `-max_total_time=1800`
