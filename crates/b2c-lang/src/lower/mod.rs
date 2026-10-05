@@ -30,7 +30,8 @@ use crate::collect::{self, DeclInfo, DeclKind, DeclStatus, MAX_BLOCK_DEPTH};
 use crate::flow;
 use crate::messages::{Diags, quoted};
 use crate::nesting;
-use crate::scope::{ListKey, PARAMS_LIST, Scopes};
+use crate::query::{Point, ScopeIndex};
+use crate::scope::{HideMark, ListKey, PARAMS_LIST, Scopes};
 
 /// Functions of namespace `std` that are not templates and take a
 /// `std::string` first. A call `stoi(text)` of a user function with the same
@@ -58,10 +59,17 @@ pub(crate) fn run(document: &Document) -> Analysis {
         return Analysis {
             program,
             diagnostics: diags.list,
+            index: ScopeIndex::default(),
         };
     };
     let mut lowerer = Lowerer::new(document, first.id.clone());
     let modules = lowerer.program();
+    let trail = lowerer.scopes.take_trail();
+    let functions = lowerer
+        .functions
+        .iter()
+        .map(|(sym, sig)| (sig.module, sig.name.as_str(), sym));
+    lowerer.index.finish(trail, document.modules.len(), functions);
     Analysis {
         program: Program {
             standard,
@@ -69,6 +77,7 @@ pub(crate) fn run(document: &Document) -> Analysis {
             symbols: lowerer.symbols,
         },
         diagnostics: lowerer.diags.list,
+        index: lowerer.index,
     }
 }
 
@@ -123,6 +132,8 @@ struct Pending {
     name: String,
     sym: SymbolId,
     kind: PendingKind,
+    /// Ends the hiding of `name` in the scope stack's trail.
+    mark: HideMark,
 }
 
 #[derive(Debug, Clone)]
@@ -145,6 +156,8 @@ struct Lowerer<'d> {
     symbols: SymbolTable,
     diags: Diags,
     scopes: Scopes,
+    /// What is visible at each lowered block, for the editor's scope query.
+    index: ScopeIndex,
     pending: Vec<Pending>,
     module_index: usize,
     module: ModuleId,
@@ -189,6 +202,7 @@ impl<'d> Lowerer<'d> {
             symbols: SymbolTable::default(),
             diags: Diags::default(),
             scopes: Scopes::default(),
+            index: ScopeIndex::default(),
             pending: Vec::new(),
             module_index: 0,
             module,
@@ -320,7 +334,7 @@ impl<'d> Lowerer<'d> {
     /// Starts lowering a new item.
     fn begin_item(&mut self, item: ItemCtx) {
         self.item = item;
-        self.scopes = Scopes::default();
+        self.scopes.reset();
         self.pending.clear();
         self.loop_depth = 0;
         self.depth = 0;
@@ -329,6 +343,7 @@ impl<'d> Lowerer<'d> {
 
     fn main(&mut self, block: &Block) -> Item {
         self.begin_item(ItemCtx::Main);
+        self.record_block(&block.id);
         let body = self.body(block, "BODY", false);
         Item {
             kind: ItemKind::Main(MainDef { body }),
@@ -344,6 +359,7 @@ impl<'d> Lowerer<'d> {
             name: sig.name.clone(),
             ret: sig.ret.clone(),
         });
+        self.record_block(&block.id);
         self.scopes.push(ListKey::new(&block.id, PARAMS_LIST), false);
         for param in &sig.params {
             self.scopes.declare(&param.name, &param.sym);
@@ -417,7 +433,7 @@ impl<'d> Lowerer<'d> {
             ty: ret.clone(),
             origin: self.origin(&block.id, field("NAME")),
         };
-        if self.insert_symbol(&decl.sym, symbol, name_loc) {
+        if self.insert_symbol(&decl.sym, &decl.name, symbol, name_loc) {
             let sig = FuncSig {
                 name: decl.name.clone(),
                 module: self.module_index,
@@ -473,7 +489,7 @@ impl<'d> Lowerer<'d> {
                 ty: ty.clone(),
                 origin: origin.clone(),
             };
-            let declared = self.insert_symbol(&row.sym, symbol, loc);
+            let declared = self.insert_symbol(&row.sym, &row.name, symbol, loc);
             params.push(ParamSig {
                 sym: row.sym,
                 name: row.name,
@@ -573,8 +589,9 @@ impl<'d> Lowerer<'d> {
         }
     }
 
-    /// Adds a symbol to the table; reports a duplicate symbol ID instead.
-    fn insert_symbol(&mut self, sym: &SymbolId, symbol: Symbol, location: Location) -> bool {
+    /// Adds a symbol, whose user's name is `name`, to the table; reports a
+    /// duplicate symbol ID instead.
+    fn insert_symbol(&mut self, sym: &SymbolId, name: &str, symbol: Symbol, location: Location) -> bool {
         if self.symbols.symbols.contains_key(sym) {
             self.diags.error(
                 codes::DUPLICATE_SYMBOL_ID,
@@ -584,8 +601,55 @@ impl<'d> Lowerer<'d> {
             );
             return false;
         }
+        if symbol.name.as_str() != name {
+            // An invalid name has a placeholder in the table; the editor
+            // shows what the user wrote.
+            self.index.record_name(sym, name);
+        }
         self.symbols.symbols.insert(sym.clone(), symbol);
         true
+    }
+
+    // --- The editor's scope index -----------------------------------------------
+
+    /// What is visible at the current point of the lowering.
+    fn point(&self) -> Point {
+        Point {
+            node: self.scopes.here(),
+            module: self.module_index,
+        }
+    }
+
+    /// Records what is visible at a block that is being lowered.
+    fn record_block(&mut self, block: &BlockId) {
+        let point = self.point();
+        self.index.record_block(block, point);
+    }
+
+    /// Records what is visible at the start of a statement list, or inside a
+    /// value input, of a block that is being lowered.
+    fn record_input(&mut self, block: &BlockId, input: &str) {
+        let point = self.point();
+        self.index.record_input(block, input, point);
+    }
+
+    /// Starts lowering the starting value of a variable, or the header of a
+    /// `for` loop: C++ already binds `name` there to the new declaration.
+    fn push_pending(&mut self, name: &str, sym: &SymbolId, kind: PendingKind) {
+        let mark = self.scopes.hide(name);
+        self.pending.push(Pending {
+            name: name.to_owned(),
+            sym: sym.clone(),
+            kind,
+            mark,
+        });
+    }
+
+    /// Ends what [`Self::push_pending`] started.
+    fn pop_pending(&mut self) {
+        if let Some(pending) = self.pending.pop() {
+            self.scopes.unhide(pending.mark);
+        }
     }
 
     /// Warns when a local name hides a function of the module.

@@ -154,6 +154,7 @@ impl Lowerer<'_> {
         if !self.enter(block) {
             return error_expr(origin);
         }
+        self.record_block(&block.id);
         let expr = match block.block_type.as_str() {
             "var.get" => self.var_get(block, origin),
             "math.number" => self.number_block(block, origin),

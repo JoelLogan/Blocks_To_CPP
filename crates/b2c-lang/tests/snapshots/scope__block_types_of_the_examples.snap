@@ -1,0 +1,43 @@
+---
+source: crates/b2c-lang/tests/scope.rs
+expression: text
+---
+average.b2c:
+  (no value blocks)
+countdown.b2c:
+  (no value blocks)
+exit_code.b2c:
+  (no value blocks)
+factorial.b2c:
+  b005: "int"
+fizzbuzz.b2c:
+  b001: "int"
+  b002: "bool"
+  b004: "int"
+  b005: "bool"
+  b007: "int"
+  b008: "bool"
+greeting.b2c:
+  b003: "string"
+guessing_game.b2c:
+  b001: "int"
+hello_world.b2c:
+  (no value blocks)
+max_of_three.b2c:
+  (no value blocks)
+primes.b2c:
+  (no value blocks)
+sum_to_ten.b2c:
+  (no value blocks)
+temperature.b2c:
+  (no value blocks)
+times_table.b2c:
+  (no value blocks)
+tricky_text.b2c:
+  b004: "char"
+weather.b2c:
+  b001: "bool"
+  b002: "bool"
+  b003: "string"
+  b004: "bool"
+  b005: "bool"

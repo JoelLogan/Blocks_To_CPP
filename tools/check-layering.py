@@ -41,6 +41,10 @@ ALLOWED_DEV_DEPS = {
     # The analyser's end-to-end tests compile the C++ generated from what it
     # accepts; production code of the two crates stays independent.
     ("b2c-lang", "b2c-codegen"),
+    # The analyser's scope and robustness tests analyse documents exactly as
+    # the resolve stage completes them, including documents it rejects (the
+    # editor's preview analyses those too).
+    ("b2c-lang", "b2c-catalog"),
 }
 
 # The pure compiler crates and the external crates they may use. Anything

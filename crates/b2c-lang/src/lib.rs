@@ -29,6 +29,13 @@
 //! 3. **Flow** checks on each finished item: missing `return`, unreachable
 //!    blocks, variables used before they get a value, endless loops. An item
 //!    that nests too deeply for the later stages is reported instead.
+//!
+//! For the editor, an [`Analysis`] also answers questions about the blocks
+//! (spec §6.5): [`Analysis::symbols_in_scope`] lists the symbols a block may
+//! refer to, [`Analysis::symbol_infos`] every symbol, and
+//! [`Analysis::block_types`] the static type of each value block. Together
+//! with [`conversion`], the analyser's own conversion rule, they let the
+//! editor offer and connect only what the analyser accepts.
 
 mod access;
 mod codes;
@@ -38,12 +45,15 @@ mod lower;
 mod messages;
 mod nesting;
 mod parser;
+mod query;
 mod scope;
 mod typing;
 
 use b2c_ir::Diagnostic;
 use b2c_ir::sast::Program;
 use b2c_model::Document;
+
+pub use typing::{Conversion, conversion};
 
 /// The result of analysing a document.
 #[derive(Debug, Clone, PartialEq)]
@@ -52,12 +62,15 @@ pub struct Analysis {
     pub program: Program,
     /// Every problem found, in a deterministic order.
     pub diagnostics: Vec<Diagnostic>,
+    /// What is visible where, for [`Analysis::symbols_in_scope`].
+    index: query::ScopeIndex,
 }
 
-/// Analyses a resolved document.
+/// Analyses a document, normally one that `b2c_catalog::resolve` completed.
 ///
-/// Never panics: problems in the document become diagnostics, and the program
-/// contains everything that could be lowered.
+/// Never panics, also on a document whose resolution failed (the editor's
+/// preview analyses those too): problems in the document become
+/// diagnostics, and the program contains everything that could be lowered.
 pub fn analyze(document: &Document) -> Analysis {
     lower::run(document)
 }
