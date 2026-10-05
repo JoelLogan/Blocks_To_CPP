@@ -31,7 +31,7 @@ use serde_json::json;
 #[test]
 fn startup_never_probes_and_discovery_reports_when_done() {
     let prober = TestProber::held();
-    let app = TestApp::with(Compiler::Spy, Arc::clone(&prober));
+    let app = TestApp::with(Compiler::spy(), Arc::clone(&prober));
     let events = app_sink();
     app.backend.app_subscribe(events.clone());
     // The first list answers at once, from the (empty) cache, while the
@@ -113,7 +113,7 @@ fn discovery_never_searches_the_cache_or_the_current_directory() {
 
 #[test]
 fn relative_folders_are_refused() {
-    let mut dirs = Dirs::under_root(std::path::Path::new("/tmp/b2c-test-root"));
+    let mut dirs = Dirs::under_root(&std::env::temp_dir().join("b2c-test-root"));
     dirs.cache = std::path::PathBuf::from("relative/cache");
     let error = Backend::start(
         BackendConfig {
@@ -128,7 +128,7 @@ fn relative_folders_are_refused() {
     assert_eq!(error, StartError::RelativeFolder("cache"));
     let error = Backend::start(
         BackendConfig {
-            dirs: Dirs::under_root(std::path::Path::new("/tmp/b2c-test-root")),
+            dirs: Dirs::under_root(&std::env::temp_dir().join("b2c-test-root")),
             app_version: "0.1.0",
             discovery_scope: DiscoveryScope::Only(Vec::new()),
             cwd: Some(std::path::PathBuf::from("here")),
@@ -141,7 +141,7 @@ fn relative_folders_are_refused() {
 
 #[test]
 fn selecting_a_toolchain_persists() {
-    let app = TestApp::with(Compiler::Spy, TestProber::new());
+    let app = TestApp::with(Compiler::spy(), TestProber::new());
     app.wait_discovery();
     let list = app.backend.toolchain_list().unwrap();
     assert_eq!(list.toolchains.len(), 1);
