@@ -4,7 +4,11 @@
 //! * [`frontend`]: the pure part, project bytes to generated C++.
 //! * [`build_dir`]: the per-project build directory and safe file writing.
 //! * [`build`]: the front end, then g++ in the build cache.
-//! * [`run_program`] / [`run_program_captured`]: running what was built.
+//! * [`run_program`] / [`run_program_captured`]: running what was built
+//!   (the CLI).
+//! * [`RunSessions`]: the IDE's running programs, in a pseudo-terminal with
+//!   streamed, flood-protected output, input, resizing, Stop and exit
+//!   decoding; [`run_environment`] gives their environment.
 //! * [`list_toolchains`]: the compilers on this computer.
 //!
 //! ```no_run
@@ -44,6 +48,8 @@ pub use compile::{
 };
 pub use frontend::{Frontend, FrontendOptions, GENERATOR_INCOMPLETE, Stage, run_frontend};
 pub use run::{
-    CapturedRun, ProgramExit, ProgramInput, RunError, RunRequest, run_program, run_program_captured,
+    ASAN_OPTIONS, ASAN_OPTIONS_NO_LEAKS, CapturedRun, ProgramExit, ProgramInput, PtySize, RunEnvOptions,
+    RunError, RunRequest, RunSessions, RunSpec, TERM, UBSAN_OPTIONS, run_environment, run_program,
+    run_program_captured,
 };
 pub use toolchains::{ToolchainChoice, ToolchainReport, list_toolchains};

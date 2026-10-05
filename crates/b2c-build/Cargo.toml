@@ -16,11 +16,14 @@ b2c-lang.workspace = true
 b2c-codegen.workspace = true
 b2c-toolchain.workspace = true
 b2c-process.workspace = true
+# The IPC contract: run sessions report through its sinks, events, IDs and errors.
+b2c-ipc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

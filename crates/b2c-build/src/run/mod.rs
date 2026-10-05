@@ -1,10 +1,29 @@
 //! Running a built program (`docs/spec/07-toolchain-build-run.md` §7.6).
+//!
+//! * [`run_program`] and [`run_program_captured`]: the CLI's runs, attached to
+//!   its terminal or with the output captured.
+//! * [`RunSessions`]: the IDE's runs, each a session in a pseudo-terminal
+//!   that streams its output in batches with flood protection, takes input,
+//!   resizes and stops, and reports how the program ended (`session`, with
+//!   `coalesce` for batching and flood protection, `rate` for the input
+//!   limits and `exit` for decoding the end).
+//! * [`run_environment`]: the environment of an IDE run (`env`).
 
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use b2c_process::{Command, ExitStatus, Limits, Stdin};
+use b2c_process::{Command, ExitStatus, Limits, PtyExit, Stdin};
+
+mod coalesce;
+mod env;
+mod exit;
+mod rate;
+mod session;
+
+pub use b2c_process::PtySize;
+pub use env::{ASAN_OPTIONS, ASAN_OPTIONS_NO_LEAKS, RunEnvOptions, TERM, UBSAN_OPTIONS, run_environment};
+pub use session::{RunSessions, RunSpec};
 
 /// Where the program's standard input comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +62,9 @@ pub enum ProgramExit {
     Exception(u32),
     /// The timeout stopped it.
     TimedOut,
+    /// The user stopped it (IDE runs: *Stop*, closing the project or the
+    /// app), whatever signal or exception then ended it.
+    Stopped,
 }
 
 impl ProgramExit {
@@ -54,6 +76,18 @@ impl ProgramExit {
             Self::Signal(signal) => ExitStatus::Signaled(signal).describe(),
             Self::Exception(code) => ExitStatus::Exception(code).describe(),
             Self::TimedOut => String::from("Stopped: the program ran longer than the time limit"),
+            Self::Stopped => String::from("Stopped"),
+        }
+    }
+
+    /// How a session's program ended: [`ProgramExit::Stopped`] when the
+    /// session stopped it, [`ProgramExit::TimedOut`] for its time limit, and
+    /// otherwise its exit status.
+    pub fn from_pty(exit: &PtyExit) -> Self {
+        if exit.stopped {
+            Self::Stopped
+        } else {
+            Self::from_status(exit.status, exit.timed_out)
         }
     }
 

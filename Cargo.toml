@@ -38,6 +38,9 @@ sha2 = "0.11.0"
 getrandom = "0.3.4"
 # TypeScript bindings for the IPC types (b2c-ipc, feature `ts`, never in app builds).
 ts-rs = "12.0.1"
+# Structured logging with spans per build and run session (09 §9.1, 08 §8.11); already in the
+# lockfile through Tauri. No default features: no `log` bridge and no proc-macro attributes.
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 clap = { version = "4.6.7", features = ["derive"] }
 tempfile = "3.27.0"
 rustix = { version = "1.1.5", features = ["process"] }
