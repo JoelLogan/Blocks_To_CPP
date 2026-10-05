@@ -346,17 +346,27 @@ export function text(value: string): string {
 
 /**
  * Catalog text as inline code. The fence is longer than any run of backticks inside, and `|` is
- * escaped because the code sits in a table cell. Empty text has no code form.
+ * written `\|` because the code sits in a table cell. Empty text has no code form.
+ *
+ * Code spans have no escapes, and GFM renderers disagree about a backslash directly before a
+ * `|` in a table cell (GitHub takes every `\|` as an escaped pipe; marked, which builds the
+ * site, counts the backslashes before it). No code span renders such text exactly in both, so
+ * it is written as escaped plain text instead, which both read the same way.
  */
 export function code(value: string): string {
   const flat = value.replace(/\s+/gu, ' ').trim();
   if (flat === '') {
     return 'nothing';
   }
+  if (flat.includes('\\|')) {
+    return text(flat);
+  }
   const longest = Math.max(0, ...[...flat.matchAll(/`+/gu)].map((run) => run[0].length));
   const fence = '`'.repeat(longest + 1);
   const pad = flat.startsWith('`') || flat.endsWith('`') ? ' ' : '';
-  return `${fence}${pad}${flat.replace(/\|/gu, '\\|')}${pad}${fence}`;
+  // Every `|` here follows a character other than a backslash (checked above).
+  const cell = Array.from(flat, (c) => (c === '|' ? '\\|' : c)).join('');
+  return `${fence}${pad}${cell}${pad}${fence}`;
 }
 
 function lines(all: readonly string[]): string {

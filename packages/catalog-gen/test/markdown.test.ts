@@ -60,6 +60,14 @@ describe('escaping', () => {
     expect(code('a ``` b')).toBe('````a ``` b````');
     expect(code(' padded \n ')).toBe('`padded`');
     expect(code('   ')).toBe('nothing');
+    // A backslash directly before `|` has no code-span form that GitHub and marked read alike,
+    // so it becomes escaped plain text (both render it as the original text).
+    expect(code('a\\|b')).toBe('a\\\\\\|b');
+    expect(code('a\\\\|b')).toBe('a\\\\\\\\\\|b');
+    expect(code('<x> \\| `y`')).toBe('\\<x\\> \\\\\\| \\`y\\`');
+    // A backslash elsewhere stays in the code span.
+    expect(code('|\\')).toBe('`\\|\\`');
+    expect(code('x\\')).toBe('`x\\`');
   });
 
   it('writes tokens the way the editor shows them', () => {
