@@ -164,6 +164,103 @@ fn generate_writes_cpp() {
     );
 }
 
+/// Every file below `dir` (recursively), with its contents.
+fn files_below(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut files = Vec::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(folder) = pending.pop() {
+        for entry in std::fs::read_dir(&folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let contents = std::fs::read(&path).unwrap();
+                files.push((path, contents));
+            }
+        }
+    }
+    files
+}
+
+/// Whether `haystack` contains `needle`.
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|window| window == needle)
+}
+
+/// The IDE init unit never reaches generated or exported code (07 §7.6.3).
+#[test]
+fn generate_and_export_never_contain_the_ide_init_unit() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = example("hello_world");
+    for (folder, export) in [("generated", false), ("export", true)] {
+        let out = dir.path().join(folder);
+        let mut args = vec![
+            "generate",
+            project.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ];
+        if export {
+            args.push("--export");
+        }
+        let output = b2c(&args);
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        let files = files_below(&out);
+        assert!(!files.is_empty());
+        for (path, contents) in files {
+            assert!(!path.to_string_lossy().contains("b2c_ide"), "{}", path.display());
+            assert!(!contains(&contents, b"b2c_ide"), "{}", path.display());
+            assert!(!contains(&contents, b"SetConsoleCP"), "{}", path.display());
+        }
+    }
+}
+
+/// `b2c build` never links the IDE init unit: no IDE file in its build
+/// folder and none in any compiler command of its manifest, and a second
+/// build is served from the cache.
+#[test]
+fn cli_builds_never_contain_the_ide_init_unit() {
+    if !have_gxx() {
+        return;
+    }
+    let cache = tempfile::tempdir().unwrap();
+    let build = || {
+        b2c(&[
+            "build",
+            example("hello_world").to_str().unwrap(),
+            "--cache-dir",
+            cache.path().to_str().unwrap(),
+        ])
+    };
+    let output = build();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let executable = PathBuf::from(stdout(&output).trim_end());
+    let built_at = std::fs::metadata(&executable).unwrap().modified().unwrap();
+    let files = files_below(&cache.path().join("builds"));
+    let manifests: Vec<&(PathBuf, Vec<u8>)> = files
+        .iter()
+        .filter(|(path, _)| path.ends_with("build-manifest.json"))
+        .collect();
+    assert_eq!(manifests.len(), 1, "{files:?}");
+    let manifest: serde_json::Value = serde_json::from_slice(&manifests[0].1).unwrap();
+    assert_eq!(manifest["ide"], false);
+    assert_eq!(manifest["result"], "success");
+    for (path, _) in &files {
+        assert!(!path.to_string_lossy().contains("b2c_ide"), "{}", path.display());
+    }
+    assert!(!manifest["steps"].to_string().contains("b2c_ide"));
+
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let output = build();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(PathBuf::from(stdout(&output).trim_end()), executable);
+    assert_eq!(
+        std::fs::metadata(&executable).unwrap().modified().unwrap(),
+        built_at,
+        "an unchanged project is not compiled again"
+    );
+}
+
 #[test]
 fn examples_are_canonically_formatted() {
     for entry in std::fs::read_dir(repo_root().join("examples")).unwrap() {

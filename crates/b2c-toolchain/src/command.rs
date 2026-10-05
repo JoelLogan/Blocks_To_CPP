@@ -19,7 +19,7 @@ use b2c_model::{BuildConfiguration, Language, Optimization, Sanitizer, WarningLe
 use b2c_process::{Command, Limits, ProcessError};
 
 use crate::codes;
-use crate::diagnostics::{self, MAX_INPUT_BYTES, ParsedOutput};
+use crate::diagnostics::{self, CompilerMessage, MAX_INPUT_BYTES, MAX_MESSAGES, MessageOrigin, ParsedOutput};
 use crate::env::CompilerEnv;
 use crate::flags::{ExtraFlags, LibraryProfile, Subsystem, ValidDefine};
 use crate::probe::{DiagnosticsFormat, Toolchain};
@@ -34,6 +34,10 @@ pub const COMPILER_MEMORY_LIMIT: u64 = 4 * 1024 * 1024 * 1024;
 pub const COMPILER_PROCESS_LIMIT: u32 = 32;
 /// Cap for the compiler's captured output: 4 MiB (spec §7.5.2).
 pub const COMPILER_OUTPUT_CAP: usize = 4 * 1024 * 1024;
+/// Time between the polite stop (`SIGTERM` to the compiler's process group)
+/// and the forced kill (`SIGKILL`) when a build is cancelled or a compiler
+/// times out (spec §7.5.4). Windows terminates the Job Object at once.
+pub const COMPILER_GRACE: Duration = Duration::from_secs(2);
 
 /// Flags that keep the compiler's output stable and machine-readable.
 const STABLE_OUTPUT: [&str; 3] = [
@@ -57,7 +61,9 @@ const STRICT_WARNINGS: [&str; 10] = [
 ];
 
 /// The limits for one compiler invocation: the timeout, 4 GiB of memory, 32
-/// processes and 4 MiB of captured output per stream.
+/// processes, 4 MiB of captured output per stream, and [`COMPILER_GRACE`]
+/// between `SIGTERM` and `SIGKILL` when the run is stopped (spec §7.5.4).
+/// Capability probes use their own limits and are killed at once.
 pub fn compiler_limits(timeout: Duration) -> Limits {
     Limits {
         timeout: Some(timeout),
@@ -65,7 +71,7 @@ pub fn compiler_limits(timeout: Duration) -> Limits {
         stderr_cap: COMPILER_OUTPUT_CAP,
         memory: Some(COMPILER_MEMORY_LIMIT),
         processes: Some(COMPILER_PROCESS_LIMIT),
-        grace: None,
+        grace: Some(COMPILER_GRACE),
     }
 }
 
@@ -155,9 +161,10 @@ pub struct CompilerCommand {
     pub args: Vec<OsString>,
     /// How diagnostics come back for this step.
     pub format: DiagnosticsFormat,
-    /// The SARIF file the compiler writes into its working directory, if
-    /// any (a file name, not a path).
-    pub sarif_file: Option<String>,
+    /// The SARIF files the compiler writes into its working directory, one
+    /// per source file, in source order (file names, not paths). Empty for
+    /// steps whose diagnostics come on standard error.
+    pub sarif_files: Vec<String>,
 }
 
 impl CommandPlan {
@@ -343,14 +350,14 @@ impl CommandPlan {
 
     /// `-c <source> -o <object>`.
     pub fn compile(&self, source: &Path, object: &Path) -> CompilerCommand {
-        let (mut args, sarif_file) = self.compile_head(source);
+        let (mut args, sarif_files) = self.compile_head(&[source]);
         args.extend(["-c".into(), source.as_os_str().to_os_string()]);
         args.extend(["-o".into(), object.as_os_str().to_os_string()]);
         CompilerCommand {
             program: self.program.clone(),
             args,
             format: self.format,
-            sarif_file,
+            sarif_files,
         }
     }
 
@@ -367,39 +374,70 @@ impl CommandPlan {
             program: self.program.clone(),
             args,
             format: DiagnosticsFormat::Plain,
-            sarif_file: None,
+            sarif_files: Vec::new(),
         }
     }
 
     /// Compiles and links a single translation unit in one invocation.
     pub fn compile_and_link(&self, source: &Path, output: &Path) -> CompilerCommand {
-        let (mut args, sarif_file) = self.compile_head(source);
+        self.compile_and_link_sources(&[source], output)
+    }
+
+    /// Compiles several translation units and links them in one invocation,
+    /// for example a project's `main.cpp` together with the IDE init unit
+    /// (spec §7.6.3). The sources are compiled in the order given. Their file
+    /// names should differ, because each one's SARIF file is named after it;
+    /// an empty list gives a command that fails with "no input files".
+    ///
+    /// GCC 15's `-fdiagnostics-add-output` names one SARIF file per
+    /// invocation, so for several sources the names are left to GCC
+    /// (`<file name>.sarif` in the working directory, as with
+    /// `-fdiagnostics-format=sarif-file`). If GCC writes them elsewhere,
+    /// [`CompilerCommand::read_diagnostics`] reads the text that GCC 15 also
+    /// prints on standard error instead.
+    pub fn compile_and_link_many(&self, sources: &[PathBuf], output: &Path) -> CompilerCommand {
+        let sources: Vec<&Path> = sources.iter().map(PathBuf::as_path).collect();
+        self.compile_and_link_sources(&sources, output)
+    }
+
+    fn compile_and_link_sources(&self, sources: &[&Path], output: &Path) -> CompilerCommand {
+        let (mut args, sarif_files) = self.compile_head(sources);
         args.extend(self.link.iter().cloned());
-        args.push(source.as_os_str().to_os_string());
+        args.extend(sources.iter().map(|source| source.as_os_str().to_os_string()));
         args.extend(["-o".into(), output.as_os_str().to_os_string()]);
         args.extend(self.libs.iter().cloned());
         CompilerCommand {
             program: self.program.clone(),
             args,
             format: self.format,
-            sarif_file,
+            sarif_files,
         }
     }
 
-    /// The compile flags plus the per-source diagnostics flag.
-    fn compile_head(&self, source: &Path) -> (Vec<OsString>, Option<String>) {
+    /// The compile flags plus the diagnostics flag for `sources`, and the
+    /// SARIF files the compiler writes for them (each name once).
+    fn compile_head(&self, sources: &[&Path]) -> (Vec<OsString>, Vec<String>) {
         let mut args = self.compile.clone();
-        let sarif_file = match self.format {
-            DiagnosticsFormat::AddOutputSarif => {
-                let name = sarif_name(source);
-                args.push(format!("-fdiagnostics-add-output=sarif:version=2.1,file={name}").into());
-                Some(name)
-            }
+        let mut sarif_files: Vec<String> = Vec::new();
+        if matches!(
+            self.format,
+            DiagnosticsFormat::AddOutputSarif | DiagnosticsFormat::SarifFile
+        ) {
             // GCC 13–14 name the file after the source.
-            DiagnosticsFormat::SarifFile => Some(sarif_name(source)),
-            DiagnosticsFormat::Json | DiagnosticsFormat::Plain => None,
-        };
-        (args, sarif_file)
+            for source in sources {
+                let name = sarif_name(source);
+                if !sarif_files.contains(&name) {
+                    sarif_files.push(name);
+                }
+            }
+        }
+        if self.format == DiagnosticsFormat::AddOutputSarif {
+            args.push(match sarif_files.as_slice() {
+                [name] => format!("-fdiagnostics-add-output=sarif:version=2.1,file={name}").into(),
+                _ => OsString::from("-fdiagnostics-add-output=sarif:version=2.1"),
+            });
+        }
+        (args, sarif_files)
     }
 
     fn compile_flag(&mut self, flag: impl Into<OsString>) {
@@ -561,8 +599,11 @@ impl CompilerCommand {
     /// [`compiler_limits`] (`timeout` defaults to
     /// [`DEFAULT_COMPILE_TIMEOUT`]).
     ///
-    /// It also removes a SARIF file left in `working_dir` by an earlier run,
-    /// so [`CompilerCommand::read_diagnostics`] never reads stale results.
+    /// It also removes the SARIF files left in `working_dir` by an earlier
+    /// run, so [`CompilerCommand::read_diagnostics`] never reads stale
+    /// results. Attach a [`b2c_process::CancelToken`] to the returned command
+    /// to make the step cancellable; a cancelled or timed-out compiler gets
+    /// [`COMPILER_GRACE`] to exit after `SIGTERM`.
     ///
     /// # Errors
     /// [`ProcessError`] if the program or working directory is not
@@ -573,7 +614,7 @@ impl CompilerCommand {
         env: &CompilerEnv,
         timeout: Option<Duration>,
     ) -> Result<Command, ProcessError> {
-        if let Some(name) = &self.sarif_file {
+        for name in &self.sarif_files {
             let _ = std::fs::remove_file(working_dir.join(name));
         }
         let mut command = Command::new(&self.program, working_dir)?;
@@ -616,22 +657,69 @@ impl CompilerCommand {
             program: self.program.clone(),
             args,
             format: DiagnosticsFormat::Plain,
-            sarif_file: None,
+            sarif_files: Vec::new(),
         })
     }
 
-    /// Parses this step's diagnostics: the SARIF file in `working_dir` (read
-    /// with a size bound, never through a symbolic link) and standard error.
+    /// Parses this step's diagnostics: its SARIF files in `working_dir`
+    /// (each read with a size bound, never through a symbolic link) and
+    /// standard error.
+    ///
+    /// When every SARIF file is there and parses, the compiler's messages come
+    /// from them, in source order, and only the driver's and the linker's
+    /// lines are taken from standard error. When one is missing, malformed or
+    /// too large, standard error is read as text instead (spec §7.5.3), and
+    /// a file that was too large marks the result as truncated.
     pub fn read_diagnostics(&self, working_dir: &Path, stderr: &[u8]) -> ParsedOutput {
-        let sarif = self
-            .sarif_file
-            .as_ref()
-            .and_then(|name| read_bounded(&working_dir.join(name)));
-        let mut parsed = diagnostics::parse_output(self.format, stderr, sarif.as_deref());
-        if sarif.as_ref().is_some_and(|bytes| bytes.len() > MAX_INPUT_BYTES) {
-            parsed.truncated = true;
+        if self.sarif_files.is_empty() {
+            return diagnostics::parse_output(self.format, stderr, None);
         }
-        parsed
+        let mut runs = Vec::with_capacity(self.sarif_files.len());
+        let mut too_large = false;
+        for name in &self.sarif_files {
+            let parsed = read_bounded(&working_dir.join(name)).and_then(|bytes| {
+                too_large |= bytes.len() > MAX_INPUT_BYTES;
+                diagnostics::parse_sarif(&bytes).ok()
+            });
+            let Some(parsed) = parsed else {
+                let mut text = diagnostics::parse_output(self.format, stderr, None);
+                text.truncated |= too_large;
+                return text;
+            };
+            runs.push(parsed);
+        }
+        // As `parse_output` does for one file: the compiler's messages from
+        // SARIF, the driver's and the linker's from standard error.
+        let text = diagnostics::parse_text(&String::from_utf8_lossy(
+            stderr.get(..MAX_INPUT_BYTES).unwrap_or(stderr),
+        ));
+        let mut out = ParsedOutput {
+            truncated: too_large || text.truncated,
+            ..ParsedOutput::default()
+        };
+        for run in runs {
+            out.truncated |= run.truncated;
+            push_bounded(&mut out, run.messages);
+        }
+        push_bounded(
+            &mut out,
+            text.messages
+                .into_iter()
+                .filter(|message| message.origin != MessageOrigin::Compiler),
+        );
+        out
+    }
+}
+
+/// Appends messages, keeping at most [`MAX_MESSAGES`]; dropping any marks
+/// the result as truncated.
+fn push_bounded(out: &mut ParsedOutput, messages: impl IntoIterator<Item = CompilerMessage>) {
+    for message in messages {
+        if out.messages.len() >= MAX_MESSAGES {
+            out.truncated = true;
+            return;
+        }
+        out.messages.push(message);
     }
 }
 

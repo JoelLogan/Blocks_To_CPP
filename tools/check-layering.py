@@ -26,9 +26,11 @@ ALLOWED_WORKSPACE_DEPS = {
     # one OS call it needs (the atomic rename) comes from b2c-process.
     "b2c-store": {"b2c-ir", "b2c-model", "b2c-process"},
     "b2c-toolchain": {"b2c-ir", "b2c-model", "b2c-process"},
+    # Build and run sessions: the cache root and atomic writes come from
+    # b2c-store, and the sessions report through b2c-ipc's event types.
     "b2c-build": {
         "b2c-ir", "b2c-model", "b2c-catalog", "b2c-lang", "b2c-codegen",
-        "b2c-toolchain", "b2c-process",
+        "b2c-toolchain", "b2c-process", "b2c-store", "b2c-ipc",
     },
     "b2c-cli": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain"},
     # The IPC contract: types, IDs and decoding only (no Tauri, no services).

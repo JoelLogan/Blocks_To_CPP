@@ -183,6 +183,7 @@ fn check_run(example: &Example, cache: &Path) -> Result<(), String> {
         toolchain: ToolchainChoice::Auto,
         cache_root: cache.to_path_buf(),
         frontend: FrontendOptions::default(),
+        ide: false,
     };
     let report =
         b2c_build::build(&project, &request).map_err(|error| format!("{}: {error}", example.name))?;
