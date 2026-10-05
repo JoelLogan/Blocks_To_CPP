@@ -43,7 +43,9 @@ pub fn rfc3339_utc(time: SystemTime) -> String {
 /// Strict: the separators must be exactly `-`, `T` (or `t`), `:` and `.`;
 /// every field must have its fixed number of digits and be in range
 /// (including the day of the month); leap seconds (`:60`) and years outside
-/// 0000–9999 are refused. Returns `None` for anything else.
+/// 0000–9999 are refused. Returns `None` for anything else, and for an
+/// instant this platform's `SystemTime` cannot hold (before 1601 on
+/// Windows).
 pub fn parse_rfc3339_utc(text: &str) -> Option<SystemTime> {
     let bytes = text.as_bytes();
     if bytes.len() > 64 {
@@ -201,36 +203,50 @@ mod tests {
 
     use super::*;
 
-    fn at(seconds: i64, nanos: u32) -> SystemTime {
+    /// The instant `seconds` + `nanos` after the epoch, if this platform's
+    /// `SystemTime` can hold it (Windows cannot before 1601).
+    fn at(seconds: i64, nanos: u32) -> Option<SystemTime> {
         let base = if seconds >= 0 {
-            UNIX_EPOCH + Duration::from_secs(seconds.unsigned_abs())
+            UNIX_EPOCH.checked_add(Duration::from_secs(seconds.unsigned_abs()))
         } else {
-            UNIX_EPOCH - Duration::from_secs(seconds.unsigned_abs())
+            UNIX_EPOCH.checked_sub(Duration::from_secs(seconds.unsigned_abs()))
         };
-        base + Duration::from_nanos(u64::from(nanos))
+        base?.checked_add(Duration::from_nanos(u64::from(nanos)))
     }
 
     #[test]
     fn formats_known_instants() {
         assert_eq!(rfc3339_utc(UNIX_EPOCH), "1970-01-01T00:00:00.000Z");
         assert_eq!(
-            rfc3339_utc(at(1_791_209_007, 512_999_999)),
+            rfc3339_utc(at(1_791_209_007, 512_999_999).unwrap()),
             "2026-10-05T14:03:27.512Z"
         );
-        assert_eq!(rfc3339_utc(at(951_782_400, 0)), "2000-02-29T00:00:00.000Z");
-        assert_eq!(rfc3339_utc(at(-1, 999_000_000)), "1969-12-31T23:59:59.999Z");
-        assert_eq!(rfc3339_utc(at(-86_400, 0)), "1969-12-31T00:00:00.000Z");
+        assert_eq!(
+            rfc3339_utc(at(951_782_400, 0).unwrap()),
+            "2000-02-29T00:00:00.000Z"
+        );
+        assert_eq!(
+            rfc3339_utc(at(-1, 999_000_000).unwrap()),
+            "1969-12-31T23:59:59.999Z"
+        );
+        assert_eq!(rfc3339_utc(at(-86_400, 0).unwrap()), "1969-12-31T00:00:00.000Z");
     }
 
     #[test]
     fn clamps_to_four_digit_years() {
-        assert_eq!(rfc3339_utc(at(300_000_000_000, 0)), "9999-12-31T23:59:59.999Z");
-        assert_eq!(rfc3339_utc(at(-70_000_000_000, 0)), "0000-01-01T00:00:00.000Z");
+        assert_eq!(
+            rfc3339_utc(at(300_000_000_000, 0).unwrap()),
+            "9999-12-31T23:59:59.999Z"
+        );
+        if let Some(ancient) = at(-70_000_000_000, 0) {
+            assert_eq!(rfc3339_utc(ancient), "0000-01-01T00:00:00.000Z");
+        }
     }
 
     #[test]
     fn parses_offsets_and_fractions() {
         let expected = at(1_791_209_007, 0);
+        assert!(expected.is_some());
         for text in [
             "2026-10-05T14:03:27Z",
             "2026-10-05t14:03:27z",
@@ -238,28 +254,20 @@ mod tests {
             "2026-10-05T09:33:27-04:30",
             "2026-10-05T14:03:27.000000000Z",
         ] {
-            assert_eq!(parse_rfc3339_utc(text), Some(expected), "{text}");
+            assert_eq!(parse_rfc3339_utc(text), expected, "{text}");
         }
         assert_eq!(
             parse_rfc3339_utc("2026-10-05T14:03:27.5Z"),
-            Some(at(1_791_209_007, 500_000_000))
+            at(1_791_209_007, 500_000_000)
         );
         assert_eq!(
             parse_rfc3339_utc("2026-10-05T14:03:27.123456789Z"),
-            Some(at(1_791_209_007, 123_456_789))
+            at(1_791_209_007, 123_456_789)
         );
-        assert_eq!(
-            parse_rfc3339_utc("1969-12-31T23:59:59.250Z"),
-            Some(at(-1, 250_000_000))
-        );
-        assert_eq!(
-            parse_rfc3339_utc("0000-01-01T00:00:00Z"),
-            Some(at(-62_167_219_200, 0))
-        );
-        assert_eq!(
-            parse_rfc3339_utc("2024-02-29T00:00:00Z"),
-            Some(at(1_709_164_800, 0))
-        );
+        assert_eq!(parse_rfc3339_utc("1969-12-31T23:59:59.250Z"), at(-1, 250_000_000));
+        // `None` on both sides where the platform cannot hold year 0.
+        assert_eq!(parse_rfc3339_utc("0000-01-01T00:00:00Z"), at(-62_167_219_200, 0));
+        assert_eq!(parse_rfc3339_utc("2024-02-29T00:00:00Z"), at(1_709_164_800, 0));
     }
 
     #[test]
@@ -304,6 +312,9 @@ mod tests {
         fn round_trips(millis in MIN_MILLIS..=MAX_MILLIS) {
             let millis = i64::try_from(millis).unwrap();
             let time = at(millis.div_euclid(1000), u32::try_from(millis.rem_euclid(1000)).unwrap() * 1_000_000);
+            // Instants the platform cannot hold (before 1601 on Windows).
+            prop_assume!(time.is_some());
+            let time = time.unwrap();
             let text = rfc3339_utc(time);
             prop_assert_eq!(text.len(), 24);
             prop_assert_eq!(parse_rfc3339_utc(&text), Some(time));
