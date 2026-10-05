@@ -79,8 +79,9 @@ Checks (CI runs them all, see [`.github/workflows/desktop.yml`](../../.github/wo
 ```sh
 pnpm desktop:check                    # TypeScript, ESLint and Prettier, in every frontend package
 python3 tools/check-package-layering.py                           # which package may use which
-pnpm --filter @blocks2cpp/desktop run test                        # Vitest (happy-dom), headless
-pnpm --filter @blocks2cpp/desktop run test:coverage               # with the 75% line gate
+pnpm --filter @blocks2cpp/desktop run test                        # Vitest (happy-dom), headless, then test:isolation
+pnpm --filter @blocks2cpp/desktop run test:coverage               # the same, with the 75% line gate
+pnpm --filter @blocks2cpp/desktop run test:isolation              # the isolation hook's validator (node --test)
 pnpm --filter @blocks2cpp/desktop run build                       # frontend build
 cargo clippy --locked -p blocks2cpp-desktop --all-targets -- -D warnings
 cargo test --locked -p blocks2cpp-desktop

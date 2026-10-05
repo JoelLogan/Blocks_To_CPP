@@ -1,7 +1,8 @@
 # The desktop app (apps/desktop) and the frontend packages (packages/*): typecheck, lint and
 # format every frontend package and check the package layering rules; run the frontend tests
-# with the coverage gate (docs/spec/09-quality-and-delivery.md §9.2, §9.3); then lint, test and
-# build the Tauri app on Linux and Windows and check that it starts.
+# with the coverage gate (docs/spec/09-quality-and-delivery.md §9.2, §9.3) and the isolation
+# hook's tests; then lint, test and build the Tauri app on Linux and Windows and check that it
+# starts.
 # The app is not a default member of the Cargo workspace, so ci.yml's root `cargo` commands
 # skip it; this workflow covers it. Installers (MSI, NSIS, AppImage, deb, rpm) are built by
 # the release workflow once there is one (M6), so this one builds the executable only.
@@ -14,10 +15,18 @@ on:
       - "apps/desktop/**"
       - "packages/**"
       - "crates/**"
+      # Compiled into the crates (include_str!), so into the app and the WebAssembly core.
+      - "catalog/**"
+      # Read by the WebAssembly core's tests (packages/b2c-core-wasm/test/wasm.test.ts).
+      - "examples/**"
+      - "tests/golden/**"
+      - "tests/security/projects/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "package.json"
+      # A workspace package that the package rules cover (the site is built in pages.yml).
+      - "site/package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".node-version"
@@ -28,10 +37,18 @@ on:
       - "apps/desktop/**"
       - "packages/**"
       - "crates/**"
+      # Compiled into the crates (include_str!), so into the app and the WebAssembly core.
+      - "catalog/**"
+      # Read by the WebAssembly core's tests (packages/b2c-core-wasm/test/wasm.test.ts).
+      - "examples/**"
+      - "tests/golden/**"
+      - "tests/security/projects/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "package.json"
+      # A workspace package that the package rules cover (the site is built in pages.yml).
+      - "site/package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".node-version"
@@ -171,8 +188,13 @@ jobs:
       - name: Build the WebAssembly core package
         run: pnpm --filter @blocks2cpp/b2c-core-wasm run build
 
-      # Vitest in every package that has tests, each with its 75% line-coverage gate.
+      # Vitest in every package that has tests, each with its 75% line-coverage gate. The app's
+      # test:coverage also runs the isolation hook's tests (node --test, apps/desktop/package.json).
+      # B2C_REQUIRE_WASM: the WebAssembly core's tests fail, rather than skip, without the module
+      # built above.
       - name: Run the frontend tests with coverage
+        env:
+          B2C_REQUIRE_WASM: "1"
         run: pnpm -r --if-present run test:coverage
 
       - name: Write the coverage summary

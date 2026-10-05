@@ -13,8 +13,9 @@
     "lint": "eslint --max-warnings 0 .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test": "vitest run && pnpm run test:isolation",
+    "test:coverage": "vitest run --coverage && pnpm run test:isolation",
+    "test:isolation": "node --test --test-reporter=spec \"src-tauri/isolation-tests/*.test.js\"",
     "test:watch": "vitest",
     "tauri": "tauri"
   },
