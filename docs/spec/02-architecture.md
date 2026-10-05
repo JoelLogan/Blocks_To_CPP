@@ -271,7 +271,13 @@ commands.
   ([07 §7.9](07-toolchain-build-run.md#79-command-line-interface)); their
   field names are single words, so they fit the convention. `SymbolInfo` has
   one shape in WASM and IPC ([06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes)),
-  and its parameter mode keeps the value `read_only`.
+  and its parameter mode keeps the value `read_only`. `b2c_ipc::diag` and
+  `b2c_ipc::pipeline` hold copies of these shared `b2c-ir` types
+  (`Diagnostic`, `GeneratedFile`, `FileKind`, `SourceMap`, `FileMap`,
+  `MappedRange`, `Position`, `StaticType`, `SymbolInfo`, `SymbolInfoKind` and
+  `PassMode`) whose JSON is byte-identical to theirs, which tests check, so
+  `packages/ipc-types` declares them for every frontend package, including
+  the shapes the WASM core returns, even before a command carries them.
 * **Dialogs.** A command that shows a native dialog returns
   `{ status: "cancelled" }` or `{ status: "ok", … }`. A cancel is not an error.
 * **No paths in requests.** No request carries a filesystem path. Paths come
@@ -309,7 +315,7 @@ separately.
 | `trust_revoke` | `{ handle }` | `{ trust }` | Removes the project's own record; trust that comes from a folder remains and is reported. |
 | `toolchain_list` | `{}` | `{ toolchains, discovering }` | Cached results; `discovering` is `true` while background discovery runs. |
 | `toolchain_rescan` | `{}` | `{ toolchains, discovering }` | Discovers and probes again. |
-| `toolchain_add_dialog` | `{}` | cancelled, or `{ toolchain }` | The user picks a `g++` executable in a native dialog; one that cannot be used gives `toolchainRejected`. |
+| `toolchain_add_dialog` | `{}` | cancelled, or `{ toolchain }` | The user picks a `g++` executable in a native dialog. A file that is not an acceptable g++ (`B2C-T1002`) or cannot be probed gives `toolchainRejected`; a probed compiler is added even when it is not usable (`usable: false`, with its problems). |
 | `toolchain_select` | `{ toolchainId }` | `{}` | The only way to change the selected toolchain in the settings. |
 | `toolchain_setup_info` | `{}` | `{ platform, noUsableToolchain, distro }` | `platform` is `windows` or `linux`; `distro` is `{ id, idLike }` from `os-release`, or `null` ([04 §4.6](04-user-interface.md#46-toolchain-setup-experience)). |
 | `build_start` | `{ handle, document, config }` + channel `onEvent` | `{ buildId }` | `config` is `debug` or `release`. One active build per project: a new one cancels the old one, and the project's running program is stopped first. |
@@ -421,12 +427,14 @@ Every command returns either its response or an `IpcError`, tagged by
 | `rateLimited` | | Too many calls (program input, trust dialog) |
 | `busy` | | Another native dialog is open |
 | `tooManyHandles`, `tooManySessions` | | A resource bound was reached (§2.6) |
-| `toolchainRejected` | `diagnostics` | A compiler picked by the user cannot be used |
+| `toolchainRejected` | `diagnostics` | The file picked in `toolchain_add_dialog` is not an acceptable g++ or cannot be probed |
 | `io` | `kind`: `notFound`, `permissionDenied`, `alreadyExists` or `other` | A file operation failed |
 | `internal` | | A bug; details are only in the log |
 
-No error carries a path or project content; internal details, such as I/O
-errors with paths, go to the log at debug level. User-facing text comes from
+No error carries a path or project content, except that the diagnostics of
+`toolchainRejected` may name the compiler file the user just picked, for
+display only like `displayPath`; internal details, such as I/O errors with
+paths, go to the log at debug level. User-facing text comes from
 the frontend's message catalog, never from the `Display` text of an error. No
 panic crosses the IPC boundary: the adapters catch panics and return
 `internal`.

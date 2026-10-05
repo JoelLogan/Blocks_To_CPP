@@ -24,8 +24,6 @@
           ]
         }
       },
-      "x": 120,
-      "y": 80,
       "stack": [
         {
           "id": "blk_second",
@@ -55,8 +53,6 @@
       "id": "blk_x\" onmouseover=\"alert(1)",
       "type": "var.declare",
       "v": 1,
-      "x": 120,
-      "y": 200,
       "fields": {
         "CONST": false,
         "NAME": {

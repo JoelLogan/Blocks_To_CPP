@@ -60,7 +60,10 @@ project's canonical folder is refused with `B2C-T1002`.
 Windows only a file named exactly `g++.exe` is accepted (`.bat`, `.cmd` and
 anything else give `B2C-T1002`); a network path is accepted with the warning
 `B2C-T1020`. The file is canonicalised, probed and stored with the source
-*manual*.
+*manual*, even when it fails health checks (it is then listed as not usable,
+with its problems). Only a file that is refused, or that cannot be probed at
+all, is not added: the command returns `toolchainRejected` with the problems
+([02 §2.5.5](02-architecture.md#255-errors)).
 
 Each candidate is **canonicalised** (symlinks resolved; on Windows the path is
 normalised and checked to be a regular file, not a reparse point into an

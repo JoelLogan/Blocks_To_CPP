@@ -289,6 +289,42 @@ signal: number, } | { "type": "exception",
 ntstatus: number, } | { "type": "stopped" };
 
 /**
+ * The kind of a generated file.
+ */
+export type FileKind = "source" | "header";
+
+/**
+ * The mapped ranges of one generated file.
+ */
+export type FileMap = {
+/**
+ * The path, as in `GeneratedFile::path`.
+ */
+path: string,
+/**
+ * The ranges, sorted by start position.
+ */
+ranges: Array<MappedRange>, };
+
+/**
+ * One generated file.
+ */
+export type GeneratedFile = {
+/**
+ * The path relative to the generated-sources folder, `/`-separated, built
+ * only from validated module names (for example `main.cpp`).
+ */
+path: string,
+/**
+ * Source or header.
+ */
+kind: FileKind,
+/**
+ * The contents: UTF-8 text with `\n` line endings, ending with one newline.
+ */
+contents: string, };
+
+/**
  * An open project: maps, inside the backend, to the canonical path the user
  * chose (or to no path for a new, unsaved project).
  */
@@ -342,7 +378,8 @@ needs: string | null, } | { "code": "restricted" } | { "code": "changedOnDisk" }
  */
 count: number, } | { "code": "notRunning" } | { "code": "rateLimited" } | { "code": "busy" } | { "code": "tooManyHandles" } | { "code": "tooManySessions" } | { "code": "toolchainRejected",
 /**
- * The `B2C-T1xxx` problems found.
+ * The `B2C-T1xxx` problems found. Their messages may name the picked
+ * file, for display only, like a toolchain's `displayPath`.
  */
 diagnostics: Array<Diagnostic>, } | { "code": "io",
 /**
@@ -369,6 +406,31 @@ module?: string,
 block?: string,
 /**
  * The part of the block.
+ */
+part: Part, };
+
+/**
+ * A range of generated text and the block part that produced it.
+ */
+export type MappedRange = {
+/**
+ * The first position (inclusive).
+ */
+start: Position,
+/**
+ * The last position (exclusive).
+ */
+end: Position,
+/**
+ * The module of the block.
+ */
+module: string,
+/**
+ * The block.
+ */
+block: string,
+/**
+ * Which part of the block.
  */
 part: Part, };
 
@@ -428,9 +490,28 @@ start: number,
 end: number, };
 
 /**
+ * How an argument is passed to a parameter (spec 03 §3.7.7).
+ */
+export type PassMode = "copy" | "editable" | "read_only";
+
+/**
  * The operating system the backend runs on.
  */
 export type Platform = "windows" | "linux";
+
+/**
+ * A position in a generated file: 1-based line, 1-based column counted in UTF-8
+ * bytes (GCC's column unit).
+ */
+export type Position = {
+/**
+ * The 1-based line.
+ */
+line: number,
+/**
+ * The 1-based column, in UTF-8 bytes.
+ */
+column: number, };
 
 /**
  * The request of `project_close`.
@@ -1056,6 +1137,90 @@ savedAt: string,
 hasPath: boolean, };
 
 /**
+ * Maps generated text back to the blocks that produced it (spec 06 §6.9).
+ */
+export type SourceMap = {
+/**
+ * The format version (currently 1).
+ */
+version: number,
+/**
+ * The generated files with their mapped ranges.
+ */
+files: Array<FileMap>, };
+
+/**
+ * A static type (spec 06 §6.6). `string` is `std::string`; `error` is the
+ * type of an expression that already has an error and is compatible with
+ * everything.
+ */
+export type StaticType = "void" | "bool" | "char" | "int" | "double" | "string" | "error";
+
+/**
+ * A symbol as the editor sees it (spec 06 §6.5): enough to fill a dropdown,
+ * label a getter block or pick the type of a reporter.
+ */
+export type SymbolInfo = {
+/**
+ * The symbol's ID (what blocks store).
+ */
+id: string,
+/**
+ * The name the user gave it, as written in its declaring block.
+ */
+name: string,
+/**
+ * Its type; for a function, the type it gives back.
+ */
+type: StaticType,
+/**
+ * The module that declares it.
+ */
+module: string,
+/**
+ * The block that declares it (`var.declare`, `control.for_range`, or the
+ * `func.define` of a function and of its parameters).
+ */
+declBlock: string, } & ({ "kind": "variable",
+/**
+ * Whether it was declared `const`.
+ */
+isConst: boolean, } | { "kind": "parameter",
+/**
+ * How the argument is passed.
+ */
+mode: PassMode, } | { "kind": "loopVariable" } | { "kind": "function",
+/**
+ * Its parameters' symbol IDs, in order.
+ */
+params: Array<string>,
+/**
+ * The type it gives back (`void` for nothing).
+ */
+returns: StaticType, });
+
+/**
+ * The kind of a `SymbolInfo`, with the details of that kind.
+ */
+export type SymbolInfoKind = { "kind": "variable",
+/**
+ * Whether it was declared `const`.
+ */
+isConst: boolean, } | { "kind": "parameter",
+/**
+ * How the argument is passed.
+ */
+mode: PassMode, } | { "kind": "loopVariable" } | { "kind": "function",
+/**
+ * Its parameters' symbol IDs, in order.
+ */
+params: Array<string>,
+/**
+ * The type it gives back (`void` for nothing).
+ */
+returns: StaticType, };
+
+/**
  * The bundled templates a new project can start from.
  */
 export type Template = "empty" | "helloWorld";
@@ -1082,7 +1247,10 @@ target: string | null,
 flavor: string | null,
 /**
  * Where it is, for display only (the status bar and the toolchain page); it
- * is never accepted back.
+ * is never accepted back. It is the path the compiler was found as, before
+ * links were resolved (for example `/usr/bin/g++`, or the file the user
+ * picked), which `toolchains.json` keeps as `foundAs` so that a cached entry
+ * shows the same path as a discovered one.
  */
 displayPath: string,
 /**
@@ -1111,7 +1279,7 @@ problems: Array<Diagnostic>, };
  */
 export type ToolchainAddDialogResponse = { "status": "cancelled" } | { "status": "ok",
 /**
- * The added toolchain (possibly not usable; see its problems).
+ * The added toolchain; when `usable` is false, `problems` says why.
  */
 toolchain: Toolchain, };
 
@@ -1194,7 +1362,9 @@ noUsableToolchain: boolean,
 distro: Distro | null, };
 
 /**
- * How a toolchain was found.
+ * How a toolchain was found. `toolchains.json` stores the same value with
+ * each cached toolchain (`docs/spec/05-project-format.md` §5.9), so a
+ * cached entry reports the source that discovery gives it.
  */
 export type ToolchainSource = "path" | "wellKnown" | "manual";
 

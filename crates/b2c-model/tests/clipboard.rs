@@ -175,7 +175,7 @@ fn the_valid_payload_means_what_it_says() {
     assert_eq!(clipboard.catalog, "1.0.0");
     let ids: Vec<&str> = clipboard.blocks.iter().map(|b| b.id.as_str()).collect();
     assert_eq!(ids, ["blk_head", "blk_decl"], "the copy order is kept");
-    assert_eq!(clipboard.blocks[0].x, Some(120));
+    assert_eq!((clipboard.blocks[0].x, clipboard.blocks[0].y), (None, None));
     assert_eq!(clipboard.blocks[0].stack.len(), 1);
     let refs: Vec<(&str, &str, RefKind)> = clipboard
         .refs
@@ -215,14 +215,18 @@ fn the_valid_payload_means_what_it_says() {
 #[test]
 fn copied_blocks_follow_the_block_rules() {
     let print = json!({"id": "b_p", "type": "io.print", "v": 1});
-    // Copied blocks are top-level: a position and a stack are allowed.
-    let top = json!([{"id": "b_a", "type": "io.print", "v": 1, "x": -5, "y": 5, "stack": [print]}]);
+    // Copied blocks are top-level: a stack is allowed.
+    let top = json!([{"id": "b_a", "type": "io.print", "v": 1, "stack": [print]}]);
     let clipboard = load_clipboard(&serde_json::to_vec(&payload(top)).unwrap()).unwrap();
     assert_eq!(clipboard.blocks[0].stack[0].id.as_str(), "b_p");
-    // Nested blocks have no position, stacks are not nested, never empty.
+    // Nested and stacked blocks have no position, stacks are not nested,
+    // never empty.
     let nested = json!([{"id": "b_a", "type": "control.forever", "v": 1,
         "statements": {"BODY": [{"id": "b_b", "type": "io.print", "v": 1, "x": 1, "y": 1}]}}]);
     assert_eq!(codes(&payload(nested)), ["B2C-E0128"]);
+    let stacked = json!([{"id": "b_a", "type": "io.print", "v": 1,
+        "stack": [{"id": "b_b", "type": "io.print", "v": 1, "y": 1}]}]);
+    assert_eq!(codes(&payload(stacked)), ["B2C-E0128"]);
     let in_stack = json!([{"id": "b_a", "type": "io.print", "v": 1,
         "stack": [{"id": "b_b", "type": "io.print", "v": 1, "stack": [print]}]}]);
     assert_eq!(codes(&payload(in_stack)), ["B2C-E0139"]);
@@ -235,6 +239,46 @@ fn copied_blocks_follow_the_block_rules() {
     let tokens: Vec<Value> = (0..513).map(|_| json!({"op": "+"})).collect();
     let long = json!([{"id": "b_a", "type": "io.print", "v": 1, "inputs": {"ITEM0": {"expr": tokens}}}]);
     assert_eq!(codes(&payload(long)), ["B2C-E0122"]);
+}
+
+#[test]
+fn a_paste_ignores_the_position_of_copied_blocks() {
+    // A top-level copied block may carry `x`/`y` (05 §5.12): it is checked
+    // like a canvas position, then dropped, so the payload means the same as
+    // one without it and has one canonical spelling, without `x`/`y`.
+    let top = |at: Value| {
+        let mut block = json!({"id": "b_a", "type": "io.print", "v": 1,
+            "stack": [{"id": "b_p", "type": "io.print", "v": 1}]});
+        if let Value::Object(at) = at {
+            block.as_object_mut().unwrap().extend(at);
+        }
+        payload(json!([block]))
+    };
+    let load_value = |value: &Value| load_clipboard(&serde_json::to_vec(value).unwrap()).unwrap();
+    let plain = load_value(&top(json!({})));
+    let canonical = to_canonical_clipboard_json(&plain);
+    assert!(
+        !canonical.contains("\"x\"") && !canonical.contains("\"y\""),
+        "{canonical}"
+    );
+    for at in [
+        json!({"x": -5, "y": 5}),
+        json!({"x": 7}),
+        json!({"y": 7}),
+        json!({"x": null, "y": null}),
+    ] {
+        let positioned = load_value(&top(at.clone()));
+        assert_eq!(positioned, plain, "{at}");
+        assert_eq!(to_canonical_clipboard_json(&positioned), canonical, "{at}");
+    }
+    // Out of range is still an error, as on a canvas.
+    assert_eq!(codes(&top(json!({"x": 2_147_483_648_i64}))), ["B2C-E0129"]);
+    // The writer never writes a position, even one set by the caller (as
+    // `clipboard_make` gets blocks straight from a canvas).
+    let mut moved = plain.clone();
+    moved.blocks[0].x = Some(300);
+    moved.blocks[0].y = Some(-40);
+    assert_eq!(to_canonical_clipboard_json(&moved), canonical);
 }
 
 #[test]
@@ -348,7 +392,13 @@ fn examples_survive_copy_and_repeated_paste() {
             };
             let text = to_canonical_clipboard_json(&clipboard);
             let pasted = load_clipboard(text.as_bytes()).unwrap_or_else(|e| panic!("{name}: {e:?}"));
-            assert_eq!(pasted, clipboard, "{name}");
+            // The copy keeps everything but the canvas positions, which a
+            // paste never uses (spec §5.12).
+            let mut expected = clipboard.clone();
+            for block in &mut expected.blocks {
+                (block.x, block.y) = (None, None);
+            }
+            assert_eq!(pasted, expected, "{name}");
 
             for round in 0..20u8 {
                 let mut blocks = pasted.blocks.clone();

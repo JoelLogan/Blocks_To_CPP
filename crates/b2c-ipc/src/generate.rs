@@ -30,6 +30,9 @@ use crate::dto::*;
 use crate::error::{InvalidReason, IoKind, IpcError};
 use crate::ids::{BuildId, Handle, RecentId, RunId, SnapshotId, ToolchainId};
 use crate::links::LinkId;
+use crate::pipeline::{
+    FileKind, FileMap, MappedRange, PassMode, Position, SourceMap, StaticType, SymbolInfo, SymbolInfoKind,
+};
 use crate::schema::{FieldSchema, ObjectSchema};
 
 /// The environment variable that makes `tests/generate.rs` write the files.
@@ -153,6 +156,9 @@ pub fn type_decls() -> Vec<TypeDecl> {
         IpcError, InvalidReason, IoKind,
         Diagnostic, Location, Part, Related, Severity, DiagSource,
         Handle, BuildId, RunId, RecentId, SnapshotId, ToolchainId, LinkId,
+        // The pipeline's shared shapes (not carried by any command yet).
+        crate::pipeline::GeneratedFile, FileKind, SourceMap, FileMap, MappedRange, Position,
+        StaticType, SymbolInfo, SymbolInfoKind, PassMode,
         // App.
         AppEvent, AppInfo, Empty, Platform,
         // Projects.

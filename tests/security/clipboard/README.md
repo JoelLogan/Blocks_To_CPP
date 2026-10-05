@@ -18,6 +18,10 @@ diagnostic message may contain a control, bidirectional or invisible
 character. The same test generates the one case too large to commit: a
 payload one byte over the 32 MiB limit (`B2C-E0101`).
 
+Like the payloads the editor writes, the copied blocks carry no canvas
+position (`x`/`y`); `position-on-copied-block.json` checks that one on a
+top-level copied block is still accepted, and dropped.
+
 Characters that are dangerous to show (bidi controls, NUL) are written as
 JSON `\uXXXX` escapes, so the files are safe to open in an editor and on
 GitHub. The files also seed the `clipboard` fuzz target
@@ -50,6 +54,9 @@ the rest of the payload valid, so that the file tests one thing.
 | `newer-version.json` | T1 | `formatVersion` 2 with keys this version does not know | `B2C-E0108` |
 | `not-an-object.json` | T1 | A JSON list instead of a payload object | `B2C-E0138` |
 | `nul-in-ref-name.json` | T3 | A NUL character in a qualified name in `refs` | `B2C-E0124` |
+| `position-on-copied-block.json` | — | A canvas position on the top-level copied blocks, which a paste ignores (the loader drops it) | accepted |
+| `position-on-nested-block.json` | T1 | A canvas position on a block nested in a value input | `B2C-E0128` |
+| `position-on-stacked-block.json` | T1 | A canvas position on a stacked block | `B2C-E0128` |
 | `project-file.json` | T1 | A payload tagged as a whole project (`blocks2cpp/project`) | `B2C-E0138` |
 | `proto-key-in-refs.json` | T6 | A `__proto__` key in `refs` | `B2C-E0127` |
 | `proto-key.json` | T6 | A `__proto__` key in a block's fields | `B2C-E0127` |

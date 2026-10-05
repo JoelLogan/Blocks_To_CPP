@@ -55,8 +55,6 @@
       "id": "blk_decl",
       "type": "var.declare",
       "v": 1,
-      "x": 120,
-      "y": 200,
       "fields": {
         "CONST": false,
         "NAME": {

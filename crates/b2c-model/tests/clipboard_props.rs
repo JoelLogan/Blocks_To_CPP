@@ -147,18 +147,23 @@ fn block() -> impl Strategy<Value = Block> {
     })
 }
 
+/// A copied block as `clipboard_make` writes it: maybe with a stack, never
+/// with a canvas position (spec §5.12).
 fn copied_block() -> impl Strategy<Value = Block> {
     (
         block(),
-        option::of((-10_000_000..=10_000_000i32, -10_000_000..=10_000_000i32)),
         prop_oneof![2 => Just(Vec::new()), 1 => vec(block(), 1..3)],
     )
-        .prop_map(|(mut block, at, stack)| {
-            block.x = at.map(|(x, _)| x);
-            block.y = at.map(|(_, y)| y);
+        .prop_map(|(mut block, stack)| {
             block.stack = stack;
             block
         })
+}
+
+/// A canvas position, or part of one, for a top-level copied block.
+fn position() -> impl Strategy<Value = (Option<i32>, Option<i32>)> {
+    let coordinate = || option::of(-10_000_000..=10_000_000i32);
+    (coordinate(), coordinate())
 }
 
 /// Gives every block a unique ID and every declaration a unique symbol.
@@ -369,6 +374,34 @@ proptest! {
         prop_assert_eq!(to_canonical_clipboard_json(&loaded), canonical.clone());
         let well_formed = canonical.ends_with("}\n") && !canonical.contains('\r');
         prop_assert!(well_formed);
+    }
+
+    #[test]
+    fn positions_of_copied_blocks_are_dropped(
+        clipboard in clipboard(),
+        positions in vec(position(), 4),
+    ) {
+        // A payload from elsewhere may give its top-level blocks a position:
+        // it loads to the same clipboard, which saves without it.
+        let canonical = to_canonical_clipboard_json(&clipboard);
+        let mut value: Value = serde_json::from_str(&canonical).expect("canonical JSON");
+        let blocks = value["blocks"].as_array_mut().expect("a list of blocks");
+        for (block, (x, y)) in blocks.iter_mut().zip(&positions) {
+            let block = block.as_object_mut().expect("a block");
+            if let Some(x) = x {
+                block.insert(String::from("x"), Value::from(*x));
+            }
+            if let Some(y) = y {
+                block.insert(String::from("y"), Value::from(*y));
+            }
+        }
+        let bytes = serde_json::to_vec(&value).expect("JSON");
+        let loaded = match load_clipboard(&bytes) {
+            Ok(loaded) => loaded,
+            Err(error) => panic!("{:#?}\n{value}", error.diagnostics),
+        };
+        prop_assert_eq!(&loaded, &clipboard);
+        prop_assert_eq!(to_canonical_clipboard_json(&loaded), canonical);
     }
 
     #[test]

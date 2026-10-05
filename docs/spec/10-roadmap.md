@@ -101,7 +101,13 @@ readers, high contrast, the toolchain matrix) and updated documentation.
 * The expert-mode switch (Q8): Friendly/C++ block labels and *Show advanced
   blocks*. Toolbox search. A project settings dialog (standard, options,
   build configurations, defines) and run options (arguments, working
-  directory, stdin file, run in an external terminal).
+  directory, stdin from a file, run in an external terminal).
+* Ending a program's input: in pipe mode, where Ctrl+D is an ordinary byte, a
+  program that reads until the end of its input can then finish on its own,
+  and stdin from a file builds on it. This adds a close-input operation to
+  `b2c-process` sessions (pipe mode closes the input pipe, PTY mode sends the
+  terminal's end-of-file character) and an `eof` flag or a close-input
+  command to the IPC contract.
 * Quick fixes on diagnostics, applied as one undo step. *Copy bug report* for
   suspected generator bugs. Feature gating by C++ standard and toolchain
   capability, with fallbacks. A snapshot test of every catalog block's

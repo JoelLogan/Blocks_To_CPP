@@ -311,12 +311,23 @@ M4).
   verbatim when present until then.
 
 **`toolchains.json`** (read limit 4 MiB): `{ format: "blocks2cpp/toolchains",
-formatVersion: 1, toolchains: [{ source, probe }] }`, where `source` is
-`discovered` or `manual` and `probe` is a probed toolchain (fingerprint,
-version, target, capabilities and problems,
-[07 §7.3](07-toolchain-build-run.md#73-capability-probing)). It is a cache:
-an unreadable file, or the bare array that M1 wrote, counts as empty, and
-discovery fills it again.
+formatVersion: 1, toolchains: [{ source, foundAs, probe }] }`, where:
+
+* `source` is how the toolchain was found, with the values of the IPC
+  `Toolchain.source` ([02 §2.5.2](02-architecture.md#252-commands)): `path`
+  (a `PATH` entry), `wellKnown` (a well-known or configured install folder)
+  or `manual` (added with `toolchain_add_dialog`);
+* `foundAs` is the path it was found as, before links were resolved (for
+  example `/usr/bin/g++`, or for a manual toolchain the file the user
+  picked), which the IPC `Toolchain.displayPath` shows;
+* `probe` is a probed toolchain (fingerprint with the canonical path,
+  version, target, capabilities and problems,
+  [07 §7.3](07-toolchain-build-run.md#73-capability-probing)).
+
+`toolchain_list` reports the cached entries before background discovery
+finishes, and `source` and `foundAs` make them show the same source and path
+as discovery does. The file is a cache: an unreadable or invalid file, or
+the bare array that M1 wrote, counts as empty, and discovery fills it again.
 
 **`trust.json`** (read limit 4 MiB):
 
@@ -443,8 +454,15 @@ and a custom `application/x-blocks2cpp+json` payload:
 
 `refs` records the qualified name and kind of each symbol that the copied
 blocks refer to but do not declare. `kind` is `variable`, `parameter`,
-`loopVariable` or `function`. Copied blocks have no `x` or `y`, and a copied
-stack of statements is one block with `stack` (§5.4).
+`loopVariable` or `function`. A copied stack of statements is one block with
+`stack` (§5.4).
+
+Copied blocks have no `x` or `y`, because a paste places blocks at the
+target: `clipboard_make` writes none. `load_clipboard` accepts `x`/`y` on a
+top-level copied block, checks it like a canvas position (`B2C-E0129` when
+out of range) and drops it, so the paste ignores it and the canonical
+payload has one spelling. `x`/`y` on a stacked or nested block is
+`B2C-E0128`, as in a project file.
 
 Pasting runs the **same validator and limits as file loading**. Pasted blocks
 get fresh IDs, and symbol references are re-resolved by qualified name in the
