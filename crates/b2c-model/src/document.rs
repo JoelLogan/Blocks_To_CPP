@@ -2,7 +2,7 @@
 //! (`docs/spec/05-project-format.md` §5.3–5.5).
 //!
 //! These types derive `serde` so tests and tools can build documents directly,
-//! but untrusted input must go through [`crate::load`], which adds the limits,
+//! but untrusted input must go through [`crate::load()`], which adds the limits,
 //! duplicate-key rejection and text rules of §5.6 that plain `serde` does not.
 
 use std::collections::BTreeMap;
@@ -436,6 +436,15 @@ pub struct Block {
     /// Statement inputs, as arrays (never linked `next` chains).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub statements: BTreeMap<String, Vec<Block>>,
+    /// A loose statement stack: the statement blocks attached below this
+    /// block on the canvas, in order (ADR-0011). Only a block directly on a
+    /// canvas (or directly in a clipboard payload) may have one; its
+    /// elements have no `x`/`y` and no `stack` of their own. Never empty:
+    /// the loader rejects `"stack": []`, so the canonical form has one
+    /// spelling. Whether the head block is a statement is checked against
+    /// the catalog by `b2c-catalog`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stack: Vec<Block>,
 }
 
 /// A block comment.

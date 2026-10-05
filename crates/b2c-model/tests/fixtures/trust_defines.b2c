@@ -1,0 +1,169 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_trust_fixture",
+    "name": "Trust fixture",
+    "language": {
+      "standard": "c++20"
+    },
+    "build": {
+      "defines": [
+        {
+          "name": "LEVEL",
+          "value": {
+            "int": -3
+          }
+        },
+        {
+          "name": "DEBUG_MODE",
+          "value": {
+            "bool": true
+          }
+        },
+        {
+          "name": "GREETING",
+          "value": {
+            "string": "Héllo \"world\" ✓\tok\\"
+          }
+        }
+      ],
+      "libraries": [
+        "sfml-graphics",
+        "m",
+        "sfml-graphics"
+      ],
+      "packs": [
+        {
+          "id": "sfml",
+          "version": "^2.6"
+        },
+        {
+          "id": "geo",
+          "version": ">=1.2, <2"
+        }
+      ]
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 0,
+            "y": 0,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_raw2",
+                  "type": "raw.statement",
+                  "v": 1,
+                  "fields": {
+                    "CODE": "std::puts(\"two\");\n",
+                    "PINNED": true
+                  }
+                },
+                {
+                  "id": "b_file",
+                  "type": "file.read_line",
+                  "v": 1,
+                  "fields": {
+                    "PATH": "data.txt"
+                  }
+                },
+                {
+                  "id": "b_print",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "not Raw C++"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b_raw1",
+            "type": "raw.declaration",
+            "v": 1,
+            "x": 400,
+            "y": 0,
+            "disabled": true,
+            "comment": {
+              "text": "A comment is not part of the hash"
+            },
+            "fields": {
+              "CODE": "int helper() { return 1; }",
+              "AFTER": "// end"
+            }
+          },
+          {
+            "id": "b_loose",
+            "type": "io.print",
+            "v": 1,
+            "x": 800,
+            "y": 0,
+            "stack": [
+              {
+                "id": "b_raw3",
+                "type": "raw.statement",
+                "v": 1,
+                "fields": {
+                  "CODE": "/* stacked */"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "mod_util",
+      "name": "util",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "a_raw0",
+            "type": "raw.declaration",
+            "v": 1,
+            "x": 0,
+            "y": 0,
+            "fields": {
+              "CODE": "namespace util {}"
+            }
+          },
+          {
+            "id": "a_file",
+            "type": "file.write_line",
+            "v": 1,
+            "x": 0,
+            "y": 300
+          }
+        ]
+      }
+    }
+  ]
+}

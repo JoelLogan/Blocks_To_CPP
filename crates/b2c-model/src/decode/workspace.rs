@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use b2c_ir::{BlockId, Location, ModuleId, SymbolId};
 
-use super::{Decoder, Seg, find};
+use super::{Decoder, Origin, Placement, Seg, find};
 use crate::codes;
 use crate::document::{
     Block, BlockComment, BlockInput, ExprInput, FieldValue, Frame, FrameColor, Input, Module, Note,
@@ -25,7 +25,7 @@ pub(super) const FRAME_COLORS: [FrameColor; 6] = [
 ];
 
 /// Keys of a block object, in declaration order.
-const BLOCK_KEYS: [&str; 12] = [
+const BLOCK_KEYS: [&str; 13] = [
     "id",
     "type",
     "v",
@@ -38,6 +38,7 @@ const BLOCK_KEYS: [&str; 12] = [
     "fields",
     "inputs",
     "statements",
+    "stack",
 ];
 
 /// Token kinds, as their single key.
@@ -188,7 +189,7 @@ impl<'a> Decoder<'a> {
     fn workspace(&mut self, value: &'a Json) -> Option<Workspace> {
         let entries = self.object(value, &["blocks", "frames", "notes", "viewport"])?;
         let blocks = self.or_default(entries, "blocks", Vec::new, |d, v| {
-            d.list(v, |d, item| d.block(item, true))
+            d.list(v, |d, item| d.block(item, Placement::Canvas))
         });
         let frames = self.or_default(entries, "frames", Vec::new, |d, v| d.list(v, Self::frame));
         let notes = self.or_default(entries, "notes", Vec::new, |d, v| d.list(v, Self::note));
@@ -306,14 +307,19 @@ impl<'a> Decoder<'a> {
     // Blocks
     // -----------------------------------------------------------------------
 
-    /// Decodes a block. `top_level` is true for blocks directly on a canvas.
-    pub(super) fn block(&mut self, value: &'a Json, top_level: bool) -> Option<Block> {
+    /// Decodes a block that sits at `placement`.
+    pub(super) fn block(&mut self, value: &'a Json, placement: Placement) -> Option<Block> {
         self.blocks_seen += 1;
         if self.blocks_seen > MAX_BLOCKS {
             if self.blocks_seen == MAX_BLOCKS + 1 {
-                let message = format!(
-                    "The project has more than {MAX_BLOCKS} blocks, which is the most a project can have. Split it into smaller projects."
-                );
+                let message = match self.origin {
+                    Origin::Project => format!(
+                        "The project has more than {MAX_BLOCKS} blocks, which is the most a project can have. Split it into smaller projects."
+                    ),
+                    Origin::Clipboard => format!(
+                        "The pasted data has more than {MAX_BLOCKS} blocks, which is the most a project can have."
+                    ),
+                };
                 self.diags
                     .error(codes::TOO_MANY_BLOCKS, Location::project(), message);
             }
@@ -338,7 +344,7 @@ impl<'a> Decoder<'a> {
             let location = self.location();
             self.claim_canvas_id(id, location);
         }
-        let block = self.block_body(value, entries, top_level, id);
+        let block = self.block_body(value, entries, placement, id);
         (self.block, self.block_base) = saved;
         block
     }
@@ -347,7 +353,7 @@ impl<'a> Decoder<'a> {
         &mut self,
         value: &'a Json,
         entries: &'a [(Box<str>, Json)],
-        top_level: bool,
+        placement: Placement,
         id: Option<BlockId>,
     ) -> Option<Block> {
         self.object(value, &BLOCK_KEYS);
@@ -355,13 +361,19 @@ impl<'a> Decoder<'a> {
         let version = self.required(entries, "v", Self::u32);
         let x = self.nullable(entries, "x", Self::position);
         let y = self.nullable(entries, "y", Self::position);
-        if !top_level && (matches!(x, Ok(Some(_))) || matches!(y, Ok(Some(_)))) {
-            self.report(
-                codes::NESTED_POSITION,
-                String::from(
-                    "This block is inside another block, so it cannot have a canvas position (\"x\" and \"y\"). Remove them.",
+        if matches!(x, Ok(Some(_))) || matches!(y, Ok(Some(_))) {
+            let position = "so it cannot have a canvas position (\"x\" and \"y\"). Remove them.";
+            match placement {
+                Placement::Canvas => {}
+                Placement::Nested => self.report(
+                    codes::NESTED_POSITION,
+                    format!("This block is inside another block, {position}"),
                 ),
-            );
+                Placement::Stacked => self.report(
+                    codes::NESTED_POSITION,
+                    format!("This block is stacked below another block, {position}"),
+                ),
+            }
         }
         let collapsed = self.or_default(entries, "collapsed", || false, Self::bool);
         let disabled = self.or_default(entries, "disabled", || false, Self::bool);
@@ -370,6 +382,7 @@ impl<'a> Decoder<'a> {
         let fields = self.or_default(entries, "fields", BTreeMap::new, Self::fields);
         let inputs = self.or_default(entries, "inputs", BTreeMap::new, Self::inputs);
         let statements = self.or_default(entries, "statements", BTreeMap::new, Self::statements);
+        let stack = self.or_default(entries, "stack", Vec::new, |d, v| d.stack(v, placement));
         Some(Block {
             id: id?,
             block_type: block_type?,
@@ -383,7 +396,40 @@ impl<'a> Decoder<'a> {
             fields: fields.unwrap_or_default(),
             inputs: inputs.unwrap_or_default(),
             statements: statements.unwrap_or_default(),
+            stack: stack.unwrap_or_default(),
         })
+    }
+
+    /// A loose statement stack (ADR-0011): only on a block directly on the
+    /// canvas, and never empty. The elements are decoded even when the
+    /// stack is misplaced, so that their own problems are reported too.
+    fn stack(&mut self, value: &'a Json, placement: Placement) -> Option<Vec<Block>> {
+        match placement {
+            Placement::Canvas => {}
+            Placement::Nested => self.report(
+                codes::MISPLACED_STACK,
+                String::from(
+                    "This block is inside another block, so it cannot have a \"stack\": only a block directly on the canvas can have blocks stacked below it. Move the stacked blocks into the statement list they belong to.",
+                ),
+            ),
+            Placement::Stacked => self.report(
+                codes::MISPLACED_STACK,
+                String::from(
+                    "This block is itself in a \"stack\", so it cannot have a \"stack\" of its own. Put all the stacked blocks in the stack of the first block.",
+                ),
+            ),
+        }
+        if let Json::Array(items) = value
+            && items.is_empty()
+        {
+            let message = format!(
+                "{} is an empty list. Leave \"stack\" out when no blocks are stacked below the block.",
+                self.subject()
+            );
+            self.report(codes::WRONG_VALUE, message);
+            return None;
+        }
+        self.list(value, |d, item| d.block(item, Placement::Stacked))
     }
 
     fn comment(&mut self, value: &'a Json) -> Option<BlockComment> {
@@ -546,7 +592,7 @@ impl<'a> Decoder<'a> {
         };
         if find(entries, "block").is_some() {
             let entries = self.object(value, &["block"])?;
-            let block = self.required(entries, "block", |d, v| d.block(v, false))?;
+            let block = self.required(entries, "block", |d, v| d.block(v, Placement::Nested))?;
             Some(Input::Block(BlockInput {
                 block: Box::new(block),
             }))
@@ -616,7 +662,9 @@ impl<'a> Decoder<'a> {
     }
 
     fn statements(&mut self, value: &'a Json) -> Option<BTreeMap<String, Vec<Block>>> {
-        self.map(value, |d, _, item| d.list(item, |d, block| d.block(block, false)))
+        self.map(value, |d, _, item| {
+            d.list(item, |d, block| d.block(block, Placement::Nested))
+        })
     }
 }
 

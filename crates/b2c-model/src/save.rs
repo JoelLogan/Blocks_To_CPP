@@ -3,7 +3,8 @@
 //! CONTRACT (implemented in milestone M1):
 //! * `to_canonical_json`: UTF-8 JSON, 2-space indentation, `\n` line endings,
 //!   one trailing newline; struct keys in declaration order, map keys sorted,
-//!   top-level blocks of each module sorted by ID. Saving an unchanged document
+//!   top-level blocks of each module sorted by ID (statement lists and a
+//!   top-level block's `stack` keep their order). Saving an unchanged document
 //!   gives byte-identical output, and `load(to_canonical_json(d)) == d`.
 //! * `content_hash`: SHA-256 of the canonical serialisation with layout-only
 //!   data removed (block `x`/`y`/`collapsed`, comment `pinned`, workspace
@@ -41,9 +42,32 @@ pub fn content_hash(document: &Document) -> [u8; 32] {
     Sha256::digest(writer.finish().as_bytes()).into()
 }
 
+/// Appends a JSON string with `serde_json`'s escaping: `"` and `\`, the
+/// short escapes for backspace, form feed, newline, carriage return and tab,
+/// `\u00XX` for other C0 controls; everything else as UTF-8.
+pub(crate) fn push_json_string(out: &mut String, text: &str) {
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c < ' ' => {
+                let _ = write!(out, "\\u{:04x}", u32::from(c));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+}
+
 /// A pretty-printing JSON writer in the style of `serde_json`'s
 /// `PrettyFormatter` (2 spaces, `": "`, empty containers as `[]` / `{}`).
-struct Writer {
+pub(crate) struct Writer {
     out: String,
     /// One entry per open container: whether it has no entries yet.
     open: Vec<bool>,
@@ -52,7 +76,7 @@ struct Writer {
 }
 
 impl Writer {
-    fn new(semantic: bool) -> Self {
+    pub(crate) fn new(semantic: bool) -> Self {
         Self {
             out: String::new(),
             open: Vec::new(),
@@ -60,7 +84,7 @@ impl Writer {
         }
     }
 
-    fn finish(mut self) -> String {
+    pub(crate) fn finish(mut self) -> String {
         self.out.push('\n');
         self.out
     }
@@ -72,7 +96,7 @@ impl Writer {
     }
 
     /// Starts a new entry in the innermost container.
-    fn entry(&mut self) {
+    pub(crate) fn entry(&mut self) {
         if let Some(first) = self.open.last_mut() {
             let was_first = std::mem::replace(first, false);
             self.out.push_str(if was_first { "\n" } else { ",\n" });
@@ -80,12 +104,12 @@ impl Writer {
         }
     }
 
-    fn begin(&mut self, bracket: char) {
+    pub(crate) fn begin(&mut self, bracket: char) {
         self.out.push(bracket);
         self.open.push(true);
     }
 
-    fn end(&mut self, bracket: char) {
+    pub(crate) fn end(&mut self, bracket: char) {
         let empty = self.open.pop().unwrap_or(true);
         if !empty {
             self.out.push('\n');
@@ -94,33 +118,14 @@ impl Writer {
         self.out.push(bracket);
     }
 
-    fn key(&mut self, key: &str) {
+    pub(crate) fn key(&mut self, key: &str) {
         self.entry();
         self.string(key);
         self.out.push_str(": ");
     }
 
-    /// Writes a JSON string with `serde_json`'s escaping: `"` and `\`, the
-    /// short escapes for backspace, form feed, newline, carriage return and
-    /// tab, `\u00XX` for other C0 controls; everything else as UTF-8.
     fn string(&mut self, text: &str) {
-        self.out.push('"');
-        for c in text.chars() {
-            match c {
-                '"' => self.out.push_str("\\\""),
-                '\\' => self.out.push_str("\\\\"),
-                '\u{8}' => self.out.push_str("\\b"),
-                '\u{c}' => self.out.push_str("\\f"),
-                '\n' => self.out.push_str("\\n"),
-                '\r' => self.out.push_str("\\r"),
-                '\t' => self.out.push_str("\\t"),
-                c if c < ' ' => {
-                    let _ = write!(self.out, "\\u{:04x}", u32::from(c));
-                }
-                c => self.out.push(c),
-            }
-        }
-        self.out.push('"');
+        push_json_string(&mut self.out, text);
     }
 
     fn display(&mut self, value: impl std::fmt::Display) {
@@ -142,17 +147,17 @@ impl Writer {
         }
     }
 
-    fn field_str(&mut self, key: &str, value: &str) {
+    pub(crate) fn field_str(&mut self, key: &str, value: &str) {
         self.key(key);
         self.string(value);
     }
 
-    fn field_display(&mut self, key: &str, value: impl std::fmt::Display) {
+    pub(crate) fn field_display(&mut self, key: &str, value: impl std::fmt::Display) {
         self.key(key);
         self.display(value);
     }
 
-    fn field_variant<T: Serialize>(&mut self, key: &str, value: &T) {
+    pub(crate) fn field_variant<T: Serialize>(&mut self, key: &str, value: &T) {
         self.key(key);
         self.variant(value);
     }
@@ -392,7 +397,7 @@ impl Writer {
         self.end('}');
     }
 
-    fn block(&mut self, block: &Block) {
+    pub(crate) fn block(&mut self, block: &Block) {
         self.begin('{');
         self.field_str("id", block.id.as_str());
         self.field_str("type", &block.block_type);
@@ -460,6 +465,16 @@ impl Writer {
                 self.end(']');
             }
             self.end('}');
+        }
+        if !block.stack.is_empty() {
+            // Stack order is the order on the canvas: never sorted.
+            self.key("stack");
+            self.begin('[');
+            for child in &block.stack {
+                self.entry();
+                self.block(child);
+            }
+            self.end(']');
         }
         self.end('}');
     }
