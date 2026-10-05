@@ -432,7 +432,11 @@ const INVISIBLE_RANGES: &[(u32, u32)] = &[
     (0x10FFFE, 0x10FFFF),
 ];
 
-/// Whether a character is invisible or reorders text (see [`INVISIBLE_RANGES`]).
+/// Whether a character is invisible or reorders text: a C1 control, a format
+/// character (Unicode category Cf, including the bidi controls used by
+/// "Trojan Source" attacks), a line or paragraph separator, or a
+/// noncharacter. These are the characters [`StrLit`] and [`CharLit`] escape
+/// as universal character names and [`Comment`] replaces by placeholders.
 pub fn is_invisible(c: char) -> bool {
     let cp = u32::from(c);
     if cp < 0x80 {
