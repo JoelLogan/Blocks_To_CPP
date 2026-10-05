@@ -16,12 +16,14 @@
 
 use std::io;
 use std::mem::size_of;
-use std::os::windows::io::AsRawHandle as _;
+use std::os::windows::io::{
+    AsHandle as _, AsRawHandle as _, BorrowedHandle, FromRawHandle as _, OwnedHandle,
+};
 use std::os::windows::process::CommandExt as _;
 use std::process::Child;
 use std::ptr;
 
-use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
 };
@@ -53,18 +55,10 @@ pub(crate) fn configure(command: &mut std::process::Command, _placement: Placeme
 }
 
 /// An owned Job Object handle; closing it kills whatever is still inside.
+/// (`OwnedHandle` closes it exactly once and makes the job `Send + Sync`, so
+/// a session's supervisor thread can share it.)
 #[derive(Debug)]
-struct Job(HANDLE);
-
-impl Drop for Job {
-    fn drop(&mut self) {
-        // SAFETY: `self.0` is a valid job handle owned by this value and
-        // closed exactly once, here.
-        unsafe {
-            CloseHandle(self.0);
-        }
-    }
-}
+struct Job(OwnedHandle);
 
 /// The child's process tree: its Job Object.
 #[derive(Debug)]
@@ -75,16 +69,25 @@ pub(crate) struct Tree {
 /// Creates the job, assigns the suspended child to it and resumes it. On
 /// failure the child is terminated before it ran any code.
 pub(crate) fn contain(child: &mut Child, _placement: Placement, limits: &Limits) -> io::Result<Tree> {
-    let result = create_job(limits).and_then(|job| {
-        assign(&job, child)?;
+    let result = job_tree(limits).and_then(|tree| {
+        tree.assign(child.as_handle())?;
         resume_main_thread(child.id())?;
-        Ok(Tree { job })
+        Ok(tree)
     });
     if result.is_err() {
         let _ = child.kill();
         let _ = child.wait();
     }
     result
+}
+
+/// A new, empty Job Object with the limits of the module documentation, for
+/// a process that is created suspended and assigned with [`Tree::assign`]
+/// before it is resumed (`src/pty/windows.rs`).
+pub(crate) fn job_tree(limits: &Limits) -> io::Result<Tree> {
+    Ok(Tree {
+        job: create_job(limits)?,
+    })
 }
 
 fn create_job(limits: &Limits) -> io::Result<Job> {
@@ -94,7 +97,9 @@ fn create_job(limits: &Limits) -> io::Result<Job> {
     if handle.is_null() {
         return Err(io::Error::last_os_error());
     }
-    let job = Job(handle);
+    // SAFETY: `handle` is a valid, open job handle that nothing else owns;
+    // from here on `OwnedHandle` closes it exactly once.
+    let job = Job(unsafe { OwnedHandle::from_raw_handle(handle) });
 
     let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
     let mut flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
@@ -114,7 +119,7 @@ fn create_job(limits: &Limits) -> io::Result<Job> {
     // is its exact size, as the information class requires.
     let ok = unsafe {
         SetInformationJobObject(
-            job.0,
+            job.0.as_raw_handle(),
             JobObjectExtendedLimitInformation,
             (&raw const info).cast(),
             size,
@@ -126,28 +131,6 @@ fn create_job(limits: &Limits) -> io::Result<Job> {
     Ok(job)
 }
 
-fn assign(job: &Job, child: &Child) -> io::Result<()> {
-    // SAFETY: `job.0` is a valid job handle and the child's process handle is
-    // valid while `child` is alive (it has not been waited on yet).
-    let ok = unsafe { AssignProcessToJobObject(job.0, child.as_raw_handle()) };
-    if ok == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
-}
-
-/// An owned handle from Toolhelp or `OpenThread`.
-struct OwnedHandle(HANDLE);
-
-impl Drop for OwnedHandle {
-    fn drop(&mut self) {
-        // SAFETY: the handle is valid and owned by this value.
-        unsafe {
-            CloseHandle(self.0);
-        }
-    }
-}
-
 /// Resumes the only thread of a process created suspended.
 fn resume_main_thread(pid: u32) -> io::Result<()> {
     // SAFETY: plain call; the result is checked against INVALID_HANDLE_VALUE.
@@ -155,16 +138,17 @@ fn resume_main_thread(pid: u32) -> io::Result<()> {
     if snapshot == INVALID_HANDLE_VALUE {
         return Err(io::Error::last_os_error());
     }
-    let snapshot = OwnedHandle(snapshot);
+    // SAFETY: `snapshot` is a valid, open handle that nothing else owns.
+    let snapshot = unsafe { OwnedHandle::from_raw_handle(snapshot) };
     let entry_size = u32::try_from(size_of::<THREADENTRY32>()).unwrap_or(u32::MAX);
     let mut entry = THREADENTRY32 {
         dwSize: entry_size,
         ..THREADENTRY32::default()
     };
     let mut resumed = 0_u32;
-    // SAFETY: `snapshot.0` is a valid snapshot handle and `entry` is a
+    // SAFETY: `snapshot` is a valid snapshot handle and `entry` is a
     // THREADENTRY32 with `dwSize` set, as Thread32First requires.
-    let mut more = unsafe { Thread32First(snapshot.0, &raw mut entry) } != 0;
+    let mut more = unsafe { Thread32First(snapshot.as_raw_handle(), &raw mut entry) } != 0;
     while more {
         if entry.th32OwnerProcessID == pid {
             // SAFETY: plain call with a thread ID from the snapshot; the
@@ -173,17 +157,18 @@ fn resume_main_thread(pid: u32) -> io::Result<()> {
             if thread.is_null() {
                 return Err(io::Error::last_os_error());
             }
-            let thread = OwnedHandle(thread);
-            // SAFETY: `thread.0` is a valid handle with THREAD_SUSPEND_RESUME
+            // SAFETY: `thread` is a valid, open handle that nothing else owns.
+            let thread = unsafe { OwnedHandle::from_raw_handle(thread) };
+            // SAFETY: `thread` is a valid handle with THREAD_SUSPEND_RESUME
             // access.
-            if unsafe { ResumeThread(thread.0) } == u32::MAX {
+            if unsafe { ResumeThread(thread.as_raw_handle()) } == u32::MAX {
                 return Err(io::Error::last_os_error());
             }
             resumed += 1;
         }
         entry.dwSize = entry_size;
         // SAFETY: as for Thread32First.
-        more = unsafe { Thread32Next(snapshot.0, &raw mut entry) } != 0;
+        more = unsafe { Thread32Next(snapshot.as_raw_handle(), &raw mut entry) } != 0;
     }
     if resumed == 0 {
         return Err(io::Error::other("the new process has no thread to resume"));
@@ -198,6 +183,18 @@ pub(crate) fn has_exited(child: &mut Child) -> io::Result<bool> {
 }
 
 impl Tree {
+    /// Puts `process` (created suspended) into the job. Every process it
+    /// creates after it is resumed is in the job too.
+    pub(crate) fn assign(&self, process: BorrowedHandle<'_>) -> io::Result<()> {
+        // SAFETY: `self.job.0` is a valid job handle and `process` is a valid
+        // process handle, borrowed for the duration of the call.
+        let ok = unsafe { AssignProcessToJobObject(self.job.0.as_raw_handle(), process.as_raw_handle()) };
+        if ok == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
     /// Windows has no polite stop for console programs in a job; this
     /// terminates at once.
     pub(crate) fn stop(&self) {
@@ -208,7 +205,7 @@ impl Tree {
     pub(crate) fn kill(&self) {
         // SAFETY: `self.job.0` is a valid job handle.
         unsafe {
-            TerminateJobObject(self.job.0, TERMINATED_EXIT_CODE);
+            TerminateJobObject(self.job.0.as_raw_handle(), TERMINATED_EXIT_CODE);
         }
     }
 

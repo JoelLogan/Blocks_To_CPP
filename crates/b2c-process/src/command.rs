@@ -303,6 +303,26 @@ impl Command {
     pub(crate) fn get_cancel(&self) -> Option<&CancelToken> {
         self.cancel.as_ref()
     }
+
+    /// The standard library command for this command: the absolute program,
+    /// the argv list, the working directory and exactly this environment
+    /// (nothing inherited). Standard input and output, process groups and
+    /// creation flags are left to the caller.
+    ///
+    /// This is the only place in Blocks2Cpp that creates a
+    /// `std::process::Command` (`docs/spec/08-security.md` §8.5); the Windows
+    /// sessions of `src/pty/windows.rs` call `CreateProcessW` with the same
+    /// parts instead.
+    pub(crate) fn to_std(&self) -> std::process::Command {
+        #[allow(clippy::disallowed_methods)]
+        let mut command = std::process::Command::new(&self.program);
+        command
+            .args(&self.args)
+            .current_dir(&self.cwd)
+            .env_clear()
+            .envs(self.get_envs());
+        command
+    }
 }
 
 /// Checks a program path: absolute, and on Windows an `.exe`.

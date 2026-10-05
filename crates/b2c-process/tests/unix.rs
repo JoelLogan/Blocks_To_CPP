@@ -283,6 +283,60 @@ fn cancel_token_stops_a_run_from_another_thread() {
 }
 
 #[test]
+fn captured_runs_get_sigterm_first_when_a_grace_is_set() {
+    // The compiler's limits set a 2 s grace (07 §7.5.4): a timeout or a
+    // cancel sends SIGTERM to the group, and the program may clean up.
+    let mut command = sh("trap 'echo got-term; exit 7' TERM; while :; do sleep 0.05; done");
+    command.limits(Limits {
+        timeout: Some(Duration::from_millis(300)),
+        grace: Some(Duration::from_secs(10)),
+        ..Limits::default()
+    });
+    let start = Instant::now();
+    let result = run_captured(&command).unwrap();
+    assert!(result.timed_out);
+    assert_eq!(result.status, ExitStatus::Exited(7));
+    assert_eq!(text(&result.stdout), "got-term\n");
+    assert!(start.elapsed() < Duration::from_secs(5), "{:?}", start.elapsed());
+}
+
+#[test]
+fn captured_runs_are_killed_after_the_grace() {
+    let token = CancelToken::new();
+    let mut command = sh("trap '' TERM; while :; do sleep 0.05; done");
+    command.cancel_token(&token).limits(Limits {
+        grace: Some(Duration::from_millis(600)),
+        ..Limits::default()
+    });
+    let canceller = {
+        let token = token.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200));
+            token.cancel();
+        })
+    };
+    let start = Instant::now();
+    let result = run_captured(&command).unwrap();
+    canceller.join().unwrap();
+    let took = start.elapsed();
+    assert!(result.cancelled);
+    assert_eq!(result.status, ExitStatus::Signaled(9));
+    // 200 ms until the cancel, then the 600 ms grace before SIGKILL.
+    assert!(took >= Duration::from_millis(750), "{took:?}");
+    assert!(took < Duration::from_secs(5), "{took:?}");
+}
+
+#[test]
+fn captured_runs_without_a_grace_are_killed_at_once() {
+    let mut command = sh("trap 'echo got-term' TERM; while :; do sleep 0.05; done");
+    command.timeout(Duration::from_millis(200));
+    let result = run_captured(&command).unwrap();
+    assert!(result.timed_out);
+    assert_eq!(result.status, ExitStatus::Signaled(9));
+    assert_eq!(text(&result.stdout), "");
+}
+
+#[test]
 fn cancelled_token_prevents_starting() {
     let token = CancelToken::new();
     token.cancel();
