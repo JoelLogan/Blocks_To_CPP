@@ -43,6 +43,33 @@ view, building and running arrive with milestone M2
 - **Shortcuts** (`shortcuts.ts`): `F5` Run, `Shift+F5` Stop, `Ctrl+B` Build, `Ctrl+S` Save,
   everywhere except in a dialog or inside an element marked `data-b2c-shortcuts="off"`.
 
+### The block editor (milestone M2)
+
+`src/editor/` turns Blockly into the Blocks2Cpp editor
+([§2.4.1](../../docs/spec/02-architecture.md), [§5.4](../../docs/spec/05-project-format.md)):
+
+- **Workspace** (`EditorWorkspace.tsx`): Zelos, the b2c theme (following the system colour
+  scheme), the `b2c_checker` connection checker, sounds off, the project format's zoom range
+  (0.1–4.0) and a starting category toolbox that the toolbox plugin replaces. It installs the
+  editor services, starts an editing session, publishes the `EditorHandle` and attaches
+  `EDITOR_PLUGINS`.
+- **Sync** (`sync/`): `loadModule` builds a module's canvas from a loaded document and
+  `readModule` reads it back (statements as arrays, loose stacks as `stack`, positions as whole
+  numbers within ±10⁷). Both are iterative. Blocks the editor cannot show faithfully (unknown
+  types, values a field would change, inputs the mutator state lacks, misplaced shapes, newer
+  versions) become placeholders that keep their data verbatim, so saving an unchanged project is
+  byte-identical. Blockly's own serialisation and variable model are never persisted.
+- **Preview** (`preview/`): 50 ms after the last change the session reads the canvas, runs the
+  core's `canonical()` (project text, hash, dirty) and `preview()` (analysis, C++); stale results
+  are dropped; a WASM trap replaces the core and sets the notice `trapRecovered`; a document that
+  does not load keeps the last preview and sets `syncFailed`.
+- **Duplicates** (`sync/duplicates.ts`): blocks Blockly creates (duplicate, paste, toolbox drags,
+  redo) get fresh symbol IDs where theirs are already declared, so B2C-E0114/E0115 cannot occur.
+- **Opening** (`load.ts`): `openDocumentInEditor` loads backend text through the core's loader
+  (never `JSON.parse`), sets the store and shows the editor.
+- **Saving**: call `editor.currentDocument()`; it reads the canvas now and captures the viewports
+  (which are never part of the live document, so scrolling does not mark the project dirty).
+
 ## Layout
 
 | Path                                   | Contents                                                    |
@@ -50,7 +77,7 @@ view, building and running arrive with milestone M2
 | `index.html`, `src/main.tsx`           | Entry point (no inline scripts)                             |
 | `src/app/`                             | The app shell: start-up, state, registries, window, dialogs |
 | `src/features/`                        | The features, installed at start-up (`index.ts`)            |
-| `src/editor/`                          | The Blockly workspace and where its media files come from   |
+| `src/editor/`                          | The block editor: workspace, BDM ⇄ Blockly sync, live preview, services, module switcher |
 | `src/panels/`                          | The C++ code panel, Problems, the console and Build output  |
 | `src/lib/ipc.ts`                       | The typed client for the backend's commands                 |
 | `src/test/`, `vitest.config.ts`        | Test setup and shared test helpers; the Vitest settings     |
@@ -85,8 +112,13 @@ From the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
+pnpm --filter @blocks2cpp/b2c-core-wasm build   # the WebAssembly core the editor imports
 pnpm desktop:dev          # the app, with the frontend served by Vite (hot reload)
 ```
+
+The editor imports the WebAssembly core (`packages/b2c-core-wasm`), so build it once before the
+first `dev`, `build` or test run, and again after changing the Rust crates it contains. Without
+binaryen's `wasm-opt`, set `B2C_SKIP_WASM_OPT=1` (see that package's README).
 
 `pnpm --filter @blocks2cpp/desktop dev` starts only the Vite dev server
 (<http://localhost:1420>), so the frontend can be opened in a browser. There is no backend there:

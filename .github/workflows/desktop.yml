@@ -65,12 +65,14 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # The CLI must be the version of the wasm-bindgen crate in Cargo.lock (test-web checks it).
+  WASM_BINDGEN_VERSION: 0.2.129
 
 jobs:
   frontend:
     name: Frontend (typecheck, lint, format, layering, build)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read # check out the repository
     steps:
@@ -109,6 +111,33 @@ jobs:
           python3 tools/check-package-layering.py
           python3 tools/check-package-layering.py --self-test
 
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      # Building wasm-bindgen-cli takes minutes; its binaries are cached per version.
+      - name: Restore wasm-bindgen-cli from the cache
+        id: wasm-bindgen-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen*
+            ~/.cargo/bin/wasm2es6js*
+          key: wasm-bindgen-cli-${{ env.WASM_BINDGEN_VERSION }}-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Install wasm-bindgen-cli
+        if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+
+      # The editor imports the WebAssembly core, so the app cannot be built without it.
+      # Unoptimised (no wasm-opt), the module is about 1.1 MB, inside the 2 MB budget the
+      # build still checks; ci.yml and test-web check the optimised module.
+      - name: Build the WebAssembly core (without wasm-opt)
+        shell: bash
+        env:
+          B2C_SKIP_WASM_OPT: "1"
+        run: pnpm --filter @blocks2cpp/b2c-core-wasm run build
+
       - name: Build
         run: pnpm --filter @blocks2cpp/desktop run build
 
@@ -119,8 +148,6 @@ jobs:
     permissions:
       contents: read # check out the repository
     env:
-      # The CLI must be the version of the wasm-bindgen crate in Cargo.lock (checked below).
-      WASM_BINDGEN_VERSION: 0.2.129
       # wasm-opt (binaryen), pinned by release and checksum like rustup-init in ci.yml.
       BINARYEN_VERSION: "133"
       BINARYEN_SHA256: 2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489
@@ -280,6 +307,30 @@ jobs:
 
       - name: Test
         run: cargo test --locked -p blocks2cpp-desktop
+
+      # Building wasm-bindgen-cli takes minutes; its binaries are cached per version.
+      - name: Restore wasm-bindgen-cli from the cache
+        id: wasm-bindgen-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen*
+            ~/.cargo/bin/wasm2es6js*
+          key: wasm-bindgen-cli-${{ env.WASM_BINDGEN_VERSION }}-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Install wasm-bindgen-cli
+        if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+
+      # The editor imports the WebAssembly core, so the app cannot be built without it.
+      # Unoptimised (no wasm-opt), the module is about 1.1 MB, inside the 2 MB budget the
+      # build still checks; ci.yml and test-web check the optimised module.
+      - name: Build the WebAssembly core (without wasm-opt)
+        shell: bash
+        env:
+          B2C_SKIP_WASM_OPT: "1"
+        run: pnpm --filter @blocks2cpp/b2c-core-wasm run build
 
       # A release build of the executable with the frontend embedded, as it ships: the
       # Content Security Policy applies and the web inspector is compiled out.

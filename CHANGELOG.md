@@ -86,6 +86,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   delays the first window.
 - Recovery snapshots for unsaved work, kept per app instance with locks so
   several instances never take each other's snapshots.
+- The block editor: the Blockly canvas reads and writes the project format
+  faithfully (unknown or unrepresentable blocks become placeholders that keep
+  their data, so an unchanged project saves byte for byte), with a live C++
+  preview 50 ms after each change, fresh symbol IDs for duplicated and pasted
+  blocks, and a module switcher.
 - Review fixes: on Windows, trust compares only ASCII letter case in paths,
   so a lookalike folder name is never trusted; a build returns its ID at once
   and can be cancelled while it waits for the compiler search or runs the
