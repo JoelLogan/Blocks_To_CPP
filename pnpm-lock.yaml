@@ -14,6 +14,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@blockly/continuous-toolbox':
+        specifier: 7.0.9
+        version: 7.0.9(blockly@12.5.1(supports-color@7.2.0))
       '@blocks2cpp/b2c-core-wasm':
         specifier: workspace:*
         version: link:../../packages/b2c-core-wasm
@@ -297,6 +300,12 @@ packages:
   '@bcoe/v8-coverage@1.0.2':
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
+
+  '@blockly/continuous-toolbox@7.0.9':
+    resolution: {integrity: sha512-luFNC9GX4GAEqTrag07jV3DrY2WEeYfyBJnP932/xb27hs6oVaAw1bJPzI/NtyBxdU3LOkQZ826fEVbCVoXzAQ==}
+    engines: {node: '>=8.17.0'}
+    peerDependencies:
+      blockly: ^12.0.0
 
   '@cacheable/memory@2.2.0':
     resolution: {integrity: sha512-CTLKqLItRCEixEAewD3/j9DB3/o96gpTPD4eJ1v+DGOlxZRZncRQkGYqqnAGCscYd6RNeXfGeiuCphsPtqyIfQ==}
@@ -2715,6 +2724,10 @@ snapshots:
       '@babel/helper-validator-identifier': 7.29.7
 
   '@bcoe/v8-coverage@1.0.2': {}
+
+  '@blockly/continuous-toolbox@7.0.9(blockly@12.5.1(supports-color@7.2.0))':
+    dependencies:
+      blockly: 12.5.1(supports-color@7.2.0)
 
   '@cacheable/memory@2.2.0':
     dependencies:
