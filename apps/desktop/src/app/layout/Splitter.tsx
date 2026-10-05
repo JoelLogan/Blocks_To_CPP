@@ -16,7 +16,10 @@ export interface SplitterProps {
   max: number;
   /** Called with the new size, already clamped to `min`–`max`. */
   onChange: (value: number) => void;
-  /** Called on Enter: collapses the panel (the window-splitter pattern of WAI-ARIA). */
+  /**
+   * Called on Enter: collapses the panel (the window-splitter pattern of WAI-ARIA). If that removes
+   * the splitter, the caller moves the keyboard focus to the control that restores the panel.
+   */
   onCollapse: () => void;
   /** The accessible name, such as "Resize the C++ panel". */
   label: string;

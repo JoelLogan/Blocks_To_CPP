@@ -28,6 +28,14 @@ export function DialogHost({ queue }: { queue: DialogQueue }) {
   return <QueuedDialog key={request.id} request={request} />;
 }
 
+/** Gives the dialog's initial control the focus, selecting a text field's text. */
+function focusInitial(target: HTMLElement): void {
+  target.focus();
+  if (target instanceof HTMLInputElement) {
+    target.select();
+  }
+}
+
 function QueuedDialog({ request }: { request: DialogRequest }) {
   /** The element that gets the focus when the dialog opens. */
   const initialFocus = useRef<HTMLElement | null>(null);
@@ -42,6 +50,13 @@ function QueuedDialog({ request }: { request: DialogRequest }) {
         return undefined;
       }
       const release = onOpen(element);
+      // `onOpen` may already have moved the focus into the dialog (Blockly's ephemeral focus
+      // focuses the dialog element itself). Radix then skips `onOpenAutoFocus`, so the initial
+      // control gets the focus here. Child refs are set before this one, so it is known.
+      const target = initialFocus.current;
+      if (target !== null && element.contains(document.activeElement)) {
+        focusInitial(target);
+      }
       return () => {
         release?.();
       };
@@ -86,10 +101,7 @@ function QueuedDialog({ request }: { request: DialogRequest }) {
             const target = initialFocus.current;
             if (target !== null) {
               event.preventDefault();
-              target.focus();
-              if (target instanceof HTMLInputElement) {
-                target.select();
-              }
+              focusInitial(target);
             }
           }}
         >

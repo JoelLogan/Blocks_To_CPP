@@ -1,7 +1,7 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal, type ITheme } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
-import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import { useEffect, useId, useImperativeHandle, useRef, useState, type Ref } from 'react';
 
 import '../panels.css';
 import type { RunMode } from '../types';
@@ -41,7 +41,10 @@ export interface ConsoleHandle {
    * the batch with `run_ack`. Writes reach the terminal at most 60 times a second.
    */
   write(bytes: Uint8Array): Promise<void>;
-  /** Writes the "… N lines skipped" marker, in order with the output already written. */
+  /**
+   * Writes the "… N lines skipped" marker (with `lines` 0, "… output skipped": only part of one
+   * line was dropped), in order with the output already written.
+   */
   writeSkipped(lines: number): void;
   /** Clears the terminal (output already queued is written after the clear). */
   clear(): void;
@@ -144,6 +147,32 @@ function subscribe<T>(listeners: Set<T>, listener: T): () => void {
   };
 }
 
+/** The key that always moves the focus out of the terminal, as the terminal's description says. */
+export const LEAVE_CONSOLE_KEYS = 'Ctrl+Tab';
+
+/**
+ * What the terminal does with a key event, so it is never a keyboard trap (WCAG 2.1.2):
+ *
+ * * `terminal`: xterm handles it (while a program runs, Tab and Shift+Tab go to the program, as
+ *   in any terminal).
+ * * `browser`: xterm ignores it and the browser's default runs: with no program running, Tab and
+ *   Shift+Tab move the focus like on any other control.
+ * * `leave`: Ctrl+Tab (with or without Shift) moves the focus to the console's header.
+ * * `ignore`: xterm ignores it and nothing else happens (the `keypress` and `keyup` of Ctrl+Tab).
+ */
+export function consoleKeyAction(
+  event: Pick<KeyboardEvent, 'type' | 'key' | 'ctrlKey' | 'altKey' | 'metaKey'>,
+  programRunning: boolean,
+): 'terminal' | 'browser' | 'leave' | 'ignore' {
+  if (event.key !== 'Tab') {
+    return 'terminal';
+  }
+  if (event.ctrlKey && !event.altKey && !event.metaKey) {
+    return event.type === 'keydown' ? 'leave' : 'ignore';
+  }
+  return programRunning ? 'terminal' : 'browser';
+}
+
 /**
  * The Console tab (docs/spec/04-user-interface.md §4.5): an xterm.js terminal (its DOM renderer,
  * so the text is real DOM text) for the running program, with a header for the state, elapsed
@@ -152,6 +181,11 @@ function subscribe<T>(listeners: Set<T>, listener: T): () => void {
  * Program output is only ever terminal cells. Clipboard writes by escape sequence (OSC 52) are
  * swallowed, and there is no clipboard add-on. A link (OSC 8) is accepted only for `http` and
  * `https`; activating it shows the full URL with *Copy link* and opens nothing.
+ *
+ * The terminal is never a keyboard trap (see {@link consoleKeyAction}): with no program running,
+ * Tab and Shift+Tab move the focus as usual; while one runs they go to the program, and Ctrl+Tab
+ * moves the focus to the header's first enabled button. The terminal's input announces that key
+ * through `aria-describedby`.
  */
 export function ConsolePanel({
   header,
@@ -163,6 +197,8 @@ export function ConsolePanel({
   ref,
 }: ConsolePanelProps) {
   const host = useRef<HTMLDivElement>(null);
+  const headerBar = useRef<HTMLDivElement>(null);
+  const keysNoteId = useId();
   const terminal = useRef<Terminal | null>(null);
   const [scheduler] = useState(() => new OutputScheduler());
   const [dataListeners] = useState(() => new Set<(data: string) => void>());
@@ -201,7 +237,24 @@ export function ConsolePanel({
     const resized = term.onResize(({ cols, rows }) => {
       notify(resizeListeners, { cols, rows });
     });
+    // xterm cancels every Tab it sees, so without this the focus could never leave by keyboard.
+    // Returning false makes xterm leave the event alone. Typing is enabled only while a program
+    // runs (see `disableStdin` below).
+    term.attachCustomKeyEventHandler((event) => {
+      switch (consoleKeyAction(event, term.options.disableStdin !== true)) {
+        case 'terminal':
+          return true;
+        case 'leave':
+          event.preventDefault();
+          headerBar.current?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
+          return false;
+        case 'browser':
+        case 'ignore':
+          return false;
+      }
+    });
     term.open(element);
+    term.textarea?.setAttribute('aria-describedby', keysNoteId);
     fitTerminal(term, fit);
     const observer =
       typeof ResizeObserver === 'undefined'
@@ -233,7 +286,7 @@ export function ConsolePanel({
         term.dispose();
       }, 0);
     };
-  }, [scheduler, dataListeners, resizeListeners]);
+  }, [scheduler, dataListeners, resizeListeners, keysNoteId]);
 
   useEffect(() => {
     if (terminal.current !== null) {
@@ -285,7 +338,11 @@ export function ConsolePanel({
 
   return (
     <div className="b2c-panel b2c-console-panel" data-testid="console-panel">
-      <div className="b2c-panel-bar b2c-console-header" data-testid="console-header">
+      <div
+        className="b2c-panel-bar b2c-console-header"
+        data-testid="console-header"
+        ref={headerBar}
+      >
         <span
           className={`b2c-console-state b2c-console-state-${status.tone}`}
           role="status"
@@ -323,6 +380,9 @@ export function ConsolePanel({
         </span>
       </div>
       <div className="b2c-console-terminal" ref={host} data-testid="console-terminal" />
+      <span id={keysNoteId} className="b2c-panel-visually-hidden">
+        {LEAVE_CONSOLE_KEYS} leaves the console.
+      </span>
       <LinkDialog
         url={link}
         onClose={() => {

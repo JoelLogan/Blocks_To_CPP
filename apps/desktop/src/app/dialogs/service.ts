@@ -23,7 +23,9 @@ export interface DialogTextOptions {
   message: string;
   /**
    * Called with the dialog's element once it is open; the returned function, if any, is called
-   * when it closes. Lets the Blockly workspace hand its keyboard focus to the dialog.
+   * when it closes. Lets the Blockly workspace hand its keyboard focus to the dialog. If it moves
+   * the focus into the dialog, the dialog's initial control (the text field, or the default
+   * button) still gets the focus afterwards.
    */
   onOpen?: (content: HTMLElement) => (() => void) | undefined;
 }

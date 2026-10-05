@@ -28,7 +28,10 @@ export interface FeatureContext {
   dialogs: DialogService;
   /** The backend's push events and the frontend's local events. */
   events: AppEventBus;
-  /** The compiler core, or `null` before it has started. */
+  /**
+   * The compiler core, or `null` before it has started. Call it each time and never keep the
+   * instance: it is replaced after a WebAssembly trap (see `app/core.ts`).
+   */
   core: () => CoreWasm | null;
   /** The block editor, or `null` while there is no workspace. */
   editor: () => EditorHandle | null;

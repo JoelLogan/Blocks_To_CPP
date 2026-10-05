@@ -14,7 +14,7 @@
  * installIdGenerator();
  * registerB2cMutators();
  * registerB2cBlocks();
- * setEditorServices({ symbols, types, dialogs });
+ * setEditorServices({ symbols, types }); // also connects the checker's oracle and the mutators
  * Blockly.inject(host, { renderer: 'zelos', theme: b2cLightTheme, … });
  * ```
  */

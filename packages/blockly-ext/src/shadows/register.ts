@@ -28,8 +28,19 @@ const EMPTY_EXTRA: ExprShadowExtra = Object.freeze({
   tokens: Object.freeze([]),
 });
 
-/** The longest part of a read-only expression shown in a block (the tooltip has all of it). */
+/**
+ * The longest part of a read-only expression shown in a block. The tooltip shows more of it, up to
+ * {@link MAX_TOOLTIP_CHARS}.
+ */
 const MAX_SHOWN_CHARS = 48;
+
+/**
+ * The longest expression text in a read-only shadow's tooltip, in characters. The text comes from
+ * the project file (up to 512 tokens of up to 64 KiB each), and Blockly wraps a tooltip before
+ * showing it in time that grows much faster than its length, so an uncapped one could freeze the
+ * window on hover.
+ */
+export const MAX_TOOLTIP_CHARS = 400;
 
 /** Label fields of the read-only shadow: before, at and after the highlighted tokens. */
 const TOKENS_FIELD = Object.freeze({
@@ -90,12 +101,12 @@ export function renderTokens(block: ExprShadowBlock): void {
     }
   });
   block.getField(TOKENS_FIELD.draft)?.setVisible(draft);
-  const full = tokensDisplay(tokens);
+  const tip = truncateForDisplay(tokensDisplay(tokens), MAX_TOOLTIP_CHARS);
   block.setTooltip(
     draft
-      ? `${full}\nAn unfinished expression, kept as it is.`
-      : full.length > 0
-        ? full
+      ? `${tip}\nAn unfinished expression, kept as it is.`
+      : tip.length > 0
+        ? tip
         : 'An empty expression.',
   );
   if (block instanceof Blockly.BlockSvg) {
