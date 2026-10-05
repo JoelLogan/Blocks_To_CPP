@@ -156,10 +156,14 @@ pub enum IpcError {
     /// Too many programs are running.
     #[error("too many running programs")]
     TooManySessions,
-    /// The chosen compiler cannot be used; the diagnostics say why.
+    /// The file picked in `toolchain_add_dialog` is not an acceptable g++
+    /// (`B2C-T1002`) or cannot be probed, so it was not added; the diagnostics
+    /// say why. A probed compiler that fails health checks is not rejected: it
+    /// is added and returned with `usable: false` and its problems.
     #[error("toolchain rejected ({} problem(s))", .diagnostics.len())]
     ToolchainRejected {
-        /// The `B2C-T1xxx` problems found.
+        /// The `B2C-T1xxx` problems found. Their messages may name the picked
+        /// file, for display only, like a toolchain's `displayPath`.
         diagnostics: Vec<Diagnostic>,
     },
     /// A file operation failed.

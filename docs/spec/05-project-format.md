@@ -311,12 +311,23 @@ M4).
   verbatim when present until then.
 
 **`toolchains.json`** (read limit 4 MiB): `{ format: "blocks2cpp/toolchains",
-formatVersion: 1, toolchains: [{ source, probe }] }`, where `source` is
-`discovered` or `manual` and `probe` is a probed toolchain (fingerprint,
-version, target, capabilities and problems,
-[07 §7.3](07-toolchain-build-run.md#73-capability-probing)). It is a cache:
-an unreadable file, or the bare array that M1 wrote, counts as empty, and
-discovery fills it again.
+formatVersion: 1, toolchains: [{ source, foundAs, probe }] }`, where:
+
+* `source` is how the toolchain was found, with the values of the IPC
+  `Toolchain.source` ([02 §2.5.2](02-architecture.md#252-commands)): `path`
+  (a `PATH` entry), `wellKnown` (a well-known or configured install folder)
+  or `manual` (added with `toolchain_add_dialog`);
+* `foundAs` is the path it was found as, before links were resolved (for
+  example `/usr/bin/g++`, or for a manual toolchain the file the user
+  picked), which the IPC `Toolchain.displayPath` shows;
+* `probe` is a probed toolchain (fingerprint with the canonical path,
+  version, target, capabilities and problems,
+  [07 §7.3](07-toolchain-build-run.md#73-capability-probing)).
+
+`toolchain_list` reports the cached entries before background discovery
+finishes, and `source` and `foundAs` make them show the same source and path
+as discovery does. The file is a cache: an unreadable or invalid file, or
+the bare array that M1 wrote, counts as empty, and discovery fills it again.
 
 **`trust.json`** (read limit 4 MiB):
 

@@ -5,6 +5,11 @@ The IPC contract between the Blocks2Cpp editor and its backend, for TypeScript
 request, response, channel message and error type, the command names, `IPC_VERSION`, and a typed
 client with one method per command.
 
+The types also include the pipeline's shared shapes (`Diagnostic`, `GeneratedFile`, `SourceMap`,
+`StaticType`, `SymbolInfo` and their parts), which the WebAssembly core returns too: the Rust copies
+in `b2c_ipc::diag` and `b2c_ipc::pipeline` serialise byte for byte like the `b2c-ir` types, so other
+packages import these declarations instead of keeping their own.
+
 Everything in `src/generated/` is generated from the Rust crate
 [`crates/b2c-ipc`](../../crates/b2c-ipc/src/lib.rs). Never edit it by hand; change the Rust types
 and regenerate:

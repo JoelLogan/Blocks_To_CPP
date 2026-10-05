@@ -13,6 +13,8 @@
 //! * [`ids`]: the opaque IDs that stand in for every path and session.
 //! * [`error`]: [`IpcError`], the typed error of every command.
 //! * [`diag`]: the diagnostic type, identical in JSON to the CLI's.
+//! * [`pipeline`]: generated files, source maps, static types and symbol
+//!   records, identical in JSON to the shared `b2c-ir` types.
 //! * [`decode`](mod@decode): [`decode()`] for requests, [`parse_document`] for
 //!   project documents, and strict base64.
 //! * [`schema`]: request shapes as data, shared with the isolation hook.
@@ -39,6 +41,7 @@ pub mod ids;
 pub mod limits;
 pub mod links;
 mod macros;
+pub mod pipeline;
 pub mod schema;
 pub mod sink;
 

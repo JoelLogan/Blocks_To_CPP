@@ -13,7 +13,9 @@ use crate::ids::ToolchainId;
 use crate::macros::string_enum;
 
 string_enum! {
-    /// How a toolchain was found.
+    /// How a toolchain was found. `toolchains.json` stores the same value with
+    /// each cached toolchain (`docs/spec/05-project-format.md` §5.9), so a
+    /// cached entry reports the source that discovery gives it.
     pub enum ToolchainSource {
         /// On `PATH`.
         Path = "path",
@@ -67,7 +69,10 @@ pub struct Toolchain {
     /// The distribution flavour, for example `MSYS2 UCRT64`.
     pub flavor: Option<String>,
     /// Where it is, for display only (the status bar and the toolchain page); it
-    /// is never accepted back.
+    /// is never accepted back. It is the path the compiler was found as, before
+    /// links were resolved (for example `/usr/bin/g++`, or the file the user
+    /// picked), which `toolchains.json` keeps as `foundAs` so that a cached entry
+    /// shows the same path as a discovered one.
     pub display_path: String,
     /// How it was found.
     pub source: ToolchainSource,
@@ -100,9 +105,13 @@ pub struct ToolchainListResponse {
 pub enum ToolchainAddDialogResponse {
     /// The user cancelled the dialog.
     Cancelled,
-    /// The chosen compiler was probed and added.
+    /// The chosen compiler was probed and added, even when it is not usable. A
+    /// file that is not an acceptable g++ or cannot be probed is not added: the
+    /// command fails with
+    /// [`IpcError::ToolchainRejected`](crate::IpcError::ToolchainRejected)
+    /// instead.
     Ok {
-        /// The added toolchain (possibly not usable; see its problems).
+        /// The added toolchain; when `usable` is false, `problems` says why.
         toolchain: Toolchain,
     },
 }
