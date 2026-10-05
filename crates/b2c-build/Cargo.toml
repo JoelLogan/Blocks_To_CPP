@@ -16,13 +16,19 @@ b2c-lang.workspace = true
 b2c-codegen.workspace = true
 b2c-toolchain.workspace = true
 b2c-process.workspace = true
+# toolchains.json in the machine folder, written atomically (05 §5.9-5.10).
+b2c-store.workspace = true
+# The toolchain DTOs and IDs the app's commands return (02 §2.5).
+b2c-ipc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
+insta.workspace = true
 proptest.workspace = true
 regex.workspace = true
 

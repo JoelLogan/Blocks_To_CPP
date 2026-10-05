@@ -5,7 +5,8 @@
 //! * [`build_dir`]: the per-project build directory and safe file writing.
 //! * [`build`]: the front end, then g++ in the build cache.
 //! * [`run_program`] / [`run_program_captured`]: running what was built.
-//! * [`list_toolchains`]: the compilers on this computer.
+//! * [`list_toolchains`]: the compilers on this computer; [`toolchains`]:
+//!   the app's toolchain list and choice ([`toolchains::ToolchainRegistry`]).
 //!
 //! ```no_run
 //! use b2c_build::{BuildOutcome, BuildRequest, Configuration, FrontendOptions, ToolchainChoice};
@@ -33,7 +34,7 @@ pub mod cache;
 mod compile;
 pub mod frontend;
 mod run;
-mod toolchains;
+pub mod toolchains;
 
 pub use build_dir::{
     BuildDir, BuildDirError, default_cache_root, sandbox_dir, write_executable, write_generated_files,

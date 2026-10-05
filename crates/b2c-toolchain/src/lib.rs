@@ -16,7 +16,8 @@
 //! 6. [`diagnostics`]: parse what g++ and the linker reported (§7.5.3).
 //!
 //! Every problem is reported as a [`b2c_ir::Diagnostic`] with a
-//! `B2C-T1xxx` code from [`codes`].
+//! `B2C-T1xxx` code from [`codes`]. [`host`] reads what the toolchain setup
+//! page needs to know about this computer (the Linux distribution).
 //!
 //! # Example: compile and run hello world
 //!
@@ -61,6 +62,7 @@ pub mod discovery;
 pub mod env;
 pub mod fingerprint;
 pub mod flags;
+pub mod host;
 pub mod paths;
 pub mod probe;
 pub mod target;

@@ -33,6 +33,7 @@ WinLibs. On Linux, install `g++` with your package manager.
 | [B2C-T1019](#b2c-t1019-a-define-cannot-be-used) | error | A project define cannot be passed to the compiler |
 | [B2C-T1020](#b2c-t1020-compiler-on-a-network-folder) | warning | The compiler is on a network folder |
 | [B2C-T1021](#b2c-t1021-no-leak-detection) | note | Leak detection is not available where programs run |
+| [B2C-T1022](#b2c-t1022-the-selected-compiler-cannot-be-used) | warning | The selected compiler is missing or unusable, so another one was used |
 
 ## B2C-T1001: no usable compiler
 
@@ -49,13 +50,19 @@ again. `b2c toolchains` lists what was found and why each one was rejected.
 
 A compiler chosen by path (for example `b2c build --toolchain <path>`) is not
 an absolute path to an executable file named `g++` (or `g++.exe` on
-Windows). Batch files (`.bat`, `.cmd`) are never accepted.
+Windows). Batch files (`.bat`, `.cmd`) are never accepted. In the app,
+*Choose g++ manually…* accepts on Windows only a file named exactly
+`g++.exe`.
+
+The same code refuses a compiler, chosen or found, that lies inside the open
+project's folder: a project must never bring its own compiler, so such a
+program is never run.
 
 *Example:* "The compiler C:\tools\g++.cmd cannot be used: only .exe programs
 can be used (never .bat or .cmd scripts)."
 
 **How to fix:** choose the `g++` (or `g++.exe`) program itself, by its full
-path.
+path, from a folder outside your projects.
 
 ## B2C-T1003: the compiler did not run
 
@@ -216,3 +223,29 @@ change that folder can change what runs on this computer.
 AddressSanitizer works, but its leak detection does not (this happens in some
 containers and under debuggers), so debug builds run without leak checks.
 Memory errors are still found.
+
+## B2C-T1022: the selected compiler cannot be used
+
+The compiler selected as the default in the app's toolchain list (*Select as
+default*) cannot be used for this build, so the build used the first usable
+compiler in discovery order instead, the same one it would use with nothing
+selected ([spec §7.2](../../spec/07-toolchain-build-run.md#72-discovery)).
+The selected compiler is checked again before every build, and this happens
+when:
+
+* it is no longer on this computer (it was uninstalled or moved);
+* it changed and now fails its checks, for example after an update to a
+  version that is too old or broken;
+* it lies inside the open project's folder, where compilers are never run
+  (see [B2C-T1002](#b2c-t1002-the-chosen-compiler-cannot-be-used)).
+
+The build never switches compilers silently: this warning names the
+compiler that was used. When no other usable compiler exists either, it
+comes with [B2C-T1001](#b2c-t1001-no-usable-compiler).
+
+*Example:* "The selected compiler is no longer available on this computer, so
+/usr/bin/g++ was used instead. Select another compiler in the toolchain list
+to stop this warning."
+
+**How to fix:** open the toolchain list, then reinstall the compiler you
+selected and choose *Rescan*, or select another compiler as the default.

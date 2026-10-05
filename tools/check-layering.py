@@ -28,7 +28,7 @@ ALLOWED_WORKSPACE_DEPS = {
     "b2c-toolchain": {"b2c-ir", "b2c-model", "b2c-process"},
     "b2c-build": {
         "b2c-ir", "b2c-model", "b2c-catalog", "b2c-lang", "b2c-codegen",
-        "b2c-toolchain", "b2c-process",
+        "b2c-toolchain", "b2c-process", "b2c-store", "b2c-ipc",
     },
     "b2c-cli": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain"},
     # The IPC contract: types, IDs and decoding only (no Tauri, no services).
