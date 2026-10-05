@@ -161,8 +161,14 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
       if (!loaded.ok) {
         throw new Error(`${file} should load: ${codes(loaded.diagnostics).join(', ')}`);
       }
+      // The editor's round trip gives the file's own canonical text and hash (05 §5.6).
       const saved = core.canonical(JSON.stringify(loaded.document));
-      expect(saved.ok).toBe(true);
+      const direct = core.canonical(new TextDecoder().decode(bytes));
+      expect(saved.ok && direct.ok).toBe(true);
+      if (saved.ok && direct.ok) {
+        expect(saved.text === direct.text).toBe(true);
+        expect(saved.hash).toBe(direct.hash);
+      }
       const preview = core.preview(JSON.stringify(loaded.document), { indentWidth: 4 });
       expect(preview.stage).not.toBe('load');
       expect(preview.files.length).toBeGreaterThan(0);
@@ -174,6 +180,101 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
         expect(diagnostic.source).toBe('loader');
       }
     }
+  });
+
+  describe('numbers through JSON.parse and JSON.stringify (05 §5.6)', () => {
+    /** `hello_world` with `defines` and `x-ext` spliced in as raw JSON text. */
+    function hello(defines: string, ext: string): string {
+      const text = exampleText('hello_world')
+        .replace('\n  "formatVersion": 1,\n', `\n  "formatVersion": 1,\n  "x-ext": ${ext},\n`)
+        .replace('\n    "build": {\n', `\n    "build": {\n      "defines": ${defines},\n`);
+      expect(text).toContain('"x-ext"');
+      expect(text).toContain('"defines"');
+      return text;
+    }
+
+    /** The loader's codes for a text it must refuse. */
+    function refused(text: string): string[] {
+      const loaded = core.load(new TextEncoder().encode(text));
+      expect(loaded.ok).toBe(false);
+      return codes(loaded.diagnostics);
+    }
+
+    /**
+     * What the editor does with a text that must load: keep the loaded object and send it back as
+     * JSON. Returns the canonical text and hash of the file and of the editor's copy.
+     */
+    function throughTheEditor(text: string) {
+      const loaded = core.load(new TextEncoder().encode(text));
+      if (!loaded.ok) {
+        throw new Error(`the document did not load: ${codes(loaded.diagnostics).join(', ')}`);
+      }
+      const direct = core.canonical(text);
+      const edited = core.canonical(JSON.stringify(loaded.document));
+      if (!direct.ok || !edited.ok) {
+        throw new Error('the document did not save');
+      }
+      return { direct, edited };
+    }
+
+    it('refuses what JavaScript would change', () => {
+      for (const [defines, ext] of [
+        ['[{"name": "BIG", "value": {"int": 9007199254740993}}]', '{}'],
+        ['[{"name": "SMALL", "value": {"int": -9007199254740992}}]', '{}'],
+        ['[]', '{"c": 12345678901234567890}'],
+        ['[]', '{"c": [1, {"d": 1e300}]}'],
+      ] as const) {
+        expect(refused(hello(defines, ext))).toEqual(['B2C-E0112']);
+      }
+    });
+
+    it('keeps defines and free-form numbers, and writes them as JavaScript does', () => {
+      const { direct, edited } = throughTheEditor(
+        hello(
+          '[{"name": "TOP", "value": {"int": 9007199254740991}}, {"name": "LOW", "value": {"int": -9007199254740991}}]',
+          '{"a": 1.0, "b": 1.5e-6, "c": 1e-7, "d": -2.5, "e": 2e3, "f": 0.1, "g": -0.0, "h": 5e-324}',
+        ),
+      );
+      expect(edited.text === direct.text).toBe(true);
+      expect(edited.hash).toBe(direct.hash);
+      // The canonical text is exactly what JSON.stringify writes for it.
+      expect(`${JSON.stringify(JSON.parse(direct.text), null, 2)}\n` === direct.text).toBe(true);
+      expect(direct.text).toContain('"int": 9007199254740991');
+      expect(direct.text).toContain('"b": 0.0000015,');
+      expect(direct.text).toContain('"g": 0,');
+    });
+
+    it('keeps any number within ±(2^53 − 1) and refuses the others', () => {
+      // Reproducible random doubles from every part of the range (xorshift64 over the bits).
+      let state = 0x9e3779b97f4a7c15n;
+      const view = new DataView(new ArrayBuffer(8));
+      const kept: number[] = [];
+      for (let i = 0; i < 4000; i += 1) {
+        state ^= (state << 13n) & 0xffffffffffffffffn;
+        state ^= state >> 7n;
+        state ^= (state << 17n) & 0xffffffffffffffffn;
+        view.setBigUint64(0, state);
+        const x = view.getFloat64(0);
+        if (!Number.isFinite(x)) {
+          continue;
+        }
+        if (Math.abs(x) > Number.MAX_SAFE_INTEGER) {
+          if (i % 50 === 0) {
+            expect(refused(hello('[]', JSON.stringify({ x }))), String(x)).toEqual(['B2C-E0112']);
+          }
+          continue;
+        }
+        // Quarters just above 2^50 are ties between two shortest spellings.
+        kept.push(x, x / 3, Math.round(x), 2 ** 50 + (i % 1024) + 0.25);
+      }
+      expect(kept.length).toBeGreaterThan(1000);
+      const { direct, edited } = throughTheEditor(hello('[]', JSON.stringify({ kept })));
+      expect(edited.text === direct.text).toBe(true);
+      expect(`${JSON.stringify(JSON.parse(direct.text), null, 2)}\n` === direct.text).toBe(true);
+      const saved = (JSON.parse(direct.text) as { 'x-ext': { kept: number[] } })['x-ext'].kept;
+      const zero = (x: number) => (Object.is(x, -0) ? 0 : x);
+      expect(saved.map(zero)).toEqual(kept.map(zero));
+    });
   });
 
   it('refuses an oversized document without copying all of it', () => {

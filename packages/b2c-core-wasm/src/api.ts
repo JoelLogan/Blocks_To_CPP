@@ -30,6 +30,8 @@ export interface CoreVersion {
 /**
  * The result of `CoreWasm.load()`: the loaded document (migrated to the current format, not
  * resolved against the catalog, keys in canonical order), or the loader's `B2C-E01xx` problems.
+ * Every number in the document is one JavaScript holds exactly (05 §5.6), so
+ * `canonical(JSON.stringify(document))` gives the same text and hash as `canonical()` of the file.
  */
 export type LoadResult =
   | { ok: true; document: BdmDocument; diagnostics: Diagnostic[] }
@@ -116,8 +118,9 @@ export type ClipboardMakeResult =
  * - `block` with `input: null`: directly after the block in its statement list (a variable the
  *   block itself creates is visible).
  *
- * A block the analyser does not reach (disabled, or loose on the canvas) sees what the canvas
- * sees.
+ * A disabled statement in a list the analyser reaches has the scope of its position, like an
+ * enabled block there. A block the analyser does not reach (inside a disabled block, or loose on
+ * the canvas) sees what the canvas sees.
  */
 export interface PasteTarget {
   /** The module ID. */
@@ -148,9 +151,12 @@ export type PastePrepareResult =
   | {
       ok: true;
       /**
-       * The payload's blocks with fresh block IDs and fresh IDs for the symbols they declare (none
-       * used in the document), outside references re-bound at the target, and no canvas
-       * position.
+       * The payload's blocks, in order, with fresh block IDs and fresh IDs for the symbols they
+       * declare (none used in the document), outside references re-bound at the target, and no
+       * canvas position. Insert them as they are:
+       * - for a canvas target (`block: null`), a copied loose stack stays one block with `stack`;
+       * - for a target in or after a block, the stacked blocks follow their head in this list and
+       *   no block has `stack` (a block inside another one cannot have one, `B2C-E0139`).
        */
       blocks: BdmBlock[];
       unresolved: UnresolvedRef[];
@@ -181,9 +187,11 @@ export interface CoreWasm {
   /**
    * The symbols a block may refer to, from the analysis of the **last preview** (06 §6.5), sorted
    * by name, then ID. `input` null (or a value input) gives what is visible at the block; the
-   * name of one of its statement inputs gives what is visible at the start of that list. Empty
-   * before a successful preview and for blocks the analyser does not reach. Call it only after
-   * your own preview has finished, so the answer is about the document you show.
+   * name of one of its statement inputs gives what is visible at the start of that list. A
+   * disabled statement in a list the analyser reaches answers for its position, like an enabled
+   * block there. Empty before a successful preview and for blocks the analyser does not reach
+   * (inside a disabled block, loose, or nested too deeply). Call it only after your own preview
+   * has finished, so the answer is about the document you show.
    */
   symbolsInScope(blockId: string, input: string | null): SymbolInfo[];
   /** The analyser's conversion rule for every pair of static types (49 rows). */
@@ -197,6 +205,13 @@ export interface CoreWasm {
    * Validates a clipboard payload like a project file and prepares its blocks for insertion at
    * `target` in the document. `seedHex` is 64 hex digits of fresh randomness (see
    * `randomSeedHex()`); the same seed always gives the same IDs.
+   *
+   * Each outside reference binds to the symbol visible at the target with its recorded qualified
+   * name and kind (itself when it is one of them). When no visible symbol has that name, a
+   * reference whose original symbol is visible there with the same kind keeps it, even when it
+   * was renamed since the copy; so projects that share symbol IDs (copies of one example) bind
+   * such references silently, whatever the symbol is called in the target. Otherwise (no match,
+   * or several) the reference is listed in `unresolved` with a `B2C-E0201` (06 §6.14.11).
    */
   pastePrepare(
     clipboardText: string,

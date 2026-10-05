@@ -21,7 +21,7 @@ use serde::Serialize;
 use crate::codes::{self, Diags};
 use crate::document::Document;
 use crate::json::Json;
-use crate::limits::MAX_STRING_BYTES;
+use crate::limits::{MAX_SAFE_INTEGER, MAX_STRING_BYTES};
 use crate::text_rules::{self, quote};
 
 /// Maximum number of JSON values stored as free-form data in all `extra`
@@ -461,16 +461,17 @@ impl<'a> Decoder<'a> {
         parsed
     }
 
-    fn i64(&mut self, value: &Json) -> Option<i64> {
+    /// A whole number within ±[`MAX_SAFE_INTEGER`], which JavaScript holds
+    /// exactly (a define's `int` value).
+    fn safe_int(&mut self, value: &Json) -> Option<i64> {
         let parsed = match value {
-            Json::Number(n) => n.as_i64(),
+            Json::Number(n) => n
+                .as_i64()
+                .filter(|n| n.unsigned_abs() <= MAX_SAFE_INTEGER.unsigned_abs()),
             _ => None,
         };
         if parsed.is_none() {
-            self.wrong(
-                value,
-                "a whole number from -9223372036854775808 to 9223372036854775807",
-            );
+            self.wrong(value, "a whole number from -9007199254740991 to 9007199254740991");
         }
         parsed
     }
@@ -522,7 +523,8 @@ impl<'a> Decoder<'a> {
     // -----------------------------------------------------------------------
 
     /// Converts free-form JSON, checking text rules on every string and key,
-    /// reserved keys (unless `reserved_allowed`) and the free-form budget.
+    /// reserved keys (unless `reserved_allowed`), numbers (see
+    /// [`Self::free_number`]) and the free-form budget.
     fn untyped(&mut self, value: &'a Json, reserved_allowed: bool) -> Option<serde_json::Value> {
         self.untyped_values += 1;
         if self.untyped_values > MAX_UNTYPED_VALUES {
@@ -563,8 +565,34 @@ impl<'a> Decoder<'a> {
                 }
                 serde_json::Value::Object(out)
             }
+            Json::Number(n) => serde_json::Value::Number(self.free_number(value, n)),
             other => other.to_value(),
         })
+    }
+
+    /// A number of free-form data, as JavaScript reads it (spec §5.6): the
+    /// editor holds the document as JavaScript numbers, so whatever it
+    /// stores must survive that unchanged.
+    ///
+    /// * A number beyond ±[`MAX_SAFE_INTEGER`] is reported (JavaScript
+    ///   would change a whole number that large; every larger float is
+    ///   whole). It is kept as it is, so later problems are still found.
+    /// * A whole number written with a fraction or an exponent (`1.0`,
+    ///   `2e3`, `-0.0`) becomes the integer it is, as in JavaScript, so the
+    ///   document holds one value for one number and a save writes it one
+    ///   way.
+    /// * Other numbers (fractions) are kept as floats.
+    fn free_number(&mut self, value: &Json, n: &serde_json::Number) -> serde_json::Number {
+        if let Some(number) = safe_number(n) {
+            return number;
+        }
+        let message = format!(
+            "{} is {}, but numbers in free-form data must be between -9007199254740991 and 9007199254740991, which the editor can hold exactly.",
+            self.subject(),
+            describe(value)
+        );
+        self.report(codes::WRONG_VALUE, message);
+        n.clone()
     }
 
     // -----------------------------------------------------------------------
@@ -609,6 +637,38 @@ impl<'a> Decoder<'a> {
             self.symbols.insert(sym.clone(), location);
         }
     }
+}
+
+/// A number of free-form data in the form a document stores it (see
+/// [`Decoder::free_number`]), or `None` when it is beyond
+/// ±[`MAX_SAFE_INTEGER`].
+fn safe_number(n: &serde_json::Number) -> Option<serde_json::Number> {
+    let limit = MAX_SAFE_INTEGER.unsigned_abs();
+    if let Some(whole) = n.as_i64() {
+        return (whole.unsigned_abs() <= limit).then(|| serde_json::Number::from(whole));
+    }
+    if n.is_u64() {
+        // Above i64::MAX, so far above the limit.
+        return None;
+    }
+    let x = n.as_f64()?;
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the limit, 2^53 - 1, is exactly representable as an f64"
+    )]
+    let in_range = x.abs() <= limit as f64;
+    if !in_range {
+        return None;
+    }
+    if x.fract() == 0.0 {
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "a whole number within ±(2^53 - 1) converts exactly"
+        )]
+        let whole = x as i64;
+        return Some(serde_json::Number::from(whole));
+    }
+    Some(n.clone())
 }
 
 /// The value of `key` among `entries`.
@@ -684,5 +744,48 @@ mod tests {
         );
         assert_eq!(describe(&Json::Array(Box::default())), "a list");
         assert_eq!(describe(&Json::Object(Box::default())), "an object");
+    }
+
+    #[test]
+    fn free_form_numbers_are_stored_as_javascript_reads_them() {
+        use serde_json::Number;
+        let float = |x: f64| Number::from_f64(x).unwrap();
+        let max = MAX_SAFE_INTEGER;
+        // Whole numbers within ±(2^53 − 1), however written, are integers.
+        for (number, expected) in [
+            (Number::from(max), Number::from(max)),
+            (Number::from(-max), Number::from(-max)),
+            (Number::from(7u64), Number::from(7u64)),
+            (float(9_007_199_254_740_991.0), Number::from(max)),
+            (float(-9_007_199_254_740_991.0), Number::from(-max)),
+            (float(1.0), Number::from(1u64)),
+            (float(-3.0), Number::from(-3i64)),
+            (float(-0.0), Number::from(0u64)),
+            (float(2e3), Number::from(2000u64)),
+            (float(0.5), float(0.5)),
+            (float(-1.5e-300), float(-1.5e-300)),
+            (float(4_503_599_627_370_495.5), float(4_503_599_627_370_495.5)),
+        ] {
+            let stored = safe_number(&number);
+            assert_eq!(stored, Some(expected.clone()), "{number}");
+            assert_eq!(
+                stored.map(|n| (n.is_u64(), n.is_i64(), n.is_f64())),
+                Some((expected.is_u64(), expected.is_i64(), expected.is_f64())),
+                "{number}"
+            );
+        }
+        // Anything larger is refused.
+        for number in [
+            Number::from(max + 1),
+            Number::from(-max - 1),
+            Number::from(u64::MAX),
+            Number::from(i64::MIN),
+            float(9_007_199_254_740_992.0),
+            float(-9_007_199_254_740_992.0),
+            float(1e300),
+            float(f64::MAX),
+        ] {
+            assert_eq!(safe_number(&number), None, "{number}");
+        }
     }
 }

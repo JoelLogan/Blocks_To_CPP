@@ -16,7 +16,14 @@
 //! so that the hash can leave out layout keys without copying the document.
 //! It follows the `serde` attributes of [`crate::document`] exactly (which
 //! keys are skipped when empty or default); a test checks that its output is
-//! byte-identical to `serde_json::to_string_pretty`.
+//! byte-identical to `serde_json::to_string_pretty`, except for floats in
+//! free-form data (`extra`, `x-ext`).
+//!
+//! Those are written as JavaScript writes them (`1.5e-6` as `0.0000015`),
+//! because the editor holds the document as JavaScript values: with the
+//! loader's rules for free-form numbers (spec §5.6: within ±(2^53 − 1),
+//! whole numbers stored as integers), a document that has been through
+//! `JSON.parse` and `JSON.stringify` saves to the same text and hash.
 
 use std::fmt::Write as _;
 
@@ -63,6 +70,78 @@ pub(crate) fn push_json_string(out: &mut String, text: &str) {
         }
     }
     out.push('"');
+}
+
+/// Appends a finite number the way ECMAScript's `Number::toString` writes it
+/// (ECMA-262 §6.1.6.1.20), which is what `JSON.stringify` writes: the
+/// shortest digits that read back as the same number, in plain decimal
+/// notation from 10^-6 up to (not including) 10^21, otherwise as
+/// `d.ddde±n`. So `1.0` is `1`, `1.5e-6` is `0.0000015`, `1e-7` is `1e-7`
+/// and `1e21` is `1e+21`. Both zeros are `0`. A non-finite value (never in a
+/// document, since JSON has none) is written as `null`, like `JSON.stringify`.
+///
+/// The digits are the fewest that read back as the same number and, of
+/// those, the closest to it, the even one in a tie (as ECMAScript asks and
+/// engines do). Rust's `{:e}` gives the fewest digits but rounds a tie up,
+/// so the same count of digits is also taken correctly rounded (`{:.*e}`
+/// rounds ties to even) and used whenever it reads back as the number.
+pub(crate) fn push_js_number(out: &mut String, x: f64) {
+    if !x.is_finite() {
+        out.push_str("null");
+        return;
+    }
+    if x == 0.0 {
+        out.push('0');
+        return;
+    }
+    if x < 0.0 {
+        out.push('-');
+    }
+    let magnitude = x.abs();
+    // `d.ddddde-7`: the digits s (k of them) and the exponent of the first.
+    let shortest = format!("{magnitude:e}");
+    let count = shortest.split('e').next().map_or(1, |mantissa| {
+        mantissa.chars().filter(char::is_ascii_digit).count()
+    });
+    let rounded = format!("{:.*e}", count.saturating_sub(1), magnitude);
+    let scientific = if rounded
+        .parse::<f64>()
+        .is_ok_and(|back| back.to_bits() == magnitude.to_bits())
+    {
+        rounded
+    } else {
+        shortest
+    };
+    let (mantissa, exponent) = scientific.split_once('e').unwrap_or((&scientific, "0"));
+    let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+    let k = i64::try_from(digits.len()).unwrap_or(i64::MAX);
+    // x = 0.d1d2…dk × 10^n in ECMAScript's terms.
+    let n = exponent.parse::<i64>().unwrap_or(0).saturating_add(1);
+    if (k..=21).contains(&n) {
+        // Whole: the digits, then n − k zeros.
+        out.push_str(&digits);
+        out.extend(std::iter::repeat_n('0', usize::try_from(n - k).unwrap_or(0)));
+    } else if (1..=21).contains(&n) {
+        // The point inside the digits.
+        let (whole, fraction) = digits.split_at(usize::try_from(n).unwrap_or(0));
+        out.push_str(whole);
+        out.push('.');
+        out.push_str(fraction);
+    } else if (-5..=0).contains(&n) {
+        // Small: `0.`, −n zeros, the digits.
+        out.push_str("0.");
+        out.extend(std::iter::repeat_n('0', usize::try_from(-n).unwrap_or(0)));
+        out.push_str(&digits);
+    } else {
+        let (first, rest) = digits.split_at(1.min(digits.len()));
+        out.push_str(first);
+        if !rest.is_empty() {
+            out.push('.');
+            out.push_str(rest);
+        }
+        let e = n - 1;
+        let _ = write!(out, "e{}{}", if e < 0 { '-' } else { '+' }, e.unsigned_abs());
+    }
 }
 
 /// A pretty-printing JSON writer in the style of `serde_json`'s
@@ -172,12 +251,16 @@ impl Writer {
         self.end(']');
     }
 
-    /// Free-form JSON with object keys sorted.
+    /// Free-form JSON with object keys sorted, and numbers written as
+    /// JavaScript writes them ([`push_js_number`]).
     fn value(&mut self, value: &serde_json::Value) {
         match value {
             serde_json::Value::Null => self.out.push_str("null"),
             serde_json::Value::Bool(b) => self.display(b),
-            serde_json::Value::Number(n) => self.display(n),
+            serde_json::Value::Number(n) => match n.as_f64().filter(|_| n.is_f64()) {
+                Some(x) => push_js_number(&mut self.out, x),
+                None => self.display(n),
+            },
             serde_json::Value::String(s) => self.string(s),
             serde_json::Value::Array(items) => {
                 self.begin('[');
@@ -571,12 +654,77 @@ mod tests {
     #[test]
     fn free_form_values_are_sorted_and_pretty() {
         let value: serde_json::Value =
-            serde_json::from_str(r#"{"b": [1, -2, 3.5, true, null, {}, []], "a": {"z": "x", "y": 1e300}}"#)
+            serde_json::from_str(r#"{"b": [1, -2, 3.5, true, null, {}, []], "a": {"z": "x", "y": 0.25}}"#)
                 .unwrap();
         let mut writer = Writer::new(false);
         writer.value(&value);
         assert_eq!(writer.out, serde_json::to_string_pretty(&value).unwrap());
         assert!(writer.out.find("\"a\"") < writer.out.find("\"b\""));
+    }
+
+    fn js(x: f64) -> String {
+        let mut out = String::new();
+        push_js_number(&mut out, x);
+        out
+    }
+
+    #[test]
+    fn numbers_are_written_as_javascript_writes_them() {
+        // What `String(x)` gives in JavaScript (ECMA-262 Number::toString).
+        let cases: [(f64, &str); 29] = [
+            // Ties between two shortest spellings: the even digit, as V8
+            // writes them (Rust's `{:e}` alone gives …583.3).
+            (1_425_944_814_366_583.0 + 0.25, "1425944814366583.2"),
+            (1_777_500_692_964_025.0 + 0.25, "1777500692964025.2"),
+            (1_425_944_814_366_583.0 + 0.75, "1425944814366583.8"),
+            (0.0, "0"),
+            (-0.0, "0"),
+            (1.0, "1"),
+            (-2.0, "-2"),
+            (1.5, "1.5"),
+            (-2.5, "-2.5"),
+            (0.1, "0.1"),
+            (0.1 + 0.2, "0.30000000000000004"),
+            (1.0 / 3.0, "0.3333333333333333"),
+            (123.456, "123.456"),
+            (100.0, "100"),
+            (4_503_599_627_370_495.5, "4503599627370495.5"),
+            (9_007_199_254_740_991.0, "9007199254740991"),
+            (9_007_199_254_740_992.0, "9007199254740992"),
+            (2f64.powi(60), "1152921504606847000"),
+            (1e20, "100000000000000000000"),
+            (123e18, "123000000000000000000"),
+            (1e21, "1e+21"),
+            (1.234_567_890_123_456_8e21, "1.2345678901234568e+21"),
+            (f64::MAX, "1.7976931348623157e+308"),
+            (0.000_001, "0.000001"),
+            (0.000_001_5, "0.0000015"),
+            (1e-7, "1e-7"),
+            (-1.5e-7, "-1.5e-7"),
+            (5e-324, "5e-324"),
+            (1.25e-300, "1.25e-300"),
+        ];
+        for (x, expected) in cases {
+            assert_eq!(js(x), expected, "{x:e}");
+            // Read back as the same number (both zeros as 0).
+            let back = js(x).parse::<f64>().unwrap();
+            let same = if x == 0.0 { 0.0 } else { x };
+            assert_eq!(back.to_bits(), same.to_bits(), "{x:e}");
+        }
+        assert_eq!(js(f64::NAN), "null");
+        assert_eq!(js(f64::INFINITY), "null");
+    }
+
+    #[test]
+    fn free_form_floats_are_written_as_javascript_writes_them() {
+        let value: serde_json::Value =
+            serde_json::json!({"tiny": 0.000_001_5, "big": 1e300, "n": [1, -7, 2.5]});
+        let mut writer = Writer::new(false);
+        writer.value(&value);
+        assert_eq!(
+            writer.out,
+            "{\n  \"big\": 1e+300,\n  \"n\": [\n    1,\n    -7,\n    2.5\n  ],\n  \"tiny\": 0.0000015\n}"
+        );
     }
 
     #[test]

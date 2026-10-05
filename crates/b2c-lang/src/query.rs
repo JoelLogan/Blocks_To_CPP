@@ -5,9 +5,10 @@
 //! The scope query answers from an index that the lowering records as it
 //! walks, from the same scope stack it resolves names with ([`Scopes`]), so a
 //! dropdown never offers a symbol that the analyser would reject at that
-//! point. For each lowered block, and for each statement list it lowers, the
-//! index keeps one node of the scope stack's [`Trail`]: the index grows with
-//! the number of blocks and declarations, never with their product.
+//! point. For each lowered block (and each disabled statement in a lowered
+//! list), and for each statement list it lowers, the index keeps one node of
+//! the scope stack's [`Trail`]: the index grows with the number of blocks and
+//! declarations, never with their product.
 //!
 //! [`Scopes`]: crate::scope::Scopes
 
@@ -59,7 +60,8 @@ pub(crate) struct ScopeIndex {
 }
 
 impl ScopeIndex {
-    /// Records what is visible at a block. A block that is lowered twice (a
+    /// Records what is visible at a block that is lowered, or at a disabled
+    /// statement in a list that is lowered. A block that is lowered twice (a
     /// damaged file reusing a block ID) keeps its first position.
     pub(crate) fn record_block(&mut self, block: &BlockId, point: Point) {
         let points = self.blocks.entry(block.clone()).or_default();
@@ -160,11 +162,15 @@ impl Analysis {
     /// Exactly the symbols that the analyser accepts a reference to at that
     /// point are listed: a symbol that a newer declaration with the same name
     /// hides is left out, and so are declarations in disabled blocks,
-    /// functions of other modules and functions hidden by a local name. A
-    /// block ID that the document does not have, and a block the analyser
-    /// does not reach (disabled or inside a disabled block, not attached to
-    /// `when program starts` or a function, or nested too deeply), give an
-    /// empty list.
+    /// functions of other modules and functions hidden by a local name.
+    ///
+    /// A disabled statement in a list the analyser reaches answers for its
+    /// position, like an enabled block there (its own dropdowns, and a paste
+    /// directly after it): a disabled declaration declares nothing, so the
+    /// same symbols are visible at it and after it. A block ID that the
+    /// document does not have, and a block the analyser does not reach
+    /// (inside a disabled block, not attached to `when program starts` or a
+    /// function, or nested too deeply), give an empty list.
     ///
     /// The result is sorted by name (byte order), then by ID.
     pub fn symbols_in_scope(&self, block: &BlockId, input: Option<&str>) -> Vec<SymbolInfo> {

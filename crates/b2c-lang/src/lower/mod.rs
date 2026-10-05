@@ -620,7 +620,8 @@ impl<'d> Lowerer<'d> {
         }
     }
 
-    /// Records what is visible at a block that is being lowered.
+    /// Records what is visible at a block that is being lowered, or at a
+    /// disabled statement of a list that is being lowered.
     fn record_block(&mut self, block: &BlockId) {
         let point = self.point();
         self.index.record_block(block, point);

@@ -41,6 +41,9 @@ pub struct Document {
     /// Modules (at least one).
     pub modules: Vec<Module>,
     /// Forward-compatible tooling metadata: preserved, never interpreted.
+    /// Its numbers follow the rules of free-form data (spec §5.6): within
+    /// ±[`crate::limits::MAX_SAFE_INTEGER`], and a whole number (even one
+    /// written `1.0`) is stored as an integer, as JavaScript reads it.
     #[serde(rename = "x-ext", default, skip_serializing_if = "Option::is_none")]
     pub ext: Option<serde_json::Value>,
 }
@@ -258,7 +261,8 @@ pub struct Define {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum DefineValue {
-    /// Integer.
+    /// Integer, within ±[`crate::limits::MAX_SAFE_INTEGER`] in a loaded
+    /// document (the editor's JavaScript numbers hold those exactly).
     Int(i64),
     /// Boolean (`1` / `0`).
     Bool(bool),
@@ -426,7 +430,9 @@ pub struct Block {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<BlockComment>,
     /// Mutator state (variadic counts, parameter rows), validated against the
-    /// catalog's schema for the block type.
+    /// catalog's schema for the block type. Free-form data: a loaded
+    /// document's numbers here are within ±[`crate::limits::MAX_SAFE_INTEGER`]
+    /// and whole ones are integers (spec §5.6).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extra: BTreeMap<String, serde_json::Value>,
     /// Field values.

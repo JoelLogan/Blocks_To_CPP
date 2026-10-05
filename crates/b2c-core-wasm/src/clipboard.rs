@@ -33,10 +33,12 @@
 //!   itself creates, if it is a `var.declare` the analyser accepted (it hides
 //!   any other symbol with its name).
 //!
-//! A block the analyser does not reach (disabled, loose on the canvas, or in
-//! a loose stack) has no scope of its own, so its place sees what the canvas
-//! sees. The analysis is the one kept from the last preview when it belongs
-//! to the same document (same content hash), otherwise a new one.
+//! A disabled statement in a list the analyser reaches has the scope of its
+//! position, like an enabled block there. A block the analyser does not
+//! reach (inside a disabled block, loose on the canvas, or in a loose stack)
+//! has no scope of its own, so its place sees what the canvas sees. The
+//! analysis is the one kept from the last preview when it belongs to the
+//! same document (same content hash), otherwise a new one.
 //!
 //! # How references are bound
 //!
@@ -50,11 +52,26 @@
 //! * if the payload does not name it, it stays as it is and is unresolved
 //!   unless that very symbol is visible.
 //!
+//! Keeping a renamed original (05 §5.12, 06 §6.14.11) means that copy,
+//! rename, paste in one project needs no fix, and agrees with the analyser,
+//! which accepts the reference there. Symbol IDs are stable but not unique
+//! across projects: projects made from the same example or template share
+//! them (`s_guess`), so a block pasted from one into another keeps a
+//! reference whose ID the target declares with the same kind, silently,
+//! whatever that symbol is called there.
+//!
 //! An unresolved reference still refers to its original symbol ID, so the
 //! analyser reports it once the blocks are in place (`B2C-E0201`, or
 //! `B2C-E0203` when that symbol exists in the document but not there). The
 //! paste reports one [`NOT_DECLARED`] per unresolved symbol at its first use
 //! in the pasted blocks, naming the original.
+//!
+//! # The shape of the result
+//!
+//! A copied loose stack is one block with a `stack` (ADR-0011). Pasted on a
+//! canvas it stays that way; pasted in or after a block, the stacked blocks
+//! follow their head as ordinary blocks, because a block inside another one
+//! cannot have a `stack`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -303,6 +320,22 @@ pub(crate) fn rebind(
         }
     }
     binding
+}
+
+/// The blocks to insert in or after a block: each block followed by the
+/// blocks of its loose `stack` (ADR-0011), in order, and none of them with a
+/// `stack`. A block in a statement list or a value input cannot have one
+/// (`B2C-E0139`), and the stacked blocks are what follows the head there.
+/// Stacked blocks never have a `stack` of their own (the loader refuses it),
+/// so one level is all there is.
+pub(crate) fn unstack(blocks: Vec<Block>) -> Vec<Block> {
+    let mut out = Vec::with_capacity(blocks.len());
+    for mut block in blocks {
+        let stack = std::mem::take(&mut block.stack);
+        out.push(block);
+        out.extend(stack);
+    }
+    out
 }
 
 /// Where each symbol is first referred to in the blocks: the block and the

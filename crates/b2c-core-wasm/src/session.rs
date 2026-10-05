@@ -66,9 +66,13 @@ pub struct ClipboardMade {
 /// The result of [`Session::paste_prepare`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pasted {
-    /// The blocks to insert at the target: fresh block IDs, fresh IDs for
-    /// the symbols they declare, references re-bound at the target. They
-    /// have no canvas position.
+    /// The blocks to insert at the target, in order: fresh block IDs, fresh
+    /// IDs for the symbols they declare, references re-bound at the target.
+    /// They have no canvas position. For a canvas target a copied loose
+    /// stack stays one block with a `stack` (ADR-0011); for a target in or
+    /// after a block, every block's `stack` is moved out to follow it, so
+    /// none has one (a nested block with a `stack` is `B2C-E0139`) and the
+    /// blocks can be inserted as they are.
     pub blocks: Vec<Block>,
     /// The references that found nothing to bind to; they still refer to
     /// their original symbols.
@@ -112,9 +116,10 @@ impl Session {
     /// The symbols visible at a block of the last previewed document
     /// ([`Analysis::symbols_in_scope`]): with `input` `None` or a value
     /// input, what is visible at the block; with a statement input, what is
-    /// visible at the start of that list. Empty when there is no preview,
-    /// for a block the document does not have, and for a block the analyser
-    /// does not reach. Sorted by name, then ID.
+    /// visible at the start of that list. A disabled statement in a list the
+    /// analyser reaches answers for its position. Empty when there is no
+    /// preview, for a block the document does not have, and for a block the
+    /// analyser does not reach. Sorted by name, then ID.
     pub fn symbols_in_scope(&self, block: &str, input: Option<&str>) -> Vec<SymbolInfo> {
         let (Some(last), Ok(block)) = (&self.last, BlockId::new(block)) else {
             return Vec::new();
@@ -184,7 +189,14 @@ impl Session {
     /// `target` (see [`crate::clipboard`] for the target and binding
     /// rules); those that find nothing stay references to their original
     /// symbols and are reported as unresolved, with a `B2C-E0201` naming the
-    /// original.
+    /// original. When no visible symbol has the recorded name, a reference
+    /// whose original symbol is visible at the target with the same kind
+    /// keeps it, even if it was renamed since the copy.
+    ///
+    /// For a target in or after a block (`target.block` set), each block
+    /// with a loose `stack` is followed by its stacked blocks and loses the
+    /// `stack`, so the result can be inserted into a statement list as it is;
+    /// for the canvas the stack is kept (see [`Pasted::blocks`]).
     ///
     /// # Errors
     /// [`Failure::Diagnostics`] when the payload or the document does not
@@ -241,6 +253,10 @@ impl Session {
         b2c_model::rewrite_refs(&mut blocks, &binding.rebound);
         let diagnostics =
             clipboard::unresolved_diagnostics(&blocks, &binding.unresolved, &payload.refs, &target.module);
+        if target.block.is_some() {
+            // Inside or after a block: no block can keep a loose stack there.
+            blocks = clipboard::unstack(blocks);
+        }
         Ok(Pasted {
             blocks,
             unresolved: binding.unresolved,

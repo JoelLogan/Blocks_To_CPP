@@ -152,9 +152,13 @@ dropdown never offers a symbol the analyser would reject:
 * `symbols_in_scope(block, Some(statement input))` gives what is visible at
   the **start of that statement list**, including the loop counter and
   parameters that the block itself declares.
-* Declarations in disabled blocks are left out. An unknown block, or one
-  outside the SAST (a loose block), gives an empty list. The result is sorted
-  by name, then by ID.
+* Declarations in disabled blocks are left out. A disabled statement in a
+  statement list that the analyser reaches answers for its position, like an
+  enabled block there (for its own dropdowns and for a paste directly after
+  it); since a disabled declaration declares nothing, the same symbols are
+  visible at it and after it. An unknown block, or one outside the SAST (a
+  loose block, a block inside a disabled block, or one nested too deeply),
+  gives an empty list. The result is sorted by name, then by ID.
 * `symbol_infos()` lists every symbol, and `block_types()` gives the static
   type of each value block, which the editor's connection checker uses
   together with `conversion(from, to)`, the analyser's own conversion rule
@@ -981,10 +985,18 @@ are kept. `E0216` is reported only while typed text is being resolved: stored
 tokens, and tokens of a slot that the user did not edit, keep their symbol IDs
 and are never re-resolved. Re-resolution by name (paste, snippets, Quick
 Insert) uses the target's qualified name recorded in the payload (`::count`,
-`geo::area`, `std::max`), never its shortened spelling. It binds only to an
-entity with that qualified name, of the same kind, that is visible at the new
-position (for a module's non-shared name, the target module's own entity);
-otherwise the reference is `E0201`, naming the original.
+`geo::area`, `std::max`), never its shortened spelling. It binds to an entity
+with that qualified name, of the same kind, that is visible at the new
+position (for a module's non-shared name, the target module's own entity),
+and to the original entity when it is one of them. When no visible entity
+has that name, a reference whose original entity (the same symbol ID) is
+visible there with the same kind keeps it, even when it was renamed since
+the reference was recorded: the analyser accepts that reference, so copy,
+rename and paste within one project needs no fix. Symbol IDs are stable but
+not unique across projects (projects made from the same example or template
+share them), so a paste between such projects binds that way too, silently,
+to whatever the entity with that ID is called in the target. Otherwise (no
+match, or several) the reference is `E0201`, naming the original.
 
 ### 6.14.12 Turning Textbook style on and off; export
 

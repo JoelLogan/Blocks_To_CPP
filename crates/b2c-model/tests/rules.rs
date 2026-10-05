@@ -234,6 +234,104 @@ fn e0112_numbers_and_kinds() {
 }
 
 #[test]
+fn e0112_numbers_javascript_cannot_hold() {
+    // Define values and free-form numbers stay within ±(2^53 − 1), which
+    // the editor's JavaScript numbers hold exactly (spec §5.6).
+    let mut document = base();
+    document["project"]["build"] = json!({"defines": [
+        {"name": "MAX", "value": {"int": 9_007_199_254_740_991_i64}},
+        {"name": "MIN", "value": {"int": -9_007_199_254_740_991_i64}},
+    ]});
+    document["x-ext"] = json!({"max": 9_007_199_254_740_991_i64, "min": -9_007_199_254_740_991_i64});
+    let loaded = loads(&document);
+    assert_eq!(
+        loaded.project.build.defines[0].value,
+        b2c_model::DefineValue::Int(b2c_model::limits::MAX_SAFE_INTEGER)
+    );
+
+    let mut document = base();
+    document["project"]["build"] = json!({"defines": [
+        {"name": "BIG", "value": {"int": 9_007_199_254_740_993_i64}},
+        {"name": "SMALL", "value": {"int": -9_007_199_254_740_992_i64}},
+    ]});
+    document["x-ext"] = json!({
+        "a": 9_007_199_254_740_992_i64,
+        "b": 12_345_678_901_234_567_890_u64,
+        "c": [1, {"d": -1e16}],
+        "e": 1e300,
+    });
+    print_block(&mut document)["extra"]["other"] = json!([1e20]);
+    let diagnostics = failure(&bytes(&document));
+    let messages: Vec<(&str, &str)> = diagnostics
+        .iter()
+        .map(|d| (d.code.0.as_str(), d.message.as_str()))
+        .collect();
+    let free = "but numbers in free-form data must be between -9007199254740991 and 9007199254740991, which the editor can hold exactly.";
+    assert_eq!(
+        messages,
+        [
+            (
+                "B2C-E0112",
+                "\"project.build.defines[0].value.int\" should be a whole number from -9007199254740991 to 9007199254740991, but it is the number 9007199254740993."
+            ),
+            (
+                "B2C-E0112",
+                "\"project.build.defines[1].value.int\" should be a whole number from -9007199254740991 to 9007199254740991, but it is the number -9007199254740992."
+            ),
+            (
+                "B2C-E0112",
+                &*format!("\"extra.other[0]\" in this block is the number 1e+20, {free}")
+            ),
+            (
+                "B2C-E0112",
+                &*format!("\"x-ext.a\" is the number 9007199254740992, {free}")
+            ),
+            (
+                "B2C-E0112",
+                &*format!("\"x-ext.b\" is the number 12345678901234567890, {free}")
+            ),
+            (
+                "B2C-E0112",
+                &*format!("\"x-ext.c[1].d\" is the number -1e+16, {free}")
+            ),
+            ("B2C-E0112", &*format!("\"x-ext.e\" is the number 1e+300, {free}")),
+        ]
+    );
+}
+
+#[test]
+fn whole_free_form_numbers_are_stored_as_integers() {
+    // As JavaScript reads them: `1.0` is the number 1 (spec §5.6), so a
+    // save writes it `1`, and the editor's copy saves to the same text.
+    let mut document = base();
+    document["x-ext"] = json!({"one": 1.0, "zero": -0.0, "big": 2e15, "half": 0.5, "tiny": 1.5e-6});
+    print_block(&mut document)["extra"]["scale"] = json!(64.0);
+    let loaded = loads(&document);
+    let ext = loaded.ext.as_ref().unwrap();
+    assert!(ext["one"].is_u64() && ext["zero"].is_u64() && ext["big"].is_u64());
+    assert_eq!(ext["one"], json!(1));
+    assert_eq!(ext["zero"], json!(0));
+    assert_eq!(ext["big"], json!(2_000_000_000_000_000_u64));
+    assert!(ext["half"].is_f64());
+    let print = &loaded.modules[0].workspace.blocks[0].statements["BODY"][0];
+    assert_eq!(print.extra["scale"], json!(64));
+    let text = b2c_model::to_canonical_json(&loaded);
+    for line in [
+        "\"big\": 2000000000000000,",
+        "\"half\": 0.5,",
+        "\"one\": 1,",
+        "\"tiny\": 0.0000015,",
+        "\"zero\": 0",
+        "\"scale\": 64",
+    ] {
+        assert!(text.contains(line), "{line}\n{text}");
+    }
+    let again = load(text.as_bytes()).unwrap();
+    assert_eq!(again.ext, loaded.ext);
+    assert_eq!(b2c_model::to_canonical_json(&again), text);
+}
+
+#[test]
 fn null_means_absent_for_optional_values() {
     let mut document = base();
     main_block(&mut document)["x"] = json!(null);

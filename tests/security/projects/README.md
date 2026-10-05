@@ -53,6 +53,7 @@ rest of the project valid, so that the file tests one thing.
 | `deep-expression.b2c` | T5 | 255 nested parentheses in one slot (within the token limit) | accepted | clean | The expression parser stops at depth 64 |
 | `deep-nesting.b2c` | T5 | 5,000 nested lists (stack exhaustion) | `B2C-E0104` | — |  |
 | `define-name-injection.b2c` | T2 | A compiler flag disguised as a `-D` define name | `B2C-E0132` | — |  |
+| `define-unsafe-integer.b2c` | T2 | A define value of 2⁵³ + 1, which the editor's JavaScript numbers would silently change (and with it the program and the security hash) | `B2C-E0112` | — |  |
 | `define-value-injection.b2c` | T3 | A define value that tries to end its string | accepted | clean | The backend passes it as one escaped string argument |
 | `diagnostic-flood.b2c` | T5 | 1,500 unknown keys, to flood the problem list | `B2C-E0110`, `B2C-E0199` | — | At most 1,000 problems are listed, then one summary |
 | `duplicate-block-ids.b2c` | T1 | Two blocks with the same ID (diagnostics and edits would hit the wrong one) | `B2C-E0114` | — |  |

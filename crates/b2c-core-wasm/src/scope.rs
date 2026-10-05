@@ -80,8 +80,12 @@ pub(crate) fn module_functions(analysis: &Analysis, module: &ModuleId) -> Vec<Sy
 ///   itself creates, if it is a `var.declare` the analyser accepted (it
 ///   hides any other symbol with its name).
 ///
-/// A block the analyser does not reach (disabled, loose on the canvas, or in
-/// a loose stack) has no scope of its own; its blocks see the module's
+/// A disabled statement in a statement list the analyser reaches has the
+/// scope of its position (the scope query answers for it, and a disabled
+/// `var.declare` creates nothing), so a paste after it, or into one of its
+/// value inputs, sees the variables declared before it. A block the analyser
+/// does not reach (inside a disabled block, loose on the canvas, or in a
+/// loose stack) has no scope of its own; its blocks see the module's
 /// functions, like the canvas. That is also what an empty scope query means:
 /// a reached block always sees the module's functions unless a visible local
 /// name hides them, so an empty answer only comes from an unreached block

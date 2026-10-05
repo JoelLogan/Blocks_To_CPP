@@ -324,8 +324,68 @@ fn disabled_declarations_are_left_out() {
     assert_eq!(
         visible(&a, &ids[1], None),
         NONE,
-        "a disabled block is not analysed"
+        "a block inside a disabled block is not analysed"
     );
+}
+
+#[test]
+fn a_disabled_statement_answers_for_its_position() {
+    let off_marker = disabled(marker());
+    let off_declare = disabled(declare("int", "off", None));
+    let off_loop = disabled(repeat(num("2"), vec![]));
+    let inner_off = disabled(marker());
+    let ids = [&off_marker, &off_declare, &off_loop, &inner_off].map(id_of);
+    let a = run(vec![
+        main(vec![
+            declare("int", "first", None),
+            off_marker,
+            declare("int", "second", None),
+            off_declare,
+            if_then(boolean(true), vec![off_loop]),
+        ]),
+        func("helper", "void", &[], vec![]),
+        // A disabled statement in a loose block is not reached.
+        forever(vec![inner_off]),
+    ]);
+    // Like an enabled block there: what is declared before it, and the
+    // module's functions. A disabled declaration declares nothing, so the
+    // same is visible at it and after it.
+    assert_eq!(visible(&a, &ids[0], None), ["first", "helper"]);
+    assert_eq!(visible(&a, &ids[1], None), ["first", "helper", "second"]);
+    assert_eq!(
+        visible(&a, &ids[1], Some("VALUE")),
+        ["first", "helper", "second"],
+        "its inputs answer at the block"
+    );
+    assert_eq!(visible(&a, &ids[2], None), ["first", "helper", "second"]);
+    assert_eq!(
+        visible(&a, &ids[2], Some("BODY")),
+        ["first", "helper", "second"],
+        "its own lists are never lowered, so they answer at the block"
+    );
+    assert_eq!(visible(&a, &ids[3], None), NONE, "not in the program");
+    // Nothing a disabled block declares is in the program.
+    assert!(a.symbol_infos().iter().all(|s| s.name != "off"));
+}
+
+#[test]
+fn a_disabled_statement_answers_like_an_enabled_one_near_the_depth_limit() {
+    // A disabled and an enabled statement side by side, inside more and
+    // more loops: both answer, or (nested too deeply) neither does.
+    let mut empty_or_not = BTreeSet::new();
+    for levels in 60..68 {
+        let (off, on) = (disabled(marker()), marker());
+        let ids = [&off, &on].map(id_of);
+        let mut nested = forever(vec![off, on]);
+        for _ in 1..levels {
+            nested = forever(vec![nested]);
+        }
+        let a = run_main(vec![declare("int", "x", None), nested]);
+        let found = visible(&a, &ids[1], None);
+        assert_eq!(visible(&a, &ids[0], None), found, "at {levels} levels");
+        empty_or_not.insert(found.is_empty());
+    }
+    assert_eq!(empty_or_not.len(), 2, "both sides of the limit are tested");
 }
 
 #[test]
@@ -795,6 +855,36 @@ fn gen_program() -> impl Strategy<Value = GenProgram> {
         .prop_map(|(main, functions)| GenProgram { main, functions })
 }
 
+/// Whether the analyser reaches a block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reach {
+    /// It is analysed.
+    Reached,
+    /// It is a disabled statement in a list that is analysed: not analysed
+    /// itself, but the scope query answers for its position.
+    DisabledHere,
+    /// Inside a disabled block (so never analysed, and never answered for).
+    Unreached,
+}
+
+impl Reach {
+    /// The reach of the blocks inside a block with this reach.
+    fn inside(self) -> Self {
+        match self {
+            Self::Reached => Self::Reached,
+            Self::DisabledHere | Self::Unreached => Self::Unreached,
+        }
+    }
+
+    /// The reach of a block marked disabled, given its reach otherwise.
+    fn disabled(self) -> Self {
+        match self {
+            Self::Reached | Self::DisabledHere => Self::DisabledHere,
+            Self::Unreached => Self::Unreached,
+        }
+    }
+}
+
 /// A probe: a block whose reference the test points at each candidate.
 #[derive(Debug)]
 struct Probe {
@@ -802,8 +892,8 @@ struct Probe {
     /// The symbol ID it refers to in the rendered text, unique to it.
     placeholder: String,
     call: bool,
-    /// Inside a disabled block (so never analysed).
-    disabled: bool,
+    /// Whether the analyser reaches it.
+    reach: Reach,
     /// The variable whose starting value it is in, if any.
     initialises: Option<String>,
 }
@@ -822,29 +912,32 @@ impl Renderer {
         format!("{prefix}{}", self.next)
     }
 
-    fn probe(&mut self, call: bool, disabled: bool, initialises: Option<String>) -> (String, String) {
+    fn probe(&mut self, call: bool, reach: Reach, initialises: Option<String>) -> (String, String) {
         let block = self.fresh(if call { "pc" } else { "pv" });
         let placeholder = self.fresh("q");
         self.probes.push(Probe {
             block: block.clone(),
             placeholder: placeholder.clone(),
             call,
-            disabled,
+            reach,
             initialises,
         });
         (block, placeholder)
     }
 
-    fn var_probe(&mut self, disabled: bool, initialises: Option<String>) -> Value {
-        let (id, target) = self.probe(false, disabled, initialises);
+    /// A `var.get` probe inside a block with this reach.
+    fn var_probe(&mut self, reach: Reach, initialises: Option<String>) -> Value {
+        let (id, target) = self.probe(false, reach.inside(), initialises);
         json!({"block": {"id": id, "type": "var.get", "v": 1, "fields": {"VAR": {"ref": target}}}})
     }
 
-    fn list(&mut self, list: &[Gen], disabled: bool) -> Value {
-        Value::Array(list.iter().map(|g| self.statement(g, disabled)).collect())
+    /// A statement list of a block with this reach.
+    fn list(&mut self, list: &[Gen], reach: Reach) -> Value {
+        Value::Array(list.iter().map(|g| self.statement(g, reach.inside())).collect())
     }
 
-    fn statement(&mut self, statement: &Gen, disabled: bool) -> Value {
+    /// A statement with this reach (before its own `disabled` flag).
+    fn statement(&mut self, statement: &Gen, reach: Reach) -> Value {
         let id = self.fresh("k");
         match statement {
             Gen::Declare { name, probe_value } => {
@@ -853,32 +946,32 @@ impl Renderer {
                 let mut block = json!({"id": id, "type": "var.declare", "v": 1,
                     "fields": {"TYPE": "int", "NAME": {"sym": symbol, "name": NAMES[*name]}}});
                 if *probe_value {
-                    block["inputs"] = json!({"VALUE": self.var_probe(disabled, Some(symbol))});
+                    block["inputs"] = json!({"VALUE": self.var_probe(reach, Some(symbol))});
                 }
                 block
             }
             Gen::Probe => {
-                let item = self.var_probe(disabled, None);
+                let item = self.var_probe(reach, None);
                 json!({"id": id, "type": "io.print", "v": 1, "extra": {"itemCount": 1},
                        "inputs": {"ITEM0": item}})
             }
             Gen::CallProbe => {
-                let (id, target) = self.probe(true, disabled, None);
+                let (id, target) = self.probe(true, reach, None);
                 json!({"id": id, "type": "func.call_stmt", "v": 1, "fields": {"FUNC": {"ref": target}},
                        "extra": {"argCount": 0}})
             }
             Gen::If { body, else_body } => {
                 let mut statements = serde_json::Map::new();
-                statements.insert(String::from("DO0"), self.list(body, disabled));
+                statements.insert(String::from("DO0"), self.list(body, reach));
                 if let Some(other) = else_body {
-                    statements.insert(String::from("ELSE"), self.list(other, disabled));
+                    statements.insert(String::from("ELSE"), self.list(other, reach));
                 }
                 json!({"id": id, "type": "control.if", "v": 1,
                        "extra": {"elseIfCount": 0, "hasElse": else_body.is_some()},
                        "inputs": {"COND0": {"expr": [{"kw": "true"}]}}, "statements": statements})
             }
             Gen::While(body) => {
-                let body = self.list(body, disabled);
+                let body = self.list(body, reach);
                 json!({"id": id, "type": "control.while", "v": 1, "fields": {"MODE": "while"},
                        "inputs": {"COND": {"expr": [{"kw": "true"}]}}, "statements": {"BODY": body}})
             }
@@ -890,18 +983,18 @@ impl Renderer {
                 let symbol = self.fresh("s");
                 self.variables.push(symbol.clone());
                 let from = if *probe_from {
-                    self.var_probe(disabled, None)
+                    self.var_probe(reach, None)
                 } else {
                     json!({"expr": [{"num": "0"}]})
                 };
-                let body = self.list(body, disabled);
+                let body = self.list(body, reach);
                 json!({"id": id, "type": "control.for_range", "v": 1,
                        "fields": {"VAR": {"sym": symbol, "name": NAMES[*name]}, "DIRECTION": "to"},
                        "inputs": {"FROM": from, "TO": {"expr": [{"num": "3"}]}},
                        "statements": {"BODY": body}})
             }
             Gen::Disabled(inner) => {
-                let mut block = self.statement(inner, true);
+                let mut block = self.statement(inner, reach.disabled());
                 block["disabled"] = json!(true);
                 block
             }
@@ -921,7 +1014,12 @@ impl Renderer {
                 json!({"sym": param, "name": NAMES[*name], "type": "int", "mode": "copy"})
             })
             .collect();
-        let body = self.list(&function.body, function.disabled);
+        let reach = if function.disabled {
+            Reach::Unreached
+        } else {
+            Reach::Reached
+        };
+        let body = self.list(&function.body, reach);
         json!({"id": id, "type": "func.define", "v": 1, "disabled": function.disabled,
                "fields": {"NAME": {"sym": symbol, "name": NAMES[function.name]}, "RETURNS": "void"},
                "extra": {"params": params}, "statements": {"BODY": body}})
@@ -930,7 +1028,7 @@ impl Renderer {
     /// The project text and the probes and candidates in it.
     fn render(program: &GenProgram) -> (String, Self) {
         let mut renderer = Self::default();
-        let body = renderer.list(&program.main, false);
+        let body = renderer.list(&program.main, Reach::Reached);
         let mut modules = [
             vec![json!({"id": "main", "type": "program.main", "v": 1,
                                        "statements": {"BODY": body}})],
@@ -970,6 +1068,25 @@ fn analyse_text(text: &str) -> Analysis {
     analyze(&serde_json::from_str::<Document>(text).expect("generated document"))
 }
 
+/// The project text with the block `id` enabled.
+fn enable(text: &str, id: &str) -> String {
+    fn walk(value: &mut Value, id: &str) {
+        match value {
+            Value::Object(map) => {
+                if map.get("id").and_then(Value::as_str) == Some(id) && map.contains_key("type") {
+                    map.remove("disabled");
+                }
+                map.values_mut().for_each(|v| walk(v, id));
+            }
+            Value::Array(items) => items.iter_mut().for_each(|v| walk(v, id)),
+            _ => {}
+        }
+    }
+    let mut value: Value = serde_json::from_str(text).expect("generated document");
+    walk(&mut value, id);
+    value.to_string()
+}
+
 /// Points each probe at each candidate and compares the analyser's verdict
 /// with what the scope query offered there.
 fn check_program(program: &GenProgram) -> Result<(), TestCaseError> {
@@ -977,9 +1094,21 @@ fn check_program(program: &GenProgram) -> Result<(), TestCaseError> {
     let base = analyse_text(&text);
     for probe in &renderer.probes {
         let here = base.symbols_in_scope(&block(&probe.block), None);
-        if probe.disabled {
-            prop_assert!(here.is_empty(), "{} is in a disabled block", probe.block);
-            continue;
+        match probe.reach {
+            Reach::Reached => {}
+            Reach::Unreached => {
+                prop_assert!(here.is_empty(), "{} is in a disabled block", probe.block);
+                continue;
+            }
+            Reach::DisabledHere => {
+                // The analyser does not check its reference, but the query
+                // answers as for the same block enabled (a call statement
+                // declares nothing, so enabling it changes nothing there).
+                let enabled = analyse_text(&enable(&text, &probe.block));
+                let there = enabled.symbols_in_scope(&block(&probe.block), None);
+                prop_assert_eq!(&here, &there, "{} answers like an enabled block", &probe.block);
+                continue;
+            }
         }
         let offered: BTreeSet<String> = here
             .iter()
@@ -1046,6 +1175,7 @@ fn the_probe_harness_sees_hidden_names() {
                 probe_value: true,
             },
             Gen::Disabled(Box::new(Gen::Probe)),
+            Gen::Disabled(Box::new(Gen::CallProbe)),
         ],
         functions: vec![
             GenFunction {
@@ -1065,6 +1195,6 @@ fn the_probe_harness_sees_hidden_names() {
         ],
     };
     let (_, renderer) = Renderer::render(&program);
-    assert_eq!(renderer.probes.len(), 7);
+    assert_eq!(renderer.probes.len(), 8);
     check_program(&program).expect("the query matches the analyser");
 }

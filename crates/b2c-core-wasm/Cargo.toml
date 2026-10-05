@@ -28,6 +28,10 @@ wasm-bindgen.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+# Tests parse the exports' JSON and compare numbers exactly (tests/round_trip.rs);
+# with this feature serde_json parses floats with correct rounding, as the
+# loader and JavaScript do. Tests only: the WebAssembly build does not get it.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 
 # A copy of the workspace lints with one change: `unsafe_code` is `deny`, not
 # `forbid`, because the `#[wasm_bindgen]` expansion contains `unsafe` glue and

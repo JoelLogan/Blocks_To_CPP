@@ -157,9 +157,11 @@ pub fn preview(document_json: &str, options_json: &str) -> String {
 /// With `input` absent, or the name of a value input, it is what is visible
 /// at the block; with the name of one of the block's statement inputs, what
 /// is visible at the start of that list (including a loop's counter and a
-/// function's parameters). The list is empty (`[]`) when there has been no
-/// successful preview, and for a block the previewed document does not have
-/// or the analyser does not reach. See
+/// function's parameters). A disabled statement in a list the analyser
+/// reaches answers for its position, like an enabled block there. The list
+/// is empty (`[]`) when there has been no successful preview, and for a
+/// block the previewed document does not have or the analyser does not
+/// reach (inside a disabled block, loose, or nested too deeply). See
 /// [`b2c_lang::Analysis::symbols_in_scope`] for the exact rules.
 #[wasm_bindgen]
 #[allow(
@@ -208,13 +210,24 @@ pub fn clipboard_make(document_json: &str, block_ids_json: &str) -> String {
 /// IDs are derived.
 ///
 /// Returns `{"ok": true, "blocks": [...], "unresolved": [{"sym", "name"}],
-/// "diagnostics": [...]}`: the blocks to insert, with fresh IDs (none used
-/// in the document) and references re-bound by qualified name and kind
-/// among the symbols visible at the target; references that find nothing
-/// are listed in `unresolved` with a `B2C-E0201` each. A payload or document
-/// that does not load gives `{"ok": false, "unresolved": [], "diagnostics":
-/// [...]}` with the loader's codes; a malformed target or seed, or a target
-/// the document does not have, gives
+/// "diagnostics": [...]}`: the blocks to insert, in order, with fresh IDs
+/// (none used in the document) and references re-bound by qualified name
+/// and kind among the symbols visible at the target; references that find
+/// nothing are listed in `unresolved` with a `B2C-E0201` each. When no
+/// visible symbol has the recorded name, a reference whose original symbol
+/// is visible at the target with the same kind keeps it, even if it was
+/// renamed since the copy; projects that share symbol IDs (copies of one
+/// example) therefore bind such references silently, whatever the symbol is
+/// called in the target (06 §6.14.11).
+///
+/// For a canvas target a copied loose stack stays one block with a `stack`;
+/// for a target in or after a block, the stacked blocks follow their head
+/// in `blocks` and no block has a `stack`, so the list can be inserted into
+/// the statement list as it is.
+///
+/// A payload or document that does not load gives `{"ok": false,
+/// "unresolved": [], "diagnostics": [...]}` with the loader's codes; a
+/// malformed target or seed, or a target the document does not have, gives
 /// `{"error": {"kind": "invalidArguments", …}}`. See
 /// [`Session::paste_prepare`].
 #[wasm_bindgen]

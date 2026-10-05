@@ -466,17 +466,22 @@ impl<'a> Decoder<'a> {
 
     fn extra(&mut self, value: &'a Json) -> Option<BTreeMap<String, serde_json::Value>> {
         self.map(value, |d, key, item| {
-            d.check_variadic(item);
+            let too_many = d.check_variadic(item);
             if key == "params" {
                 d.declare_params(item);
+            }
+            if too_many && matches!(item, Json::Number(_)) {
+                // Already reported; a count that large is never also
+                // reported as a number JavaScript cannot hold.
+                return None;
             }
             d.untyped(item, false)
         })
     }
 
     /// Counts and lists in `extra` describe ⊕ parts: at most
-    /// [`MAX_VARIADIC_PARTS`] of them.
-    fn check_variadic(&mut self, value: &Json) {
+    /// [`MAX_VARIADIC_PARTS`] of them. Returns whether it reported one.
+    fn check_variadic(&mut self, value: &Json) -> bool {
         let limit = u32::try_from(MAX_VARIADIC_PARTS).unwrap_or(u32::MAX);
         let message = match value {
             Json::Number(n)
@@ -495,9 +500,10 @@ impl<'a> Decoder<'a> {
                 self.subject(),
                 items.len()
             ),
-            _ => return,
+            _ => return false,
         };
         self.report(codes::TOO_MANY_PARTS, message);
+        true
     }
 
     /// Function parameter rows (`extra.params`) declare symbols. Their exact
