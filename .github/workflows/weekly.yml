@@ -1,0 +1,429 @@
+# Weekly checks (docs/spec/09-quality-and-delivery.md §9.2 "Mutation" and §9.3 weekly.yml;
+# docs/spec/08-security.md §8.9 and §8.13 "Weekly"):
+# - mutants: cargo-mutants over the security-critical encoders and validators listed in
+#   .cargo/mutants.toml, which must kill every mutant;
+# - dependency-health: a report of advisories (unmaintained crates included), outdated npm
+#   packages, duplicate crate versions and expiring OSV-Scanner exceptions
+#   (tools/dependency-health.sh);
+# - geiger: a cargo-geiger report of unsafe code (08 §8.9), informational only;
+# - fuzz-cmin: minimises the corpora that nightly.yml keeps.
+# OpenSSF Scorecard runs weekly in scorecard.yml, and Dependabot opens its update pull requests
+# weekly (.github/dependabot.yml).
+name: Weekly
+
+on:
+  schedule:
+    - cron: "41 5 * * 1" # Mondays 05:41 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: weekly-${{ github.ref }}
+  cancel-in-progress: false
+
+# No RUSTFLAGS=-D warnings here (ci.yml lints): a mutant that only causes a warning must still
+# be built and tested, not counted as unviable.
+env:
+  CARGO_TERM_COLOR: always
+  # Tool versions, each at least 7 days old when bumped (docs/spec/08-security.md §8.9).
+  CARGO_MUTANTS_VERSION: 27.1.0
+  # The version cargo-deny-action (ci.yml's deny job) runs.
+  CARGO_DENY_VERSION: 0.20.2
+  CARGO_GEIGER_VERSION: 0.13.0
+  # The same pins as ci.yml's and nightly.yml's fuzz jobs.
+  FUZZ_TOOLCHAIN: nightly-2026-09-25
+  CARGO_FUZZ_VERSION: 0.13.2
+
+jobs:
+  # About 830 mutants at 2 to 15 seconds each, spread over four runners (.cargo/mutants.toml
+  # deals them out round-robin). `cargo mutants --shard k/4` locally runs shard k.
+  mutants:
+    name: Mutation testing (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      SHARD: ${{ matrix.shard }}
+      SHARDS: ${{ strategy.job-total }}
+      # Tests that compile C++ fail, rather than skip, without g++ (GCC 13 on ubuntu-24.04),
+      # so a missing compiler cannot make mutants look missed.
+      B2C_REQUIRE_GXX: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show g++ version
+        run: g++ --version
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked --version "$CARGO_MUTANTS_VERSION"
+
+      # Mutants are tested in a copy of the tree (the default), never in place. The exit status
+      # is judged in the last step, so the report and the artifact come first.
+      - name: Test the mutants of this shard
+        id: run
+        run: |
+          set -uo pipefail
+          if ! [[ "$SHARD" =~ ^[0-9]+$ && "$SHARDS" =~ ^[0-9]+$ ]] || [ "$SHARD" -ge "$SHARDS" ]; then
+            echo "::error::Bad shard '$SHARD' of '$SHARDS'"
+            exit 1
+          fi
+          status=0
+          cargo mutants --shard "$SHARD/$SHARDS" --output "$RUNNER_TEMP" || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Report the outcome
+        if: ${{ !cancelled() && steps.run.outcome == 'success' }}
+        env:
+          STATUS: ${{ steps.run.outputs.status }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/mutants.out"
+          count() { if [ -f "$out/$1.txt" ]; then wc -l < "$out/$1.txt"; else echo "?"; fi; }
+          # At most 200 names per list keeps the summary well under its 1 MiB limit.
+          list() {
+            echo '````text'
+            head -n 200 "$out/$1.txt"
+            echo '````'
+            if [ "$(count "$1")" -gt 200 ]; then echo "… and more in the artifact."; fi
+          }
+          case "$STATUS" in
+            0) verdict="Every mutant was caught or unviable." ;;
+            2 | 3) verdict="cargo-mutants finished (exit status $STATUS)." ;;
+            4) verdict="**The tests fail without any mutation** (exit status 4): fix them first." ;;
+            *) verdict="**cargo-mutants failed** (exit status $STATUS)." ;;
+          esac
+          {
+            echo "### Mutation testing, shard $SHARD of $SHARDS"
+            echo
+            echo "$verdict Missed mutants fail the job; timeouts and unviable mutants are reported only."
+            echo
+            echo "| Outcome | Mutants |"
+            echo "|---|---:|"
+            echo "| Caught | $(count caught) |"
+            echo "| **Missed** | $(count missed) |"
+            echo "| Timeout | $(count timeout) |"
+            echo "| Unviable | $(count unviable) |"
+            echo
+            if [ -s "$out/missed.txt" ]; then
+              echo "Missed (add a test that notices each change; the diffs and logs are in the artifact \`mutants-shard-$SHARD\`):"
+              echo
+              list missed
+              echo
+            fi
+            for kind in timeout unviable; do
+              if [ -s "$out/$kind.txt" ]; then
+                echo "<details><summary>${kind^} ($(count "$kind"))</summary>"
+                echo
+                list "$kind"
+                echo
+                echo "</details>"
+                echo
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the cargo-mutants output
+        if: ${{ !cancelled() && steps.run.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/mutants.out
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Fail on missed mutants
+        if: ${{ !cancelled() && steps.run.outcome == 'success' }}
+        env:
+          STATUS: ${{ steps.run.outputs.status }}
+        run: |
+          set -euo pipefail
+          case "$STATUS" in
+            0 | 2 | 3) ;; # finished: judged by the missed list below
+            4)
+              echo "::error::The tests fail on the unmutated tree (cargo-mutants exit status 4)"
+              exit 1
+              ;;
+            *)
+              echo "::error::cargo-mutants failed with exit status $STATUS"
+              exit 1
+              ;;
+          esac
+          missed="$RUNNER_TEMP/mutants.out/missed.txt"
+          if [ ! -f "$missed" ]; then
+            echo "::error::cargo-mutants wrote no missed.txt"
+            exit 1
+          fi
+          if [ -s "$missed" ]; then
+            echo "::error::$(wc -l < "$missed") mutants were not caught by the tests (see the job summary)"
+            exit 1
+          fi
+          echo "No missed mutants."
+
+  dependency-health:
+    name: Dependency health report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read # check out the repository
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # Installed, so that `pnpm outdated` knows the current versions.
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version "$CARGO_DENY_VERSION"
+
+      # Findings never fail this step; an incomplete report (a tool failed) does.
+      - name: Write the report to the job summary
+        run: tools/dependency-health.sh
+
+  # Informational (docs/spec/08-security.md §8.9): unsafe code is gated by the unsafe_code
+  # lints (forbid in the workspace, deny in b2c-process with allow only in its platform
+  # modules), clippy's undocumented_unsafe_blocks and CODEOWNERS review, not by this report.
+  # cargo-geiger tends to lag new Cargo releases, so its own failure is allowed, labelled and
+  # reported (continue-on-error on those steps only).
+  geiger:
+    name: Unsafe code report (cargo-geiger)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read # check out the repository
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      # cargo-geiger links the system OpenSSL (through the cargo library).
+      - name: Install the OpenSSL headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libssl-dev pkg-config
+
+      - name: Install cargo-geiger (a tool failure does not fail the job)
+        id: install
+        continue-on-error: true # tool failure only; see the job comment
+        run: cargo install cargo-geiger --locked --version "$CARGO_GEIGER_VERSION"
+
+      # cargo-geiger needs a package, not the workspace's virtual manifest, so it runs once per
+      # default member (crates/*; the desktop app needs WebKitGTK and is left out like in ci.yml).
+      - name: Report unsafe code per crate (a tool failure does not fail the job)
+        id: report
+        if: ${{ steps.install.outcome == 'success' }}
+        continue-on-error: true # tool failure only; see the job comment
+        run: |
+          set -euo pipefail
+          metadata=$(cargo metadata --locked --no-deps --format-version 1)
+          mapfile -t members < <(jq -r '. as $m | $m.workspace_default_members[] as $id
+            | $m.packages[] | select(.id == $id) | "\(.name)\t\(.manifest_path)"' <<< "$metadata")
+          if [ "${#members[@]}" -eq 0 ]; then
+            echo "::error::No default workspace members found"
+            exit 1
+          fi
+          reports="$RUNNER_TEMP/geiger"
+          mkdir -p "$reports"
+          failed=()
+          {
+            echo "### Unsafe code (cargo-geiger $CARGO_GEIGER_VERSION)"
+            echo
+            echo "Informational: the gate is the \`unsafe_code\` lints and review (docs/spec/08-security.md §8.9)."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          for member in "${members[@]}"; do
+            name=${member%%$'\t'*}
+            manifest=${member#*$'\t'}
+            echo "::group::$name"
+            status=0
+            cargo geiger --manifest-path "$manifest" --locked --color never \
+              --output-format GitHubMarkdown > "$reports/$name.md" 2> "$reports/$name.err" || status=$?
+            tail -n 20 "$reports/$name.err"
+            echo "::endgroup::"
+            {
+              if [ "$status" -eq 0 ]; then
+                echo "<details><summary><code>$name</code></summary>"
+                echo
+                # At most 64 KiB per crate keeps the summary under its 1 MiB limit.
+                head -c 65536 "$reports/$name.md"
+                echo
+                echo "</details>"
+              else
+                failed+=("$name")
+                echo "**\`$name\`: cargo-geiger failed (exit status $status)**; its log is in the job output."
+              fi
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "::warning::cargo-geiger failed for: ${failed[*]}"
+            exit 1
+          fi
+
+      - name: Note a cargo-geiger failure
+        if: ${{ steps.install.outcome == 'failure' || steps.report.outcome == 'failure' }}
+        run: |
+          echo "::warning::cargo-geiger failed, so the unsafe code report is incomplete. It is informational; the unsafe_code lints still gate every change."
+          {
+            echo "**cargo-geiger failed** (a tool failure, which does not fail this job), so the report"
+            echo "above is incomplete or missing. See the job log."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  fuzz-list:
+    name: List the fuzz targets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # check out the repository
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the nightly toolchain and cargo-fuzz
+        run: |
+          rustup toolchain install "$FUZZ_TOOLCHAIN" --profile minimal
+          cargo "+$FUZZ_TOOLCHAIN" install cargo-fuzz --version "$CARGO_FUZZ_VERSION" --locked
+
+      # As in nightly.yml: plain names only, since they become cache keys and paths.
+      - name: List the targets as a JSON array
+        id: list
+        run: |
+          set -euo pipefail
+          list=$(cargo "+$FUZZ_TOOLCHAIN" fuzz list)
+          mapfile -t targets <<< "$list"
+          if [ "${#targets[@]}" -gt 64 ]; then
+            echo "::error::Expected at most 64 fuzz targets, found ${#targets[@]}"
+            exit 1
+          fi
+          for target in "${targets[@]}"; do
+            if ! [[ "$target" =~ ^[a-z][a-z0-9_]{0,63}$ ]]; then
+              echo "::error::Fuzz target name '$target' is not a plain lower-case name"
+              exit 1
+            fi
+          done
+          json=$(printf '%s\n' "${targets[@]}" | jq --raw-input . | jq --compact-output --slurp .)
+          echo "Targets: $json"
+          echo "targets=$json" >> "$GITHUB_OUTPUT"
+
+  # Keeps only the inputs that add coverage (`cargo fuzz cmin`, libFuzzer's -merge=1), so the
+  # kept corpora stay small and the nightly runs start fast.
+  fuzz-cmin:
+    name: Minimise the ${{ matrix.target }} corpus
+    needs: fuzz-list
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.fuzz-list.outputs.targets) }}
+    # One run at a time restores and saves a target's corpus (with nightly.yml's fuzz job).
+    concurrency:
+      group: fuzz-corpus-${{ matrix.target }}
+      cancel-in-progress: false
+    env:
+      TARGET: ${{ matrix.target }}
+      CORPUS: fuzz/corpus/${{ matrix.target }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore the kept corpus
+        id: restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+
+      - name: Install the nightly toolchain and cargo-fuzz
+        if: ${{ steps.restore.outputs.cache-matched-key != '' }}
+        run: |
+          rustup toolchain install "$FUZZ_TOOLCHAIN" --profile minimal
+          cargo "+$FUZZ_TOOLCHAIN" install cargo-fuzz --version "$CARGO_FUZZ_VERSION" --locked
+
+      # The same -max_len and limits as the nightly run, so coverage is measured the same way.
+      - name: Minimise the corpus
+        id: cmin
+        if: ${{ steps.restore.outputs.cache-matched-key != '' }}
+        run: |
+          set -euo pipefail
+          echo "BEFORE_FILES=$(find "$CORPUS" -type f | wc -l)" >> "$GITHUB_ENV"
+          echo "BEFORE_BYTES=$(du -sb "$CORPUS" | cut -f1)" >> "$GITHUB_ENV"
+          args=(-timeout=10 -rss_limit_mb=2048)
+          case "$TARGET" in
+            encoders) args+=(-max_len=1024) ;;
+            diag_*) ;;
+            *) args+=(-max_len=65536) ;;
+          esac
+          cargo "+$FUZZ_TOOLCHAIN" fuzz cmin "$TARGET" "$CORPUS" -- "${args[@]}"
+
+      - name: Report the corpus size
+        if: ${{ !cancelled() }}
+        env:
+          MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+          CMIN_OUTCOME: ${{ steps.cmin.outcome }}
+        run: |
+          set -euo pipefail
+          size() { numfmt --to=iec-i --suffix=B "$1"; }
+          {
+            echo "### Fuzz corpus \`$TARGET\`"
+            echo
+            if [ -z "$MATCHED_KEY" ]; then
+              echo "No kept corpus yet (nightly.yml saves one after its first scheduled run)."
+            elif [ "$CMIN_OUTCOME" != success ]; then
+              echo "**Minimising failed**; the kept corpus \`$MATCHED_KEY\` is unchanged."
+            else
+              echo "| Corpus | Files | Size |"
+              echo "|---|---:|---:|"
+              echo "| Kept (\`$MATCHED_KEY\`) | ${BEFORE_FILES:-?} | $(size "${BEFORE_BYTES:-0}") |"
+              echo "| Minimised | $(find "$CORPUS" -type f | wc -l) | $(size "$(du -sb "$CORPUS" | cut -f1)") |"
+            fi
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # As in nightly.yml, only the scheduled run (on the default branch) saves; the next
+      # nightly run starts from this, the newest saved corpus.
+      - name: Keep the minimised corpus
+        if: ${{ !cancelled() && github.event_name == 'schedule' && steps.cmin.outcome == 'success' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}

@@ -1,0 +1,64 @@
+# cargo-mutants configuration (https://mutants.rs), used by the weekly
+# workflow (.github/workflows/weekly.yml, job `mutants`).
+#
+# docs/spec/09-quality-and-delivery.md §9.2 (Mutation): the security-critical
+# encoders and validators must kill all mutants. Any "missed" mutant fails the
+# job; "timeout" and "unviable" mutants are reported only.
+#
+# Run locally (from the repository root; needs g++ for b2c-build's tests):
+#
+#   cargo install cargo-mutants --locked --version <weekly.yml's CARGO_MUTANTS_VERSION>
+#   cargo mutants --list                  # what the weekly job mutates
+#   cargo mutants --shard 0/4             # what its first shard runs
+#   cargo mutants --no-config -f crates/b2c-ir/src/text.rs   # one file
+#
+# (`-f` adds to the globs below rather than narrowing them, hence
+# `--no-config` for a single file.)
+#
+# A mutant that is truly equivalent (no test can tell it apart) is excluded
+# with `#[mutants::skip]` on the function, or an `exclude_re` entry here, with
+# a comment saying why. Never widen the exclusions to make the job pass.
+
+# The files in scope (globs with a slash match the whole path from the
+# repository root):
+examine_globs = [
+  # Typed text encoders: the only way user text becomes C++ (08 §8.4).
+  "crates/b2c-ir/src/text.rs",
+  # Compiler flags: the denylist, defines and the pkg-config allowlist (08 §8.5).
+  "crates/b2c-toolchain/src/flags.rs",
+  # The compiler's environment (08 §8.5, 07 §7.5.2).
+  "crates/b2c-toolchain/src/env.rs",
+  # Which compilers are found and accepted (07 §7.2, 08 §8.5).
+  "crates/b2c-toolchain/src/discovery.rs",
+  # The strict, bounded JSON parser for untrusted project files (05 §5.6).
+  "crates/b2c-model/src/json.rs",
+  # The project-file decoder and its validation (05 §5.4-§5.6).
+  "crates/b2c-model/src/decode/**",
+  # Build directory naming and containment (08 §8.6).
+  "crates/b2c-build/src/build_dir.rs",
+  # Program path validation before any spawn (08 §8.7); only `check_program`,
+  # see `examine_re`.
+  "crates/b2c-process/src/command.rs",
+]
+
+# Generated keyword tables (tools/gen-reserved-names.py): data, not logic.
+exclude_globs = ["crates/b2c-ir/src/reserved_names.rs"]
+
+# A mutant is examined when its name (as `cargo mutants --list` prints it:
+# `<path>:<line>:<column>: <change>`) matches one of these. They select every
+# mutant of the files above except in command.rs, where only `check_program`
+# is in scope (the rest of the file is the builder's plain accessors).
+examine_re = [
+  '^crates/(?:b2c-ir|b2c-toolchain|b2c-model|b2c-build)/src/',
+  '^crates/b2c-process/src/command\.rs:.*\bcheck_program\b',
+]
+
+# The weekly job splits the mutants over several runners with `--shard k/n`.
+# Round-robin gives every shard a similar mix of fast (b2c-ir) and slow
+# (b2c-model, b2c-build) mutants; `cargo mutants --shard k/n` locally runs
+# the same mutants as shard k in CI.
+sharding = "round-robin"
+
+# Each mutant is checked against the tests of the package it is in (the
+# default). The rule is that the encoders' and validators' own tests must
+# notice every change, not that some distant snapshot test happens to.
