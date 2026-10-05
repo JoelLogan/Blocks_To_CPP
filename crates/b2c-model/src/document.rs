@@ -408,10 +408,12 @@ pub struct Block {
     pub block_type: String,
     /// Catalog block version.
     pub v: u32,
-    /// Canvas X (top-level blocks only).
+    /// Canvas X (top-level blocks only; copied blocks in a clipboard
+    /// payload have none, spec §5.12).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub x: Option<i32>,
-    /// Canvas Y (top-level blocks only).
+    /// Canvas Y (top-level blocks only; copied blocks in a clipboard
+    /// payload have none, spec §5.12).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub y: Option<i32>,
     /// Shown collapsed.

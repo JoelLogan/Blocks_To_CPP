@@ -36,10 +36,21 @@ impl<'a> Decoder<'a> {
         let entries = self.object(root, &CLIPBOARD_KEYS)?;
         let catalog = self.required(entries, "catalog", Self::string);
         // The copied blocks are top-level blocks of the payload: they may
-        // carry a canvas position and a stack, like blocks on a canvas.
-        let blocks = self.required(entries, "blocks", |d, v| {
-            d.list(v, |d, item| d.block(item, Placement::Canvas))
-        });
+        // carry a stack, like blocks on a canvas, and a canvas position. The
+        // position is checked like one on a canvas and then dropped, because
+        // a paste places blocks at the target (spec §5.12). A stacked or
+        // nested block with a position is still `B2C-E0128`.
+        let blocks = self
+            .required(entries, "blocks", |d, v| {
+                d.list(v, |d, item| d.block(item, Placement::Canvas))
+            })
+            .map(|mut blocks| {
+                for block in &mut blocks {
+                    block.x = None;
+                    block.y = None;
+                }
+                blocks
+            });
         let refs = self.required(entries, "refs", Self::refs);
         Some(Clipboard {
             catalog: catalog?,

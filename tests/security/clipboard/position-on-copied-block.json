@@ -24,18 +24,29 @@
           ]
         }
       },
+      "x": 120,
+      "y": 80,
       "stack": [
         {
-          "id": "blk_twin",
-          "type": "var.declare",
+          "id": "blk_second",
+          "type": "io.print",
           "v": 1,
+          "extra": {
+            "itemCount": 1
+          },
           "fields": {
-            "CONST": false,
-            "NAME": {
-              "sym": "sym_local",
-              "name": "twin"
-            },
-            "TYPE": "int"
+            "NEWLINE": true,
+            "SEP": "none",
+            "STREAM": "out"
+          },
+          "inputs": {
+            "ITEM0": {
+              "expr": [
+                {
+                  "str": "second"
+                }
+              ]
+            }
           }
         }
       ]
@@ -44,6 +55,8 @@
       "id": "blk_decl",
       "type": "var.declare",
       "v": 1,
+      "x": 120,
+      "y": 200,
       "fields": {
         "CONST": false,
         "NAME": {

@@ -443,8 +443,15 @@ and a custom `application/x-blocks2cpp+json` payload:
 
 `refs` records the qualified name and kind of each symbol that the copied
 blocks refer to but do not declare. `kind` is `variable`, `parameter`,
-`loopVariable` or `function`. Copied blocks have no `x` or `y`, and a copied
-stack of statements is one block with `stack` (§5.4).
+`loopVariable` or `function`. A copied stack of statements is one block with
+`stack` (§5.4).
+
+Copied blocks have no `x` or `y`, because a paste places blocks at the
+target: `clipboard_make` writes none. `load_clipboard` accepts `x`/`y` on a
+top-level copied block, checks it like a canvas position (`B2C-E0129` when
+out of range) and drops it, so the paste ignores it and the canonical
+payload has one spelling. `x`/`y` on a stacked or nested block is
+`B2C-E0128`, as in a project file.
 
 Pasting runs the **same validator and limits as file loading**. Pasted blocks
 get fresh IDs, and symbol references are re-resolved by qualified name in the

@@ -398,15 +398,27 @@ impl Writer {
     }
 
     pub(crate) fn block(&mut self, block: &Block) {
+        self.block_at(block, true);
+    }
+
+    /// Writes a copied block of a clipboard payload (spec §5.12): like
+    /// [`Writer::block`], but never with a canvas position, because a paste
+    /// places blocks at the target.
+    pub(crate) fn copied_block(&mut self, block: &Block) {
+        self.block_at(block, false);
+    }
+
+    /// Writes a block; `position` says whether its `x`/`y` are written.
+    fn block_at(&mut self, block: &Block, position: bool) {
         self.begin('{');
         self.field_str("id", block.id.as_str());
         self.field_str("type", &block.block_type);
         self.field_display("v", block.v);
         if !self.semantic {
-            if let Some(x) = block.x {
+            if let Some(x) = block.x.filter(|_| position) {
                 self.field_display("x", x);
             }
-            if let Some(y) = block.y {
+            if let Some(y) = block.y.filter(|_| position) {
                 self.field_display("y", y);
             }
             if block.collapsed {

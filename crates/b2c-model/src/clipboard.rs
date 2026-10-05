@@ -16,8 +16,13 @@
 //! is `B2C-E0138`, and a newer `formatVersion` is `B2C-E0108`.
 //!
 //! The copied blocks are the payload's top-level blocks: like blocks on a
-//! canvas they may have `x`/`y` and a loose `stack` (ADR-0011), so copying a
-//! stack gives one block with a `stack`. Block and symbol IDs must be unique
+//! canvas they may have a loose `stack` (ADR-0011), so copying a stack gives
+//! one block with a `stack`. Copied blocks have no canvas position, because a
+//! paste places blocks at the target: [`to_canonical_clipboard_json`] never
+//! writes `x`/`y`, and [`load_clipboard`] accepts them on a top-level copied
+//! block (checked like a canvas position, so an out-of-range value is still
+//! `B2C-E0129`) and drops them. On a stacked or nested block they are
+//! `B2C-E0128`, as in a project file. Block and symbol IDs must be unique
 //! within the payload. Pasted blocks get fresh IDs with
 //! [`crate::remap_ids`] before they join a document.
 
@@ -48,8 +53,10 @@ pub struct Clipboard {
     /// Version of the block catalog the blocks were copied with, e.g.
     /// `1.0.0`.
     pub catalog: String,
-    /// The copied blocks, in the order they were copied. Each may carry
-    /// `x`/`y` and a loose `stack`, like a block on a canvas.
+    /// The copied blocks, in the order they were copied. Each may carry a
+    /// loose `stack`, like a block on a canvas, but no position: a loaded
+    /// payload has `x` and `y` set to `None`, and the canonical text never
+    /// has them, whatever they are set to here.
     pub blocks: Vec<Block>,
     /// The symbols the blocks refer to but do not declare, so that a paste
     /// can bind them again by qualified name and kind (spec §6.14.11).
@@ -109,7 +116,10 @@ pub fn load_clipboard(bytes: &[u8]) -> Result<Clipboard, LoadError> {
 /// [`crate::to_canonical_json`]: 2-space indentation, `\n` line endings, one
 /// trailing newline, keys in the order `format`, `formatVersion`,
 /// `catalog`, `blocks`, `refs` (always written, `{}` when empty), map keys
-/// sorted. The blocks keep their order. For a valid payload,
+/// sorted. The blocks keep their order and are written as in a project
+/// file, except that a copied block's `x`/`y` are never written. For a valid
+/// payload `c` whose copied blocks have no position (as every payload that
+/// [`load_clipboard`] returns),
 /// `load_clipboard(to_canonical_clipboard_json(c)) == c`.
 pub fn to_canonical_clipboard_json(clipboard: &Clipboard) -> String {
     let mut writer = Writer::new(false);
@@ -121,7 +131,7 @@ pub fn to_canonical_clipboard_json(clipboard: &Clipboard) -> String {
     writer.begin('[');
     for block in &clipboard.blocks {
         writer.entry();
-        writer.block(block);
+        writer.copied_block(block);
     }
     writer.end(']');
     writer.key("refs");

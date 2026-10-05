@@ -63,7 +63,7 @@ impl Origin {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Placement {
     /// Directly on a canvas, or directly in a clipboard payload: may have
-    /// `x`, `y` and a `stack`.
+    /// `x`, `y` and a `stack`. (The clipboard decoder drops the position.)
     Canvas,
     /// In another block's value input or statement list.
     Nested,
