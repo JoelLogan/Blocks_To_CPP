@@ -1,0 +1,170 @@
+/*
+ * The full-window pages of the toolchain and settings features (docs/spec/04-user-interface.md
+ * §4.6, §4.12), built on the shell's colour tokens (src/app/app.css). Colour is never the only
+ * signal: every notice has a glyph and a spoken label (§4.8).
+ */
+
+.feature-page {
+  padding: 24px 24px 48px;
+}
+
+.feature-page-content {
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+.feature-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.feature-page-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.feature-page-title:focus {
+  outline: none;
+}
+
+.feature-page-title:focus-visible {
+  outline: 2px solid var(--b2c-focus);
+  outline-offset: 4px;
+}
+
+.feature-section {
+  margin-top: 20px;
+  padding: 16px 20px;
+  border: 1px solid var(--b2c-border);
+  border-radius: 8px;
+  background: var(--b2c-surface-raised);
+}
+
+.feature-section-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.feature-section p {
+  margin: 6px 0;
+}
+
+.feature-muted {
+  color: var(--b2c-text-muted);
+}
+
+.feature-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.feature-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--b2c-border);
+  border-radius: 6px;
+  background: var(--b2c-surface);
+}
+
+.feature-notice-glyph {
+  flex: none;
+  min-width: 1em;
+  font-weight: 700;
+  text-align: center;
+}
+
+.feature-notice-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.feature-notice-body p,
+.feature-notice-body ul {
+  margin: 4px 0;
+}
+
+.feature-notice-success .feature-notice-glyph {
+  color: var(--b2c-ok);
+}
+
+.feature-notice-error {
+  border-color: var(--b2c-error);
+}
+
+.feature-notice-error .feature-notice-glyph {
+  color: var(--b2c-error);
+}
+
+.feature-notice-warning {
+  border-color: var(--b2c-warning-text);
+  background: var(--b2c-warning-bg);
+  color: var(--b2c-warning-text);
+}
+
+.feature-field {
+  margin: 10px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.feature-field legend,
+.feature-field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.feature-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 24px;
+  margin: 4px 0;
+}
+
+.feature-option input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+}
+
+.feature-option-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.feature-input {
+  width: 12em;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--b2c-border);
+  border-radius: 6px;
+  background: var(--b2c-bg);
+  color: var(--b2c-text);
+  font: inherit;
+}
+
+.feature-input[aria-invalid='true'] {
+  border-color: var(--b2c-error);
+}
+
+.feature-field-error {
+  margin: 4px 0 0;
+  color: var(--b2c-error);
+}
+
+.feature-path {
+  font-family: ui-monospace, 'Cascadia Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  overflow-wrap: anywhere;
+}
