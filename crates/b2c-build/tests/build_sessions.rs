@@ -14,19 +14,25 @@ mod common;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::time::Duration;
 #[cfg(target_os = "linux")]
 use std::time::Instant;
 
+#[cfg(unix)]
+use b2c_build::cache;
 use b2c_build::{
     BuildJob, BuildOutcome as SyncOutcome, BuildRequest, BuildSessions, Configuration, FrontendOptions,
     RecordOutcome, StaleReason, ToolchainChoice, ToolchainForBuild,
 };
-use b2c_ipc::dto::{BuildEvent, BuildOutcome};
-use b2c_ipc::{BuildId, IpcError};
+use b2c_ipc::dto::{BuildEvent, BuildOutcome, BuildStage};
+use b2c_ipc::sink::testing::RecordingSink;
+use b2c_ipc::{BuildId, EventSink, IpcError};
+use b2c_process::CancelToken;
 use common::{
     BUILD_TIMEOUT, bytes, diagnostics, example, example_json, job, outcome, progress, ready, real_toolchain,
-    sink, wait_finished,
+    sink, unavailable, wait_finished,
 };
 
 /// Starts `job`, waits for its finished event, and returns the events.
@@ -883,6 +889,164 @@ fn the_finished_hook_sees_every_build() {
         ),
     );
     assert_eq!(*seen.lock().unwrap(), [(id, RecordOutcome::ProjectErrors)]);
+}
+
+/// A sink that cancels its project's build as soon as the front end starts
+/// (the `generate` 0/1 progress event), and records every event.
+struct CancelWhenGenerating {
+    sessions: Arc<BuildSessions>,
+    key: &'static str,
+    events: Arc<RecordingSink<BuildEvent>>,
+}
+
+impl EventSink<BuildEvent> for CancelWhenGenerating {
+    fn send(&self, event: BuildEvent) -> bool {
+        if matches!(
+            event,
+            BuildEvent::Progress {
+                stage: BuildStage::Generate,
+                done: 0,
+                ..
+            }
+        ) {
+            self.sessions.cancel_project(self.key);
+        }
+        self.events.send(event)
+    }
+}
+
+/// A build cancelled while the front end runs stops there and ends as
+/// `cancelled`, also when the project has errors (07 §7.5.4), and no
+/// toolchain is chosen for it.
+#[test]
+fn a_build_cancelled_while_generating_ends_as_cancelled() {
+    let cache = tempfile::tempdir().unwrap();
+    let sessions = Arc::new(BuildSessions::new(cache.path().to_path_buf()));
+    let mut broken = example_json("hello_world");
+    broken["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"][0]["inputs"]["ITEM0"]["expr"] =
+        serde_json::json!([{"ref": "s_missing"}]);
+    for document in [bytes(&broken), b"{".to_vec(), example("hello_world")] {
+        let asked = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&asked);
+        let mut generating = job("ph_generating", document, unavailable());
+        generating.toolchain = Box::new(move |_| {
+            flag.store(true, Ordering::SeqCst);
+            unavailable()
+        });
+        let events = sink();
+        let canceller = Arc::new(CancelWhenGenerating {
+            sessions: Arc::clone(&sessions),
+            key: "ph_generating",
+            events: events.clone(),
+        });
+        sessions.start(generating, canceller).unwrap();
+        let all = wait_finished(&events, BUILD_TIMEOUT);
+        assert_eq!(outcome(&all).0, BuildOutcome::Cancelled, "{all:#?}");
+        assert!(
+            diagnostics(&all).is_empty(),
+            "nothing is reported after the cancel: {all:#?}"
+        );
+        assert!(!asked.load(Ordering::SeqCst), "no toolchain is chosen");
+        assert!(sessions.wait_idle(Duration::from_secs(30)));
+    }
+}
+
+/// The toolchain is chosen on the session's thread after `start` returned
+/// the ID, so a choice that waits (for a toolchain discovery) never delays
+/// `build_start`, and cancelling the build ends the wait with `cancelled`.
+/// A project with errors never asks for a toolchain.
+#[test]
+fn the_toolchain_is_chosen_after_start_and_its_wait_can_be_cancelled() {
+    let cache = tempfile::tempdir().unwrap();
+    let sessions = BuildSessions::new(cache.path().to_path_buf());
+    let (entered, choosing) = mpsc::channel();
+    let mut waiting = job("ph_lazy", example("hello_world"), unavailable());
+    waiting.toolchain = Box::new(move |cancel: &CancelToken| {
+        entered.send(()).unwrap();
+        // Like waiting for a discovery: only the build's cancel ends it.
+        while !cancel.is_cancelled() {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        unavailable()
+    });
+    let events = sink();
+    let id = sessions.start(waiting, events.clone()).unwrap();
+    choosing.recv_timeout(BUILD_TIMEOUT).unwrap();
+    assert!(sessions.record(&id).is_none(), "the build is still choosing");
+    sessions.cancel(&id).unwrap();
+    let all = wait_finished(&events, BUILD_TIMEOUT);
+    assert_eq!(outcome(&all).0, BuildOutcome::Cancelled);
+    assert!(
+        !diagnostics(&all).iter().any(|d| d.code == "B2C-T1001"),
+        "what a cancelled choice returned is not reported: {all:#?}"
+    );
+    assert!(sessions.wait_idle(Duration::from_secs(30)));
+
+    let asked = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&asked);
+    let mut broken = job("ph_lazy", b"{".to_vec(), unavailable());
+    broken.toolchain = Box::new(move |_| {
+        flag.store(true, Ordering::SeqCst);
+        unavailable()
+    });
+    let (_, all) = run(&sessions, broken);
+    assert_eq!(outcome(&all).0, BuildOutcome::ProjectErrors);
+    assert!(!asked.load(Ordering::SeqCst));
+    // The job hides the document's bytes in its debug form.
+    let shown = format!("{:?}", job("ph_lazy", b"secret text".to_vec(), unavailable()));
+    assert!(shown.contains("11 bytes") && !shown.contains("secret"), "{shown}");
+}
+
+/// A finished build marks its folder as used again, so eviction right after
+/// it keeps the program that was just built even when another entry was
+/// used while it compiled (07 §7.5.1), without being told which entry to
+/// keep.
+#[cfg(unix)]
+#[test]
+fn eviction_right_after_a_build_keeps_the_program_just_built() {
+    let Some(real) = real_toolchain() else {
+        return;
+    };
+    let cache = tempfile::tempdir().unwrap();
+    // Another project's entry, used while this build compiles.
+    let other = cache.path().join("builds/prj_other-00000000/debug-00000000");
+    std::fs::create_dir_all(other.join("out")).unwrap();
+    std::fs::write(other.join("out/program"), vec![0u8; 4096]).unwrap();
+    std::fs::write(other.join("lock"), b"").unwrap();
+    let scripts = tempfile::tempdir().unwrap();
+    let script = common::write_script(
+        scripts.path(),
+        "g++",
+        &format!(
+            "touch '{}'\nexec '{}' \"$@\"",
+            other.join("lock").display(),
+            real.path().display()
+        ),
+    );
+    let fake = common::fake_toolchain(&real, &script);
+    let sessions = BuildSessions::new(cache.path().to_path_buf());
+    let root = cache.path().to_path_buf();
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let hook_seen = Arc::clone(&seen);
+    sessions.set_on_finished(Box::new(move |record| {
+        let report = cache::evict_to_cap(&root, &cache::EvictionPolicy::with_max_bytes(1)).unwrap();
+        hook_seen
+            .lock()
+            .unwrap()
+            .push((report, record.verify_executable()));
+    }));
+    let (id, events) = run(&sessions, job("ph_evict", example("hello_world"), ready(fake)));
+    assert_eq!(
+        outcome(&events).0,
+        BuildOutcome::Built,
+        "{:#?}",
+        diagnostics(&events)
+    );
+    let (report, verified) = seen.lock().unwrap().remove(0);
+    assert_eq!(verified, Ok(()), "{report:?}");
+    assert_eq!(report.removed, 1, "{report:?}");
+    assert!(!other.exists());
+    sessions.record(&id).unwrap().verify_executable().unwrap();
 }
 
 /// A receiver that went away stops the events but not the build.

@@ -17,6 +17,11 @@
 //!   and any `skipped` events, then exactly one `exit` once the output has
 //!   ended and its last batch was sent, with `afterSeq` naming the batches
 //!   before it.
+//! * **Ended runs.** Once its `exit` event has gone, a run keeps only the
+//!   number of batches it sent, so it holds no terminal, pipe or process
+//!   handle. The last 64 ended runs are remembered: `run_input`,
+//!   `run_resize` and `run_stop` then give `notRunning`, and late
+//!   acknowledgements succeed.
 //! * **Limits.** At most [`MAX_CONCURRENT_RUNS`] programs run at once and one
 //!   per project (starting one stops the project's previous run); input is
 //!   at most [`MAX_RUN_INPUT_BYTES`] per call and rate-limited (see `rate`);
@@ -60,7 +65,8 @@ const OUTPUT_QUEUE: usize = 16;
 const INPUT_QUEUE: usize = 64;
 
 /// How many finished runs are remembered, so that late calls for them get
-/// `notRunning` rather than `unknownRun`.
+/// `notRunning` rather than `unknownRun`. Only their count of batches sent
+/// is kept ([`Slot::Ended`]).
 const MAX_FINISHED_RUNS: usize = 64;
 
 /// How long [`RunSessions::stop_all`] waits for the programs to end.
@@ -160,8 +166,33 @@ impl Shared {
 /// The runs by ID, and the finished ones in the order they ended.
 #[derive(Debug, Default)]
 struct Runs {
-    by_id: HashMap<RunId, Arc<Run>>,
+    by_id: HashMap<RunId, Slot>,
     finished: VecDeque<RunId>,
+}
+
+impl Runs {
+    /// The runs that have not ended yet.
+    fn live(&self) -> impl Iterator<Item = &Arc<Run>> {
+        self.by_id.values().filter_map(|slot| match slot {
+            Slot::Live(run) => Some(run),
+            Slot::Ended { .. } => None,
+        })
+    }
+}
+
+/// A run in the table: its session while it runs, and after its `exit`
+/// event only what late calls need. An ended run keeps no terminal, pipe or
+/// process handle: its [`PtyChild`] is dropped with the last [`Arc<Run>`].
+#[derive(Debug)]
+enum Slot {
+    /// Started and not ended yet (its `exit` event may be on its way).
+    Live(Arc<Run>),
+    /// Ended: input, resize and stop give `notRunning`, and acknowledgements
+    /// up to `sent` succeed.
+    Ended {
+        /// The number of output batches it sent.
+        sent: u64,
+    },
 }
 
 /// One run session.
@@ -244,8 +275,7 @@ impl RunSessions {
         let command = command(&spec)?;
         let mut runs = self.shared.lock();
         let (others, same_project): (Vec<Arc<Run>>, Vec<Arc<Run>>) = runs
-            .by_id
-            .values()
+            .live()
             .filter(|run| run.is_live())
             .cloned()
             .partition(|run| run.project_key != spec.project_key);
@@ -326,7 +356,7 @@ impl RunSessions {
             return Err(IpcError::Internal);
         }
         tracing::debug!(run_id = %id, "program started");
-        runs.by_id.insert(id.clone(), run);
+        runs.by_id.insert(id.clone(), Slot::Live(run));
         Ok(id)
     }
 
@@ -343,10 +373,7 @@ impl RunSessions {
         if bytes.len() > MAX_RUN_INPUT_BYTES {
             return Err(IpcError::too_large(MAX_RUN_INPUT_BYTES));
         }
-        let run = self.get(id)?;
-        if !run.is_live() {
-            return Err(IpcError::NotRunning);
-        }
+        let run = self.live(id)?;
         if !lock(&run.limiter).admit(bytes.len(), Instant::now()) {
             return Err(IpcError::RateLimited);
         }
@@ -373,10 +400,7 @@ impl RunSessions {
     /// the old one).
     pub fn resize(&self, id: &RunId, cols: u16, rows: u16) -> Result<(), IpcError> {
         check_size(cols, rows, "")?;
-        let run = self.get(id)?;
-        if !run.is_live() {
-            return Err(IpcError::NotRunning);
-        }
+        let run = self.live(id)?;
         run.child.resize(PtySize { cols, rows }).map_err(|error| {
             tracing::debug!(%error, "cannot resize a program's terminal");
             match error {
@@ -395,11 +419,7 @@ impl RunSessions {
     /// [`IpcError::UnknownRun`], and [`IpcError::NotRunning`] once the program
     /// has ended.
     pub fn stop(&self, id: &RunId) -> Result<(), IpcError> {
-        let run = self.get(id)?;
-        if !run.is_live() {
-            return Err(IpcError::NotRunning);
-        }
-        run.child.stop();
+        self.live(id)?.child.stop();
         Ok(())
     }
 
@@ -414,11 +434,17 @@ impl RunSessions {
         if seq > MAX_SAFE_INTEGER {
             return Err(IpcError::invalid(InvalidReason::OutOfRange, Some("seq")));
         }
-        let run = self.get(id)?;
-        if seq > run.sent.load(Ordering::Acquire) {
+        let runs = self.shared.lock();
+        let (sent, acked) = match runs.by_id.get(id).ok_or(IpcError::UnknownRun)? {
+            Slot::Live(run) => (run.sent.load(Ordering::Acquire), Some(&run.acked)),
+            Slot::Ended { sent } => (*sent, None),
+        };
+        if seq > sent {
             return Err(IpcError::invalid(InvalidReason::OutOfRange, Some("seq")));
         }
-        run.acked.fetch_max(seq, Ordering::AcqRel);
+        if let Some(acked) = acked {
+            acked.fetch_max(seq, Ordering::AcqRel);
+        }
         Ok(())
     }
 
@@ -456,20 +482,23 @@ impl RunSessions {
         !self.live_runs(Some(key)).is_empty()
     }
 
-    fn get(&self, id: &RunId) -> Result<Arc<Run>, IpcError> {
-        self.shared
-            .lock()
-            .by_id
-            .get(id)
-            .cloned()
-            .ok_or(IpcError::UnknownRun)
+    /// The run with this ID while its program runs.
+    ///
+    /// # Errors
+    /// [`IpcError::UnknownRun`], and [`IpcError::NotRunning`] once the
+    /// program has ended.
+    fn live(&self, id: &RunId) -> Result<Arc<Run>, IpcError> {
+        match self.shared.lock().by_id.get(id) {
+            None => Err(IpcError::UnknownRun),
+            Some(Slot::Live(run)) if run.is_live() => Ok(Arc::clone(run)),
+            Some(_) => Err(IpcError::NotRunning),
+        }
     }
 
     fn live_runs(&self, key: Option<&str>) -> Vec<Arc<Run>> {
         self.shared
             .lock()
-            .by_id
-            .values()
+            .live()
             .filter(|run| key.is_none_or(|key| run.project_key == key) && run.is_live())
             .cloned()
             .collect()
@@ -478,7 +507,7 @@ impl RunSessions {
 
 impl Drop for RunSessions {
     fn drop(&mut self) {
-        for run in self.shared.lock().by_id.values() {
+        for run in self.shared.lock().live() {
             run.child.kill();
         }
     }
@@ -666,6 +695,11 @@ impl Pump {
         self.run.end();
         if let Some(sessions) = self.sessions.upgrade() {
             let mut runs = sessions.lock();
+            // Only the count is kept: the session, and with it the
+            // terminal and the process handles, goes once the last thread
+            // lets go of it (this one, right after).
+            let sent = self.run.sent.load(Ordering::Acquire);
+            runs.by_id.insert(self.id.clone(), Slot::Ended { sent });
             runs.finished.push_back(self.id);
             while runs.finished.len() > MAX_FINISHED_RUNS {
                 if let Some(oldest) = runs.finished.pop_front() {
@@ -817,6 +851,59 @@ mod tests {
         );
         sessions.stop_project("p");
         sessions.stop_all();
+        assert!(!sessions.is_running("p"));
+    }
+
+    /// An ended run keeps only its count of batches sent: the session, with
+    /// its terminal and process handles, is freed, and late calls still get
+    /// the remembered answers.
+    #[cfg(unix)]
+    #[test]
+    fn an_ended_run_frees_its_terminal_and_keeps_only_its_count() {
+        let sessions = RunSessions::new();
+        let events = Arc::new(RecordingSink::new());
+        let mut spec = spec(PtySize::default());
+        spec.executable = PathBuf::from("/bin/sh");
+        spec.args = vec![OsString::from("-c"), OsString::from("echo ended")];
+        spec.env = Vec::new();
+        let id = sessions
+            .start(spec, Arc::new(RecordingBytes::new()), events.clone())
+            .unwrap();
+        let session = match sessions.shared.lock().by_id.get(&id) {
+            Some(Slot::Live(run)) => Arc::downgrade(run),
+            other => panic!("not live: {other:?}"),
+        };
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let after_seq = loop {
+            let exit = events.events().into_iter().find_map(|event| match event {
+                RunEvent::Exit { after_seq, .. } => Some(after_seq),
+                _ => None,
+            });
+            if let Some(after_seq) = exit {
+                break after_seq;
+            }
+            assert!(Instant::now() < deadline, "no exit event");
+            thread::sleep(Duration::from_millis(10));
+        };
+        // The pump replaces the session right after the exit event, and its
+        // threads let go of it as they end.
+        while session.upgrade().is_some() {
+            assert!(Instant::now() < deadline, "the ended session is still held");
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(after_seq >= 1, "the output was sent");
+        match sessions.shared.lock().by_id.get(&id) {
+            Some(Slot::Ended { sent }) => assert_eq!(*sent, after_seq),
+            other => panic!("not ended: {other:?}"),
+        }
+        assert_eq!(sessions.ack(&id, after_seq), Ok(()));
+        assert_eq!(
+            sessions.ack(&id, after_seq + 1),
+            Err(IpcError::invalid(InvalidReason::OutOfRange, Some("seq")))
+        );
+        assert_eq!(sessions.input(&id, b"x"), Err(IpcError::NotRunning));
+        assert_eq!(sessions.resize(&id, 80, 24), Err(IpcError::NotRunning));
+        assert_eq!(sessions.stop(&id), Err(IpcError::NotRunning));
         assert!(!sessions.is_running("p"));
     }
 

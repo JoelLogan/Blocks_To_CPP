@@ -18,7 +18,10 @@ immediately), on *Rescan*, and when a cached toolchain's fingerprint changes.
 Starting the app never probes: it loads `toolchains.json`, and the background
 discovery sends the `toolchainsUpdated` app event when it finishes
 ([02 §2.5](02-architecture.md#25-ipc-surface)). A rescan probes at most four
-compilers at a time.
+compilers at a time. A build that finds no usable toolchain, or not the
+selected one, waits for a running discovery (at most 30 s) or starts one
+when none has run, then chooses again. Cancelling the build ends its wait
+at once; the discovery itself goes on and updates the list.
 
 **Search order:**
 
@@ -264,11 +267,14 @@ settings**, never in projects:
 
 * The unit is one `builds/<projectFolder>/<config>-<optionsHash8>/` folder.
   Its last use is the modification time of its `lock` file, which every build
-  and run touches.
+  and run touches. A build touches it when it takes the lock and again, still
+  holding the lock, when it finishes as `built` or `upToDate`.
 * After each finished build and at startup, the app removes the least recently
   used entries while the cache is larger than `buildCache.maxBytes` (default
   2 GiB, [05 §5.9](05-project-format.md#59-machine-local-data)). At startup it
-  also removes entries unused for 30 days.
+  also removes entries unused for 30 days. The eviction after a build never
+  removes that build's own folder, even when another build or run used an
+  entry since, so the program the user is about to run is still there.
 * The most recently used entry is never evicted for size, and a run holds a
   shared lock on its entry's `lock` file for as long as it runs. An entry
   whose lock is held (a build or run is using it) is skipped, and so is an
@@ -395,12 +401,23 @@ atomic rename after a successful compile, so the cache cannot be corrupted.
 * The 2 s grace applies to the compiler runs of builds, both on cancel and on
   timeout. Capability probes are killed at once.
 * A cancelled build deletes its partial outputs and its build manifest and
-  finishes with the outcome `cancelled`. Cancelling a build that has already
+  finishes with the outcome `cancelled`, whatever the step it was in had
+  found (a project with errors cancelled while its C++ is generated is
+  `cancelled`, not `projectErrors`). Cancelling a build that has already
   finished does nothing.
+* A cancelled session stops at its next check: between the stages of the
+  front end (after loading, resolving and analysing), while the toolchain is
+  chosen (including the wait for a running discovery, §7.2, and the probe of
+  a changed compiler), while it waits for the build folder's lock, and
+  between compiler steps. A build replaced by a newer one therefore stops
+  within one stage instead of generating C++ nobody will use.
 * A build runs as a *session* on its own thread with a cancellation token;
   `build_start` returns its `buildId` at once, and the session reports
   progress, diagnostics and exactly one `finished` event through its channel
-  ([02 §2.5](02-architecture.md#25-ipc-surface)). The record of a build
+  ([02 §2.5](02-architecture.md#25-ipc-surface)). The toolchain is chosen on
+  the session's thread, after `build_start` has returned, and only for a
+  project without errors; a choice that waits for the startup discovery (at
+  most 30 s) never delays `build_start`. The record of a build
   (outcome, project hash, executable, the document it built) is kept until
   its project closes, at most 8 per project: older build IDs become unknown
   (`unknownBuild`).
@@ -453,7 +470,13 @@ The backend checks these itself and never relies on the UI:
   minus IDE-internal variables, plus:
   * `TERM=xterm-256color` (Linux)
   * Library-profile `runtimeDirs` (and the toolchain `bin` when linked
-    dynamically on Windows) prepended to `PATH` / `LD_LIBRARY_PATH`
+    dynamically on Windows) prepended to `PATH` / `LD_LIBRARY_PATH`. A
+    Windows program is linked dynamically only when static linking does not
+    work with the toolchain (`B2C-T1013`); its build record then names the
+    toolchain's `bin` folder, which goes first on `PATH` (separated by `;`,
+    keeping the variable's own spelling), so the program finds the
+    compiler's DLLs before any other copy. A statically linked program's
+    `PATH` is the user's.
   * `ASAN_OPTIONS=halt_on_error=1:detect_leaks=1` and
     `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1` for sanitizer builds
   * `B2C_EVENTS=<channel>` (IDE runs only, §7.7)
@@ -572,7 +595,9 @@ How the flood protection works ([02 §2.5](02-architecture.md#25-ipc-surface)):
   are normal); `run_input`, `run_resize` and `run_stop` then give
   `notRunning`. An acknowledgement above the last batch sent gives
   `invalidRequest`. The last 64 ended runs are remembered, so calls for them
-  give `notRunning` rather than `unknownRun`.
+  give `notRunning` rather than `unknownRun`. Only the number of batches an
+  ended run sent is kept: its pseudo-terminal or pipes and its process
+  handles are released when it ends.
 * The `exit` event always follows the last output batch: its `afterSeq` names
   the number of batches before it.
 * **Input** (`run_input`) is at most 64 KiB per call and is rate-limited to

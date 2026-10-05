@@ -17,6 +17,7 @@
 //! |---|---|
 //! | [`prune_and_evict`] | entries unused for [`EvictionPolicy::max_age`], then least recently used entries while the cache is over [`EvictionPolicy::max_bytes`] |
 //! | [`evict_to_cap`] | least recently used entries while the cache is over [`EvictionPolicy::max_bytes`] |
+//! | [`prune_and_evict_keeping`], [`evict_to_cap_keeping`] | the same, but never the given entry (the build that just finished) |
 //! | [`clear`] | everything in `builds/` except entries in use |
 //! | [`usage`] | nothing; it measures `builds/` |
 //!
@@ -24,12 +25,18 @@
 //! `builds/`. Links count as nothing and are never followed, so a link inside
 //! the cache that points elsewhere never makes the cache look larger.
 //!
-//! Eviction never removes the most recently used entry, so a program that
-//! was just built survives even when it alone is over the cap. Deleting a
-//! single entry may fail (on Windows, for example, while its program runs
-//! without a [`hold_for_run`]); the entry is then counted as kept, the bytes
-//! that were deleted are still reported, and the rest of the cache is
-//! processed as usual.
+//! Eviction never removes the most recently used entry for size. A build
+//! marks its entry as used when it takes the lock and again when it
+//! finishes, so a program that was just built is normally the most recently
+//! used entry even when it alone is over the cap. Another build or run can
+//! still use an entry between that and the eviction after the build, so the
+//! eviction after a build names the build's entry to keep
+//! ([`prune_and_evict_keeping`], [`evict_to_cap_keeping`]): the program the
+//! user is about to run is never deleted. Deleting a single entry may fail
+//! (on Windows, for example, while its program runs without a
+//! [`hold_for_run`]); the entry is then counted as kept, the bytes that
+//! were deleted are still reported, and the rest of the cache is processed
+//! as usual.
 //!
 //! # Safety rules (08 §8.6)
 //!
@@ -217,7 +224,7 @@ pub fn prune_and_evict(
     policy: &EvictionPolicy,
     now: SystemTime,
 ) -> io::Result<EvictionReport> {
-    evict(cache_root, policy, Some(now))
+    evict(cache_root, policy, Some(now), None)
 }
 
 /// Deletes least recently used entries while the cache is larger than
@@ -227,7 +234,38 @@ pub fn prune_and_evict(
 /// # Errors
 /// As [`prune_and_evict`].
 pub fn evict_to_cap(cache_root: &Path, policy: &EvictionPolicy) -> io::Result<EvictionReport> {
-    evict(cache_root, policy, None)
+    evict(cache_root, policy, None, None)
+}
+
+/// [`prune_and_evict`] that never deletes the entry `keep`: the eviction
+/// after a build, with the build's folder (`BuildRecord::build_dir`), so
+/// the program that was just built is still there when the user runs it,
+/// whatever other entries were used meanwhile. `keep` is compared with the
+/// entries by its canonical path; `None`, or a path that is not an entry,
+/// keeps nothing extra. The entry still counts towards the cache's size.
+///
+/// # Errors
+/// As [`prune_and_evict`].
+pub fn prune_and_evict_keeping(
+    cache_root: &Path,
+    policy: &EvictionPolicy,
+    now: SystemTime,
+    keep: Option<&Path>,
+) -> io::Result<EvictionReport> {
+    evict(cache_root, policy, Some(now), keep)
+}
+
+/// [`evict_to_cap`] that never deletes the entry `keep` (see
+/// [`prune_and_evict_keeping`]).
+///
+/// # Errors
+/// As [`prune_and_evict`].
+pub fn evict_to_cap_keeping(
+    cache_root: &Path,
+    policy: &EvictionPolicy,
+    keep: Option<&Path>,
+) -> io::Result<EvictionReport> {
+    evict(cache_root, policy, None, keep)
 }
 
 /// *Clear build cache*: deletes everything in `<cache_root>/builds/` except
@@ -775,27 +813,33 @@ fn expired(last_used: Option<SystemTime>, now: SystemTime, max_age: Duration) ->
     last_used.is_some_and(|used| now.duration_since(used).is_ok_and(|age| age >= max_age))
 }
 
-/// [`prune_and_evict`] (with `prune_at`) and [`evict_to_cap`] (without).
+/// [`prune_and_evict`] (with `prune_at`) and [`evict_to_cap`] (without);
+/// the `_keeping` variants with `keep`.
 fn evict(
     cache_root: &Path,
     policy: &EvictionPolicy,
     prune_at: Option<SystemTime>,
+    keep: Option<&Path>,
 ) -> io::Result<EvictionReport> {
     let mut report = EvictionReport::default();
     let Some(layout) = Layout::open(cache_root)? else {
         return Ok(report);
     };
+    // Entries are listed below the canonical `builds/`, so the entry to keep
+    // is compared by its canonical path too.
+    let keep = keep.and_then(|keep| fs::canonicalize(keep).ok());
     let mut scan = scan(&layout)?;
     // Least recently used first; an unknown time counts as oldest, and equal
     // times are ordered by path so that eviction is deterministic.
     scan.entries
         .sort_by(|a, b| a.last_used.cmp(&b.last_used).then_with(|| a.path.cmp(&b.path)));
     let newest = scan.entries.len().checked_sub(1);
+    let kept = |entry: &Entry| keep.as_ref() == Some(&entry.path);
     let mut tried = vec![false; scan.entries.len()];
 
     if let Some(now) = prune_at {
         for (index, entry) in scan.entries.iter().enumerate() {
-            if expired(entry.last_used, now, policy.max_age) {
+            if !kept(entry) && expired(entry.last_used, now, policy.max_age) {
                 tried[index] = true;
                 let removal = remove_entry(&layout, &entry.path);
                 scan.total = scan.total.saturating_sub(removal.freed());
@@ -807,7 +851,7 @@ fn evict(
         if scan.total <= policy.max_bytes {
             break;
         }
-        if tried[index] || Some(index) == newest {
+        if tried[index] || Some(index) == newest || kept(entry) {
             continue;
         }
         let removal = remove_entry(&layout, &entry.path);

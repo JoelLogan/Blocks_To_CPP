@@ -24,7 +24,9 @@
 //! CONTRACT (milestone M2):
 //! * **Evaluation** ([`TrustStore::evaluate`], 08 §8.3.1). A project record
 //!   applies only when both the project ID and the canonical path are equal
-//!   (paths compared by their parts, ignoring letter case on Windows). The
+//!   (paths compared by their parts, ignoring ASCII letter case on Windows;
+//!   other letters must match exactly, because Windows file systems keep
+//!   apart letters that Unicode case rules equate, such as `ı` and `I`). The
 //!   project is trusted ([`TrustSource::Project`]) when the security hash
 //!   (`b2c_model::security_hash`) is equal too. A folder record covers the
 //!   folder and everything below it, compared by path parts, with no hash
@@ -875,9 +877,22 @@ fn parse_hash(text: &str) -> Option<[u8; 32]> {
     Some(hash)
 }
 
-/// A path as trust compares it: its parts in order. On Windows letter case
-/// is folded and the verbatim prefixes (`\\?\C:`, `\\?\UNC\server\share`)
+/// A path as trust compares it: its parts in order. On Windows ASCII letter
+/// case is ignored and the verbatim prefixes (`\\?\C:`, `\\?\UNC\server\share`)
 /// equal their plain forms; elsewhere parts are compared byte for byte.
+///
+/// Only ASCII letters are folded. Windows file systems compare names with
+/// the upper-case table stored on each volume when it was formatted, which
+/// differs from the Unicode case rules of any one Rust version (it keeps
+/// `ı` U+0131 and `ſ` U+017F apart from `I` and `S`, and has no newer case
+/// pairs such as Georgian Mtavruli). Folding by Unicode rules would give two
+/// names that are different folders on disk the same key, so a lookalike
+/// sibling of a trusted folder would be trusted. Every volume maps `a`-`z`
+/// to `A`-`Z`, so ASCII folding never equates two different names; and
+/// because canonical paths keep the spelling stored on disk, the same file
+/// always gives the same key. A rename that changes only the case of a
+/// non-ASCII letter makes the path unknown, which fails closed (the user is
+/// asked again).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PathKey(Vec<OsString>);
 
@@ -936,34 +951,22 @@ fn prefix_key(prefix: Prefix<'_>) -> OsString {
     key
 }
 
-/// A path part as compared: on Windows with letter case folded (parts that
-/// are not valid Unicode are kept as they are, so they only equal
-/// themselves); elsewhere unchanged.
+/// A path part as compared: on Windows with ASCII letter case folded (see
+/// [`PathKey`]); elsewhere unchanged.
 fn fold(part: &OsStr) -> OsString {
-    if cfg!(windows)
-        && let Some(text) = part.to_str()
-    {
-        return OsString::from(fold_case(text));
+    if cfg!(windows) {
+        fold_ascii(part)
+    } else {
+        part.to_os_string()
     }
-    part.to_os_string()
 }
 
-/// `text` with every character mapped to its simple upper case, as Windows
-/// file systems compare names: only characters of the Basic Multilingual
-/// Plane whose upper case is a single character change (`ß` stays `ß`).
-fn fold_case(text: &str) -> String {
-    text.chars()
-        .map(|c| {
-            if u32::from(c) > 0xFFFF {
-                return c;
-            }
-            let mut upper = c.to_uppercase();
-            match (upper.next(), upper.next()) {
-                (Some(single), None) => single,
-                _ => c,
-            }
-        })
-        .collect()
+/// `part` with the ASCII letters `a`-`z` upper-cased and every other
+/// character, including every non-ASCII letter, kept as it is. Parts that
+/// are not valid Unicode are folded the same way, so they only equal
+/// themselves up to ASCII case.
+fn fold_ascii(part: &OsStr) -> OsString {
+    part.to_ascii_uppercase()
 }
 
 #[cfg(test)]
@@ -1345,12 +1348,23 @@ mod tests {
     }
 
     #[test]
-    fn case_folding_is_simple_upper_case() {
-        assert_eq!(fold_case("Ada/Games/x.b2c"), "ADA/GAMES/X.B2C");
-        assert_eq!(fold_case("straße"), "STRAßE");
-        assert_eq!(fold_case("ÉCOLE é"), "ÉCOLE É");
-        assert_eq!(fold_case("\u{10428}"), "\u{10428}");
-        assert_eq!(fold_case("ǆ"), "Ǆ");
+    fn only_ascii_letters_are_folded() {
+        let fold = |text: &str| fold_ascii(OsStr::new(text));
+        assert_eq!(fold("Ada/Games/x.b2c"), "ADA/GAMES/X.B2C");
+        // Non-ASCII letters keep their case, whatever Unicode says.
+        assert_eq!(fold("straße"), "STRAßE");
+        assert_eq!(fold("École é"), "ÉCOLE é");
+        assert_eq!(fold("ǆ"), "ǆ");
+        // Letters that Unicode upper-cases to an ASCII letter but Windows
+        // file systems keep apart (dotless i, long s), and newer case pairs
+        // missing from the volume's table (Georgian Mkhedruli / Mtavruli,
+        // Cherokee): all distinct from their partners.
+        for (lookalike, ascii) in [("Assıgnments", "Assignments"), ("Claſs", "Class")] {
+            assert_ne!(fold(lookalike), fold(ascii), "{lookalike}");
+        }
+        assert_ne!(fold("\u{10D0}"), fold("\u{1C90}"));
+        assert_ne!(fold("\u{AB70}"), fold("\u{13A0}"));
+        assert_eq!(fold("\u{10D0}"), "\u{10D0}");
     }
 
     #[test]
@@ -1363,6 +1377,15 @@ mod tests {
             assert_ne!(key(r"C:\a\x.b2c"), key(r"D:\a\x.b2c"));
             assert!(key(r"C:\a\..\x.b2c").is_none());
             assert!(key(r"a\x.b2c").is_none());
+            // A lookalike sibling folder is not inside the trusted one:
+            // NTFS keeps these names apart, so trust must too.
+            let within = |path: &str, folder: &str| key(path).unwrap().is_within(&key(folder).unwrap());
+            assert!(!within(r"C:\Assıgnments\x.b2c", r"C:\Assignments"));
+            assert!(!within(r"C:\Assignments\x.b2c", r"C:\Assıgnments"));
+            assert!(!within(r"C:\Claſs\x.b2c", r"C:\Class"));
+            assert!(!within("C:\\\u{10D0}\\x.b2c", "C:\\\u{1C90}"));
+            assert!(!within(r"\\server\Claſs\x.b2c", r"\\server\Class"));
+            assert!(within(r"C:\assignments\x.b2c", r"C:\Assignments"));
         } else {
             assert_eq!(key("/home//ada/x.b2c"), key("/home/ada/x.b2c"));
             assert_ne!(key("/home/Ada/x.b2c"), key("/home/ada/x.b2c"));

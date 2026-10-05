@@ -73,14 +73,21 @@ pub(crate) fn ready(toolchain: Toolchain) -> ToolchainForBuild {
     }
 }
 
-/// A build of `document` with the given toolchain: debug, IDE helpers on,
-/// indent width 4.
+/// No usable toolchain (`B2C-T1001`).
+pub(crate) fn unavailable() -> ToolchainForBuild {
+    ToolchainForBuild::Unavailable {
+        diagnostics: vec![b2c_toolchain::codes::no_toolchain()],
+    }
+}
+
+/// A build of `document` with the given toolchain (handed over when the
+/// session asks for it): debug, IDE helpers on, indent width 4.
 pub(crate) fn job(project_key: &str, document: Vec<u8>, toolchain: ToolchainForBuild) -> BuildJob {
     BuildJob {
         project_key: project_key.to_owned(),
         document,
         configuration: Configuration::Debug,
-        toolchain,
+        toolchain: Box::new(move |_| toolchain),
         frontend: FrontendOptions::default(),
         ide: true,
     }

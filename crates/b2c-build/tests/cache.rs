@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use b2c_build::cache::{
-    CacheError, ClearReport, EvictionPolicy, EvictionReport, clear, evict_to_cap, hold_for_run,
-    prune_and_evict, usage,
+    CacheError, ClearReport, EvictionPolicy, EvictionReport, clear, evict_to_cap, evict_to_cap_keeping,
+    hold_for_run, prune_and_evict, prune_and_evict_keeping, usage,
 };
 use proptest::prelude::*;
 use tempfile::TempDir;
@@ -275,6 +275,51 @@ fn the_most_recently_used_entry_is_never_evicted_for_size() {
         evict_to_cap(cache.root(), &Cache::policy(0)).unwrap(),
         EvictionReport::default()
     );
+}
+
+/// The eviction after a build names the build's folder to keep: even when
+/// another entry was used after the build (another build, or a run), the
+/// program that was just built survives. `keep` matches by canonical path,
+/// and the kept entry still counts towards the size.
+#[test]
+fn the_entry_to_keep_survives_eviction_and_pruning() {
+    let cache = Cache::new();
+    let just_built = cache.entry("prj_a-00000001", "debug-00000001", 4000, Duration::from_secs(5));
+    let older = cache.entry("prj_a-00000001", "debug-00000002", 1000, 2 * DAY);
+    let used_since = cache.entry("prj_b-00000002", "debug-00000003", 1000, Duration::ZERO);
+    // Spelled another way than the cache lists it.
+    let spelled = just_built.join("out").join("..");
+    let report = evict_to_cap_keeping(cache.root(), &Cache::policy(0), Some(&spelled)).unwrap();
+    assert_eq!(report.removed, 1, "{report:?}");
+    assert!(!exists(&older));
+    assert!(exists(&just_built.join("out").join("program")));
+    assert!(
+        exists(&used_since.join("out").join("program")),
+        "the newest is kept too"
+    );
+    // Without it, the build's folder would have gone.
+    let report = evict_to_cap(cache.root(), &Cache::policy(0)).unwrap();
+    assert_eq!(report.removed, 1);
+    assert!(!exists(&just_built));
+
+    // Pruning keeps it too, however old its lock looks; the rest goes.
+    let cache = Cache::new();
+    let kept = cache.entry("prj_a-00000001", "debug-00000001", 1000, 40 * DAY);
+    let stale = cache.entry("prj_a-00000001", "debug-00000002", 1000, 40 * DAY);
+    let report = prune_and_evict_keeping(cache.root(), &Cache::policy(0), cache.now, Some(&kept)).unwrap();
+    assert_eq!(report.removed, 1, "{report:?}");
+    assert!(!exists(&stale));
+    assert!(exists(&kept.join("out").join("program")));
+    // A path that is not an entry (or not there) keeps nothing extra.
+    let report = prune_and_evict_keeping(
+        cache.root(),
+        &Cache::policy(0),
+        cache.now,
+        Some(&cache.root().join("missing")),
+    )
+    .unwrap();
+    assert_eq!(report.removed, 1);
+    assert!(!exists(&kept));
 }
 
 #[test]

@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use b2c_build::toolchains::{
     Chosen, DiscoveryScope, MAX_PARALLEL_PROBES, PROBE_TEMP_DIR, Prober, STORE_FILE, ToolchainRegistry,
@@ -22,6 +22,7 @@ use b2c_build::toolchains::{
 use b2c_ipc::ToolchainId;
 use b2c_ipc::dto::{CppStandard, Platform as IpcPlatform, ToolchainSource};
 use b2c_ir::{DiagSource, Diagnostic, Location, Severity};
+use b2c_process::CancelToken;
 use b2c_toolchain::discovery::explicit_candidate;
 use b2c_toolchain::fingerprint::Fingerprint;
 use b2c_toolchain::probe::{
@@ -860,6 +861,99 @@ fn choosing_waits_for_a_running_discovery_or_runs_one() {
         codes(&unavailable(fresh.choose(None, None))),
         [NO_TOOLCHAIN, "B2C-T1006"]
     );
+}
+
+/// Waits (at most 10 s) until no discovery runs.
+fn wait_discovered(registry: &ToolchainRegistry) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while registry.list(None).discovering {
+        assert!(Instant::now() < deadline, "the discovery did not end");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Cancels `cancel` once `entered` says a probe is waiting at the gate.
+fn cancel_when_entered(entered: mpsc::Receiver<()>, cancel: &CancelToken) -> std::thread::JoinHandle<()> {
+    let cancel = cancel.clone();
+    std::thread::spawn(move || {
+        entered.recv_timeout(Duration::from_secs(10)).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        cancel.cancel();
+    })
+}
+
+/// A build's choice stops waiting for a discovery as soon as the build is
+/// cancelled (well before `DISCOVERY_WAIT`), and the discovery goes on and
+/// fills the list. When none has run, the choice starts one in the
+/// background, so cancelling never leaves it half done. A changed compiler
+/// is probed again with the build's token.
+#[test]
+fn a_cancelled_build_stops_waiting_for_the_discovery() {
+    let root = Root::new();
+    let bin = root.join("bin");
+    let gxx = install(&bin, "gcc");
+    let (prober, entered) = FakeProber::gated();
+    let registry = Arc::new(root.registry(std::slice::from_ref(&bin), &prober));
+    registry.spawn_discovery(Vec::new(), Box::new(|| {}));
+    let cancel = CancelToken::new();
+    let canceller = cancel_when_entered(entered, &cancel);
+    let started = Instant::now();
+    let diagnostics = unavailable(registry.choose_cancellable(None, None, &cancel));
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(codes(&diagnostics), [NO_TOOLCHAIN]);
+    canceller.join().unwrap();
+    assert!(registry.list(None).discovering, "the discovery goes on");
+    // Not cancelled: the choice waits for the discovery and uses its result.
+    let opener = {
+        let prober = Arc::clone(&prober);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            prober.open_gate();
+        })
+    };
+    let (toolchain, _) = ready(registry.choose_cancellable(None, None, &CancelToken::new()));
+    assert_eq!(toolchain.path(), gxx);
+    opener.join().unwrap();
+
+    // A compiler that changed is probed again, with the build's token.
+    fs::write(&gxx, "gcc, updated").unwrap();
+    let build = CancelToken::new();
+    let (_, notes) = ready(registry.choose_cancellable(None, None, &build));
+    assert_eq!(codes(&notes), [CHANGED]);
+    let last = prober.options.lock().unwrap().last().cloned().unwrap();
+    assert!(last.cancel.is_some_and(|token| {
+        build.cancel();
+        token.is_cancelled()
+    }));
+
+    // No discovery has run: the choice starts one in the background.
+    let fresh_root = Root::new();
+    let (fresh_prober, fresh_entered) = FakeProber::gated();
+    let fresh = Arc::new(fresh_root.registry(std::slice::from_ref(&bin), &fresh_prober));
+    let cancel = CancelToken::new();
+    let canceller = cancel_when_entered(fresh_entered, &cancel);
+    assert_eq!(
+        codes(&unavailable(fresh.choose_cancellable(None, None, &cancel))),
+        [NO_TOOLCHAIN]
+    );
+    canceller.join().unwrap();
+    assert!(fresh.list(None).discovering);
+    fresh_prober.open_gate();
+    wait_discovered(&fresh);
+    assert_eq!(listed_paths(&fresh), [shown(&gxx)]);
+    // Already cancelled: no wait at all, and no discovery is started.
+    let idle_root = Root::new();
+    let idle_prober = FakeProber::new();
+    let idle = Arc::new(idle_root.registry(std::slice::from_ref(&bin), &idle_prober));
+    let fired = CancelToken::new();
+    fired.cancel();
+    unavailable(idle.choose_cancellable(None, None, &fired));
+    assert!(!idle.list(None).discovering);
+    assert_eq!(idle_prober.calls(), 0);
 }
 
 #[test]

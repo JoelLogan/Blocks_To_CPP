@@ -111,17 +111,27 @@ decision the user makes explicitly, once, per project.**
   It is stored as lower-case hex in `rawCodeHashAtGrant`. Moving blocks,
   comments and ordinary block edits never change it.
 * **Matching.** A project record applies only when both the project ID and
-  the canonical path are equal (paths compared case-insensitively on
+  the canonical path are equal (paths compared ignoring ASCII letter case on
   Windows). The project is trusted when the hash is equal too. When the ID and
   path match but the hash differs, its security-relevant content changed
   outside the app, and it opens restricted (*changed outside*). A copy of a
   trusted file at another path has no record (*no record*).
 * **Folder trust** covers a canonical folder and everything below it,
-  compared by path components (case-insensitively on Windows). It stores no
-  hash, so a project in a trusted folder is not re-flagged after an outside
-  change; the user trusted everything there. A whole drive or the file-system
-  root cannot be trusted as a folder, and paths with `.` or `..` parts never
-  match a record.
+  compared by path components (ignoring ASCII letter case on Windows). It
+  stores no hash, so a project in a trusted folder is not re-flagged after an
+  outside change; the user trusted everything there. A whole drive or the
+  file-system root cannot be trusted as a folder, and paths with `.` or `..`
+  parts never match a record.
+* **Letter case.** On Windows the case of the ASCII letters `a`–`z` is
+  ignored; every other character, non-ASCII letters included, must match
+  exactly. Windows file systems compare names with the upper-case table
+  stored on each volume, which keeps letters such as `ı` (U+0131) and `ſ`
+  (U+017F) apart from `I` and `S` and lacks newer case pairs, so folding by
+  Unicode case rules would make a lookalike sibling folder (`Assıgnments`
+  next to a trusted `Assignments`) trusted. Canonical paths keep the
+  spelling stored on disk, so the same file always matches; a rename that
+  changes only the case of a non-ASCII letter makes the user confirm trust
+  again.
 * **Revoking** (`trust_revoke`) removes only the project's own record. A
   project inside a trusted folder stays trusted, and the response says that
   the trust comes from the folder, so the UI can explain why.
