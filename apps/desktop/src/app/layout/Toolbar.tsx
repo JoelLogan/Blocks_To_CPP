@@ -10,6 +10,7 @@ import { SHORTCUTS } from '../shortcuts';
 import { useAppStore } from '../store';
 import { Hint } from '../ui/Hint';
 import { GearIcon } from '../ui/icons';
+import { MainMenu } from './MainMenu';
 
 /** The top bar's name when no project is open. */
 export const APP_NAME = 'Blocks2Cpp';
@@ -17,12 +18,14 @@ export const APP_NAME = 'Blocks2Cpp';
 const CONFIG_LABELS: Record<BuildConfig, string> = { debug: 'Debug', release: 'Release' };
 
 /**
- * The top bar (docs/spec/04-user-interface.md §4.1): the project name with `•` while there are
- * unsaved changes, the session's Debug/Release choice, ► Run, ■ Stop, Build and Settings.
+ * The top bar (docs/spec/04-user-interface.md §4.1): the main menu `≡`, the project name with `•`
+ * while there are unsaved changes, the session's Debug/Release choice, ► Run, ■ Stop, Build and
+ * Settings.
  */
 export function Toolbar() {
   return (
     <header className="toolbar">
+      <MainMenu />
       <ProjectTitle />
       <div className="toolbar-group" role="group" aria-label="Build and run">
         <ConfigSelect />
