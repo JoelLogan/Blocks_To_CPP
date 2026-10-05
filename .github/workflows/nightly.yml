@@ -1,0 +1,281 @@
+# Nightly checks (docs/spec/08-security.md §8.13 "Nightly", docs/spec/09-quality-and-delivery.md
+# §9.3 nightly.yml):
+# - fuzz: every cargo-fuzz target for 30 minutes in its own job, starting from the corpus the
+#   previous night kept (08 §8.13: "extended fuzzing, 30 min per target, with a persisted corpus").
+#   The weekly workflow (weekly.yml, job fuzz-cmin) minimises the kept corpora.
+# - links: the external links in all Markdown (lychee); ci.yml checks them only on pull requests
+#   that touch Markdown.
+# The full OSV scan of the default branch runs daily in osv-scanner.yml and is not repeated here.
+# E2E on both OSes, the E2E security tests and the benchmarks join this workflow with the editor's
+# E2E harness (docs/spec/10-roadmap.md, M2).
+name: Nightly
+
+on:
+  schedule:
+    - cron: "23 3 * * *" # daily 03:23 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+# A manual run waits for a running scheduled one (and the other way round) instead of
+# cancelling it: a cancelled fuzz job keeps nothing.
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # libFuzzer needs nightly; the same pins as ci.yml's fuzz job. Bump them together, keeping each
+  # at least 7 days old (docs/spec/08-security.md §8.9).
+  FUZZ_TOOLCHAIN: nightly-2026-09-25
+  CARGO_FUZZ_VERSION: 0.13.2
+
+jobs:
+  fuzz-list:
+    name: List the fuzz targets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # check out the repository
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the nightly toolchain and cargo-fuzz
+        run: |
+          rustup toolchain install "$FUZZ_TOOLCHAIN" --profile minimal
+          cargo "+$FUZZ_TOOLCHAIN" install cargo-fuzz --version "$CARGO_FUZZ_VERSION" --locked
+
+      # Every target `cargo fuzz list` prints, so a new target needs no change here. A name
+      # becomes a cache key, an artifact name and a path, so only plain names are accepted; with
+      # no hyphen in any name, the key prefix fuzz-corpus-<target>- matches one target only.
+      - name: List the targets as a JSON array
+        id: list
+        run: |
+          set -euo pipefail
+          list=$(cargo "+$FUZZ_TOOLCHAIN" fuzz list)
+          mapfile -t targets <<< "$list"
+          if [ "${#targets[@]}" -gt 64 ]; then
+            echo "::error::Expected at most 64 fuzz targets, found ${#targets[@]}"
+            exit 1
+          fi
+          for target in "${targets[@]}"; do
+            if ! [[ "$target" =~ ^[a-z][a-z0-9_]{0,63}$ ]]; then
+              echo "::error::Fuzz target name '$target' is not a plain lower-case name"
+              exit 1
+            fi
+          done
+          json=$(printf '%s\n' "${targets[@]}" | jq --raw-input . | jq --compact-output --slurp .)
+          echo "Targets: $json"
+          echo "targets=$json" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    name: Fuzz ${{ matrix.target }} (30 min)
+    needs: fuzz-list
+    runs-on: ubuntu-24.04
+    # About 3 minutes of setup, 5 to build, 30 to fuzz.
+    timeout-minutes: 45
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.fuzz-list.outputs.targets) }}
+    # One run at a time restores and saves a target's corpus (with weekly.yml's fuzz-cmin).
+    concurrency:
+      group: fuzz-corpus-${{ matrix.target }}
+      cancel-in-progress: false
+    env:
+      TARGET: ${{ matrix.target }}
+      CORPUS: fuzz/corpus/${{ matrix.target }}
+      # The kept corpus is saved only below this size; above it the job warns, and the next
+      # night starts again from the last corpus saved (the repository's cache holds 10 GB
+      # for all targets).
+      CORPUS_MAX_MIB: 1024
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the nightly toolchain and cargo-fuzz
+        run: |
+          rustup toolchain install "$FUZZ_TOOLCHAIN" --profile minimal
+          cargo "+$FUZZ_TOOLCHAIN" install cargo-fuzz --version "$CARGO_FUZZ_VERSION" --locked
+
+      # The newest corpus saved for this target, by the last scheduled run of this workflow or
+      # of weekly.yml's fuzz-cmin (the key itself is new, so the prefix picks the newest).
+      - name: Restore the kept corpus
+        id: restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+
+      # The same seeds as ci.yml's fuzz job (fuzz/README.md), added every night so new examples,
+      # security projects and compiler fixtures reach the kept corpus:
+      # * project-file targets: the examples and the security suite (clipboard: its payloads too);
+      # * diagnostics parsers: the recorded g++ output under crates/b2c-toolchain/tests/fixtures/
+      #   (diag_output adds its mode byte and joins standard error and the SARIF file with
+      #   \0sarif\0);
+      # * encoders and new targets: none.
+      # Each seed is stored under its SHA-1, the name libFuzzer gives corpus files, so a seed
+      # already in the kept corpus is not stored twice.
+      - name: Add the seeds
+        env:
+          MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p "$CORPUS"
+          before_files=$(find "$CORPUS" -type f | wc -l)
+          before_bytes=$(du -sb "$CORPUS" | cut -f1)
+          staged="$RUNNER_TEMP/seed"
+          add_seed() { # reads one seed from standard input
+            cat > "$staged"
+            mv -f "$staged" "$CORPUS/$(sha1sum < "$staged" | cut -d' ' -f1)"
+          }
+          fixtures=crates/b2c-toolchain/tests/fixtures
+          case "$TARGET" in
+            load | resolve | roundtrip | frontend | clipboard)
+              files=(examples/*.b2c tests/security/projects/*.b2c)
+              if [ "$TARGET" = clipboard ]; then files+=(tests/security/clipboard/*.json); fi
+              for file in "${files[@]}"; do add_seed < "$file"; done
+              ;;
+            diag_sarif) for file in "$fixtures"/*/*.sarif; do add_seed < "$file"; done ;;
+            diag_json) for file in "$fixtures"/*/*.json; do add_seed < "$file"; done ;;
+            diag_text) for file in "$fixtures"/*/*.txt; do add_seed < "$file"; done ;;
+            diag_output)
+              for sarif in "$fixtures"/*/*.sarif; do
+                stderr="${sarif%.sarif}.sarif-stderr.txt"
+                [ -f "$stderr" ] || stderr=/dev/null
+                for mode in 004 005; do
+                  { printf '%b' "\\$mode"; cat "$stderr"; printf '\000sarif\000'; cat "$sarif"; } | add_seed
+                done
+              done
+              for json in "$fixtures"/*/*.json; do { printf '\002'; cat "$json"; } | add_seed; done
+              for plain in "$fixtures"/*/*.plain.txt; do
+                { printf '\003'; cat "$plain"; } | add_seed
+                { printf '\001'; cat "$plain"; } | add_seed
+              done
+              ;;
+            *) ;;
+          esac
+          {
+            echo "BEFORE_FILES=$before_files"
+            echo "BEFORE_BYTES=$before_bytes"
+            echo "SEEDED_FILES=$(find "$CORPUS" -type f | wc -l)"
+            echo "SEEDED_BYTES=$(du -sb "$CORPUS" | cut -f1)"
+            echo "KEPT_FROM=${MATCHED_KEY:-nothing (no kept corpus was found)}"
+          } >> "$GITHUB_ENV"
+
+      # Building first keeps the 30 minutes for fuzzing and tells a build failure from a crash.
+      - name: Build the target
+        run: cargo "+$FUZZ_TOOLCHAIN" fuzz build "$TARGET"
+
+      # -max_len as in ci.yml (diagnostics: left to libFuzzer, since GCC's SARIF files are about
+      # 300 KiB); an input that runs longer than 10 s or uses more than 2 GiB counts as a crash.
+      # A crash stops the run, saves the input under fuzz/artifacts/<target>/ and fails the job.
+      - name: Fuzz for 30 minutes
+        id: fuzz
+        run: |
+          set -euo pipefail
+          dict="fuzz/$TARGET.dict"
+          [ -f "$dict" ] || dict=fuzz/b2c.dict
+          args=("-dict=$dict" -max_total_time=1800 -timeout=10 -rss_limit_mb=2048 -print_final_stats=1)
+          case "$TARGET" in
+            encoders) args+=(-max_len=1024) ;;
+            diag_*) ;;
+            *) args+=(-max_len=65536) ;;
+          esac
+          cargo "+$FUZZ_TOOLCHAIN" fuzz run "$TARGET" "$CORPUS" -- "${args[@]}"
+
+      - name: Report the corpus size
+        id: size
+        if: ${{ !cancelled() }}
+        env:
+          FUZZ_OUTCOME: ${{ steps.fuzz.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$CORPUS"
+          files=$(find "$CORPUS" -type f | wc -l)
+          bytes=$(du -sb "$CORPUS" | cut -f1)
+          size() { numfmt --to=iec-i --suffix=B "$1"; }
+          case "$FUZZ_OUTCOME" in
+            success) result="No crash in 30 minutes." ;;
+            failure) result="**Crash, timeout or out-of-memory**: the input is in the artifact \`fuzz-artifacts-$TARGET\` and the log; reproduce it with \`cargo +nightly fuzz run $TARGET <file>\` (fuzz/README.md)." ;;
+            *) result="Not fuzzed (the build or an earlier step failed)." ;;
+          esac
+          save=true
+          if [ "$bytes" -gt $((CORPUS_MAX_MIB * 1024 * 1024)) ]; then
+            save=false
+            echo "::warning::The $TARGET corpus is $(size "$bytes"), over the $CORPUS_MAX_MIB MiB limit, so it is not kept; weekly.yml's fuzz-cmin minimises it."
+          fi
+          echo "save=$save" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Fuzz target \`$TARGET\`"
+            echo
+            echo "$result"
+            echo
+            echo "| Corpus | Files | Size |"
+            echo "|---|---:|---:|"
+            echo "| Kept from \`${KEPT_FROM:-unknown}\` | ${BEFORE_FILES:-0} | $(size "${BEFORE_BYTES:-0}") |"
+            echo "| With the seeds | ${SEEDED_FILES:-0} | $(size "${SEEDED_BYTES:-0}") |"
+            echo "| After this run | $files | $(size "$bytes") |"
+            echo
+            if [ "$save" = false ]; then
+              echo "Over the $CORPUS_MAX_MIB MiB limit: not kept for the next night."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # In a public repository artifacts are public: a crash may be a vulnerability, so triage
+      # it promptly and handle it under SECURITY.md. The nightly run finds it again while it is
+      # unfixed, so the artifact is kept for two weeks only.
+      - name: Upload the crash artifacts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Only the scheduled run saves (a schedule always runs on the default branch), so the
+      # corpus every run starts from comes from default-branch code; manual runs, on any
+      # branch, use it without changing it. Saved after a crash too, so the night's progress
+      # is kept.
+      - name: Keep the corpus for the next night
+        if: ${{ !cancelled() && github.event_name == 'schedule' && steps.size.outputs.save == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+  # Everything ci.yml's docs job checks on Markdown changes, every night, so that links that break
+  # later are noticed too (lychee.toml: 3 retries; 200, 206 and 429 accepted; local hosts and
+  # example.com excluded). No token, so nothing private can be reached.
+  links:
+    name: External links (lychee)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # check out the repository
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: External links (lychee)
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          args: --config lychee.toml --no-progress './**/*.md'
+          token: ""
+          fail: true
+          jobSummary: true
