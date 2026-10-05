@@ -1,0 +1,57 @@
+[package]
+name = "b2c-core-wasm"
+description = "Blocks2Cpp compiler core for the editor: a WebAssembly facade over the pure compiler crates"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+# cdylib: the .wasm for the editor (packages/b2c-core-wasm); rlib: native tests and
+# native callers (the same functions, the same results).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Only the pure compiler crates and the externals allowed for them
+# (tools/check-layering.py, PURE_CRATES): no I/O, clock, randomness or threads.
+b2c-ir.workspace = true
+b2c-model.workspace = true
+b2c-catalog.workspace = true
+b2c-lang.workspace = true
+b2c-codegen.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+wasm-bindgen.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+# A copy of the workspace lints with one change: `unsafe_code` is `deny`, not
+# `forbid`, because the `#[wasm_bindgen]` expansion contains `unsafe` glue and
+# `forbid` cannot be lifted for generated code. Hand-written `unsafe` is still
+# rejected (by this lint and in review); keep the rest in step with the
+# workspace table in the root Cargo.toml.
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+disallowed_methods = "deny"
+# Indexing that can panic is not allowed in a facade that must never trap.
+indexing_slicing = "deny"
