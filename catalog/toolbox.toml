@@ -1,0 +1,160 @@
+# The editor's toolbox (docs/spec/03-block-language.md §3.11.1, docs/spec/04-user-interface.md §4.2).
+#
+# Categories come in the order of §3.7. Each has a name, an icon (so colour is never the only
+# cue) and a colour token, which is the category ID; the colour values live in the editor theme.
+# `dynamic` marks a category whose blocks the editor adds for the open project: `variables`
+# (getters and setters for the variables in scope) and `functions` (My Blocks: a call block for
+# every function).
+#
+# Entries are shown in order. An entry names a block, with an optional label (shown above it)
+# and an optional preset: field values, `extra` values and input tokens that differ from the
+# catalog defaults. b2c-catalog validates this file against the catalog (every block exists and
+# sits in its own category, every catalog block is reachable, presets fit their block), and the
+# block definitions and the block reference are generated from the validated result
+# (packages/catalog-gen).
+
+[[category]]
+id = "program"
+name = "Program"
+icon = "▶"
+colour = "program"
+
+[[category.entry]]
+block = "program.main"
+
+[[category.entry]]
+block = "program.exit"
+
+[[category]]
+id = "variables"
+name = "Variables"
+icon = "𝑥"
+colour = "variables"
+dynamic = "variables"
+
+[[category.entry]]
+block = "var.declare"
+preset = { fields = { TYPE = "int" }, inputs = { VALUE = [{ num = "0" }] } }
+
+[[category]]
+id = "math"
+name = "Math"
+icon = "∑"
+colour = "math"
+
+[[category.entry]]
+block = "math.number"
+
+[[category.entry]]
+block = "math.arithmetic"
+
+[[category.entry]]
+block = "math.compare"
+
+[[category.entry]]
+block = "math.random_int"
+
+[[category.entry]]
+block = "math.convert"
+
+[[category]]
+id = "logic"
+name = "Logic"
+icon = "◇"
+colour = "logic"
+
+[[category.entry]]
+block = "logic.operation"
+
+[[category.entry]]
+block = "logic.not"
+
+[[category.entry]]
+block = "logic.boolean"
+
+[[category.entry]]
+block = "logic.ternary"
+
+[[category]]
+id = "text"
+name = "Text"
+icon = "“ ”"
+colour = "text"
+
+[[category.entry]]
+block = "text.literal"
+
+[[category.entry]]
+block = "text.join"
+
+[[category.entry]]
+block = "text.char"
+
+[[category]]
+id = "control"
+name = "Control"
+icon = "⑂"
+colour = "control"
+
+[[category.entry]]
+block = "control.if"
+
+[[category.entry]]
+block = "control.if"
+label = "if … else"
+preset = { extra = { hasElse = true } }
+
+[[category]]
+id = "loops"
+name = "Loops"
+icon = "↻"
+colour = "loops"
+
+[[category.entry]]
+block = "control.repeat"
+
+[[category.entry]]
+block = "control.while"
+
+[[category.entry]]
+block = "control.while"
+label = "repeat until"
+preset = { fields = { MODE = "until" } }
+
+[[category.entry]]
+block = "control.for_range"
+
+[[category.entry]]
+block = "control.forever"
+
+[[category.entry]]
+block = "control.break"
+
+[[category.entry]]
+block = "control.continue"
+
+[[category]]
+id = "io"
+name = "Input / Output"
+icon = "⌨"
+colour = "io"
+
+[[category.entry]]
+block = "io.print"
+
+[[category.entry]]
+block = "io.ask"
+preset = { inputs = { PROMPT = [{ str = "Your answer: " }] } }
+
+[[category]]
+id = "functions"
+name = "Functions"
+icon = "ƒ"
+colour = "functions"
+dynamic = "functions"
+
+[[category.entry]]
+block = "func.define"
+
+[[category.entry]]
+block = "func.return"

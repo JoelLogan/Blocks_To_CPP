@@ -5,6 +5,7 @@ id = "text.literal"
 version = 1
 category = "text"
 shape = "reporter"
+output = "string"
 label = { friendly = "\"%VALUE\"", cpp = "\"%VALUE\"" }
 lowering = "builtin"
 headers = ["<string>"]
@@ -20,6 +21,7 @@ id = "text.char"
 version = 1
 category = "text"
 shape = "reporter"
+output = "char"
 label = { friendly = "letter '%VALUE'", cpp = "'%VALUE'" }
 lowering = "builtin"
 help = "A single character, such as 'a'."
@@ -34,6 +36,7 @@ id = "text.join"
 version = 1
 category = "text"
 shape = "reporter"
+output = "string"
 label = { friendly = "join %ITEM …", cpp = "%ITEM + …" }
 lowering = "builtin"
 headers = ["<string>"]

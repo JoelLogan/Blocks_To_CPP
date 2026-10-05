@@ -8,6 +8,12 @@
 //! extras with a default, and absent value inputs with default tokens (the
 //! "shadow" blocks of the editor). Statement inputs are never filled: an
 //! absent one simply means an empty list.
+//!
+//! A block directly on the canvas may carry a loose statement stack (spec
+//! §5.4, ADR-0011): the blocks attached below it. Stacked blocks are checked
+//! like blocks in a statement list. The stack itself is in the wrong place
+//! (`B2C-E0604`), reported once, on its head: a statement head is not inside
+//! `main` or a function, and nothing can be attached below any other shape.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -21,13 +27,17 @@ use crate::codes::{self, Diags};
 use crate::definitions::{self, PARAM_MODES, count_default, default_tokens, repeat_index};
 use crate::migrate::{self, BLOCK_MIGRATIONS, BlockMigration, MigrationError};
 use crate::schema::{BlockDef, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, Shape};
+use crate::stack;
 
 /// Where a block sits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Position {
-    /// Directly on a module's canvas.
-    TopLevel,
-    /// In a statement list.
+    /// Directly on a module's canvas, with this many blocks stacked below it.
+    TopLevel {
+        /// The length of the block's loose stack.
+        stacked: usize,
+    },
+    /// In a statement list or a loose stack.
     Statement,
     /// In a value input.
     Value,
@@ -77,7 +87,9 @@ fn run_with(
     for module in &mut completed.modules {
         resolver.module = Some(module.id.clone());
         for block in &mut module.workspace.blocks {
-            resolver.block(block, Position::TopLevel);
+            let mut stacked = stack::take(block);
+            resolver.top_level(block, &mut stacked);
+            stack::restore(block, stacked);
         }
     }
     (completed, resolver.diags.finish())
@@ -104,6 +116,22 @@ struct Resolver<'c> {
 }
 
 impl Resolver<'_> {
+    /// A block directly on a module's canvas, and the loose stack below it.
+    /// Stacked blocks are checked like the blocks of a statement list, so a
+    /// stacked statement gets no placement error of its own: the stack is
+    /// reported once, on its head (see [`Self::check_place`]).
+    fn top_level(&mut self, head: &mut Block, stacked: &mut [Block]) {
+        self.block(
+            head,
+            Position::TopLevel {
+                stacked: stacked.len(),
+            },
+        );
+        for block in stacked {
+            self.block(block, Position::Statement);
+        }
+    }
+
     fn block(&mut self, block: &mut Block, position: Position) {
         let location = Location::block(self.module.clone(), block.id.clone());
         let catalog = self.catalog;
@@ -184,14 +212,38 @@ impl Resolver<'_> {
 
     fn check_place(&mut self, def: &BlockDef, position: Position, location: &Location) {
         let kind = quote(&def.id);
+        if let Position::TopLevel { stacked } = position
+            && stacked > 0
+            && def.shape != Shape::Statement
+        {
+            // Only a statement has a connection below it (spec §3.3).
+            let message = if stacked == 1 {
+                format!(
+                    "1 block is stacked below this {kind} block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it."
+                )
+            } else {
+                format!(
+                    "{stacked} blocks are stacked below this {kind} block, but nothing can be attached below it, so the stacked blocks would never run. Move them inside a block, or delete them."
+                )
+            };
+            self.diags.error(codes::WRONG_PLACE, location.clone(), message);
+        }
         let message = match (position, def.shape) {
-            (Position::TopLevel, Shape::Hat | Shape::Definition)
+            (Position::TopLevel { .. }, Shape::Hat | Shape::Definition)
             | (Position::Statement, Shape::Statement)
             | (Position::Value, Shape::Reporter | Shape::Predicate) => return,
-            (Position::TopLevel, Shape::Statement) => format!(
+            (Position::TopLevel { stacked: 0 }, Shape::Statement) => format!(
                 "This {kind} block is not inside \"when program starts\" or a function, so it would never run. Move it inside one, or delete it."
             ),
-            (Position::TopLevel, Shape::Reporter | Shape::Predicate) => format!(
+            (Position::TopLevel { stacked }, Shape::Statement) => format!(
+                "This {kind} block and the {} below it are not inside \"when program starts\" or a function, so they would never run. Move them inside one, or delete them.",
+                if stacked == 1 {
+                    String::from("block")
+                } else {
+                    format!("{stacked} blocks")
+                }
+            ),
+            (Position::TopLevel { .. }, Shape::Reporter | Shape::Predicate) => format!(
                 "This {kind} block gives a value, but it is not plugged into another block. Put it into an input, or delete it."
             ),
             (Position::Statement | Position::Value, Shape::Hat | Shape::Definition) => {
@@ -788,6 +840,146 @@ mod tests {
             diagnostics[0].message,
             "This block is version 1 of \"io.print\", which this version of Blocks2Cpp cannot upgrade to version 2."
         );
+    }
+
+    /// A block from its JSON form (tests only; files go through the loader).
+    fn block(value: Value) -> Block {
+        serde_json::from_value(value).unwrap()
+    }
+
+    /// Resolves one top-level block with a loose stack against the core
+    /// catalog, as the stage does for every block on a canvas.
+    fn resolve_stack(head: Value, stacked: Vec<Value>) -> (Block, Vec<Block>, Vec<Diagnostic>) {
+        let catalog = crate::core_catalog();
+        let mut resolver = Resolver {
+            catalog,
+            migrations: BLOCK_MIGRATIONS,
+            broken: broken_definitions(catalog),
+            reported_broken: BTreeSet::new(),
+            module: ModuleId::new("m").ok(),
+            diags: Diags::default(),
+        };
+        let mut head = block(head);
+        let mut stacked: Vec<Block> = stacked.into_iter().map(block).collect();
+        resolver.top_level(&mut head, &mut stacked);
+        (head, stacked, resolver.diags.finish())
+    }
+
+    fn print(id: &str) -> Value {
+        serde_json::json!({"id": id, "type": "io.print", "v": 1})
+    }
+
+    fn codes_and_blocks(diagnostics: &[Diagnostic]) -> Vec<(String, String)> {
+        diagnostics
+            .iter()
+            .map(|d| {
+                let block = d.primary.block.as_ref().map_or("", |b| b.as_str());
+                (d.code.0.clone(), block.to_owned())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_loose_stack_is_reported_once_on_its_head() {
+        let (head, stacked, diagnostics) = resolve_stack(print("b1"), vec![print("b2"), print("b3")]);
+        assert_eq!(
+            codes_and_blocks(&diagnostics),
+            [(codes::WRONG_PLACE.to_owned(), "b1".to_owned())]
+        );
+        assert_eq!(
+            diagnostics[0].message,
+            "This \"io.print\" block and the 2 blocks below it are not inside \"when program starts\" or a function, so they would never run. Move them inside one, or delete them."
+        );
+        // Stacked blocks are completed like any other block.
+        assert!(head.inputs.contains_key("ITEM0"));
+        assert!(stacked.iter().all(|b| b.inputs.contains_key("ITEM0")));
+
+        let (_, _, diagnostics) = resolve_stack(print("b1"), vec![print("b2")]);
+        assert_eq!(
+            diagnostics[0].message,
+            "This \"io.print\" block and the block below it are not inside \"when program starts\" or a function, so they would never run. Move them inside one, or delete them."
+        );
+        // Without a stack, the message is about the block alone.
+        let (_, _, diagnostics) = resolve_stack(print("b1"), vec![]);
+        assert_eq!(
+            diagnostics[0].message,
+            "This \"io.print\" block is not inside \"when program starts\" or a function, so it would never run. Move it inside one, or delete it."
+        );
+    }
+
+    #[test]
+    fn stacked_blocks_are_checked_like_statements() {
+        let bad_field =
+            serde_json::json!({"id": "b3", "type": "io.print", "v": 1, "fields": {"SEP": "tabs"}});
+        let reporter = serde_json::json!({"id": "b4", "type": "math.number", "v": 1});
+        let hat = serde_json::json!({"id": "b5", "type": "program.main", "v": 1});
+        let unknown = serde_json::json!({"id": "b6", "type": "x.nope", "v": 1});
+        let (_, _, diagnostics) =
+            resolve_stack(print("b1"), vec![print("b2"), bad_field, reporter, hat, unknown]);
+        assert_eq!(
+            codes_and_blocks(&diagnostics),
+            [
+                (codes::WRONG_PLACE.to_owned(), "b1".to_owned()),
+                (codes::BAD_FIELD.to_owned(), "b3".to_owned()),
+                // A value or a hat is not a statement, so it cannot be
+                // stacked either.
+                (codes::WRONG_PLACE.to_owned(), "b4".to_owned()),
+                (codes::WRONG_PLACE.to_owned(), "b5".to_owned()),
+                (codes::UNKNOWN_BLOCK.to_owned(), "b6".to_owned()),
+            ]
+        );
+        assert!(diagnostics[0].message.contains("the 5 blocks below it"));
+        assert!(diagnostics[2].message.contains("cannot be a step on its own"));
+    }
+
+    #[test]
+    fn only_a_statement_can_head_a_stack() {
+        let main = serde_json::json!({"id": "b1", "type": "program.main", "v": 1});
+        let (_, _, diagnostics) = resolve_stack(main.clone(), vec![print("b2")]);
+        assert_eq!(
+            codes_and_blocks(&diagnostics),
+            [(codes::WRONG_PLACE.to_owned(), "b1".to_owned())]
+        );
+        assert_eq!(
+            diagnostics[0].message,
+            "1 block is stacked below this \"program.main\" block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it."
+        );
+        let (_, _, diagnostics) = resolve_stack(main, vec![print("b2"), print("b3")]);
+        assert!(
+            diagnostics[0]
+                .message
+                .starts_with("2 blocks are stacked below this \"program.main\" block")
+        );
+        // A loose value block with a stack: both problems, on the head.
+        let number = serde_json::json!({"id": "b1", "type": "math.number", "v": 1});
+        let (_, _, diagnostics) = resolve_stack(number, vec![print("b2")]);
+        assert_eq!(codes_and_blocks(&diagnostics).len(), 2);
+        assert!(diagnostics.iter().all(|d| d.code.0 == codes::WRONG_PLACE));
+        assert!(diagnostics[1].message.contains("gives a value"));
+        // A head the catalog does not know: its stack is still checked.
+        let unknown = serde_json::json!({"id": "b1", "type": "x.nope", "v": 1});
+        let bad_field =
+            serde_json::json!({"id": "b2", "type": "io.print", "v": 1, "fields": {"SEP": "tabs"}});
+        let (_, _, diagnostics) = resolve_stack(unknown, vec![bad_field]);
+        assert_eq!(
+            codes_and_blocks(&diagnostics),
+            [
+                (codes::UNKNOWN_BLOCK.to_owned(), "b1".to_owned()),
+                (codes::BAD_FIELD.to_owned(), "b2".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn documents_without_stacks_resolve_as_before() {
+        // The seam: until `b2c_model::Block` has its `stack`, every block
+        // has an empty one and resolving is unchanged.
+        let mut head = block(print("b1"));
+        let stacked = stack::take(&mut head);
+        assert!(stacked.is_empty());
+        let before = head.clone();
+        stack::restore(&mut head, stacked);
+        assert_eq!(head, before);
     }
 
     #[test]

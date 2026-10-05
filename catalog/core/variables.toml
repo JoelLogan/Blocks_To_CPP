@@ -93,6 +93,7 @@ id = "var.get"
 version = 1
 category = "variables"
 shape = "reporter"
+output = "symbol"
 label = { friendly = "%VAR", cpp = "%VAR" }
 lowering = "builtin"
 help = "The value of a variable."

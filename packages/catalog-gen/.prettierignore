@@ -1,0 +1,3 @@
+coverage/
+# Written by crates/b2c-catalog/tests/export.rs (serde_json's pretty printer), not by hand.
+catalog.json

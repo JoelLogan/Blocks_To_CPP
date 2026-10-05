@@ -16,12 +16,30 @@
 //!   inputs and statement inputs not matching the definition after expanding
 //!   `repeat` counts and `when` flags; `extra` keys unknown, missing (when no
 //!   default) or out of range; `params` rows well-formed.
+//!
+//! Added in milestone M2 for the editor:
+//! * Every `reporter` and `predicate` definition declares the type of its
+//!   value ([`BlockDef::output`], [`OutputType`]), which the editor's
+//!   connection checker uses.
+//! * [`toolbox`] parses `catalog/toolbox.toml` (embedded like the catalog)
+//!   and checks it against the core catalog: the categories in toolbox
+//!   order, their entries and presets, and the dynamic Variables and
+//!   Functions categories ([`Toolbox`]).
+//! * [`resolve`] also checks loose statement stacks: the blocks stacked below
+//!   a block directly on the canvas (spec §5.4, ADR-0011).
+//!
+//! The editor never reads the TOML files: a test exports the validated
+//! catalog and toolbox as `packages/catalog-gen/catalog.json`, from which
+//! `packages/catalog-gen` generates the editor's block definitions and the
+//! block reference (`tests/export.rs`).
 
 mod codes;
 mod definitions;
 mod migrate;
 mod resolve;
 pub mod schema;
+mod stack;
+mod toolbox;
 
 use std::sync::OnceLock;
 
@@ -29,6 +47,11 @@ use b2c_ir::Diagnostic;
 use b2c_model::Document;
 
 pub use schema::*;
+pub use toolbox::{
+    DynamicCategory, MAX_CATEGORY_ICON_CHARS, MAX_CATEGORY_NAME_CHARS, MAX_ENTRY_LABEL_CHARS,
+    MAX_TOOLBOX_BYTES, MAX_TOOLBOX_ENTRIES, Preset, PresetExtra, Toolbox, ToolboxCategory, ToolboxEntry,
+    ToolboxError, ToolboxProblem,
+};
 
 /// The catalog version (semver of the `catalog/` directory).
 pub const CATALOG_VERSION: &str = "1.0.0";
@@ -51,6 +74,24 @@ pub struct Catalog {
 pub fn core_catalog() -> &'static Catalog {
     static CORE: OnceLock<Catalog> = OnceLock::new();
     CORE.get_or_init(|| definitions::build(&definitions::CORE_FILES).0)
+}
+
+/// The built-in toolbox (`catalog/toolbox.toml`), parsed and checked against
+/// the [core catalog](core_catalog) on first use.
+///
+/// Like the catalog, the file is compiled in and tests keep it free of
+/// problems. Should it be broken anyway, the categories and entries with
+/// problems are left out instead of panicking.
+///
+/// ```
+/// let toolbox = b2c_catalog::toolbox();
+/// assert_eq!(toolbox.categories[0].id, b2c_catalog::Category::Program);
+/// // Every block of the catalog can be reached.
+/// assert_eq!(toolbox.reachable_blocks().len(), b2c_catalog::core_catalog().blocks.len());
+/// ```
+pub fn toolbox() -> &'static Toolbox {
+    static TOOLBOX: OnceLock<Toolbox> = OnceLock::new();
+    TOOLBOX.get_or_init(|| toolbox::build(toolbox::CORE_TOOLBOX, core_catalog()).0)
 }
 
 /// Checks a document against the catalog and fills absent inputs from defaults.
