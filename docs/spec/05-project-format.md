@@ -399,26 +399,50 @@ running app instance:
 ├── <instanceId>.lock                 held exclusively by that instance while it runs
 └── <instanceId>/                     instanceId: 32 hex digits, new for each start
     ├── <snapshotId>.b2c              the document, as the editor last sent it
-    └── <snapshotId>.json             metadata
+    ├── <snapshotId>.json             its metadata
+    └── <snapshotId>.prev.b2c         the previous document, only while a new one is written
 ```
 
-* The metadata is `{ formatVersion: 1, projectId, projectName, hasPath,
-  boundPath, savedAt, appVersion, trustedAtWrite, securityHash }`: `boundPath`
-  is the project's file or `null` for a project never saved,
-  `trustedAtWrite` says whether the project was trusted when the snapshot was
-  written, and `securityHash` is its security hash
-  ([08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode)). It is
-  read with a 64 KiB limit, and the document with the project limit of §5.6.
-* Each project has one snapshot per instance (its `snapshotId`, `sn_` + 32 hex
-  digits, stays the same while it is open), replaced atomically with mode
-  `0600`. It is deleted when the project is saved cleanly or closed.
-* Several instances of the app may run at once. Each holds an exclusive lock
-  on its own `.lock` file, and only snapshots whose instance lock is free,
-  that is, of instances that have exited or crashed, are offered for restore.
-  Empty, unlocked instance folders are removed.
+* The metadata is `{ format: "blocks2cpp/recovery", formatVersion: 1,
+  projectId, projectName, hasPath, boundPath, savedAt, appVersion,
+  trustedAtWrite, securityHash, documentHash }`: `boundPath` is the project's
+  file or `null` for a project never saved, `trustedAtWrite` says whether the
+  project was trusted when the snapshot was written, `securityHash` is its
+  security hash ([08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode)),
+  and `documentHash` is the SHA-256 of the document it was written with. It is
+  read with a 64 KiB limit and validated strictly (no unknown or duplicate
+  keys); the document is read with the project limit of §5.6. A snapshot whose
+  metadata is invalid or from a newer `formatVersion` is not offered and is
+  left alone.
+* `projectName` is cut to 1 KiB. A path that cannot be written to JSON (not
+  valid Unicode, or longer than 8 KiB) is recorded as `boundPath: null` with
+  `hasPath: true`: such a snapshot restores without a path, in Restricted
+  Mode, and is never taken for a project that was never saved.
+* Each project has one snapshot per instance. Its `snapshotId`, `sn_` + 32 hex
+  digits, stays the same until the snapshot is deleted, which happens when the
+  project is saved cleanly or closed. An instance keeps at most 64 snapshots.
+* Every file is written atomically (§5.10 above) with mode `0600`. A
+  snapshot is replaced as a pair: the current document is first renamed to
+  `<snapshotId>.prev.b2c`, then the new document is written, then the new
+  metadata, and the previous document is removed. A restore returns only the
+  document whose SHA-256 equals `documentHash`, so a crash at any point leaves
+  the old snapshot or the new one, and a document is never restored with
+  metadata (and trust facts) written for another one.
+* Several instances of the app may run at once. Each takes an exclusive lock
+  on its own `.lock` file before it creates its folder, and holds it until it
+  exits; the lock file is never read. Only snapshots whose instance lock is
+  free, that is, of instances that have exited or crashed, are offered for
+  restore, newest first and at most 100; reading or discarding one takes that
+  lock again. While it holds a stopped instance's lock, the app removes the
+  temporary files and documents without metadata that a crash left there,
+  then the folder and its lock file once the folder is empty, and lock files
+  without a folder. An instance that exits removes its own folder and lock
+  file when no snapshot is left in it; the snapshots of projects that still
+  had unsaved changes stay for the next start.
 * A restored snapshot opens as a project bound to its `boundPath` (or to no
   path) and is trusted only under the rules of
-  [08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode).
+  [08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode). The app
+  then writes the restored project's own snapshot and discards the old one.
 * Project content never goes into logs.
 
 **External changes.** For each open project with a file, the backend watches

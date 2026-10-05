@@ -516,6 +516,11 @@ happen only in major releases, which means any `0.x` release until 1.0
   CLI uses the same cache root. Earlier versions used
   `%LOCALAPPDATA%\Blocks2Cpp\cache\` on Windows; that folder is abandoned, not
   migrated, and can be deleted.
+* The recovery folder holds one folder and one lock file per app instance,
+  so several instances can run at once and only the snapshots of instances
+  that exited or crashed are offered for restore
+  ([05 §5.10](05-project-format.md#510-saving-and-recovery)). Like the logs,
+  it is machine-local state, not configuration, so it never roams.
 * When an XDG variable is unset, the XDG Base Directory defaults apply:
   `~/.config`, `~/.cache` and `~/.local/state`. Relative values are ignored,
   as that specification requires. Values with a `..` part are ignored the

@@ -42,6 +42,12 @@
 //! * [`log`]: [`RotatingFile`], the size-rotating log writer behind the
 //!   app's `tracing` subscriber (08 §8.11: 5 files of 5 MiB, `0600` in a
 //!   `0700` folder).
+//! * [`recovery`]: [`RecoveryStore`], the autosave snapshots of projects
+//!   with unsaved changes (05 §5.10): one folder per running app instance,
+//!   guarded by an exclusive lock on `<instanceId>.lock`; documents and
+//!   their metadata written atomically as pairs that a crash cannot split;
+//!   and the snapshots of instances that exited or crashed offered for
+//!   restore, never those of a running one.
 //! * [`time`] and [`ids`]: RFC 3339 UTC timestamps and random opaque IDs
 //!   from the OS random number generator.
 //!
@@ -52,7 +58,9 @@
 //! [`TrustStore::problem`]) for the app to log. Nothing in this crate reads
 //! or writes outside the paths its callers give it, and nothing from a
 //! project file ever ends up in the machine-local files except the recent
-//! list's display name and the trust store's project IDs.
+//! list's display name, the trust store's project IDs and the recovery
+//! snapshots (copies of open projects, kept only in the private recovery
+//! folder).
 //!
 //! This crate is native only and contains no `unsafe` code: the OS calls it
 //! needs that the standard library lacks (the write-through rename and the
@@ -68,6 +76,7 @@ pub mod motw;
 pub mod project_file;
 pub mod read;
 pub mod recent;
+pub mod recovery;
 pub mod settings;
 pub mod time;
 pub mod trust;
@@ -81,6 +90,7 @@ pub use motw::mark_of_the_web;
 pub use project_file::{canonical_path, read_project, save_project, sha256_hex};
 pub use read::read_bounded;
 pub use recent::{RecentEntry, RecentStore};
+pub use recovery::{RecoveryStore, SnapshotListing, SnapshotMeta};
 pub use settings::{
     CodeStyle, NoticeReason, OnErrors, Settings, SettingsNotice, SettingsPatch, SettingsStore,
 };
