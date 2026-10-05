@@ -1,0 +1,171 @@
+//! The OS helpers of `b2c_process::os`: atomic replacement (both platforms),
+//! DLL search hardening (Windows, run in CI) and the link opener's URL
+//! check.
+// Test helpers fail the test by panicking.
+#![allow(clippy::unwrap_used)]
+
+use std::fs;
+
+use b2c_process::ProcessError;
+use b2c_process::os::{atomic_replace, harden_dll_search, open_https_url};
+
+#[test]
+fn replaces_an_existing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("project.b2c");
+    let temp = dir.path().join(".project.b2c.tmp");
+    fs::write(&target, "old").unwrap();
+    fs::write(&temp, "new").unwrap();
+    atomic_replace(&temp, &target).unwrap();
+    assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+    assert!(!temp.exists());
+}
+
+#[test]
+fn creates_a_missing_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("settings.json");
+    let temp = dir.path().join(".settings.json.tmp");
+    fs::write(&temp, "{}").unwrap();
+    atomic_replace(&temp, &target).unwrap();
+    assert_eq!(fs::read_to_string(&target).unwrap(), "{}");
+}
+
+#[test]
+fn a_failed_replace_leaves_the_target_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("project.b2c");
+    fs::write(&target, "old").unwrap();
+    assert!(atomic_replace(&dir.path().join("missing.tmp"), &target).is_err());
+    assert_eq!(fs::read_to_string(&target).unwrap(), "old");
+}
+
+#[test]
+fn long_paths_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut deep = dir.path().to_path_buf();
+    // Well past MAX_PATH (260) in total, each level within the 255 limit.
+    for level in 0..4 {
+        deep.push(format!("{level}{}", "d".repeat(80)));
+    }
+    fs::create_dir_all(&deep).unwrap();
+    let target = deep.join("project.b2c");
+    let temp = deep.join(".project.b2c.tmp");
+    fs::write(&target, "old").unwrap();
+    fs::write(&temp, "new").unwrap();
+    atomic_replace(&temp, &target).unwrap();
+    assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+}
+
+#[cfg(unix)]
+#[test]
+fn the_directory_is_synced() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("file");
+    let temp = dir.path().join("file.tmp");
+    fs::write(&temp, "data").unwrap();
+    let before = b2c_process::os::directory_syncs();
+    atomic_replace(&temp, &target).unwrap();
+    assert!(b2c_process::os::directory_syncs() > before);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_at_the_target_is_replaced_not_followed() {
+    let dir = tempfile::tempdir().unwrap();
+    let victim = dir.path().join("victim");
+    fs::write(&victim, "keep me").unwrap();
+    let target = dir.path().join("target");
+    std::os::unix::fs::symlink(&victim, &target).unwrap();
+    let temp = dir.path().join("target.tmp");
+    fs::write(&temp, "new").unwrap();
+    atomic_replace(&temp, &target).unwrap();
+    assert!(!fs::symlink_metadata(&target).unwrap().file_type().is_symlink());
+    assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+    assert_eq!(fs::read_to_string(&victim).unwrap(), "keep me");
+}
+
+#[test]
+fn unsafe_urls_are_refused_before_anything_starts() {
+    for url in [
+        "http://example.com/",
+        "file:///etc/passwd",
+        "https://example.com/\"; calc.exe; \"",
+        "https://example.com/a b",
+        "https://example.com/$(touch x)",
+        "https://user@example.com/",
+    ] {
+        assert!(
+            matches!(open_https_url(url), Err(ProcessError::InvalidUrl)),
+            "{url}"
+        );
+    }
+}
+
+#[cfg(not(windows))]
+#[test]
+fn dll_hardening_is_a_no_op_elsewhere() {
+    harden_dll_search().unwrap();
+}
+
+/// After hardening, a DLL that exists only in the current directory cannot
+/// be loaded by name, while System32 DLLs still can.
+#[cfg(windows)]
+#[test]
+fn planted_dlls_in_the_current_directory_are_not_loaded() {
+    use std::os::windows::ffi::OsStrExt as _;
+    use std::path::PathBuf;
+
+    use windows_sys::Win32::Foundation::FreeLibrary;
+    use windows_sys::Win32::System::LibraryLoader::LoadLibraryW;
+
+    /// Restores the working directory when the test ends, even on failure.
+    struct RestoreDir(PathBuf);
+    impl Drop for RestoreDir {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+
+    /// Loads a DLL by bare name; whether it loaded.
+    fn loads(name: &str) -> bool {
+        let wide: Vec<u16> = std::ffi::OsStr::new(name)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: `wide` is a NUL-terminated UTF-16 string that outlives the
+        // call. The DLLs loaded here are copies of a System32 DLL whose
+        // initialisation is safe to run.
+        #[allow(unsafe_code)]
+        let module = unsafe { LoadLibraryW(wide.as_ptr()) };
+        if module.is_null() {
+            return false;
+        }
+        // SAFETY: `module` was just returned by LoadLibraryW and is released
+        // exactly once.
+        #[allow(unsafe_code)]
+        unsafe {
+            FreeLibrary(module);
+        }
+        true
+    }
+
+    let system32 = PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32");
+    let planted = tempfile::tempdir().unwrap();
+    let before = planted.path().join("b2c_planted_before.dll");
+    let after = planted.path().join("b2c_planted_after.dll");
+    fs::copy(system32.join("version.dll"), &before).unwrap();
+    fs::copy(system32.join("version.dll"), &after).unwrap();
+
+    let _restore = RestoreDir(std::env::current_dir().unwrap());
+    std::env::set_current_dir(planted.path()).unwrap();
+    // The default search order includes the current directory ...
+    assert!(
+        loads("b2c_planted_before.dll"),
+        "control: the planted DLL should load before hardening"
+    );
+    harden_dll_search().unwrap();
+    // ... and after hardening it does not.
+    assert!(!loads("b2c_planted_after.dll"));
+    assert!(loads("version.dll"));
+}

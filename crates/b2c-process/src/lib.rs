@@ -63,6 +63,7 @@ mod cancel;
 mod capture;
 mod command;
 mod error;
+pub mod os;
 mod platform;
 #[cfg(target_os = "linux")]
 mod procfs;

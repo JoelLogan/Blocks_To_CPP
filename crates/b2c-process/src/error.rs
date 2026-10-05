@@ -54,4 +54,20 @@ pub enum ProcessError {
     /// The run was cancelled before the program started.
     #[error("cancelled before the program started")]
     Cancelled,
+    /// [`crate::os::open_https_url`] was given something other than a plain
+    /// `https://` URL (see that function for the exact rules). Nothing was
+    /// started.
+    #[error("refusing to open a link that is not a plain https:// address")]
+    InvalidUrl,
+    /// No program to open links with was found: on Linux, `xdg-open` is in
+    /// neither `/usr/bin` nor `/bin`; on Windows, no program is registered
+    /// for `https` links.
+    #[error("cannot open the link: no web browser or link opener was found")]
+    NoUrlOpener,
+    /// The link opener could not be started or reported a failure.
+    #[error("cannot open the link: {source}")]
+    OpenUrl {
+        /// The underlying error.
+        source: io::Error,
+    },
 }

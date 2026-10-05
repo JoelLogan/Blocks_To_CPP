@@ -22,6 +22,9 @@ ALLOWED_WORKSPACE_DEPS = {
     "b2c-codegen": {"b2c-ir"},
     "b2c-core-wasm": {"b2c-ir", "b2c-model", "b2c-catalog", "b2c-lang", "b2c-codegen"},
     "b2c-process": set(),
+    # Machine-local storage (02 §2.7, 05 §5.9): files and folders only; the
+    # one OS call it needs (the atomic rename) comes from b2c-process.
+    "b2c-store": {"b2c-ir", "b2c-model", "b2c-process"},
     "b2c-toolchain": {"b2c-ir", "b2c-model", "b2c-process"},
     "b2c-build": {
         "b2c-ir", "b2c-model", "b2c-catalog", "b2c-lang", "b2c-codegen",
