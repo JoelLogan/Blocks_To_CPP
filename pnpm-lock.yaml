@@ -17,6 +17,9 @@ importers:
       '@blocks2cpp/b2c-core-wasm':
         specifier: workspace:*
         version: link:../../packages/b2c-core-wasm
+      '@blocks2cpp/blockly-ext':
+        specifier: workspace:*
+        version: link:../../packages/blockly-ext
       '@blocks2cpp/ipc-types':
         specifier: workspace:*
         version: link:../../packages/ipc-types

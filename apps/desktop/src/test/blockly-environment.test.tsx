@@ -7,7 +7,7 @@ import { render } from '@testing-library/react';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { BlocklyWorkspace } from '../editor/BlocklyWorkspace';
+import { EditorWorkspace } from '../editor/EditorWorkspace';
 
 const BLOCK_TYPE = 'b2c_test_environment_say';
 
@@ -76,7 +76,7 @@ describe('Blockly in the test environment', () => {
   });
 
   it('mounts and disposes the app workspace component', () => {
-    const { container, unmount } = render(<BlocklyWorkspace />);
+    const { container, unmount } = render(<EditorWorkspace />);
     expect(container.querySelector('.blockly-host .injectionDiv')).not.toBeNull();
     expect(mainWorkspaces()).toHaveLength(1);
 

@@ -18,41 +18,21 @@ import {
 import { HintProvider } from './ui/Hint';
 
 /**
- * Blockly is replaced by a stand-in that records what the workspace component asks of it, so the
- * tests can check the wiring (options, theme, resizing, clean-up). src/test/blockly-environment
- * checks the same component against the real Blockly.
+ * The block editor is replaced by a stand-in that records its mounts, so these tests check the shell
+ * around it. src/editor/EditorWorkspace.test.tsx tests the editor itself against the real Blockly.
  */
-const blockly = vi.hoisted(() => {
-  const workspace = { setTheme: vi.fn(), dispose: vi.fn() };
+const editor = vi.hoisted(() => ({ mounted: 0, unmounted: 0 }));
+vi.mock('../editor/EditorWorkspace', async () => {
+  const { useEffect } = await import('react');
   return {
-    workspace,
-    inject: vi.fn(() => workspace),
-    svgResize: vi.fn(),
-    setLocale: vi.fn(),
-    Theme: { defineTheme: vi.fn((name: string) => ({ name })) },
-    Themes: { Zelos: { name: 'zelos' } },
-  };
-});
-vi.mock('blockly/core', () => blockly);
-vi.mock('blockly/msg/en', () => ({}));
-
-/** The colour-scheme media query, which the workspace module reads when it is first imported. */
-const colourScheme = vi.hoisted(() => {
-  const listeners = new Set<() => void>();
-  const query = {
-    matches: false,
-    addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
-    removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
-  };
-  window.matchMedia = () => query as unknown as MediaQueryList;
-  return {
-    listeners,
-    /** Switches the system colour scheme, as the user would in the OS settings. */
-    set(dark: boolean) {
-      query.matches = dark;
-      for (const listener of listeners) {
-        listener();
-      }
+    EditorWorkspace: function EditorWorkspace() {
+      useEffect(() => {
+        editor.mounted += 1;
+        return () => {
+          editor.unmounted += 1;
+        };
+      }, []);
+      return <div className="blockly-host" />;
     },
   };
 });
@@ -107,6 +87,8 @@ function setState(update: () => void): void {
 
 beforeEach(() => {
   resetAppStore();
+  editor.mounted = 0;
+  editor.unmounted = 0;
   FakeResizeObserver.instances = [];
   vi.stubGlobal('ResizeObserver', FakeResizeObserver);
 });
@@ -115,7 +97,6 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) {
     cleanup();
   }
-  colourScheme.set(false);
 });
 
 describe('the main window', () => {
@@ -160,13 +141,13 @@ describe('the main window', () => {
 
     expect(screen.getByRole('main', { name: 'Start page' }).textContent).toBe('Welcome');
     expect(screen.queryByRole('main', { name: 'Block workspace' })).toBeNull();
-    expect(blockly.inject).toHaveBeenCalledTimes(1);
+    expect(editor.mounted).toBe(1);
 
     setState(() => {
       useAppStore.getState().actions.setUi({ screen: 'editor' });
     });
     expect(screen.getByRole('main', { name: 'Block workspace' })).toBeTruthy();
-    expect(blockly.workspace.dispose).not.toHaveBeenCalled();
+    expect(editor.unmounted).toBe(0);
   });
 
   it('shows the editor for a page no feature provides yet', () => {
@@ -477,67 +458,15 @@ describe('the docks', () => {
 });
 
 describe('Block workspace', () => {
-  it('injects Blockly with the Zelos renderer, bundled media and no sounds', () => {
-    renderApp();
-
-    expect(blockly.inject).toHaveBeenCalledTimes(1);
-    const [host, options] = blockly.inject.mock.calls[0] as unknown as [
-      HTMLElement,
-      Record<string, unknown>,
-    ];
-    expect(host.className).toBe('blockly-host');
-    expect(screen.getByRole('main').contains(host)).toBe(true);
-    expect(options).toMatchObject({
-      renderer: 'zelos',
-      sounds: false,
-      theme: { name: 'b2c-light' },
-      // Tests run like the dev server, which serves Blockly's media from the package.
-      media: '/node_modules/blockly/media/',
-    });
-  });
-
-  it('starts in the dark theme when the system uses a dark colour scheme', () => {
-    colourScheme.set(true);
-    renderApp();
-
-    expect(blockly.inject.mock.calls[0]).toMatchObject([
-      expect.anything(),
-      { theme: { name: 'b2c-dark' } },
-    ]);
-  });
-
-  it('follows changes of the system colour scheme', () => {
-    renderApp();
-
-    colourScheme.set(true);
-    expect(blockly.workspace.setTheme).toHaveBeenLastCalledWith({ name: 'b2c-dark' });
-    colourScheme.set(false);
-    expect(blockly.workspace.setTheme).toHaveBeenLastCalledWith({ name: 'b2c-light' });
-  });
-
-  it('resizes the workspace when its panel changes size', () => {
-    renderApp();
-
-    const host = screen.getByRole('main').firstElementChild;
-    const observer = FakeResizeObserver.instances.find(
-      (instance) => host !== null && instance.observed.includes(host),
-    );
-    observer?.callback();
-    expect(blockly.svgResize).toHaveBeenCalledWith(blockly.workspace);
-  });
-
-  it('releases the workspace and its listeners when the window closes', () => {
+  it('is the block editor, in the workspace region, released when the window closes', () => {
     const { unmount } = renderApp();
-    expect(colourScheme.listeners.size).toBe(1);
-    const host = screen.getByRole('main').firstElementChild;
+    const host = screen
+      .getByRole('main', { name: 'Block workspace' })
+      .querySelector('.blockly-host');
+    expect(host).not.toBeNull();
+    expect(editor.mounted).toBe(1);
 
     unmount();
-
-    expect(blockly.workspace.dispose).toHaveBeenCalledTimes(1);
-    const observer = FakeResizeObserver.instances.find(
-      (instance) => host !== null && instance.observed.includes(host),
-    );
-    expect(observer?.disconnected).toBe(true);
-    expect(colourScheme.listeners.size).toBe(0);
+    expect(editor.unmounted).toBe(1);
   });
 });
