@@ -33,6 +33,7 @@ id = "func.call"
 version = 1
 category = "functions"
 shape = "reporter"
+output = "symbol"
 label = { friendly = "%FUNC %ARG …", cpp = "%FUNC(%ARG, …)" }
 lowering = "builtin"
 help = "Calls a function and uses its result."

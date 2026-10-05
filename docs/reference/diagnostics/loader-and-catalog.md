@@ -480,6 +480,18 @@ blocks go into inputs.
 
 > This "io.print" block is a step, not a value, so it cannot be plugged into an input.
 
+Blocks stacked below a loose block on the canvas (its `"stack"`, see
+[spec §5.4](../../spec/05-project-format.md#54-block-nodes)) are reported
+once, on the block at the top of the stack. The stacked blocks are still
+checked like any other blocks, but get no message of their own for their
+place:
+
+> This "io.print" block and the 2 blocks below it are not inside "when program starts" or a function, so they would never run. Move them inside one, or delete them.
+
+Only a statement block can have blocks below it:
+
+> 1 block is stacked below this "program.main" block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it.
+
 **Fix:** move the block where the message says.
 
 ### B2C-E0605: unknown field

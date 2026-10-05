@@ -12,10 +12,11 @@
 
 mod common;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_catalog::{
-    BlockDef, CATALOG_VERSION, CatalogFile, ExtraKind, FieldDefault, FieldKind, Shape, core_catalog,
+    BlockDef, CATALOG_VERSION, CatalogFile, ExtraKind, FieldDefault, FieldKind, OutputType, Shape,
+    core_catalog,
 };
 use common::{project, resolve};
 use serde_json::{Map, Value, json};
@@ -58,6 +59,43 @@ fn only_hats_and_definitions_are_top_level() {
         );
         if def.shape.is_value() {
             assert!(def.statement.is_empty(), "{}", def.id);
+        }
+    }
+}
+
+/// The output type of every value block is pinned: the editor's connection
+/// checker and the generated block definitions rely on it.
+#[test]
+fn value_blocks_declare_their_output_type() {
+    use OutputType as O;
+    let expected: BTreeMap<&str, OutputType> = [
+        ("func.call", O::Symbol),
+        ("logic.boolean", O::Bool),
+        ("logic.not", O::Bool),
+        ("logic.operation", O::Bool),
+        ("logic.ternary", O::Any),
+        ("math.arithmetic", O::Number),
+        ("math.compare", O::Bool),
+        ("math.convert", O::Field("TO".into())),
+        ("math.number", O::Number),
+        ("math.random_int", O::Int),
+        ("text.char", O::Char),
+        ("text.join", O::StdString),
+        ("text.literal", O::StdString),
+        ("var.get", O::Symbol),
+    ]
+    .into_iter()
+    .collect();
+    let actual: BTreeMap<&str, OutputType> = core_catalog()
+        .blocks
+        .values()
+        .filter_map(|def| Some((def.id.as_str(), def.output.clone()?)))
+        .collect();
+    assert_eq!(actual, expected);
+    for def in core_catalog().blocks.values() {
+        assert_eq!(def.output.is_some(), def.shape.is_value(), "{}", def.id);
+        if def.shape == Shape::Predicate {
+            assert_eq!(def.output, Some(O::Bool), "{}", def.id);
         }
     }
 }

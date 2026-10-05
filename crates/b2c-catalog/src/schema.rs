@@ -3,6 +3,9 @@
 //! The same files drive the editor (block shapes, fields, toolbox) and the
 //! compiler (validation of project files before analysis).
 
+use std::fmt;
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 
 /// One catalog TOML file: a list of `[[block]]` tables.
@@ -26,6 +29,12 @@ pub struct BlockDef {
     pub category: Category,
     /// Visual and structural shape.
     pub shape: Shape,
+    /// The type of the value the block gives: required for the `reporter`
+    /// and `predicate` shapes and forbidden for the others (a predicate
+    /// gives `bool`). The editor's connection checker uses it; the analyser
+    /// does the real type checking.
+    #[serde(default)]
+    pub output: Option<OutputType>,
     /// Label templates; `%NAME` marks where a field or input goes.
     pub label: Label,
     /// How the compiler lowers the block (`builtin` for core blocks).
@@ -49,8 +58,9 @@ pub struct BlockDef {
     pub extra: Vec<ExtraDef>,
 }
 
-/// Toolbox categories (spec §3.7).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Toolbox categories (spec §3.7), declared (and ordered) in the order the
+/// toolbox shows them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Category {
     /// Program structure.
@@ -71,6 +81,42 @@ pub enum Category {
     Io,
     /// Functions.
     Functions,
+}
+
+impl Category {
+    /// Every category, in toolbox order (spec §3.7).
+    pub const ALL: [Self; 9] = [
+        Self::Program,
+        Self::Variables,
+        Self::Math,
+        Self::Logic,
+        Self::Text,
+        Self::Control,
+        Self::Loops,
+        Self::Io,
+        Self::Functions,
+    ];
+
+    /// The category's ID as written in catalog files, e.g. `io`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Program => "program",
+            Self::Variables => "variables",
+            Self::Math => "math",
+            Self::Logic => "logic",
+            Self::Text => "text",
+            Self::Control => "control",
+            Self::Loops => "loops",
+            Self::Io => "io",
+            Self::Functions => "functions",
+        }
+    }
+}
+
+impl fmt::Display for Category {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// Block shapes (spec §3.3).
@@ -99,6 +145,107 @@ impl Shape {
     pub fn is_value(self) -> bool {
         matches!(self, Self::Reporter | Self::Predicate)
     }
+}
+
+/// The static type of the value a `reporter` or `predicate` block gives
+/// (spec §3.11.1), written in catalog files as one of `any`, `bool`, `int`,
+/// `double`, `number`, `char`, `string`, `symbol` or `field:NAME`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum OutputType {
+    /// Depends on the inputs (for example `logic.ternary`).
+    Any,
+    /// `bool`.
+    Bool,
+    /// `int`.
+    Int,
+    /// `double`.
+    Double,
+    /// `int` or `double`, depending on the values (for example a number
+    /// literal, or arithmetic).
+    Number,
+    /// `char`.
+    Char,
+    /// `std::string` (written `string`).
+    StdString,
+    /// The type of the symbol that the block's one `symbol_ref` field refers
+    /// to: a variable's type, or a function's return type. The editor takes
+    /// it from the live analysis.
+    Symbol,
+    /// The type chosen in the block's `type` field of this name (for
+    /// example `field:TO` for `math.convert`).
+    Field(String),
+}
+
+impl OutputType {
+    /// The prefix of [`OutputType::Field`] in catalog files.
+    pub const FIELD_PREFIX: &'static str = "field:";
+}
+
+impl fmt::Display for OutputType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::Any => "any",
+            Self::Bool => "bool",
+            Self::Int => "int",
+            Self::Double => "double",
+            Self::Number => "number",
+            Self::Char => "char",
+            Self::StdString => "string",
+            Self::Symbol => "symbol",
+            Self::Field(field) => return write!(f, "{}{field}", Self::FIELD_PREFIX),
+        };
+        f.write_str(name)
+    }
+}
+
+/// Text that is not an [`OutputType`].
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "{0:?} is not an output type (use any, bool, int, double, number, char, string, symbol, or field:NAME with an UPPER_CASE field name)"
+)]
+pub struct OutputTypeError(pub String);
+
+impl FromStr for OutputType {
+    type Err = OutputTypeError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        Ok(match text {
+            "any" => Self::Any,
+            "bool" => Self::Bool,
+            "int" => Self::Int,
+            "double" => Self::Double,
+            "number" => Self::Number,
+            "char" => Self::Char,
+            "string" => Self::StdString,
+            "symbol" => Self::Symbol,
+            _ => match text.strip_prefix(Self::FIELD_PREFIX) {
+                Some(field) if is_part_name(field) => Self::Field(field.to_owned()),
+                _ => return Err(OutputTypeError(text.to_owned())),
+            },
+        })
+    }
+}
+
+impl TryFrom<String> for OutputType {
+    type Error = OutputTypeError;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        text.parse()
+    }
+}
+
+impl From<OutputType> for String {
+    fn from(output: OutputType) -> Self {
+        output.to_string()
+    }
+}
+
+/// Field, input and statement names: `^[A-Z][A-Z0-9_]*$`.
+pub(crate) fn is_part_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    bytes.next().is_some_and(|b| b.is_ascii_uppercase())
+        && bytes.all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
 }
 
 /// Label templates for the two display modes (spec §3.5.2).

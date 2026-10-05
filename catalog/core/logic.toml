@@ -5,6 +5,7 @@ id = "logic.boolean"
 version = 1
 category = "logic"
 shape = "predicate"
+output = "bool"
 label = { friendly = "%VALUE", cpp = "%VALUE" }
 lowering = "builtin"
 help = "True or false."
@@ -20,6 +21,7 @@ id = "logic.operation"
 version = 1
 category = "logic"
 shape = "predicate"
+output = "bool"
 label = { friendly = "%ITEM %OP …", cpp = "%ITEM && …" }
 lowering = "builtin"
 help = "True when all (and) or any (or) of the conditions are true."
@@ -48,6 +50,7 @@ id = "logic.not"
 version = 1
 category = "logic"
 shape = "predicate"
+output = "bool"
 label = { friendly = "not %A", cpp = "!%A" }
 lowering = "builtin"
 help = "True when the condition is false."
@@ -62,6 +65,7 @@ id = "logic.ternary"
 version = 1
 category = "logic"
 shape = "reporter"
+output = "any"
 label = { friendly = "if %COND then %THEN else %ELSE", cpp = "%COND ? %THEN : %ELSE" }
 lowering = "builtin"
 help = "One of two values, depending on a condition."
