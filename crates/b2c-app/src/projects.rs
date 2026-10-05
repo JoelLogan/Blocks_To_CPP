@@ -65,7 +65,7 @@ pub(crate) struct ProjectEntry {
     /// the baseline for external-change detection. `None` without a file.
     pub(crate) baseline_sha256: Option<[u8; 32]>,
     /// The latest document the backend received for the project (opened,
-    /// saved, built; snapshotted in `w4-recovery-watcher`). The trust dialog
+    /// saved, built, snapshotted or restored). The trust dialog
     /// lists from it, and `run_start` compares builds with it.
     pub(crate) latest_document: Arc<Document>,
     /// The size of the latest document's text, in bytes.
@@ -447,7 +447,12 @@ impl Backend {
         let entry_ref = self.projects.get(&request.handle)?;
         let mut entry = lock(&entry_ref);
         let path = entry.path.clone().ok_or(IpcError::NoPath)?;
-        let baseline = entry.baseline_sha256.ok_or(IpcError::Internal)?;
+        // No baseline: a restored project whose file was missing or
+        // unreadable when it was restored. Never overwrite what was not seen.
+        let baseline = entry.baseline_sha256.ok_or(IpcError::ChangedOnDisk)?;
+        // The watcher checks nothing until the new baseline is in place, so
+        // this save never reports itself as an outside change.
+        let _hold = self.watchers.hold(&request.handle);
         check_unchanged(&path, &baseline)?;
         save_project(&path, &bytes).map_err(|error| store_error("save a project", &error))?;
         let hash = sha256(&bytes);
@@ -527,6 +532,8 @@ impl Backend {
         // The project may have been closed while the dialog was open.
         let entry_ref = self.projects.get(&request.handle)?;
         let mut entry = lock(&entry_ref);
+        // The target may be the project's own file: see `project_save`.
+        let _hold = self.watchers.hold(&request.handle);
         save_project(&target, &bytes).map_err(|error| store_error("save a project as", &error))?;
         let path = canonical_path(&target).unwrap_or(target);
         let hash = sha256(&bytes);

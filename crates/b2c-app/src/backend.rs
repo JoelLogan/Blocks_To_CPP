@@ -27,6 +27,7 @@ use crate::errors::StartError;
 use crate::events::AppEvents;
 use crate::limits::SHUTDOWN_BUILD_WAIT;
 use crate::projects::ProjectTable;
+use crate::recovery::RecoveryState;
 use crate::settings::notices_to_dto;
 use crate::watcher::Watchers;
 
@@ -121,6 +122,8 @@ pub struct Backend {
     pub(crate) projects: ProjectTable,
     pub(crate) events: Arc<AppEvents>,
     pub(crate) watchers: Watchers,
+    /// This instance's recovery snapshots.
+    pub(crate) recovery: RecoveryState,
     pub(crate) shut_down: AtomicBool,
 }
 
@@ -210,8 +213,10 @@ impl Backend {
         ));
         let builds = BuildSessions::new(dirs.cache.clone());
         let events = Arc::new(AppEvents::new(settings_notices.clone()));
+        let recovery = RecoveryState::open(&dirs.recovery);
         let backend = Arc::new(Self {
             watchers: Watchers::new(Arc::clone(&events)),
+            recovery,
             dirs,
             app_version,
             cwd,

@@ -26,10 +26,10 @@
 //! | `project_set_dirty` | [`Backend::project_set_dirty`] | 02 §2.6 |
 //! | `recent_list` | [`Backend::recent_list`] | 05 §5.9, 04 §4.10 |
 //! | `recent_remove` | [`Backend::recent_remove`] | 05 §5.9 |
-//! | `recovery_save` | [`Backend::recovery_save`] (stub) | 05 §5.10 |
-//! | `recovery_list` | [`Backend::recovery_list`] (stub) | 05 §5.10 |
-//! | `recovery_restore` | [`Backend::recovery_restore`] (stub) | 05 §5.10, 08 §8.3.1 |
-//! | `recovery_discard` | [`Backend::recovery_discard`] (stub) | 05 §5.10 |
+//! | `recovery_save` | [`Backend::recovery_save`] | 05 §5.10 |
+//! | `recovery_list` | [`Backend::recovery_list`] | 05 §5.10 |
+//! | `recovery_restore` | [`Backend::recovery_restore`] | 05 §5.10, 08 §8.3.1 |
+//! | `recovery_discard` | [`Backend::recovery_discard`] | 05 §5.10 |
 //! | `trust_get` | [`Backend::trust_get`] | 08 §8.3 |
 //! | `trust_grant` | [`Backend::trust_grant`] | 08 §8.3, §8.3.1 |
 //! | `trust_revoke` | [`Backend::trust_revoke`] | 08 §8.3.1 |
@@ -74,11 +74,19 @@
 //!   panics across the boundary.
 //! * **Logging**: one debug span per command, without arguments or content.
 //!
-//! # Not yet implemented
+//! # Recovery and outside changes
 //!
-//! Recovery snapshots (`recovery_*` return `internal`) and the file watcher
-//! (a no-op) are stubs, wired in at every point they are needed, until the
-//! package `w4-recovery-watcher`.
+//! * **Recovery snapshots** (05 §5.10): `recovery_save` keeps one snapshot
+//!   per open project in this instance's folder of the recovery directory; a
+//!   clean save, *Save as*, close, and shutdown for projects without unsaved
+//!   changes delete it. Snapshots of instances that exited or crashed are
+//!   listed and restored under the trust rules of 08 §8.3.1.
+//! * **The file watcher** watches the folder of every open project file and
+//!   sends `projectChangedOnDisk { handle, deleted }` on the app channel once
+//!   per outside change, after a 300 ms debounce
+//!   ([`WATCH_DEBOUNCE`]) and only when the file's SHA-256 differs from the
+//!   baseline; the app's own saves never notify. `project_save` checks the
+//!   hash again before it writes.
 
 mod backend;
 mod build_run;
@@ -101,3 +109,4 @@ pub use dialogs::{
     trust_dialog_text,
 };
 pub use errors::StartError;
+pub use watcher::{WATCH_DEBOUNCE, WATCH_MAX_DELAY};

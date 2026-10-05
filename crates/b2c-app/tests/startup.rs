@@ -300,9 +300,10 @@ fn clearing_an_empty_cache_frees_nothing() {
 }
 
 #[test]
-fn recovery_is_not_available_yet() {
+fn a_first_start_offers_no_recovery_snapshots() {
+    // Recovery itself is tested in tests/recovery.rs.
     let app = TestApp::new();
-    assert_eq!(app.backend.recovery_list().unwrap_err(), IpcError::Internal);
+    assert!(app.backend.recovery_list().unwrap().snapshots.is_empty());
 }
 
 #[test]

@@ -60,6 +60,9 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
+# Watching open projects for outside changes (b2c-app, 05 §5.10): inotify on Linux,
+# ReadDirectoryChangesW on Windows. No default features: no macOS FSEvents backend.
+notify = { version = "8.2.0", default-features = false }
 
 # Test-only.
 proptest = "1.11.0"
