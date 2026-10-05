@@ -148,7 +148,12 @@ readers, high contrast, the toolchain matrix) and updated documentation.
   per machine; Q9), with a malicious-project test that a project file cannot
   lower `W0520`. Build and run settings
   (compile timeout, cache size, Windows link mode, memory and process caps
-  for runs). The start-page example gallery and full template set.
+  for runs). With a process cap, a program in a terminal that hits the
+  scope's `TasksMax` and ends at once with all its processes (the terminal
+  hangs them up) must still be reported as over the limit: today the scope
+  can be gone before its `pids.events` is read (watch it continuously, or
+  keep the scope alive until it has been read). The start-page example
+  gallery and full template set.
   *Help → Export diagnostics bundle*.
 
 ### M6: 1.0 hardening and release

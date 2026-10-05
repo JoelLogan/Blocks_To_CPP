@@ -117,7 +117,11 @@ pub struct PtyExit {
     /// Whether the command's [`crate::Limits::timeout`] stopped the program.
     pub timed_out: bool,
     /// Whether the process limit stopped the program (see
-    /// [`crate::Limits`]).
+    /// [`crate::Limits`]). In a cgroup scope, a program whose fork the
+    /// scope's `TasksMax` refused and that then ended together with all its
+    /// processes (the terminal hangs up the whole foreground group) can be
+    /// missed: the empty scope may be removed before its events are read.
+    /// The app sets no process cap on terminal sessions in M2.
     pub too_many_processes: bool,
     /// Whether the program ran out of memory: a memory limit (for a user's
     /// program, [`crate::Limits::rss_limit`]) stopped it, or the system

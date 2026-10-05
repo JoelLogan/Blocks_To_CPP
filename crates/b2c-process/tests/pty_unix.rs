@@ -684,7 +684,10 @@ fn a_grace_period_too_long_to_reach_never_forces_the_kill() {
 #[test]
 fn the_process_watchdog_stops_a_growing_tree() {
     let mut command = sh("for i in 1 2 3 4 5 6 7 8; do sleep 600 & done; wait");
-    command.limits(Limits {
+    // The watchdog itself: in a cgroup scope, TasksMax refuses the fifth
+    // process instead, and the report can then be lost (see
+    // PtyExit::too_many_processes).
+    command.containment(Containment::ProcessGroupOnly).limits(Limits {
         processes: Some(4),
         ..Limits::default()
     });
