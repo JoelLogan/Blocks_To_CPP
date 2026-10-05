@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-project-set-dirty"
+description = "Enables the project_set_dirty command without any pre-configured scope."
+commands.allow = ["project_set_dirty"]
+
+[[permission]]
+identifier = "deny-project-set-dirty"
+description = "Denies the project_set_dirty command without any pre-configured scope."
+commands.deny = ["project_set_dirty"]

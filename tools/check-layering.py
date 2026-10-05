@@ -37,9 +37,12 @@ ALLOWED_WORKSPACE_DEPS = {
     "b2c-ipc": {"b2c-ir", "b2c-model"},
     # The Tauri-free backend services behind every IPC command.
     "b2c-app": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain", "b2c-store", "b2c-ipc"},
-    # The desktop shell holds no business logic: it adapts IPC to the build
-    # and toolchain layers (and may use their shared types).
-    "blocks2cpp-desktop": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain"},
+    # The desktop shell holds no business logic: it adapts Tauri's IPC to the
+    # backend services (b2c-app) and the contract (b2c-ipc), and may use the
+    # shared types of the layers below them.
+    "blocks2cpp-desktop": {
+        "b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain", "b2c-ipc", "b2c-store", "b2c-app",
+    },
 }
 
 # Test-only exceptions to the rules above, each with its reason.

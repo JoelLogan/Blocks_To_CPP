@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-toolchain-add-dialog"
+description = "Enables the toolchain_add_dialog command without any pre-configured scope."
+commands.allow = ["toolchain_add_dialog"]
+
+[[permission]]
+identifier = "deny-toolchain-add-dialog"
+description = "Denies the toolchain_add_dialog command without any pre-configured scope."
+commands.deny = ["toolchain_add_dialog"]

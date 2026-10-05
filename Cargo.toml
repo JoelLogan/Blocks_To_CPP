@@ -27,6 +27,7 @@ b2c-build = { path = "crates/b2c-build" }
 b2c-core-wasm = { path = "crates/b2c-core-wasm" }
 b2c-store = { path = "crates/b2c-store" }
 b2c-ipc = { path = "crates/b2c-ipc" }
+b2c-app = { path = "crates/b2c-app" }
 
 # Third-party crates. Every addition needs a justification in the PR (spec §8.9).
 serde = { version = "1.0.229", features = ["derive"] }
@@ -41,7 +42,13 @@ ts-rs = "12.0.1"
 # Structured logging with spans per build and run session (09 §9.1, 08 §8.11); already in the
 # lockfile through Tauri. No default features: no `log` bridge and no proc-macro attributes.
 tracing = { version = "0.1.44", default-features = false, features = ["std"] }
-clap = { version = "4.6.7", features = ["derive"] }
+# The desktop app's log files (08 §8.11): the span registry under the app's own JSON-lines layer.
+# No default features: no `fmt`, ANSI colours, `log` bridge or `EnvFilter` (regex).
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
+# The desktop app's native open, save and trust dialogs, called from Rust only: the webview gets no
+# dialog permission (08 §8.8). GTK 3 on Linux through rfd, never the XDG portal (no D-Bus).
+tauri-plugin-dialog = { version = "2.8.0", default-features = false, features = ["gtk3"] }
+clap ={ version = "4.6.7", features = ["derive"] }
 tempfile = "3.27.0"
 rustix = { version = "1.1.5", features = ["process"] }
 # Signal actions in a session's child before exec (b2c-process, Unix), which rustix
