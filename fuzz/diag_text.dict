@@ -1,0 +1,77 @@
+# libFuzzer dictionary for fuzz_targets/diag_text.rs: the markers GCC's
+# plain-text diagnostics and the linker's messages are recognised by
+# (docs/spec/07-toolchain-build-run.md §7.5.3).
+# Seeds: crates/b2c-toolchain/tests/fixtures/*/*.txt.
+
+# Lines and positions
+"\x0a"
+"\x0d\x0a"
+"\x09"
+":"
+": "
+":1:"
+":1:1:"
+":12:5:"
+":0:"
+":4294967295:"
+"main.cpp"
+"src/broken.hpp"
+"/usr/include/c++/13/iostream"
+"C:\\"
+"C:/"
+".exe"
+
+# Severities
+": error: "
+": warning: "
+": note: "
+": fatal error: "
+": internal compiler error: "
+": sorry, unimplemented: "
+"[-W"
+"[-Werror="
+"[-Wunused-variable]"
+"[enabled by default]"
+"]"
+
+# Context
+"In file included from "
+"                 from "
+"In function '"
+"In member function '"
+"In constructor '"
+"In lambda function"
+"In instantiation of '"
+"In substitution of '"
+"At global scope"
+"   required from here"
+"required from here"
+"template argument deduction/substitution failed:"
+"compilation terminated."
+
+# Quotes
+"'"
+"`"
+"\xe2\x80\x98"
+"\xe2\x80\x99"
+
+# Programs
+"g++: "
+"g++-13: "
+"x86_64-linux-gnu-g++-13: "
+"cc1plus: "
+"collect2: error: "
+"ld returned 1 exit status"
+"/usr/bin/ld: "
+"ld.lld: "
+"mold: "
+"ld.exe: "
+
+# Linker messages
+": in function `main':"
+":(.text+0x1d): "
+"undefined reference to "
+"multiple definition of "
+"undefined symbol: "
+"cannot find -l"
+"; "
