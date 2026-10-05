@@ -147,8 +147,12 @@ describe('skippedMarker', () => {
       '\r\n\u001b[0;7m … 1,204,331 lines skipped \u001b[0m\r\n',
     );
     expect(skippedMarker(1)).toContain('… 1 line skipped');
-    expect(skippedMarker(0)).toBeNull();
     expect(skippedMarker(-3)).toBeNull();
     expect(skippedMarker(1.5)).toBeNull();
+    expect(skippedMarker(Number.NaN)).toBeNull();
+  });
+
+  it('marks dropped output that held no line break (07 §7.6.5: lines can be 0)', () => {
+    expect(skippedMarker(0)).toBe('\r\n\u001b[0;7m … output skipped \u001b[0m\r\n');
   });
 });

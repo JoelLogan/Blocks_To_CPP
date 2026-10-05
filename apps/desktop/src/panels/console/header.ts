@@ -124,12 +124,17 @@ export function formatElapsed(ms: number): string {
 
 /**
  * The marker written into the terminal where output was dropped (07 §7.6.5), in inverse video on
- * a line of its own: `… 1,204,331 lines skipped`. `null` for a count that is not a positive integer.
+ * a line of its own: `… 1,204,331 lines skipped`. The count is the number of line breaks dropped;
+ * 0 means part of a single line (longer than the backend keeps) was cut without its break, which
+ * gives `… output skipped`. `null` for a count that is not a non-negative integer.
  */
 export function skippedMarker(lines: number): string | null {
-  if (!Number.isSafeInteger(lines) || lines <= 0) {
+  if (!Number.isSafeInteger(lines) || lines < 0) {
     return null;
   }
-  const count = lines.toLocaleString('en-US');
-  return `\r\n\u001b[0;7m … ${count} ${lines === 1 ? 'line' : 'lines'} skipped \u001b[0m\r\n`;
+  const text =
+    lines === 0
+      ? 'output skipped'
+      : `${lines.toLocaleString('en-US')} ${lines === 1 ? 'line' : 'lines'} skipped`;
+  return `\r\n\u001b[0;7m … ${text} \u001b[0m\r\n`;
 }

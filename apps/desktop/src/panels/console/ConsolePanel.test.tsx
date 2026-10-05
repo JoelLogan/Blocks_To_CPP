@@ -10,7 +10,9 @@ import {
   type ConsoleHandle,
   type ConsoleHeader,
   type ConsolePanelProps,
+  LEAVE_CONSOLE_KEYS,
   clampScrollback,
+  consoleKeyAction,
 } from './ConsolePanel';
 
 const IDLE: ConsoleHeader = { state: 'idle', exit: null, elapsedMs: 0, notices: [] };
@@ -138,9 +140,18 @@ describe('ConsolePanel', () => {
     const { handle, terminal } = renderConsole();
     void handle.write(encode('before'));
     handle.writeSkipped(1_204_331);
+    void handle.write(encode('middle'));
+    // Part of one very long line was dropped: no line break, but output is still missing.
     handle.writeSkipped(0);
+    handle.writeSkipped(-1);
     await act(() => handle.write(encode('after')));
-    expect(lines(terminal).slice(0, 3)).toEqual(['before', ' … 1,204,331 lines skipped ', 'after']);
+    expect(lines(terminal).slice(0, 5)).toEqual([
+      'before',
+      ' … 1,204,331 lines skipped ',
+      'middle',
+      ' … output skipped ',
+      'after',
+    ]);
   });
 
   it('ignores clipboard writes by escape sequence (OSC 52)', async () => {
@@ -307,5 +318,111 @@ describe('ConsolePanel', () => {
   it('has no accessibility violations', async () => {
     const { container } = renderConsole();
     await expectNoAxeViolations(container);
+  });
+});
+
+/** The terminal's input element, which has the keyboard focus while the console has it. */
+function terminalInput(container: HTMLElement): HTMLTextAreaElement {
+  const input = container.querySelector<HTMLTextAreaElement>('.xterm-helper-textarea');
+  if (input === null) {
+    throw new Error('the terminal has no input element');
+  }
+  return input;
+}
+
+/** Dispatches a Tab key event (keydown unless `type` says otherwise) and returns it. */
+function pressTab(
+  target: HTMLElement,
+  init: { type?: string; shiftKey?: boolean; ctrlKey?: boolean } = {},
+): KeyboardEvent {
+  const { type = 'keydown', ...modifiers } = init;
+  const event = new KeyboardEvent(type, {
+    key: 'Tab',
+    code: 'Tab',
+    keyCode: 9,
+    bubbles: true,
+    cancelable: true,
+    ...modifiers,
+  });
+  target.dispatchEvent(event);
+  return event;
+}
+
+describe('ConsolePanel keyboard (never a keyboard trap, WCAG 2.1.2)', () => {
+  it('lets Tab and Shift+Tab move the focus while no program runs', () => {
+    const exited = exitHeader({ type: 'exited', code: 0 }, 'Finished (exit code 0)');
+    for (const header of [IDLE, exited]) {
+      const { container, handle, unmount } = renderConsole({ header });
+      const typed = vi.fn();
+      handle.onData(typed);
+      const input = terminalInput(container);
+      input.focus();
+      // Not cancelled: the browser moves the focus as for any other control.
+      expect(pressTab(input).defaultPrevented).toBe(false);
+      expect(pressTab(input, { shiftKey: true }).defaultPrevented).toBe(false);
+      expect(typed).not.toHaveBeenCalled();
+      unmount();
+    }
+  });
+
+  it('sends Tab to a running program, and Ctrl+Tab moves the focus to the header', () => {
+    const { container, handle } = renderConsole({ header: RUNNING });
+    const typed = vi.fn();
+    handle.onData(typed);
+    const input = terminalInput(container);
+    input.focus();
+
+    expect(pressTab(input).defaultPrevented).toBe(true);
+    expect(pressTab(input, { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(typed.mock.calls).toEqual([['\t'], ['\u001b[Z']]);
+    expect(document.activeElement).toBe(input);
+
+    // Only the keydown moves the focus; the keyup that follows it changes nothing.
+    pressTab(input, { type: 'keyup', ctrlKey: true });
+    expect(document.activeElement).toBe(input);
+    const leave = pressTab(input, { ctrlKey: true });
+    expect(leave.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Stop' }));
+    expect(typed).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves with Ctrl+Tab to the first enabled header button in every state', () => {
+    const { container } = renderConsole({ header: IDLE });
+    const input = terminalInput(container);
+    input.focus();
+    pressTab(input, { ctrlKey: true, shiftKey: true });
+    // Idle: Stop and Run again are disabled.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Clear' }));
+  });
+
+  it('tells screen reader users how to leave the terminal', () => {
+    const { container } = renderConsole();
+    const describedBy = terminalInput(container).getAttribute('aria-describedby');
+    expect(describedBy).not.toBeNull();
+    expect(document.getElementById(describedBy ?? '')?.textContent).toBe(
+      `${LEAVE_CONSOLE_KEYS} leaves the console.`,
+    );
+  });
+
+  it('decides what each Tab key event does', () => {
+    const key = (
+      type: string,
+      modifiers: Partial<Record<'ctrlKey' | 'altKey' | 'metaKey', boolean>> = {},
+      keyName = 'Tab',
+    ) => ({ type, key: keyName, ctrlKey: false, altKey: false, metaKey: false, ...modifiers });
+    expect(consoleKeyAction(key('keydown', {}, 'a'), false)).toBe('terminal');
+    expect(consoleKeyAction(key('keydown'), true)).toBe('terminal');
+    expect(consoleKeyAction(key('keydown'), false)).toBe('browser');
+    expect(consoleKeyAction(key('keyup'), false)).toBe('browser');
+    expect(consoleKeyAction(key('keydown', { ctrlKey: true }), true)).toBe('leave');
+    expect(consoleKeyAction(key('keydown', { ctrlKey: true }), false)).toBe('leave');
+    expect(consoleKeyAction(key('keypress', { ctrlKey: true }), true)).toBe('ignore');
+    expect(consoleKeyAction(key('keyup', { ctrlKey: true }), true)).toBe('ignore');
+    expect(consoleKeyAction(key('keydown', { ctrlKey: true, altKey: true }), true)).toBe(
+      'terminal',
+    );
+    expect(consoleKeyAction(key('keydown', { ctrlKey: true, metaKey: true }), false)).toBe(
+      'browser',
+    );
   });
 });

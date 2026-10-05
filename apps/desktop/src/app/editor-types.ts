@@ -34,7 +34,16 @@ export interface EditorHandle {
 export interface EditorContext {
   workspace: Blockly.WorkspaceSvg;
   store: typeof useAppStore;
-  core: CoreWasm;
+  /**
+   * The compiler core as it is now, or `null` before it has started: the editor passes `getCore`
+   * from `app/core.ts`, like `FeatureContext.core`.
+   *
+   * Plugins must call it each time they need the core and must never keep the instance it returns
+   * (nor anything that holds it, such as a symbol provider built over it): after a WebAssembly
+   * trap the preview pipeline replaces the core (`resetCore`, `initCore`, `setCore`) without
+   * recreating the workspace or its plugins, and the old instance throws `CoreTrap` on every call.
+   */
+  core: () => CoreWasm | null;
   /** Selects a block (or its collapsed ancestor) and optionally centres it. */
   selectBlock(id: string, opts?: SelectBlockOptions): void;
   /** The ID of the module whose canvas is shown. */

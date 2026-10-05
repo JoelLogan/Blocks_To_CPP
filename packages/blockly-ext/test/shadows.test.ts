@@ -20,6 +20,7 @@ import {
   type TokenJson,
   type TypeClass,
 } from '../src';
+import { MAX_TOOLTIP_CHARS } from '../src/shadows/register';
 import { fakeSymbols, headlessWorkspace, renderedWorkspace, setUpBlocks, symbol } from './helpers';
 
 beforeEach(() => {
@@ -305,6 +306,23 @@ describe('read-only expressions', () => {
     expect(String(shadow.getFieldValue('TEXT_BEFORE')).length).toBeLessThanOrEqual(48);
     expect(shadow.getTooltip()).toContain('An unfinished expression');
     expect(shadow.getTooltip()).toContain('59');
+  });
+
+  it('cap the tooltip, so a long text from a project file cannot freeze the window', () => {
+    // One text token of 4,096 short words (well within the 64 KiB text limit): Blockly wraps a
+    // tooltip before showing it, in time that grows much faster than its word count.
+    const words = Array.from({ length: 4096 }, () => 'ab').join(' ');
+    for (const draft of [false, true]) {
+      const shadow = shadowFor([{ str: words }, { op: '+' }, { num: '1' }], { draft });
+      const [expression = '', ...rest] = shadow.getTooltip().split('\n');
+      expect(expression.length).toBe(MAX_TOOLTIP_CHARS);
+      expect(expression.startsWith('"ab ab ab')).toBe(true);
+      expect(expression.endsWith('…')).toBe(true);
+      expect(rest).toEqual(draft ? ['An unfinished expression, kept as it is.'] : []);
+      expect(String(shadow.getFieldValue('TEXT_BEFORE')).length).toBeLessThanOrEqual(48);
+    }
+    // Text that fits is shown whole.
+    expect(shadowFor([{ str: 'ab' }, { op: '+' }, { num: '1' }]).getTooltip()).toBe('"ab" + 1');
   });
 
   it('mark a one-token shadow as a whole when rendered', () => {

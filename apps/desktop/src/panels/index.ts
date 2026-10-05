@@ -21,6 +21,7 @@ export {
   clampScrollback,
   ConsolePanel,
   DEFAULT_SCROLLBACK_LINES,
+  LEAVE_CONSOLE_KEYS,
   MAX_SCROLLBACK_LINES,
   MIN_SCROLLBACK_LINES,
   type ConsoleHandle,

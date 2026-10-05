@@ -164,6 +164,10 @@ slots in M3, and *Change level…* with lint levels in M5.
 
 * xterm.js connected to the program's pseudo-terminal: colours, cursor
   movement, line editing and `Ctrl+C` all behave like a real console.
+* The console is never a keyboard trap (§4.8). With no program running,
+  `Tab` and `Shift+Tab` move the focus as usual. While a program runs they go
+  to the program, and `Ctrl+Tab` moves the focus to the header's first
+  enabled button; the terminal's accessible description names that key.
 * The header shows state (`Running`, then the exit text of
   [07 §7.6.4](07-toolchain-build-run.md#764-exit-decoding): *Finished (exit
   code 0)*, *Finished with exit code 3*, *Stopped*, *Crashed: the program
@@ -183,7 +187,8 @@ slots in M3, and *Change level…* with lint levels in M5.
 * Output is batched to at most 60 updates/s. Scrollback is capped (default
   10,000 lines; 1,000–100,000 in Settings). When the program writes faster
   than the console can show, older output is dropped and replaced by a
-  *"… N lines skipped"* marker ([07 §7.6.5](07-toolchain-build-run.md#765-run-limits)).
+  *"… N lines skipped"* marker ([07 §7.6.5](07-toolchain-build-run.md#765-run-limits)),
+  or *"… output skipped"* when only part of one very long line was dropped.
   Clipboard writes via escape sequences (OSC 52) are disabled.
   Hyperlinks (OSC 8) are shown but open only after confirmation and only for
   `http`/`https`. **In M2** activating a link shows the full URL with a *Copy

@@ -4,11 +4,17 @@
  * services with {@link setEditorServices}; until then safe defaults answer (no symbols, unknown
  * types, dialogs that cancel), so fields never fail for lack of a service.
  *
+ * The same call connects the type-aware connection checker (its type oracle) and the variadic
+ * mutators (the symbols that label call arguments), so the editor sets everything up in one place.
+ *
  * Every call into a service is guarded: a service that throws is treated like one that has no
  * answer, and the field keeps working.
  */
 import type { StaticType } from '@blocks2cpp/b2c-core-wasm';
 import type * as Blockly from 'blockly/core';
+
+import { setCheckerTypeOracle } from './checker/oracle';
+import { configureMutators } from './mutators/hooks';
 
 /** How a parameter is passed (`b2c_ir::PassMode`). */
 export type PassMode = 'copy' | 'editable' | 'read_only';
@@ -68,7 +74,11 @@ export interface TypeOracle {
   outputTypeOf(block: Blockly.Block): StaticType | null;
 }
 
-/** Accessible in-app dialogs (never `window.prompt`; M2 decision "Blockly built-in prompts"). */
+/**
+ * Accessible in-app dialogs (never `window.prompt`; M2 decision "Blockly built-in prompts"). This
+ * is the fields' own small interface, not the app shell's `DialogService` (which takes option
+ * objects); nothing in this package asks for a dialog yet.
+ */
 export interface DialogService {
   /** Asks for text; null when the user cancels. */
   prompt(message: string, defaultValue: string): Promise<string | null>;
@@ -82,13 +92,14 @@ export interface DialogService {
 export interface EditorServices {
   readonly symbols: SymbolProvider;
   readonly types: TypeOracle;
-  readonly dialogs: DialogService;
+  /** Optional: without it, {@link DEFAULT_EDITOR_SERVICES}'s dialogs (which cancel) answer. */
+  readonly dialogs?: DialogService;
 }
 
 const NO_SYMBOLS: readonly SymbolInfo[] = Object.freeze([]);
 
 /** The services in effect before the app installs its own: nothing known, every dialog cancels. */
-export const DEFAULT_EDITOR_SERVICES: EditorServices = Object.freeze({
+export const DEFAULT_EDITOR_SERVICES: Required<EditorServices> = Object.freeze({
   symbols: Object.freeze({
     symbolsAt: () => NO_SYMBOLS,
     nameOf: () => null,
@@ -103,9 +114,17 @@ export const DEFAULT_EDITOR_SERVICES: EditorServices = Object.freeze({
 
 let current: EditorServices = DEFAULT_EDITOR_SERVICES;
 
-/** Installs the services the fields use. A later call replaces them. */
+/**
+ * Installs the services the fields use, and connects the rest of the package to them: the
+ * connection checker asks `types` for the types of `symbol` and `any` outputs
+ * (`setCheckerTypeOracle`), and the call-argument mutators label arguments from `symbols`
+ * (`configureMutators({ symbols })`). A later call replaces all of them. The mutators' other hooks
+ * (`inputShadow`, `newSymbolId`) are set with `configureMutators` and are left as they are.
+ */
 export function setEditorServices(services: EditorServices): void {
   current = services;
+  setCheckerTypeOracle(services.types);
+  configureMutators({ symbols: services.symbols });
 }
 
 /** The services in effect. */
@@ -113,9 +132,14 @@ export function getEditorServices(): EditorServices {
   return current;
 }
 
-/** Goes back to {@link DEFAULT_EDITOR_SERVICES} (tests, and when the editor closes). */
+/**
+ * Goes back to {@link DEFAULT_EDITOR_SERVICES} (tests, and when the editor closes), and
+ * disconnects the checker's oracle and the mutators' symbols again.
+ */
 export function resetEditorServices(): void {
   current = DEFAULT_EDITOR_SERVICES;
+  setCheckerTypeOracle(null);
+  configureMutators({ symbols: null });
 }
 
 /** The symbols at a block, or none when the provider fails. */

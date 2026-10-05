@@ -250,6 +250,9 @@ describe('installBlocklyDialogs', () => {
     });
     const input = screen.getByRole<HTMLInputElement>('textbox', { name: 'New variable name:' });
     expect(Blockly.getFocusManager().ephemeralFocusTaken()).toBe(true);
+    // Blockly's focus moves to the dialog first; the text field still gets it, its text selected.
+    expect(document.activeElement).toBe(input);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, 'x'.length]);
     fireEvent.change(input, { target: { value: 'total' } });
     fireEvent.submit(input);
     await waitFor(() => {
@@ -264,6 +267,7 @@ describe('installBlocklyDialogs', () => {
       Blockly.dialog.confirm('Delete all 4 blocks?', confirmResult);
       await Promise.resolve();
     });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'OK' }));
     fireEvent.click(screen.getByRole('button', { name: 'OK' }));
     await waitFor(() => {
       expect(confirmResult).toHaveBeenCalledWith(true);
@@ -275,6 +279,7 @@ describe('installBlocklyDialogs', () => {
       await Promise.resolve();
     });
     expect(screen.getByRole('dialog', { name: 'Nothing to undo.' })).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'OK' }));
     fireEvent.click(screen.getByRole('button', { name: 'OK' }));
     await waitFor(() => {
       expect(alerted).toHaveBeenCalledTimes(1);

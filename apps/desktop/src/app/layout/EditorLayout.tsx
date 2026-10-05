@@ -1,5 +1,6 @@
 import * as Tabs from '@radix-ui/react-tabs';
-import { type ReactNode, useId, useState } from 'react';
+import { type ReactNode, type Ref, useId, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 
 import { PROBLEMS_PANEL } from '../actions';
@@ -34,6 +35,8 @@ function isBottomTab(value: string): value is BottomTab {
  * keyboard) and collapsed; their sizes last for the session (remembering them is M5).
  *
  * The docks' panels stay mounted while they are hidden, so the console keeps its content.
+ * Collapsing a dock with Enter on its splitter removes the splitter, so the keyboard focus moves to
+ * the dock's show/hide button, which stays and expands it again.
  */
 export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidden: boolean }) {
   const [rightWidth, setRightWidth] = useState<number>(RIGHT_DOCK.initial);
@@ -46,8 +49,25 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
   );
   const rightId = useId();
   const bottomId = useId();
+  const rightToggle = useRef<HTMLButtonElement>(null);
+  const bottomToggle = useRef<HTMLButtonElement>(null);
   const panels = DockPanels();
   const { setUi } = useAppStore.getState().actions;
+
+  /**
+   * Collapses a dock from its focused splitter. The splitter is removed, so the focus goes to the
+   * dock's toggle button once it shows its new state (rendered at once, so the focus is never left
+   * on the page's body and the button is announced as "Show …").
+   */
+  const collapseFromSplitter = (
+    patch: { rightCollapsed: true } | { bottomCollapsed: true },
+    toggle: { readonly current: HTMLButtonElement | null },
+  ) => {
+    flushSync(() => {
+      setUi(patch);
+    });
+    toggle.current?.focus();
+  };
 
   const columns = rightCollapsed
     ? 'minmax(0, 1fr) 0 auto'
@@ -74,7 +94,7 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
           max={RIGHT_DOCK.max}
           onChange={setRightWidth}
           onCollapse={() => {
-            setUi({ rightCollapsed: true });
+            collapseFromSplitter({ rightCollapsed: true }, rightToggle);
           }}
           label="Resize the C++ panel"
           controls={rightId}
@@ -90,6 +110,7 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
         <div className="dock-header">
           <h2 className="dock-title">C++</h2>
           <button
+            ref={rightToggle}
             type="button"
             className="icon-button"
             aria-expanded={!rightCollapsed}
@@ -115,14 +136,19 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
           max={BOTTOM_DOCK.max}
           onChange={setBottomHeight}
           onCollapse={() => {
-            setUi({ bottomCollapsed: true });
+            collapseFromSplitter({ bottomCollapsed: true }, bottomToggle);
           }}
           label="Resize the bottom panel"
           controls={bottomId}
         />
       )}
 
-      <BottomDock id={bottomId} collapsed={bottomCollapsed} panels={panels} />
+      <BottomDock
+        id={bottomId}
+        collapsed={bottomCollapsed}
+        panels={panels}
+        toggleRef={bottomToggle}
+      />
     </div>
   );
 }
@@ -132,10 +158,13 @@ function BottomDock({
   id,
   collapsed,
   panels,
+  toggleRef,
 }: {
   id: string;
   collapsed: boolean;
   panels: ReturnType<typeof DockPanels>;
+  /** The show/hide button, which gets the focus when the splitter collapses the dock. */
+  toggleRef: Ref<HTMLButtonElement>;
 }) {
   const { tab, problems } = useAppStore(
     useShallow((state) => ({ tab: state.ui.bottomTab, problems: problemCount(state) })),
@@ -182,6 +211,7 @@ function BottomDock({
             ))}
           </Tabs.List>
           <button
+            ref={toggleRef}
             type="button"
             className="icon-button"
             aria-expanded={!collapsed}

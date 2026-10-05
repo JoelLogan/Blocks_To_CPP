@@ -1,7 +1,9 @@
 /**
  * Where the shell keeps the compiler core (`@blocks2cpp/b2c-core-wasm`) once it is running. The
  * editor's preview pipeline (milestone M2, wave 3) starts it with `initCore()`, publishes it here,
- * and replaces it after a trap; features read it through `FeatureContext.core()`.
+ * and replaces it after a trap; features read it through `FeatureContext.core()` and editor
+ * plugins through `EditorContext.core()`, both backed by {@link getCore}. Nothing may keep the
+ * instance: after a trap it throws `CoreTrap` on every call.
  *
  * The shell itself never loads the WebAssembly module, so the app starts (and its tests run)
  * without it.
