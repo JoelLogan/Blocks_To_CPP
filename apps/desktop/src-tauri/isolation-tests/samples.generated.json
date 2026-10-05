@@ -1,0 +1,161 @@
+{
+  "app_info": {},
+  "app_subscribe": {
+    "onEvent": "__CHANNEL__:1000"
+  },
+  "app_quit": {},
+  "project_new": {
+    "request": {
+      "template": "helloWorld"
+    }
+  },
+  "project_open_dialog": {},
+  "project_open_recent": {
+    "request": {
+      "recentId": "rc_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "project_reload": {
+    "request": {
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "project_save": {
+    "request": {
+      "document": "{\n  \"format\": \"blocks2cpp/project\",\n  \"formatVersion\": 1,\n  \"generator\": {\n    \"app\": \"0.1.0\",\n    \"catalog\": \"1.0.0\"\n  },\n  \"project\": {\n    \"id\": \"prj_sample\",\n    \"name\": \"Sample\",\n    \"language\": {\n      \"standard\": \"c++20\"\n    },\n    \"options\": {\n      \"showAdvanced\": false,\n      \"manualMemory\": false,\n      \"preferPlainStd\": false,\n      \"formattingStyle\": \"stream\",\n      \"checkedIndexing\": true\n    },\n    \"build\": {\n      \"configurations\": {\n        \"debug\": {\n          \"optimization\": \"none\",\n          \"debugInfo\": true,\n          \"sanitizers\": [\n            \"address\",\n            \"undefined\"\n          ],\n          \"warnings\": \"helpful\",\n          \"hardening\": true\n        },\n        \"release\": {\n          \"optimization\": \"speed\",\n          \"debugInfo\": false,\n          \"sanitizers\": [],\n          \"warnings\": \"helpful\",\n          \"hardening\": true\n        }\n      }\n    },\n    \"run\": {\n      \"workingDirectory\": \"project\"\n    }\n  },\n  \"modules\": [\n    {\n      \"id\": \"mod_main\",\n      \"name\": \"main\",\n      \"workspace\": {\n        \"blocks\": [\n          {\n            \"id\": \"b001\",\n            \"type\": \"program.main\",\n            \"v\": 1,\n            \"x\": 40,\n            \"y\": 40,\n            \"statements\": {\n              \"BODY\": []\n            }\n          }\n        ]\n      }\n    }\n  ]\n}\n",
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "project_save_as_dialog": {
+    "request": {
+      "document": "{\n  \"format\": \"blocks2cpp/project\",\n  \"formatVersion\": 1,\n  \"generator\": {\n    \"app\": \"0.1.0\",\n    \"catalog\": \"1.0.0\"\n  },\n  \"project\": {\n    \"id\": \"prj_sample\",\n    \"name\": \"Sample\",\n    \"language\": {\n      \"standard\": \"c++20\"\n    },\n    \"options\": {\n      \"showAdvanced\": false,\n      \"manualMemory\": false,\n      \"preferPlainStd\": false,\n      \"formattingStyle\": \"stream\",\n      \"checkedIndexing\": true\n    },\n    \"build\": {\n      \"configurations\": {\n        \"debug\": {\n          \"optimization\": \"none\",\n          \"debugInfo\": true,\n          \"sanitizers\": [\n            \"address\",\n            \"undefined\"\n          ],\n          \"warnings\": \"helpful\",\n          \"hardening\": true\n        },\n        \"release\": {\n          \"optimization\": \"speed\",\n          \"debugInfo\": false,\n          \"sanitizers\": [],\n          \"warnings\": \"helpful\",\n          \"hardening\": true\n        }\n      }\n    },\n    \"run\": {\n      \"workingDirectory\": \"project\"\n    }\n  },\n  \"modules\": [\n    {\n      \"id\": \"mod_main\",\n      \"name\": \"main\",\n      \"workspace\": {\n        \"blocks\": [\n          {\n            \"id\": \"b001\",\n            \"type\": \"program.main\",\n            \"v\": 1,\n            \"x\": 40,\n            \"y\": 40,\n            \"statements\": {\n              \"BODY\": []\n            }\n          }\n        ]\n      }\n    }\n  ]\n}\n",
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "project_close": {
+    "request": {
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "project_set_dirty": {
+    "request": {
+      "dirty": true,
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "recent_list": {},
+  "recent_remove": {
+    "request": {
+      "recentId": "rc_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "recovery_save": {
+    "request": {
+      "document": "{\n  \"format\": \"blocks2cpp/project\",\n  \"formatVersion\": 1,\n  \"generator\": {\n    \"app\": \"0.1.0\",\n    \"catalog\": \"1.0.0\"\n  },\n  \"project\": {\n    \"id\": \"prj_sample\",\n    \"name\": \"Sample\",\n    \"language\": {\n      \"standard\": \"c++20\"\n    },\n    \"options\": {\n      \"showAdvanced\": false,\n      \"manualMemory\": false,\n      \"preferPlainStd\": false,\n      \"formattingStyle\": \"stream\",\n      \"checkedIndexing\": true\n    },\n    \"build\": {\n      \"configurations\": {\n        \"debug\": {\n          \"optimization\": \"none\",\n          \"debugInfo\": true,\n          \"sanitizers\": [\n            \"address\",\n            \"undefined\"\n          ],\n          \"warnings\": \"helpful\",\n          \"hardening\": true\n        },\n        \"release\": {\n          \"optimization\": \"speed\",\n          \"debugInfo\": false,\n          \"sanitizers\": [],\n          \"warnings\": \"helpful\",\n          \"hardening\": true\n        }\n      }\n    },\n    \"run\": {\n      \"workingDirectory\": \"project\"\n    }\n  },\n  \"modules\": [\n    {\n      \"id\": \"mod_main\",\n      \"name\": \"main\",\n      \"workspace\": {\n        \"blocks\": [\n          {\n            \"id\": \"b001\",\n            \"type\": \"program.main\",\n            \"v\": 1,\n            \"x\": 40,\n            \"y\": 40,\n            \"statements\": {\n              \"BODY\": []\n            }\n          }\n        ]\n      }\n    }\n  ]\n}\n",
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "recovery_list": {},
+  "recovery_restore": {
+    "request": {
+      "snapshotId": "sn_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "recovery_discard": {
+    "request": {
+      "snapshotId": "sn_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "trust_get": {
+    "request": {
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "trust_grant": {
+    "request": {
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "trust_revoke": {
+    "request": {
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "toolchain_list": {},
+  "toolchain_rescan": {},
+  "toolchain_add_dialog": {},
+  "toolchain_select": {
+    "request": {
+      "toolchainId": "tc_0123456789abcdef"
+    }
+  },
+  "toolchain_setup_info": {},
+  "build_start": {
+    "onEvent": "__CHANNEL__:1000",
+    "request": {
+      "config": "debug",
+      "document": "{\n  \"format\": \"blocks2cpp/project\",\n  \"formatVersion\": 1,\n  \"generator\": {\n    \"app\": \"0.1.0\",\n    \"catalog\": \"1.0.0\"\n  },\n  \"project\": {\n    \"id\": \"prj_sample\",\n    \"name\": \"Sample\",\n    \"language\": {\n      \"standard\": \"c++20\"\n    },\n    \"options\": {\n      \"showAdvanced\": false,\n      \"manualMemory\": false,\n      \"preferPlainStd\": false,\n      \"formattingStyle\": \"stream\",\n      \"checkedIndexing\": true\n    },\n    \"build\": {\n      \"configurations\": {\n        \"debug\": {\n          \"optimization\": \"none\",\n          \"debugInfo\": true,\n          \"sanitizers\": [\n            \"address\",\n            \"undefined\"\n          ],\n          \"warnings\": \"helpful\",\n          \"hardening\": true\n        },\n        \"release\": {\n          \"optimization\": \"speed\",\n          \"debugInfo\": false,\n          \"sanitizers\": [],\n          \"warnings\": \"helpful\",\n          \"hardening\": true\n        }\n      }\n    },\n    \"run\": {\n      \"workingDirectory\": \"project\"\n    }\n  },\n  \"modules\": [\n    {\n      \"id\": \"mod_main\",\n      \"name\": \"main\",\n      \"workspace\": {\n        \"blocks\": [\n          {\n            \"id\": \"b001\",\n            \"type\": \"program.main\",\n            \"v\": 1,\n            \"x\": 40,\n            \"y\": 40,\n            \"statements\": {\n              \"BODY\": []\n            }\n          }\n        ]\n      }\n    }\n  ]\n}\n",
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "build_cancel": {
+    "request": {
+      "buildId": "bd_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "build_cache_clear": {},
+  "run_start": {
+    "onEvent": "__CHANNEL__:1001",
+    "onOutput": "__CHANNEL__:1000",
+    "request": {
+      "buildId": "bd_0123456789abcdef0123456789abcdef",
+      "runOptions": {
+        "cols": 80,
+        "rows": 24
+      }
+    }
+  },
+  "run_input": {
+    "request": {
+      "data": "NDIK",
+      "runId": "rn_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "run_resize": {
+    "request": {
+      "cols": 120,
+      "rows": 40,
+      "runId": "rn_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "run_stop": {
+    "request": {
+      "runId": "rn_0123456789abcdef0123456789abcdef"
+    }
+  },
+  "run_ack": {
+    "request": {
+      "runId": "rn_0123456789abcdef0123456789abcdef",
+      "seq": 7
+    }
+  },
+  "settings_get": {},
+  "settings_update": {
+    "request": {
+      "codeStyle": {
+        "indentWidth": 2
+      },
+      "console": {
+        "scrollbackLines": 20000
+      },
+      "run": {
+        "onErrors": "showProblems"
+      }
+    }
+  },
+  "open_help_link": {
+    "request": {
+      "linkId": "diagnosticsReference"
+    }
+  }
+}

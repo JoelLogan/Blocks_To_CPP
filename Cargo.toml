@@ -26,6 +26,7 @@ b2c-process = { path = "crates/b2c-process" }
 b2c-build = { path = "crates/b2c-build" }
 b2c-core-wasm = { path = "crates/b2c-core-wasm" }
 b2c-store = { path = "crates/b2c-store" }
+b2c-ipc = { path = "crates/b2c-ipc" }
 
 # Third-party crates. Every addition needs a justification in the PR (spec §8.9).
 serde = { version = "1.0.229", features = ["derive"] }
@@ -33,9 +34,12 @@ serde_json = "1.0.151"
 toml = { version = "1.1.6", default-features = false, features = ["parse", "serde", "std"] }
 thiserror = "2.0.21"
 sha2 = "0.11.0"
+# OS CSPRNG for the opaque IPC IDs (b2c-ipc); already in the lockfile through tempfile.
+getrandom = "0.3.4"
+# TypeScript bindings for the IPC types (b2c-ipc, feature `ts`, never in app builds).
+ts-rs = "12.0.1"
 clap = { version = "4.6.7", features = ["derive"] }
 tempfile = "3.27.0"
-getrandom = "0.3.4"
 rustix = { version = "1.1.5", features = ["process"] }
 # The editor's WebAssembly facade (b2c-core-wasm). Exact pin: the wasm-bindgen CLI that
 # generates the JavaScript glue must be the same version.

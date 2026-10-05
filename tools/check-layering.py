@@ -31,6 +31,8 @@ ALLOWED_WORKSPACE_DEPS = {
         "b2c-toolchain", "b2c-process",
     },
     "b2c-cli": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain"},
+    # The IPC contract: types, IDs and decoding only (no Tauri, no services).
+    "b2c-ipc": {"b2c-ir", "b2c-model"},
     # The desktop shell holds no business logic: it adapts IPC to the build
     # and toolchain layers (and may use their shared types).
     "blocks2cpp-desktop": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain"},

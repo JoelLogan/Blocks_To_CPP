@@ -1,0 +1,150 @@
+---
+source: crates/b2c-ipc/tests/snapshots.rs
+expression: render(&values)
+---
+--- invalidRequest
+{
+  "code": "invalidRequest",
+  "field": "runOptions.colour",
+  "reason": "unknownField"
+}
+--- invalidRequest
+{
+  "code": "invalidRequest",
+  "field": null,
+  "reason": "malformed"
+}
+--- payloadTooLarge
+{
+  "code": "payloadTooLarge",
+  "limit": 33554432
+}
+--- unknownHandle
+{
+  "code": "unknownHandle"
+}
+--- unknownBuild
+{
+  "code": "unknownBuild"
+}
+--- unknownRun
+{
+  "code": "unknownRun"
+}
+--- unknownRecent
+{
+  "code": "unknownRecent"
+}
+--- unknownSnapshot
+{
+  "code": "unknownSnapshot"
+}
+--- unknownToolchain
+{
+  "code": "unknownToolchain"
+}
+--- invalidDocument
+{
+  "code": "invalidDocument",
+  "diagnostics": [
+    {
+      "code": "B2C-E0201",
+      "message": "The variable 'score' does not exist here.",
+      "primary": {
+        "block": "b012",
+        "module": "mod_main",
+        "part": {
+          "kind": "field",
+          "name": "VAR"
+        }
+      },
+      "severity": "error",
+      "source": "analyser"
+    }
+  ]
+}
+--- newerFormat
+{
+  "code": "newerFormat",
+  "needs": "3.1.0"
+}
+--- newerFormat
+{
+  "code": "newerFormat",
+  "needs": null
+}
+--- restricted
+{
+  "code": "restricted"
+}
+--- changedOnDisk
+{
+  "code": "changedOnDisk"
+}
+--- noPath
+{
+  "code": "noPath"
+}
+--- notFound
+{
+  "code": "notFound"
+}
+--- staleBuild
+{
+  "code": "staleBuild"
+}
+--- buildNotSuccessful
+{
+  "code": "buildNotSuccessful"
+}
+--- projectErrors
+{
+  "code": "projectErrors",
+  "count": 3
+}
+--- notRunning
+{
+  "code": "notRunning"
+}
+--- rateLimited
+{
+  "code": "rateLimited"
+}
+--- busy
+{
+  "code": "busy"
+}
+--- tooManyHandles
+{
+  "code": "tooManyHandles"
+}
+--- tooManySessions
+{
+  "code": "tooManySessions"
+}
+--- toolchainRejected
+{
+  "code": "toolchainRejected",
+  "diagnostics": [
+    {
+      "code": "B2C-T1004",
+      "message": "This compiler is too old: Blocks2Cpp needs GCC 11 or later.",
+      "primary": {
+        "part": {
+          "kind": "whole"
+        }
+      },
+      "severity": "error",
+      "source": "toolchain"
+    }
+  ]
+}
+--- io
+{
+  "code": "io",
+  "kind": "permissionDenied"
+}
+--- internal
+{
+  "code": "internal"
+}
