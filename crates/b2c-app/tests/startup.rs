@@ -80,7 +80,7 @@ fn discovery_never_searches_the_cache_or_the_current_directory() {
     #[cfg(unix)]
     {
         let root = tempfile::tempdir().unwrap();
-        let root_path = root.path().canonicalize().unwrap();
+        let root_path = b2c_toolchain::paths::canonical(root.path()).unwrap();
         let cwd = root_path.join("cwd");
         common::write_script(&cwd, "g++", "exit 0");
         let dialogs = FakeDialogs::new();
@@ -214,7 +214,7 @@ fn setup_info_reports_the_platform() {
 #[test]
 fn settings_round_trip_and_notices_reach_the_first_subscriber() {
     let root = tempfile::tempdir().unwrap();
-    let root_path = root.path().canonicalize().unwrap();
+    let root_path = b2c_toolchain::paths::canonical(root.path()).unwrap();
     let dirs = Dirs::under_root(&root_path.join("app"));
     std::fs::create_dir_all(&dirs.config).unwrap();
     std::fs::write(
@@ -333,7 +333,7 @@ fn shutdown_is_idempotent_and_ends_sessions() {
 #[test]
 fn startup_prunes_builds_unused_for_30_days() {
     let root = tempfile::tempdir().unwrap();
-    let root_path = root.path().canonicalize().unwrap();
+    let root_path = b2c_toolchain::paths::canonical(root.path()).unwrap();
     let dirs = Dirs::under_root(&root_path.join("app"));
     let entry = |name: &str, days: u64| {
         let folder = dirs.builds().join("prj_old-00000001").join(name);

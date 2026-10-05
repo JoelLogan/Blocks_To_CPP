@@ -88,7 +88,7 @@ pub fn gxx() -> Option<PathBuf> {
         found.is_some() || std::env::var_os("B2C_REQUIRE_GXX").is_none(),
         "B2C_REQUIRE_GXX is set but g++ was not found"
     );
-    found.map(|path| path.canonicalize().unwrap())
+    found.map(|path| b2c_toolchain::paths::canonical(&path).unwrap())
 }
 
 /// The probe of the real g++ (once per test binary), or `None` without one.
@@ -338,7 +338,7 @@ pub fn write_script(dir: &Path, name: &str, body: &str) -> PathBuf {
     std::fs::write(&temp, format!("#!/bin/sh\n{body}\n")).unwrap();
     std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::rename(&temp, &path).unwrap();
-    path.canonicalize().unwrap()
+    b2c_toolchain::paths::canonical(&path).unwrap()
 }
 
 /// Which compiler a [`TestApp`] finds.
@@ -386,7 +386,9 @@ impl TestApp {
     /// A backend with `compiler` and `prober`.
     pub fn with(compiler: Compiler, prober: Arc<TestProber>) -> Self {
         let root = tempfile::tempdir().unwrap();
-        let root_path = root.path().canonicalize().unwrap();
+        // The plain canonical form: on Windows `canonicalize` gives a `\\?\` path, which
+        // MinGW g++ cannot open sources under. The app's own folders are never verbatim.
+        let root_path = b2c_toolchain::paths::canonical(root.path()).unwrap();
         let bin = root_path.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         let real = gxx().map(|path| path.display().to_string());
@@ -444,7 +446,7 @@ impl TestApp {
 
     /// The root folder (canonical).
     pub fn root(&self) -> PathBuf {
-        self.root.path().canonicalize().unwrap()
+        b2c_toolchain::paths::canonical(self.root.path()).unwrap()
     }
 
     /// Where tests put project files.
