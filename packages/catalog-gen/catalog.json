@@ -1,0 +1,1675 @@
+{
+  "catalogVersion": "1.0.0",
+  "blocks": [
+    {
+      "id": "control.break",
+      "version": 1,
+      "category": "loops",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "leave loop",
+        "cpp": "break;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Leaves the innermost loop.",
+      "field": [],
+      "input": [],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "control.continue",
+      "version": 1,
+      "category": "loops",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "skip to next round",
+        "cpp": "continue;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Skips the rest of this round of the innermost loop.",
+      "field": [],
+      "input": [],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "control.for_range",
+      "version": 1,
+      "category": "loops",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "for %VAR from %FROM %DIRECTION %TO step %STEP",
+        "cpp": "for (int %VAR = %FROM; …; …) { … }"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Counts from one number to another, running blocks for each value.",
+      "field": [
+        {
+          "name": "VAR",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null
+        },
+        {
+          "name": "DIRECTION",
+          "kind": "dropdown",
+          "options": [
+            [
+              "to",
+              "to"
+            ],
+            [
+              "through",
+              "through"
+            ],
+            [
+              "down to",
+              "down_to"
+            ]
+          ],
+          "types": [],
+          "default": "to"
+        }
+      ],
+      "input": [
+        {
+          "name": "FROM",
+          "check": "integer",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0"
+            }
+          ]
+        },
+        {
+          "name": "TO",
+          "check": "integer",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "10"
+            }
+          ]
+        },
+        {
+          "name": "STEP",
+          "check": "integer",
+          "optional": true,
+          "repeat": null,
+          "default": []
+        }
+      ],
+      "statement": [
+        {
+          "name": "BODY",
+          "repeat": null,
+          "when": null
+        }
+      ],
+      "extra": []
+    },
+    {
+      "id": "control.forever",
+      "version": 1,
+      "category": "loops",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "forever",
+        "cpp": "while (true) { … }"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Repeats blocks forever (use stop or break to leave).",
+      "field": [],
+      "input": [],
+      "statement": [
+        {
+          "name": "BODY",
+          "repeat": null,
+          "when": null
+        }
+      ],
+      "extra": []
+    },
+    {
+      "id": "control.if",
+      "version": 1,
+      "category": "control",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "if %COND then %DO else if … else %ELSE",
+        "cpp": "if (%COND) { … } else { … }"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Runs blocks only when a condition is true. Add else-if and else parts with ⊕.",
+      "field": [],
+      "input": [
+        {
+          "name": "COND",
+          "check": "bool",
+          "optional": false,
+          "repeat": {
+            "count": "elseIfCount",
+            "plus": 1
+          },
+          "default": [
+            {
+              "kw": "true"
+            }
+          ]
+        }
+      ],
+      "statement": [
+        {
+          "name": "DO",
+          "repeat": {
+            "count": "elseIfCount",
+            "plus": 1
+          },
+          "when": null
+        },
+        {
+          "name": "ELSE",
+          "repeat": null,
+          "when": "hasElse"
+        }
+      ],
+      "extra": [
+        {
+          "name": "elseIfCount",
+          "kind": "count",
+          "min": 0,
+          "max": 32,
+          "default": "0",
+          "types": []
+        },
+        {
+          "name": "hasElse",
+          "kind": "flag",
+          "min": 0,
+          "max": 1,
+          "default": false,
+          "types": []
+        }
+      ]
+    },
+    {
+      "id": "control.repeat",
+      "version": 1,
+      "category": "loops",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "repeat %TIMES times",
+        "cpp": "for (int i = 0; i < %TIMES; ++i) { … }"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Repeats blocks a number of times.",
+      "field": [],
+      "input": [
+        {
+          "name": "TIMES",
+          "check": "integer",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "10"
+            }
+          ]
+        }
+      ],
+      "statement": [
+        {
+          "name": "BODY",
+          "repeat": null,
+          "when": null
+        }
+      ],
+      "extra": []
+    },
+    {
+      "id": "control.while",
+      "version": 1,
+      "category": "loops",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "repeat %MODE %COND",
+        "cpp": "while (%COND) { … }"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Repeats blocks while a condition is true, or until it becomes true.",
+      "field": [
+        {
+          "name": "MODE",
+          "kind": "dropdown",
+          "options": [
+            [
+              "while",
+              "while"
+            ],
+            [
+              "until",
+              "until"
+            ]
+          ],
+          "types": [],
+          "default": "while"
+        }
+      ],
+      "input": [
+        {
+          "name": "COND",
+          "check": "bool",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "kw": "true"
+            }
+          ]
+        }
+      ],
+      "statement": [
+        {
+          "name": "BODY",
+          "repeat": null,
+          "when": null
+        }
+      ],
+      "extra": []
+    },
+    {
+      "id": "func.call",
+      "version": 1,
+      "category": "functions",
+      "shape": "reporter",
+      "output": "symbol",
+      "label": {
+        "friendly": "%FUNC %ARG …",
+        "cpp": "%FUNC(%ARG, …)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Calls a function and uses its result.",
+      "field": [
+        {
+          "name": "FUNC",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null
+        }
+      ],
+      "input": [
+        {
+          "name": "ARG",
+          "check": "any",
+          "optional": false,
+          "repeat": {
+            "count": "argCount",
+            "plus": 0
+          },
+          "default": []
+        }
+      ],
+      "statement": [],
+      "extra": [
+        {
+          "name": "argCount",
+          "kind": "count",
+          "min": 0,
+          "max": 16,
+          "default": "0",
+          "types": []
+        }
+      ]
+    },
+    {
+      "id": "func.call_stmt",
+      "version": 1,
+      "category": "functions",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "%FUNC %ARG …",
+        "cpp": "%FUNC(%ARG, …);"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Calls a function.",
+      "field": [
+        {
+          "name": "FUNC",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null
+        }
+      ],
+      "input": [
+        {
+          "name": "ARG",
+          "check": "any",
+          "optional": false,
+          "repeat": {
+            "count": "argCount",
+            "plus": 0
+          },
+          "default": []
+        }
+      ],
+      "statement": [],
+      "extra": [
+        {
+          "name": "argCount",
+          "kind": "count",
+          "min": 0,
+          "max": 16,
+          "default": "0",
+          "types": []
+        }
+      ]
+    },
+    {
+      "id": "func.define",
+      "version": 1,
+      "category": "functions",
+      "shape": "definition",
+      "output": null,
+      "label": {
+        "friendly": "define %NAME with … returns %RETURNS",
+        "cpp": "%RETURNS %NAME(…) { … }"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Defines a function: a named group of blocks you can use again.",
+      "field": [
+        {
+          "name": "NAME",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null
+        },
+        {
+          "name": "RETURNS",
+          "kind": "type",
+          "options": [],
+          "types": [
+            "void",
+            "int",
+            "double",
+            "bool",
+            "char",
+            "std::string"
+          ],
+          "default": "void"
+        }
+      ],
+      "input": [],
+      "statement": [
+        {
+          "name": "BODY",
+          "repeat": null,
+          "when": null
+        }
+      ],
+      "extra": [
+        {
+          "name": "params",
+          "kind": "params",
+          "min": 0,
+          "max": 16,
+          "default": null,
+          "types": [
+            "int",
+            "double",
+            "bool",
+            "char",
+            "std::string"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "func.return",
+      "version": 1,
+      "category": "functions",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "return %VALUE",
+        "cpp": "return %VALUE;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Leaves the function, giving back a value if the function returns one.",
+      "field": [],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "any",
+          "optional": true,
+          "repeat": null,
+          "default": []
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "io.ask",
+      "version": 1,
+      "category": "io",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "ask %PROMPT and save answer in %VAR (%MODE)",
+        "cpp": "std::cin >> %VAR;"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<iostream>",
+        "<string>"
+      ],
+      "help": "Asks the user to type something and stores it in a variable.",
+      "field": [
+        {
+          "name": "VAR",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null
+        },
+        {
+          "name": "MODE",
+          "kind": "dropdown",
+          "options": [
+            [
+              "keep asking until valid",
+              "keep_asking"
+            ],
+            [
+              "simple",
+              "simple"
+            ]
+          ],
+          "types": [],
+          "default": "keep_asking"
+        }
+      ],
+      "input": [
+        {
+          "name": "PROMPT",
+          "check": "text",
+          "optional": true,
+          "repeat": null,
+          "default": []
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "io.print",
+      "version": 1,
+      "category": "io",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "print %ITEM … %SEP %NEWLINE",
+        "cpp": "std::cout << %ITEM << …;"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<iostream>"
+      ],
+      "help": "Shows values in the console.",
+      "field": [
+        {
+          "name": "SEP",
+          "kind": "dropdown",
+          "options": [
+            [
+              "no separator",
+              "none"
+            ],
+            [
+              "spaces",
+              "space"
+            ],
+            [
+              "commas",
+              "comma"
+            ]
+          ],
+          "types": [],
+          "default": "none"
+        },
+        {
+          "name": "NEWLINE",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": true
+        },
+        {
+          "name": "STREAM",
+          "kind": "dropdown",
+          "options": [
+            [
+              "output",
+              "out"
+            ],
+            [
+              "error stream",
+              "err"
+            ]
+          ],
+          "types": [],
+          "default": "out"
+        }
+      ],
+      "input": [
+        {
+          "name": "ITEM",
+          "check": "any",
+          "optional": false,
+          "repeat": {
+            "count": "itemCount",
+            "plus": 0
+          },
+          "default": [
+            {
+              "str": "Hello, world!"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": [
+        {
+          "name": "itemCount",
+          "kind": "count",
+          "min": 1,
+          "max": 32,
+          "default": "1",
+          "types": []
+        }
+      ]
+    },
+    {
+      "id": "logic.boolean",
+      "version": 1,
+      "category": "logic",
+      "shape": "predicate",
+      "output": "bool",
+      "label": {
+        "friendly": "%VALUE",
+        "cpp": "%VALUE"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "True or false.",
+      "field": [
+        {
+          "name": "VALUE",
+          "kind": "dropdown",
+          "options": [
+            [
+              "true",
+              "true"
+            ],
+            [
+              "false",
+              "false"
+            ]
+          ],
+          "types": [],
+          "default": "true"
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "logic.not",
+      "version": 1,
+      "category": "logic",
+      "shape": "predicate",
+      "output": "bool",
+      "label": {
+        "friendly": "not %A",
+        "cpp": "!%A"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "True when the condition is false.",
+      "field": [],
+      "input": [
+        {
+          "name": "A",
+          "check": "bool",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "kw": "true"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "logic.operation",
+      "version": 1,
+      "category": "logic",
+      "shape": "predicate",
+      "output": "bool",
+      "label": {
+        "friendly": "%ITEM %OP …",
+        "cpp": "%ITEM && …"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "True when all (and) or any (or) of the conditions are true.",
+      "field": [
+        {
+          "name": "OP",
+          "kind": "dropdown",
+          "options": [
+            [
+              "and",
+              "and"
+            ],
+            [
+              "or",
+              "or"
+            ]
+          ],
+          "types": [],
+          "default": "and"
+        }
+      ],
+      "input": [
+        {
+          "name": "ITEM",
+          "check": "bool",
+          "optional": false,
+          "repeat": {
+            "count": "itemCount",
+            "plus": 0
+          },
+          "default": [
+            {
+              "kw": "true"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": [
+        {
+          "name": "itemCount",
+          "kind": "count",
+          "min": 2,
+          "max": 32,
+          "default": "2",
+          "types": []
+        }
+      ]
+    },
+    {
+      "id": "logic.ternary",
+      "version": 1,
+      "category": "logic",
+      "shape": "reporter",
+      "output": "any",
+      "label": {
+        "friendly": "if %COND then %THEN else %ELSE",
+        "cpp": "%COND ? %THEN : %ELSE"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "One of two values, depending on a condition.",
+      "field": [],
+      "input": [
+        {
+          "name": "COND",
+          "check": "bool",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "kw": "true"
+            }
+          ]
+        },
+        {
+          "name": "THEN",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0"
+            }
+          ]
+        },
+        {
+          "name": "ELSE",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "math.arithmetic",
+      "version": 1,
+      "category": "math",
+      "shape": "reporter",
+      "output": "number",
+      "label": {
+        "friendly": "%A %OP %B",
+        "cpp": "%A %OP %B"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Adds, subtracts, multiplies or divides two numbers, or gives the remainder.",
+      "field": [
+        {
+          "name": "OP",
+          "kind": "dropdown",
+          "options": [
+            [
+              "+",
+              "add"
+            ],
+            [
+              "−",
+              "sub"
+            ],
+            [
+              "×",
+              "mul"
+            ],
+            [
+              "÷",
+              "div"
+            ],
+            [
+              "mod",
+              "mod"
+            ]
+          ],
+          "types": [],
+          "default": "add"
+        }
+      ],
+      "input": [
+        {
+          "name": "A",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0"
+            }
+          ]
+        },
+        {
+          "name": "B",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "math.compare",
+      "version": 1,
+      "category": "math",
+      "shape": "predicate",
+      "output": "bool",
+      "label": {
+        "friendly": "%A %OP %B",
+        "cpp": "%A %OP %B"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Compares two values.",
+      "field": [
+        {
+          "name": "OP",
+          "kind": "dropdown",
+          "options": [
+            [
+              "<",
+              "lt"
+            ],
+            [
+              "≤",
+              "le"
+            ],
+            [
+              ">",
+              "gt"
+            ],
+            [
+              "≥",
+              "ge"
+            ],
+            [
+              "=",
+              "eq"
+            ],
+            [
+              "≠",
+              "ne"
+            ]
+          ],
+          "types": [],
+          "default": "lt"
+        }
+      ],
+      "input": [
+        {
+          "name": "A",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0"
+            }
+          ]
+        },
+        {
+          "name": "B",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "math.convert",
+      "version": 1,
+      "category": "math",
+      "shape": "reporter",
+      "output": "field:TO",
+      "label": {
+        "friendly": "%VALUE as %TO",
+        "cpp": "static_cast<%TO>(%VALUE)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Converts a number to another number type, e.g. a decimal to a whole number.",
+      "field": [
+        {
+          "name": "TO",
+          "kind": "type",
+          "options": [],
+          "types": [
+            "int",
+            "double"
+          ],
+          "default": "int"
+        }
+      ],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "math.number",
+      "version": 1,
+      "category": "math",
+      "shape": "reporter",
+      "output": "number",
+      "label": {
+        "friendly": "%VALUE",
+        "cpp": "%VALUE"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "A number, such as 42 or 3.14.",
+      "field": [
+        {
+          "name": "VALUE",
+          "kind": "number",
+          "options": [],
+          "types": [],
+          "default": "0"
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "math.random_int",
+      "version": 1,
+      "category": "math",
+      "shape": "reporter",
+      "output": "int",
+      "label": {
+        "friendly": "random integer from %LOW to %HIGH",
+        "cpp": "b2c::random_int(%LOW, %HIGH)"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<random>"
+      ],
+      "help": "A random whole number between the two values, including both.",
+      "field": [],
+      "input": [
+        {
+          "name": "LOW",
+          "check": "integer",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "1"
+            }
+          ]
+        },
+        {
+          "name": "HIGH",
+          "check": "integer",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "6"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "program.exit",
+      "version": 1,
+      "category": "program",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "stop program with exit code %CODE",
+        "cpp": "return %CODE / std::exit(%CODE)"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<cstdlib>"
+      ],
+      "help": "Ends the program. Exit code 0 means success.",
+      "field": [],
+      "input": [
+        {
+          "name": "CODE",
+          "check": "integer",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "program.main",
+      "version": 1,
+      "category": "program",
+      "shape": "hat",
+      "output": null,
+      "label": {
+        "friendly": "when program starts",
+        "cpp": "int main()"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The program starts here. A project has exactly one of these blocks.",
+      "field": [],
+      "input": [],
+      "statement": [
+        {
+          "name": "BODY",
+          "repeat": null,
+          "when": null
+        }
+      ],
+      "extra": []
+    },
+    {
+      "id": "text.char",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "char",
+      "label": {
+        "friendly": "letter '%VALUE'",
+        "cpp": "'%VALUE'"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "A single character, such as 'a'.",
+      "field": [
+        {
+          "name": "VALUE",
+          "kind": "text",
+          "options": [],
+          "types": [],
+          "default": "a"
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "text.join",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "string",
+      "label": {
+        "friendly": "join %ITEM …",
+        "cpp": "%ITEM + …"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<string>"
+      ],
+      "help": "Joins text and numbers into one piece of text.",
+      "field": [],
+      "input": [
+        {
+          "name": "ITEM",
+          "check": "any",
+          "optional": false,
+          "repeat": {
+            "count": "itemCount",
+            "plus": 0
+          },
+          "default": [
+            {
+              "str": ""
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": [
+        {
+          "name": "itemCount",
+          "kind": "count",
+          "min": 2,
+          "max": 32,
+          "default": "2",
+          "types": []
+        }
+      ]
+    },
+    {
+      "id": "text.literal",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "string",
+      "label": {
+        "friendly": "\"%VALUE\"",
+        "cpp": "\"%VALUE\""
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<string>"
+      ],
+      "help": "A piece of text.",
+      "field": [
+        {
+          "name": "VALUE",
+          "kind": "text",
+          "options": [],
+          "types": [],
+          "default": ""
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "var.change",
+      "version": 1,
+      "category": "variables",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "change %VAR by %BY",
+        "cpp": "%VAR += %BY;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Adds to a variable.",
+      "field": [
+        {
+          "name": "VAR",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null
+        }
+      ],
+      "input": [
+        {
+          "name": "BY",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "1"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "var.declare",
+      "version": 1,
+      "category": "variables",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "create %TYPE variable %NAME = %VALUE %CONST",
+        "cpp": "%TYPE %NAME = %VALUE;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Creates a variable. It can be used by the blocks after it in the same place.",
+      "field": [
+        {
+          "name": "TYPE",
+          "kind": "type",
+          "options": [],
+          "types": [
+            "int",
+            "double",
+            "bool",
+            "char",
+            "std::string",
+            "auto"
+          ],
+          "default": "int"
+        },
+        {
+          "name": "NAME",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null
+        },
+        {
+          "name": "CONST",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": false
+        }
+      ],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "any",
+          "optional": true,
+          "repeat": null,
+          "default": []
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "var.get",
+      "version": 1,
+      "category": "variables",
+      "shape": "reporter",
+      "output": "symbol",
+      "label": {
+        "friendly": "%VAR",
+        "cpp": "%VAR"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The value of a variable.",
+      "field": [
+        {
+          "name": "VAR",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "var.set",
+      "version": 1,
+      "category": "variables",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "set %VAR to %VALUE",
+        "cpp": "%VAR = %VALUE;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Gives a variable a new value.",
+      "field": [
+        {
+          "name": "VAR",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null
+        }
+      ],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": []
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "var.update",
+      "version": 1,
+      "category": "variables",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "%VAR %OP %VALUE",
+        "cpp": "%VAR %OP %VALUE;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Updates a variable with an operator, such as multiplying it.",
+      "field": [
+        {
+          "name": "VAR",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null
+        },
+        {
+          "name": "OP",
+          "kind": "dropdown",
+          "options": [
+            [
+              "+=",
+              "add"
+            ],
+            [
+              "-=",
+              "sub"
+            ],
+            [
+              "*=",
+              "mul"
+            ],
+            [
+              "/=",
+              "div"
+            ],
+            [
+              "%=",
+              "mod"
+            ]
+          ],
+          "types": [],
+          "default": "add"
+        }
+      ],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "1"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    }
+  ],
+  "toolbox": {
+    "category": [
+      {
+        "id": "program",
+        "name": "Program",
+        "icon": "▶",
+        "colour": "program",
+        "dynamic": null,
+        "entry": [
+          {
+            "block": "program.main",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "program.exit",
+            "label": null,
+            "preset": null
+          }
+        ]
+      },
+      {
+        "id": "variables",
+        "name": "Variables",
+        "icon": "𝑥",
+        "colour": "variables",
+        "dynamic": "variables",
+        "entry": [
+          {
+            "block": "var.declare",
+            "label": null,
+            "preset": {
+              "fields": {
+                "TYPE": "int"
+              },
+              "inputs": {
+                "VALUE": [
+                  {
+                    "num": "0"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "math",
+        "name": "Math",
+        "icon": "∑",
+        "colour": "math",
+        "dynamic": null,
+        "entry": [
+          {
+            "block": "math.number",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "math.arithmetic",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "math.compare",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "math.random_int",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "math.convert",
+            "label": null,
+            "preset": null
+          }
+        ]
+      },
+      {
+        "id": "logic",
+        "name": "Logic",
+        "icon": "◇",
+        "colour": "logic",
+        "dynamic": null,
+        "entry": [
+          {
+            "block": "logic.operation",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "logic.not",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "logic.boolean",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "logic.ternary",
+            "label": null,
+            "preset": null
+          }
+        ]
+      },
+      {
+        "id": "text",
+        "name": "Text",
+        "icon": "“ ”",
+        "colour": "text",
+        "dynamic": null,
+        "entry": [
+          {
+            "block": "text.literal",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.join",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.char",
+            "label": null,
+            "preset": null
+          }
+        ]
+      },
+      {
+        "id": "control",
+        "name": "Control",
+        "icon": "⑂",
+        "colour": "control",
+        "dynamic": null,
+        "entry": [
+          {
+            "block": "control.if",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "control.if",
+            "label": "if … else",
+            "preset": {
+              "extra": {
+                "hasElse": true
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "loops",
+        "name": "Loops",
+        "icon": "↻",
+        "colour": "loops",
+        "dynamic": null,
+        "entry": [
+          {
+            "block": "control.repeat",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "control.while",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "control.while",
+            "label": "repeat until",
+            "preset": {
+              "fields": {
+                "MODE": "until"
+              }
+            }
+          },
+          {
+            "block": "control.for_range",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "control.forever",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "control.break",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "control.continue",
+            "label": null,
+            "preset": null
+          }
+        ]
+      },
+      {
+        "id": "io",
+        "name": "Input / Output",
+        "icon": "⌨",
+        "colour": "io",
+        "dynamic": null,
+        "entry": [
+          {
+            "block": "io.print",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "io.ask",
+            "label": null,
+            "preset": {
+              "inputs": {
+                "PROMPT": [
+                  {
+                    "str": "Your answer: "
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "functions",
+        "name": "Functions",
+        "icon": "ƒ",
+        "colour": "functions",
+        "dynamic": "functions",
+        "entry": [
+          {
+            "block": "func.define",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "func.return",
+            "label": null,
+            "preset": null
+          }
+        ]
+      }
+    ]
+  }
+}
