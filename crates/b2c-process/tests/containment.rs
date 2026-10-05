@@ -32,6 +32,15 @@ const MIB: u64 = 1024 * 1024;
 const PATIENCE: Duration = Duration::from_secs(20);
 const SETSID: &str = "/usr/bin/setsid";
 
+/// Held by every test that calls [`cleanup_stale_scopes`]: a cleanup in one
+/// test would otherwise kill the stale scope another test planted before
+/// that test looks at it.
+static CLEANUP: Mutex<()> = Mutex::new(());
+
+fn cleanup_lock() -> std::sync::MutexGuard<'static, ()> {
+    CLEANUP.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 fn sh(script: &str, containment: Containment) -> Command {
     let mut command = Command::new("/bin/sh", std::env::temp_dir()).unwrap();
     command
@@ -571,6 +580,7 @@ fn stale_scopes_of_dead_owners_are_killed() {
     if !cgroups("stale_scopes_of_dead_owners_are_killed") || !Path::new(SETSID).exists() {
         return;
     }
+    let _cleanup = cleanup_lock();
     // A process ID that no longer runs: a session's program, reaped.
     let gone = spawn_piped(&sh("exit 0", Containment::ProcessGroupOnly)).unwrap();
     let dead_owner = gone.pid();
@@ -630,6 +640,7 @@ fn live_scopes_are_left_alone() {
     if !cgroups("live_scopes_are_left_alone") {
         return;
     }
+    let _cleanup = cleanup_lock();
     let mut child = spawn_piped(&sh("echo ready; exec sleep 600", Containment::Auto)).unwrap();
     let output = Output::start(&mut child);
     output.wait_for("ready");

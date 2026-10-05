@@ -711,6 +711,25 @@ fn indent_widths_change_the_generated_files() {
     }
 }
 
+/// The compiler's `PATH` as builds give it (07 §7.5.2): its own folder
+/// first, then the system folders, where for example the assembler `as`
+/// lives when g++ is in `/usr/local/bin`.
+fn compiler_path(bin: &std::path::Path) -> std::ffi::OsString {
+    let mut path = bin.as_os_str().to_os_string();
+    if cfg!(windows) {
+        if let Some(root) = std::env::var_os("SystemRoot") {
+            for tail in [r"\System32", ""] {
+                path.push(";");
+                path.push(&root);
+                path.push(tail);
+            }
+        }
+    } else {
+        path.push(":/usr/local/bin:/usr/bin:/bin");
+    }
+    path
+}
+
 /// The init unit compiles without a single warning, also as an error, for
 /// every supported standard in debug and release, alone and in a build.
 #[test]
@@ -737,7 +756,7 @@ fn the_init_unit_compiles_without_warnings() {
                     String::from("-o"),
                     dir.path().join("init.o").to_string_lossy().into_owned(),
                 ])
-                .env("PATH", toolchain.bin_dir());
+                .env("PATH", compiler_path(toolchain.bin_dir()));
             for name in ["SystemRoot", "TEMP", "TMP", "TMPDIR"] {
                 if let Some(value) = std::env::var_os(name) {
                     command.env(name, value);

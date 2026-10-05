@@ -191,8 +191,14 @@ impl Root {
         Self { _dir: dir, path }
     }
 
+    /// `relative` (with `/` between its parts) below the root, built part by
+    /// part so the path has the platform's separators: on Windows the
+    /// registry's canonical paths never contain `/`, and the IDs the tests
+    /// compute from these paths must match them.
     fn join(&self, relative: &str) -> PathBuf {
-        self.path.join(relative)
+        relative
+            .split('/')
+            .fold(self.path.clone(), |path, part| path.join(part))
     }
 
     fn store(&self) -> PathBuf {
