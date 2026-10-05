@@ -69,6 +69,11 @@ exclude_re = [
   # `.exe` name always ends in `e` or `E`. (The other `||`, column 20, is
   # tested.)
   '^crates/b2c-process/src/command\.rs:\d+:43: replace \|\| with && in check_program$',
+  # The JSON parser's arm for a lone low surrogate (`\uDC00`–`\uDFFF`)
+  # returns `LoneSurrogate` at the escape. Without it the value falls through
+  # to `char::from_u32`, which refuses every surrogate with the same error at
+  # the same offset.
+  "^crates/b2c-model/src/json\\.rs:\\d+:\\d+: delete match arm 0xDC00\\.\\.= 0xDFFF in Parser<'a>::unicode_escape$",
   # `ExtraFlags::none` is defined as `Self::default()`.
   '^crates/b2c-toolchain/src/flags\.rs:\d+:\d+: replace ExtraFlags::none -> Self with Default::default\(\)$',
   # Windows-only code, which the weekly job's Linux runner does not compile or

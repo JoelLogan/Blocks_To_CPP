@@ -373,13 +373,21 @@ fn e0120_module_count() {
 fn e0121_too_many_blocks_counts_nested_blocks() {
     let block = |i: usize| json!({"id": format!("b{i}"), "type": "control.break", "v": 1});
     let mut document = base();
-    let body: Vec<Value> = (0..MAX_BLOCKS - 5).map(block).collect();
+    let body: Vec<Value> = (0..MAX_BLOCKS - 2).map(block).collect();
     main_block(&mut document)["statements"]["BODY"] = Value::Array(body);
-    // main + function + the body = MAX_BLOCKS - 3: still fine.
+    // main + function + the body = exactly MAX_BLOCKS: still fine.
     loads(&document);
+    // More, nested in the function, are too many; they are reported once.
     let more: Vec<Value> = (0..4).map(|i| block(MAX_BLOCKS + i)).collect();
     document["modules"][0]["workspace"]["blocks"][1]["statements"] = json!({"BODY": more});
-    assert_eq!(codes(&document), ["B2C-E0121"]);
+    let diagnostics = failure(&bytes(&document));
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code.0, "B2C-E0121");
+    assert_eq!(
+        diagnostics[0].message,
+        "The project has more than 100000 blocks, which is the most a project can have. Split it into smaller projects."
+    );
+    assert_eq!(diagnostics[0].primary, Location::project());
 }
 
 #[test]
@@ -597,6 +605,37 @@ fn e0131_variadic_parts() {
 }
 
 #[test]
+fn e0131_part_limits_are_exact() {
+    // At most 64 parts, whether "extra" holds a count (whole, or a number
+    // written with a fraction) or a list of rows.
+    let mut document = base();
+    print_block(&mut document)["extra"]["itemCount"] = json!(64);
+    print_block(&mut document)["extra"]["rows"] = json!(vec![0; 64]);
+    print_block(&mut document)["extra"]["scale"] = json!(64.0);
+    loads(&document);
+    print_block(&mut document)["extra"]["rows"] = json!(vec![0; 65]);
+    print_block(&mut document)["extra"]["scale"] = json!(64.5);
+    let diagnostics = failure(&bytes(&document));
+    let found: Vec<(&str, &str)> = diagnostics
+        .iter()
+        .map(|d| (d.code.0.as_str(), d.message.as_str()))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (
+                "B2C-E0131",
+                "\"extra.rows\" in this block has 65 entries, but a block can have at most 64."
+            ),
+            (
+                "B2C-E0131",
+                "\"extra.scale\" in this block is 64.5, but a block can have at most 64 parts."
+            ),
+        ]
+    );
+}
+
+#[test]
 fn e0132_and_e0134_defines() {
     let mut document = base();
     document["project"]["build"] = json!({"defines": [
@@ -666,10 +705,29 @@ fn e0136_and_e0137_packs() {
 
 #[test]
 fn e0135_free_form_budget() {
+    // The documented budget: at most 500,000 values in all "extra" maps and
+    // "x-ext" together. Without the blocks' own "extra" data, "x-ext" holds
+    // them all: the object, the list and the numbers in it.
+    const BUDGET: usize = 500_000;
     let mut document = base();
-    document["x-ext"] = json!({ "list": Value::Array(vec![json!(0); 499_000]) });
+    print_block(&mut document)
+        .as_object_mut()
+        .unwrap()
+        .remove("extra");
+    document["modules"][0]["workspace"]["blocks"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("extra");
+    document["x-ext"] = json!({ "list": vec![0; BUDGET - 2] });
     loads(&document);
-    document["x-ext"] = json!({ "list": Value::Array(vec![json!(0); 500_001]) });
+    document["x-ext"] = json!({ "list": vec![0; BUDGET - 1] });
+    let diagnostics = failure(&bytes(&document));
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code.0, "B2C-E0135");
+    assert_eq!(diagnostics[0].primary, Location::project());
+    // The blocks' "extra" values count toward the same budget.
+    let mut document = base();
+    document["x-ext"] = json!({ "list": vec![0; BUDGET - 2] });
     assert_eq!(codes(&document), ["B2C-E0135"]);
 }
 
