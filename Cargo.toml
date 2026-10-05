@@ -24,6 +24,7 @@ b2c-codegen = { path = "crates/b2c-codegen" }
 b2c-toolchain = { path = "crates/b2c-toolchain" }
 b2c-process = { path = "crates/b2c-process" }
 b2c-build = { path = "crates/b2c-build" }
+b2c-core-wasm = { path = "crates/b2c-core-wasm" }
 
 # Third-party crates. Every addition needs a justification in the PR (spec §8.9).
 serde = { version = "1.0.229", features = ["derive"] }
@@ -34,6 +35,9 @@ sha2 = "0.11.0"
 clap = { version = "4.6.7", features = ["derive"] }
 tempfile = "3.27.0"
 rustix = { version = "1.1.5", features = ["process"] }
+# The editor's WebAssembly facade (b2c-core-wasm). Exact pin: the wasm-bindgen CLI that
+# generates the JavaScript glue must be the same version.
+wasm-bindgen = "=0.2.129"
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
   "Win32_Security",
@@ -69,3 +73,13 @@ disallowed_methods = "deny"
 [profile.release]
 debug = false
 strip = "symbols"
+
+# The editor's WebAssembly build of b2c-core-wasm (packages/b2c-core-wasm/scripts/build.mjs):
+# smallest code, whole-program optimisation, and abort on panic (the frontend
+# re-instantiates the module after a trap).
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
