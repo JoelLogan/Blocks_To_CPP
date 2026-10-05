@@ -64,7 +64,7 @@ fn startup_never_probes_and_discovery_reports_when_done() {
     assert!(toolchains[0].usable);
     assert_eq!(
         toolchains[0].display_path,
-        app.root().join("bin/g++").display().to_string()
+        app.compiler().display().to_string()
     );
     assert_eq!(app.backend.toolchain_list().unwrap().toolchains, *toolchains);
 }

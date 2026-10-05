@@ -302,11 +302,40 @@ jobs:
       - name: Install dependencies under the supply-chain policy
         run: pnpm install --frozen-lockfile
 
+      # The desktop crate's tests build and run programs through the app's IPC.
+      - name: Install g++ (MSYS2 UCRT64)
+        if: runner.os == 'Windows'
+        id: msys2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+
+      - name: Put g++ on PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $env:MSYS2_LOCATION 'ucrt64\bin')
+
+      - name: Show g++ version
+        run: g++ --version
+
+      # bash, not pwsh, on Windows: it stops at the first failing command.
       - name: Clippy
-        run: cargo clippy --locked -p blocks2cpp-desktop --all-targets -- -D warnings
+        shell: bash
+        run: |
+          cargo clippy --locked -p blocks2cpp-desktop --all-targets -- -D warnings
+          cargo clippy --locked -p blocks2cpp-desktop --all-targets --features e2e-hooks -- -D warnings
 
       - name: Test
-        run: cargo test --locked -p blocks2cpp-desktop
+        shell: bash
+        env:
+          B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
+        run: |
+          cargo test --locked -p blocks2cpp-desktop
+          cargo test --locked -p blocks2cpp-desktop --features e2e-hooks
 
       # Building wasm-bindgen-cli takes minutes; its binaries are cached per version.
       - name: Restore wasm-bindgen-cli from the cache

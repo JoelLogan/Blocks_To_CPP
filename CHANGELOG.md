@@ -111,3 +111,25 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   front end; the program that was just built survives cache eviction; ended
   runs release their terminals; and dynamically linked Windows programs find
   the compiler's DLLs.
+- The desktop app speaks the full M2 IPC contract: 36 commands for projects,
+  recent files, recovery, trust, toolchains, builds, runs, settings and help
+  links, with build and run output streamed through channels. Open, Save As,
+  Choose g++ and the trust confirmation are native dialogs raised by the
+  backend, which the editor cannot show or answer. Closing the window with
+  unsaved changes asks first; quitting stops every build and running program.
+  Local JSON-lines logs (five files of 5 MiB) hold no project content.
+- Projects in the editor: a start page with templates, _Open…_ and the recent
+  projects, _Save_ and _Save as…_, unsaved-changes prompts, and one project
+  per window.
+- Build, Run, Stop and Run again from the toolbar and shortcuts, with the
+  build output, the interactive console (acknowledged output, rate-limited
+  input, resizing) and friendly exit messages.
+- The toolchain page (setup instructions while no compiler works, the list of
+  compilers with their health checks, rescan and choosing g++ by hand), the
+  Settings page, and the Restricted Mode banner with _Trust…_ and _Revoke
+  trust_.
+- Autosave of unsaved changes into recovery snapshots every 30 seconds and
+  when the window loses focus; after a crash the start page offers to restore
+  or discard them. A file watcher notices when the open project's file changes
+  on disk (the app's own saves never trigger it), and the editor offers
+  _Reload_ (which re-checks trust) or _Keep mine (save as…)_.

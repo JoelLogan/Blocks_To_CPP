@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { installFeatures } from '../features';
-import { createCommandRegistry } from './commands';
+import { type CommandId, createCommandRegistry } from './commands';
 import { createDialogQueue } from './dialogs';
 import { EDITOR_PLUGINS } from './editorPlugins';
 import { createAppEventBus } from './events';
@@ -84,10 +84,27 @@ describe('installAll', () => {
 });
 
 describe('the lists later waves extend', () => {
-  it('hold the editor plugins in attach order, and no features yet', () => {
+  it('hold the editor plugins in attach order', () => {
     expect(EDITOR_PLUGINS.map((plugin) => plugin.name)).toEqual(['toolbox', 'diagnostics']);
-    const uninstall = installFeatures(context());
-    expect(uninstall).toBeTypeOf('function');
+  });
+
+  it('install every feature without errors, and uninstall them again', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const ctx = context();
+    const uninstall = installFeatures(ctx);
+    const ids: CommandId[] = [
+      'project.new',
+      'project.open',
+      'project.save',
+      'build.start',
+      'run.start',
+      'run.stop',
+    ];
+    for (const id of ids) {
+      expect(ctx.commands.hasCommand(id), id).toBe(true);
+    }
     uninstall();
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });

@@ -375,6 +375,8 @@ pub struct TestApp {
     pub opener: Arc<FakeOpener>,
     pub prober: Arc<TestProber>,
     pub dirs: Dirs,
+    /// The one folder discovery searches.
+    scope: PathBuf,
 }
 
 impl TestApp {
@@ -424,7 +426,7 @@ impl TestApp {
             BackendConfig {
                 dirs: dirs.clone(),
                 app_version: "0.1.0",
-                discovery_scope: DiscoveryScope::Only(vec![scope]),
+                discovery_scope: DiscoveryScope::Only(vec![scope.clone()]),
                 cwd: Some(cwd),
             },
             dialogs.clone(),
@@ -441,7 +443,14 @@ impl TestApp {
             opener,
             prober,
             dirs,
+            scope,
         }
+    }
+
+    /// Where discovery finds g++: the spy in `bin`, or the real g++ for
+    /// [`Compiler::Real`].
+    pub fn compiler(&self) -> PathBuf {
+        self.scope.join(if cfg!(windows) { "g++.exe" } else { "g++" })
     }
 
     /// The root folder (canonical).

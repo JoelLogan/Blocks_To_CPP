@@ -18,9 +18,26 @@ The shell of the main window ([§4.1](../../docs/spec/04-user-interface.md#41-ma
 - a status bar with the version, which the frontend asks the backend for over IPC (the
   `app_version` command), so the shell shows that IPC works under the security settings below
 
-The backend is deliberately thin and has no other commands yet. Toolbox, blocks, the live C++
-view, building and running arrive with milestone M2
-([roadmap](../../docs/spec/10-roadmap.md)).
+Milestone M2 ([roadmap](../../docs/spec/10-roadmap.md)) turns the shell into the editor: the
+sections below describe what it adds.
+
+### The backend (milestone M2)
+
+`src-tauri/` is a thin adapter over `b2c_app::Backend` (`crates/b2c-app`), which holds the
+project, build, run, toolchain, settings, trust and recovery services:
+
+- **Commands** (`src-tauri/src/commands/`): one async adapter per command of the IPC contract
+  (`crates/b2c-ipc`, 36 commands): it decodes the request, calls the backend on Tauri's blocking
+  pool and returns its response or error. Build and run output stream to the editor through
+  channels (`channels.rs`).
+- **Native dialogs** (`dialogs.rs`): _Open_, _Save as_, _Choose g++_ and the trust confirmation
+  are native dialogs raised by the backend (tauri-plugin-dialog, from Rust only). The editor
+  cannot show or answer them, and it never names a path to open or save.
+- **Window** (`window.rs`): the navigation rules, and closing with unsaved changes asks the
+  editor first; quitting stops every build and running program.
+- **Logs** (`logging.rs`): JSON-lines files (`blocks2cpp.log`, five files of 5 MiB) in the app's
+  log folder, with no project content; `B2C_LOG=debug` adds paths. A panic is logged before the
+  app exits.
 
 ### The app shell (milestone M2)
 
@@ -35,9 +52,12 @@ view, building and running arrive with milestone M2
 - **Registries**: commands (`commands.ts`), full-window pages (`screens.ts`), the app event bus
   (`events.ts`), editor plugins (`editorPlugins.ts`) and the editor handle (`editor-types.ts`).
   Features receive all of them in a `FeatureContext` (`features.ts`).
-- **Window**: the toolbar (project name and `•`, Debug/Release, ► Run, ■ Stop, Build, Settings),
-  the docks (resizable by pointer and keyboard, collapsible), the status bar, and the run gate
-  (`runGate.ts`) that explains why Run and Build are held back.
+- **Window**: the toolbar (the `≡` main menu, project name and `•`, Debug/Release, ► Run, ■ Stop,
+  Build, Settings), the docks (resizable by pointer and keyboard, collapsible), the status bar, and
+  the run gate (`runGate.ts`) that explains why Run and Build are held back. The main menu
+  (`layout/MainMenu.tsx`) lists only the project commands a feature has registered.
+- **Window banners** (`banners.tsx`): features register banners with `registerBanner`; `App`
+  shows them under the toolbar in a polite live region.
 - **Dialogs** (`dialogs/`): alerts, confirmations, prompts and choices on Radix's accessible
   dialog; Blockly's own prompts go through them too.
 - **Shortcuts** (`shortcuts.ts`): `F5` Run, `Shift+F5` Stop, `Ctrl+B` Build, `Ctrl+S` Save,
@@ -89,22 +109,133 @@ view, building and running arrive with milestone M2
   They load no Blockly: Problems' block paths (`main › repeat until › if`) use the block catalog
   the diagnostics plugin provides (`diagnostics/catalog.ts`).
 
+### Projects (milestone M2)
+
+`src/features/project/` (the `projectFeature`) is the project lifecycle
+([§4.10](../../docs/spec/04-user-interface.md)):
+
+- **Start page** (`StartPage.tsx`, the `start` screen): _New project_ from the bundled templates
+  (_Empty_, _Hello World_), _Open…_ (the backend's native dialog; the webview never names a path),
+  the recent projects (newest first, at most 10, each with a remove button; an entry whose file is
+  gone offers to remove itself), and the sections other features add with
+  `registerStartPageSection(id, Component, {order})` (the recovery offer). A file that does not
+  load shows its `B2C-E01xx` problems there (`E0108` reads _made with a newer version of
+  Blocks2Cpp (needs ≥ X)_) and nothing opens.
+- **Commands**: `project.new` (asks for the template), `project.open`, `project.save` (`Ctrl+S`;
+  a project without a file, or a backend `noPath`, goes to _Save as…_), `project.saveAs` and
+  `project.close`, all reachable from the toolbar's `≡` main menu.
+- **One project per window**: opening or creating another project first asks _Save_, _Don't
+  save_ or _Cancel_; the previous project is closed (`project_close`) only once the new one is
+  shown.
+- **Saving** writes the editor's document (`EditorHandle.currentDocument()`, viewports captured)
+  with `generator` set to this app and catalog, serialised by the core's canonical writer, so an
+  unchanged project saves byte for byte the same. A file changed on disk is never overwritten:
+  the save emits `project:changedOnDisk` for the external-change feature.
+- **Unsaved changes**: the store's `dirty` flag is reported with `project_set_dirty` (one call at
+  a time, latest value wins); the window's `closeRequested` asks _Save_, _Don't save_ or _Cancel_
+  and then calls `app_quit`. An untouched new project has no unsaved changes.
+- Operations run one at a time, in order; every backend error becomes a sentence for the user.
+
+### Build and run (milestone M2)
+
+`src/features/build-run/` (the `buildRunFeature`) builds and runs the open project
+([§4.5](../../docs/spec/04-user-interface.md), [02 §2.4.2–§2.4.3](../../docs/spec/02-architecture.md)):
+
+- **Build** (`build.start`, `Ctrl+B`) sends `build_start` with the project's canonical BDM text
+  (read from the canvas through the core's `canonical()` at that moment, else the store's text)
+  and the session's Debug/Release choice. Its channel fills `store.build` (progress, diagnostics,
+  one `finished`) and the Build output tab: progress, toolchain notes (`B2C-T1011`–`T1013`), the
+  compiler's own text and how the build ended. A `C:` error from blocks that are not Raw C++ is
+  labelled _This looks like a bug in Blocks2Cpp_. A cancelled build puts the previous diagnostics
+  back; an up-to-date build keeps the previous compiler warnings of the same content.
+- **Run** (`run.start`, `F5`, and `run.again`) stops a running program first (its _Stopped_
+  shows), builds unless the last successful build has the same content hash, configuration and
+  compiler, then calls `run_start` with the console's size. `staleBuild` from the backend builds
+  once more and retries. A failed build shows the first error (or the Build output).
+- **Stop** (`run.stop`, `Shift+F5`) cancels the running build (`build_cancel`, also once a late
+  build ID arrives) and stops the running program (`run_stop`, also once a late run ID arrives).
+- **The console** (`src/app/panels.tsx`, `ConnectedConsolePanel`) attaches its terminal to the
+  feature's `consoleBridge`. Output batches are written in order and acknowledged with `run_ack`
+  at most every 100 ms, once xterm has processed them; `skipped` and `exit` are applied only after
+  their `afterSeq` batches are written. Typed text goes to `run_input` as base64 chunks of at most
+  64 KiB, within the backend's 200 calls and 1 MiB a second (with retries on `rateLimited`); the
+  fitted size goes to `run_resize`. The header shows the state, the exit text, the elapsed time
+  and the notices _Running with IDE helpers_ and _Process group only_. A new run writes a dim
+  `── New run ──` separator after resetting the terminal's modes.
+- Every channel message is checked against the contract before use (`channel.ts`); user-facing
+  error text comes from `messages.ts`, never from the backend.
+
+### Toolchain, settings and trust (milestone M2)
+
+- **Toolchain page** (`src/features/toolchain/`, the `toolchainSetup` screen,
+  [§4.6](../../docs/spec/04-user-interface.md)): one page that is the setup page while no
+  compiler can build (what a compiler is; on Windows MSYS2 with
+  `pacman -S mingw-w64-ucrt-x86_64-gcc` in the _MSYS2 UCRT64_ shell, or WinLibs through winget;
+  on Linux the `apt`, `dnf` or `pacman` command chosen from `toolchain_setup_info`'s
+  distribution, all three when unknown; copy buttons; the MSYS2 and WinLibs links through
+  `open_help_link`) and the toolchain list otherwise (version, target, flavour, location,
+  capabilities, health checks with the reason of each rejection, _Select as default_). _I
+  installed it → Rescan_ and _Choose g++ manually…_ are always there. The page opens by itself
+  once when discovery ends without a usable compiler, and from the status bar.
+- **Settings page** (`src/features/settings/`, the `settings` screen,
+  [§4.12](../../docs/spec/04-user-interface.md)): indent width, _Run on errors_, console
+  scrollback, a link to the toolchain page and _Clear build cache_ (in-app confirmation, then the
+  space freed and the builds kept). Every change is a partial `settings_update`, saved at once
+  and applied live through the store. Notices about `settings.json` are listed on the page, and a
+  dismissible window banner points to them. Other features add sections with
+  `registerSettingsSection`.
+- **Restricted Mode** (`src/features/trust/`,
+  [08 §8.3](../../docs/spec/08-security.md)): a persistent banner under the toolbar while the
+  open project is restricted (why: no trust record or changed outside the app; a stronger
+  warning for a file from the Internet), with _Trust…_ (`trust_grant`, the backend's native
+  dialog). The Settings page's _This project_ section says why a project is trusted and offers
+  _Revoke trust_ when the trust comes from the project's own record.
+
+### Recovery and outside changes (milestone M2)
+
+- **Autosave** (`src/features/recovery/autosave.ts`): while the open project has unsaved
+  changes, its canonical text goes to the backend as a recovery snapshot (`recovery_save`) every
+  30 s and when the window loses focus; never twice the same text, one call at a time, failures
+  logged by code only. The backend keeps snapshots in its recovery folder, never next to the
+  project, and deletes them on a clean save or close.
+- **Restore or discard** (`RecoveryOffer.tsx`, a start page section): at start-up the snapshots
+  of instances that are no longer running (`recovery_list`) are listed with _Restore_ and
+  _Discard_. Restore starts the compiler core first, then `recovery_restore`; the document goes
+  through the core's loader (`openDocumentInEditor`) and opens with unsaved changes and the trust
+  state the backend decided (08 §8.3.1). An open project with unsaved changes is settled first
+  (_Save_, _Don't save_, _Cancel_) and closed once the restored one is shown. Discard asks first.
+- **Changed on disk** (`src/features/external-change/`): the backend's file watcher reports a
+  change to the open project file (`projectChangedOnDisk`), or a save is refused with
+  `changedOnDisk`; the editor asks _Reload_, _Keep mine (save as…)_ or _Not now_. Reload
+  (`project_reload`) replaces the workspace, clears undo and takes the reloaded file's trust
+  state (an outside change to trust-relevant content shows Restricted Mode); it is not offered
+  for a deleted or moved file. Keep mine runs `project.saveAs`.
+
 ## Layout
 
 | Path                                   | Contents                                                                                                                               |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `index.html`, `src/main.tsx`           | Entry point (no inline scripts)                                                                                                        |
-| `src/app/`                             | The app shell: start-up, state, registries, window, dialogs                                                                            |
-| `src/features/`                        | The features, installed at start-up (`index.ts`)                                                                                       |
+| `src/app/`                             | The app shell: start-up, state, registries, window, banners, dialogs                                                                   |
+| `src/features/`                        | The features, installed at start-up (`index.ts`): project, build and run, toolchain, settings, trust, recovery, external changes       |
 | `src/editor/`                          | The block editor: workspace, BDM ⇄ Blockly sync, live preview, services, module switcher, toolbox, diagnostics on blocks, highlighting |
 | `src/panels/`                          | The C++ code panel, Problems, the console and Build output                                                                             |
 | `src/lib/ipc.ts`                       | The typed client for the backend's commands                                                                                            |
 | `src/test/`, `vitest.config.ts`        | Test setup and shared test helpers; the Vitest settings                                                                                |
-| `src-tauri/src/main.rs`                | The Rust shell: window, navigation rules, commands                                                                                     |
+| `src-tauri/src/main.rs`                | Entry point; calls `blocks2cpp_desktop::run()`                                                                                         |
+| `src-tauri/src/lib.rs`                 | Start-up (folders, log, panic hook, backend, window), the command list, shutdown on exit                                               |
+| `src-tauri/src/commands/`              | One thin async adapter per IPC command (decode, call `b2c_app::Backend` on the blocking pool)                                          |
+| `src-tauri/src/channels.rs`            | Tauri channels as the backend's event and byte sinks                                                                                   |
+| `src-tauri/src/dialogs.rs`             | Native open, save, choose-g++ and trust dialogs (tauri-plugin-dialog, Rust API only)                                                   |
+| `src-tauri/src/window.rs`              | The editor window, navigation rules, closing with unsaved changes                                                                      |
+| `src-tauri/src/logging.rs`             | JSON-lines log files (5 × 5 MiB), `B2C_LOG`, panic hook                                                                                |
+| `src-tauri/src/e2e.rs`                 | End-to-end seams, feature `e2e-hooks` only (never in release builds)                                                                   |
+| `src-tauri/tests/`                     | Command consistency, security settings, mock-runtime IPC, logging, end-to-end seams                                                    |
 | `src-tauri/tauri.conf.json`            | App, window, security (CSP, isolation) and bundle settings                                                                             |
 | `src-tauri/capabilities/`              | What the window may call in the backend                                                                                                |
 | `src-tauri/permissions/autogenerated/` | Permissions for our commands, generated by `build.rs`                                                                                  |
 | `src-tauri/isolation/`                 | The isolation application that checks every IPC message                                                                                |
+| `src-tauri/isolation-tests/`           | Node tests of the isolation validator and hook                                                                                         |
 | `src-tauri/icons/`                     | App icons; `icon.svg` is the source                                                                                                    |
 
 ## Requirements
@@ -157,8 +288,14 @@ pnpm --filter @blocks2cpp/desktop run test:coverage               # the same, wi
 pnpm --filter @blocks2cpp/desktop run test:isolation              # the isolation hook's validator (node --test)
 pnpm --filter @blocks2cpp/desktop run build                       # frontend build
 cargo clippy --locked -p blocks2cpp-desktop --all-targets -- -D warnings
-cargo test --locked -p blocks2cpp-desktop
+cargo test --locked -p blocks2cpp-desktop                         # B2C_REQUIRE_GXX=1: fail without g++
+cargo test --locked -p blocks2cpp-desktop --features e2e-hooks
 ```
+
+`cargo build -p blocks2cpp-desktop --features e2e-hooks` (debug builds only: a `compile_error!`
+refuses it otherwise) builds the app with its end-to-end seams, which read `B2C_E2E_ROOT`,
+`B2C_E2E_DIALOGS` and `B2C_E2E_TOOLCHAIN_DIRS` ([ADR-0009](../../docs/adr/0009-e2e-tooling-and-test-seams.md)). `B2C_LOG=debug`
+makes the log more detailed.
 
 Tests sit next to the code they test (`*.test.ts`, `*.test.tsx`); `src/test/` holds the setup and
 the shared helpers, such as `expectNoAxeViolations` for the accessibility check every panel and
@@ -199,12 +336,15 @@ These implement [docs/spec/08-security.md §8.8](../../docs/spec/08-security.md#
   into `blockly-media/`) instead of loaded from Blockly's default web server, sounds are off, and
   fonts are the system's. The build inlines no assets as `data:` URLs.
 - **Isolation pattern.** `src-tauri/isolation/index.js` runs in a sandboxed iframe and drops every
-  IPC message whose command and arguments are not on its allowlist, before the backend sees it.
-- **Capabilities.** The `main` window may call `app_version` and nothing else: no core or plugin
-  permissions, and no `fs`, `shell`, `http`, `process` or `dialog` plugins. `build.rs` declares
-  the app's commands, so each one needs an explicit permission.
+  IPC message whose command and arguments are not on its allowlist (`allowlist.generated.js`,
+  generated from the command table in `crates/b2c-ipc`), before the backend sees it. The backend
+  checks every request again.
+- **Capabilities.** The `main` window may call exactly the commands of the IPC contract, one
+  `allow-…` permission each: no core or plugin permissions, and no `fs`, `shell`, `http`,
+  `process`, `opener` or `dialog` permission (the native dialogs are raised from Rust).
+  `build.rs` declares the app's commands, so each one needs an explicit permission.
 - **Navigation.** The window may navigate only within the app (and to the dev server during
-  development), and requests to open new windows are denied (`src-tauri/src/main.rs`).
+  development), and requests to open new windows are denied (`src-tauri/src/window.rs`).
 - `withGlobalTauri: false` (no `window.__TAURI__`), `freezePrototype: true`
   (`Object.prototype` is frozen against prototype pollution), and the web inspector is only in
   debug builds: the `devtools` Cargo feature is off.
@@ -214,12 +354,16 @@ These implement [docs/spec/08-security.md §8.8](../../docs/spec/08-security.md#
 
 ### Adding an IPC command
 
-1. Write the command in `src-tauri/src/` with `#[tauri::command]`, validate its input, and add it
-   to `generate_handler!` in `main.rs`.
-2. Add its name to `AppManifest::commands` in `build.rs`, and its `allow-…` permission to
-   `capabilities/main-window.json`.
-3. Add it, with a check of its arguments, to `ALLOWED_COMMANDS` in `isolation/index.js`.
-4. Call it only through a typed function in `src/lib/ipc.ts`.
+1. Add the request and response types and the `COMMANDS` entry in `crates/b2c-ipc`, then
+   regenerate (`B2C_UPDATE_IPC=1 cargo test -p b2c-ipc --features ts --test generate`): the
+   TypeScript client, the isolation allowlist and the isolation samples follow.
+2. Implement the method on `b2c_app::Backend`.
+3. Add a thin adapter in `src-tauri/src/commands/<area>.rs` and its path to `generate_handler!`
+   in `src/lib.rs`.
+4. Add `allow-<name>` (underscores become dashes) to `capabilities/main-window.json`; `build.rs`
+   takes the command names from `b2c_ipc::COMMAND_NAMES` and writes
+   `permissions/autogenerated/<name>.toml` (commit it).
+5. `cargo test -p blocks2cpp-desktop --test consistency` checks that all five places agree.
 
 ## Dependencies
 
@@ -262,10 +406,13 @@ workspace policy requires ([§8.9](../../docs/spec/08-security.md#89-supply-chai
 | `@xterm/xterm`                           | 5.5.0 (2024-04-05)   | MIT               | The console (§4.5) with its DOM renderer; no dependencies                                                                                                                                                                                      |
 | `@xterm/addon-fit`                       | 0.10.0 (2024-04-05)  | MIT               | Fits the terminal to the console panel                                                                                                                                                                                                         |
 
-| Crate                 | Version (released)  | Licence           | Why                                                                        |
-| --------------------- | ------------------- | ----------------- | -------------------------------------------------------------------------- |
-| `tauri`               | 2.12.0 (2026-09-26) | Apache-2.0 OR MIT | The desktop shell ([ADR-0001](../../docs/adr/0001-desktop-shell-tauri.md)) |
-| `tauri-build` (build) | 2.7.0 (2026-09-26)  | Apache-2.0 OR MIT | Embeds the configuration, capabilities and Windows resources               |
+| Crate                        | Version (released)  | Licence           | Why                                                                                                                                                                                                                                                                              |
+| ---------------------------- | ------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tauri`                      | 2.12.0 (2026-09-26) | Apache-2.0 OR MIT | The desktop shell ([ADR-0001](../../docs/adr/0001-desktop-shell-tauri.md))                                                                                                                                                                                                       |
+| `tauri-build` (build)        | 2.7.0 (2026-09-26)  | Apache-2.0 OR MIT | Embeds the configuration, capabilities and Windows resources                                                                                                                                                                                                                     |
+| `tauri-plugin-dialog`        | 2.8.0 (2026-09-26)  | Apache-2.0 OR MIT | Native open, save and message dialogs, from Rust only (no JavaScript permission). Default features off except `gtk3`: rfd 0.16.0's GTK 3 backend on Linux, no XDG portal and no D-Bus. Brings `tauri-plugin-fs` 2.6.0 (for its `FilePath` type; the fs plugin is not registered) |
+| `tracing-subscriber`         | 0.3.23 (2026-03-13) | MIT               | The span registry under the app's own JSON-lines log layer. Features `registry` and `std` only: no `fmt`, ANSI, `log` bridge or `EnvFilter`                                                                                                                                      |
+| `notify` (through `b2c-app`) | 8.2.0 (2025-08-03)  | CC0-1.0           | The file watcher of open projects (05 §5.10): inotify on Linux, `ReadDirectoryChangesW` on Windows, one non-recursive watch per project folder. No default features (no macOS FSEvents). Its events only wake the backend's own 300 ms debounce and SHA-256 check                |
 
 Notes:
 
@@ -313,6 +460,13 @@ Notes:
 - **`tauri` features:** `wry`, `compression`, `isolation`, `common-controls-v6` and `x11`.
   Left out: `devtools` (no web inspector in release builds), `dynamic-acl` (capabilities are fixed
   at build time), `tray-icon`, and `dbus` (unused, and it would need libdbus to build).
+- **`tauri-plugin-dialog` 2.8.0, `tauri-plugin` 2.7.0, `lazy_static` 1.5.0**: the newer 2.8.1,
+  2.7.1 and 1.5.1 were less than 7 days old when added. `rfd` 0.16.0 on Windows brings
+  `windows-sys` 0.60.2, which `notify` uses too.
+- **`notify` 8.2.0**, the newest stable release (9.0 is still a release candidate). Without
+  default features it brings `inotify`, `inotify-sys`, `mio`, `walkdir`, `notify-types`,
+  `bitflags` and `log` on Linux (most already in the lockfile through Tauri), and `walkdir` and
+  `windows-sys` 0.60 on Windows.
 - Cargo has no minimum release age, so `Cargo.lock` holds Tauri's own crates and the crates it
   brought in at their newest versions that were at least 7 days old. Keep it that way when
   updating them, with `cargo update -p <crate> --precise <version>`.
