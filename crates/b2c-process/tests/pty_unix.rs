@@ -773,7 +773,13 @@ fn pipe_mode_writes_fail_once_the_program_has_ended() {
 #[test]
 fn the_environment_is_exactly_the_commands() {
     let mut command = Command::new("/usr/bin/env", std::env::temp_dir()).unwrap();
-    command.env("ONLY_THIS", "yes").env("TERM", "xterm-256color");
+    // In a cgroup scope the program also sees the manager's XDG_RUNTIME_DIR
+    // and DBUS_SESSION_BUS_ADDRESS and systemd-run's INVOCATION_ID (07
+    // §7.5.2); this test is about everything else.
+    command
+        .env("ONLY_THIS", "yes")
+        .env("TERM", "xterm-256color")
+        .containment(Containment::ProcessGroupOnly);
     let mut child = spawn_pty(&command, SIZE).unwrap();
     let output = Collector::start(&mut child);
     let text = output.finish();

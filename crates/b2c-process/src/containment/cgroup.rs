@@ -226,6 +226,24 @@ fn first_executable(paths: &[&str]) -> Option<PathBuf> {
     })
 }
 
+/// `systemd-run` starts and only then executes the program, so a program
+/// that cannot be executed would show up as the scope's exit status rather
+/// than as a failed start. Checking first gives the error a direct spawn
+/// gives: `NotFound` for a missing file and `PermissionDenied` for a folder
+/// or a file without an execute bit. (A file removed between this check and
+/// the exec still ends as a failed run, which is harmless.)
+fn check_runnable(program: &Path) -> Result<(), ProcessError> {
+    let refused = |source: io::Error| ProcessError::Spawn {
+        program: program.to_path_buf(),
+        source,
+    };
+    let metadata = fs::metadata(program).map_err(refused)?;
+    if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+        return Err(refused(io::Error::from(io::ErrorKind::PermissionDenied)));
+    }
+    Ok(())
+}
+
 /// The trial: `systemd-run … -- cat /proc/self/cgroup` in a scope named
 /// `unit`, contained by its process group only (detection must not need
 /// itself).
@@ -414,14 +432,17 @@ impl Scope {
     /// manager's bus variables.
     ///
     /// # Errors
-    /// Those of [`Command::new`], which cannot happen for the absolute
-    /// `systemd-run` path and an already accepted working directory.
+    /// [`ProcessError::Spawn`] when the program is missing, not a regular
+    /// file or not executable (see [`check_runnable`]); otherwise those of
+    /// [`Command::new`], which cannot happen for the absolute `systemd-run`
+    /// path and an already accepted working directory.
     pub(crate) fn wrap(
         &self,
         detected: &Detected,
         command: &Command,
         enforcement: &Enforcement,
     ) -> Result<Command, ProcessError> {
+        check_runnable(command.program())?;
         let mut wrapped = Command::new(&detected.systemd_run, command.working_dir())?;
         wrapped
             .args(scope_arguments(
@@ -762,6 +783,39 @@ mod tests {
             ]
             .map(OsString::from)
         );
+    }
+
+    #[test]
+    fn only_runnable_programs_are_wrapped() {
+        let dir = tempfile::tempdir().unwrap();
+        let kind = |path: &Path| match check_runnable(path) {
+            Ok(()) => None,
+            Err(ProcessError::Spawn { program, source }) => {
+                assert_eq!(program, path);
+                Some(source.kind())
+            }
+            Err(other) => panic!("{other:?}"),
+        };
+        assert_eq!(kind(&dir.path().join("missing")), Some(io::ErrorKind::NotFound));
+        assert_eq!(kind(dir.path()), Some(io::ErrorKind::PermissionDenied));
+        let file = dir.path().join("program");
+        fs::write(&file, b"#!/bin/sh\n").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(kind(&file), Some(io::ErrorKind::PermissionDenied));
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(kind(&file), None);
+        // A link to a runnable program is fine: systemd-run follows it too.
+        let link = dir.path().join("link");
+        symlink(&file, &link).unwrap();
+        assert_eq!(kind(&link), None);
+
+        let detected = detected_for(dir.path(), Controllers::default());
+        let scope = Scope::new(&detected, "run");
+        let command = Command::new(dir.path().join("missing"), "/tmp").unwrap();
+        let error = scope
+            .wrap(&detected, &command, &Enforcement::default())
+            .unwrap_err();
+        assert!(matches!(error, ProcessError::Spawn { .. }), "{error:?}");
     }
 
     #[test]
@@ -1175,7 +1229,31 @@ exec "$@"
         let path = dir.join("systemd-run");
         fs::write(&path, script).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        wait_until_executable(&path);
         path
+    }
+
+    /// Waits until `script` can be executed. A child that another test
+    /// thread forks while the script is still open for writing holds that
+    /// descriptor until it execs, and until then executing the script fails
+    /// with `ETXTBSY` ("Text file busy"). Once one execution succeeds no
+    /// writer is left, and none can appear again.
+    fn wait_until_executable(script: &Path) {
+        let until = Instant::now() + Duration::from_secs(5);
+        let mut probe = Command::new(script, "/").unwrap();
+        probe.arg("--probe").containment(Containment::ProcessGroupOnly);
+        loop {
+            match crate::run_captured(&probe) {
+                Err(ProcessError::Spawn { source, .. })
+                    if source.raw_os_error() == Some(Errno::TXTBSY.raw_os_error())
+                        && Instant::now() < until =>
+                {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("cannot run {}: {error}", script.display()),
+                Ok(_) => return,
+            }
+        }
     }
 
     /// Runs `test` on this thread with scopes from the fake `systemd-run`

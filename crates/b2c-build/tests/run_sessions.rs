@@ -437,7 +437,9 @@ fn an_echo_program_reads_a_line_through_the_terminal() {
     let mut spec = spec(program, &["echo"]);
     spec.ide_helpers = true;
     let (id, console) = start(&sessions, spec);
-    console.wait_for_text("name? ");
+    // ConPTY repaints the screen and may draw the prompt's trailing space as
+    // a cursor movement (ESC [ 1 C), so only the visible text is awaited.
+    console.wait_for_text("name?");
     assert!(sessions.is_running("project"));
     // Enter is a carriage return in a terminal.
     sessions.input(&id, b"Ada\r").unwrap();
@@ -511,7 +513,20 @@ fn exits_are_decoded() {
                 ntstatus: 0xC000_0094
             }
         );
-        assert_eq!(abort.status, ExitStatus::Exited { code: 3 });
+        // The C runtime decides how abort() ends a program: the classic
+        // exit code 3, or a fail-fast exception (0xC0000409, what UCRT does
+        // when a debugger-less abort reports the fault). Both are an abort.
+        assert!(
+            matches!(
+                abort.status,
+                ExitStatus::Exited { code: 3 }
+                    | ExitStatus::Exception {
+                        ntstatus: 0xC000_0409
+                    }
+            ),
+            "{:?}",
+            abort.status
+        );
         let recursion = run_helper("recurse").unwrap();
         assert_eq!(
             recursion.status,
