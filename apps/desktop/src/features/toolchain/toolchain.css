@@ -1,0 +1,148 @@
+/*
+ * The toolchain page (docs/spec/04-user-interface.md §4.6): setup steps, copyable commands and the
+ * toolchain list. The shared page frame is in ../settings/page/page.css.
+ */
+
+.setup-option-title {
+  margin: 14px 0 4px;
+  font-size: 14px;
+}
+
+.setup-steps {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+
+.setup-steps > li {
+  margin: 8px 0;
+}
+
+.setup-steps p {
+  margin: 4px 0;
+}
+
+.setup-alternatives {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.copy-command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.copy-command-text {
+  padding: 6px 10px;
+  border: 1px solid var(--b2c-border);
+  border-radius: 6px;
+  background: var(--b2c-surface);
+  font-family: ui-monospace, 'Cascadia Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.copy-command-status {
+  color: var(--b2c-text-muted);
+}
+
+.toolchain-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toolchain-item {
+  padding: 12px 0;
+}
+
+.toolchain-item + .toolchain-item {
+  border-top: 1px solid var(--b2c-border);
+}
+
+.toolchain-item-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.toolchain-name {
+  margin: 0;
+  font-size: 15px;
+}
+
+.toolchain-health {
+  font-weight: 600;
+}
+
+.toolchain-usable {
+  color: var(--b2c-ok);
+}
+
+.toolchain-unusable {
+  color: var(--b2c-error);
+}
+
+.toolchain-default {
+  padding: 1px 8px;
+  border: 1px solid var(--b2c-primary);
+  border-radius: 999px;
+  color: var(--b2c-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.toolchain-fallback {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--b2c-warning-bg);
+  color: var(--b2c-warning-text);
+}
+
+.toolchain-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 16px;
+  margin: 8px 0 0;
+}
+
+.toolchain-details dt {
+  color: var(--b2c-text-muted);
+}
+
+.toolchain-details dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.toolchain-problems {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toolchain-problem {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.toolchain-problem p {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.toolchain-problem-glyph {
+  flex: none;
+  font-weight: 700;
+}
+
+.toolchain-problem-code {
+  color: var(--b2c-text-muted);
+  font-family: ui-monospace, 'Cascadia Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  font-size: 12px;
+}
