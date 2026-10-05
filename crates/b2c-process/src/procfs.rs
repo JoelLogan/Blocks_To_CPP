@@ -1,5 +1,5 @@
 //! Reading the Linux process table from `/proc`, for finding a child's
-//! descendants and counting the members of a process group.
+//! descendants and the members of a process group.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -75,9 +75,13 @@ pub(crate) fn descendants(root: i32) -> Vec<i32> {
     descendants_in(root, &snapshot())
 }
 
-/// How many processes are in process group `pgrp`.
-pub(crate) fn count_group(pgrp: i32) -> usize {
-    snapshot().iter().filter(|entry| entry.pgrp == pgrp).count()
+/// The PIDs of the processes in process group `pgrp`.
+pub(crate) fn group_members(pgrp: i32) -> Vec<i32> {
+    snapshot()
+        .iter()
+        .filter(|entry| entry.pgrp == pgrp)
+        .map(|entry| entry.pid)
+        .collect()
 }
 
 #[cfg(test)]
@@ -149,6 +153,8 @@ mod tests {
     fn the_test_process_is_in_the_table() {
         let me = i32::try_from(std::process::id()).unwrap();
         assert!(snapshot().iter().any(|entry| entry.pid == me));
+        let group = rustix::process::getpgrp().as_raw_pid();
+        assert!(group_members(group).contains(&me));
     }
 
     proptest! {

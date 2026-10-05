@@ -1,13 +1,16 @@
-//! Unix containment: process groups and signals (no `unsafe` needed).
+//! Unix containment: process groups and signals, plus (Linux) the cgroup v2
+//! scope and the watchdogs of `src/containment/` (no `unsafe` needed).
 
 use std::io;
 use std::os::unix::process::CommandExt as _;
 use std::process::Child;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rustix::process::{Pid, Signal, kill_process, kill_process_group};
 
 use super::Placement;
-use crate::command::Limits;
+use crate::containment::{Breach, TreeSpec};
+use crate::status::ExitStatus;
 
 /// Applies the placement before spawning.
 pub(crate) fn configure(command: &mut std::process::Command, placement: Placement, _captured: bool) {
@@ -19,23 +22,88 @@ pub(crate) fn configure(command: &mut std::process::Command, placement: Placemen
     }
 }
 
-/// The child's process tree.
+/// What the watchdog checks (see [`crate::containment::Enforcement`]).
+#[derive(Debug, Clone, Copy, Default)]
+struct Watch {
+    /// The RSS watchdog's limit for the tree.
+    rss: Option<u64>,
+    /// The process-count watchdog's limit.
+    processes: Option<u32>,
+    /// Stop when the scope's `pids.events` reports a refused task.
+    pids_events: bool,
+    /// Stop when the scope's `memory.events` reports running out of memory.
+    oom_events: bool,
+}
+
+/// The child's process tree: its process group (or, for a child in this
+/// process's group, the child and its descendants), and on Linux its cgroup
+/// scope when it has one.
 #[derive(Debug)]
 pub(crate) struct Tree {
     pid: Pid,
     placement: Placement,
+    watch: Watch,
+    #[cfg(target_os = "linux")]
+    scope: Option<crate::containment::cgroup::Scope>,
+    /// Set once a watchdog or a memory event found the tree out of memory.
+    out_of_memory: AtomicBool,
+    /// Set once the scope's `pids.events` showed a refused task.
+    process_limit_hit: AtomicBool,
 }
 
-/// Puts a freshly spawned child under control.
+/// A started child, owned by its supervisor.
+#[derive(Debug)]
+pub(crate) struct Process(Child);
+
+impl Process {
+    /// Wraps a child started by the standard library.
+    pub(crate) fn from_std(child: Child) -> Self {
+        Self(child)
+    }
+
+    /// Whether the child has exited, without reaping it ([`has_exited`]).
+    pub(crate) fn has_exited(&mut self) -> io::Result<bool> {
+        has_exited(&mut self.0)
+    }
+
+    /// Waits for the child and reaps it.
+    pub(crate) fn wait(&mut self) -> io::Result<ExitStatus> {
+        self.0.wait().map(ExitStatus::from_std)
+    }
+
+    /// Kills the child itself (not its tree) and reaps it, after a setup
+    /// failure.
+    pub(crate) fn discard(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// Puts a freshly spawned child under control as `spec` says: `RLIMIT_AS`
+/// when no scope enforces memory, and the watchdogs.
 ///
 /// # Errors
 /// Fails if the memory limit cannot be applied.
-pub(crate) fn contain(child: &mut Child, placement: Placement, limits: &Limits) -> io::Result<Tree> {
+pub(crate) fn contain(child: &mut Child, placement: Placement, spec: TreeSpec) -> io::Result<Tree> {
     let pid = Pid::from_child(child);
-    if let Some(bytes) = limits.memory {
+    let enforcement = spec.enforcement;
+    if let Some(bytes) = enforcement.address_space {
         apply_memory_limit(pid, bytes)?;
     }
-    Ok(Tree { pid, placement })
+    Ok(Tree {
+        pid,
+        placement,
+        watch: Watch {
+            rss: enforcement.rss_watch,
+            processes: enforcement.count_processes,
+            pids_events: enforcement.pids_events,
+            oom_events: enforcement.oom_events,
+        },
+        #[cfg(target_os = "linux")]
+        scope: spec.scope,
+        out_of_memory: AtomicBool::new(false),
+        process_limit_hit: AtomicBool::new(false),
+    })
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -90,13 +158,17 @@ pub(crate) fn has_exited(child: &mut Child) -> io::Result<bool> {
 }
 
 impl Tree {
-    /// Asks the whole tree to stop (`SIGTERM`).
+    /// Asks the whole tree to stop (`SIGTERM` to the process group; the
+    /// scope's other processes are killed by [`Tree::kill`] afterwards).
     pub(crate) fn stop(&self) {
         self.signal(Signal::TERM);
     }
 
-    /// Kills the whole tree (`SIGKILL`).
+    /// Kills the whole tree: the scope (`cgroup.kill`) and the process group
+    /// (`SIGKILL`), which until `systemd-run` has moved into the scope is
+    /// the only place it is.
     pub(crate) fn kill(&self) {
+        self.kill_scope();
         match self.placement {
             Placement::NewGroup => {
                 // ESRCH (nothing left) is fine.
@@ -107,26 +179,142 @@ impl Tree {
     }
 
     /// Cleans up after the child itself has exited (but before it is
-    /// reaped): anything it left running in its process group is killed.
-    /// Leftovers of a shared-group child cannot be found any more (they were
-    /// re-parented when it exited) and are left alone.
+    /// reaped): anything it left running in its scope or process group is
+    /// killed. Leftovers of a shared-group child outside a scope cannot be
+    /// found any more (they were re-parented when it exited) and are left
+    /// alone. The scope's events are read first, while it still exists (a
+    /// fork bomb whose leader gave up leaves its processes in it).
     pub(crate) fn after_exit(&self) {
+        self.note_scope_events();
+        self.kill_scope();
         if self.placement == Placement::NewGroup {
             let _ = kill_process_group(self.pid, Signal::KILL);
         }
     }
 
-    /// How many processes are in the tree, where that can be counted (Linux,
-    /// new process group).
-    pub(crate) fn process_count(&self) -> Option<usize> {
+    /// Whether [`Tree::watchdog`] has anything to check.
+    pub(crate) fn watches(&self) -> bool {
+        let watch = self.watch;
+        watch.rss.is_some() || watch.processes.is_some() || watch.pids_events || watch.oom_events
+    }
+
+    /// One look at the tree for the supervisor (every 100 ms while it runs):
+    /// whether it has gone over its process or memory limit. The supervisor
+    /// then kills it.
+    pub(crate) fn watchdog(&self) -> Option<Breach> {
         #[cfg(target_os = "linux")]
         {
-            if self.placement == Placement::NewGroup {
-                return Some(crate::procfs::count_group(self.pid.as_raw_pid()));
+            if let Some(scope) = &self.scope {
+                if self.watch.oom_events && scope.oom_seen() {
+                    self.out_of_memory.store(true, Ordering::Relaxed);
+                    return Some(Breach::Memory);
+                }
+                if self.watch.pids_events && scope.tasks_max_hit() {
+                    return Some(Breach::Processes);
+                }
+            }
+            if self.watch.rss.is_none() && self.watch.processes.is_none() {
+                return None;
+            }
+            let members = self.members();
+            if let Some(max) = self.watch.processes
+                && members.countable
+                && members.pids.len() > usize::try_from(max).unwrap_or(usize::MAX)
+            {
+                return Some(Breach::Processes);
+            }
+            if let Some(limit) = self.watch.rss
+                && crate::containment::rss::total(&members.pids) > limit
+            {
+                self.out_of_memory.store(true, Ordering::Relaxed);
+                return Some(Breach::Memory);
             }
         }
         None
     }
+
+    /// Whether the tree hit its process limit without a watchdog stopping
+    /// it (the scope's `TasksMax` refused a task and the program then ended
+    /// by itself), as noted by [`Tree::after_exit`].
+    pub(crate) fn process_limit_hit(&self) -> bool {
+        self.process_limit_hit.load(Ordering::Relaxed)
+    }
+
+    /// Whether the tree ran out of memory, decided after the child's exit
+    /// (`failed`: it did not exit with code 0): a watchdog or scope event
+    /// saw it, or the scope's events say so.
+    pub(crate) fn out_of_memory(&self, failed: bool) -> bool {
+        if self.out_of_memory.load(Ordering::Relaxed) {
+            return true;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            if self.watch.oom_events
+                && let Some(scope) = &self.scope
+            {
+                return scope.final_out_of_memory(failed);
+            }
+        }
+        let _ = failed;
+        false
+    }
+
+    /// The processes the watchdogs look at (Linux).
+    #[cfg(target_os = "linux")]
+    fn members(&self) -> Members {
+        if let Some(scope) = &self.scope {
+            return Members {
+                pids: scope.pids(),
+                countable: true,
+            };
+        }
+        let root = self.pid.as_raw_pid();
+        match self.placement {
+            Placement::NewGroup => Members {
+                pids: crate::procfs::group_members(root),
+                countable: true,
+            },
+            // This process's own group: only the child and its descendants
+            // are the tree, and they are not counted against a process
+            // limit (see `crate::Limits`).
+            Placement::SharedGroup => {
+                let mut pids = crate::procfs::descendants(root);
+                pids.push(root);
+                Members {
+                    pids,
+                    countable: false,
+                }
+            }
+        }
+    }
+
+    /// Records what the scope's event files say, while it exists.
+    #[cfg(target_os = "linux")]
+    fn note_scope_events(&self) {
+        if let Some(scope) = &self.scope {
+            if self.watch.oom_events && scope.oom_seen() {
+                self.out_of_memory.store(true, Ordering::Relaxed);
+            }
+            if self.watch.pids_events && scope.tasks_max_hit() {
+                self.process_limit_hit.store(true, Ordering::Relaxed);
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[allow(clippy::unused_self)] // same signature as the Linux version
+    fn note_scope_events(&self) {}
+
+    #[cfg(target_os = "linux")]
+    fn kill_scope(&self) {
+        if let Some(scope) = &self.scope {
+            scope.kill();
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[allow(clippy::unused_self)] // same signature as the Linux version
+    fn kill_scope(&self) {}
 
     fn signal(&self, signal: Signal) {
         match self.placement {
@@ -144,6 +332,15 @@ impl Tree {
             }
         }
     }
+}
+
+/// The processes of a tree, for the watchdogs.
+#[cfg(target_os = "linux")]
+struct Members {
+    /// The processes of the tree.
+    pids: Vec<i32>,
+    /// Whether they are counted against a process limit.
+    countable: bool,
 }
 
 /// Kills the child and every descendant that can be found, without a race

@@ -64,6 +64,7 @@ pub fn compiler_limits(timeout: Duration) -> Limits {
         stdout_cap: COMPILER_OUTPUT_CAP,
         stderr_cap: COMPILER_OUTPUT_CAP,
         memory: Some(COMPILER_MEMORY_LIMIT),
+        rss_limit: None,
         processes: Some(COMPILER_PROCESS_LIMIT),
         grace: None,
     }

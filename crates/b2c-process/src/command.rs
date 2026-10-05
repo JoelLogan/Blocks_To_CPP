@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::cancel::CancelToken;
+use crate::containment::Containment;
 use crate::error::ProcessError;
 
 /// Default cap for each captured stream: 4 MiB (spec §7.5.2).
@@ -67,18 +68,45 @@ pub enum ProcessGroup {
 
 /// Resource limits for one run.
 ///
-/// | Limit | Windows | Linux |
-/// |-------|---------|-------|
-/// | `timeout` | wall clock, whole tree terminated | wall clock, whole tree killed |
-/// | `memory` | Job Object `JobMemoryLimit` (all processes together) | `RLIMIT_AS` set on the child with `prlimit(2)` right after it starts and inherited by its descendants (address space per process, not a total) |
-/// | `processes` | Job Object `ActiveProcessLimit` (further process creation fails) | a watchdog counts the processes in the child's process group every 100 ms and kills the group when there are more (only with [`ProcessGroup::New`]) |
-/// | output caps | the same everywhere: bytes beyond the cap are read and discarded | |
+/// How each limit is enforced depends on the platform and, on Linux, on the
+/// containment actually used ([`crate::containment_level`],
+/// [`crate::Containment`]):
+///
+/// | Limit | Windows | Linux, cgroup v2 scope | Linux fallback |
+/// |-------|---------|------------------------|----------------|
+/// | `timeout` | wall clock, whole tree terminated | wall clock, whole scope killed | wall clock, whole group killed |
+/// | `memory` | Job Object `JobMemoryLimit` (all processes together) | `MemoryMax` and `MemorySwapMax=0` on the scope | `RLIMIT_AS` set on the child with `prlimit(2)` right after it starts (inherited by its descendants; address space per process), **plus** the RSS watchdog |
+/// | `rss_limit` | Job Object `JobMemoryLimit` | `MemoryMax` and `MemorySwapMax=0` on the scope | the RSS watchdog only, never `RLIMIT_AS` |
+/// | `processes` | Job Object `ActiveProcessLimit` (further process creation fails, and the run is stopped) | `TasksMax` on the scope (further `fork`s fail, and the run is stopped; it counts threads too) | a watchdog counts the processes in the child's process group every 100 ms and kills the group when there are more (only with [`ProcessGroup::New`]) |
+/// | output caps | the same everywhere: bytes beyond the cap are read and discarded | | |
+///
+/// The **RSS watchdog** adds up the resident memory (`VmRSS`, from
+/// `/proc/<pid>/statm`) of the tree's processes every 100 ms and kills the
+/// tree when the sum is above the limit (the smaller of `memory` and
+/// `rss_limit`). Pages shared between the processes are counted once per
+/// process, so the sum can only overestimate. The cgroup columns apply when
+/// the user's service manager delegates the `memory` and `pids` controllers;
+/// otherwise the fallback column applies to that limit even inside a scope
+/// (counting the scope's processes rather than the group's). When both
+/// memory limits are set, the smaller one is used (`RLIMIT_AS` only ever
+/// comes from `memory`).
+///
+/// A run stopped by a memory limit, or one of whose processes the system
+/// stopped for going over it (the kernel's out-of-memory killer in a scope,
+/// a failed allocation in a Windows job), reports `out_of_memory`; a run
+/// stopped by the process limit, or one of whose process creations the
+/// limit refused, reports `too_many_processes` ([`crate::Captured`],
+/// [`crate::Finished`], [`crate::PtyExit`]). A program that `RLIMIT_AS`
+/// refused memory fails in its own way (`std::bad_alloc`, the compiler's
+/// "out of memory" message) and is reported as out of memory only if the
+/// RSS watchdog caught it first.
 ///
 /// Other Unix systems apply the timeout, output caps and memory limit
-/// (through `prlimit` where available) but not the process watchdog.
+/// (through `prlimit` where available) but neither watchdog.
 ///
 /// `RLIMIT_AS` counts reserved address space, so it must not be used for
-/// programs built with AddressSanitizer, which reserves terabytes of it.
+/// programs built with AddressSanitizer, which reserves terabytes of it: use
+/// `rss_limit` for a user's program, and `memory` only for the compiler.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Limits {
     /// Wall-clock limit for the run. `None` means no limit.
@@ -87,8 +115,14 @@ pub struct Limits {
     pub stdout_cap: usize,
     /// Maximum bytes of standard error kept by [`crate::run_captured`].
     pub stderr_cap: usize,
-    /// Memory limit in bytes (see the table above).
+    /// Memory limit in bytes (see the table above; on Linux without a
+    /// cgroup scope this is an address-space limit, so it is for the
+    /// compiler only).
     pub memory: Option<u64>,
+    /// Resident-memory limit in bytes for the whole tree, never enforced
+    /// with an address-space limit, so it is safe for programs built with
+    /// AddressSanitizer (see the table above).
+    pub rss_limit: Option<u64>,
     /// Maximum number of processes in the tree (see the table above).
     pub processes: Option<u32>,
     /// Unix: time between `SIGTERM` and `SIGKILL` when the tree is stopped.
@@ -105,6 +139,7 @@ impl Default for Limits {
             stdout_cap: DEFAULT_OUTPUT_CAP,
             stderr_cap: DEFAULT_OUTPUT_CAP,
             memory: None,
+            rss_limit: None,
             processes: None,
             grace: None,
         }
@@ -135,6 +170,7 @@ pub struct Command {
     stdin: Stdin,
     limits: Limits,
     group: ProcessGroup,
+    containment: Containment,
     cancel: Option<CancelToken>,
 }
 
@@ -176,6 +212,7 @@ impl Command {
             stdin: Stdin::Null,
             limits: Limits::default(),
             group: ProcessGroup::Auto,
+            containment: Containment::Auto,
             cancel: None,
         })
     }
@@ -249,6 +286,13 @@ impl Command {
         self
     }
 
+    /// Chooses how the run is contained (see [`Containment`]); the default
+    /// is [`Containment::Auto`].
+    pub fn containment(&mut self, containment: Containment) -> &mut Self {
+        self.containment = containment;
+        self
+    }
+
     /// Lets `token` stop this run from another thread.
     pub fn cancel_token(&mut self, token: &CancelToken) -> &mut Self {
         self.cancel = Some(token.clone());
@@ -297,6 +341,11 @@ impl Command {
     /// The process-group placement.
     pub fn get_process_group(&self) -> ProcessGroup {
         self.group
+    }
+
+    /// How the run is to be contained.
+    pub fn get_containment(&self) -> Containment {
+        self.containment
     }
 
     /// The cancellation token, if any.

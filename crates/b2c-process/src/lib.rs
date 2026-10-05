@@ -36,15 +36,26 @@
 //!     [`Limits::grace`] is set). See [`ProcessGroup`] for the one
 //!     exception: interactive runs attached to a terminal. Sessions lead a
 //!     new session (`setsid`), so their process group ID is their process
-//!     ID; [`ContainmentLevel`] says how complete this is.
+//!     ID.
+//!   * **Linux with cgroup v2 user scopes** ([`containment_level`] is
+//!     [`ContainmentLevel::Cgroup`]): captured runs and sessions also run in
+//!     a transient scope of the user's service manager (`systemd-run --user
+//!     --scope`, which executes the program in place), so processes that
+//!     leave the process group (`setsid`, a double fork) are killed with
+//!     the rest. [`Containment`] opts a command out, and
+//!     [`cleanup_stale_scopes`] kills the scopes of app instances that
+//!     crashed.
 //!   * **Windows:** the child is created suspended, assigned to a Job Object
 //!     with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and only then resumed, so no
 //!     descendant can be created outside the job. The job is terminated on
 //!     timeout, cancellation and exit, and closing it (even when this process
-//!     dies) kills everything still in it. Sessions inherit no handles but
-//!     their own terminal or pipe ends (an explicit handle list).
+//!     dies) kills everything still in it. Captured runs and sessions
+//!     inherit no handles but their own pipe ends or terminal (an explicit
+//!     handle list).
 //! * Optional resource limits: see [`Limits`] for exactly what is enforced on
-//!   each platform.
+//!   each platform and containment level, and how running out of memory is
+//!   reported. `RLIMIT_AS` is never applied to a user's program
+//!   ([`Limits::rss_limit`]).
 //!
 //! # Example
 //!
@@ -70,16 +81,19 @@
 //!
 //! This is the only crate allowed to contain `unsafe`
 //! (`docs/spec/02-architecture.md` §2.3), and only in the platform modules
-//! that call the operating system: `platform/windows.rs` (Job Objects),
-//! `pty/windows.rs` (`ConPTY`, `CreateProcessW`, pipes) and `pty/unix.rs` (the
-//! `pre_exec` hook that makes a session's program a session leader). Every
-//! `unsafe` block has a `// SAFETY:` comment and CODEOWNERS review.
+//! that call the operating system: `platform/windows.rs` (Job Objects and
+//! their completion ports), `platform/create.rs` (`CreateProcessW`, attribute
+//! lists, pipes), `pty/windows.rs` (`ConPTY`), `pty/unix.rs` (the `pre_exec`
+//! hook that makes a session's program a session leader) and `os/windows.rs`.
+//! Every `unsafe` block has a `// SAFETY:` comment and CODEOWNERS review. The
+//! cgroup code (`containment/`) needs none.
 
 #![deny(unsafe_code)]
 
 mod cancel;
 mod capture;
 mod command;
+mod containment;
 mod error;
 pub mod os;
 mod platform;
@@ -91,7 +105,8 @@ mod status;
 
 pub use cancel::CancelToken;
 pub use command::{Command, DEFAULT_INTERACTIVE_GRACE, DEFAULT_OUTPUT_CAP, Limits, ProcessGroup, Stdin};
+pub use containment::{Containment, ContainmentLevel, cleanup_stale_scopes, containment_level};
 pub use error::ProcessError;
-pub use pty::{ContainmentLevel, IoMode, PtyChild, PtyExit, PtySize, PtyWriter, spawn_piped, spawn_pty};
+pub use pty::{IoMode, PtyChild, PtyExit, PtySize, PtyWriter, spawn_piped, spawn_pty};
 pub use run::{Captured, Finished, run_captured, run_interactive};
 pub use status::{Crash, ExitStatus};

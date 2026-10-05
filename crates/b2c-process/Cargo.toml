@@ -15,20 +15,25 @@ thiserror.workspace = true
 # The workspace features plus the pseudo-terminal calls (`pty`, `termios`),
 # the standard descriptors for `TIOCSCTTY` (`stdio`) and `poll` for the
 # session reader and writer (`event`); see src/pty/unix.rs. `fs` gives the
-# open flags of os::open_read_nonblocking (src/os/unix.rs).
-rustix = { workspace = true, features = ["event", "fs", "pty", "stdio", "termios"] }
+# open flags of os::open_read_nonblocking (src/os/unix.rs). `param` (the page
+# size for the RSS watchdog) and `rand` (`getrandom`, for cgroup scope names)
+# are used by src/containment/; neither adds a crate.
+rustix = { workspace = true, features = ["event", "fs", "param", "pty", "rand", "stdio", "termios"] }
 # `signal` and `pthread_sigmask`, to give a session's program default signal
 # handling between fork and exec (src/pty/unix.rs); rustix has no
 # signal-action API.
 libc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-# The workspace features plus Toolhelp, used to resume the main thread of a
-# child created suspended (see src/platform/windows.rs), and the pseudo
-# console and anonymous pipes for sessions (see src/pty/windows.rs).
+# The workspace features plus Toolhelp, used to resume the main thread of an
+# interactive child created suspended (see src/platform/windows.rs), the
+# pseudo console and anonymous pipes for sessions and captured runs (see
+# src/pty/windows.rs, src/platform/create.rs), and I/O completion ports for
+# the Job Object's memory-limit messages (`Win32_System_IO`).
 windows-sys = { workspace = true, features = [
   "Win32_System_Console",
   "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_IO",
   "Win32_System_Pipes",
 ] }
 

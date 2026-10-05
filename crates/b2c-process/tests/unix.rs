@@ -9,8 +9,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use b2c_process::{
-    CancelToken, Captured, Command, Crash, ExitStatus, Limits, ProcessError, ProcessGroup, Stdin,
-    run_captured, run_interactive,
+    CancelToken, Captured, Command, Containment, Crash, ExitStatus, Limits, ProcessError, ProcessGroup,
+    Stdin, run_captured, run_interactive,
 };
 
 const SH: &str = "/bin/sh";
@@ -102,12 +102,17 @@ fn stdout_and_stderr_are_separate() {
 
 #[test]
 fn environment_is_isolated() {
+    // Without a scope: exactly the command's environment. (A cgroup scope
+    // adds the bus variables `systemd-run` needs; tests/containment.rs.)
     let mut command = Command::new("/usr/bin/env", std::env::temp_dir()).unwrap();
-    command.env("ONLY_THIS", "yes");
+    command
+        .env("ONLY_THIS", "yes")
+        .containment(Containment::ProcessGroupOnly);
     let result = run_captured(&command).unwrap();
     assert_eq!(text(&result.stdout), "ONLY_THIS=yes\n");
 
-    let empty = Command::new("/usr/bin/env", std::env::temp_dir()).unwrap();
+    let mut empty = Command::new("/usr/bin/env", std::env::temp_dir()).unwrap();
+    empty.containment(Containment::ProcessGroupOnly);
     assert_eq!(text(&run_captured(&empty).unwrap().stdout), "");
 }
 
@@ -224,7 +229,11 @@ fn missing_working_directory_is_a_spawn_error() {
 #[test]
 fn timeout_kills_the_child_and_its_grandchildren() {
     let mut command = sh("sleep 30 & echo $!; sleep 30");
-    command.timeout(Duration::from_millis(300));
+    // The group: the shell must have started within the 300 ms, which the
+    // start of a cgroup scope could delay on a slow runner.
+    command
+        .timeout(Duration::from_millis(300))
+        .containment(Containment::ProcessGroupOnly);
     let start = Instant::now();
     let result = run_captured(&command).unwrap();
     assert!(result.timed_out);
@@ -287,7 +296,8 @@ fn captured_runs_get_sigterm_first_when_a_grace_is_set() {
     // The compiler's limits set a 2 s grace (07 §7.5.4): a timeout or a
     // cancel sends SIGTERM to the group, and the program may clean up.
     let mut command = sh("trap 'echo got-term; exit 7' TERM; while :; do sleep 0.05; done");
-    command.limits(Limits {
+    // The trap must be in place within the 300 ms (see above).
+    command.containment(Containment::ProcessGroupOnly).limits(Limits {
         timeout: Some(Duration::from_millis(300)),
         grace: Some(Duration::from_secs(10)),
         ..Limits::default()
@@ -304,6 +314,8 @@ fn captured_runs_get_sigterm_first_when_a_grace_is_set() {
 fn captured_runs_are_killed_after_the_grace() {
     let token = CancelToken::new();
     let mut command = sh("trap '' TERM; while :; do sleep 0.05; done");
+    // The trap must be in place within the 200 ms (see above).
+    command.containment(Containment::ProcessGroupOnly);
     command.cancel_token(&token).limits(Limits {
         grace: Some(Duration::from_millis(600)),
         ..Limits::default()
@@ -358,8 +370,10 @@ fn captured_runs_lead_their_own_process_group() {
 #[cfg(target_os = "linux")]
 #[test]
 fn memory_limit_is_applied() {
+    // The fallback's address-space limit (a cgroup scope enforces
+    // `MemoryMax` instead; tests/containment.rs).
     let mut command = sh("sleep 0.2; ulimit -v");
-    command.limits(Limits {
+    command.containment(Containment::ProcessGroupOnly).limits(Limits {
         memory: Some(512 * 1024 * 1024),
         ..Limits::default()
     });
@@ -371,7 +385,7 @@ fn memory_limit_is_applied() {
 #[test]
 fn process_watchdog_stops_a_growing_tree() {
     let mut command = sh("for i in 1 2 3 4 5 6 7 8; do sleep 30 & done; wait");
-    command.limits(Limits {
+    command.containment(Containment::ProcessGroupOnly).limits(Limits {
         processes: Some(4),
         timeout: Some(Duration::from_secs(20)),
         ..Limits::default()
