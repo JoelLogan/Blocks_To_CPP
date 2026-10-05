@@ -20,7 +20,9 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@blockly/continuous-toolbox": "7.0.9",
     "@blocks2cpp/b2c-core-wasm": "workspace:*",
+    "@blocks2cpp/blockly-ext": "workspace:*",
     "@blocks2cpp/ipc-types": "workspace:*",
     "@codemirror/lang-cpp": "6.0.3",
     "@codemirror/language": "6.12.4",
