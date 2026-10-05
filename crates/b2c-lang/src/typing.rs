@@ -9,29 +9,87 @@ use b2c_ir::sast::Expr;
 use b2c_ir::sast::{BinaryOp, ExprKind};
 use b2c_ir::types::Type;
 
-/// How a value of one type converts to another (assignment, initialisation,
-/// argument passing, `return`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Conversion {
-    /// Same type, or an error is involved already.
-    Exact,
-    /// A safe implicit conversion (`int` → `double`, `char` → `int`).
+/// How a value of one type converts to another when it is assigned, used to
+/// initialise a variable, passed as an argument or returned (spec §3.5.3).
+///
+/// This is the analyser's own rule, published so that the editor's
+/// connection checker refuses exactly what the analyser reports as an error:
+/// only [`Conversion::Invalid`] is an error (`B2C-E0301`, or `B2C-E0305` for a
+/// value that is `void`); [`Conversion::Narrowing`] (`B2C-W0518`) and
+/// [`Conversion::BoolNumber`] (`B2C-W0519`) are warnings; the others are
+/// silent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Conversion {
+    /// The same type, or [`Type::Error`] on either side: the error is already
+    /// reported where that value came from, so nothing more is said.
+    Same,
+    /// A safe implicit conversion: `int` → `double`, `char` → `int` or
+    /// `double`.
     Widening,
-    /// An implicit conversion that can lose information (`double` → `int`,
-    /// `int` → `char`): legal, but warned about.
+    /// An implicit conversion that can lose information: `double` → `int` or
+    /// `char`, `int` → `char`. Legal, but warned about.
     Narrowing,
-    /// Between `bool` and a number: legal, but suspicious.
+    /// Between `bool` and a number (`int`, `double` or `char`), either way.
+    /// Legal, but suspicious, so warned about.
     BoolNumber,
-    /// Not possible (text ↔ other types, or a missing value).
+    /// Not possible: text to or from any other type, and `void` (a missing
+    /// value) to or from any other type.
     Invalid,
 }
 
-/// The conversion from `from` to `to`.
-pub(crate) fn conversion(from: &Type, to: &Type) -> Conversion {
+impl Conversion {
+    /// Every conversion, from the most to the least permissive.
+    pub const ALL: [Self; 5] = [
+        Self::Same,
+        Self::Widening,
+        Self::Narrowing,
+        Self::BoolNumber,
+        Self::Invalid,
+    ];
+
+    /// The name the editor uses for it in JSON: `same`, `widening`,
+    /// `narrowing`, `boolNumber` or `invalid`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Same => "same",
+            Self::Widening => "widening",
+            Self::Narrowing => "narrowing",
+            Self::BoolNumber => "boolNumber",
+            Self::Invalid => "invalid",
+        }
+    }
+
+    /// Whether the analyser reports this conversion as an error.
+    pub const fn is_error(self) -> bool {
+        matches!(self, Self::Invalid)
+    }
+}
+
+/// The conversion from a value of type `from` to a place of type `to`.
+///
+/// Numbers are `int`, `double` and `char`. In order:
+///
+/// 1. [`Type::Error`] on either side, or the same type on both: `Same`.
+/// 2. `bool` to a number, or a number to `bool`: `BoolNumber`.
+/// 3. `int` or `char` to `double`, `char` to `int`: `Widening`.
+/// 4. `double` to `int` or `char`, `int` to `char`: `Narrowing`.
+/// 5. Anything else (text with any other type, `void` with any other type):
+///    `Invalid`.
+///
+/// ```
+/// use b2c_ir::Type;
+/// use b2c_lang::{Conversion, conversion};
+///
+/// assert_eq!(conversion(&Type::Int, &Type::Double), Conversion::Widening);
+/// assert_eq!(conversion(&Type::Double, &Type::Int), Conversion::Narrowing);
+/// assert_eq!(conversion(&Type::String, &Type::Int), Conversion::Invalid);
+/// assert_eq!(conversion(&Type::Error, &Type::String), Conversion::Same);
+/// ```
+pub fn conversion(from: &Type, to: &Type) -> Conversion {
     use Type as T;
     match (from, to) {
-        (T::Error, _) | (_, T::Error) => Conversion::Exact,
-        (a, b) if a == b => Conversion::Exact,
+        (T::Error, _) | (_, T::Error) => Conversion::Same,
+        (a, b) if a == b => Conversion::Same,
         (T::Bool, T::Int | T::Double | T::Char) | (T::Int | T::Double | T::Char, T::Bool) => {
             Conversion::BoolNumber
         }
@@ -160,7 +218,7 @@ mod tests {
     fn conversions() {
         use Conversion as C;
         let cases = [
-            (Type::Int, Type::Int, C::Exact),
+            (Type::Int, Type::Int, C::Same),
             (Type::Int, Type::Double, C::Widening),
             (Type::Char, Type::Double, C::Widening),
             (Type::Char, Type::Int, C::Widening),
@@ -174,15 +232,15 @@ mod tests {
             (Type::Char, Type::String, C::Invalid),
             (Type::Bool, Type::String, C::Invalid),
             (Type::Void, Type::Int, C::Invalid),
-            (Type::Error, Type::String, C::Exact),
-            (Type::String, Type::Error, C::Exact),
+            (Type::Error, Type::String, C::Same),
+            (Type::String, Type::Error, C::Same),
         ];
         for (from, to, expected) in cases {
             assert_eq!(conversion(&from, &to), expected, "{from:?} -> {to:?}");
         }
         for t in &ALL {
-            assert_eq!(conversion(t, t), C::Exact);
-            assert_eq!(conversion(t, &Type::Error), C::Exact);
+            assert_eq!(conversion(t, t), C::Same);
+            assert_eq!(conversion(t, &Type::Error), C::Same);
         }
     }
 

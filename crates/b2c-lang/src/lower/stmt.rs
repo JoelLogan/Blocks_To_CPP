@@ -10,7 +10,7 @@ use b2c_ir::types::Type;
 use b2c_model::Block;
 
 use super::convert::{Subject, constant_int};
-use super::{ItemCtx, Lowerer, Pending, PendingKind, field};
+use super::{ItemCtx, Lowerer, PendingKind, field};
 use crate::access;
 use crate::codes;
 use crate::messages::{a_type, quoted};
@@ -22,6 +22,7 @@ impl Lowerer<'_> {
     /// when C++ treats it as the same scope as the enclosing frame).
     pub(super) fn body(&mut self, owner: &Block, list: &str, joined: bool) -> sast::Block {
         self.scopes.push(ListKey::new(&owner.id, list), joined);
+        self.record_input(&owner.id, list);
         let mut stmts = Vec::new();
         for block in access::statements(owner, list) {
             if block.disabled {
@@ -47,6 +48,7 @@ impl Lowerer<'_> {
         if !self.enter(block) {
             return None;
         }
+        self.record_block(&block.id);
         let kind = self.statement_kind(block);
         self.leave();
         let kind = kind?;
@@ -130,13 +132,10 @@ impl Lowerer<'_> {
         let ident = self.ident(&decl.name, &name_loc, false);
         self.check_new_name(&decl.name, &name_loc);
         let kind = PendingKind::Initialiser(declared.clone());
-        self.pending.push(Pending {
-            name: decl.name.clone(),
-            sym: decl.sym.clone(),
-            kind,
-        });
+        self.push_pending(&decl.name, &decl.sym, kind);
+        self.record_input(&block.id, "VALUE");
         let init = self.optional_input(block, "VALUE");
-        self.pending.pop();
+        self.pop_pending();
         let ty = match (declared, &init) {
             (Some(ty), Some(value)) => {
                 self.check_conversion(value, &ty, &Subject::Variable(decl.name.clone()));
@@ -183,7 +182,7 @@ impl Lowerer<'_> {
         symbol: Symbol,
         location: b2c_ir::diag::Location,
     ) -> bool {
-        let inserted = self.insert_symbol(sym, symbol, location);
+        let inserted = self.insert_symbol(sym, name, symbol, location);
         if inserted {
             self.scopes.declare(name, sym);
         }
@@ -318,11 +317,10 @@ impl Lowerer<'_> {
         let direction = self.choice(block, "DIRECTION", RangeDirection::UpExclusive, &options);
         let decl = access::decl_field(block, "VAR").ok();
         if let Some(decl) = decl {
-            self.pending.push(Pending {
-                name: decl.name.clone(),
-                sym: decl.sym.clone(),
-                kind: PendingKind::Counter,
-            });
+            self.push_pending(&decl.name, &decl.sym, PendingKind::Counter);
+            for input in ["FROM", "TO", "STEP"] {
+                self.record_input(&block.id, input);
+            }
         }
         let from = self.required_input(block, "FROM");
         let from = self.integer(from, &Subject::LoopStart);
@@ -332,7 +330,7 @@ impl Lowerer<'_> {
             .optional_input(block, "STEP")
             .map(|step| self.loop_step(step));
         if decl.is_some() {
-            self.pending.pop();
+            self.pop_pending();
         }
         let Some(decl) = decl else {
             self.incomplete(name_loc, "This 'for' loop needs a name for its counter.");

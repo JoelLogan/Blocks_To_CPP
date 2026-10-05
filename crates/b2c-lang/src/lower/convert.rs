@@ -92,7 +92,7 @@ impl Lowerer<'_> {
         let phrase = subject.phrase();
         let (want, have) = (a_type(target), a_type(&value.ty));
         match conversion(&value.ty, target) {
-            Conversion::Exact | Conversion::Widening => {}
+            Conversion::Same | Conversion::Widening => {}
             Conversion::Narrowing => {
                 let message = if *target == Type::Char {
                     format!(

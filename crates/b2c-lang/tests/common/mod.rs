@@ -10,10 +10,11 @@
 pub(crate) mod gxx;
 
 use std::cell::Cell;
+use std::path::{Path, PathBuf};
 
 use b2c_ir::diag::{Diagnostic, Part, Severity};
 use b2c_lang::{Analysis, analyze};
-use b2c_model::Document;
+use b2c_model::{Block, Document, Input};
 use serde_json::{Value, json};
 
 thread_local! {
@@ -75,6 +76,90 @@ pub(crate) fn doc_modules(modules: Vec<(&str, Vec<Value>)>) -> Document {
         "modules": modules
     }))
     .expect("test document")
+}
+
+// --- Project files ---------------------------------------------------------------
+
+/// The repository root.
+pub(crate) fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+/// The `.b2c` files of a folder of the repository, sorted by name.
+pub(crate) fn project_files(folder: &str) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(repo_root().join(folder))
+        .unwrap_or_else(|e| panic!("{folder}: {e}"))
+        .map(|entry| entry.expect("folder entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "b2c"))
+        .collect();
+    paths.sort();
+    paths
+}
+
+/// A file's name, for messages.
+pub(crate) fn file_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// A document as the build analyses it: loaded by the real loader and
+/// completed by the resolve stage, which must accept it.
+pub(crate) fn resolved(bytes: &[u8], what: &str) -> Document {
+    let loaded = b2c_model::load(bytes).unwrap_or_else(|e| panic!("{what} does not load: {e:?}"));
+    let (document, diagnostics) = b2c_catalog::resolve(&loaded, b2c_catalog::core_catalog());
+    assert!(diagnostics.is_empty(), "{what} does not resolve: {diagnostics:?}");
+    document
+}
+
+/// Every example project (`examples/*.b2c`): its file name and the resolved document.
+pub(crate) fn resolved_examples() -> Vec<(String, Document)> {
+    let examples: Vec<(String, Document)> = project_files("examples")
+        .into_iter()
+        .map(|path| {
+            let name = file_name(&path);
+            let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+            let document = resolved(&bytes, &name);
+            (name, document)
+        })
+        .collect();
+    assert!(
+        examples.len() >= 15,
+        "expected the M1 examples, found {}",
+        examples.len()
+    );
+    examples
+}
+
+/// One example, resolved.
+pub(crate) fn resolved_example(name: &str) -> Document {
+    let path = repo_root().join("examples").join(name);
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+    resolved(&bytes, name)
+}
+
+/// Every block of a document with the index of its module and whether it
+/// is a top-level block, parents before children.
+pub(crate) fn all_blocks(document: &Document) -> Vec<(usize, bool, &Block)> {
+    let mut found = Vec::new();
+    for (index, module) in document.modules.iter().enumerate() {
+        let mut stack: Vec<(&Block, bool)> =
+            module.workspace.blocks.iter().rev().map(|b| (b, true)).collect();
+        while let Some((block, top)) = stack.pop() {
+            found.push((index, top, block));
+            let mut children: Vec<&Block> = Vec::new();
+            for list in block.statements.values() {
+                children.extend(list);
+            }
+            for input in block.inputs.values() {
+                if let Input::Block(nested) = input {
+                    children.push(&nested.block);
+                }
+            }
+            stack.extend(children.into_iter().rev().map(|b| (b, false)));
+        }
+    }
+    found
 }
 
 /// Analyses a program whose `main` holds these statements.
