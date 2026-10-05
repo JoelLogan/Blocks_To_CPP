@@ -25,8 +25,9 @@ files can break:
   them);
 - workspace packages are referenced as `"workspace:*"`, so pnpm never fetches a same-named
   package from the registry, and every `@blocks2cpp/` name is a workspace package;
-- no package has an install script (`preinstall`, `install`, `postinstall`, `prepare`), which pnpm
-  would run on every install.
+- no package has a script that pnpm runs by itself: `preinstall`, `install`, `postinstall`,
+  `preprepare`, `prepare` and `postprepare` (every install), `pnpm:devPreinstall` (the root, before
+  an install), `prepublishOnly` (an injected workspace package) and `prepublish` (`pnpm rebuild`).
 
 `python3 tools/check-package-layering.py --self-test` checks the checker against generated
 workspaces that break each rule.
