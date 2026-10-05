@@ -150,7 +150,9 @@ Blocks_To_CPP/
 | `blocks2cpp-desktop` (`src-tauri`) | `b2c-ir`, `b2c-model`, `b2c-build`, `b2c-toolchain`, `b2c-ipc`, `b2c-store`, `b2c-app` |
 
 Test-only exceptions: `b2c-lang` may use `b2c-codegen` (its end-to-end tests
-compile what the analyser accepts), and `b2c-app` may use `b2c-core-wasm`
+compile what the analyser accepts) and `b2c-catalog` (its scope and robustness
+tests analyse documents as the resolve stage completes or rejects them), and
+`b2c-app` may use `b2c-core-wasm`
 (the test that the live preview and the build generate identical files).
 
 * `b2c-ir` holds the types that cross a stage boundary: validated IDs,

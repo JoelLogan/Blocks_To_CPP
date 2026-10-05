@@ -58,7 +58,7 @@ UTF-16, in a legacy code page, or with a BOM are refused. The message gives
 the position of the first byte that is not UTF-8.
 
 > The project file is not valid UTF-8 text (line 1, column 1). Save it with the UTF-8 encoding.
-
+>
 > The project file starts with an invisible byte order mark (BOM). Save it as UTF-8 without a BOM.
 
 **Fix:** save the file as "UTF-8" (not "UTF-8 with BOM" or "Unicode") in your
@@ -139,7 +139,7 @@ never existed or that this version cannot upgrade from. (Older versions are
 upgraded automatically; see [spec §5.7](../../spec/05-project-format.md#57-versioning-and-migration).)
 
 > The project file has no valid "formatVersion" (a whole number such as 1), so it cannot be read.
-
+>
 > This project uses project format 0, which this version of Blocks2Cpp cannot read or upgrade.
 
 **Fix:** restore the file from a backup or version control.
@@ -179,7 +179,7 @@ with nothing below it has no `"stack"` key, so every project has one
 spelling.
 
 > "project.run.workingDirectory" should be one of "project" or "sandbox", but it is the text "/etc".
-
+>
 > "stack" in this block is an empty list. Leave "stack" out when no blocks are stacked below the block.
 
 **Fix:** use one of the values the message lists, or remove an empty
@@ -261,7 +261,7 @@ A project has 1 to 256 modules. When there are too many, only the first 256
 are checked.
 
 > The project has no modules. It needs at least one (usually called "main").
-
+>
 > The project has 257 modules, but at most 256 are allowed. Only the first 256 were checked.
 
 **Fix:** add a `main` module, or merge modules.
@@ -344,7 +344,7 @@ blocks inside other blocks are placed by their parent, and blocks in a
 `"stack"` sit below the block that holds the stack.
 
 > This block is inside another block, so it cannot have a canvas position ("x" and "y"). Remove them.
-
+>
 > This block is stacked below another block, so it cannot have a canvas position ("x" and "y"). Remove them.
 
 **Fix:** remove `"x"` and `"y"` from the nested or stacked block.
@@ -440,7 +440,7 @@ a paste only accepts blocks copied in Blocks2Cpp
 ([spec §5.12](../../spec/05-project-format.md#512-clipboard-format)).
 
 > The pasted data is not Blocks2Cpp blocks: its "format" is "blockly/clipboard", not "blocks2cpp/clipboard".
-
+>
 > The pasted data is a whole Blocks2Cpp project, not copied blocks. Open it as a project instead.
 
 **Fix:** copy the blocks in Blocks2Cpp and paste again. To use a project
@@ -456,7 +456,7 @@ statements belong in a statement list. (Whether the block holding the stack
 is a statement block is checked later, against the catalog.)
 
 > This block is inside another block, so it cannot have a "stack": only a block directly on the canvas can have blocks stacked below it. Move the stacked blocks into the statement list they belong to.
-
+>
 > This block is itself in a "stack", so it cannot have a "stack" of its own. Put all the stacked blocks in the stack of the first block.
 
 **Fix:** move the stacked blocks into the statement list they belong to,
@@ -491,7 +491,7 @@ editor), and saving the project preserves it; the blocks inside it are still
 checked.
 
 > This block has the type "sfml.window.open", which this version of Blocks2Cpp does not know. Missing pack: "sfml". Install that library pack, or update Blocks2Cpp if the block comes from a newer version.
-
+>
 > This block has the type "Not A Type", which is not a valid block type. Block types look like "io.print".
 
 **Fix:** install the library pack, update Blocks2Cpp, or delete the block.
@@ -515,7 +515,7 @@ the upgrade failed because the block does not have the shape its version
 promises. The block is kept unchanged.
 
 > This block is version 0 of "control.break", which this version of Blocks2Cpp cannot upgrade to version 1.
-
+>
 > This block is version 1 of "io.print", and upgrading it from version 1 failed: the separator is unknown.
 
 **Fix:** replace the block with a new one from the toolbox.
@@ -528,9 +528,9 @@ statement lists (inside `when program starts`, a function or a loop); value
 blocks go into inputs.
 
 > This "io.print" block is not inside "when program starts" or a function, so it would never run. Move it inside one, or delete it.
-
+>
 > A "program.main" block must sit directly on the canvas, not inside another block.
-
+>
 > This "io.print" block is a step, not a value, so it cannot be plugged into an input.
 
 Blocks stacked below a loose block on the canvas (its `"stack"`, see
@@ -627,7 +627,7 @@ false, a parameter list is not a list, or a function has more parameters than
 allowed.
 
 > "extra.itemCount" of this block is 0, but it must be a whole number from 1 to 32.
-
+>
 > This block has 17 parameters, but at most 16 are allowed.
 
 **Fix:** use a value within the range given.

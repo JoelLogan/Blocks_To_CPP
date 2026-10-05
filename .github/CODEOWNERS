@@ -2,6 +2,7 @@
 *                                   @JoelLogan
 /crates/b2c-process/                @JoelLogan
 /crates/b2c-store/                  @JoelLogan
+/crates/b2c-ipc/                    @JoelLogan
 /crates/b2c-ir/src/text.rs          @JoelLogan
 /crates/b2c-toolchain/              @JoelLogan
 /apps/desktop/src-tauri/            @JoelLogan

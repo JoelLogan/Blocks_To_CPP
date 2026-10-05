@@ -971,15 +971,38 @@ mod tests {
     }
 
     #[test]
-    fn documents_without_stacks_resolve_as_before() {
-        // The seam: until `b2c_model::Block` has its `stack`, every block
-        // has an empty one and resolving is unchanged.
+    fn a_stack_is_taken_out_and_put_back() {
         let mut head = block(print("b1"));
+        head.stack = vec![block(print("b2")), block(print("b3"))];
         let stacked = stack::take(&mut head);
-        assert!(stacked.is_empty());
-        let before = head.clone();
+        assert_eq!(stacked.len(), 2);
+        assert!(head.stack.is_empty());
         stack::restore(&mut head, stacked);
-        assert_eq!(head, before);
+        assert_eq!(head.stack.len(), 2);
+    }
+
+    #[test]
+    fn a_document_with_a_loose_stack_resolves_with_one_placement_error() {
+        let document: Document = serde_json::from_value(serde_json::json!({
+            "format": "blocks2cpp/project", "formatVersion": 1,
+            "generator": {"app": "0.1.0", "catalog": "1.0.0"},
+            "project": {"id": "p", "name": "T", "language": {"standard": "c++20"}},
+            "modules": [{"id": "m", "name": "main", "workspace": {"blocks": [
+                {"id": "main", "type": "program.main", "v": 1, "x": 0, "y": 0},
+                {"id": "b1", "type": "io.print", "v": 1, "x": 0, "y": 200,
+                 "stack": [print("b2"), print("b3")]}
+            ]}}]
+        }))
+        .expect("document");
+        let (completed, diagnostics) = run(&document, crate::core_catalog());
+        assert_eq!(
+            codes_and_blocks(&diagnostics),
+            [(codes::WRONG_PLACE.to_owned(), "b1".to_owned())]
+        );
+        // The stack survives resolving, completed like any other block.
+        let head = &completed.modules[0].workspace.blocks[1];
+        assert_eq!(head.stack.len(), 2);
+        assert_eq!(head.stack[1].id.as_str(), "b3");
     }
 
     #[test]

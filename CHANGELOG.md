@@ -37,3 +37,14 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   the compiler crates), a size budget for the WebAssembly core, checks that
   generated files are up to date, and fuzz targets for the g++ diagnostics
   parsers, seeded with recorded GCC 11 and GCC 13 output.
+- Milestone M2 foundations: the IPC contract between the editor and the
+  backend (crate `b2c-ipc`, with generated TypeScript types and an isolation
+  allowlist), machine-local settings and recent-project stores, pseudo-terminal
+  sessions for running programs (openpty on Linux, ConPTY on Windows), the
+  editor's scope query, the WebAssembly core for the live C++ preview, the
+  catalog export that generates the toolbox and the block reference, and
+  frontend test tooling with coverage and accessibility checks.
+- Pasting blocks is validated like opening a file (new codes `B2C-E0138` and
+  `B2C-E0139`), and loose block stacks are saved intact (`stack`).
+- Nightly fuzzing with a kept corpus, and weekly mutation testing and
+  dependency-health reports.
