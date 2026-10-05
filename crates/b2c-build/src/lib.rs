@@ -29,6 +29,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod build_dir;
+pub mod cache;
 mod compile;
 pub mod frontend;
 mod run;
