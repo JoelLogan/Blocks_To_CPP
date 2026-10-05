@@ -2,8 +2,8 @@
 //! (`docs/spec/08-security.md` §8.3).
 //!
 //! The backend holds each open project's trust ([`HandleTrust`]), computed when
-//! the file is loaded (open, open recent, reload; restore in
-//! `w4-recovery-watcher`) by [`b2c_store::TrustStore::evaluate`], and changed
+//! the file is loaded (open, open recent, reload, and restoring a recovery
+//! snapshot) by [`b2c_store::TrustStore::evaluate`], and changed
 //! only by:
 //!
 //! * `trust_grant`, after the native dialog ([`crate::Dialogs::confirm_trust`])
