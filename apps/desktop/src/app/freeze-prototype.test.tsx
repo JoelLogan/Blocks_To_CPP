@@ -20,6 +20,9 @@ vi.mock('blockly/core', () => {
   };
 });
 vi.mock('blockly/msg/en', () => ({}));
+// The block editor (Blockly itself) is tested under the frozen prototype in
+// src/editor/frozen-prototype.test.tsx; here it is left out with Blockly.
+vi.mock('../editor/EditorWorkspace', () => ({ EditorWorkspace: () => null }));
 
 beforeAll(() => {
   Object.freeze(Object.prototype);

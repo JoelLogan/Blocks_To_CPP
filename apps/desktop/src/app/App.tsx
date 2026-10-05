@@ -1,4 +1,4 @@
-import { BlocklyWorkspace } from '../editor/BlocklyWorkspace';
+import { EditorWorkspace } from '../editor/EditorWorkspace';
 import { EditorLayout } from './layout/EditorLayout';
 import { StatusBar } from './layout/StatusBar';
 import { Toolbar } from './layout/Toolbar';
@@ -27,7 +27,7 @@ export function App() {
     <div className="shell">
       <Toolbar />
       <div className="shell-body">
-        <EditorLayout workspace={<BlocklyWorkspace />} hidden={Screen !== null} />
+        <EditorLayout workspace={<EditorWorkspace />} hidden={Screen !== null} />
         {Screen !== null && (
           <main className="screen" aria-label={SCREEN_LABELS[screen]}>
             <Screen />
