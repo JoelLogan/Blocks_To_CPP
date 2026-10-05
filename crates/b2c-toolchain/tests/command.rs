@@ -160,7 +160,7 @@ fn linux_debug_single_step_is_exact() {
         ]
     );
     assert_eq!(step.format, DiagnosticsFormat::SarifFile);
-    assert_eq!(step.sarif_file.as_deref(), Some("main.cpp.sarif"));
+    assert_eq!(step.sarif_files, ["main.cpp.sarif"]);
     assert!(plan.notes().is_empty(), "{:#?}", plan.notes());
 }
 
@@ -197,7 +197,7 @@ fn gcc11_uses_fortify_2_json_and_no_bidi_warning() {
     assert!(args.contains(&"-D_FORTIFY_SOURCE=2".to_owned()));
     assert!(args.contains(&"-fdiagnostics-format=json".to_owned()));
     assert!(!args.iter().any(|a| a.starts_with("-Wbidi-chars")));
-    assert_eq!(step.sarif_file, None);
+    assert!(step.sarif_files.is_empty());
     assert_eq!(step.format, DiagnosticsFormat::Json);
 }
 
@@ -266,7 +266,7 @@ fn structured_diagnostics_can_be_swapped_for_plain_text() {
         );
         assert_eq!(args.len(), step.args.len(), "only the format flag changes");
         assert_eq!(plain.format, DiagnosticsFormat::Plain);
-        assert_eq!(plain.sarif_file, None);
+        assert!(plain.sarif_files.is_empty());
         assert!(plain.with_plain_diagnostics().is_none());
     }
 }
@@ -283,7 +283,7 @@ fn gcc15_writes_sarif_beside_text() {
     let step = plan.compile(Path::new("/b/gen/player.cpp"), Path::new("/b/obj/player-0123.o"));
     let args = strings(&step.args);
     assert!(args.contains(&"-fdiagnostics-add-output=sarif:version=2.1,file=player.cpp.sarif".to_owned()));
-    assert_eq!(step.sarif_file.as_deref(), Some("player.cpp.sarif"));
+    assert_eq!(step.sarif_files, ["player.cpp.sarif"]);
     // The per-source flag is not part of the cache key.
     assert!(
         !strings(plan.compile_flags_for_key())
@@ -320,7 +320,7 @@ fn separate_compile_and_link_steps() {
         Path::new("/b/out/game"),
     );
     assert_eq!(link.format, DiagnosticsFormat::Plain);
-    assert_eq!(link.sarif_file, None);
+    assert!(link.sarif_files.is_empty());
     assert_eq!(
         strings(&link.args),
         [
@@ -753,4 +753,216 @@ proptest! {
         unique.dedup();
         prop_assert_eq!(unique.len(), args.len(), "duplicate flag in {:?}", args);
     }
+}
+
+/// A SARIF log with one error at `file`:`line`:3 saying `text`.
+fn sarif_error(file: &str, line: u32, text: &str) -> String {
+    format!(
+        r#"{{"version": "2.1.0", "runs": [{{"results": [{{"ruleId": "error", "level": "error",
+            "message": {{"text": "{text}"}}, "locations": [{{"physicalLocation":
+            {{"artifactLocation": {{"uri": "{file}"}}, "region": {{"startLine": {line}, "startColumn": 3}}}}}}]}}]}}]}}"#
+    )
+}
+
+#[test]
+fn several_sources_compile_and_link_in_one_step() {
+    let tc = linux13();
+    let config = debug();
+    let plan = plan(&tc, &config);
+    let sources = [
+        PathBuf::from("/b/gen/main.cpp"),
+        PathBuf::from("/b/ide/b2c_ide_init.cpp"),
+    ];
+    let step = plan.compile_and_link_many(&sources, Path::new("/b/out/main"));
+    let args = strings(&step.args);
+    assert_eq!(
+        &args[args.len() - 4..],
+        ["/b/gen/main.cpp", "/b/ide/b2c_ide_init.cpp", "-o", "/b/out/main"]
+    );
+    assert_eq!(step.sarif_files, ["main.cpp.sarif", "b2c_ide_init.cpp.sarif"]);
+    assert_eq!(step.format, DiagnosticsFormat::SarifFile);
+    // Everything but the second source is what a single-source step has.
+    let single = plan.compile_and_link(&sources[0], Path::new("/b/out/main"));
+    let without_second: Vec<&String> = args.iter().filter(|a| !a.contains("b2c_ide_init")).collect();
+    assert_eq!(without_second, strings(&single.args).iter().collect::<Vec<_>>());
+    // One source through either function gives the same step.
+    assert_eq!(
+        plan.compile_and_link_many(&sources[..1], Path::new("/b/out/main")),
+        single
+    );
+}
+
+#[test]
+fn gcc15_names_the_sarif_file_only_for_a_single_source() {
+    let tc = toolchain(
+        "/usr/bin/g++-15",
+        "x86_64-linux-gnu",
+        15,
+        DiagnosticsFormat::AddOutputSarif,
+    );
+    let plan = plan(&tc, &debug());
+    let single = plan.compile_and_link_many(&[PathBuf::from("/b/gen/main.cpp")], Path::new("/b/out/m"));
+    assert!(
+        strings(&single.args)
+            .contains(&"-fdiagnostics-add-output=sarif:version=2.1,file=main.cpp.sarif".to_owned())
+    );
+    assert_eq!(single.sarif_files, ["main.cpp.sarif"]);
+
+    let two = plan.compile_and_link_many(
+        &[
+            PathBuf::from("/b/gen/main.cpp"),
+            PathBuf::from("/b/ide/b2c_ide_init.cpp"),
+        ],
+        Path::new("/b/out/m"),
+    );
+    let args = strings(&two.args);
+    let outputs: Vec<&String> = args
+        .iter()
+        .filter(|a| a.starts_with("-fdiagnostics-add-output="))
+        .collect();
+    assert_eq!(outputs, ["-fdiagnostics-add-output=sarif:version=2.1"]);
+    assert_eq!(two.sarif_files, ["main.cpp.sarif", "b2c_ide_init.cpp.sarif"]);
+    let as_text = two.with_plain_diagnostics().unwrap();
+    assert!(as_text.sarif_files.is_empty());
+    assert!(
+        !strings(&as_text.args)
+            .iter()
+            .any(|a| a.starts_with("-fdiagnostics-add-output"))
+    );
+}
+
+#[test]
+fn sources_with_one_file_name_share_a_sarif_file() {
+    let tc = linux13();
+    let step = plan(&tc, &debug()).compile_and_link_many(
+        &[PathBuf::from("/a/main.cpp"), PathBuf::from("/b/main.cpp")],
+        Path::new("/o/m"),
+    );
+    assert_eq!(step.sarif_files, ["main.cpp.sarif"]);
+    // JSON and plain text come on standard error: no files.
+    let json = toolchain("/usr/bin/g++-11", "x86_64-linux-gnu", 11, DiagnosticsFormat::Json);
+    let step = plan(&json, &debug()).compile_and_link_many(
+        &[PathBuf::from("/a/main.cpp"), PathBuf::from("/b/x.cpp")],
+        Path::new("/o/m"),
+    );
+    assert!(step.sarif_files.is_empty());
+}
+
+#[test]
+fn compilers_get_a_grace_period() {
+    use b2c_toolchain::command::{
+        COMPILER_GRACE, COMPILER_MEMORY_LIMIT, COMPILER_PROCESS_LIMIT, compiler_limits,
+    };
+    let limits = compiler_limits(std::time::Duration::from_secs(30));
+    assert_eq!(limits.grace, Some(std::time::Duration::from_secs(2)));
+    assert_eq!(limits.grace, Some(COMPILER_GRACE));
+    assert_eq!(limits.timeout, Some(std::time::Duration::from_secs(30)));
+    assert_eq!(limits.memory, Some(COMPILER_MEMORY_LIMIT));
+    assert_eq!(limits.processes, Some(COMPILER_PROCESS_LIMIT));
+}
+
+#[test]
+fn read_diagnostics_merges_every_sarif_file_in_source_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let tc = linux13();
+    let step = plan(&tc, &debug()).compile_and_link_many(
+        &[PathBuf::from("/g/main.cpp"), PathBuf::from("/i/b2c_ide_init.cpp")],
+        Path::new("/o/main"),
+    );
+    std::fs::write(
+        dir.path().join("main.cpp.sarif"),
+        sarif_error("/g/main.cpp", 2, "first"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("b2c_ide_init.cpp.sarif"),
+        sarif_error("/i/b2c_ide_init.cpp", 4, "second"),
+    )
+    .unwrap();
+    let stderr = b"/g/main.cpp:2:3: error: first\ncollect2: error: ld returned 1 exit status\n";
+    let parsed = step.read_diagnostics(dir.path(), stderr);
+    let texts: Vec<&str> = parsed.messages.iter().map(|m| m.message.as_str()).collect();
+    assert_eq!(texts, ["first", "second", "ld returned 1 exit status"]);
+    assert!(!parsed.truncated);
+
+    // A missing file: standard error is read as text instead.
+    std::fs::remove_file(dir.path().join("b2c_ide_init.cpp.sarif")).unwrap();
+    let parsed = step.read_diagnostics(dir.path(), stderr);
+    let texts: Vec<&str> = parsed.messages.iter().map(|m| m.message.as_str()).collect();
+    assert_eq!(texts, ["first", "ld returned 1 exit status"]);
+
+    // A malformed file does the same.
+    std::fs::write(dir.path().join("b2c_ide_init.cpp.sarif"), "{").unwrap();
+    let parsed = step.read_diagnostics(dir.path(), b"/i/b2c_ide_init.cpp:1:1: error: text\n");
+    let texts: Vec<&str> = parsed.messages.iter().map(|m| m.message.as_str()).collect();
+    assert_eq!(texts, ["text"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn read_diagnostics_never_follows_a_linked_sarif_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let tc = linux13();
+    let step = plan(&tc, &debug()).compile_and_link_many(
+        &[PathBuf::from("/g/main.cpp"), PathBuf::from("/g/two.cpp")],
+        Path::new("/o/main"),
+    );
+    std::fs::write(
+        dir.path().join("main.cpp.sarif"),
+        sarif_error("/g/main.cpp", 2, "first"),
+    )
+    .unwrap();
+    let target = elsewhere.path().join("planted.sarif");
+    std::fs::write(&target, sarif_error("/g/two.cpp", 1, "planted")).unwrap();
+    std::os::unix::fs::symlink(&target, dir.path().join("two.cpp.sarif")).unwrap();
+    let parsed = step.read_diagnostics(dir.path(), b"/g/two.cpp:1:1: error: real\n");
+    let texts: Vec<&str> = parsed.messages.iter().map(|m| m.message.as_str()).collect();
+    assert_eq!(texts, ["real"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn process_command_removes_every_stale_sarif_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let diag = dir.path().canonicalize().unwrap();
+    for name in ["main.cpp.sarif", "b2c_ide_init.cpp.sarif", "other.sarif"] {
+        std::fs::write(diag.join(name), "stale").unwrap();
+    }
+    let tc = linux13();
+    let step = plan(&tc, &debug()).compile_and_link_many(
+        &[PathBuf::from("/g/main.cpp"), PathBuf::from("/i/b2c_ide_init.cpp")],
+        Path::new("/o/main"),
+    );
+    let env = b2c_toolchain::env::CompilerEnv {
+        vars: Vec::new(),
+        refused: Vec::new(),
+    };
+    step.process_command(&diag, &env, None).unwrap();
+    assert!(!diag.join("main.cpp.sarif").exists());
+    assert!(!diag.join("b2c_ide_init.cpp.sarif").exists());
+    assert!(diag.join("other.sarif").exists());
+}
+
+#[test]
+fn merged_diagnostics_are_bounded() {
+    use b2c_toolchain::diagnostics::MAX_MESSAGES;
+    let dir = tempfile::tempdir().unwrap();
+    let tc = linux13();
+    let step = plan(&tc, &debug()).compile_and_link_many(
+        &[PathBuf::from("/g/a.cpp"), PathBuf::from("/g/b.cpp")],
+        Path::new("/o/main"),
+    );
+    // Each file holds just over half the limit.
+    let half = MAX_MESSAGES / 2 + 1;
+    let result = r#"{"ruleId": "error", "level": "error", "message": {"text": "x"}}"#;
+    let log = format!(
+        r#"{{"version": "2.1.0", "runs": [{{"results": [{}]}}]}}"#,
+        vec![result; half].join(",")
+    );
+    std::fs::write(dir.path().join("a.cpp.sarif"), &log).unwrap();
+    std::fs::write(dir.path().join("b.cpp.sarif"), &log).unwrap();
+    let parsed = step.read_diagnostics(dir.path(), b"");
+    assert_eq!(parsed.messages.len(), MAX_MESSAGES);
+    assert!(parsed.truncated);
 }

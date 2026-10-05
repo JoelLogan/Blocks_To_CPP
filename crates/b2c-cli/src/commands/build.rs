@@ -62,18 +62,25 @@ fn build_project(
         Some(path) => ToolchainChoice::Path(path.to_path_buf()),
         None => ToolchainChoice::Auto,
     };
+    // The CLI never reads the code style (07 §7.9): the default indent width
+    // of 4. It never links the IDE init unit, so its builds have their own
+    // build folders.
     let request = BuildRequest {
         configuration: config.into(),
         toolchain,
         cache_root: cache_root(cache_dir)?,
         frontend: b2c_build::FrontendOptions::default(),
+        ide: false,
     };
     let report = b2c_build::build(&bytes, &request).map_err(|error| {
         fail(&terminal_safe(&error.to_string()));
         match error {
             // The compiler exists (it was probed) but could not be started.
             BuildError::Process(_) => Status::Toolchain,
-            BuildError::BuildDir(_) => Status::Usage,
+            BuildError::BuildDir(_)
+            | BuildError::Manifest(_)
+            | BuildError::Cancelled
+            | BuildError::Internal(_) => Status::Usage,
         }
     })?;
     // Notes (a sanitizer the compiler lacks, and so on) would repeat on every
