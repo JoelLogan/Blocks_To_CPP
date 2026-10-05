@@ -31,6 +31,7 @@ view, building and running arrive with milestone M2
 | `src/editor/`                          | The Blockly workspace and where its media files come from  |
 | `src/panels/`                          | Panels; placeholders for now                               |
 | `src/lib/ipc.ts`                       | The typed client for the backend's commands                |
+| `src/test/`, `vitest.config.ts`        | Test setup and shared test helpers; the Vitest settings    |
 | `src-tauri/src/main.rs`                | The Rust shell: window, navigation rules, commands         |
 | `src-tauri/tauri.conf.json`            | App, window, security (CSP, isolation) and bundle settings |
 | `src-tauri/capabilities/`              | What the window may call in the backend                    |
@@ -76,11 +77,19 @@ Policy. To check the app as it ships, with the CSP and the embedded frontend, bu
 Checks (CI runs them all, see [`.github/workflows/desktop.yml`](../../.github/workflows/desktop.yml)):
 
 ```sh
-pnpm desktop:check                    # TypeScript, ESLint and Prettier
+pnpm desktop:check                    # TypeScript, ESLint and Prettier, in every frontend package
+python3 tools/check-package-layering.py                           # which package may use which
+pnpm --filter @blocks2cpp/desktop run test                        # Vitest (happy-dom), headless
+pnpm --filter @blocks2cpp/desktop run test:coverage               # with the 75% line gate
 pnpm --filter @blocks2cpp/desktop run build                       # frontend build
 cargo clippy --locked -p blocks2cpp-desktop --all-targets -- -D warnings
 cargo test --locked -p blocks2cpp-desktop
 ```
+
+Tests sit next to the code they test (`*.test.ts`, `*.test.tsx`); `src/test/` holds the setup and
+the shared helpers, such as `expectNoAxeViolations` for the accessibility check every panel and
+dialog test runs. [`packages/README.md`](../../packages/README.md) describes the frontend packages
+and the template they follow.
 
 The desktop crate is a member of the Cargo workspace but not a default member, so `cargo build`,
 `cargo test` and `cargo clippy` at the root build only the compiler crates and the CLI and need
@@ -158,7 +167,14 @@ workspace policy requires ([§8.9](../../docs/spec/08-security.md#89-supply-chai
 | `typescript-eslint` (dev)                | 8.70.1 (2026-09-21)  | MIT               | `strict-type-checked` and `stylistic-type-checked` rules                                          |
 | `eslint-plugin-react-hooks` (dev)        | 5.2.0 (2025-02-28)   | MIT               | Rules of Hooks and effect dependencies                                                            |
 | `eslint-plugin-no-unsanitized` (dev)     | 4.1.5 (2026-02-19)   | MPL-2.0           | Flags HTML-injection sinks (§8.8)                                                                 |
+| `eslint-plugin-jsx-a11y` (dev)           | 6.10.2 (2024-10-26)  | MIT               | Accessibility rules for JSX, the strict set (§9.1, WCAG 2.2 AA in §4.8)                           |
 | `prettier` (dev)                         | 3.9.9 (2026-09-23)   | MIT               | Formatting                                                                                        |
+| `vitest` (dev)                           | 4.1.11 (2026-08-18)  | MIT               | Unit and component tests (§9.2); uses the app's Vite configuration                                |
+| `@vitest/coverage-v8` (dev)              | 4.1.11 (2026-08-18)  | MIT               | Line coverage and the 75% frontend gate (§9.2)                                                    |
+| `happy-dom` (dev)                        | 20.14.5 (2026-09-12) | MIT               | The DOM the tests run in, headless; Blockly runs in it                                            |
+| `@testing-library/react` (dev)           | 16.3.3 (2026-08-27)  | MIT               | Renders components in tests and finds elements by role and name                                   |
+| `@testing-library/dom` (dev)             | 10.4.2 (2026-09-13)  | MIT               | The DOM queries behind `@testing-library/react` (its peer dependency)                             |
+| `axe-core` (dev)                         | 4.13.0 (2026-08-05)  | MPL-2.0           | Automated accessibility checks in component tests (`src/test/axe.ts`); no dependencies            |
 
 | Crate                 | Version (released)  | Licence           | Why                                                                        |
 | --------------------- | ------------------- | ----------------- | -------------------------------------------------------------------------- |
@@ -178,7 +194,19 @@ Notes:
   Blockly 13 makes `jsdom` a peer dependency, so it would still be installed.
 - **No `@types/node`:** `@types/node` 22 depends on `undici-types@6.21.0`, which the trust policy
   also rejects, so `vite.config.ts` reads Blockly's media through Rolldown's plugin file-system API
-  instead of `node:fs`.
+  instead of `node:fs`. (`happy-dom` brings `@types/node` 26 with `undici-types` 8 for its own
+  types, which pass the policy; the app's TypeScript configuration still loads no Node.js types.)
+- **`eslint-plugin-jsx-a11y` 6.10.2** is the newest release and declares ESLint up to 9 as its
+  peer, so pnpm warns about an unmet peer as for `eslint-plugin-react-hooks`. Its rules use only
+  the parts of the rule API that ESLint 10 kept, and the lint fails on JSX accessibility problems
+  as it should. It adds about 110 development-only packages to the lockfile, mostly small
+  ECMAScript polyfills (`es-abstract` and its helpers).
+- **No `eslint-plugin-react`**, which §9.1 names: it depends on `semver@6.3.1`, which
+  `trustPolicy: no-downgrade` rejects (checked with 7.37.5, the newest version). The one security rule
+  needed from it, `react/no-danger`, is a `no-restricted-syntax` rule on `dangerouslySetInnerHTML`
+  in `eslint.config.js` instead.
+- **Test tooling** (`vitest`, `@vitest/coverage-v8`, `happy-dom`, Testing Library, `axe-core`) adds
+  about 70 development-only packages; none of it reaches the app bundle.
 - **`tauri` features:** `wry`, `compression`, `isolation`, `common-controls-v6` and `x11`.
   Left out: `devtools` (no web inspector in release builds), `dynamic-acl` (capabilities are fixed
   at build time), `tray-icon`, and `dbus` (unused, and it would need libdbus to build).

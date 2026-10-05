@@ -11,6 +11,7 @@
     "site:build": "pnpm --filter @blocks2cpp/site run build",
     "desktop:dev": "pnpm --filter @blocks2cpp/desktop run tauri dev",
     "desktop:build": "pnpm --filter @blocks2cpp/desktop run tauri build",
-    "desktop:check": "pnpm --filter @blocks2cpp/desktop run typecheck && pnpm --filter @blocks2cpp/desktop run lint && pnpm --filter @blocks2cpp/desktop run format:check"
+    "desktop:check": "pnpm -r --if-present run typecheck && pnpm -r --if-present run lint && pnpm -r --if-present run format:check",
+    "test:web": "pnpm -r --if-present run test"
   }
 }

@@ -1,5 +1,7 @@
-# The desktop app (apps/desktop): lint and build the frontend, then lint, test and build the
-# Tauri app on Linux and Windows and check that it starts (docs/spec/10-roadmap.md, M0).
+# The desktop app (apps/desktop) and the frontend packages (packages/*): typecheck, lint and
+# format every frontend package and check the package layering rules; run the frontend tests
+# with the coverage gate (docs/spec/09-quality-and-delivery.md §9.2, §9.3); then lint, test and
+# build the Tauri app on Linux and Windows and check that it starts.
 # The app is not a default member of the Cargo workspace, so ci.yml's root `cargo` commands
 # skip it; this workflow covers it. Installers (MSI, NSIS, AppImage, deb, rpm) are built by
 # the release workflow once there is one (M6), so this one builds the executable only.
@@ -10,6 +12,7 @@ on:
     branches: ["**"]
     paths:
       - "apps/desktop/**"
+      - "packages/**"
       - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -18,10 +21,12 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".node-version"
+      - "tools/check-package-layering.py"
       - ".github/workflows/desktop.yml"
   pull_request:
     paths:
       - "apps/desktop/**"
+      - "packages/**"
       - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -30,6 +35,7 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".node-version"
+      - "tools/check-package-layering.py"
       - ".github/workflows/desktop.yml"
   workflow_dispatch:
 
@@ -45,7 +51,7 @@ env:
 
 jobs:
   frontend:
-    name: Frontend (typecheck, lint, format, build)
+    name: Frontend (typecheck, lint, format, layering, build)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -68,17 +74,143 @@ jobs:
       - name: Install dependencies under the supply-chain policy
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm --filter @blocks2cpp/desktop run typecheck
+      # Every workspace package that has the script: the app and packages/*.
+      - name: Typecheck (tsc)
+        run: pnpm -r --if-present run typecheck
 
-      - name: Lint (ESLint, including the security rules)
-        run: pnpm --filter @blocks2cpp/desktop run lint
+      - name: Lint (ESLint, including the security and accessibility rules)
+        run: pnpm -r --if-present run lint
 
       - name: Check formatting (Prettier)
-        run: pnpm --filter @blocks2cpp/desktop run format:check
+        run: pnpm -r --if-present run format:check
+
+      # Which package may depend on which, exact versions and the workspace: protocol
+      # (docs/spec/02-architecture.md §2.3, docs/spec/08-security.md §8.9); then the
+      # checker's own test against generated workspaces that break each rule.
+      - name: Package layering rules
+        run: |
+          python3 tools/check-package-layering.py
+          python3 tools/check-package-layering.py --self-test
 
       - name: Build
         run: pnpm --filter @blocks2cpp/desktop run build
+
+  test-web:
+    name: Frontend tests (Vitest, coverage gate)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read # check out the repository
+    env:
+      # The CLI must be the version of the wasm-bindgen crate in Cargo.lock (checked below).
+      WASM_BINDGEN_VERSION: 0.2.129
+      # wasm-opt (binaryen), pinned by release and checksum like rustup-init in ci.yml.
+      BINARYEN_VERSION: "133"
+      BINARYEN_SHA256: 2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # rust-toolchain.toml pins the version and lists the wasm32-unknown-unknown target.
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      # Building wasm-bindgen-cli takes minutes; its binaries are cached per version.
+      - name: Restore wasm-bindgen-cli from the cache
+        id: wasm-bindgen-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm2es6js
+          key: wasm-bindgen-cli-${{ env.WASM_BINDGEN_VERSION }}-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Install wasm-bindgen-cli
+        if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+
+      - name: Check that wasm-bindgen-cli matches Cargo.lock
+        run: |
+          locked="$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)"
+          installed="$(wasm-bindgen --version)"
+          echo "Cargo.lock has wasm-bindgen ${locked}; installed: ${installed}"
+          if [ "$locked" != "$WASM_BINDGEN_VERSION" ] || [ "$installed" != "wasm-bindgen $WASM_BINDGEN_VERSION" ]; then
+            echo "::error::wasm-bindgen-cli must be the version in Cargo.lock; update WASM_BINDGEN_VERSION"
+            exit 1
+          fi
+
+      - name: Install wasm-opt (binaryen)
+        run: |
+          archive="binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/${archive}"
+          echo "${BINARYEN_SHA256}  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar --extract --gzip --file "$RUNNER_TEMP/$archive" --directory "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Show wasm-opt version
+        run: wasm-opt --version
+
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      # The WebAssembly core's tests load the optimised module, as the app does.
+      - name: Build the WebAssembly core package
+        run: pnpm --filter @blocks2cpp/b2c-core-wasm run build
+
+      # Vitest in every package that has tests, each with its 75% line-coverage gate.
+      - name: Run the frontend tests with coverage
+        run: pnpm -r --if-present run test:coverage
+
+      - name: Write the coverage summary
+        if: ${{ !cancelled() }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import glob
+          import json
+
+          print("### Frontend line coverage (gate: 75% per package)")
+          print()
+          print("| Package | Lines | Statements | Functions | Branches |")
+          print("| --- | ---: | ---: | ---: | ---: |")
+          reports = sorted(glob.glob("apps/*/coverage/coverage-summary.json"))
+          reports += sorted(glob.glob("packages/*/coverage/coverage-summary.json"))
+          for report in reports:
+              with open(report, encoding="utf-8") as file:
+                  total = json.load(file)["total"]
+              package = report.removesuffix("/coverage/coverage-summary.json")
+              cells = [
+                  f"{total[kind]['pct']}% ({total[kind]['covered']}/{total[kind]['total']})"
+                  for kind in ("lines", "statements", "functions", "branches")
+              ]
+              print(f"| `{package}` | " + " | ".join(cells) + " |")
+          if not reports:
+              print("| (no coverage reports) | | | | |")
+          EOF
+
+      - name: Upload the coverage reports (lcov)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-coverage-lcov
+          path: |
+            apps/*/coverage/lcov.info
+            packages/*/coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 14
 
   app:
     name: App (${{ matrix.os }})
