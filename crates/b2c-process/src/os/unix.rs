@@ -1,12 +1,14 @@
-//! Unix: `rename(2)` plus a directory sync, and links opened with
-//! `xdg-open`. No `unsafe` needed.
+//! Unix: `rename(2)` plus a directory sync, non-blocking opens, and links
+//! opened with `xdg-open`. No `unsafe` needed.
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io;
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::os::unix::process::CommandExt as _;
 use std::path::Path;
 use std::process::Stdio;
+
+use rustix::fs::OFlags;
 
 use crate::error::ProcessError;
 
@@ -23,9 +25,27 @@ pub(super) fn atomic_replace(temp: &Path, target: &Path) -> io::Result<()> {
     sync_directory(parent)
 }
 
+/// See [`super::open_read_nonblocking`].
+pub(super) fn open_read_nonblocking(path: &Path) -> io::Result<File> {
+    open_with(path, OFlags::NONBLOCK | OFlags::NOCTTY)
+}
+
+/// Opens `path` for reading with `flags` added to the standard library's
+/// own (`O_RDONLY | O_CLOEXEC`).
+fn open_with(path: &Path, flags: OFlags) -> io::Result<File> {
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(flags.bits().cast_signed())
+        .open(path)
+}
+
 /// `fsync`s a directory, so a rename inside it is durable.
+///
+/// The directory is opened with `O_DIRECTORY | O_NONBLOCK`, so anything
+/// else found at its path (above all a FIFO, which would block a plain open
+/// until a writer comes) fails at once instead.
 fn sync_directory(dir: &Path) -> io::Result<()> {
-    let handle = File::open(dir)?;
+    let handle = open_with(dir, OFlags::DIRECTORY | OFlags::NONBLOCK | OFlags::NOCTTY)?;
     match handle.sync_all() {
         Ok(()) => {
             super::count_directory_sync();
@@ -148,6 +168,18 @@ mod tests {
         assert!(is_executable_file(&file));
         assert!(!is_executable_file(dir.path()));
         assert!(!is_executable_file(&dir.path().join("missing")));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_fifo_where_the_directory_should_be_is_not_waited_for() {
+        use rustix::fs::{CWD, Mode, mkfifoat};
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("fifo");
+        mkfifoat(CWD, &fifo, Mode::RUSR | Mode::WUSR).unwrap();
+        // No writer ever opens the FIFO, so a blocking open would hang here.
+        assert!(sync_directory(&fifo).is_err());
+        assert!(sync_directory(dir.path()).is_ok());
     }
 
     #[test]

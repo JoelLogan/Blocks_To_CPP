@@ -111,6 +111,130 @@ fn writes_need_a_folder_and_leave_nothing_behind() {
     );
 }
 
+/// Every machine-local file is `0600` (02 §2.7, 08 §8.6), also when an
+/// older one was left wider; a project keeps the mode its user gave it.
+#[cfg(unix)]
+#[test]
+fn machine_local_files_become_owner_only_and_projects_keep_their_mode() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let mode = |path: &std::path::Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    let wide = || fs::Permissions::from_mode(0o666);
+
+    let root = tempfile::tempdir().unwrap();
+    let dirs = Dirs::under_root(root.path());
+    dirs.ensure().unwrap();
+    let settings_file = dirs.config.join("settings.json");
+    let recent_file = dirs.config.join("recent.json");
+    fs::write(&settings_file, b"{}").unwrap();
+    fs::write(&recent_file, b"{}").unwrap();
+    fs::set_permissions(&settings_file, wide()).unwrap();
+    fs::set_permissions(&recent_file, wide()).unwrap();
+
+    let (settings, _) = SettingsStore::open(&dirs.config);
+    settings.update(&SettingsPatch::default()).unwrap();
+    assert_eq!(mode(&settings_file), 0o600);
+    let projects = tempfile::tempdir().unwrap();
+    let project = projects.path().join("game.b2c");
+    save_project(&project, b"first\n").unwrap();
+    RecentStore::open(&dirs.config).touch(&project, "Game").unwrap();
+    assert_eq!(mode(&recent_file), 0o600);
+
+    // A new project is owner-only; one the user made group-readable stays
+    // so, and so does its backup.
+    assert_eq!(mode(&project), 0o600);
+    fs::set_permissions(&project, fs::Permissions::from_mode(0o640)).unwrap();
+    save_project(&project, b"second\n").unwrap();
+    assert_eq!(mode(&project), 0o640);
+    assert_eq!(mode(&projects.path().join("game.b2c.bak")), 0o640);
+}
+
+/// Someone else who can write the project's folder keeps swapping the
+/// project file for a FIFO (named pipe) and back. Opening a FIFO that has no
+/// writer blocks, so a check-then-open race would hang a read or the `.bak`
+/// copy of a save forever. Every call must return: with the file read or
+/// saved, or with the FIFO refused.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_file_swapped_for_a_fifo_never_blocks_a_read_or_a_save() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, mpsc};
+    use std::time::{Duration, Instant};
+
+    use rustix::fs::{CWD, Mode, mkfifoat};
+
+    const RACE_FOR: Duration = Duration::from_secs(2);
+    const TIMEOUT: Duration = Duration::from_secs(30);
+
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("game.b2c");
+    fs::write(&target, b"old").unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+
+    // The attacker: a FIFO and a regular file, each renamed over the target
+    // in turn, so the target is always one or the other.
+    let swapper = {
+        let (dir, target, stop) = (dir.path().to_path_buf(), target.clone(), Arc::clone(&stop));
+        std::thread::spawn(move || {
+            let (fifo, file) = (dir.join("swap.fifo"), dir.join("swap.file"));
+            let mut swaps = 0_u64;
+            while !stop.load(Ordering::Relaxed) {
+                mkfifoat(CWD, &fifo, Mode::RUSR | Mode::WUSR).unwrap();
+                fs::rename(&fifo, &target).unwrap();
+                fs::write(&file, b"old").unwrap();
+                fs::rename(&file, &target).unwrap();
+                swaps += 1;
+            }
+            swaps
+        })
+    };
+
+    // The victims: reads and saves in a loop, each reporting when it is done.
+    let (done, finished) = mpsc::channel();
+    let victims = [false, true].map(|save| {
+        let (target, done) = (target.clone(), done.clone());
+        std::thread::spawn(move || {
+            let start = Instant::now();
+            let mut calls = 0_u64;
+            while start.elapsed() < RACE_FOR {
+                if save {
+                    // A FIFO at the target is refused; a file is saved.
+                    let _ = save_project(&target, b"new");
+                } else if let Ok(bytes) = read_project(&target) {
+                    assert!(bytes == b"old" || bytes == b"new");
+                }
+                calls += 1;
+            }
+            done.send((save, calls)).unwrap();
+        })
+    });
+    drop(done);
+    let mut results = Vec::new();
+    let deadline = Instant::now() + TIMEOUT;
+    while results.len() < victims.len() {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match finished.recv_timeout(left) {
+            Ok(result) => results.push(result),
+            Err(_) => break,
+        }
+    }
+    stop.store(true, Ordering::Relaxed);
+    let swaps = swapper.join().unwrap();
+    let expected = victims.len();
+    // A thread that ended without reporting panicked: show its panic. One
+    // that is still running is blocked and cannot be joined.
+    for victim in victims {
+        if victim.is_finished() {
+            victim.join().unwrap();
+        }
+    }
+    assert_eq!(
+        results.len(),
+        expected,
+        "a read or save blocked on the FIFO (finished: {results:?}, swaps: {swaps})"
+    );
+    assert!(swaps > 0);
+}
+
 fn hex_to_bytes(hex: &str) -> Vec<u8> {
     (0..hex.len())
         .step_by(2)

@@ -510,7 +510,10 @@ happen only in major releases, which means any `0.x` release until 1.0
   migrated, and can be deleted.
 * When an XDG variable is unset, the XDG Base Directory defaults apply:
   `~/.config`, `~/.cache` and `~/.local/state`. Relative values are ignored,
-  as that specification requires.
+  as that specification requires. Values with a `..` part are ignored the
+  same way (on Windows an `APPDATA` or `LOCALAPPDATA` with one is an error),
+  because the folders are created level by level and a `..` after a link
+  leads somewhere other than its text says.
 * All of these directories are created with owner-only permissions, one level
   at a time and without following links (`symlink_metadata` checks, and
   reparse-point checks on Windows): `0700` on Linux; on Windows they inherit

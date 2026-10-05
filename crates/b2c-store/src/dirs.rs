@@ -11,8 +11,13 @@
 //! On Linux (and other Unix systems) an `XDG_*` variable that is unset,
 //! empty or not an absolute path is ignored, as the XDG Base Directory
 //! specification says, and `~/.config`, `~/.cache` or `~/.local/state` is
-//! used instead. Tauri's path resolver is not used: it names the folders
-//! after the bundle identifier rather than `Blocks2Cpp`/`blocks2cpp`.
+//! used instead. A value with a `..` part is ignored the same way: it is not
+//! resolved by text, which would differ from what the system does when a
+//! folder before the `..` is a link, and [`ensure_private_dir`] refuses such
+//! paths, so nothing could ever be saved below it. (`APPDATA` and
+//! `LOCALAPPDATA` have no fallback: such a value is an error.) Tauri's path
+//! resolver is not used: it names the folders after the bundle identifier
+//! rather than `Blocks2Cpp`/`blocks2cpp`.
 //!
 //! Every folder is created by [`ensure_private_dir`]: one level at a time,
 //! owner-only (`0700`) on Unix, and never through a link.
@@ -53,8 +58,9 @@ impl Dirs {
     ///
     /// # Errors
     /// [`StoreError::Invalid`] when the variables the folders derive from
-    /// are missing or not absolute paths: `APPDATA` and `LOCALAPPDATA` on
-    /// Windows; on Linux `HOME`, for each XDG variable that is not usable.
+    /// are missing, not absolute paths or have `..` parts: `APPDATA` and
+    /// `LOCALAPPDATA` on Windows; on Linux `HOME`, for each XDG variable that
+    /// is not usable.
     pub fn from_env() -> Result<Self, StoreError> {
         Self::from_lookup(&|name| std::env::var_os(name))
     }
@@ -65,10 +71,14 @@ impl Dirs {
         #[cfg(windows)]
         {
             let roaming = absolute_var(env, "APPDATA")
-                .ok_or(StoreError::Invalid("APPDATA is not set to an absolute path"))?
+                .ok_or(StoreError::Invalid(
+                    "APPDATA is not set to an absolute path without '..' parts",
+                ))?
                 .join(APP_FOLDER);
             let local = absolute_var(env, "LOCALAPPDATA")
-                .ok_or(StoreError::Invalid("LOCALAPPDATA is not set to an absolute path"))?
+                .ok_or(StoreError::Invalid(
+                    "LOCALAPPDATA is not set to an absolute path without '..' parts",
+                ))?
                 .join(APP_FOLDER);
             Ok(Self {
                 config: roaming,
@@ -137,7 +147,8 @@ impl Dirs {
 /// The cache root alone (the `cache` of [`Dirs::from_env`]), for the
 /// command-line tool: `%LOCALAPPDATA%\Blocks2Cpp` on Windows,
 /// `$XDG_CACHE_HOME/blocks2cpp` or `~/.cache/blocks2cpp` elsewhere. `None`
-/// when the variables it derives from are missing or not absolute.
+/// when the variables it derives from are missing, not absolute or have
+/// `..` parts.
 pub fn cache_root_from_env() -> Option<PathBuf> {
     cache_root_from_lookup(&|name| std::env::var_os(name))
 }
@@ -154,13 +165,26 @@ pub(crate) fn cache_root_from_lookup(env: &dyn Fn(&str) -> Option<OsString>) -> 
     }
 }
 
-/// The value of `name` as a path, if it is set to an absolute path.
+/// The value of `name` as a path, if it is set to an absolute path without
+/// `.` or `..` parts (see the module documentation), so that
+/// [`ensure_private_dir`] accepts the folders below it.
 fn absolute_var(env: &dyn Fn(&str) -> Option<OsString>, name: &str) -> Option<PathBuf> {
-    env(name).map(PathBuf::from).filter(|path| path.is_absolute())
+    env(name)
+        .map(PathBuf::from)
+        .filter(|path| is_plain_absolute(path))
+}
+
+/// Whether `path` is absolute and has no `.` or `..` parts.
+fn is_plain_absolute(path: &Path) -> bool {
+    path.is_absolute()
+        && !path
+            .components()
+            .any(|component| matches!(component, Component::CurDir | Component::ParentDir))
 }
 
 /// `$<variable>/blocks2cpp`, or `$HOME/<fallback...>/blocks2cpp` when the
-/// variable is unset, empty or relative (XDG Base Directory specification).
+/// variable is unset, empty or relative (XDG Base Directory specification),
+/// or has a `..` part.
 #[cfg(not(windows))]
 fn xdg_dir(
     env: &dyn Fn(&str) -> Option<OsString>,
@@ -170,8 +194,9 @@ fn xdg_dir(
     if let Some(base) = absolute_var(env, variable) {
         return Ok(base.join(APP_FOLDER));
     }
-    let mut dir =
-        absolute_var(env, "HOME").ok_or(StoreError::Invalid("HOME is not set to an absolute path"))?;
+    let mut dir = absolute_var(env, "HOME").ok_or(StoreError::Invalid(
+        "HOME is not set to an absolute path without '..' parts",
+    ))?;
     dir.extend(fallback);
     dir.push(APP_FOLDER);
     Ok(dir)
@@ -195,11 +220,7 @@ fn xdg_dir(
 /// parts; [`StoreError::Link`] for a link or non-folder; [`StoreError::Io`]
 /// when a folder cannot be inspected, created or made private.
 pub fn ensure_private_dir(path: &Path) -> Result<(), StoreError> {
-    if !path.is_absolute()
-        || path
-            .components()
-            .any(|component| matches!(component, Component::CurDir | Component::ParentDir))
-    {
+    if !is_plain_absolute(path) {
         return Err(StoreError::Invalid(
             "a private folder must be an absolute path without '.' or '..' parts",
         ));
@@ -364,6 +385,57 @@ mod tests {
         assert!(Dirs::from_lookup(&env).is_ok());
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn values_with_dot_dot_parts_fall_back_like_relative_ones() {
+        let env = lookup(&[
+            ("HOME", "/home/ada"),
+            ("XDG_CONFIG_HOME", "/home/ada/../ada/.config"),
+            ("XDG_CACHE_HOME", "/xdg/cache/.."),
+            ("XDG_STATE_HOME", "/xdg/../state"),
+        ]);
+        let dirs = Dirs::from_lookup(&env).unwrap();
+        assert_eq!(dirs.config, PathBuf::from("/home/ada/.config/blocks2cpp"));
+        assert_eq!(dirs.cache, PathBuf::from("/home/ada/.cache/blocks2cpp"));
+        assert_eq!(
+            dirs.recovery,
+            PathBuf::from("/home/ada/.local/state/blocks2cpp/recovery")
+        );
+        assert_eq!(
+            cache_root_from_lookup(&env),
+            Some(PathBuf::from("/home/ada/.cache/blocks2cpp"))
+        );
+        // A HOME with one is as unusable as a relative HOME.
+        let dotted_home = lookup(&[("HOME", "/home/../ada")]);
+        assert!(matches!(
+            Dirs::from_lookup(&dotted_home),
+            Err(StoreError::Invalid(_))
+        ));
+        assert_eq!(cache_root_from_lookup(&dotted_home), None);
+    }
+
+    /// Every folder computed from the environment can be created: an XDG
+    /// value with a `..` part used to be accepted here but refused by
+    /// `ensure_private_dir`, so nothing could ever be saved.
+    #[cfg(not(windows))]
+    #[test]
+    fn folders_from_the_environment_can_always_be_created() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        let dotted = root.path().join("xdg").join("..").join("xdgc");
+        let (home, dotted) = (home.to_str().unwrap(), dotted.to_str().unwrap());
+        let vars = [
+            ("HOME", home),
+            ("XDG_CONFIG_HOME", dotted),
+            ("XDG_CACHE_HOME", dotted),
+            ("XDG_STATE_HOME", dotted),
+        ];
+        let dirs = Dirs::from_lookup(&lookup(&vars)).unwrap();
+        dirs.ensure().unwrap();
+        assert!(Path::new(home).join(".config").join("blocks2cpp").is_dir());
+        assert!(!root.path().join("xdgc").exists());
+    }
+
     #[cfg(windows)]
     #[test]
     fn windows_folders_follow_appdata_and_localappdata() {
@@ -402,12 +474,18 @@ mod tests {
             &[("LOCALAPPDATA", r"C:\Users\Ada\AppData\Local")][..],
             &[("APPDATA", r"relative"), ("LOCALAPPDATA", r"C:\x")][..],
             &[("APPDATA", r"C:\x")][..],
+            &[("APPDATA", r"C:\Users\..\Ada"), ("LOCALAPPDATA", r"C:\x")][..],
+            &[("APPDATA", r"C:\x"), ("LOCALAPPDATA", r"C:\x\..\y")][..],
         ] {
             assert!(matches!(
                 Dirs::from_lookup(&lookup(vars)),
                 Err(StoreError::Invalid(_))
             ));
         }
+        assert_eq!(
+            cache_root_from_lookup(&lookup(&[("LOCALAPPDATA", r"C:\x\..\y")])),
+            None
+        );
     }
 
     #[test]

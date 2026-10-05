@@ -7,19 +7,23 @@
 //! * [`dirs`]: [`Dirs`] computes the folders of 02 §2.7 from the
 //!   environment (`%APPDATA%`/`%LOCALAPPDATA%` on Windows; the XDG variables
 //!   with the `~/.config`, `~/.cache` and `~/.local/state` fallbacks on
-//!   Linux, ignoring relative values), never through Tauri's path resolver.
-//!   [`ensure_private_dir`] creates folders one level at a time, `0700` on
-//!   Unix, and refuses links, junctions and reparse points (08 §8.6).
+//!   Linux, ignoring relative values and values with `..` parts), never
+//!   through Tauri's path resolver. [`ensure_private_dir`] creates folders
+//!   one level at a time, `0700` on Unix, and refuses links, junctions and
+//!   reparse points (08 §8.6).
 //! * [`atomic`]: [`write_atomic`] writes a temporary file in the same folder
 //!   (exclusive, random name, `0600`), flushes and syncs it, then renames it
 //!   over the target with `MoveFileExW(REPLACE_EXISTING | WRITE_THROUGH)` on
 //!   Windows or `rename(2)` plus a directory `fsync` on Unix, so a crash
 //!   leaves the old file or the new one, never a mix (05 §5.10, 01 N10).
+//!   The file is always `0600` on Unix; [`write_atomic_keeping_mode`], for
+//!   project files only, keeps the mode of the file it replaces.
 //!   [`Backup::KeepPrevious`] keeps one `<name>.bak` generation, written the
 //!   same way, so a link planted there is replaced, never followed. Links at
 //!   the target are refused; temporary files never outlive an error.
 //! * [`read`]: [`read_bounded`] reads regular files only, at most
-//!   `limit + 1` bytes (08 §8.6 size-bounded reads).
+//!   `limit + 1` bytes (08 §8.6 size-bounded reads), and a FIFO swapped in
+//!   for the file can never block it.
 //! * [`project_file`]: project bytes in and out: bounded to 32 MiB
 //!   (05 §5.6), saved with a `.b2c.bak`, hashed with SHA-256, and paths
 //!   canonicalised.
@@ -37,9 +41,9 @@
 //! project file ever ends up in the machine-local files except the recent
 //! list's display name.
 //!
-//! This crate is native only and contains no `unsafe` code: the one OS call
-//! it needs that the standard library lacks (the write-through rename) comes
-//! from [`b2c_process::os`].
+//! This crate is native only and contains no `unsafe` code: the OS calls it
+//! needs that the standard library lacks (the write-through rename and the
+//! non-blocking open) come from [`b2c_process::os`].
 
 pub mod atomic;
 pub mod dirs;
@@ -52,7 +56,7 @@ pub mod recent;
 pub mod settings;
 pub mod time;
 
-pub use atomic::{Backup, write_atomic};
+pub use atomic::{Backup, write_atomic, write_atomic_keeping_mode};
 pub use dirs::{Dirs, cache_root_from_env, ensure_private_dir};
 pub use error::{ReadError, StoreError};
 pub use ids::random_hex_id;

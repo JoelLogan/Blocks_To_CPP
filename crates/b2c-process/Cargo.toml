@@ -14,8 +14,9 @@ thiserror.workspace = true
 [target.'cfg(unix)'.dependencies]
 # The workspace features plus the pseudo-terminal calls (`pty`, `termios`),
 # the standard descriptors for `TIOCSCTTY` (`stdio`) and `poll` for the
-# session reader and writer (`event`); see src/pty/unix.rs.
-rustix = { workspace = true, features = ["event", "pty", "stdio", "termios"] }
+# session reader and writer (`event`); see src/pty/unix.rs. `fs` gives the
+# open flags of os::open_read_nonblocking (src/os/unix.rs).
+rustix = { workspace = true, features = ["event", "fs", "pty", "stdio", "termios"] }
 
 [target.'cfg(windows)'.dependencies]
 # The workspace features plus Toolhelp, used to resume the main thread of a
