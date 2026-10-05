@@ -267,6 +267,20 @@ mod tests {
     }
 
     #[test]
+    fn cmd_scripts_of_the_session_tests() {
+        // tests/pty_windows.rs runs one-line scripts with `cmd /c`. The
+        // script must reach cmd.exe as one argument with exactly two quotes
+        // around it, no escapes and a special character (`&`) between them:
+        // cmd /c then removes those two quotes and runs the text as written
+        // (`cmd /?`, on /C and /K).
+        let script = "set /p line=& echo got !line!";
+        assert_eq!(
+            line_for(r"C:\Windows\System32\cmd.exe", &["/d", "/v:on", "/c", script]),
+            r#""C:\Windows\System32\cmd.exe" /d /v:on /c "set /p line=& echo got !line!""#
+        );
+    }
+
+    #[test]
     fn known_lines_parse_back() {
         let args = ["", "a b", r"C:\x\", "\"", r"\\", r#"\""#, "é ✓ 𝄞"];
         let program = wide(r"C:\a\b.exe");

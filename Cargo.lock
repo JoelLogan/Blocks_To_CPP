@@ -296,6 +296,7 @@ dependencies = [
 name = "b2c-process"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "proptest",
  "rustix",
  "tempfile",

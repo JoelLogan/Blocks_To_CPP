@@ -16,6 +16,10 @@ thiserror.workspace = true
 # the standard descriptors for `TIOCSCTTY` (`stdio`) and `poll` for the
 # session reader and writer (`event`); see src/pty/unix.rs.
 rustix = { workspace = true, features = ["event", "pty", "stdio", "termios"] }
+# `signal` and `pthread_sigmask`, to give a session's program default signal
+# handling between fork and exec (src/pty/unix.rs); rustix has no
+# signal-action API.
+libc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # The workspace features plus Toolhelp, used to resume the main thread of a
