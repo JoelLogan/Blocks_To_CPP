@@ -164,7 +164,15 @@ AppContainer sandbox · import of C++ declarations from headers · classroom
 features (assignment templates, CLI grading reports) · Flatpak · C++ modules
 once GCC support matures · a deprecation path for block types (badge and
 automatic replacement; until a block type is removed, the migration chain is
-enough).
+enough) · evaluate and adopt Tauri 3 once it is stable and has had a point
+release with no open security advisories. Tauri is confined to the desktop
+adapter (`apps/desktop/src-tauri`) and the frontend's IPC transport
+(`apps/desktop/src/lib/ipc.ts`), so the work is mainly re-verifying the
+security configuration of [08 §8.8](08-security.md#88-webview-and-ipc-hardening)
+(CSP, capabilities and permissions, the isolation hook, navigation locking),
+updating the adapter, the Linux webview packages and the E2E driver, and a
+full manual test pass on both OSes. A newer Linux webview stack would also
+drop glib 0.18 and its tracked advisory (`osv-scanner.toml`).
 
 ## 10.2 Risks
 
