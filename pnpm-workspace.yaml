@@ -1,6 +1,7 @@
 # pnpm workspace and supply-chain policy (docs/spec/08-security.md §8.9).
 packages:
   - apps/desktop
+  - packages/*
   - site
 
 # Refuse package versions published less than 7 days ago (in minutes).

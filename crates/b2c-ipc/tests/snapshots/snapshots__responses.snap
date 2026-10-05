@@ -1,0 +1,276 @@
+---
+source: crates/b2c-ipc/tests/snapshots.rs
+expression: render(&values)
+---
+--- AppInfo
+{
+  "appVersion": "0.1.0",
+  "catalogVersion": "1.0.0",
+  "ipcVersion": 1,
+  "platform": "linux"
+}
+--- Empty
+{}
+--- ProjectNewResponse
+{
+  "document": "{\"format\":\"blocks2cpp/project\"}",
+  "handle": "ph_0123456789abcdef0123456789abcdef",
+  "trust": {
+    "markOfTheWeb": false,
+    "restrictedReason": null,
+    "source": "createdHere",
+    "state": "trusted"
+  }
+}
+--- ProjectOpenDialogResponse
+{
+  "status": "cancelled"
+}
+--- ProjectOpenDialogResponse
+{
+  "document": "{\"format\":\"blocks2cpp/project\"}",
+  "fileName": "guess.b2c",
+  "handle": "ph_0123456789abcdef0123456789abcdef",
+  "migratedFrom": null,
+  "status": "ok",
+  "trust": {
+    "markOfTheWeb": true,
+    "restrictedReason": "changedOutside",
+    "source": null,
+    "state": "restricted"
+  }
+}
+--- ProjectOpened
+{
+  "document": "{\"format\":\"blocks2cpp/project\"}",
+  "fileName": "guess.b2c",
+  "handle": "ph_0123456789abcdef0123456789abcdef",
+  "migratedFrom": 1,
+  "trust": {
+    "markOfTheWeb": true,
+    "restrictedReason": "changedOutside",
+    "source": null,
+    "state": "restricted"
+  }
+}
+--- ProjectReloadResponse
+{
+  "document": "{\"format\":\"blocks2cpp/project\"}",
+  "migratedFrom": null,
+  "trust": {
+    "markOfTheWeb": false,
+    "restrictedReason": null,
+    "source": "createdHere",
+    "state": "trusted"
+  }
+}
+--- ProjectSaveResponse
+{
+  "hash": "abababababababababababababababababababababababababababababababab",
+  "savedAt": "2026-10-05T09:15:00Z"
+}
+--- ProjectSaveAsDialogResponse
+{
+  "status": "cancelled"
+}
+--- ProjectSaveAsDialogResponse
+{
+  "fileName": "copy.b2c",
+  "handle": "ph_0123456789abcdef0123456789abcdef",
+  "hash": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "savedAt": "2026-10-05T09:15:00Z",
+  "status": "ok"
+}
+--- RecentListResponse
+{
+  "entries": [
+    {
+      "displayPath": "~/Projects/guess.b2c",
+      "lastOpenedAt": "2026-10-04T18:00:00Z",
+      "projectName": "Guessing Game",
+      "recentId": "rc_0123456789abcdef0123456789abcdef"
+    }
+  ]
+}
+--- RecoveryListResponse
+{
+  "snapshots": [
+    {
+      "hasPath": false,
+      "projectName": "Untitled",
+      "savedAt": "2026-10-04T18:01:00Z",
+      "snapshotId": "sn_0123456789abcdef0123456789abcdef"
+    }
+  ]
+}
+--- RecoveryRestoreResponse
+{
+  "document": "{\"format\":\"blocks2cpp/project\"}",
+  "fileName": null,
+  "handle": "ph_0123456789abcdef0123456789abcdef",
+  "trust": {
+    "markOfTheWeb": false,
+    "restrictedReason": null,
+    "source": "createdHere",
+    "state": "trusted"
+  }
+}
+--- TrustResponse
+{
+  "trust": {
+    "markOfTheWeb": true,
+    "restrictedReason": "changedOutside",
+    "source": null,
+    "state": "restricted"
+  }
+}
+--- ToolchainListResponse
+{
+  "discovering": true,
+  "toolchains": [
+    {
+      "capabilities": {
+        "sanitizers": true,
+        "sarif": true,
+        "standards": [
+          "c++17",
+          "c++20",
+          "c++23"
+        ],
+        "stdFormat": true
+      },
+      "displayPath": "/usr/bin/g++-13",
+      "flavor": null,
+      "id": "tc_0123456789abcdef",
+      "problems": [],
+      "selected": true,
+      "source": "path",
+      "target": "x86_64-linux-gnu",
+      "usable": true,
+      "version": "13.3.0"
+    }
+  ]
+}
+--- ToolchainAddDialogResponse
+{
+  "status": "cancelled"
+}
+--- ToolchainAddDialogResponse
+{
+  "status": "ok",
+  "toolchain": {
+    "capabilities": {
+      "sanitizers": false,
+      "sarif": false,
+      "standards": [
+        "c++17"
+      ],
+      "stdFormat": false
+    },
+    "displayPath": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+    "flavor": "MSYS2 UCRT64",
+    "id": "tc_fedcba9876543210",
+    "problems": [
+      {
+        "code": "B2C-T1004",
+        "message": "This compiler is too old: Blocks2Cpp needs GCC 11 or later.",
+        "primary": {
+          "part": {
+            "kind": "whole"
+          }
+        },
+        "severity": "error",
+        "source": "toolchain"
+      }
+    ],
+    "selected": false,
+    "source": "wellKnown",
+    "target": "x86_64-w64-mingw32",
+    "usable": false,
+    "version": "9.4.0"
+  }
+}
+--- ToolchainSetupInfo
+{
+  "distro": {
+    "id": "ubuntu",
+    "idLike": [
+      "debian"
+    ]
+  },
+  "noUsableToolchain": true,
+  "platform": "linux"
+}
+--- ToolchainSetupInfo
+{
+  "distro": null,
+  "noUsableToolchain": false,
+  "platform": "windows"
+}
+--- BuildStartResponse
+{
+  "buildId": "bd_0123456789abcdef0123456789abcdef"
+}
+--- BuildCacheClearResponse
+{
+  "freedBytes": 734003200,
+  "skippedInUse": 1
+}
+--- RunStartResponse
+{
+  "runId": "rn_0123456789abcdef0123456789abcdef"
+}
+--- SettingsGetResponse
+{
+  "notices": [
+    {
+      "key": "buildCache.maxBytes",
+      "reason": "newerVersion"
+    }
+  ],
+  "settings": {
+    "buildCache": {
+      "maxBytes": 2147483648
+    },
+    "codeStyle": {
+      "indentWidth": 4
+    },
+    "console": {
+      "scrollbackLines": 10000
+    },
+    "formatVersion": 1,
+    "newProject": {
+      "standard": "c++20"
+    },
+    "run": {
+      "onErrors": "disableRun"
+    },
+    "toolchain": {
+      "selectedId": "tc_0123456789abcdef"
+    }
+  }
+}
+--- SettingsUpdateResponse
+{
+  "settings": {
+    "buildCache": {
+      "maxBytes": 2147483648
+    },
+    "codeStyle": {
+      "indentWidth": 4
+    },
+    "console": {
+      "scrollbackLines": 10000
+    },
+    "formatVersion": 1,
+    "newProject": {
+      "standard": "c++20"
+    },
+    "run": {
+      "onErrors": "disableRun"
+    },
+    "toolchain": {
+      "selectedId": "tc_0123456789abcdef"
+    }
+  }
+}

@@ -1,0 +1,2 @@
+# Vitest coverage reports (pnpm run test:coverage)
+coverage/
