@@ -822,6 +822,8 @@ fn evict(
 
 #[cfg(test)]
 mod tests {
+    use std::path::{MAIN_SEPARATOR, MAIN_SEPARATOR_STR};
+
     use super::*;
 
     #[test]
@@ -881,7 +883,17 @@ mod tests {
         assert!(!layout.holds_dir(&entry, 1));
         assert!(layout.holds_dir(entry.parent().unwrap(), 1));
         assert!(layout.holds_dir(&layout.builds, 0));
-        assert!(!layout.holds_dir(&layout.builds.join("prj_a-00000000/../prj_a-00000000"), 1));
+        // Spelled by hand: on Windows `join` onto the verbatim (`\\?\`) root
+        // would resolve the `..` and give the real folder back.
+        for odd in [
+            "prj_a-00000000/../prj_a-00000000",
+            &format!("prj_a-00000000{MAIN_SEPARATOR}..{MAIN_SEPARATOR}prj_a-00000000"),
+        ] {
+            let mut path = layout.builds.clone().into_os_string();
+            path.push(MAIN_SEPARATOR_STR);
+            path.push(odd);
+            assert!(!layout.holds_dir(Path::new(&path), 1), "{odd}");
+        }
         assert!(!layout.holds_dir(&layout.builds.join("missing/entry"), 2));
         assert!(!layout.holds_dir(cache.path(), 0));
         #[cfg(unix)]
