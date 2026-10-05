@@ -1,0 +1,74 @@
+/*
+ * The recovery offer on the start page (docs/spec/04-user-interface.md §4.10), in the app's colour
+ * tokens (app.css). Targets are at least 24×24 px and focus stays visible (§4.8).
+ */
+
+.recovery-offer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--b2c-accent);
+  border-radius: 8px;
+  background: var(--b2c-warning-bg);
+  color: var(--b2c-warning-text);
+}
+
+.recovery-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.recovery-note {
+  margin: 0;
+}
+
+.recovery-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recovery-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--b2c-border);
+  border-radius: 6px;
+  background: var(--b2c-surface-raised);
+  color: var(--b2c-text);
+}
+
+.recovery-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.recovery-name {
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.recovery-details {
+  color: var(--b2c-text-muted);
+  font-size: 13px;
+}
+
+.recovery-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Always rendered (never display: none), so screen readers announce what is written into it. */
+.recovery-status {
+  margin: 0;
+}
