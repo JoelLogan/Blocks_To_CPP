@@ -3,7 +3,8 @@
 # with the coverage gate (docs/spec/09-quality-and-delivery.md §9.2, §9.3) and the isolation
 # hook's tests; then lint, test and build the Tauri app on Linux and Windows, check that it
 # starts and that its release build has no end-to-end hooks; and run the end-to-end tests, the
-# M2 exit flow among them, in the real app on both systems (docs/adr/0009).
+# M2 exit flow among them, and the visual diff of the block canvas in the real app on both
+# systems (docs/adr/0009). The E2E security tests and the benchmarks run nightly (nightly.yml).
 # The app is not a default member of the Cargo workspace, so ci.yml's root `cargo` commands
 # skip it; this workflow covers it. Installers (MSI, NSIS, AppImage, deb, rpm) are built by
 # the release workflow once there is one (M6), so this one builds the executable only.
@@ -33,6 +34,7 @@ on:
       - ".node-version"
       - "tools/check-package-layering.py"
       - "tools/check-windows-manifest.ps1"
+      - "tools/bench-compare.py"
       - ".github/workflows/desktop.yml"
   pull_request:
     paths:
@@ -56,8 +58,17 @@ on:
       - ".node-version"
       - "tools/check-package-layering.py"
       - "tools/check-windows-manifest.ps1"
+      - "tools/bench-compare.py"
       - ".github/workflows/desktop.yml"
   workflow_dispatch:
+    inputs:
+      visual-baselines:
+        description: >-
+          Make new visual-diff baselines: the e2e job only writes the canvas screenshots
+          (artifact visual-candidates-<os>) for a person to review and commit to
+          apps/desktop/e2e/visual/baselines/, and does not compare them.
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -231,6 +242,19 @@ jobs:
       # end-to-end tests themselves run in the e2e job.
       - name: Run the end-to-end harness's own tests
         run: pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/vitest.e2e.config.ts --project support
+
+      # The logic of the benchmarks and the visual diff (statistics, page scripts, the generated
+      # benchmark document and its parity with the native one, the screenshot comparison); the
+      # benchmarks run nightly (nightly.yml, bench) and the visual diff in the e2e job.
+      - name: Run the benchmarks' and the visual diff's own tests
+        run: |
+          pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/bench/vitest.bench.config.ts --project bench-unit
+          pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/visual/vitest.visual.config.ts --project visual-unit
+
+      # The nightly benchmark gate's comparison against synthetic baselines (equal, +9% and +11%
+      # medians, too few baselines or samples, malformed files, history updates).
+      - name: Benchmark comparison (self-test)
+        run: python3 tools/bench-compare.py --self-test
 
       - name: Write the coverage summary
         if: ${{ !cancelled() }}
@@ -455,6 +479,9 @@ jobs:
     env:
       # tauri-driver, pinned (docs/adr/0009); installed with cargo install --locked.
       TAURI_DRIVER_VERSION: 2.1.0
+      # "1" only in a manual run asked to make new visual-diff baselines: the visual diff then
+      # writes the screenshots as candidates and compares nothing (e2e/visual/README.md).
+      B2C_VISUAL_UPDATE: ${{ inputs.visual-baselines && '1' || '0' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -553,6 +580,7 @@ jobs:
       # e2e mode (the test hook), embedded as in a release, so the CSP, the isolation hook and
       # freezePrototype are all active. Output: target/debug/blocks2cpp-desktop[.exe].
       - name: Build the app for the end-to-end tests
+        id: app-build
         shell: bash
         run: >-
           pnpm --filter @blocks2cpp/desktop tauri build --debug --no-bundle
@@ -588,6 +616,7 @@ jobs:
           Get-Content $wrapper
           Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_NATIVE_DRIVER=$wrapper"
 
+      # Every spec except the E2E security tests, which run nightly (nightly.yml, e2e-security).
       - name: Run the end-to-end tests (Linux)
         if: runner.os == 'Linux'
         env:
@@ -596,7 +625,7 @@ jobs:
           B2C_E2E_APP: ${{ github.workspace }}/target/debug/blocks2cpp-desktop
           B2C_E2E_ARTIFACTS: ${{ runner.temp }}/e2e-artifacts
           B2C_E2E_TOOLCHAIN_DIRS: /usr/bin
-        run: xvfb-run --auto-servernum pnpm --filter @blocks2cpp/desktop run e2e
+        run: xvfb-run --auto-servernum pnpm --filter @blocks2cpp/desktop run e2e --exclude 'specs/security/**'
 
       # Before the tests, so a failure to start is told apart from a driver problem: the app
       # under test starts with a fresh profile and keeps running; its output and log are shown.
@@ -634,7 +663,32 @@ jobs:
           B2C_E2E_ARTIFACTS: ${{ runner.temp }}\e2e-artifacts
           # The app's debug log shows each page it loads (kept with the artifacts on failure).
           B2C_LOG: debug
-        run: pnpm --filter @blocks2cpp/desktop run e2e
+        run: pnpm --filter @blocks2cpp/desktop run e2e --exclude 'specs/security/**'
+
+      # The visual diff of the block canvas (docs/spec/09-quality-and-delivery.md §9.2,
+      # apps/desktop/e2e/visual): after the other tests, whatever they found, so a failure there
+      # still shows how the canvas looks. Its screenshots are uploaded below as candidates.
+      - name: Run the visual diff (Linux)
+        if: ${{ !cancelled() && runner.os == 'Linux' && steps.app-build.outcome == 'success' }}
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          B2C_E2E_APP: ${{ github.workspace }}/target/debug/blocks2cpp-desktop
+          B2C_E2E_ARTIFACTS: ${{ runner.temp }}/e2e-artifacts
+          B2C_E2E_TOOLCHAIN_DIRS: /usr/bin
+        run: >-
+          xvfb-run --auto-servernum pnpm --filter @blocks2cpp/desktop exec
+          vitest run --config e2e/visual/vitest.visual.config.ts --project visual
+
+      - name: Run the visual diff (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' && steps.app-build.outcome == 'success' }}
+        shell: bash
+        env:
+          B2C_E2E_APP: ${{ github.workspace }}\target\debug\blocks2cpp-desktop.exe
+          B2C_E2E_ARTIFACTS: ${{ runner.temp }}\e2e-artifacts
+          B2C_LOG: debug
+        run: >-
+          pnpm --filter @blocks2cpp/desktop exec
+          vitest run --config e2e/visual/vitest.visual.config.ts --project visual
 
       # The logs the harness keeps (the app's, tauri-driver's with the native driver's output, and
       # msedgedriver's own) in the job log, as artifacts are not always at hand.
@@ -696,6 +750,29 @@ jobs:
           else
             echo "No Trusted Types report was written." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Write the visual diff summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          SUMMARY: ${{ runner.temp }}/e2e-artifacts/visual/visual-diff.md
+        run: |
+          if [ -f "$SUMMARY" ]; then
+            cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The visual diff did not run." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Always: the screenshots (and diff images) are what a person commits as new baselines
+      # (apps/desktop/e2e/visual/baselines/<linux|windows>/), from any run.
+      - name: Upload the visual diff candidates
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: visual-candidates-${{ matrix.os }}
+          path: ${{ runner.temp }}/e2e-artifacts/visual
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload screenshots and logs
         if: failure()
