@@ -1,6 +1,7 @@
 //! The OS helpers of `b2c_process::os`: atomic replacement (both platforms),
-//! non-blocking opens, DLL search hardening (Windows, run in CI) and the
-//! link opener's URL check.
+//! non-blocking opens, DLL search hardening (a no-op here; on Windows it
+//! changes the whole process, so it has a test binary of its own,
+//! `tests/os_windows.rs`) and the link opener's URL check.
 // Test helpers fail the test by panicking.
 #![allow(clippy::unwrap_used)]
 
@@ -8,7 +9,7 @@ use std::fs;
 use std::io::Read as _;
 
 use b2c_process::ProcessError;
-use b2c_process::os::{atomic_replace, harden_dll_search, open_https_url, open_read_nonblocking};
+use b2c_process::os::{atomic_replace, open_https_url, open_read_nonblocking};
 
 #[test]
 fn regular_files_open_and_read_normally() {
@@ -151,67 +152,6 @@ fn unsafe_urls_are_refused_before_anything_starts() {
 #[cfg(not(windows))]
 #[test]
 fn dll_hardening_is_a_no_op_elsewhere() {
-    harden_dll_search().unwrap();
-}
-
-/// After hardening, a DLL that exists only in the current directory cannot
-/// be loaded by name, while System32 DLLs still can.
-#[cfg(windows)]
-#[test]
-fn planted_dlls_in_the_current_directory_are_not_loaded() {
-    use std::os::windows::ffi::OsStrExt as _;
-    use std::path::PathBuf;
-
-    use windows_sys::Win32::Foundation::FreeLibrary;
-    use windows_sys::Win32::System::LibraryLoader::LoadLibraryW;
-
-    /// Restores the working directory when the test ends, even on failure.
-    struct RestoreDir(PathBuf);
-    impl Drop for RestoreDir {
-        fn drop(&mut self) {
-            let _ = std::env::set_current_dir(&self.0);
-        }
-    }
-
-    /// Loads a DLL by bare name; whether it loaded.
-    fn loads(name: &str) -> bool {
-        let wide: Vec<u16> = std::ffi::OsStr::new(name)
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect();
-        // SAFETY: `wide` is a NUL-terminated UTF-16 string that outlives the
-        // call. The DLLs loaded here are copies of a System32 DLL whose
-        // initialisation is safe to run.
-        #[allow(unsafe_code)]
-        let module = unsafe { LoadLibraryW(wide.as_ptr()) };
-        if module.is_null() {
-            return false;
-        }
-        // SAFETY: `module` was just returned by LoadLibraryW and is released
-        // exactly once.
-        #[allow(unsafe_code)]
-        unsafe {
-            FreeLibrary(module);
-        }
-        true
-    }
-
-    let system32 = PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32");
-    let planted = tempfile::tempdir().unwrap();
-    let before = planted.path().join("b2c_planted_before.dll");
-    let after = planted.path().join("b2c_planted_after.dll");
-    fs::copy(system32.join("version.dll"), &before).unwrap();
-    fs::copy(system32.join("version.dll"), &after).unwrap();
-
-    let _restore = RestoreDir(std::env::current_dir().unwrap());
-    std::env::set_current_dir(planted.path()).unwrap();
-    // The default search order includes the current directory ...
-    assert!(
-        loads("b2c_planted_before.dll"),
-        "control: the planted DLL should load before hardening"
-    );
-    harden_dll_search().unwrap();
-    // ... and after hardening it does not.
-    assert!(!loads("b2c_planted_after.dll"));
-    assert!(loads("version.dll"));
+    b2c_process::os::harden_dll_search().unwrap();
+    b2c_process::os::harden_dll_search().unwrap();
 }

@@ -118,6 +118,9 @@ pub(super) fn spawn(command: &Command, io: Io) -> Result<Spawned, ProcessError> 
             )
         }
     };
+    // A session gets an address-space limit only if its command asks for one
+    // (`Limits::memory`; programs use `rss_limit`, which never becomes one).
+    platform::limit_address_space(&mut std_command, plan.tree.enforcement.address_space);
     let spawned = std_command.spawn();
     // The command holds this process's copies of the child's ends (the
     // terminal's slave side, the pipe ends). They must be closed now, or the

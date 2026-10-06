@@ -380,19 +380,16 @@ fn captured_runs_lead_their_own_process_group() {
 #[test]
 fn memory_limit_is_applied() {
     // The fallback's address-space limit (a cgroup scope enforces
-    // `MemoryMax` instead; tests/containment.rs). It is set on the child
-    // after it has started, so the shell waits for it (at most 5 s) instead
-    // of reading it at once.
-    let mut command = sh(
-        "i=0; while [ \"$(ulimit -v)\" = unlimited ] && [ $i -lt 500 ]; do \
-                          sleep 0.01; i=$((i+1)); done; ulimit -v",
-    );
+    // `MemoryMax` instead; tests/containment.rs). The child sets it on
+    // itself before `exec`, so the program reads it at once: the soft and
+    // the hard limit, in KiB.
+    let mut command = sh("ulimit -v; ulimit -H -v");
     command.containment(Containment::ProcessGroupOnly).limits(Limits {
         memory: Some(512 * 1024 * 1024),
         ..Limits::default()
     });
     let result = run_captured(&command).unwrap();
-    assert_eq!(text(&result.stdout).trim(), "524288");
+    assert_eq!(text(&result.stdout), "524288\n524288\n");
 }
 
 #[cfg(target_os = "linux")]

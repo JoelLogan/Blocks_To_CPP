@@ -340,6 +340,11 @@ fn start_std(command: &Command, plan: Plan, mode: Mode) -> Result<(Running, Outp
     };
     let placement = placement(command, mode);
     platform::configure(&mut std_command, placement, mode == Mode::Captured);
+    // The fallback's address-space limit (the compiler without a cgroup
+    // scope): the child sets it on itself before `exec`, so nothing the
+    // program starts can escape it.
+    #[cfg(unix)]
+    platform::limit_address_space(&mut std_command, plan.tree.enforcement.address_space);
 
     let mut child = std_command.spawn().map_err(|source| ProcessError::Spawn {
         program: program.clone(),
