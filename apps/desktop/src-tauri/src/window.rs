@@ -311,8 +311,7 @@ mod tests {
     #[test]
     fn html_of_other_origins_gets_no_policy() {
         let (_, other_platform) = origins();
-        for page in [
-            format!("{other_platform}/"),
+        let mut pages = vec![
             "tauri://localhost:1420/".to_owned(),
             "tauri://example.com/".to_owned(),
             "https://tauri.localhost/".to_owned(),
@@ -320,7 +319,13 @@ mod tests {
             "https://example.com/".to_owned(),
             "isolation://localhost/index.html".to_owned(),
             "/index.html".to_owned(),
-        ] {
+        ];
+        // On Windows the other platform's origin is `tauri://localhost`, the
+        // protocol's own form of every request, which is the app's there too.
+        if !cfg!(windows) {
+            pages.push(format!("{other_platform}/"));
+        }
+        for page in pages {
             let mut response = asset("text/html");
             add_trusted_types_report_only(&uri(&page), &mut response);
             assert!(report_only(&response).is_empty(), "{page}");

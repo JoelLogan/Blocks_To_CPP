@@ -108,11 +108,14 @@ async function saveFailureArtifacts(app: App, test: string): Promise<void> {
   }
 }
 
-/** Copies the app's and the driver's logs into the test's artifact folder. */
-function saveLogs(app: App, test: string): void {
-  const dir = artifactDir(app.settings.artifacts, test);
-  copyFiles(path.join(app.root, 'profile', 'state', 'logs'), dir, 'app-');
-  copyFiles(app.root, dir, 'driver-');
+/**
+ * Copies the app's and the driver's logs (`root` is the test's folder) into the test's artifact
+ * folder.
+ */
+function saveLogs(artifacts: string, root: string, test: string): void {
+  const dir = artifactDir(artifacts, test);
+  copyFiles(path.join(root, 'profile', 'state', 'logs'), dir, 'app-');
+  copyFiles(root, dir, 'driver-');
 }
 
 /**
@@ -161,6 +164,7 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
   const dialogs = path.join(root, 'dialogs.json');
   writeFileSync(dialogs, JSON.stringify(options.dialogs ?? {}));
 
+  const test = context.task.name;
   let driverProcess: TauriDriver | null = null;
   let driver: WebDriver | null = null;
   /** Ends the session (which closes the app), stops the driver and deletes the folder. */
@@ -196,11 +200,14 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
     await session.manage().setTimeouts({ script: 30_000, implicit: 0, pageLoad: 60_000 });
     app = { driver: session, hook: new HookClient(session), settings, root };
   } catch (error: unknown) {
-    await close();
+    // No session: keep what the driver and the app wrote (the native driver's output is in
+    // tauri-driver.log), which is all there is to tell why.
+    await close(() => {
+      saveLogs(settings.artifacts, root, test);
+    });
     throw error;
   }
 
-  const test = context.task.name;
   context.onTestFinished(async ({ task }) => {
     const failed = task.result?.state === 'fail';
     try {
@@ -214,7 +221,7 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
       await close(
         failed
           ? () => {
-              saveLogs(app, test);
+              saveLogs(settings.artifacts, root, test);
             }
           : undefined,
       );

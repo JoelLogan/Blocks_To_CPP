@@ -29,6 +29,8 @@ exclude = [
   '^https?://([a-z0-9-]+\.)*ipc\.localhost([:/?#]|$)',
   # Placeholder domain used in examples.
   '^https?://([a-z0-9-]+\.)*example\.com([:/?#]|$)',
+  # The npm registry's website answers automated requests with 403 Forbidden.
+  '^https://www\.npmjs\.com/',
 ]
 exclude_loopback = true
 
