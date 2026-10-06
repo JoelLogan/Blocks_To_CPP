@@ -5,6 +5,8 @@
  * this file), so nothing the test runner adds to compiled functions can end up in the page; each
  * one only reads the page, apart from the edit the preview benchmark makes through the test hook.
  */
+import type { E2ePoint } from '../../src/e2e/contract';
+import type { Rect } from '../support/canvas';
 
 /**
  * The readiness marker of the cold-start benchmark: the start page is shown (the window has
@@ -29,6 +31,34 @@ export type ReadyResult =
       readonly already: boolean;
     }
   | { readonly kind: 'timeout' };
+
+/** What {@link PAGE_SCRIPT} returns. */
+export interface PageLook {
+  /** The address of the document the window shows (`location.href`). */
+  readonly href: string;
+  /** The document's clock origin (epoch ms): every new document has its own. */
+  readonly timeOrigin: number;
+  /**
+   * When the readiness marker was seen to hold (the page clock's time origin plus its time, epoch
+   * ms), or `null` when it did not hold.
+   */
+  readonly readyAt: number | null;
+}
+
+/**
+ * Runs in the webview (`executeScript(PAGE_SCRIPT)`): one quick look at the window, which document
+ * it shows and whether the readiness marker holds there. The cold-start benchmark looks until the
+ * window shows the app's own page before it waits with {@link READY_SCRIPT}, because that wait
+ * ends with the document it runs in.
+ */
+export const PAGE_SCRIPT = `
+  const marker = () => {${MARKER}};
+  return {
+    href: String(location.href),
+    timeOrigin: performance.timeOrigin,
+    readyAt: marker() ? performance.timeOrigin + performance.now() : null,
+  };
+`;
 
 /**
  * Runs in the webview (`executeAsyncScript(READY_SCRIPT, timeoutMs)`): waits for the readiness
@@ -331,6 +361,47 @@ export const QUIET_SCRIPT = `
   requestAnimationFrame(step);
   // Without animation frames (a hidden window) nothing would ever call back.
   setTimeout(() => finish('busy'), timeoutMs + 1000);
+`;
+
+/** What {@link PLACE_SCRIPT} returns: where a block is. */
+export interface BlockPlace {
+  /** The block's bounding box on screen (client coordinates, CSS pixels). */
+  readonly box: Rect;
+  /**
+   * Where the block is on the canvas: the offset of its origin from the canvas's origin, in CSS
+   * pixels at the canvas's zoom. Scrolling the canvas leaves it as it is; moving the block changes
+   * it by as much as the block moved on screen.
+   */
+  readonly offset: E2ePoint;
+}
+
+/**
+ * Runs in the webview (`executeScript(PLACE_SCRIPT, hookName, blockId)`): where a block is (a
+ * {@link BlockPlace}), or `null` when it is not on the canvas. The block's SVG group (from the test
+ * hook) is placed inside its parent, the canvas Blockly scrolls and zooms, so the difference of
+ * their screen transforms is the block's place on the canvas.
+ */
+export const PLACE_SCRIPT = `
+  const [hookName, blockId] = arguments;
+  const hook = window[hookName];
+  if (typeof hook !== 'object' || hook === null) {
+    throw new Error('The end-to-end hook is not installed');
+  }
+  const block = hook.blockElement(blockId);
+  const parent = block === null ? null : block.parentNode;
+  if (parent === null || typeof parent.getScreenCTM !== 'function') {
+    return null;
+  }
+  const own = block.getScreenCTM();
+  const canvas = parent.getScreenCTM();
+  if (own === null || canvas === null) {
+    return null;
+  }
+  const box = block.getBoundingClientRect();
+  return {
+    box: { left: box.left, top: box.top, right: box.right, bottom: box.bottom },
+    offset: { x: own.e - canvas.e, y: own.f - canvas.f },
+  };
 `;
 
 /** Whether `value` is a list of finite numbers (frame timestamps from the page). */

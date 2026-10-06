@@ -20,7 +20,16 @@ Every timing of the webview benchmarks is taken inside the page with its own clo
 
 - **Cold start** ([`launch.ts`](launch.ts)): the time starts just before the session request and
   ends at the page clock's time (its time origin plus `performance.now()`) when the readiness marker
-  first holds, checked every 4 ms.
+  first holds, checked every 4 ms. Right after the session starts the window may not show the app's
+  page yet, and may replace its document while the page is asked (msedgedriver then reports a
+  script timeout long before the script's own). So the window is first looked at with short
+  synchronous scripts, every 10 ms, until it shows the app's page (`tauri://localhost` on Linux,
+  `http://tauri.localhost` on Windows), and the wait for the marker runs there; a wait cut short by
+  a new document is started again in that document (at most 5 waits, and only until 60 s after the
+  session request). The time is always taken from the session request, so a restart can only make
+  a start slower. When the marker already holds at the first look at a document, or when its wait
+  begins, the time is an upper bound. The benchmark's summary line counts those starts, and the
+  restarted ones.
 - **Preview** ([`preview.bench.e2e.ts`](preview.bench.e2e.ts)): a print with a unique text is added
   at the end of `main` through the test hook, and the page checks the hook's `code()` until the
   text is there. A heartbeat (a message the page posts to itself again and again) finds the long
@@ -29,8 +38,15 @@ Every timing of the webview benchmarks is taken inside the page with its own clo
   the keyboard (selected, then _Delete_), so every edit is made to the same 1,000 blocks.
 - **Drag** ([`drag.bench.e2e.ts`](drag.bench.e2e.ts)): a separate `func.define` beside `main` is
   dragged away and back across empty canvas in 60 moves of 16 ms each, and the page records the
-  timestamps of the animation frames that run while the pointer drags. After each drop the page is
-  left to finish what the drop started (10 frames in a row within 50 ms).
+  timestamps of the animation frames that run while the pointer drags. Before each drag, outside
+  the timed part, the canvas is centred on the handle again and the page left to settle (10 frames
+  in a row within 50 ms): a drop does not always leave the handle, or the canvas's view, exactly
+  where the pointer moves suggest, and over many drags it could drift off screen. After each drop
+  the page is left to finish what the drop started (the same 10 frames), and the handle must have
+  moved with the pointer: on the canvas (scrolling aside) it must have landed within half the
+  drag's length of where the pointer left it ([`handle.ts`](handle.ts)), or the run fails rather
+  than measure a drag that missed the handle. A handle that cannot be grabbed fails the run with
+  where it is on screen.
 
 ## The generated document
 

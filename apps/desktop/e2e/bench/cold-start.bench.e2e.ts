@@ -27,11 +27,15 @@ describe('webview benchmark: cold start', () => {
     await measureColdStart(settings, 'cold-start-warm-up');
     const samples: number[] = [];
     let upperBounds = 0;
+    let restarted = 0;
     for (let launch = 1; launch <= LAUNCHES; launch += 1) {
       const start = await measureColdStart(settings, `cold-start-${String(launch)}`);
       samples.push(start.ms);
       if (start.already) {
         upperBounds += 1;
+      }
+      if (start.restarts > 0) {
+        restarted += 1;
       }
     }
     const file = writeMetric({
@@ -44,7 +48,8 @@ describe('webview benchmark: cold start', () => {
     });
     process.stdout.write(
       `Cold start: median ${String(rounded(median(samples), 1))} ms over ${String(LAUNCHES)} starts ` +
-        `(${String(upperBounds)} already ready when first asked); written to ${file}\n`,
+        `(${String(upperBounds)} already ready when first asked, ${String(restarted)} waited again ` +
+        `after the window replaced its page); written to ${file}\n`,
     );
     expect(samples).toHaveLength(LAUNCHES);
   });

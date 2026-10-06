@@ -15,6 +15,8 @@ import {
   FRAMES_STOP_SCRIPT,
   GONE_SCRIPT,
   isTimestamps,
+  PAGE_SCRIPT,
+  PLACE_SCRIPT,
   previewTask,
   QUIET_SCRIPT,
   READY_SCRIPT,
@@ -181,6 +183,38 @@ describe('READY_SCRIPT', () => {
     loop.run(() => result !== null);
     expect(result).toEqual({ kind: 'timeout' });
     expect(loop.now).toBeLessThan(520);
+  });
+});
+
+describe('PAGE_SCRIPT', () => {
+  function look(loop: FakeLoop, readyAt: number, href: string): unknown {
+    return start(
+      PAGE_SCRIPT,
+      loop.globals({
+        location: { href },
+        document: {
+          querySelector: (selector: string) =>
+            loop.now >= readyAt && selector.length > 0 ? {} : null,
+          querySelectorAll: () => ({ length: loop.now >= readyAt ? 9 : 0 }),
+        },
+      }),
+      [],
+    );
+  }
+
+  it('says which page the window shows and when the marker held there', () => {
+    const loop = new FakeLoop();
+    expect(look(loop, 1_000, 'about:blank')).toEqual({
+      href: 'about:blank',
+      timeOrigin: loop.timeOrigin,
+      readyAt: null,
+    });
+    loop.now = 1_250;
+    expect(look(loop, 1_000, 'tauri://localhost/')).toEqual({
+      href: 'tauri://localhost/',
+      timeOrigin: loop.timeOrigin,
+      readyAt: loop.timeOrigin + 1_250,
+    });
   });
 });
 
@@ -431,6 +465,68 @@ describe('QUIET_SCRIPT', () => {
     });
     stopped.run(() => result !== null);
     expect(result).toBe('busy');
+  });
+});
+
+describe('PLACE_SCRIPT', () => {
+  /**
+   * A block at (x, y) on a canvas scrolled by (scrollX, scrollY) and zoomed by `scale`, inside an
+   * SVG at (10, 20) on screen: the screen transforms Blockly's groups get.
+   */
+  function canvasWith(block: { x: number; y: number; width: number; height: number } | null) {
+    const scale = 0.8;
+    const scroll = { x: -300, y: 40 };
+    const canvas = { a: scale, d: scale, e: 10 + scroll.x, f: 20 + scroll.y };
+    const parent = { getScreenCTM: () => canvas };
+    const element =
+      block === null
+        ? null
+        : {
+            parentNode: parent,
+            getScreenCTM: () => ({
+              ...canvas,
+              e: canvas.e + scale * block.x,
+              f: canvas.f + scale * block.y,
+            }),
+            getBoundingClientRect: () => {
+              const left = canvas.e + scale * block.x;
+              const top = canvas.f + scale * block.y;
+              return {
+                left,
+                top,
+                right: left + scale * block.width,
+                bottom: top + scale * block.height,
+                x: left,
+                y: top,
+              };
+            },
+          };
+    const asked: unknown[] = [];
+    const hook = {
+      blockElement: (id: unknown) => {
+        asked.push(id);
+        return element;
+      },
+    };
+    return { window: { __B2C_E2E__: hook }, asked };
+  }
+
+  it('gives the block’s box on screen and its place on the canvas', () => {
+    const page = canvasWith({ x: 800, y: 40, width: 250, height: 100 });
+    const place = start(PLACE_SCRIPT, { window: page.window }, ['__B2C_E2E__', 'b4998']);
+    expect(page.asked).toEqual(['b4998']);
+    expect(place).toEqual({
+      box: { left: 350, top: 92, right: 550, bottom: 172 },
+      offset: { x: 640, y: 32 },
+    });
+  });
+
+  it('is null for a block that is not on the canvas, and fails without the hook', () => {
+    const page = canvasWith(null);
+    expect(start(PLACE_SCRIPT, { window: page.window }, ['__B2C_E2E__', 'b1'])).toBeNull();
+    expect(() => start(PLACE_SCRIPT, { window: {} }, ['__B2C_E2E__', 'b1'])).toThrow(
+      /hook is not installed/,
+    );
   });
 });
 
