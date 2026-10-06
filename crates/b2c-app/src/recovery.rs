@@ -563,7 +563,9 @@ mod tests {
         assert_eq!(rebind(&file), file);
         let gone = folder.join("gone").join("game.b2c");
         assert_eq!(rebind(&gone), gone);
-        assert_eq!(rebind(Path::new("/")), PathBuf::from("/"));
+        // A root has no file name: it stays as it canonicalises.
+        let root = folder.ancestors().last().unwrap();
+        assert_eq!(rebind(root), root);
     }
 
     #[cfg(unix)]

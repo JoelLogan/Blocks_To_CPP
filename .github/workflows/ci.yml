@@ -130,7 +130,7 @@ jobs:
         run: cargo run --locked --quiet -p b2c-cli -- toolchains || true
 
       - name: Test
-        run: cargo test --locked
+        run: cargo test --locked --no-fail-fast
         env:
           B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
 

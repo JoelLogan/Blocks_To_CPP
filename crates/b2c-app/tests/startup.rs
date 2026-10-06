@@ -62,10 +62,7 @@ fn startup_never_probes_and_discovery_reports_when_done() {
     assert!(!discovering);
     assert_eq!(toolchains.len(), 1);
     assert!(toolchains[0].usable);
-    assert_eq!(
-        toolchains[0].display_path,
-        app.compiler().display().to_string()
-    );
+    assert_eq!(toolchains[0].display_path, app.compiler().display().to_string());
     assert_eq!(app.backend.toolchain_list().unwrap().toolchains, *toolchains);
 }
 
