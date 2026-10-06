@@ -33,14 +33,17 @@ export interface E2eHookContract {
    * `parentBlockId` on the shown canvas: appended to the end of a statement list, or, for a value
    * input, the one reporter or predicate in place of the input's expression slot. One undoable
    * step. Throws when the target or the blocks are not valid, a block is not one the editor can
-   * show exactly, or the blocks do not fit there; nothing is changed then.
+   * show exactly, or the blocks do not fit there; nothing is changed then, and the undo stack
+   * gains no step.
    */
   insertBlocks(parentBlockId: string, input: string, blocks: readonly unknown[]): void;
   /** The open project as the canvas has it now: the canonical BDM text a save would write. */
   document(): string;
   /**
    * Everything the console was given since it was last cleared (program output with the
-   * terminal's echo, and the console's own separators), as plain text with `\n` line ends.
+   * terminal's echo, the console's own separators and its "… N lines skipped" markers), as plain
+   * text with `\n` line ends, in the order the console was given it. Output still queued for the
+   * terminal when the console is cleared is painted after the clear but is not in the transcript.
    */
   consoleText(): string;
   /** The Content Security Policy violations seen so far. */

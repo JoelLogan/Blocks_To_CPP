@@ -1,8 +1,9 @@
 /**
  * Inserting blocks for the end-to-end tests (`window.__B2C_E2E__.insertBlocks`): the tests drag
  * some blocks for real and add the rest of a program through this helper, which builds them as
- * the clipboard's paste does (editor/clipboard/insert.ts). The insertion is one undoable step, and
- * the editing session sees the new blocks like any others (fresh-ID check, live preview).
+ * the clipboard's paste does (editor/clipboard/insert.ts). The insertion is one undoable step, a
+ * refused one leaves no step behind, and the editing session sees the new blocks like any others
+ * (fresh-ID check, live preview).
  *
  * The blocks come from the test, so they are checked like any other input: the target must be a
  * project block on the shown canvas, the input one of its own, and every block a catalog block the
@@ -13,7 +14,7 @@ import { isProjectId } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
 import { isProjectBlock, type PasteAnchor } from '../editor/clipboard/anchor';
-import { insertPasted } from '../editor/clipboard/insert';
+import { type BuiltBlocks, canAttach, insertPasted } from '../editor/clipboard/insert';
 import { forEachNode } from '../editor/sync/bdmTree';
 import { placeholderNode } from '../editor/sync/placeholders';
 import { descendantsOf } from '../editor/sync/traverse';
@@ -127,21 +128,38 @@ function anchorFor(parent: Blockly.Block, input: string): PasteAnchor {
   throw new InsertBlocksError(`input ${input} of block ${parent.id} takes no blocks`);
 }
 
-/** Removes inserted blocks again, as one undoable step. */
-function removeInserted(roots: readonly Blockly.Block[]): void {
-  const outerGroup = Blockly.Events.getGroup();
-  if (outerGroup === '') {
-    Blockly.Events.setGroup(true);
+/**
+ * Refuses built blocks before anything is announced (the `check` of `insertPasted`): a block that
+ * is only a placeholder, or blocks that are not one tree or chain that connects at `anchor`.
+ */
+function refuseMisfits(
+  workspace: Blockly.Workspace,
+  anchor: PasteAnchor,
+  built: BuiltBlocks,
+  target: string,
+): void {
+  const placeholder = built.roots
+    .flatMap((root) => descendantsOf(root))
+    .find((block) => placeholderNode(block) !== null);
+  if (placeholder !== undefined) {
+    throw new InsertBlocksError(`block ${placeholder.id} is not one the editor can show exactly`);
   }
-  try {
-    for (const root of roots) {
-      if (!root.isDisposed()) {
-        root.dispose(false);
-      }
-    }
-  } finally {
-    if (outerGroup === '') {
-      Blockly.Events.setGroup(false);
+  const [only, ...others] = built.roots;
+  if (
+    built.lead === null ||
+    only !== built.lead ||
+    others.length > 0 ||
+    !canAttach(workspace, anchor, built.lead)
+  ) {
+    throw new InsertBlocksError(`the blocks do not fit into ${target}`);
+  }
+}
+
+/** Removes inserted blocks again (in the insertion's own event group). */
+function removeInserted(roots: readonly Blockly.Block[]): void {
+  for (const root of roots) {
+    if (!root.isDisposed()) {
+      root.dispose(false);
     }
   }
 }
@@ -151,9 +169,14 @@ function removeInserted(roots: readonly Blockly.Block[]): void {
  * canvas): appended to the end of a statement list, or, for a value input, the one reporter or
  * predicate in place of the input's expression slot.
  *
+ * The blocks are checked once they are built and before anything is announced, so a refused
+ * insertion fires no event and leaves nothing on the undo stack. Should the connection still fail
+ * after that check, the blocks are removed in the insertion's own event group: one undo step that
+ * changes nothing.
+ *
  * @throws InsertBlocksError when the target or the blocks are not valid, a block is not one the
- *   editor can show exactly, or the blocks do not fit at the target; whatever was built is removed
- *   again. Errors of the clipboard's builder (a chain too long for Blockly) are passed on.
+ *   editor can show exactly, or the blocks do not fit at the target; nothing is changed then.
+ *   Errors of the clipboard's builder (a chain too long for Blockly) are passed on.
  */
 export function insertBlocks(
   workspace: Blockly.WorkspaceSvg,
@@ -181,16 +204,30 @@ export function insertBlocks(
   }
   const anchor = anchorFor(parent, input);
   const origin = parent.getRelativeToSurfaceXY();
-  const inserted = insertPasted(workspace, nodes, anchor, { x: origin.x, y: origin.y });
-  const placeholder = inserted.roots
-    .flatMap((root) => descendantsOf(root))
-    .find((block) => placeholderNode(block) !== null);
-  if (placeholder !== undefined || !inserted.attached || inserted.roots.length !== 1) {
-    removeInserted(inserted.roots);
-    throw new InsertBlocksError(
-      placeholder === undefined
-        ? `the blocks do not fit into ${input} of block ${parentBlockId}`
-        : `block ${placeholder.id} is not one the editor can show exactly`,
+  const target = `${input} of block ${parentBlockId}`;
+  const outerGroup = Blockly.Events.getGroup();
+  if (outerGroup === '') {
+    Blockly.Events.setGroup(true);
+  }
+  try {
+    const inserted = insertPasted(
+      workspace,
+      nodes,
+      anchor,
+      { x: origin.x, y: origin.y },
+      {
+        check: (built) => {
+          refuseMisfits(workspace, anchor, built, target);
+        },
+      },
     );
+    if (!inserted.attached) {
+      removeInserted(inserted.roots);
+      throw new InsertBlocksError(`the blocks do not fit into ${target}`);
+    }
+  } finally {
+    if (outerGroup === '') {
+      Blockly.Events.setGroup(false);
+    }
   }
 }

@@ -222,35 +222,63 @@ function longestPastedChain(nodes: readonly BdmBlock[], anchor: PasteAnchor): nu
   return longestChainOf(nodes, run);
 }
 
-/**
- * Connects `head` (the first leading block) at the anchor's connection, if the connection checker
- * allows it there. A value input that already holds a block (not an expression slot) is left as
- * it is.
- */
-function attach(workspace: Blockly.Workspace, anchor: PasteAnchor, head: Blockly.Block): boolean {
+/** The anchor's connection and the head's own one (`output` for a value input, else `previous`). */
+function connectionPair(
+  anchor: PasteAnchor,
+  head: Blockly.Block,
+): { readonly target: Blockly.Connection; readonly own: Blockly.Connection } | null {
   const target = anchorConnection(anchor);
   const own = anchor.kind === 'value' ? head.outputConnection : head.previousConnection;
-  if (target === null || own === null) {
+  return target === null || own === null ? null : { target, own };
+}
+
+/**
+ * Whether `head` (the first leading block) can be connected at the anchor: the anchor has a
+ * connection for the head's own one, a value input does not already hold a block (an expression
+ * slot's shadow is replaced), and the connection checker allows it there. {@link attach} checks
+ * exactly this before it connects.
+ */
+export function canAttach(
+  workspace: Blockly.Workspace,
+  anchor: PasteAnchor,
+  head: Blockly.Block,
+): boolean {
+  const pair = connectionPair(anchor, head);
+  if (pair === null) {
     return false;
   }
-  const occupant = target.targetBlock();
+  const occupant = pair.target.targetBlock();
   if (anchor.kind === 'value' && occupant !== null && !occupant.isShadow()) {
     return false;
   }
   try {
-    if (!workspace.connectionChecker.canConnect(own, target, false)) {
-      return false;
-    }
-    target.connect(own);
+    return workspace.connectionChecker.canConnect(pair.own, pair.target, false);
+  } catch (error: unknown) {
+    console.warn('A pasted block could not be checked against its anchor', error);
+    return false;
+  }
+}
+
+/**
+ * Connects `head` (the first leading block) at the anchor's connection, if {@link canAttach}
+ * allows it. A value input that already holds a block (not an expression slot) is left as it is.
+ */
+function attach(workspace: Blockly.Workspace, anchor: PasteAnchor, head: Blockly.Block): boolean {
+  const pair = connectionPair(anchor, head);
+  if (pair === null || !canAttach(workspace, anchor, head)) {
+    return false;
+  }
+  try {
+    pair.target.connect(pair.own);
   } catch (error: unknown) {
     console.warn('A pasted block could not be connected; it stays on the canvas', error);
     return false;
   }
-  return own.targetConnection === target;
+  return pair.own.targetConnection === pair.target;
 }
 
 /** The blocks built on the canvas, before they are announced and connected. */
-interface Built {
+export interface BuiltBlocks {
   /** Every block built at the top of a tree or chain, in the pasted order. */
   readonly roots: readonly Blockly.Block[];
   /** The head of the leading chain that goes to the anchor, or `null`. */
@@ -263,7 +291,7 @@ function buildAll(
   nodes: readonly BdmBlock[],
   anchor: PasteAnchor,
   origin: WorkspacePoint,
-): Built {
+): BuiltBlocks {
   const spots = new SpotFinder(workspace, origin);
   const roots: Blockly.Block[] = [];
   const leading = leadingCount(nodes, anchor);
@@ -288,20 +316,32 @@ function buildAll(
   return { roots, lead };
 }
 
+/** Options of {@link insertPasted}. */
+export interface InsertOptions {
+  /**
+   * Called once the blocks are built, before anything is announced or connected (events are
+   * off). It refuses the insertion by throwing: the built blocks are removed again and the error
+   * is passed on, so the canvas and its undo stack are as they were.
+   */
+  readonly check?: (built: BuiltBlocks) => void;
+}
+
 /**
  * Inserts prepared blocks at `anchor` as one undoable step (see the module comment). `origin` is
  * where blocks that stay on the canvas start; each further one is moved a step down and right.
  *
  * @throws {@link ChainTooLongError} when the JavaScript stack ran out while the blocks were built
- *   or serialised for their events (a statement chain too long for Blockly), and otherwise
- *   whatever the builder or Blockly threw. Either way the blocks built until then are removed
- *   again and no event was fired, so the canvas and its undo stack are as they were.
+ *   or serialised for their events (a statement chain too long for Blockly), whatever
+ *   `options.check` threw, and otherwise whatever the builder or Blockly threw. Either way the
+ *   blocks built until then are removed again and no event was fired, so the canvas and its undo
+ *   stack are as they were.
  */
 export function insertPasted(
   workspace: Blockly.Workspace,
   nodes: readonly BdmBlock[],
   anchor: PasteAnchor,
   origin: WorkspacePoint,
+  options: InsertOptions = {},
 ): InsertedBlocks {
   if (nodes.length === 0) {
     return { roots: [], first: null, attached: false };
@@ -314,10 +354,11 @@ export function insertPasted(
   svg?.setResizesEnabled(false);
   try {
     const before = new Set(workspace.getTopBlocks(false));
-    let built: Built;
+    let built: BuiltBlocks;
     let events: Blockly.Events.BlockCreate[];
     try {
       built = buildAll(workspace, nodes, anchor, origin);
+      options.check?.(built);
       events = creationEvents(built.roots);
     } catch (error: unknown) {
       discardBuilt(workspace, before);

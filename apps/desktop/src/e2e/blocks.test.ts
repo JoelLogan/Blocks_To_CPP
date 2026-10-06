@@ -93,6 +93,31 @@ describe('insertBlocks', () => {
     expect(workspace.getBlockById('second')).toBeNull();
   });
 
+  it('leaves no undo step behind when it refuses an insertion', async () => {
+    const before = JSON.stringify(readTopBlocks(workspace));
+    const refusals: [string, string, BdmBlock][] = [
+      // A statement in a value input.
+      ['b004', 'ITEM0', print('misfit', 'x')],
+      // A value input that already holds a block.
+      ['b002', 'VALUE', { id: 'second', type: 'math.random_int', v: 1 }],
+      // A block the editor can only show as a placeholder.
+      ['b010', 'BODY', { id: 'odd', type: 'pack.unknown', v: 1 }],
+    ];
+    await settle();
+    workspace.clearUndo();
+    for (const [parent, input, block] of refusals) {
+      expect(() => {
+        insertBlocks(workspace, parent, input, [block]);
+      }).toThrow(InsertBlocksError);
+      await settle();
+      expect(workspace.getUndoStack(), `${block.id} left an undo step`).toHaveLength(0);
+      // Undo (nothing to undo) must not bring the refused block back either.
+      workspace.undo(false);
+      expect(workspace.getBlockById(block.id)).toBeNull();
+    }
+    expect(JSON.stringify(readTopBlocks(workspace))).toBe(before);
+  });
+
   it('refuses a block the editor can only show as a placeholder', () => {
     expect(() => {
       insertBlocks(workspace, 'b010', 'BODY', [{ id: 'odd', type: 'pack.unknown', v: 1 }]);

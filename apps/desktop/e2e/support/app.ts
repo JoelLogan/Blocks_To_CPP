@@ -16,10 +16,26 @@ import { artifactDir, copyFiles, recordTrustedTypes, writeArtifact } from './art
 import { TauriDriver } from './driver';
 import { appEnvironment, harnessSettings, type HarnessSettings } from './env';
 import { HookClient } from './hook';
-import { sleep, waitFor } from './wait';
+import { sleep, waitFor, withTimeout } from './wait';
 
 /** How long the window may take to start (02 §2.5.7 start-up, backend and features). */
 export const READY_TIMEOUT_MS = 30_000;
+
+/**
+ * How long ending the WebDriver session (which closes the app) may take before the driver and
+ * whatever it started are stopped anyway. selenium-webdriver's requests have no timeout of their
+ * own, so a hung app or native driver would otherwise hold the test until its hook times out.
+ */
+export const QUIT_TIMEOUT_MS = 15_000;
+
+/** How long each artifact of a failed test (screenshot, page, …) may take to read. */
+const ARTIFACT_TIMEOUT_MS = 10_000;
+
+/** How long reading and probing the Trusted Types counts may take. */
+const TRUSTED_TYPES_TIMEOUT_MS = 10_000;
+
+/** How long the clean-up after a test may take in all (Vitest's hook timeout). */
+const FINISH_TIMEOUT_MS = 120_000;
 
 /** What the native dialogs answer (src-tauri/src/e2e.rs `DialogScript`). */
 export interface DialogScript {
@@ -66,7 +82,10 @@ async function removeFolder(folder: string): Promise<void> {
   process.stderr.write(`Could not remove the test folder ${folder}\n`);
 }
 
-/** Saves what helps to understand a failure (best effort: each part on its own). */
+/**
+ * Saves what helps to understand a failure (best effort: each part on its own, and each bounded
+ * in time, so that a hung app cannot keep the clean-up from closing it).
+ */
 async function saveFailureArtifacts(app: App, test: string): Promise<void> {
   const dir = artifactDir(app.settings.artifacts, test);
   const attempts: [string, () => Promise<void>][] = [
@@ -101,21 +120,36 @@ async function saveFailureArtifacts(app: App, test: string): Promise<void> {
   ];
   for (const [what, attempt] of attempts) {
     try {
-      await attempt();
+      await withTimeout(attempt(), ARTIFACT_TIMEOUT_MS, `the ${what}`);
     } catch (error: unknown) {
       writeArtifact(dir, `${what}.error.txt`, String(error));
     }
   }
 }
 
+/** The name of `tauri-driver`'s log in the test's folder (`driver-` is put in front when saved). */
+const TAURI_DRIVER_LOG = 'tauri-driver.log';
+
+/** Where an app that did not start left its logs, for the error message ('' when nowhere). */
+function launchLogsNote(dir: string | null): string {
+  if (dir === null) {
+    return '';
+  }
+  const driverLog = path.join(dir, `driver-${TAURI_DRIVER_LOG}`);
+  return existsSync(driverLog)
+    ? `\nThe driver's log is ${driverLog}; the app's logs, if any, are next to it.`
+    : `\nThe logs, if any, are in ${dir}.`;
+}
+
 /**
  * Copies the app's and the driver's logs (`root` is the test's folder) into the test's artifact
- * folder.
+ * folder, and returns that folder.
  */
-function saveLogs(artifacts: string, root: string, test: string): void {
+function saveLogs(artifacts: string, root: string, test: string): string {
   const dir = artifactDir(artifacts, test);
   copyFiles(path.join(root, 'profile', 'state', 'logs'), dir, 'app-');
   copyFiles(root, dir, 'driver-');
+  return dir;
 }
 
 /**
@@ -167,17 +201,30 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
   const test = context.task.name;
   let driverProcess: TauriDriver | null = null;
   let driver: WebDriver | null = null;
-  /** Ends the session (which closes the app), stops the driver and deletes the folder. */
+  /**
+   * Ends the session (which closes the app), stops the driver and whatever it started, and deletes
+   * the folder. A session that does not end within {@link QUIT_TIMEOUT_MS} (a hung app or native
+   * driver) or fails to end is left to the driver's stop, which on Linux kills the app's
+   * processes too; every step runs whatever happened before it.
+   */
   const close = async (beforeRemoving?: () => void): Promise<void> => {
     const session = driver;
     driver = null;
     if (session !== null) {
-      await session.quit().catch((error: unknown) => {
-        process.stderr.write(`The WebDriver session did not end cleanly: ${String(error)}\n`);
-      });
+      await withTimeout(session.quit(), QUIT_TIMEOUT_MS, 'the WebDriver session to end').catch(
+        (error: unknown) => {
+          process.stderr.write(`The WebDriver session did not end cleanly: ${String(error)}\n`);
+        },
+      );
     }
-    await driverProcess?.stop();
-    beforeRemoving?.();
+    await driverProcess?.stop().catch((error: unknown) => {
+      process.stderr.write(`tauri-driver did not stop cleanly: ${String(error)}\n`);
+    });
+    try {
+      beforeRemoving?.();
+    } catch (error: unknown) {
+      process.stderr.write(`The test's logs could not be saved: ${String(error)}\n`);
+    }
     await removeFolder(root);
   };
 
@@ -187,7 +234,8 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
       command: settings.tauriDriver,
       nativeDriver: settings.nativeDriver,
       env: appEnvironment(settings, { root: profile, dialogs }),
-      logFile: path.join(root, 'tauri-driver.log'),
+      logFile: path.join(root, TAURI_DRIVER_LOG),
+      marker: `B2C_E2E_ROOT=${profile}`,
     });
     const capabilities = new Capabilities();
     capabilities.set('tauri:options', { application: settings.app });
@@ -201,11 +249,16 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
     app = { driver: session, hook: new HookClient(session), settings, root };
   } catch (error: unknown) {
     // No session: keep what the driver and the app wrote (the native driver's output is in
-    // tauri-driver.log), which is all there is to tell why.
+    // tauri-driver.log), which is all there is to tell why. The test's folder is deleted, so the
+    // message names the copies.
+    let saved: string | null = null;
     await close(() => {
-      saveLogs(settings.artifacts, root, test);
+      saved = saveLogs(settings.artifacts, root, test);
     });
-    throw error;
+    throw new Error(
+      `The app under test did not start: ${error instanceof Error ? error.message : String(error)}${launchLogsNote(saved)}`,
+      { cause: error },
+    );
   }
 
   context.onTestFinished(async ({ task }) => {
@@ -214,7 +267,11 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
       if (failed) {
         await saveFailureArtifacts(app, test);
       }
-      await reportTrustedTypes(app, test).catch((error: unknown) => {
+      await withTimeout(
+        reportTrustedTypes(app, test),
+        TRUSTED_TYPES_TIMEOUT_MS,
+        'the counts',
+      ).catch((error: unknown) => {
         process.stderr.write(`The Trusted Types counts could not be read: ${String(error)}\n`);
       });
     } finally {
@@ -226,7 +283,7 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
           : undefined,
       );
     }
-  }, 120_000);
+  }, FINISH_TIMEOUT_MS);
 
   await waitUntilReady(app);
   return app;
