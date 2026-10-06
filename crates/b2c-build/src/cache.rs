@@ -662,16 +662,20 @@ fn remove_entry(layout: &Layout, entry: &Path) -> Removal {
         return Removal::kept_unless_gone(entry);
     }
     let before = tree_size(entry);
-    let deleted = delete_locked_entry(entry, lock);
+    if delete_locked_entry(entry, lock).is_ok() {
+        // Removed completely. Not measured again: on Windows a removed
+        // folder that another thread still has open stays "delete pending"
+        // for a moment, and reading it then fails with an error other than
+        // "not found".
+        return Removal::Removed { freed: before };
+    }
     let left = match fs::symlink_metadata(entry) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => 0,
         Ok(metadata) if kind_of(&metadata) == Kind::Dir => tree_size(entry),
         _ => before,
     };
-    let freed = before.saturating_sub(left);
-    match deleted {
-        Ok(()) => Removal::Removed { freed },
-        Err(_) => Removal::Kept { freed },
+    Removal::Kept {
+        freed: before.saturating_sub(left),
     }
 }
 

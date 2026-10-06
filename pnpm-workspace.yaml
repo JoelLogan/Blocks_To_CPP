@@ -20,6 +20,15 @@ blockExoticSubdeps: true
 allowBuilds: {}
 strictDepBuilds: true
 
+# Fixed versions of vulnerable transitive dependencies that their parents pin.
+overrides:
+  # GHSA-r4xh-jqrq-34v2 (smol-toml <=1.8.0, quadratic-time parse): markdownlint-cli2 0.23.3
+  # pins 1.8.0. 1.9.0 has the same API.
+  smol-toml: 1.9.0
+  # GHSA-238p-pmpm-9mq7 (katex <0.18.2): markdownlint's math syntax extension
+  # (micromark-extension-math) asks for ^0.16 but never renders math; 0.18.2 is the fixed release.
+  katex: 0.18.2
+
 # Tracked `pnpm audit` exceptions (docs/spec/08-security.md §8.9). Each one names the
 # only path that reaches the package and is reviewed by its date.
 auditConfig:
@@ -29,3 +38,9 @@ auditConfig:
     # from our own .markdownlint-cli2.jsonc; nothing user-supplied is expanded. Review by
     # 2027-01-04 or as soon as a fixed braces release exists.
     - GHSA-vfj7-8cjw-p6xm
+    # source-map-js <1.2.2: event-loop denial of service through the section offsets of an
+    # indexed source map. Reached only through dev tooling (Vite and PostCSS building our own
+    # frontend, Vitest coverage), which reads only the source maps our build makes; never
+    # shipped. 1.2.2 (2026-09-30) is younger than minimumReleaseAge: move to it and remove this
+    # entry on 2026-10-08.
+    - GHSA-68fv-2mgg-jv7q

@@ -172,7 +172,7 @@ fn the_app_channel_carries_close_requests() {
 }
 
 #[test]
-fn a_build_streams_progress_then_diagnostics_then_one_finished() {
+fn a_build_streams_progress_and_diagnostics_then_one_finished() {
     let Some(compiler) = gxx() else {
         return;
     };
@@ -206,11 +206,9 @@ fn a_build_streams_progress_then_diagnostics_then_one_finished() {
         "{kinds:?}"
     );
     assert_eq!(kinds.last(), Some(&"finished"), "{kinds:?}");
+    // Diagnostics may come before the compiler runs: notes about the chosen
+    // toolchain (07 §7.5) are sent as soon as it is chosen.
     assert!(kinds.contains(&"progress"), "{kinds:?}");
-    let last_progress = kinds.iter().rposition(|kind| *kind == "progress").unwrap();
-    if let Some(first_diagnostics) = kinds.iter().position(|kind| *kind == "diagnostics") {
-        assert!(last_progress < first_diagnostics, "{kinds:?}");
-    }
     let finished = events.last().unwrap();
     assert_eq!(finished["outcome"], "built", "{finished}");
     assert_eq!(finished["projectHash"].as_str().map(str::len), Some(64));
@@ -289,7 +287,13 @@ fn a_run_streams_raw_output_over_8_kib_and_one_exit() {
     );
     let output = batches.concat();
     let shown = String::from_utf8_lossy(&output).matches('x').count();
-    assert_eq!(shown, text.len());
+    if cfg!(windows) {
+        // ConPTY sends a rendering of the console, not the program's bytes:
+        // it may paint part of a wrapped line again.
+        assert!(shown >= text.len(), "{shown} of {} shown", text.len());
+    } else {
+        assert_eq!(shown, text.len());
+    }
     let largest = batches.iter().map(Vec::len).max().unwrap_or(0);
     assert!(largest > 8 * 1024, "the largest batch has only {largest} bytes");
 }
