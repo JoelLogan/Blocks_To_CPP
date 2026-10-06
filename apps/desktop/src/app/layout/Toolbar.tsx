@@ -80,6 +80,7 @@ function ConfigSelect() {
       <select
         id={id}
         className="toolbar-select"
+        data-testid="toolbar-config"
         value={config}
         onChange={(event) => {
           const value = event.target.value;
@@ -199,6 +200,7 @@ function SettingsButton() {
     <button
       type="button"
       className="toolbar-button toolbar-settings"
+      data-testid="toolbar-settings"
       onClick={() => {
         triggerCommand('settings.open');
       }}

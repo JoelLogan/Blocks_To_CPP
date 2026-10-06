@@ -68,7 +68,7 @@ export function StartPage({ lifecycle, model, store, sections }: StartPageProps)
   const idle = busy === null;
 
   return (
-    <div className="start-page">
+    <div className="start-page" data-testid="start-page">
       <header className="start-header">
         <h2 className="start-title">Start</h2>
         <p className="start-intro">
@@ -121,6 +121,7 @@ export function StartPage({ lifecycle, model, store, sections }: StartPageProps)
         <button
           type="button"
           className="button button-primary"
+          data-testid="start-open"
           aria-disabled={!idle}
           onClick={() => {
             if (idle) {
@@ -157,6 +158,7 @@ function TemplateButton({
     <button
       type="button"
       className="start-card"
+      data-testid={`template-${template}`}
       aria-disabled={!idle}
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
