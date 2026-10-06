@@ -52,7 +52,9 @@ chosen instead.
   `cargo install --locked` at that pinned version). Linux uses `WebKitWebDriver`
   (the distribution's `webkit2gtk-driver`) under `xvfb`. Windows uses
   `msedgedriver` matching the installed WebView2 version, downloaded from
-  Microsoft's official endpoint and version-checked. WebdriverIO is
+  Microsoft's official endpoint (only the executable is extracted),
+  signature-checked (the exact Microsoft signer and a Microsoft issuer) and
+  version-checked. WebdriverIO is
   reconsidered when its dependency chain passes the policy again.
 * **`eslint-plugin-react` is not used**, for the same policy
   reason. Its one security rule, `react/no-danger`, is replaced by a

@@ -264,10 +264,12 @@ core focus manager, cursor and shortcut registry (the maintained
 `@blockly/keyboard-navigation` plugin would replace the validated clipboard,
 drag blocks past the editing session and write HTML with `innerHTML`). The
 arrow keys move between blocks and their fields and inputs, `Enter` edits a
-field, `M` picks a block up so the arrow keys choose where it goes (`Enter`
-puts it there, `Escape` cancels), `T` opens the toolbox, whose categories and
-blocks are reached with the arrow keys, and copy, paste, duplicate, delete,
-undo and the block menu (`Ctrl+Enter`) act on the keyboard focus. The
+field, `M` picks a block up so the arrow keys choose where it goes (the
+places a pointer drag could drop it, type rule included; `Enter` puts it
+there, `Escape` cancels), `T` opens the toolbox, whose categories and blocks
+are reached with the arrow keys (adding a block from it is one undo step),
+and copy, paste, duplicate, delete, undo and the block menu (`Ctrl+Enter`)
+act on the keyboard focus. The
 shortcuts `F5`, `Shift+F5`, `Ctrl+B` and `Ctrl+S` work; the command palette,
 remapping, Find, Go to definition, Find references and Rename come in M5, and
 Quick Insert in M3. Full screen-reader announcements for the workspace and
@@ -298,8 +300,11 @@ console and selected text.
   tests and reachable by keyboard, and the Tab order runs toolbar, toolbox,
   the toolbox's blocks, canvas, then the docks. The canvas and the toolbox's
   blocks have names and describe their keys; a polite live region announces
-  the block or place the keyboard reaches; Blockly's own animations follow the
-  reduced-motion setting; and focus returns where it was when a dialog closes.
+  the block or place the keyboard reaches; Blockly's own animations, and the
+  toolbox's scroll to a category, follow the reduced-motion setting; focus
+  returns where it was when a dialog closes, the block canvas included; and it
+  stays in the editor when the focused block is deleted or the toolbox's
+  blocks are rebuilt.
   The manual screen-reader pass (NVDA, Orca) follows
   [the M2 accessibility checklist](../manual-tests/m2-accessibility.md). The
   High Contrast themes, the checked colour-blind-safe palette, UI scaling,

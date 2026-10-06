@@ -177,3 +177,18 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   (checked in CI); the app's pages carry a report-only Trusted Types policy;
   and on Linux without cgroups the compiler's memory limit is set before it
   starts, so processes it forks at once are limited too.
+- Review fixes: keyboard moves offer only the places a pointer drag accepts,
+  so they can no longer make a connection the type rule refuses; adding a
+  block from the toolbox with the keyboard is one undo step, and Ctrl+Z after
+  Escape no longer brings the cancelled block back; the keyboard focus no
+  longer falls out of the editor when the focused block is deleted or the
+  toolbox's blocks are rebuilt; dialogs give the focus back to the block
+  canvas; with reduced motion on, choosing a toolbox category jumps to it; a
+  compiler that runs out of memory under the address-space limit is reported
+  as such (`C:limit`) instead of as a crash; and the Windows application
+  manifest has no XML declaration, which MinGW builds embedded after a space.
+- End-to-end harness fixes: on Linux, stopping a test kills the app and
+  everything it started even when the WebDriver session did not end; a
+  driver that exits at once fails the test at once with its output; a
+  refused block insertion leaves no undo step; and the msedgedriver download
+  is checked against Microsoft's exact signer and the exact version.

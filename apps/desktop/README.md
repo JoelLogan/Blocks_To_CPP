@@ -131,6 +131,9 @@ project, build, run, toolchain, settings, trust and recovery services:
   toolbox, and `Escape` cancels; `keyboard/help.ts` is the whole key map. A polite live region
   announces the block or place the keyboard reaches, the canvas and the toolbox's blocks have
   names and describe their keys, and Blockly's own animations follow the reduced-motion setting.
+  A move offers only the places a pointer drag could connect to, an add from the toolbox is one
+  undo step, and the keyboard focus stays in the editor when the focused block or the toolbox's
+  blocks go away (`keepFocus.ts`).
 - **Two-way highlighting** (`highlight/`): the hovered and selected blocks go to the store
   (`ui.hoverBlock`, `ui.selection`) and the C++ tab highlights their code; a click in the code or
   on a problem selects the block (or the collapsed block around it) and scrolls to it or centres

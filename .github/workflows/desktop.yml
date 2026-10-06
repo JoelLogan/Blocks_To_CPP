@@ -337,9 +337,10 @@ jobs:
           cargo clippy --locked -p blocks2cpp-desktop --all-targets -- -D warnings
           cargo clippy --locked -p blocks2cpp-desktop --all-targets --features e2e-hooks -- -D warnings
 
-      # docs/spec/08-security.md §8.6: tests/hardening.rs saves and builds a project under a
-      # path longer than 260 characters, which needs the system setting as well as the
-      # app's longPathAware manifest. It is read when a process starts, so it comes first.
+      # docs/spec/08-security.md §8.6: tests/hardening.rs saves, reopens and builds a project
+      # under a path longer than 260 characters (through verbatim paths; the longPathAware
+      # manifest entry is checked separately, by check-windows-manifest.ps1). The system
+      # setting is read when a process starts, so it comes first.
       - name: Enable long paths (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

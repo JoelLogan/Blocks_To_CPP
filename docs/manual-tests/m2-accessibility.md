@@ -145,6 +145,11 @@ Check that:
   outline.
 - [ ] T, a category, a block and Enter adds the block where the focus was and
   starts a move, so you can choose where it goes.
+- [ ] T, a block, Enter, Enter, then one Ctrl+Z removes the added block; T, a
+  block, Enter, Escape, then Ctrl+Z brings nothing back.
+- [ ] M on a text value never offers `repeat (…) times`.
+- [ ] Delete on a top-level block (for example a function) leaves the focus on
+  the canvas; ↓ works at once.
 - [ ] *Make a variable* in the toolbox's blocks opens the app's dialog; the
   focus goes into the dialog and comes back afterwards.
 - [ ] Ctrl+C then Ctrl+V pastes a copy; Ctrl+Z undoes it.
