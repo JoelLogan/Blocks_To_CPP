@@ -16,7 +16,19 @@ machine's folders are scripted, through the app's `e2e-hooks` feature.
   program, a variable, a print and the loop; the test hook for the rest), F5, a binary search on the
   answers until _Correct!_, _Finished (exit code 0)_, then _Run again_ and _Stop_. A second test
   checks that more than 8 KiB of output in one batch (Tauri's channel fetch, through the isolation
-  hook) reaches the console.
+  hook) reaches the console. [`specs/flows/`](specs/flows/README.md) are the breadth flows of 09
+  §9.2 (Restricted Mode and trust, save and reload, crash recovery, Stop, exit decoding, closing
+  the app, the output flood, the setup page, external changes, the clipboard, settings, the
+  variable menus, the connection checker, code-to-block selection, dragging from every category,
+  build and run with input); their launcher (`specs/flows/lib/launch.ts`) keeps one profile across
+  launches. [`specs/security/`](specs/security/README.md) are the security tests of 08 §8.13,
+  which run nightly (`nightly.yml`, `e2e-security`), not in the PR job.
+- **Benchmarks and visual diff:** [`bench/`](bench/README.md) (cold start, the preview at 1,000
+  blocks, dragging in a 5,000-block workspace; nightly, with the 10% gate) and
+  [`visual/`](visual/README.md) (the canvas screenshot against per-system baselines). The PR job
+  runs `pnpm --filter @blocks2cpp/desktop run e2e --exclude 'specs/security/**'` and then the visual
+  diff; `support/global.ts` clears the Trusted Types report, `visual/global.ts` only rewrites its
+  summary.
 
 ## Running them locally (Linux)
 
@@ -50,7 +62,11 @@ Then run the tests under a virtual display:
 WEBKIT_DISABLE_DMABUF_RENDERER=1 xvfb-run -a pnpm --filter @blocks2cpp/desktop run e2e
 ```
 
-Only the harness's own unit tests (no app needed):
+`app-close` (in `specs/flows/`) also needs `python3` and libX11, both on Ubuntu runners, to send
+the window its close request.
+
+Only the harness's own unit tests, and those of the flow helpers (`specs/**/*.test.ts`); no app
+needed:
 
 ```sh
 pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/vitest.e2e.config.ts --project support
