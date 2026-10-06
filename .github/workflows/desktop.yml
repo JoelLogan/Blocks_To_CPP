@@ -631,6 +631,8 @@ jobs:
         env:
           B2C_E2E_APP: ${{ github.workspace }}\target\debug\blocks2cpp-desktop.exe
           B2C_E2E_ARTIFACTS: ${{ runner.temp }}\e2e-artifacts
+          # The app's debug log shows each page it loads (kept with the artifacts on failure).
+          B2C_LOG: debug
         run: pnpm --filter @blocks2cpp/desktop run e2e
 
       # The logs the harness keeps (the app's, tauri-driver's with the native driver's output, and
@@ -648,6 +650,37 @@ jobs:
               tail -n 300 "$file"
               echo "::endgroup::"
             done
+
+      # When no WebDriver session starts on Windows: start the app as msedgedriver does (its user
+      # data folder and remote debugging port through the WEBVIEW2_* variables) and show whether
+      # WebView2 opens the DevTools endpoint and where it writes DevToolsActivePort.
+      - name: Probe WebView2 remote debugging (Windows, on failure)
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $probe = Join-Path $env:RUNNER_TEMP 'webview2-probe'
+          New-Item -ItemType Directory -Force -Path $probe | Out-Null
+          $env:B2C_E2E_ROOT = Join-Path $probe 'profile'
+          $env:B2C_E2E_DIALOGS = Join-Path $probe 'dialogs.json'
+          Set-Content -Path $env:B2C_E2E_DIALOGS -Value '{}'
+          $env:B2C_LOG = 'debug'
+          $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $probe 'user-data'
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9333'
+          $app = Start-Process -FilePath 'target\debug\blocks2cpp-desktop.exe' -PassThru
+          Start-Sleep -Seconds 20
+          try {
+            (Invoke-WebRequest -Uri 'http://127.0.0.1:9333/json/version' -UseBasicParsing -TimeoutSec 5).Content
+          } catch {
+            Write-Output "No DevTools endpoint on port 9333: $($_.Exception.Message)"
+          }
+          Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" |
+            Select-Object -First 3 -ExpandProperty CommandLine
+          if (-not $app.HasExited) { Stop-Process -Id $app.Id } else { "The app exited with code $($app.ExitCode)" }
+          $places = @($probe, (Join-Path $env:LOCALAPPDATA 'org.blocks2cpp.desktop'))
+          Get-ChildItem -Path $places -Recurse -Filter DevToolsActivePort -ErrorAction SilentlyContinue |
+            ForEach-Object { "$($_.FullName): $((Get-Content $_.FullName) -join ' ')" }
+          Get-ChildItem -Path $places -Directory -Depth 1 -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+          Get-Content (Join-Path $probe 'profile\state\logs\blocks2cpp.log') -Tail 30 -ErrorAction SilentlyContinue
 
       # The Trusted Types trial (docs/spec/08-security.md §8.8): violations per test, reported,
       # never failing. Meaningful on WebView2; WebKitGTK may ignore the report-only header.
