@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<!-- The Windows application manifest of every executable of the desktop crate (build.rs):
-     Common Controls v6, which the native dialogs need. -->
+<!-- The Windows application manifest of every executable of the desktop crate (build.rs).
+     tools/check-windows-manifest.ps1 checks both entries in the built executable. -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <!-- Common Controls v6, which the native dialogs need (TaskDialogIndirect). -->
   <dependency>
     <dependentAssembly>
       <assemblyIdentity
@@ -14,4 +15,11 @@
       />
     </dependentAssembly>
   </dependency>
+  <!-- Paths longer than MAX_PATH (260 characters) work without the \\?\ prefix where the
+       system allows it (LongPathsEnabled), docs/spec/08-security.md section 8.6. -->
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
 </assembly>

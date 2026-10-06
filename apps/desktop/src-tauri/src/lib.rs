@@ -22,11 +22,15 @@
 //! * `e2e` (feature `e2e-hooks`, never in a release build): the end-to-end
 //!   test seams of [ADR-0009](../../../docs/adr/0009-e2e-tooling-and-test-seams.md).
 //!
-//! Hardening (`docs/spec/08-security.md` §8.8): the Content Security Policy,
-//! the isolation pattern and the capability are set in `tauri.conf.json`,
-//! `isolation/` and `capabilities/`. The window may navigate only within the
-//! app and cannot open new windows; the native dialog plugin is registered
-//! from Rust and the webview has no permission to call it.
+//! Hardening (`docs/spec/08-security.md` §8.6–§8.8): the Content Security
+//! Policy, the isolation pattern and the capability are set in
+//! `tauri.conf.json`, `isolation/` and `capabilities/`. The window may
+//! navigate only within the app and cannot open new windows, and the app's
+//! HTML carries the report-only Trusted Types policy of the M2 trial; the
+//! native dialog plugin is registered from Rust and the webview has no
+//! permission to call it. On Windows, [`run`] first restricts where DLLs are
+//! loaded from (§8.7), and the application manifest (`build.rs`) declares
+//! long-path awareness (§8.6).
 
 mod channels;
 mod commands;
@@ -51,20 +55,35 @@ use tauri::{App, AppHandle, Manager as _, RunEvent, Runtime};
 /// `apps/desktop/package.json`).
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Starts the app and runs it until it exits: finds the app's folders, starts
-/// the log file and the panic hook, builds the Tauri app (commands, dialog
-/// plugin, window events), starts the [`Backend`] and opens the editor window.
-/// When the app exits, every build and program is stopped
-/// ([`Backend::shutdown`]).
+/// Starts the app and runs it until it exits: restricts where DLLs are
+/// loaded from (Windows), finds the app's folders, starts the log file and
+/// the panic hook, builds the Tauri app (commands, dialog plugin, window
+/// events), starts the [`Backend`] and opens the editor window. When the app
+/// exits, every build and program is stopped ([`Backend::shutdown`]).
+///
+/// `main` calls nothing else, so the DLL hardening is the first thing the
+/// process does.
 ///
 /// Returns the process's exit code: failure when the app could not start.
 pub fn run() -> ExitCode {
+    // First, before anything can load a DLL by name (08 §8.7): on Windows,
+    // DLLs then come only from System32 and the app's own folder, never from
+    // the current directory or `PATH`. Elsewhere it does nothing. A failure
+    // is not fatal (the default search order stays in effect); it is
+    // reported once the log is up.
+    let dll_search = b2c_build::os::harden_dll_search();
     let launch = match Launch::from_env() {
         Ok(launch) => launch,
-        Err(error) => return failed_to_start(&error),
+        Err(error) => {
+            if let Err(dll_error) = &dll_search {
+                warn_dll_search_not_hardened(&mut std::io::stderr().lock(), dll_error, false);
+            }
+            return failed_to_start(&error);
+        }
     };
     let level = logging::level_from_env();
-    if let Err(error) = logging::init(&launch.dirs.logs, level) {
+    let log_file = logging::init(&launch.dirs.logs, level);
+    if let Err(error) = &log_file {
         // The app works without its log file; say so where a developer sees it.
         let _ = writeln!(
             std::io::stderr().lock(),
@@ -73,6 +92,9 @@ pub fn run() -> ExitCode {
     }
     logging::install_panic_hook();
     tracing::info!(app_version = APP_VERSION, "starting");
+    if let Err(error) = &dll_search {
+        warn_dll_search_not_hardened(&mut std::io::stderr().lock(), error, log_file.is_ok());
+    }
     #[cfg(feature = "e2e-hooks")]
     tracing::warn!("this is an end-to-end test build: its folders, dialogs and toolchains can be scripted");
     match start(launch) {
@@ -148,6 +170,22 @@ enum LaunchError {
     /// Tauri could not build the app or open its window.
     #[error("the window could not be opened ({0})")]
     Tauri(#[from] tauri::Error),
+}
+
+/// What the app reports when [`b2c_build::os::harden_dll_search`] failed.
+const DLL_SEARCH_WARNING: &str =
+    "where DLLs are loaded from could not be restricted; continuing with the default search order";
+
+/// Reports a failed DLL hardening (`docs/spec/08-security.md` §8.7): a
+/// warning in the log, and also on `stderr` when there is no log file
+/// (`logged` is false). The app carries on: the default search order is
+/// what every program without the hardening has.
+fn warn_dll_search_not_hardened(stderr: &mut impl std::io::Write, error: &std::io::Error, logged: bool) {
+    tracing::warn!(%error, "{DLL_SEARCH_WARNING}");
+    if !logged {
+        // If stderr is gone too, there is nobody left to tell.
+        let _ = writeln!(stderr, "Blocks2Cpp: {DLL_SEARCH_WARNING} ({error})");
+    }
 }
 
 /// Logs why the app could not start and returns the failure exit code.
@@ -281,6 +319,71 @@ mod tests {
             error.to_string(),
             "the backend could not start (the cache folder is not an absolute path)"
         );
+    }
+
+    /// A log destination the tests can read back.
+    #[derive(Clone, Default)]
+    struct Buffer(Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Buffer {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Buffer {
+        fn text(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
+
+    /// What a failed DLL hardening leaves in the log and on stderr.
+    fn reported(logged: bool) -> (String, String) {
+        let log = Buffer::default();
+        let mut stderr = Vec::new();
+        let error = std::io::Error::from_raw_os_error(87);
+        let subscriber = logging::subscriber(log.clone(), logging::LevelHandle::new(tracing::Level::INFO));
+        tracing::subscriber::with_default(subscriber, || {
+            warn_dll_search_not_hardened(&mut stderr, &error, logged);
+        });
+        (log.text(), String::from_utf8(stderr).unwrap())
+    }
+
+    #[test]
+    fn a_failed_dll_hardening_is_a_warning_in_the_log() {
+        let (log, stderr) = reported(true);
+        let line: serde_json::Value = serde_json::from_str(log.trim()).unwrap();
+        assert_eq!(line["level"], "WARN");
+        assert_eq!(line["message"], DLL_SEARCH_WARNING);
+        assert_eq!(
+            line["fields"]["error"],
+            std::io::Error::from_raw_os_error(87).to_string()
+        );
+        assert_eq!(stderr, "");
+    }
+
+    #[test]
+    fn without_a_log_file_the_warning_goes_to_stderr_too() {
+        let (log, stderr) = reported(false);
+        assert!(log.contains(DLL_SEARCH_WARNING), "{log}");
+        assert_eq!(
+            stderr,
+            format!(
+                "Blocks2Cpp: {DLL_SEARCH_WARNING} ({})\n",
+                std::io::Error::from_raw_os_error(87)
+            )
+        );
+    }
+
+    #[test]
+    fn dll_hardening_succeeds_here() {
+        // A no-op outside Windows; the real call on the Windows CI runners.
+        b2c_build::os::harden_dll_search().unwrap();
     }
 
     #[test]
