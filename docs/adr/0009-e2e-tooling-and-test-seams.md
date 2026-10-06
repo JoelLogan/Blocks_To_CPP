@@ -47,9 +47,9 @@ chosen instead.
 
 ## Decision
 
-* The E2E suite uses **selenium-webdriver** with
-  **Vitest** as its runner, driving **`tauri-driver`** (installed with
-  `cargo install --locked` at a pinned version). Linux uses `WebKitWebDriver`
+* The E2E suite uses **selenium-webdriver** (4.49.0) with
+  **Vitest** as its runner, driving **`tauri-driver`** (2.1.0, installed with
+  `cargo install --locked` at that pinned version). Linux uses `WebKitWebDriver`
   (the distribution's `webkit2gtk-driver`) under `xvfb`. Windows uses
   `msedgedriver` matching the installed WebView2 version, downloaded from
   Microsoft's official endpoint and version-checked. WebdriverIO is
@@ -69,15 +69,25 @@ chosen instead.
   * `B2C_E2E_TOOLCHAIN_DIRS`: the only folders toolchain discovery searches
     (an empty value means no compilers).
 * **A frontend hook** (`window.__B2C_E2E__`: readiness, inserting blocks,
-  reading the document and the console, selecting a block, and the Trusted
-  Types counts of [08 §8.8](../spec/08-security.md#88-webview-and-ipc-hardening))
-  is installed only when Vite builds in mode `e2e`, and is tree-shaken out of
-  every other build.
-* **CI asserts** that the release binary and bundle contain neither the
-  strings `B2C_E2E_DIALOGS` nor `__B2C_E2E__`.
-* The tests read the console through xterm.js's DOM renderer (`.xterm-rows`)
-  and type through `.xterm-helper-textarea`. Stable `data-testid` attributes
-  mark the toolbar, status bar, console header, Problems and banners.
+  reading the document, the generated C++ and the console, selecting a block,
+  and the Trusted Types counts of
+  [08 §8.8](../spec/08-security.md#88-webview-and-ipc-hardening)) is installed
+  only when Vite builds in mode `e2e`, and is tree-shaken out of every other
+  build. It also finds blocks, fields, connections and grab points on screen
+  for real pointer input, and probes whether the report-only policy reached the
+  page. Its contract is `apps/desktop/src/e2e/contract.ts`, which the app and
+  the harness share.
+* **CI asserts** that the release binary contains neither the strings
+  `B2C_E2E_DIALOGS` nor `__B2C_E2E__`, and that the release frontend
+  (`apps/desktop/dist`) contains neither `__B2C_E2E__` nor `B2C_E2E_`: the
+  executable embeds the frontend brotli-compressed, so a string search in it
+  cannot see the frontend. The E2E job's own build must contain both, as a
+  positive control.
+* The tests read the console through the hook's transcript of what the console
+  was given, because xterm.js's DOM renderer only has the rows on screen; they
+  check what is visible in `.xterm-rows` and type through
+  `.xterm-helper-textarea`. Stable `data-testid` attributes mark the toolbar,
+  status bar, docks, start page, console header, Problems and banners.
 
 ## Consequences
 

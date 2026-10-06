@@ -259,9 +259,15 @@ restarted after a crash, a dismissible banner says so.
   `Ctrl+F` Find, `F12` Go to definition, `Shift+F12` Find references, `F2`
   Rename. All are remappable.
 
-**In M2:** Blockly 12's keyboard navigation is on (core, or the maintained
-plugin if it passes the dependency policy) for moving between blocks and
-connections, connecting, editing fields, copy, paste and delete. The
+**In M2:** keyboard navigation is the app's own editor plugin on Blockly 12's
+core focus manager, cursor and shortcut registry (the maintained
+`@blockly/keyboard-navigation` plugin would replace the validated clipboard,
+drag blocks past the editing session and write HTML with `innerHTML`). The
+arrow keys move between blocks and their fields and inputs, `Enter` edits a
+field, `M` picks a block up so the arrow keys choose where it goes (`Enter`
+puts it there, `Escape` cancels), `T` opens the toolbox, whose categories and
+blocks are reached with the arrow keys, and copy, paste, duplicate, delete,
+undo and the block menu (`Ctrl+Enter`) act on the keyboard focus. The
 shortcuts `F5`, `Shift+F5`, `Ctrl+B` and `Ctrl+S` work; the command palette,
 remapping, Find, Go to definition, Find references and Rename come in M5, and
 Quick Insert in M3. Full screen-reader announcements for the workspace and
@@ -289,8 +295,15 @@ console and selected text.
   renaming) are replaced by the app's accessible dialogs, which use Radix UI
   primitives.
 * **In M2** every panel and dialog is checked with axe-core in the component
-  tests and reachable by keyboard. The High Contrast themes, the checked
-  colour-blind-safe palette and UI scaling come in M5.
+  tests and reachable by keyboard, and the Tab order runs toolbar, toolbox,
+  the toolbox's blocks, canvas, then the docks. The canvas and the toolbox's
+  blocks have names and describe their keys; a polite live region announces
+  the block or place the keyboard reaches; Blockly's own animations follow the
+  reduced-motion setting; and focus returns where it was when a dialog closes.
+  The manual screen-reader pass (NVDA, Orca) follows
+  [the M2 accessibility checklist](../manual-tests/m2-accessibility.md). The
+  High Contrast themes, the checked colour-blind-safe palette, UI scaling,
+  24 px splitter targets and non-drag alternatives come in M5.
 
 ## 4.9 Localisation
 

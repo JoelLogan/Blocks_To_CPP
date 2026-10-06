@@ -118,8 +118,9 @@ Details of each level as M2 sets them up:
   Windows `msedgedriver` matched to the installed WebView2. The tests run a
   debug build with the `e2e-hooks` feature, so the native dialogs are
   scripted and each test gets a fresh profile, while the CSP, the isolation
-  hook and `freezePrototype` stay active. They read the console through
-  xterm.js's DOM renderer and find elements by `data-testid`. CI checks that
+  hook and `freezePrototype` stay active. They read the console through the
+  test hook's transcript (xterm.js's DOM renderer holds only the rows on
+  screen) and find elements by `data-testid`. CI checks that
   release builds contain neither the hooks nor the frontend's test helper.
 * **The M2 exit test** assembles the guessing game from the *Empty* template
   on both systems: real drags for some blocks (the program, a variable, a
@@ -156,7 +157,7 @@ GitHub Actions workflows. All actions are SHA-pinned and least-privilege
 | Workflow | Trigger | Jobs |
 | ---------- | --------- | ------ |
 | `ci.yml` | PR, push to any branch, weekly, manual | `lint` (rustfmt, clippy, also for the Windows target, markdownlint) · `test` (ubuntu, windows) · `test-cgroup` (the Linux cgroup path) · `gcc` (GCC 11 and 15 containers) · `wasm` (build + size budget) · `coverage` (the gates of §9.2) · `docs` (rustdoc, lychee link check, diagnostic codes documented, generated IPC types and catalog outputs up to date) · `deny` · `secrets` (gitleaks) · `security` (pnpm audit, security suite) · `fuzz` (60 s per target) |
-| `desktop.yml` | PR and push touching the app, the crates, the packages or the Rust and Node configuration; manual | `frontend` (`tsc --noEmit`, eslint, prettier, package layering) · `test-web` (Vitest with coverage, after building the WASM core) · `app` (build, tests and start check on ubuntu and windows) · `e2e` (ubuntu, windows; with the visual diff, and the Trusted Types summary on Windows) |
+| `desktop.yml` | PR and push touching the app, the crates, the packages or the Rust and Node configuration; manual | `frontend` (`tsc --noEmit`, eslint, prettier, package layering) · `test-web` (Vitest with coverage, after building the WASM core) · `app` (build, tests and start check on ubuntu and windows) · `e2e` (ubuntu, windows; with the visual diff, and the Trusted Types summary, which is meaningful on WebView2) |
 | `codeql.yml` | PR, push, weekly | CodeQL: JavaScript/TypeScript, Rust, GitHub Actions (code scanning, see below) |
 | `osv-scanner.yml` | PR, push, daily | OSV-Scanner over every lockfile; fails on known vulnerabilities and uploads results to code scanning when available |
 | `scorecard.yml` | Push to `main`, weekly, branch-protection changes | OpenSSF Scorecard (code scanning, see below) |
@@ -193,14 +194,17 @@ Notes on the jobs:
   within 14 days.
 
 **Implemented so far:** `pages.yml`, `workflow-audit.yml`, `codeql.yml`, `osv-scanner.yml`,
-`scorecard.yml`; in `ci.yml` the `lint`, `test` (Ubuntu with GCC 13 and Windows with MSYS2), `gcc`
-(GCC 11 and 15 in containers, for the crates that compile C++), `wasm`,
-`deny`, `docs` (diagnostic codes documented), `secrets` (gitleaks), `security` (`pnpm audit`) and
-`fuzz` (a 60-second libFuzzer run per target, seeded with the examples and the malicious-project
-suite) jobs; and in `desktop.yml` the `frontend` and `app` jobs. M2 adds the rest of `ci.yml`
-(markdownlint, rustdoc, lychee, the staleness checks, the coverage gates, `test-cgroup` and the
-WASM size budget), `test-web` and `e2e` in `desktop.yml`, and `nightly.yml` and `weekly.yml`.
-`release.yml` arrives before the first signed release (M6).
+`scorecard.yml`; every `ci.yml` job in the table: `lint` (with markdownlint), `test` (Ubuntu with
+GCC 13 and Windows with MSYS2), `gcc` (GCC 11 and 15 in containers, for the crates that compile
+C++), `test-cgroup`, `coverage` (with both gates), `wasm` (with the size budget), `fuzz` (a 60-second
+libFuzzer run per target, seeded with the examples and the malicious-project suite), `deny`, `docs`
+(diagnostic codes documented, rustdoc, the staleness checks and lychee), `secrets` (gitleaks) and
+`security` (`pnpm audit`); in `desktop.yml` the `frontend`, `test-web`, `app` (with the release
+checks: no end-to-end hooks, and on Windows the embedded application manifest) and `e2e` (Ubuntu and
+Windows, the guessing-game exit test; the Trusted Types summary is written on both systems and is
+meaningful on WebView2) jobs; `nightly.yml` with `fuzz` and `links`; and `weekly.yml`. The rest of
+M2 adds the other E2E flows and the visual diff, and the nightly `e2e`, `e2e-security` and `bench`
+jobs. `release.yml` arrives before the first signed release (M6).
 
 ## 9.4 Documentation
 

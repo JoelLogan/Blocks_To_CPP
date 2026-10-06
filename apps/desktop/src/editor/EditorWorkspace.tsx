@@ -4,7 +4,7 @@
  * editing session (./sync/session.ts) and previewed live (./preview/pipeline.ts).
  *
  * It publishes the {@link EditorHandle} features use, and attaches the editor plugins
- * (`EDITOR_PLUGINS`: the toolbox, the diagnostics, the clipboard).
+ * (`EDITOR_PLUGINS`: the toolbox, the diagnostics, the clipboard, the keyboard navigation).
  */
 import { B2C_CHECKER_NAME, b2cDarkTheme, b2cLightTheme } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';

@@ -159,3 +159,21 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   status bar says _Saved_ for a file just opened; and pastes, duplicates and
   cuts of very long statement chains, or pastes that would make the file
   larger than 32 MiB, are refused whole instead of half done.
+- Keyboard use of the block editor: the arrow keys move between blocks and
+  their parts, _M_ moves a block to a place chosen with the arrow keys, _T_
+  opens the toolbox, and copy, paste, duplicate, delete, undo and the block
+  menu act on the keyboard focus. A live region announces what the keyboard
+  reaches, the Tab order runs toolbar, toolbox, canvas, then the docks, focus
+  returns where it was when a dialog closes, Blockly's animations follow the
+  reduced-motion setting, and the colours and focus rings meet WCAG 2.2 AA
+  contrast in the style sheets (a manual screen-reader checklist covers the
+  real webviews).
+- End-to-end tests drive the real app on Linux and Windows (selenium-webdriver
+  and `tauri-driver`): the guessing game is assembled from the _Empty_
+  template with real drags, run, answered until _Correct!_ and stopped. CI
+  checks that release builds contain no test hooks.
+- Desktop hardening: on Windows the app and the CLI restrict where DLLs are
+  loaded from before anything else, and the app's manifest allows long paths
+  (checked in CI); the app's pages carry a report-only Trusted Types policy;
+  and on Linux without cgroups the compiler's memory limit is set before it
+  starts, so processes it forks at once are limited too.

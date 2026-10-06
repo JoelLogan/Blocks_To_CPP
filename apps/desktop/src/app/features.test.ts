@@ -89,6 +89,7 @@ describe('the lists later waves extend', () => {
       'toolbox',
       'diagnostics',
       'clipboard',
+      'keyboard',
     ]);
   });
 

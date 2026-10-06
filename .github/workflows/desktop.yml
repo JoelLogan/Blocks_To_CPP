@@ -32,6 +32,7 @@ on:
       - "pnpm-workspace.yaml"
       - ".node-version"
       - "tools/check-package-layering.py"
+      - "tools/check-windows-manifest.ps1"
       - ".github/workflows/desktop.yml"
   pull_request:
     paths:
@@ -54,6 +55,7 @@ on:
       - "pnpm-workspace.yaml"
       - ".node-version"
       - "tools/check-package-layering.py"
+      - "tools/check-windows-manifest.ps1"
       - ".github/workflows/desktop.yml"
   workflow_dispatch:
 
@@ -335,6 +337,14 @@ jobs:
           cargo clippy --locked -p blocks2cpp-desktop --all-targets -- -D warnings
           cargo clippy --locked -p blocks2cpp-desktop --all-targets --features e2e-hooks -- -D warnings
 
+      # docs/spec/08-security.md §8.6: tests/hardening.rs saves and builds a project under a
+      # path longer than 260 characters, which needs the system setting as well as the
+      # app's longPathAware manifest. It is read when a process starts, so it comes first.
+      - name: Enable long paths (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1 -PropertyType DWord -Force
+
       - name: Test
         shell: bash
         env:
@@ -395,6 +405,13 @@ jobs:
             status=1
           fi
           exit "$status"
+
+      # docs/spec/08-security.md §8.6 and §8.8: the released executable must embed the manifest
+      # with Common-Controls v6 (the native dialogs need it) and longPathAware.
+      - name: Check the embedded application manifest (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/check-windows-manifest.ps1 target/release/blocks2cpp-desktop.exe
 
       - name: Check that the app starts (Linux)
         if: runner.os == 'Linux'

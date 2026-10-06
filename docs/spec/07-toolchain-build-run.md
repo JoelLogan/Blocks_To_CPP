@@ -319,8 +319,10 @@ settings**, never in projects:
   * Timeout per TU: 120 s (configurable, 10–600 s).
   * Memory: 4 GiB per invocation. On Windows, a Job Object
     `JobMemoryLimit`. On Linux, a cgroup-v2 transient scope (`MemoryMax`)
-    when a user systemd instance is available; otherwise `prlimit(2)
-    RLIMIT_AS` applied right after spawn, plus an RSS watchdog.
+    when a user systemd instance is available; otherwise `RLIMIT_AS`, which
+    the compiler process sets on itself between `fork` and `exec` (so every
+    process it starts inherits it; never above the limit it would inherit),
+    plus an RSS watchdog.
   * Process count: Job Object `ActiveProcessLimit` 32 / cgroup `pids.max`.
   * Captured stderr is capped at 4 MiB and the rest is truncated with a
     notice.

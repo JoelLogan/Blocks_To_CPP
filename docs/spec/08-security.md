@@ -376,8 +376,10 @@ It is range-checked against the target type; overflow is error `E0517`.
   with a suspended start and the job.
 * The platform calls sit in `b2c_process::os` as safe wrappers with
   `// SAFETY:` comments: `atomic_replace`, `harden_dll_search` and
-  `open_https_url`. The app and the CLI call `harden_dll_search` as the first
-  statement of `main`; if it fails, a warning is logged and startup continues.
+  `open_https_url`. The CLI calls `harden_dll_search` as the first statement
+  of `main`, the app as the first statement of `blocks2cpp_desktop::run` (all
+  its `main` does); if it fails, a warning is logged (on stderr while there is
+  no log file) and startup continues.
 * `open_https_url` accepts only a URL that starts with `https://` and is
   printable ASCII of at most 2,048 characters without spaces or quotes. On
   Linux it runs `/usr/bin/xdg-open` or `/bin/xdg-open` (an absolute path, never
@@ -496,7 +498,9 @@ the app's own HTML responses, in every build; the enforced CSP is unchanged.
 The frontend counts `securitypolicyviolation` events, recording only the
 directive, never sample text. E2E builds expose the counts, and the Windows
 E2E job writes them to its summary. WebKitGTK may ignore the header, so the
-trial is meaningful on WebView2.
+trial is meaningful on WebView2. Adding the header is logged at debug level
+(*"added the Trusted Types report-only policy"*, with the path), so a test can
+confirm the main document carries it without a backend command.
 
 ## 8.9 Supply chain
 

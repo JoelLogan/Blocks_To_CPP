@@ -8,12 +8,10 @@ import { act, render, screen } from '@testing-library/react';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { keyboardPlugin } from '../../editor/keyboard';
 import { guessDocument } from '../../editor/toolbox/testing';
 import { expectNoAxeViolations } from '../../test/axe';
 import { App } from '../App';
 import { setCore } from '../core';
-import { EDITOR_PLUGINS } from '../editorPlugins';
 import { resetAppStore, useAppStore } from '../store';
 import { projectFixture, settingsFixture, toolchainFixture } from '../testing/fixtures';
 import { HintProvider } from '../ui/Hint';
@@ -33,7 +31,6 @@ class StillResizeObserver {
 }
 
 const cleanups: (() => void)[] = [];
-let plugins: typeof EDITOR_PLUGINS = [];
 
 beforeEach(() => {
   resetAppStore();
@@ -49,9 +46,6 @@ beforeEach(() => {
   // The core never starts here: these tests are about the focus, not the preview.
   setCore(null);
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
-  plugins = [...EDITOR_PLUGINS];
-  // The keyboard plugin as the integrator adds it, after the app's other editor plugins.
-  EDITOR_PLUGINS.push(keyboardPlugin);
   const style = document.createElement('style');
   style.textContent = '[hidden] { display: none !important; }';
   document.head.append(style);
@@ -64,7 +58,6 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) {
     cleanup();
   }
-  EDITOR_PLUGINS.splice(0, EDITOR_PLUGINS.length, ...plugins);
   setCore(null);
   Blockly.keyboardNavigationController.setIsActive(false);
 });
