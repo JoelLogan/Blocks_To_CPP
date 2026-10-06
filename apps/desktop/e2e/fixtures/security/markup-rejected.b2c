@@ -1,0 +1,33 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_e2e_security_rejected",
+    "name": "<img src=x data-b2c-xss onerror=\"__b2cXss='rejected'\">",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "<svg data-b2c-xss onload=\"__b2cXss='key'\">": true,
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}

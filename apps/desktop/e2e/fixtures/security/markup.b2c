@@ -1,0 +1,171 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_e2e_security_markup",
+    "name": "<img src=x data-b2c-xss onerror=\"__b2cXss='name'\">",
+    "description": "<iframe data-b2c-xss srcdoc=\"<script>parent.__b2cXss='description'</script>\"></iframe>",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "comment": {
+              "text": "<svg data-b2c-xss onload=\"__b2cXss='comment'\"></svg>",
+              "pinned": true
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_script",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "<script data-b2c-xss>__b2cXss='print'</script>"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b_link",
+                  "type": "io.print",
+                  "v": 1,
+                  "comment": {
+                    "text": "<style data-b2c-xss>body{display:none}</style>"
+                  },
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "<a data-b2c-xss href=\"javascript:__b2cXss='link'\">link</a>"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b_label",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "sym_label",
+                      "name": "label"
+                    },
+                    "TYPE": "std::string"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "str": "<b data-b2c-xss onmouseover=\"__b2cXss='variable'\">bold</b>"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b_show",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "ref": "sym_label"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "notes": [
+          {
+            "id": "n_markup",
+            "text": "<script data-b2c-xss>__b2cXss='note'</script>",
+            "x": 600,
+            "y": 40
+          }
+        ]
+      }
+    }
+  ]
+}
