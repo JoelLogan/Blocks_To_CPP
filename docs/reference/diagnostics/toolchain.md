@@ -56,7 +56,8 @@ Windows). Batch files (`.bat`, `.cmd`) are never accepted. In the app,
 
 The same code refuses a compiler, chosen or found, that lies inside the open
 project's folder: a project must never bring its own compiler, so such a
-program is never run.
+program is never run. In the app, *Choose g++ manually…* also refuses a file
+inside an open project's folder or the build cache before running it.
 
 *Example:* "The compiler C:\tools\g++.cmd cannot be used: only .exe programs
 can be used (never .bat or .cmd scripts)."

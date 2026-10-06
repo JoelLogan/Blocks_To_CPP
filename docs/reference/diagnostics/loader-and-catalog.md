@@ -46,6 +46,9 @@ oversized file cannot use up memory (which is also why the message does not
 say how large the file is). Real projects are far smaller (typically under
 1 MiB).
 
+The editor also refuses, with this code, a paste that would make the project
+file larger than 32 MiB; nothing is pasted.
+
 > The project file is larger than 33554432 bytes (32 MiB), the most a project file can be.
 
 **Fix:** check that you opened the right file. Split a very large program
@@ -81,6 +84,13 @@ anything after the end of the data are all refused.
 Lists and objects are nested more than 128 levels deep. Statement lists keep
 the nesting of a file equal to the logical nesting of the program, which is
 far smaller; very deep nesting is only used to crash parsers.
+
+The editor also shows this code when a paste, a duplicate or a cut holds a
+chain of statements too long for the block editor to handle in one piece: it
+keeps each statement of a chain inside the one before it, so after a few
+thousand statements its undo records reach the JavaScript stack limit.
+Nothing is changed; move fewer statements at a time, or put some of them into
+a function.
 
 > Lists and objects in the project file are nested more than 128 levels deep (line 1, column 3127). Real projects need far fewer levels, so the file was not opened.
 

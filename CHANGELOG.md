@@ -137,3 +137,25 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   format (with the C++ as plain text for other programs): pastes get fresh
   IDs, re-bind references where they land, and are refused with the
   loader's codes when they are malformed or would break the format's limits.
+- Review fixes (security): a crash-recovery snapshot is trusted only by the
+  trust record of its own path, so a link swapped in after a crash restores
+  it in Restricted Mode; _Choose g++ manually…_ refuses a compiler inside an
+  open project's folder or the build cache before running it, and its dialog
+  starts in a system folder; on Windows the trust dialog's default button is
+  _Stay in Restricted Mode_; the window navigates only within its own
+  platform's app origin; and the webview can no longer be reloaded by key or
+  by its context menu.
+- Review fixes: edits made while a save runs stay unsaved, so closing the
+  window asks first and their recovery snapshot is kept; closing a project or
+  quitting while its program or build starts leaves nothing running; Reload
+  deletes the snapshot of the changes it discards and waits for a save in
+  progress; restoring a snapshot waits for and holds back New, Open and Save;
+  autosave never races a save; a canvas that cannot be read back is shown in
+  a banner and is never built silently; opening a project leaves no label
+  updates to undo, and saving an untouched project keeps its bytes,
+  viewport included; Delete then Undo, selecting from Problems and saving
+  during a drag keep the blocks exactly; opening another project resets the
+  console; the _lines skipped_ marker appears where output was dropped; the
+  status bar says _Saved_ for a file just opened; and pastes, duplicates and
+  cuts of very long statement chains, or pastes that would make the file
+  larger than 32 MiB, are refused whole instead of half done.

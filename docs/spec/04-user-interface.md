@@ -36,6 +36,9 @@
 
 **In M2** (see §4.13 for everything that comes later):
 
+* The `≡` main menu at the left of the top bar has *New project…*, *Open…*,
+  *Save* (`Ctrl+S`), *Save as…* and *Close project*; the items about the open
+  project appear only while one is open.
 * The top bar shows the project name, followed by `•` while there are unsaved
   changes. The window title does not change: the webview has no window
   permission ([08 §8.8](08-security.md#88-webview-and-ipc-hardening)).
@@ -47,6 +50,9 @@
   are not drawn yet, and are kept unchanged on save.
 * Docks are resizable and collapsible. Swapping, splitting and remembering
   them, Focus mode and Presentation mode come in M5.
+* The status bar says *Saved* (with the time after a save in this session)
+  or *Unsaved* while there are unsaved changes or the project has no file
+  yet.
 
 ## 4.2 Toolbox
 
@@ -160,6 +166,13 @@ dropdown text filled in (*main › repeat until › if*).
 come in M5. Quick fixes and squiggles under slot tokens come with expression
 slots in M3, and *Change level…* with lint levels in M5.
 
+**In M2** a canvas that cannot be read back as a project (a `B2C-E01xx`
+problem, such as blocks nested too deeply) does not go unnoticed: a banner
+says that the latest change was not checked, the code, Problems and Run keep
+showing the last version that could be, and Build and Run refuse with a dialog
+that names the problem until the change is undone. When the compiler core was
+restarted after a crash, a dismissible banner says so.
+
 ## 4.5 Console (integrated terminal)
 
 * xterm.js connected to the program's pseudo-terminal: colours, cursor
@@ -193,6 +206,9 @@ slots in M3, and *Change level…* with lint levels in M5.
   Hyperlinks (OSC 8) are shown but open only after confirmation and only for
   `http`/`https`. **In M2** activating a link shows the full URL with a *Copy
   link* button and opens nothing.
+* **In M2** opening or creating another project resets the console: output
+  still queued from the old program is dropped and the terminal is fully
+  reset. Every run starts with the terminal's modes reset.
 
 ## 4.6 Toolchain setup experience
 
@@ -249,7 +265,12 @@ connections, connecting, editing fields, copy, paste and delete. The
 shortcuts `F5`, `Shift+F5`, `Ctrl+B` and `Ctrl+S` work; the command palette,
 remapping, Find, Go to definition, Find references and Rename come in M5, and
 Quick Insert in M3. Full screen-reader announcements for the workspace and
-the accessibility audit are M5 work.
+the accessibility audit are M5 work. Copy, cut, paste and duplicate
+(`Ctrl+D`) use the validated clipboard format
+([05 §5.12](05-project-format.md#512-clipboard-format)). `Ctrl+R`,
+`Ctrl+Shift+R` and `Ctrl+F5` never reload the window, and the webview's own
+context menu (which offers *Reload*) appears only over editable text, the
+console and selected text.
 
 ## 4.8 Accessibility
 
@@ -308,7 +329,10 @@ the accessibility audit are M5 work.
   name and where it is. An entry whose file is gone stays in the list; opening
   it says so and offers to remove it.
 * **One project per window.** Opening or creating another project first asks
-  about unsaved changes and then closes the current one.
+  about unsaved changes and then closes the current one. The current project
+  is closed only once the other one is shown, so a cancelled dialog or a file
+  that does not load leaves it open. A new project that has not been edited
+  has no unsaved changes.
 * **Unsaved changes.** Moving blocks counts as a change, because block
   positions are saved; scrolling and zooming do not, but the current viewport
   is written into the file whenever it is saved. Closing the window, opening
@@ -318,14 +342,27 @@ the accessibility audit are M5 work.
   every 30 s and when the window loses focus ([05 §5.10](05-project-format.md#510-saving-and-recovery)).
   After a crash, the start page lists the snapshots of app instances that are
   no longer running and offers *Restore* or *Discard*. Several instances of
-  the app can run at once without offering each other's snapshots.
+  the app can run at once without offering each other's snapshots. Restoring
+  waits for, and holds back, New, Open and Save like they hold back each
+  other: it asks about the open project's unsaved changes first and closes
+  that project only once the restored one is shown. *Discard* asks for
+  confirmation, because discarded work cannot be recovered. Autosave pauses
+  while a save runs, and a save waits for a snapshot being written.
 * **Changed on disk.** When the open file changes outside the app, a dialog
   offers *Reload* or *Keep mine (save as…)*. When the file was deleted or
   renamed, only *Keep mine* is offered. Saving never overwrites a file that
-  changed on disk.
+  changed on disk. *Not now* (or closing the dialog) changes nothing; the
+  next save is refused again and asks again. When there are unsaved changes,
+  *Keep mine* is the suggested answer and *Reload* says that it discards them.
+  Reload waits for a save in progress, deletes the recovery snapshot of the
+  changes it replaces, and checks trust again.
 * **Untrusted project.** The Restricted Mode banner explains why Build and Run
   are disabled and offers *Trust…*, which opens the backend's native trust
-  dialog.
+  dialog, whose default button is *Stay in Restricted Mode*. The banner stays
+  under the toolbar while the project is restricted. *Revoke trust* is on the
+  Settings page, in a *This project* section that says why the open project
+  is trusted (its own record, its folder, or created here); it is offered
+  only for a project's own record.
 * *Export* comes in M3.
 
 ## 4.11 Debugger (later phase)
@@ -359,6 +396,8 @@ stored in a project.
   native dialog.
 * When `settings.json` held an invalid value, was corrupt or came from a newer
   version, the page says which settings were reset or left as they were.
+  When the app starts with such notices, a banner under the toolbar says so
+  until the Settings page is opened or the banner is dismissed.
 
 Lint levels, the build and run settings (M5) and the machine-local extra
 flags and environment pass-through list (M4) join the page later.

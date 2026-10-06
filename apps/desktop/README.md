@@ -57,11 +57,16 @@ project, build, run, toolchain, settings, trust and recovery services:
   the run gate (`runGate.ts`) that explains why Run and Build are held back. The main menu
   (`layout/MainMenu.tsx`) lists only the project commands a feature has registered.
 - **Window banners** (`banners.tsx`): features register banners with `registerBanner`; `App`
-  shows them under the toolbar in a polite live region.
+  shows them under the toolbar in a polite live region. The analysis feature
+  (`src/features/analysis/`) adds one while the latest change could not be checked
+  (`syncFailed`) or the compiler core was restarted (`trapRecovered`).
 - **Dialogs** (`dialogs/`): alerts, confirmations, prompts and choices on Radix's accessible
   dialog; Blockly's own prompts go through them too.
 - **Shortcuts** (`shortcuts.ts`): `F5` Run, `Shift+F5` Stop, `Ctrl+B` Build, `Ctrl+S` Save,
-  everywhere except in a dialog or inside an element marked `data-b2c-shortcuts="off"`.
+  everywhere except in a dialog or inside an element marked `data-b2c-shortcuts="off"`. The
+  reload keys (`Ctrl+R`, `Ctrl+Shift+R`, `Ctrl+F5`) are cancelled everywhere, and the webview's
+  own context menu (which offers _Reload_) appears only over editable text, the console and
+  selected text.
 
 ### The block editor (milestone M2)
 
@@ -89,6 +94,11 @@ project, build, run, toolchain, settings, trust and recovery services:
   (never `JSON.parse`), sets the store and shows the editor.
 - **Saving**: call `editor.currentDocument()`; it reads the canvas now and captures the viewports
   (which are never part of the live document, so scrolling does not mark the project dirty).
+  During a block drag it returns the canvas as it was before the drag: the editor injects its own
+  block dragger (`sync/drag.ts`) so the session hears of a drag before Blockly moves anything.
+  Code that shows or resizes the editor container relies on the editor's resize observer (or
+  calls `EditorSession.resize()`), never `Blockly.svgResize` directly, so a view the user has not
+  moved stays unchanged for saving.
 - **Toolbox** (`toolbox/`, the `toolboxPlugin`): the catalog's categories in a Scratch-style
   continuous toolbox (category bubbles and one scrolling flyout), with presets and shadows, plus
   the dynamic Variables (with _Make a variable_), Loops and My Blocks categories, which follow the
@@ -108,6 +118,11 @@ project, build, run, toolchain, settings, trust and recovery services:
   copy as a fallback. A paste is validated like a project file, gets fresh IDs, re-binds
   references at its target and must keep the project within the format's limits; a refused paste
   changes nothing and lists the loader's codes. One paste is one undo step.
+  A paste must also keep the saved (canonical) project text within 32 MiB.
+  Paste, duplicate and cut are all or nothing: Blockly's undo events
+  serialise statement chains recursively, so a chain too long for the
+  engine's stack is refused with a notice and nothing changes
+  (`clipboard/chains.ts`).
 - **Two-way highlighting** (`highlight/`): the hovered and selected blocks go to the store
   (`ui.hoverBlock`, `ui.selection`) and the C++ tab highlights their code; a click in the code or
   on a problem selects the block (or the collapsed block around it) and scrolls to it or centres
@@ -142,6 +157,9 @@ project, build, run, toolchain, settings, trust and recovery services:
   a time, latest value wins); the window's `closeRequested` asks _Save_, _Don't save_ or _Cancel_
   and then calls `app_quit`. An untouched new project has no unsaved changes.
 - Operations run one at a time, in order; every backend error becomes a sentence for the user.
+  Recovery (restore, autosave) and the external-change feature (reload) use the same queue
+  through `features/project/link.ts` (`ProjectLink`), which `src/features/index.ts` creates and
+  passes to the three features.
 
 ### Build and run (milestone M2)
 
@@ -419,6 +437,7 @@ workspace policy requires ([§8.9](../../docs/spec/08-security.md#89-supply-chai
 | `tauri`                      | 2.12.0 (2026-09-26) | Apache-2.0 OR MIT | The desktop shell ([ADR-0001](../../docs/adr/0001-desktop-shell-tauri.md))                                                                                                                                                                                                       |
 | `tauri-build` (build)        | 2.7.0 (2026-09-26)  | Apache-2.0 OR MIT | Embeds the configuration, capabilities and Windows resources                                                                                                                                                                                                                     |
 | `tauri-plugin-dialog`        | 2.8.0 (2026-09-26)  | Apache-2.0 OR MIT | Native open, save and message dialogs, from Rust only (no JavaScript permission). Default features off except `gtk3`: rfd 0.16.0's GTK 3 backend on Linux, no XDG portal and no D-Bus. Brings `tauri-plugin-fs` 2.6.0 (for its `FilePath` type; the fs plugin is not registered) |
+| `rfd` (Windows only)         | 0.16.0              | MIT               | The Windows trust dialog with _Stay in Restricted Mode_ as its first and default button (08 §8.3.1). No default features, `common-controls-v6`; already in the lockfile through `tauri-plugin-dialog` with the same features, so no new code is compiled                         |
 | `tracing-subscriber`         | 0.3.23 (2026-03-13) | MIT               | The span registry under the app's own JSON-lines log layer. Features `registry` and `std` only: no `fmt`, ANSI, `log` bridge or `EnvFilter`                                                                                                                                      |
 | `notify` (through `b2c-app`) | 8.2.0 (2025-08-03)  | CC0-1.0           | The file watcher of open projects (05 §5.10): inotify on Linux, `ReadDirectoryChangesW` on Windows, one non-recursive watch per project folder. No default features (no macOS FSEvents). Its events only wake the backend's own 300 ms debounce and SHA-256 check                |
 
