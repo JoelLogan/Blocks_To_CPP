@@ -18,6 +18,9 @@
  * Whether a message was dropped is decided against a control call: once `app_info` has been
  * answered after it, and a grace period has passed, a call that is still unanswered was never
  * sent.
+ *
+ * The calls reach the page as JSON text, which the page parses itself, so every argument arrives
+ * exactly as written whatever the native WebDriver does with script arguments.
  */
 import type { ToolchainListResponse } from '@blocks2cpp/ipc-types';
 import type { WebDriver } from 'selenium-webdriver';
@@ -83,6 +86,13 @@ const DEFAULT_SETTLE_MS = 30_000;
 /** The default of {@link RunOptions.graceMs}. */
 const DEFAULT_GRACE_MS = 1_500;
 
+/**
+ * The command that ends the app when it runs. {@link IpcProbe.check} sends its cases one at a
+ * time after the others, so that one getting through cannot hide the others' outcomes and is
+ * named in the error.
+ */
+export const ENDS_THE_APP = 'app_quit';
+
 /** The session's script timeout that the harness sets (support/app.ts), restored after a run. */
 const DEFAULT_SCRIPT_TIMEOUT_MS = 30_000;
 
@@ -93,15 +103,15 @@ const SCRIPT_MARGIN_MS = 10_000;
 export const CHANNELS_GLOBAL = '__b2cSecurityChannels';
 
 /**
- * Runs in the webview (`executeAsyncScript`): sends the calls of `arguments[0]` with the options
- * `arguments[1]`, then, when a call is still unanswered, the control call and the grace period, and
+ * Runs in the webview (`executeAsyncScript`): sends the calls of `arguments[0]` (JSON text) with
+ * the options `arguments[1]`, then, when a call is still unanswered, the control call and the grace period, and
  * calls back with `{control, entries}` (`control` is `notNeeded` when every call settled). A plain script
  * (not a function from this file), so nothing the test runner adds to compiled code reaches the
  * page; the page's CSP forbids `eval` and `new Function`, so the script builds nothing from text.
  */
 const RUN_SCRIPT = `
   const done = arguments[arguments.length - 1];
-  const calls = arguments[0];
+  const calls = JSON.parse(arguments[0]);
   const options = arguments[1];
   const internals = window.__TAURI_INTERNALS__;
   if (typeof internals !== 'object' || internals === null || typeof internals.invoke !== 'function'
@@ -234,6 +244,14 @@ export function outcomeOf(entry: RawEntry): IpcOutcome {
   }
 }
 
+/** A batch of calls for messages: how many, and the first few names. */
+export function describeBatch(calls: readonly IpcCall[]): string {
+  const shown = calls.slice(0, 3).map((call) => `"${call.name}" (${call.cmd})`);
+  const more =
+    calls.length > shown.length ? `, and ${String(calls.length - shown.length)} more` : '';
+  return `the batch of ${String(calls.length)} call${calls.length === 1 ? '' : 's'} ${shown.join(', ')}${more}`;
+}
+
 /** Whether a value is a plain object (a JSON object). */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -362,7 +380,7 @@ export class IpcProbe {
     await this.#driver.manage().setTimeouts({ script: budget + SCRIPT_MARGIN_MS });
     let report: unknown;
     try {
-      report = await this.#driver.executeAsyncScript(RUN_SCRIPT, sent, {
+      report = await this.#driver.executeAsyncScript(RUN_SCRIPT, JSON.stringify(sent), {
         sequential,
         settleMs,
         graceMs,
@@ -373,17 +391,15 @@ export class IpcProbe {
     } catch (error: unknown) {
       // An abuse that got through may have ended the app (app_quit) or replaced the page.
       throw new IpcProbeError(
-        `A batch of ${String(calls.length)} calls (${calls
-          .slice(0, 3)
-          .map((call) => call.cmd)
-          .join(
-            ', ',
-          )}${calls.length > 3 ? ', …' : ''}) did not finish: ${error instanceof Error ? `${error.name} ${error.message}` : String(error)}. If the app ended, a call that should have been refused ran; the app's log (kept with the test's artifacts) names every command that ran.`,
+        `${describeBatch(calls)} did not finish: ${error instanceof Error ? `${error.name} ${error.message}` : String(error)}. If the app ended, a call that should have been refused ran; the app's log (kept with the test's artifacts) shows whether app_quit ran.`,
         { cause: error },
       );
     }
     if (!isRecord(report)) {
-      throw new IpcProbeError('The page returned no report');
+      // msedgedriver answers so when the window closed while the script ran.
+      throw new IpcProbeError(
+        `The page returned no report for ${describeBatch(calls)}: the window may have closed (the app's log shows whether app_quit ran)`,
+      );
     }
     if (typeof report['fatal'] === 'string') {
       throw new IpcProbeError(report['fatal']);
@@ -425,7 +441,15 @@ export class IpcProbe {
    * empty list when all did).
    */
   async check(cases: readonly AbuseCase[], options: RunOptions = {}): Promise<string[]> {
-    const outcomes = await this.run(cases, options);
+    const outcomes = await this.run(
+      cases.filter((abuse) => abuse.cmd !== ENDS_THE_APP),
+      options,
+    );
+    for (const abuse of cases.filter((each) => each.cmd === ENDS_THE_APP)) {
+      for (const [name, outcome] of await this.run([abuse], options)) {
+        outcomes.set(name, outcome);
+      }
+    }
     const problems: string[] = [];
     for (const abuse of cases) {
       const outcome = outcomes.get(abuse.name);

@@ -12,7 +12,15 @@ import path from 'node:path';
 import { Builder, Capabilities, type WebDriver } from 'selenium-webdriver';
 import type { TestContext } from 'vitest';
 
-import { artifactDir, copyFiles, recordTrustedTypes, writeArtifact } from './artifacts';
+import {
+  artifactDir,
+  copyFiles,
+  copyLogSince,
+  fileSize,
+  NATIVE_DRIVER_LOG_PART,
+  recordTrustedTypes,
+  writeArtifact,
+} from './artifacts';
 import { TauriDriver } from './driver';
 import { appEnvironment, harnessSettings, type HarnessSettings } from './env';
 import { HookClient } from './hook';
@@ -143,12 +151,21 @@ function launchLogsNote(dir: string | null): string {
 
 /**
  * Copies the app's and the driver's logs (`root` is the test's folder) into the test's artifact
- * folder, and returns that folder.
+ * folder, with the part of the native driver's log written since it was `nativeLogStart` bytes
+ * long, and returns that folder.
  */
-function saveLogs(artifacts: string, root: string, test: string): string {
-  const dir = artifactDir(artifacts, test);
+function saveLogs(
+  settings: HarnessSettings,
+  root: string,
+  test: string,
+  nativeLogStart: number,
+): string {
+  const dir = artifactDir(settings.artifacts, test);
   copyFiles(path.join(root, 'profile', 'state', 'logs'), dir, 'app-');
   copyFiles(root, dir, 'driver-');
+  if (settings.nativeDriverLog !== null) {
+    copyLogSince(settings.nativeDriverLog, nativeLogStart, path.join(dir, NATIVE_DRIVER_LOG_PART));
+  }
   return dir;
 }
 
@@ -199,6 +216,7 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
   writeFileSync(dialogs, JSON.stringify(options.dialogs ?? {}));
 
   const test = context.task.name;
+  const nativeLogStart = settings.nativeDriverLog === null ? 0 : fileSize(settings.nativeDriverLog);
   let driverProcess: TauriDriver | null = null;
   let driver: WebDriver | null = null;
   /**
@@ -253,7 +271,7 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
     // message names the copies.
     let saved: string | null = null;
     await close(() => {
-      saved = saveLogs(settings.artifacts, root, test);
+      saved = saveLogs(settings, root, test, nativeLogStart);
     });
     throw new Error(
       `The app under test did not start: ${error instanceof Error ? error.message : String(error)}${launchLogsNote(saved)}`,
@@ -278,7 +296,7 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
       await close(
         failed
           ? () => {
-              saveLogs(settings.artifacts, root, test);
+              saveLogs(settings, root, test, nativeLogStart);
             }
           : undefined,
       );

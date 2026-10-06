@@ -1,4 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -9,6 +16,8 @@ import {
   artifactName,
   clearTrustedTypes,
   copyFiles,
+  copyLogSince,
+  fileSize,
   recordTrustedTypes,
   TRUSTED_TYPES_REPORT,
   TRUSTED_TYPES_SUMMARY,
@@ -132,6 +141,23 @@ describe('artifacts', () => {
       entry,
       { ...entry, count: 0, directives: [], policyActive: null },
     ]);
+  });
+
+  it("keeps a test's part of a shared log", () => {
+    const folder = tempFolder();
+    const shared = path.join(folder, 'msedgedriver.log');
+    expect(fileSize(shared)).toBe(0);
+    writeFileSync(shared, 'earlier test\n');
+    const start = fileSize(shared);
+    appendFileSync(shared, 'this test\n');
+    const part = path.join(folder, 'part.log');
+    copyLogSince(shared, start, part);
+    expect(readFileSync(part, 'utf8')).toBe('this test\n');
+    // Nothing appended, or no log at all: nothing is written.
+    const none = path.join(folder, 'none.log');
+    copyLogSince(shared, fileSize(shared), none);
+    copyLogSince(path.join(folder, 'missing.log'), 0, none);
+    expect(existsSync(none)).toBe(false);
   });
 });
 

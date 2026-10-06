@@ -615,6 +615,8 @@ jobs:
           Set-Content -Path $wrapper -Encoding ascii -Value $line
           Get-Content $wrapper
           Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_NATIVE_DRIVER=$wrapper"
+          # A failed test keeps its part of the log (e2e/README.md).
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_NATIVE_DRIVER_LOG=$log"
 
       # Every spec except the E2E security tests, which run nightly (nightly.yml, e2e-security).
       - name: Run the end-to-end tests (Linux)
@@ -697,14 +699,7 @@ jobs:
         shell: bash
         env:
           ARTIFACTS: ${{ runner.temp }}/e2e-artifacts
-        run: |
-          if [ ! -d "$ARTIFACTS" ]; then exit 0; fi
-          find "$ARTIFACTS" -type f \( -name '*.log' -o -name '*.txt' \) -print0 |
-            while IFS= read -r -d '' file; do
-              echo "::group::$file"
-              tail -n 300 "$file"
-              echo "::endgroup::"
-            done
+        run: apps/desktop/e2e/scripts/show-logs.sh "$ARTIFACTS"
 
       # When no WebDriver session starts on Windows: start the app as msedgedriver does (its user
       # data folder and remote debugging port through the WEBVIEW2_* variables) and show whether

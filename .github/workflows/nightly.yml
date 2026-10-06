@@ -507,6 +507,8 @@ jobs:
           $line = '@"{0}" --verbose --append-log "--log-path={1}" %*' -f $env:B2C_E2E_NATIVE_DRIVER, $log
           Set-Content -Path $wrapper -Encoding ascii -Value $line
           Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_NATIVE_DRIVER=$wrapper"
+          # A failed test keeps its part of the log (e2e/README.md).
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_NATIVE_DRIVER_LOG=$log"
 
       - name: Run the end-to-end tests (Linux)
         if: runner.os == 'Linux'
@@ -544,14 +546,7 @@ jobs:
       - name: Show the end-to-end logs (on failure)
         if: failure()
         shell: bash
-        run: |
-          if [ ! -d "$B2C_E2E_ARTIFACTS" ]; then exit 0; fi
-          find "$B2C_E2E_ARTIFACTS" -type f \( -name '*.log' -o -name '*.txt' \) -print0 |
-            while IFS= read -r -d '' file; do
-              echo "::group::$file"
-              tail -n 300 "$file"
-              echo "::endgroup::"
-            done
+        run: apps/desktop/e2e/scripts/show-logs.sh "$B2C_E2E_ARTIFACTS"
 
       # The Trusted Types trial (docs/spec/08-security.md §8.8) and the visual diff, as in desktop.yml.
       - name: Write the Trusted Types and visual diff summaries
@@ -695,6 +690,8 @@ jobs:
           $line = '@"{0}" --verbose --append-log "--log-path={1}" %*' -f $env:B2C_E2E_NATIVE_DRIVER, $log
           Set-Content -Path $wrapper -Encoding ascii -Value $line
           Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_NATIVE_DRIVER=$wrapper"
+          # A failed test keeps its part of the log (e2e/README.md).
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_NATIVE_DRIVER_LOG=$log"
 
       # Only the security specs; no spec found is a failure too (Vitest exits with an error).
       - name: Run the E2E security tests (Linux)
@@ -714,14 +711,7 @@ jobs:
       - name: Show the end-to-end logs (on failure)
         if: failure()
         shell: bash
-        run: |
-          if [ ! -d "$B2C_E2E_ARTIFACTS" ]; then exit 0; fi
-          find "$B2C_E2E_ARTIFACTS" -type f \( -name '*.log' -o -name '*.txt' \) -print0 |
-            while IFS= read -r -d '' file; do
-              echo "::group::$file"
-              tail -n 300 "$file"
-              echo "::endgroup::"
-            done
+        run: apps/desktop/e2e/scripts/show-logs.sh "$B2C_E2E_ARTIFACTS"
 
       - name: Write the Trusted Types summary
         if: ${{ !cancelled() }}
@@ -932,6 +922,11 @@ jobs:
             .bench-history/history.json
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Show the benchmark logs (on failure)
+        if: failure()
+        shell: bash
+        run: apps/desktop/e2e/scripts/show-logs.sh "$B2C_E2E_ARTIFACTS"
 
       - name: Upload screenshots and logs
         if: failure()

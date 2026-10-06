@@ -5,12 +5,17 @@
  */
 import {
   appendFileSync,
+  closeSync,
   copyFileSync,
   existsSync,
+  fstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
@@ -76,6 +81,57 @@ export function copyFiles(from: string, to: string, prefix = ''): void {
     }
   }
 }
+
+/** The most of a shared log one test keeps (its end, when it wrote more). */
+export const MAX_LOG_PART_BYTES = 32 * 1024 * 1024;
+
+/** The size of `file` in bytes; 0 when it does not exist yet (a log nothing has written to). */
+export function fileSize(file: string): number {
+  try {
+    return statSync(file).size;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Writes what was appended to the log `file` since it was `from` bytes long (at most
+ * {@link MAX_LOG_PART_BYTES}, the end) to `to`: one test's part of a log the whole run shares,
+ * such as the native WebDriver's. Nothing is written when nothing was appended.
+ */
+export function copyLogSince(file: string, from: number, to: string): void {
+  if (!existsSync(file)) {
+    return;
+  }
+  let fd: number | null = null;
+  try {
+    fd = openSync(file, 'r');
+    const size = fstatSync(fd).size;
+    const start = Math.max(from, size - MAX_LOG_PART_BYTES);
+    if (start >= size) {
+      return;
+    }
+    const part = Buffer.alloc(size - start);
+    let read = 0;
+    while (read < part.length) {
+      const count = readSync(fd, part, read, part.length - read, start + read);
+      if (count === 0) {
+        break;
+      }
+      read += count;
+    }
+    writeFileSync(to, part.subarray(0, read));
+  } catch (error: unknown) {
+    process.stderr.write(`Could not copy the part of ${file}: ${String(error)}\n`);
+  } finally {
+    if (fd !== null) {
+      closeSync(fd);
+    }
+  }
+}
+
+/** The name of a failed test's part of the native driver's log, in its artifact folder. */
+export const NATIVE_DRIVER_LOG_PART = 'native-driver.log';
 
 /** Appends a test's Trusted Types counts to the report in `root`. */
 export function recordTrustedTypes(root: string, entry: TrustedTypesEntry): void {

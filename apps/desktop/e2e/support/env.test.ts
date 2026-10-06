@@ -10,6 +10,7 @@ describe('harnessSettings', () => {
     expect(settings.app).toBe(path.join(REPOSITORY_ROOT, 'target', 'debug', 'blocks2cpp-desktop'));
     expect(settings.tauriDriver).toBe('tauri-driver');
     expect(settings.nativeDriver).toBeNull();
+    expect(settings.nativeDriverLog).toBeNull();
     expect(settings.toolchainDirs).toBe('/usr/bin');
     expect(path.isAbsolute(settings.artifacts)).toBe(true);
   });
@@ -23,6 +24,7 @@ describe('harnessSettings', () => {
         B2C_E2E_NATIVE_DRIVER: path.join(root, 'msedgedriver.exe'),
         B2C_E2E_TOOLCHAIN_DIRS: path.join(root, 'ucrt64', 'bin'),
         B2C_E2E_ARTIFACTS: path.join(root, 'artifacts'),
+        B2C_E2E_NATIVE_DRIVER_LOG: path.join(root, 'artifacts', 'msedgedriver.log'),
       },
       'win32',
     );
@@ -31,6 +33,7 @@ describe('harnessSettings', () => {
     expect(settings.nativeDriver).toBe(path.join(root, 'msedgedriver.exe'));
     expect(settings.toolchainDirs).toBe(path.join(root, 'ucrt64', 'bin'));
     expect(settings.artifacts).toBe(path.join(root, 'artifacts'));
+    expect(settings.nativeDriverLog).toBe(path.join(root, 'artifacts', 'msedgedriver.log'));
     expect(harnessSettings({ B2C_E2E_APP: path.join(root, 'app') }, 'linux').app).toBe(
       path.join(root, 'app'),
     );
@@ -42,6 +45,9 @@ describe('harnessSettings', () => {
       'B2C_E2E_APP must be an absolute path',
     );
     expect(() => harnessSettings({ B2C_E2E_ARTIFACTS: 'out' }, 'linux')).toThrow('absolute');
+    expect(() => harnessSettings({ B2C_E2E_NATIVE_DRIVER_LOG: 'x.log' }, 'linux')).toThrow(
+      'absolute',
+    );
     // An empty variable counts as unset.
     expect(harnessSettings({ B2C_E2E_APP: '' }, 'linux').app).toContain('blocks2cpp-desktop');
   });

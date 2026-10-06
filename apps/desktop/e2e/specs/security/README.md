@@ -56,7 +56,10 @@ has passed. If that control call is not answered, the test fails instead, so a b
 never pass for a dropped message. Every abuse case ([`lib/abuse.ts`](lib/abuse.ts)) names the
 outcome it must have; most are built from the generated valid sample of every command
 (`src-tauri/isolation-tests/samples.generated.json`), so a new command gets its cases without a
-change here.
+change here. The calls reach the page as JSON text that the page parses itself, so every argument
+arrives exactly as written whatever the native WebDriver does with script arguments. The
+`app_quit` cases are sent one at a time after the others: one that got through would end the app,
+and the error then names it.
 
 Two properties of Tauri 2.12 that the cases rely on, found while writing them:
 

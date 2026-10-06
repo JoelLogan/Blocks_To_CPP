@@ -1,12 +1,14 @@
 /**
  * Output flood protection (docs/spec/07-toolchain-build-run.md §7.6.5, 04 §4.5): a program that
  * prints 10,000,000 lines does not freeze the window. The editor answers while the output pours
- * in, and Stop ends a flooding program within 5 s. On Linux the program outpaces the console, which
- * drops what it cannot show and says so with a "… N lines skipped" marker, and the end of the
- * output arrives. On Windows the pseudoconsole throttles the program itself (its pipe fills and the
- * program waits), so the console keeps up, nothing is dropped and the flood would take many
- * minutes: there the test checks the editor and Stop while the program prints. Whether an endless
- * flood falls behind depends on the machine, so that test does not ask for the marker.
+ * in, and Stop ends a flooding program within 5 s. The console drops what it cannot show only when
+ * it falls behind (07 §7.6.5), which a fast machine may never do, so on Linux the test holds the
+ * page busy for a moment while the program prints, as a slow machine would be: the backend then
+ * drops the output the console has not acknowledged and the console shows a "… N lines skipped"
+ * marker, and the end of the output arrives. On Windows the pseudoconsole throttles the program
+ * itself (its pipe fills and the program waits), so nothing is dropped and the flood would take
+ * many minutes: there the test checks the editor and Stop while the program prints. Whether an
+ * endless flood falls behind depends on the machine, so that test does not ask for the marker.
  */
 import path from 'node:path';
 
@@ -38,6 +40,12 @@ const STOP_LIMIT_MS = 5_000;
 const RESPONSIVE_LIMIT_MS = 5_000;
 
 /**
+ * How long the page is held busy while the program prints, so the console cannot acknowledge
+ * output: more than the 4 MiB the backend lets go unacknowledged even on a slow machine.
+ */
+const HOLD_MS = 3_000;
+
+/**
  * How long the 10,000,000 lines may take to go through: about 20 s on a Linux machine with four
  * cores; ConPTY is slower on Windows.
  */
@@ -50,6 +58,17 @@ const FLOOD_TIMEOUT_MS = 120_000;
 async function runFlood(app: FlowApp): Promise<void> {
   await clickTestId(app.driver, 'toolbar-run');
   await waitForConsoleText(app.driver, [START, LINE, END], BUILD_TIMEOUT_MS);
+}
+
+/**
+ * Keeps the page's main thread busy for `ms`, as a slow machine would, so the console neither
+ * writes nor acknowledges output meanwhile.
+ */
+async function holdThePage(app: FlowApp, ms: number): Promise<void> {
+  await app.driver.executeScript(
+    'const end = performance.now() + arguments[0]; while (performance.now() < end) { /* busy */ }',
+    ms,
+  );
 }
 
 /** Waits until the console shows a "… N lines skipped" marker; returns its counts. */
@@ -122,8 +141,9 @@ describe('Output flood protection', () => {
       );
       return;
     }
-    // A marker shows once the console has fallen behind (and, on a machine fast enough to finish
-    // the flood before the console catches up, before the last lines).
+    // The console falls behind while the page is busy; the marker shows once it has caught up
+    // (and, when the flood ends before that, before the last lines).
+    await holdThePage(app, HOLD_MS);
     const counts = await waitForSkippedMarker(app, FLOOD_TIMEOUT_MS);
     expect(counts.every((count) => Number.isSafeInteger(count) && count >= 0)).toBe(true);
     expect(Math.max(...counts)).toBeGreaterThan(0);

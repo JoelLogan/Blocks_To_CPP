@@ -24,6 +24,9 @@ import { type App, type DialogScript, QUIT_TIMEOUT_MS, waitUntilReady } from '..
 import {
   artifactDir,
   copyFiles,
+  copyLogSince,
+  fileSize,
+  NATIVE_DRIVER_LOG_PART,
   recordTrustedTypes,
   writeArtifact,
 } from '../../../support/artifacts';
@@ -338,12 +341,16 @@ async function reportTrustedTypes(app: Launch, test: string): Promise<void> {
 export class FlowSession {
   readonly folders: FlowFolders;
   readonly #test: string;
+  /** How long the native driver's log was when the test started (see `B2C_E2E_NATIVE_DRIVER_LOG`). */
+  readonly #nativeLogStart: number;
   #launches = 0;
   #current: Launch | null = null;
 
   private constructor(test: string, folders: FlowFolders) {
     this.#test = test;
     this.folders = folders;
+    const nativeLog = harnessSettings().nativeDriverLog;
+    this.#nativeLogStart = nativeLog === null ? 0 : fileSize(nativeLog);
   }
 
   /** Creates the test's folders and registers the clean-up when the test finishes. */
@@ -455,6 +462,13 @@ export class FlowSession {
         try {
           copyFiles(path.join(this.folders.profile, 'state', 'logs'), dir, 'app-');
           copyFiles(this.folders.root, dir, 'driver-');
+          if (settings.nativeDriverLog !== null) {
+            copyLogSince(
+              settings.nativeDriverLog,
+              this.#nativeLogStart,
+              path.join(dir, NATIVE_DRIVER_LOG_PART),
+            );
+          }
         } catch (error: unknown) {
           process.stderr.write(`The test's logs could not be saved: ${String(error)}\n`);
         }

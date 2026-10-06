@@ -80,13 +80,14 @@ and that it reports exactly that version, and sets `B2C_E2E_NATIVE_DRIVER`.
 
 ## Settings
 
-| Variable                 | What it is                                                | Default                                                                            |
-| ------------------------ | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `B2C_E2E_APP`            | The app under test (absolute)                             | `target/debug/blocks2cpp-desktop[.exe]` under `CARGO_TARGET_DIR` or the repository |
-| `B2C_E2E_TAURI_DRIVER`   | `tauri-driver`                                            | the one on `PATH`                                                                  |
-| `B2C_E2E_NATIVE_DRIVER`  | `tauri-driver --native-driver` (absolute)                 | none: `tauri-driver` looks on `PATH`                                               |
-| `B2C_E2E_TOOLCHAIN_DIRS` | Where the app looks for g++ (the app's own variable)      | `/usr/bin` on Linux; required elsewhere                                            |
-| `B2C_E2E_ARTIFACTS`      | Screenshots, logs and the Trusted Types report (absolute) | `blocks2cpp-e2e-artifacts` in the system's temporary folder                        |
+| Variable                    | What it is                                                                                                                                 | Default                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `B2C_E2E_APP`               | The app under test (absolute)                                                                                                              | `target/debug/blocks2cpp-desktop[.exe]` under `CARGO_TARGET_DIR` or the repository |
+| `B2C_E2E_TAURI_DRIVER`      | `tauri-driver`                                                                                                                             | the one on `PATH`                                                                  |
+| `B2C_E2E_NATIVE_DRIVER`     | `tauri-driver --native-driver` (absolute)                                                                                                  | none: `tauri-driver` looks on `PATH`                                               |
+| `B2C_E2E_TOOLCHAIN_DIRS`    | Where the app looks for g++ (the app's own variable)                                                                                       | `/usr/bin` on Linux; required elsewhere                                            |
+| `B2C_E2E_ARTIFACTS`         | Screenshots, logs and the Trusted Types report (absolute)                                                                                  | `blocks2cpp-e2e-artifacts` in the system's temporary folder                        |
+| `B2C_E2E_NATIVE_DRIVER_LOG` | A log the native driver appends to for the whole run (absolute); a failed test keeps the part written while it ran, as `native-driver.log` | none                                                                               |
 
 Each test gets its own temporary profile (`B2C_E2E_ROOT`), a dialog script (`B2C_E2E_DIALOGS`; by
 default every native dialog is cancelled) and its own `tauri-driver` on free ports. A failed test

@@ -11,6 +11,8 @@
  *   Default on Linux: `/usr/bin`; required elsewhere.
  * - `B2C_E2E_ARTIFACTS`: where screenshots, logs and the Trusted Types report go. Default: a
  *   `blocks2cpp-e2e-artifacts` folder in the system's temporary folder.
+ * - `B2C_E2E_NATIVE_DRIVER_LOG`: a log the native WebDriver appends to for the whole run (CI's
+ *   verbose msedgedriver). A failed test keeps the part written while it ran. Default: none.
  *
  * `B2C_E2E_ROOT` and `B2C_E2E_DIALOGS` are set by the harness for each test (a fresh profile).
  */
@@ -26,6 +28,7 @@ export const HARNESS_VARIABLES = [
   'B2C_E2E_TAURI_DRIVER',
   'B2C_E2E_NATIVE_DRIVER',
   'B2C_E2E_ARTIFACTS',
+  'B2C_E2E_NATIVE_DRIVER_LOG',
 ] as const;
 
 /** What the harness runs and where it writes. */
@@ -40,6 +43,8 @@ export interface HarnessSettings {
   readonly toolchainDirs: string;
   /** Where artifacts go (absolute). */
   readonly artifacts: string;
+  /** The log the native driver appends to (absolute), or `null` when there is none. */
+  readonly nativeDriverLog: string | null;
 }
 
 /** The harness's settings are not usable. */
@@ -85,6 +90,7 @@ export function harnessSettings(
     toolchainDirs,
     artifacts:
       absolute(env, 'B2C_E2E_ARTIFACTS') ?? path.join(tmpdir(), 'blocks2cpp-e2e-artifacts'),
+    nativeDriverLog: absolute(env, 'B2C_E2E_NATIVE_DRIVER_LOG') ?? null,
   };
 }
 
