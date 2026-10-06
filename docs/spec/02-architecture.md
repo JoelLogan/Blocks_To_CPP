@@ -75,7 +75,8 @@ Blocks_To_CPP/
 │       │   │                       #   native dialogs, window events, logging, capabilities/
 │       │   ├── isolation/          #   isolation hook: generated allowlist + validator
 │       │   └── isolation-tests/    #   node --test tests of the hook
-│       └── e2e/                    # WebDriver end-to-end tests (selenium-webdriver, tauri-driver)
+│       └── e2e/                    # WebDriver end-to-end tests (selenium-webdriver, tauri-driver),
+│                                   #   webview benchmarks (bench/), canvas visual diff (visual/)
 ├── crates/
 │   ├── b2c-ir/                     # shared contracts: IDs, diagnostics, typed text [wasm + native, forbid(unsafe)]
 │   │                               #   leaves, types, SAST, symbol info, source maps
@@ -118,9 +119,12 @@ Blocks_To_CPP/
 │   ├── spec/                       # this specification
 │   ├── adr/                        # architecture decision records
 │   ├── user-guide/                 # end-user documentation (built into a static site)
+│   ├── manual-tests/               # manual test protocols (screen readers, usability)
+│   ├── security/                   # review checklists (custom Blockly fields and tooltips)
 │   └── reference/                  # block reference (generated), diagnostics reference, CLI
 ├── site/                           # specification website generator (GitHub Pages), see site/README.md
-├── tools/                          # repository checks (layering, diagnostics docs, …)
+├── tools/                          # repository checks and scripts (layering, diagnostics docs,
+│                                   #   benchmark comparison, …)
 ├── .github/                        # workflows, dependabot, CODEOWNERS, templates
 ├── Cargo.toml                      # Cargo workspace
 ├── pnpm-workspace.yaml             # pnpm workspace
@@ -510,8 +514,9 @@ happen only in major releases, which means any `0.x` release until 1.0
 
 * `trust.json` and `toolchains.json` describe this machine (canonical paths,
   compiler fingerprints), so on Windows they live in the local, non-roaming
-  folder ([ADR-0007](../adr/0007-backend-crates-and-ipc-contract.md), owner
-  to confirm). On Linux the configuration folder holds both kinds of file.
+  folder ([ADR-0007](../adr/0007-backend-crates-and-ipc-contract.md),
+  accepted by the owner). On Linux the configuration folder holds both kinds
+  of file.
 * The cache root holds `builds/` ([07 §7.5.1](07-toolchain-build-run.md#751-build-directory))
   and `sandbox/`, the working folders of programs that do not run in their
   project folder ([07 §7.6.2](07-toolchain-build-run.md#762-spawning)). The

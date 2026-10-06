@@ -77,13 +77,16 @@
 **In M2:** the toolbox shows Program, Variables, Math, Logic, Text, Control,
 Loops, Input / Output and Functions (*My Blocks*). *Variables* lists the
 symbols in scope at the selected block (with nothing selected, those visible
-at the end of `main`) and offers *Make a variable* (default names in
-[03 §3.6](03-block-language.md#36-symbols-and-scoping)). The continuous flyout
-uses `@blockly/continuous-toolbox` only if it passes the dependency policy
-([08 §8.9](08-security.md#89-supply-chain)) and supports the dynamic
-categories with Blockly 12.5; otherwise M2 uses Blockly's category toolbox and
-records the difference. *Libraries* comes with library packs (M4), *Show
-advanced blocks* and toolbox search in M3.
+at the end of `main`) and offers *Make a variable*; *Loops* gives its counted
+loop the first counter name that is free there, and *My Blocks* follows the
+functions as they are defined (default names in
+[03 §3.6](03-block-language.md#36-symbols-and-scoping)). The continuous
+flyout is `@blockly/continuous-toolbox` 7.0.9, the Blockly team's plugin and
+its last release for Blockly 12: it passes the dependency policy
+([08 §8.9](08-security.md#89-supply-chain)) and shows the dynamic categories
+in the same scrolling flyout, so M2 needs no fallback to Blockly's category
+toolbox. *Libraries* comes with library packs (M4), *Show advanced blocks* and
+toolbox search in M3.
 
 ## 4.3 Code panel (live C++)
 

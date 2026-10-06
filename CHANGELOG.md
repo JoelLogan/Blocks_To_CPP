@@ -192,3 +192,23 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   driver that exits at once fails the test at once with its output; a
   refused block insertion leaves no undo step; and the msedgedriver download
   is checked against Microsoft's exact signer and the exact version.
+- End-to-end flows on Linux and Windows: Restricted Mode and trust, save and
+  reload, crash recovery, Stop, exit decoding, closing the app while a
+  program runs, a 10,000,000-line output flood, the toolchain setup page,
+  external changes, the clipboard, settings after a restart, the variable
+  menus, the connection checker, selecting a block from its code, drags from
+  every toolbox category, and a build and a run with input.
+- Nightly end-to-end security tests in the real app on Linux and Windows:
+  every file of the malicious-project suite, build and run refused in
+  Restricted Mode, IPC abuse and messages around the isolation frame, markup
+  shown as text, blocked navigation and new windows, and trust changes made
+  outside the app.
+- Benchmarks with a 10% regression gate: the compiler pipeline at 1,000
+  blocks (criterion), and in the app the cold start, the live preview at
+  1,000 blocks and dragging in a 5,000-block workspace; a visual diff of the
+  block canvas against a baseline per system; and nightly end-to-end,
+  security and benchmark jobs on both systems.
+- The user guide's getting-started page (from the first start to a guessing
+  game built from blocks), and the protocols of M2's manual checks: screen
+  readers, and a usability session with first-time users together with the
+  review that nothing of later milestones has an entry point in M2.

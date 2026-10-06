@@ -4,7 +4,31 @@
 
 ## 10.1 Milestones
 
-> **Implementation status (2026-10-04).** **M1** is done: loading and
+> **Implementation status (2026-10-06).** **M2** is in progress: its
+> automated exit criteria are met, and its manual checks are pending. The
+> desktop editor ([apps/desktop](../../apps/desktop/README.md),
+> [getting started](../user-guide/getting-started.md)) builds and runs block
+> programs with the user's g++ on Linux and Windows: blocks and a toolbox
+> generated from the catalog, a live C++ preview with two-way highlighting,
+> problems on blocks and in a list, the setup page, a console with Stop and
+> exit decoding, projects with autosave and crash recovery, workspace trust
+> and Restricted Mode, the validated clipboard and the reload of files
+> changed outside the app, behind the hardened IPC contract of 36 commands.
+> The guessing-game exit test, assembled from the *Empty* template, passes in
+> CI on both systems, and CI is green on both through commit `f7204c8`. The
+> last additions (the breadth E2E flows, the visual diff of the canvas, and
+> the nightly E2E security and benchmark jobs) pass on Linux; their Windows
+> runs are not yet confirmed. M2 is done once these are recorded: the
+> usability session with at least three first-time users
+> ([protocol](../manual-tests/m2-usability.md)), the NVDA and Orca pass
+> ([checklist](../manual-tests/m2-accessibility.md)), the review at the
+> milestone demo that nothing of M3–M6 has an entry point in the app (first
+> run on the code, recorded in the usability protocol), and green Windows
+> runs of the last additions. The visual diff's baselines and the
+> benchmarks' history build up from the first CI runs
+> ([09 §9.3](09-quality-and-delivery.md#93-continuous-integration)).
+>
+> **M1** is done: loading and
 > validating projects, the block catalog, analysis, C++ generation with source
 > maps, toolchain discovery and probing, building with g++ and running
 > programs, all behind the `b2c` command-line tool
@@ -18,7 +42,7 @@
 > start-checked in CI on Linux and Windows, and CI checks the crate layering
 > rules. Three M0 items moved: branch protection waits until the `main` branch
 > is created at the end of 1.0 (owner's decision), and the `packages/`
-> skeletons and markdownlint come with M2, where they are first needed.
+> skeletons and markdownlint came with M2, where they were first needed.
 
 Each milestone ends with a demo, a threat-model review
 ([08 §8.13](08-security.md#813-continuous-security-process)), a manual test
@@ -120,7 +144,9 @@ readers, high contrast, the toolchain matrix) and updated documentation.
 * Classes (inheritance, virtual, operators, special members), lambdas,
   memory and smart pointers, templates and constraints, concurrency.
 * Library-pack system (the `std` pack complete), library profiles, generic
-  member block, Raw C++ blocks.
+  member block, Raw C++ blocks. First decided: whether building a project
+  created in the app asks for trust once it holds Raw C++ or libraries
+  ([08 §8.3.1](08-security.md#831-how-trust-is-decided)).
 * Machine-local extra compiler and linker flags (one flag per row, checked
   against the denylist, each change confirmed in a native dialog the backend
   raises) and the environment pass-through list
@@ -138,7 +164,8 @@ readers, high contrast, the toolchain matrix) and updated documentation.
 * GDB debugger with block stepping. Trace (glow) mode. Runtime error mapping.
 * Accessibility audit and fixes, i18n infrastructure, and performance targets
   (N2–N5) met.
-* User guide and tutorials, and the offline help system.
+* User guide and tutorials (beyond M2's getting-started page), and the
+  offline help system.
 * Find references, back/forward history and bookmarks. Collapse to
   signatures. A command palette and remappable shortcuts. Focus and
   Presentation modes. Dock layout (swap, split, remembered). Light, Dark and
@@ -189,7 +216,7 @@ drop glib 0.18 and its tracked advisory (`osv-scanner.toml`).
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| Blockly performance in WebKitGTK on large workspaces | Medium | Medium | Early benchmarks in M2, per-module canvases, collapse/virtualisation, Web Worker analysis. Fallback: recommend splitting modules. |
+| Blockly performance in WebKitGTK on large workspaces | Medium | Medium | Benchmarks with a regression gate since M2 ([09 §9.2](09-quality-and-delivery.md#92-testing-strategy)). The first readings, taken locally on Linux under a virtual display without a GPU, are above N3 and N4: the preview task at 1,000 blocks about 120 ms at p95 (the native pipeline alone about 19 ms), and dragging at 5,000 blocks about 50 ms per frame at p95. The CI baselines decide whether the Web Worker ([02 §2.6](02-architecture.md#26-process-model-and-concurrency)) comes before M5. Also per-module canvases and collapse/virtualisation. Fallback: recommend splitting modules. |
 | Rendering differences between WebView2 and WebKitGTK | Medium | Low | E2E on both, a visual-diff test of the core canvas, avoid cutting-edge CSS |
 | Type-checker false positives frustrate users | Medium | High | Gradual typing; only report certain errors; defer to g++; a differential test oracle |
 | Windows toolchain variety (broken PATHs, mixed runtimes) | High | Medium | Strong probing, health checks, clear guided setup, a wide manual test matrix |
