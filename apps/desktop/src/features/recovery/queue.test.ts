@@ -229,6 +229,7 @@ describe.skipIf(!CORE_BUILT)('autosave and saving', () => {
     expect(harness.ipc.recoverySave).toHaveBeenCalledTimes(2);
     expect(order).toEqual(['recovery_save', 'project_save', 'recovery_save']);
   });
+
   it('lets a reload wait for the snapshot being written, and writes none while it reloads', async () => {
     await openChanged();
     const order: string[] = [];

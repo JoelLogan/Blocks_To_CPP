@@ -282,10 +282,10 @@ export class EditorSession {
     try {
       Blockly.common.setSelected(target);
       if (options.center === true) {
-        this.workspace.centerOnBlock(target.id, true);
         // The module may have just been shown, and its view still settles once Blockly has
         // rendered it: that settle centres on the block again.
         this.shownView.centreOn = target.id;
+        this.workspace.centerOnBlock(target.id, true);
       }
     } catch (error: unknown) {
       console.warn('The block could not be selected', error);

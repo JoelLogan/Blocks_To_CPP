@@ -326,6 +326,37 @@ describe('Reload', () => {
     expect(useAppStore.getState().project?.canonicalText).toBe('{"reloaded":true}');
   });
 
+  it('explains a failed reload only once the reload has left the queue', async () => {
+    uninstall();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    harness.ipc.projectReload.mockRejectedValueOnce(ipcFailure({ code: 'io', kind: 'other' }));
+    // The queue pauses autosave while a reload runs; an alert shown inside it would keep autosave
+    // paused for as long as it is open.
+    let inQueue = false;
+    const reloadWith = vi.fn(async (task: () => Promise<boolean>) => {
+      inQueue = true;
+      try {
+        return await task();
+      } finally {
+        inQueue = false;
+      }
+    });
+    uninstall = installExternalChangeFeature(harness.ctx, {
+      openInEditor,
+      project: { reloadWith },
+    }).uninstall;
+    changedOnDisk();
+    await answerChoice(harness.dialogs, 'reload');
+    const alert = await nextDialog(harness.dialogs);
+    if (alert.kind !== 'alert') {
+      throw new Error(`expected an alert, got ${alert.kind}`);
+    }
+    expect(reloadWith).toHaveBeenCalledOnce();
+    expect(inQueue).toBe(false);
+    alert.settle();
+    await settled();
+  });
+
   it('does not reload a project that was replaced while the reload waited for its turn', async () => {
     uninstall();
     let turn: () => void = () => undefined;

@@ -9,10 +9,11 @@
  *   that is already in the latest snapshot is not written again.
  * - **One call at a time.** A snapshot asked for while one is being written follows it, with the
  *   text as it is then, so the backend never receives them out of order.
- * - **Never across a save.** The backend deletes the snapshot when the project is saved, so a
- *   snapshot written after that would offer older work as unsaved after a crash, and roll the
- *   backend's latest document back. No snapshot starts while a save runs (`isPaused`), and a save
- *   waits for the snapshot being written ({@link Autosave.idle}) before it sends the project.
+ * - **Never across a save or a reload.** The backend deletes the snapshot when the project is
+ *   saved or reloaded, so a snapshot written after that would offer older or discarded work as
+ *   unsaved after a crash, and roll the backend's latest document back. No snapshot starts while a
+ *   save or reload runs (`isPaused`), and both wait for the snapshot being written
+ *   ({@link Autosave.idle}) before they send the project.
  * - **Quiet failures.** Autosave runs in the background: a failure is logged by its code (once per
  *   run of the same failure, never with project content) and retried at the next tick; the user
  *   is not interrupted every 30 seconds.
@@ -40,8 +41,8 @@ export interface AutosaveDeps {
   /** The time between snapshots, in milliseconds ({@link AUTOSAVE_INTERVAL_MS} by default). */
   readonly intervalMs?: number;
   /**
-   * Whether snapshots wait for now: while the project lifecycle saves (its write deletes the
-   * snapshot). A snapshot asked for meanwhile is not written; the next tick or blur writes it if
+   * Whether snapshots wait for now: while the project lifecycle saves or reloads (the backend then
+   * deletes the snapshot). A snapshot asked for meanwhile is not written; the next tick or blur writes it if
    * the changes are still unsaved. Never paused by default.
    */
   readonly isPaused?: () => boolean;

@@ -22,6 +22,7 @@
  */
 import type { Handle, ProjectReloadResponse } from '@blocks2cpp/ipc-types';
 
+import type { AlertOptions } from '../../app/dialogs';
 import type { FeatureContext } from '../../app/features';
 import type { ProjectState } from '../../app/store';
 import {
@@ -48,6 +49,16 @@ export interface ExternalChangeOptions {
 }
 
 /** How a reload ended. */
+/**
+ * How a reload ended, with the alert that says why it failed. The alert is shown only once the
+ * reload has left the project queue: the queue pauses autosave while a reload runs, and the
+ * blocks a failed reload keeps must get their snapshot while the alert is open.
+ */
+interface ReloadResult {
+  readonly outcome: ReloadOutcome;
+  readonly alert: AlertOptions | null;
+}
+
 type ReloadOutcome =
   /** Shown. */
   | 'reloaded'
@@ -224,25 +235,28 @@ export class ExternalChangeController {
    * open.
    */
   private async reloadInQueue(handle: Handle): Promise<ReloadOutcome> {
-    const reloadNow = (): Promise<ReloadOutcome> => {
+    const failed: ReloadResult = { outcome: 'failed', alert: null };
+    const reloadNow = (): Promise<ReloadResult> => {
       const project = this.openProject(handle);
-      return project === null || this.isDisposed()
-        ? Promise.resolve('failed')
-        : this.reload(project);
+      return project === null || this.isDisposed() ? Promise.resolve(failed) : this.reload(project);
     };
+    let result = failed;
     if (this.project === null) {
-      return reloadNow();
+      result = await reloadNow();
+    } else {
+      await this.project.reloadWith(async () => {
+        result = await reloadNow();
+        return result.outcome === 'reloaded';
+      });
     }
-    let outcome: ReloadOutcome = 'failed';
-    await this.project.reloadWith(async () => {
-      outcome = await reloadNow();
-      return outcome === 'reloaded';
-    });
-    return outcome;
+    if (result.alert !== null) {
+      await this.ctx.dialogs.alert(result.alert);
+    }
+    return result.outcome;
   }
 
   /** *Reload*: reads the file again and shows it; see the module comment. */
-  private async reload(project: ProjectState): Promise<ReloadOutcome> {
+  private async reload(project: ProjectState): Promise<ReloadResult> {
     const { handle } = project;
     const name = shownName(project.document.project.name);
     let response: ProjectReloadResponse;
@@ -256,21 +270,24 @@ export class ExternalChangeController {
         ipcError?.code === 'notFound' ||
         (ipcError?.code === 'io' && ipcError.kind === 'notFound')
       ) {
-        return 'gone';
+        return { outcome: 'gone', alert: null };
       }
       // `unknownHandle`: closed meanwhile; `noPath`: it has no file. Nothing to reload either way.
       if (ipcError?.code !== 'unknownHandle' && ipcError?.code !== 'noPath') {
-        await this.ctx.dialogs.alert({
-          title: `“${name}” could not be reloaded`,
-          message: describeReloadError(ipcError, code),
-        });
+        return {
+          outcome: 'failed',
+          alert: {
+            title: `“${name}” could not be reloaded`,
+            message: describeReloadError(ipcError, code),
+          },
+        };
       }
-      return 'failed';
+      return { outcome: 'failed', alert: null };
     }
 
     const now = this.openProject(handle);
     if (now === null) {
-      return 'failed';
+      return { outcome: 'failed', alert: null };
     }
     let result: OpenDocumentResult;
     try {
@@ -286,12 +303,14 @@ export class ExternalChangeController {
     } catch (error: unknown) {
       console.error('The compiler core could not show a reloaded project', error);
       await this.keepEditorVersion(handle, response);
-      await this.ctx.dialogs.alert({
-        title: `“${name}” could not be reloaded`,
-        message:
-          'The Blocks2Cpp compiler core stopped, so the file could not be shown. Your blocks were not changed; they now count as unsaved changes, and saving them replaces the file. Restart Blocks2Cpp to see the file.',
-      });
-      return 'failed';
+      return {
+        outcome: 'failed',
+        alert: {
+          title: `“${name}” could not be reloaded`,
+          message:
+            'The Blocks2Cpp compiler core stopped, so the file could not be shown. Your blocks were not changed; they now count as unsaved changes, and saving them replaces the file. Restart Blocks2Cpp to see the file.',
+        },
+      };
     }
     if (!result.ok) {
       console.warn(
@@ -299,13 +318,15 @@ export class ExternalChangeController {
         result.diagnostics.map((diagnostic) => diagnostic.code).join(', '),
       );
       await this.keepEditorVersion(handle, response);
-      await this.ctx.dialogs.alert({
-        title: `“${name}” could not be reloaded`,
-        message: `Blocks2Cpp found these problems in the file:\n${problemLines(result.diagnostics).join('\n')}\nYour blocks were not changed; they now count as unsaved changes, and saving them replaces the file.`,
-      });
-      return 'failed';
+      return {
+        outcome: 'failed',
+        alert: {
+          title: `“${name}” could not be reloaded`,
+          message: `Blocks2Cpp found these problems in the file:\n${problemLines(result.diagnostics).join('\n')}\nYour blocks were not changed; they now count as unsaved changes, and saving them replaces the file.`,
+        },
+      };
     }
-    return 'reloaded';
+    return { outcome: 'reloaded', alert: null };
   }
 
   /**

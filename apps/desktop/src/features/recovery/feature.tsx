@@ -57,9 +57,9 @@ export interface RecoveryFeatureOptions extends RecoveryControllerOptions {
   /** The time between snapshots, in milliseconds (30 s by default). */
   readonly intervalMs?: number;
   /**
-   * The project lifecycle's queue: restores run in it, autosave pauses while it saves or reloads,
-   * and a save or reload waits for a snapshot being written. Without it nothing can be restored (an error is logged)
-   * and autosave does not coordinate with saves.
+   * The project lifecycle's queue: restores run in it, autosave pauses while it saves or
+   * reloads, and a save or reload waits for a snapshot being written. Without it nothing can be
+   * restored (an error is logged) and autosave does not coordinate with saves.
    */
   readonly project?: ProjectQueue | null;
 }

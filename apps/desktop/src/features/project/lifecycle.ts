@@ -17,9 +17,9 @@
  *
  * Operations run one at a time, in the order they were asked for, so a close never overtakes a
  * save. Other features' operations on the open project take their place in the same queue
- * (./link.ts): restoring a recovery snapshot and reloading after an outside change. A save waits
- * for an autosave snapshot that is being written before it sends the project, so the backend never
- * gets a snapshot after the save that deleted it. Backend errors become messages for the user;
+ * (./link.ts): restoring a recovery snapshot and reloading after an outside change. A save or a
+ * reload waits for an autosave snapshot that is being written before it sends the project, so the
+ * backend never gets a snapshot after the save or reload that deleted it. Backend errors become messages for the user;
  * only bugs reject.
  */
 import {
@@ -598,7 +598,7 @@ export class ProjectLifecycle implements ProjectQueue {
         Promise.resolve()
           .then(wait)
           .catch((error: unknown) => {
-            console.warn('A save waited in vain for another write', error);
+            console.warn('A save or reload waited in vain for another write', error);
           }),
       ),
     );
