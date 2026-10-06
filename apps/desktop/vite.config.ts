@@ -32,9 +32,38 @@ function blocklyMedia(): Plugin {
   };
 }
 
+/**
+ * Stops with instructions when the WebAssembly core has not been built, instead of the bundler's
+ * bare "failed to resolve import": `#glue` and `#pkg-bytes` point into the core's `pkg/`, which
+ * is built, not committed, so a fresh clone has none.
+ */
+function wasmCoreBuilt(): Plugin {
+  return {
+    name: 'blocks2cpp:wasm-core-built',
+    enforce: 'pre',
+    resolveId: {
+      filter: { id: /^#(?:glue|pkg-bytes)$/ },
+      async handler(source, importer, options) {
+        const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
+        if (resolved === null) {
+          this.error(
+            'The WebAssembly core of the editor has not been built ' +
+              `(${source} points into packages/b2c-core-wasm/pkg/, which is not committed). ` +
+              'Build it from the repository root with ' +
+              '`pnpm --filter @blocks2cpp/b2c-core-wasm build` (set B2C_SKIP_WASM_OPT=1 without ' +
+              "binaryen's wasm-opt), then run this again. It needs the wasm-bindgen CLI of the " +
+              'version in Cargo.lock: see packages/b2c-core-wasm/README.md#build.',
+          );
+        }
+        return resolved;
+      },
+    },
+  };
+}
+
 // https://vite.dev/config/ and https://v2.tauri.app/start/frontend/vite/
 export default defineConfig({
-  plugins: [react(), blocklyMedia()],
+  plugins: [react(), blocklyMedia(), wasmCoreBuilt()],
   // Keep Rust compiler errors from `tauri dev` visible.
   clearScreen: false,
   server: {

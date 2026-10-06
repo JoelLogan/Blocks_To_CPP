@@ -373,7 +373,12 @@ no webview libraries. Name the crate (`-p blocks2cpp-desktop`) to build the app.
 
 ## Build
 
+Build the WebAssembly core first, as for `dev` ([Develop](#develop)); without it the frontend
+build stops with _"The WebAssembly core of the editor has not been built"_. From the repository
+root:
+
 ```sh
+pnpm --filter @blocks2cpp/b2c-core-wasm build                    # once, and after Rust changes
 pnpm desktop:build                                               # release build and installers
 pnpm --filter @blocks2cpp/desktop tauri build --no-bundle        # the executable only
 pnpm --filter @blocks2cpp/desktop tauri build --debug --no-bundle
