@@ -397,7 +397,7 @@ could send back ([02 §2.5](02-architecture.md#25-ipc-surface)).
   hash becomes the baseline for detecting outside changes.
 * **Autosave** writes recovery snapshots to the recovery directory (never next
   to the project) every 30 s while dirty. Snapshots are deleted on a clean
-  save or close.
+  save, a reload (which discards the unsaved changes) or close.
 * **External change detection.** If the file changes on disk while open
   (detected by a file watcher and a hash check before save), the user chooses
   *Reload* or *Keep mine (save as…)*.
@@ -432,7 +432,8 @@ running app instance:
   Mode, and is never taken for a project that was never saved.
 * Each project has one snapshot per instance. Its `snapshotId`, `sn_` + 32 hex
   digits, stays the same until the snapshot is deleted, which happens when the
-  project is saved cleanly or closed. An instance keeps at most 64 snapshots.
+  project is saved cleanly, reloaded or closed. An instance keeps at most 64
+  snapshots.
 * Every file is written atomically (§5.10 above) with mode `0600`. A
   snapshot is replaced as a pair: the current document is first renamed to
   `<snapshotId>.prev.b2c`, then the new document is written, then the new
@@ -453,8 +454,11 @@ running app instance:
   had unsaved changes stay for the next start.
 * A restored snapshot opens as a project bound to its `boundPath` (or to no
   path) and is trusted only under the rules of
-  [08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode). The app
-  then writes the restored project's own snapshot and discards the old one.
+  [08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode), with the
+  trust record of `boundPath` itself: when that path now resolves to another
+  one (a link was put in place of the file or of a folder above it), it
+  restores in Restricted Mode. The app then writes the restored project's
+  own snapshot and discards the old one.
 * Project content never goes into logs.
 
 **External changes.** For each open project with a file, the backend watches
@@ -464,9 +468,10 @@ differs from the baseline counts as a change. A deleted or renamed file
 counts as changed (`deleted: true`), and then *Reload* is not available. The
 frontend is told through the `projectChangedOnDisk` app event
 ([02 §2.5](02-architecture.md#25-ipc-surface)), once per change. The app's own
-saves update the baseline first, so they never notify. `project_save` checks
-the hash again before writing and refuses with `changedOnDisk` when it
-differs; M2 has no *overwrite anyway*.
+saves update the baseline first, so they never notify, and a save or reload
+that finishes after the project was closed does not watch its file again.
+`project_save` checks the hash again before writing and refuses with
+`changedOnDisk` when it differs; M2 has no *overwrite anyway*.
 
 ## 5.11 Content hash
 

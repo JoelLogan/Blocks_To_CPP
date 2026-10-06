@@ -69,6 +69,13 @@ thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+# Windows only: the trust dialog through the dialog plugin's own library directly
+# (docs/spec/08-security.md §8.3.1 allows it), so its first and default button can be
+# "Stay in Restricted Mode". Already in the lockfile through tauri-plugin-dialog, with
+# the same features: no new code is compiled.
+rfd = { version = "0.16.0", default-features = false, features = ["common-controls-v6"] }
+
 [dev-dependencies]
 # The mock runtime (`tauri::test`), for command and channel tests without a webview.
 tauri = { version = "2.12.0", default-features = false, features = ["test"] }

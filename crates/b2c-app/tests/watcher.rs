@@ -430,3 +430,61 @@ fn closing_save_as_and_shutdown_stop_the_watching() {
     std::fs::write(&new_path, renamed(&moved.document, "After shutdown")).unwrap();
     assert_quiet(&sink, 1);
 }
+
+/// A save, reload or *Save as* that finishes after a close of the same
+/// project (the backend runs commands concurrently) does not watch the
+/// closed project again: outside changes to its file are never reported for
+/// it. The close comes at different points of the save's write.
+#[test]
+fn a_save_or_reload_racing_a_close_does_not_watch_the_closed_project() {
+    use std::sync::Barrier;
+
+    let app = TestApp::new();
+    let sink = app_sink();
+    app.backend.app_subscribe(sink.clone());
+    let base = example_text("guessing_game");
+    let mut written = Vec::new();
+    for attempt in 0..45_u64 {
+        let path = app.write(&format!("race{attempt}.b2c"), base.as_bytes());
+        let target = app.projects().join(format!("race{attempt}-as.b2c"));
+        let opened = app.open(&path);
+        if attempt % 3 == 2 {
+            app.dialogs.will_save_as(&target);
+        }
+        let backend = Arc::clone(&app.backend);
+        let handle = opened.handle.clone();
+        let document = renamed(&opened.document, &format!("Saved {attempt}"));
+        let barrier = Arc::new(Barrier::new(2));
+        let worker = {
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                match attempt % 3 {
+                    0 => backend
+                        .project_save(ProjectSaveRequest { handle, document })
+                        .map(drop),
+                    1 => backend.project_reload(ProjectReloadRequest { handle }).map(drop),
+                    _ => backend
+                        .project_save_as_dialog(ProjectSaveAsDialogRequest { handle, document })
+                        .map(drop),
+                }
+            })
+        };
+        barrier.wait();
+        std::thread::sleep(Duration::from_micros((attempt / 3 % 15) * 150));
+        app.backend
+            .project_close(ProjectCloseRequest {
+                handle: opened.handle,
+            })
+            .unwrap();
+        // The command may finish or find the project closed; both are fine.
+        let _ = worker.join().unwrap();
+        written.extend([path, target]);
+    }
+    std::thread::sleep(QUIET);
+    let before = changes(&sink).len();
+    for path in &written {
+        std::fs::write(path, renamed(&base, "Changed after the close")).unwrap();
+    }
+    assert_quiet(&sink, before);
+}

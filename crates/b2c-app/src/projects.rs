@@ -77,7 +77,9 @@ pub(crate) struct ProjectEntry {
     pub(crate) trust: HandleTrust,
     /// Whether the file has the Mark of the Web.
     pub(crate) mark_of_the_web: bool,
-    /// Whether it has unsaved changes (`project_set_dirty`).
+    /// Whether it has unsaved changes: what `project_set_dirty` last
+    /// reported (open, new and reload make it `false`, a restore `true`;
+    /// saving leaves it alone).
     pub(crate) dirty: bool,
     /// When `trust_grant` was last called for it (rate limit).
     pub(crate) last_trust_grant: Option<Instant>,
@@ -392,11 +394,14 @@ impl Backend {
 
     /// `project_reload`: reads the project's file again (after it changed
     /// outside the app), with the full open flow, trust re-check included.
-    /// The project's unsaved changes are discarded.
+    /// The project's unsaved changes are discarded, and so is their recovery
+    /// snapshot (a crash afterwards must not offer them again); the project
+    /// has no unsaved changes then.
     ///
     /// # Errors
     /// [`IpcError::UnknownHandle`], [`IpcError::NoPath`] for a project that was
-    /// never saved, and the errors of opening.
+    /// never saved, and the errors of opening (the project and its snapshot
+    /// are then left as they were).
     pub fn project_reload(&self, request: ProjectReloadRequest) -> Result<ProjectReloadResponse, IpcError> {
         let _span = command_span("project_reload");
         let entry_ref = self.projects.get(&request.handle)?;
@@ -411,11 +416,14 @@ impl Backend {
         entry.created_here = false;
         entry.mark_of_the_web = loaded.mark_of_the_web;
         entry.dirty = false;
+        // Under the project's lock, as `recovery_save` writes it: an autosave
+        // of the discarded changes comes wholly before this, or after it (it
+        // then holds changes made after the reload).
+        self.discard_snapshot_of(&request.handle);
         let trust = entry.trust.to_dto(entry.mark_of_the_web);
         let project_name = entry.latest_document.project.name.clone();
         drop(entry);
-        self.watchers
-            .watch(&request.handle, &loaded.path, loaded.baseline);
+        self.watch_open(&request.handle, &loaded.path, loaded.baseline);
         self.touch_recent(&loaded.path, &project_name);
         Ok(ProjectReloadResponse {
             document: text,
@@ -432,6 +440,12 @@ impl Backend {
     /// baseline, the recovery snapshot is deleted, and for a trusted project
     /// the trust record follows the new content (the first save of a project
     /// created here records it).
+    ///
+    /// The unsaved-changes flag is left as `project_set_dirty` last reported
+    /// it (`docs/spec/02-architecture.md` §2.6): the editor may have changed
+    /// while the save was on its way, and only the frontend knows whether
+    /// what it holds now is what was saved. It reports `false` itself after
+    /// a save that left nothing unsaved.
     ///
     /// # Errors
     /// The document's errors (`payloadTooLarge`, `invalidDocument`,
@@ -460,9 +474,8 @@ impl Backend {
         self.record_trust_after_save(&mut entry, &document, &path);
         entry.set_latest(document, bytes.len());
         entry.baseline_sha256 = Some(hash);
-        entry.dirty = false;
         drop(entry);
-        self.watchers.watch(&request.handle, &path, hash);
+        self.watch_open(&request.handle, &path, hash);
         self.discard_snapshot_of(&request.handle);
         Ok(ProjectSaveResponse {
             saved_at,
@@ -503,7 +516,8 @@ impl Backend {
     /// `project_save_as_dialog`: asks for a new file in the native save
     /// dialog, writes the document there and rebinds the project to it. The
     /// old file is not touched. A trusted project gets trust recorded for the
-    /// new file; a restricted one stays restricted.
+    /// new file; a restricted one stays restricted. As with `project_save`,
+    /// the unsaved-changes flag stays as `project_set_dirty` last reported it.
     ///
     /// # Errors
     /// The document's errors before anything else; [`IpcError::UnknownHandle`];
@@ -561,11 +575,10 @@ impl Backend {
         entry.baseline_sha256 = Some(hash);
         entry.trust = trust;
         entry.created_here = trust == HandleTrust::CreatedHere;
-        entry.dirty = false;
         let project_name = entry.latest_document.project.name.clone();
         drop(entry);
         self.watchers.unwatch(&request.handle);
-        self.watchers.watch(&request.handle, &path, hash);
+        self.watch_open(&request.handle, &path, hash);
         self.touch_recent(&path, &project_name);
         self.discard_snapshot_of(&request.handle);
         Ok(ProjectSaveAsDialogResponse::Ok(ProjectSavedAs {
@@ -595,8 +608,25 @@ impl Backend {
         Ok(Empty {})
     }
 
+    /// Watches the project's file again after a save, *Save as* or reload,
+    /// unless the project was closed meanwhile. These commands watch after
+    /// releasing the project's lock, and `project_close` takes no project
+    /// lock: it removes the handle and only then stops watching it. So
+    /// either the close stops watching after this watch, or the check here
+    /// finds the handle gone and stops watching it itself; a closed project
+    /// is never watched again.
+    fn watch_open(&self, handle: &Handle, path: &Path, baseline: [u8; 32]) {
+        self.watchers.watch(handle, path, baseline);
+        if self.projects.get(handle).is_err() {
+            self.watchers.unwatch(handle);
+        }
+    }
+
     /// `project_set_dirty`: records whether the project has unsaved changes,
-    /// so closing the window asks first.
+    /// so closing the window asks first and shutdown keeps the project's
+    /// recovery snapshot. The flag is only what this command last reported
+    /// (`docs/spec/02-architecture.md` §2.6): opening, creating, reloading
+    /// and restoring set it, saving never changes it.
     ///
     /// # Errors
     /// [`IpcError::UnknownHandle`].

@@ -13,8 +13,8 @@ pub(crate) const MAIN_WINDOW: &str = "main";
 
 /// Opens the editor window from its entry in `tauri.conf.json` (which has
 /// `"create": false`), adding the navigation rules that the configuration
-/// file cannot express: the window may only show the app itself, and it can
-/// never open another window.
+/// file cannot express: the window may only show the app itself, at this
+/// platform's app origin, and it can never open another window.
 pub(crate) fn open_main_window<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
     let config = app.config();
     let window = config
@@ -36,17 +36,26 @@ pub(crate) fn open_main_window<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Whether `url` belongs to the app's own frontend: the bundled assets
-/// (`tauri://localhost` on Linux, `http://tauri.localhost` on Windows) or, in
-/// development, the dev server. Everything else, such as a link to a web
-/// page, is refused; help links open in the system browser through
-/// `open_help_link`.
+/// The origin of the bundled frontend on this platform: Tauri serves it as
+/// `http://tauri.localhost` on Windows (`WebView2`, `useHttpsScheme` off) and
+/// as `tauri://localhost` elsewhere (`WebKitGTK`).
+const APP_ORIGIN: (&str, &str) = if cfg!(windows) {
+    ("http", "tauri.localhost")
+} else {
+    ("tauri", "localhost")
+};
+
+/// Whether `url` belongs to the app's own frontend: the bundled assets, at
+/// exactly this platform's app origin ([`APP_ORIGIN`]), or, in development,
+/// the dev server. Everything else is refused (`docs/spec/08-security.md`
+/// §8.8): a link to a web page, and also the other platform's spelling of
+/// the app origin, which here is not the app but a network address (on Linux
+/// `http://tauri.localhost` is whatever listens on the loopback interface;
+/// on Windows `https://tauri.localhost` is not served by the app). Help links
+/// open in the system browser through `open_help_link`.
 pub(crate) fn is_app_url(url: &Url, dev_url: Option<&Url>) -> bool {
-    let bundled = match url.scheme() {
-        "tauri" => url.host_str() == Some("localhost"),
-        "http" | "https" => url.host_str() == Some("tauri.localhost"),
-        _ => false,
-    };
+    let (scheme, host) = APP_ORIGIN;
+    let bundled = url.scheme() == scheme && url.host_str() == Some(host) && url.port().is_none();
     bundled || dev_url.is_some_and(|dev| dev.origin() == url.origin())
 }
 
@@ -88,26 +97,51 @@ mod tests {
         Url::parse(text).unwrap()
     }
 
-    #[test]
-    fn bundled_frontend_is_allowed() {
-        assert!(is_app_url(&url("tauri://localhost/index.html"), None));
-        assert!(is_app_url(&url("http://tauri.localhost/"), None));
-        assert!(is_app_url(&url("https://tauri.localhost/assets/app.js"), None));
+    /// This platform's app origin, and the other platform's (which is not
+    /// the app here).
+    const fn origins() -> (&'static str, &'static str) {
+        if cfg!(windows) {
+            ("http://tauri.localhost", "tauri://localhost")
+        } else {
+            ("tauri://localhost", "http://tauri.localhost")
+        }
     }
 
     #[test]
+    fn bundled_frontend_is_allowed() {
+        let (app, _) = origins();
+        for path in ["/", "/index.html", "/assets/app.js?v=1#top"] {
+            let page = format!("{app}{path}");
+            assert!(is_app_url(&url(&page), None), "{page} should be allowed");
+        }
+    }
+
+    /// 08 §8.8: only this platform's app origin is the app. The other
+    /// platform's spelling, and the same host under another scheme or port,
+    /// are network addresses (or nothing) here.
+    #[test]
     fn other_sites_are_refused() {
+        let (_, other_platform) = origins();
         for other in [
+            other_platform,
+            "https://tauri.localhost/",
+            "https://tauri.localhost/assets/app.js",
+            "http://tauri.localhost:8080/",
+            "tauri://localhost:1420/",
             "https://example.com/",
             "http://localhost:1420/",
+            "http://localhost/",
             "https://tauri.localhost.example.com/",
+            "http://tauri.localhost.example.com/",
             "tauri://example.com/",
+            "tauri://tauri.localhost/",
             "file:///etc/passwd",
             "data:text/html,hello",
             "javascript:alert(1)",
             "about:blank",
             "isolation://localhost/",
             "ipc://localhost/",
+            "http://ipc.localhost/",
         ] {
             assert!(!is_app_url(&url(other), None), "{other} should be refused");
         }

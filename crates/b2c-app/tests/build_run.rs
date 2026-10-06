@@ -421,6 +421,80 @@ fn closing_a_project_kills_its_program() {
     }
 }
 
+/// 02 §2.6: closing a project stops its program, also one whose `run_start`
+/// was still being prepared (checked, hashed, analysed) when the close came.
+/// Either the close finds the new program, or `run_start` finds the project
+/// gone, stops what it started and answers `unknownBuild`; nothing is left
+/// running, so the next build of the same content is not kept waiting for a
+/// program's hold on its build folder.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_run_racing_a_close_never_outlives_its_project() {
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    if gxx().is_none() {
+        return;
+    }
+    let app = TestApp::with(Compiler::spy(), TestProber::new());
+    let game = example_text("guessing_game");
+    let mut executable = None;
+    for attempt in 0..20_u64 {
+        let created = app
+            .backend
+            .project_new(ProjectNewRequest {
+                template: Template::Empty,
+            })
+            .unwrap();
+        let (build_id, result, events) = build(&app, &created.handle, &game);
+        assert!(
+            matches!(result, BuildOutcome::Built | BuildOutcome::UpToDate),
+            "{events:#?}"
+        );
+        let program = executable
+            .get_or_insert_with(|| find_executable(&app.dirs.builds()).unwrap())
+            .clone();
+        let backend = Arc::clone(&app.backend);
+        let (output, run_events) = run_sinks();
+        let runner = {
+            let run_events = run_events.clone();
+            std::thread::spawn(move || {
+                backend.run_start(
+                    RunStartRequest {
+                        build_id,
+                        run_options: RunOptions { cols: 80, rows: 24 },
+                    },
+                    output,
+                    run_events,
+                )
+            })
+        };
+        // Closes at different points of the run's preparation.
+        std::thread::sleep(Duration::from_micros(attempt * 1_500));
+        app.backend
+            .project_close(ProjectCloseRequest {
+                handle: created.handle,
+            })
+            .unwrap();
+        let started = runner.join().unwrap();
+        assert!(
+            matches!(started, Ok(_) | Err(IpcError::UnknownBuild)),
+            "attempt {attempt}: run_start gave {started:?}"
+        );
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !processes_running(&program).is_empty() {
+            assert!(
+                Instant::now() < deadline,
+                "attempt {attempt}: the program of a closed project is still running ({started:?})"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        if started.is_ok() {
+            assert_eq!(exit_status(&wait_exit(&run_events)), ExitStatus::Stopped);
+        }
+    }
+}
+
 /// Waits until the program has printed something.
 #[cfg(target_os = "linux")]
 fn wait_output(output: &b2c_ipc::sink::testing::RecordingBytes) {

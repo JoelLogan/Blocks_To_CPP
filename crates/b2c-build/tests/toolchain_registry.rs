@@ -390,7 +390,7 @@ fn batch_files_and_bad_paths_are_never_added() {
         root.join("missing").join(GXX),
         PathBuf::from(GXX),
     ] {
-        let refused = registry.add_explicit(&bad).unwrap_err();
+        let refused = registry.add_explicit(&bad, &[]).unwrap_err();
         assert_eq!(codes(&refused), [BAD_PATH], "{}", bad.display());
         assert_eq!(refused[0].severity, Severity::Error);
     }
@@ -409,7 +409,7 @@ fn compilers_added_by_hand_are_kept_as_manual() {
     let prober = FakeProber::new();
     let registry = root.registry(std::slice::from_ref(&bin), &prober);
     let picked = install(&root.join("opt/gcc-13/bin"), "gcc");
-    let added = registry.add_explicit(&picked).unwrap();
+    let added = registry.add_explicit(&picked, &[]).unwrap();
     assert_eq!(added.source, ToolchainSource::Manual);
     assert_eq!(added.display_path, shown(&picked));
     assert!(added.usable && !added.selected);
@@ -417,13 +417,13 @@ fn compilers_added_by_hand_are_kept_as_manual() {
 
     // A broken one is added too, as not usable, with its problems.
     let broken = install(&root.join("opt/broken/bin"), "broken");
-    let added_broken = registry.add_explicit(&broken).unwrap();
+    let added_broken = registry.add_explicit(&broken, &[]).unwrap();
     assert!(!added_broken.usable);
     assert_eq!(added_broken.problems[0].code, "B2C-T1006");
 
     // One that cannot be probed at all is refused.
     let unprobeable = install(&root.join("opt/odd/bin"), "unprobeable");
-    let refused = registry.add_explicit(&unprobeable).unwrap_err();
+    let refused = registry.add_explicit(&unprobeable, &[]).unwrap_err();
     assert_eq!(codes(&refused), [NOT_RUNNABLE]);
 
     // Discovery keeps them, after the discovered ones, and so does the file.
@@ -442,13 +442,49 @@ fn compilers_added_by_hand_are_kept_as_manual() {
     assert_eq!(reopened.list(None), listed);
 
     // Adding the same file again replaces its entry.
-    registry.add_explicit(&picked).unwrap();
+    registry.add_explicit(&picked, &[]).unwrap();
     assert_eq!(registry.list(None).toolchains.len(), 3);
 
     // A manual compiler whose file is gone is forgotten by the next rescan.
     fs::remove_file(&broken).unwrap();
     registry.rescan(&[], None);
     assert_eq!(listed_paths(&registry), [shown(&bin.join(GXX)), shown(&picked)]);
+}
+
+/// 08 §8.5: a compiler picked by hand inside an excluded folder (an open
+/// project's folder, the cache root) is refused before it is probed, so it
+/// never runs; through a link from outside it is refused too, since the
+/// canonical path counts.
+#[test]
+fn compilers_in_excluded_folders_are_never_added_or_run() {
+    let root = Root::new();
+    let prober = FakeProber::new();
+    let registry = root.registry(&[], &prober);
+    let project = root.join("Downloads/game");
+    let planted = install(&project.join("tools"), "gcc");
+    let excluded = [root.join("cache"), project.clone()];
+    let refused = registry.add_explicit(&planted, &excluded).unwrap_err();
+    assert_eq!(codes(&refused), [BAD_PATH]);
+    assert_eq!(refused[0].severity, Severity::Error);
+    #[cfg(unix)]
+    {
+        let link = root.join("bin").join(GXX);
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&planted, &link).unwrap();
+        let refused = registry.add_explicit(&link, &excluded).unwrap_err();
+        assert_eq!(codes(&refused), [BAD_PATH]);
+    }
+    let cached = install(&root.join("cache/elsewhere"), "gcc");
+    assert_eq!(
+        codes(&registry.add_explicit(&cached, &excluded).unwrap_err()),
+        [BAD_PATH]
+    );
+    assert_eq!(prober.calls(), 0);
+    assert!(registry.list(None).toolchains.is_empty());
+    // The same compiler outside every excluded folder is added.
+    let outside = install(&root.join("opt/gcc/bin"), "gcc");
+    assert!(registry.add_explicit(&outside, &excluded).is_ok());
+    assert_eq!(prober.calls(), 1);
 }
 
 #[test]

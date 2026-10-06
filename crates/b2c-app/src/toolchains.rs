@@ -68,10 +68,25 @@ impl Backend {
             .rescan(&excluded, self.selected_toolchain().as_ref()))
     }
 
+    /// The folders a compiler picked by hand may not lie in, because it would
+    /// be run (probed) at once: the open projects' folders, where a
+    /// downloaded project could ship its own "g++" (08 §8.5), and the build
+    /// cache. The current directory is not among them, unlike for discovery:
+    /// a desktop app often starts in the user's home folder, where compilers
+    /// the user installed (Scoop, a GCC built by hand) live, and a compiler
+    /// chosen by its full path does not depend on the current directory.
+    fn manual_compiler_excluded(&self) -> Vec<PathBuf> {
+        let mut excluded = vec![self.cache_root().to_path_buf()];
+        excluded.extend(self.projects.folders());
+        excluded
+    }
+
     /// `toolchain_add_dialog`: the user picks a g++ executable in the native
     /// file dialog; it is checked (`B2C-T1002`: never `.bat` or `.cmd`, on
-    /// Windows only `g++.exe`), canonicalised, probed and kept as a manual
-    /// toolchain, even when it fails its health checks (`usable: false`).
+    /// Windows only `g++.exe`, never inside an open project's folder or the
+    /// build cache), canonicalised, probed and kept as a manual toolchain,
+    /// even when it fails its health checks (`usable: false`). Nothing a
+    /// check refuses is ever run.
     ///
     /// # Errors
     /// [`IpcError::Busy`] while another dialog is open;
@@ -86,12 +101,13 @@ impl Backend {
         let Some(path) = picked else {
             return Ok(ToolchainAddDialogResponse::Cancelled);
         };
-        let mut toolchain =
-            self.toolchains
-                .add_explicit(&path)
-                .map_err(|diagnostics| IpcError::ToolchainRejected {
-                    diagnostics: b2c_ipc::diag::convert_all(&diagnostics),
-                })?;
+        let excluded = self.manual_compiler_excluded();
+        let mut toolchain = self
+            .toolchains
+            .add_explicit(&path, &excluded)
+            .map_err(|diagnostics| IpcError::ToolchainRejected {
+                diagnostics: b2c_ipc::diag::convert_all(&diagnostics),
+            })?;
         toolchain.selected = self.selected_toolchain().as_ref() == Some(&toolchain.id);
         Ok(ToolchainAddDialogResponse::Ok { toolchain })
     }

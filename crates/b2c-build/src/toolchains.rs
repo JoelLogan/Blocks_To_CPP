@@ -26,6 +26,8 @@
 //!   g++ manually…*) are checked by
 //!   [`explicit_candidate`] plus the name rules of 07 §7.2 (never `.bat` or
 //!   `.cmd`; on Windows only a file named exactly `g++.exe`), canonicalised,
+//!   refused (`B2C-T1002`) inside the folders the caller excludes (the open
+//!   projects' folders and the cache root) before anything runs them,
 //!   probed and kept with the source `manual`, even when they fail their
 //!   health checks. A rescan keeps them, probes them again when they
 //!   changed, and forgets them only when their file is gone.
@@ -293,22 +295,36 @@ impl ToolchainRegistry {
     /// Adds a compiler the user picked (`toolchain_add_dialog`): it must
     /// pass [`explicit_candidate`] (absolute, an executable file; a network
     /// path gives the warning `B2C-T1020`) and the name rules (never `.bat`
-    /// or `.cmd`; on Windows only `g++.exe`), and be probed. It is then kept
-    /// with the source `manual`, even when it is not usable (its problems
-    /// say why), replacing an entry for the same file. The DTO's `selected`
-    /// is false: the caller knows the selection.
+    /// or `.cmd`; on Windows only `g++.exe`), must not lie inside any of the
+    /// `excluded` folders (the open projects' folders and the cache root:
+    /// a project must never bring its own compiler, 08 §8.5), and is then
+    /// probed. That check compares canonical paths and comes before the
+    /// probe, which runs the program. It is then kept with the source
+    /// `manual`, even when it is not usable (its problems say why),
+    /// replacing an entry for the same file. The DTO's `selected` is false:
+    /// the caller knows the selection.
     ///
     /// # Errors
     /// The `B2C-T1002` refusal, or the `B2C-T1003` probe failure; nothing is
-    /// added then.
-    pub fn add_explicit(&self, path: &Path) -> Result<ToolchainDto, Vec<Diagnostic>> {
-        self.add_explicit_for(path, Platform::host())
+    /// added (or run) then.
+    pub fn add_explicit(&self, path: &Path, excluded: &[PathBuf]) -> Result<ToolchainDto, Vec<Diagnostic>> {
+        self.add_explicit_for(path, excluded, Platform::host())
     }
 
     /// [`ToolchainRegistry::add_explicit`] with the platform's rules.
-    fn add_explicit_for(&self, path: &Path, platform: Platform) -> Result<ToolchainDto, Vec<Diagnostic>> {
+    fn add_explicit_for(
+        &self,
+        path: &Path,
+        excluded: &[PathBuf],
+        platform: Platform,
+    ) -> Result<ToolchainDto, Vec<Diagnostic>> {
         manual_name_allowed(path, platform).map_err(|refusal| vec![refusal])?;
         let candidate = explicit_candidate(path, platform).map_err(|refusal| vec![refusal])?;
+        if let Some(folder) = excluded_folder_of(&candidate.path, excluded) {
+            tracing::info!("a compiler picked by hand inside a project folder or the cache was refused");
+            tracing::debug!(path = %candidate.path.display(), folder = %folder.display(), "refused compiler");
+            return Err(vec![inside_excluded(&candidate.found_as)]);
+        }
         let probe = self
             .probe_candidate(&candidate, default_jobs(), None)
             .map_err(|failure| vec![failure])?;
@@ -961,6 +977,31 @@ fn is_inside(path: &Path, project: Option<&Path>) -> bool {
     project.is_some_and(|dir| path.starts_with(dir))
 }
 
+/// The folder of `excluded` that the canonical `path` lies in, if any. Each
+/// folder is compared in its canonical form (as given when it no longer
+/// exists), as discovery compares them.
+fn excluded_folder_of(path: &Path, excluded: &[PathBuf]) -> Option<PathBuf> {
+    excluded
+        .iter()
+        .map(|dir| b2c_toolchain::paths::canonical(dir).unwrap_or_else(|_| dir.clone()))
+        .find(|dir| path.starts_with(dir))
+}
+
+/// The `B2C-T1002` refusal of a compiler picked by hand inside a folder
+/// where compilers are never run.
+fn inside_excluded(found_as: &Path) -> Diagnostic {
+    Diagnostic::error(
+        codes::BAD_TOOLCHAIN_PATH,
+        DiagSource::Toolchain,
+        Location::project(),
+        format!(
+            "The compiler {} cannot be used: it is inside an open project's folder or the build cache, \
+             and a project must never bring its own compiler. Choose a g++ installed outside your projects.",
+            found_as.display()
+        ),
+    )
+}
+
 /// The error-level problems.
 fn errors(problems: Vec<Diagnostic>) -> impl Iterator<Item = Diagnostic> {
     problems
@@ -1375,14 +1416,29 @@ mod tests {
         );
         for refused in ["x86_64-w64-mingw32-g++.exe", "g++.bat"] {
             let problems = registry
-                .add_explicit_for(&root.join(refused), Platform::Windows)
+                .add_explicit_for(&root.join(refused), &[], Platform::Windows)
                 .unwrap_err();
             assert_eq!(problems.len(), 1);
             assert_eq!(problems[0].code.0, codes::BAD_TOOLCHAIN_PATH, "{refused}");
         }
+        // Inside an excluded folder (an open project's): refused, never run.
+        let problems = registry
+            .add_explicit_for(
+                &root.join("g++.exe"),
+                &[PathBuf::from("/elsewhere"), root.clone()],
+                Platform::Windows,
+            )
+            .unwrap_err();
+        assert_eq!(problems.len(), 1);
+        assert_eq!(problems[0].code.0, codes::BAD_TOOLCHAIN_PATH);
+        assert!(
+            problems[0].message.contains("inside an open project's folder"),
+            "{}",
+            problems[0].message
+        );
         assert_eq!(prober.0.load(Ordering::SeqCst), 0);
         let added = registry
-            .add_explicit_for(&root.join("g++.exe"), Platform::Windows)
+            .add_explicit_for(&root.join("g++.exe"), &[root.join("other")], Platform::Windows)
             .unwrap();
         assert_eq!(added.source, ToolchainSource::Manual);
         assert_eq!(prober.0.load(Ordering::SeqCst), 1);
@@ -1512,6 +1568,33 @@ mod tests {
         assert!(!is_inside(Path::new("/home/ada/game2/g++"), project));
         assert!(!is_inside(Path::new("/usr/bin/g++"), project));
         assert!(!is_inside(Path::new("/home/ada/game/g++"), None));
+    }
+
+    #[test]
+    fn excluded_folders_contain_their_whole_tree_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = b2c_toolchain::paths::canonical(dir.path()).unwrap();
+        let game = root.join("game");
+        std::fs::create_dir_all(game.join("tools")).unwrap();
+        let gxx = game.join("tools").join("g++");
+        // Compared in canonical form, also when given through a parent link.
+        let roundabout = game.join("tools").join(std::path::Component::ParentDir);
+        assert_eq!(excluded_folder_of(&gxx, &[roundabout]), Some(game.clone()));
+        assert_eq!(
+            excluded_folder_of(&gxx, std::slice::from_ref(&game)),
+            Some(game.clone())
+        );
+        // A folder that does not exist is compared as given.
+        assert_eq!(
+            excluded_folder_of(Path::new("/gone/game/g++"), &[PathBuf::from("/gone/game")]),
+            Some(PathBuf::from("/gone/game"))
+        );
+        // A sibling whose name starts the same is not inside.
+        assert_eq!(
+            excluded_folder_of(&root.join("game2").join("g++"), std::slice::from_ref(&game)),
+            None
+        );
+        assert_eq!(excluded_folder_of(&gxx, &[]), None);
     }
 
     #[test]

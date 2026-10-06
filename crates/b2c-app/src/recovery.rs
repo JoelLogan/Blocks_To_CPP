@@ -16,8 +16,9 @@
 //!   canonical path, whether it was trusted at that moment and its security
 //!   hash. The document also becomes the project's latest document, which
 //!   the trust dialog lists from.
-//! * **Deleting.** A clean save, *Save as*, closing the project, and
-//!   shutdown for projects without unsaved changes delete the snapshot
+//! * **Deleting.** A clean save, *Save as*, a reload (which discards the
+//!   unsaved changes), closing the project, and shutdown for projects
+//!   without unsaved changes delete the snapshot
 //!   ([`Backend::discard_snapshot_of`]). Dropping the backend without
 //!   shutting down (a crash) leaves the snapshots for the next start.
 //! * **Restoring.** `recovery_restore` loads the snapshot's document with the
@@ -35,9 +36,12 @@
 //!   only when a trust record still covers that file and either its hash
 //!   equals the snapshot's security hash or the snapshot was written while
 //!   the project was trusted; a folder record covers it as when the file is
-//!   opened. Everything else restores in Restricted Mode: a snapshot whose
-//!   path could not be recorded, a snapshot whose document does not match
-//!   its own metadata, and a file whose record is gone.
+//!   opened. The record is looked up at the recorded path itself. Everything
+//!   else restores in Restricted Mode: a snapshot whose path could not be
+//!   recorded, a snapshot whose document does not match its own metadata, a
+//!   file whose record is gone, and a recorded path that now resolves to
+//!   another one (its file or a folder above it was replaced by a link, so
+//!   whoever controls that location would choose the record).
 //! * **Bounded.** Documents are at most 32 MiB in both directions; the store
 //!   bounds every read, the number of snapshots and the listing. A snapshot
 //!   restored in this session is never offered again by it, even when it
@@ -248,7 +252,10 @@ fn restored_trust(verdict: TrustVerdict, trusted_at_write: bool) -> HandleTrust 
 /// The file a restored project is bound to: the canonical form of the
 /// recorded path while it exists, otherwise the canonical form of its folder
 /// with the file name (or the recorded path itself, which the store checked
-/// is absolute and has no `.` or `..` parts).
+/// is absolute and has no `.` or `..` parts). The recorded path was
+/// canonical when it was written, so this is the recorded path itself unless
+/// a link was put in its place since; trust is then not evaluated at all
+/// ([`Backend::restored`]).
 fn rebind(bound: &Path) -> PathBuf {
     if let Ok(path) = canonical_path(bound) {
         return path;
@@ -451,8 +458,9 @@ impl Backend {
         Ok(Empty {})
     }
 
-    /// Deletes the recovery snapshot of `handle`, if it has one (a clean save
-    /// or close, and shutdown for projects without unsaved changes). A
+    /// Deletes the recovery snapshot of `handle`, if it has one (a clean
+    /// save, a reload or close, and shutdown for projects without unsaved
+    /// changes). A
     /// failure is logged: the snapshot is then offered at the next start,
     /// which loses nothing.
     pub(crate) fn discard_snapshot_of(&self, handle: &Handle) {
@@ -501,14 +509,21 @@ impl Backend {
         // it, neither the trust facts nor the document can be relied on.
         let consistent = document.project.id == meta.project_id
             && b2c_model::security_hash(document) == meta.security_hash;
-        let trust = if consistent {
+        let trust = if !consistent {
+            tracing::warn!("a recovery snapshot does not match its metadata; it restores restricted");
+            HandleTrust::Restricted(RestrictedReason::NoRecord)
+        } else if path != bound {
+            // The recorded path now leads elsewhere: its file, or a folder
+            // above it, was replaced by a link. Only the record of the
+            // recorded path itself may trust this content (08 §8.3.1);
+            // whoever controls the old location must not pick the record.
+            tracing::info!("a restored project's file now resolves to another path; it restores restricted");
+            HandleTrust::Restricted(RestrictedReason::NoRecord)
+        } else {
             restored_trust(
                 self.trust.evaluate(&identity(document, &path)),
                 meta.trusted_at_write,
             )
-        } else {
-            tracing::warn!("a recovery snapshot does not match its metadata; it restores restricted");
-            HandleTrust::Restricted(RestrictedReason::NoRecord)
         };
         Restored {
             path: Some(path),

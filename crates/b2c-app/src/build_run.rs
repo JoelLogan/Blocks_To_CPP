@@ -81,9 +81,11 @@ impl Backend {
     ///
     /// # Errors
     /// The document's errors (`payloadTooLarge`, `invalidDocument`,
-    /// `newerFormat`) before anything else; [`IpcError::UnknownHandle`];
-    /// [`IpcError::Restricted`]; [`IpcError::Internal`] after shutdown or when
-    /// no build thread can start.
+    /// `newerFormat`) before anything else; [`IpcError::UnknownHandle`],
+    /// also when the project was closed while its build was being started
+    /// (the build is then cancelled and forgotten); [`IpcError::Restricted`];
+    /// [`IpcError::Internal`] after shutdown (also one that began while the
+    /// build was being started) or when no build thread can start.
     pub fn build_start(
         &self,
         request: BuildStartRequest,
@@ -109,7 +111,7 @@ impl Backend {
         let selected = self.selected_toolchain();
         let registry = Arc::clone(&self.toolchains);
         let job = BuildJob {
-            project_key: key,
+            project_key: key.clone(),
             document: request.document.into_bytes(),
             configuration: request.config.into(),
             toolchain: Box::new(move |cancel| {
@@ -121,8 +123,35 @@ impl Backend {
             ide: true,
         };
         let build_id = self.builds.start(job, sink)?;
+        if let Err(error) = self.still_open(&request.handle, IpcError::UnknownHandle) {
+            // Closed or shut down while the build was being set up: the
+            // close (or shutdown) may have looked before the build existed.
+            self.builds.forget_project(&key);
+            return Err(error);
+        }
         tracing::debug!(%build_id, "build started");
         Ok(BuildStartResponse { build_id })
+    }
+
+    /// After a build or program was started for `handle`: fails with `gone`
+    /// when the project was closed meanwhile, or with
+    /// [`IpcError::Internal`] when the backend shut down, so the caller
+    /// stops what it just started.
+    ///
+    /// `project_close` removes the handle before it cancels the project's
+    /// builds and stops its program, and shutdown sets its flag before it
+    /// cancels and stops everything; both start their work after this
+    /// command's own check. So either they see what this command started,
+    /// or this check sees them: no build or program outlives its project or
+    /// the app (`docs/spec/02-architecture.md` §2.6).
+    fn still_open(&self, handle: &Handle, gone: IpcError) -> Result<(), IpcError> {
+        if self.is_shut_down() {
+            Err(IpcError::Internal)
+        } else if self.projects.get(handle).is_err() {
+            Err(gone)
+        } else {
+            Ok(())
+        }
     }
 
     /// `build_cancel`: cancels a build, killing the compiler's process tree.
@@ -186,7 +215,10 @@ impl Backend {
     /// [`IpcError::BuildNotSuccessful`], [`IpcError::StaleBuild`] and
     /// [`IpcError::ProjectErrors`] as above; [`IpcError::TooManySessions`]
     /// with 8 programs running; [`IpcError::Io`] when the program cannot
-    /// start; [`IpcError::Internal`] after shutdown.
+    /// start; [`IpcError::Internal`] after shutdown. A project closed, or a
+    /// shutdown begun, while the program was being started gives
+    /// `unknownBuild` or `internal` too: the program is then stopped at once
+    /// (`events` still gets its `exit`), so it never outlives its project.
     pub fn run_start(
         &self,
         request: RunStartRequest,
@@ -274,6 +306,14 @@ impl Backend {
             hold,
         };
         let run_id = self.runs.start(spec, output, events)?;
+        if let Err(error) = self.still_open(&handle, IpcError::UnknownBuild) {
+            // Closed or shut down while the run was being prepared: the
+            // close (or shutdown) may have looked before the program existed.
+            // Its `exit` event (status `stopped`) still follows on `events`.
+            tracing::debug!(%run_id, "the project closed while its program started; stopping it");
+            self.runs.stop_project(&record.project_key);
+            return Err(error);
+        }
         tracing::debug!(%run_id, "program started");
         Ok(RunStartResponse { run_id })
     }

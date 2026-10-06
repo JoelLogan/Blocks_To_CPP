@@ -78,8 +78,8 @@
 //!
 //! * **Recovery snapshots** (05 §5.10): `recovery_save` keeps one snapshot
 //!   per open project in this instance's folder of the recovery directory; a
-//!   clean save, *Save as*, close, and shutdown for projects without unsaved
-//!   changes delete it. Snapshots of instances that exited or crashed are
+//!   clean save, *Save as*, a reload (which discards the unsaved changes),
+//!   close, and shutdown for projects without unsaved changes delete it. Snapshots of instances that exited or crashed are
 //!   listed and restored under the trust rules of 08 §8.3.1.
 //! * **The file watcher** watches the folder of every open project file and
 //!   sends `projectChangedOnDisk { handle, deleted }` on the app channel once
