@@ -24,6 +24,16 @@
   font-size: 24px;
 }
 
+/* The heading takes the focus when the page replaces what had it (StartPage.tsx). */
+.start-title:focus {
+  outline: none;
+}
+
+.start-title:focus-visible {
+  outline: 2px solid var(--b2c-focus);
+  outline-offset: 4px;
+}
+
 .start-intro {
   margin: 0;
   color: var(--b2c-text-muted);

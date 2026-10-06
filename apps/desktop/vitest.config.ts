@@ -13,6 +13,10 @@ export default mergeConfig(
       environment: 'happy-dom',
       include: ['src/**/*.test.{ts,tsx}'],
       setupFiles: ['./src/test/setup.ts'],
+      // Style sheets stay empty in tests, except when a test reads one as text (`?raw`): the
+      // accessibility checks read the colour tokens and control sizes from them
+      // (src/app/layout/styles.test.ts).
+      css: { include: [/\.css\?raw$/] },
       // Every test starts from the same state: no recorded calls, no replaced globals.
       clearMocks: true,
       restoreMocks: true,

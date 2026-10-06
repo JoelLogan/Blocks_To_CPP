@@ -267,6 +267,11 @@ describe('ConsolePanel', () => {
     expect(screen.getByTestId('console-elapsed').textContent).toBe('Elapsed 0:04');
     expect(screen.getByText('Running with IDE helpers')).toBeDefined();
     expect(screen.getByText('Process group only')).toBeDefined();
+    // Each notice opens its explanation from its summary, by keyboard as by pointer.
+    const notices = screen.getAllByTestId('console-notice');
+    expect(notices.map((notice) => notice.tagName)).toEqual(['DETAILS', 'DETAILS']);
+    expect(notices[0]?.querySelector('summary')?.textContent).toBe('Running with IDE helpers');
+    expect(notices[0]?.textContent).toContain('the C++ you see is unchanged');
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
     expect(props.onStop).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Run again' }));

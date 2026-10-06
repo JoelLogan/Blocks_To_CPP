@@ -1,5 +1,5 @@
 import * as Tabs from '@radix-ui/react-tabs';
-import { type ReactNode, type Ref, useId, useRef, useState } from 'react';
+import { type ReactNode, type Ref, useEffect, useId, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -8,6 +8,7 @@ import { DockPanels } from '../panels';
 import { type BottomTab, useAppStore } from '../store';
 import { problemCount } from '../store/selectors';
 import { ChevronIcon } from '../ui/icons';
+import { focusIfLost } from './focus';
 import { Splitter } from './Splitter';
 
 /** The right dock's width: initial, smallest and largest, in CSS pixels. */
@@ -39,6 +40,17 @@ function isBottomTab(value: string): value is BottomTab {
  * the dock's show/hide button, which stays and expands it again.
  */
 export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidden: boolean }) {
+  const workspaceRegion = useRef<HTMLElement>(null);
+  const wasHidden = useRef(hidden);
+  // Shown again (a page closed, such as the start page's "Back to the project"): the control that
+  // had the focus is gone with the page, so the focus goes to the workspace region rather than the
+  // top of the window.
+  useEffect(() => {
+    if (wasHidden.current && !hidden) {
+      focusIfLost(workspaceRegion.current);
+    }
+    wasHidden.current = hidden;
+  }, [hidden]);
   const [rightWidth, setRightWidth] = useState<number>(RIGHT_DOCK.initial);
   const [bottomHeight, setBottomHeight] = useState<number>(BOTTOM_DOCK.initial);
   const { rightCollapsed, bottomCollapsed } = useAppStore(
@@ -82,7 +94,14 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
       hidden={hidden}
       style={{ gridTemplateColumns: columns, gridTemplateRows: rows }}
     >
-      <main className="workspace" aria-label="Block workspace" data-testid="workspace">
+      {/* Focusable from code only (tabIndex -1): see the focus effect above. */}
+      <main
+        ref={workspaceRegion}
+        className="workspace"
+        aria-label="Block workspace"
+        tabIndex={-1}
+        data-testid="workspace"
+      >
         {workspace}
       </main>
 

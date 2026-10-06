@@ -100,6 +100,11 @@
   cursor: pointer;
 }
 
+/* A drop-down shows its edge at 3:1 (WCAG 1.4.11); a button is known by its text. */
+.b2c-panel select {
+  border-color: var(--b2c-control-border, #767f91);
+}
+
 .b2c-panel button:disabled,
 .b2c-panel select:disabled {
   cursor: default;
@@ -178,6 +183,8 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  /* A row scrolled to with the keyboard never hides under the sticky header (WCAG 2.4.11). */
+  scroll-padding-top: 2.5em;
 }
 
 .b2c-problems-grid {
@@ -287,6 +294,23 @@
   border-radius: 10px;
   color: var(--b2c-text-muted, #4f596c);
   font-size: 12px;
+}
+
+/* A notice is a disclosure: its explanation opens with the keyboard as well as by pointer. */
+.b2c-console-notice summary {
+  min-height: 24px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.b2c-console-notice[open] {
+  flex-basis: 100%;
+  border-radius: 6px;
+}
+
+.b2c-console-notice-detail {
+  margin: 0 0 4px;
+  color: var(--b2c-text, #1b2130);
 }
 
 .b2c-console-elapsed {
