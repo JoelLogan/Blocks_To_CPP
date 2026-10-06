@@ -14,17 +14,16 @@
 > exit decoding, projects with autosave and crash recovery, workspace trust
 > and Restricted Mode, the validated clipboard and the reload of files
 > changed outside the app, behind the hardened IPC contract of 36 commands.
-> The guessing-game exit test, assembled from the *Empty* template, passes in
-> CI on both systems, and CI is green on both through commit `f7204c8`. The
-> last additions (the breadth E2E flows, the visual diff of the canvas, and
-> the nightly E2E security and benchmark jobs) pass on Linux; their Windows
-> runs are not yet confirmed. M2 is done once these are recorded: the
-> usability session with at least three first-time users
+> The guessing-game exit test, assembled from the *Empty* template, and the
+> breadth E2E flows and the visual diff of the canvas pass in CI on both
+> systems (commit `8c531d3`). The nightly E2E security and benchmark jobs
+> pass on Linux and have not yet run on their schedule. M2 is done once these
+> are recorded: the usability session with at least three first-time users
 > ([protocol](../manual-tests/m2-usability.md)), the NVDA and Orca pass
 > ([checklist](../manual-tests/m2-accessibility.md)), the review at the
 > milestone demo that nothing of M3–M6 has an entry point in the app (first
-> run on the code, recorded in the usability protocol), and green Windows
-> runs of the last additions. The visual diff's baselines and the
+> run on the code, recorded in the usability protocol), and a green first
+> nightly run on both systems. The visual diff's baselines and the
 > benchmarks' history build up from the first CI runs
 > ([09 §9.3](09-quality-and-delivery.md#93-continuous-integration)).
 >

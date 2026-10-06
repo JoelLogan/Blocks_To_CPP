@@ -847,7 +847,24 @@ mod tests {
             .unwrap();
         assert!(other.try_lock().is_err());
         drop(held);
-        other.try_lock().unwrap();
+        take_released_lock(&other);
+    }
+
+    /// Takes a lock that was just released. A process another test starts at
+    /// that moment holds a copy of the descriptor, and with it the lock, from
+    /// its fork until its exec closes it (the file is close-on-exec), so the
+    /// lock can stay taken for a moment after the release.
+    fn take_released_lock(file: &fs::File) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            match file.try_lock() {
+                Ok(()) => return,
+                Err(fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("the released lock stays taken: {error:?}"),
+            }
+        }
     }
 
     /// `try_lock_until` takes a free lock at once, waits for a held one, and
@@ -889,7 +906,7 @@ mod tests {
         drop(held);
         // An already cancelled token never takes the lock, even a free one.
         assert!(dir.try_lock_until(&cancel).unwrap().is_none());
-        other.try_lock().unwrap();
+        take_released_lock(&other);
     }
 
     /// `touch` creates the lock file when needed and moves its modification
