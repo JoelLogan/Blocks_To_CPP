@@ -33,6 +33,7 @@ import {
   servicesSessionHooks,
 } from './services';
 import { withoutEvents } from './sync/bdmToWorkspace';
+import { B2cBlockDragger } from './sync/drag';
 import { MAX_ZOOM, MIN_ZOOM } from './sync/limits';
 import { clearWorkspace } from './sync/traverse';
 import { EditorSession } from './sync/session';
@@ -55,9 +56,14 @@ export function editorInjectOptions(theme: Blockly.Theme): Blockly.BlocklyOption
     sounds: false,
     trashcan: true,
     // The starting toolbox and the continuous toolbox's classes, which Blockly picks only at
-    // inject time; the toolbox plugin then fills in presets, Variables and My Blocks.
+    // inject time; the toolbox plugin then fills in presets, Variables and My Blocks. The block
+    // dragger tells the editing session when a drag starts, before Blockly moves anything.
     toolbox: toolbox.toolbox,
-    plugins: { connectionChecker: B2C_CHECKER_NAME, ...toolbox.plugins },
+    plugins: {
+      connectionChecker: B2C_CHECKER_NAME,
+      blockDragger: B2cBlockDragger,
+      ...toolbox.plugins,
+    },
     grid: { spacing: 24, length: 2, colour: '#8f98ab55', snap: true },
     move: { scrollbars: true, drag: true, wheel: true },
     // The project format's zoom range (05 §5.3), so a saved view is shown as it was saved.
@@ -193,9 +199,11 @@ export function EditorWorkspace() {
       plugins: EDITOR_PLUGINS,
     });
 
-    // Blockly sizes its SVG once; follow the panel when the window or a dock resizes.
+    // Blockly sizes its SVG once; follow the panel when the window or a dock resizes, and when
+    // the editor is shown (it is hidden while the start page opens a project). The session keeps
+    // track of whether the user moved the view, and shows a saved view that waited for a size.
     const resizeObserver = new ResizeObserver(() => {
-      Blockly.svgResize(workspace);
+      editor.session.resize();
     });
     resizeObserver.observe(element);
     const onSchemeChange = (): void => {

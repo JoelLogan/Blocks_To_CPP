@@ -128,14 +128,31 @@ export function headlessWorkspace(): Blockly.Workspace {
   return workspace;
 }
 
-/** A rendered workspace (Zelos) in the document; dispose it with {@link disposeWorkspaces}. */
-export function renderedWorkspace(): Blockly.WorkspaceSvg {
+/**
+ * A rendered workspace (Zelos, with any further `options`) in the document; dispose it with
+ * {@link disposeWorkspaces}. Its view has no size (happy-dom lays nothing out, as a hidden editor
+ * has none) until {@link setViewSize}.
+ */
+export function renderedWorkspace(options: Blockly.BlocklyOptions = {}): Blockly.WorkspaceSvg {
   registerEditorBlocks();
   const host = document.createElement('div');
   document.body.append(host);
-  const workspace = Blockly.inject(host, { renderer: 'zelos', sounds: false });
+  const workspace = Blockly.inject(host, { renderer: 'zelos', sounds: false, ...options });
   workspaces.push(workspace);
   return workspace;
+}
+
+/**
+ * Gives a rendered workspace's container a size, as a browser would lay it out; Blockly reads it at
+ * the next `Blockly.svgResize` (the editor calls it through `EditorSession.resize`).
+ */
+export function setViewSize(workspace: Blockly.WorkspaceSvg, width: number, height: number): void {
+  const container = workspace.getParentSvg().parentElement;
+  if (container === null) {
+    throw new Error('The workspace is not in the document');
+  }
+  Object.defineProperty(container, 'offsetWidth', { configurable: true, get: () => width });
+  Object.defineProperty(container, 'offsetHeight', { configurable: true, get: () => height });
 }
 
 /**

@@ -76,7 +76,12 @@ export function isTokenRange(range: TokenRange, length: number): boolean {
   );
 }
 
-/** Shows a read-only shadow's tokens, with the highlighted range in its own label. */
+/**
+ * Shows a read-only shadow's tokens, with the highlighted range in its own label.
+ *
+ * The labels are display state, never saved: they change with Blockly's events off, so relabelling
+ * (after a rename, or when a project opens) is never an undo step and reports no change.
+ */
 export function renderTokens(block: ExprShadowBlock): void {
   const { tokens, draft } = block.b2cExpr;
   const range =
@@ -92,15 +97,22 @@ export function renderTokens(block: ExprShadowBlock): void {
           (spaceAt(tokens, range.end) ? ' ' : '') + tokensDisplay(tokens, range.end),
         ];
   const names = [TOKENS_FIELD.before, TOKENS_FIELD.mark, TOKENS_FIELD.after];
-  names.forEach((name, index) => {
-    const text = truncateForDisplay(parts[index] ?? '', MAX_SHOWN_CHARS);
-    const field = block.getField(name);
-    if (field !== null) {
-      field.setValue(text);
-      field.setVisible(text.length > 0);
-    }
-  });
-  block.getField(TOKENS_FIELD.draft)?.setVisible(draft);
+  // Blockly fires (and records for undo) a change event for any field whose value changes, labels
+  // included. The counter nests, so this is safe inside callers that already disabled events.
+  Blockly.Events.disable();
+  try {
+    names.forEach((name, index) => {
+      const text = truncateForDisplay(parts[index] ?? '', MAX_SHOWN_CHARS);
+      const field = block.getField(name);
+      if (field !== null) {
+        field.setValue(text);
+        field.setVisible(text.length > 0);
+      }
+    });
+    block.getField(TOKENS_FIELD.draft)?.setVisible(draft);
+  } finally {
+    Blockly.Events.enable();
+  }
   const tip = truncateForDisplay(tokensDisplay(tokens), MAX_TOOLTIP_CHARS);
   block.setTooltip(
     draft

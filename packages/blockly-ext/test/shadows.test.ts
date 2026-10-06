@@ -27,6 +27,17 @@ beforeEach(() => {
   setUpBlocks();
 });
 
+/** Waits until Blockly has delivered its queued events (it fires them after a frame and a task). */
+function blocklyEventsDelivered(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        setTimeout(resolve, 0);
+      }, 0);
+    });
+  });
+}
+
 /** A `control.repeat` block whose TIMES input shows the shadow for `tokens`; returns the shadow. */
 function shadowFor(
   tokens: readonly TokenJson[],
@@ -273,6 +284,31 @@ describe('read-only expressions', () => {
     refreshSymbolNames(shadow.workspace);
     expect(shadow.getFieldValue('TEXT_BEFORE')).toBe('attempt < secret');
     expect(shadow.getTooltip()).toBe('attempt < secret');
+  });
+
+  it('relabel without a change event or an undo step (labels are never saved)', async () => {
+    const names: Record<string, string> = { s_guess: 'guess', s_secret: 'secret' };
+    fakeSymbols({}, names);
+    const workspace = renderedWorkspace();
+    const shadow = shadowFor([{ ref: 's_guess' }, { op: '<' }, { ref: 's_secret' }], {
+      workspace,
+    });
+    await blocklyEventsDelivered();
+    workspace.clearUndo();
+    const events: Blockly.Events.Abstract[] = [];
+    workspace.addChangeListener((event) => {
+      events.push(event);
+    });
+
+    names['s_guess'] = 'attempt';
+    refreshSymbolNames(workspace);
+    setTokenHighlight(shadow, { start: 0, end: 1 });
+    await blocklyEventsDelivered();
+
+    expect(shadow.getFieldValue('TEXT_MARK')).toBe('attempt');
+    expect(events).toEqual([]);
+    expect(workspace.getUndoStack()).toEqual([]);
+    expect(Blockly.Events.isEnabled()).toBe(true);
   });
 
   it('mark the tokens a diagnostic points at', () => {

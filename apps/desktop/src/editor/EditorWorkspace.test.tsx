@@ -15,6 +15,7 @@ import { expectNoAxeViolations } from '../test/axe';
 import { attachEditor, EditorWorkspace, editorInjectOptions } from './EditorWorkspace';
 import { createCoreHost } from './preview/coreHost';
 import { registerEditorBlocks } from './services';
+import { B2cBlockDragger } from './sync/drag';
 import { present } from './sync/testing';
 
 /** The colour-scheme media query the component reads. */
@@ -112,6 +113,14 @@ describe('the block editor', () => {
     expect(workspace?.options.pathToMedia).toBe('/node_modules/blockly/media/');
     expect(workspace?.getTheme().name).toBe('b2c-light');
     expect(workspace?.connectionChecker.constructor.name).toBe('B2cConnectionChecker');
+    // Blockly creates a dragger per drag from the options; ours reports drags to the session.
+    expect(
+      workspace &&
+        Blockly.registry.getClassFromOptions(
+          Blockly.registry.Type.BLOCK_DRAGGER,
+          workspace.options,
+        ),
+    ).toBe(B2cBlockDragger);
     expect(workspace?.getToolbox()).not.toBeNull();
     unmount();
     expect(mainWorkspaces()).toHaveLength(0);
@@ -233,6 +242,7 @@ describe('the initial toolbox and the inject options', () => {
     expect(options.zoom).toMatchObject({ minScale: 0.1, maxScale: 4 });
     expect(options.plugins).toEqual({
       connectionChecker: 'b2c_checker',
+      blockDragger: B2cBlockDragger,
       toolbox: 'b2c_continuous_toolbox',
       flyoutsVerticalToolbox: 'b2c_continuous_flyout',
       metricsManager: 'b2c_continuous_metrics',
