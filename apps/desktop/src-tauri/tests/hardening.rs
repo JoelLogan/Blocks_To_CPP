@@ -68,21 +68,34 @@ impl Element {
 }
 
 /// The elements of `xml` in document order. Enough XML for application
-/// manifests as tools write them (declarations, comments, elements,
-/// attributes in either quote, text, default and prefixed namespaces);
-/// anything else (a DTD, CDATA, unbalanced tags) is an error, so a check
-/// never passes by misreading.
+/// manifests as tools write them (an XML declaration, processing
+/// instructions, comments, elements, attributes in either quote, text,
+/// default and prefixed namespaces); anything else (a DTD, CDATA,
+/// unbalanced tags) is an error, so a check never passes by misreading.
+///
+/// The XML declaration (`<?xml …?>`) must be the very first thing, after an
+/// optional byte-order mark: one after anything else, even whitespace, is
+/// not well-formed, and Windows, .NET and `tools/check-windows-manifest.ps1`
+/// reject it.
 fn elements(xml: &str) -> Result<Vec<Element>, String> {
     let mut found: Vec<Element> = Vec::new();
     // Open elements: index into `found`, and the namespace bindings in scope.
     let mut open: Vec<(usize, Vec<(String, String)>)> = Vec::new();
-    let mut rest = xml.trim_start_matches('\u{feff}');
+    let document = xml.strip_prefix('\u{feff}').unwrap_or(xml);
+    let mut rest = document;
     while let Some(start) = rest.find('<') {
         if let Some((index, _)) = open.last() {
             found[*index].text.push_str(&rest[..start]);
         }
         rest = &rest[start..];
         if let Some(after) = rest.strip_prefix("<?") {
+            let target = after
+                .split(|c: char| c.is_whitespace() || c == '?')
+                .next()
+                .unwrap_or_default();
+            if target.eq_ignore_ascii_case("xml") && rest.len() != document.len() {
+                return Err("the XML declaration is not the very first thing in the manifest".to_owned());
+            }
             rest = &after[after.find("?>").ok_or("unterminated declaration")? + 2..];
         } else if let Some(after) = rest.strip_prefix("<!--") {
             rest = &after[after.find("-->").ok_or("unterminated comment")? + 3..];
@@ -365,6 +378,49 @@ fn the_manifest_check_finds_what_is_missing() {
     assert!(check_manifest(&outside_settings).is_err(), "{outside_settings}");
     assert!(check_manifest("<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\"><dependency>").is_err());
     assert!(check_manifest("<!DOCTYPE x><assembly/>").is_err());
+}
+
+/// An XML declaration counts only at the very start, after an optional
+/// byte-order mark.
+#[test]
+fn an_xml_declaration_must_come_first() {
+    let good = read("windows-app-manifest.xml");
+    let declaration = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#;
+    check_manifest(&format!("{declaration}\n{good}")).unwrap();
+    check_manifest(&format!("\u{feff}{declaration}\n{good}")).unwrap();
+    for bad in [
+        // What tauri-winres made of the manifest while it had a declaration.
+        format!(" {declaration} {good}"),
+        format!("\n{declaration}\n{good}"),
+        format!("\u{feff}\u{feff}{declaration}\n{good}"),
+        format!("<!-- first -->{declaration}\n{good}"),
+        format!("{declaration}{declaration}\n{good}"),
+        format!("{good}{declaration}"),
+        format!(" <?XML version=\"1.0\"?>{good}"),
+    ] {
+        let problem = check_manifest(&bad).unwrap_err();
+        assert!(problem.contains("XML declaration"), "{problem}: {bad}");
+    }
+    // Other processing instructions may come anywhere.
+    check_manifest(&format!("{good}<?xml-stylesheet href='a.xsl'?>")).unwrap();
+}
+
+/// With MinGW, tauri-build hands the manifest to tauri-winres, which writes
+/// every line of it into the resource file trimmed and between spaces, so
+/// the embedded manifest starts with a space (`build.rs`). It must still be
+/// well-formed there, which is why the file has no XML declaration.
+#[test]
+fn the_manifest_survives_the_mingw_resource_file() {
+    // Each line becomes the string literal `" <line> "`, and the resource
+    // compiler joins consecutive literals.
+    let mut embedded = String::new();
+    for line in read("windows-app-manifest.xml").lines() {
+        embedded.push(' ');
+        embedded.push_str(line.trim());
+        embedded.push(' ');
+    }
+    assert!(embedded.starts_with(' '));
+    check_manifest(&embedded).unwrap();
 }
 
 /// Tools that merge manifests (`mt.exe`, the MSVC linker) may move a
