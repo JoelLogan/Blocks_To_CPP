@@ -133,19 +133,82 @@ fn build_and_run_a_canary_project(root: &Path) -> bool {
     true
 }
 
-/// Whether `log` mentions an absolute path: a JSON string that starts like
-/// one, or the given folders.
+/// The lines of `log` that mention an absolute path: a JSON string that starts
+/// like one, or that names one of `folders`. Strings are compared as JSON
+/// decodes them (on Windows the file holds every `\` of a path as `\\`).
 fn absolute_paths(log: &str, folders: &[&Path]) -> Vec<String> {
-    let mut found: Vec<String> = log
-        .lines()
-        .filter(|line| line.contains("\":\"/") || line.contains(":\\\\") || line.contains("\":\"\\\\"))
+    let names: Vec<String> = folders.iter().flat_map(|folder| spellings(folder)).collect();
+    log.lines()
+        .filter(|line| {
+            json_strings(line)
+                .iter()
+                .any(|text| looks_absolute(text) || names.iter().any(|name| text.contains(name)))
+        })
         .map(str::to_owned)
-        .collect();
-    for folder in folders {
-        let text = folder.display().to_string();
-        found.extend(log.lines().filter(|line| line.contains(&text)).map(str::to_owned));
+        .collect()
+}
+
+/// Whether one of `log`'s lines names `folder`.
+fn names_folder(log: &str, folder: &Path) -> bool {
+    let names = spellings(folder);
+    log.lines().any(|line| {
+        json_strings(line)
+            .iter()
+            .any(|text| names.iter().any(|name| text.contains(name)))
+    })
+}
+
+/// Every string (keys and values) of the JSON line `line`, decoded; the line
+/// itself when it is not JSON.
+fn json_strings(line: &str) -> Vec<String> {
+    fn collect(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::String(text) => out.push(text.clone()),
+            serde_json::Value::Array(items) => items.iter().for_each(|item| collect(item, out)),
+            serde_json::Value::Object(map) => {
+                for (key, item) in map {
+                    out.push(key.clone());
+                    collect(item, out);
+                }
+            }
+            _ => {}
+        }
     }
-    found
+    let mut out = Vec::new();
+    match serde_json::from_str::<serde_json::Value>(line) {
+        Ok(value) => collect(&value, &mut out),
+        Err(_) => out.push(line.to_owned()),
+    }
+    out
+}
+
+/// Whether `text` starts like an absolute path: `/…`, `C:\…`, `C:/…` or `\\…`.
+fn looks_absolute(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    text.starts_with('/')
+        || text.starts_with("\\\\")
+        || (bytes.len() > 2
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && matches!(bytes[2], b'\\' | b'/'))
+}
+
+/// The ways a log can spell `folder`: as given, and canonical in its plain
+/// form (the app canonicalises paths; on Windows that also expands short
+/// names such as `RUNNER~1`).
+fn spellings(folder: &Path) -> Vec<String> {
+    let mut names = vec![folder.display().to_string()];
+    if let Ok(canonical) = std::fs::canonicalize(folder) {
+        let text = canonical.display().to_string();
+        let plain = match text.strip_prefix(r"\\?\UNC\") {
+            Some(rest) => format!(r"\\{rest}"),
+            None => text.strip_prefix(r"\\?\").map_or(text.clone(), str::to_owned),
+        };
+        if !names.contains(&plain) {
+            names.push(plain);
+        }
+    }
+    names
 }
 
 #[test]
@@ -180,7 +243,7 @@ fn info_logs_hold_no_content_and_no_paths_and_debug_logs_add_paths() {
         );
     }
     assert!(
-        debug_part.contains(&debug_root.path().display().to_string()),
+        names_folder(debug_part, debug_root.path()),
         "debug lines name the build folder"
     );
     for line in debug_part.lines() {

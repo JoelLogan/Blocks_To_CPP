@@ -333,9 +333,12 @@ jobs:
         shell: bash
         env:
           B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
+        # Both runs, every test binary: one failure does not hide the others.
         run: |
-          cargo test --locked -p blocks2cpp-desktop
-          cargo test --locked -p blocks2cpp-desktop --features e2e-hooks
+          status=0
+          cargo test --locked --no-fail-fast -p blocks2cpp-desktop || status=$?
+          cargo test --locked --no-fail-fast -p blocks2cpp-desktop --features e2e-hooks || status=$?
+          exit "$status"
 
       # Building wasm-bindgen-cli takes minutes; its binaries are cached per version.
       - name: Restore wasm-bindgen-cli from the cache
