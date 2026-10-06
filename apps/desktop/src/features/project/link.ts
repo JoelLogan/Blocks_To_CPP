@@ -10,7 +10,8 @@
  *   ({@link ProjectQueue.addSaveBarrier}), so a snapshot never reaches the backend after the save
  *   that deleted it.
  * - The external-change feature runs Reload with {@link ProjectQueue.reloadWith}, so a save never
- *   writes the canvas over a file that is being read again.
+ *   writes the canvas over a file that is being read again. A reload deletes the snapshot too, so
+ *   it pauses autosave and waits for a snapshot being written like a save.
  *
  * The app's features are created before they are installed, so `src/features/index.ts` hands the
  * other features a {@link ProjectLink}, which the project feature binds to its lifecycle while it
@@ -29,11 +30,14 @@ export interface ProjectQueue {
   replaceWith(show: () => Promise<Handle | null>): Promise<boolean>;
   /** Runs `reload` (`project_reload` and showing the file again) in the queue; resolves its result. */
   reloadWith(reload: () => Promise<boolean>): Promise<boolean>;
-  /** Whether a save (Save, Save as, or the save of an unsaved-changes prompt) is under way. */
+  /**
+   * Whether a save (Save, Save as, or the save of an unsaved-changes prompt) or a reload is under
+   * way: both make the backend delete the recovery snapshot.
+   */
   isSaving(): boolean;
   /**
-   * Adds `wait`, which every save awaits before it sends the project to the backend. Returns the
-   * function that removes it again.
+   * Adds `wait`, which every save and reload awaits before it sends the project to the backend.
+   * Returns the function that removes it again.
    */
   addSaveBarrier(wait: () => Promise<void>): () => void;
 }

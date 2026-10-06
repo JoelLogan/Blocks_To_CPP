@@ -2,7 +2,7 @@
  * Restore and autosave in the project lifecycle's queue, with the real project feature and
  * compiler core: a restore and a start page action never overlap (a template click during a restore
  * asks about the restored work instead of closing it), the open project's unsaved changes are
- * settled by the lifecycle itself, and a snapshot never crosses a save.
+ * settled by the lifecycle itself, and a snapshot never crosses a save or a reload.
  *
  * Without a build of the compiler core these tests are skipped, unless B2C_REQUIRE_WASM is set
  * (as in CI), in which case a missing build fails them.
@@ -228,5 +228,42 @@ describe.skipIf(!CORE_BUILT)('autosave and saving', () => {
     await recovery.autosave.snapshotNow();
     expect(harness.ipc.recoverySave).toHaveBeenCalledTimes(2);
     expect(order).toEqual(['recovery_save', 'project_save', 'recovery_save']);
+  });
+  it('lets a reload wait for the snapshot being written, and writes none while it reloads', async () => {
+    await openChanged();
+    const order: string[] = [];
+    const snapshot = deferred<Record<string, never>>();
+    harness.ipc.recoverySave.mockImplementation(() => {
+      order.push('recovery_save');
+      return Promise.resolve({});
+    });
+    harness.ipc.recoverySave.mockImplementationOnce(() => {
+      order.push('recovery_save');
+      return snapshot.promise;
+    });
+    const reloaded = deferred<boolean>();
+
+    // A snapshot of the change is on its way when the user chooses Reload.
+    void recovery.autosave.snapshotNow();
+    const reloading = harness.feature.lifecycle.reloadWith(() => {
+      order.push('project_reload');
+      return reloaded.promise;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(order).toEqual(['recovery_save']);
+
+    // The reload goes out only once the snapshot is written (the backend then deletes it) ...
+    snapshot.resolve({});
+    await vi.waitFor(() => {
+      expect(order).toEqual(['recovery_save', 'project_reload']);
+    });
+    // ... and while it is on its way, no snapshot of the canvas being replaced starts.
+    edit('Changed again');
+    await recovery.autosave.snapshotNow();
+    expect(harness.ipc.recoverySave).toHaveBeenCalledTimes(1);
+
+    reloaded.resolve(true);
+    expect(await reloading).toBe(true);
+    expect(order).toEqual(['recovery_save', 'project_reload']);
   });
 });

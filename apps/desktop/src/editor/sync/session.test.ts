@@ -62,6 +62,21 @@ function twoModules(): BdmDocument {
   return doc;
 }
 
+/** Whether the middle of block `id` is inside the part of the canvas shown. */
+function isShown(workspace: Blockly.WorkspaceSvg, id: string): boolean {
+  const block = workspace.getBlockById(id);
+  if (!(block instanceof Blockly.BlockSvg)) {
+    return false;
+  }
+  const box = block.getBoundingRectangle();
+  const view = workspace.getMetricsManager().getViewMetrics(true);
+  const x = (box.left + box.right) / 2;
+  const y = (box.top + box.bottom) / 2;
+  return (
+    x >= view.left && x <= view.left + view.width && y >= view.top && y <= view.top + view.height
+  );
+}
+
 const sessions: EditorSession[] = [];
 
 function start(
@@ -194,6 +209,38 @@ describe('the editing session', () => {
     expect(session.shownModuleId()).toBe('mod_util');
     expect(Blockly.common.getSelected()).toBe(session.workspace.getBlockById('b'));
   });
+
+  it.each([true, false])(
+    'keeps a block in another module centred once that module has rendered (saved view: %s)',
+    async (withView) => {
+      const doc = twoModules();
+      const util = present(doc.modules[1], 'util');
+      util.workspace.blocks = [
+        { ...forever('near'), x: 0, y: 0 },
+        { ...forever('far'), x: 3000, y: 2500 },
+      ];
+      if (withView) {
+        util.workspace.viewport = { x: 0, y: 0, scale: 1 };
+      }
+      const workspace = renderedWorkspace({ move: { scrollbars: true, drag: true } });
+      setViewSize(workspace, 1000, 700);
+      const session = start(doc, workspace);
+      session.resize();
+      await vi.advanceTimersByTimeAsync(50);
+
+      // A click in Problems or the C++ panel on a block of another module.
+      session.selectBlock('far', { center: true });
+      expect(session.shownModuleId()).toBe('mod_util');
+      expect(isShown(workspace, 'far')).toBe(true);
+      // Blockly's first render of the module settles its view; the block stays in view.
+      await vi.advanceTimersByTimeAsync(50);
+      expect(isShown(workspace, 'far')).toBe(true);
+      // The jump moved the view, so the view shown is the one saved.
+      const saved = session.currentDocument().modules[1]?.workspace.viewport;
+      expect(saved).toBeDefined();
+      expect(saved).not.toEqual({ x: 0, y: 0, scale: 1 });
+    },
+  );
 
   it('selects the outermost collapsed block around the one asked for', async () => {
     const doc = documentFixture();

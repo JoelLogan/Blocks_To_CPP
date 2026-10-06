@@ -115,7 +115,7 @@ export class ProjectLifecycle implements ProjectQueue {
   private recentRequest = 0;
   /** How many saves are under way (a Save as inside a save counts twice). */
   private saving = 0;
-  /** What every save waits for before it sends the project ({@link addSaveBarrier}). */
+  /** What every save and reload waits for before it sends the project ({@link addSaveBarrier}). */
   private readonly saveBarriers = new Set<() => Promise<void>>();
   private disposed = false;
 
@@ -348,21 +348,32 @@ export class ProjectLifecycle implements ProjectQueue {
 
   /**
    * Runs `reload` (`project_reload` and showing the file again after an outside change) as the
-   * operation `reload`, so it never overlaps a save or another open. Resolves its result, or
-   * `false` once the lifecycle is stopped.
+   * operation `reload`, so it never overlaps a save or another open. Like a save it waits for a
+   * snapshot being written and pauses autosave until the reloaded file is shown: the backend
+   * deletes the snapshot of the changes a reload discards, and a snapshot of the old canvas must
+   * not reach it afterwards. Resolves its result, or `false` once the lifecycle is stopped.
    */
   reloadWith(reload: () => Promise<boolean>): Promise<boolean> {
-    return this.exclusive('reload', reload);
+    return this.exclusive('reload', () =>
+      this.whileSaving(async () => {
+        await this.passSaveBarriers();
+        return reload();
+      }),
+    );
   }
 
-  /** Whether a save (Save, Save as, or the save of an unsaved-changes prompt) is under way. */
+  /**
+   * Whether a save (Save, Save as, or the save of an unsaved-changes prompt) or a reload is under
+   * way: both make the backend delete the recovery snapshot, so autosave pauses meanwhile.
+   */
   isSaving(): boolean {
     return this.saving > 0;
   }
 
   /**
-   * Adds `wait`, which every save awaits right before it sends the project to the backend
-   * (autosave: its snapshot write in progress). Returns the function that removes it again.
+   * Adds `wait`, which every save and reload awaits right before it sends the project to the
+   * backend (autosave: its snapshot write in progress). Returns the function that removes it
+   * again.
    */
   addSaveBarrier(wait: () => Promise<void>): () => void {
     const entry = () => wait();
@@ -570,7 +581,7 @@ export class ProjectLifecycle implements ProjectQueue {
 
   // ---- Saving ----------------------------------------------------------------------------------
 
-  /** Runs `task`, a save, counted in {@link isSaving}. */
+  /** Runs `task`, a save or a reload, counted in {@link isSaving}. */
   private async whileSaving(task: () => Promise<boolean>): Promise<boolean> {
     this.saving += 1;
     try {

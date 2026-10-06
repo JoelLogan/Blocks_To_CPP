@@ -79,6 +79,12 @@ interface ShownView {
    * headless workspace). While it is `null`, the view counts as unchanged.
    */
   baseline: ViewState | null;
+  /**
+   * The block a selection asked to centre on while this module was shown. Settling the view
+   * restores `saved`, so it centres on this block again afterwards; otherwise the deferred
+   * settle after Blockly's first render would undo a jump to a block in another module.
+   */
+  centreOn: string | null;
 }
 
 /** Whether a rendered workspace's view has an area (it has none while the editor is hidden). */
@@ -131,7 +137,7 @@ export class EditorSession {
   private readonly unsubscribe: () => void;
   private shown: string | null = null;
   /** The view of the shown module (see {@link ShownView}). */
-  private shownView: ShownView = { saved: undefined, baseline: null };
+  private shownView: ShownView = { saved: undefined, baseline: null, centreOn: null };
   /** Viewports of modules that were shown and left, to save with the document. */
   private readonly leftViews = new Map<string, BdmViewport | undefined>();
   /** The shown module's blocks just before the block drag in progress, or `null`. */
@@ -277,6 +283,9 @@ export class EditorSession {
       Blockly.common.setSelected(target);
       if (options.center === true) {
         this.workspace.centerOnBlock(target.id, true);
+        // The module may have just been shown, and its view still settles once Blockly has
+        // rendered it: that settle centres on the block again.
+        this.shownView.centreOn = target.id;
       }
     } catch (error: unknown) {
       console.warn('The block could not be selected', error);
@@ -383,7 +392,7 @@ export class EditorSession {
       ? this.leftViews.get(moduleId)
       : doc.modules.find((module) => module.id === moduleId)?.workspace.viewport;
     this.leftViews.delete(moduleId);
-    const view: ShownView = { saved, baseline: null };
+    const view: ShownView = { saved, baseline: null, centreOn: null };
     this.shownView = view;
     this.settleView(view);
     this.index.rebuild(this.workspace);
@@ -400,7 +409,7 @@ export class EditorSession {
     clearWorkspace(this.workspace);
     this.workspace.clearUndo();
     this.shown = null;
-    this.shownView = { saved: undefined, baseline: null };
+    this.shownView = { saved: undefined, baseline: null, centreOn: null };
     this.leftViews.clear();
     this.guard.reset();
     this.index.rebuild(this.workspace);
@@ -411,7 +420,8 @@ export class EditorSession {
    * and again after Blockly's first render of the canvas, which sizes the content and moves the
    * scroll position (that is not the user scrolling). A workspace without a size (the editor is
    * hidden while a project opens from the start page) cannot show a view; {@link resize} settles
-   * it once the editor is shown.
+   * it once the editor is shown. A block a selection centred on in the meantime is centred on
+   * again after each settle; the baseline is taken before that, so the jump counts as a move.
    */
   private settleView(view: ShownView): void {
     const workspace = this.workspace;
@@ -423,6 +433,9 @@ export class EditorSession {
         restoreViewport(workspace, view.saved);
       }
       view.baseline = viewStateOf(workspace);
+      if (view.centreOn !== null && workspace.getBlockById(view.centreOn) !== null) {
+        workspace.centerOnBlock(view.centreOn, true);
+      }
     };
     settle();
     void Blockly.renderManagement.finishQueuedRenders().then(() => {
