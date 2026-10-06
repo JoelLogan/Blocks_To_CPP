@@ -80,7 +80,7 @@
 | **Visual diff** | WebDriver screenshots + pixelmatch | The canvas with a known project on both systems |
 | **Security regression** | Custom harness | `tests/security/projects/*.b2c` with asserted outcomes ([08 §8.12](08-security.md#812-threat-summary)) |
 | **Performance** | `criterion` + scripted workspace benchmarks | Codegen p95 at 1k blocks, drag frame time at 5k blocks, cold start. More than 10% regression fails CI on the benchmark job. |
-| **Manual** | Per milestone | Screen readers (NVDA on Windows, Orca on Linux), high-contrast themes, real-world toolchain matrix (WinLibs, TDM, Scoop, Strawberry, distro GCCs) |
+| **Manual** | Per milestone | Screen readers (NVDA on Windows, Orca on Linux), high-contrast themes, real-world toolchain matrix (WinLibs, TDM, Scoop, Strawberry, distro GCCs), and sessions with first-time users where an exit criterion needs them; protocols and results in [`docs/manual-tests/`](../manual-tests/README.md) |
 
 **Coverage gates:** core compiler crates ≥ 90% lines, all Rust ≥ 80%, and
 frontend ≥ 75%. Measured with `cargo-llvm-cov` and Vitest coverage, and
@@ -122,32 +122,50 @@ Details of each level as M2 sets them up:
   test hook's transcript (xterm.js's DOM renderer holds only the rows on
   screen) and find elements by `data-testid`. CI checks that
   release builds contain neither the hooks nor the frontend's test helper.
-* **The M2 exit test** assembles the guessing game from the *Empty* template
-  on both systems: real drags for some blocks (the program, a variable, a
-  print and a loop), a test helper for the rest, then a build, a binary search
-  over *Too low!* and *Too high!* until *Correct!*, and *Finished (exit code
-  0)* in the console header. Further M2 flows: Restricted Mode and trust,
-  save and reload, crash recovery, Stop, exit decoding, cleanup when the app
-  closes, the setup page, an external change, the clipboard and the
-  settings. Typing in expression slots and Quick Insert are M3 features and
-  are not tested in M2. *Without reading docs* is checked by a manual
-  usability session with first-time users on both systems before M2 is
-  declared done.
+* **The M2 exit test** (`apps/desktop/e2e/specs/exit/`) assembles the
+  guessing game from the *Empty* template on both systems: real drags for
+  some blocks (the program, a variable, a print and a loop), a test helper
+  for the rest, then a build, a binary search over *Too low!* and *Too
+  high!* until *Correct!*, and *Finished (exit code 0)* in the console
+  header. **The breadth flows** (`specs/flows/`) cover Restricted Mode and
+  trust, save and reload, crash recovery, Stop (the button and `Shift+F5`),
+  exit decoding, closing the app while a program runs (no process outlives
+  it), a flood of 10,000,000 output lines, the setup page, an external change
+  (also to a deleted file), the clipboard, settings after a restart, the
+  variable menus, the connection checker, selecting a block from its code, a
+  drag from every toolbox category, and a build and a run with input. Both
+  run in the pull request E2E job on both systems; the security tests of
+  [08 §8.13](08-security.md#813-continuous-security-process) run nightly.
+  Typing in expression slots and Quick Insert are M3 features and are not
+  tested in M2. *Without reading docs* is checked by a manual usability
+  session with first-time users on both systems before M2 is declared done
+  ([the protocol](../manual-tests/m2-usability.md)).
 * **Visual diff.** The guessing game in a 1000×700 window at zoom 1.0, light
-  theme, caret hidden, compared with pixelmatch (threshold 0.1); more than
-  0.5% of differing pixels fails. Each system has its own baselines in
-  `apps/desktop/e2e/visual/baselines/{linux,windows}/`, refreshed by a manually
-  started job whose results a person reviews and commits. It runs in the pull
-  request E2E job.
+  theme, caret hidden, with the C++ and bottom panels folded, compared with
+  pixelmatch (threshold 0.1); more than 0.5% of differing pixels fails. A
+  native driver that cannot resize the window leaves the app at its own size
+  with a warning, and the baseline's size check still applies. Each system
+  has its own baseline in `apps/desktop/e2e/visual/baselines/{linux,windows}/`.
+  The E2E job uploads its screenshots as candidates on every run (a manual
+  run with the `visual-baselines` input only writes candidates); a person
+  reviews them and commits the baselines. Until a system's baseline is
+  committed, its visual diff passes with a warning. It runs in the pull
+  request E2E job and nightly.
 * **Benchmarks.** `criterion` measures the native pipeline (load, resolve,
-  analyse, generate) on a generated 1,000-block module. Through the E2E
-  harness, the webview benchmarks measure cold start to the editor's
-  readiness marker, the preview's p95 at 1,000 blocks and the p95 frame time
-  while dragging in a 5,000-block workspace. A run takes the median of at
-  least 10 samples and compares it with the baseline, the median of the last 5
-  successful nightly runs on the default branch for the same system. More
-  than 10% worse fails; until 5 baselines exist the comparison is only
-  reported.
+  analyse, generate, and the whole preview) on a generated 1,000-block
+  module. Through the E2E harness, the webview benchmarks measure cold start
+  to the editor's readiness marker, the p95 of the preview pipeline's task at
+  1,000 blocks (reading the canvas, `canonical()` and `preview()` in
+  WebAssembly and storing the result, found by an in-page heartbeat) and the
+  p95 frame time while dragging in a 5,000-block workspace (one sample is a
+  drag away and back). The time from an edit to its C++ is reported too, not
+  gated. Every timing is taken inside the page, never across WebDriver. A
+  run takes the median of at least 10 samples and compares it with the
+  baseline, the median of the last 5 successful nightly runs on the default
+  branch for the same system, kept in the Actions cache per system
+  (`tools/bench-compare.py`). More than 10% worse fails; until 5 baselines
+  exist the comparison is only reported. M2 gates regressions; meeting the
+  targets N2–N4 ([01 §1.4](01-overview.md#14-goals)) is part of M5.
 
 ## 9.3 Continuous integration
 
@@ -157,13 +175,13 @@ GitHub Actions workflows. All actions are SHA-pinned and least-privilege
 | Workflow | Trigger | Jobs |
 | ---------- | --------- | ------ |
 | `ci.yml` | PR, push to any branch, weekly, manual | `lint` (rustfmt, clippy, also for the Windows target, markdownlint) · `test` (ubuntu, windows) · `test-cgroup` (the Linux cgroup path) · `gcc` (GCC 11 and 15 containers) · `wasm` (build + size budget) · `coverage` (the gates of §9.2) · `docs` (rustdoc, lychee link check, diagnostic codes documented, generated IPC types and catalog outputs up to date) · `deny` · `secrets` (gitleaks) · `security` (pnpm audit, security suite) · `fuzz` (60 s per target) |
-| `desktop.yml` | PR and push touching the app, the crates, the packages or the Rust and Node configuration; manual | `frontend` (`tsc --noEmit`, eslint, prettier, package layering) · `test-web` (Vitest with coverage, after building the WASM core) · `app` (build, tests and start check on ubuntu and windows) · `e2e` (ubuntu, windows; with the visual diff, and the Trusted Types summary, which is meaningful on WebView2) |
+| `desktop.yml` | PR and push touching the app, the crates, the packages or the Rust and Node configuration; manual (optionally making new visual-diff candidates) | `frontend` (`tsc --noEmit`, eslint, prettier, package layering) · `test-web` (Vitest with coverage, after building the WASM core; the unit tests of the E2E harness, the benchmarks and the visual diff; the benchmark comparison's self-test) · `app` (build, tests, release checks and start check on ubuntu and windows) · `e2e` (ubuntu, windows: the exit test and the breadth flows, then the visual diff; the Trusted Types summary, which is meaningful on WebView2) |
 | `codeql.yml` | PR, push, weekly | CodeQL: JavaScript/TypeScript, Rust, GitHub Actions (code scanning, see below) |
 | `osv-scanner.yml` | PR, push, daily | OSV-Scanner over every lockfile; fails on known vulnerabilities and uploads results to code scanning when available |
 | `scorecard.yml` | Push to `main`, weekly, branch-protection changes | OpenSSF Scorecard (code scanning, see below) |
 | `workflow-audit.yml` | PR and push touching `.github/`; weekly and manual (adding online audits) | zizmor (auditor persona) |
 | `pages.yml` | PR and push touching `docs/`, `site/`, `LICENSE`, `SECURITY.md`, the Node/pnpm config or the workflow itself; manual | Build the specification website (fails on broken links or anchors, unpublished docs and raw HTML); deploy to GitHub Pages from the default branch |
-| `nightly.yml` | Daily, manual | `fuzz` (30 minutes per target, one job per target, with a kept corpus) · `e2e` (both OSes, every flow) · `e2e-security` (both OSes, [08 §8.13](08-security.md#813-continuous-security-process)) · `bench` (both OSes, with the 10% gate) |
+| `nightly.yml` | Daily, manual | `fuzz` (30 minutes per target, one job per target, with a kept corpus) · `links` (lychee over all Markdown) · `e2e-app` (the app under test, built once per OS for the jobs below) · `e2e` (both OSes, every flow and the visual diff) · `e2e-security` (both OSes, [08 §8.13](08-security.md#813-continuous-security-process)) · `bench` (both OSes, with the 10% gate) |
 | `weekly.yml` | Weekly, manual | `mutants` (`cargo-mutants`) · `dependency-health` (report) · `geiger` (`cargo-geiger`, report only) · `fuzz-cmin` (corpus minimisation) |
 | `release.yml` | Signed tag `v*` | Build and bundle (Windows MSI/NSIS, Linux AppImage/deb/rpm), sign, SBOMs, provenance attestations, draft GitHub Release. Runs in the protected `release` environment. |
 
@@ -193,18 +211,14 @@ Notes on the jobs:
   duplicate crate versions, and `osv-scanner.toml` exceptions that expire
   within 14 days.
 
-**Implemented so far:** `pages.yml`, `workflow-audit.yml`, `codeql.yml`, `osv-scanner.yml`,
-`scorecard.yml`; every `ci.yml` job in the table: `lint` (with markdownlint), `test` (Ubuntu with
-GCC 13 and Windows with MSYS2), `gcc` (GCC 11 and 15 in containers, for the crates that compile
-C++), `test-cgroup`, `coverage` (with both gates), `wasm` (with the size budget), `fuzz` (a 60-second
-libFuzzer run per target, seeded with the examples and the malicious-project suite), `deny`, `docs`
-(diagnostic codes documented, rustdoc, the staleness checks and lychee), `secrets` (gitleaks) and
-`security` (`pnpm audit`); in `desktop.yml` the `frontend`, `test-web`, `app` (with the release
-checks: no end-to-end hooks, and on Windows the embedded application manifest) and `e2e` (Ubuntu and
-Windows, the guessing-game exit test; the Trusted Types summary is written on both systems and is
-meaningful on WebView2) jobs; `nightly.yml` with `fuzz` and `links`; and `weekly.yml`. The rest of
-M2 adds the other E2E flows and the visual diff, and the nightly `e2e`, `e2e-security` and `bench`
-jobs. `release.yml` arrives before the first signed release (M6).
+**Implemented so far:** every workflow and job in the table except
+`release.yml`, which arrives before the first signed release (M6). The
+breadth flows and the visual diff in `desktop.yml`'s `e2e` job, and
+`nightly.yml`'s `e2e-app`, `e2e`, `e2e-security` and `bench` jobs, came last
+in M2: their tests pass on Linux, and their Windows runs are not yet
+confirmed ([10 §10.1](10-roadmap.md#101-milestones)). The benchmark gate
+only reports until five scheduled runs per system have been kept, and the
+visual diff only warns until a person commits its baselines.
 
 ## 9.4 Documentation
 
@@ -216,7 +230,8 @@ the code it describes.
 | Specification | `docs/spec/` | Contributors | Living document with status and last-reviewed date per chapter |
 | Specification website | `site/` → GitHub Pages | Everyone | **Generated** from `docs/spec/` and `docs/adr/` on every change; the build fails on broken links |
 | ADRs | `docs/adr/` | Contributors | One per significant decision (template in `docs/adr/README.md`); superseded, never deleted |
-| User guide + tutorials | `docs/user-guide/` (mdBook) | Users, teachers | Screenshots regenerated by E2E tests |
+| User guide + tutorials | `docs/user-guide/` (Markdown; the mdBook build and the bundled copy come with the offline help in M5) | Users, teachers | Updated with the features it describes; screenshots, once added, are regenerated by E2E tests. M2 has the [getting-started page](../user-guide/getting-started.md) |
+| Manual test protocols | `docs/manual-tests/` | Testers, maintainers | One protocol per milestone check that cannot be automated (screen readers, usability), with its results recorded in the protocol ([index](../manual-tests/README.md)) |
 | Block reference | `docs/reference/blocks/` | Users | **Generated** from the catalog; CI fails if stale |
 | Diagnostics reference | `docs/reference/diagnostics/` | Users | **Generated** from the message catalog plus explanations; CI fails if a code is undocumented |
 | API docs | rustdoc / TSDoc | Contributors | Built in CI; `missing_docs` warnings |
@@ -232,10 +247,11 @@ pages, and every diagnostic links to its reference entry.
   [10 §10.1](10-roadmap.md#101-milestones) are updated when a milestone ends.
 * All Markdown is linted with markdownlint, and external links are checked
   with lychee (§9.3). rustdoc is built with warnings as errors.
-* **In M2** *Help* and *Learn more* open the published documentation in the
-  system browser through fixed links
-  ([08 §8.8](08-security.md#88-webview-and-ipc-hardening)); the bundled
-  offline pages and per-code links come in M5.
+* **In M2** there is no *Help* menu: *Learn more* in Problems opens the
+  published diagnostics reference, and the setup page opens the MSYS2 and
+  WinLibs sites, in the system browser through fixed links
+  ([08 §8.8](08-security.md#88-webview-and-ipc-hardening)). *Help*, the
+  bundled offline pages and per-code links come in M5.
 
 ## 9.5 Versioning
 

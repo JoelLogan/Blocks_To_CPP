@@ -141,6 +141,17 @@ decision the user makes explicitly, once, per project.**
   first save records trust for the chosen path. *Save as* of a trusted
   project records trust for the new path; *Save as* of a restricted project
   leaves it restricted.
+
+  **Open for M4.** `build_start` takes the document to build from the
+  editor, so script that took over the webview could create a project and
+  build, under that trusted handle, a document copied from a restricted
+  project. In M2 this gives it nothing the trust gate holds back: M2 builds
+  no Raw C++ (the M2 catalog has no such block, so a document with one has
+  errors and is never built), and defines and library names are typed and
+  encoded (§8.4). Before Raw C++ blocks and library packs arrive (M4),
+  decide whether `build_start` on a *created here* handle must ask for trust
+  when the document's security summary is not empty. Writing the nightly E2E
+  security tests (§8.13) brought this up.
 * **Restored snapshots** ([05 §5.10](05-project-format.md#510-saving-and-recovery)):
   a snapshot of a project that was never saved restores as trusted (*created
   here*). A snapshot with a file path restores as trusted only when that
@@ -157,13 +168,13 @@ decision the user makes explicitly, once, per project.**
   opened, saved, built or snapshotted), and granting trust records that
   document's security hash.
 * **The dialog itself** is raised from Rust with `tauri-plugin-dialog`'s Rust
-  API; the webview has no dialog permission. It offers the three choices as
-  buttons if the pinned version supports custom labels, and otherwise asks two
-  native questions in turn (*Trust this project?*, then *This project only,
-  or everything in this folder?*). On Linux it uses the GTK3 backend without
-  D-Bus. The plugin is a new dependency justified under §8.9; using its
-  dialog library (`rfd`) directly is the fallback. On Windows the dialog
-  uses `rfd` directly, with **Stay in Restricted Mode** as the first button:
+  API; the webview has no dialog permission. It is one native message dialog
+  with the three choices as its buttons: the pinned plugin (2.8.0) supports
+  three buttons with custom labels on both systems, so the fallback of two
+  questions in turn was not needed. On Linux it is a GTK 3 dialog without the
+  XDG portal, so without D-Bus. The plugin is a new dependency justified
+  under §8.9. On Windows the dialog uses the plugin's dialog library (`rfd`)
+  directly, with **Stay in Restricted Mode** as the first button:
   the Task Dialog's default button is its first one, so Enter (also a held
   or repeated one) never grants trust, and the plugin cannot show that
   order (it reports Escape as the third button). Cancelling, Escape and
@@ -463,9 +474,16 @@ In detail ([02 §2.5](02-architecture.md#25-ipc-surface)):
   ranges and enum values. Channel arguments must look like
   `__CHANNEL__:<1–10 digits>`. Tauri's internal `plugin:__TAURI_CHANNEL__|fetch`
   with a `null` payload is allowed, because large channel messages are
-  delivered through it. Anything else throws, so the message is never sent.
-  The hook has its own tests with a valid sample of every command and every
-  kind of malformed message.
+  delivered through it. Anything else throws, so the message is never sent
+  and the call is never answered. The hook has its own tests with a valid
+  sample of every command and every kind of malformed message. A `__proto__`
+  key in the arguments of Tauri's internal `invoke` never reaches the hook:
+  Tauri's serializer in the editor's frame copies the arguments by
+  assignment, which turns such a key into the copy's prototype, and
+  structured cloning keeps own properties only. The hook judges what is left
+  (a field hidden behind `__proto__` arrives missing), so its `__proto__`
+  check matters for messages built some other way; `constructor` and
+  `prototype` keys do arrive and are refused.
 * **The backend re-validates everything** (`b2c_ipc::decode`) and enforces the
   resource bounds: 32 open projects, 8 running programs, one native dialog at
   a time, one `trust_grant` per project every 2 s, and 200 calls and 1 MiB
@@ -496,9 +514,10 @@ In detail ([02 §2.5](02-architecture.md#25-ipc-surface)):
 `Content-Security-Policy-Report-Only: require-trusted-types-for 'script'` to
 the app's own HTML responses, in every build; the enforced CSP is unchanged.
 The frontend counts `securitypolicyviolation` events, recording only the
-directive, never sample text. E2E builds expose the counts, and the Windows
-E2E job writes them to its summary. WebKitGTK may ignore the header, so the
-trial is meaningful on WebView2. Adding the header is logged at debug level
+directive, never sample text. E2E builds expose the counts, and the E2E jobs
+write them to their summaries on both systems, with a column that says
+whether the policy was active. WebKitGTK may ignore the header, so the trial
+is meaningful on WebView2. Adding the header is logged at debug level
 (*"added the Trusted Types report-only policy"*, with the path), so a test can
 confirm the main document carries it without a backend command.
 
@@ -578,6 +597,19 @@ are sent, which leaves this exposure to a compromised webview on the same
 machine that bypasses the hook. That is accepted for M2. Reading raw request
 bodies in the handlers is adopted only if profiling shows a need.
 
+Script in the editor's frame can also send a message straight to the IPC
+endpoint with Tauri's internal `postMessage`, around the isolation frame. A
+message with a body is refused, because only the isolation frame can
+encrypt it. A message with an empty body is not decrypted at all (Tauri 2.12
+decrypts only a payload), so a command that takes no arguments runs that
+way without the hook. Every such command is on the allowlist anyway:
+`app_info`, `app_quit`, `project_open_dialog`, `recent_list`,
+`recovery_list`, `toolchain_list`, `toolchain_rescan`, `toolchain_add_dialog`,
+`toolchain_setup_info`, `build_cache_clear` and `settings_get`. Commands with
+arguments, and every command the capability does not grant, are refused.
+This is accepted for M2 as well, and the nightly E2E security tests (§8.13)
+check it.
+
 **Malicious-project regression suite:** `tests/security/projects/` holds a
 crafted `.b2c` file for **every** threat above that a file can express:
 injection strings, comment splices, bidi text, deep nesting, duplicate keys,
@@ -602,7 +634,8 @@ safely), and the suite runs on every PR.
    Restricted Mode, and no compiler process is ever started;
 2. `build_start` and `run_start` called directly through Tauri's internal
    invoke on a restricted project are refused with `restricted`;
-3. an unknown command is dropped by the isolation hook;
+3. an unknown command is dropped by the isolation hook: the call is never
+   answered, and the backend never sees it (its debug log names none);
 4. unknown fields, an oversized document, program input over 64 KiB, an
    out-of-range terminal size and forged handles are refused;
 5. HTML and script text in a project's strings and comments is shown
@@ -610,6 +643,15 @@ safely), and the suite runs on every PR.
 6. navigation to an external URL and `window.open` are blocked;
 7. a trust-relevant change made outside the app (editing `trust.json`, or a
    define in the project file) returns the project to Restricted Mode.
+
+They are the specs in `apps/desktop/e2e/specs/security/`, whose README lists
+every case, and `nightly.yml`'s `e2e-security` job runs them on Ubuntu and
+Windows. They act as script injected into the editor would: through Tauri's
+internal `invoke` and `postMessage` (§8.12), never through the app's IPC
+client or the test hook. Their probes have positive controls (a trusted
+build that the compiler watch must see, a marked element that the injection
+probe must find, a reload that the navigation check must notice), so a
+broken probe cannot pass for a refused attack.
 
 **Vulnerability handling.** Reports come in through GitHub private
 vulnerability reporting ([/SECURITY.md](../../SECURITY.md)). Fixes are

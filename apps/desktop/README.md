@@ -6,20 +6,14 @@ Linux). See [docs/spec/02-architecture.md](../../docs/spec/02-architecture.md) f
 architecture and [docs/spec/04-user-interface.md](../../docs/spec/04-user-interface.md) for the
 user interface.
 
-## What it contains (milestone M0)
+## What it contains
 
-The shell of the main window ([§4.1](../../docs/spec/04-user-interface.md#41-main-window-layout)):
-
-- a top bar with the app name
-- an empty Blockly workspace with the Scratch-style **Zelos** renderer, a grid, zoom controls
-  and a trash can, in light and dark colours that follow the system setting
-- placeholders for the toolbox (left), the C++ panel (right) and the console, problems and build
-  output dock (bottom)
-- a status bar with the version, which the frontend asks the backend for over IPC (the
-  `app_version` command), so the shell shows that IPC works under the security settings below
-
-Milestone M2 ([roadmap](../../docs/spec/10-roadmap.md)) turns the shell into the editor: the
-sections below describe what it adds.
+The desktop editor of milestone M2 ([roadmap](../../docs/spec/10-roadmap.md#101-milestones)):
+the start page, the block editor with its toolbox, the live C++ panel, Problems, the console and
+the build output, the toolchain and settings pages, and Restricted Mode, on top of the M0 shell
+(the window, the Content Security Policy, the isolation pattern and the capabilities of
+[Security settings](#security-settings)). [Getting started](../../docs/user-guide/getting-started.md)
+shows the app from a user's side; the sections below describe how it is built.
 
 ### The backend (milestone M2)
 
@@ -249,33 +243,33 @@ project, build, run, toolchain, settings, trust and recovery services:
 
 ## Layout
 
-| Path                                   | Contents                                                                                                                                          |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `index.html`, `src/main.tsx`           | Entry point (no inline scripts)                                                                                                                   |
-| `src/app/`                             | The app shell: start-up, state, registries, window, banners, dialogs                                                                              |
-| `src/features/`                        | The features, installed at start-up (`index.ts`): project, build and run, toolchain, settings, trust, recovery, external changes                  |
-| `src/editor/`                          | The block editor: workspace, BDM ⇄ Blockly sync, live preview, services, module switcher, toolbox, diagnostics on blocks, highlighting, clipboard |
-| `src/panels/`                          | The C++ code panel, Problems, the console and Build output                                                                                        |
-| `src/lib/ipc.ts`                       | The typed client for the backend's commands                                                                                                       |
-| `src/e2e/`                             | The end-to-end test hook `window.__B2C_E2E__`, built only in Vite mode `e2e` (`pnpm build:e2e`) and absent from every other build                 |
-| `e2e/`                                 | The end-to-end tests (selenium-webdriver, `tauri-driver`, Vitest); see [`e2e/README.md`](e2e/README.md)                                           |
-| `src/test/`, `vitest.config.ts`        | Test setup and shared test helpers; the Vitest settings                                                                                           |
-| `src-tauri/src/main.rs`                | Entry point; calls `blocks2cpp_desktop::run()`                                                                                                    |
-| `src-tauri/src/lib.rs`                 | Start-up (folders, log, panic hook, backend, window), the command list, shutdown on exit                                                          |
-| `src-tauri/src/commands/`              | One thin async adapter per IPC command (decode, call `b2c_app::Backend` on the blocking pool)                                                     |
-| `src-tauri/src/channels.rs`            | Tauri channels as the backend's event and byte sinks                                                                                              |
-| `src-tauri/src/dialogs.rs`             | Native open, save, choose-g++ and trust dialogs (tauri-plugin-dialog, Rust API only)                                                              |
-| `src-tauri/src/window.rs`              | The editor window, navigation rules, closing with unsaved changes                                                                                 |
-| `src-tauri/src/logging.rs`             | JSON-lines log files (5 × 5 MiB), `B2C_LOG`, panic hook                                                                                           |
-| `src-tauri/src/e2e.rs`                 | End-to-end seams, feature `e2e-hooks` only (never in release builds)                                                                              |
-| `src-tauri/tests/`                     | Command consistency, security settings, mock-runtime IPC, logging, end-to-end seams, Windows hardening (`hardening.rs`)                           |
-| `src-tauri/windows-app-manifest.xml`   | The Windows application manifest (Common Controls v6, `longPathAware`), linked into every executable of the crate, tests included                 |
-| `src-tauri/tauri.conf.json`            | App, window, security (CSP, isolation) and bundle settings                                                                                        |
-| `src-tauri/capabilities/`              | What the window may call in the backend                                                                                                           |
-| `src-tauri/permissions/autogenerated/` | Permissions for our commands, generated by `build.rs`                                                                                             |
-| `src-tauri/isolation/`                 | The isolation application that checks every IPC message                                                                                           |
-| `src-tauri/isolation-tests/`           | Node tests of the isolation validator and hook                                                                                                    |
-| `src-tauri/icons/`                     | App icons; `icon.svg` is the source                                                                                                               |
+| Path                                   | Contents                                                                                                                                                                   |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.html`, `src/main.tsx`           | Entry point (no inline scripts)                                                                                                                                            |
+| `src/app/`                             | The app shell: start-up, state, registries, window, banners, dialogs                                                                                                       |
+| `src/features/`                        | The features, installed at start-up (`index.ts`): project, build and run, toolchain, settings, trust, recovery, external changes                                           |
+| `src/editor/`                          | The block editor: workspace, BDM ⇄ Blockly sync, live preview, services, module switcher, toolbox, diagnostics on blocks, highlighting, clipboard                          |
+| `src/panels/`                          | The C++ code panel, Problems, the console and Build output                                                                                                                 |
+| `src/lib/ipc.ts`                       | The typed client for the backend's commands                                                                                                                                |
+| `src/e2e/`                             | The end-to-end test hook `window.__B2C_E2E__`, built only in Vite mode `e2e` (`pnpm build:e2e`) and absent from every other build                                          |
+| `e2e/`                                 | The end-to-end tests (selenium-webdriver, `tauri-driver`, Vitest), the webview benchmarks (`bench/`) and the visual diff (`visual/`); see [`e2e/README.md`](e2e/README.md) |
+| `src/test/`, `vitest.config.ts`        | Test setup and shared test helpers; the Vitest settings                                                                                                                    |
+| `src-tauri/src/main.rs`                | Entry point; calls `blocks2cpp_desktop::run()`                                                                                                                             |
+| `src-tauri/src/lib.rs`                 | Start-up (folders, log, panic hook, backend, window), the command list, shutdown on exit                                                                                   |
+| `src-tauri/src/commands/`              | One thin async adapter per IPC command (decode, call `b2c_app::Backend` on the blocking pool)                                                                              |
+| `src-tauri/src/channels.rs`            | Tauri channels as the backend's event and byte sinks                                                                                                                       |
+| `src-tauri/src/dialogs.rs`             | Native open, save, choose-g++ and trust dialogs (tauri-plugin-dialog, Rust API only)                                                                                       |
+| `src-tauri/src/window.rs`              | The editor window, navigation rules, closing with unsaved changes                                                                                                          |
+| `src-tauri/src/logging.rs`             | JSON-lines log files (5 × 5 MiB), `B2C_LOG`, panic hook                                                                                                                    |
+| `src-tauri/src/e2e.rs`                 | End-to-end seams, feature `e2e-hooks` only (never in release builds)                                                                                                       |
+| `src-tauri/tests/`                     | Command consistency, security settings, mock-runtime IPC, logging, end-to-end seams, Windows hardening (`hardening.rs`)                                                    |
+| `src-tauri/windows-app-manifest.xml`   | The Windows application manifest (Common Controls v6, `longPathAware`), linked into every executable of the crate, tests included                                          |
+| `src-tauri/tauri.conf.json`            | App, window, security (CSP, isolation) and bundle settings                                                                                                                 |
+| `src-tauri/capabilities/`              | What the window may call in the backend                                                                                                                                    |
+| `src-tauri/permissions/autogenerated/` | Permissions for our commands, generated by `build.rs`                                                                                                                      |
+| `src-tauri/isolation/`                 | The isolation application that checks every IPC message                                                                                                                    |
+| `src-tauri/isolation-tests/`           | Node tests of the isolation validator and hook                                                                                                                             |
+| `src-tauri/icons/`                     | App icons; `icon.svg` is the source                                                                                                                                        |
 
 ## Requirements
 
@@ -439,7 +433,10 @@ These implement [docs/spec/08-security.md §8.8](../../docs/spec/08-security.md#
 ## Dependencies
 
 Every dependency is pinned to an exact version and was at least 7 days old when added, as the
-workspace policy requires ([§8.9](../../docs/spec/08-security.md#89-supply-chain)).
+workspace policy requires ([§8.9](../../docs/spec/08-security.md#89-supply-chain)), with the one
+exception the notes explain (`libc`). The tables list the npm packages of the app and of the
+frontend packages (`packages/*` use the same development tools at the same versions), and the
+crates that the desktop shell (milestone M0) and milestone M2 added to the Cargo workspace.
 
 | Package                                  | Version (released)   | Licence           | Why                                                                                                                                                                                                                                                                                                                                                                              |
 | ---------------------------------------- | -------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -472,6 +469,7 @@ workspace policy requires ([§8.9](../../docs/spec/08-security.md#89-supply-chai
 | `pngjs` (dev)                            | 7.0.0 (2023-02-20)   | MIT               | Reads and writes the visual diff's PNG screenshots and baselines; no dependencies                                                                                                                                                                                                                                                                                                |
 | `@types/pngjs` (dev)                     | 6.0.5 (2024-05-02)   | MIT               | Types for `pngjs`                                                                                                                                                                                                                                                                                                                                                                |
 | `@types/node` (dev)                      | 24.19.0              | MIT               | Node.js types for the end-to-end harness only (`e2e/tsconfig.json`); the app's own TypeScript configuration loads none. The same version as `b2c-core-wasm` and `catalog-gen`                                                                                                                                                                                                    |
+| `markdownlint-cli2` (root, dev)          | 0.23.3 (2026-09-20)  | MIT               | The Markdown lint of `ci.yml`'s `lint` job (`.markdownlint-cli2.jsonc`); a devDependency of the repository root, not of the app. 87 development-only packages, none with an install script                                                                                                                                                                                       |
 | `zustand`                                | 5.0.15 (2026-08-13)  | MIT               | The app's state store (`src/app/store/`); no dependencies                                                                                                                                                                                                                                                                                                                        |
 | `@radix-ui/react-dialog`                 | 1.1.23 (2026-07-24)  | MIT               | Accessible, focus-trapped dialogs (§4.8), also for Blockly's prompts                                                                                                                                                                                                                                                                                                             |
 | `@radix-ui/react-tabs`                   | 1.1.21 (2026-07-24)  | MIT               | The bottom dock's tabs: ARIA tab semantics and arrow-key navigation                                                                                                                                                                                                                                                                                                              |
@@ -484,14 +482,20 @@ workspace policy requires ([§8.9](../../docs/spec/08-security.md#89-supply-chai
 | `@xterm/xterm`                           | 5.5.0 (2024-04-05)   | MIT               | The console (§4.5) with its DOM renderer; no dependencies                                                                                                                                                                                                                                                                                                                        |
 | `@xterm/addon-fit`                       | 0.10.0 (2024-04-05)  | MIT               | Fits the terminal to the console panel                                                                                                                                                                                                                                                                                                                                           |
 
-| Crate                        | Version (released)  | Licence           | Why                                                                                                                                                                                                                                                                              |
-| ---------------------------- | ------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tauri`                      | 2.12.0 (2026-09-26) | Apache-2.0 OR MIT | The desktop shell ([ADR-0001](../../docs/adr/0001-desktop-shell-tauri.md))                                                                                                                                                                                                       |
-| `tauri-build` (build)        | 2.7.0 (2026-09-26)  | Apache-2.0 OR MIT | Embeds the configuration, capabilities and Windows resources                                                                                                                                                                                                                     |
-| `tauri-plugin-dialog`        | 2.8.0 (2026-09-26)  | Apache-2.0 OR MIT | Native open, save and message dialogs, from Rust only (no JavaScript permission). Default features off except `gtk3`: rfd 0.16.0's GTK 3 backend on Linux, no XDG portal and no D-Bus. Brings `tauri-plugin-fs` 2.6.0 (for its `FilePath` type; the fs plugin is not registered) |
-| `rfd` (Windows only)         | 0.16.0              | MIT               | The Windows trust dialog with _Stay in Restricted Mode_ as its first and default button (08 §8.3.1). No default features, `common-controls-v6`; already in the lockfile through `tauri-plugin-dialog` with the same features, so no new code is compiled                         |
-| `tracing-subscriber`         | 0.3.23 (2026-03-13) | MIT               | The span registry under the app's own JSON-lines log layer. Features `registry` and `std` only: no `fmt`, ANSI, `log` bridge or `EnvFilter`                                                                                                                                      |
-| `notify` (through `b2c-app`) | 8.2.0 (2025-08-03)  | CC0-1.0           | The file watcher of open projects (05 §5.10): inotify on Linux, `ReadDirectoryChangesW` on Windows, one non-recursive watch per project folder. No default features (no macOS FSEvents). Its events only wake the backend's own 300 ms debounce and SHA-256 check                |
+| Crate                                        | Version (released)   | Licence           | Why                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------- | -------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tauri`                                      | 2.12.0 (2026-09-26)  | Apache-2.0 OR MIT | The desktop shell ([ADR-0001](../../docs/adr/0001-desktop-shell-tauri.md))                                                                                                                                                                                                                                                                                                          |
+| `tauri-build` (build)                        | 2.7.0 (2026-09-26)   | Apache-2.0 OR MIT | Embeds the configuration, capabilities and Windows resources                                                                                                                                                                                                                                                                                                                        |
+| `tauri-plugin-dialog`                        | 2.8.0 (2026-09-26)   | Apache-2.0 OR MIT | Native open, save and message dialogs, from Rust only (no JavaScript permission). Default features off except `gtk3`: rfd 0.16.0's GTK 3 backend on Linux, no XDG portal and no D-Bus. Brings `tauri-plugin-fs` 2.6.0 (for its `FilePath` type; the fs plugin is not registered)                                                                                                    |
+| `rfd` (Windows only)                         | 0.16.0               | MIT               | The Windows trust dialog with _Stay in Restricted Mode_ as its first and default button (08 §8.3.1). No default features, `common-controls-v6`; already in the lockfile through `tauri-plugin-dialog` with the same features, so no new code is compiled                                                                                                                            |
+| `tracing-subscriber`                         | 0.3.23 (2026-03-13)  | MIT               | The span registry under the app's own JSON-lines log layer. Features `registry` and `std` only: no `fmt`, ANSI, `log` bridge or `EnvFilter`                                                                                                                                                                                                                                         |
+| `notify` (through `b2c-app`)                 | 8.2.0 (2025-08-03)   | CC0-1.0           | The file watcher of open projects (05 §5.10): inotify on Linux, `ReadDirectoryChangesW` on Windows, one non-recursive watch per project folder. No default features (no macOS FSEvents). Its events only wake the backend's own 300 ms debounce and SHA-256 check                                                                                                                   |
+| `tracing` (through `b2c-build`, `b2c-app`)   | 0.1.44 (2025-12-18)  | MIT               | Structured logging with a span per build and run session (09 §9.1, 08 §8.11). No default features (`std` only): no `log` bridge and no attribute macros. Already in the lockfile through Tauri                                                                                                                                                                                      |
+| `getrandom` (through `b2c-ipc`, `b2c-store`) | 0.3.4 (2025-10-14)   | MIT OR Apache-2.0 | 128 bits from the operating system's random number generator for every opaque IPC ID and recovery ID (02 §2.5.4). Already in the lockfile through `tempfile` and Tauri                                                                                                                                                                                                              |
+| `ts-rs` (`b2c-ipc`, feature `ts` only)       | 12.0.1 (2026-01-31)  | MIT               | Generates the TypeScript IPC types of `packages/ipc-types` from the Rust types (ADR-0007). Only the generation test turns the feature on, so no app build compiles it. Brings `ts-rs-macros` 12.0.1 (MIT) and `termcolor` 1.4.1 (Unlicense OR MIT)                                                                                                                                  |
+| `wasm-bindgen` (through `b2c-core-wasm`)     | 0.2.129 (2026-09-25) | MIT OR Apache-2.0 | The JavaScript glue of the WebAssembly core the editor runs (ADR-0003, ADR-0010). Pinned exactly, because the wasm-bindgen CLI that writes the glue must be the same version. Already in the lockfile through Tauri                                                                                                                                                                 |
+| `libc` (through `b2c-process`, Unix only)    | 0.2.190 (2026-10-02) | MIT OR Apache-2.0 | Resets the signal mask and dispositions in a program's process before `exec`, which `rustix` does not offer. No default features. Already in the lockfile through `tempfile` and `getrandom`; see the note below                                                                                                                                                                    |
+| `criterion` (dev, `b2c-core-wasm`)           | 0.7.0 (2025-07-25)   | Apache-2.0 OR MIT | The native pipeline benchmark (`crates/b2c-core-wasm/benches/pipeline`). No default features (no plotters, no rayon). 0.8 adds `alloca`, whose build script needs a C compiler for the Windows target of the clippy check. Brings `anes`, `cast`, `ciborium` (with `-io` and `-ll`), `criterion-plot`, `crunchy`, `either`, `half`, `itertools` 0.13, `oorandom` and `tinytemplate` |
 
 Notes:
 
@@ -548,6 +552,12 @@ Notes:
   default features it brings `inotify`, `inotify-sys`, `mio`, `walkdir`, `notify-types`,
   `bitflags` and `log` on Linux (most already in the lockfile through Tauri), and `walkdir` and
   `windows-sys` 0.60 on Windows.
+- **`libc` 0.2.190** was released on 2026-10-02 and entered `Cargo.lock` on 2026-10-03, as a
+  dependency of `tempfile` and `getrandom`, so it was younger than the 7 days the policy asks for;
+  `b2c-process` later required the version already locked (`libc = "0.2.190"` in the workspace
+  `Cargo.toml`). It turns 7 days old on 2026-10-09. To hold the lockfile to the rule before then,
+  require 0.2.189 (released 2026-07-21) there, if every crate that uses `libc` accepts it, and run
+  `cargo update -p libc --precise 0.2.189`.
 - Cargo has no minimum release age, so `Cargo.lock` holds Tauri's own crates and the crates it
   brought in at their newest versions that were at least 7 days old. Keep it that way when
   updating them, with `cargo update -p <crate> --precise <version>`.
