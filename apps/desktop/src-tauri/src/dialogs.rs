@@ -2,11 +2,17 @@
 //! §2.5.1, `docs/spec/08-security.md` §8.3 and §8.8): open project, save
 //! project as, choose g++, and the trust dialog.
 //!
-//! They use `tauri-plugin-dialog`'s Rust API only. The plugin is registered
-//! from Rust and the capability grants the webview none of its commands, so
-//! only the backend can show a dialog, and the webview can neither fake nor
-//! answer one. On Linux the dialogs are GTK 3 dialogs (never the XDG portal,
-//! so no D-Bus); on Windows they are the system's common dialogs.
+//! They use `tauri-plugin-dialog`'s Rust API only, except the Windows trust
+//! dialog, which uses the plugin's dialog library (`rfd`) directly so that
+//! its default button is **Stay in Restricted Mode**. The plugin is
+//! registered from Rust and the capability grants the webview none of its
+//! commands, so only the backend can show a dialog, and the webview can
+//! neither fake nor answer one. On Linux the dialogs are GTK 3 dialogs (never
+//! the XDG portal, so no D-Bus); on Windows they are the system's common
+//! dialogs and Task Dialogs.
+//!
+//! *Choose g++* starts in a system folder with no file chosen, never in the
+//! folder used last (usually the open project's own).
 //!
 //! Every method blocks the calling command thread (never the main thread)
 //! until the user answers: the plugin shows the dialog on the main thread and
@@ -134,26 +140,48 @@ impl<R: Runtime> Dialogs for NativeDialogs<R> {
     }
 
     fn pick_compiler(&self) -> Option<PathBuf> {
-        let builder = self.file_dialog("Choose g++")?;
+        // No file name is filled in, and the dialog starts in a folder where
+        // compilers are installed, never in the one used last, which is
+        // usually the folder a project was just opened from: a "g++" that a
+        // downloaded project ships must not be one Enter away
+        // (`docs/spec/08-security.md` §8.5). The backend refuses a compiler
+        // inside an open project's folder anyway, before running it.
+        let mut builder = self.file_dialog("Choose g++")?;
+        if let Some(folder) = compiler_start_folder() {
+            builder = builder.set_directory(folder);
+        }
         // The common dialog filters by extension only, so on Windows it shows
-        // programs and suggests g++.exe; the backend refuses anything that is
-        // not a usable g++ (B2C-T1002).
-        let builder = if cfg!(windows) {
-            builder
-                .add_filter("g++ (g++.exe)", &["exe"])
-                .set_file_name("g++.exe")
-        } else {
-            builder
-        };
+        // programs; the backend refuses anything that is not a usable g++
+        // (B2C-T1002).
+        if cfg!(windows) {
+            builder = builder.add_filter("g++ (g++.exe)", &["exe"]);
+        }
         let picked = wait(|reply| builder.pick_file(move |path| send(&reply, path))).flatten()?;
         local_path(picked)
     }
 
     fn confirm_trust(&self, prompt: &TrustPrompt) -> TrustChoice {
+        let (title, body) = trust_dialog_text(prompt);
+        #[cfg(windows)]
+        {
+            self.windows_trust_dialog(&title, &body)
+        }
+        #[cfg(not(windows))]
+        {
+            self.plugin_trust_dialog(title, body)
+        }
+    }
+}
+
+impl<R: Runtime> NativeDialogs<R> {
+    /// The trust dialog through the plugin (Linux: a GTK 3 message dialog).
+    /// Its buttons are [`TrustChoice::LABELS`] in order; see
+    /// [`trust_choice`] for how its answers are read.
+    #[cfg(not(windows))]
+    fn plugin_trust_dialog(&self, title: String, body: String) -> TrustChoice {
         let Some(dialog) = self.plugin() else {
             return TrustChoice::StayRestricted;
         };
-        let (title, body) = trust_dialog_text(prompt);
         let [project, folder, restricted] = TrustChoice::LABELS.map(|(_, label)| label.to_owned());
         let mut builder = dialog
             .message(body)
@@ -167,6 +195,32 @@ impl<R: Runtime> Dialogs for NativeDialogs<R> {
         }
         let answer = wait(|reply| builder.show_with_result(move |result| send(&reply, result)));
         answer.map_or(TrustChoice::StayRestricted, |result| trust_choice(&result))
+    }
+
+    /// Windows: the trust dialog through the plugin's own dialog library
+    /// (`rfd`) directly, the fallback `docs/spec/08-security.md` §8.3.1
+    /// allows. The Task Dialog makes its first button the default, which
+    /// Enter (also a held or repeated one) presses, so the first button is
+    /// **Stay in Restricted Mode**; Escape and closing the dialog stay
+    /// restricted too. The plugin cannot show that order: it reports Escape
+    /// as the third button, which would then be a trust choice.
+    ///
+    /// The dialog runs on this command thread, modal to the editor window,
+    /// as the plugin runs its own on a thread of its own.
+    #[cfg(windows)]
+    fn windows_trust_dialog(&self, title: &str, body: &str) -> TrustChoice {
+        let [project, folder, restricted] = TrustChoice::LABELS.map(|(_, label)| label.to_owned());
+        let mut dialog = rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Warning)
+            .set_title(title)
+            .set_description(body)
+            .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
+                restricted, project, folder,
+            ));
+        if let Some(window) = self.app.get_webview_window(MAIN_WINDOW) {
+            dialog = dialog.set_parent(&window);
+        }
+        windows_trust_choice(&dialog.show().into())
     }
 }
 
@@ -209,18 +263,58 @@ pub(crate) fn with_project_extension(picked: PathBuf) -> (PathBuf, bool) {
     (PathBuf::from(name), true)
 }
 
-/// The trust choice for the button the user pressed. The buttons are, in
-/// order, [`TrustChoice::LABELS`]; closing the dialog, or anything
-/// unexpected, means Stay in Restricted Mode.
+/// Where the *Choose g++* dialog starts: on Windows the system drive's root
+/// (where MSYS2, TDM-GCC, `MinGW` and Strawberry Perl install their
+/// compilers), elsewhere `/usr/bin`. `None` when that folder does not exist;
+/// the dialog then starts where the system decides, still with no file
+/// chosen.
+pub(crate) fn compiler_start_folder() -> Option<PathBuf> {
+    let folder = if cfg!(windows) {
+        let mut root = std::env::var_os("SystemDrive").unwrap_or_else(|| "C:".into());
+        root.push("\\");
+        PathBuf::from(root)
+    } else {
+        PathBuf::from("/usr/bin")
+    };
+    (folder.is_absolute() && folder.is_dir()).then_some(folder)
+}
+
+/// The choice whose button has `label` (compared exactly), if any.
+fn trust_button(label: &str) -> Option<TrustChoice> {
+    TrustChoice::LABELS
+        .iter()
+        .find(|(_, shown)| *shown == label)
+        .map(|(choice, _)| *choice)
+}
+
+/// The trust choice for the button the user pressed in the plugin's dialog
+/// (Linux). The buttons are, in order, [`TrustChoice::LABELS`]; the GTK
+/// backend reports them as Yes, No and Cancel rather than by label, and
+/// Escape or closing the dialog as Cancel. Cancel, or anything unexpected,
+/// means Stay in Restricted Mode.
+#[cfg(any(not(windows), test))]
 pub(crate) fn trust_choice(result: &MessageDialogResult) -> TrustChoice {
     match result {
         MessageDialogResult::Yes => TrustChoice::TrustProject,
         MessageDialogResult::No => TrustChoice::TrustFolder,
-        MessageDialogResult::Custom(label) => TrustChoice::LABELS
-            .iter()
-            .find(|(_, shown)| shown == label)
-            .map_or(TrustChoice::StayRestricted, |(choice, _)| *choice),
+        MessageDialogResult::Custom(label) => trust_button(label).unwrap_or(TrustChoice::StayRestricted),
         MessageDialogResult::Ok | MessageDialogResult::Cancel => TrustChoice::StayRestricted,
+    }
+}
+
+/// The trust choice for the button the user pressed in the Windows dialog,
+/// whose buttons are Stay in Restricted Mode, Trust this project and Trust
+/// everything in this folder, in that order. The Task Dialog reports each by
+/// its label; only a trust button's own label grants trust. Escape, closing
+/// the dialog (Cancel) and anything else mean Stay in Restricted Mode.
+#[cfg(any(windows, test))]
+pub(crate) fn windows_trust_choice(result: &MessageDialogResult) -> TrustChoice {
+    match result {
+        MessageDialogResult::Custom(label) => trust_button(label).unwrap_or(TrustChoice::StayRestricted),
+        MessageDialogResult::Yes
+        | MessageDialogResult::No
+        | MessageDialogResult::Ok
+        | MessageDialogResult::Cancel => TrustChoice::StayRestricted,
     }
 }
 
@@ -252,6 +346,52 @@ mod tests {
             MessageDialogResult::Custom(String::from("trust this project")),
         ] {
             assert_eq!(trust_choice(&result), TrustChoice::StayRestricted, "{result:?}");
+            assert_eq!(
+                windows_trust_choice(&result),
+                TrustChoice::StayRestricted,
+                "{result:?}"
+            );
+        }
+    }
+
+    /// The Windows dialog's buttons are Stay in Restricted Mode (the default
+    /// button), Trust this project and Trust everything in this folder. Only
+    /// a trust button's own label grants trust: Escape and closing (Cancel),
+    /// and the plain Yes, No and Ok, never do.
+    #[test]
+    fn on_windows_only_a_trust_buttons_label_grants_trust() {
+        for (choice, label) in TrustChoice::LABELS {
+            assert_eq!(
+                windows_trust_choice(&MessageDialogResult::Custom(label.to_owned())),
+                choice
+            );
+        }
+        for result in [
+            MessageDialogResult::Yes,
+            MessageDialogResult::No,
+            MessageDialogResult::Ok,
+            MessageDialogResult::Cancel,
+        ] {
+            assert_eq!(
+                windows_trust_choice(&result),
+                TrustChoice::StayRestricted,
+                "{result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_compiler_dialog_starts_in_a_system_folder() {
+        let folder = compiler_start_folder();
+        if cfg!(windows) {
+            let folder = folder.unwrap();
+            assert!(
+                folder.is_dir() && folder.parent().is_none(),
+                "{}",
+                folder.display()
+            );
+        } else {
+            assert_eq!(folder.as_deref(), Some(Path::new("/usr/bin")));
         }
     }
 

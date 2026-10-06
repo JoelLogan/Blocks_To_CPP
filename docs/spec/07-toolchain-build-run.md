@@ -59,13 +59,21 @@ selected or discovered toolchain whose canonical path lies inside the open
 project's canonical folder is refused with `B2C-T1002`.
 
 **Adding a compiler manually** (*Choose g++ manually…*,
-`toolchain_add_dialog`): the user picks the file in a native dialog. On
+`toolchain_add_dialog`): the user picks the file in a native dialog. The
+dialog starts in a system folder (the system drive's root on Windows,
+`/usr/bin` on Linux) with no file name filled in, never in the folder used
+last, which is usually the folder a project was just opened from. On
 Windows only a file named exactly `g++.exe` is accepted (`.bat`, `.cmd` and
 anything else give `B2C-T1002`); a network path is accepted with the warning
-`B2C-T1020`. The file is canonicalised, probed and stored with the source
-*manual*, even when it fails health checks (it is then listed as not usable,
-with its problems). Only a file that is refused, or that cannot be probed at
-all, is not added: the command returns `toolchainRejected` with the problems
+`B2C-T1020`. The file is canonicalised; a file whose canonical path lies
+inside an open project's folder or the build cache is refused with
+`B2C-T1002` before it is probed, because probing runs it (the current
+directory is not refused here: a compiler chosen by its full path does not
+depend on it, and the app often starts in the user's home folder). Otherwise
+the file is probed and stored with the source *manual*, even when it fails
+health checks (it is then listed as not usable, with its problems). Only a
+file that is refused, or that cannot be probed at all, is not added: the
+command returns `toolchainRejected` with the problems
 ([02 §2.5.5](02-architecture.md#255-errors)).
 
 Each candidate is **canonicalised** (symlinks resolved; on Windows the path is
@@ -448,6 +456,14 @@ The backend checks these itself and never relies on the UI:
   backend received for the project, or whose executable no longer matches its
   build manifest (`staleBuild`); and a document with analyser errors
   (`projectErrors`, with the count).
+* Closing the project, or shutting down, while `build_start` or `run_start`
+  is still preparing never leaves its compiler or program behind: once the
+  build or program exists, the command checks again, and if the project was
+  closed meanwhile it cancels the build or stops the program and answers
+  `unknownHandle` (build) or `unknownBuild` (run), or `internal` after
+  shutdown. The close removes the project before it stops its work, so
+  either the close sees the new build or program, or the command sees the
+  close.
 
 ### 7.6.2 Spawning
 

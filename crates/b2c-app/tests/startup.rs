@@ -196,6 +196,66 @@ fn compilers_added_by_hand_are_checked() {
     assert_eq!(app.backend.toolchain_list().unwrap().toolchains, [toolchain]);
 }
 
+/// 07 §7.2, 08 §8.5 (binary planting): a "g++" that ships in an open
+/// project's folder, or lies in the build cache, is refused with `B2C-T1002`
+/// before anything runs it, even when the user picks it by hand while the
+/// project is in Restricted Mode. The real prober is used, so a probe would
+/// run the planted program.
+#[cfg(unix)]
+#[test]
+fn a_compiler_in_an_open_projects_folder_is_refused_before_it_runs() {
+    use b2c_build::toolchains::RealProber;
+    use b2c_ipc::dto::{ProjectOpenDialogResponse, TrustState};
+
+    let root = tempfile::tempdir().unwrap();
+    let base = b2c_toolchain::paths::canonical(root.path()).unwrap();
+    let dirs = Dirs::under_root(&base.join("app"));
+    let cwd = base.join("cwd");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let dialogs = FakeDialogs::new();
+    let backend = Backend::start_with(
+        BackendConfig {
+            dirs: dirs.clone(),
+            app_version: "0.1.0",
+            discovery_scope: DiscoveryScope::Only(Vec::new()),
+            cwd: Some(cwd),
+        },
+        dialogs.clone(),
+        Services {
+            prober: Arc::new(RealProber),
+            opener: Arc::new(common::FakeOpener::default()),
+        },
+    )
+    .unwrap();
+    // A downloaded project whose folder ships its own "g++", one level down.
+    let folder = base.join("Downloads").join("game");
+    let file = folder.join("game.b2c");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(&file, common::example_text("hello_world")).unwrap();
+    let marker = base.join("planted-compiler-ran");
+    let run_marker = format!("touch '{}'\nexit 1", marker.display());
+    let planted = common::write_script(&folder.join("tools"), "g++", &run_marker);
+    dialogs.will_open(&file);
+    let ProjectOpenDialogResponse::Ok(opened) = backend.project_open_dialog().unwrap() else {
+        panic!("the open dialog was cancelled");
+    };
+    assert_eq!(opened.trust.state, TrustState::Restricted);
+    // One planted below the build cache's root is refused too.
+    let cached = common::write_script(&dirs.cache.join("planted"), "g++", &run_marker);
+
+    for picked in [&planted, &cached] {
+        dialogs.will_pick_compiler(picked);
+        let IpcError::ToolchainRejected { diagnostics } = backend.toolchain_add_dialog().unwrap_err() else {
+            panic!("expected toolchainRejected for {}", picked.display());
+        };
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(diagnostics[0].code, "B2C-T1002");
+        assert!(!marker.exists(), "{} was run", picked.display());
+    }
+    assert!(backend.toolchain_list().unwrap().toolchains.is_empty());
+    backend.shutdown();
+}
+
 #[test]
 fn setup_info_reports_the_platform() {
     let app = TestApp::new();

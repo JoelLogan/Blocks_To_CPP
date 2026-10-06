@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use b2c_app::{Backend, BackendConfig, Services, TrustChoice};
 use b2c_build::toolchains::DiscoveryScope;
 use b2c_ipc::dto::{
-    AppEvent, ProjectCloseRequest, ProjectNewRequest, ProjectSaveAsDialogRequest,
+    AppEvent, ProjectCloseRequest, ProjectNewRequest, ProjectReloadRequest, ProjectSaveAsDialogRequest,
     ProjectSaveAsDialogResponse, ProjectSaveRequest, ProjectSetDirtyRequest, RecoveryDiscardRequest,
     RecoveryRestoreRequest, RecoveryRestoreResponse, RecoverySaveRequest, RestrictedReason, SnapshotInfo,
     Template, Trust, TrustGetRequest, TrustGrantRequest, TrustRevokeRequest, TrustSource, TrustState,
@@ -134,6 +134,24 @@ fn grant(app: &TestApp, handle: &Handle, choice: TrustChoice) -> Trust {
         })
         .unwrap()
         .trust
+}
+
+/// What the frontend reports about unsaved changes (`project_set_dirty`).
+fn set_dirty(app: &TestApp, handle: &Handle, dirty: bool) {
+    app.backend
+        .project_set_dirty(ProjectSetDirtyRequest {
+            handle: handle.clone(),
+            dirty,
+        })
+        .unwrap();
+}
+
+/// The project names of the snapshots offered for restore.
+fn offered_names(app: &TestApp) -> Vec<String> {
+    list(app)
+        .into_iter()
+        .map(|snapshot| snapshot.project_name)
+        .collect()
 }
 
 fn trust_of(app: &TestApp, handle: &Handle) -> Trust {
@@ -485,6 +503,174 @@ fn a_snapshot_that_disagrees_with_its_metadata_restores_restricted() {
     std::fs::write(&files[0], serde_json::to_vec(&meta).unwrap()).unwrap();
     let restored = restore_only(&app);
     assert_restricted(restored.trust, RestrictedReason::NoRecord);
+}
+
+/// What was put where a project's file was, between the crash and the
+/// restore.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy)]
+enum Swap {
+    /// The project's folder was replaced by a link to a trusted folder.
+    Folder,
+    /// Only the file was replaced by a link to a file in a trusted folder.
+    File,
+}
+
+/// 08 §8.3.1: a snapshot restores trusted only by the trust record of *its
+/// own* path. A snapshot written while its project was restricted, whose
+/// recorded path leads into a trusted folder by the time it is restored
+/// (whoever controls the project's folder replaced the folder, or only the
+/// file, by a link), restores restricted, and its builds are refused.
+#[cfg(unix)]
+#[test]
+fn a_snapshot_whose_path_now_leads_elsewhere_restores_restricted() {
+    use b2c_ipc::dto::{BuildConfig, BuildEvent, BuildStartRequest};
+    use b2c_ipc::sink::testing::RecordingSink;
+
+    for swap in [Swap::Folder, Swap::File] {
+        let mut app = TestApp::new();
+        // A folder of the user's own, trusted as a whole.
+        let trusted = app.projects().join("trusted");
+        std::fs::create_dir_all(&trusted).unwrap();
+        let mine = trusted.join("mine.b2c");
+        std::fs::write(&mine, example_text("hello_world")).unwrap();
+        let own = app.open(&mine);
+        assert_trusted(
+            grant(&app, &own.handle, TrustChoice::TrustFolder),
+            TrustSource::Folder,
+        );
+        // Someone else's project in a shared folder: restricted, edited,
+        // autosaved, and then the app crashes.
+        let shared = app.projects().join("shared");
+        std::fs::create_dir_all(&shared).unwrap();
+        let file = shared.join("game.b2c");
+        std::fs::write(&file, example_text("guessing_game")).unwrap();
+        let opened = app.open(&file);
+        assert_restricted(opened.trust, RestrictedReason::NoRecord);
+        snapshot(&app, &opened.handle, &renamed(&opened.document, "Their edits")).unwrap();
+        crash_and_restart(&mut app);
+
+        match swap {
+            Swap::Folder => {
+                std::fs::rename(&shared, app.projects().join("shared-old")).unwrap();
+                std::os::unix::fs::symlink(&trusted, &shared).unwrap();
+            }
+            Swap::File => {
+                std::fs::remove_file(&file).unwrap();
+                std::os::unix::fs::symlink(&mine, &file).unwrap();
+            }
+        }
+        let restored = restore_only(&app);
+        assert_restricted(restored.trust, RestrictedReason::NoRecord);
+        assert_eq!(trust_of(&app, &restored.handle), restored.trust, "{swap:?}");
+        let built = app.backend.build_start(
+            BuildStartRequest {
+                handle: restored.handle.clone(),
+                document: restored.document.clone(),
+                config: BuildConfig::Debug,
+            },
+            Arc::new(RecordingSink::<BuildEvent>::new()),
+        );
+        assert!(matches!(built, Err(IpcError::Restricted)), "{swap:?}: {built:?}");
+    }
+}
+
+/// 02 §2.6: whether a project has unsaved changes is only what
+/// `project_set_dirty` last reported. A save does not clear it: the editor
+/// may have changed while the save was on its way (its store then stays
+/// dirty and reports nothing new). Those edits still make the window ask,
+/// and quitting keeps their snapshot for the next start.
+#[test]
+fn edits_made_while_a_save_ran_stay_unsaved() {
+    let mut app = TestApp::new();
+    let events = app_sink();
+    app.backend.app_subscribe(events.clone());
+    let path = app.write("game.b2c", example_text("guessing_game").as_bytes());
+    let opened = app.open(&path);
+    set_dirty(&app, &opened.handle, true);
+    app.backend
+        .project_save(ProjectSaveRequest {
+            handle: opened.handle.clone(),
+            document: renamed(&opened.document, "Version 1"),
+        })
+        .unwrap();
+    // The autosave of the edits made while the save ran.
+    snapshot(&app, &opened.handle, &renamed(&opened.document, "Version 2")).unwrap();
+    assert!(app.backend.has_dirty());
+
+    // Save as leaves the flag as reported, too.
+    let created = app
+        .backend
+        .project_new(ProjectNewRequest {
+            template: Template::HelloWorld,
+        })
+        .unwrap();
+    set_dirty(&app, &created.handle, true);
+    set_dirty(&app, &opened.handle, false);
+    app.dialogs.will_save_as(&app.projects().join("new.b2c"));
+    let saved = app
+        .backend
+        .project_save_as_dialog(ProjectSaveAsDialogRequest {
+            handle: created.handle.clone(),
+            document: created.document.clone(),
+        })
+        .unwrap();
+    assert!(matches!(saved, ProjectSaveAsDialogResponse::Ok(_)));
+    assert!(app.backend.has_dirty());
+    set_dirty(&app, &created.handle, false);
+    assert!(!app.backend.has_dirty());
+
+    // Closing the window asks while the first project has unsaved edits.
+    set_dirty(&app, &opened.handle, true);
+    events.take();
+    assert!(!app.backend.request_close());
+    assert_eq!(events.take(), [AppEvent::CloseRequested]);
+    // Quitting keeps their snapshot.
+    app.backend.shutdown();
+    crash_and_restart(&mut app);
+    assert_eq!(offered_names(&app), ["Version 2"]);
+}
+
+/// Reload discards the project's unsaved changes, and with them their
+/// snapshot: a crash afterwards does not offer the discarded changes.
+#[test]
+fn reloading_discards_the_snapshot_of_the_unsaved_changes() {
+    let mut app = TestApp::new();
+    let path = app.write("game.b2c", example_text("guessing_game").as_bytes());
+    let opened = app.open(&path);
+    set_dirty(&app, &opened.handle, true);
+    snapshot(&app, &opened.handle, &renamed(&opened.document, "Unsaved edits")).unwrap();
+    assert_eq!(snapshot_files(&app).len(), 1);
+    let outside = renamed(&opened.document, "Changed outside");
+    std::fs::write(&path, &outside).unwrap();
+    let reloaded = app
+        .backend
+        .project_reload(ProjectReloadRequest {
+            handle: opened.handle.clone(),
+        })
+        .unwrap();
+    assert_eq!(reloaded.document, canonical(&outside));
+    assert!(!app.backend.has_dirty());
+    assert!(snapshot_files(&app).is_empty());
+
+    crash_and_restart(&mut app);
+    assert!(offered_names(&app).is_empty());
+
+    // A reload that fails leaves the snapshot alone.
+    let opened = app.open(&path);
+    set_dirty(&app, &opened.handle, true);
+    snapshot(&app, &opened.handle, &renamed(&opened.document, "Kept")).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(
+        app.backend
+            .project_reload(ProjectReloadRequest {
+                handle: opened.handle.clone(),
+            })
+            .unwrap_err(),
+        IpcError::NotFound
+    );
+    crash_and_restart(&mut app);
+    assert_eq!(offered_names(&app), ["Kept"]);
 }
 
 #[test]

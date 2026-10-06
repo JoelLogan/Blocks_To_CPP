@@ -443,6 +443,7 @@ dependencies = [
  "b2c-build",
  "b2c-ipc",
  "b2c-store",
+ "rfd",
  "serde",
  "serde_json",
  "tauri",

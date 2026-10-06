@@ -299,11 +299,11 @@ separately.
 | `project_new` | `{ template }` | `{ handle, document, trust }` | `template` is `empty` or `helloWorld`, bundled in the binary. The handle has no path and is trusted (`createdHere`). |
 | `project_open_dialog` | `{}` | cancelled, or `{ handle, document, trust, fileName, migratedFrom }` | Native open dialog **in the backend**, filtered to `*.b2c`. `migratedFrom` is the file's older `formatVersion`, or `null`. |
 | `project_open_recent` | `{ recentId }` | `{ handle, document, trust, fileName, migratedFrom }` | A file that no longer exists gives `notFound` and stays in the list. |
-| `project_reload` | `{ handle }` | `{ document, trust, migratedFrom }` | Reads the bound file again after an outside change; trust is evaluated again. |
+| `project_reload` | `{ handle }` | `{ document, trust, migratedFrom }` | Reads the bound file again after an outside change; trust is evaluated again. The unsaved changes are discarded, and so is their recovery snapshot. |
 | `project_save` | `{ handle, document }` | `{ savedAt, hash }` | Atomic write, only to the path bound to `handle` ([05 §5.10](05-project-format.md#510-saving-and-recovery)). |
 | `project_save_as_dialog` | `{ handle, document }` | cancelled, or `{ handle, savedAt, hash, fileName }` | Rebinds the handle to the path chosen in a native dialog. |
-| `project_close` | `{ handle }` | `{}` | Cancels the project's build, stops its program and forgets the handle. |
-| `project_set_dirty` | `{ handle, dirty }` | `{}` | Lets the backend ask before the window closes (§2.6). |
+| `project_close` | `{ handle }` | `{}` | Cancels the project's build, stops its program and forgets the handle. A `build_start` or `run_start` still preparing when the close comes stops what it started ([07 §7.6.1](07-toolchain-build-run.md#761-preconditions)). |
+| `project_set_dirty` | `{ handle, dirty }` | `{}` | Lets the backend ask before the window closes (§2.6). The backend's flag is only what this command last reported: a save never clears it, since the editor may have changed while the save was on its way. Open, new and reload start clean, a restore starts dirty. |
 | `recent_list` | `{}` | `{ entries: [{ recentId, projectName, displayPath, lastOpenedAt }] }` | Newest first, at most 10. |
 | `recent_remove` | `{ recentId }` | `{}` | |
 | `recovery_save` | `{ handle, document }` | `{}` | Writes the handle's recovery snapshot. |
@@ -315,7 +315,7 @@ separately.
 | `trust_revoke` | `{ handle }` | `{ trust }` | Removes the project's own record; trust that comes from a folder remains and is reported. |
 | `toolchain_list` | `{}` | `{ toolchains, discovering }` | Cached results; `discovering` is `true` while background discovery runs. |
 | `toolchain_rescan` | `{}` | `{ toolchains, discovering }` | Discovers and probes again. |
-| `toolchain_add_dialog` | `{}` | cancelled, or `{ toolchain }` | The user picks a `g++` executable in a native dialog. A file that is not an acceptable g++ (`B2C-T1002`) or cannot be probed gives `toolchainRejected`; a probed compiler is added even when it is not usable (`usable: false`, with its problems). |
+| `toolchain_add_dialog` | `{}` | cancelled, or `{ toolchain }` | The user picks a `g++` executable in a native dialog. A file that is not an acceptable g++ (`B2C-T1002`, also for a file inside an open project's folder or the build cache, refused before it is run) or cannot be probed gives `toolchainRejected`; a probed compiler is added even when it is not usable (`usable: false`, with its problems). |
 | `toolchain_select` | `{ toolchainId }` | `{}` | The only way to change the selected toolchain in the settings. |
 | `toolchain_setup_info` | `{}` | `{ platform, noUsableToolchain, distro }` | `platform` is `windows` or `linux`; `distro` is `{ id, idLike }` from `os-release`, or `null` ([04 §4.6](04-user-interface.md#46-toolchain-setup-experience)). |
 | `build_start` | `{ handle, document, config }` + channel `onEvent` | `{ buildId }` | `config` is `debug` or `release`. One active build per project: a new one cancels the old one, and the project's running program is stopped first. |
@@ -489,12 +489,14 @@ happen only in major releases, which means any `0.x` release until 1.0
   `build_start` stops the project's running program first, because Windows
   locks a running executable.
 * **Closing the window:** the backend handles the window's close request. When
-  any project is dirty (as reported by `project_set_dirty`), it keeps the
-  window open and sends `closeRequested`; the frontend asks *Save*, *Don't
-  save* or *Cancel* and then calls `app_quit`.
+  any project is dirty (as reported by `project_set_dirty`; saving does not
+  change it), it keeps the window open and sends `closeRequested`; the
+  frontend asks *Save*, *Don't save* or *Cancel* and then calls `app_quit`.
 * **Shutdown:** `app_quit` and the app's exit event run the same idempotent
   shutdown: cancel every build, stop every program and kill its process tree,
   stop the file watchers, and delete the recovery snapshots of clean projects.
+  A `build_start` or `run_start` that shutdown overtakes stops what it
+  started and answers `internal`.
 
 ## 2.7 Persistence locations
 

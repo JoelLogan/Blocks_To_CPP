@@ -146,7 +146,11 @@ decision the user makes explicitly, once, per project.**
   here*). A snapshot with a file path restores as trusted only when that
   path's trust record still exists and either its hash equals the snapshot's
   security hash or the snapshot was written while the project was trusted.
-  Every other snapshot restores in Restricted Mode.
+  The record is looked up at the recorded path itself: when that path now
+  resolves to another one (its file, or a folder above it, was replaced by a
+  link, so whoever controls that location would choose the record), the
+  snapshot restores in Restricted Mode. Every other snapshot restores in
+  Restricted Mode too.
 * **What the dialog lists.** The dialog lists the Raw C++ blocks, the library
   requirements and the file-system blocks (`b2c_model::security_summary`) of
   the latest document the backend received for the project (when it was
@@ -158,10 +162,14 @@ decision the user makes explicitly, once, per project.**
   native questions in turn (*Trust this project?*, then *This project only,
   or everything in this folder?*). On Linux it uses the GTK3 backend without
   D-Bus. The plugin is a new dependency justified under §8.9; using its
-  dialog library (`rfd`) directly is the fallback. Cancelling is the same as
-  staying in Restricted Mode, and `trust_grant` then returns the unchanged
-  trust. There is at most one `trust_grant` per project every 2 s, and one
-  native dialog at a time.
+  dialog library (`rfd`) directly is the fallback. On Windows the dialog
+  uses `rfd` directly, with **Stay in Restricted Mode** as the first button:
+  the Task Dialog's default button is its first one, so Enter (also a held
+  or repeated one) never grants trust, and the plugin cannot show that
+  order (it reports Escape as the third button). Cancelling, Escape and
+  closing the dialog are the same as staying in Restricted Mode, and
+  `trust_grant` then returns the unchanged trust. There is at most one
+  `trust_grant` per project every 2 s, and one native dialog at a time.
 * **Mark-of-the-Web.** The backend reads the file's `Zone.Identifier` stream
   (at most 64 KiB) and parses `ZoneId` in its `[ZoneTransfer]` section
   strictly. A zone of 3 or higher (Internet, Restricted sites) marks the
@@ -292,7 +300,7 @@ It is range-checked against the target type; overflow is error `E0517`.
 | File writes through flags (`-o`, `-MF`, `-save-temps`, `-fdump-*`) | Same as above. Output paths are always backend-generated inside the build directory. |
 | Shell injection | No shell anywhere. `Vec<OsString>` argv. Clippy `disallowed_methods` bans `std::process::Command` outside `b2c-process`. |
 | `.bat`/`.cmd` argument-injection (BatBadBut, CVE-2024-24576) | Only `g++.exe` is accepted. MSRV is well above the Rust fix (1.77.2). |
-| Binary planting (`g++.exe` in the project folder or CWD) | Discovery never searches those, skips relative `PATH` entries, and uses canonical absolute paths ([07 §7.2](07-toolchain-build-run.md#72-discovery)). The selected path is shown in the status bar. |
+| Binary planting (`g++.exe` in the project folder or CWD) | Discovery never searches those, skips relative `PATH` entries, and uses canonical absolute paths ([07 §7.2](07-toolchain-build-run.md#72-discovery)). *Choose g++ manually…* refuses a file inside an open project's folder or the build cache before running it, and its dialog starts in a system folder with no file chosen. The selected path is shown in the status bar. |
 | Toolchain swapped after selection | Fingerprint re-checked before each build. A change triggers a re-probe and a notice. |
 | Environment influence (`CPATH`, `GCC_EXEC_PREFIX`, `LD_PRELOAD`, …) | Allowlisted environment ([07 §7.5.2](07-toolchain-build-run.md#752-invocation)) |
 | `pkg-config` output injecting flags | Tokenised and allowlisted to `-I`, `-isystem`, `-L`, `-l`, `-D`, `-pthread` |
@@ -404,7 +412,11 @@ base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
   injection.
 * **No remote content:** all assets are bundled, nothing comes from a CDN, and
   there are no remote fonts. Navigation away from the app origin is blocked,
-  and new windows are denied. Help links open in the OS browser through
+  and new windows are denied. The app origin is exactly the one the platform
+  serves the bundled frontend at, `tauri://localhost` on Linux and
+  `http://tauri.localhost` on Windows; the other platform's form (and any
+  other scheme or port for the same host) is a network address there, not
+  the app, and is blocked too. Help links open in the OS browser through
   `open_help_link` with fixed IDs only.
 
 **Help links.** `open_help_link` maps a closed set of IDs to fixed URLs and
