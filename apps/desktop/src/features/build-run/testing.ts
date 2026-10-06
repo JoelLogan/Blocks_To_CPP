@@ -39,6 +39,8 @@ export class FakeConsole implements ConsoleHandle {
   readonly skipped: number[] = [];
   /** How often it was cleared. */
   clears = 0;
+  /** How often it was reset. */
+  resets = 0;
   /** How often it got the focus. */
   focuses = 0;
   /** Whether writes resolve at once. */
@@ -73,6 +75,13 @@ export class FakeConsole implements ConsoleHandle {
 
   clear(): void {
     this.clears += 1;
+  }
+
+  /** Like the real console: output not yet written is dropped (its writes resolve). */
+  reset(): void {
+    this.resets += 1;
+    this.text = '';
+    this.resolveWrites();
   }
 
   size(): TerminalSize {

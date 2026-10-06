@@ -21,6 +21,11 @@ export interface TerminalSink {
   write(data: Uint8Array, done: () => void): void;
   /** Clears the terminal's screen and scrollback. */
   clear(): void;
+  /**
+   * Resets the terminal to its initial state (a full reset, RIS): screen, scrollback, colours,
+   * cursor, the alternate screen and every mode a program set.
+   */
+  reset(): void;
 }
 
 /** The clock and timers the scheduler uses; tests pass fake ones. */
@@ -55,6 +60,7 @@ export class OutputScheduler {
   #timer: unknown = null;
   #lastWrite = Number.NEGATIVE_INFINITY;
   #clearRequested = false;
+  #resetRequested = false;
 
   constructor(timers: SchedulerTimers = browserTimers) {
     this.#timers = timers;
@@ -72,6 +78,7 @@ export class OutputScheduler {
       this.#pending = [];
       this.#inFlight = null;
       this.#clearRequested = false;
+      this.#resetRequested = false;
       for (const resolve of waiting) {
         resolve();
       }
@@ -109,6 +116,28 @@ export class OutputScheduler {
     }
   }
 
+  /**
+   * Starts the terminal afresh (another project is shown): output still queued is dropped (its
+   * `write` promises resolve, so acknowledgements do not hang) and the terminal is reset once it has
+   * processed what it was already given, as a reset does not discard data the terminal has not
+   * parsed yet. Output written after this call follows the reset.
+   */
+  reset(): void {
+    const dropped = this.#pending.map((entry) => entry.resolve);
+    this.#pending = [];
+    this.#clearRequested = false;
+    if (this.#sink !== null && this.#inFlight === null) {
+      this.#cancelTimer();
+      this.#resetRequested = false;
+      this.#sink.reset();
+    } else {
+      this.#resetRequested = true;
+    }
+    for (const resolve of dropped) {
+      resolve();
+    }
+  }
+
   /** How many bytes are queued and not yet passed to the terminal. */
   get queuedBytes(): number {
     return this.#pending.reduce((sum, entry) => sum + entry.data.length, 0);
@@ -118,7 +147,7 @@ export class OutputScheduler {
     if (this.#timer !== null || this.#inFlight !== null || this.#sink === null) {
       return;
     }
-    if (this.#pending.length === 0 && !this.#clearRequested) {
+    if (this.#pending.length === 0 && !this.#clearRequested && !this.#resetRequested) {
       return;
     }
     const delay = Math.max(0, this.#lastWrite + MIN_WRITE_INTERVAL_MS - this.#timers.now());
@@ -139,6 +168,10 @@ export class OutputScheduler {
     const sink = this.#sink;
     if (sink === null || this.#inFlight !== null) {
       return;
+    }
+    if (this.#resetRequested) {
+      this.#resetRequested = false;
+      sink.reset();
     }
     if (this.#clearRequested) {
       this.#clearRequested = false;

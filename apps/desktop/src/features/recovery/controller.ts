@@ -2,17 +2,19 @@
  * Restoring and discarding the recovery snapshots of earlier sessions (docs/spec/04-user-interface.md
  * §4.10, 05 §5.10, 08 §8.3.1).
  *
- * - **Restore** opens a snapshot as a project with unsaved changes, under a new handle. The
- *   compiler core is started first, so a core that cannot start leaves the snapshot untouched;
- *   then `recovery_restore` hands over the document, which goes through the core's loader like
- *   any other (`openDocumentInEditor`), with the trust state the backend decided. One project per
- *   window: an open project with unsaved changes is settled first (*Save*, *Don't save* or
- *   *Cancel*), and closed only once the restored one is shown.
+ * - **Restore** opens a snapshot as a project with unsaved changes, under a new handle. It runs
+ *   in the project lifecycle's queue ({@link ProjectQueue.replaceWith}), like New and Open: it
+ *   waits for an operation in progress, they wait for it, and the start page's buttons are held
+ *   back meanwhile. The lifecycle settles the open project's unsaved changes first (*Save*, *Don't
+ *   save* or *Cancel*) and closes it only once the restored one is shown. The compiler core is
+ *   started next, so a core that cannot start leaves the snapshot untouched; then
+ *   `recovery_restore` hands over the document, which goes through the core's loader like any
+ *   other (`openDocumentInEditor`), with the trust state the backend decided.
  * - **Discard** deletes a snapshot after the user confirms; it cannot be undone.
  *
- * One operation runs at a time. Backend errors become sentences for the user; only bugs reject.
- * A restored project that cannot be shown keeps its handle (and with it the backend's snapshot of
- * it), so the work is offered again at the next start instead of being lost.
+ * One operation of the offer runs at a time. Backend errors become sentences for the user; only
+ * bugs reject. A restored project that cannot be shown keeps its handle (and with it the backend's
+ * snapshot of it), so the work is offered again at the next start instead of being lost.
  */
 import type { CoreWasm } from '@blocks2cpp/b2c-core-wasm';
 import type {
@@ -23,13 +25,13 @@ import type {
 } from '@blocks2cpp/ipc-types';
 
 import type { FeatureContext } from '../../app/features';
-import type { ProjectState } from '../../app/store';
 import {
   openDocumentInEditor,
   type OpenDocumentArgs,
   type OpenDocumentResult,
 } from '../../editor/load';
 import { appCoreHost } from '../../editor/preview/coreHost';
+import type { ProjectQueue } from '../project/link';
 import {
   type RecoveryModel,
   type RecoveryOperation,
@@ -60,10 +62,12 @@ export interface RecoveryControllerOptions {
    * @throws when it cannot be started.
    */
   readonly startCore?: () => Promise<CoreWasm>;
+  /**
+   * The project lifecycle's queue, which a restore runs in (the project feature's link in the app).
+   * Without it nothing can be restored.
+   */
+  readonly project?: Pick<ProjectQueue, 'replaceWith'> | null;
 }
-
-/** The answers of the unsaved-changes prompt. */
-type UnsavedChoice = 'save' | 'discard' | 'cancel';
 
 /** Restores and discards snapshots; see the module comment. */
 export class RecoveryController {
@@ -71,6 +75,7 @@ export class RecoveryController {
   private readonly model: RecoveryModel;
   private readonly openInEditor: NonNullable<RecoveryControllerOptions['openInEditor']>;
   private readonly startCore: () => Promise<CoreWasm>;
+  private readonly project: Pick<ProjectQueue, 'replaceWith'> | null;
   /** The latest `recovery_list` request; older answers are dropped. */
   private listRequest = 0;
   private disposed = false;
@@ -85,6 +90,7 @@ export class RecoveryController {
         const core = ctx.core();
         return core === null ? appCoreHost().start() : Promise.resolve(core);
       });
+    this.project = options.project ?? null;
   }
 
   /** Stops: later operations do nothing and resolve `false`. */
@@ -123,38 +129,17 @@ export class RecoveryController {
    */
   restore(snapshotId: SnapshotId): Promise<boolean> {
     return this.exclusive({ kind: 'restore', snapshotId }, async (snapshot) => {
-      const previous = await this.settleOpenProject();
-      if (previous === 'cancel') {
-        return false;
-      }
-      try {
-        await this.startCore();
-      } catch (error: unknown) {
-        console.error('The compiler core could not start before a restore', error);
+      const project = this.project;
+      if (project === null) {
+        console.error('The recovery feature has no project lifecycle; nothing was restored');
         await this.ctx.dialogs.alert({
           title: 'Nothing was restored',
-          message:
-            'The Blocks2Cpp compiler core could not start, so the unsaved work was not restored. It is still offered here. Restart Blocks2Cpp and try again.',
+          message: somethingWentWrong('the unsaved work was not restored', 'noProjectLifecycle'),
         });
         return false;
       }
-
-      let restored: RecoveryRestoreResponse;
-      try {
-        restored = await this.ctx.ipc.recoveryRestore({ snapshotId });
-      } catch (error: unknown) {
-        await this.reportRestoreFailure(snapshot, error);
-        return false;
-      }
-      // The backend has a new project for it now and will not offer the snapshot again.
-      withoutSnapshot(this.model, snapshotId);
-      if (!(await this.show(snapshot, restored))) {
-        return false;
-      }
-      if (previous !== null && previous.handle !== restored.handle) {
-        await this.closeHandle(previous.handle);
-      }
-      return true;
+      // The lifecycle settles the open project first, and closes it once this one is shown.
+      return project.replaceWith(() => this.restoreNow(snapshot));
     });
   }
 
@@ -220,53 +205,35 @@ export class RecoveryController {
   // ---- Restoring -------------------------------------------------------------------------------
 
   /**
-   * Before a restore replaces the open project: resolves the project to close afterwards (or
-   * `null` when none is open), or `cancel` when the user cancelled or its save did not happen.
+   * Starts the compiler core, takes the snapshot from the backend and shows it. Resolves the
+   * restored project's handle, or `null` when nothing is shown (after telling the user why).
    */
-  private async settleOpenProject(): Promise<ProjectState | null | 'cancel'> {
-    const project = this.ctx.store.getState().project;
-    if (project?.dirty !== true) {
-      return project;
-    }
-    const choice = await this.ctx.dialogs.choose<UnsavedChoice>({
-      title: `Save changes to “${shownName(project.document.project.name)}”?`,
-      message:
-        "The restored project replaces the one that is open. If you don't save, your changes to it will be lost.",
-      choices: [
-        { id: 'save', label: 'Save', primary: true },
-        { id: 'discard', label: "Don't save", destructive: true },
-        { id: 'cancel', label: 'Cancel' },
-      ],
-      cancel: 'cancel',
-    });
-    switch (choice) {
-      case 'cancel':
-        return 'cancel';
-      case 'discard':
-        return project;
-      case 'save':
-        return (await this.saveOpenProject(project)) ? project : 'cancel';
-    }
-  }
-
-  /** Saves the open project with the project feature's `project.save`; resolves whether it did. */
-  private async saveOpenProject(project: ProjectState): Promise<boolean> {
-    if (!this.ctx.commands.hasCommand('project.save')) {
-      console.error('No project.save command is registered; the restore was not started');
-      await this.ctx.dialogs.alert({
-        title: 'Nothing was restored',
-        message: somethingWentWrong('the open project could not be saved', 'noSaveCommand'),
-      });
-      return false;
+  private async restoreNow(snapshot: SnapshotInfo): Promise<Handle | null> {
+    if (this.isDisposed()) {
+      return null;
     }
     try {
-      await this.ctx.commands.runCommand('project.save');
+      await this.startCore();
     } catch (error: unknown) {
-      console.error('Saving the open project before a restore failed', error);
+      console.error('The compiler core could not start before a restore', error);
+      await this.ctx.dialogs.alert({
+        title: 'Nothing was restored',
+        message:
+          'The Blocks2Cpp compiler core could not start, so the unsaved work was not restored. It is still offered here. Restart Blocks2Cpp and try again.',
+      });
+      return null;
     }
-    // The save reports its own failures; whether it happened shows in the store.
-    const now = this.ctx.store.getState().project;
-    return now?.handle !== project.handle || !now.dirty;
+
+    let restored: RecoveryRestoreResponse;
+    try {
+      restored = await this.ctx.ipc.recoveryRestore({ snapshotId: snapshot.snapshotId });
+    } catch (error: unknown) {
+      await this.reportRestoreFailure(snapshot, error);
+      return null;
+    }
+    // The backend has a new project for it now and will not offer the snapshot again.
+    withoutSnapshot(this.model, snapshot.snapshotId);
+    return (await this.show(snapshot, restored)) ? restored.handle : null;
   }
 
   /**
@@ -339,15 +306,6 @@ export class RecoveryController {
       message = somethingWentWrong('the unsaved work was not restored', code);
     }
     await this.ctx.dialogs.alert({ title: 'Nothing was restored', message });
-  }
-
-  /** Closes the backend's handle, logging a failure (the handle is gone either way). */
-  private async closeHandle(handle: Handle): Promise<void> {
-    try {
-      await this.ctx.ipc.projectClose({ handle });
-    } catch (error: unknown) {
-      console.warn('project_close failed', errorCode(error));
-    }
   }
 }
 

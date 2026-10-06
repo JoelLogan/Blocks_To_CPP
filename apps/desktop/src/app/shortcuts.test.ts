@@ -5,7 +5,13 @@ import { activateGated, installShellCommands, type ShellActionContext } from './
 import { type CommandId, createCommandRegistry } from './commands';
 import type { EditorHandle } from './editor-types';
 import { createScreenRegistry } from './screens';
-import { installShortcuts, matchShortcut, SHORTCUTS_OFF_ATTRIBUTE } from './shortcuts';
+import {
+  installShortcuts,
+  isReloadKey,
+  keepsNativeContextMenu,
+  matchShortcut,
+  SHORTCUTS_OFF_ATTRIBUTE,
+} from './shortcuts';
 import { resetAppStore, useAppStore } from './store';
 import {
   diagnosticFixture,
@@ -169,6 +175,122 @@ describe('installShortcuts', () => {
 
     press({ key: 's', ctrlKey: true });
     expect(ran).toEqual([]);
+  });
+});
+
+describe('keeping the page from reloading', () => {
+  const reloadKeys: KeyboardEventInit[] = [
+    { key: 'r', ctrlKey: true },
+    { key: 'R', ctrlKey: true, shiftKey: true },
+    { key: 'к', code: 'KeyR', ctrlKey: true },
+    { key: 'F5', ctrlKey: true },
+    { key: 'F5', ctrlKey: true, shiftKey: true },
+  ];
+
+  /** A right click on `target`. */
+  function rightClick(target: EventTarget): MouseEvent {
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  it('knows the reload keys, but not AltGr+R or other letters', () => {
+    const key = (init: KeyboardEventInit) => isReloadKey(new KeyboardEvent('keydown', init));
+    for (const init of reloadKeys) {
+      expect(key(init)).toBe(true);
+    }
+    expect(key({ key: 'F5' })).toBe(true);
+    expect(key({ key: 'F5', shiftKey: true })).toBe(true);
+    expect(key({ key: 'r', ctrlKey: true, altKey: true })).toBe(false);
+    expect(key({ key: 'r', metaKey: true })).toBe(false);
+    expect(key({ key: 'r' })).toBe(false);
+    expect(key({ key: 't', ctrlKey: true })).toBe(false);
+  });
+
+  it('cancels the reload keys everywhere, but still lets the focused element have them', () => {
+    const { ctx, ran } = setUp();
+    makeRunnable();
+    uninstall = installShortcuts(window, ctx);
+    const scope = document.createElement('div');
+    scope.setAttribute(SHORTCUTS_OFF_ATTRIBUTE, 'off');
+    const terminal = document.createElement('textarea');
+    scope.append(terminal);
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('data-state', 'open');
+    const field = document.createElement('input');
+    dialog.append(field);
+    document.body.append(scope, dialog);
+    const seen: string[] = [];
+    terminal.addEventListener('keydown', (event) => seen.push(event.key));
+
+    for (const target of [document.body, terminal, field]) {
+      for (const init of reloadKeys) {
+        expect(press(init, target).defaultPrevented).toBe(true);
+      }
+    }
+    // In an element that takes the keys itself, F5 reaches it but does not reload either.
+    expect(press({ key: 'F5' }, terminal).defaultPrevented).toBe(true);
+    expect(seen).toEqual(['r', 'R', 'к', 'F5', 'F5', 'F5']);
+    expect(press({ key: 'r', ctrlKey: true, altKey: true }).defaultPrevented).toBe(false);
+    expect(ran).toEqual([]);
+  });
+
+  it("cancels the webview's context menu, which offers Reload, but not app menus", () => {
+    const { ctx } = setUp();
+    uninstall = installShortcuts(window, ctx);
+    const canvas = document.createElement('div');
+    document.body.append(canvas);
+    const appMenu = vi.fn();
+    canvas.addEventListener('contextmenu', appMenu);
+
+    expect(rightClick(canvas).defaultPrevented).toBe(true);
+    expect(rightClick(document.body).defaultPrevented).toBe(true);
+    // Blockly's own menu still sees the event.
+    expect(appMenu).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the context menu over editable text, the console and selected text', () => {
+    const { ctx } = setUp();
+    uninstall = installShortcuts(window, ctx);
+    const input = document.createElement('input');
+    const area = document.createElement('textarea');
+    const editable = document.createElement('div');
+    editable.contentEditable = 'true';
+    const readOnly = document.createElement('div');
+    readOnly.setAttribute('contenteditable', 'false');
+    const terminal = document.createElement('div');
+    terminal.className = 'xterm';
+    const screen = document.createElement('div');
+    terminal.append(screen);
+    const code = document.createElement('p');
+    code.textContent = 'int main() {}';
+    document.body.append(input, area, editable, readOnly, terminal, code);
+
+    for (const target of [input, area, editable, screen]) {
+      expect(rightClick(target).defaultPrevented).toBe(false);
+    }
+    expect(rightClick(readOnly).defaultPrevented).toBe(true);
+    expect(rightClick(code).defaultPrevented).toBe(true);
+
+    // With the code's text selected, the menu offers Copy.
+    const range = document.createRange();
+    range.selectNodeContents(code);
+    document.getSelection()?.removeAllRanges();
+    document.getSelection()?.addRange(range);
+    expect(keepsNativeContextMenu(new MouseEvent('contextmenu'))).toBe(false);
+    expect(rightClick(code).defaultPrevented).toBe(false);
+    // Elsewhere, even around the selection, the page's menu would open: cancelled.
+    expect(rightClick(readOnly).defaultPrevented).toBe(true);
+    expect(rightClick(document.body).defaultPrevented).toBe(true);
+    document.getSelection()?.removeAllRanges();
+  });
+
+  it('stops cancelling once uninstalled', () => {
+    const { ctx } = setUp();
+    installShortcuts(window, ctx)();
+    expect(press({ key: 'r', ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(rightClick(document.body).defaultPrevented).toBe(false);
   });
 });
 

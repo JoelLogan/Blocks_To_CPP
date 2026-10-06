@@ -23,12 +23,13 @@ let recoverySave: RecoverySave;
 let autosave: Autosave | null = null;
 const blurTarget = new EventTarget();
 
-function start(intervalMs?: number): Autosave {
+function start(intervalMs?: number, isPaused?: () => boolean): Autosave {
   autosave = startAutosave({
     store: useAppStore,
     ipc: { recoverySave },
     window: blurTarget,
     ...(intervalMs === undefined ? {} : { intervalMs }),
+    ...(isPaused === undefined ? {} : { isPaused }),
   });
   return autosave;
 }
@@ -189,6 +190,57 @@ describe('autosave when the window loses focus', () => {
     await queued;
     expect(recoverySave).toHaveBeenCalledTimes(2);
     expect(recoverySave).toHaveBeenLastCalledWith({ handle: HANDLE_A, document: '{"v":3}' });
+  });
+});
+
+describe('autosave around a save', () => {
+  it('writes no snapshot while a save runs, and the next one once it is over', async () => {
+    let saving = true;
+    open();
+    const running = start(undefined, () => saving);
+    edit('{"v":1}');
+    blur();
+    await running.snapshotNow();
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
+    expect(recoverySave).not.toHaveBeenCalled();
+
+    // The save failed or was cancelled: the changes are still unsaved, and the next tick writes them.
+    saving = false;
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
+    expect(recoverySave).toHaveBeenCalledExactlyOnceWith({ handle: HANDLE_A, document: '{"v":1}' });
+  });
+
+  it('is idle once the snapshot being written, and the one that followed it, are done', async () => {
+    const finishers: (() => void)[] = [];
+    recoverySave.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishers.push(() => {
+            resolve({});
+          });
+        }),
+    );
+    open();
+    const running = start();
+    await expect(running.idle()).resolves.toBeUndefined();
+
+    edit('{"v":1}');
+    blur();
+    edit('{"v":2}');
+    blur();
+    let idle = false;
+    const waiting = running.idle().then(() => {
+      idle = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    finishers.shift()?.();
+    await vi.advanceTimersByTimeAsync(0);
+    // The queued snapshot of {"v":2} is being written now.
+    expect(recoverySave).toHaveBeenCalledTimes(2);
+    expect(idle).toBe(false);
+    finishers.shift()?.();
+    await waiting;
+    expect(idle).toBe(true);
   });
 });
 

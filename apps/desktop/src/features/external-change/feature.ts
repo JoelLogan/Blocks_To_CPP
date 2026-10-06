@@ -46,7 +46,15 @@ export function installExternalChangeFeature(
   };
 }
 
-/** The external-change feature, for `src/features/index.ts`. */
-export const externalChangeFeature: Feature = function externalChangeFeature(ctx) {
-  return installExternalChangeFeature(ctx).uninstall;
-};
+/**
+ * An external-change feature with `options` (the app passes the project feature's link as
+ * `project`, so a reload runs in the project lifecycle's queue).
+ */
+export function createExternalChangeFeature(options: ExternalChangeOptions = {}): Feature {
+  return function externalChangeFeature(ctx) {
+    return installExternalChangeFeature(ctx, options).uninstall;
+  };
+}
+
+/** The external-change feature without the project lifecycle's queue. */
+export const externalChangeFeature: Feature = createExternalChangeFeature();

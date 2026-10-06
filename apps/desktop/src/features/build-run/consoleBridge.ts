@@ -20,6 +20,7 @@ const DETACHED_CONSOLE: ConsoleHandle = Object.freeze({
   write: () => Promise.resolve(),
   writeSkipped: () => undefined,
   clear: () => undefined,
+  reset: () => undefined,
   size: () => DEFAULT_TERMINAL_SIZE,
   onData: () => () => undefined,
   onResize: () => () => undefined,
@@ -102,21 +103,31 @@ export class ConsoleBridge {
   }
 
   /**
-   * Writes text of our own (a separator between runs) into the attached console, in order with
-   * the output. Nothing happens without a console.
+   * Writes text of our own (the terminal reset and separator before a run) into the attached
+   * console, in order with the output. It does not count as output for {@link used}. Nothing
+   * happens without a console.
    */
   writeText(text: string): void {
-    void this.write(new TextEncoder().encode(text));
+    void this.console().write(new TextEncoder().encode(text));
   }
 
-  /** Whether the attached console has been written to since it was last cleared. */
+  /** Whether program output has been written to the attached console since it was last cleared. */
   get used(): boolean {
     return this.#used;
   }
 
-  /** Clears the attached console. */
+  /** Clears the attached console (output already queued is written after the clear). */
   clear(): void {
     this.console().clear();
+    this.cleared();
+  }
+
+  /**
+   * Starts the attached console afresh for another project: the output of the old one that is
+   * still queued is dropped and the terminal is fully reset, modes included.
+   */
+  reset(): void {
+    this.console().reset();
     this.cleared();
   }
 

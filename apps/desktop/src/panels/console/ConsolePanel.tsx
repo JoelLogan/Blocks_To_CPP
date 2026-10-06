@@ -48,6 +48,12 @@ export interface ConsoleHandle {
   writeSkipped(lines: number): void;
   /** Clears the terminal (output already queued is written after the clear). */
   clear(): void;
+  /**
+   * Starts the terminal afresh for another project: output still queued is dropped, and the
+   * terminal is fully reset (screen, scrollback, colours, cursor, alternate screen and modes) once
+   * it has processed what it was already given.
+   */
+  reset(): void;
   /** The terminal's current size. */
   size(): TerminalSize;
   /** Calls `callback` with what the person types (or pastes); returns an unsubscribe function. */
@@ -272,6 +278,9 @@ export function ConsolePanel({
       clear: () => {
         term.clear();
       },
+      reset: () => {
+        term.reset();
+      },
     });
     return () => {
       scheduler.attach(null);
@@ -320,6 +329,9 @@ export function ConsolePanel({
       },
       clear: () => {
         scheduler.clear();
+      },
+      reset: () => {
+        scheduler.reset();
       },
       size: () => ({
         cols: terminal.current?.cols ?? 80,

@@ -10,8 +10,11 @@
  *
  * A sequence number discards results that a newer run has overtaken. When the core traps, the
  * instance is replaced, the run is tried once more on the new one, and the analysis gets the
- * notice `trapRecovered`. When the document read from the canvas does not load (a bug in the sync),
- * the last good preview stays and the analysis gets the notice `syncFailed`.
+ * notice `trapRecovered`. When the document read from the canvas does not load (blocks nested
+ * deeper than a project may be, B2C-E0104, or a bug in the sync), nothing is committed: the
+ * project and the last good preview stay, and the analysis gets the notice `syncFailed` until the
+ * canvas loads again. The window shows both notices in a banner (src/features/analysis), and Build
+ * and Run refuse such a canvas instead of building the older document (src/features/build-run).
  */
 import {
   type BdmDocument,
@@ -165,11 +168,15 @@ export class PreviewPipeline {
         canonical = core.canonical(json);
       }
       if (!canonical.ok) {
-        console.error(`The editor's document did not load (${codesOf(canonical)}); this is a bug.`);
+        console.error(`The editor's document did not load (${codesOf(canonical)}).`);
         this.setNotice('syncFailed');
         return;
       }
       this.commit(doc, canonical);
+      if (this.options.store.getState().analysis.notice === 'syncFailed') {
+        // The canvas loads again: what the project holds is what it shows.
+        this.options.store.getState().actions.setAnalysis({ notice: null });
+      }
 
       this.options.store.getState().actions.setAnalysis({ seq });
       const previewOptions: PreviewOptions = { indentWidth: this.indentWidth() };

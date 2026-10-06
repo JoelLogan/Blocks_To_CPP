@@ -59,6 +59,7 @@ export function createBuildRunFeature(options: BuildRunFeatureOptions = {}): Fea
       store: ctx.store,
       editor: ctx.editor,
       core: ctx.core,
+      dialogs: ctx.dialogs,
     });
     const runs = new RunController({
       ipc: ctx.ipc,

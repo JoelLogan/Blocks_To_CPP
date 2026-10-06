@@ -21,13 +21,24 @@ describe('status bar labels', () => {
   it('show the save time as HH:MM in local time', () => {
     const savedAt = new Date(2026, 9, 5, 9, 7).toISOString();
     expect(localTime(savedAt)).toBe('09:07');
-    expect(saveStateLabel({ dirty: false, savedAt })).toBe('Saved 09:07');
+    expect(saveStateLabel({ dirty: false, fileName: 'game.b2c', savedAt })).toBe('Saved 09:07');
   });
 
-  it('say Unsaved for changes or a project never saved, and Saved for an odd timestamp', () => {
-    expect(saveStateLabel({ dirty: true, savedAt: '2026-10-05T10:42:00Z' })).toBe('Unsaved');
-    expect(saveStateLabel({ dirty: false, savedAt: null })).toBe('Unsaved');
+  it('say Unsaved for unsaved changes or a project without a file', () => {
+    const fileName = 'game.b2c';
+    expect(saveStateLabel({ dirty: true, fileName, savedAt: '2026-10-05T10:42:00Z' })).toBe(
+      'Unsaved',
+    );
+    expect(saveStateLabel({ dirty: true, fileName, savedAt: null })).toBe('Unsaved');
+    // A new project, untouched or not, is not in a file yet.
+    expect(saveStateLabel({ dirty: false, fileName: null, savedAt: null })).toBe('Unsaved');
+  });
+
+  it('say Saved for a file just opened, which has no unsaved changes, and for an odd timestamp', () => {
+    expect(saveStateLabel({ dirty: false, fileName: 'game.b2c', savedAt: null })).toBe('Saved');
     expect(localTime('not a time')).toBeNull();
-    expect(saveStateLabel({ dirty: false, savedAt: 'not a time' })).toBe('Saved');
+    expect(saveStateLabel({ dirty: false, fileName: 'game.b2c', savedAt: 'not a time' })).toBe(
+      'Saved',
+    );
   });
 });

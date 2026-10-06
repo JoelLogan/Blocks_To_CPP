@@ -22,7 +22,7 @@ import { ACK_INTERVAL_MS } from './acks';
 import { GENERATOR_BUG_LABEL } from './buildOutput';
 import { ConsoleBridge } from './consoleBridge';
 import { createBuildRunFeature } from './feature';
-import { RUN_SEPARATOR, STOP_WAIT_MS } from './runController';
+import { RUN_MODE_RESET, RUN_SEPARATOR, STOP_WAIT_MS } from './runController';
 import {
   createFakeBackend,
   type FakeBackend,
@@ -234,14 +234,37 @@ describe('Build', () => {
     await run('build.start');
     expect(canonical).toHaveBeenCalledWith(JSON.stringify(documentFixture()));
     expect(backend.builds[0]?.request.document).toBe('{"fresh":true}');
+  });
 
-    // A canvas that does not load falls back to the last synchronised text.
+  it('refuses to build or run a canvas the loader refuses, naming the problem', async () => {
+    uninstall();
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    canonical.mockReturnValueOnce({ ok: false, diagnostics: [] });
+    const tooDeep = diagnosticFixture({
+      code: 'B2C-E0104',
+      source: 'loader',
+      message: 'Lists and objects in the project file are nested more than 128 levels deep.',
+      primary: { part: { kind: 'whole' } },
+    });
+    const canonical = vi.fn((): CanonicalResult => ({ ok: false, diagnostics: [tooDeep] }));
+    const editor = { currentDocument: () => documentFixture() } as unknown as EditorHandle;
+    install({
+      editor: () => editor,
+      core: () => ({ canonical }) as unknown as CoreWasm,
+    });
+    // The store still holds the last version that loaded; it must not be built instead.
     state().actions.updateProject({ canonicalText: '{"doc":3}', contentHash: OTHER_HASH });
-    await finishBuild(0);
+
     await run('build.start');
-    expect(backend.builds[1]?.request.document).toBe('{"doc":3}');
+    await run('run.start');
+
+    expect(backend.ipc.buildStart).not.toHaveBeenCalled();
+    expect(backend.ipc.runStart).not.toHaveBeenCalled();
+    expect(dialogs.alert).toHaveBeenCalledTimes(2);
+    const [{ title, message }] = dialogs.alert.mock.calls[0] ?? [{ title: '', message: '' }];
+    expect(title).toBe('The build could not start');
+    expect(message).toContain(
+      'B2C-E0104: Lists and objects in the project file are nested more than 128 levels deep.',
+    );
   });
 
   it('puts the last diagnostics back after a cancelled build and keeps warnings when up to date', async () => {
@@ -389,7 +412,8 @@ describe('Run', () => {
     await settle();
     expect(state().run.status).toBe('exited');
     expect(state().run.exit?.message).toBe('Finished (exit code 0)');
-    expect(terminal.text).toBe('Guess a number from 1 to 100!\r\nYour guess: ');
+    // Every run starts by resetting the terminal's modes.
+    expect(terminal.text).toBe(`${RUN_MODE_RESET}Guess a number from 1 to 100!\r\nYour guess: `);
     expect(backend.ipc.runAck).toHaveBeenLastCalledWith({ runId: program?.runId, seq: 1 });
     await vi.advanceTimersByTimeAsync(ACK_INTERVAL_MS);
     expect(backend.ipc.runAck).toHaveBeenCalledTimes(1);
@@ -476,7 +500,25 @@ describe('Run', () => {
     second?.output('again');
     await settle();
     expect(state().run.status).toBe('running');
-    expect(terminal.text).toBe(`working…${RUN_SEPARATOR}again`);
+    expect(terminal.text).toBe(`${RUN_MODE_RESET}working…${RUN_SEPARATOR}again`);
+  });
+
+  it("resets the terminal's modes after Clear too, without a separator", async () => {
+    await run('run.start');
+    await finishBuild(0);
+    backend.runs[0]?.send(STARTED);
+    // The program hides the cursor and ends.
+    backend.runs[0]?.output('\u001b[?25lbye');
+    backend.runs[0]?.send(exitEvent(1));
+    await settle();
+    bridge.clear();
+    terminal.text = '';
+
+    await run('run.again');
+    backend.runs[1]?.send(STARTED);
+    backend.runs[1]?.output('hello');
+    await settle();
+    expect(terminal.text).toBe(`${RUN_MODE_RESET}hello`);
   });
 
   it('starts the new run anyway when the old one does not report its end', async () => {
@@ -577,11 +619,36 @@ describe('Run', () => {
     program?.send({ kind: 'skipped', lines: 1_204_331, afterSeq: 1 });
     program?.output('z');
     await settle();
-    expect(terminal.skipped).toEqual([]);
-    terminal.resolveWrites(1);
-    await settle();
+    // Queued right after batch 1, before the kept tail, although batch 1 is not written yet.
     expect(terminal.skipped).toEqual([1_204_331]);
-    expect(terminal.text).toBe('az[skipped 1204331]');
+    expect(terminal.text).toBe(`${RUN_MODE_RESET}a[skipped 1204331]z`);
+    terminal.resolveWrites();
+    await settle();
+    expect(terminal.text).toBe(`${RUN_MODE_RESET}a[skipped 1204331]z`);
+  });
+
+  it('writes a skipped marker that arrives before its batch right after that batch', async () => {
+    await run('run.start');
+    await finishBuild(0);
+    const program = backend.runs[0];
+    program?.send(STARTED);
+    terminal.autoResolve = false;
+    program?.output('a');
+    // The event channel overtook batch 2: the marker waits for it, then follows it.
+    program?.send({ kind: 'skipped', lines: 7, afterSeq: 2 });
+    await settle();
+    expect(terminal.skipped).toEqual([]);
+    program?.output('b');
+    program?.output('z');
+    await settle();
+    expect(terminal.text).toBe(`${RUN_MODE_RESET}ab[skipped 7]z`);
+    // The exit still waits until all the output is on screen.
+    program?.send(exitEvent(3));
+    await settle();
+    expect(state().run.status).toBe('running');
+    terminal.resolveWrites();
+    await settle();
+    expect(state().run.status).toBe('exited');
   });
 
   it('shows the exit anyway when output batches never arrive', async () => {
@@ -760,12 +827,32 @@ describe('the open project', () => {
     state().actions.setProject(
       projectFixture({ handle: `ph_${'9'.repeat(32)}`, document: documentFixture('Other') }),
     );
-    expect(terminal.clears).toBe(1);
+    // Reset, not cleared: a clear would still write the old program's queued output.
+    expect(terminal.resets).toBe(1);
+    expect(terminal.clears).toBe(0);
     backend.runs[0]?.output('old output');
     backend.runs[0]?.send(exitEvent(1));
     await settle();
     expect(terminal.text).toBe('');
     expect(state().run.status).toBe('idle');
+  });
+
+  it("starts the new project's first run without a separator, with the modes reset", async () => {
+    await run('run.start');
+    await finishBuild(0);
+    backend.runs[0]?.send(STARTED);
+    backend.runs[0]?.output('old output');
+    await settle();
+
+    state().actions.setProject(
+      projectFixture({ handle: `ph_${'9'.repeat(32)}`, document: documentFixture('Other') }),
+    );
+    await run('run.start');
+    await finishBuild(1);
+    backend.runs[1]?.send(STARTED);
+    backend.runs[1]?.output('new output');
+    await settle();
+    expect(terminal.text).toBe(`${RUN_MODE_RESET}new output`);
   });
 
   it('forgets a build of a closed project', async () => {

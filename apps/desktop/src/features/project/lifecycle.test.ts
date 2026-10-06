@@ -558,6 +558,73 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       expect(after.savedAt).toBe('2026-10-05T10:42:00Z');
     });
 
+    it("leaves the backend's flag set after a save that overlapped an edit, and clears it after a clean save", async () => {
+      // The backend's flag is what project_set_dirty last reported; a save does not clear it.
+      let backendDirty = false;
+      harness.ipc.projectSetDirty.mockImplementation((request) => {
+        backendDirty = request.dirty;
+        return Promise.resolve({});
+      });
+      await openFile(HELLO_TEXT, HANDLE_A);
+      const editName = (name: string) => {
+        const edited = structuredClone(project().document);
+        edited.project.name = name;
+        const canonical = core.canonical(JSON.stringify(edited));
+        if (!canonical.ok) {
+          throw new Error('the edited document does not load');
+        }
+        useAppStore.getState().actions.updateProject({
+          document: edited,
+          canonicalText: canonical.text,
+          contentHash: canonical.hash,
+          dirty: canonical.text !== project().savedCanonicalText,
+        });
+      };
+      editName('First edit');
+      await vi.waitFor(() => {
+        expect(backendDirty).toBe(true);
+      });
+
+      let finish: (value: { savedAt: string; hash: string }) => void = () => undefined;
+      harness.ipc.projectSave.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const saving = harness.feature.lifecycle.save();
+      await vi.waitFor(() => {
+        expect(harness.ipc.projectSave).toHaveBeenCalled();
+      });
+      editName('Typed while the save was on its way');
+      finish({ savedAt: '2026-10-05T10:42:00Z', hash: 'f'.repeat(64) });
+      expect(await saving).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Closing the window must still ask: the last value sent is true.
+      expect(project().dirty).toBe(true);
+      expect(harness.ipc.projectSetDirty).toHaveBeenLastCalledWith({
+        handle: HANDLE_A,
+        dirty: true,
+      });
+      expect(backendDirty).toBe(true);
+
+      // A clean save turns the store's flag false, which is sent.
+      harness.ipc.projectSave.mockResolvedValueOnce({
+        savedAt: '2026-10-05T10:43:00Z',
+        hash: 'e'.repeat(64),
+      });
+      expect(await harness.feature.lifecycle.save()).toBe(true);
+      await vi.waitFor(() => {
+        expect(backendDirty).toBe(false);
+      });
+      expect(project().dirty).toBe(false);
+      expect(harness.ipc.projectSetDirty).toHaveBeenLastCalledWith({
+        handle: HANDLE_A,
+        dirty: false,
+      });
+    });
+
     it('refuses to save a document the core does not load, saying it is a bug', async () => {
       await openFile(HELLO_TEXT, HANDLE_A);
       const broken = structuredClone(project().document);
@@ -815,6 +882,98 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       finish({ savedAt: '2026-10-05T10:42:00Z', hash: 'f'.repeat(64) });
       expect(await saving).toBe(true);
       expect(project()).toEqual(other);
+    });
+  });
+
+  describe("other features' operations", () => {
+    it('replaces the open project in the queue, after asking about its unsaved changes', async () => {
+      await openFile(HELLO_TEXT, HANDLE_A);
+      makeDirty();
+      const show = vi.fn(() => {
+        expect(harness.feature.model.getState().busy).toBe('restore');
+        useAppStore
+          .getState()
+          .actions.setProject(projectFixture({ handle: HANDLE_C, dirty: true }));
+        return Promise.resolve(HANDLE_C);
+      });
+
+      // Cancel: nothing is shown.
+      let replacing = harness.feature.lifecycle.replaceWith(show);
+      await answerChoice(harness.dialogs, 'cancel');
+      expect(await replacing).toBe(false);
+      expect(show).not.toHaveBeenCalled();
+
+      // Don't save: shown, and the replaced project closed afterwards.
+      replacing = harness.feature.lifecycle.replaceWith(show);
+      await answerChoice(harness.dialogs, 'discard');
+      expect(await replacing).toBe(true);
+      expect(harness.ipc.projectClose).toHaveBeenCalledWith({ handle: HANDLE_A });
+      expect(harness.feature.model.getState().busy).toBeNull();
+    });
+
+    it('keeps the open project when nothing was shown', async () => {
+      await openFile(HELLO_TEXT, HANDLE_A);
+      expect(await harness.feature.lifecycle.replaceWith(() => Promise.resolve(null))).toBe(false);
+      expect(harness.ipc.projectClose).not.toHaveBeenCalled();
+      expect(project().handle).toBe(HANDLE_A);
+    });
+
+    it('runs a reload after a save that was asked for first', async () => {
+      await openFile(HELLO_TEXT, HANDLE_A);
+      const order: string[] = [];
+      let finishSave: (value: { savedAt: string; hash: string }) => void = () => undefined;
+      harness.ipc.projectSave.mockImplementationOnce(() => {
+        order.push('save');
+        return new Promise((resolve) => {
+          finishSave = resolve;
+        });
+      });
+      const saving = harness.feature.lifecycle.save();
+      const reloading = harness.feature.lifecycle.reloadWith(() => {
+        order.push('reload');
+        expect(harness.feature.model.getState().busy).toBe('reload');
+        return Promise.resolve(true);
+      });
+      await vi.waitFor(() => {
+        expect(order).toEqual(['save']);
+      });
+      finishSave({ savedAt: '2026-10-05T10:42:00Z', hash: 'f'.repeat(64) });
+      expect(await saving).toBe(true);
+      expect(await reloading).toBe(true);
+      expect(order).toEqual(['save', 'reload']);
+    });
+
+    it('makes every save wait for its barriers, and says when it is saving', async () => {
+      await openFile(HELLO_TEXT, HANDLE_A);
+      let release: () => void = () => undefined;
+      const barrier = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+      );
+      const remove = harness.feature.lifecycle.addSaveBarrier(barrier);
+      harness.ipc.projectSave.mockResolvedValue({
+        savedAt: '2026-10-05T10:42:00Z',
+        hash: 'f'.repeat(64),
+      });
+      expect(harness.feature.lifecycle.isSaving()).toBe(false);
+      const saving = harness.feature.lifecycle.save();
+      await vi.waitFor(() => {
+        expect(barrier).toHaveBeenCalledOnce();
+      });
+      expect(harness.feature.lifecycle.isSaving()).toBe(true);
+      expect(harness.ipc.projectSave).not.toHaveBeenCalled();
+      release();
+      expect(await saving).toBe(true);
+      expect(harness.ipc.projectSave).toHaveBeenCalledOnce();
+      expect(harness.feature.lifecycle.isSaving()).toBe(false);
+
+      // A barrier that fails is only logged; a removed one is not waited for.
+      remove();
+      harness.feature.lifecycle.addSaveBarrier(() => Promise.reject(new Error('lost')));
+      expect(await harness.feature.lifecycle.save()).toBe(true);
+      expect(barrier).toHaveBeenCalledOnce();
     });
   });
 
