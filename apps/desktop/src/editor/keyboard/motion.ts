@@ -1,10 +1,13 @@
 /**
  * Reduced motion in the block editor (docs/spec/04-user-interface.md §4.8). The app's style sheet
  * already turns CSS transitions and animations off when the system asks for reduced motion
- * (src/app/app.css), which covers Blockly's scrolling and flyout transitions, and ./keyboard.css
- * hides the two effects Blockly draws itself (the shrinking copy of a deleted block and the ripple
- * of a new connection). What is left is the wiggle Blockly starts with a timer when a block is
- * dragged out of a stack: it is stopped as soon as the drag is reported.
+ * (src/app/app.css), which covers the CSS transitions of Blockly and the panels, and
+ * ./keyboard.css hides the two effects Blockly draws itself (the shrinking copy of a deleted block
+ * and the ripple of a new connection). Two animations run in script, which no style sheet stops:
+ * the continuous toolbox's scroll to a chosen category, which its flyout makes jump at once
+ * (`B2cContinuousFlyout.scrollTo` in ../toolbox/continuous.ts, with {@link prefersReducedMotion}),
+ * and the wiggle Blockly starts with a timer when a block is dragged out of a stack, which is
+ * stopped here as soon as the drag is reported.
  */
 import * as Blockly from 'blockly/core';
 

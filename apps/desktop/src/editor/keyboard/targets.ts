@@ -12,8 +12,9 @@
  *   go).
  *
  * Each place is checked with the workspace's connection checker (the type-aware checker of
- * blockly-ext), and a place where the statements already there could not hang below the block is
- * left out, so a move never knocks other blocks loose. The canvas is walked iteratively with a
+ * blockly-ext) as a pointer drag is, type rule included, so the keyboard offers exactly the places
+ * a drag could connect to; and a place where the statements already there could not hang below
+ * the block is left out, so a move never knocks other blocks loose. The canvas is walked iteratively with a
  * bound, never recursively.
  */
 import * as Blockly from 'blockly/core';
@@ -91,7 +92,11 @@ export function movingBlocks(block: Blockly.BlockSvg): Set<Blockly.Block> {
   return moving;
 }
 
-/** Whether `from` can connect to `to` (with Blockly's checks and the type-aware checker). */
+/**
+ * Whether `from` can connect to `to` (with Blockly's checks and the structural rules of the
+ * type-aware checker). This is the check for connections the program makes, without the type
+ * rule: here, whether what is at a place could hang below the moved block.
+ */
 function canConnect(
   workspace: Blockly.WorkspaceSvg,
   from: Blockly.Connection,
@@ -99,6 +104,25 @@ function canConnect(
 ): boolean {
   try {
     return workspace.connectionChecker.canConnect(from, to, false);
+  } catch (error: unknown) {
+    console.warn('A connection could not be checked', error);
+    return false;
+  }
+}
+
+/**
+ * Whether the moved block's connection `from` can go to `to` as a user's move: the checks of a
+ * pointer drag, so the type-aware checker also applies the type rule (03 §3.5.3) and the keyboard
+ * offers no place a drag would refuse. The distance is unbounded (only the drag's proximity check
+ * is left out); nothing is being dragged, so no connection is excluded as the dragged block's own.
+ */
+function canMoveTo(
+  workspace: Blockly.WorkspaceSvg,
+  from: Blockly.Connection,
+  to: Blockly.Connection,
+): boolean {
+  try {
+    return workspace.connectionChecker.canConnect(from, to, true, Number.POSITIVE_INFINITY);
   } catch (error: unknown) {
     console.warn('A connection could not be checked', error);
     return false;
@@ -167,7 +191,7 @@ export function dropTargets(
     const consider = (target: DropTarget & { connection: Blockly.RenderedConnection }) => {
       if (
         targets.length < limit &&
-        canConnect(workspace, from, target.connection) &&
+        canMoveTo(workspace, from, target.connection) &&
         (!isStatement || keepsWhatIsThere(workspace, block, target.connection))
       ) {
         targets.push(target);
@@ -264,7 +288,7 @@ export function isStillValid(block: Blockly.BlockSvg, target: DropTarget): boole
     return false;
   }
   const workspace = block.workspace;
-  if (!canConnect(workspace, from, target.connection)) {
+  if (!canMoveTo(workspace, from, target.connection)) {
     return false;
   }
   if (target.kind === 'value') {

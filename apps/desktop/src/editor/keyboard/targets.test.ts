@@ -136,6 +136,44 @@ describe('the places of a value', () => {
     expect(now?.kind).toBe('value');
     expect(isCurrentPlace(sum, { kind: 'canvas' })).toBe(false);
   });
+
+  it('follow the type rule of a pointer drag: no input the value cannot convert to', () => {
+    const { block, workspace } = open();
+    const repeat = newBlock(workspace, 'control.repeat');
+    block('print').nextConnection.connect(repeat.previousConnection);
+    const times = repeat.getInput('TIMES')?.connection;
+    if (!(times instanceof Blockly.RenderedConnection)) {
+      throw new Error('no TIMES input');
+    }
+    const text = newBlock(workspace, 'text.literal');
+    const number = newBlock(workspace, 'math.number');
+    const intoTimes = (target: DropTarget) =>
+      target.kind === 'value' && target.owner === repeat && target.input === 'TIMES';
+
+    // A number can be a count; text cannot (a pointer drag is refused there).
+    expect(dropTargets(number).some(intoTimes)).toBe(true);
+    expect(dropTargets(text).some(intoTimes)).toBe(false);
+    const place: DropTarget = { kind: 'value', owner: repeat, input: 'TIMES', connection: times };
+    expect(isStillValid(number, place)).toBe(true);
+    expect(isStillValid(text, place)).toBe(false);
+  });
+
+  it('are the places a pointer drag can connect to', () => {
+    const { block, workspace } = open();
+    const checker = workspace.connectionChecker;
+    for (const id of ['print', 'decl', 'fn', 'main']) {
+      const moved = block(id);
+      const from = movingConnection(moved);
+      for (const target of dropTargets(moved)) {
+        if (target.kind !== 'canvas' && from !== null && !isCurrentPlace(moved, target)) {
+          expect(
+            checker.canConnect(from, target.connection, true, Number.POSITIVE_INFINITY),
+            `${id} ${describeTarget(target)}`,
+          ).toBe(true);
+        }
+      }
+    }
+  });
 });
 
 describe('the places of a block without a connection', () => {

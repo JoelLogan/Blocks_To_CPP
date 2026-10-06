@@ -113,6 +113,63 @@ describe.skipIf(!WITH_CORE)('the workspace keys with the keyboard focus on a blo
     expect(workspace.getAllBlocks(false).length).toBeGreaterThan(count);
   });
 
+  it('Ctrl+X on a loose block keeps the keyboard focus on the canvas', async () => {
+    const { workspace, memory } = await openGame();
+    const loose = statementAt(workspace, 1);
+    focus(loose);
+    press('m');
+    press('End');
+    press('Enter');
+    expect(loose.getParent()).toBeNull();
+    expect(loose.getChildren(false).length).toBeGreaterThan(0);
+    focus(loose);
+
+    press('x', { ctrlKey: true });
+    await settle();
+    await eventsDelivered();
+    expect(loose.isDeadOrDying()).toBe(true);
+    expect(memory.get()).not.toBeNull();
+    const node = Blockly.getFocusManager().getFocusedNode();
+    expect(node).toBeInstanceOf(Blockly.BlockSvg);
+    expect((node as Blockly.BlockSvg).isDeadOrDying()).toBe(false);
+    expect(document.activeElement).toBe(node?.getFocusableElement());
+  });
+
+  it('a keyboard add from the toolbox is one undo step for the document too', async () => {
+    const game = await openGame();
+    const { workspace } = game;
+    const before = bodyTypes(workspace);
+    focus(statementAt(workspace, 0));
+    await eventsDelivered();
+    workspace.clearUndo();
+
+    press('t');
+    press('ArrowRight');
+    for (let step = 0; step < 80; step++) {
+      const node = Blockly.getFocusManager().getFocusedNode();
+      if (node instanceof Blockly.BlockSvg && node.type === 'program.exit') {
+        break;
+      }
+      press('ArrowDown');
+    }
+    press('Enter');
+    await eventsDelivered();
+    press('Enter');
+    await eventsDelivered();
+    expect(bodyTypes(workspace)).toEqual([before[0], 'program.exit', ...before.slice(1)]);
+
+    press('z', { ctrlKey: true });
+    await eventsDelivered();
+    expect(bodyTypes(workspace)).toEqual(before);
+    expect(workspace.getAllBlocks(false).some((block) => block.type === 'program.exit')).toBe(
+      false,
+    );
+    const main = game
+      .document()
+      .modules[0]?.workspace.blocks.find((block) => block.type === 'program.main');
+    expect(main?.statements?.['BODY']?.map((node) => node.type)).toEqual(before);
+  });
+
   it('a keyboard move reaches the project document', async () => {
     const game = await openGame();
     const { workspace } = game;

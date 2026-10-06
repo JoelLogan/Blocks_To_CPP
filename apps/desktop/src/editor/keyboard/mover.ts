@@ -6,12 +6,16 @@
  *
  * The block does not travel while the places are tried: the place is highlighted and announced,
  * and only `Enter` changes the canvas, in one Blockly event group, so one `Ctrl+Z` undoes the move.
- * Connecting is Blockly's own (with the type-aware connection checker), so the editing session sees
- * the move like any other change. A pointer press, the focus leaving the canvas, or the block or
- * the project going away ends the move without changing anything.
+ * A block added from the toolbox is dropped (or removed on Escape) in the group it was created in,
+ * so the whole add is one undo step, as a pointer drag from the toolbox is. The places are the ones
+ * a pointer drag could connect to (./targets.ts), and connecting is Blockly's own (with the
+ * type-aware connection checker), so the editing session sees the move like any other change. A
+ * pointer press, the focus leaving the canvas, or the block or the project going away ends the
+ * move without changing anything.
  */
 import * as Blockly from 'blockly/core';
 
+import { blockOfNode, isGone } from './keepFocus';
 import { describeBlock, describeTarget, type SymbolNames } from './labels';
 import {
   dropTargets,
@@ -42,9 +46,15 @@ export interface MoveOptions {
   readonly inserted?: boolean;
   /**
    * Start at the place nearest this node (where the keyboard cursor was when the toolbox was
-   * opened) rather than where the block is.
+   * opened) rather than where the block is. When an added block is removed again, the keyboard
+   * focus goes back to this node.
    */
   readonly near?: Blockly.IFocusableNode | null;
+  /**
+   * The Blockly event group the block was added in: the drop (or the removal on Escape) joins it,
+   * so the whole add is one undo step. Without it the drop is a group of its own.
+   */
+  readonly group?: string;
 }
 
 /** A move in progress. */
@@ -53,21 +63,37 @@ interface Move {
   readonly targets: readonly DropTarget[];
   index: number;
   readonly inserted: boolean;
+  /** Where the keyboard focus goes back to when an added block is removed again. */
+  readonly near: Blockly.IFocusableNode | null;
+  /** The event group the move's change joins, or `null` for a group of its own. */
+  readonly group: string | null;
   /** The connection drawn as the current place, to un-draw it. */
   highlighted: Blockly.RenderedConnection | null;
   readonly stop: () => void;
 }
 
-/** The node's block, if it is a block or a part of one. */
-function blockOfNode(node: Blockly.IFocusableNode | null | undefined): Blockly.BlockSvg | null {
-  if (node instanceof Blockly.BlockSvg) {
-    return node;
+/**
+ * Whether `node` is a live node of `workspace` outside `leaving` (a block about to be removed):
+ * the canvas itself, or a block, field or connection of a block that is still on it.
+ */
+function isLiveNodeOf(
+  node: Blockly.IFocusableNode,
+  workspace: Blockly.WorkspaceSvg,
+  leaving: Blockly.BlockSvg,
+): boolean {
+  if (node === workspace) {
+    return true;
   }
-  if (node instanceof Blockly.Field || node instanceof Blockly.RenderedConnection) {
-    const block = node.getSourceBlock();
-    return block instanceof Blockly.BlockSvg ? block : null;
+  const block = blockOfNode(node);
+  if (block?.workspace !== workspace || isGone(node) || !node.canBeFocused()) {
+    return false;
   }
-  return null;
+  for (let at: Blockly.BlockSvg | null = block; at !== null; at = at.getParent()) {
+    if (at === leaving) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** The place in `targets` nearest a node: a place at its block (or one of its parents). */
@@ -166,6 +192,8 @@ export class KeyboardMover {
       targets,
       index,
       inserted: options.inserted === true,
+      near: options.near ?? null,
+      group: options.group === undefined || options.group === '' ? null : options.group,
       highlighted: null,
       stop,
     };
@@ -209,7 +237,7 @@ export class KeyboardMover {
     if (move === null || target === null) {
       return false;
     }
-    const { block, inserted } = move;
+    const { block, inserted, group } = move;
     const names = this.deps.names();
     if (block.isDeadOrDying()) {
       this.cancel();
@@ -228,7 +256,7 @@ export class KeyboardMover {
       return false;
     }
     this.end();
-    if (this.place(block, target)) {
+    if (this.place(block, target, group)) {
       Blockly.getFocusManager().focusNode(block);
       this.deps.announce(`${inserted ? 'Added' : 'Moved'} “${name}” ${where}.`);
     } else {
@@ -238,8 +266,10 @@ export class KeyboardMover {
   }
 
   /**
-   * Leaves the held block where it was (a block just added from the toolbox is removed again),
-   * and gives it the keyboard focus back. Does nothing without a move.
+   * Leaves the held block where it was and gives it the keyboard focus back. A block just added
+   * from the toolbox is removed again, in the add's event group (so undo has nothing to bring
+   * back), and the keyboard focus goes back to where the cursor was before the add. Does nothing
+   * without a move.
    */
   cancel(): void {
     const move = this.move;
@@ -252,7 +282,8 @@ export class KeyboardMover {
       return;
     }
     if (move.inserted) {
-      Blockly.Events.setGroup(true);
+      this.focusAwayFrom(block, move.near);
+      Blockly.Events.setGroup(move.group ?? true);
       try {
         block.dispose(false, false);
       } finally {
@@ -354,12 +385,35 @@ export class KeyboardMover {
     }
   }
 
-  /** Connects `block` at `target` in one undoable step. Returns whether it worked. */
-  private place(block: Blockly.BlockSvg, target: DropTarget): boolean {
+  /**
+   * Moves the keyboard focus off `block`, which is about to be removed, to `near` (when it is
+   * still a live node of this canvas) or else to the canvas itself, if the focus is on the block
+   * or a part of it. Blockly's own choice when a focused block is removed can be a block nested in
+   * it, removed a moment later, which would leave the focus on nothing.
+   */
+  private focusAwayFrom(block: Blockly.BlockSvg, near: Blockly.IFocusableNode | null): void {
+    try {
+      const manager = Blockly.getFocusManager();
+      const focused = manager.getFocusedNode();
+      if (focused === null || !block.getSvgRoot().contains(focused.getFocusableElement())) {
+        return;
+      }
+      const workspace = this.deps.workspace;
+      manager.focusNode(near !== null && isLiveNodeOf(near, workspace, block) ? near : workspace);
+    } catch (error: unknown) {
+      console.warn('The keyboard focus could not be moved off the block', error);
+    }
+  }
+
+  /**
+   * Connects `block` at `target` in one undoable step (in `group` when given: the add the block
+   * came from). Returns whether it worked.
+   */
+  private place(block: Blockly.BlockSvg, target: DropTarget, group: string | null): boolean {
     const workspace = this.deps.workspace;
     const from = movingConnection(block);
     const start = block.getRelativeToSurfaceXY();
-    Blockly.Events.setGroup(true);
+    Blockly.Events.setGroup(group ?? true);
     try {
       block.unplug(true);
       if (target.kind === 'canvas') {

@@ -14,7 +14,10 @@
  *   cancelled when the toolbox is disposed;
  * - the flyout never recycles blocks (the toolbox's blocks change between showings: default names,
  *   fresh symbol IDs), so it keeps a recycler of its own that stays empty instead of needing the
- *   plugin's recycler to replace Blockly's block inflater for every flyout.
+ *   plugin's recycler to replace Blockly's block inflater for every flyout;
+ * - showing the flyout again keeps the keyboard focus on the same item when it was in the flyout
+ *   (04 §4.8), and the animated scroll to a chosen category jumps at once when the system asks for
+ *   reduced motion.
  */
 import {
   ContinuousFlyout,
@@ -23,6 +26,9 @@ import {
   RecyclableBlockFlyoutInflater,
 } from '@blockly/continuous-toolbox';
 import * as Blockly from 'blockly/core';
+
+import { keepFlyoutFocus } from '../keyboard/keepFocus';
+import { prefersReducedMotion } from '../keyboard/motion';
 
 /** How long the toolbox waits after the last change before it rebuilds the flyout. */
 export const CONTINUOUS_REFRESH_DELAY_MS = 100;
@@ -41,12 +47,15 @@ function dynamicCategoryKey(item: Blockly.utils.toolbox.FlyoutItemInfo): string 
 }
 
 /**
- * The continuous toolbox, with three changes:
+ * The continuous toolbox, with four changes:
  *
  * - a refresh builds the dynamic categories itself and shows the flyout again only when what it
  *   would show changed (the analysis and the selection change much more often than the toolbox's
  *   blocks do, and rebuilding hundreds of flyout blocks on every edit is slow);
  * - a dynamic category that cannot be built is left out instead of failing the whole flyout;
+ * - showing the flyout again disposes every item in it, so a keyboard focus that was on one goes
+ *   to the same item in the new contents instead of being lost (the keyboard plugin's
+ *   `keepFlyoutFocus`);
  * - the delayed refresh is cancelled when the toolbox is disposed.
  */
 export class B2cContinuousToolbox extends ContinuousToolbox {
@@ -75,10 +84,13 @@ export class B2cContinuousToolbox extends ContinuousToolbox {
   showAllCategories(force = true): boolean {
     const contents = this.flyoutContents();
     const serialised = JSON.stringify(contents);
-    if (!force && serialised === this.shownContents && this.getFlyout().isVisible()) {
+    const flyout = this.getFlyout();
+    if (!force && serialised === this.shownContents && flyout.isVisible()) {
       return false;
     }
-    this.getFlyout().show(contents);
+    keepFlyoutFocus(flyout, () => {
+      flyout.show(contents);
+    });
     this.shownContents = serialised;
     return true;
   }
@@ -124,8 +136,25 @@ export class B2cContinuousToolbox extends ContinuousToolbox {
 /** Each flyout's private recycler, which recycling is never turned on for. */
 const RECYCLERS = new WeakMap<ContinuousFlyout, RecyclableBlockFlyoutInflater>();
 
-/** The continuous flyout, without block recycling. */
+/**
+ * The share of the remaining distance the flyout scrolls each frame when a category is chosen
+ * (the continuous toolbox's own value).
+ */
+const CATEGORY_SCROLL_FRACTION = 0.3;
+
+/** The continuous flyout, without block recycling, and without its scroll animation on request. */
 export class B2cContinuousFlyout extends ContinuousFlyout {
+  /**
+   * Scrolls to `position` (a category chosen in the toolbox): animated, or at once when the system
+   * asks for reduced motion (04 §4.8; read at each scroll, so a change of the setting applies at
+   * once). The animation runs frame by frame in script, which the style sheet's reduced-motion
+   * rule cannot stop.
+   */
+  override scrollTo(position: number): void {
+    this.scrollAnimationFraction = prefersReducedMotion() ? 1 : CATEGORY_SCROLL_FRACTION;
+    super.scrollTo(position);
+  }
+
   /**
    * A recycler of this flyout's own (the base class insists on one): it is never used to create
    * blocks, so nothing is ever recycled, and Blockly's block inflater stays the default for every

@@ -11,6 +11,8 @@
  *   ./navigation.ts); copy, cut, paste and duplicate stay the clipboard plugin's, and Delete, undo,
  *   redo and the block menu (`Ctrl+Enter`) stay Blockly's own, all acting on the keyboard focus;
  * - gives a held block the keyboard until it is put down or the move is cancelled (./mover.ts);
+ * - keeps the keyboard focus on the canvas when Delete, `Ctrl+X` or anything else removes the
+ *   block that had it (./keepFocus.ts; the toolbox keeps it in its blocks when they are rebuilt);
  * - puts the toolbox's blocks between the toolbox and the canvas in the Tab order, and names the
  *   canvas and the toolbox's blocks, with their keys as description (./help.ts);
  * - announces what the keyboard reaches in a polite live region (./announcer.ts);
@@ -24,6 +26,7 @@ import type { EditorContext, EditorPlugin } from '../../app/editor-types';
 import { indexDocument } from '../diagnostics/blockPath';
 import { Announcer } from './announcer';
 import { CANVAS_DESCRIPTION, CANVAS_LABEL, FLYOUT_DESCRIPTION, FLYOUT_LABEL } from './help';
+import { keepCanvasFocus } from './keepFocus';
 import type { SymbolNames } from './labels';
 import { attachReducedMotion, type MatchMedia, windowMatchMedia } from './motion';
 import { EditorKeyboard } from './navigation';
@@ -209,6 +212,7 @@ export function createKeyboardPlugin(options: KeyboardPluginOptions = {}): Edito
       const uninstallShortcuts = installKeyboardShortcuts(keyboard);
       const matchMedia = options.matchMedia === undefined ? windowMatchMedia() : options.matchMedia;
       const detachMotion = attachReducedMotion(workspace, matchMedia);
+      const stopKeepingFocus = keepCanvasFocus(workspace);
       // Another project (or a reload) replaces the canvas: a held block is gone with it.
       const unsubscribe = ctx.store.subscribe((state, previous) => {
         if (state.project?.handle !== previous.project?.handle) {
@@ -218,6 +222,7 @@ export function createKeyboardPlugin(options: KeyboardPluginOptions = {}): Edito
       options.onAttached?.(keyboard);
       return () => {
         unsubscribe();
+        stopKeepingFocus();
         keyboard.dispose();
         releaseConnectionFocus(workspace);
         detachMotion();

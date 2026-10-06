@@ -1,7 +1,8 @@
 /**
  * The keyboard editor plugin's attachment against the real Blockly: names and descriptions of the
  * canvas and the toolbox's blocks, the Tab order, the shortcut registry, keyboard mode, the end of
- * a move when another project opens, reduced motion and clean-up.
+ * a move when another project opens, the keyboard focus when its block is deleted, reduced motion
+ * (with the toolbox's category scroll) and clean-up.
  */
 import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../app/store';
 import { projectFixture } from '../../app/testing/fixtures';
 import { expectNoAxeViolations } from '../../test/axe';
+import { B2cContinuousFlyout } from '../toolbox/continuous';
 import { ANNOUNCER_CLASS, Announcer, MAX_ANNOUNCEMENT_CHARS } from './announcer';
 import {
   CANVAS_DESCRIPTION,
@@ -20,7 +22,7 @@ import {
 import { attachReducedMotion, prefersReducedMotion, REDUCED_MOTION_QUERY } from './motion';
 import { keyboardPlugin } from './plugin';
 import { KEYBOARD_SHORTCUT_NAMES } from './shortcuts';
-import { type KeyboardEditor, keyboardEditor, press } from './testing';
+import { eventsDelivered, type KeyboardEditor, keyboardEditor, press } from './testing';
 
 let editors: KeyboardEditor[] = [];
 
@@ -198,6 +200,95 @@ describe('the keyboard plugin', () => {
   });
 });
 
+describe('the keyboard focus when its block is deleted', () => {
+  /** Whether the keyboard focus is on a live node of `workspace`, with the DOM focus on it. */
+  function onLiveNode(workspace: Blockly.WorkspaceSvg): boolean {
+    const node = Blockly.getFocusManager().getFocusedNode();
+    if (node?.getFocusableTree() !== workspace) {
+      return false;
+    }
+    const block =
+      node instanceof Blockly.BlockSvg
+        ? node
+        : node instanceof Blockly.Field || node instanceof Blockly.RenderedConnection
+          ? node.getSourceBlock()
+          : null;
+    const element = node.getFocusableElement();
+    return (
+      block?.isDeadOrDying() !== true && element.isConnected && document.activeElement === element
+    );
+  }
+
+  it('stays on the canvas when Delete removes a loose block with a value slot', async () => {
+    const { block, keyboard, workspace } = open();
+    const print = block('print');
+    Blockly.getFocusManager().focusNode(print);
+    press('m');
+    press('End');
+    press('Enter');
+    expect(print.getParent()).toBeNull();
+    expect(print.getChildren(false).length).toBeGreaterThan(0);
+    Blockly.getFocusManager().focusNode(print);
+
+    press('Delete');
+    await eventsDelivered();
+    expect(print.isDeadOrDying()).toBe(true);
+    expect(onLiveNode(workspace)).toBe(true);
+    expect(keyboard.area()).toBe('canvas');
+    // The keys work again: ↓ goes on from there.
+    press('ArrowDown');
+    expect(onLiveNode(workspace)).toBe(true);
+  });
+
+  it('stays on the canvas when Delete removes a definition with statements', async () => {
+    const { block, workspace } = open();
+    const fn = block('fn');
+    Blockly.getFocusManager().focusNode(fn);
+
+    press('Delete');
+    await eventsDelivered();
+    expect(fn.isDeadOrDying()).toBe(true);
+    expect(onLiveNode(workspace)).toBe(true);
+  });
+
+  it('stays on the canvas itself when Delete removes its last block', async () => {
+    const { block, workspace } = open();
+    const print = block('print');
+    Blockly.getFocusManager().focusNode(print);
+    press('m');
+    press('End');
+    press('Enter');
+    for (const top of workspace.getTopBlocks(false)) {
+      if (top !== print) {
+        top.dispose(false);
+      }
+    }
+    await eventsDelivered();
+    Blockly.getFocusManager().focusNode(print);
+
+    press('Delete');
+    await eventsDelivered();
+    expect(workspace.getAllBlocks(false)).toHaveLength(0);
+    expect(Blockly.getFocusManager().getFocusedTree()).toBe(workspace);
+    expect(document.activeElement).toBe(workspace.getFocusableElement());
+  });
+
+  it('leaves a focus that is elsewhere alone', async () => {
+    const { block, workspace } = open();
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    try {
+      outside.focus();
+      block('fn').dispose(false);
+      await eventsDelivered();
+      expect(document.activeElement).toBe(outside);
+      expect(Blockly.getFocusManager().getFocusedTree()).not.toBe(workspace);
+    } finally {
+      outside.remove();
+    }
+  });
+});
+
 describe('the announcer', () => {
   it('announces plain text politely and repeats a repeated message', () => {
     const parent = document.createElement('div');
@@ -279,5 +370,47 @@ describe('reduced motion', () => {
     workspace.fireChangeListener(new Blockly.Events.BlockDrag(block('print'), true, []));
     expect(stop).not.toHaveBeenCalled();
     detach();
+  });
+
+  /**
+   * Where the toolbox's flyout scrolls first when a category 300 units down is chosen (its
+   * animation frames are held back).
+   */
+  function firstScrollStep(reduced: boolean): number | undefined {
+    const { workspace } = open();
+    const flyout = workspace.getFlyout();
+    if (!(flyout instanceof B2cContinuousFlyout)) {
+      throw new Error('not the continuous flyout');
+    }
+    const flyoutWorkspace = flyout.getWorkspace();
+    const scrollbar = flyoutWorkspace.scrollbar;
+    if (scrollbar === null) {
+      throw new Error('no scrollbar');
+    }
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({ matches: reduced && query === REDUCED_MOTION_QUERY, media: query }) as MediaQueryList,
+    );
+    vi.spyOn(flyoutWorkspace, 'getMetrics').mockReturnValue({
+      ...flyoutWorkspace.getMetrics(),
+      scrollHeight: 10_000,
+      viewHeight: 500,
+    });
+    const frames = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0);
+    const setY = vi.spyOn(scrollbar, 'setY').mockImplementation(() => undefined);
+    flyout.scrollTo(300);
+    expect(frames.mock.calls.length).toBeLessThanOrEqual(1);
+    const first = setY.mock.calls[0]?.[0];
+    return first === undefined ? undefined : first / flyoutWorkspace.scale;
+  }
+
+  it('makes the toolbox’s category scroll jump at once when the system asks for it', () => {
+    expect(firstScrollStep(true)).toBeCloseTo(300);
+  });
+
+  it('animates the toolbox’s category scroll otherwise', () => {
+    const step = firstScrollStep(false);
+    expect(step).toBeGreaterThan(0);
+    expect(step).toBeLessThan(300);
   });
 });
