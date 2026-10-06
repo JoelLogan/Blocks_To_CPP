@@ -1,14 +1,17 @@
 /**
  * Inserting prepared blocks (the result of the core's `pastePrepare`) into the workspace, as one
- * undoable step.
+ * undoable step, or not at all.
  *
  * The blocks are built with the document sync's builder (../sync/bdmToWorkspace.ts), so pasted
  * blocks are exactly what loading them from a file would give (placeholders included). They are
- * first built on the canvas with Blockly's events off; then, with events on and in one event
- * group, a `BlockCreate` is fired for each and the leading statements (or the one reporter) are
- * connected at the anchor. Undo therefore removes the pasted blocks and puts back anything the
- * insertion moved (the statements that followed the anchor), and the editing session sees the new
- * blocks like any other (fresh-ID check, preview).
+ * first built on the canvas with Blockly's events off, and a `BlockCreate` is made for each tree
+ * or chain. Those events serialise the blocks recursively along their statement chains, so they
+ * can fail for a very long chain (./chains.ts): if building or any event fails, the built blocks
+ * are removed again (without recursion) and nothing has changed. Only once every event exists are
+ * they fired, with events on and in one event group, and the leading statements (or the one
+ * reporter) connected at the anchor. Undo therefore removes the pasted blocks and puts back
+ * anything the insertion moved (the statements that followed the anchor), and the editing session
+ * sees the new blocks like any other (fresh-ID check, preview).
  *
  * Blocks that do not fit at the anchor (a reporter after a statement, a statement in a value input,
  * a hat anywhere but the canvas, a refused type) stay on the canvas next to it, statements that
@@ -21,6 +24,7 @@ import { buildBlockTree, withoutEvents } from '../sync/bdmToWorkspace';
 import { blockDefOf } from '../sync/catalog';
 import { clampCoordinate } from '../sync/limits';
 import type { PasteAnchor, WorkspacePoint } from './anchor';
+import { ChainTooLongError, disposeTree, isStackOverflow, longestChainOf } from './chains';
 
 /** How far each further block placed on the canvas is moved from the one before (both axes). */
 export const CANVAS_STEP = 32;
@@ -175,24 +179,47 @@ function buildChain(
 }
 
 /**
- * Removes, with events off, every top-level block that is not in `before`: what a failed build left
- * behind. Nothing was announced or connected yet, so nothing else changed.
+ * Removes, with events off and without recursion along chains, every top-level block that is not
+ * in `before`: what a failed build left behind. Nothing was announced or connected yet, so nothing
+ * else changed.
  */
 function discardBuilt(workspace: Blockly.Workspace, before: ReadonlySet<Blockly.Block>): void {
   withoutEvents(() => {
     for (const block of workspace.getTopBlocks(false)) {
-      if (!before.has(block) && !block.isDisposed()) {
-        block.dispose(false);
+      if (!before.has(block) && !block.isDeadOrDying()) {
+        disposeTree(block);
       }
     }
   });
 }
 
-/** Tells the workspace (and its undo stack) about a block built with events off. */
-function announce(block: Blockly.Block): void {
-  if (Blockly.Events.isEnabled()) {
-    Blockly.Events.fire(new Blockly.Events.BlockCreate(block));
+/**
+ * The events that tell the workspace (and its undo stack) about blocks built with events off, one
+ * per root; none while events are off. Making them serialises the blocks, so this throws a
+ * `RangeError` for a chain too long for the JavaScript stack.
+ */
+function creationEvents(roots: readonly Blockly.Block[]): Blockly.Events.BlockCreate[] {
+  return Blockly.Events.isEnabled()
+    ? roots.map((root) => new Blockly.Events.BlockCreate(root))
+    : [];
+}
+
+/**
+ * The longest statement chain the insertion links for `nodes` at `anchor`: a list or stack in the
+ * nodes, or a run of pasted statements chained one below the other (not on the canvas, where each
+ * node is a block of its own). A single block counts as a chain of one.
+ */
+function longestPastedChain(nodes: readonly BdmBlock[], anchor: PasteAnchor): number {
+  let run = nodes.length > 0 ? 1 : 0;
+  if (anchor.kind !== 'canvas') {
+    let start = 0;
+    while (start < nodes.length) {
+      const length = chainableRun(nodes, start);
+      run = Math.max(run, length);
+      start += Math.max(1, length);
+    }
   }
+  return longestChainOf(nodes, run);
 }
 
 /**
@@ -265,8 +292,10 @@ function buildAll(
  * Inserts prepared blocks at `anchor` as one undoable step (see the module comment). `origin` is
  * where blocks that stay on the canvas start; each further one is moved a step down and right.
  *
- * @throws whatever the builder throws for a node it cannot build; the blocks built until then are
- *   removed again, so the canvas is as it was.
+ * @throws {@link ChainTooLongError} when the JavaScript stack ran out while the blocks were built
+ *   or serialised for their events (a statement chain too long for Blockly), and otherwise
+ *   whatever the builder or Blockly threw. Either way the blocks built until then are removed
+ *   again and no event was fired, so the canvas and its undo stack are as they were.
  */
 export function insertPasted(
   workspace: Blockly.Workspace,
@@ -286,14 +315,18 @@ export function insertPasted(
   try {
     const before = new Set(workspace.getTopBlocks(false));
     let built: Built;
+    let events: Blockly.Events.BlockCreate[];
     try {
       built = buildAll(workspace, nodes, anchor, origin);
+      events = creationEvents(built.roots);
     } catch (error: unknown) {
       discardBuilt(workspace, before);
-      throw error;
+      throw isStackOverflow(error)
+        ? new ChainTooLongError(longestPastedChain(nodes, anchor), error)
+        : error;
     }
-    for (const root of built.roots) {
-      announce(root);
+    for (const event of events) {
+      Blockly.Events.fire(event);
     }
     const attached = built.lead !== null && attach(workspace, anchor, built.lead);
     return { roots: built.roots, first: built.roots[0] ?? null, attached };

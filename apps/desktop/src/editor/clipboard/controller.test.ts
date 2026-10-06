@@ -2,8 +2,10 @@
  * The clipboard actions when something goes wrong, with a scripted compiler core: no core yet, a
  * core that traps (restarted once, unless the preview already replaced it), a paste target the
  * core cannot see (retried on the canvas), no randomness, a refused document or payload, a paste
- * that would break the file limits, and a canvas that cannot be edited. Nothing changes on the
- * canvas in any of these cases, and nothing throws.
+ * that would break the file limits (its size measured on the canonical text), blocks whose create
+ * or delete events cannot be made (a statement chain too long for Blockly, simulated here; see
+ * chains.test.ts for real ones), and a canvas that cannot be edited. Nothing changes on the canvas
+ * or its undo stack in any of these cases, and nothing throws.
  */
 import {
   type BdmBlock,
@@ -12,9 +14,10 @@ import {
   CoreError,
   CoreTrap,
   type CoreWasm,
+  MAX_DOCUMENT_BYTES,
   type PastePrepareResult,
 } from '@blocks2cpp/b2c-core-wasm';
-import type * as Blockly from 'blockly/core';
+import * as Blockly from 'blockly/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resetAppStore, useAppStore } from '../../app/store';
@@ -367,6 +370,243 @@ describe('blocks the canvas cannot build', () => {
     expect(workspace.getBlockById(PRINT.id)).toBeNull();
     expect(canvasText()).toBe(before);
     expect(notices).toEqual([{ kind: 'unavailable', action: 'paste', reason: 'internal' }]);
+  });
+});
+
+/** What V8 and JavaScriptCore throw when the stack runs out (Blockly's walks of a long chain). */
+function stackOverflow(): RangeError {
+  return new RangeError('Maximum call stack size exceeded');
+}
+
+/** Lets Blockly fire its queued events (they run on a timer), so that undo has recorded them. */
+async function settle(): Promise<void> {
+  for (let round = 0; round < 3; round++) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+/** Makes Blockly's create event for the block with `id` throw `error`, as a long chain does. */
+function failCreateEvent(id: string, error: Error): void {
+  const Real = Blockly.Events.BlockCreate;
+  vi.spyOn(Blockly.Events, 'BlockCreate').mockImplementation(function (block?: Blockly.Block) {
+    if (block?.id === id) {
+      throw error;
+    }
+    return new Real(block);
+  });
+}
+
+/** Makes Blockly's delete event for the block with `id` throw `error`, as a long chain does. */
+function failDeleteEvent(id: string, error: Error): void {
+  const Real = Blockly.Events.BlockDelete;
+  vi.spyOn(Blockly.Events, 'BlockDelete').mockImplementation(function (block?: Blockly.Block) {
+    if (block?.id === id) {
+      throw error;
+    }
+    return new Real(block);
+  });
+}
+
+/** The ID of every block on the canvas, shadows included. */
+function blockIds(): string[] {
+  return workspace
+    .getAllBlocks(false)
+    .map((found) => found.id)
+    .sort();
+}
+
+const SECOND: BdmBlock = { ...PRINT, id: 'blk_second000000000000' };
+
+describe('pasted blocks whose create events cannot be made', () => {
+  it('are refused whole for a stack overflow (a chain too long for Blockly): nothing is built, fired or kept', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const scripted = scriptedCore();
+    scripted.pastePrepare.mockReturnValue({
+      ok: true,
+      blocks: [PRINT, SECOND],
+      unresolved: [],
+      diagnostics: [],
+    });
+    // The first block's event is made; the second one's runs out of stack.
+    failCreateEvent(SECOND.id, stackOverflow());
+    const before = canvasText();
+    const ids = blockIds();
+    const outcome = controller({ core: () => scripted.core }).paste('PAYLOAD', ON_CANVAS);
+
+    const problem = expect.objectContaining({
+      code: 'B2C-E0104',
+      message: expect.stringContaining('A chain of 1 statement is') as unknown,
+    }) as unknown;
+    expect(outcome).toEqual({ kind: 'refused', diagnostics: [problem] });
+    expect(notices).toEqual([{ kind: 'limits', action: 'paste', diagnostics: [problem] }]);
+    expect(blockIds()).toEqual(ids);
+    expect(canvasText()).toBe(before);
+    await settle();
+    expect(workspace.getUndoStack()).toEqual([]);
+  });
+
+  it('are removed again for any other failure, reported as internal', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const scripted = scriptedCore();
+    scripted.pastePrepare.mockReturnValue({
+      ok: true,
+      blocks: [PRINT, SECOND],
+      unresolved: [],
+      diagnostics: [],
+    });
+    // After b004, both blocks are one chain: its first block's event serialises it.
+    failCreateEvent(PRINT.id, new Error('a bug'));
+    const ids = blockIds();
+    const outcome = controller({ core: () => scripted.core }).duplicate(block('b004'));
+    expect(outcome).toEqual({ kind: 'failed' });
+    expect(notices).toEqual([{ kind: 'unavailable', action: 'duplicate', reason: 'internal' }]);
+    expect(blockIds()).toEqual(ids);
+    expect(block('b004').getNextBlock()?.id).toBe('b010');
+    await settle();
+    expect(workspace.getUndoStack()).toEqual([]);
+  });
+
+  it('measure the longest chain they hold for the notice', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const scripted = scriptedCore();
+    const stack = Array.from({ length: 6 }, (_unused, index) => ({
+      ...PRINT,
+      id: `blk_stacked${String(index).padStart(11, '0')}`,
+    }));
+    scripted.pastePrepare.mockReturnValue({
+      ok: true,
+      blocks: [{ ...PRINT, stack }],
+      unresolved: [],
+      diagnostics: [],
+    });
+    failCreateEvent(PRINT.id, stackOverflow());
+    const outcome = controller({ core: () => scripted.core }).paste('PAYLOAD', ON_CANVAS);
+    expect(outcome.kind === 'refused' && outcome.diagnostics[0]?.message).toContain(
+      'A chain of 7 statements',
+    );
+    expect(workspace.getBlockById(PRINT.id)).toBeNull();
+  });
+});
+
+describe('a cut whose delete event cannot be made', () => {
+  /** The guessing game with a loose stack (`loose`, then `stacked`) on the canvas. */
+  function withLooseStack(): void {
+    const doc = guessingGame();
+    doc.modules[0]?.workspace.blocks.push({
+      ...PRINT,
+      id: 'loose',
+      x: 900,
+      y: 40,
+      stack: [{ ...PRINT, id: 'stacked' }],
+    });
+    useAppStore.getState().actions.setProject(projectFixture({ document: doc }));
+    loadModule(workspace, doc, 'mod_main');
+  }
+
+  it('deletes nothing and keeps the old copy, for a top-level block too long a chain to serialise', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    withLooseStack();
+    failDeleteEvent('loose', stackOverflow());
+    memory.set({ payload: 'OLD', text: null });
+    const before = canvasText();
+    const ids = blockIds();
+
+    expect(controller().cut(block('loose'))).toBeNull();
+    expect(memory.get()).toEqual({ payload: 'OLD', text: null });
+    expect(notices).toEqual([
+      {
+        kind: 'limits',
+        action: 'cut',
+        diagnostics: [
+          expect.objectContaining({
+            code: 'B2C-E0104',
+            message: expect.stringContaining('A chain of 2 statements') as unknown,
+          }),
+        ],
+      },
+    ]);
+    expect(block('loose').isDeadOrDying()).toBe(false);
+    expect(block('loose').getNextBlock()?.id).toBe('stacked');
+    expect(blockIds()).toEqual(ids);
+    expect(canvasText()).toBe(before);
+    await settle();
+    expect(workspace.getUndoStack()).toEqual([]);
+  });
+
+  it('deletes nothing, for a block in a list whose blocks cannot be serialised', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(Blockly.serialization.blocks, 'save').mockImplementation(() => {
+      throw stackOverflow();
+    });
+    const before = canvasText();
+    expect(controller().cut(block('b010'))).toBeNull();
+    expect(memory.get()).toBeNull();
+    expect(notices.map((notice) => notice.kind)).toEqual(['limits']);
+    expect(block('b010').getPreviousBlock()?.id).toBe('b004');
+    expect(canvasText()).toBe(before);
+    await settle();
+    expect(workspace.getUndoStack()).toEqual([]);
+  });
+
+  it('reports any other failure as internal', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    withLooseStack();
+    failDeleteEvent('loose', new Error('a bug'));
+    expect(controller().cut(block('loose'))).toBeNull();
+    expect(memory.get()).toBeNull();
+    expect(notices).toEqual([{ kind: 'unavailable', action: 'cut', reason: 'internal' }]);
+    expect(block('loose').isDeadOrDying()).toBe(false);
+  });
+
+  it('when it can be made, cuts the stack as one undo step that undo and redo replay', async () => {
+    withLooseStack();
+    const before = canvasText();
+    expect(controller().cut(block('loose'))).toEqual({ payload: 'PAYLOAD', text: 'f();\n' });
+    expect(memory.get()).toEqual({ payload: 'PAYLOAD', text: 'f();\n' });
+    expect(workspace.getBlockById('loose')).toBeNull();
+    expect(workspace.getBlockById('stacked')).toBeNull();
+    await settle();
+    expect(workspace.getUndoStack()).toHaveLength(1);
+
+    workspace.undo(false);
+    await settle();
+    expect(canvasText()).toBe(before);
+    workspace.undo(true);
+    await settle();
+    expect(workspace.getBlockById('loose')).toBeNull();
+    expect(workspace.getBlockById('stacked')).toBeNull();
+  });
+});
+
+describe('a paste whose project file would be larger than 32 MiB', () => {
+  /** A paste on the canvas for which the core's canonical text of the document is `text`. */
+  function pasteWithCanonical(text: string) {
+    const scripted = scriptedCore();
+    scripted.canonical.mockReturnValue({ ok: true, text, hash: '0'.repeat(64), diagnostics: [] });
+    notices = [];
+    return controller({ core: () => scripted.core }).paste('PAYLOAD', ON_CANVAS);
+  }
+
+  it('is refused with B2C-E0101, measured in UTF-8 on the canonical text as a save measures it', () => {
+    const before = canvasText();
+    const tooLarge = expect.objectContaining({ code: 'B2C-E0101' }) as unknown;
+    // Longer than the limit in characters already.
+    expect(pasteWithCanonical('x'.repeat(MAX_DOCUMENT_BYTES + 1))).toEqual({
+      kind: 'refused',
+      diagnostics: [tooLarge],
+    });
+    expect(notices).toEqual([{ kind: 'limits', action: 'paste', diagnostics: [tooLarge] }]);
+    // Fewer characters than the limit, but two bytes each in UTF-8.
+    const twoByte = 'é'.repeat(MAX_DOCUMENT_BYTES / 2 + 1);
+    expect(pasteWithCanonical(twoByte).kind).toBe('refused');
+    expect(notices.map((notice) => notice.kind)).toEqual(['limits']);
+    expect(canvasText()).toBe(before);
+  });
+
+  it('is not refused at the limit', () => {
+    expect(pasteWithCanonical('é'.repeat(MAX_DOCUMENT_BYTES / 2)).kind).toBe('pasted');
+    expect(notices).toEqual([]);
+    expect(workspace.getBlockById(PRINT.id)).not.toBeNull();
   });
 });
 

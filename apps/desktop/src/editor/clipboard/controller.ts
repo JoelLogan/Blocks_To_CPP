@@ -7,14 +7,18 @@
  *   they use but do not declare, and their C++ for `text/plain`. The in-app copy keeps it; writing
  *   the system clipboard is the DOM bridge's part (./bridge.ts).
  * - **Cut** copies, then deletes exactly what was copied (a top-level block with its loose stack;
- *   a block in a list alone, the list closing up behind it), as one undo step.
+ *   a block in a list alone, the list closing up behind it), as one undo step. Only a cut whose
+ *   blocks were deleted keeps the copy: when Blockly cannot delete them (a statement chain too
+ *   long for it to serialise, ./chains.ts), nothing is deleted or kept and the user is told why.
  * - **Paste** hands the payload to the core (`pastePrepare`), which validates it like a project
  *   file, gives the blocks fresh block and symbol IDs from a 256-bit random seed, and binds outside
  *   references again among the symbols visible at the target. A refused payload changes nothing
  *   and is reported with the loader's problems; references that find nothing keep their original
  *   symbol, so the analyser reports them (`B2C-E0201`). Before anything is inserted, the document
  *   with the blocks at the target is loaded too (./candidate.ts): a paste that would take it past
- *   the limits of a project file (05 §5.6) is refused the same way.
+ *   the limits of a project file (05 §5.6), including the 32 MiB its saved (canonical) text may
+ *   have, is refused the same way. So is a paste with a statement chain longer than Blockly can
+ *   serialise: ./insert.ts builds and serialises everything before it changes anything.
  * - **Duplicate** is a copy and a paste in memory, leaving both clipboards alone: a statement's
  *   copy goes directly after it, any other block's next to it on the canvas.
  *
@@ -28,6 +32,7 @@ import {
   CoreTrap,
   type CoreWasm,
   type Diagnostic,
+  MAX_DOCUMENT_BYTES,
   type UnresolvedRef,
 } from '@blocks2cpp/b2c-core-wasm';
 import * as Blockly from 'blockly/core';
@@ -45,6 +50,13 @@ import {
   type WorkspacePoint,
 } from './anchor';
 import { documentWithPasted } from './candidate';
+import {
+  chainTooLongDiagnostic,
+  ChainTooLongError,
+  disposeTree,
+  isStackOverflow,
+  longestChainFrom,
+} from './chains';
 import type { ClipboardData } from './formats';
 import { CANVAS_STEP, type InsertedBlocks, insertPasted } from './insert';
 import type { ClipboardMemory } from './memory';
@@ -82,7 +94,10 @@ export type PasteOutcome =
       readonly attached: boolean;
       readonly unresolved: readonly UnresolvedRef[];
     }
-  /** The loader refused the payload (or the document); nothing changed. */
+  /**
+   * The loader refused the payload (or the document with the blocks inserted), or the blocks are
+   * too long a statement chain for the block editor; nothing changed.
+   */
   | { readonly kind: 'refused'; readonly diagnostics: readonly Diagnostic[] }
   /** There was nothing to paste, or nowhere to paste it (no project, a read-only canvas). */
   | { readonly kind: 'nothing' }
@@ -181,8 +196,9 @@ export class ClipboardController {
   }
 
   /**
-   * Copies `block` into the in-app copy, then deletes what was copied as one undo step. Returns
-   * the data, or `null` when nothing was copied (and so nothing deleted).
+   * Copies `block`, deletes what was copied as one undo step, and keeps the copy in the in-app
+   * copy. Returns the data, or `null` when nothing was cut: nothing was copied, or the blocks could
+   * not be deleted (the user is told why, and the in-app copy is left as it was).
    */
   cut(block: Blockly.Block): ClipboardData | null {
     if (!this.canCut(block)) {
@@ -192,8 +208,20 @@ export class ClipboardController {
     if (data === null) {
       return null;
     }
+    try {
+      deleteCopied(block);
+    } catch (error: unknown) {
+      if (error instanceof ChainTooLongError) {
+        console.warn('The cut blocks are too long a chain to delete', error);
+        const diagnostics = [chainTooLongDiagnostic(error.longestChain)];
+        this.options.notify({ kind: 'limits', action: 'cut', diagnostics });
+      } else {
+        console.error('The cut blocks could not be deleted', error);
+        this.unavailable('cut', 'internal');
+      }
+      return null;
+    }
     this.options.memory.set(data);
-    deleteCopied(block);
     return data;
   }
 
@@ -274,6 +302,12 @@ export class ClipboardController {
     try {
       inserted = insertPasted(workspace, result.blocks, anchor, origin);
     } catch (error: unknown) {
+      if (error instanceof ChainTooLongError) {
+        console.warn('The pasted blocks are too long a chain to insert', error);
+        const diagnostics = [chainTooLongDiagnostic(error.longestChain)];
+        this.options.notify({ kind: 'limits', action, diagnostics });
+        return { kind: 'refused', diagnostics };
+      }
       console.error('The pasted blocks could not be inserted', error);
       this.options.notify({ kind: 'unavailable', action, reason: 'internal' });
       return { kind: 'failed' };
@@ -291,7 +325,10 @@ export class ClipboardController {
 
   /**
    * The loader's problems with the document once `blocks` are inserted at `anchor` (none: the
-   * paste fits), or `null` when the check could not run (the user was told why).
+   * paste fits), or `null` when the check could not run (the user was told why). The core checks
+   * the document as it is given (compact JSON), but the 32 MiB limit of 05 §5.6 applies to the
+   * project file, the canonical text, which is several times longer; that is measured here, as
+   * the save measures it.
    */
   private limitProblems(
     action: ClipboardAction,
@@ -317,7 +354,10 @@ export class ClipboardController {
       }
       return null;
     }
-    return checked.value.ok ? [] : checked.value.diagnostics;
+    if (!checked.value.ok) {
+      return checked.value.diagnostics;
+    }
+    return exceedsDocumentLimit(checked.value.text) ? [fileTooLargeDiagnostic()] : [];
   }
 
   /** 64 hex digits of fresh randomness, or `null` when there is none (the user was told). */
@@ -427,8 +467,45 @@ export class ClipboardController {
 }
 
 /**
+ * Whether `text` is larger in UTF-8 than a project file may be (05 §5.6), measured as the save
+ * measures it. UTF-8 never has fewer bytes than UTF-16 has code units, and at most three per unit,
+ * so only text in between is encoded.
+ */
+function exceedsDocumentLimit(text: string): boolean {
+  if (text.length > MAX_DOCUMENT_BYTES) {
+    return true;
+  }
+  if (text.length * 3 <= MAX_DOCUMENT_BYTES) {
+    return false;
+  }
+  return new TextEncoder().encode(text).length > MAX_DOCUMENT_BYTES;
+}
+
+/** The problem shown when the project file would be larger than 32 MiB (the loader's code). */
+function fileTooLargeDiagnostic(): Diagnostic {
+  return {
+    code: 'B2C-E0101',
+    severity: 'error',
+    message: `The project file would be larger than ${String(MAX_DOCUMENT_BYTES)} bytes (32 MiB), the most a project file can be, so it could no longer be saved.`,
+    primary: { part: { kind: 'whole' } },
+    source: 'loader',
+  };
+}
+
+/**
  * Deletes what a copy of `block` holds, as one undo step: a top-level block with its loose stack
  * (the blocks chained below it), any other block alone (a statement list closes up behind it).
+ *
+ * Blockly's delete event serialises the deleted blocks recursively along their statement chains,
+ * which overflows the stack for a very long chain (./chains.ts), and Blockly's own `dispose` would
+ * then leave them half deleted. So the event is made before any block is removed: a block in a
+ * list or an input is first tried (the same serialisation, on the block in place) and then
+ * unplugged as Blockly's delete does it (recorded in the same event group); the event is made, the
+ * blocks are removed with events off and without recursion, and the event is fired.
+ *
+ * @throws {@link ChainTooLongError} when the event cannot be made, before any block was removed
+ *   (should the try pass and the event still fail, the unplugged block stays on the canvas as a
+ *   loose block, which undo puts back); anything else Blockly throws.
  */
 function deleteCopied(block: Blockly.Block): void {
   const outerGroup = Blockly.Events.getGroup();
@@ -436,18 +513,51 @@ function deleteCopied(block: Blockly.Block): void {
     Blockly.Events.setGroup(true);
   }
   try {
-    const heal = block.getParent() !== null && block.outputConnection === null;
     if (block instanceof Blockly.BlockSvg) {
       block.workspace.hideChaff();
-      block.dispose(heal, true);
-    } else {
-      block.dispose(heal);
     }
-  } catch (error: unknown) {
-    console.error('The cut blocks could not be deleted', error);
+    if (block.getParent() !== null) {
+      const heal = block.outputConnection === null;
+      serialising(block, () => {
+        trySerialising(block, heal);
+      });
+      block.unplug(heal);
+    }
+    const event = Blockly.Events.isEnabled()
+      ? serialising(block, () => new Blockly.Events.BlockDelete(block))
+      : null;
+    disposeTree(block, true);
+    if (event !== null) {
+      Blockly.Events.fire(event);
+    }
   } finally {
     if (outerGroup === '') {
       Blockly.Events.setGroup(false);
+    }
+  }
+}
+
+/** `run()`, with a stack overflow turned into a {@link ChainTooLongError} about `block`. */
+function serialising<T>(block: Blockly.Block, run: () => T): T {
+  try {
+    return run();
+  } catch (error: unknown) {
+    throw isStackOverflow(error) ? new ChainTooLongError(longestChainFrom(block), error) : error;
+  }
+}
+
+/**
+ * Runs, on `block` still in its list or input, the serialisation that Blockly's delete event does
+ * once it is unplugged: its tree, without the blocks chained below it when the list closes up
+ * behind it (`heal`). Throws whatever that serialisation throws.
+ */
+function trySerialising(block: Blockly.Block, heal: boolean): void {
+  Blockly.serialization.blocks.save(block, { addCoordinates: true, addNextBlocks: !heal });
+  const next = heal ? block.getNextBlock() : null;
+  for (const child of block.getChildren(false)) {
+    if (child !== next) {
+      Blockly.Xml.blockToDom(child);
+      Blockly.Events.getDescendantIds(child);
     }
   }
 }

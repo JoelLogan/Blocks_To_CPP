@@ -2,7 +2,7 @@
  * Untrusted clipboard data (docs/spec/05-project-format.md §5.12, 08-security.md): every payload
  * goes through the loader with the limits of a project file, and a refused one changes nothing
  * and is reported with the loader's codes. Also blocks that are fine on their own but would take
- * the project past a limit where they are pasted.
+ * the project past a limit where they are pasted, including the 32 MiB of its canonical text.
  *
  * Without a build of the core these tests are skipped, unless B2C_REQUIRE_WASM is set (as in CI).
  */
@@ -16,8 +16,14 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { setEditorHandle } from '../../app/editor-types';
 import { GUESSING_GAME_TEXT } from '../diagnostics/testing';
-import { disposeWorkspaces, renderedWorkspace } from '../sync/testing';
+import {
+  disposeWorkspaces,
+  renderedWorkspace,
+  startSession,
+  type TestSession,
+} from '../sync/testing';
 import { anchorForBlock, ON_CANVAS, type PasteAnchor } from './anchor';
+import type { ClipboardNotice } from './notices';
 import {
   canvasBlock,
   clipboardEditor,
@@ -25,11 +31,13 @@ import {
   loadGuessingGame,
   nodeOf,
   requireCore,
+  sessionController,
   WITH_CORE,
 } from './testing';
 
 let core: CoreWasm;
 let editor: ClipboardTestEditor | null = null;
+let session: TestSession | null = null;
 
 beforeAll(async () => {
   if (WITH_CORE) {
@@ -40,6 +48,8 @@ beforeAll(async () => {
 afterEach(() => {
   editor?.dispose();
   editor = null;
+  session?.dispose();
+  session = null;
   setEditorHandle(null);
   disposeWorkspaces();
 });
@@ -207,4 +217,41 @@ describe.skipIf(!WITH_CORE)('blocks that fit alone but not where they are pasted
     expect(fits.notices).toEqual([]);
     expect(loads(fits.document())).toBe(true);
   });
+});
+
+describe.skipIf(!WITH_CORE)('a paste whose project file would be larger than 32 MiB', () => {
+  /** Blocks whose JSON is far smaller compact than indented, as a project file is written. */
+  const COUNT = 70_000;
+
+  it('is refused with B2C-E0101, although the document fits as compact JSON', () => {
+    const blocks = Array.from({ length: COUNT }, (_unused, index) => ({
+      ...nodeOf(loadGuessingGame(core), 'b004'),
+      id: `p${String(index)}`,
+      inputs: { ITEM0: { expr: [{ str: 'x' }] } },
+    }));
+    const text = JSON.stringify({
+      format: 'blocks2cpp/clipboard',
+      formatVersion: 1,
+      catalog: '1.0.0',
+      blocks,
+      refs: {},
+    });
+    expect(text.length).toBeLessThan(MAX_DOCUMENT_BYTES / 2);
+    // A headless session: should the paste get through, building the blocks takes seconds, not
+    // minutes.
+    session = startSession(core, loadGuessingGame(core));
+    const notices: ClipboardNotice[] = [];
+    const controller = sessionController(session, { notices });
+    const before = JSON.stringify(session.session.currentDocument());
+
+    const outcome = controller.paste(text, ON_CANVAS);
+    const tooLarge = expect.objectContaining({
+      code: 'B2C-E0101',
+      message: expect.stringContaining('larger than 33554432 bytes (32 MiB)') as unknown,
+    }) as unknown;
+    // The loader takes the document (no other problem), but its canonical text is too large.
+    expect(outcome).toEqual({ kind: 'refused', diagnostics: [tooLarge] });
+    expect(notices).toEqual([{ kind: 'limits', action: 'paste', diagnostics: [tooLarge] }]);
+    expect(JSON.stringify(session.session.currentDocument())).toBe(before);
+  }, 120_000);
 });
