@@ -9,11 +9,12 @@
  * first pair warms up and is not counted, and after every drop the page is left to finish what the
  * drop started (its preview) before the next drag.
  *
- * Before every drag, outside what is timed, the canvas is centred on the handle again and the page
+ * Before every pair, outside what is timed, the canvas is centred on the handle again and the page
  * left to settle: a drop does not always leave the handle (or the canvas's view) exactly where the
- * pointer moves suggest, and over many drags it could drift off screen. After every drop the
- * handle must have moved with the pointer (bench/handle.ts), so a drag that missed it fails the
- * run instead of being measured.
+ * pointer moves suggest, and over many drags it could drift off screen. The drag back starts where
+ * the drag away ended, so it never crosses the toolbox (a drop there would delete the handle).
+ * After every drop the handle must have moved with the pointer (bench/handle.ts), so a drag that
+ * missed it fails the run instead of being measured.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -145,13 +146,20 @@ interface TimedDrag {
 }
 
 /**
- * Centres the canvas on the handle, drags it by `delta` and returns the frame times recorded
- * during the drag (only the drag itself is timed), once the drop has settled and the handle is
- * known to have moved with the pointer.
+ * Drags the handle by `delta` (first centring the canvas on it, with `centre`) and returns the
+ * frame times recorded during the drag (only the drag itself is timed), once the drop has settled
+ * and the handle is known to have moved with the pointer.
  */
-async function timedDrag(app: App, id: string, delta: E2ePoint): Promise<TimedDrag> {
-  await centerOn(app, id);
-  await waitUntilQuiet(app, 'centring the canvas on the drag handle');
+async function timedDrag(
+  app: App,
+  id: string,
+  delta: E2ePoint,
+  centre: boolean,
+): Promise<TimedDrag> {
+  if (centre) {
+    await centerOn(app, id);
+    await waitUntilQuiet(app, 'centring the canvas on the drag handle');
+  }
   const before = await placeOf(app, id);
   if (before === null) {
     throw new Error(`The drag handle ${id} is not on the canvas`);
@@ -206,8 +214,8 @@ describe('webview benchmark: dragging in a 5,000-block workspace', () => {
       const samples: number[] = [];
       let worstLanding = 0;
       for (let pair = 0; pair <= PAIRS; pair += 1) {
-        const away = await timedDrag(app, handle, DISTANCE);
-        const back = await timedDrag(app, handle, { x: -DISTANCE.x, y: -DISTANCE.y });
+        const away = await timedDrag(app, handle, DISTANCE, true);
+        const back = await timedDrag(app, handle, { x: -DISTANCE.x, y: -DISTANCE.y }, false);
         worstLanding = Math.max(worstLanding, away.landing, back.landing);
         // The first pair warms up (Blockly's drag surface, the connection database): not kept.
         if (pair > 0) {

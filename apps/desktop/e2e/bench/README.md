@@ -38,10 +38,12 @@ Every timing of the webview benchmarks is taken inside the page with its own clo
   the keyboard (selected, then _Delete_), so every edit is made to the same 1,000 blocks.
 - **Drag** ([`drag.bench.e2e.ts`](drag.bench.e2e.ts)): a separate `func.define` beside `main` is
   dragged away and back across empty canvas in 60 moves of 16 ms each, and the page records the
-  timestamps of the animation frames that run while the pointer drags. Before each drag, outside
-  the timed part, the canvas is centred on the handle again and the page left to settle (10 frames
-  in a row within 50 ms): a drop does not always leave the handle, or the canvas's view, exactly
-  where the pointer moves suggest, and over many drags it could drift off screen. After each drop
+  timestamps of the animation frames that run while the pointer drags. Before each pair of drags,
+  outside the timed part, the canvas is centred on the handle again and the page left to settle (10
+  frames in a row within 50 ms): a drop does not always leave the handle, or the canvas's view,
+  exactly where the pointer moves suggest, and over many drags it could drift off screen. The drag
+  back starts where the drag away ended, so it never crosses the toolbox, where a drop would delete
+  the handle. After each drop
   the page is left to finish what the drop started (the same 10 frames), and the handle must have
   moved with the pointer: on the canvas (scrolling aside) it must have landed within half the
   drag's length of where the pointer left it ([`handle.ts`](handle.ts)), or the run fails rather
