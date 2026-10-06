@@ -1,7 +1,8 @@
 /**
  * What the user is told when a clipboard action cannot be done: a payload the loader refuses
  * (with its `B2C-E01xx` problems, 05 §5.12), blocks that would take the project past the limits
- * of a project file where they would go (05 §5.6), or a compiler core that is not available.
+ * of a project file where they would go (05 §5.6) or that are too long a chain for the block
+ * editor, or a compiler core that is not available.
  * Unresolved references after a successful paste need no notice: the analyser marks them on the
  * blocks (`B2C-E0201`).
  *
@@ -34,7 +35,9 @@ export type ClipboardNotice =
     }
   /**
    * The payload is fine, but the project with the blocks at the target would break the limits of
-   * a project file (05 §5.6), for example nesting too deep: nothing changed.
+   * a project file (05 §5.6), for example nesting too deep or a file over 32 MiB, or the blocks
+   * hold a statement chain longer than the block editor can serialise (`B2C-E0104`, ./chains.ts):
+   * nothing changed.
    */
   | {
       readonly kind: 'limits';
@@ -73,14 +76,17 @@ const REFUSED: Readonly<Record<ClipboardAction, string>> = {
   duplicate: 'The block could not be read for duplicating, so nothing was changed.',
 };
 
-/** What the notice says before listing the problems of the project with the blocks inserted. */
+/**
+ * What the notice says before listing the problems of the project with the blocks inserted, or of
+ * a statement chain too long for the block editor.
+ */
 const LIMITS: Readonly<Record<ClipboardAction, string>> = {
-  copy: 'The blocks could not be copied without breaking the limits of a project file.',
-  cut: 'The blocks could not be cut without breaking the limits of a project file.',
+  copy: 'The blocks could not be copied without breaking the limits of a project file or of the editor.',
+  cut: 'The blocks could not be cut without breaking the limits of a project file or of the editor, so nothing was cut.',
   paste:
-    'Pasting these blocks here would take the project past the limits of a project file, so nothing was pasted.',
+    'Pasting these blocks here would take the project past the limits of a project file or of the editor, so nothing was pasted.',
   duplicate:
-    'Duplicating this block would take the project past the limits of a project file, so nothing was changed.',
+    'Duplicating this block would take the project past the limits of a project file or of the editor, so nothing was changed.',
 };
 
 /** What the notice says when the action could not run. */

@@ -59,12 +59,16 @@ describe('describeNotice', () => {
     const deep = diagnosticFixture({ code: 'B2C-E0104', message: 'The nesting is too deep.' });
     const paste = describeNotice({ kind: 'limits', action: 'paste', diagnostics: [deep] });
     expect(paste.message).toBe(
-      'Pasting these blocks here would take the project past the limits of a project file, so nothing was pasted.\n\n' +
+      'Pasting these blocks here would take the project past the limits of a project file or of the editor, so nothing was pasted.\n\n' +
         'B2C-E0104: The nesting is too deep.',
     );
     const duplicate = describeNotice({ kind: 'limits', action: 'duplicate', diagnostics: [] });
     expect(duplicate.message).toBe(
-      'Duplicating this block would take the project past the limits of a project file, so nothing was changed.',
+      'Duplicating this block would take the project past the limits of a project file or of the editor, so nothing was changed.',
+    );
+    const cut = describeNotice({ kind: 'limits', action: 'cut', diagnostics: [] });
+    expect(cut.message).toBe(
+      'The blocks could not be cut without breaking the limits of a project file or of the editor, so nothing was cut.',
     );
   });
 
