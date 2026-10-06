@@ -9,6 +9,10 @@
  *   that is already in the latest snapshot is not written again.
  * - **One call at a time.** A snapshot asked for while one is being written follows it, with the
  *   text as it is then, so the backend never receives them out of order.
+ * - **Never across a save.** The backend deletes the snapshot when the project is saved, so a
+ *   snapshot written after that would offer older work as unsaved after a crash, and roll the
+ *   backend's latest document back. No snapshot starts while a save runs (`isPaused`), and a save
+ *   waits for the snapshot being written ({@link Autosave.idle}) before it sends the project.
  * - **Quiet failures.** Autosave runs in the background: a failure is logged by its code (once per
  *   run of the same failure, never with project content) and retried at the next tick; the user
  *   is not interrupted every 30 seconds.
@@ -35,6 +39,12 @@ export interface AutosaveDeps {
   readonly window: BlurSource | null;
   /** The time between snapshots, in milliseconds ({@link AUTOSAVE_INTERVAL_MS} by default). */
   readonly intervalMs?: number;
+  /**
+   * Whether snapshots wait for now: while the project lifecycle saves (its write deletes the
+   * snapshot). A snapshot asked for meanwhile is not written; the next tick or blur writes it if
+   * the changes are still unsaved. Never paused by default.
+   */
+  readonly isPaused?: () => boolean;
 }
 
 /** A running autosave. */
@@ -44,6 +54,11 @@ export interface Autosave {
    * Resolves when it (and any write it had to wait for) is done; never rejects.
    */
   snapshotNow(): Promise<void>;
+  /**
+   * Resolves once no snapshot is being written (at once when none is), including one asked for
+   * meanwhile. Never rejects. A save awaits this before it sends the project.
+   */
+  idle(): Promise<void>;
   /** Stops the timer and the `blur` listener; a write in progress still finishes. */
   stop(): void;
 }
@@ -147,7 +162,7 @@ export function startAutosave(deps: AutosaveDeps): Autosave {
       return queued;
     }
     const project = deps.store.getState().project;
-    if (project?.dirty !== true) {
+    if (project?.dirty !== true || deps.isPaused?.() === true) {
       return Promise.resolve();
     }
     const text = project.canonicalText;
@@ -166,6 +181,13 @@ export function startAutosave(deps: AutosaveDeps): Autosave {
     });
     writing = current;
     return current;
+  }
+
+  async function idle(): Promise<void> {
+    // A snapshot that followed the one in progress may start another write: wait for each.
+    for (let current = queued ?? writing; current !== null; current = queued ?? writing) {
+      await current;
+    }
   }
 
   const onBlur = (): void => {
@@ -191,6 +213,7 @@ export function startAutosave(deps: AutosaveDeps): Autosave {
 
   return {
     snapshotNow,
+    idle,
     stop() {
       if (stopped) {
         return;

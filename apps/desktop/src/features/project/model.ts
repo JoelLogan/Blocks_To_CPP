@@ -26,8 +26,13 @@ export interface LoadFailureState extends LoadProblems {
   readonly name: string | null;
 }
 
-/** A project lifecycle operation; they run one at a time. */
-export type LifecycleOperation = 'new' | 'open' | 'save' | 'saveAs' | 'close' | 'quit';
+/**
+ * A project lifecycle operation; they run one at a time. `restore` (a recovery snapshot replaces
+ * the open project) and `reload` (the file is read again after an outside change) are run for the
+ * recovery and external-change features.
+ */
+export type LifecycleOperation =
+  'new' | 'open' | 'save' | 'saveAs' | 'close' | 'quit' | 'restore' | 'reload';
 
 /** The feature's state. */
 export interface ProjectFeatureState {

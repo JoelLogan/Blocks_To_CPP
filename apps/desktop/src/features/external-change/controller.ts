@@ -8,8 +8,10 @@
  *   trust re-check included; the document goes through the compiler core's loader
  *   (`openDocumentInEditor`), replaces the workspace and clears the undo history, and the project
  *   takes the trust state from the response, so an outside change to trust-relevant content shows
- *   Restricted Mode. Unsaved changes are discarded. Not offered when the file was deleted or
- *   moved; a reload that finds the file gone asks again without it.
+ *   Restricted Mode. Unsaved changes are discarded. It runs in the project lifecycle's queue
+ *   (`ProjectQueue.reloadWith`), so a save never writes the old canvas over the file being read
+ *   again, nor does another open replace the project meanwhile. Not offered when the file was
+ *   deleted or moved; a reload that finds the file gone asks again without it.
  * - **Keep mine (save as…)**: the project feature's `project.saveAs`.
  * - **Not now** (also what dismissing the dialog means): nothing changes; the next save is refused
  *   again and asks again.
@@ -27,6 +29,7 @@ import {
   type OpenDocumentArgs,
   type OpenDocumentResult,
 } from '../../editor/load';
+import type { ProjectQueue } from '../project/link';
 import { errorCode, ipcErrorOf, problemLines, shownName } from '../recovery/text';
 import { describeReloadError, type ExternalChangeChoice, externalChangeQuestion } from './messages';
 
@@ -37,6 +40,11 @@ export interface ExternalChangeOptions {
     ctx: FeatureContext,
     args: OpenDocumentArgs,
   ) => Promise<OpenDocumentResult>;
+  /**
+   * The project lifecycle's queue, which a reload runs in (the project feature's link in the app).
+   * Without it the reload runs at once.
+   */
+  readonly project?: Pick<ProjectQueue, 'reloadWith'> | null;
 }
 
 /** How a reload ended. */
@@ -69,12 +77,14 @@ function changedMeanwhile(active: Active): boolean {
 export class ExternalChangeController {
   private readonly ctx: FeatureContext;
   private readonly openInEditor: NonNullable<ExternalChangeOptions['openInEditor']>;
+  private readonly project: Pick<ProjectQueue, 'reloadWith'> | null;
   private active: Active | null = null;
   private disposed = false;
 
   constructor(ctx: FeatureContext, options: ExternalChangeOptions = {}) {
     this.ctx = ctx;
     this.openInEditor = options.openInEditor ?? openDocumentInEditor;
+    this.project = options.project ?? null;
   }
 
   /** Stops: later reports are ignored and a running question ends after its answer. */
@@ -168,7 +178,7 @@ export class ExternalChangeController {
           // Even when a report said meanwhile that the file is gone: the reload finds out.
           active.step = 'reloading';
           active.changedDuringReload = false;
-          const outcome = await this.reload(now);
+          const outcome = await this.reloadInQueue(active.handle);
           if (outcome === 'gone') {
             active.deleted = true;
             continue;
@@ -207,6 +217,28 @@ export class ExternalChangeController {
     } catch (error: unknown) {
       console.error('Save as… failed after an outside change', error);
     }
+  }
+
+  /**
+   * *Reload* in the project lifecycle's queue: once it is its turn, the project must still be
+   * open.
+   */
+  private async reloadInQueue(handle: Handle): Promise<ReloadOutcome> {
+    const reloadNow = (): Promise<ReloadOutcome> => {
+      const project = this.openProject(handle);
+      return project === null || this.isDisposed()
+        ? Promise.resolve('failed')
+        : this.reload(project);
+    };
+    if (this.project === null) {
+      return reloadNow();
+    }
+    let outcome: ReloadOutcome = 'failed';
+    await this.project.reloadWith(async () => {
+      outcome = await reloadNow();
+      return outcome === 'reloaded';
+    });
+    return outcome;
   }
 
   /** *Reload*: reads the file again and shows it; see the module comment. */

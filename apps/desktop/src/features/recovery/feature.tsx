@@ -5,19 +5,25 @@
  *
  * The offer is a start page section. The start page belongs to the project feature, which provides
  * `registerStartPageSection`; this feature takes that function as an option
- * ({@link RecoveryFeatureOptions.registerStartPageSection}), so it does not depend on the project
- * feature's modules:
+ * ({@link RecoveryFeatureOptions.registerStartPageSection}). A restore replaces the open project,
+ * and autosave must not cross a save, so both go through the project lifecycle's queue, which the
+ * project feature's link provides ({@link RecoveryFeatureOptions.project}):
  *
  * ```ts
- * import { projectFeature, registerStartPageSection } from './project';
+ * import { createProjectFeature, ProjectLink, registerStartPageSection } from './project';
  * import { createRecoveryFeature } from './recovery';
  *
- * const FEATURES = [projectFeature, createRecoveryFeature({ registerStartPageSection })];
+ * const project = new ProjectLink();
+ * const FEATURES = [
+ *   createProjectFeature({ link: project }),
+ *   createRecoveryFeature({ registerStartPageSection, project }),
+ * ];
  * ```
  */
 import type { ComponentType } from 'react';
 
 import type { Feature, FeatureContext } from '../../app/features';
+import type { ProjectQueue } from '../project/link';
 import { type Autosave, type BlurSource, startAutosave } from './autosave';
 import { RecoveryController, type RecoveryControllerOptions } from './controller';
 import { createRecoveryModel, type RecoveryModel } from './model';
@@ -50,6 +56,12 @@ export interface RecoveryFeatureOptions extends RecoveryControllerOptions {
   readonly window?: BlurSource | null;
   /** The time between snapshots, in milliseconds (30 s by default). */
   readonly intervalMs?: number;
+  /**
+   * The project lifecycle's queue: restores run in it, autosave pauses while it saves, and a save
+   * waits for a snapshot being written. Without it nothing can be restored (an error is logged)
+   * and autosave does not coordinate with saves.
+   */
+  readonly project?: ProjectQueue | null;
 }
 
 /** An installed recovery feature: its parts (for tests) and the function that uninstalls it. */
@@ -78,13 +90,19 @@ export function installRecoveryFeature(
   options: RecoveryFeatureOptions = {},
 ): InstalledRecoveryFeature {
   const model = createRecoveryModel();
+  const project = options.project ?? null;
   const controller = new RecoveryController(ctx, model, options);
   const autosave = startAutosave({
     store: ctx.store,
     ipc: ctx.ipc,
     window: options.window === undefined ? defaultWindow() : options.window,
     ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),
+    isPaused: () => project?.isSaving() ?? false,
   });
+  if (project === null) {
+    console.error('The recovery feature has no project lifecycle; unsaved work cannot be restored');
+  }
+  const removeSaveBarrier = project?.addSaveBarrier(() => autosave.idle()) ?? (() => undefined);
 
   function RecoveryStartPageSection() {
     return <RecoveryOffer model={model} controller={controller} />;
@@ -114,12 +132,13 @@ export function installRecoveryFeature(
       installed = false;
       controller.dispose();
       autosave.stop();
+      removeSaveBarrier();
       removeSection();
     },
   };
 }
 
-/** A recovery feature with `options` (the app passes `registerStartPageSection`). */
+/** A recovery feature with `options` (the app passes `registerStartPageSection` and `project`). */
 export function createRecoveryFeature(options: RecoveryFeatureOptions = {}): Feature {
   return function recoveryFeature(ctx) {
     return installRecoveryFeature(ctx, options).uninstall;
@@ -127,7 +146,8 @@ export function createRecoveryFeature(options: RecoveryFeatureOptions = {}): Fea
 }
 
 /**
- * The recovery feature without a start page: autosave only. The app installs
- * `createRecoveryFeature({ registerStartPageSection })` instead (see the module comment).
+ * The recovery feature without a start page or a project lifecycle: autosave only. The app
+ * installs `createRecoveryFeature({ registerStartPageSection, project })` instead (see the module
+ * comment).
  */
 export const recoveryFeature: Feature = createRecoveryFeature();

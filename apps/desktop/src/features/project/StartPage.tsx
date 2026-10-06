@@ -40,6 +40,8 @@ const BUSY_TEXT: Readonly<Record<LifecycleOperation, string>> = {
   saveAs: 'Saving the project…',
   close: 'Closing the project…',
   quit: 'Quitting…',
+  restore: 'Restoring the project…',
+  reload: 'Reloading the project…',
 };
 
 /** Runs a lifecycle operation from a click; its errors are shown by the lifecycle itself. */

@@ -19,6 +19,7 @@ import {
   type Harness,
   ipcFailure,
   type OpenInEditorMock,
+  projectQueue,
   snapshotId,
   snapshotInfo,
   TRUSTED,
@@ -35,6 +36,7 @@ async function renderOffer(snapshots = [snapshotInfo(1), snapshotInfo(2, { hasPa
   controller = new RecoveryController(harness.ctx, model, {
     openInEditor,
     startCore: () => Promise.resolve({} as CoreWasm),
+    project: projectQueue(harness),
   });
   const view = render(
     <>

@@ -154,6 +154,22 @@ describe('ConsolePanel', () => {
     ]);
   });
 
+  it('starts afresh on a reset: queued output is dropped and the modes a program set are gone', async () => {
+    const { handle, terminal } = renderConsole();
+    // The old program switched to the alternate screen and bracketed paste, and printed.
+    await act(() => handle.write(encode('old\r\n\u001b[?1049h\u001b[?2004hfull screen')));
+    expect(terminal.buffer.active.type).toBe('alternate');
+    expect(terminal.modes.bracketedPasteMode).toBe(true);
+    const dropped = handle.write(encode('still queued'));
+
+    handle.reset();
+    await expect(dropped).resolves.toBeUndefined();
+    await act(() => handle.write(encode('new')));
+    expect(terminal.buffer.active.type).toBe('normal');
+    expect(terminal.modes.bracketedPasteMode).toBe(false);
+    expect(lines(terminal).filter((line) => line !== '')).toEqual(['new']);
+  });
+
   it('ignores clipboard writes by escape sequence (OSC 52)', async () => {
     const writeText = vi.spyOn(navigator.clipboard, 'writeText');
     const clipboardWrite = vi.spyOn(navigator.clipboard, 'write');

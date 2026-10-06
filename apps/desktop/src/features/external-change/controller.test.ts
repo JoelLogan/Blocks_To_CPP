@@ -296,6 +296,66 @@ describe('Reload', () => {
     expect(choiceIds(await nextChoice(harness.dialogs))).toEqual(['reload', 'keepMine', 'later']);
   });
 
+  it("reloads in the project lifecycle's queue, once it is its turn", async () => {
+    uninstall();
+    let turn: () => void = () => undefined;
+    const reloadWith = vi.fn(
+      (task: () => Promise<boolean>) =>
+        new Promise<boolean>((resolve) => {
+          turn = () => {
+            void task().then(resolve);
+          };
+        }),
+    );
+    uninstall = installExternalChangeFeature(harness.ctx, {
+      openInEditor,
+      project: { reloadWith },
+    }).uninstall;
+    changedOnDisk();
+    await answerChoice(harness.dialogs, 'reload');
+    await settled();
+    // A save (or an open) asked for earlier is still running: the reload waits.
+    expect(reloadWith).toHaveBeenCalledOnce();
+    expect(harness.ipc.projectReload).not.toHaveBeenCalled();
+
+    turn();
+    await vi.waitFor(() => {
+      expect(openInEditor).toHaveBeenCalled();
+    });
+    expect(harness.ipc.projectReload).toHaveBeenCalledWith({ handle: HANDLE_A });
+    expect(useAppStore.getState().project?.canonicalText).toBe('{"reloaded":true}');
+  });
+
+  it('does not reload a project that was replaced while the reload waited for its turn', async () => {
+    uninstall();
+    let turn: () => void = () => undefined;
+    const outcomes: boolean[] = [];
+    const reloadWith = vi.fn(
+      (task: () => Promise<boolean>) =>
+        new Promise<boolean>((resolve) => {
+          turn = () => {
+            void task().then((outcome) => {
+              outcomes.push(outcome);
+              resolve(outcome);
+            });
+          };
+        }),
+    );
+    uninstall = installExternalChangeFeature(harness.ctx, {
+      openInEditor,
+      project: { reloadWith },
+    }).uninstall;
+    changedOnDisk();
+    await answerChoice(harness.dialogs, 'reload');
+    await settled();
+    open({ handle: HANDLE_B });
+    turn();
+    await vi.waitFor(() => {
+      expect(outcomes).toEqual([false]);
+    });
+    expect(harness.ipc.projectReload).not.toHaveBeenCalled();
+  });
+
   it('says nothing when the project was closed meanwhile', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     harness.ipc.projectReload.mockRejectedValueOnce(ipcFailure({ code: 'unknownHandle' }));

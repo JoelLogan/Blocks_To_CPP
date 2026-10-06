@@ -19,7 +19,7 @@ import {
   recoveryFeature,
   type RegisterStartPageSection,
 } from './feature';
-import { createHarness, HANDLE_A, type Harness, snapshotInfo } from './testing';
+import { createHarness, HANDLE_A, type Harness, projectQueue, snapshotInfo } from './testing';
 
 interface Section {
   id: string;
@@ -52,6 +52,7 @@ describe('the recovery feature', () => {
   it('lists the snapshots at start-up and offers them on the start page', async () => {
     harness.ipc.recoveryList.mockResolvedValue({ snapshots: [snapshotInfo(1)] });
     const feature = installRecoveryFeature(harness.ctx, {
+      project: projectQueue(harness),
       registerStartPageSection: register,
       window: null,
     });
@@ -74,6 +75,7 @@ describe('the recovery feature', () => {
   it('writes a snapshot when the window loses focus, until it is uninstalled', async () => {
     const target = new EventTarget();
     const feature = installRecoveryFeature(harness.ctx, {
+      project: projectQueue(harness),
       registerStartPageSection: register,
       window: target,
     });
@@ -100,6 +102,7 @@ describe('the recovery feature', () => {
   it('autosaves with the interval it is given', async () => {
     vi.useFakeTimers();
     const feature = installRecoveryFeature(harness.ctx, {
+      project: projectQueue(harness),
       registerStartPageSection: register,
       window: null,
       intervalMs: 1000,
@@ -114,16 +117,20 @@ describe('the recovery feature', () => {
   it('listens to the app window by default', () => {
     const add = vi.spyOn(window, 'addEventListener');
     const remove = vi.spyOn(window, 'removeEventListener');
-    const feature = installRecoveryFeature(harness.ctx, { registerStartPageSection: register });
+    const feature = installRecoveryFeature(harness.ctx, {
+      registerStartPageSection: register,
+      project: projectQueue(harness),
+    });
     expect(add).toHaveBeenCalledWith('blur', expect.any(Function));
     feature.uninstall();
     expect(remove).toHaveBeenCalledWith('blur', expect.any(Function));
   });
 
-  it('works as a Feature, and says so when it has no start page', () => {
+  it('works as a Feature, and says so when it has no start page or project lifecycle', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const project = projectQueue(harness);
     const uninstall = installAll(
-      [createRecoveryFeature({ registerStartPageSection: register, window: null })],
+      [createRecoveryFeature({ registerStartPageSection: register, window: null, project })],
       harness.ctx,
     );
     expect(sections).toHaveLength(1);
@@ -135,6 +142,57 @@ describe('the recovery feature', () => {
     expect(error).toHaveBeenCalledWith(
       'The recovery feature has no start page section; unsaved work is not offered',
     );
+    expect(error).toHaveBeenCalledWith(
+      'The recovery feature has no project lifecycle; unsaved work cannot be restored',
+    );
     autosaveOnly();
+  });
+
+  it('makes saves wait for a snapshot being written, and pauses autosave while one runs', async () => {
+    let saving = false;
+    const barriers: (() => Promise<void>)[] = [];
+    const removed = vi.fn();
+    const project = {
+      replaceWith: vi.fn(() => Promise.resolve(false)),
+      reloadWith: vi.fn(() => Promise.resolve(false)),
+      isSaving: () => saving,
+      addSaveBarrier: (wait: () => Promise<void>) => {
+        barriers.push(wait);
+        return removed;
+      },
+    };
+    let written: () => void = () => undefined;
+    harness.ipc.recoverySave.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          written = () => {
+            resolve({});
+          };
+        }),
+    );
+    const feature = installRecoveryFeature(harness.ctx, { window: null, project });
+    useAppStore.getState().actions.setProject(projectFixture({ handle: HANDLE_A, dirty: true }));
+    expect(barriers).toHaveLength(1);
+
+    // A snapshot is being written: the save's barrier waits for it.
+    void feature.autosave.snapshotNow();
+    let passed = false;
+    const barrier = barriers[0]?.().then(() => {
+      passed = true;
+    });
+    await Promise.resolve();
+    expect(passed).toBe(false);
+    written();
+    await barrier;
+    expect(passed).toBe(true);
+
+    // While the save runs, no snapshot starts.
+    saving = true;
+    useAppStore.getState().actions.updateProject({ canonicalText: '{"edited":true}' });
+    await feature.autosave.snapshotNow();
+    expect(harness.ipc.recoverySave).toHaveBeenCalledTimes(1);
+
+    feature.uninstall();
+    expect(removed).toHaveBeenCalledOnce();
   });
 });

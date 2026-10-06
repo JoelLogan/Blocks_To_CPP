@@ -3,7 +3,14 @@
  * the text comes from the frontend, never from the backend's error). The log gets only the
  * command and the error code.
  */
-import { type IpcError, IpcCallError, type TransportError } from '@blocks2cpp/ipc-types';
+import {
+  type Diagnostic,
+  type IpcError,
+  IpcCallError,
+  type TransportError,
+} from '@blocks2cpp/ipc-types';
+
+import { problemLines } from '../recovery/text';
 
 /** The error code of a failed IPC call, `transport` for a failure below the command. */
 export type FailureCode = IpcError['code'] | TransportError['code'];
@@ -60,4 +67,16 @@ export function failureMessage(code: FailureCode, action: 'build' | 'run'): Fail
     default:
       return { title, message: 'Something went wrong. The details are in the log file.' };
   }
+}
+
+/**
+ * The text for a build (or the build of a run) refused because the canvas does not read back as a
+ * project the compiler core's loader accepts: it names the loader's problems (at most 20, made
+ * safe to show), since building the last version that did load would ignore the newest blocks.
+ */
+export function unreadableCanvasMessage(diagnostics: readonly Diagnostic[]): FailureMessage {
+  return {
+    title: 'The build could not start',
+    message: `Blocks2Cpp cannot read your latest change back as a project, so nothing was built:\n${problemLines(diagnostics).join('\n')}\nUndo the last change (Ctrl+Z), then try again.`,
+  };
 }

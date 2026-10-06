@@ -24,6 +24,8 @@ import { createScreenRegistry } from '../../app/screens';
 import { resetAppStore, useAppStore } from '../../app/store';
 import { appInfoFixture, createFakeIpc, type FakeIpc } from '../../app/testing/fixtures';
 import type { OpenDocumentArgs, OpenDocumentResult } from '../../editor/load';
+import { ProjectLifecycle } from '../project/lifecycle';
+import { createProjectModel, type ProjectModel } from '../project/model';
 
 /** Handles the fake backend gives out. */
 export const HANDLE_A: Handle = `ph_${'a'.repeat(32)}`;
@@ -127,6 +129,17 @@ export function createHarness(core: CoreWasm | null = null): Harness {
       dialogs.cancelAll();
     },
   };
+}
+
+/**
+ * A project lifecycle over `harness`'s context, whose queue restores run in (the app passes the
+ * project feature's link instead).
+ */
+export function projectQueue(
+  harness: Harness,
+  model: ProjectModel = createProjectModel(),
+): ProjectLifecycle {
+  return new ProjectLifecycle(harness.ctx, model);
 }
 
 /** Waits until a dialog is shown and returns it (without answering). */

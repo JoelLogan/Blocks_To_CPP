@@ -37,7 +37,7 @@ export {
   DEFAULT_TERMINAL_SIZE,
 } from './consoleBridge';
 export { consoleHeaderFrom } from './consoleHeader';
-export { type BuildDocument, documentToBuild } from './document';
+export { type BuildDocument, documentToBuild, type DocumentToBuild } from './document';
 export { buildRunFeature, type BuildRunFeatureOptions, createBuildRunFeature } from './feature';
 export { focusFirstError, gateAllows } from './gate';
 export {
@@ -49,6 +49,12 @@ export {
   MAX_RUN_INPUT_BYTES,
   toBase64,
 } from './input';
-export { failureCode, failureMessage } from './messages';
-export { clampSize, RUN_SEPARATOR, RunController, STOP_WAIT_MS } from './runController';
+export { failureCode, failureMessage, unreadableCanvasMessage } from './messages';
+export {
+  clampSize,
+  RUN_MODE_RESET,
+  RUN_SEPARATOR,
+  RunController,
+  STOP_WAIT_MS,
+} from './runController';
 export { MISSING_OUTPUT_WAIT_MS, RunSession, type RunSessionHooks } from './runSession';

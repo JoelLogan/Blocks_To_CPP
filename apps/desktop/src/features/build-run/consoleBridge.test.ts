@@ -57,20 +57,39 @@ describe('ConsoleBridge', () => {
     expect(onInput.mock.calls).toEqual([['new']]);
   });
 
-  it('tracks whether the console was written to since it was cleared', async () => {
+  it('tracks whether program output was written since the console was cleared', async () => {
     const bridge = new ConsoleBridge();
     const terminal = new FakeConsole();
     bridge.attach(terminal);
-    bridge.writeText('hi');
+    // Text of our own (the mode reset and separator before a run) is not output.
+    bridge.writeText('mode reset');
     await Promise.resolve();
-    expect(terminal.text).toBe('hi');
+    expect(terminal.text).toBe('mode reset');
+    expect(bridge.used).toBe(false);
+    await bridge.write(new TextEncoder().encode('hi'));
     expect(bridge.used).toBe(true);
     bridge.cleared();
     expect(bridge.used).toBe(false);
-    bridge.writeText('again');
+    await bridge.write(new TextEncoder().encode('again'));
     bridge.clear();
     expect(terminal.clears).toBe(1);
     expect(bridge.used).toBe(false);
+  });
+
+  it('resets the console for another project, dropping what is still queued', async () => {
+    const bridge = new ConsoleBridge();
+    const terminal = new FakeConsole();
+    bridge.attach(terminal);
+    terminal.autoResolve = false;
+    const queued = bridge.write(new TextEncoder().encode('old output'));
+    expect(bridge.used).toBe(true);
+    bridge.reset();
+    await expect(queued).resolves.toBeUndefined();
+    expect(terminal.resets).toBe(1);
+    expect(terminal.text).toBe('');
+    expect(bridge.used).toBe(false);
+    // Without a console, nothing happens.
+    new ConsoleBridge().reset();
   });
 
   it('tells subscribers when the run mode changes', () => {

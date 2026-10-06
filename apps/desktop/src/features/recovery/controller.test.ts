@@ -11,6 +11,8 @@ import { useAppStore } from '../../app/store';
 import { documentFixture, projectFixture } from '../../app/testing/fixtures';
 import { RecoveryController } from './controller';
 import { createRecoveryModel, MAX_OFFERED_SNAPSHOTS, offeredSnapshots } from './model';
+import type { ProjectLifecycle } from '../project/lifecycle';
+import { createProjectModel, type ProjectModel } from '../project/model';
 import {
   answerChoice,
   answerConfirm,
@@ -23,6 +25,7 @@ import {
   ipcFailure,
   nextDialog,
   type OpenInEditorMock,
+  projectQueue,
   snapshotId,
   snapshotInfo,
   TRUSTED,
@@ -31,6 +34,8 @@ import {
 let harness: Harness;
 let openInEditor: OpenInEditorMock;
 let startCore: Mock<() => Promise<CoreWasm>>;
+let queue: ProjectLifecycle;
+let projectModel: ProjectModel;
 
 function restored(overrides: Partial<RecoveryRestoreResponse> = {}): RecoveryRestoreResponse {
   return {
@@ -51,7 +56,11 @@ async function controllerWith(count = 2): Promise<{
   harness.ipc.recoveryList.mockResolvedValue({
     snapshots: Array.from({ length: count }, (_, index) => snapshotInfo(index + 1)),
   });
-  const controller = new RecoveryController(harness.ctx, model, { openInEditor, startCore });
+  const controller = new RecoveryController(harness.ctx, model, {
+    openInEditor,
+    startCore,
+    project: queue,
+  });
   await controller.refresh();
   return { controller, model };
 }
@@ -70,6 +79,8 @@ function showsProject(): void {
 
 beforeEach(() => {
   harness = createHarness();
+  projectModel = createProjectModel();
+  queue = projectQueue(harness, projectModel);
   openInEditor = vi.fn();
   startCore = vi.fn(() => Promise.resolve({} as CoreWasm));
   showsProject();
@@ -95,7 +106,11 @@ describe('the offered snapshots', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const model = createRecoveryModel();
     harness.ipc.recoveryList.mockRejectedValue(ipcFailure({ code: 'io', kind: 'other' }));
-    const controller = new RecoveryController(harness.ctx, model, { openInEditor, startCore });
+    const controller = new RecoveryController(harness.ctx, model, {
+      openInEditor,
+      startCore,
+      project: queue,
+    });
     await controller.refresh();
     expect(model.getState().status).toBe('failed');
   });
@@ -126,7 +141,11 @@ describe('the offered snapshots', () => {
 
   it('drops a late answer to an older request', async () => {
     const model = createRecoveryModel();
-    const controller = new RecoveryController(harness.ctx, model, { openInEditor, startCore });
+    const controller = new RecoveryController(harness.ctx, model, {
+      openInEditor,
+      startCore,
+      project: queue,
+    });
     let answerFirst: (value: { snapshots: [] }) => void = () => undefined;
     harness.ipc.recoveryList.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -202,36 +221,29 @@ describe('restoring a snapshot', () => {
     expect(harness.ipc.projectClose).toHaveBeenCalledWith({ handle: HANDLE_A });
   });
 
-  it('saves the open project with project.save when asked to, and stops when it is not saved', async () => {
-    useAppStore.getState().actions.setProject(projectFixture({ handle: HANDLE_A, dirty: true }));
+  it('runs in the project lifecycle, which is busy restoring meanwhile', async () => {
     const { controller } = await controllerWith(1);
-    const save = vi.fn(() => undefined);
-    harness.commands.registerCommand('project.save', save);
-
-    // The save did not happen (the user cancelled Save as, or it failed): no restore.
-    let restoring = controller.restore(snapshotId(1));
-    await answerChoice(harness.dialogs, 'save');
-    await expect(restoring).resolves.toBe(false);
-    expect(save).toHaveBeenCalledTimes(1);
-    expect(harness.ipc.recoveryRestore).not.toHaveBeenCalled();
-
-    save.mockImplementation(() => {
-      useAppStore.getState().actions.updateProject({ dirty: false });
+    const busy: unknown[] = [];
+    startCore.mockImplementation(() => {
+      busy.push(projectModel.getState().busy);
+      return Promise.resolve({} as CoreWasm);
     });
-    restoring = controller.restore(snapshotId(1));
-    await answerChoice(harness.dialogs, 'save');
-    await expect(restoring).resolves.toBe(true);
-    expect(harness.ipc.projectClose).toHaveBeenCalledWith({ handle: HANDLE_A });
+    await expect(controller.restore(snapshotId(1))).resolves.toBe(true);
+    expect(busy).toEqual(['restore']);
   });
 
-  it('says so when there is no save command', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    useAppStore.getState().actions.setProject(projectFixture({ handle: HANDLE_A, dirty: true }));
-    const { controller } = await controllerWith(1);
+  it('restores nothing without the project lifecycle, and says so', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const model = createRecoveryModel();
+    harness.ipc.recoveryList.mockResolvedValue({ snapshots: [snapshotInfo(1)] });
+    const controller = new RecoveryController(harness.ctx, model, { openInEditor, startCore });
+    await controller.refresh();
     const restoring = controller.restore(snapshotId(1));
-    await answerChoice(harness.dialogs, 'save');
-    expect((await closeAlert(harness.dialogs)).options.message).toContain('noSaveCommand');
+    expect((await closeAlert(harness.dialogs)).options.message).toContain('noProjectLifecycle');
     await expect(restoring).resolves.toBe(false);
+    expect(error).toHaveBeenCalled();
+    expect(startCore).not.toHaveBeenCalled();
+    expect(model.getState().snapshots).toHaveLength(1);
   });
 
   it('leaves the snapshot alone when the compiler core cannot start', async () => {
@@ -401,7 +413,11 @@ describe('discarding a snapshot', () => {
     harness.ipc.recoveryList.mockResolvedValue({
       snapshots: [snapshotInfo(1, { savedAt: 'yesterday', projectName: '  ' })],
     });
-    const controller = new RecoveryController(harness.ctx, model, { openInEditor, startCore });
+    const controller = new RecoveryController(harness.ctx, model, {
+      openInEditor,
+      startCore,
+      project: queue,
+    });
     await controller.refresh();
     const discarding = controller.discard(snapshotId(1));
     const question = await nextDialog(harness.dialogs);
@@ -421,7 +437,10 @@ describe('the default core starter', () => {
     harness.ipc.recoveryRestore.mockResolvedValue(restored());
     harness.ipc.recoveryList.mockResolvedValue({ snapshots: [snapshotInfo(1)] });
     const model = createRecoveryModel();
-    const controller = new RecoveryController(harness.ctx, model, { openInEditor });
+    const controller = new RecoveryController(harness.ctx, model, {
+      openInEditor,
+      project: projectQueue(harness),
+    });
     await controller.refresh();
     await expect(controller.restore(snapshotId(1))).resolves.toBe(true);
     expect(harness.ipc.recoveryRestore).toHaveBeenCalledTimes(1);

@@ -32,12 +32,19 @@ export function localTime(timestamp: string): string | null {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-/** `Saved 10:42`, or `Unsaved` while there are unsaved changes or before the first save. */
-export function saveStateLabel(project: Pick<ProjectState, 'dirty' | 'savedAt'>): string {
-  if (project.dirty || project.savedAt === null) {
+/**
+ * The save state, as the top bar's unsaved-changes marker has it (04 §4.1, §4.10): `Unsaved` while
+ * there are unsaved changes or for a project that has no file yet; otherwise `Saved 10:42` after a
+ * save in this session, and `Saved` for a file that is as it was opened (the backend sends no
+ * modification time).
+ */
+export function saveStateLabel(
+  project: Pick<ProjectState, 'dirty' | 'fileName' | 'savedAt'>,
+): string {
+  if (project.dirty || project.fileName === null) {
     return 'Unsaved';
   }
-  const time = localTime(project.savedAt);
+  const time = project.savedAt === null ? null : localTime(project.savedAt);
   return time === null ? 'Saved' : `Saved ${time}`;
 }
 

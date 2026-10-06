@@ -7,6 +7,7 @@
 import type { Feature, FeatureContext } from '../../app/features';
 import { reportDirtyState } from './dirty';
 import { type LifecycleOptions, ProjectLifecycle } from './lifecycle';
+import type { ProjectLink } from './link';
 import { createProjectModel, type ProjectModel } from './model';
 import { startPageSections, type StartPageSections } from './sections';
 import { StartPage } from './StartPage';
@@ -15,6 +16,11 @@ import { StartPage } from './StartPage';
 export interface ProjectFeatureOptions extends LifecycleOptions {
   /** Where other features add start page sections; the app's registry by default. */
   readonly sections?: StartPageSections;
+  /**
+   * Bound to the lifecycle while the feature is installed, so features created before it (restore,
+   * reload, autosave) use its queue (./link.ts).
+   */
+  readonly link?: ProjectLink;
 }
 
 /** An installed project feature: its parts (for tests) and the function that uninstalls it. */
@@ -74,6 +80,7 @@ export function installProjectFeature(
       });
     }),
     reportDirtyState(ctx.store, ctx.ipc),
+    options.link?.bind(lifecycle) ?? (() => undefined),
   ];
 
   let installed = true;
@@ -93,7 +100,15 @@ export function installProjectFeature(
   };
 }
 
-/** The project feature, for `src/features/index.ts`. */
-export const projectFeature: Feature = function projectFeature(ctx) {
-  return installProjectFeature(ctx).uninstall;
-};
+/**
+ * A project feature with `options`; `src/features/index.ts` passes a {@link ProjectLink} that the
+ * recovery and external-change features use.
+ */
+export function createProjectFeature(options: ProjectFeatureOptions = {}): Feature {
+  return function projectFeature(ctx) {
+    return installProjectFeature(ctx, options).uninstall;
+  };
+}
+
+/** The project feature without a link (other features then cannot use its queue). */
+export const projectFeature: Feature = createProjectFeature();

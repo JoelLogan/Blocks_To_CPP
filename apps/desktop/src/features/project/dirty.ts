@@ -21,9 +21,13 @@ function same(a: DirtyFlag | null, b: DirtyFlag | null): boolean {
 /**
  * Reports the open project's `dirty` flag to the backend until the returned function is called.
  *
- * A newly opened handle starts clean in the backend (open, new, reload and save all reset it), so
- * only a change, or a project that is dirty from the start (a restored snapshot), is sent. A
- * failed call is logged by code and not retried; the next change sends the flag again.
+ * The backend's flag is what `project_set_dirty` last reported: open, new and reload reset it, a
+ * save does not (02 §2.6). A newly opened handle therefore starts clean there, and only a change,
+ * or a project that is dirty from the start (a restored snapshot), is sent. A clean save turns the
+ * store's flag from true to false, which is sent; edits made while a save was on its way keep it
+ * true, and the backend, never told otherwise, keeps it true as well. A failed call is logged by
+ * code and not retried (it can only fail for a project that is closed already); the next change
+ * sends the flag again.
  */
 export function reportDirtyState(store: typeof useAppStore, ipc: IpcClient): () => void {
   /** What the backend was last told (or starts with) for the current handle. */

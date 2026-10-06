@@ -75,6 +75,10 @@ class FakeSink implements TerminalSink {
     this.events.push('clear');
   }
 
+  reset(): void {
+    this.events.push('reset');
+  }
+
   /** Finishes the oldest unfinished write. */
   finish(): void {
     this.#done.shift()?.();
@@ -177,6 +181,40 @@ describe('OutputScheduler', () => {
     expect(sink.events.at(-1)).toBe('clear');
   });
 
+  it('drops the queued output on a reset and resets the terminal after the write in flight', async () => {
+    const timers = new FakeTimers();
+    const sink = new FakeSink(timers, true);
+    const scheduler = new OutputScheduler(timers);
+    scheduler.attach(sink);
+    const resolved: string[] = [];
+    // The old program floods: one write in flight, more queued behind it.
+    void scheduler.write(bytes('old 1')).then(() => resolved.push('old 1'));
+    timers.advance(1);
+    void scheduler.write(bytes('old 2')).then(() => resolved.push('old 2'));
+    scheduler.clear();
+
+    // Another project is shown.
+    scheduler.reset();
+    await settle();
+    // The dropped output counts as written, so its acknowledgements do not hang.
+    expect(resolved).toEqual(['old 2']);
+    expect(scheduler.queuedBytes).toBe(0);
+    void scheduler.write(bytes('new'));
+    expect(sink.events).toEqual(['write:old 1']);
+
+    // The terminal finishes what it was given; then it is reset, and only new output follows.
+    sink.finish();
+    timers.advance(MIN_WRITE_INTERVAL_MS);
+    expect(sink.events).toEqual(['write:old 1', 'reset', 'write:new']);
+
+    // With nothing in progress, a reset happens at once.
+    sink.finish();
+    scheduler.reset();
+    expect(sink.events.at(-1)).toBe('reset');
+    timers.advance(MIN_WRITE_INTERVAL_MS);
+    expect(sink.events.filter((event) => event === 'reset')).toHaveLength(2);
+  });
+
   it('keeps output until a terminal is attached', () => {
     const timers = new FakeTimers();
     const scheduler = new OutputScheduler(timers);
@@ -215,6 +253,7 @@ describe('OutputScheduler', () => {
         throw new Error('write data discarded');
       },
       clear: () => undefined,
+      reset: () => undefined,
     });
     const written = scheduler.write(bytes('x'));
     timers.advance(1);

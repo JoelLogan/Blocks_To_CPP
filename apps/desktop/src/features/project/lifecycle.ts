@@ -16,7 +16,11 @@
  *   chooses *Save*, *Don't save* or *Cancel*, then `app_quit` ends the app.
  *
  * Operations run one at a time, in the order they were asked for, so a close never overtakes a
- * save. Backend errors become messages for the user; only bugs reject.
+ * save. Other features' operations on the open project take their place in the same queue
+ * (./link.ts): restoring a recovery snapshot and reloading after an outside change. A save waits
+ * for an autosave snapshot that is being written before it sends the project, so the backend never
+ * gets a snapshot after the save that deleted it. Backend errors become messages for the user;
+ * only bugs reject.
  */
 import {
   type BdmDocument,
@@ -46,6 +50,7 @@ import {
   type LoadProblems,
   loadProblems,
 } from './errors';
+import type { ProjectQueue } from './link';
 import { type LifecycleOperation, type ProjectModel, shownRecentEntries } from './model';
 import { MAX_SHOWN_PATH_CHARS, shownName, shownText } from './text';
 
@@ -96,7 +101,7 @@ function problemsText(problems: LoadProblems): string {
 }
 
 /** The project lifecycle of one window; see the module comment. */
-export class ProjectLifecycle {
+export class ProjectLifecycle implements ProjectQueue {
   private readonly ctx: FeatureContext;
   private readonly model: ProjectModel;
   private readonly openInEditor: NonNullable<LifecycleOptions['openInEditor']>;
@@ -108,6 +113,10 @@ export class ProjectLifecycle {
   private quitting: Promise<boolean> | null = null;
   /** The latest `recent_list` request; older answers are dropped. */
   private recentRequest = 0;
+  /** How many saves are under way (a Save as inside a save counts twice). */
+  private saving = 0;
+  /** What every save waits for before it sends the project ({@link addSaveBarrier}). */
+  private readonly saveBarriers = new Set<() => Promise<void>>();
   private disposed = false;
 
   constructor(ctx: FeatureContext, model: ProjectModel, options: LifecycleOptions = {}) {
@@ -311,6 +320,58 @@ export class ProjectLifecycle {
     this.model.setState({ loadFailure: null });
   }
 
+  // ---- For other features (./link.ts) ----------------------------------------------------------
+
+  /**
+   * Replaces the open project with the one `show` shows (a restored recovery snapshot), as the
+   * operation `restore`: after the unsaved-changes prompt, `show` runs and resolves the handle it
+   * showed, or `null` when it showed none (having told the user why); the replaced project is
+   * closed only once the new one is shown. Resolves whether it was shown.
+   */
+  replaceWith(show: () => Promise<Handle | null>): Promise<boolean> {
+    return this.exclusive('restore', async () => {
+      if (!(await this.settleUnsaved())) {
+        return false;
+      }
+      const previous = this.ctx.store.getState().project;
+      const shown = await show();
+      if (shown === null) {
+        return false;
+      }
+      this.model.setState({ loadFailure: null });
+      if (previous !== null && previous.handle !== shown) {
+        await this.closeHandle(previous.handle);
+      }
+      return true;
+    });
+  }
+
+  /**
+   * Runs `reload` (`project_reload` and showing the file again after an outside change) as the
+   * operation `reload`, so it never overlaps a save or another open. Resolves its result, or
+   * `false` once the lifecycle is stopped.
+   */
+  reloadWith(reload: () => Promise<boolean>): Promise<boolean> {
+    return this.exclusive('reload', reload);
+  }
+
+  /** Whether a save (Save, Save as, or the save of an unsaved-changes prompt) is under way. */
+  isSaving(): boolean {
+    return this.saving > 0;
+  }
+
+  /**
+   * Adds `wait`, which every save awaits right before it sends the project to the backend
+   * (autosave: its snapshot write in progress). Returns the function that removes it again.
+   */
+  addSaveBarrier(wait: () => Promise<void>): () => void {
+    const entry = () => wait();
+    this.saveBarriers.add(entry);
+    return () => {
+      this.saveBarriers.delete(entry);
+    };
+  }
+
   // ---- The queue -------------------------------------------------------------------------------
 
   /** Runs `task` after every operation asked for before it; `busy` names the running one. */
@@ -509,8 +570,36 @@ export class ProjectLifecycle {
 
   // ---- Saving ----------------------------------------------------------------------------------
 
+  /** Runs `task`, a save, counted in {@link isSaving}. */
+  private async whileSaving(task: () => Promise<boolean>): Promise<boolean> {
+    this.saving += 1;
+    try {
+      return await task();
+    } finally {
+      this.saving -= 1;
+    }
+  }
+
+  /** Waits for every save barrier (a snapshot being written); a failing one is only logged. */
+  private async passSaveBarriers(): Promise<void> {
+    await Promise.all(
+      [...this.saveBarriers].map((wait) =>
+        Promise.resolve()
+          .then(wait)
+          .catch((error: unknown) => {
+            console.warn('A save waited in vain for another write', error);
+          }),
+      ),
+    );
+  }
+
   /** Saves to the project's file; see {@link save}. */
-  private async saveNow(): Promise<boolean> {
+  private saveNow(): Promise<boolean> {
+    return this.whileSaving(() => this.saveToFile());
+  }
+
+  /** {@link saveNow} itself. */
+  private async saveToFile(): Promise<boolean> {
     const project = this.ctx.store.getState().project;
     if (project === null) {
       return false;
@@ -522,6 +611,7 @@ export class ProjectLifecycle {
     if (prepared === null) {
       return false;
     }
+    await this.passSaveBarriers();
     let response;
     try {
       response = await this.ctx.ipc.projectSave({
@@ -550,11 +640,20 @@ export class ProjectLifecycle {
   }
 
   /** Saves under a name the user picks in the backend's native dialog. */
-  private async saveAsNow(project: ProjectState, ready: PreparedSave | null): Promise<boolean> {
+  private saveAsNow(project: ProjectState, ready: PreparedSave | null): Promise<boolean> {
+    return this.whileSaving(() => this.saveToChosenFile(project, ready));
+  }
+
+  /** {@link saveAsNow} itself. */
+  private async saveToChosenFile(
+    project: ProjectState,
+    ready: PreparedSave | null,
+  ): Promise<boolean> {
     const prepared = ready ?? (await this.prepare(project));
     if (prepared === null) {
       return false;
     }
+    await this.passSaveBarriers();
     let response;
     try {
       response = await this.ctx.ipc.projectSaveAsDialog({

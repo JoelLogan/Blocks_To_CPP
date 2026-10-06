@@ -44,10 +44,17 @@ const ROWS = { min: 1, max: 1000 } as const;
 const RUN_ID = /^rn_[0-9a-f]{32}$/;
 
 /**
- * What the console shows between two runs: the terminal's modes are reset (a program may have
- * left the alternate screen, hidden the cursor or changed colours), then a dim separator line.
+ * What the console gets at the start of every run: the terminal's modes are reset (the last
+ * program may have left the alternate screen, hidden the cursor or changed colours), so they never
+ * carry over, even after *Clear*.
  */
-export const RUN_SEPARATOR = '\u001b[?1049l\u001b[!p\r\n\u001b[2m── New run ──\u001b[22m\r\n';
+export const RUN_MODE_RESET = '\u001b[?1049l\u001b[!p';
+
+/**
+ * What the console shows between two runs when the last one wrote output: the mode reset, then a
+ * dim separator line.
+ */
+export const RUN_SEPARATOR = `${RUN_MODE_RESET}\r\n\u001b[2m── New run ──\u001b[22m\r\n`;
 
 /** The backend errors after which Run builds again and tries once more. */
 const REBUILD_CODES: ReadonlySet<FailureCode> = new Set<FailureCode>([
@@ -134,14 +141,15 @@ export class RunController {
 
   /**
    * The open project changed: the run (which the backend stops when the project closes) is no
-   * longer followed, and the console is cleared for the new project.
+   * longer followed, and the console starts afresh for the new project: the old program's output
+   * that is still queued is dropped and the terminal is reset.
    */
   reset(): void {
     this.#generation += 1;
     this.#session?.detach();
     this.#session = null;
     this.#sessionHandle = null;
-    this.#deps.bridge.clear();
+    this.#deps.bridge.reset();
     this.#deps.bridge.setMode('pty');
   }
 
@@ -267,7 +275,7 @@ export class RunController {
       ipc,
       bridge,
       clock: this.#deps.clock,
-      prelude: bridge.used ? RUN_SEPARATOR : null,
+      prelude: bridge.used ? RUN_SEPARATOR : RUN_MODE_RESET,
       hooks: {
         onStarted: (started) => {
           if (this.#isCurrent(session, handle)) {

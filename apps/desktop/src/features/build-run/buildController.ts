@@ -22,6 +22,7 @@ import type {
   IpcClient,
 } from '@blocks2cpp/ipc-types';
 
+import type { DialogService } from '../../app/dialogs';
 import { type BuildState, type BuildStatus, useAppStore } from '../../app/store';
 import { selectedToolchain } from '../../app/store/selectors';
 import {
@@ -35,7 +36,7 @@ import {
 } from './buildOutput';
 import { checkBuildEvent } from './channel';
 import { type BuildDocument, type DocumentSources, documentToBuild } from './document';
-import { failureCode, type FailureCode, failureMessage } from './messages';
+import { failureCode, type FailureCode, failureMessage, unreadableCanvasMessage } from './messages';
 
 /** The most diagnostics one build keeps; more are dropped. */
 export const MAX_BUILD_DIAGNOSTICS = 20_000;
@@ -93,6 +94,8 @@ export interface ActiveBuild {
 export interface BuildControllerDeps extends DocumentSources {
   readonly ipc: IpcClient;
   readonly store: typeof useAppStore;
+  /** Says why a build cannot start (a canvas the loader refuses). */
+  readonly dialogs: Pick<DialogService, 'alert'>;
 }
 
 /** One build session, from `build_start` to its `finished` event. */
@@ -148,14 +151,27 @@ export class BuildController {
     this.#deps = deps;
   }
 
-  /** What a build of the open project would build now, or `null` without a project. */
+  /**
+   * What a build of the open project would build now, or `null` without a project, and when the
+   * canvas does not read back as a project the loader accepts: then nothing may be built, and a
+   * dialog names the loader's problems (Run builds through here too).
+   */
   prepare(): PreparedBuild | null {
     const state = this.#deps.store.getState();
     const project = state.project;
-    const document = documentToBuild(this.#deps);
-    if (project === null || document === null) {
+    const found = documentToBuild(this.#deps);
+    if (project === null || found === null) {
       return null;
     }
+    if (found.kind === 'unreadable') {
+      this.#deps.dialogs
+        .alert(unreadableCanvasMessage(found.diagnostics))
+        .catch((error: unknown) => {
+          console.error('Could not say why the build did not start', error);
+        });
+      return null;
+    }
+    const { document } = found;
     return {
       handle: project.handle,
       projectName: project.document.project.name,

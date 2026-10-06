@@ -7,10 +7,12 @@
  *   acknowledged with `run_ack` (at most every 100 ms, ./acks.ts).
  * * **Events** (`onEvent`): `started` first, then `skipped` and one `exit`. The two channels are
  *   not ordered against each other, so `skipped` and `exit` carry `afterSeq`, the number of
- *   batches sent before them, and are applied only after that many batches have been written:
- *   the "lines skipped" marker lands where the output was dropped, and the exit text shows only
- *   once all the output is on screen. Should batches go missing (they never do), the events are
- *   applied after {@link MISSING_OUTPUT_WAIT_MS} anyway, so the console never stays *Running*.
+ *   batches sent before them. The "lines skipped" marker joins the console's queue right after
+ *   batch `afterSeq` has (at once when it has already arrived, else as soon as it arrives), so it
+ *   lands where the output was dropped, before the kept tail. The exit is applied only once that
+ *   many batches have been written, so its text shows once all the output is on screen. Should
+ *   batches go missing (they never do), the events are applied after
+ *   {@link MISSING_OUTPUT_WAIT_MS} anyway, so the console never stays *Running*.
  * * **Input**: what the person types goes to `run_input` (./input.ts); the terminal's size to
  *   `run_resize`.
  */
@@ -135,6 +137,8 @@ export class RunSession {
       this.#markWritten(seq);
     };
     this.#bridge.write(new Uint8Array(bytes)).then(settle, settle);
+    // A `skipped` that waited for this batch follows it into the console's queue.
+    this.#drain();
   };
 
   /** The `onEvent` channel of `run_start`. */
@@ -233,10 +237,17 @@ export class RunSession {
     this.#drain();
   }
 
-  /** Applies the waiting events whose output has been written, in order. */
+  /**
+   * Applies the waiting events that may go now, in order: `started` at once, `skipped` once the
+   * batches before it have been received (it is queued behind them), `exit` once they have been
+   * written.
+   */
   #drain(): void {
     for (let next = this.#waiting[0]; next !== undefined; next = this.#waiting[0]) {
-      if (next.kind !== 'started' && next.afterSeq > this.#written) {
+      if (next.kind === 'skipped' && next.afterSeq > this.#received) {
+        break;
+      }
+      if (next.kind === 'exit' && next.afterSeq > this.#written) {
         break;
       }
       this.#waiting.shift();
@@ -295,6 +306,7 @@ export class RunSession {
         });
         return;
       case 'skipped':
+        this.#writePrelude();
         this.#bridge.console().writeSkipped(event.lines);
         return;
       case 'exit':

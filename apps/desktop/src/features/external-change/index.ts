@@ -5,6 +5,7 @@
  */
 export { ExternalChangeController, type ExternalChangeOptions } from './controller';
 export {
+  createExternalChangeFeature,
   externalChangeFeature,
   type InstalledExternalChangeFeature,
   installExternalChangeFeature,

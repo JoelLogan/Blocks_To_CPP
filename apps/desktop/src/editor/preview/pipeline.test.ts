@@ -331,6 +331,21 @@ describe('the preview pipeline', () => {
     pipeline.dispose();
   });
 
+  it('clears the sync notice as soon as the canvas loads again, even if the preview fails', async () => {
+    openProject();
+    useAppStore.getState().actions.setAnalysis({ notice: 'syncFailed' });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      read: readDocument,
+      service: { preview: () => Promise.reject(new Error('the preview failed')) },
+    });
+    await pipeline.runNow();
+    expect(useAppStore.getState().analysis.notice).toBeNull();
+    pipeline.dispose();
+  });
+
   it('does nothing without a project, or when the core cannot start', async () => {
     const read = vi.fn(readDocument);
     const pipeline = new PreviewPipeline({ store: useAppStore, host: hostOf(), read });
