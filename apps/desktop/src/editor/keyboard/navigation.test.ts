@@ -1,12 +1,16 @@
 /**
  * Keyboard navigation of the block editor against the real Blockly (docs/spec/04-user-interface.md
  * §4.7): the arrow keys on the canvas, Enter on fields and on the canvas, the toolbox and its
- * blocks, and Escape.
+ * blocks (also when they are rebuilt under the keyboard), and Escape.
  */
 import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { guessDocument } from '../toolbox/testing';
+import { useAppStore } from '../../app/store';
+import { type B2cContinuousToolbox, CONTINUOUS_REFRESH_DELAY_MS } from '../toolbox/continuous';
+import { createToolboxPlugin } from '../toolbox/plugin';
+import { guessDocument, symbolFixture } from '../toolbox/testing';
+import { keepFlyoutFocus } from './keepFocus';
 import { focused, type KeyboardEditor, keyboardEditor, press } from './testing';
 
 let editor: KeyboardEditor | null = null;
@@ -207,6 +211,146 @@ describe('the toolbox and its blocks', () => {
     press('Escape');
     expect(hide).toHaveBeenCalled();
   });
+});
+
+describe('the toolbox’s blocks rebuilt while the keyboard is in them', () => {
+  /** Whether the keyboard focus is on a live node, with the DOM focus on its element. */
+  function onLiveNode(): boolean {
+    const node = focused();
+    if (node === null) {
+      return false;
+    }
+    const element = node.getFocusableElement();
+    const dead = node instanceof Blockly.BlockSvg && node.isDeadOrDying();
+    return !dead && element.isConnected && document.activeElement === element;
+  }
+
+  it('keep the keyboard on the same item, and ↓ goes on from there', () => {
+    const { block, keyboard, workspace } = open();
+    focus(block('print'));
+    press('t');
+    press('ArrowRight');
+    press('ArrowDown');
+    press('ArrowDown');
+    const before = focused();
+    expect(before).toBeInstanceOf(Blockly.BlockSvg);
+    const type = (before as Blockly.BlockSvg).type;
+    const toolbox = workspace.getToolbox() as B2cContinuousToolbox;
+
+    expect(toolbox.showAllCategories(true)).toBe(true);
+    expect((before as Blockly.BlockSvg).isDeadOrDying()).toBe(true);
+    expect(onLiveNode()).toBe(true);
+    expect(keyboard.area()).toBe('flyout');
+    expect((focused() as Blockly.BlockSvg).type).toBe(type);
+
+    const at = focused();
+    press('ArrowDown');
+    expect(onLiveNode()).toBe(true);
+    expect(focused()).not.toBe(at);
+  });
+
+  it('keep the keyboard on a toolbox button that is rebuilt', () => {
+    const { block, keyboard, workspace } = open();
+    focus(block('print'));
+    press('t');
+    press('ArrowRight');
+    const label = focused();
+    expect(nameOf(label)).toBe('button:Program');
+
+    (workspace.getToolbox() as B2cContinuousToolbox).showAllCategories(true);
+    expect(focused()).not.toBe(label);
+    expect(nameOf(focused())).toBe('button:Program');
+    expect(onLiveNode()).toBe(true);
+    expect(keyboard.area()).toBe('flyout');
+  });
+
+  it('keep the keyboard at the same place when its item is no longer there', () => {
+    const { block, workspace } = open();
+    focus(block('print'));
+    press('t');
+    press('ArrowRight');
+    press('ArrowDown');
+    press('ArrowDown');
+    const flyout = workspace.getFlyout();
+    if (flyout === null) {
+      throw new Error('no flyout');
+    }
+    const before = focused();
+    // Past the end of the contents shown next.
+    expect(flyout.getContents().findIndex((item) => item.getElement() === before)).toBeGreaterThan(
+      2,
+    );
+
+    // Fewer items, none of them the focused one: the last item is nearest its place.
+    keepFlyoutFocus(flyout, () => {
+      flyout.show([
+        { kind: 'label', text: 'Only' },
+        { kind: 'block', type: 'program.exit' },
+      ]);
+    });
+    const now = focused();
+    expect(now).toBeInstanceOf(Blockly.BlockSvg);
+    expect((now as Blockly.BlockSvg).type).toBe('program.exit');
+    expect(onLiveNode()).toBe(true);
+  });
+
+  it('leave a keyboard that is elsewhere alone', () => {
+    const { block, workspace } = open();
+    const print = block('print');
+    focus(print);
+    (workspace.getToolbox() as B2cContinuousToolbox).showAllCategories(true);
+    expect(focused()).toBe(print);
+  });
+
+  // The toolbox plugin rebuilds the flyout twice here, which is slow on a busy machine.
+  it(
+    'keep the keyboard when an analysis adds a category’s block',
+    { timeout: 20_000 },
+    async () => {
+      editor = keyboardEditor({ plugins: [createToolboxPlugin()] });
+      const { block, keyboard } = editor;
+      focus(block('print'));
+      press('t');
+      press('ArrowRight');
+      press('ArrowDown');
+      press('ArrowDown');
+      expect(keyboard.area()).toBe('flyout');
+      const before = focused();
+
+      // The preview of an earlier edit lands: My Blocks now lists factorial.
+      const factorial = symbolFixture('s_fact', 'factorial', {
+        kind: 'function',
+        params: ['s_n'],
+        returns: 'int',
+        declBlock: 'fn',
+      });
+      const state = useAppStore.getState();
+      useAppStore.setState({
+        analysis: {
+          ...state.analysis,
+          seq: state.analysis.seq + 1,
+          preview: {
+            stage: 'generate',
+            diagnostics: [],
+            files: [],
+            sourceMap: null,
+            buildable: true,
+            placeholders: 0,
+            contentHash: 'a'.repeat(64),
+            blockTypes: {},
+            symbols: [factorial],
+          },
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, CONTINUOUS_REFRESH_DELAY_MS + 50));
+
+      expect((before as Blockly.BlockSvg).isDeadOrDying()).toBe(true);
+      expect(onLiveNode()).toBe(true);
+      expect(keyboard.area()).toBe('flyout');
+      press('ArrowDown');
+      expect(onLiveNode()).toBe(true);
+    },
+  );
 });
 
 /** A document whose only module is empty. */

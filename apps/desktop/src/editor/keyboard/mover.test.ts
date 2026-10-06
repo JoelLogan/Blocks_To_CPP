@@ -231,7 +231,66 @@ describe('M moves a block', () => {
     expect(keyboard.mover.active).toBe(false);
     expect(keyboard.announcer.last).toBe('Go to a block first, then press M to move it.');
   });
+
+  it('never offers a place a pointer drag would refuse for the value’s type', () => {
+    const { block, keyboard, workspace } = open();
+    // `repeat (…) times` after print, and a loose text value: text cannot be a count.
+    const repeat = newBlock(workspace, 'control.repeat');
+    block('print').nextConnection.connect(repeat.previousConnection);
+    const times = repeat.getInput('TIMES')?.connection;
+    if (!(times instanceof Blockly.RenderedConnection)) {
+      throw new Error('no TIMES input');
+    }
+    const text = newBlock(workspace, 'text.literal');
+    text.moveBy(700, 500);
+    expect(
+      workspace.connectionChecker.canConnect(
+        text.outputConnection,
+        times,
+        true,
+        Number.POSITIVE_INFINITY,
+      ),
+    ).toBe(false);
+
+    focus(text);
+    press('m');
+    expect(keyboard.mover.active).toBe(true);
+    const reached: string[] = [];
+    for (let step = 0; step < 40 && keyboard.mover.active; step++) {
+      const target = keyboard.mover.target;
+      if (target?.kind === 'value') {
+        reached.push(`${target.owner.type}.${target.input}`);
+      }
+      press('ArrowDown');
+    }
+    expect(reached).not.toContain('control.repeat.TIMES');
+    press('Escape');
+    expect(times.targetBlock()).not.toBe(text);
+  });
 });
+
+/** A new rendered block on the canvas. */
+function newBlock(workspace: Blockly.WorkspaceSvg, type: string): Blockly.BlockSvg {
+  const block = workspace.newBlock(type);
+  block.initSvg();
+  block.render();
+  return block;
+}
+
+/** Whether the canvas resizes its scrollbars to its contents (Blockly can switch that off). */
+function resizes(workspace: Blockly.WorkspaceSvg): boolean {
+  const scrollbar = workspace.scrollbar;
+  if (scrollbar === null) {
+    throw new Error('no scrollbars');
+  }
+  const resize = vi.spyOn(scrollbar, 'resize');
+  try {
+    workspace.resizeContents();
+    return resize.mock.calls.length > 0;
+  } finally {
+    resize.mockRestore();
+  }
+}
 
 describe('adding a block from the toolbox', () => {
   /** Opens the toolbox from `node` and goes down to the first flyout block of `type`. */
@@ -280,6 +339,96 @@ describe('adding a block from the toolbox', () => {
     expect(keyboard.mover.active).toBe(false);
     expect(workspace.getAllBlocks(false).length).toBe(before);
     expect(keyboard.announcer.last).toBe('Nothing was added.');
+  });
+
+  it('is one undo step: one Ctrl+Z takes an added block away again', async () => {
+    const { block, workspace } = open();
+    focus(block('print'));
+    await eventsDelivered();
+    workspace.clearUndo();
+    const before = workspace.getAllBlocks(false).length;
+
+    reachFlyoutBlock('program.exit');
+    press('Enter');
+    await eventsDelivered();
+    press('Enter');
+    await eventsDelivered();
+    expect(statements(block('main'), 'BODY')).toEqual(['decl', 'print', 'program.exit']);
+
+    workspace.undo(false);
+    await eventsDelivered();
+    expect(statements(block('main'), 'BODY')).toEqual(['decl', 'print']);
+    expect(workspace.getAllBlocks(false).length).toBe(before);
+    expect(workspace.getUndoStack()).toHaveLength(0);
+  });
+
+  it('leaves nothing for Ctrl+Z to bring back after Escape', async () => {
+    const { block, workspace } = open();
+    focus(block('print'));
+    await eventsDelivered();
+    workspace.clearUndo();
+    const before = workspace.getAllBlocks(false).length;
+
+    reachFlyoutBlock('program.exit');
+    press('Enter');
+    await eventsDelivered();
+    press('Escape');
+    await eventsDelivered();
+    expect(workspace.getAllBlocks(false).length).toBe(before);
+
+    workspace.undo(false);
+    await eventsDelivered();
+    expect(workspace.getAllBlocks(false).length).toBe(before);
+    expect(workspace.getAllBlocks(false).some((each) => each.type === 'program.exit')).toBe(false);
+  });
+
+  it('gives the focus back to where the cursor was when Escape takes the block away', async () => {
+    const { block, keyboard } = open();
+    const print = block('print');
+    focus(print);
+    reachFlyoutBlock('program.exit');
+    press('Enter');
+    expect(keyboard.mover.active).toBe(true);
+
+    press('Escape');
+    expect(focused()).toBe(print);
+    await eventsDelivered();
+    expect(focused()).toBe(print);
+    expect(document.activeElement).toBe(print.getFocusableElement());
+    expect(keyboard.area()).toBe('canvas');
+  });
+
+  it('keeps the focus on the canvas when Tab ends an add, so Tab goes on from there', async () => {
+    const { block, keyboard, workspace } = open();
+    const print = block('print');
+    focus(print);
+    const before = workspace.getAllBlocks(false).length;
+    reachFlyoutBlock('program.exit');
+    press('Enter');
+    expect(keyboard.mover.active).toBe(true);
+
+    // Tab ends the move and is not cancelled: the browser then moves the focus on from the
+    // element that has it, which must not be the body (Tab would start again at the top).
+    const tab = press('Tab');
+    expect(tab.defaultPrevented).toBe(false);
+    expect(keyboard.mover.active).toBe(false);
+    expect(workspace.getAllBlocks(false).length).toBe(before);
+    expect(document.activeElement).toBe(print.getFocusableElement());
+    await eventsDelivered();
+    expect(focused()).toBe(print);
+  });
+
+  it('leaves the canvas resizing to its contents, whether the add ends with Enter or Escape', () => {
+    const { block, workspace } = open();
+    expect(resizes(workspace)).toBe(true);
+    for (const end of ['Enter', 'Escape']) {
+      focus(block('print'));
+      reachFlyoutBlock('program.exit');
+      press('Enter');
+      expect(resizes(workspace)).toBe(true);
+      press(end);
+      expect(resizes(workspace)).toBe(true);
+    }
   });
 
   it('adds a block that stands alone straight onto the canvas', () => {

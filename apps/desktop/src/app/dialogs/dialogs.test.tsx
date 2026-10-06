@@ -224,6 +224,57 @@ describe('DialogHost', () => {
     await expect(answer).resolves.toBe(true);
   });
 
+  it('gives the focus back to an SVG element, such as a block, when it closes', async () => {
+    const queue = createDialogQueue();
+    render(
+      <>
+        <svg>
+          <g tabIndex={0} data-testid="block" />
+        </svg>
+        <DialogHost queue={queue} />
+      </>,
+    );
+    const block = screen.getByTestId('block');
+    expect(block).toBeInstanceOf(SVGElement);
+    block.focus();
+    expect(document.activeElement).toBe(block);
+
+    const { answer } = await open(() =>
+      queue.alert({ message: 'The project could not be saved.' }),
+    );
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    await answer;
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    expect(document.activeElement).toBe(block);
+  });
+
+  it('gives the focus back to the block canvas, and Blockly follows it', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const workspace = Blockly.inject(host, { sounds: false });
+    try {
+      const queue = renderHost();
+      Blockly.getFocusManager().focusTree(workspace);
+      const canvas = workspace.getFocusableElement();
+      expect(document.activeElement).toBe(canvas);
+
+      const { answer } = await open(() => queue.alert({ message: 'Run is turned off here.' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+      await answer;
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).toBeNull();
+      });
+      expect(document.activeElement).toBe(canvas);
+      expect(Blockly.getFocusManager().getFocusedTree()).toBe(workspace);
+    } finally {
+      workspace.dispose();
+      host.remove();
+    }
+  });
+
   it('calls onOpen with the dialog and its clean-up when it closes', async () => {
     const queue = renderHost();
     const release = vi.fn();

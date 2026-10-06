@@ -13,6 +13,7 @@
 import * as Blockly from 'blockly/core';
 
 import type { Announcer } from './announcer';
+import { blockOfNode } from './keepFocus';
 import { describeNode, type SymbolNames } from './labels';
 import { KeyboardMover } from './mover';
 
@@ -50,21 +51,9 @@ function focusedTree(): Blockly.IFocusableTree | null {
   }
 }
 
-/** The block a node is or belongs to (a field's or a connection's block), or `null`. */
-function blockOf(node: Blockly.IFocusableNode | null): Blockly.BlockSvg | null {
-  if (node instanceof Blockly.BlockSvg) {
-    return node;
-  }
-  if (node instanceof Blockly.Field || node instanceof Blockly.RenderedConnection) {
-    const block = node.getSourceBlock();
-    return block instanceof Blockly.BlockSvg ? block : null;
-  }
-  return null;
-}
-
 /** The block that moves for a node: its block, or for a value slot the block the slot is in. */
 function movableBlockOf(node: Blockly.IFocusableNode | null): Blockly.BlockSvg | null {
-  let block = blockOf(node);
+  let block = blockOfNode(node);
   while (block?.isShadow() === true) {
     block = block.getParent();
   }
@@ -382,7 +371,15 @@ export class EditorKeyboard {
     return false;
   }
 
-  /** Adds a copy of a toolbox block to the canvas and lets the keyboard choose where it goes. */
+  /**
+   * Adds a copy of a toolbox block to the canvas and lets the keyboard choose where it goes.
+   *
+   * The whole add is one Blockly event group, as a pointer drag from the toolbox is: the copy's
+   * creation, Blockly's move of it next to the toolbox, and then the drop (or, on Escape, its
+   * removal), so one `Ctrl+Z` takes an added block away and an add that was cancelled leaves
+   * nothing for undo to bring back. Blockly turns the canvas's resizing off while it creates the
+   * copy (a pointer drag turns it on again when it ends); it is turned on again at once here.
+   */
   private addFromFlyout(original: Blockly.BlockSvg): boolean {
     const flyout = this.flyout();
     if (flyout === null || this.workspace.isReadOnly()) {
@@ -393,15 +390,25 @@ export class EditorKeyboard {
       return true;
     }
     let added: Blockly.BlockSvg;
+    const outerGroup = Blockly.Events.getGroup();
+    if (outerGroup === '') {
+      Blockly.Events.setGroup(true);
+    }
+    const group = Blockly.Events.getGroup();
     try {
       added = flyout.createBlock(original);
     } catch (error: unknown) {
       console.error('The block could not be added from the toolbox', error);
       this.announcer.announce('The block could not be added.');
       return true;
+    } finally {
+      if (outerGroup === '') {
+        Blockly.Events.setGroup(false);
+      }
+      this.workspace.setResizesEnabled(true);
     }
     Blockly.getFocusManager().focusNode(added);
-    this.mover.start(added, { inserted: true, near: this.insertionPoint });
+    this.mover.start(added, { inserted: true, near: this.insertionPoint, group });
     return true;
   }
 }

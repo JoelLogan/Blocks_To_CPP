@@ -22,9 +22,13 @@ export function focusIsLost(doc: Document = document): boolean {
 
 /**
  * Moves the focus to `target` (without scrolling) when it is lost; leaves a focus that is still
- * somewhere visible alone. Returns whether it moved the focus.
+ * somewhere visible alone. The target can be an SVG element, such as a block of the canvas.
+ * Returns whether it moved the focus.
  */
-export function focusIfLost(target: HTMLElement | null, doc: Document = document): boolean {
+export function focusIfLost(
+  target: HTMLElement | SVGElement | null,
+  doc: Document = document,
+): boolean {
   if (target === null || !focusIsLost(doc)) {
     return false;
   }

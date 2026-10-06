@@ -54,6 +54,16 @@ describe('focusIfLost', () => {
     expect(document.activeElement).toBe(run);
   });
 
+  it('moves a lost focus to an SVG target, such as a block of the canvas', () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const block = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    block.setAttribute('tabindex', '-1');
+    svg.append(block);
+    document.body.append(svg);
+    expect(focusIfLost(block)).toBe(true);
+    expect(document.activeElement).toBe(block);
+  });
+
   it('does nothing without a target', () => {
     expect(focusIfLost(null)).toBe(false);
     expect(document.activeElement).toBe(document.body);

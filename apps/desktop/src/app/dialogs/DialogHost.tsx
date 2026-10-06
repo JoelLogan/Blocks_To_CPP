@@ -31,11 +31,13 @@ import {
  * Radix gives the focus back to a dialog's trigger button, and these dialogs have none (features
  * open them from code), so the host does it: it notes what had the focus when the first dialog
  * opened and, once the last queued one has closed, focuses it again, unless the answer moved the
- * focus somewhere itself or the element is gone (WCAG 2.4.3).
+ * focus somewhere itself or the element is gone (WCAG 2.4.3). That can be an SVG element: the
+ * block canvas and its blocks, where a keyboard user is when Ctrl+S or F5 opens a dialog (Blockly's
+ * focus manager follows the focus back to its node).
  */
 export function DialogHost({ queue }: { queue: DialogQueue }) {
   const request = useStore(queue.store, (state) => state.queue[0]);
-  const returnTo = useRef<HTMLElement | null>(null);
+  const returnTo = useRef<HTMLElement | SVGElement | null>(null);
   const open = request !== undefined;
 
   // A layout effect runs before the dialog's own effects move the focus into it.
@@ -44,7 +46,10 @@ export function DialogHost({ queue }: { queue: DialogQueue }) {
       if (returnTo.current === null) {
         const active = document.activeElement;
         returnTo.current =
-          active instanceof HTMLElement && active !== document.body ? active : null;
+          (active instanceof HTMLElement || active instanceof SVGElement) &&
+          active !== document.body
+            ? active
+            : null;
       }
       return;
     }
