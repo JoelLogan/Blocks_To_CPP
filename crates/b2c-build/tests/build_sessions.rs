@@ -528,6 +528,102 @@ fn cancel_kills_the_whole_compiler_tree() {
     assert!(std::fs::read_dir(dir.join("out")).unwrap().next().is_none());
 }
 
+/// The variable that makes [`a_compiler_refused_memory_hits_the_limit`] the
+/// helper it starts: the folder to read the toolchain from and to write the
+/// build's events to.
+#[cfg(target_os = "linux")]
+const LIMITED_BUILD_DIR: &str = "B2C_TEST_LIMITED_BUILD_DIR";
+
+/// The address-space limit (`ulimit -v`, in KiB) the helper runs under:
+/// plenty for the helper (which needs less than 20 MiB), far too little for
+/// `cc1plus` to compile a program that includes `<iostream>`. (g++ 11 to 14
+/// need about 95 to 110 MiB for it; from about 50 MiB up to that they print
+/// "virtual memory exhausted" or "out of memory allocating", and below that
+/// they cannot even load.)
+#[cfg(target_os = "linux")]
+const LIMITED_BUILD_KIB: &str = "80000";
+
+/// A compiler that the Linux fallback's `RLIMIT_AS` refuses memory is
+/// reported as running out of memory (`C:limit`, 07 §7.5.2), not as
+/// stopping without a reason (`C:failed`) or as a g++ crash. No test program
+/// reaches the real 4 GiB, so the build runs in a helper (this test, in a
+/// new process) under a far lower inherited limit, which the compiler keeps:
+/// its own limit never loosens an inherited one.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_compiler_refused_memory_hits_the_limit() {
+    if let Some(dir) = std::env::var_os(LIMITED_BUILD_DIR) {
+        // The helper: build, and leave the checks to the test that started it.
+        let dir = PathBuf::from(dir);
+        let toolchain = serde_json::from_slice(&std::fs::read(dir.join("toolchain.json")).unwrap()).unwrap();
+        let sessions = BuildSessions::new(dir.join("cache"));
+        let (_, events) = run(
+            &sessions,
+            job("ph_limited", example("hello_world"), ready(toolchain)),
+        );
+        std::fs::write(dir.join("events.json"), serde_json::to_vec(&events).unwrap()).unwrap();
+        return;
+    }
+    let Some(toolchain) = real_toolchain() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("toolchain.json"),
+        serde_json::to_vec(&toolchain).unwrap(),
+    )
+    .unwrap();
+    // Production code spawns processes only through b2c-process; this test
+    // starts its own helper directly, under `ulimit -v`.
+    #[allow(clippy::disallowed_methods)]
+    let output = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            r#"ulimit -v "$1" && shift && exec "$@""#,
+            "sh",
+            LIMITED_BUILD_KIB,
+        ])
+        .arg(std::env::current_exe().unwrap())
+        .args([
+            "a_compiler_refused_memory_hits_the_limit",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(LIMITED_BUILD_DIR, dir.path())
+        // One malloc arena for the helper's threads: each further arena
+        // reserves 64 MiB of address space.
+        .env("MALLOC_ARENA_MAX", "1")
+        .output()
+        .unwrap();
+    let shown = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "the helper failed:\n{shown}");
+    let events: Vec<BuildEvent> = serde_json::from_slice(
+        &std::fs::read(dir.path().join("events.json"))
+            .unwrap_or_else(|error| panic!("the helper wrote no events ({error}):\n{shown}")),
+    )
+    .unwrap();
+    let found = diagnostics(&events);
+    assert_eq!(outcome(&events).0, BuildOutcome::ProjectErrors, "{found:#?}");
+    let codes: Vec<&str> = found.iter().map(|d| d.code.as_str()).collect();
+    assert_eq!(codes, ["C:limit"], "{found:#?}");
+    assert!(
+        found[0].message.contains("ran out of time or memory"),
+        "{found:#?}"
+    );
+    // GCC's own words stay available ("Show C++ compiler message").
+    assert!(
+        found[0].raw.as_deref().is_some_and(
+            |raw| raw.contains("virtual memory exhausted") || raw.contains("out of memory allocating")
+        ),
+        "{found:#?}"
+    );
+}
+
 /// A compiler that changed since it was probed is probed again before the
 /// build, with `B2C-T1009` among the diagnostics.
 #[cfg(unix)]

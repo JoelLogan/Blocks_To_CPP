@@ -360,7 +360,16 @@ settings**, never in projects:
 * **Fallback.** Without cgroups, the compiler runs in its own process group
   with `RLIMIT_AS`, and an **RSS watchdog** adds up the resident memory
   (`VmRSS` in `/proc`) of the group's processes every 100 ms and kills the
-  group above 4 GiB, reported the same way.
+  group above 4 GiB, reported the same way. A process's resident memory
+  never exceeds its address space, so in practice `RLIMIT_AS` refuses a
+  compiler process memory before the watchdog sees it. GCC then stops with
+  its own *virtual memory exhausted* or *`<program>`: out of memory
+  allocating …* line on stderr (outside its diagnostics, so the SARIF or JSON
+  output has no error for it). A compiler run that fails with such a line is
+  reported the same way, as a `C:limit` diagnostic with that text attached.
+  It is never reported as `C:failed` or as a compiler crash (`C:crashed`),
+  even when `cc1plus` then crashes, and it is not retried with plain-text
+  diagnostics as a crash is.
 * At startup, `b2c-*` scopes left behind by an app instance that no longer
   runs are killed ([08 §8.14](08-security.md#814-residual-risks-accepted-documented-to-users)).
 
