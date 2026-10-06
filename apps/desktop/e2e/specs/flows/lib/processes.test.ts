@@ -104,8 +104,11 @@ describe('paths', () => {
   });
 
   it('keeps the given spelling when the path cannot be resolved', () => {
-    const missing = path.join(tmpdir(), 'b2c-e2e-flows-no-such-folder');
-    expect(pathSpellings(missing)).toEqual([path.normalize(missing)]);
+    const missing = path.normalize(path.join(tmpdir(), 'b2c-e2e-flows-no-such-folder'));
+    // Windows paths are compared without case, so they come back in lower case there.
+    expect(pathSpellings(missing)).toEqual([
+      process.platform === 'win32' ? missing.toLowerCase() : missing,
+    ]);
   });
 
   it.skipIf(process.platform === 'win32')(
@@ -138,30 +141,44 @@ describe('paths', () => {
   });
 });
 
-describe('real processes', () => {
-  it('sees this process and its executable', async () => {
-    expect(isRunning(process.pid)).toBe(true);
-    const self = (await listOsProcesses()).find((found) => found.pid === process.pid);
-    expect(self).toBeDefined();
-    const exe = self?.exe ?? null;
-    expect(exe === null ? null : pathSpellings(exe)).toEqual(pathSpellings(process.execPath));
-  });
+/**
+ * On Windows each listing starts PowerShell (`Get-CimInstance Win32_Process`), which takes several
+ * seconds on a CI runner.
+ */
+const LISTING_TEST_TIMEOUT_MS = 60_000;
 
-  it('finds a process by the folder its executable is in, and waits for it to end', async () => {
-    const folder = path.dirname(process.execPath);
-    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
-      stdio: 'ignore',
-    });
-    try {
-      const pid = child.pid ?? 0;
-      expect(pid).toBeGreaterThan(0);
-      expect((await processesRunningFrom(folder)).map((found) => found.pid)).toContain(pid);
-      expect(await waitForProcessEnd(pid, 200)).toBe(false);
-      child.kill('SIGKILL');
-      expect(await waitForProcessEnd(pid, 10_000)).toBe(true);
-      expect(isRunning(pid)).toBe(false);
-    } finally {
-      child.kill('SIGKILL');
-    }
-  });
+describe('real processes', () => {
+  it(
+    'sees this process and its executable',
+    async () => {
+      expect(isRunning(process.pid)).toBe(true);
+      const self = (await listOsProcesses()).find((found) => found.pid === process.pid);
+      expect(self).toBeDefined();
+      const exe = self?.exe ?? null;
+      expect(exe === null ? null : pathSpellings(exe)).toEqual(pathSpellings(process.execPath));
+    },
+    LISTING_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'finds a process by the folder its executable is in, and waits for it to end',
+    async () => {
+      const folder = path.dirname(process.execPath);
+      const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
+        stdio: 'ignore',
+      });
+      try {
+        const pid = child.pid ?? 0;
+        expect(pid).toBeGreaterThan(0);
+        expect((await processesRunningFrom(folder)).map((found) => found.pid)).toContain(pid);
+        expect(await waitForProcessEnd(pid, 200)).toBe(false);
+        child.kill('SIGKILL');
+        expect(await waitForProcessEnd(pid, 10_000)).toBe(true);
+        expect(isRunning(pid)).toBe(false);
+      } finally {
+        child.kill('SIGKILL');
+      }
+    },
+    LISTING_TEST_TIMEOUT_MS,
+  );
 });

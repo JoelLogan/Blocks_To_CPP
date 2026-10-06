@@ -107,18 +107,34 @@ describe('Block editor', () => {
     await openFromStartPage(app);
     expect(await isSelected(app, ASK_BLOCK)).toBe(false);
 
+    // CodeMirror draws only the lines near its viewport, so the panel is scrolled on (and back to
+    // the top at the end) until the line is drawn; whitespace is compared loosely.
+    const normalise = (text: string): string => text.replace(/\s+/g, ' ').trim();
+    const lines = () => app.driver.findElements(By.css('[data-testid="code-panel"] .cm-line'));
     const line = await waitFor(
       async () => {
-        for (const candidate of await app.driver.findElements(
-          By.css('[data-testid="code-panel"] .cm-line'),
-        )) {
-          if ((await candidate.getText()).trim() === ASK_LINE) {
+        for (const candidate of await lines()) {
+          if (normalise(await candidate.getText()) === ASK_LINE) {
             return candidate;
           }
         }
+        await app.driver.executeScript(
+          `const scroller = document.querySelector('[data-testid="code-panel"] .cm-scroller');
+           if (scroller !== null) {
+             const end = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1;
+             scroller.scrollTop = end ? 0 : scroller.scrollTop + scroller.clientHeight / 2;
+           }`,
+        );
         return null;
       },
-      { timeout: UI_TIMEOUT_MS, message: `the line ${ASK_LINE} in the C++ panel` },
+      {
+        timeout: UI_TIMEOUT_MS,
+        interval: 250,
+        message: async () => {
+          const shown = await Promise.all((await lines()).map((found) => found.getText()));
+          return `the line ${ASK_LINE} in the C++ panel; it shows ${String(shown.length)} lines: ${JSON.stringify(shown.slice(0, 40))}`;
+        },
+      },
     );
     await app.driver.executeScript('arguments[0].scrollIntoView({ block: "center" });', line);
     await line.click();

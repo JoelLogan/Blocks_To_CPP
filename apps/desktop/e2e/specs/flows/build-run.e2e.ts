@@ -74,11 +74,13 @@ describe('Build and run', () => {
 
     // (3) F5 runs it; the number typed into the console comes back doubled.
     await pressKey(app.driver, Key.F5);
-    await waitForTranscript(app, (text) => text.includes(PROMPT), BUILD_TIMEOUT_MS, 'the prompt');
+    // Windows' pseudoconsole may drop the prompt's trailing space when it repaints the line.
+    const prompt = PROMPT.trimEnd();
+    await waitForTranscript(app, (text) => text.includes(prompt), BUILD_TIMEOUT_MS, 'the prompt');
     await showConsole(app.driver);
     await typeIntoConsole(app.driver, `21${Key.ENTER}`);
     await waitForConsoleState(app.driver, /Finished \(exit code 0\)$/, UI_TIMEOUT_MS);
     const transcript = await app.hook.consoleText();
-    expect(transcript.slice(transcript.indexOf(PROMPT))).toMatch(/42/);
+    expect(transcript.slice(transcript.indexOf(prompt))).toMatch(/42/);
   }, 180_000);
 });
