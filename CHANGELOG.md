@@ -133,3 +133,7 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   or discard them. A file watcher notices when the open project's file changes
   on disk (the app's own saves never trigger it), and the editor offers
   _Reload_ (which re-checks trust) or _Keep mine (save as…)_.
+- Copy, cut, paste and duplicate blocks through a validated clipboard
+  format (with the C++ as plain text for other programs): pastes get fresh
+  IDs, re-bind references where they land, and are refused with the
+  loader's codes when they are malformed or would break the format's limits.

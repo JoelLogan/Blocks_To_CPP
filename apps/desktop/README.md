@@ -101,6 +101,13 @@ project, build, run, toolchain, settings, trust and recovery services:
   on the placeholder. The last build's compiler and linker messages show the same way, dimmed and
   marked "from the last build" once the project has changed, and are dropped when their block is
   deleted. Badges are display only: no Blockly events, no undo entries, never saved.
+- **Clipboard** (`clipboard/`, the `clipboardPlugin`): copy, cut, paste and duplicate (`Ctrl+C`,
+  `Ctrl+X`, `Ctrl+V`, `Ctrl+D`, the block and canvas menus, the webview's copy, cut and paste
+  events, and the commands `edit.copy`, `edit.cut` and `edit.paste`) go through the core's
+  validated format: `application/x-blocks2cpp+json` plus the C++ as `text/plain`, with an in-app
+  copy as a fallback. A paste is validated like a project file, gets fresh IDs, re-binds
+  references at its target and must keep the project within the format's limits; a refused paste
+  changes nothing and lists the loader's codes. One paste is one undo step.
 - **Two-way highlighting** (`highlight/`): the hovered and selected blocks go to the store
   (`ui.hoverBlock`, `ui.selection`) and the C++ tab highlights their code; a click in the code or
   on a problem selects the block (or the collapsed block around it) and scrolls to it or centres
@@ -213,31 +220,31 @@ project, build, run, toolchain, settings, trust and recovery services:
 
 ## Layout
 
-| Path                                   | Contents                                                                                                                               |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `index.html`, `src/main.tsx`           | Entry point (no inline scripts)                                                                                                        |
-| `src/app/`                             | The app shell: start-up, state, registries, window, banners, dialogs                                                                   |
-| `src/features/`                        | The features, installed at start-up (`index.ts`): project, build and run, toolchain, settings, trust, recovery, external changes       |
-| `src/editor/`                          | The block editor: workspace, BDM ⇄ Blockly sync, live preview, services, module switcher, toolbox, diagnostics on blocks, highlighting |
-| `src/panels/`                          | The C++ code panel, Problems, the console and Build output                                                                             |
-| `src/lib/ipc.ts`                       | The typed client for the backend's commands                                                                                            |
-| `src/test/`, `vitest.config.ts`        | Test setup and shared test helpers; the Vitest settings                                                                                |
-| `src-tauri/src/main.rs`                | Entry point; calls `blocks2cpp_desktop::run()`                                                                                         |
-| `src-tauri/src/lib.rs`                 | Start-up (folders, log, panic hook, backend, window), the command list, shutdown on exit                                               |
-| `src-tauri/src/commands/`              | One thin async adapter per IPC command (decode, call `b2c_app::Backend` on the blocking pool)                                          |
-| `src-tauri/src/channels.rs`            | Tauri channels as the backend's event and byte sinks                                                                                   |
-| `src-tauri/src/dialogs.rs`             | Native open, save, choose-g++ and trust dialogs (tauri-plugin-dialog, Rust API only)                                                   |
-| `src-tauri/src/window.rs`              | The editor window, navigation rules, closing with unsaved changes                                                                      |
-| `src-tauri/src/logging.rs`             | JSON-lines log files (5 × 5 MiB), `B2C_LOG`, panic hook                                                                                |
-| `src-tauri/src/e2e.rs`                 | End-to-end seams, feature `e2e-hooks` only (never in release builds)                                                                   |
-| `src-tauri/tests/`                     | Command consistency, security settings, mock-runtime IPC, logging, end-to-end seams                                                    |
-| `src-tauri/windows-app-manifest.xml`   | The Windows application manifest (Common Controls v6), linked into every executable of the crate, tests included                       |
-| `src-tauri/tauri.conf.json`            | App, window, security (CSP, isolation) and bundle settings                                                                             |
-| `src-tauri/capabilities/`              | What the window may call in the backend                                                                                                |
-| `src-tauri/permissions/autogenerated/` | Permissions for our commands, generated by `build.rs`                                                                                  |
-| `src-tauri/isolation/`                 | The isolation application that checks every IPC message                                                                                |
-| `src-tauri/isolation-tests/`           | Node tests of the isolation validator and hook                                                                                         |
-| `src-tauri/icons/`                     | App icons; `icon.svg` is the source                                                                                                    |
+| Path                                   | Contents                                                                                                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.html`, `src/main.tsx`           | Entry point (no inline scripts)                                                                                                                   |
+| `src/app/`                             | The app shell: start-up, state, registries, window, banners, dialogs                                                                              |
+| `src/features/`                        | The features, installed at start-up (`index.ts`): project, build and run, toolchain, settings, trust, recovery, external changes                  |
+| `src/editor/`                          | The block editor: workspace, BDM ⇄ Blockly sync, live preview, services, module switcher, toolbox, diagnostics on blocks, highlighting, clipboard |
+| `src/panels/`                          | The C++ code panel, Problems, the console and Build output                                                                                        |
+| `src/lib/ipc.ts`                       | The typed client for the backend's commands                                                                                                       |
+| `src/test/`, `vitest.config.ts`        | Test setup and shared test helpers; the Vitest settings                                                                                           |
+| `src-tauri/src/main.rs`                | Entry point; calls `blocks2cpp_desktop::run()`                                                                                                    |
+| `src-tauri/src/lib.rs`                 | Start-up (folders, log, panic hook, backend, window), the command list, shutdown on exit                                                          |
+| `src-tauri/src/commands/`              | One thin async adapter per IPC command (decode, call `b2c_app::Backend` on the blocking pool)                                                     |
+| `src-tauri/src/channels.rs`            | Tauri channels as the backend's event and byte sinks                                                                                              |
+| `src-tauri/src/dialogs.rs`             | Native open, save, choose-g++ and trust dialogs (tauri-plugin-dialog, Rust API only)                                                              |
+| `src-tauri/src/window.rs`              | The editor window, navigation rules, closing with unsaved changes                                                                                 |
+| `src-tauri/src/logging.rs`             | JSON-lines log files (5 × 5 MiB), `B2C_LOG`, panic hook                                                                                           |
+| `src-tauri/src/e2e.rs`                 | End-to-end seams, feature `e2e-hooks` only (never in release builds)                                                                              |
+| `src-tauri/tests/`                     | Command consistency, security settings, mock-runtime IPC, logging, end-to-end seams                                                               |
+| `src-tauri/windows-app-manifest.xml`   | The Windows application manifest (Common Controls v6), linked into every executable of the crate, tests included                                  |
+| `src-tauri/tauri.conf.json`            | App, window, security (CSP, isolation) and bundle settings                                                                                        |
+| `src-tauri/capabilities/`              | What the window may call in the backend                                                                                                           |
+| `src-tauri/permissions/autogenerated/` | Permissions for our commands, generated by `build.rs`                                                                                             |
+| `src-tauri/isolation/`                 | The isolation application that checks every IPC message                                                                                           |
+| `src-tauri/isolation-tests/`           | Node tests of the isolation validator and hook                                                                                                    |
+| `src-tauri/icons/`                     | App icons; `icon.svg` is the source                                                                                                               |
 
 ## Requirements
 

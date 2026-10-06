@@ -85,7 +85,11 @@ describe('installAll', () => {
 
 describe('the lists later waves extend', () => {
   it('hold the editor plugins in attach order', () => {
-    expect(EDITOR_PLUGINS.map((plugin) => plugin.name)).toEqual(['toolbox', 'diagnostics']);
+    expect(EDITOR_PLUGINS.map((plugin) => plugin.name)).toEqual([
+      'toolbox',
+      'diagnostics',
+      'clipboard',
+    ]);
   });
 
   it('install every feature without errors, and uninstall them again', () => {
