@@ -335,8 +335,12 @@ describe('M2 exit criterion: the guessing game', () => {
       'the end of the flood',
     );
     if (process.platform === 'win32') {
-      // Windows' pseudoconsole wraps the long line itself (with cursor moves or line breaks).
-      expect(transcript.replace(/\s+/g, '')).toContain(flood);
+      // Windows' pseudoconsole wraps the long line itself (with cursor moves or line breaks), and
+      // writes the character at each wrap point again on the next row. The flood never has two
+      // equal characters in a row, so squeezing runs keeps every character of it and its order
+      // (a lost or reordered character still fails) while forgiving those repeats.
+      const squeeze = (text: string): string => text.replace(/\s+/g, '').replace(/(.)\1+/g, '$1');
+      expect(squeeze(transcript)).toContain(squeeze(flood));
     } else {
       // On screen the long line wraps; the transcript has it whole, exactly once.
       expect(transcript.split(flood)).toHaveLength(2);

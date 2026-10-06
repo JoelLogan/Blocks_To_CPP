@@ -82,6 +82,15 @@ describe('reading the transcript', () => {
     ]);
   });
 
+  it('finds a prompt whose space a repaint dropped (Windows)', () => {
+    expect(gameTokens('Too high!\nYour guess:69\nCorrect!')).toEqual([
+      'Too high!',
+      'Your guess: ',
+      'Correct!',
+    ]);
+    expect(promptCount('Your guess: 50\nToo low!\nYour guess:69')).toBe(2);
+  });
+
   it('matches the golden output shape once the echo is removed', () => {
     const source = readFileSync(
       path.join(REPOSITORY_ROOT, 'tests', 'golden', 'guessing_game', 'stdout.regex'),

@@ -11,6 +11,11 @@ export type Answer = 'low' | 'high' | 'correct';
 export const INTRO = 'Guess a number from 1 to 100!';
 /** The game's prompt. */
 export const PROMPT = 'Your guess: ';
+/**
+ * The prompt without its trailing space: Windows' pseudoconsole may drop that space when it
+ * repaints the line with the typed guess (`Your guess:69`), so prompts are found by this.
+ */
+const PROMPT_WORDS = 'Your guess:';
 /** The game's answers, as printed. */
 export const ANSWER_TEXT: Readonly<Record<Answer, string>> = {
   low: 'Too low!',
@@ -36,7 +41,7 @@ export function answersIn(transcript: string): Answer[] {
 
 /** How many prompts a transcript has. */
 export function promptCount(transcript: string): number {
-  return transcript.split(PROMPT).length - 1;
+  return transcript.split(PROMPT_WORDS).length - 1;
 }
 
 /** A binary search for the secret from the answers so far. */
@@ -116,6 +121,8 @@ export function withoutEcho(transcript: string): string {
  * breaks: Windows' pseudoconsole may move the cursor instead of writing them.
  */
 export function gameTokens(transcript: string): string[] {
-  const tokens = /Guess a number from 1 to 100!|Your guess: |Too low!|Too high!|Correct!/g;
-  return Array.from(transcript.matchAll(tokens), (match) => match[0]);
+  const tokens = /Guess a number from 1 to 100!|Your guess:|Too low!|Too high!|Correct!/g;
+  return Array.from(transcript.matchAll(tokens), (match) =>
+    match[0] === PROMPT_WORDS ? PROMPT : match[0],
+  );
 }
