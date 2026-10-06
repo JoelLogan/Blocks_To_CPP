@@ -1,6 +1,8 @@
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!-- The Windows application manifest of every executable of the desktop crate (build.rs).
-     tools/check-windows-manifest.ps1 checks both entries in the built executable. -->
+     tools/check-windows-manifest.ps1 checks both entries in the built executable.
+     No XML declaration: with MinGW, tauri-winres writes every line of this file into the resource
+     file after a space, and a declaration after whitespace is not well-formed XML, which manifest
+     parsers reject. The MSVC linker writes its own declaration when it merges this file. -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <!-- Common Controls v6, which the native dialogs need (TaskDialogIndirect). -->
   <dependency>

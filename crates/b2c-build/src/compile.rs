@@ -1136,6 +1136,8 @@ fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<S
     }
     let crashed = run.crashed();
     let explained = run.explained();
+    let limited = run.hit_limit();
+    let refused_memory = run.refused_memory();
     let StepRun { captured, mut mapped } = run;
     if captured.cancelled {
         return Ok(StepReport {
@@ -1143,13 +1145,18 @@ fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<S
             diagnostics: Vec::new(),
         });
     }
-    if captured.timed_out || captured.too_many_processes || captured.out_of_memory {
-        mapped.push(Diagnostic::error(
+    if limited {
+        let mut diagnostic = Diagnostic::error(
             COMPILER_LIMIT,
             DiagSource::Compiler,
             Location::project(),
             "The compiler ran out of time or memory while building this program.",
-        ));
+        );
+        if refused_memory {
+            // GCC's own words about the memory it was refused.
+            diagnostic.raw = Some(cap_raw(String::from_utf8_lossy(&captured.stderr).into_owned()));
+        }
+        mapped.push(diagnostic);
         return Ok(StepReport {
             result: StepResult::Failed,
             diagnostics: mapped,
@@ -1212,18 +1219,66 @@ impl StepRun {
             .any(|diagnostic| diagnostic.severity == Severity::Error)
     }
 
+    /// Whether the run ran into one of its limits (a `C:limit` diagnostic):
+    /// it was stopped for its time, memory or process count, or it failed
+    /// because a compiler process was refused memory.
+    fn hit_limit(&self) -> bool {
+        self.captured.timed_out
+            || self.captured.too_many_processes
+            || self.captured.out_of_memory
+            || self.refused_memory()
+    }
+
+    /// Whether the run failed because a compiler process was refused memory
+    /// and said so ([`reports_out_of_memory`]).
+    fn refused_memory(&self) -> bool {
+        !self.captured.status.success()
+            && !self.captured.cancelled
+            && reports_out_of_memory(&self.captured.stderr)
+    }
+
     /// Whether the compiler crashed without reporting an error first.
     fn crashed(&self) -> bool {
         // A compiler stopped by a limit is not a crash, even when g++ reports
-        // the killed cc1plus as an "internal compiler error: Killed".
+        // the killed cc1plus as an "internal compiler error: Killed"; it is
+        // not run again with plain diagnostics either.
         !self.captured.status.success()
-            && !self.captured.timed_out
-            && !self.captured.too_many_processes
-            && !self.captured.out_of_memory
             && !self.captured.cancelled
+            && !self.hit_limit()
             && !self.explained()
             && String::from_utf8_lossy(&self.captured.stderr).contains("internal compiler error")
     }
+}
+
+/// Whether a compiler's standard error says that one of its processes could
+/// not get more memory.
+///
+/// GCC does not report this through its diagnostics (so the SARIF or JSON
+/// output has no error for it): its page allocator prints `virtual memory
+/// exhausted: <reason>` with `perror`, and libiberty's `xmalloc` (used by
+/// `cc1plus`, `as`, `collect2` and `ld`) prints `<program>: out of memory
+/// allocating <n> bytes after a total of <m> bytes`; both then exit with a
+/// failure status. This is how the Linux fallback's `RLIMIT_AS` shows (07
+/// §7.5.2): a process's resident memory never exceeds its address space, so
+/// the RSS watchdog, which watches the same 4 GiB, practically never stops
+/// the compiler before `RLIMIT_AS` refuses it memory, and such a run is not
+/// reported as `out_of_memory`. Neither text is translated, so the check
+/// holds in any locale.
+///
+/// Only a line that starts with one of these messages counts, optionally
+/// after a `<program>: ` prefix without spaces, so a quoted source line
+/// (indented, with a line number) or a diagnostic that merely mentions these
+/// words does not.
+fn reports_out_of_memory(stderr: &[u8]) -> bool {
+    let reported = |message: &str| {
+        message.starts_with("virtual memory exhausted") || message.starts_with("out of memory allocating ")
+    };
+    String::from_utf8_lossy(stderr).lines().any(|line| {
+        reported(line)
+            || line.split_once(": ").is_some_and(|(program, message)| {
+                !program.is_empty() && !program.contains(char::is_whitespace) && reported(message)
+            })
+    })
 }
 
 /// Runs a step once; `None` when the build was cancelled before it started.
@@ -1506,22 +1561,33 @@ mod tests {
 
     use super::*;
 
-    fn killed_compiler(out_of_memory: bool) -> StepRun {
+    /// A finished compiler run with this status and standard error, which
+    /// no limit stopped.
+    fn compiler_run(status: b2c_process::ExitStatus, stderr: &str) -> StepRun {
         StepRun {
             captured: b2c_process::Captured {
-                status: b2c_process::ExitStatus::Signaled(9),
+                status,
                 stdout: Vec::new(),
-                stderr: b"g++: internal compiler error: Killed signal terminated program cc1plus\n".to_vec(),
+                stderr: stderr.as_bytes().to_vec(),
                 stdout_truncated: false,
                 stderr_truncated: false,
                 duration: std::time::Duration::from_secs(1),
                 timed_out: false,
                 cancelled: false,
                 too_many_processes: false,
-                out_of_memory,
+                out_of_memory: false,
             },
             mapped: Vec::new(),
         }
+    }
+
+    fn killed_compiler(out_of_memory: bool) -> StepRun {
+        let mut run = compiler_run(
+            b2c_process::ExitStatus::Signaled(9),
+            "g++: internal compiler error: Killed signal terminated program cc1plus\n",
+        );
+        run.captured.out_of_memory = out_of_memory;
+        run
     }
 
     #[test]
@@ -1529,7 +1595,80 @@ mod tests {
         // g++ reports a cc1plus killed by the memory limit as an "internal
         // compiler error"; that is a limit (C:limit), not a g++ bug.
         assert!(killed_compiler(false).crashed());
+        assert!(!killed_compiler(false).hit_limit());
         assert!(!killed_compiler(true).crashed());
+        assert!(killed_compiler(true).hit_limit());
+        assert!(!killed_compiler(true).refused_memory());
+    }
+
+    /// What g++ 13 prints when `RLIMIT_AS` refuses `cc1plus` memory: its
+    /// page allocator's `perror`, or libiberty's `xmalloc` failure.
+    const REFUSED: [&str; 2] = [
+        "virtual memory exhausted: Cannot allocate memory\n",
+        "\ncc1plus: out of memory allocating 32768 bytes after a total of 3702784 bytes\n",
+    ];
+
+    #[test]
+    fn a_compiler_refused_memory_hit_the_limit_and_did_not_crash() {
+        use b2c_process::ExitStatus::{Exited, Signaled};
+        for stderr in REFUSED {
+            let run = compiler_run(Exited(1), stderr);
+            assert!(run.refused_memory(), "{stderr:?}");
+            assert!(run.hit_limit(), "{stderr:?}");
+            assert!(!run.crashed(), "{stderr:?}");
+            // A crash after a refused allocation is the limit too, and is
+            // not compiled again with plain diagnostics.
+            let crash = format!(
+                "{stderr}g++: internal compiler error: Segmentation fault signal terminated program cc1plus\n"
+            );
+            let run = compiler_run(Signaled(11), &crash);
+            assert!(run.hit_limit(), "{crash:?}");
+            assert!(!run.crashed(), "{crash:?}");
+            // Only a failed run counts: one that succeeded or was cancelled
+            // did not hit a limit, whatever it printed.
+            assert!(!compiler_run(Exited(0), stderr).hit_limit());
+            let mut cancelled = compiler_run(Exited(1), stderr);
+            cancelled.captured.cancelled = true;
+            assert!(!cancelled.hit_limit());
+        }
+        // A plain failure or crash is neither.
+        assert!(!compiler_run(Exited(1), "").hit_limit());
+        let crash = compiler_run(
+            Signaled(11),
+            "g++: internal compiler error: Segmentation fault signal terminated program cc1plus\n",
+        );
+        assert!(!crash.hit_limit());
+        assert!(crash.crashed());
+    }
+
+    #[test]
+    fn only_whole_out_of_memory_lines_count() {
+        for stderr in REFUSED {
+            assert!(reports_out_of_memory(stderr.as_bytes()), "{stderr:?}");
+        }
+        for found in [
+            // libiberty without a program name, and other programs it serves.
+            "out of memory allocating 65536 bytes after a total of 0 bytes\n",
+            "first line\n/usr/bin/ld: out of memory allocating 64 bytes after a total of 1 bytes\n",
+            "as: out of memory allocating 64 bytes after a total of 1 bytes\r\n",
+            "cc1plus: virtual memory exhausted: Cannot allocate memory",
+        ] {
+            assert!(reports_out_of_memory(found.as_bytes()), "{found:?}");
+        }
+        for not_found in [
+            "",
+            "collect2: error: ld returned 1 exit status\n",
+            // A quoted source line (plain diagnostics) and a diagnostic.
+            "    5 |     std::cout << \"error: out of memory allocating buffer\";\n",
+            "    5 | virtual memory exhausted\n",
+            "main.cpp:5:1: error: out of memory allocating 4 bytes\n",
+            "main.cpp:5:1: note: virtual memory exhausted\n",
+            // GCC 11-12 JSON diagnostics on standard error.
+            "[{\"kind\": \"error\", \"message\": \"out of memory allocating 4 bytes\"}]\n",
+            "a program: out of memory allocating 4 bytes\n",
+        ] {
+            assert!(!reports_out_of_memory(not_found.as_bytes()), "{not_found:?}");
+        }
     }
 
     fn gen_dir() -> PathBuf {
