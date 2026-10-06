@@ -1,5 +1,8 @@
 //! Unix containment: process groups and signals, plus (Linux) the cgroup v2
-//! scope and the watchdogs of `src/containment/` (no `unsafe` needed).
+//! scope and the watchdogs of `src/containment/`, and the fallback's
+//! address-space limit, which the child sets on itself before `exec`
+//! ([`limit_address_space`]). That limit's `pre_exec` hook is the only
+//! `unsafe` code here.
 
 use std::io;
 use std::os::unix::process::CommandExt as _;
@@ -7,6 +10,8 @@ use std::process::Child;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rustix::process::{Pid, Signal, kill_process, kill_process_group};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use rustix::process::{Resource, Rlimit};
 
 use super::Placement;
 use crate::containment::{Breach, TreeSpec};
@@ -79,17 +84,80 @@ impl Process {
     }
 }
 
-/// Puts a freshly spawned child under control as `spec` says: `RLIMIT_AS`
-/// when no scope enforces memory, and the watchdogs.
+/// Gives the child the fallback's address-space limit (`RLIMIT_AS`) before
+/// it runs the program, when `bytes` is set (Linux; see
+/// [`crate::containment::Enforcement::address_space`]). Call it on every
+/// command spawned with such a limit, before spawning.
+///
+/// The child sets the limit on itself between `fork` and `exec`, so the
+/// program starts with it and every process it creates inherits it, however
+/// early. (Set from this process after the spawn, a process the compiler
+/// forked straight away could start before the limit and escape it.) The
+/// limit never loosens one the child would inherit anyway: the soft and the
+/// hard limit each become the smaller of this process's own and `bytes`
+/// ([`address_space_limit`]). If the child cannot set it, the spawn fails.
+///
+/// Other Unix systems do not enforce the limit (documented on
+/// [`crate::Limits`]).
+#[cfg(any(target_os = "linux", target_os = "android"))]
+#[allow(unsafe_code)] // `pre_exec`; see the SAFETY comment.
+pub(crate) fn limit_address_space(command: &mut std::process::Command, bytes: Option<u64>) {
+    let Some(bytes) = bytes else {
+        return;
+    };
+    let limit = address_space_limit(bytes, rustix::process::getrlimit(Resource::As));
+    let set_limit = move || {
+        rustix::process::setrlimit(Resource::As, limit)
+            .map_err(|errno| io::Error::from_raw_os_error(errno.raw_os_error()))
+    };
+    // SAFETY: the closure runs in the child between `fork` and `exec`, where
+    // only async-signal-safe operations are allowed. It makes one system
+    // call, `prlimit64(0, RLIMIT_AS, &limit, NULL)`, which rustix (its
+    // `linux_raw` backend, the one this workspace builds) issues directly,
+    // without locks or allocation. It captures only `limit`, a `Copy` value
+    // computed before the fork, touches no shared state, and builds its
+    // error with `io::Error::from_raw_os_error`, which does not allocate.
+    // Lowering a resource limit needs no privilege, and `limit` is never
+    // above the limits the child inherited, so the call can only fail on a
+    // kernel without `prlimit64` (before 2.6.36), and the spawn then fails
+    // with that error.
+    unsafe {
+        command.pre_exec(set_limit);
+    }
+}
+
+/// Elsewhere the address-space limit is not enforced (see
+/// [`crate::Limits`]).
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+pub(crate) fn limit_address_space(_command: &mut std::process::Command, _bytes: Option<u64>) {}
+
+/// The address-space limit a child gets for a requested limit of `bytes`,
+/// given the limit it would inherit (`inherited`, this process's own): the
+/// soft and the hard limit are each the smaller of the inherited one
+/// (`None`: unlimited) and `bytes`. So the child is never allowed more than
+/// it would have had without the request, and lowering both needs no
+/// privilege.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn address_space_limit(bytes: u64, inherited: Rlimit) -> Rlimit {
+    let capped = |inherited: Option<u64>| Some(inherited.map_or(bytes, |inherited| inherited.min(bytes)));
+    Rlimit {
+        current: capped(inherited.current),
+        maximum: capped(inherited.maximum),
+    }
+}
+
+/// Puts a freshly spawned child under control as `spec` says: the
+/// watchdogs, and on Linux its cgroup scope. (The address-space limit is
+/// already in place: the child set it before `exec`,
+/// [`limit_address_space`].)
 ///
 /// # Errors
-/// Fails if the memory limit cannot be applied.
+/// Never on Unix; the signature is shared with Windows, where assigning the
+/// Job Object can fail.
+#[allow(clippy::unnecessary_wraps)] // same signature as the Windows version
 pub(crate) fn contain(child: &mut Child, placement: Placement, spec: TreeSpec) -> io::Result<Tree> {
     let pid = Pid::from_child(child);
     let enforcement = spec.enforcement;
-    if let Some(bytes) = enforcement.address_space {
-        apply_memory_limit(pid, bytes)?;
-    }
     Ok(Tree {
         pid,
         placement,
@@ -104,28 +172,6 @@ pub(crate) fn contain(child: &mut Child, placement: Placement, spec: TreeSpec) -
         out_of_memory: AtomicBool::new(false),
         process_limit_hit: AtomicBool::new(false),
     })
-}
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-fn apply_memory_limit(pid: Pid, bytes: u64) -> io::Result<()> {
-    use rustix::process::{Resource, Rlimit, prlimit};
-    // Lowering both limits is always allowed for our own child. Its
-    // descendants inherit them when they are created.
-    prlimit(
-        Some(pid),
-        Resource::As,
-        Rlimit {
-            current: Some(bytes),
-            maximum: Some(bytes),
-        },
-    )?;
-    Ok(())
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
-fn apply_memory_limit(_pid: Pid, _bytes: u64) -> io::Result<()> {
-    // No `prlimit` on this system: documented as not enforced.
-    Ok(())
 }
 
 /// Whether the child has exited, leaving it a zombie (not reaped) so its PID
@@ -373,4 +419,106 @@ fn kill_descendants(root: Pid) {
         }
     }
     let _ = kill_process(root, Signal::KILL);
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "android")))]
+mod tests {
+    use std::process::Stdio;
+
+    use rustix::process::{Resource, Rlimit, getrlimit};
+
+    use super::*;
+
+    const GIB: u64 = 1024 * 1024 * 1024;
+
+    #[test]
+    fn the_limit_never_loosens_an_inherited_one() {
+        let unlimited = Rlimit {
+            current: None,
+            maximum: None,
+        };
+        assert_eq!(
+            address_space_limit(4 * GIB, unlimited),
+            Rlimit {
+                current: Some(4 * GIB),
+                maximum: Some(4 * GIB),
+            }
+        );
+        // A lower inherited soft limit stays; the hard limit comes down.
+        let soft = Rlimit {
+            current: Some(GIB),
+            maximum: None,
+        };
+        assert_eq!(
+            address_space_limit(4 * GIB, soft),
+            Rlimit {
+                current: Some(GIB),
+                maximum: Some(4 * GIB),
+            }
+        );
+        // Both inherited limits lower: nothing changes (raising the hard
+        // limit would need privilege and fail).
+        let both = Rlimit {
+            current: Some(GIB),
+            maximum: Some(2 * GIB),
+        };
+        assert_eq!(address_space_limit(4 * GIB, both), both);
+        // Higher inherited limits come down to the request.
+        let high = Rlimit {
+            current: Some(8 * GIB),
+            maximum: Some(16 * GIB),
+        };
+        assert_eq!(
+            address_space_limit(4 * GIB, high),
+            Rlimit {
+                current: Some(4 * GIB),
+                maximum: Some(4 * GIB),
+            }
+        );
+    }
+
+    /// What `/bin/sh -c script` prints when spawned with `bytes` as its
+    /// address-space limit, without [`contain`] ever running: the limit
+    /// must already be there when the program starts.
+    #[allow(clippy::unwrap_used)] // a test helper fails the test by panicking
+    fn output_with_limit(script: &str, bytes: Option<u64>) -> String {
+        let mut command = crate::Command::new("/bin/sh", std::env::temp_dir()).unwrap();
+        command.args(["-c", script]).env("PATH", "/usr/bin:/bin");
+        let mut std_command = command.to_std();
+        std_command.stdin(Stdio::null()).stderr(Stdio::inherit());
+        limit_address_space(&mut std_command, bytes);
+        let output = std_command.output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    #[test]
+    fn the_child_starts_with_the_limit_and_its_children_inherit_it() {
+        let bytes = 768 * 1024 * 1024;
+        let kib = (bytes / 1024).to_string();
+        // `ulimit -v` reads the soft limit in KiB; the subshell is a process
+        // the program forks before doing anything else.
+        let output = output_with_limit("ulimit -v; (ulimit -H -v)", Some(bytes));
+        let lines: Vec<&str> = output.lines().collect();
+        let inherited = getrlimit(Resource::As);
+        let expected =
+            |limit: Option<u64>| limit.map_or(kib.clone(), |limit| (limit.min(bytes) / 1024).to_string());
+        assert_eq!(
+            lines,
+            [expected(inherited.current), expected(inherited.maximum)],
+            "{output}"
+        );
+    }
+
+    #[test]
+    fn without_a_limit_nothing_is_set() {
+        let inherited = getrlimit(Resource::As);
+        let shown = |limit: Option<u64>| {
+            limit.map_or_else(|| "unlimited".to_owned(), |limit| (limit / 1024).to_string())
+        };
+        assert_eq!(
+            output_with_limit("ulimit -v", None).trim(),
+            shown(inherited.current)
+        );
+    }
 }

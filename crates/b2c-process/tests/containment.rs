@@ -270,6 +270,51 @@ fn a_run_cap_never_becomes_an_address_space_limit() {
     }
 }
 
+/// The compiler's address-space limit is in place before the program runs,
+/// so a process it forks before doing anything else inherits it too. (Set
+/// from outside after the spawn, as it once was, a process forked at once,
+/// such as `cc1plus` under a heavily loaded compiler driver, could escape
+/// it.) Repeated, because the old race lost only some of the time.
+#[test]
+fn a_child_forked_at_once_inherits_the_address_space_limit() {
+    for attempt in 0..20 {
+        // The background subshell is forked first thing; it reports its own
+        // soft and hard limits, then the shell reports its own.
+        let mut command = sh(
+            "(ulimit -v; ulimit -H -v) & wait; ulimit -v",
+            Containment::ProcessGroupOnly,
+        );
+        command.limits(Limits {
+            memory: Some(512 * MIB),
+            ..Limits::default()
+        });
+        let result = run_captured(&command).unwrap();
+        assert_eq!(
+            text(&result.stdout),
+            "524288\n524288\n524288\n",
+            "attempt {attempt}: {result:?}"
+        );
+    }
+}
+
+/// A session spawned with `memory` (the app never does: programs get
+/// `rss_limit`) gets the same limit before `exec`.
+#[test]
+fn a_session_with_a_memory_limit_starts_with_it() {
+    let mut command = sh("(ulimit -v) & wait; echo done", Containment::ProcessGroupOnly);
+    command.limits(Limits {
+        memory: Some(512 * MIB),
+        timeout: Some(Duration::from_mins(1)),
+        ..Limits::default()
+    });
+    let mut child = spawn_piped(&command).unwrap();
+    let output = Output::start(&mut child);
+    let exit = child.wait().unwrap();
+    assert_eq!(exit.status, ExitStatus::Exited(0), "{exit:?}");
+    let text = output.wait_for("done");
+    assert_eq!(text.lines().next(), Some("524288"), "{text:?}");
+}
+
 #[test]
 fn a_session_over_its_rss_limit_is_out_of_memory() {
     let mut command = hog(512, Containment::ProcessGroupOnly);

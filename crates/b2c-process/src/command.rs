@@ -75,7 +75,7 @@ pub enum ProcessGroup {
 /// | Limit | Windows | Linux, cgroup v2 scope | Linux fallback |
 /// |-------|---------|------------------------|----------------|
 /// | `timeout` | wall clock, whole tree terminated | wall clock, whole scope killed | wall clock, whole group killed |
-/// | `memory` | Job Object `JobMemoryLimit` (all processes together) | `MemoryMax` and `MemorySwapMax=0` on the scope | `RLIMIT_AS` set on the child with `prlimit(2)` right after it starts (inherited by its descendants; address space per process), **plus** the RSS watchdog |
+/// | `memory` | Job Object `JobMemoryLimit` (all processes together) | `MemoryMax` and `MemorySwapMax=0` on the scope | `RLIMIT_AS`, which the child sets on itself before `exec` (so every process it starts inherits it; address space per process; never above the limit it would inherit), **plus** the RSS watchdog |
 /// | `rss_limit` | Job Object `JobMemoryLimit` | `MemoryMax` and `MemorySwapMax=0` on the scope | the RSS watchdog only, never `RLIMIT_AS` |
 /// | `processes` | Job Object `ActiveProcessLimit` (further process creation fails, and the run is stopped) | `TasksMax` on the scope (further `fork`s fail, and the run is stopped; it counts threads too) | a watchdog counts the processes in the child's process group every 100 ms and kills the group when there are more (only with [`ProcessGroup::New`]) |
 /// | output caps | the same everywhere: bytes beyond the cap are read and discarded | | |
@@ -101,8 +101,8 @@ pub enum ProcessGroup {
 /// "out of memory" message) and is reported as out of memory only if the
 /// RSS watchdog caught it first.
 ///
-/// Other Unix systems apply the timeout, output caps and memory limit
-/// (through `prlimit` where available) but neither watchdog.
+/// Other Unix systems apply the timeout and the output caps, but neither the
+/// address-space limit nor the watchdogs.
 ///
 /// `RLIMIT_AS` counts reserved address space, so it must not be used for
 /// programs built with AddressSanitizer, which reserves terabytes of it: use

@@ -84,7 +84,9 @@
 //! that call the operating system: `platform/windows.rs` (Job Objects and
 //! their completion ports), `platform/create.rs` (`CreateProcessW`, attribute
 //! lists, pipes), `pty/windows.rs` (`ConPTY`), `pty/unix.rs` (the `pre_exec`
-//! hook that makes a session's program a session leader) and `os/windows.rs`.
+//! hook that makes a session's program a session leader), `platform/unix.rs`
+//! (the `pre_exec` hook that sets the compiler's address-space limit) and
+//! `os/windows.rs`.
 //! Every `unsafe` block has a `// SAFETY:` comment and CODEOWNERS review. The
 //! cgroup code (`containment/`) needs none.
 
