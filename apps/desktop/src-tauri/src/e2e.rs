@@ -15,6 +15,10 @@
 //!   on Linux, `;` on Windows) of the only folders toolchain discovery
 //!   searches; an empty value means no compilers.
 //!
+//! On Windows it also passes on the browser arguments of
+//! [`WEBVIEW2_ARGS_ENV`], which a `WebDriver` for `WebView2` needs
+//! ([`webview2_browser_args`]); release builds ignore that variable.
+//!
 //! Only the native dialogs and the folders are replaced: commands, IPC, the
 //! isolation hook, trust and the real g++ are exercised as in the product.
 
@@ -165,6 +169,54 @@ impl DialogScript {
     }
 }
 
+/// The variable through which `msedgedriver` gives a `WebView2` app the browser
+/// arguments a `WebDriver` session needs, `--remote-debugging-port` among them.
+pub const WEBVIEW2_ARGS_ENV: &str = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+
+/// The browser arguments wry gives `WebView2` when the app sets none.
+const WRY_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+
+/// The switch whose comma-separated lists are merged.
+const DISABLE_FEATURES: &str = "--disable-features=";
+
+/// The `WebView2` browser arguments of an end-to-end build: wry's own defaults
+/// and those of `extra` (the value of [`WEBVIEW2_ARGS_ENV`]), or `None` when
+/// `extra` is unset or blank, so wry's defaults apply as in the product.
+///
+/// `WebView2` lets the arguments an app sets through its API take precedence
+/// over the variable, and wry always sets some, so without this the remote
+/// debugging port `msedgedriver` asks for never opens and no `WebDriver`
+/// session starts (seen on windows-2025 with `WebView2` 153). Release builds
+/// never read the variable, so it cannot turn remote debugging on there.
+/// The `--disable-features` lists of both are merged into one switch,
+/// because Chromium keeps only the last of a repeated switch.
+pub fn webview2_browser_args(extra: Option<&str>) -> Option<String> {
+    let extra = extra.map(str::trim).filter(|extra| !extra.is_empty())?;
+    let mut disabled: Vec<&str> = Vec::new();
+    let mut others: Vec<&str> = Vec::new();
+    for argument in WRY_BROWSER_ARGS
+        .split_whitespace()
+        .chain(extra.split_whitespace())
+    {
+        match argument.strip_prefix(DISABLE_FEATURES) {
+            Some(features) => {
+                for feature in features.split(',').filter(|feature| !feature.is_empty()) {
+                    if !disabled.contains(&feature) {
+                        disabled.push(feature);
+                    }
+                }
+            }
+            None => others.push(argument),
+        }
+    }
+    let mut arguments = format!("{DISABLE_FEATURES}{}", disabled.join(","));
+    for argument in others {
+        arguments.push(' ');
+        arguments.push_str(argument);
+    }
+    Some(arguments)
+}
+
 /// The end-to-end settings from the environment; `None` fields keep the
 /// normal behaviour.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -276,6 +328,27 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
+
+    #[test]
+    fn webview2_arguments_add_the_drivers_to_wrys_own() {
+        assert_eq!(webview2_browser_args(None), None);
+        assert_eq!(webview2_browser_args(Some("  ")), None);
+        // What msedgedriver 153 sets, shortened.
+        let driver = "--allow-pre-commit-input --disable-features=IgnoreDuplicateNavs,Prewarm \
+                      --enable-automation --remote-debugging-port=0 --test-type=webdriver";
+        assert_eq!(
+            webview2_browser_args(Some(driver)).as_deref(),
+            Some(
+                "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,IgnoreDuplicateNavs,Prewarm \
+                 --allow-pre-commit-input --enable-automation --remote-debugging-port=0 --test-type=webdriver"
+            )
+        );
+        // A feature named twice is disabled once.
+        assert_eq!(
+            webview2_browser_args(Some("--disable-features=msWebOOUI,,Prewarm")).as_deref(),
+            Some("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,Prewarm")
+        );
+    }
 
     fn absolute(name: &str) -> PathBuf {
         std::env::temp_dir().join(name)

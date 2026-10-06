@@ -43,15 +43,24 @@ pub(crate) fn open_main_window<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
     } else {
         None
     };
-    WebviewWindowBuilder::from_config(app.handle(), window)?
+    let builder = WebviewWindowBuilder::from_config(app.handle(), window)?
         .on_navigation(move |url| is_app_url(url, dev_url.as_ref()))
         .on_new_window(|_, _| NewWindowResponse::Deny)
         // Tauri calls this for every response of its `tauri` protocol, which
         // serves the bundled frontend (not the dev server).
         .on_web_resource_request(|request, response| {
             add_trusted_types_report_only(request.uri(), response);
-        })
-        .build()?;
+        });
+    // End-to-end builds pass on a WebDriver's browser arguments, which
+    // WebView2 would otherwise drop in favour of wry's (see the function).
+    #[cfg(all(windows, feature = "e2e-hooks"))]
+    let builder =
+        match crate::e2e::webview2_browser_args(std::env::var(crate::e2e::WEBVIEW2_ARGS_ENV).ok().as_deref())
+        {
+            Some(arguments) => builder.additional_browser_args(&arguments),
+            None => builder,
+        };
+    builder.build()?;
     Ok(())
 }
 

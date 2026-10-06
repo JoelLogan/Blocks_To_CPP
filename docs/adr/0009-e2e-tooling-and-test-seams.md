@@ -70,6 +70,11 @@ chosen instead.
     pick-compiler and trust dialogs in order, and cancels once exhausted;
   * `B2C_E2E_TOOLCHAIN_DIRS`: the only folders toolchain discovery searches
     (an empty value means no compilers).
+  * on Windows, `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`, which `msedgedriver`
+    sets (`--remote-debugging-port` among others): the app passes it on to
+    WebView2 itself, because WebView2 lets the arguments wry sets through its
+    API take precedence over the variable. Release builds never read it, so
+    the variable cannot turn remote debugging on there.
 * **A frontend hook** (`window.__B2C_E2E__`: readiness, inserting blocks,
   reading the document, the generated C++ and the console, selecting a block,
   and the Trusted Types counts of
