@@ -3,7 +3,8 @@
 // (see e2e/README.md for the app build and the drivers).
 //
 // Two projects:
-// - `support`: unit tests of the harness's own logic (no app, no driver), fast;
+// - `support`: unit tests of the harness's own logic and of the specs' helpers (no app, no
+//   driver), fast;
 // - `e2e`: the specs, one app at a time: a single forked worker, files one after the other, and
 //   long timeouts (a build may take up to two minutes).
 import { defineConfig } from 'vitest/config';
@@ -17,7 +18,7 @@ export default defineConfig({
         test: {
           name: 'support',
           root: import.meta.dirname,
-          include: ['support/**/*.test.ts'],
+          include: ['support/**/*.test.ts', 'specs/**/*.test.ts'],
           environment: 'node',
         },
       },

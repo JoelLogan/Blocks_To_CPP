@@ -1,0 +1,277 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_e2e_scopes",
+    "name": "Scopes",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_helper",
+            "type": "func.define",
+            "v": 1,
+            "x": 560,
+            "y": 40,
+            "extra": {
+              "params": []
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_helper",
+                "name": "helper"
+              },
+              "RETURNS": "void"
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_inner",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_inner",
+                      "name": "inner"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_score",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_score",
+                      "name": "score"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b_limit",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": true,
+                    "NAME": {
+                      "sym": "s_limit",
+                      "name": "limit"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "10"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b_name",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_name",
+                      "name": "name"
+                    },
+                    "TYPE": "std::string"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "str": "Ada"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b_loop",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "DIRECTION": "to",
+                    "VAR": {
+                      "sym": "s_i",
+                      "name": "i"
+                    }
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "num": "3"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b_ask",
+                        "type": "io.ask",
+                        "v": 1,
+                        "fields": {
+                          "MODE": "keep_asking",
+                          "VAR": {
+                            "ref": "s_score"
+                          }
+                        },
+                        "inputs": {
+                          "PROMPT": {
+                            "expr": [
+                              {
+                                "str": "Score: "
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b_show",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 1
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "block": {
+                              "id": "b_get",
+                              "type": "var.get",
+                              "v": 1,
+                              "fields": {
+                                "VAR": {
+                                  "ref": "s_limit"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b_later",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_later",
+                      "name": "later"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
