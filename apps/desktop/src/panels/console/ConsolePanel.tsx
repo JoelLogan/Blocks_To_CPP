@@ -369,9 +369,11 @@ export function ConsolePanel({
           </span>
         )}
         {header.notices.map((notice) => (
-          <span key={notice} className="b2c-console-notice" title={NOTICE_DETAIL[notice]}>
-            {NOTICE_TEXT[notice]}
-          </span>
+          // A disclosure rather than a tooltip, so the explanation opens by keyboard too.
+          <details key={notice} className="b2c-console-notice" data-testid="console-notice">
+            <summary>{NOTICE_TEXT[notice]}</summary>
+            <p className="b2c-console-notice-detail">{NOTICE_DETAIL[notice]}</p>
+          </details>
         ))}
         <span className="b2c-panel-status">
           <button type="button" disabled={!running} onClick={onStop}>

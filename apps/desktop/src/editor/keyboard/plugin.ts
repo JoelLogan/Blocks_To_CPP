@@ -145,8 +145,16 @@ function listen(keyboard: EditorKeyboard): () => void {
   const onDocumentPointerDown = () => {
     tabbed = false;
   };
-  const onFocusIn = () => {
-    if (!tabbed) {
+  // On the window, so that it runs after Blockly's focus manager (which listens there, from before
+  // the editor exists). Tabbing onto a tree's root makes the manager focus the node it restores,
+  // from inside its own listener: the inner `focusin` arrives before the manager has recorded that
+  // node, so only the one that finds the manager and the DOM agreeing is announced.
+  const onFocusIn = (event: FocusEvent) => {
+    if (!tabbed || !(event.target instanceof Node) || !injection.contains(event.target)) {
+      return;
+    }
+    const node = Blockly.getFocusManager().getFocusedNode();
+    if (node?.getFocusableElement() !== document.activeElement) {
       return;
     }
     tabbed = false;
@@ -154,13 +162,14 @@ function listen(keyboard: EditorKeyboard): () => void {
     keyboard.announceFocus();
   };
 
+  const view = document.defaultView;
   injection.addEventListener('keydown', onKeyDownCapture, true);
-  injection.addEventListener('focusin', onFocusIn);
+  view?.addEventListener('focusin', onFocusIn);
   document.addEventListener('keydown', onDocumentKeyDown, true);
   document.addEventListener('pointerdown', onDocumentPointerDown, true);
   return () => {
     injection.removeEventListener('keydown', onKeyDownCapture, true);
-    injection.removeEventListener('focusin', onFocusIn);
+    view?.removeEventListener('focusin', onFocusIn);
     document.removeEventListener('keydown', onDocumentKeyDown, true);
     document.removeEventListener('pointerdown', onDocumentPointerDown, true);
   };

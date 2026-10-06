@@ -1,7 +1,16 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { type ReactNode, type SyntheticEvent, useCallback, useId, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  type SyntheticEvent,
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useStore } from 'zustand';
 
+import { focusIfLost } from '../layout/focus';
 import {
   type AlertOptions,
   type ChoiceOptions,
@@ -18,14 +27,44 @@ import {
  * Shows the dialog at the head of `queue`, one at a time, as a modal Radix dialog: focus moves
  * into it and stays there until it closes, Escape dismisses it, and focus returns to where it was.
  * Mount it once, at the root of the window.
+ *
+ * Radix gives the focus back to a dialog's trigger button, and these dialogs have none (features
+ * open them from code), so the host does it: it notes what had the focus when the first dialog
+ * opened and, once the last queued one has closed, focuses it again, unless the answer moved the
+ * focus somewhere itself or the element is gone (WCAG 2.4.3).
  */
 export function DialogHost({ queue }: { queue: DialogQueue }) {
   const request = useStore(queue.store, (state) => state.queue[0]);
+  const returnTo = useRef<HTMLElement | null>(null);
+  const open = request !== undefined;
+
+  // A layout effect runs before the dialog's own effects move the focus into it.
+  useLayoutEffect(() => {
+    if (open) {
+      if (returnTo.current === null) {
+        const active = document.activeElement;
+        returnTo.current =
+          active instanceof HTMLElement && active !== document.body ? active : null;
+      }
+      return;
+    }
+    const target = returnTo.current;
+    returnTo.current = null;
+    if (target !== null && target.closest('[role="dialog"], [role="alertdialog"]') === null) {
+      focusIfLost(target);
+    }
+  }, [open]);
+
   if (request === undefined) {
     return null;
   }
   // A new key for each request: no state carries over from the previous dialog.
   return <QueuedDialog key={request.id} request={request} />;
+}
+
+/** Keeps Radix from moving the focus when a dialog closes: {@link DialogHost} returns it. */
+function keepFocus(event: Event): void {
+  event.preventDefault();
 }
 
 /** Gives the dialog's initial control the focus, selecting a text field's text. */
@@ -104,6 +143,7 @@ function QueuedDialog({ request }: { request: DialogRequest }) {
               focusInitial(target);
             }
           }}
+          onCloseAutoFocus={keepFocus}
         >
           <DialogText options={request.options} />
           {body}

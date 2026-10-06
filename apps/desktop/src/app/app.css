@@ -14,6 +14,10 @@
   --b2c-surface: #f0f2f7;
   --b2c-surface-raised: #ffffff;
   --b2c-border: #c9cfdb;
+  /* The edge of a text field or a drop-down: at least 3:1 on every surface (WCAG 1.4.11). */
+  --b2c-control-border: #767f91;
+  /* The mark of the selected tab: at least 3:1 on the dock's surface (WCAG 1.4.11). */
+  --b2c-selected: #1a56db;
   --b2c-text: #1b2130;
   --b2c-text-muted: #4f596c;
   --b2c-accent: #ff9f1c;
@@ -41,6 +45,8 @@
     --b2c-surface: #1b1f29;
     --b2c-surface-raised: #232836;
     --b2c-border: #3a4153;
+    --b2c-control-border: #7f889c;
+    --b2c-selected: #ff9f1c;
     --b2c-text: #e6e9f0;
     --b2c-text-muted: #a9b1c2;
     --b2c-focus: #8ab4ff;
@@ -207,7 +213,8 @@ body {
   gap: 6px;
   min-height: 28px;
   padding: 3px 12px;
-  border: 1px solid rgb(255 255 255 / 35%);
+  /* At least 3:1 on the toolbar, so the Debug/Release drop-down shows its edge (WCAG 1.4.11). */
+  border: 1px solid rgb(255 255 255 / 45%);
   border-radius: 6px;
   background: transparent;
   color: inherit;
@@ -259,6 +266,11 @@ body {
   min-width: 0;
   min-height: 0;
   background: var(--b2c-canvas);
+}
+
+/* The region takes the focus when a page closes (EditorLayout.tsx): its ring stays inside it. */
+.workspace:focus-visible {
+  outline-offset: -2px;
 }
 
 /* Blockly needs a sized, positioned container. */
@@ -383,7 +395,7 @@ body {
 
 .dock-tab[data-state='active'] {
   color: var(--b2c-text);
-  box-shadow: inset 0 -3px 0 var(--b2c-accent);
+  box-shadow: inset 0 -3px 0 var(--b2c-selected);
 }
 
 .dock-tab:focus-visible {
@@ -537,7 +549,7 @@ body {
 .dialog-input {
   min-height: 32px;
   padding: 4px 8px;
-  border: 1px solid var(--b2c-border);
+  border: 1px solid var(--b2c-control-border);
   border-radius: 6px;
   background: var(--b2c-bg);
   color: var(--b2c-text);

@@ -148,7 +148,8 @@
   width: 12em;
   min-height: 32px;
   padding: 4px 8px;
-  border: 1px solid var(--b2c-border);
+  /* The field's edge at 3:1 on the page (WCAG 1.4.11). */
+  border: 1px solid var(--b2c-control-border);
   border-radius: 6px;
   background: var(--b2c-bg);
   color: var(--b2c-text);

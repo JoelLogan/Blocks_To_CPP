@@ -5,9 +5,10 @@
  * starts and where closing a project leads.
  */
 import type { RecentEntry, Template } from '@blocks2cpp/ipc-types';
-import { useEffect, useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { useStore } from 'zustand';
 
+import { focusIfLost } from '../../app/layout/focus';
 import type { useAppStore } from '../../app/store';
 import { type ProjectLifecycle, TEMPLATE_LABELS } from './lifecycle';
 import type { LifecycleOperation, ProjectModel } from './model';
@@ -60,17 +61,26 @@ export function StartPage({ lifecycle, model, store, sections }: StartPageProps)
   const shown = useStartPageSections(sections);
   const newId = useId();
   const openId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     run(() => lifecycle.refreshRecent());
   }, [lifecycle]);
+
+  // The page replaces the editor (a project was closed) or opens with the window: where the focus
+  // was is gone, so it starts at the page's heading, which screen readers then announce.
+  useEffect(() => {
+    focusIfLost(heading.current);
+  }, []);
 
   const idle = busy === null;
 
   return (
     <div className="start-page">
       <header className="start-header">
-        <h2 className="start-title">Start</h2>
+        <h2 ref={heading} className="start-title" tabIndex={-1}>
+          Start
+        </h2>
         <p className="start-intro">
           Build real C++ programs from blocks. Start a new project, or open one you made before.
         </p>
