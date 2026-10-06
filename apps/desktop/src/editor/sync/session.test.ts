@@ -12,7 +12,14 @@ import { documentFixture, previewFixture, projectFixture } from '../../app/testi
 import { createCoreHost } from '../preview/coreHost';
 import { SyncError } from './errors';
 import { EditorSession, type SessionHooks } from './session';
-import { disposeWorkspaces, headlessWorkspace, renderedWorkspace } from './testing';
+import {
+  disposeWorkspaces,
+  headlessWorkspace,
+  present,
+  renderedWorkspace,
+  setViewSize,
+} from './testing';
+import { viewStateOf } from './viewport';
 
 /** A stand-in core: the canonical text is the JSON itself; previews are empty. */
 function stubCore(): CoreWasm {
@@ -226,6 +233,48 @@ describe('the editing session', () => {
     expect(Blockly.common.getSelected()).toBe(session.workspace.getBlockById('outer'));
   });
 
+  it('selects a statement that follows a collapsed one, not the collapsed one', async () => {
+    const doc = documentFixture();
+    doc.modules = [
+      {
+        id: 'mod_main',
+        name: 'main',
+        workspace: {
+          blocks: [
+            {
+              id: 'main',
+              type: 'program.main',
+              v: 1,
+              x: 0,
+              y: 0,
+              statements: {
+                BODY: [
+                  {
+                    ...forever('folded'),
+                    collapsed: true,
+                    statements: { BODY: [forever('hidden')] },
+                  },
+                  { ...forever('after'), statements: { BODY: [forever('nested')] } },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ];
+    const session = start(doc, renderedWorkspace());
+    await vi.advanceTimersByTimeAsync(0);
+    // In Blockly the parent of a statement is the statement before it; only nesting hides a block.
+    for (const [asked, selected] of [
+      ['after', 'after'],
+      ['nested', 'nested'],
+      ['hidden', 'folded'],
+    ] as const) {
+      session.selectBlock(asked, { center: true });
+      expect((Blockly.common.getSelected() as Blockly.Block | null)?.id).toBe(selected);
+    }
+  });
+
   it('empties the canvas when the project closes, and refuses to save without one', async () => {
     const session = start(twoModules());
     await vi.advanceTimersByTimeAsync(0);
@@ -247,7 +296,10 @@ describe('the editing session', () => {
   });
 
   it("captures the viewport only for saving, keeping the file's while the view is unchanged", async () => {
-    const session = start(twoModules(), renderedWorkspace());
+    const shown = renderedWorkspace();
+    setViewSize(shown, 1000, 700);
+    Blockly.svgResize(shown);
+    const session = start(twoModules(), shown);
     await vi.advanceTimersByTimeAsync(0);
     expect(session.currentDocument().modules[0]?.workspace.viewport).toEqual({
       x: 3,
@@ -272,6 +324,59 @@ describe('the editing session', () => {
     expect(session.currentDocument().modules[0]?.workspace.viewport?.scale).toBe(2);
     expect(session.currentDocument().modules[1]?.workspace.viewport).toBeUndefined();
   });
+
+  it.each([
+    ['without a viewport', undefined],
+    ['with a viewport', { x: -100, y: -60, scale: 1.25 }],
+  ])(
+    'keeps the view of a file %s that opened while the editor was hidden',
+    async (_what, viewport) => {
+      const doc = twoModules();
+      const main = doc.modules[0];
+      if (main === undefined) {
+        throw new Error('no main module');
+      }
+      if (viewport === undefined) {
+        delete main.workspace.viewport;
+      } else {
+        main.workspace.viewport = viewport;
+      }
+      // The start page opens projects while the editor is hidden: the view has no size yet.
+      const workspace = renderedWorkspace({ move: { scrollbars: true, drag: true } });
+      const session = start(doc, workspace);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(session.currentDocument().modules[0]?.workspace.viewport).toEqual(viewport);
+
+      // Showing the editor gives it a size; Blockly's first render and the resize move the
+      // scroll position, which is not the user scrolling.
+      setViewSize(workspace, 1000, 700);
+      session.resize();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(session.currentDocument().modules[0]?.workspace.viewport).toEqual(viewport);
+      if (viewport !== undefined) {
+        // The saved view is shown.
+        const state = present(viewStateOf(workspace), 'view');
+        expect(state.scale).toBe(1.25);
+        expect(Math.round(-state.scrollX / state.scale)).toBe(-100);
+        expect(Math.round(-state.scrollY / state.scale)).toBe(-60);
+      }
+
+      // A resize (a dock opening) is not the user moving the view either.
+      setViewSize(workspace, 800, 500);
+      session.resize();
+      expect(session.currentDocument().modules[0]?.workspace.viewport).toEqual(viewport);
+
+      // Scrolling is: the view shown is saved, also after another resize.
+      const scale = viewport?.scale ?? 1;
+      workspace.scroll(200 * scale, 100 * scale);
+      session.resize();
+      expect(session.currentDocument().modules[0]?.workspace.viewport).toEqual({
+        x: -200,
+        y: -100,
+        scale,
+      });
+    },
+  );
 
   it('keeps reading until a drag has ended', async () => {
     const session = start(twoModules(), renderedWorkspace());

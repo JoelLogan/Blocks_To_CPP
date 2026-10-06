@@ -37,7 +37,7 @@ import { readsBackAs, writeFlagsAndComment, writeOwnData } from './blockState';
 import { blockDefOf, shapeFits, type Slot, statementDef, valueInputDef } from './catalog';
 import { SyncError } from './errors';
 import { clampCoordinate } from './limits';
-import { rememberOrigin } from './origin';
+import { forgetOrigin, forgetOrigins, rememberOrigin } from './origin';
 import { initPlaceholder } from './placeholders';
 import { clearWorkspace } from './traverse';
 
@@ -178,6 +178,7 @@ class TreeBuilder {
     let block = def === null ? null : this.catalogBlock(node, def, slot);
     if (block !== null && parent !== null && !connect(parent, block, slot)) {
       // Refused by the connection checker (a hat inside a statement list, for example).
+      forgetOrigin(block);
       block.dispose(false);
       block = null;
     }
@@ -223,6 +224,7 @@ class TreeBuilder {
       fits = readsBackAs(block, def, node);
     }
     if (!fits) {
+      forgetOrigin(block);
       block.dispose(false);
       return null;
     }
@@ -362,6 +364,7 @@ export function loadModule(workspace: Blockly.Workspace, doc: BdmDocument, modul
     svg?.setResizesEnabled(false);
     try {
       clearWorkspace(workspace);
+      forgetOrigins(workspace);
       const builder = new TreeBuilder(workspace);
       for (const node of module.workspace.blocks) {
         builder.add(node, { kind: 'top', x: node.x ?? 0, y: node.y ?? 0 });

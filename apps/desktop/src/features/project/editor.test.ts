@@ -2,7 +2,10 @@
  * The project lifecycle with the real block editor (a rendered Blockly workspace with the editing
  * session and live preview) and the real compiler core: moving a block marks the project dirty
  * and tells the backend, zooming and scrolling do not, saving writes the view that is shown, and
- * an unchanged project saves byte for byte as it was read.
+ * an unchanged project saves byte for byte as it was read, its view included.
+ *
+ * As in the app, projects open while the editor is hidden (the start page is showing): the
+ * workspace has no size until the editor is shown.
  *
  * Without a build of the compiler core these tests are skipped, unless B2C_REQUIRE_WASM is set
  * (as in CI), in which case a missing build fails them.
@@ -23,7 +26,9 @@ import {
 import { createCoreHost } from '../../editor/preview/coreHost';
 import { registerEditorBlocks } from '../../editor/services';
 import { withoutEvents } from '../../editor/sync/bdmToWorkspace';
+import { setViewSize } from '../../editor/sync/testing';
 import { clearWorkspace } from '../../editor/sync/traverse';
+import { viewStateOf } from '../../editor/sync/viewport';
 import {
   CORE_BUILT,
   HANDLE_A,
@@ -94,16 +99,42 @@ afterEach(() => {
   harness.dispose();
 });
 
-/** Opens Hello World from its file and waits for the editor's first preview. */
-async function openHello(): Promise<void> {
+/**
+ * Opens a file (Hello World by default) while the editor is hidden, waits for the editor's first
+ * preview, then shows the editor, as the app does when it leaves the start page.
+ */
+async function openHello(text = HELLO_TEXT): Promise<void> {
   harness.ipc.projectOpenDialog.mockResolvedValueOnce({
     status: 'ok',
-    ...opened(HELLO_TEXT, { handle: HANDLE_A }),
+    ...opened(text, { handle: HANDLE_A }),
   });
   expect(await harness.feature.lifecycle.open()).toBe(true);
   await waitFor(() => {
     expect(useAppStore.getState().analysis.preview).not.toBeNull();
   });
+  await Blockly.renderManagement.finishQueuedRenders();
+  // What EditorWorkspace's resize observer does once the editor is shown.
+  setViewSize(workspace, 1000, 700);
+  editor.session.resize();
+  await Blockly.renderManagement.finishQueuedRenders();
+}
+
+/** Hello World with a saved view, in canonical form. */
+function helloWithView(): string {
+  const loaded = core.load(new TextEncoder().encode(HELLO_TEXT));
+  if (!loaded.ok) {
+    throw new Error('Hello World does not load');
+  }
+  const module = loaded.document.modules[0];
+  if (module === undefined) {
+    throw new Error('Hello World has no module');
+  }
+  module.workspace.viewport = { x: -60, y: -30, scale: 1.25 };
+  const canonical = core.canonical(JSON.stringify(loaded.document));
+  if (!canonical.ok) {
+    throw new Error('Hello World with a view is not canonical');
+  }
+  return canonical.text;
 }
 
 function dirty(): boolean {
@@ -119,21 +150,29 @@ describe.skipIf(!CORE_BUILT)('the project in the block editor', () => {
     expect(harness.ipc.projectSetDirty).not.toHaveBeenCalled();
   });
 
-  it('saves an unchanged project byte for byte, again and again', async () => {
-    await openHello();
-    await Blockly.renderManagement.finishQueuedRenders();
+  it.each([
+    ['without a saved view', () => HELLO_TEXT],
+    ['with a saved view', helloWithView],
+  ])('saves an unchanged project %s byte for byte, again and again', async (_what, file) => {
+    const text = file();
+    await openHello(text);
     expect(await harness.feature.lifecycle.save()).toBe(true);
     expect(await harness.feature.lifecycle.save()).toBe(true);
 
+    // Blockly's first render and showing the editor move the scroll position; that is not the
+    // user scrolling, so the file's view (or its lack of one) is kept.
     const [first, second] = harness.ipc.projectSave.mock.calls.map(([request]) => request.document);
-    expect(second).toBe(first);
-    // Everything but the view is the file as it was read. The editing session takes its "view
-    // unchanged" baseline before Blockly's first render moves the scroll position, so the first
-    // save also writes the view shown (reported to the editor's owners; see the package report).
-    const withoutView = (text: string | undefined) =>
-      (text ?? '').replace(/,\n\s*"viewport": \{[^}]*\}/g, '');
-    expect(withoutView(first)).toBe(HELLO_TEXT);
+    expect(first).toBe(text);
+    expect(second).toBe(text);
     expect(dirty()).toBe(false);
+  });
+
+  it('shows the view a project was saved with', async () => {
+    await openHello(helloWithView());
+    const state = viewStateOf(workspace);
+    expect(state?.scale).toBe(1.25);
+    expect(Math.round(-(state?.scrollX ?? 0) / 1.25)).toBe(-60);
+    expect(Math.round(-(state?.scrollY ?? 0) / 1.25)).toBe(-30);
   });
 
   it('counts a moved block as a change, but not zooming or scrolling', async () => {

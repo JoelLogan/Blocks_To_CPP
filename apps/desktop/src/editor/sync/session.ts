@@ -11,16 +11,19 @@
  * - One module is shown at a time; switching keeps the left module's changes in the document and
  *   clears Blockly's undo history (each module has its own canvas).
  * - The viewport is captured only for saving ({@link EditorSession.currentDocument}).
+ * - While a block is dragged, saving writes the canvas as it was just before the drag (./drag.ts).
  */
 import type { BdmBlock, BdmDocument, BdmViewport, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
 import * as Blockly from 'blockly/core';
 
 import type { ProjectState, useAppStore } from '../../app/store';
+import { visibleHolder } from '../highlight/reveal';
 import type { CoreHost } from '../preview/coreHost';
 import { PreviewPipeline } from '../preview/pipeline';
 import type { PreviewService } from '../preview/service';
 import { loadModule } from './bdmToWorkspace';
 import { forEachNode, treeBlockIds } from './bdmTree';
+import { listenToBlockDrags } from './drag';
 import { DeclIndex, DuplicateGuard } from './duplicates';
 import { SyncError } from './errors';
 import { placeholderNode } from './placeholders';
@@ -32,7 +35,7 @@ import {
   type ViewState,
   viewStateOf,
 } from './viewport';
-import { readModule, withViewport } from './workspaceToBdm';
+import { readModule, readTopBlocks, withBlocks, withViewport } from './workspaceToBdm';
 
 /** What the rest of the editor hears from a session. */
 export interface SessionHooks {
@@ -64,6 +67,26 @@ export interface SelectOptions {
   readonly center?: boolean;
 }
 
+/**
+ * The view of the shown module: the viewport it was shown with, and what "the user has not moved
+ * the view" is checked against when saving.
+ */
+interface ShownView {
+  /** The viewport the module was shown with: the file's, or the one it was left with. */
+  readonly saved: BdmViewport | undefined;
+  /**
+   * Blockly's view once `saved` was shown on a canvas with a size; `null` until then (and for a
+   * headless workspace). While it is `null`, the view counts as unchanged.
+   */
+  baseline: ViewState | null;
+}
+
+/** Whether a rendered workspace's view has an area (it has none while the editor is hidden). */
+function hasViewSize(workspace: Blockly.WorkspaceSvg): boolean {
+  const view = workspace.getMetricsManager().getViewMetrics();
+  return view.width > 0 && view.height > 0;
+}
+
 /** Whether a rendered workspace is in the middle of a drag (its blocks are in flux). */
 function isDragging(workspace: Blockly.Workspace): boolean {
   return workspace instanceof Blockly.WorkspaceSvg && workspace.isDragging();
@@ -75,6 +98,12 @@ function pickModule(doc: BdmDocument, wanted: string | undefined): string | null
     return wanted;
   }
   return doc.modules[0]?.id ?? null;
+}
+
+/** Whether module `moduleId` of `doc` holds block `id` (at any depth). */
+function moduleHasBlock(doc: BdmDocument, moduleId: string, id: string): boolean {
+  const module = doc.modules.find((candidate) => candidate.id === moduleId);
+  return module !== undefined && treeBlockIds(module.workspace.blocks).includes(id);
 }
 
 /** The ID of the module whose canvas holds block `id` (at any depth), or `null`. */
@@ -101,13 +130,14 @@ export class EditorSession {
   private readonly guard: DuplicateGuard;
   private readonly unsubscribe: () => void;
   private shown: string | null = null;
-  /** The viewport the shown module had when it was shown, and Blockly's view right after. */
-  private shownView: {
-    readonly saved: BdmViewport | undefined;
-    readonly baseline: ViewState | null;
-  } = { saved: undefined, baseline: null };
+  /** The view of the shown module (see {@link ShownView}). */
+  private shownView: ShownView = { saved: undefined, baseline: null };
   /** Viewports of modules that were shown and left, to save with the document. */
   private readonly leftViews = new Map<string, BdmViewport | undefined>();
+  /** The shown module's blocks just before the block drag in progress, or `null`. */
+  private preDrag: { readonly moduleId: string; readonly blocks: readonly BdmBlock[] } | null =
+    null;
+  private readonly stopDragListening: () => void;
   private disposed = false;
 
   constructor(options: EditorSessionOptions) {
@@ -127,6 +157,17 @@ export class EditorSession {
       onPreviewed: (result) => this.hooks.onPreviewed?.(result),
     });
     this.workspace.addChangeListener(this.onEvent);
+    this.stopDragListening =
+      this.workspace instanceof Blockly.WorkspaceSvg
+        ? listenToBlockDrags(this.workspace, {
+            onDragStart: (block) => {
+              this.beforeDrag(block);
+            },
+            onDragEnd: () => {
+              this.preDrag = null;
+            },
+          })
+        : () => undefined;
     this.unsubscribe = this.store.subscribe((state, previous) => {
       this.onStore(state.project, previous.project);
     });
@@ -174,6 +215,8 @@ export class EditorSession {
 
   /**
    * The document as the canvas has it now, with the viewports captured: what a save writes.
+   * While a block is dragged, the canvas as it was just before the drag: the dragged block is
+   * still where it was, and no drag preview stands in for anything.
    *
    * @throws SyncError (`noDocument`) when no project is open.
    */
@@ -185,7 +228,11 @@ export class EditorSession {
     if (this.shown === null) {
       return project.document;
     }
-    let doc = readModule(this.workspace, project.document, this.shown);
+    const preDrag = this.preDrag;
+    let doc =
+      preDrag !== null && preDrag.moduleId === this.shown && isDragging(this.workspace)
+        ? withBlocks(project.document, this.shown, preDrag.blocks)
+        : readModule(this.workspace, project.document, this.shown);
     doc = withViewport(doc, this.shown, this.shownViewport(doc, this.shown));
     for (const [moduleId, viewport] of this.leftViews) {
       if (doc.modules.some((module) => module.id === moduleId)) {
@@ -201,8 +248,9 @@ export class EditorSession {
   }
 
   /**
-   * Selects a block, or the outermost collapsed block it is in, switching to its module first.
-   * A block kept inside a placeholder selects the placeholder.
+   * Selects a block, or the outermost collapsed block it is nested in, switching to its module
+   * first. A collapsed statement before it in the same list does not hide it, so it is not taken
+   * instead. A block kept inside a placeholder selects the placeholder.
    */
   selectBlock(id: string, options: SelectOptions = {}): void {
     let block = this.workspace.getBlockById(id);
@@ -218,12 +266,7 @@ export class EditorSession {
     if (block === null) {
       return;
     }
-    let target = block;
-    for (let parent = block.getParent(); parent !== null; parent = parent.getParent()) {
-      if (parent.isCollapsed()) {
-        target = parent;
-      }
-    }
+    const target = visibleHolder(block);
     if (
       !(target instanceof Blockly.BlockSvg) ||
       !(this.workspace instanceof Blockly.WorkspaceSvg)
@@ -270,19 +313,67 @@ export class EditorSession {
     void this.pipeline.runNow();
   }
 
+  /**
+   * Fits a rendered workspace to its container (`Blockly.svgResize`); call it whenever the editor
+   * is shown or resized. Resizing moves Blockly's scroll position, which is not the user's doing:
+   * a view the user has not moved stays unchanged for saving, and the shown module's saved view,
+   * which waits while the editor has no size, is shown now.
+   */
+  resize(): void {
+    const workspace = this.workspace;
+    if (!(workspace instanceof Blockly.WorkspaceSvg)) {
+      return;
+    }
+    const view = this.shownView;
+    const before = viewStateOf(workspace);
+    const unchanged =
+      view.baseline !== null && before !== null && sameViewState(before, view.baseline);
+    Blockly.svgResize(workspace);
+    if (this.shown === null || this.disposed) {
+      return;
+    }
+    if (view.baseline === null) {
+      this.settleView(view);
+    } else if (unchanged) {
+      view.baseline = viewStateOf(workspace);
+    }
+  }
+
   /** Detaches from the workspace and the store. */
   dispose(): void {
     if (this.disposed) {
       return;
     }
     this.disposed = true;
+    this.preDrag = null;
+    this.stopDragListening();
     this.workspace.removeChangeListener(this.onEvent);
     this.unsubscribe();
     this.pipeline.dispose();
   }
 
+  /**
+   * Reads the shown module's canvas just before a drag of `block` starts (Blockly has not detached
+   * it yet), for {@link currentDocument}. A block the project's document does not have yet and
+   * that sits on its own is one the drag takes out of the toolbox: it is not part of the canvas
+   * before the drag.
+   */
+  private beforeDrag(block: Blockly.BlockSvg): void {
+    this.preDrag = null;
+    const project = this.store.getState().project;
+    if (project === null || this.shown === null || this.disposed) {
+      return;
+    }
+    let blocks = readTopBlocks(this.workspace);
+    if (block.getParent() === null && !moduleHasBlock(project.document, this.shown, block.id)) {
+      blocks = blocks.filter((node) => node.id !== block.id);
+    }
+    this.preDrag = { moduleId: this.shown, blocks };
+  }
+
   /** Builds module `moduleId` of `doc` on the canvas and restores its view. */
   private show(doc: BdmDocument, moduleId: string, clearUndo: boolean): void {
+    this.preDrag = null;
     loadModule(this.workspace, doc, moduleId);
     this.shown = moduleId;
     if (clearUndo) {
@@ -292,10 +383,9 @@ export class EditorSession {
       ? this.leftViews.get(moduleId)
       : doc.modules.find((module) => module.id === moduleId)?.workspace.viewport;
     this.leftViews.delete(moduleId);
-    if (saved !== undefined) {
-      restoreViewport(this.workspace, saved);
-    }
-    this.shownView = { saved, baseline: viewStateOf(this.workspace) };
+    const view: ShownView = { saved, baseline: null };
+    this.shownView = view;
+    this.settleView(view);
     this.index.rebuild(this.workspace);
     const project = this.store.getState().project;
     if (project !== null && project.activeModuleId !== moduleId) {
@@ -306,6 +396,7 @@ export class EditorSession {
   /** Empties the canvas (the project was closed). */
   private clearCanvas(): void {
     this.pipeline.invalidate();
+    this.preDrag = null;
     clearWorkspace(this.workspace);
     this.workspace.clearUndo();
     this.shown = null;
@@ -316,16 +407,42 @@ export class EditorSession {
   }
 
   /**
+   * Shows `view`'s saved viewport and takes its baseline, once the workspace has a size: at once,
+   * and again after Blockly's first render of the canvas, which sizes the content and moves the
+   * scroll position (that is not the user scrolling). A workspace without a size (the editor is
+   * hidden while a project opens from the start page) cannot show a view; {@link resize} settles
+   * it once the editor is shown.
+   */
+  private settleView(view: ShownView): void {
+    const workspace = this.workspace;
+    if (!(workspace instanceof Blockly.WorkspaceSvg) || !hasViewSize(workspace)) {
+      return;
+    }
+    const settle = (): void => {
+      if (view.saved !== undefined) {
+        restoreViewport(workspace, view.saved);
+      }
+      view.baseline = viewStateOf(workspace);
+    };
+    settle();
+    void Blockly.renderManagement.finishQueuedRenders().then(() => {
+      if (!this.disposed && this.shownView === view && hasViewSize(workspace)) {
+        settle();
+      }
+    });
+  }
+
+  /**
    * The shown module's viewport for saving: the one it was shown with while the user has not
    * scrolled or zoomed, else the current one. A headless workspace keeps the document's.
    */
   private shownViewport(doc: BdmDocument, moduleId: string): BdmViewport | undefined {
     const state = viewStateOf(this.workspace);
-    const baseline = this.shownView.baseline;
-    if (state === null || baseline === null) {
+    if (state === null) {
       return doc.modules.find((module) => module.id === moduleId)?.workspace.viewport;
     }
-    if (sameViewState(state, baseline)) {
+    const baseline = this.shownView.baseline;
+    if (baseline === null || sameViewState(state, baseline)) {
       return this.shownView.saved;
     }
     return captureViewport(this.workspace) ?? this.shownView.saved;

@@ -253,9 +253,23 @@ export function readBlockTrees(blocks: readonly Blockly.Block[], top: boolean): 
   return out.filter((node): node is BdmBlock => node !== undefined);
 }
 
-/** The project blocks on the canvas, read into BDM nodes (top-level blocks with `x`, `y`). */
+/**
+ * The project blocks on the canvas, read into BDM nodes (top-level blocks with `x`, `y`). An
+ * insertion marker at the top (a drag previewing a statement attached above a loose stack) is not
+ * part of the project, but the stack chained under it is: its first block is read as top-level
+ * (the preview leaves the stack where it was).
+ */
 export function readTopBlocks(workspace: Blockly.Workspace): BdmBlock[] {
-  const tops = workspace.getTopBlocks(false).filter((block) => !block.isShadow());
+  const tops: Blockly.Block[] = [];
+  for (const block of workspace.getTopBlocks(false)) {
+    if (block.isShadow()) {
+      continue;
+    }
+    const top = block.isInsertionMarker() ? block.getNextBlock() : block;
+    if (top !== null) {
+      tops.push(top);
+    }
+  }
   return readBlockTrees(tops, true);
 }
 
@@ -293,11 +307,24 @@ export function readModule(
   base: BdmDocument,
   moduleId: string,
 ): BdmDocument {
+  return withBlocks(base, moduleId, readTopBlocks(workspace));
+}
+
+/**
+ * The document `base` with module `moduleId`'s top-level blocks replaced by `blocks` (read with
+ * {@link readTopBlocks}). Everything else is kept from `base`.
+ *
+ * @throws SyncError (`unknownModule`) when `base` has no such module.
+ */
+export function withBlocks(
+  base: BdmDocument,
+  moduleId: string,
+  blocks: readonly BdmBlock[],
+): BdmDocument {
   const index = moduleIndex(base, moduleId);
-  const blocks = readTopBlocks(workspace);
   return withModuleWorkspace(base, index, (module) => ({
     ...module,
-    workspace: { ...module.workspace, blocks },
+    workspace: { ...module.workspace, blocks: blocks.slice() },
   }));
 }
 
