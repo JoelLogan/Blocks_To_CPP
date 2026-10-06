@@ -1,5 +1,5 @@
 // Tests of the isolation hook as the isolation frame runs it (docs/spec/08-security.md §8.8), with
-// plain Node and no dependencies:
+// plain Node and one development dependency, happy-dom, which parses index.html:
 //
 //   node --test "apps/desktop/src-tauri/isolation-tests/*.test.js"
 //
@@ -14,15 +14,43 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
+import { Window } from 'happy-dom';
+
 const here = dirname(fileURLToPath(import.meta.url));
 const isolation = join(here, '..', 'isolation');
 const samples = JSON.parse(readFileSync(join(here, 'samples.generated.json'), 'utf8'));
 const FETCH = 'plugin:__TAURI_CHANNEL__|fetch';
 
+/**
+ * The scripts `html` loads, in its order, read with an HTML parser (never a regular expression).
+ * Every script must be a classic script with a plain file name in the isolation folder: anything
+ * else (inline code, a module, a path) fails here instead of being left out of the tests.
+ * @param {string} html
+ */
+function scriptsOf(html) {
+  const window = new Window();
+  try {
+    const page = new window.DOMParser().parseFromString(html, 'text/html');
+    const scripts = [...page.querySelectorAll('script')].map((script) => {
+      const src = script.getAttribute('src');
+      assert.ok(
+        src !== null && /^[a-z][a-z.]*\.js$/.test(src),
+        `unexpected script src ${JSON.stringify(src)}`,
+      );
+      assert.equal(script.textContent, '', `script ${src} also has inline code`);
+      assert.ok(!script.hasAttribute('type'), `script ${src} has a type`);
+      return src;
+    });
+    assert.ok(scripts.length > 0, 'the page loads no scripts');
+    return scripts;
+  } finally {
+    void window.happyDOM.close();
+  }
+}
+
 /** The scripts index.html loads, in its order. */
 function pageScripts() {
-  const html = readFileSync(join(isolation, 'index.html'), 'utf8');
-  return [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((match) => match[1]);
+  return scriptsOf(readFileSync(join(isolation, 'index.html'), 'utf8'));
 }
 
 /** A realm with the page's scripts loaded; returns the hook and a message builder. */
@@ -90,6 +118,18 @@ function assertBlocked(msg, shown) {
 }
 
 describe('the isolation page', () => {
+  test('reads the page with an HTML parser, whatever the spelling of its tags', () => {
+    assert.deepEqual(scriptsOf('<SCRIPT SRC="a.js"></SCRIPT ><script\nsrc=b.js></script\t>'), [
+      'a.js',
+      'b.js',
+    ]);
+    assert.throws(() => scriptsOf('<script src="a.js"></script><script>alert(1)</script >'));
+    assert.throws(() => scriptsOf('<script src="a.js">alert(1)</script>'));
+    assert.throws(() => scriptsOf('<script type="module" src="a.js"></script>'));
+    assert.throws(() => scriptsOf('<script src="../a.js"></script>'));
+    assert.throws(() => scriptsOf('<p>no scripts</p>'));
+  });
+
   test('loads the allowlist, the validator and the hook, in that order', () => {
     assert.deepEqual(pageScripts(), ['allowlist.generated.js', 'validate.js', 'index.js']);
   });
