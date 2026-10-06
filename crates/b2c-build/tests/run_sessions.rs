@@ -333,6 +333,11 @@ const HELPER_SOURCE: &str = r#"
 #include <cstring>
 #include <iostream>
 #include <string>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 static int deep(int n) {
     volatile char frame[1024];
@@ -364,6 +369,14 @@ int main(int argc, char** argv) {
         return 42;
     }
     if (std::strcmp(what, "recurse") == 0) {
+#ifdef _WIN32
+        // Keep stack in reserve for reporting the overflow: without it, the
+        // C runtime's unhandled-exception filter can itself run out of the
+        // little stack that is left, and the program then ends with an access
+        // violation instead (depending on where in a frame the overflow hit).
+        ULONG reserve = 64 * 1024;
+        SetThreadStackGuarantee(&reserve);
+#endif
         return deep(INT_MAX / 2);
     }
     if (std::strcmp(what, "heap") == 0) {
