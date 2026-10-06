@@ -27,11 +27,30 @@ thiserror.workspace = true
 wasm-bindgen.workspace = true
 
 [dev-dependencies]
+# The native pipeline benchmark (benches/pipeline; docs/spec/09-quality-and-delivery.md §9.2).
+# No default features: no plotting and no rayon. Not 0.8: it adds a C build step (the
+# `alloca` crate) that the lint job's Clippy check for the Windows target cannot run
+# without a MinGW compiler.
+criterion = { version = "0.7.0", default-features = false }
 proptest.workspace = true
 # Tests parse the exports' JSON and compare numbers exactly (tests/round_trip.rs);
 # with this feature serde_json parses floats with correct rounding, as the
 # loader and JavaScript do. Tests only: the WebAssembly build does not get it.
 serde_json = { workspace = true, features = ["float_roundtrip"] }
+# The benchmark document's parity digest with the TypeScript generator of the webview
+# benchmarks (benches/pipeline/document.rs); already a dependency of b2c-model.
+sha2.workspace = true
+
+# The native pipeline benchmark: `cargo bench -p b2c-core-wasm --bench pipeline`.
+[[bench]]
+name = "pipeline"
+path = "benches/pipeline/main.rs"
+harness = false
+
+# The benchmark document's own checks, which `cargo test` runs (it does not run benchmarks).
+[[test]]
+name = "bench_document"
+path = "benches/pipeline/tests.rs"
 
 # A copy of the workspace lints with one change: `unsafe_code` is `deny`, not
 # `forbid`, because the `#[wasm_bindgen]` expansion contains `unsafe` glue and

@@ -5,9 +5,16 @@
 #   The weekly workflow (weekly.yml, job fuzz-cmin) minimises the kept corpora.
 # - links: the external links in all Markdown (lychee); ci.yml checks them only on pull requests
 #   that touch Markdown.
+# - e2e-app: the desktop app under test (a debug build with the e2e-hooks feature and the e2e
+#   frontend, as desktop.yml's e2e job builds it), built once per system for the three jobs below;
+# - e2e: every end-to-end flow and the visual diff of the block canvas, on Linux and Windows;
+# - e2e-security: the E2E security tests (docs/spec/08-security.md §8.13 "Nightly"), both systems;
+# - bench: the benchmarks (docs/spec/09-quality-and-delivery.md §9.2): criterion on the native
+#   pipeline and, through the E2E harness, cold start, the preview at 1,000 blocks and dragging
+#   in a 5,000-block workspace. tools/bench-compare.py compares the medians with the baseline (the
+#   last 5 scheduled runs on this system, kept in the Actions cache) and fails at more than 10%
+#   worse; until 5 runs are kept it only reports.
 # The full OSV scan of the default branch runs daily in osv-scanner.yml and is not repeated here.
-# E2E on both OSes, the E2E security tests and the benchmarks join this workflow with the editor's
-# E2E harness (docs/spec/10-roadmap.md, M2).
 name: Nightly
 
 on:
@@ -29,6 +36,11 @@ env:
   # at least 7 days old (docs/spec/08-security.md §8.9).
   FUZZ_TOOLCHAIN: nightly-2026-09-25
   CARGO_FUZZ_VERSION: 0.13.2
+  # The wasm-bindgen CLI must be the version of the wasm-bindgen crate in Cargo.lock (as in
+  # desktop.yml, which checks it).
+  WASM_BINDGEN_VERSION: 0.2.129
+  # tauri-driver, pinned (docs/adr/0009); installed with cargo install --locked.
+  TAURI_DRIVER_VERSION: 2.1.0
 
 jobs:
   fuzz-list:
@@ -279,3 +291,641 @@ jobs:
           token: ""
           fail: true
           jobSummary: true
+
+  # The app under test of the e2e, e2e-security and bench jobs, built once per system: a debug
+  # build with the e2e-hooks feature and the e2e frontend embedded, so the CSP, the isolation hook
+  # and freezePrototype are active (the same build as desktop.yml's e2e job, docs/adr/0009).
+  e2e-app:
+    name: E2E app (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the webview libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential pkg-config libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev libgtk-3-dev librsvg2-dev
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      # Building wasm-bindgen-cli takes minutes; its binaries are cached per version.
+      - name: Restore wasm-bindgen-cli from the cache
+        id: wasm-bindgen-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen*
+            ~/.cargo/bin/wasm2es6js*
+          key: wasm-bindgen-cli-${{ env.WASM_BINDGEN_VERSION }}-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Install wasm-bindgen-cli
+        if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+
+      - name: Build the WebAssembly core (without wasm-opt)
+        shell: bash
+        env:
+          B2C_SKIP_WASM_OPT: "1"
+        run: pnpm --filter @blocks2cpp/b2c-core-wasm run build
+
+      - name: Build the app for the end-to-end tests
+        shell: bash
+        run: >-
+          pnpm --filter @blocks2cpp/desktop tauri build --debug --no-bundle
+          --features e2e-hooks
+          --config '{"build":{"beforeBuildCommand":"pnpm build:e2e"}}'
+
+      - name: Check that the end-to-end build has its hooks
+        shell: bash
+        run: |
+          exe=target/debug/blocks2cpp-desktop
+          if [ "$RUNNER_OS" = "Windows" ]; then exe="$exe.exe"; fi
+          grep --binary-files=text --quiet --fixed-strings B2C_E2E_DIALOGS "$exe"
+          grep --recursive --quiet --fixed-strings __B2C_E2E__ apps/desktop/dist
+
+      # The executable embeds the frontend, so it is all the other jobs need.
+      - name: Upload the app under test
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-app-${{ matrix.os }}
+          path: |
+            target/debug/blocks2cpp-desktop
+            target/debug/blocks2cpp-desktop.exe
+          if-no-files-found: error
+          retention-days: 3
+
+  # Every end-to-end flow (apps/desktop/e2e/specs, except the security tests, which have their own
+  # job) and the visual diff of the block canvas, on both systems.
+  e2e:
+    name: E2E (${{ matrix.os }})
+    needs: e2e-app
+    # Each system's leg runs when its own app was built (a missing app fails only that leg).
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            app: blocks2cpp-desktop
+          - os: windows-2025
+            app: blocks2cpp-desktop.exe
+    env:
+      B2C_E2E_APP: ${{ github.workspace }}/e2e-app/${{ matrix.app }}
+      B2C_E2E_ARTIFACTS: ${{ github.workspace }}/e2e-artifacts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the webview libraries, WebKitWebDriver and xvfb (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential pkg-config libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev libgtk-3-dev librsvg2-dev xvfb webkit2gtk-driver
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      - name: Install g++ (MSYS2 UCRT64)
+        if: runner.os == 'Windows'
+        id: msys2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+
+      - name: Put g++ on PATH and name its folder for the app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $bin = Join-Path $env:MSYS2_LOCATION 'ucrt64\bin'
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_TOOLCHAIN_DIRS=$bin"
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Restore tauri-driver from the cache
+        id: tauri-driver-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/tauri-driver
+            ~/.cargo/bin/tauri-driver.exe
+          key: tauri-driver-${{ env.TAURI_DRIVER_VERSION }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
+
+      - name: Install tauri-driver
+        if: steps.tauri-driver-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          # A third-party tool: its warnings are not ours to deny.
+          RUSTFLAGS: ""
+        run: cargo install tauri-driver --version "$TAURI_DRIVER_VERSION" --locked
+
+      - name: Download the app under test
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: e2e-app-${{ matrix.os }}
+          path: e2e-app
+
+      # Artifacts do not keep file modes.
+      - name: Make the app executable (Linux)
+        if: runner.os == 'Linux'
+        run: chmod +x "$B2C_E2E_APP"
+
+      - name: Fetch msedgedriver for the installed WebView2 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./apps/desktop/e2e/scripts/msedgedriver.ps1 -OutDir (Join-Path $env:RUNNER_TEMP 'msedgedriver')
+
+      # msedgedriver logs verbosely into the artifacts (as in desktop.yml's e2e job).
+      - name: Log msedgedriver verbosely (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:B2C_E2E_ARTIFACTS | Out-Null
+          $log = Join-Path $env:B2C_E2E_ARTIFACTS 'msedgedriver.log'
+          $wrapper = Join-Path $env:RUNNER_TEMP 'msedgedriver-verbose.cmd'
+          $line = '@"{0}" --verbose --append-log "--log-path={1}" %*' -f $env:B2C_E2E_NATIVE_DRIVER, $log
+          Set-Content -Path $wrapper -Encoding ascii -Value $line
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_NATIVE_DRIVER=$wrapper"
+
+      - name: Run the end-to-end tests (Linux)
+        if: runner.os == 'Linux'
+        env:
+          # A virtual display has no GPU (docs/spec/02-architecture.md §2.8).
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          B2C_E2E_TOOLCHAIN_DIRS: /usr/bin
+        run: xvfb-run --auto-servernum pnpm --filter @blocks2cpp/desktop run e2e --exclude 'specs/security/**'
+
+      - name: Run the end-to-end tests (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          B2C_LOG: debug
+        run: pnpm --filter @blocks2cpp/desktop run e2e --exclude 'specs/security/**'
+
+      - name: Run the visual diff (Linux)
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          B2C_E2E_TOOLCHAIN_DIRS: /usr/bin
+        run: >-
+          xvfb-run --auto-servernum pnpm --filter @blocks2cpp/desktop exec
+          vitest run --config e2e/visual/vitest.visual.config.ts --project visual
+
+      - name: Run the visual diff (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: bash
+        env:
+          B2C_LOG: debug
+        run: >-
+          pnpm --filter @blocks2cpp/desktop exec
+          vitest run --config e2e/visual/vitest.visual.config.ts --project visual
+
+      - name: Show the end-to-end logs (on failure)
+        if: failure()
+        shell: bash
+        run: |
+          if [ ! -d "$B2C_E2E_ARTIFACTS" ]; then exit 0; fi
+          find "$B2C_E2E_ARTIFACTS" -type f \( -name '*.log' -o -name '*.txt' \) -print0 |
+            while IFS= read -r -d '' file; do
+              echo "::group::$file"
+              tail -n 300 "$file"
+              echo "::endgroup::"
+            done
+
+      # The Trusted Types trial (docs/spec/08-security.md §8.8) and the visual diff, as in desktop.yml.
+      - name: Write the Trusted Types and visual diff summaries
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          for summary in trusted-types.md visual/visual-diff.md; do
+            if [ -f "$B2C_E2E_ARTIFACTS/$summary" ]; then
+              cat "$B2C_E2E_ARTIFACTS/$summary" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "No $summary was written." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+      - name: Upload the visual diff candidates
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nightly-visual-candidates-${{ matrix.os }}
+          path: e2e-artifacts/visual
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload screenshots and logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nightly-e2e-artifacts-${{ matrix.os }}
+          path: e2e-artifacts
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The E2E security tests (docs/spec/08-security.md §8.12, §8.13; apps/desktop/e2e/specs/security):
+  # any abuse the app accepts fails the job.
+  e2e-security:
+    name: E2E security (${{ matrix.os }})
+    needs: e2e-app
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            app: blocks2cpp-desktop
+          - os: windows-2025
+            app: blocks2cpp-desktop.exe
+    env:
+      B2C_E2E_APP: ${{ github.workspace }}/e2e-app/${{ matrix.app }}
+      B2C_E2E_ARTIFACTS: ${{ github.workspace }}/e2e-artifacts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the webview libraries, WebKitWebDriver and xvfb (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential pkg-config libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev libgtk-3-dev librsvg2-dev xvfb webkit2gtk-driver
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      # A compiler the app finds, so the tests can show that it is never started for an abuse.
+      - name: Install g++ (MSYS2 UCRT64)
+        if: runner.os == 'Windows'
+        id: msys2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+
+      - name: Put g++ on PATH and name its folder for the app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $bin = Join-Path $env:MSYS2_LOCATION 'ucrt64\bin'
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_TOOLCHAIN_DIRS=$bin"
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Restore tauri-driver from the cache
+        id: tauri-driver-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/tauri-driver
+            ~/.cargo/bin/tauri-driver.exe
+          key: tauri-driver-${{ env.TAURI_DRIVER_VERSION }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
+
+      - name: Install tauri-driver
+        if: steps.tauri-driver-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          RUSTFLAGS: ""
+        run: cargo install tauri-driver --version "$TAURI_DRIVER_VERSION" --locked
+
+      - name: Download the app under test
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: e2e-app-${{ matrix.os }}
+          path: e2e-app
+
+      - name: Make the app executable (Linux)
+        if: runner.os == 'Linux'
+        run: chmod +x "$B2C_E2E_APP"
+
+      - name: Fetch msedgedriver for the installed WebView2 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./apps/desktop/e2e/scripts/msedgedriver.ps1 -OutDir (Join-Path $env:RUNNER_TEMP 'msedgedriver')
+
+      - name: Log msedgedriver verbosely (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:B2C_E2E_ARTIFACTS | Out-Null
+          $log = Join-Path $env:B2C_E2E_ARTIFACTS 'msedgedriver.log'
+          $wrapper = Join-Path $env:RUNNER_TEMP 'msedgedriver-verbose.cmd'
+          $line = '@"{0}" --verbose --append-log "--log-path={1}" %*' -f $env:B2C_E2E_NATIVE_DRIVER, $log
+          Set-Content -Path $wrapper -Encoding ascii -Value $line
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_NATIVE_DRIVER=$wrapper"
+
+      # Only the security specs; no spec found is a failure too (Vitest exits with an error).
+      - name: Run the E2E security tests (Linux)
+        if: runner.os == 'Linux'
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          B2C_E2E_TOOLCHAIN_DIRS: /usr/bin
+        run: xvfb-run --auto-servernum pnpm --filter @blocks2cpp/desktop run e2e --project e2e specs/security
+
+      - name: Run the E2E security tests (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          B2C_LOG: debug
+        run: pnpm --filter @blocks2cpp/desktop run e2e --project e2e specs/security
+
+      - name: Show the end-to-end logs (on failure)
+        if: failure()
+        shell: bash
+        run: |
+          if [ ! -d "$B2C_E2E_ARTIFACTS" ]; then exit 0; fi
+          find "$B2C_E2E_ARTIFACTS" -type f \( -name '*.log' -o -name '*.txt' \) -print0 |
+            while IFS= read -r -d '' file; do
+              echo "::group::$file"
+              tail -n 300 "$file"
+              echo "::endgroup::"
+            done
+
+      - name: Write the Trusted Types summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          if [ -f "$B2C_E2E_ARTIFACTS/trusted-types.md" ]; then
+            cat "$B2C_E2E_ARTIFACTS/trusted-types.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No Trusted Types report was written." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload screenshots and logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nightly-e2e-security-artifacts-${{ matrix.os }}
+          path: e2e-artifacts
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The benchmarks with their 10% regression gate (docs/spec/09-quality-and-delivery.md §9.2,
+  # apps/desktop/e2e/bench/README.md): the native pipeline (criterion) first, while the runner is
+  # quiet, then the webview benchmarks in the app under test. tools/bench-compare.py compares the
+  # medians with the history of this system (the last 5 scheduled runs, kept in the Actions
+  # cache); only a scheduled run without a regression is added to the history.
+  bench:
+    name: Benchmarks (${{ matrix.os }})
+    needs: e2e-app
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            app: blocks2cpp-desktop
+            system: linux
+            python: python3
+          - os: windows-2025
+            app: blocks2cpp-desktop.exe
+            system: windows
+            python: python
+    # One run at a time reads and writes a system's history.
+    concurrency:
+      group: bench-history-${{ matrix.system }}
+      cancel-in-progress: false
+    env:
+      B2C_E2E_APP: ${{ github.workspace }}/e2e-app/${{ matrix.app }}
+      B2C_E2E_ARTIFACTS: ${{ github.workspace }}/e2e-artifacts
+      B2C_BENCH_OUT: ${{ github.workspace }}/bench-results
+      BENCH_SYSTEM: ${{ matrix.system }}
+      PYTHON: ${{ matrix.python }}
+      HISTORY: .bench-history/history.json
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the webview libraries, WebKitWebDriver and xvfb (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential pkg-config libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev libgtk-3-dev librsvg2-dev xvfb webkit2gtk-driver
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      # The app finds a compiler as on a user's machine, so it opens on its start page.
+      - name: Install g++ (MSYS2 UCRT64)
+        if: runner.os == 'Windows'
+        id: msys2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+
+      - name: Put g++ on PATH and name its folder for the app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $bin = Join-Path $env:MSYS2_LOCATION 'ucrt64\bin'
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_TOOLCHAIN_DIRS=$bin"
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Check the benchmark comparison script
+        shell: bash
+        run: |
+          "$PYTHON" --version
+          "$PYTHON" tools/bench-compare.py --self-test
+
+      # criterion, 50 samples per benchmark (crates/b2c-core-wasm/benches/pipeline); the document is
+      # checked before anything is measured.
+      - name: Run the native pipeline benchmark
+        shell: bash
+        run: |
+          cargo bench --locked -p b2c-core-wasm --bench pipeline
+          "$PYTHON" tools/bench-compare.py criterion --dir target/criterion --group pipeline \
+            --os "$BENCH_SYSTEM" --gate preview --out "$B2C_BENCH_OUT/native.pipeline.json"
+
+      - name: Restore tauri-driver from the cache
+        id: tauri-driver-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/tauri-driver
+            ~/.cargo/bin/tauri-driver.exe
+          key: tauri-driver-${{ env.TAURI_DRIVER_VERSION }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
+
+      - name: Install tauri-driver
+        if: steps.tauri-driver-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          RUSTFLAGS: ""
+        run: cargo install tauri-driver --version "$TAURI_DRIVER_VERSION" --locked
+
+      - name: Download the app under test
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: e2e-app-${{ matrix.os }}
+          path: e2e-app
+
+      - name: Make the app executable (Linux)
+        if: runner.os == 'Linux'
+        run: chmod +x "$B2C_E2E_APP"
+
+      - name: Fetch msedgedriver for the installed WebView2 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./apps/desktop/e2e/scripts/msedgedriver.ps1 -OutDir (Join-Path $env:RUNNER_TEMP 'msedgedriver')
+
+      # Cold start (10 launches), the preview at 1,000 blocks and dragging at 5,000 blocks, one
+      # results file per metric in B2C_BENCH_OUT.
+      - name: Run the webview benchmarks (Linux)
+        if: runner.os == 'Linux'
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          B2C_E2E_TOOLCHAIN_DIRS: /usr/bin
+        run: >-
+          xvfb-run --auto-servernum pnpm --filter @blocks2cpp/desktop exec
+          vitest run --config e2e/bench/vitest.bench.config.ts --project bench
+
+      - name: Run the webview benchmarks (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: >-
+          pnpm --filter @blocks2cpp/desktop exec
+          vitest run --config e2e/bench/vitest.bench.config.ts --project bench
+
+      # The newest history this system's scheduled runs kept (the key itself is new, so the
+      # prefix picks the newest).
+      - name: Restore the benchmark history
+        if: ${{ !cancelled() }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .bench-history/history.json
+          key: bench-history-${{ matrix.system }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: bench-history-${{ matrix.system }}-
+
+      # Fails at more than 10% worse on a gated metric once it has 5 baselines; otherwise only
+      # reports. The history file gets this run only when nothing regressed.
+      - name: Compare with the baseline
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          "$PYTHON" tools/bench-compare.py compare --os "$BENCH_SYSTEM" \
+            --results-dir "$B2C_BENCH_OUT" --history "$HISTORY" \
+            --update-history "$HISTORY" --run-id "$GITHUB_RUN_ID" --commit "$GITHUB_SHA" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      # Only the scheduled run (always on the default branch) keeps its medians as a baseline,
+      # and only when every benchmark ran and none regressed; manual runs compare without
+      # changing the history.
+      - name: Keep the benchmark history
+        if: ${{ success() && github.event_name == 'schedule' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .bench-history/history.json
+          key: bench-history-${{ matrix.system }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload the benchmark results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-results-${{ matrix.system }}
+          path: |
+            bench-results
+            .bench-history/history.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload screenshots and logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-artifacts-${{ matrix.system }}
+          path: e2e-artifacts
+          if-no-files-found: ignore
+          retention-days: 14
