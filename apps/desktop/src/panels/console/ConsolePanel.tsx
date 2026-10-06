@@ -374,14 +374,20 @@ export function ConsolePanel({
           </span>
         ))}
         <span className="b2c-panel-status">
-          <button type="button" disabled={!running} onClick={onStop}>
+          <button type="button" disabled={!running} onClick={onStop} data-testid="console-stop">
             <span aria-hidden="true">■ </span>Stop
           </button>{' '}
-          <button type="button" disabled={header.state === 'idle'} onClick={onRunAgain}>
+          <button
+            type="button"
+            disabled={header.state === 'idle'}
+            onClick={onRunAgain}
+            data-testid="console-run-again"
+          >
             <span aria-hidden="true">⟲ </span>Run again
           </button>{' '}
           <button
             type="button"
+            data-testid="console-clear"
             onClick={() => {
               scheduler.clear();
               onClear();

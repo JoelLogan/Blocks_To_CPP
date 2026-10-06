@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:e2e": "tsc -b && vite build --mode e2e",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "lint": "eslint --max-warnings 0 .",
@@ -17,6 +18,7 @@
     "test:coverage": "vitest run --coverage && pnpm run test:isolation",
     "test:isolation": "node --test --test-reporter=spec \"src-tauri/isolation-tests/*.test.js\"",
     "test:watch": "vitest",
+    "e2e": "vitest run --config e2e/vitest.e2e.config.ts",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -45,8 +47,10 @@
     "@tauri-apps/cli": "2.12.0",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
+    "@types/node": "24.19.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/selenium-webdriver": "4.35.7",
     "@vitejs/plugin-react": "6.1.1",
     "@vitest/coverage-v8": "4.1.11",
     "axe-core": "4.13.0",
@@ -56,6 +60,7 @@
     "eslint-plugin-react-hooks": "5.2.0",
     "happy-dom": "20.14.5",
     "prettier": "3.9.9",
+    "selenium-webdriver": "4.49.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.70.1",
     "vite": "8.3.1",

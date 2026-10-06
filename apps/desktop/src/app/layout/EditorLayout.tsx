@@ -82,7 +82,7 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
       hidden={hidden}
       style={{ gridTemplateColumns: columns, gridTemplateRows: rows }}
     >
-      <main className="workspace" aria-label="Block workspace">
+      <main className="workspace" aria-label="Block workspace" data-testid="workspace">
         {workspace}
       </main>
 
@@ -113,6 +113,7 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
             ref={rightToggle}
             type="button"
             className="icon-button"
+            data-testid="right-dock-toggle"
             aria-expanded={!rightCollapsed}
             aria-controls={`${rightId}-content`}
             aria-label={rightCollapsed ? 'Show the C++ panel' : 'Hide the C++ panel'}
@@ -199,6 +200,7 @@ function BottomDock({
                 key={value}
                 value={value}
                 className="dock-tab"
+                data-testid={`dock-tab-${value}`}
                 onClick={() => {
                   // Choosing the shown tab again opens a collapsed dock.
                   if (collapsed) {
@@ -214,6 +216,7 @@ function BottomDock({
             ref={toggleRef}
             type="button"
             className="icon-button"
+            data-testid="bottom-dock-toggle"
             aria-expanded={!collapsed}
             aria-controls={`${id}-content`}
             aria-label={collapsed ? 'Show the bottom panel' : 'Hide the bottom panel'}

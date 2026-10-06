@@ -58,7 +58,11 @@ export function StatusBar() {
   return (
     <footer className="status-bar">
       <ToolchainStatus />
-      {project !== null && <span className="status-item">{standardLabel(project)}</span>}
+      {project !== null && (
+        <span className="status-item" data-testid="status-standard">
+          {standardLabel(project)}
+        </span>
+      )}
       <span className="status-item" data-testid="status-config">
         {CONFIG_LABELS[config]}
       </span>

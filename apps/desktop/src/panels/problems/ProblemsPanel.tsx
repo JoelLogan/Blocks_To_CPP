@@ -126,7 +126,7 @@ export function ProblemsPanel({ items, onActivate, onShowRaw, onLearnMore }: Pro
   return (
     <div className="b2c-panel b2c-problems-panel" data-testid="problems-panel">
       <div className="b2c-panel-bar">
-        <span>{problemSummary(items)}</span>
+        <span data-testid="problems-summary">{problemSummary(items)}</span>
         <span className="b2c-panel-status">
           <button type="button" onClick={onLearnMore}>
             Learn more
