@@ -57,8 +57,10 @@ pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/vitest.e2e.config
 ```
 
 On Windows the tests run in CI (`windows-2025`): [`scripts/msedgedriver.ps1`](scripts/msedgedriver.ps1)
-reads the installed WebView2 runtime's version, downloads the matching `msedgedriver` from
-Microsoft, checks its signature and version, and sets `B2C_E2E_NATIVE_DRIVER`.
+(PowerShell 7.3 or later) reads the installed WebView2 runtime's version, downloads the matching
+`msedgedriver` from Microsoft, takes only `msedgedriver.exe` out of the archive (into a folder of its
+own), checks that its signature is valid and Microsoft's (the exact signer and a Microsoft issuer)
+and that it reports exactly that version, and sets `B2C_E2E_NATIVE_DRIVER`.
 
 ## Settings
 
@@ -73,7 +75,15 @@ Microsoft, checks its signature and version, and sets `B2C_E2E_NATIVE_DRIVER`.
 Each test gets its own temporary profile (`B2C_E2E_ROOT`), a dialog script (`B2C_E2E_DIALOGS`; by
 default every native dialog is cancelled) and its own `tauri-driver` on free ports. A failed test
 leaves a screenshot, the page, the console transcript, the project and the app's and the driver's
-logs in a folder named after it. After every test the Content Security Policy violations it saw
+logs in a folder named after it. When no session starts (a missing or mismatched native driver),
+the test fails as soon as `tauri-driver` exits, and its message quotes the driver's output and names
+the saved copy of its log there.
+
+When a test ends, the WebDriver session is ended (which closes the app) with a time limit, then
+`tauri-driver` is stopped. On Linux `tauri-driver` does not close the app itself, so whatever the test
+started that is still running then (the app, WebKit's processes, a compiler or program the app
+started) is killed: the driver's descendants and every process with the test's `B2C_E2E_ROOT`
+([`support/processes.ts`](support/processes.ts)). On Windows `tauri-driver`'s job object does this. After every test the Content Security Policy violations it saw
 are appended to `trusted-types.jsonl`, and `trusted-types.md` summarises them when the run ends
 (the CI job adds it to its summary): the Trusted Types trial of
 [08 §8.8](../../../docs/spec/08-security.md#88-webview-and-ipc-hardening), which never fails a test.
@@ -84,7 +94,8 @@ are appended to `trusted-types.jsonl`, and `trusted-types.md` summarises them wh
 when the test ends. The helpers:
 
 - [`support/ui.ts`](support/ui.ts): elements by `data-testid`, text also in hidden tabs, toolbox
-  categories, Blockly's dropdown menus and text editors, pointer clicks.
+  categories (`openCategory` returns once the flyout's scroll animation has ended, however many
+  frames it takes), Blockly's dropdown menus and text editors, pointer clicks.
 - [`support/editor.ts`](support/editor.ts) and [`support/canvas.ts`](support/canvas.ts): the open
   project, dragging blocks from the toolbox onto connections and around the canvas, panning the
   canvas, fields, Problems and the run gate.
@@ -95,10 +106,12 @@ when the test ends. The helpers:
 
 The hook exists only in the frontend built with `vite build --mode e2e`
 ([`src/e2e/`](../src/e2e/index.ts); its contract is [`src/e2e/contract.ts`](../src/e2e/contract.ts)).
-It reports readiness, inserts blocks as the clipboard's paste does, reads the canonical document,
-the console transcript (the terminal only has the rows on screen), the C++ of the code panel and
-the Trusted Types counts, selects a block, and locates blocks, fields, connections and grab points
-on screen so that the test can click and drag with real pointer input. CI checks that a release
+It reports readiness, inserts blocks as the clipboard's paste does (one undo step; a refused
+insertion changes nothing and leaves no undo step), reads the canonical document, the console
+transcript (the terminal only has the rows on screen; the transcript also has the console's
+separators and its "… N lines skipped" markers), the C++ of the code panel and the Trusted Types
+counts, selects a block, and locates blocks, fields, connections and grab points on screen so that
+the test can click and drag with real pointer input. CI checks that a release
 build contains neither the hook nor the backend's `B2C_E2E_*` variables.
 
 Find elements by their `data-testid`; the stable ones are listed in the app's README. Wait for

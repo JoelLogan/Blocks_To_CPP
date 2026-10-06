@@ -57,6 +57,33 @@ export async function waitFor<T>(
   });
 }
 
+/**
+ * `promise`'s result, or a {@link WaitTimeoutError} once `timeout` milliseconds have passed. The
+ * promise itself is not stopped; a failure after the timeout is ignored (never unhandled).
+ */
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  timeout: number,
+  what: string,
+): Promise<T> {
+  promise.catch(() => undefined);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new WaitTimeoutError(
+          `Timed out after ${(timeout / 1000).toFixed(1)} s waiting for ${what}`,
+        ),
+      );
+    }, timeout);
+  });
+  try {
+    return await Promise.race([promise, expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** The message from a describing function, or a note that it failed. */
 async function describe(message: () => string | Promise<string>): Promise<string> {
   try {

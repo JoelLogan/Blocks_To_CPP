@@ -5,7 +5,7 @@
 import { By, Key, Origin, type WebDriver, type WebElement } from 'selenium-webdriver';
 
 import type { E2ePoint } from '../../src/e2e/contract';
-import { sleep, waitFor } from './wait';
+import { waitFor } from './wait';
 
 /** The locator of `[data-testid="id"]`. */
 export function byTestId(id: string): By {
@@ -47,7 +47,103 @@ export async function clickTestId(driver: WebDriver, id: string, timeout = 10_00
   await element.click();
 }
 
-/** Opens a toolbox category by its name; the flyout scrolls to its blocks. */
+/** The SVG group the toolbox's flyout scrolls: its `transform` changes while it scrolls. */
+export const FLYOUT_CANVAS = '.blocklyToolboxFlyout .blocklyBlockCanvas';
+
+/** How long the flyout's position must stay the same to count as settled (at least 3 frames). */
+export const FLYOUT_QUIET_MS = 150;
+
+/** How long the flyout may take to stop scrolling. */
+export const FLYOUT_SETTLE_TIMEOUT_MS = 5_000;
+
+/** What {@link SETTLE_SCRIPT} calls back with. */
+export type SettleResult = 'settled' | 'moving' | 'missing';
+
+/**
+ * Runs in the webview (`executeAsyncScript`): calls back with `'settled'` once the element at
+ * selector `arguments[0]` has kept its `transform` for `arguments[1]` milliseconds and at least
+ * three animation frames, with `'moving'` when that has not happened after `arguments[2]`
+ * milliseconds, and with `'missing'` at once when there is no such element. The continuous toolbox
+ * scrolls its flyout a fraction of the way on every animation frame, so the time an animation
+ * takes depends on the frame rate: counting frames and time, rather than sleeping, waits for its
+ * end on a slow machine too. A plain script (not a function from this file), so nothing the test
+ * runner adds to compiled functions can end up in the page.
+ */
+export const SETTLE_SCRIPT = `
+  const selector = arguments[0];
+  const quietMs = arguments[1];
+  const timeoutMs = arguments[2];
+  const done = arguments[arguments.length - 1];
+  const read = () => {
+    const element = document.querySelector(selector);
+    return element === null ? null : element.getAttribute('transform');
+  };
+  const start = performance.now();
+  let last = read();
+  let since = start;
+  let frames = 0;
+  let finished = false;
+  const finish = (result) => {
+    if (!finished) {
+      finished = true;
+      done(result);
+    }
+  };
+  if (document.querySelector(selector) === null) {
+    finish('missing');
+    return;
+  }
+  const step = (now) => {
+    if (finished) {
+      return;
+    }
+    const current = read();
+    if (current !== last) {
+      last = current;
+      since = now;
+      frames = 0;
+    } else {
+      frames += 1;
+    }
+    if (frames >= 3 && now - since >= quietMs) {
+      finish('settled');
+    } else if (now - start >= timeoutMs) {
+      finish('moving');
+    } else {
+      requestAnimationFrame(step);
+    }
+  };
+  requestAnimationFrame(step);
+  // Without animation frames (a hidden window) nothing would ever call back.
+  setTimeout(() => finish('moving'), timeoutMs + 1000);
+`;
+
+/**
+ * Waits until the toolbox's flyout has stopped scrolling (see {@link SETTLE_SCRIPT}).
+ *
+ * @throws Error when there is no flyout, or it still moves after {@link FLYOUT_SETTLE_TIMEOUT_MS}.
+ */
+export async function waitForFlyout(driver: WebDriver): Promise<void> {
+  const result: unknown = await driver.executeAsyncScript(
+    SETTLE_SCRIPT,
+    FLYOUT_CANVAS,
+    FLYOUT_QUIET_MS,
+    FLYOUT_SETTLE_TIMEOUT_MS,
+  );
+  if (result === 'missing') {
+    throw new Error(`The toolbox's flyout (${FLYOUT_CANVAS}) is not on the page`);
+  }
+  if (result !== 'settled') {
+    throw new Error(
+      `The toolbox's flyout was still scrolling after ${String(FLYOUT_SETTLE_TIMEOUT_MS / 1000)} s`,
+    );
+  }
+}
+
+/**
+ * Opens a toolbox category by its name and waits until the flyout has scrolled to its blocks, so
+ * that the blocks are where the next WebDriver call finds them.
+ */
 export async function openCategory(driver: WebDriver, name: string): Promise<void> {
   const category = await waitFor(
     async () => {
@@ -62,8 +158,8 @@ export async function openCategory(driver: WebDriver, name: string): Promise<voi
     { timeout: 10_000, message: `the toolbox category "${name}"` },
   );
   await category.click();
-  // The flyout scrolls with an animation.
-  await sleep(600);
+  // The flyout scrolls with an animation that lasts a number of frames.
+  await waitForFlyout(driver);
 }
 
 /** The middle of an element's box on screen (viewport coordinates, whole pixels). */

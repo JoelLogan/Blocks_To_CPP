@@ -19,7 +19,7 @@ import { freePort } from './driver';
 import { dropPoint } from './drag';
 import { mainFunction } from './editor';
 import { byTestId, errorCount } from './ui';
-import { sleep, waitFor, WaitTimeoutError } from './wait';
+import { sleep, waitFor, WaitTimeoutError, withTimeout } from './wait';
 
 const folders: string[] = [];
 
@@ -72,6 +72,32 @@ describe('waitFor', () => {
     const start = Date.now();
     await sleep(20);
     expect(Date.now() - start).toBeGreaterThanOrEqual(15);
+  });
+});
+
+describe('withTimeout', () => {
+  it('passes on the result or the failure of a promise that settles in time', async () => {
+    expect(await withTimeout(Promise.resolve('quit'), 1_000, 'the quit')).toBe('quit');
+    await expect(withTimeout(Promise.reject(new Error('gone')), 1_000, 'x')).rejects.toThrow(
+      'gone',
+    );
+  });
+
+  it('gives up on a promise that hangs, and ignores its later failure', async () => {
+    let fail: (error: Error) => void = () => undefined;
+    const hanging = new Promise<void>((_resolve, reject) => {
+      fail = reject;
+    });
+    const start = Date.now();
+    const waiting = withTimeout(hanging, 50, 'the WebDriver session to end');
+    await expect(waiting).rejects.toThrow(WaitTimeoutError);
+    await expect(waiting).rejects.toThrow(
+      'Timed out after 0.1 s waiting for the WebDriver session to end',
+    );
+    expect(Date.now() - start).toBeLessThan(1_000);
+    // Vitest fails the run on an unhandled rejection; there is none.
+    fail(new Error('the session ended badly, later'));
+    await sleep(10);
   });
 });
 
