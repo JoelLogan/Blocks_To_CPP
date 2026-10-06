@@ -511,8 +511,14 @@ fn cancel_kills_the_whole_compiler_tree() {
     let took = cancelled_at.elapsed();
     assert_eq!(outcome(&all).0, BuildOutcome::Cancelled);
     assert!(took < Duration::from_secs(3), "cancelling took {took:?}");
+    // SIGKILL is delivered at once, but a process only dies when it next
+    // runs: wait for that rather than look once.
+    let deadline = Instant::now() + Duration::from_secs(10);
     for pid in &pids {
-        assert!(!alive(pid), "process {pid} survived the cancel");
+        while alive(pid) {
+            assert!(Instant::now() < deadline, "process {pid} survived the cancel");
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
     assert!(sessions.wait_idle(Duration::from_secs(30)));
     let record = sessions.record(&id).unwrap();

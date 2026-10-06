@@ -1337,8 +1337,8 @@ exec "$@"
         }
     }
 
-    /// Starts a sleeper that double-forks and leaves the session, waits
-    /// until it has, and prints `escaped <pid>`.
+    /// Starts a sleeper that leaves the session (`setsid`), waits until it
+    /// has, and prints `escaped <pid>`.
     const ESCAPE: &str = "( /usr/bin/setsid /bin/sleep 600 </dev/null >/dev/null 2>&1 & p=$!; \
         while [ \"$(cut -d' ' -f6 /proc/$p/stat)\" != \"$p\" ]; do sleep 0.01; done; \
         echo \"escaped $p\" )";
@@ -1480,13 +1480,17 @@ exec "$@"
 
     /// A shell that waits for a line on its input before it starts a
     /// `setsid` sleeper and a plain one, so it can be moved into a cgroup
-    /// first.
+    /// first. It prints `started` once the `setsid` sleeper has left its
+    /// process group (field 6 of its stat line, the session ID, is its own
+    /// PID).
     fn waiting_sleepers() -> crate::PtyChild {
         let mut command = Command::new("/bin/sh", "/").unwrap();
         command
             .args([
                 "-c",
-                "read go; /usr/bin/setsid /bin/sleep 60 & /bin/sleep 60 & echo started; wait",
+                "read go; /usr/bin/setsid /bin/sleep 60 & p=$!; /bin/sleep 60 & \
+                 while [ \"$(cut -d' ' -f6 /proc/$p/stat)\" != \"$p\" ]; do sleep 0.01; done; \
+                 echo started; wait",
             ])
             .env("PATH", "/usr/bin:/bin")
             .containment(Containment::ProcessGroupOnly);
@@ -1527,13 +1531,27 @@ exec "$@"
         let dir = scratch.0.clone();
         let mut child = waiting_sleepers();
         // Kept open until the end: the shell must not die of SIGPIPE.
-        let output = child.take_reader();
+        let mut output = child.take_reader().unwrap();
         if write_control(&dir.join("cgroup.procs"), child.pid().to_string().as_bytes()).is_err() {
             child.kill();
             eprintln!("skipped: cannot move a process into {}", dir.display());
             return;
         }
         std::io::Write::write_all(&mut child.writer(), b"go\n").unwrap();
+        // Only once the setsid sleeper is out of the shell's process group
+        // does the kill show that leaving the group is no escape.
+        let mut seen = Vec::new();
+        while !seen.ends_with(b"started\n") {
+            let mut byte = [0_u8; 1];
+            let read = std::io::Read::read(&mut output, &mut byte).unwrap();
+            assert_eq!(
+                read,
+                1,
+                "the shell ended early: {:?}",
+                String::from_utf8_lossy(&seen)
+            );
+            seen.push(byte[0]);
+        }
         // The shell, the setsid sleeper and the plain sleeper.
         let pids = wait_for_pids(&dir, 3);
         assert!(pids.len() >= 3, "{pids:?}");

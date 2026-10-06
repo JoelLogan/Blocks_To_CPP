@@ -183,7 +183,7 @@ impl Output {
     }
 }
 
-/// A script that starts a sleeper which double-forks and leaves the session
+/// A script that starts a sleeper which leaves its process group and session
 /// (`setsid`), waits until it has, prints `escaped <pid>`, then runs `rest`.
 fn double_fork_then(rest: &str) -> String {
     format!(
@@ -258,7 +258,9 @@ fn a_hog_under_its_cap_is_not_out_of_memory() {
 #[test]
 fn a_run_cap_never_becomes_an_address_space_limit() {
     for containment in [Containment::ProcessGroupOnly, Containment::Auto] {
-        let mut command = sh("ulimit -v", containment);
+        // A limit would be set on the child after it has started: read it
+        // only after that would have happened, or a regression could pass.
+        let mut command = sh("sleep 0.2; ulimit -v", containment);
         command.limits(Limits {
             rss_limit: Some(256 * MIB),
             ..Limits::default()
@@ -602,11 +604,10 @@ fn stale_scopes_of_dead_owners_are_killed() {
             &format!("--unit={unit}"),
             "--",
         ])
-        .args([
-            "/bin/sh",
-            "-c",
-            &format!("{SETSID} /bin/sleep 600 </dev/null >/dev/null 2>&1 & echo \"escaped $!\""),
-        ])
+        // The shell waits until the sleeper has left its process group:
+        // the captured run kills that group when the shell exits, and a
+        // sleeper that has not called setsid() yet would die with it.
+        .args(["/bin/sh", "-c", &double_fork_then("")])
         .env("PATH", "/usr/bin:/bin")
         .containment(Containment::ProcessGroupOnly)
         .limits(Limits {

@@ -261,9 +261,18 @@ fn escaped_processes_cannot_hold_the_run_open() {
     if !Path::new("/usr/bin/setsid").exists() {
         return;
     }
-    // `setsid` leaves the process group but keeps the stdout pipe open.
-    let mut command = sh("/usr/bin/setsid sleep 6 & echo started");
-    command.timeout(Duration::from_secs(30));
+    // `setsid` leaves the process group but keeps the stdout pipe open. The
+    // shell waits until it has (field 6 of its stat line, the session ID, is
+    // its own PID): the group cleanup at the shell's exit would otherwise
+    // kill it first, and the test would prove nothing. Only without a cgroup
+    // scope can a process escape like this (a scope kills it when the
+    // program exits; tests/containment.rs).
+    let mut command = sh("/usr/bin/setsid sleep 6 & p=$!; \
+                          while [ \"$(cut -d' ' -f6 /proc/$p/stat)\" != \"$p\" ]; do sleep 0.01; done; \
+                          echo started");
+    command
+        .containment(Containment::ProcessGroupOnly)
+        .timeout(Duration::from_secs(30));
     let start = Instant::now();
     let result = run_captured(&command).unwrap();
     assert!(result.status.success());
@@ -371,8 +380,13 @@ fn captured_runs_lead_their_own_process_group() {
 #[test]
 fn memory_limit_is_applied() {
     // The fallback's address-space limit (a cgroup scope enforces
-    // `MemoryMax` instead; tests/containment.rs).
-    let mut command = sh("sleep 0.2; ulimit -v");
+    // `MemoryMax` instead; tests/containment.rs). It is set on the child
+    // after it has started, so the shell waits for it (at most 5 s) instead
+    // of reading it at once.
+    let mut command = sh(
+        "i=0; while [ \"$(ulimit -v)\" = unlimited ] && [ $i -lt 500 ]; do \
+                          sleep 0.01; i=$((i+1)); done; ulimit -v",
+    );
     command.containment(Containment::ProcessGroupOnly).limits(Limits {
         memory: Some(512 * 1024 * 1024),
         ..Limits::default()
