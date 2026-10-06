@@ -20,7 +20,15 @@ name: Nightly
 on:
   schedule:
     - cron: "23 3 * * *" # daily 03:23 UTC
+  # By hand, all jobs or one group of them (the E2E group is the E2E app, the E2E suite, the E2E
+  # security tests and the benchmarks, which all use that app).
   workflow_dispatch:
+    inputs:
+      jobs:
+        description: Which jobs to run
+        type: choice
+        options: [all, e2e, fuzz, links]
+        default: all
 
 permissions: {}
 
@@ -45,6 +53,7 @@ env:
 jobs:
   fuzz-list:
     name: List the fuzz targets
+    if: github.event_name == 'schedule' || inputs.jobs == 'all' || inputs.jobs == 'fuzz'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -273,6 +282,7 @@ jobs:
   # example.com excluded). No token, so nothing private can be reached.
   links:
     name: External links (lychee)
+    if: github.event_name == 'schedule' || inputs.jobs == 'all' || inputs.jobs == 'links'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -297,6 +307,7 @@ jobs:
   # and freezePrototype are active (the same build as desktop.yml's e2e job, docs/adr/0009).
   e2e-app:
     name: E2E app (${{ matrix.os }})
+    if: github.event_name == 'schedule' || inputs.jobs == 'all' || inputs.jobs == 'e2e'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -386,8 +397,9 @@ jobs:
   e2e:
     name: E2E (${{ matrix.os }})
     needs: e2e-app
-    # Each system's leg runs when its own app was built (a missing app fails only that leg).
-    if: ${{ !cancelled() }}
+    # Each system's leg runs when its own app was built (a missing app fails only that leg); none
+    # runs when the E2E group was not asked for.
+    if: ${{ !cancelled() && needs.e2e-app.result != 'skipped' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     permissions:
@@ -577,7 +589,7 @@ jobs:
   e2e-security:
     name: E2E security (${{ matrix.os }})
     needs: e2e-app
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.e2e-app.result != 'skipped' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -738,7 +750,7 @@ jobs:
   bench:
     name: Benchmarks (${{ matrix.os }})
     needs: e2e-app
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.e2e-app.result != 'skipped' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     permissions:
