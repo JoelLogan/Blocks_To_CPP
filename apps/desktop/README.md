@@ -433,8 +433,7 @@ These implement [docs/spec/08-security.md §8.8](../../docs/spec/08-security.md#
 ## Dependencies
 
 Every dependency is pinned to an exact version and was at least 7 days old when added, as the
-workspace policy requires ([§8.9](../../docs/spec/08-security.md#89-supply-chain)), with the one
-exception the notes explain (`libc`). The tables list the npm packages of the app and of the
+workspace policy requires ([§8.9](../../docs/spec/08-security.md#89-supply-chain)). The tables list the npm packages of the app and of the
 frontend packages (`packages/*` use the same development tools at the same versions), and the
 crates that the desktop shell (milestone M0) and milestone M2 added to the Cargo workspace.
 
@@ -494,7 +493,7 @@ crates that the desktop shell (milestone M0) and milestone M2 added to the Cargo
 | `getrandom` (through `b2c-ipc`, `b2c-store`) | 0.3.4 (2025-10-14)   | MIT OR Apache-2.0 | 128 bits from the operating system's random number generator for every opaque IPC ID and recovery ID (02 §2.5.4). Already in the lockfile through `tempfile` and Tauri                                                                                                                                                                                                              |
 | `ts-rs` (`b2c-ipc`, feature `ts` only)       | 12.0.1 (2026-01-31)  | MIT               | Generates the TypeScript IPC types of `packages/ipc-types` from the Rust types (ADR-0007). Only the generation test turns the feature on, so no app build compiles it. Brings `ts-rs-macros` 12.0.1 (MIT) and `termcolor` 1.4.1 (Unlicense OR MIT)                                                                                                                                  |
 | `wasm-bindgen` (through `b2c-core-wasm`)     | 0.2.129 (2026-09-25) | MIT OR Apache-2.0 | The JavaScript glue of the WebAssembly core the editor runs (ADR-0003, ADR-0010). Pinned exactly, because the wasm-bindgen CLI that writes the glue must be the same version. Already in the lockfile through Tauri                                                                                                                                                                 |
-| `libc` (through `b2c-process`, Unix only)    | 0.2.190 (2026-10-02) | MIT OR Apache-2.0 | Resets the signal mask and dispositions in a program's process before `exec`, which `rustix` does not offer. No default features. Already in the lockfile through `tempfile` and `getrandom`; see the note below                                                                                                                                                                    |
+| `libc` (through `b2c-process`, Unix only)    | 0.2.189 (2026-07-21) | MIT OR Apache-2.0 | Resets the signal mask and dispositions in a program's process before `exec`, which `rustix` does not offer. No default features. Already in the lockfile through `tempfile` and `getrandom`; see the note below                                                                                                                                                                    |
 | `criterion` (dev, `b2c-core-wasm`)           | 0.7.0 (2025-07-25)   | Apache-2.0 OR MIT | The native pipeline benchmark (`crates/b2c-core-wasm/benches/pipeline`). No default features (no plotters, no rayon). 0.8 adds `alloca`, whose build script needs a C compiler for the Windows target of the clippy check. Brings `anes`, `cast`, `ciborium` (with `-io` and `-ll`), `criterion-plot`, `crunchy`, `either`, `half`, `itertools` 0.13, `oorandom` and `tinytemplate` |
 
 Notes:
@@ -552,12 +551,9 @@ Notes:
   default features it brings `inotify`, `inotify-sys`, `mio`, `walkdir`, `notify-types`,
   `bitflags` and `log` on Linux (most already in the lockfile through Tauri), and `walkdir` and
   `windows-sys` 0.60 on Windows.
-- **`libc` 0.2.190** was released on 2026-10-02 and entered `Cargo.lock` on 2026-10-03, as a
-  dependency of `tempfile` and `getrandom`, so it was younger than the 7 days the policy asks for;
-  `b2c-process` later required the version already locked (`libc = "0.2.190"` in the workspace
-  `Cargo.toml`). It turns 7 days old on 2026-10-09. To hold the lockfile to the rule before then,
-  require 0.2.189 (released 2026-07-21) there, if every crate that uses `libc` accepts it, and run
-  `cargo update -p libc --precise 0.2.189`.
+- **`libc` 0.2.189**, not 0.2.190: 0.2.190 (released 2026-10-02) entered `Cargo.lock` on
+  2026-10-03 through `tempfile` and `getrandom`, younger than the policy's 7 days, so the workspace
+  requires 0.2.189 (2026-07-21) instead; every crate that uses `libc` accepts it.
 - Cargo has no minimum release age, so `Cargo.lock` holds Tauri's own crates and the crates it
   brought in at their newest versions that were at least 7 days old. Keep it that way when
   updating them, with `cargo update -p <crate> --precise <version>`.
