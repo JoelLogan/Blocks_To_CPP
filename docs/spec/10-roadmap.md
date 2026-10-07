@@ -4,7 +4,7 @@
 
 ## 10.1 Milestones
 
-> **Implementation status (2026-10-06).** **M2** is in progress: its
+> **Implementation status (2026-10-07).** **M2** is in progress: its
 > automated exit criteria are met, and its manual checks are pending. The
 > desktop editor ([apps/desktop](../../apps/desktop/README.md),
 > [getting started](../user-guide/getting-started.md)) builds and runs block
@@ -16,20 +16,19 @@
 > changed outside the app, behind the hardened IPC contract of 36 commands.
 > The guessing-game exit test, assembled from the *Empty* template, and the
 > breadth E2E flows and the visual diff of the canvas pass in CI on both
-> systems (commit `8c531d3`). The nightly E2E security tests and benchmarks
-> pass on both systems when run by hand (commit `aabfc06`); their schedule
-> runs on the default branch. The first measurements on CI's runners, which
-> have no GPU, are a cold start of 1.2 s (Linux) and 2.8 s (Windows), and a
-> p95 frame time while dragging in a 5,000-block workspace of 40 ms (Linux)
-> and 914 ms (Windows): meeting the targets N2–N4 is M5's exit, M2 gates
-> regressions only. M2 is done once these
-> are recorded: the usability session with at least three first-time users
+> systems (commit `8c531d3`). The first scheduled nightly run, with the E2E
+> security tests, the benchmarks and the fuzzing, passed on both systems
+> (2026-10-07, commit `0709960`). The first measurements on CI's runners,
+> which have no GPU, are a cold start of 1.2 s (Linux) and 2.8 s (Windows),
+> and a p95 frame time while dragging in a 5,000-block workspace of 40 ms
+> (Linux) and 914 ms (Windows): meeting the targets N2–N4 is M5's exit, M2
+> gates regressions only. M2 is done once these are recorded: the usability
+> session with at least three first-time users
 > ([protocol](../manual-tests/m2-usability.md)), the NVDA and Orca pass
-> ([checklist](../manual-tests/m2-accessibility.md)), the review at the
+> ([checklist](../manual-tests/m2-accessibility.md)), and the review at the
 > milestone demo that nothing of M3–M6 has an entry point in the app (first
-> run on the code, recorded in the usability protocol), and a green first
-> nightly run on both systems. The visual diff's baselines and the
-> benchmarks' history build up from the first CI runs
+> run on the code, recorded in the usability protocol). The visual diff's
+> baselines and the benchmarks' history build up from the first CI runs
 > ([09 §9.3](09-quality-and-delivery.md#93-continuous-integration)).
 >
 > **M1** is done: loading and
