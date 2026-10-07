@@ -73,11 +73,18 @@ const QUIET_FRAME_MS = 50;
 const QUIET_TIMEOUT_MS = 60_000;
 
 /**
- * How long the whole benchmark may take: on Windows a drag and what its drop starts take about
- * 20 s at 5,000 blocks, and each of the 22 drags is preceded by centring the handle and waiting for
- * the page to settle.
+ * How long the whole benchmark may take: on the Windows runner opening the document takes minutes,
+ * and a drag with what its drop starts (the preview of 5,000 blocks, Blockly's rendering) takes
+ * about 40 s, before and after each of which the page is left to settle; 22 drags in all.
  */
-const TEST_TIMEOUT_MS = 1_200_000;
+const TEST_TIMEOUT_MS = 2_400_000;
+
+/** Notes progress on stderr, with the seconds since `since`, so a slow run shows where it is. */
+function progress(since: number, text: string): void {
+  process.stderr.write(
+    `drag benchmark, ${String(Math.round((Date.now() - since) / 1000))} s: ${text}\n`,
+  );
+}
 
 const folders: string[] = [];
 
@@ -249,6 +256,7 @@ describe('webview benchmark: dragging in a 5,000-block workspace', () => {
       folders.push(folder);
       const file = writeBenchProject(folder, { blocks: BLOCKS, dragHandle: true });
       const handle = handleId(BLOCKS);
+      const started = Date.now();
       const app = await launchApp(context, { dialogs: { open: [file] } });
       await openProjectFile(app, {
         blockId: MAIN_ID,
@@ -258,6 +266,7 @@ describe('webview benchmark: dragging in a 5,000-block workspace', () => {
       await foldCodePanel(app);
       await centerOn(app, handle);
       await waitUntilQuiet(app, 'centring the canvas on the drag handle');
+      progress(started, `opened the ${String(BLOCKS)}-block document`);
 
       const samples: number[] = [];
       let worstLanding = 0;
@@ -265,6 +274,10 @@ describe('webview benchmark: dragging in a 5,000-block workspace', () => {
         const away = await timedDrag(app, handle, 'away');
         const back = await timedDrag(app, handle, 'back');
         worstLanding = Math.max(worstLanding, away.landing, back.landing);
+        progress(
+          started,
+          `pair ${String(pair)} of ${String(PAIRS)} done (${pair === 0 ? 'warm-up' : 'timed'})`,
+        );
         // The first pair warms up (Blockly's drag surface, the connection database): not kept.
         if (pair > 0) {
           samples.push(percentile([...away.times, ...back.times], 95));
