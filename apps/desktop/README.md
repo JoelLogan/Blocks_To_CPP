@@ -277,6 +277,17 @@ project, build, run, toolchain, settings, trust and recovery services:
   see [site/README.md](../../site/README.md#build-locally) for Corepack)
 - Rust: the toolchain pinned in [`rust-toolchain.toml`](../../rust-toolchain.toml), installed
   automatically by `rustup`
+- The tools that build the WebAssembly core: the wasm-bindgen CLI of the version in `Cargo.lock`
+  and binaryen's `wasm-opt` ([details](../../packages/b2c-core-wasm/README.md#build)):
+
+  ```sh
+  cargo install wasm-bindgen-cli --version 0.2.129 --locked   # into ~/.cargo/bin, on PATH
+  sudo apt install binaryen     # Debian or Ubuntu; without wasm-opt, set B2C_SKIP_WASM_OPT=1
+  ```
+
+  On Windows, take `wasm-opt` from a [binaryen release](https://github.com/WebAssembly/binaryen/releases)
+  or set `B2C_SKIP_WASM_OPT=1`.
+
 - **Linux:** the WebKitGTK and GTK development packages. On Debian or Ubuntu:
 
   ```sh
@@ -300,8 +311,9 @@ pnpm desktop:dev          # the app, with the frontend served by Vite (hot reloa
 ```
 
 The editor imports the WebAssembly core (`packages/b2c-core-wasm`), so build it once before the
-first `dev`, `build` or test run, and again after changing the Rust crates it contains. Without
-binaryen's `wasm-opt`, set `B2C_SKIP_WASM_OPT=1` (see that package's README).
+first `dev`, `build` or test run, and again after changing the Rust crates it contains. It needs
+the tools under [Requirements](#requirements); without binaryen's `wasm-opt`, set
+`B2C_SKIP_WASM_OPT=1` ([details](../../packages/b2c-core-wasm/README.md#build)).
 
 `pnpm --filter @blocks2cpp/desktop dev` starts only the Vite dev server
 (<http://localhost:1420>), so the frontend can be opened in a browser. There is no backend there:
