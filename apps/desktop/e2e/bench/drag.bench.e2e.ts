@@ -34,9 +34,12 @@ import {
   type BlockPlace,
   FRAMES_KEY,
   FRAMES_START_SCRIPT,
+  DROP_REPORT_SCRIPT,
   FRAMES_STOP_SCRIPT,
   isTimestamps,
   PLACE_SCRIPT,
+  POINTER_KEY,
+  POINTER_RECORD_SCRIPT,
   QUIET_SCRIPT,
 } from './page';
 import { openProjectFile } from './project';
@@ -134,6 +137,30 @@ async function whereIs(app: App, id: string): Promise<string> {
   return describePlace(place, canvas);
 }
 
+/**
+ * What the page looked like at a drop that went wrong, for the error message: the drag, whether
+ * the handle is still in the document, and the page's report at the drop point.
+ */
+async function dropReport(app: App, id: string, grab: E2ePoint, end: E2ePoint): Promise<string> {
+  const parts = [
+    `The drag went from (${String(Math.round(grab.x))}, ${String(Math.round(grab.y))}) to (${String(Math.round(end.x))}, ${String(Math.round(end.y))})`,
+  ];
+  try {
+    const inDocument = (await app.hook.documentText()).includes(`"${id}"`);
+    parts.push(`the handle is ${inDocument ? 'still' : 'no longer'} in the document`);
+    const report: unknown = await app.driver.executeScript(
+      DROP_REPORT_SCRIPT,
+      POINTER_KEY,
+      Math.round(end.x),
+      Math.round(end.y),
+    );
+    parts.push(`the page at the drop point: ${JSON.stringify(report)}`);
+  } catch (error: unknown) {
+    parts.push(`the page could not be asked (${String(error)})`);
+  }
+  return `${parts.join('; ')}.`;
+}
+
 /** One timed drag. */
 interface TimedDrag {
   /** How far the pointer moved, in CSS pixels. */
@@ -166,6 +193,7 @@ async function timedDrag(app: App, id: string, move: 'away' | E2ePoint): Promise
       `the drag handle ${id} to be on screen and not covered (${await whereIs(app, id)})`,
   });
   const delta = move === 'away' ? awayDelta(grab, await visibleCanvas(app.driver)) : move;
+  await app.driver.executeScript(POINTER_RECORD_SCRIPT, POINTER_KEY);
   const started: unknown = await app.driver.executeScript(FRAMES_START_SCRIPT, FRAMES_KEY);
   if (started !== true) {
     throw new Error('The frame recorder could not start (one is already running)');
@@ -178,7 +206,16 @@ async function timedDrag(app: App, id: string, move: 'away' | E2ePoint): Promise
     frames = await app.driver.executeScript(FRAMES_STOP_SCRIPT, FRAMES_KEY);
   }
   await waitUntilQuiet(app, 'a drop');
-  const landing = checkLanding(id, delta, before, await placeOf(app, id));
+  const end = { x: grab.x + delta.x, y: grab.y + delta.y };
+  let landing: number;
+  try {
+    landing = checkLanding(id, delta, before, await placeOf(app, id));
+  } catch (error: unknown) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}. ${await dropReport(app, id, grab, end)}`,
+      { cause: error },
+    );
+  }
   if (!isTimestamps(frames)) {
     throw new Error('The frame recorder returned no timestamps');
   }

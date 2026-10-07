@@ -15,8 +15,11 @@ import {
   FRAMES_STOP_SCRIPT,
   GONE_SCRIPT,
   isTimestamps,
+  DROP_REPORT_SCRIPT,
   PAGE_SCRIPT,
   PLACE_SCRIPT,
+  POINTER_KEY,
+  POINTER_RECORD_SCRIPT,
   previewTask,
   QUIET_SCRIPT,
   READY_SCRIPT,
@@ -527,6 +530,78 @@ describe('PLACE_SCRIPT', () => {
     expect(() => start(PLACE_SCRIPT, { window: {} }, ['__B2C_E2E__', 'b1'])).toThrow(
       /hook is not installed/,
     );
+  });
+});
+
+describe('the drop report', () => {
+  /** A fake element with a tag, classes, a box and a parent. */
+  class FakeElement {
+    readonly tagName: string;
+    readonly className: string;
+    readonly parentElement: FakeElement | null;
+    readonly box: { left: number; top: number; right: number; bottom: number };
+
+    constructor(
+      tagName: string,
+      className: string,
+      parentElement: FakeElement | null,
+      box = { left: 0, top: 0, right: 0, bottom: 0 },
+    ) {
+      this.tagName = tagName;
+      this.className = className;
+      this.parentElement = parentElement;
+      this.box = box;
+    }
+
+    getAttribute(name: string): string | null {
+      return name === 'class' ? this.className : null;
+    }
+
+    getBoundingClientRect() {
+      return this.box;
+    }
+  }
+
+  it('records the last press and release, and reports the page at a drop point', () => {
+    const listeners = new Map<string, (event: unknown) => void>();
+    const svg = new FakeElement('SVG', 'blocklySvg', null);
+    const background = new FakeElement('RECT', 'blocklyMainBackground', svg);
+    const trash = new FakeElement('G', 'blocklyTrash', svg, {
+      left: 1160.4,
+      top: 455,
+      right: 1205,
+      bottom: 500,
+    });
+    const window: Record<string, unknown> = {
+      innerWidth: 1280,
+      innerHeight: 800,
+      devicePixelRatio: 1.25,
+      addEventListener: (type: string, listener: (event: unknown) => void) => {
+        listeners.set(type, listener);
+      },
+    };
+    const document = {
+      elementFromPoint: (x: number, y: number) => (x > 1100 && y > 400 ? trash : background),
+      querySelector: (selector: string) => (selector === '.blocklyTrash' ? trash : null),
+    };
+    const globals = { window, document, Element: FakeElement };
+    start(POINTER_RECORD_SCRIPT, globals, [POINTER_KEY]);
+    // Installed once: a second call keeps the first recorder.
+    start(POINTER_RECORD_SCRIPT, globals, [POINTER_KEY]);
+    listeners.get('pointerdown')?.({ clientX: 986.4, clientY: 332, target: background });
+    listeners.get('pointerup')?.({ clientX: 1180, clientY: 470, target: trash });
+
+    expect(start(DROP_REPORT_SCRIPT, globals, [POINTER_KEY, 1180, 470])).toEqual({
+      viewport: [1280, 800, 1.25],
+      under: ['g.blocklyTrash', 'svg.blocklySvg'],
+      trash: [1160, 455, 1205, 500],
+      flyout: null,
+      zoom: null,
+      pointer: {
+        down: { x: 986, y: 332, target: 'rect.blocklyMainBackground' },
+        up: { x: 1180, y: 470, target: 'g.blocklyTrash' },
+      },
+    });
   });
 });
 

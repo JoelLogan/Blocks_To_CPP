@@ -363,6 +363,81 @@ export const QUIET_SCRIPT = `
   setTimeout(() => finish('busy'), timeoutMs + 1000);
 `;
 
+/** The window global under which {@link POINTER_RECORD_SCRIPT} keeps the last press and release. */
+export const POINTER_KEY = '__B2C_BENCH_POINTER__';
+
+/**
+ * Runs in the webview (`executeScript(POINTER_RECORD_SCRIPT, POINTER_KEY)`): from now on, keeps
+ * where the last pointerdown and pointerup happened and on which element, for a report
+ * on a drag that went wrong ({@link DROP_REPORT_SCRIPT}). Installed once; two listeners that only
+ * store a few values, so they cost the drag nothing measurable.
+ */
+export const POINTER_RECORD_SCRIPT = `
+  const key = arguments[0];
+  if (window[key] !== undefined) {
+    return;
+  }
+  const record = { down: null, up: null };
+  window[key] = record;
+  const describe = (element) => {
+    if (!(element instanceof Element)) {
+      return String(element);
+    }
+    const name = element.getAttribute('class');
+    return element.tagName.toLowerCase() + (name ? '.' + name.trim().split(/\\s+/).join('.') : '');
+  };
+  for (const type of ['pointerdown', 'pointerup']) {
+    window.addEventListener(
+      type,
+      (event) => {
+        record[type === 'pointerdown' ? 'down' : 'up'] = {
+          x: Math.round(event.clientX),
+          y: Math.round(event.clientY),
+          target: describe(event.target),
+        };
+      },
+      true,
+    );
+  }
+`;
+
+/**
+ * Runs in the webview (`executeScript(DROP_REPORT_SCRIPT, POINTER_KEY, x, y)`): what the page
+ * looked like at a drop point, for the message of a drag that went wrong: the window's size and
+ * pixel ratio, the elements under the point, where the trash can, the flyout and the zoom
+ * controls are, and the last press and release ({@link POINTER_RECORD_SCRIPT}).
+ */
+export const DROP_REPORT_SCRIPT = `
+  const [key, x, y] = arguments;
+  const describe = (element) => {
+    if (!(element instanceof Element)) {
+      return String(element);
+    }
+    const name = element.getAttribute('class');
+    return element.tagName.toLowerCase() + (name ? '.' + name.trim().split(/\\s+/).join('.') : '');
+  };
+  const rect = (selector) => {
+    const element = document.querySelector(selector);
+    if (element === null) {
+      return null;
+    }
+    const box = element.getBoundingClientRect();
+    return [box.left, box.top, box.right, box.bottom].map(Math.round);
+  };
+  const under = [];
+  for (let element = document.elementFromPoint(x, y); element !== null && under.length < 4; element = element.parentElement) {
+    under.push(describe(element));
+  }
+  return {
+    viewport: [window.innerWidth, window.innerHeight, window.devicePixelRatio],
+    under,
+    trash: rect('.blocklyTrash'),
+    flyout: rect('svg.blocklyToolboxFlyout'),
+    zoom: rect('.blocklyZoom'),
+    pointer: window[key] ?? null,
+  };
+`;
+
 /** What {@link PLACE_SCRIPT} returns: where a block is. */
 export interface BlockPlace {
   /** The block's bounding box on screen (client coordinates, CSS pixels). */
