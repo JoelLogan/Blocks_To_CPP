@@ -2,10 +2,17 @@
  * The app's chrome in the tests: elements by their stable `data-testid`, text that may be in a
  * hidden tab, and Blockly's own widgets (toolbox categories, dropdown menus, text editors).
  */
-import { By, Key, Origin, type WebDriver, type WebElement } from 'selenium-webdriver';
+import {
+  By,
+  error as webdriverError,
+  Key,
+  Origin,
+  type WebDriver,
+  type WebElement,
+} from 'selenium-webdriver';
 
 import type { E2ePoint } from '../../src/e2e/contract';
-import { waitFor } from './wait';
+import { sleep, waitFor } from './wait';
 
 /** The locator of `[data-testid="id"]`. */
 export function byTestId(id: string): By {
@@ -41,10 +48,39 @@ export async function testIdText(driver: WebDriver, id: string): Promise<string>
   return found[0] === undefined ? '' : textContent(driver, found[0]);
 }
 
-/** Clicks the element with this test ID, waiting for it first. */
+/** How long to wait between two clicks on an element that was not ready for one. */
+const CLICK_RETRY_MS = 200;
+
+/**
+ * Whether a click failed because the element was not ready for one yet: covered for a moment, not
+ * laid out while the page is busy (a large project just opened), or replaced by a new render.
+ */
+export function isNotReadyForClick(error: unknown): boolean {
+  return (
+    error instanceof webdriverError.ElementNotInteractableError ||
+    error instanceof webdriverError.ElementClickInterceptedError ||
+    error instanceof webdriverError.StaleElementReferenceError
+  );
+}
+
+/**
+ * Clicks the element with this test ID, waiting for it first. A click the element was not ready
+ * for ({@link isNotReadyForClick}) is tried again until `timeout`; any other error is thrown.
+ */
 export async function clickTestId(driver: WebDriver, id: string, timeout = 10_000): Promise<void> {
-  const element = await testId(driver, id, timeout);
-  await element.click();
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const element = await testId(driver, id, Math.max(1_000, deadline - Date.now()));
+    try {
+      await element.click();
+      return;
+    } catch (error: unknown) {
+      if (!isNotReadyForClick(error) || Date.now() >= deadline) {
+        throw error;
+      }
+    }
+    await sleep(CLICK_RETRY_MS);
+  }
 }
 
 /** The SVG group the toolbox's flyout scrolls: its `transform` changes while it scrolls. */

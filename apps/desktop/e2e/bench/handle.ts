@@ -15,6 +15,36 @@ import type { BlockPlace } from './page';
  */
 export const MAX_LANDING_ERROR = 0.5;
 
+/**
+ * Where the drag away ends, as fractions of the visible canvas's width and height from its top
+ * left corner: up and to the right of its centre, clear of the flyout (left), the code the
+ * benchmark document puts beside the handle (left), the zoom controls (right, middle) and the
+ * trash can (bottom right), where a drop would delete the handle.
+ */
+export const AWAY_TARGET = { x: 0.7, y: 0.2 } as const;
+
+/** The shortest drag away that is still a drag worth timing, in CSS pixels. */
+export const MIN_DRAG_DISTANCE = 80;
+
+/**
+ * How far to drag the handle away from `grab` (its grab point, with the canvas centred on it) so
+ * that it ends at {@link AWAY_TARGET} of the visible `canvas`, in whole pixels.
+ *
+ * @throws Error when that is shorter than {@link MIN_DRAG_DISTANCE} (the canvas is too small).
+ */
+export function awayDelta(grab: E2ePoint, canvas: Rect): E2ePoint {
+  const delta = {
+    x: Math.round(canvas.left + (canvas.right - canvas.left) * AWAY_TARGET.x - grab.x),
+    y: Math.round(canvas.top + (canvas.bottom - canvas.top) * AWAY_TARGET.y - grab.y),
+  };
+  if (Math.hypot(delta.x, delta.y) < MIN_DRAG_DISTANCE) {
+    throw new Error(
+      `The visible canvas (${String(Math.round(canvas.left))}, ${String(Math.round(canvas.top))} to ${String(Math.round(canvas.right))}, ${String(Math.round(canvas.bottom))}) leaves no room to drag the handle from (${String(Math.round(grab.x))}, ${String(Math.round(grab.y))})`,
+    );
+  }
+  return delta;
+}
+
 /** Whether `value` is a finite number. */
 function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
@@ -110,7 +140,9 @@ export function checkLanding(
   after: BlockPlace | null,
 ): number {
   if (after === null) {
-    throw new Error(`The drag handle ${id} is no longer on the canvas after a drag`);
+    throw new Error(
+      `The drag handle ${id} is no longer on the canvas after a drag (a drop over the toolbox or the trash can deletes it)`,
+    );
   }
   const error = landingError(before, after, delta);
   if (error > MAX_LANDING_ERROR * Math.hypot(delta.x, delta.y)) {

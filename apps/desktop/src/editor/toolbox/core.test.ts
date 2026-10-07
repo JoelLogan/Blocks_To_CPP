@@ -127,7 +127,9 @@ function blocksOf(items: readonly Blockly.utils.toolbox.FlyoutItemInfo[]): B2cBl
   return items.filter((item): item is B2cBlockInfo => item.kind === B2C_BLOCK_KIND);
 }
 
-describe.skipIf(core === null)('the toolbox with the compiler core', () => {
+// Each test opens a whole project in a real workspace and runs the compiler core on it, which takes
+// seconds under coverage on a CI runner.
+describe.skipIf(core === null)('the toolbox with the compiler core', { timeout: 20_000 }, () => {
   it('lists guess below “create int guess”, and not above it', async () => {
     const workspace = open(guessingGameText);
     await settle();

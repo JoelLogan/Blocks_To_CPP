@@ -2,6 +2,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AWAY_TARGET,
+  awayDelta,
   checkLanding,
   describePlace,
   isBlockPlace,
@@ -17,6 +19,25 @@ function place(left: number, top: number, x: number, y: number): BlockPlace {
     offset: { x, y },
   };
 }
+
+describe('awayDelta', () => {
+  const canvas = { left: 745, top: 132, right: 1227, bottom: 532 };
+
+  it('aims up and to the right of the centre, inside the visible canvas', () => {
+    const grab = { x: 986, y: 332 };
+    const delta = awayDelta(grab, canvas);
+    expect(delta).toEqual({ x: Math.round(745 + 482 * AWAY_TARGET.x - 986), y: 212 - 332 });
+    expect(delta.x).toBeGreaterThan(0);
+    expect(delta.y).toBeLessThan(0);
+    const end = { x: grab.x + delta.x, y: grab.y + delta.y };
+    expect(end.x).toBeLessThan(canvas.right);
+    expect(end.y).toBeGreaterThan(canvas.top);
+  });
+
+  it('refuses a drag too short to time', () => {
+    expect(() => awayDelta({ x: 1080, y: 212 }, canvas)).toThrow('no room to drag');
+  });
+});
 
 describe('isBlockPlace', () => {
   it('accepts what PLACE_SCRIPT returns', () => {

@@ -37,7 +37,8 @@ Every timing of the webview benchmarks is taken inside the page with its own clo
   happens in one task because its WebAssembly calls are synchronous. The print is then deleted with
   the keyboard (selected, then _Delete_), so every edit is made to the same 1,000 blocks.
 - **Drag** ([`drag.bench.e2e.ts`](drag.bench.e2e.ts)): a separate `func.define` beside `main` is
-  dragged away and back across empty canvas in 60 moves of 16 ms each, and the page records the
+  dragged away (up and to the right of the canvas's centre, clear of the flyout, the zoom controls
+  and the trash can) and back across empty canvas in 60 moves of 16 ms each, and the page records the
   timestamps of the animation frames that run while the pointer drags. Before each pair of drags,
   outside the timed part, the canvas is centred on the handle again and the page left to settle (10
   frames in a row within 50 ms): a drop does not always leave the handle, or the canvas's view,

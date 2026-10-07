@@ -29,7 +29,7 @@ import { visibleCanvas } from '../support/canvas';
 import { centerOn, foldCodePanel } from '../support/editor';
 import { waitFor } from '../support/wait';
 import { handleId, MAIN_ID, writeBenchProject } from './document';
-import { checkLanding, describePlace, isBlockPlace } from './handle';
+import { awayDelta, checkLanding, describePlace, isBlockPlace } from './handle';
 import {
   type BlockPlace,
   FRAMES_KEY,
@@ -55,9 +55,6 @@ const PAIRS = 10;
 /** Pointer moves per drag, and how long each takes: a drag of about a second. */
 const STEPS = 60;
 const STEP_MS = 16;
-
-/** How far each drag moves the handle (back again on the next one), in CSS pixels. */
-const DISTANCE = { x: 240, y: 120 };
 
 /** The fewest frame times a drag must give for its p95 to mean anything. */
 const MIN_FRAMES = 20;
@@ -139,6 +136,8 @@ async function whereIs(app: App, id: string): Promise<string> {
 
 /** One timed drag. */
 interface TimedDrag {
+  /** How far the pointer moved, in CSS pixels. */
+  readonly delta: E2ePoint;
   /** The frame times recorded while the pointer dragged. */
   readonly times: number[];
   /** How far from the pointer's end the drop left the handle, in CSS pixels. */
@@ -146,17 +145,13 @@ interface TimedDrag {
 }
 
 /**
- * Drags the handle by `delta` (first centring the canvas on it, with `centre`) and returns the
- * frame times recorded during the drag (only the drag itself is timed), once the drop has settled
- * and the handle is known to have moved with the pointer.
+ * Drags the handle and returns the frame times recorded during the drag (only the drag itself is
+ * timed), once the drop has settled and the handle is known to have moved with the pointer. With
+ * `move` `'away'` the canvas is first centred on the handle and the drag ends up and to the right
+ * of the centre ({@link awayDelta}); otherwise the handle is dragged by `move`.
  */
-async function timedDrag(
-  app: App,
-  id: string,
-  delta: E2ePoint,
-  centre: boolean,
-): Promise<TimedDrag> {
-  if (centre) {
+async function timedDrag(app: App, id: string, move: 'away' | E2ePoint): Promise<TimedDrag> {
+  if (move === 'away') {
     await centerOn(app, id);
     await waitUntilQuiet(app, 'centring the canvas on the drag handle');
   }
@@ -170,6 +165,7 @@ async function timedDrag(
     message: async () =>
       `the drag handle ${id} to be on screen and not covered (${await whereIs(app, id)})`,
   });
+  const delta = move === 'away' ? awayDelta(grab, await visibleCanvas(app.driver)) : move;
   const started: unknown = await app.driver.executeScript(FRAMES_START_SCRIPT, FRAMES_KEY);
   if (started !== true) {
     throw new Error('The frame recorder could not start (one is already running)');
@@ -192,7 +188,7 @@ async function timedDrag(
       `Only ${String(times.length)} frame times were recorded during a drag (at least ${String(MIN_FRAMES)} are needed)`,
     );
   }
-  return { times, landing };
+  return { delta, times, landing };
 }
 
 describe('webview benchmark: dragging in a 5,000-block workspace', () => {
@@ -214,8 +210,8 @@ describe('webview benchmark: dragging in a 5,000-block workspace', () => {
       const samples: number[] = [];
       let worstLanding = 0;
       for (let pair = 0; pair <= PAIRS; pair += 1) {
-        const away = await timedDrag(app, handle, DISTANCE, true);
-        const back = await timedDrag(app, handle, { x: -DISTANCE.x, y: -DISTANCE.y }, false);
+        const away = await timedDrag(app, handle, 'away');
+        const back = await timedDrag(app, handle, { x: -away.delta.x, y: -away.delta.y });
         worstLanding = Math.max(worstLanding, away.landing, back.landing);
         // The first pair warms up (Blockly's drag surface, the connection database): not kept.
         if (pair > 0) {

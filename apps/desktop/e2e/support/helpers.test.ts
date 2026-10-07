@@ -9,6 +9,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { error as webdriverError, type WebDriver } from 'selenium-webdriver';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -27,7 +28,7 @@ import {
 import { freePort } from './driver';
 import { dropPoint } from './drag';
 import { mainFunction } from './editor';
-import { byTestId, errorCount } from './ui';
+import { byTestId, clickTestId, errorCount, isNotReadyForClick } from './ui';
 import { sleep, waitFor, WaitTimeoutError, withTimeout } from './wait';
 
 const folders: string[] = [];
@@ -242,5 +243,39 @@ describe('small helpers', () => {
       'int main() {\n    return 0;\n}',
     );
     expect(() => mainFunction('int helper() {}')).toThrow('no main function');
+  });
+});
+
+describe('clickTestId', () => {
+  /** A driver whose one element fails its first `failures` clicks with `error`. */
+  function driverWith(error: Error, failures: number): { driver: WebDriver; clicks: () => number } {
+    let clicks = 0;
+    const element = {
+      click: () => {
+        clicks += 1;
+        return clicks <= failures ? Promise.reject(error) : Promise.resolve();
+      },
+    };
+    const driver = { findElements: () => Promise.resolve([element]) } as unknown as WebDriver;
+    return { driver, clicks: () => clicks };
+  }
+
+  it('clicks again while the element is not ready for a click', async () => {
+    const { driver, clicks } = driverWith(new webdriverError.ElementNotInteractableError(), 2);
+    await clickTestId(driver, 'right-dock-toggle', 5_000);
+    expect(clicks()).toBe(3);
+    expect(isNotReadyForClick(new webdriverError.ElementClickInterceptedError())).toBe(true);
+  });
+
+  it('throws any other error at once, and a lasting one at the deadline', async () => {
+    const other = driverWith(new webdriverError.NoSuchWindowError(), 1);
+    await expect(clickTestId(other.driver, 'toolbar-run', 5_000)).rejects.toThrow(
+      webdriverError.NoSuchWindowError,
+    );
+    expect(other.clicks()).toBe(1);
+    const lasting = driverWith(new webdriverError.ElementNotInteractableError(), 1_000);
+    await expect(clickTestId(lasting.driver, 'toolbar-run', 500)).rejects.toThrow(
+      webdriverError.ElementNotInteractableError,
+    );
   });
 });
