@@ -132,19 +132,23 @@ so type checking works without a build.
 ## Build
 
 Needs the pinned Rust toolchain (with `wasm32-unknown-unknown`), the wasm-bindgen CLI of the
-version pinned in `Cargo.lock` (0.2.129) and binaryen's `wasm-opt`:
+version pinned in `Cargo.lock` (0.2.129) and binaryen's `wasm-opt` (the `binaryen` package of
+Ubuntu 24.04, version 108, is new enough; CI uses release 133):
 
 ```sh
-cargo install wasm-bindgen-cli --version 0.2.129 --locked
+cargo install wasm-bindgen-cli --version 0.2.129 --locked   # into ~/.cargo/bin, which must be on PATH
+sudo apt install binaryen                                    # Debian and Ubuntu; or B2C_SKIP_WASM_OPT=1
 pnpm --filter @blocks2cpp/b2c-core-wasm build
 ```
 
-[`scripts/build.mjs`](scripts/build.mjs) runs `cargo build --profile wasm-release --target
-wasm32-unknown-unknown -p b2c-core-wasm`, `wasm-bindgen --target web`, `wasm-opt -Oz` and writes
-`pkg/` (not committed): `glue.js`, `pkg-bytes.js`, `b2c_core_wasm_bg.wasm` and `sizes.json`. It
-stops when the CLI version differs from `Cargo.lock`, when the crate's exports differ from
-`src/glue.d.ts` (change `EXPECTED_EXPORTS` in the script with them), or when the module is over
-the **size budget of 2,000,000 bytes after `wasm-opt -Oz`** (the gzip size is reported only).
+[`scripts/build.mjs`](scripts/build.mjs) first checks both tools and names every one that is
+missing or unsuitable, with how to get it. It then runs `cargo build --profile wasm-release
+--target wasm32-unknown-unknown -p b2c-core-wasm`, `wasm-bindgen --target web`, `wasm-opt -Oz` and
+writes `pkg/` (not committed): `glue.js`, `pkg-bytes.js`, `b2c_core_wasm_bg.wasm` and
+`sizes.json`. It stops when the CLI version differs from `Cargo.lock`, when the crate's exports
+differ from `src/glue.d.ts` (change `EXPECTED_EXPORTS` in the script with them), or when the
+module is over the **size budget of 2,000,000 bytes after `wasm-opt -Oz`** (the gzip size is
+reported only).
 
 | Variable            | Effect                                                                                 |
 | ------------------- | -------------------------------------------------------------------------------------- |

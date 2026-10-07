@@ -5,6 +5,8 @@
 //   pnpm --filter @blocks2cpp/b2c-core-wasm build
 //
 // Steps:
+//   0. the tools: wasm-bindgen and wasm-opt are checked before anything is built, and every
+//      missing or unsuitable one is reported at once with how to get it
 //   1. cargo build --locked --profile wasm-release --target wasm32-unknown-unknown -p b2c-core-wasm
 //   2. wasm-bindgen --target web (the CLI must be the version of the wasm-bindgen crate in
 //      Cargo.lock), and a check that the crate's exports are the ones src/glue.d.ts declares
@@ -98,8 +100,13 @@ function capture(command, args, options = {}) {
     });
   } catch (error) {
     const reason = error.code === 'ENOENT' ? 'not found' : `failed (${error.message})`;
-    throw new BuildError(`${command} ${args.join(' ')}: ${reason}`);
+    throw new BuildError(`${command} ${args.join(' ')}: ${reason}`, { cause: error });
   }
+}
+
+/** Whether a capture() failure means that there is no such program. */
+function isNotFound(error) {
+  return error instanceof BuildError && error.cause?.code === 'ENOENT';
 }
 
 /** The wasm-bindgen version pinned in Cargo.lock. */
@@ -114,6 +121,72 @@ function lockedWasmBindgenVersion() {
     );
   }
   return versions[0];
+}
+
+/**
+ * Step 0: the tools steps 2 and 3 run, checked before cargo builds, so that a first build names
+ * everything it needs in one run. Returns the wasm-bindgen command and the wasm-opt to run (null
+ * when B2C_SKIP_WASM_OPT=1).
+ */
+function checkTools(bindgenVersion) {
+  const problems = [];
+  const install = `cargo install wasm-bindgen-cli --version ${bindgenVersion} --locked`;
+
+  const wasmBindgen = tool('WASM_BINDGEN', 'wasm-bindgen');
+  try {
+    const version = capture(wasmBindgen, ['--version']).trim();
+    if (version !== `wasm-bindgen ${bindgenVersion}`) {
+      problems.push(
+        `${wasmBindgen} is "${version}", but Cargo.lock pins wasm-bindgen ${bindgenVersion}; ` +
+          `install that version with: ${install}`,
+      );
+    }
+  } catch (error) {
+    problems.push(
+      isNotFound(error)
+        ? `the wasm-bindgen CLI (${wasmBindgen}) was not found; install it with: ${install} ` +
+            '(cargo puts it in ~/.cargo/bin, which must be on PATH), or set WASM_BINDGEN to it'
+        : `${error.message}; reinstall it with: ${install}, or set WASM_BINDGEN to a working one`,
+    );
+  }
+
+  let wasmOpt = null;
+  if (process.env.B2C_SKIP_WASM_OPT !== '1') {
+    const command = tool('WASM_OPT', 'wasm-opt');
+    const instead = 'or set B2C_SKIP_WASM_OPT=1 to build without it';
+    try {
+      const version = capture(command, ['--version']).trim();
+      // The options this wasm-opt knows, as whole words of its help text.
+      const known = new Set(capture(command, ['--help']).split(/\s+/));
+      const missing = REQUIRED_FEATURES.filter((flag) => !known.has(flag));
+      if (missing.length > 0) {
+        problems.push(
+          `${command} (${version}) does not know ${missing.join(', ')}; use a newer binaryen ` +
+            `(https://github.com/WebAssembly/binaryen/releases), ${instead}`,
+        );
+      } else {
+        wasmOpt = { command, version, known };
+      }
+    } catch (error) {
+      problems.push(
+        isNotFound(error)
+          ? `binaryen's wasm-opt (${command}) was not found; install binaryen (Debian and ` +
+              'Ubuntu: sudo apt install binaryen; or a release from ' +
+              'https://github.com/WebAssembly/binaryen/releases), set WASM_OPT to it, ' +
+              instead
+          : `${error.message}; reinstall binaryen, set WASM_OPT to a working wasm-opt, ${instead}`,
+      );
+    }
+  }
+
+  if (problems.length === 1) {
+    throw new BuildError(problems[0]);
+  }
+  if (problems.length > 1) {
+    const list = problems.map((problem) => `  - ${problem}`).join('\n');
+    throw new BuildError(`${problems.length} tools are missing or unsuitable:\n${list}`);
+  }
+  return { wasmBindgen, wasmOpt };
 }
 
 /** Step 1: the WebAssembly module, located through cargo's JSON messages. */
@@ -147,16 +220,8 @@ function cargoBuild() {
   return artifacts[0];
 }
 
-/** Step 2: wasm-bindgen, with the version and export checks. */
-function bindgen(wasmFile, expectedVersion) {
-  const wasmBindgen = tool('WASM_BINDGEN', 'wasm-bindgen');
-  const version = capture(wasmBindgen, ['--version']).trim();
-  if (version !== `wasm-bindgen ${expectedVersion}`) {
-    throw new BuildError(
-      `${wasmBindgen} is "${version}", but Cargo.lock pins wasm-bindgen ${expectedVersion}; ` +
-        `install it with: cargo install wasm-bindgen-cli --version ${expectedVersion} --locked`,
-    );
-  }
+/** Step 2: wasm-bindgen (its version checked in step 0), with the export check. */
+function bindgen(wasmBindgen, wasmFile) {
   capture(wasmBindgen, [
     '--target',
     'web',
@@ -185,32 +250,15 @@ function bindgen(wasmFile, expectedVersion) {
   };
 }
 
-/** Step 3: wasm-opt -Oz, or null when skipped. */
-function optimise(wasmFile) {
-  if (process.env.B2C_SKIP_WASM_OPT === '1') {
+/** Step 3: wasm-opt -Oz (checked in step 0), or null when skipped. */
+function optimise(wasmOpt, wasmFile) {
+  if (wasmOpt === null) {
     return null;
   }
-  const wasmOpt = tool('WASM_OPT', 'wasm-opt');
-  let version;
-  try {
-    version = capture(wasmOpt, ['--version']).trim();
-  } catch (error) {
-    throw new BuildError(
-      `${error.message}; install binaryen, set WASM_OPT, or set B2C_SKIP_WASM_OPT=1 for a local build`,
-    );
-  }
-  // The options this wasm-opt knows, as whole words of its help text.
-  const known = new Set(capture(wasmOpt, ['--help']).split(/\s+/));
-  const missing = REQUIRED_FEATURES.filter((flag) => !known.has(flag));
-  if (missing.length > 0) {
-    throw new BuildError(
-      `${wasmOpt} (${version}) does not know ${missing.join(', ')}; use a newer binaryen, ` +
-        'or set B2C_SKIP_WASM_OPT=1 for a local build',
-    );
-  }
+  const { command, version, known } = wasmOpt;
   const features = [...REQUIRED_FEATURES, ...OPTIONAL_FEATURES.filter((flag) => known.has(flag))];
   const optimised = path.join(workDir, `${STEM}_opt.wasm`);
-  capture(wasmOpt, ['-Oz', ...features, '--output', optimised, wasmFile]);
+  capture(command, ['-Oz', ...features, '--output', optimised, wasmFile]);
   return { file: optimised, version };
 }
 
@@ -309,11 +357,12 @@ function main() {
   rmSync(pkgDir, { recursive: true, force: true });
   try {
     const bindgenVersion = lockedWasmBindgenVersion();
+    const tools = checkTools(bindgenVersion);
     const built = cargoBuild();
     mkdirSync(workDir, { recursive: true });
-    const { glue, wasm } = bindgen(built, bindgenVersion);
+    const { glue, wasm } = bindgen(tools.wasmBindgen, built);
     const raw = readFileSync(wasm);
-    const optimised = optimise(wasm);
+    const optimised = optimise(tools.wasmOpt, wasm);
     const finalBytes = optimised === null ? raw : readFileSync(optimised.file);
     writePackage(glue, raw, finalBytes, optimised, bindgenVersion);
     rmSync(workDir, { recursive: true, force: true });

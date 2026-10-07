@@ -53,8 +53,9 @@ pnpm desktop:dev                                 # open the app, reloading as yo
 ```
 
 Building the WebAssembly core needs the wasm-bindgen CLI
-(`cargo install wasm-bindgen-cli --version 0.2.129 --locked`); without
-binaryen's `wasm-opt`, set `B2C_SKIP_WASM_OPT=1`
+(`cargo install wasm-bindgen-cli --version 0.2.129 --locked`) and binaryen's
+`wasm-opt` (`sudo apt install binaryen` on Debian and Ubuntu); without
+`wasm-opt`, set `B2C_SKIP_WASM_OPT=1`
 ([details](packages/b2c-core-wasm/README.md#build)).
 Then follow [Getting started](docs/user-guide/getting-started.md): it walks
 you from the first start to a number-guessing game built from blocks.
