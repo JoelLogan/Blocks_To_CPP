@@ -11,8 +11,9 @@ generated page.
 
 Requirements: Node.js 22.13 or later, and pnpm. The exact pnpm version is
 pinned in the root `package.json`. Either install pnpm 11 directly, or run
-`corepack enable` once to have [Corepack](https://nodejs.org/api/corepack.html)
-fetch the pinned version. Corepack needs Node.js 22.14 or later (older versions
+`corepack enable` once to have
+[Corepack](https://nodejs.org/docs/latest-v22.x/api/corepack.html) fetch the
+pinned version. Corepack needs Node.js 22.14 or later (older versions
 cannot verify current pnpm signatures), and Node.js 25 and later no longer
 bundle it (`npm install --global corepack`).
 

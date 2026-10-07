@@ -124,9 +124,10 @@ it. It is never a `data:` URL and never fetched. The wasm-bindgen glue is wrappe
 `createGlue()` by the build, so every instance gets its own glue state: the generated glue keeps
 one instance in module-level variables and could not be re-initialised after a trap.
 
-`#glue` and `#pkg-bytes` are [subpath imports](https://nodejs.org/api/packages.html#subpath-imports)
-of this package. Their `types` condition points at the committed `src/glue.d.ts` and
-`src/pkg-bytes.d.ts`, so type checking works without a build.
+`#glue` and `#pkg-bytes` are
+[subpath imports](https://nodejs.org/docs/latest-v22.x/api/packages.html#subpath-imports) of this
+package. Their `types` condition points at the committed `src/glue.d.ts` and `src/pkg-bytes.d.ts`,
+so type checking works without a build.
 
 ## Build
 
