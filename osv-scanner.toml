@@ -33,14 +33,3 @@ reason = "Unmaintained build-time proc-macro helper used by gtk-rs 0.18 macros; 
 id = "GHSA-vfj7-8cjw-p6xm"
 ignoreUntil = 2027-01-04T00:00:00Z
 reason = "braces stack exhaustion; dev-only, reached through markdownlint-cli2 expanding our own glob patterns; no fixed release yet."
-
-# source-map-js <1.2.2 (GHSA-68fv-2mgg-jv7q): event-loop denial of service
-# through the section offsets of an indexed source map. Reached only through
-# dev tooling (Vite and PostCSS building our own frontend, Vitest coverage),
-# which reads only the source maps our build makes; never shipped. The fixed
-# 1.2.2 (2026-09-30) is younger than the 7-day minimum release age; move to it
-# and remove this entry when it expires.
-[[IgnoredVulns]]
-id = "GHSA-68fv-2mgg-jv7q"
-ignoreUntil = 2026-10-08T00:00:00Z
-reason = "Dev-only (Vite, PostCSS, Vitest coverage) on our own source maps; the fixed 1.2.2 is not yet 7 days old."

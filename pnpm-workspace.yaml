@@ -38,9 +38,3 @@ auditConfig:
     # from our own .markdownlint-cli2.jsonc; nothing user-supplied is expanded. Review by
     # 2027-01-04 or as soon as a fixed braces release exists.
     - GHSA-vfj7-8cjw-p6xm
-    # source-map-js <1.2.2: event-loop denial of service through the section offsets of an
-    # indexed source map. Reached only through dev tooling (Vite and PostCSS building our own
-    # frontend, Vitest coverage), which reads only the source maps our build makes; never
-    # shipped. 1.2.2 (2026-09-30) is younger than minimumReleaseAge: move to it and remove this
-    # entry on 2026-10-08.
-    - GHSA-68fv-2mgg-jv7q
