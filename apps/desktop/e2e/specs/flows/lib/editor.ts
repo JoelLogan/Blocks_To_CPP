@@ -146,12 +146,22 @@ export async function waitForSelected(app: App, blockId: string): Promise<void> 
 export async function menuLabels(driver: WebDriver): Promise<string[]> {
   return waitFor(
     async () => {
-      const items = await driver.findElements(By.css('.blocklyDropDownDiv .blocklyMenuItem'));
+      // Every item of the open menu, also those scrolled out of its view: a menu near the
+      // window's edge is shortened and scrolled to the current choice.
+      const menus = await driver.findElements(By.css('.blocklyDropDownDiv'));
+      const open = [];
+      for (const menu of menus) {
+        if (await menu.isDisplayed()) {
+          open.push(menu);
+        }
+      }
+      if (open.length !== 1 || open[0] === undefined) {
+        return null;
+      }
+      const items = await open[0].findElements(By.css('.blocklyMenuItem'));
       const labels: string[] = [];
       for (const item of items) {
-        if (await item.isDisplayed()) {
-          labels.push(await textContent(driver, item));
-        }
+        labels.push(await textContent(driver, item));
       }
       return labels.length > 0 ? labels : null;
     },

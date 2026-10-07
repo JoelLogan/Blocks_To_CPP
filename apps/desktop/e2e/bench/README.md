@@ -37,19 +37,21 @@ Every timing of the webview benchmarks is taken inside the page with its own clo
   happens in one task because its WebAssembly calls are synchronous. The print is then deleted with
   the keyboard (selected, then _Delete_), so every edit is made to the same 1,000 blocks.
 - **Drag** ([`drag.bench.e2e.ts`](drag.bench.e2e.ts)): a separate `func.define` beside `main` is
-  dragged away (up and to the right of the canvas's centre, clear of the flyout, the zoom controls
-  and the trash can) and back across empty canvas in 60 moves of 16 ms each, and the page records the
-  timestamps of the animation frames that run while the pointer drags. Before each pair of drags,
-  outside the timed part, the canvas is centred on the handle again and the page left to settle (10
-  frames in a row within 50 ms): a drop does not always leave the handle, or the canvas's view,
-  exactly where the pointer moves suggest, and over many drags it could drift off screen. The drag
-  back starts where the drag away ended, so it never crosses the toolbox, where a drop would delete
-  the handle. After each drop
-  the page is left to finish what the drop started (the same 10 frames), and the handle must have
-  moved with the pointer: on the canvas (scrolling aside) it must have landed within half the
-  drag's length of where the pointer left it ([`handle.ts`](handle.ts)), or the run fails rather
-  than measure a drag that missed the handle. A handle that cannot be grabbed fails the run with
-  where it is on screen.
+  dragged away and back across empty canvas in 60 moves of 16 ms each, and the page records the
+  timestamps of the animation frames that run while the pointer drags. Before each drag, outside
+  the timed part, the canvas is panned until the handle is well inside the part of it that is
+  visible then, and the page is left to settle (10 frames in a row within 50 ms). The drag ends at
+  a point of that part ([`handle.ts`](handle.ts) `aimDelta`): up and to the right for the drag
+  away, down and to the left for the drag back. The toolbox's flyout stays open over the canvas's
+  left part and its width changes as the toolbox follows the program, and a drop on it would
+  delete the handle; on the Windows runner the window is small (about 1,030 by 750 pixels), so
+  little canvas is left. After each drop the page is left to finish what the drop started (the
+  same 10 frames), and the handle must have moved with the pointer: on the canvas (scrolling
+  aside) it must have landed within half the drag's length of where the pointer left it, or the
+  run fails rather than measure a drag that missed the handle. A handle that cannot be grabbed
+  fails the run with where it is on screen, and a drop that loses it with what the page looked
+  like (the drag, the window, the elements under the drop point, where the flyout, the zoom
+  controls and the trash can are, and the last press and release).
 
 ## The generated document
 

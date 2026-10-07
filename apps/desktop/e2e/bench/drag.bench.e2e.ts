@@ -9,12 +9,14 @@
  * first pair warms up and is not counted, and after every drop the page is left to finish what the
  * drop started (its preview) before the next drag.
  *
- * Before every pair, outside what is timed, the canvas is centred on the handle again and the page
- * left to settle: a drop does not always leave the handle (or the canvas's view) exactly where the
- * pointer moves suggest, and over many drags it could drift off screen. The drag back starts where
- * the drag away ended, so it never crosses the toolbox (a drop there would delete the handle).
- * After every drop the handle must have moved with the pointer (bench/handle.ts), so a drag that
- * missed it fails the run instead of being measured.
+ * Before every drag, outside what is timed, the canvas is panned until the handle is well inside
+ * the part of it that is visible then, and the drag ends at a point of that part: up and to the
+ * right for the drag away, down and to the left for the drag back (bench/handle.ts `aimDelta`).
+ * The toolbox's flyout stays open over the canvas's left part and its width changes as the toolbox
+ * follows the program, and a drop on it would delete the handle; on the Windows runner the window
+ * is small (about 1,030 by 750), so this leaves little canvas. After every drop the handle must
+ * have moved with the pointer (bench/handle.ts), so a drag that missed it fails the run instead of
+ * being measured, and a drop that loses it reports what the page looked like.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,11 +27,11 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { E2E_HOOK_NAME, type E2ePoint } from '../../src/e2e/contract';
 import { type App, launchApp } from '../support/app';
-import { visibleCanvas } from '../support/canvas';
+import { bringIntoView, visibleCanvas } from '../support/canvas';
 import { centerOn, foldCodePanel } from '../support/editor';
 import { waitFor } from '../support/wait';
 import { handleId, MAIN_ID, writeBenchProject } from './document';
-import { awayDelta, checkLanding, describePlace, isBlockPlace } from './handle';
+import { aimDelta, checkLanding, describePlace, type DragAim, isBlockPlace } from './handle';
 import {
   type BlockPlace,
   FRAMES_KEY,
@@ -171,17 +173,28 @@ interface TimedDrag {
   readonly landing: number;
 }
 
-/**
- * Drags the handle and returns the frame times recorded during the drag (only the drag itself is
- * timed), once the drop has settled and the handle is known to have moved with the pointer. With
- * `move` `'away'` the canvas is first centred on the handle and the drag ends up and to the right
- * of the centre ({@link awayDelta}); otherwise the handle is dragged by `move`.
- */
-async function timedDrag(app: App, id: string, move: 'away' | E2ePoint): Promise<TimedDrag> {
-  if (move === 'away') {
-    await centerOn(app, id);
-    await waitUntilQuiet(app, 'centring the canvas on the drag handle');
+/** How far inside the handle's box its top left corner is located for panning, in CSS pixels. */
+const CORNER_INSET = 16;
+
+/** The handle's top left corner, covered or not: where the canvas is panned to. */
+async function cornerOf(app: App, id: string): Promise<E2ePoint> {
+  const place = await placeOf(app, id);
+  if (place === null) {
+    throw new Error(`The drag handle ${id} is not on the canvas`);
   }
+  return { x: place.box.left + CORNER_INSET, y: place.box.top + CORNER_INSET };
+}
+
+/**
+ * Drags the handle `aim` ({@link aimDelta}) and returns the frame times recorded during the drag
+ * (only the drag itself is timed), once the drop has settled and the handle is known to have moved
+ * with the pointer. First, outside the timed part, the canvas is panned until the handle is well
+ * inside the part of it that is visible now: the flyout's width changes as the toolbox follows the
+ * program, and a small window leaves little canvas.
+ */
+async function timedDrag(app: App, id: string, aim: DragAim): Promise<TimedDrag> {
+  await bringIntoView(app.driver, () => cornerOf(app, id));
+  await waitUntilQuiet(app, 'panning the canvas to the drag handle');
   const before = await placeOf(app, id);
   if (before === null) {
     throw new Error(`The drag handle ${id} is not on the canvas`);
@@ -192,7 +205,7 @@ async function timedDrag(app: App, id: string, move: 'away' | E2ePoint): Promise
     message: async () =>
       `the drag handle ${id} to be on screen and not covered (${await whereIs(app, id)})`,
   });
-  const delta = move === 'away' ? awayDelta(grab, await visibleCanvas(app.driver)) : move;
+  const delta = aimDelta(grab, await visibleCanvas(app.driver), aim);
   await app.driver.executeScript(POINTER_RECORD_SCRIPT, POINTER_KEY);
   const started: unknown = await app.driver.executeScript(FRAMES_START_SCRIPT, FRAMES_KEY);
   if (started !== true) {
@@ -243,12 +256,14 @@ describe('webview benchmark: dragging in a 5,000-block workspace', () => {
         timeout: OPEN_TIMEOUT_MS,
       });
       await foldCodePanel(app);
+      await centerOn(app, handle);
+      await waitUntilQuiet(app, 'centring the canvas on the drag handle');
 
       const samples: number[] = [];
       let worstLanding = 0;
       for (let pair = 0; pair <= PAIRS; pair += 1) {
         const away = await timedDrag(app, handle, 'away');
-        const back = await timedDrag(app, handle, { x: -away.delta.x, y: -away.delta.y });
+        const back = await timedDrag(app, handle, 'back');
         worstLanding = Math.max(worstLanding, away.landing, back.landing);
         // The first pair warms up (Blockly's drag surface, the connection database): not kept.
         if (pair > 0) {

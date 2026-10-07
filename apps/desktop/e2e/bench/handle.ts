@@ -15,31 +15,39 @@ import type { BlockPlace } from './page';
  */
 export const MAX_LANDING_ERROR = 0.5;
 
-/**
- * Where the drag away ends, as fractions of the visible canvas's width and height from its top
- * left corner: up and to the right of its centre, clear of the flyout (left), the code the
- * benchmark document puts beside the handle (left), the zoom controls (right, middle) and the
- * trash can (bottom right), where a drop would delete the handle.
- */
-export const AWAY_TARGET = { x: 0.7, y: 0.2 } as const;
+/** Which way a drag of a pair goes. */
+export type DragAim = 'away' | 'back';
 
-/** The shortest drag away that is still a drag worth timing, in CSS pixels. */
+/**
+ * Where each drag of a pair ends, as fractions of the visible canvas's width and height from its
+ * top left corner (measured right before the drag): the drag away up and to the right, the drag
+ * back down and to the left. Both stay clear of the flyout, whose width changes as the toolbox
+ * follows the program (a drop on it deletes the handle), and of the zoom controls and the trash
+ * can at the right.
+ */
+export const AIMS: Readonly<Record<DragAim, E2ePoint>> = {
+  away: { x: 0.7, y: 0.25 },
+  back: { x: 0.3, y: 0.7 },
+};
+
+/** The shortest drag that is still a drag worth timing, in CSS pixels. */
 export const MIN_DRAG_DISTANCE = 80;
 
 /**
- * How far to drag the handle away from `grab` (its grab point, with the canvas centred on it) so
- * that it ends at {@link AWAY_TARGET} of the visible `canvas`, in whole pixels.
+ * How far to drag the handle from `grab` so that the drag ends at {@link AIMS}`[aim]` of the
+ * visible `canvas`, in whole pixels.
  *
- * @throws Error when that is shorter than {@link MIN_DRAG_DISTANCE} (the canvas is too small).
+ * @throws Error when that is shorter than {@link MIN_DRAG_DISTANCE} (too little canvas is visible).
  */
-export function awayDelta(grab: E2ePoint, canvas: Rect): E2ePoint {
+export function aimDelta(grab: E2ePoint, canvas: Rect, aim: DragAim): E2ePoint {
+  const target = AIMS[aim];
   const delta = {
-    x: Math.round(canvas.left + (canvas.right - canvas.left) * AWAY_TARGET.x - grab.x),
-    y: Math.round(canvas.top + (canvas.bottom - canvas.top) * AWAY_TARGET.y - grab.y),
+    x: Math.round(canvas.left + (canvas.right - canvas.left) * target.x - grab.x),
+    y: Math.round(canvas.top + (canvas.bottom - canvas.top) * target.y - grab.y),
   };
   if (Math.hypot(delta.x, delta.y) < MIN_DRAG_DISTANCE) {
     throw new Error(
-      `The visible canvas (${String(Math.round(canvas.left))}, ${String(Math.round(canvas.top))} to ${String(Math.round(canvas.right))}, ${String(Math.round(canvas.bottom))}) leaves no room to drag the handle from (${String(Math.round(grab.x))}, ${String(Math.round(grab.y))})`,
+      `The visible canvas (${String(Math.round(canvas.left))}, ${String(Math.round(canvas.top))} to ${String(Math.round(canvas.right))}, ${String(Math.round(canvas.bottom))}) leaves no room to drag the handle ${aim} from (${String(Math.round(grab.x))}, ${String(Math.round(grab.y))})`,
     );
   }
   return delta;
