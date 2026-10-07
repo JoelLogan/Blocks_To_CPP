@@ -349,8 +349,8 @@ Elements the tests find carry a `data-testid`; never rename or remove one. The s
 `problems-panel`, `problems-summary`, `problem-row`, the `console-*` parts (`console-panel`,
 `console-header`, `console-state`, `console-elapsed`, `console-stop`, `console-run-again`,
 `console-clear`, `console-terminal`, `console-notice`), `build-output-panel`,
-`build-output-line`, `keyboard-announcer`, `app-dialog`, and the settings and toolchain pages'
-`settings-*` and `toolchain-*` IDs.
+`build-output-line`, `keyboard-announcer`, `app-dialog`, `feature-page-back` (the settings and
+toolchain pages' _Back_ button), and those pages' `settings-*` and `toolchain-*` IDs.
 
 **Windows hardening.** `blocks2cpp_desktop::run()` first restricts where DLLs are loaded from
 (`harden_dll_search`: the system folder and the app's own; a failure is logged and start-up

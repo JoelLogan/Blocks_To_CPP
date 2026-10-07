@@ -471,6 +471,22 @@ impl ToolchainRegistry {
             paths = ?state.entries.iter().map(|entry| entry.found_as.display().to_string()).collect::<Vec<_>>(),
             "toolchains found"
         );
+        // Why a compiler is not usable: its problems' codes (docs/reference/diagnostics/) at info
+        // level, and their messages, which name paths, at debug level.
+        for entry in state.entries.iter().filter(|entry| !entry.probe.is_usable()) {
+            let codes: Vec<&str> = entry
+                .probe
+                .problems
+                .iter()
+                .map(|problem| problem.code.0.as_str())
+                .collect();
+            tracing::info!(?codes, kind = ?entry.probe.kind, "a compiler found is not usable");
+            tracing::debug!(
+                path = %entry.found_as.display(),
+                problems = ?entry.probe.problems.iter().map(|problem| problem.message.as_str()).collect::<Vec<_>>(),
+                "the unusable compiler's problems"
+            );
+        }
     }
 
     /// The discovered candidates and the manual entries of `snapshot`, each

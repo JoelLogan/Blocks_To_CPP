@@ -52,7 +52,7 @@ export function FeaturePage({ title, hasProject, onBack, testId, children }: Fea
           <h2 id={titleId} ref={heading} className="feature-page-title" tabIndex={-1}>
             {title}
           </h2>
-          <button type="button" className="button" onClick={onBack}>
+          <button type="button" className="button" data-testid="feature-page-back" onClick={onBack}>
             {backLabel(hasProject)}
           </button>
         </header>

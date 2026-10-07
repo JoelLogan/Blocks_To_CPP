@@ -6,7 +6,7 @@
  */
 import { E2E_HOOK_NAME } from '../../src/e2e/contract';
 import type { App } from '../support/app';
-import { clickTestId } from '../support/ui';
+import { byTestId, clickTestId } from '../support/ui';
 import { waitFor } from '../support/wait';
 
 /**
@@ -36,6 +36,31 @@ export async function codeHas(app: App, text: string): Promise<boolean> {
   return found === true;
 }
 
+/** How long the window may take to show the start page or, without a usable g++, the setup page. */
+const FIRST_PAGE_TIMEOUT_MS = 30_000;
+
+/**
+ * Goes to the start page. Without a usable g++ the app opens the toolchain setup page first; the
+ * benchmarks build nothing, so they go back from it, as a person can.
+ */
+async function toStartPage(app: App): Promise<void> {
+  const first = await waitFor(
+    async () => {
+      for (const id of ['start-open', 'toolchain-page'] as const) {
+        if ((await app.driver.findElements(byTestId(id))).length > 0) {
+          return id;
+        }
+      }
+      return null;
+    },
+    { timeout: FIRST_PAGE_TIMEOUT_MS, interval: 250, message: 'the start page or the setup page' },
+  );
+  if (first === 'toolchain-page') {
+    process.stderr.write('No usable g++: going back from the setup page to the start page\n');
+    await clickTestId(app.driver, 'feature-page-back');
+  }
+}
+
 /**
  * Clicks *Open* on the start page (the dialog script answers with the file), then waits until
  * `expected.blockId` is on the canvas and the preview's C++ contains `expected.code`.
@@ -43,6 +68,7 @@ export async function codeHas(app: App, text: string): Promise<boolean> {
 export async function openProjectFile(app: App, expected: OpenedProject): Promise<void> {
   const deadline = Date.now() + expected.timeout;
   const left = () => Math.max(1_000, deadline - Date.now());
+  await toStartPage(app);
   await clickTestId(app.driver, 'start-open');
   await waitFor(() => app.hook.blockElement(expected.blockId), {
     timeout: left(),
