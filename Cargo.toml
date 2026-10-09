@@ -36,7 +36,7 @@ toml = { version = "1.1.6", default-features = false, features = ["parse", "serd
 thiserror = "2.0.21"
 sha2 = "0.11.0"
 # OS CSPRNG for the opaque IPC IDs (b2c-ipc); already in the lockfile through tempfile.
-getrandom = "0.3.4"
+getrandom = "0.4.3"
 # TypeScript bindings for the IPC types (b2c-ipc, feature `ts`, never in app builds).
 ts-rs = "12.0.1"
 # Structured logging with spans per build and run session (09 §9.1, 08 §8.11); already in the
