@@ -48,6 +48,14 @@
 * A project with several modules gets a simple module switcher, one canvas per
   module, without adding, renaming or deleting modules (M3). Frames and notes
   are not drawn yet, and are kept unchanged on save.
+* A block's menu offers Cut, Copy, Paste, Duplicate, Add comment,
+  Collapse/Expand, Disable/Enable and Delete; the canvas menu offers Undo,
+  Redo, Paste, *Clean up blocks* (lines the top-level blocks up in a column),
+  Collapse/Expand blocks and *Delete N blocks*, which counts the blocks it
+  deletes (not their expression slots) and asks with *Cancel* as the default.
+  One Undo brings all of them back.
+* Dropping a block on the trash can deletes it; the trash can keeps nothing,
+  and Undo brings deleted blocks back.
 * Docks are resizable and collapsible. Swapping, splitting and remembering
   them, Focus mode and Presentation mode come in M5.
 * The status bar says *Saved* (with the time after a save in this session)
@@ -434,5 +442,5 @@ greyed-out menu items, buttons or shortcuts that lead nowhere.
 | --- | --- |
 | M3 | Typing in expression slots, *Expand* / *Collapse* and Quick Insert (`Ctrl+Space`); the type picker popover; collection, string, struct, enum, file, error, random and time blocks; multi-module tabs and headers (adding, renaming and deleting modules); *Export* (`project_export_dialog`); the friendly g++ message catalog; globals, constants, math functions, conversions and organisation blocks; Textbook style; the Friendly / C++ label switch and *Show advanced blocks*; toolbox search; the project settings dialog (standard, options, configurations, defines); run options (arguments, working directory, stdin file, external terminal); quick fixes and *Copy bug report*; feature gating in the UI |
 | M4 | Classes, lambdas, memory, templates and concurrency blocks; library packs and the *Libraries* category; Raw C++ blocks and the *Contains Raw C++ (n)* indicator; the extra-flags and environment pass-through settings |
-| M5 | Outline, frames, search, rename (`F2`), go to definition (`F12`), find references (`Shift+F12`), snippets, minimap, tidy-up, collapse to signatures, back/forward and bookmarks; the debugger, breakpoints, trace glow and runtime errors on blocks (§4.11); localisation; the command palette and remappable shortcuts; Focus and Presentation modes; swapping, splitting and remembering docks; High Contrast themes and the checked colour-blind-safe palette; lint levels (*Change level…*, lint lists); build and run settings (timeouts, cache size, link mode, caps); the example gallery and the full template set; *Export diagnostics bundle* |
+| M5 | Outline, frames, search, rename (`F2`), go to definition (`F12`), find references (`Shift+F12`), snippets, minimap, tidy-up beyond *Clean up blocks*, collapse to signatures, back/forward and bookmarks; the debugger, breakpoints, trace glow and runtime errors on blocks (§4.11); localisation; the command palette and remappable shortcuts; Focus and Presentation modes; swapping, splitting and remembering docks; High Contrast themes and the checked colour-blind-safe palette; lint levels (*Change level…*, lint lists); build and run settings (timeouts, cache size, link mode, caps); the example gallery and the full template set; *Export diagnostics bundle* |
 | M6 | The updater and the first-run update question, sandboxed runs, installers |

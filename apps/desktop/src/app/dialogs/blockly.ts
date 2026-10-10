@@ -11,9 +11,10 @@ import type { DialogService, DialogTextOptions } from './service';
 /**
  * Lends Blockly's keyboard focus to the open dialog, as Blockly requires of dialogs that replace
  * its prompts, and returns it when the dialog closes. Nothing happens when something else (such as
- * a field's drop-down) already holds it.
+ * a field's drop-down) already holds it. The editor's own replacements of Blockly's dialogs (such
+ * as the canvas menu's *Delete N blocks*) pass it as their `onOpen`.
  */
-function lendBlocklyFocus(content: HTMLElement): (() => void) | undefined {
+export function lendBlocklyFocus(content: HTMLElement): (() => void) | undefined {
   const manager = Blockly.getFocusManager();
   if (manager.ephemeralFocusTaken()) {
     return undefined;

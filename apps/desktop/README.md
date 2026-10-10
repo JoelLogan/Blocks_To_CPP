@@ -69,7 +69,8 @@ project, build, run, toolchain, settings, trust and recovery services:
 
 - **Workspace** (`EditorWorkspace.tsx`): Zelos, the b2c theme (following the system colour
   scheme), the `b2c_checker` connection checker, sounds off, the project format's zoom range
-  (0.1–4.0) and a starting category toolbox that the toolbox plugin replaces. It installs the
+  (0.1–4.0), a trash can that keeps nothing (`maxTrashcanContents: 0`; Undo brings deleted
+  blocks back) and a starting category toolbox that the toolbox plugin replaces. It installs the
   editor services, starts an editing session, publishes the `EditorHandle` and attaches
   `EDITOR_PLUGINS`.
 - **Sync** (`sync/`): `loadModule` builds a module's canvas from a loaded document and
@@ -120,6 +121,10 @@ project, build, run, toolchain, settings, trust and recovery services:
   serialise statement chains recursively, so a chain too long for the
   engine's stack is refused with a notice and nothing changes
   (`clipboard/chains.ts`).
+- **Menus** (`menus/`, the `menusPlugin`): Blockly's own block and canvas menu items without
+  _Inline Inputs_ (never saved), and a _Delete N blocks_ that counts the blocks it deletes (not
+  their expression slots), asks with _Cancel_ as the default and deletes in one undo step; _Clean
+  up blocks_ stays. Blockly's items are put back when the last editor detaches.
 - **Keyboard** (`keyboard/`, the `keyboardPlugin`, attached last): keyboard navigation of the
   canvas and the toolbox on Blockly 12's core focus manager, cursor and shortcut registry (not
   `@blockly/keyboard-navigation`, which would replace the validated clipboard and drag blocks past
