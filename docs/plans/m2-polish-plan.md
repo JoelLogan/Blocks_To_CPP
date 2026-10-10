@@ -1,6 +1,6 @@
 # Blocks2Cpp: improvement plan after the owner's first M2 trial
 
-> **Status: proposed, awaiting the owner's decisions (§6 and Appendix A).** Written 2026-10-10 from a review of the owner's first M2 trial. Nothing in it is implemented yet; spec and ADR revisions in §5 land with the work they describe.
+> **Status: accepted (2026-10-10).** The owner accepted every recommendation of §6 and Appendix A (D1–D18). Written 2026-10-10 from a review of the owner's first M2 trial; work proceeds wave by wave, and the spec and ADR revisions in §5 land with the work they describe.
 
 This plan rests on the owner's 18 observations (U1–U18) and the reports of 14 investigation and audit agents. Everything was checked against HEAD `729a503` on branch `ccr-01f82d9b-v70u20`. This final revision also answers three reviews of the draft, on completeness, spec consistency and feasibility.
 
@@ -1734,7 +1734,7 @@ The structured decisions list has the full options and recommendations. They are
 | none | nothing in M2 | D6 | Renderer and patched dependencies (ADR-0014) |
 | none | nothing in M2 | D15 | Worker, Blockly 13 timing, budget gating |
 
-**Questions for the owner (information, not decisions):**
+**Questions for the owner (information, not decisions).** Answers of 2026-10-10: the owner used a release build (the executable), not the dev server, so U11's lag is not a dev-server effect; the desktop session is Wayland, so W3's window fitting (`preventOverflow`) and U14's wheel handling must be checked on Wayland. The scale factor and the exact U14 glitch are still open.
 
 - Did you start the app with `pnpm desktop:dev` or with a built executable?
 - What display scale factor, Wayland or X11, desktop environment, GPU and driver, and WebKitGTK version do you use?
