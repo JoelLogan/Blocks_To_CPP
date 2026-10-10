@@ -2,18 +2,30 @@
 import type { BdmDocument, CoreWasm, PreviewResult, SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import {
   B2cSymbolRefField,
+  DEFAULT_EDITOR_SERVICES,
   EXPR_SHADOW_TYPE,
   getEditorServices,
   isExprShadowType,
   resetEditorServices,
 } from '@blocks2cpp/blockly-ext';
-import type * as Blockly from 'blockly/core';
+import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { DialogService } from '../../app/dialogs/service';
+import { useAppStore } from '../../app/store';
 import { documentFixture, previewFixture } from '../../app/testing/fixtures';
-import { disposeWorkspaces, headlessWorkspace } from '../sync/testing';
 import {
+  disposeWorkspaces,
+  EXAMPLE_PROJECTS,
+  headlessWorkspace,
+  loadText,
+  present,
+  startSession,
+  testCore,
+  type TestSession,
+} from '../sync/testing';
+import {
+  analysisScope,
   createSymbolServices,
   defaultInputShadow,
   fieldDialogs,
@@ -22,7 +34,13 @@ import {
   SymbolNames,
 } from './index';
 
+const realCore = await testCore();
+
+let running: TestSession | null = null;
+
 afterEach(() => {
+  running?.dispose();
+  running = null;
   disposeWorkspaces();
   resetEditorServices();
 });
@@ -115,27 +133,51 @@ describe('the symbol provider and the type oracle', () => {
     ],
   };
 
-  it('answers scope queries from the core, and names from the document first', () => {
+  it('answers scope queries from the core after the first preview, and names from the document first', () => {
     const symbolsInScope = vi.fn(() => [symbol('s_x', 'x')]);
     let core: CoreWasm | null = null;
     let current: PreviewResult | null = null;
-    const services = createSymbolServices({ core: () => core, preview: () => current });
+    const services = createSymbolServices({
+      core: () => core,
+      preview: () => current,
+      workspace: headlessWorkspace(),
+    });
     expect(services.symbols.symbolsAt('b1', null)).toEqual([]);
     core = { symbolsInScope } as unknown as CoreWasm;
-    expect(services.symbols.symbolsAt('b1', 'BODY')).toEqual([symbol('s_x', 'x')]);
-    expect(symbolsInScope).toHaveBeenCalledWith('b1', 'BODY');
+    // The core's kept analysis may be another project's until the first preview.
+    expect(services.symbols.symbolsAt('b1', 'BODY')).toEqual([]);
+    expect(symbolsInScope).not.toHaveBeenCalled();
 
     expect(services.symbols.nameOf('s_x')).toBeNull();
     current = preview;
+    expect(services.symbols.symbolsAt('b1', 'BODY')).toEqual([symbol('s_x', 'x')]);
+    expect(symbolsInScope).toHaveBeenCalledWith('b1', 'BODY');
     expect(services.symbols.nameOf('s_x')).toBe('x');
     services.names.update(docDeclaring([['s_x', 'renamed']]));
     expect(services.symbols.nameOf('s_x')).toBe('renamed');
   });
 
+  it('answers nothing from a core that fails (a trap)', () => {
+    const trapped = {
+      symbolsInScope: () => {
+        throw new Error('trapped');
+      },
+    } as unknown as CoreWasm;
+    const scope = analysisScope({ core: () => trapped, preview: () => preview });
+    expect(scope.symbolsAt('b1', null)).toEqual([]);
+    expect(scope.allSymbols()).toEqual(preview.symbols);
+    const services = createSymbolServices({
+      core: () => trapped,
+      preview: () => preview,
+      workspace: headlessWorkspace(),
+    });
+    expect(services.symbols.symbolsAt('b1', null)).toEqual([]);
+  });
+
   it('gives the analysed type of a block, or the type of the symbol a reference names', () => {
     let current: PreviewResult | null = null;
-    const { types } = createSymbolServices({ core: () => null, preview: () => current });
     const workspace = headlessWorkspace();
+    const { types } = createSymbolServices({ core: () => null, preview: () => current, workspace });
     const block = (type: string, id: string): Blockly.Block => {
       const created = workspace.newBlock(type, id);
       created.initModel();
@@ -159,9 +201,103 @@ describe('the symbol provider and the type oracle', () => {
   });
 });
 
+describe('the scope of a block’s menus', () => {
+  const guess = symbol('s_guess', 'guess', { declBlock: 'decl' });
+  const secret = symbol('s_secret', 'secret', { declBlock: 'decl2' });
+
+  /**
+   * `main` (ID `main`) with `create guess` (`decl`) and `create secret` (`decl2`), a loose getter
+   * (`loose`), and a core that answers for main's blocks only.
+   */
+  function canvas() {
+    const workspace = headlessWorkspace();
+    Blockly.serialization.blocks.append(
+      {
+        type: 'program.main',
+        id: 'main',
+        inputs: {
+          BODY: {
+            block: {
+              type: 'var.declare',
+              id: 'decl',
+              fields: { TYPE: 'int', NAME: { sym: 's_guess', name: 'guess' }, CONST: false },
+              next: {
+                block: {
+                  type: 'var.declare',
+                  id: 'decl2',
+                  fields: { TYPE: 'int', NAME: { sym: 's_secret', name: 'secret' }, CONST: false },
+                },
+              },
+            },
+          },
+        },
+      },
+      workspace,
+    );
+    const loose = Blockly.serialization.blocks.append(
+      { type: 'var.get', id: 'loose', fields: { VAR: { ref: 's_guess' } } },
+      workspace,
+    );
+    const scopes: Record<string, SymbolInfo[]> = { decl: [], decl2: [guess], 'main/BODY': [] };
+    const symbolsInScope = vi.fn(
+      (blockId: string, input: string | null) =>
+        scopes[input === null ? blockId : `${blockId}/${input}`] ?? [],
+    );
+    const core = { symbolsInScope } as unknown as CoreWasm;
+    const analysed: PreviewResult = { ...previewFixture(), symbols: [guess, secret] };
+    const services = createSymbolServices({
+      core: () => core,
+      preview: () => analysed,
+      workspace,
+    });
+    return { workspace, loose, services, symbolsInScope };
+  }
+
+  it('lists what is visible at the end of main for a loose block', () => {
+    const { loose, services } = canvas();
+    installEditorServices({
+      symbols: services.symbols,
+      types: services.types,
+      dialogs: DEFAULT_EDITOR_SERVICES.dialogs,
+    });
+    expect(services.symbols.symbolsAt('loose', null)).toEqual([guess, secret]);
+    const field = loose.getField('VAR') as B2cSymbolRefField;
+    expect(field.menuOptions().map(([label]) => label)).toEqual(['guess', 'secret']);
+  });
+
+  it('asks the core as it is for a block that is not on the canvas', () => {
+    const { services, symbolsInScope } = canvas();
+    expect(services.symbols.symbolsAt('flyout_block', null)).toEqual([]);
+    expect(symbolsInScope).toHaveBeenCalledWith('flyout_block', null);
+  });
+});
+
+describe.skipIf(realCore === null)('the scope of a block’s menus with the compiler core', () => {
+  it('lists main’s variables in the menu of a getter left loose on the canvas', async () => {
+    const core = present(realCore, 'the compiler core');
+    const text = EXAMPLE_PROJECTS['guessing_game.b2c'] ?? '';
+    running = startSession(core, loadText(core, text));
+    const session = running;
+    await session.session.flush();
+    expect(useAppStore.getState().analysis.preview).not.toBeNull();
+    const getter = session.workspace.newBlock('var.get');
+    getter.initModel();
+    (getter.getField('VAR') as B2cSymbolRefField).setRef({ ref: 's_guess' });
+    await session.session.flush();
+    // The analysis answers nothing for the loose getter; its menu still lists main's variables.
+    expect(core.symbolsInScope(getter.id, null)).toEqual([]);
+    const field = getter.getField('VAR') as B2cSymbolRefField;
+    expect(field.menuOptions().map(([label]) => label)).toEqual(['guess', 'secret']);
+  });
+});
+
 describe('installing the services', () => {
   it('reaches the fields, and is withdrawn again', () => {
-    const services = createSymbolServices({ core: () => null, preview: () => null });
+    const services = createSymbolServices({
+      core: () => null,
+      preview: () => null,
+      workspace: headlessWorkspace(),
+    });
     const alert = vi.fn(() => Promise.resolve());
     const confirm = vi.fn(() => Promise.resolve(true));
     const prompt = vi.fn(() => Promise.resolve('typed'));

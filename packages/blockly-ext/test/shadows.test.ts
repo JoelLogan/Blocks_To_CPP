@@ -1,11 +1,12 @@
 /** The internal expression shadows (src/shadows/). */
 import * as Blockly from 'blockly/core';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   B2C_CSS_CLASS,
   B2cSymbolRefField,
   EXPR_SHADOW_TYPE,
+  b2cLightTheme,
   ExprShadowError,
   ZELOS_OUTPUT_SHAPE,
   catalogBlock,
@@ -309,6 +310,52 @@ describe('read-only expressions', () => {
     expect(events).toEqual([]);
     expect(workspace.getUndoStack()).toEqual([]);
     expect(Blockly.Events.isEnabled()).toBe(true);
+  });
+
+  it('relabel the blocks of the workspace’s flyout too, and lay the flyout out again', async () => {
+    const names: Record<string, string> = { s_guess: 'guess' };
+    fakeSymbols({}, names);
+    const host = document.createElement('div');
+    document.body.append(host);
+    // A toolbox flyout whose getter is drawn once, as the toolbox keeps its blocks while what it
+    // lists stays the same.
+    const workspace = Blockly.inject(host, {
+      renderer: 'zelos',
+      theme: b2cLightTheme,
+      sounds: false,
+      toolbox: {
+        kind: 'flyoutToolbox',
+        contents: [{ kind: 'block', type: 'var.get', fields: { VAR: { ref: 's_guess' } } }],
+      },
+    });
+    try {
+      const flyout = workspace.getFlyout();
+      const getter = flyout?.getWorkspace().getTopBlocks(false)[0];
+      // The text Blockly drew, not the field's current text (which always asks for the name).
+      const drawn = () => getter?.getField('VAR')?.getSvgRoot()?.textContent;
+      expect(drawn()).toBe('guess');
+      if (flyout === null) {
+        throw new Error('no flyout');
+      }
+      const reflow = vi.spyOn(flyout, 'reflow');
+
+      names['s_guess'] = 'attemptsSoFar';
+      refreshSymbolNames(workspace);
+      await Blockly.renderManagement.finishQueuedRenders();
+      await Promise.resolve();
+      expect(drawn()).toBe('attemptsSoFar');
+      expect(reflow).toHaveBeenCalled();
+
+      // A hidden flyout is left alone: it draws new blocks when it is shown.
+      reflow.mockClear();
+      flyout.hide();
+      refreshSymbolNames(workspace);
+      await Blockly.renderManagement.finishQueuedRenders();
+      await Promise.resolve();
+      expect(reflow).not.toHaveBeenCalled();
+    } finally {
+      workspace.dispose();
+    }
   });
 
   it('mark the tokens a diagnostic points at', () => {

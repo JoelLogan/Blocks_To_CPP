@@ -172,11 +172,8 @@ export function getTokenHighlight(block: Blockly.Block): TokenRange | null {
   return shadowOf(block)?.b2cHighlight ?? null;
 }
 
-/**
- * Shows the current symbol names everywhere in a workspace: every reference field and every
- * read-only expression. Call it after each analysis, so a rename shows on every reference.
- */
-export function refreshSymbolNames(workspace: Blockly.Workspace): void {
+/** Redraws every reference field and every read-only expression of one workspace. */
+function relabelBlocks(workspace: Blockly.Workspace): void {
   for (const block of workspace.getAllBlocks(false)) {
     if (block.type === EXPR_SHADOW_TYPE.tokens) {
       const shadow = shadowOf(block);
@@ -193,4 +190,30 @@ export function refreshSymbolNames(workspace: Blockly.Workspace): void {
       }
     }
   }
+}
+
+/**
+ * Shows the current symbol names everywhere in a workspace and in the flyout of its toolbox: every
+ * reference field and every read-only expression. Call it after each analysis, so a rename shows
+ * on every reference.
+ *
+ * A flyout keeps its blocks while what it lists stays the same, and a renamed symbol is still the
+ * same reference, so its blocks are relabelled here too. Once Blockly has drawn them at their new
+ * widths, the flyout lays them out again (its width follows the widest block).
+ */
+export function refreshSymbolNames(workspace: Blockly.Workspace): void {
+  relabelBlocks(workspace);
+  const flyout =
+    workspace instanceof Blockly.WorkspaceSvg && !workspace.isFlyout ? workspace.getFlyout() : null;
+  if (!flyout?.isVisible()) {
+    // No flyout, or a hidden one: it builds new blocks, with the current names, when it is shown.
+    return;
+  }
+  relabelBlocks(flyout.getWorkspace());
+  void Blockly.renderManagement.finishQueuedRenders().then(() => {
+    // The flyout may have been hidden or disposed (the editor closed) in the meantime.
+    if (flyout.isVisible()) {
+      flyout.reflow();
+    }
+  });
 }

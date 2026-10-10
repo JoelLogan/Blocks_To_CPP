@@ -84,6 +84,13 @@ function open(
   return workspace;
 }
 
+function present<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) {
+    throw new Error('missing');
+  }
+  return value;
+}
+
 /** The blocks the flyout shows, in order. */
 function flyoutBlocks(workspace: Blockly.WorkspaceSvg): Blockly.BlockSvg[] {
   const flyout = workspace.getToolbox()?.getFlyout();
@@ -147,10 +154,13 @@ describe.skipIf(core === null)('the toolbox with the compiler core', { timeout: 
       ['var.update', 's_secret'],
     ]);
 
+    // Just after `create int secret` (b002), secret is visible, guess is not yet.
     select(workspace, 'b002');
     await settle();
     expect(variableBlocks(workspace).map(([, ref]) => ref)).not.toContain('s_guess');
-    expect(variableBlocks(workspace)).toEqual([]);
+    expect(variableBlocks(workspace).filter(([type]) => type === 'var.get')).toEqual([
+      ['var.get', 's_secret'],
+    ]);
 
     // Inside the loop, both are visible.
     select(workspace, 'b005');
@@ -169,6 +179,73 @@ describe.skipIf(core === null)('the toolbox with the compiler core', { timeout: 
         .filter(([type]) => type === 'var.get')
         .map(([, ref]) => ref),
     ).toEqual(['s_guess', 's_secret']);
+  });
+
+  it('lists main’s variables for a block left loose on the canvas', async () => {
+    const document = loadDocument(theCore(), guessingGameText);
+    const workspace = open(guessingGameText);
+    await settle();
+    select(workspace, 'b002');
+    await settle();
+    expect(variableBlocks(workspace).filter(([type]) => type === 'var.get')).toHaveLength(1);
+    const loose = workspace.newBlock('io.print');
+    loose.initSvg();
+    loose.render();
+    await settle();
+    // The next analysis does not lower the loose block: the scope query has no answer for it.
+    analyse(theCore(), document);
+    expect(theCore().symbolsInScope(loose.id, null)).toEqual([]);
+    select(workspace, loose.id);
+    await settle();
+    expect(
+      variableBlocks(workspace)
+        .filter(([type]) => type === 'var.get')
+        .map(([, ref]) => ref),
+    ).toEqual(['s_guess', 's_secret']);
+  });
+
+  it('lists what a disabled loop sees, and what the statement before sees, for blocks without an answer', async () => {
+    const getters = (workspace: Blockly.WorkspaceSvg): unknown[] =>
+      variableBlocks(workspace)
+        .filter(([type]) => type === 'var.get')
+        .map(([, ref]) => ref);
+    const loop = (document: BdmDocument) =>
+      document.modules[0]?.workspace.blocks
+        .find((block) => block.id === 'b011')
+        ?.statements?.['BODY']?.find((block) => block.id === 'b010');
+    const workspace = open(guessingGameText, {}, (document) => {
+      const found = loop(document);
+      if (found !== undefined) {
+        found.disabled = true;
+      }
+    });
+    await settle();
+    // The ask block (b005) is inside the disabled loop (b010).
+    expect(theCore().symbolsInScope('b005', null)).toEqual([]);
+    select(workspace, 'b005');
+    await settle();
+    expect(getters(workspace)).toEqual(['s_guess', 's_secret']);
+
+    // A block the analysis has not seen yet, just after `create int guess` (b003); the listing
+    // was last built for `create int secret` (b002).
+    select(workspace, 'b002');
+    await settle();
+    expect(getters(workspace)).toEqual(['s_secret']);
+    const fresh = workspace.newBlock('io.print');
+    fresh.initSvg();
+    fresh.render();
+    present(workspace.getBlockById('b003')).nextConnection.connect(
+      present(fresh.previousConnection),
+    );
+    await settle();
+    // A new preview of the same analysis (the core still has no answer for the new block).
+    const state = useAppStore.getState().analysis;
+    useAppStore.setState({
+      analysis: { ...state, seq: state.seq + 1, preview: { ...present(state.preview) } },
+    });
+    select(workspace, fresh.id);
+    await settle();
+    expect(getters(workspace)).toEqual(['s_guess', 's_secret']);
   });
 
   it('leaves constants out of set, change and update', async () => {

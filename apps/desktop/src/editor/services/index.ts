@@ -18,7 +18,12 @@ export {
   registerEditorBlocks,
 } from './install';
 export { MAX_LAST_KNOWN_NAMES, SymbolNames } from './names';
-export { createSymbolProvider, createTypeOracle, type SymbolServiceDeps } from './symbols';
+export {
+  analysisScope,
+  createSymbolProvider,
+  createTypeOracle,
+  type SymbolServiceDeps,
+} from './symbols';
 
 /** The symbol and type services of one editor, and the names they read. */
 export interface EditorSymbolServices {
@@ -27,15 +32,24 @@ export interface EditorSymbolServices {
   readonly types: ReturnType<typeof createTypeOracle>;
 }
 
-/** Creates the symbol and type services over the running core and the latest preview. */
+/**
+ * Creates the symbol and type services of the editor of `workspace` over the running core and the
+ * latest preview.
+ */
 export function createSymbolServices(deps: {
   readonly core: () => CoreWasm | null;
   readonly preview: () => PreviewResult | null;
+  readonly workspace: Blockly.Workspace;
 }): EditorSymbolServices {
   const names = new SymbolNames();
   return {
     names,
-    symbols: createSymbolProvider({ core: deps.core, preview: deps.preview, names }),
+    symbols: createSymbolProvider({
+      core: deps.core,
+      preview: deps.preview,
+      names,
+      workspace: deps.workspace,
+    }),
     types: createTypeOracle({ preview: deps.preview }),
   };
 }

@@ -57,7 +57,8 @@
 ## 4.2 Toolbox
 
 * **Scratch-style continuous toolbox.** Category bubbles on the left; the
-  flyout scrolls continuously through all categories.
+  flyout scrolls continuously through all categories, and its blocks always
+  show current names.
 * **Dynamic categories.** *Variables* lists the symbols in scope at the
   current selection. *My Blocks* lists call blocks for every user-defined
   function, grouped by module. *Libraries* lists installed packs.
@@ -75,14 +76,18 @@
   with a default argument of each parameter's type.
 
 **In M2:** the toolbox shows Program, Variables, Math, Logic, Text, Control,
-Loops, Input / Output and Functions (*My Blocks*). *Variables* lists the
-symbols in scope at the selected block (with nothing selected, those visible
-at the end of `main`) and offers *Make a variable*; *Loops* gives its counted
-loop the first counter name that is free there, and *My Blocks* follows the
-functions as they are defined (default names in
-[03 §3.6](03-block-language.md#36-symbols-and-scoping)). The continuous
-flyout is `@blockly/continuous-toolbox` 7.0.9, the Blockly team's plugin and
-its last release for Blockly 12: it passes the dependency policy
+Loops, Input / Output and Functions (*My Blocks*). *Variables* offers *Make a
+variable* and lists the variables in scope just after the selected statement
+(for a selected value block, at its statement). With nothing selected, or with
+a block selected that is not inside *when program starts* or a function, it
+lists those visible at the end of `main`; a block inside a disabled statement,
+or one the analysis has not seen yet, lists the scope of the nearest analysed
+statement around or before it. The list never empties while the next analysis
+runs. *Loops* gives its counted loop the first counter name that is free
+there, and *My Blocks* follows the functions as they are defined (default
+names in [03 §3.6](03-block-language.md#36-symbols-and-scoping)). The
+continuous flyout is `@blockly/continuous-toolbox` 7.0.9, the Blockly team's
+plugin and its last release for Blockly 12: it passes the dependency policy
 ([08 §8.9](08-security.md#89-supply-chain)) and shows the dynamic categories
 in the same scrolling flyout, so M2 needs no fallback to Blockly's category
 toolbox. *Libraries* comes with library packs (M4), *Show advanced blocks* and

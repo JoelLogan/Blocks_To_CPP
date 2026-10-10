@@ -105,6 +105,7 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
   const services = createSymbolServices({
     core: () => deps.host.current(),
     preview: () => deps.store.getState().analysis.preview,
+    workspace,
   });
   const uninstallServices = installEditorServices({
     symbols: services.symbols,
