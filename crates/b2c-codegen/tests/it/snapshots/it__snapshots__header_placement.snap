@@ -36,8 +36,8 @@ int main() {
 #include <cctype>
 #include <cstdlib>
 #include <iostream>
-#include <limits>
 #include <random>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -73,24 +73,30 @@ inline const char* invalid_input_message<double>() {
     return "Please enter a number.";
 }
 
+/// The message shown when the typed input is not one character.
+template <>
+inline const char* invalid_input_message<char>() {
+    return "Please enter one character.";
+}
+
 /// The message shown when the typed input is not true or false.
 template <>
 inline const char* invalid_input_message<bool>() {
     return "Please enter true or false.";
 }
 
-/// Reads one `T` from standard input. Returns false if the input is not a
-/// valid `T`.
+/// Reads one `T` from `in`. Returns false if the text there does not start
+/// with a valid `T`.
 template <typename T>
-bool read_value(T& value) {
-    return static_cast<bool>(std::cin >> value);
+bool read_value(std::istream& in, T& value) {
+    return static_cast<bool>(in >> value);
 }
 
-/// Reads a true/false answer: accepts true/false, yes/no and 1/0, in any
-/// letter case. Returns false for any other word.
-inline bool read_value(bool& value) {
+/// Reads a true/false answer from `in`: accepts true/false, yes/no and 1/0,
+/// in any letter case. Returns false for any other word.
+inline bool read_value(std::istream& in, bool& value) {
     std::string word;
-    if (!(std::cin >> word)) {
+    if (!(in >> word)) {
         return false;
     }
     for (char& letter : word) {
@@ -107,26 +113,26 @@ inline bool read_value(bool& value) {
     return false;
 }
 
-/// Prints `prompt` and reads a `T` (a number, a character or true/false),
-/// asking again until the input is valid. The rest of the line after the
-/// value is ignored. At the end of the input (for example when the input
-/// comes from a file), prints "Input ended" to the error stream and exits
-/// with code 1 instead of asking forever.
+/// Prints `prompt` and reads one line holding a `T` (a number, a character
+/// or true/false), asking again until the line is valid: apart from spaces,
+/// the whole line must be one `T`, so `3.5` or `12abc` is not a whole
+/// number. At the end of the input (for example when the input comes from a
+/// file), prints "Input ended" to the error stream and exits with code 1
+/// instead of asking forever.
 template <typename T>
 T ask(const std::string& prompt = "") {
     while (true) {
         std::cout << prompt;
-        T value{};
-        if (read_value(value)) {
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-            return value;
-        }
-        if (std::cin.eof()) {
+        std::string line;
+        if (!std::getline(std::cin, line)) {
             std::cerr << "Input ended" << '\n';
             std::exit(1);
         }
-        std::cin.clear();
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        std::istringstream in(line);
+        T value{};
+        if (read_value(in, value) && (in >> std::ws).eof()) {
+            return value;
+        }
         std::cout << invalid_input_message<T>() << '\n';
     }
 }

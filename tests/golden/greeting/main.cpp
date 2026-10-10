@@ -8,20 +8,26 @@
 // ---- Blocks2Cpp support helpers (only those used) ------------------------
 namespace b2c {
 
-/// Prints `prompt` and reads a line of text, skipping empty lines and leading
-/// spaces. At the end of the input (for example when the input comes from a
-/// file), prints "Input ended" to the error stream and exits with code 1.
+/// Prints `prompt` and reads one line of text, without its leading spaces.
+/// An empty line asks again. At the end of the input (for example when the
+/// input comes from a file), prints "Input ended" to the error stream and
+/// exits with code 1.
 inline std::string ask_line(const std::string& prompt = "") {
-    std::cout << prompt;
-    std::string line;
-    if (!std::getline(std::cin >> std::ws, line)) {
-        std::cerr << "Input ended" << '\n';
-        std::exit(1);
+    while (true) {
+        std::cout << prompt;
+        std::string line;
+        if (!std::getline(std::cin, line)) {
+            std::cerr << "Input ended" << '\n';
+            std::exit(1);
+        }
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        const auto start = line.find_first_not_of(" \t");
+        if (start != std::string::npos) {
+            return line.substr(start);
+        }
     }
-    if (!line.empty() && line.back() == '\r') {
-        line.pop_back();
-    }
-    return line;
 }
 
 }  // namespace b2c

@@ -1,6 +1,6 @@
 //! Builds generated programs with g++ and runs them with stdin fixtures: the
-//! support helpers (`ask<T>`, `ask_line`, `random_int`) and the semantics of
-//! the desugared statements.
+//! support helpers (`ask<T>`, `ask_line`, `random_int`, `to_text`) and the
+//! semantics of the desugared statements.
 
 use b2c_ir::sast::{
     AskMode, BinaryOp, CompoundOp, OutputStream, PassMode, PrintSeparator, Program, RangeDirection, StmtKind,
@@ -32,12 +32,42 @@ fn ask_and_print(ty: Type, prompt: &str) -> Program {
 
 #[test]
 fn ask_int_asks_again_after_invalid_input() {
-    let Some(out) = run(&ask_and_print(Type::Int, "Age? "), "abc\n\n42 and more\n") else {
+    let Some(out) = run(&ask_and_print(Type::Int, "Age? "), "abc\n\n42 and more\n42\n") else {
         return;
     };
     assert!(out.status.success(), "{}", out.stderr());
-    assert_eq!(out.stdout(), "Age? Please enter a whole number.\nAge? [42]\n");
+    assert_eq!(
+        out.stdout(),
+        "Age? Please enter a whole number.\n".repeat(3) + "Age? [42]\n",
+        "a word, an empty line and a number with more after it are each refused"
+    );
     assert_eq!(out.stderr(), "");
+}
+
+#[test]
+fn ask_accepts_only_a_whole_line_holding_one_value() {
+    const AGAIN: &str = "N? Please enter a whole number.\n";
+    let program = ask_and_print(Type::Int, "N? ");
+    for (stdin, expected) in [
+        ("3.5\n4\n", format!("{AGAIN}N? [4]\n")),
+        ("12abc\n7\n", format!("{AGAIN}N? [7]\n")),
+        ("0x10\n1 2\n+8\n", format!("{AGAIN}{AGAIN}N? [8]\n")),
+        ("  7  \n", String::from("N? [7]\n")),
+        ("\t-7\r\n", String::from("N? [-7]\n")),
+        ("7", String::from("N? [7]\n")),
+    ] {
+        let Some(out) = run(&program, stdin) else { return };
+        assert!(out.status.success(), "stdin {stdin:?}: {}", out.stderr());
+        assert_eq!(out.stdout(), expected, "stdin {stdin:?}");
+    }
+    let program = ask_and_print(Type::Double, "X? ");
+    let Some(out) = run(&program, "1e400\n2.5x\n2.5\n") else {
+        return;
+    };
+    assert_eq!(
+        out.stdout(),
+        "X? Please enter a number.\n".repeat(2) + "X? [2.5]\n"
+    );
 }
 
 #[test]
@@ -69,14 +99,35 @@ fn ask_stops_at_end_of_input() {
 #[test]
 fn ask_line_reads_a_whole_line() {
     let program = ask_and_print(Type::String, "Name? ");
-    let Some(out) = run(&program, "\n   Ada Lovelace\r\nignored\n") else {
+    let Some(out) = run(&program, "   Ada Lovelace\r\nignored\n") else {
         return;
     };
     assert!(out.status.success(), "{}", out.stderr());
     assert_eq!(out.stdout(), "Name? [Ada Lovelace]\n");
+    let Some(out) = run(&program, "Grace") else { return };
+    assert_eq!(
+        out.stdout(),
+        "Name? [Grace]\n",
+        "a last line without a line break"
+    );
     let Some(out) = run(&program, "\n\n") else { return };
     assert_eq!(out.status.code(), Some(1));
+    assert_eq!(out.stdout(), "Name? Name? Name? ");
     assert_eq!(out.stderr(), "Input ended\n");
+}
+
+#[test]
+fn ask_line_asks_again_after_an_empty_line() {
+    let program = ask_and_print(Type::String, "Name? ");
+    let Some(out) = run(&program, "\n\nBob\n") else {
+        return;
+    };
+    assert!(out.status.success(), "{}", out.stderr());
+    assert_eq!(out.stdout(), "Name? Name? Name? [Bob]\n");
+    let Some(out) = run(&program, "  \t\r\nBob\n") else {
+        return;
+    };
+    assert_eq!(out.stdout(), "Name? Name? [Bob]\n", "a line of spaces is empty");
 }
 
 #[test]
@@ -102,13 +153,18 @@ fn ask_reads_bool_double_and_char() {
     let program = b.program(vec![main]);
     let cases = [
         (
-            "maybe\nYES\ntall\n3.5\n  xyz\n",
+            "maybe\nYES\ntall\n3.5\n  x  \n",
             "Like? Please enter true or false.\nLike? Height? Please enter a number.\nHeight? >true 3.5 x\n",
         ),
         ("no\n2.25\nq\n", "Like? Height? >false 2.25 q\n"),
         ("1\n1e2\n7\n", "Like? Height? >true 100 7\n"),
         ("0\n0\n#\n", "Like? Height? >false 0 #\n"),
-        ("True\n-1.5\nAb\n", "Like? Height? >true -1.5 A\n"),
+        ("True\n-1.5\nA\n", "Like? Height? >true -1.5 A\n"),
+        (
+            "yes please\nno\n1.5.\n1.5\nAb\n\nb\n",
+            "Like? Please enter true or false.\nLike? Height? Please enter a number.\nHeight? \
+             >Please enter one character.\n>Please enter one character.\n>false 1.5 b\n",
+        ),
     ];
     for (stdin, expected) in cases {
         let Some(out) = run(&program, stdin) else { return };
@@ -427,7 +483,46 @@ fn printing_and_joining() {
     };
     assert_eq!(
         out.stdout(),
-        "true true false c 0.5\n1, 2, 3\nScore: 42 A true 0.500000\nconcat\ntrue\nxfalse\n"
+        "true true false c 0.5\n1, 2, 3\nScore: 42 A true 0.5\nconcat\ntrue\nxfalse\n"
     );
     assert_eq!(out.stderr(), "to stderr\n");
+}
+
+#[test]
+fn join_writes_decimal_numbers_as_print_does() {
+    let b = Builder::new();
+    let x = b.var("x", Type::Double);
+    let name = b.var("name", Type::String);
+    let values = ["2.5", "0.1", "1e20", "1.0", "0.000001", "123456789.0"];
+    let mut body = vec![b.declare(&x, Some(b.float("0.0")))];
+    for value in values {
+        body.push(b.set(&x, b.float(value)));
+        body.push(b.print(vec![b.get(&x)]));
+        // As the first part of a join, and after text.
+        body.push(b.print(vec![b.join(vec![b.get(&x)])]));
+        body.push(b.print(vec![b.join(vec![b.str("="), b.get(&x)])]));
+    }
+    // A decimal prompt is written the same way.
+    body.push(b.declare(&name, None));
+    body.push(b.ask(Some(b.float("2.5")), &name, AskMode::KeepAsking));
+    let main = b.main(body);
+    let Some(out) = run(&b.program(vec![main]), "Ada\n") else {
+        return;
+    };
+    assert!(out.status.success(), "{}", out.stderr());
+    let stdout = out.stdout();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), values.len() * 3 + 1, "{lines:?}");
+    for (index, chunk) in lines.chunks(3).take(values.len()).enumerate() {
+        let printed = chunk[0];
+        assert_eq!(chunk[1], printed, "join of {}", values[index]);
+        assert_eq!(chunk[2], format!("={printed}"), "join of {}", values[index]);
+    }
+    assert_eq!(&lines[..3], ["2.5", "2.5", "=2.5"]);
+    assert_eq!(lines[6], "1e+20");
+    assert_eq!(
+        lines.last(),
+        Some(&"2.5"),
+        "the prompt, with no line break after it"
+    );
 }
