@@ -316,6 +316,12 @@ pub(crate) fn e(src: &str) -> Value {
     json!({"expr": tokens(src)})
 }
 
+/// An expression-slot input holding one `num` token exactly as typed, the
+/// way the editor saves an edited number (`{"num": "-1"}`, spec §3.4).
+pub(crate) fn typed_num(text: &str) -> Value {
+    json!({"expr": [{"num": text}]})
+}
+
 /// A draft expression-slot input.
 pub(crate) fn draft(src: &str) -> Value {
     json!({"expr": tokens(src), "draft": true})

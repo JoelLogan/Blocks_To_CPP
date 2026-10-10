@@ -314,10 +314,13 @@ Codes by area:
 * **Meaning:** a number block or a number in an expression is not valid C++
   number syntax. Whole numbers are written like `42`, `0x2A` or `0b101`
   (with optional `'` separators); decimal numbers like `3.14`, `.5` or `1e-3`.
-  A leading `0` is not allowed, because C++ would read the number as octal.
-* **Example:** `1.2.3`, `012`.
+  A number may start with one `-` or `+` (`-1`, `+3`), which is applied as a
+  sign. A whole number with a leading `0` is not allowed, because C++ would
+  read it as octal; it gets its own message.
+* **Example:** `1.2.3`, `--1`, `012`.
 * **Message:** "`1.2.3` is not a number. Write whole numbers like 42 and
-  decimal numbers like 3.14."
+  decimal numbers like 3.14." For a leading zero: "Write `12`, not `012`: in
+  C++ a number that starts with 0 is octal."
 * **How to fix:** correct the number.
 
 ## B2C-E0311 Different kinds of values in a conditional value
@@ -601,7 +604,8 @@ Codes by area:
 * **Example:** `create [int] [big] = (3000000000)`.
 * **Message:** "`3000000000` is too large for a whole number (the largest is
   2147483647). Write it as a decimal number, such as 3000000000.0, if you
-  need it."
+  need it." Below the smallest whole number: "`-3000000000` is too small for
+  a whole number (the smallest is -2147483648). …"
 * **How to fix:** use a smaller number, or a decimal number.
 
 ## B2C-W0518 Value may lose information

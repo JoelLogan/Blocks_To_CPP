@@ -122,6 +122,22 @@ drafts are stored too (with a `"draft": true` flag), so in-progress text is
 never lost. The token list is flat, so parser recursion depth is bounded by
 expression depth (limit 64) and not by JSON nesting.
 
+A token is an object with exactly one key. The kinds are `num`, `str`, `chr`,
+`ref`, `op`, `kw` and `text`; a new kind needs a new format version
+([05 §5.7](05-project-format.md#57-versioning-and-migration)). Values are
+checked when the slot is parsed, not when the file loads: an `op` or `kw`
+outside this section's grammar, or a `num` that is not an accepted literal,
+is a slot error (`E0310`, …), and the file still loads. In M2 the accepted
+forms are the operators `+ - * / % == != < <= > >= && || ! and or not ?:`,
+parentheses, `true` and `false`, and numbers written as decimal digits with
+an optional fraction and exponent (a whole number has no leading zero, except
+a lone `0`), or as `0x`/`0b` integers, with `'` separators. Suffixes and the
+other operators ([08 §8.4.4](08-security.md#844-numbers)) come with typing in
+slots (M3). A `num` may start with one `-` or `+`, which lowering applies as
+a unary operator; the literal itself (`NumLit`) never carries a sign. The
+file keeps numbers as typed; the generated C++ prints them in canonical form
+([08 §8.4.4](08-security.md#844-numbers)).
+
 **Expand / collapse.** Right-click → *Expand into blocks* converts the parsed
 expression into nested operator/value blocks. *Collapse to text* does the
 reverse whenever the block subtree is expressible in slot syntax. This lets
@@ -133,6 +149,7 @@ tokens (or nothing) shows an internal *shadow* block, which is never saved as
 a `{"block": …}` input:
 
 * a single literal token (`num`, `str`, `chr`) is an editable literal;
+* a number typed with a leading `-` is stored as one `num` token;
 * a single reference (`ref`) is a dropdown of the symbols in scope that fit
   the input;
 * any other token list is shown read-only, as text, and is kept unchanged;

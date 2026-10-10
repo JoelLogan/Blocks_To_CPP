@@ -118,7 +118,10 @@ enum Expr {
   ([03 §3.4](03-block-language.md#34-expression-slots)) is parsed by a
   hand-written recursive-descent / precedence-climbing parser with an explicit
   depth limit of 64. It produces the same `Expr` nodes that blocks produce, so
-  later stages cannot tell a typed expression from a block-built one.
+  later stages cannot tell a typed expression from a block-built one. A `num`
+  token, like a number block, may start with one `-` or `+`, which lowering
+  applies as a unary operator: a `NumLit` never carries a sign, and
+  `-2147483648` becomes `-2147483647 - 1`.
 * **Library-pack blocks** lower to `Template` nodes that hold the parsed
   template and their argument `Expr`s ([03 §3.11.2](03-block-language.md#3112-template-lowering-library-blocks)).
 * **Disabled blocks** are dropped here, though their symbols are still

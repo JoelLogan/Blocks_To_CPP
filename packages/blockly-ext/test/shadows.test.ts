@@ -201,6 +201,43 @@ describe('shadows in a workspace', () => {
     }
   });
 
+  it('keep a typed negative number an editable literal after a reload', () => {
+    // Typed into the number shadow, `-1` is saved as one `num` token, sign included (03 §3.4)…
+    const shadow = shadowFor([{ num: '1' }], { workspace: renderedWorkspace() });
+    const field = shadow.getField('VALUE');
+    if (field === null) {
+      throw new Error('no VALUE field');
+    }
+    field.showEditor();
+    const input = document.querySelector<HTMLInputElement>('.blocklyWidgetDiv input');
+    if (input === null) {
+      throw new Error('no editor is open');
+    }
+    input.value = '-1';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    const saved = readExprShadow(shadow);
+    expect(saved).toEqual({ tokens: [{ num: '-1' }], draft: false, absent: false });
+
+    // …and loads again as the same editable literal, not as a read-only expression.
+    const reloaded = shadowFor(saved?.tokens ?? [], { workspace: renderedWorkspace() });
+    expect(reloaded.type).toBe(EXPR_SHADOW_TYPE.num);
+    expect(reloaded.getFieldValue('VALUE')).toBe('-1');
+    expect(reloaded.getField('VALUE')?.isCurrentlyEditable()).toBe(true);
+    expect(readExprShadow(reloaded)).toEqual(saved);
+
+    // Blockly's own save and load (copy, duplicate, undo of a delete) keep it too.
+    const parent = reloaded.getParent();
+    const state = parent === null ? null : Blockly.serialization.blocks.save(parent);
+    if (state === null) {
+      throw new Error('nothing saved');
+    }
+    const copy = Blockly.serialization.blocks.append(state, reloaded.workspace);
+    const copied = copy.getInputTargetBlock('TIMES');
+    expect(copied?.type).toBe(EXPR_SHADOW_TYPE.num);
+    expect(copied === null ? null : readExprShadow(copied)).toEqual(saved);
+  });
+
   it('stay absent until the value changes', () => {
     const shadow = shadowFor([{ num: '10' }], { absent: true });
     expect(readExprShadow(shadow)?.absent).toBe(true);

@@ -110,6 +110,37 @@ fn diagnostics_tour() {
     insta::assert_snapshot!(render_all(&a));
 }
 
+/// Numbers typed with a sign, each saved as one `num` token as the editor
+/// saves them (spec §3.4), through the analyser and the generator: a
+/// countdown that changes its counter by -1, the smallest `int`, a negative
+/// decimal and a subtraction of a negative number.
+#[test]
+fn typed_negative_numbers_cpp() {
+    reset_ids();
+    let a = run(vec![main(vec![
+        declare("int", "n", Some(typed_num("3"))),
+        repeat(
+            typed_num("3"),
+            vec![print(vec![get("n")]), change("n", typed_num("-1"))],
+        ),
+        print(vec![text("Liftoff!")]),
+        declare("int", "lowest", Some(typed_num("-2147483648"))),
+        declare("double", "below", Some(typed_num("-0.5"))),
+        declare(
+            "int",
+            "back",
+            Some(json!({"expr": [{"ref": sym("n")}, {"op": "-"}, {"num": "-1"}]})),
+        ),
+    ])]);
+    assert_clean(&a);
+    let project = b2c_codegen::generate(&a.program, &b2c_codegen::CodegenOptions::default());
+    let cpp = &project.files[0].contents;
+    let main = cpp
+        .get(cpp.find("int main()").expect("a main function")..)
+        .unwrap_or_default();
+    insta::assert_snapshot!(main);
+}
+
 #[test]
 fn analysis_is_deterministic() {
     let blocks = guessing_game();
