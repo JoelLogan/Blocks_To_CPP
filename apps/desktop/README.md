@@ -90,6 +90,9 @@ project, build, run, toolchain, settings, trust and recovery services:
   (which are never part of the live document, so scrolling does not mark the project dirty).
   During a block drag it returns the canvas as it was before the drag: the editor injects its own
   block dragger (`sync/drag.ts`) so the session hears of a drag before Blockly moves anything.
+  The dragger also gives each dragged block a drag strategy that previews no connection while the
+  pointer is over the toolbox or the trash can, so a drop there deletes only the dragged blocks
+  (Blockly 12 would connect them first and delete the blocks below too).
   Code that shows or resizes the editor container relies on the editor's resize observer (or
   calls `EditorSession.resize()`), never `Blockly.svgResize` directly, so a view the user has not
   moved stays unchanged for saving.
