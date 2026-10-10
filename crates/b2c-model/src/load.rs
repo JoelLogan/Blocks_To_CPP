@@ -6,7 +6,10 @@
 //!   [`crate::limits::MAX_JSON_DEPTH`], then decode into [`crate::Document`]
 //!   with unknown keys rejected (except inside `"x-ext"`).
 //! * Check `format == FORMAT_TAG`; refuse newer `formatVersion`s with a clear
-//!   message; migrate older ones (none exist yet for version 1).
+//!   message; migrate older ones (none exist yet for version 1). A key this
+//!   version does not know, in a file a newer app saved (`generator.app`),
+//!   is reported as made with a newer version (ADR-0013). Messages never name
+//!   a version taken from the file.
 //! * Enforce every limit in [`crate::limits`], unique block/module/symbol IDs,
 //!   module-name rules, and the text rules: valid UTF-8, no NUL, no C0 controls
 //!   other than tab and newline, no Unicode bidi controls, in every string.
@@ -31,6 +34,7 @@ use crate::json::{self, ErrorKind, Json};
 use crate::limits::{MAX_FILE_BYTES, MAX_JSON_DEPTH};
 use crate::migrate::{self, MigrationError};
 use crate::text_rules::quote;
+use crate::version::{APP_VERSION, is_newer};
 use crate::{CURRENT_FORMAT_VERSION, Document, FORMAT_TAG};
 
 /// Why a project file or a clipboard payload could not be loaded.
@@ -71,7 +75,9 @@ pub fn load(bytes: &[u8]) -> Result<Document, LoadError> {
     let text = check_bytes(bytes, Origin::Project)?;
     let root = parse(text, Origin::Project)?;
     let root = check_header(root)?;
-    let (document, diags) = Decoder::new(Diags::default(), Origin::Project).run(&root);
+    let (document, diags) = Decoder::new(Diags::default(), Origin::Project)
+        .saved_by_newer_app(made_by_newer_app(&root))
+        .run(&root);
     match document {
         Some(document) if diags.is_empty() => Ok(document),
         _ => Err(LoadError::from_diags(diags)),
@@ -212,17 +218,14 @@ fn syntax_problem(kind: ErrorKind, found: &str) -> String {
     }
 }
 
-/// A short, safe version string from the file (for messages), if it looks
-/// like one.
-fn saved_by(root: &Json) -> Option<&str> {
-    let Some(Json::String(app)) = root.get("generator").and_then(|g| g.get("app")) else {
-        return None;
-    };
-    let plausible = (1..=32).contains(&app.len())
-        && app
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'+'));
-    plausible.then_some(&**app)
+/// Whether the file says a newer version of Blocks2Cpp saved it: its
+/// `generator.app` is a SemVer version newer than this app's. The version is
+/// only compared, never shown: the file could claim anything.
+fn made_by_newer_app(root: &Json) -> bool {
+    match root.get("generator").and_then(|g| g.get("app")) {
+        Some(Json::String(app)) => is_newer(app, APP_VERSION),
+        _ => false,
+    }
 }
 
 /// Step 3: `format`, `formatVersion` and migrations.
@@ -276,15 +279,14 @@ fn check_header(root: Json) -> Result<Json, LoadError> {
         ));
     };
     // Any whole number above the current version is a newer format, even
-    // one beyond 32 bits (spec §5.7).
+    // one beyond 32 bits (spec §5.7). The message names no version taken
+    // from the file (ADR-0013).
     if version > u64::from(CURRENT_FORMAT_VERSION) {
-        let needs = saved_by(&root)
-            .map(|app| format!("needs ≥ {app}; "))
-            .unwrap_or_default();
         return Err(LoadError::single(
             codes::NEWER_FORMAT,
-            format!(
-                "This project was made with a newer version of Blocks2Cpp ({needs}it uses project format {version}, and this version reads format {CURRENT_FORMAT_VERSION}). Update Blocks2Cpp to open it."
+            String::from(
+                "This project was made with a newer version of Blocks2Cpp, which saves projects in a newer format \
+                 than this version can read. Update Blocks2Cpp to open it.",
             ),
         ));
     }
@@ -386,30 +388,43 @@ mod tests {
 
     #[test]
     fn newer_versions_are_refused_clearly() {
-        let error = load(
-            br#"{"format": "blocks2cpp/project", "formatVersion": 7, "generator": {"app": "3.1.0", "catalog": "2.0.0"}, "anything": "goes"}"#,
-        )
-        .unwrap_err();
-        assert_eq!(error.diagnostics.len(), 1);
-        assert_eq!(error.diagnostics[0].code.0, codes::NEWER_FORMAT);
-        assert_eq!(
-            error.diagnostics[0].message,
-            "This project was made with a newer version of Blocks2Cpp (needs ≥ 3.1.0; it uses project format 7, and this version reads format 1). Update Blocks2Cpp to open it."
-        );
-        let error = load(
+        const MESSAGE: &str = "This project was made with a newer version of Blocks2Cpp, which saves projects in a \
+                               newer format than this version can read. Update Blocks2Cpp to open it.";
+        // The message names no version from the file: neither the app that
+        // saved it nor its format.
+        for text in [
+            &br#"{"format": "blocks2cpp/project", "formatVersion": 7, "generator": {"app": "3.1.0", "catalog": "2.0.0"}, "anything": "goes"}"#[..],
             br#"{"format": "blocks2cpp/project", "formatVersion": 2, "generator": {"app": "<b>evil</b>"}}"#,
-        )
-        .unwrap_err();
-        assert!(error.diagnostics[0].message.contains("(it uses project format 2"));
-        // A whole number beyond 32 bits is a newer format too, not "no valid
-        // formatVersion".
-        let error = load(br#"{"format": "blocks2cpp/project", "formatVersion": 4294967296}"#).unwrap_err();
-        assert_eq!(error.diagnostics[0].code.0, codes::NEWER_FORMAT);
-        assert!(
-            error.diagnostics[0]
-                .message
-                .contains("it uses project format 4294967296,")
-        );
+            // A whole number beyond 32 bits is a newer format too, not "no
+            // valid formatVersion".
+            br#"{"format": "blocks2cpp/project", "formatVersion": 4294967296}"#,
+        ] {
+            let error = load(text).unwrap_err();
+            assert_eq!(error.diagnostics.len(), 1);
+            assert_eq!(error.diagnostics[0].code.0, codes::NEWER_FORMAT);
+            assert_eq!(error.diagnostics[0].message, MESSAGE);
+        }
+    }
+
+    #[test]
+    fn only_a_semver_version_newer_than_this_app_counts_as_newer() {
+        let root = |app: &str| {
+            parse(
+                &format!(r#"{{"generator": {{"app": "{app}"}}}}"#),
+                Origin::Project,
+            )
+            .unwrap()
+        };
+        assert!(made_by_newer_app(&root("9.0.0")));
+        assert!(!made_by_newer_app(&root(APP_VERSION)));
+        assert!(!made_by_newer_app(&root("0.0.0")));
+        assert!(!made_by_newer_app(&root("nine")));
+        for text in ["{}", r#"{"generator": "9.0.0"}"#, r#"{"generator": {"app": 9}}"#] {
+            assert!(
+                !made_by_newer_app(&parse(text, Origin::Project).unwrap()),
+                "{text}"
+            );
+        }
     }
 
     #[test]

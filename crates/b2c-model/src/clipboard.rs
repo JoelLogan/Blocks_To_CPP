@@ -197,11 +197,13 @@ fn check_header(root: &Json) -> Result<(), LoadError> {
             ),
         ));
     };
+    // Like a project's, the message names no version taken from the data.
     if version > u64::from(CLIPBOARD_FORMAT_VERSION) {
         return Err(LoadError::single(
             codes::NEWER_FORMAT,
-            format!(
-                "These blocks were copied from a newer version of Blocks2Cpp (they use clipboard format {version}, and this version reads format {CLIPBOARD_FORMAT_VERSION}). Update Blocks2Cpp to paste them."
+            String::from(
+                "These blocks were copied from a newer version of Blocks2Cpp, which copies blocks in a newer \
+                 format than this version can read. Update Blocks2Cpp to paste them.",
             ),
         ));
     }
@@ -309,9 +311,8 @@ mod tests {
             );
             assert_eq!(
                 message_of(text.as_bytes()),
-                format!(
-                    "These blocks were copied from a newer version of Blocks2Cpp (they use clipboard format {version}, and this version reads format 1). Update Blocks2Cpp to paste them."
-                )
+                "These blocks were copied from a newer version of Blocks2Cpp, which copies blocks in a newer format \
+                 than this version can read. Update Blocks2Cpp to paste them."
             );
             assert_eq!(codes_of(text.as_bytes()), [codes::NEWER_FORMAT]);
         }

@@ -86,6 +86,9 @@ type Entries<'a> = &'a [(Box<str>, Json)];
 pub(crate) struct Decoder<'a> {
     diags: Diags,
     origin: Origin,
+    /// Whether a newer version of Blocks2Cpp saved the input
+    /// (`generator.app`), which makes an unknown key `B2C-E0108`.
+    saved_by_newer: bool,
     path: Vec<Seg<'a>>,
     module: Option<ModuleId>,
     block: Option<BlockId>,
@@ -110,6 +113,7 @@ impl<'a> Decoder<'a> {
         Self {
             diags,
             origin,
+            saved_by_newer: false,
             path: Vec::new(),
             module: None,
             block: None,
@@ -122,6 +126,15 @@ impl<'a> Decoder<'a> {
             module_ids: BTreeMap::new(),
             module_names: BTreeMap::new(),
         }
+    }
+
+    /// Records that a newer version of Blocks2Cpp saved the input, so a key
+    /// this version does not know is one that version added: it is reported
+    /// as `B2C-E0108` ("made with a newer version") instead of `B2C-E0110`
+    /// (ADR-0013).
+    pub(crate) fn saved_by_newer_app(mut self, newer: bool) -> Self {
+        self.saved_by_newer = newer;
+        self
     }
 
     /// Decodes a whole document; returns it with the diagnostics.
@@ -261,7 +274,9 @@ impl<'a> Decoder<'a> {
     // Objects and keys
     // -----------------------------------------------------------------------
 
-    /// Expects an object whose keys are all in `known`; reports the others.
+    /// Expects an object whose keys are all in `known`; reports the others:
+    /// as made with a newer version when a newer app saved the input
+    /// (`B2C-E0108`, naming no version), else as unknown (`B2C-E0110`).
     fn object(&mut self, value: &'a Json, known: &[&str]) -> Option<Entries<'a>> {
         let Json::Object(entries) = value else {
             self.wrong(value, "an object");
@@ -273,6 +288,14 @@ impl<'a> Decoder<'a> {
             }
             if RESERVED_KEYS.contains(&&**key) {
                 self.reserved_key(key);
+            } else if self.saved_by_newer {
+                let message = format!(
+                    "{} has the key {}, which this version of Blocks2Cpp does not know. The project was made \
+                     with a newer version of Blocks2Cpp; update Blocks2Cpp to open it.",
+                    self.subject(),
+                    quote(key)
+                );
+                self.report(codes::NEWER_FORMAT, message);
             } else {
                 let message = format!(
                     "{} has an unknown key {}. Remove it or check its spelling.",

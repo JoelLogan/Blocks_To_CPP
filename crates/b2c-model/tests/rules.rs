@@ -123,6 +123,95 @@ fn e0107_to_e0109_header() {
     assert_eq!(codes(&document), ["B2C-E0109"]);
 }
 
+#[test]
+fn e0108_unknown_keys_in_a_file_from_a_newer_app() {
+    // ADR-0013: a key this version does not know, in a file that a newer
+    // Blocks2Cpp saved, is a key that version added: the file is "made with
+    // a newer version", not misspelt.
+    let mut document = base();
+    document["generator"]["app"] = json!("9.0.0");
+    document["project"]["lints"] = json!({"W0505": "error"});
+    document["project"]["options"] = json!({"usingNamespaceStd": true});
+    print_block(&mut document)["breakpoint"] = json!(true);
+    let diagnostics = failure(&bytes(&document));
+    let messages: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
+    let newer = "which this version of Blocks2Cpp does not know. The project was made with a newer version of \
+                 Blocks2Cpp; update Blocks2Cpp to open it.";
+    assert_eq!(
+        messages,
+        [
+            format!("\"project\" has the key \"lints\", {newer}"),
+            format!("\"project.options\" has the key \"usingNamespaceStd\", {newer}"),
+            format!("This block has the key \"breakpoint\", {newer}"),
+        ]
+    );
+    assert!(diagnostics.iter().all(|d| d.code.0 == "B2C-E0108"));
+    assert_eq!(diagnostics[2].primary, block_location("b_print", Part::Whole));
+    // The messages never name a version taken from the file (nor any other):
+    // the only digit in them is the one in the app's name.
+    for diagnostic in &diagnostics {
+        assert!(
+            !diagnostic
+                .message
+                .replace("Blocks2Cpp", "")
+                .contains(|c: char| c.is_ascii_digit()),
+            "{}",
+            diagnostic.message
+        );
+    }
+    // Any newer SemVer counts, however large; a newer pre-release too.
+    for app in ["99999999999999999999999.0.0", "0.1.1-alpha.1", "1.0.0+build.7"] {
+        let mut document = base();
+        document["generator"]["app"] = json!(app);
+        document["project"]["lints"] = json!({});
+        let diagnostics = failure(&bytes(&document));
+        assert_eq!(diagnostics.len(), 1, "{app}");
+        assert_eq!(diagnostics[0].code.0, "B2C-E0108", "{app}");
+        assert!(!diagnostics[0].message.contains(app), "{app}");
+    }
+    // Other problems in such a file keep their own codes.
+    let mut document = base();
+    document["generator"]["app"] = json!("9.0.0");
+    document["project"]["lints"] = json!({});
+    document["modules"][0]["name"] = json!("Main");
+    assert_eq!(codes(&document), ["B2C-E0108", "B2C-E0117"]);
+}
+
+#[test]
+fn e0110_unknown_keys_in_a_file_from_this_or_an_older_app() {
+    let this_app = env!("CARGO_PKG_VERSION");
+    let prerelease = format!("{this_app}-beta.2");
+    // The same or an older version, a pre-release of this one, and text
+    // that is not a SemVer version: the key is simply unknown.
+    for app in [
+        this_app,
+        "0.0.0",
+        prerelease.as_str(),
+        "9",
+        "9.0",
+        "v9.0.0",
+        "09.0.0",
+        "9.0.0-",
+        "9.0.0-01",
+        "9.0.0+",
+        "9.0.0.0",
+        "latest",
+        "",
+    ] {
+        let mut document = base();
+        document["generator"]["app"] = json!(app);
+        document["project"]["lints"] = json!({});
+        let diagnostics = failure(&bytes(&document));
+        assert_eq!(diagnostics.len(), 1, "{app:?}");
+        assert_eq!(diagnostics[0].code.0, "B2C-E0110", "{app:?}");
+        assert_eq!(
+            diagnostics[0].message,
+            "\"project\" has an unknown key \"lints\". Remove it or check its spelling.",
+            "{app:?}"
+        );
+    }
+}
+
 // --- E0110–E0113: shape of the file ---------------------------------------
 
 #[test]

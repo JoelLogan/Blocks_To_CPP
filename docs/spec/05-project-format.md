@@ -75,10 +75,12 @@ A project is a **single JSON file** with the extension `.b2c`.
 
 `options.usingNamespaceStd` (*Textbook style*: `using namespace std;` in
 every generated `.cpp`, [06 §6.14](06-compiler-pipeline.md#614-standard-names-and-using-namespace))
+comes in M3; a file that sets it has `formatVersion` 2 or higher (§5.7). It
 is `false` when absent and is written only when `true`, like
 `language.gnuExtensions`, so files that do not use it are unchanged.
 
-`project.lints` sets lint levels for everyone who opens the project
+`project.lints` (M5; `formatVersion` 3 or higher) sets lint levels for
+everyone who opens the project
 ([06 §6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints)):
 `"lints": { "W0510": "error", "I0513": "off" }`.
 
@@ -238,12 +240,24 @@ Further rules:
 
 ## 5.7 Versioning and migration
 
-* `formatVersion` is an integer. `b2c-model` contains a chain of pure
-  migrations `v(n) → v(n+1)`, each with golden-file tests.
+* `formatVersion` is an integer: the lowest version whose keys cover the
+  file (ADR-0013). Each version only adds keys and never changes the meaning
+  of earlier ones: version 2 adds `options.usingNamespaceStd` (M3), version 3
+  adds `project.lints` (M5), and each later key gets the next number. The
+  writer computes the version from the keys present, so a file that uses no
+  newer key keeps its version and still opens in older apps.
+* Only a change to the meaning or shape of an existing key needs a migration
+  `v(n) → v(n+1)`. `b2c-model` contains the chain of these pure migrations,
+  each with golden-file tests, and `migratedFrom` reports only such
+  migrations.
 * On load: if `formatVersion` is newer than supported, refuse with *"This
-  project was made with a newer version of Blocks2Cpp (needs ≥ X)"*. If it
+  project was made with a newer version of Blocks2Cpp"* (`B2C-E0108`). If it
   is older, migrate in memory, and save in the new format only after the
   user's explicit save (a `.b2c.bak` of the original is kept beside it).
+* An unknown key in a file whose `generator.app` is newer than this app (by
+  SemVer precedence) is `B2C-E0108` (*made with a newer version of
+  Blocks2Cpp*); otherwise it is `B2C-E0110`. Neither message names a version
+  taken from the file, which could claim any.
 * Block-level migrations (`v` per block) follow the same pattern
   ([03 §3.11.3](03-block-language.md#3113-block-versioning)).
 

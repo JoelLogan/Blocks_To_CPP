@@ -65,7 +65,10 @@ every example at indent widths 2 and 4.
   allocation-heavy work (the size check happens before parsing).
 * Strongly typed structs with `deny_unknown_fields`. Field values are decoded
   into enums and newtypes, never left as untyped JSON. The decoder reports
-  every problem it finds, not just the first.
+  every problem it finds, not just the first. An unknown key is `B2C-E0110`,
+  or `B2C-E0108` (*made with a newer version*) when the file's
+  `generator.app` is newer than this app
+  ([05 §5.7](05-project-format.md#57-versioning-and-migration)).
 * Format migrations (the `formatVersion` chain) run on the parsed JSON tree
   before decoding, because an older file may not fit the current types. The
   upgraded tree then goes through the full decoder and validation.

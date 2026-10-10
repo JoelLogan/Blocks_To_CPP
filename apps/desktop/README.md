@@ -147,7 +147,7 @@ project, build, run, toolchain, settings, trust and recovery services:
   gone offers to remove itself), and the sections other features add with
   `registerStartPageSection(id, Component, {order})` (the recovery offer). A file that does not
   load shows its `B2C-E01xx` problems there (`E0108` reads _made with a newer version of
-  Blocks2Cpp (needs ≥ X)_) and nothing opens.
+  Blocks2Cpp_, naming no version from the file) and nothing opens.
 - **Commands**: `project.new` (asks for the template), `project.open`, `project.save` (`Ctrl+S`;
   a project without a file, or a backend `noPath`, goes to _Save as…_), `project.saveAs` and
   `project.close`, all reachable from the toolbar's `≡` main menu.

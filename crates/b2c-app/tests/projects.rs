@@ -197,7 +197,8 @@ fn oversized_files_and_newer_formats_are_refused() {
     assert_eq!(
         app.backend.project_open_dialog().unwrap_err(),
         IpcError::NewerFormat {
-            needs: Some(String::from("4.2.0"))
+            // Never a version taken from the file (ADR-0013).
+            needs: None
         }
     );
 
