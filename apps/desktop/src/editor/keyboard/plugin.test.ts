@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../app/store';
 import { projectFixture } from '../../app/testing/fixtures';
 import { expectNoAxeViolations } from '../../test/axe';
-import { B2cContinuousFlyout } from '../toolbox/continuous';
+import { B2cContinuousFlyout, CATEGORY_SCROLL_SLACK } from '../toolbox/continuous';
 import { ANNOUNCER_CLASS, Announcer, MAX_ANNOUNCEMENT_CHARS } from './announcer';
 import {
   CANVAS_DESCRIPTION,
@@ -405,7 +405,7 @@ describe('reduced motion', () => {
   }
 
   it('makes the toolbox’s category scroll jump at once when the system asks for it', () => {
-    expect(firstScrollStep(true)).toBeCloseTo(300);
+    expect(firstScrollStep(true)).toBeCloseTo(300 + CATEGORY_SCROLL_SLACK);
   });
 
   it('animates the toolbox’s category scroll otherwise', () => {

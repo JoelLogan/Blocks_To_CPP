@@ -8,9 +8,8 @@ Toolbox icon: ⑂. Back to [all categories](README.md).
 
 | Block | Friendly label | C++ form | Help | Fields | Inputs |
 | --- | --- | --- | --- | --- | --- |
-| `control.if` (statement) | `if %COND then %DO else if … else %ELSE` | `if (%COND) { … } else { … }` | Runs blocks only when a condition is true. Add else-if and else parts with ⊕. | — | `COND0`, `COND1`, …: a condition, 1 more than `elseIfCount`; default `true`. `DO0`, `DO1`, …: blocks, 1 more than `elseIfCount`. `ELSE`: blocks, while `hasElse` is on. Setting `elseIfCount`: 0 to 32, default 0. Setting `hasElse`: on or off, default off. |
+| `control.if` (statement) | `if %COND then %DO else if … else %ELSE` | `if (%COND) { … } else { … }` | Runs blocks only when a condition is true. Add else if and else parts with ⊕, and remove them with ⊖. | — | `COND0`, `COND1`, …: a condition, 1 more than `elseIfCount`; default `true`. `DO0`, `DO1`, …: blocks, 1 more than `elseIfCount`. `ELSE`: blocks, while `hasElse` is on. Setting `elseIfCount`: 0 to 32, default 0. Setting `hasElse`: on or off, default off. |
 
 ## In the toolbox
 
 1. `control.if`
-2. `control.if`, labelled “if … else”, with `hasElse` on

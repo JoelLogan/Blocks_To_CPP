@@ -5,7 +5,7 @@ id = "io.print"
 version = 1
 category = "io"
 shape = "statement"
-label = { friendly = "print %ITEM … %SEP %NEWLINE", cpp = "std::cout << %ITEM << …;" }
+label = { friendly = "print %ITEM … %SEP new line %NEWLINE to %STREAM", cpp = "std::cout << %ITEM << …;" }
 lowering = "builtin"
 headers = ["<iostream>"]
 help = "Shows values in the console."
@@ -24,7 +24,7 @@ default = true
 [[block.field]]
 name = "STREAM"
 kind = "dropdown"
-options = [["output", "out"], ["error stream", "err"]]
+options = [["the console", "out"], ["the error stream", "err"]]
 default = "out"
 
 [[block.extra]]

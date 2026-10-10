@@ -17,7 +17,9 @@
  *   plugin's recycler to replace Blockly's block inflater for every flyout;
  * - showing the flyout again keeps the keyboard focus on the same item when it was in the flyout
  *   (04 §4.8), and the animated scroll to a chosen category jumps at once when the system asks for
- *   reduced motion.
+ *   reduced motion;
+ * - the scroll to a chosen category goes half a unit past its heading, so that the category stays
+ *   selected at every zoom level (04 §4.2).
  */
 import {
   ContinuousFlyout,
@@ -142,17 +144,37 @@ const RECYCLERS = new WeakMap<ContinuousFlyout, RecyclableBlockFlyoutInflater>()
  */
 const CATEGORY_SCROLL_FRACTION = 0.3;
 
-/** The continuous flyout, without block recycling, and without its scroll animation on request. */
+/**
+ * How far past a category's heading (in workspace units) the flyout scrolls when the category is
+ * chosen, so that the plugin selects that category again when the scroll ends (see
+ * {@link B2cContinuousFlyout.scrollTo}).
+ */
+export const CATEGORY_SCROLL_SLACK = 0.5;
+
+/**
+ * The continuous flyout, without block recycling, without its scroll animation on request, and
+ * landing on a chosen category at every zoom level.
+ */
 export class B2cContinuousFlyout extends ContinuousFlyout {
   /**
    * Scrolls to `position` (a category chosen in the toolbox): animated, or at once when the system
    * asks for reduced motion (04 §4.8; read at each scroll, so a change of the setting applies at
    * once). The animation runs frame by frame in script, which the style sheet's reduced-motion
    * rule cannot stop.
+   *
+   * The target is {@link CATEGORY_SCROLL_SLACK} units past the heading. When the scroll ends,
+   * `@blockly/continuous-toolbox` 7.0.9 selects the last category whose heading position is at or
+   * above `Math.round(scroll / scale)` (`ContinuousFlyout.selectCategoryByScrollPosition`). The
+   * heading positions are fractional (the label's top less half a gap), so a heading at 312.4
+   * scrolled to exactly gives 312, which is above it: the category before the chosen one was
+   * selected, and the selection seemed to jump back. Half a unit more rounds to at least the
+   * heading's position, and stays far below the next heading. It also keeps the target of the
+   * first category above 0, which the plugin's `if (this.scrollTarget)` takes for "not
+   * scrolling", so it would select categories on the way up. Both defects are reported upstream.
    */
   override scrollTo(position: number): void {
     this.scrollAnimationFraction = prefersReducedMotion() ? 1 : CATEGORY_SCROLL_FRACTION;
-    super.scrollTo(position);
+    super.scrollTo(position + CATEGORY_SCROLL_SLACK);
   }
 
   /**

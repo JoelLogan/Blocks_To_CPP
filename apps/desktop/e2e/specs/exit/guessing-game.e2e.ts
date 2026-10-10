@@ -181,12 +181,20 @@ describe('M2 exit criterion: the guessing game', () => {
     expect(intro.type).toBe('io.print');
     await typeIntoField(driver, await fieldOf(app, intro.id, 'VALUE', 'ITEM0'), INTRO);
 
-    // The `repeat until` loop from the toolbox below the print.
-    const repeatUntil = { category: 'Loops', type: 'control.while', fields: { MODE: 'until' } };
-    await dragFromToolbox(app, repeatUntil, intro.id, 'next');
-    const loop = required((await mainBody(app))[3], 'the dropped loop');
-    expect(loop.type).toBe('control.while');
-    expect(loop.fields?.['MODE']).toBe('until');
+    // The `repeat while` loop from the toolbox below the print, made `repeat until` in its menu
+    // (the toolbox has one loop block, 03 §3.1).
+    await dragFromToolbox(app, { category: 'Loops', type: 'control.while' }, intro.id, 'next');
+    const dropped = required((await mainBody(app))[3], 'the dropped loop');
+    expect(dropped.type).toBe('control.while');
+    expect(dropped.fields?.['MODE'] ?? 'while').toBe('while');
+    await chooseOption(driver, await fieldOf(app, dropped.id, 'MODE'), 'until');
+    const loop = await waitFor(
+      async () => {
+        const node = (await mainBody(app))[3];
+        return node?.id === dropped.id && node.fields?.['MODE'] === 'until' ? node : null;
+      },
+      { timeout: 10_000, message: 'the loop set to until in its menu' },
+    );
 
     // The rest through the hook: until guess == secret; ask (no variable yet); if / else if / else.
     await hook.insertBlocks(loop.id, 'COND', [

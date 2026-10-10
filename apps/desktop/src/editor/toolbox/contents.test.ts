@@ -8,11 +8,13 @@ import {
   CATEGORY_KEY,
   LOOPS_CATEGORY,
   MAKE_VARIABLE_BUTTON,
+  MAKE_VARIABLE_TEXT,
   MAX_LISTED_FUNCTIONS,
   MAX_LISTED_VARIABLES,
   MY_BLOCKS_CATEGORY,
-  MY_BLOCKS_HEADING,
+  NO_FUNCTIONS_HINT,
   VARIABLES_CATEGORY,
+  YOUR_FUNCTIONS_HEADING,
   categoryOfDefinition,
   displayName,
   functionsContents,
@@ -78,12 +80,16 @@ function shadowOf(block: B2cBlockInfo | undefined, input: string) {
       };
 }
 
-/** A context with a headless canvas holding `main` (ID `main`), and fake symbols. */
+/**
+ * A context with a headless canvas holding `main` (ID `main`), and fake symbols; the canvas shows
+ * the module `active` (`mod_main` unless given).
+ */
 function context(
   options: {
     scopes?: Record<string, readonly SymbolInfo[]>;
     all?: readonly SymbolInfo[];
     modules?: readonly ModuleInfo[];
+    active?: string;
     main?: boolean;
   } = {},
 ): ContentsContext & { workspace: Blockly.Workspace } {
@@ -101,6 +107,7 @@ function context(
     symbols,
     selected: () => null,
     modules: () => options.modules ?? [{ id: 'mod_main', name: 'main' }],
+    activeModuleId: () => options.active ?? 'mod_main',
   };
 }
 
@@ -203,19 +210,22 @@ describe('static categories', () => {
     expect(fn?.inputs).toBeUndefined();
   });
 
-  it('give the presets of the toolbox metadata, with the label shown above the block', () => {
+  it('offer each block once: its other forms are chosen on the block (03 §3.1)', () => {
+    // *else if* and *else* come with ⊕ on the one *if*, *until* from the one loop's menu.
     const control = staticCategoryContents('control');
-    expect(labelsOf(control)).toEqual(['if … else']);
-    const [plainIf, ifElse] = blocksOf(control);
-    expect(plainIf?.extraState).toEqual({ elseIfCount: 0, hasElse: false });
-    expect(ifElse?.extraState).toEqual({ elseIfCount: 0, hasElse: true });
-    expect(shadowOf(ifElse, 'COND0')).toMatchObject({ value: 'true' });
+    expect(labelsOf(control)).toEqual([]);
+    expect(typesOf(control)).toEqual(['control.if']);
+    expect(blocksOf(control)[0]?.extraState).toEqual({ elseIfCount: 0, hasElse: false });
 
     const loops = staticCategoryContents('loops');
-    expect(labelsOf(loops)).toEqual(['repeat until']);
-    const until = blocksOf(loops).filter((block) => block.type === 'control.while')[1];
-    expect(until?.fields).toEqual({ MODE: 'until' });
+    expect(labelsOf(loops)).toEqual([]);
+    const loopTypes = typesOf(loops);
+    expect(loopTypes.filter((type) => type === 'control.while')).toHaveLength(1);
+    expect(new Set(loopTypes).size).toBe(loopTypes.length);
+    expect(blocksOf(loops).find((block) => block.type === 'control.while')?.fields).toBeUndefined();
+  });
 
+  it('give the presets of the toolbox metadata', () => {
     const ask = blocksOf(staticCategoryContents('io')).find((block) => block.type === 'io.ask');
     // A preset value is explicit: it is saved, unlike a catalog default.
     expect(shadowOf(ask, 'PROMPT')).toMatchObject({ value: 'Your answer: ', absent: false });
@@ -269,27 +279,38 @@ describe('the Variables category', () => {
     expect(JSON.stringify(functionsContents(ctx))).toBe(JSON.stringify(functionsContents(ctx)));
   });
 
-  it('lists a getter, set, change and update for each variable in scope', () => {
-    const items = variablesContents(context({ scopes: { 'main/BODY': [guess, counter, stop] } }));
+  it('lists a getter, set, change and update for each number variable in scope', () => {
+    const items = variablesContents(context({ scopes: { 'main/BODY': [guess, stop] } }));
     const listed = blocksOf(items).slice(1);
     expect(listed.map((block) => [block.type, block.fields?.['VAR'] as unknown])).toEqual([
       ['var.get', { ref: 's_guess' }],
       ['var.set', { ref: 's_guess' }],
       ['var.change', { ref: 's_guess' }],
       ['var.update', { ref: 's_guess' }],
-      ['var.get', { ref: 's_i' }],
-      ['var.set', { ref: 's_i' }],
-      ['var.change', { ref: 's_i' }],
-      ['var.update', { ref: 's_i' }],
     ]);
     // set starts at a value of the variable's type; change and update keep the catalog default.
     expect(shadowOf(listed[1], 'VALUE')).toMatchObject({ value: '0', absent: false });
     expect(shadowOf(listed[2], 'BY')).toMatchObject({ value: '1', absent: true });
   });
 
-  it('leaves constants out of set, change and update', () => {
-    const items = variablesContents(context({ scopes: { 'main/BODY': [secret] } }));
-    expect(typesOf(items)).toEqual(['var.declare', 'var.get']);
+  it('presets a block to a variable only when its menu would offer it (03 §3.6)', () => {
+    const listed = (symbol: SymbolInfo) =>
+      typesOf(variablesContents(context({ scopes: { 'main/BODY': [symbol] } }))).slice(1);
+    const all = ['var.get', 'var.set', 'var.change', 'var.update'];
+    // Constants, loop counters and read-only parameters cannot be changed.
+    expect(listed(secret)).toEqual(['var.get']);
+    expect(listed(counter)).toEqual(['var.get']);
+    const readOnly = symbolFixture('s_ro', 'ro', { kind: 'parameter', mode: 'read_only' });
+    expect(listed(readOnly)).toEqual(['var.get']);
+    // Text and true/false can be set, but not changed by or updated with a number.
+    for (const type of ['string', 'bool']) {
+      expect(listed(symbolFixture('s_t', 't', { type })), type).toEqual(['var.get', 'var.set']);
+    }
+    const editable = symbolFixture('s_e', 'e', { kind: 'parameter', mode: 'editable' });
+    expect(listed(editable)).toEqual(all);
+    for (const type of ['double', 'char', 'error']) {
+      expect(listed(symbolFixture('s_n', 'n', { type })), type).toEqual(all);
+    }
   });
 
   it('gives set a start value of the variable type', () => {
@@ -341,7 +362,7 @@ describe('the Loops category', () => {
   });
 });
 
-describe('the Functions category and My Blocks', () => {
+describe('the Functions category and Your functions', () => {
   const n = symbolFixture('s_n', 'n', { kind: 'parameter', mode: 'copy', type: 'int' });
   const label = symbolFixture('s_label', 'label', {
     kind: 'parameter',
@@ -373,46 +394,80 @@ describe('the Functions category and My Blocks', () => {
     ).toBe('myFunction2');
   });
 
-  it('shows only the catalog entries while there are no functions', () => {
+  it('shows a hint under Your functions while the module has no functions', () => {
     const items = functionsContents(context());
     expect(typesOf(items)).toEqual(['func.define', 'func.return']);
-    expect(labelsOf(items)).toEqual([]);
+    expect(labelsOf(items)).toEqual([YOUR_FUNCTIONS_HEADING, NO_FUNCTIONS_HINT]);
+    expect(YOUR_FUNCTIONS_HEADING).toBe('Your functions');
+    expect(NO_FUNCTIONS_HINT).toBe('Define a function above. A block that runs it appears here.');
   });
 
-  it('lists a call for every function, grouped under module headings', () => {
-    const items = functionsContents(
-      context({
-        all: [factorial, label, n, show],
-        modules: [
-          { id: 'mod_main', name: 'main' },
-          { id: 'mod_extra', name: 'helpers' },
-        ],
-      }),
-    );
-    expect(labelsOf(items)).toEqual([MY_BLOCKS_HEADING, 'Module: main', 'Module: helpers']);
+  it('lists a call for every function under Your functions, with no module heading for one module', () => {
+    const items = functionsContents(context({ all: [factorial, n, label] }));
+    expect(labelsOf(items)).toEqual([YOUR_FUNCTIONS_HEADING]);
     const calls = blocksOf(items).slice(2);
-    // A function that gives a value is a reporter; a void function is a statement.
-    expect(calls.map((call) => call.type)).toEqual(['func.call', 'func.call_stmt']);
-    const [factorialCall, showCall] = calls;
+    // A function that gives a value is a reporter.
+    expect(calls.map((call) => call.type)).toEqual(['func.call']);
+    const [factorialCall] = calls;
     expect(factorialCall?.fields).toEqual({ FUNC: { ref: 's_fact' } });
     expect(factorialCall?.extraState).toEqual({ argCount: 1 });
     expect(factorialCall?.argLabels).toEqual(['n:']);
     expect(shadowOf(factorialCall, 'ARG0')).toMatchObject({ value: '0', absent: false });
+  });
+
+  it('lists only the shown module’s functions, under its heading when there are two modules', () => {
+    const twoModules = (active: string) =>
+      functionsContents(
+        context({
+          all: [factorial, label, n, show],
+          modules: [
+            { id: 'mod_main', name: 'main' },
+            { id: 'mod_extra', name: 'helpers' },
+          ],
+          active,
+        }),
+      );
+    // Calls across modules are B2C-E0206 in M2, so the other module's functions are left out.
+    const main = twoModules('mod_main');
+    expect(labelsOf(main)).toEqual([YOUR_FUNCTIONS_HEADING, 'Module: main']);
+    expect(
+      blocksOf(main)
+        .slice(2)
+        .map((call): unknown => call.fields?.['FUNC']),
+    ).toEqual([{ ref: 's_fact' }]);
+    const extra = twoModules('mod_extra');
+    expect(labelsOf(extra)).toEqual([YOUR_FUNCTIONS_HEADING, 'Module: helpers']);
+    const [showCall, ...others] = blocksOf(extra).slice(2);
+    expect(others).toEqual([]);
+    // A void function is a statement.
+    expect(showCall?.type).toBe('func.call_stmt');
     expect(showCall?.extraState).toEqual({ argCount: 2 });
     expect(showCall?.argLabels).toEqual(['label:', 'n:']);
     expect(shadowOf(showCall, 'ARG0')).toMatchObject({ type: 'b2c.expr.str', value: '' });
+    // A module without functions shows its heading and the hint.
+    const empty = functionsContents(
+      context({
+        all: [factorial, n],
+        modules: [
+          { id: 'mod_main', name: 'main' },
+          { id: 'mod_extra', name: 'helpers' },
+        ],
+        active: 'mod_extra',
+      }),
+    );
+    expect(labelsOf(empty)).toEqual([YOUR_FUNCTIONS_HEADING, 'Module: helpers', NO_FUNCTIONS_HINT]);
+    expect(typesOf(empty)).toEqual(['func.define', 'func.return']);
   });
 
-  it('puts modules the document does not list last, and shows unknown parameters unlabelled', () => {
+  it('shows unknown parameters unlabelled', () => {
     const lost = symbolFixture('s_lost', 'lost', {
       kind: 'function',
       params: ['s_gone'],
       returns: 'double',
-      module: 'mod_unknown',
     });
     const items = functionsContents(context({ all: [lost, factorial, n] }));
-    expect(labelsOf(items)).toEqual([MY_BLOCKS_HEADING, 'Module: main', 'Module: mod_unknown']);
-    const lostCall = blocksOf(items).at(-1);
+    const lostCall = blocksOf(items).find((block) => block.fields?.['FUNC'] !== undefined);
+    expect(lostCall?.fields).toEqual({ FUNC: { ref: 's_lost' } });
     expect(lostCall?.extraState).toEqual({ argCount: 1 });
     expect(lostCall?.argLabels).toBeUndefined();
     expect(lostCall?.inputs).toBeUndefined();
@@ -435,6 +490,50 @@ describe('the Functions category and My Blocks', () => {
   it('shows hidden characters and cuts long names in headings and labels', () => {
     expect(moduleHeading('a​b')).toBe('Module: a⟨U+200B⟩b');
     expect(displayName('x'.repeat(100)).length).toBeLessThanOrEqual(40);
+  });
+});
+
+describe('headings and labels', () => {
+  /** Every label and button text the flyout shows, static and dynamic, in a varied project. */
+  function shownTexts(names: readonly string[]): string[] {
+    const variables = names.map((name, index) => symbolFixture(`s_v${String(index)}`, name));
+    const functions = names.map((name, index) =>
+      symbolFixture(`s_f${String(index)}`, name, { kind: 'function', params: [], returns: 'void' }),
+    );
+    const texts: string[] = [];
+    for (const modules of [
+      [{ id: 'mod_main', name: 'main' }],
+      names.map((name, index) => ({ id: index === 0 ? 'mod_main' : `mod_${String(index)}`, name })),
+    ]) {
+      const ctx = context({ scopes: { 'main/BODY': variables }, all: functions, modules });
+      for (const items of [
+        ...TOOLBOX.map((category) => staticCategoryContents(category.id)),
+        variablesContents(ctx),
+        loopsContents(ctx),
+        functionsContents(ctx),
+        functionsContents(context({ modules })),
+      ]) {
+        texts.push(
+          ...items.flatMap((item) =>
+            (item.kind === 'label' || item.kind === 'button') && 'text' in item ? [item.text] : [],
+          ),
+        );
+      }
+    }
+    return texts;
+  }
+
+  it('never read like a category name, which the continuous toolbox would take for its place', () => {
+    const categoryNames = TOOLBOX.map((category) => category.name);
+    // Projects whose own names are category names, too.
+    const texts = shownTexts([...categoryNames, 'main']);
+    expect(texts).toContain(YOUR_FUNCTIONS_HEADING);
+    expect(texts).toContain(NO_FUNCTIONS_HINT);
+    expect(texts).toContain(MAKE_VARIABLE_TEXT);
+    expect(texts).toContain('Module: Program');
+    for (const text of texts) {
+      expect(categoryNames, text).not.toContain(text);
+    }
   });
 });
 

@@ -8,7 +8,7 @@ Toolbox icon: ⌨. Back to [all categories](README.md).
 
 | Block | Friendly label | C++ form | Help | Fields | Inputs |
 | --- | --- | --- | --- | --- | --- |
-| `io.print` (statement) | `print %ITEM … %SEP %NEWLINE` | `std::cout << %ITEM << …;` | Shows values in the console. | `SEP`: one of no separator (`none`), spaces (`space`) or commas (`comma`), default `none`. `NEWLINE`: on or off, default on. `STREAM`: one of output (`out`) or error stream (`err`), default `out`. | `ITEM0`, `ITEM1`, …: any value, one for each of `itemCount`; default `"Hello, world!"`. Setting `itemCount`: 1 to 32, default 1. |
+| `io.print` (statement) | `print %ITEM … %SEP new line %NEWLINE to %STREAM` | `std::cout << %ITEM << …;` | Shows values in the console. | `SEP`: one of no separator (`none`), spaces (`space`) or commas (`comma`), default `none`. `NEWLINE`: on or off, default on. `STREAM`: one of the console (`out`) or the error stream (`err`), default `out`. | `ITEM0`, `ITEM1`, …: any value, one for each of `itemCount`; default `"Hello, world!"`. Setting `itemCount`: 1 to 32, default 1. |
 | `io.ask` (statement) | `ask %PROMPT and save answer in %VAR (%MODE)` | `std::cin >> %VAR;` | Asks the user to type something and stores it in a variable. | `VAR`: the variable it uses. `MODE`: one of keep asking until valid (`keep_asking`) or `simple`, default `keep_asking`. | `PROMPT`: text; optional. |
 
 ## In the toolbox

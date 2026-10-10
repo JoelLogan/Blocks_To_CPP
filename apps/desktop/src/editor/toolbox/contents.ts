@@ -4,20 +4,25 @@
  * depend on the project, from the latest analysis:
  *
  * - **Variables**: *Make a variable*, the `create` block with a free name, and for each variable in
- *   scope at the selection a getter plus *set*, *change* and *update* preset to it (constants get
- *   only the getter);
+ *   scope at the selection a getter plus the blocks whose menu may choose it, preset to it: *set*
+ *   for a variable that may be changed there, *change* and *update* for one of a number or
+ *   character type (03 §3.6);
  * - **Loops**: the catalog entries, the counted loop with a free counter name (`i`, `j`, `k`);
- * - **Functions**: the catalog entries, `define` with a free function name, then *My Blocks*: a
- *   call block for every function, grouped by module.
+ * - **Functions**: the catalog entries, `define` with a free function name, then, under *Your
+ *   functions*, a call block for every function of the module shown (calls across modules are
+ *   `B2C-E0206` in M2), or a hint when it has none; a module heading names the module when the
+ *   project has more than one.
  *
  * The other categories are static. Every text shown comes from the catalog or the project and is
  * rendered by Blockly as SVG text (never HTML); project names show hidden characters as visible
- * placeholders (M2 decision "Hidden characters in block text fields").
+ * placeholders (M2 decision "Hidden characters in block text fields"). No heading reads like a
+ * category's name: the continuous toolbox finds a category's place in the flyout by that text.
  */
 import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import {
   MAX_VARIADIC_PARTS,
   TOOLBOX,
+  catalogFieldOptions,
   symbolMatchesKinds,
   toolboxCategoryStyle,
   truncateForDisplay,
@@ -52,22 +57,24 @@ import { startTokensForStaticType } from './values';
 export const VARIABLES_CATEGORY = 'B2C_VARIABLES';
 /** The dynamic category of Loops (its counted loop gets a free counter name). */
 export const LOOPS_CATEGORY = 'B2C_LOOPS';
-/** The dynamic category of Functions, which holds *My Blocks*. */
+/** The dynamic category of Functions, which holds the call blocks under *Your functions*. */
 export const MY_BLOCKS_CATEGORY = 'B2C_MY_BLOCKS';
 /** The flyout button that starts *Make a variable*. */
 export const MAKE_VARIABLE_BUTTON = 'B2C_MAKE_VARIABLE';
 
 /** The text of the *Make a variable* button. */
 export const MAKE_VARIABLE_TEXT = 'Make a variable';
-/** The heading above the call blocks. */
-export const MY_BLOCKS_HEADING = 'My Blocks';
+/** The heading above the call blocks (D11 of the M2 polish plan). */
+export const YOUR_FUNCTIONS_HEADING = 'Your functions';
+/** What the Functions category says under its heading while the module has no function. */
+export const NO_FUNCTIONS_HINT = 'Define a function above. A block that runs it appears here.';
 
 /** The toolbox item kind of the toolbox's categories (`B2cToolboxCategory`). */
 export const B2C_CATEGORY_KIND = 'b2c_category';
 
 /** The most variables the Variables category lists (each gives up to four blocks). */
 export const MAX_LISTED_VARIABLES = 100;
-/** The most functions *My Blocks* lists. */
+/** The most functions *Your functions* lists. */
 export const MAX_LISTED_FUNCTIONS = 200;
 /** The longest project name a label shows, in characters (longer ones end with `…`). */
 export const MAX_LABEL_NAME_CHARS = 40;
@@ -100,8 +107,10 @@ export interface ContentsContext {
   readonly symbols: SymbolSource;
   /** The selected block of the canvas, or `null`. */
   selected(): Blockly.Block | null;
-  /** The project's modules in document order (for the *My Blocks* headings). */
+  /** The project's modules in document order (for the module heading of *Your functions*). */
   modules(): readonly ModuleInfo[];
+  /** The ID of the module the canvas shows, whose functions *Your functions* lists. */
+  activeModuleId(): string;
 }
 
 /** A flyout label (Blockly draws it as SVG text). */
@@ -193,20 +202,31 @@ export function staticCategoryContents(id: CategoryId): Blockly.utils.toolbox.Fl
   return category === undefined ? [] : entryItems(category, FIRST_NAMES);
 }
 
-/** The getter and, for variables that may change, *set*, *change* and *update* of one symbol. */
+/** Whether the variable menu of block `type` lists `symbol` (03 §3.6), so a preset may name it. */
+function menuLists(type: string, symbol: SymbolInfo): boolean {
+  return symbolMatchesKinds(symbol, catalogFieldOptions(type, 'VAR').kinds ?? 'variables');
+}
+
+/**
+ * The getter of one symbol, then each block that changes a variable and may change this one:
+ * *set* with a start value of its type, and *change* and *update* for a number or a character.
+ */
 function variableItems(symbol: SymbolInfo): B2cBlockInfo[] {
   const ref = { ref: symbol.id };
   const items = [presetBlock('var.get', { fields: { VAR: ref } })];
-  if (symbolMatchesKinds(symbol, 'assignable')) {
+  if (menuLists('var.set', symbol)) {
     const start = startTokensForStaticType(symbol.type);
     items.push(
       presetBlock('var.set', {
         fields: { VAR: ref },
         ...(start === null ? {} : { inputs: { VALUE: start } }),
       }),
-      presetBlock('var.change', { fields: { VAR: ref } }),
-      presetBlock('var.update', { fields: { VAR: ref } }),
     );
+  }
+  for (const type of ['var.change', 'var.update']) {
+    if (menuLists(type, symbol)) {
+      items.push(presetBlock(type, { fields: { VAR: ref } }));
+    }
   }
   return items;
 }
@@ -276,34 +296,17 @@ function callItem(
   );
 }
 
-/** The heading of a module's functions in *My Blocks*. */
+/** The heading that names the module whose functions *Your functions* lists. */
 export function moduleHeading(name: string): string {
   return `Module: ${displayName(name)}`;
 }
 
-/** The functions of the analysed program, grouped by module in document order. */
-function functionsByModule(
-  functions: readonly Extract<SymbolInfo, { kind: 'function' }>[],
-  modules: readonly ModuleInfo[],
-): { heading: string; functions: Extract<SymbolInfo, { kind: 'function' }>[] }[] {
-  const order = new Map(modules.map((module, index) => [module.id, index]));
-  const names = new Map(modules.map((module) => [module.id, module.name]));
-  const groups = new Map<string, Extract<SymbolInfo, { kind: 'function' }>[]>();
-  for (const fn of functions) {
-    const group = groups.get(fn.module);
-    if (group === undefined) {
-      groups.set(fn.module, [fn]);
-    } else {
-      group.push(fn);
-    }
-  }
-  const rank = (id: string) => order.get(id) ?? Number.MAX_SAFE_INTEGER;
-  return [...groups.entries()]
-    .sort(([a], [b]) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0))
-    .map(([id, group]) => ({ heading: moduleHeading(names.get(id) ?? id), functions: group }));
-}
-
-/** The Functions category: its catalog entries, then *My Blocks*. */
+/**
+ * The Functions category: its catalog entries, then *Your functions*: a call block for each
+ * function of the module shown, or a hint while it has none. Calls to another module's functions
+ * cannot be used in M2 (`B2C-E0206`), so they are not offered; with more than one module, a
+ * heading names the module the calls belong to.
+ */
 export function functionsContents(
   context: ContentsContext,
 ): Blockly.utils.toolbox.FlyoutItemInfo[] {
@@ -313,22 +316,28 @@ export function functionsContents(
     const name = firstFreeName('function', takenFunctionNames(context.workspace, context.symbols));
     items.push(...entryItems(category, { 'func.define': name }));
   }
+  items.push(label(YOUR_FUNCTIONS_HEADING));
+  const active = context.activeModuleId();
+  const modules = context.modules();
+  if (modules.length > 1) {
+    items.push(
+      label(moduleHeading(modules.find((module) => module.id === active)?.name ?? active)),
+    );
+  }
   const all = context.symbols.allSymbols();
   const functions = all
     .filter(
-      (symbol): symbol is Extract<SymbolInfo, { kind: 'function' }> => symbol.kind === 'function',
+      (symbol): symbol is Extract<SymbolInfo, { kind: 'function' }> =>
+        symbol.kind === 'function' && symbol.module === active,
     )
     .slice(0, MAX_LISTED_FUNCTIONS);
   if (functions.length === 0) {
+    items.push(label(NO_FUNCTIONS_HINT));
     return items;
   }
   const byId = new Map(all.map((symbol) => [symbol.id, symbol]));
-  items.push(label(MY_BLOCKS_HEADING));
-  for (const group of functionsByModule(functions, context.modules())) {
-    items.push(label(group.heading));
-    for (const fn of group.functions) {
-      items.push(callItem(fn, byId));
-    }
+  for (const fn of functions) {
+    items.push(callItem(fn, byId));
   }
   return items;
 }

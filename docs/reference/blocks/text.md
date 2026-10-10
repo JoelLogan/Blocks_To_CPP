@@ -10,7 +10,7 @@ Toolbox icon: “ ”. Back to [all categories](README.md).
 | --- | --- | --- | --- | --- | --- |
 | `text.literal` (reporter, gives `std::string`) | `"%VALUE"` | `"%VALUE"` | A piece of text. | `VALUE`: text, default empty. | — |
 | `text.join` (reporter, gives `std::string`) | `join %ITEM …` | `%ITEM + …` | Joins text and numbers into one piece of text. | — | `ITEM0`, `ITEM1`, …: any value, one for each of `itemCount`; default `""`. Setting `itemCount`: 2 to 32, default 2. |
-| `text.char` (reporter, gives `char`) | `letter '%VALUE'` | `'%VALUE'` | A single character, such as 'a'. | `VALUE`: text, default `a`. | — |
+| `text.char` (reporter, gives `char`) | `character '%VALUE'` | `'%VALUE'` | A single character, such as 'a'. | `VALUE`: text, default `a`. | — |
 
 ## In the toolbox
 

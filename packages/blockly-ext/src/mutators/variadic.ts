@@ -5,12 +5,25 @@
  *
  * Parts are named as in project files: `ITEM0` … `ITEM{n-1}`; `COND0`/`DO0` … for `control.if`,
  * whose first branch always exists (`plus` 1); `ELSE` while `hasElse` is set.
+ *
+ * A call to a function the latest analysis knows has as many arguments as the function has
+ * parameters (docs/spec/04-user-interface.md §4.2), so its ⊖/⊕ are hidden while the counts match.
+ * When the definition gains or loses a parameter, the call offers only the button that brings it
+ * back in line. Calls in the toolbox show none: the toolbox builds them from the analysis with one
+ * argument per parameter, and blocks there cannot be edited.
  */
 import * as Blockly from 'blockly/core';
 
 import { blockDef, partIndex } from '../checker/catalog';
+import { MutatorButton } from './buttons';
 import { asUndoStep, canEdit } from './events';
-import { buttonRow, keepingFocus, type MutatorController, type RowItem } from './controller';
+import {
+  buttonKey,
+  buttonRow,
+  keepingFocus,
+  type MutatorController,
+  type RowItem,
+} from './controller';
 import { createJoinField } from './fields';
 import { mutatorHooks } from './hooks';
 import { displayName, MirrorLabel } from './labels';
@@ -42,6 +55,12 @@ function refOf(value: unknown): string | null {
   }
   return null;
 }
+
+/**
+ * The parameter names of the function a call names (`null` for a name that is not known), or
+ * `null` when the function is not known.
+ */
+type CalledParameters = readonly (string | null)[] | null;
 
 /** Quoted label words for button text: `"else if"`. */
 function quoted(words: readonly string[]): string {
@@ -86,7 +105,9 @@ export class VariadicController implements MutatorController {
   }
 
   refresh(): void {
-    this.refreshArgLabels();
+    const params = this.calledParameters();
+    this.refreshArgLabels(params);
+    this.refreshCallButtons(params);
     this.markMirrorsDirty();
   }
 
@@ -166,8 +187,9 @@ export class VariadicController implements MutatorController {
       }
     }
     this.state = next;
-    const buttons = buttonRow(this.block, BUTTONS_INPUT, this.buttonItems());
-    this.refreshArgLabels();
+    const params = this.calledParameters();
+    const buttons = buttonRow(this.block, BUTTONS_INPUT, this.buttonItems(params));
+    this.refreshArgLabels(params);
     placeParts(this.block, this.order(buttons), this.isOwned, this.spec.anchorArgs);
   }
 
@@ -277,8 +299,13 @@ export class VariadicController implements MutatorController {
 
   // --- Call arguments ---------------------------------------------------------------------------
 
-  /** The parameter names of the called function, from the latest analysis, or `null`. */
-  private parameterNames(): (string | null)[] | null {
+  /**
+   * The parameters of the called function as the latest analysis knows them (their names, `null`
+   * for a name that is not known), or `null` when the function is not known: nothing is chosen,
+   * the reference is missing or not a function, or the analysis has not seen the block yet. Always
+   * `null` for the other mutators.
+   */
+  private calledParameters(): CalledParameters {
     const symbols = mutatorHooks().symbols;
     if (symbols === null || this.refField === null) {
       return null;
@@ -299,12 +326,11 @@ export class VariadicController implements MutatorController {
   }
 
   /** Labels each argument with its parameter's name (`name:`), or with nothing when unknown. */
-  private refreshArgLabels(): void {
+  private refreshArgLabels(names: CalledParameters): void {
     const member = this.spec.members[0];
     if (this.mutator !== B2C_MUTATOR_CALL_ARGS || member === undefined) {
       return;
     }
-    const names = this.parameterNames();
     for (let copy = 0; copy < this.copies(this.state); copy += 1) {
       const input = this.block.getInput(`${member.name}${String(copy)}`);
       if (input === null) {
@@ -338,14 +364,62 @@ export class VariadicController implements MutatorController {
       : { add: 'Add an input', remove: 'Remove the last input' };
   }
 
-  private buttonItems(): RowItem[] {
+  /**
+   * Which count buttons the block shows: ⊖ and ⊕ within the catalog's limits, except on a call
+   * (see the module comment), where the called function's parameters decide.
+   */
+  private countButtons(params: CalledParameters): {
+    readonly remove: boolean;
+    readonly add: boolean;
+  } {
+    const { count } = this.state;
+    const max = Math.min(this.spec.count.max, MAX_VARIADIC_PARTS);
+    let remove = count > this.spec.count.min && count > 0;
+    let add = count < max;
+    if (this.mutator === B2C_MUTATOR_CALL_ARGS) {
+      // A call in the toolbox already has the function's count (the toolbox built it so).
+      const expected = this.block.isInFlyout ? count : params?.length;
+      if (expected !== undefined) {
+        remove &&= count > expected;
+        add &&= count < expected;
+      }
+    }
+    return { remove, add };
+  }
+
+  /**
+   * Shows the count buttons a call needs after an analysis: the called function may have become
+   * known, or gained or lost a parameter. Nothing is recorded, and a button that had the keyboard
+   * focus hands it to another button of the block, or to the block.
+   */
+  private refreshCallButtons(params: CalledParameters): void {
+    if (this.mutator !== B2C_MUTATOR_CALL_ARGS) {
+      return;
+    }
+    const update = (): void => {
+      const buttons = buttonRow(this.block, BUTTONS_INPUT, this.buttonItems(params));
+      placeParts(this.block, this.order(buttons), this.isOwned, this.spec.anchorArgs);
+    };
+    const focused =
+      this.block instanceof Blockly.BlockSvg ? Blockly.getFocusManager().getFocusedNode() : null;
+    const key =
+      focused instanceof MutatorButton && focused.getSourceBlock() === this.block
+        ? buttonKey(focused)
+        : undefined;
+    if (key === undefined) {
+      update();
+    } else {
+      keepingFocus(this.block, key, update);
+    }
+  }
+
+  private buttonItems(params: CalledParameters): RowItem[] {
     const items: RowItem[] = [];
-    const { count, flags } = this.state;
+    const { flags } = this.state;
     if (this.copies(this.state) === 0) {
       items.push(...this.spec.groupLeading.map((text) => ({ text })));
     }
-    const removable = count > this.spec.count.min && count > 0;
-    const addable = count < Math.min(this.spec.count.max, MAX_VARIADIC_PARTS);
+    const { remove: removable, add: addable } = this.countButtons(params);
     if (removable || addable) {
       const labels = this.countLabels();
       items.push(...this.spec.joinTexts.map((text) => ({ text })));

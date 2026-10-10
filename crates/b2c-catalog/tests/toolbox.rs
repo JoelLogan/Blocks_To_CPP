@@ -162,12 +162,8 @@ fn the_presets_the_editor_relies_on() {
     };
     let preset = |block: &str, label: Option<&str>| entry(block, label).preset.clone().unwrap();
 
-    let until = preset("control.while", Some("repeat until"));
-    assert_eq!(until.fields["MODE"], FieldDefault::Text("until".into()));
+    // *until* and *else* are chosen on the block (its menu and ⊕), not offered as entries.
     assert!(entry("control.while", None).preset.is_none());
-
-    let if_else = preset("control.if", Some("if … else"));
-    assert_eq!(if_else.extra["hasElse"], PresetExtra::Flag(true));
     assert!(entry("control.if", None).preset.is_none());
 
     let declare = preset("var.declare", None);
@@ -176,6 +172,98 @@ fn the_presets_the_editor_relies_on() {
 
     let ask = preset("io.ask", None);
     assert_eq!(ask.inputs["PROMPT"], [token("str", "Your answer: ")]);
+}
+
+/// One idea, one block, one toolbox entry (spec §3.1): no block has two
+/// entries, and no entry has a label, since a label only told presets of
+/// one block apart.
+#[test]
+fn every_block_has_one_entry_at_most() {
+    let entries: Vec<&b2c_catalog::ToolboxEntry> =
+        toolbox().categories.iter().flat_map(|c| &c.entries).collect();
+    let blocks: BTreeSet<&str> = entries.iter().map(|e| e.block.as_str()).collect();
+    assert_eq!(blocks.len(), entries.len());
+    assert!(entries.iter().all(|e| e.label.is_none()), "{entries:?}");
+}
+
+#[test]
+fn a_second_entry_for_a_block_is_rejected() {
+    // The two preset entries the toolbox had before (spec §3.1): the loop
+    // menu and the if block's ⊕ offer these forms in place.
+    let repeat_until = |t: &mut Toolbox| {
+        category(t, Category::Loops).entries.insert(
+            2,
+            b2c_catalog::ToolboxEntry {
+                block: "control.while".into(),
+                label: Some("repeat until".into()),
+                preset: Some(Preset {
+                    fields: [("MODE".to_owned(), FieldDefault::Text("until".into()))].into(),
+                    ..Preset::default()
+                }),
+            },
+        );
+    };
+    assert_eq!(
+        messages_after(repeat_until),
+        [
+            "category loops, entry 3: the block control.while already has an entry (category loops, \
+          entry 2): a block has one entry at most, and its other forms are chosen on the block \
+          (spec §3.1)"
+        ]
+    );
+    let if_else = |t: &mut Toolbox| {
+        category(t, Category::Control)
+            .entries
+            .push(b2c_catalog::ToolboxEntry {
+                block: "control.if".into(),
+                label: Some("if … else".into()),
+                preset: Some(Preset {
+                    extra: [("hasElse".to_owned(), PresetExtra::Flag(true))].into(),
+                    ..Preset::default()
+                }),
+            });
+    };
+    let problems = problems_after(if_else);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert_eq!(
+        (problems[0].category, problems[0].entry),
+        (Some(Category::Control), Some(1))
+    );
+    assert!(
+        problems[0].message.contains("already has an entry"),
+        "{problems:?}"
+    );
+    // The checked toolbox leaves the second entry out and keeps the first.
+    let mut text = toolbox_text();
+    text.push_str("\n[[category.entry]]\nblock = \"io.print\"\n");
+    let error = Toolbox::load(&text, core_catalog()).unwrap_err();
+    assert!(
+        error.to_string().contains("io.print already has an entry"),
+        "{error}"
+    );
+}
+
+#[test]
+fn an_entry_label_must_not_be_a_category_name() {
+    for name in ["Loops", "Program", "Input / Output"] {
+        let messages = messages_after(|t| {
+            category(t, Category::Math).entries[0].label = Some(name.into());
+        });
+        assert_eq!(
+            messages,
+            [format!(
+                "category math, entry 1: the label {name:?} is the name of a category: use other words"
+            )]
+        );
+    }
+    // Other words, including a category name inside a longer label, are fine.
+    for label in ["loops", "Loops and more", "Your functions"] {
+        assert_eq!(
+            messages_after(|t| category(t, Category::Math).entries[0].label = Some(label.into())),
+            Vec::<String>::new(),
+            "{label}"
+        );
+    }
 }
 
 #[test]
@@ -404,7 +492,8 @@ fn bad_entries_and_categories_are_rejected() {
                 let copy = category(t, Category::Math).entries[0].clone();
                 category(t, Category::Math).entries.push(copy);
             }),
-            "listed twice",
+            "category math, entry 6: the block math.number already has an entry (category math, \
+             entry 1)",
         ),
     ];
     for (change, expected) in cases {

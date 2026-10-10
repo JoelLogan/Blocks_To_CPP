@@ -145,8 +145,8 @@ Ease (participant's answer to "Overall, how easy or hard was this task?",
 
 Look out especially for:
 
-- finding the right category and block (the _repeat until_ and _if … else_
-  entries, the comparison block in Math, the variables in Variables);
+- finding the right category and block (_until_ in the loop's menu, the ⊕
+  for _else_ on _if_, the comparison block in Math, the variables in Variables);
 - dropping a block into a slot (the variables into the comparison, the
   random number into the variable's value);
 - naming a variable, editing numbers and texts, choosing `=` in the

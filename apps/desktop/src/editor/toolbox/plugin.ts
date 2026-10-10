@@ -1,8 +1,8 @@
 /**
  * The toolbox editor plugin (docs/spec/04-user-interface.md §4.2): installs the Blocks2Cpp toolbox
- * on the workspace, registers the dynamic categories (Variables, Loops, Functions with *My
- * Blocks*) and *Make a variable*, and rebuilds the dynamic categories when the selection changes
- * and after each analysis.
+ * on the workspace, registers the dynamic categories (Variables, Loops, Functions with *Your
+ * functions*) and *Make a variable*, and rebuilds the dynamic categories when the selection
+ * changes, after each analysis and when another module is shown.
  *
  * The plugin works with either toolbox the workspace was injected with: the continuous toolbox
  * (see register.ts, `toolboxInjectOptions`) or Blockly's category toolbox. The workspace needs a
@@ -168,6 +168,7 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
       return block;
     },
     modules: () => modulesOf(store),
+    activeModuleId: () => context.activeModuleId(),
   };
   let detached = false;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -264,7 +265,8 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   const unsubscribe = store.subscribe((state, previous) => {
     if (
       state.analysis.preview !== previous.analysis.preview ||
-      state.project?.document.modules !== previous.project?.document.modules
+      state.project?.document.modules !== previous.project?.document.modules ||
+      state.project?.activeModuleId !== previous.project?.activeModuleId
     ) {
       scheduleRefresh();
     }

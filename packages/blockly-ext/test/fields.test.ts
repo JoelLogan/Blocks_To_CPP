@@ -17,6 +17,7 @@ import {
   setEditorServices,
   writeB2cField,
   type B2cFieldValue,
+  type SymbolInfo,
 } from '../src';
 import {
   fakeSymbols,
@@ -253,16 +254,25 @@ describe('typing into text fields', () => {
     }
   });
 
-  it('text.char accepts exactly one character', () => {
+  it('text.char accepts exactly one printable ASCII character', () => {
     const field = renderedField('text.char', 'VALUE', B2cTextField);
-    typeInto(field, 'z');
-    expect(field.getValue()).toBe('z');
-    typeInto(field, '😀');
-    expect(field.getValue()).toBe('😀');
-    typeInto(field, 'ab');
-    expect(field.getValue()).toBe('😀');
-    typeInto(field, '');
-    expect(field.getValue()).toBe('😀');
+    for (const char of ['z', ' ', '~', "'", '\\', '0']) {
+      typeInto(field, char);
+      expect(field.getValue()).toBe(char);
+    }
+    typeInto(field, 'q');
+    // A C++ char holds one ASCII character: anything else is text (03 §3.7.4).
+    for (const bad of ['é', 'ß', '😀', ' ', '\u007f', 'ab', '']) {
+      typeInto(field, bad);
+      expect(field.getValue(), JSON.stringify(bad)).toBe('q');
+    }
+  });
+
+  it('a character loaded from a file is kept even when it could not be typed', () => {
+    // The analyser explains such a value (B2C-E0312); the editor never changes it.
+    const field = renderedField('text.char', 'VALUE', B2cTextField);
+    field.setValue('é');
+    expect(field.getValue()).toBe('é');
   });
 
   it('text fields refuse each forbidden character class and the 64 KiB cap', () => {
@@ -368,10 +378,10 @@ describe('symbol references', () => {
     if (!(field instanceof B2cSymbolRefField)) {
       throw new Error('no VAR field');
     }
+    // set leaves out the constant and the loop counter, which it may not change.
     expect(field.menuOptions()).toEqual([
       ['count', 's_count'],
       ['p', 's_p'],
-      ['i', 's_i'],
     ]);
     expect(queries).toEqual([block.id]);
 
@@ -390,6 +400,78 @@ describe('symbol references', () => {
     const call = workspace.newBlock('func.call');
     fakeSymbols({ [call.id]: [symbol('s_x', 'x'), symbol('s_f', 'f', 'function')] }, {});
     expect((call.getField('FUNC') as B2cSymbolRefField).menuOptions()).toEqual([['f', 's_f']]);
+  });
+
+  it('list only what each block may change there (03 §3.6)', () => {
+    const scope: readonly SymbolInfo[] = [
+      symbol('s_n', 'n'),
+      symbol('s_x', 'x', 'variable', { type: 'double' }),
+      symbol('s_c', 'c', 'variable', { type: 'char' }),
+      symbol('s_auto', 'unknown', 'variable', { type: 'error' }),
+      symbol('s_name', 'name', 'variable', { type: 'string' }),
+      symbol('s_won', 'won', 'variable', { type: 'bool' }),
+      symbol('s_max', 'MAX', 'variable', { isConst: true }),
+      symbol('s_i', 'i', 'loopVariable'),
+      symbol('s_copy', 'copy', 'parameter', { mode: 'copy' }),
+      symbol('s_edit', 'edit', 'parameter', { mode: 'editable', type: 'string' }),
+      symbol('s_ro', 'ro', 'parameter', { mode: 'read_only' }),
+      symbol('s_f', 'f', 'function'),
+    ];
+    const workspace = headlessWorkspace();
+    const listed = (type: string): string[] => {
+      const block = workspace.newBlock(type);
+      fakeSymbols({ [block.id]: scope }, {});
+      const field = block.getField('VAR') as B2cSymbolRefField;
+      return field.menuOptions().map(([label]) => (typeof label === 'string' ? label : '?'));
+    };
+    expect(listed('var.get')).toEqual([
+      'n',
+      'x',
+      'c',
+      'unknown',
+      'name',
+      'won',
+      'MAX',
+      'i',
+      'copy',
+      'edit',
+      'ro',
+    ]);
+    const assignable = ['n', 'x', 'c', 'unknown', 'name', 'won', 'copy', 'edit'];
+    expect(listed('var.set')).toEqual(assignable);
+    expect(listed('io.ask')).toEqual(assignable);
+    // change and the update operators also leave out text and true/false variables.
+    const numeric = ['n', 'x', 'c', 'unknown', 'copy'];
+    expect(listed('var.change')).toEqual(numeric);
+    expect(listed('var.update')).toEqual(numeric);
+  });
+
+  it('keep a chosen reference shown and first when it is not of the field’s kinds', () => {
+    const workspace = headlessWorkspace();
+    const change = workspace.newBlock('var.change');
+    const field = change.getField('VAR') as B2cSymbolRefField;
+    fakeSymbols(
+      {
+        [change.id]: [
+          symbol('s_n', 'n'),
+          symbol('s_name', 'name', 'variable', { type: 'string' }),
+          symbol('s_i', 'i', 'loopVariable'),
+        ],
+      },
+      { s_name: 'name', s_i: 'i' },
+    );
+    for (const [ref, label] of [
+      ['s_name', 'name'],
+      ['s_i', 'i'],
+    ] as const) {
+      field.setRef({ ref });
+      expect(field.getText()).toBe(label);
+      expect(field.menuOptions()).toEqual([
+        [label, ref],
+        ['n', 's_n'],
+      ]);
+      expect(field.getRef()).toEqual({ ref });
+    }
   });
 
   it('always show the current name, keep an out-of-scope reference selected, and mark missing ones', () => {

@@ -258,7 +258,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
       { arg: 'ELSE' },
     ],
     statementsNotInLabel: [],
-    help: 'Runs blocks only when a condition is true. Add else-if and else parts with ⊕.',
+    help: 'Runs blocks only when a condition is true. Add else if and else parts with ⊕, and remove them with ⊖.',
     output: null,
     fields: [],
     inputs: [
@@ -304,7 +304,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     label: { friendly: 'repeat %MODE %COND', cpp: 'while (%COND) { … }' },
     labelParts: [{ text: 'repeat' }, { arg: 'MODE' }, { arg: 'COND' }],
     statementsNotInLabel: ['BODY'],
-    help: 'Repeats blocks while a condition is true, or until it becomes true.',
+    help: 'Repeats blocks while a condition is true; choose until in the menu to repeat until it becomes true.',
     output: null,
     fields: [
       {
@@ -465,13 +465,19 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     version: 1,
     category: 'io',
     shape: 'statement',
-    label: { friendly: 'print %ITEM … %SEP %NEWLINE', cpp: 'std::cout << %ITEM << …;' },
+    label: {
+      friendly: 'print %ITEM … %SEP new line %NEWLINE to %STREAM',
+      cpp: 'std::cout << %ITEM << …;',
+    },
     labelParts: [
       { text: 'print' },
       { arg: 'ITEM' },
       { repeat: true },
       { arg: 'SEP' },
+      { text: 'new line' },
       { arg: 'NEWLINE' },
+      { text: 'to' },
+      { arg: 'STREAM' },
     ],
     statementsNotInLabel: [],
     help: 'Shows values in the console.',
@@ -493,8 +499,8 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         name: 'STREAM',
         kind: 'dropdown',
         options: [
-          ['output', 'out'],
-          ['error stream', 'err'],
+          ['the console', 'out'],
+          ['the error stream', 'err'],
         ],
         types: [],
         default: 'out',
@@ -770,8 +776,8 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     version: 1,
     category: 'text',
     shape: 'reporter',
-    label: { friendly: "letter '%VALUE'", cpp: "'%VALUE'" },
-    labelParts: [{ text: "letter '" }, { arg: 'VALUE' }, { text: "'" }],
+    label: { friendly: "character '%VALUE'", cpp: "'%VALUE'" },
+    labelParts: [{ text: "character '" }, { arg: 'VALUE' }, { text: "'" }],
     statementsNotInLabel: [],
     help: "A single character, such as 'a'.",
     output: 'char',
@@ -841,7 +847,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     category: 'variables',
     shape: 'statement',
     label: {
-      friendly: 'create %TYPE variable %NAME = %VALUE %CONST',
+      friendly: 'create %TYPE variable %NAME = %VALUE constant %CONST',
       cpp: '%TYPE %NAME = %VALUE;',
     },
     labelParts: [
@@ -851,6 +857,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
       { arg: 'NAME' },
       { text: '=' },
       { arg: 'VALUE' },
+      { text: 'constant' },
       { arg: 'CONST' },
     ],
     statementsNotInLabel: [],
@@ -1007,10 +1014,7 @@ export const TOOLBOX: readonly ToolboxCategoryJson[] = [
     icon: '⑂',
     colour: 'control',
     dynamic: null,
-    entries: [
-      { block: 'control.if', label: null, preset: null },
-      { block: 'control.if', label: 'if … else', preset: { extra: { hasElse: true } } },
-    ],
+    entries: [{ block: 'control.if', label: null, preset: null }],
   },
   {
     id: 'loops',
@@ -1021,7 +1025,6 @@ export const TOOLBOX: readonly ToolboxCategoryJson[] = [
     entries: [
       { block: 'control.repeat', label: null, preset: null },
       { block: 'control.while', label: null, preset: null },
-      { block: 'control.while', label: 'repeat until', preset: { fields: { MODE: 'until' } } },
       { block: 'control.for_range', label: null, preset: null },
       { block: 'control.forever', label: null, preset: null },
       { block: 'control.break', label: null, preset: null },
