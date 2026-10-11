@@ -1,5 +1,9 @@
 # Keeps pinned GitHub Actions, Cargo and npm dependencies current (docs/spec/08-security.md §8.9).
 # Updates wait 7 days after release, matching the pnpm minimumReleaseAge policy.
+#
+# Minor and patch updates are grouped per ecosystem, so one pull request a week brings each
+# ecosystem up to date; a major update gets a pull request of its own, so a breaking change
+# never holds back a fix. The groups apply to version updates only (the default `applies-to`).
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -9,9 +13,12 @@ updates:
     cooldown:
       default-days: 7
     groups:
-      github-actions:
+      github-actions-minor-and-patch:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: cargo
     directory: /
@@ -20,9 +27,12 @@ updates:
     cooldown:
       default-days: 7
     groups:
-      cargo-dependencies:
+      cargo-minor-and-patch:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: npm
     directory: /
@@ -31,6 +41,32 @@ updates:
     cooldown:
       default-days: 7
     groups:
-      npm-dependencies:
+      npm-minor-and-patch:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
+    # New majors of these move only when a roadmap item schedules the migration
+    # (docs/spec/10-roadmap.md). GitHub applies `ignore` to security updates as well, so an
+    # advisory that needs one of these majors is fixed by hand: OSV-Scanner and pnpm audit
+    # still fail CI on it. @vitest/* (coverage-v8) is released in step with vitest.
+    ignore:
+      - dependency-name: blockly
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@blockly/*"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@xterm/*"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+      - dependency-name: vitest
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@vitest/*"
+        update-types:
+          - version-update:semver-major
