@@ -2,6 +2,8 @@
 
 * Status: Accepted
 * Date: 2026-10-02
+* Amended by [ADR-0013](0013-additive-format-keys.md): when `formatVersion`
+  changes and what a migration is.
 
 ## Context
 

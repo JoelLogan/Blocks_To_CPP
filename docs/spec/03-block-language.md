@@ -266,6 +266,16 @@ The tables below show representative blocks. The complete, normative list is
 the catalog itself ([§3.11](#311-the-catalog-and-library-packs)), from which
 the reference documentation in `docs/reference/blocks/` is **generated**.
 
+**In M2** the catalog has the blocks of `catalog/core/` only: *create* with a
+*constant* checkbox (no `constexpr`/`static`), *set*, *change*, the update
+operators `+= -= *= /= %=`, getters; numbers, arithmetic, comparison, *random
+integer*, *as int/double*; and/or/not, true/false, conditional value; text,
+character, *join*; *if/else if/else*; *repeat*, *repeat while/until*, *for*,
+*forever*, *leave loop*, *skip to next round*; *print*, *ask*; *define*
+(copy, editable and read-only parameters; a read-only number, character or
+true/false is passed by value), *return*, calls; *when program starts*,
+*stop program*.
+
 ### 3.7.1 Program
 
 | Block | Generates |
@@ -358,9 +368,11 @@ unsigned comparison, and possible overflow of a literal into its target type
 | `function ([auto] x) ⊕ capturing [nothing ▾] returns [auto] { }` | `[](auto x) { … }`. Capture options: nothing, everything by reference `[&]`, everything by copy `[=]`, or chosen variables. |
 | `function of ([auto] x) giving (x * 2)` | `[](auto x) { return x * 2; }` (single-expression form) |
 
-Overloads (same name, different parameters), default arguments and recursion
-are supported. **Definition order on the canvas never matters**: the generator
-emits forward declarations automatically ([06 §6.7](06-compiler-pipeline.md#67-ordering-and-declarations)).
+Recursion is supported. Overloads (same name, different parameters) and
+default arguments come in M3 ([10 §10.1](10-roadmap.md#101-milestones)); until
+then a second function with the same name is `E0211`. **Definition order on
+the canvas never matters**: the generator emits forward declarations
+automatically ([06 §6.7](06-compiler-pipeline.md#67-ordering-and-declarations)).
 
 ### 3.7.8 Collections
 
@@ -466,6 +478,9 @@ Clear organisation is a core requirement, not polish:
    when it has *shared* definitions. Using another module's shared
    definitions adds the `#include` automatically, and the toolbox's
    *My Blocks* shows each module's functions under a module heading.
+   **In M2** every module is compiled on its own: functions cannot be called
+   across modules (`E0206`), their names are unique in the program
+   (`E0211`), and helpers are inline in each file.
 2. **Order-independent definitions.** Top-level definition blocks can sit
    anywhere on the canvas. The generator sorts them by dependency and adds
    forward declarations.
@@ -501,7 +516,10 @@ helpers in the `b2c` namespace: `random_int`, `random_real`, `ask<T>`, `trim`,
   emitted **only if used**.
 * **Placement.** Single-module projects get the helpers inline in a clearly
   delimited section at the top of `main.cpp`, so a student can submit one
-  file. Multi-module projects get them in `b2c_support.hpp`.
+  file. Multi-module projects get them in `b2c_support.hpp`. **In M2** every
+  module is compiled on its own: functions cannot be called across modules
+  (`E0206`), their names are unique in the program (`E0211`), and helpers
+  are inline in each file.
 * A project setting, **Prefer plain standard C++**, swaps helpers for inline
   standard code wherever a reasonable inline form exists (e.g. `std::cin >>
   x;` for `ask`).

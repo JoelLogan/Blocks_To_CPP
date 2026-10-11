@@ -1,6 +1,8 @@
 # ADR-0002: Block editor: Blockly with the Zelos renderer
 
-* Status: Accepted
+* Status: Partly superseded by [ADR-0014](0014-extending-blockly.md): the
+  clause "extended through supported plugin APIs only". Blockly 12 with the
+  Zelos renderer stays in force. Accepted.
 * Date: 2026-10-02
 
 ## Context

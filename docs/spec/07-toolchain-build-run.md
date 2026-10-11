@@ -108,7 +108,7 @@ CLI share.
 | Sanitizers | Link (and run) probe with `-fsanitize=address,undefined`; and with `-fsanitize=undefined -fsanitize-undefined-trap-on-error` | Debug configuration ([§7.4.3](#743-sanitizers-and-hardening)) |
 | Hardening | `-fhardened`, `-D_FORTIFY_SOURCE=3`, `-fstack-protector-strong`, `-fstack-clash-protection`, `-fcf-protection` accepted and link OK | Release hardening |
 | Static link | `-static` link of the probe (Windows) | Standalone `.exe` default |
-| Debugger | `gdb` alongside g++ (same `bin`), `gdb --version` ≥ 10 | Debugger availability |
+| Debugger (M5) | `gdb` alongside g++ (same `bin`), `gdb --version` ≥ 10 | Debugger availability |
 
 Over IPC the app shows each toolchain as `{ id, version, target, flavor,
 displayPath, source, usable, selected, capabilities, problems }`.
@@ -268,8 +268,10 @@ settings**, never in projects:
   The object cache matters only for multi-module projects and arrives with
   them in M3; until then a project's translation units are compiled straight
   into `out/`.
-* LRU eviction when the cache exceeds 2 GiB (configurable). Entries untouched
-  for 30 days are pruned at startup. *Clear build cache* is in the menu.
+* LRU eviction when the cache exceeds 2 GiB (`buildCache.maxBytes`, an
+  option of the Settings page from M5). Entries untouched for 30 days are
+  pruned at startup and after each build. *Clear build cache* is on the
+  Settings page.
 
 **Eviction and clearing:**
 
@@ -277,12 +279,13 @@ settings**, never in projects:
   Its last use is the modification time of its `lock` file, which every build
   and run touches. A build touches it when it takes the lock and again, still
   holding the lock, when it finishes as `built` or `upToDate`.
-* After each finished build and at startup, the app removes the least recently
-  used entries while the cache is larger than `buildCache.maxBytes` (default
-  2 GiB, [05 §5.9](05-project-format.md#59-machine-local-data)). At startup it
-  also removes entries unused for 30 days. The eviction after a build never
-  removes that build's own folder, even when another build or run used an
-  entry since, so the program the user is about to run is still there.
+* After each finished build and at startup, the app removes the entries
+  unused for 30 days, then the least recently used entries while the cache is
+  larger than `buildCache.maxBytes` (default 2 GiB,
+  [05 §5.9](05-project-format.md#59-machine-local-data)). The eviction after
+  a build never removes that build's own folder, even when another build or
+  run used an entry since, so the program the user is about to run is still
+  there.
 * The most recently used entry is never evicted for size, and a run holds a
   shared lock on its entry's `lock` file for as long as it runs. An entry
   whose lock is held (a build or run is using it) is skipped, and so is an
@@ -290,7 +293,8 @@ settings**, never in projects:
   and junctions are never followed, every folder is checked to lie inside the
   canonical cache root before it is deleted, and project folders left empty
   are removed. Only `builds/` is touched: `sandbox/` and `toolchains.json`
-  are never evicted.
+  are never evicted. (M3) Sandbox folders unused for 30 days are removed at
+  startup unless a program runs in them.
 * Only the app evicts. The CLI never deletes cache entries.
 * *Clear build cache* (on the Settings page, [04 §4.12](04-user-interface.md#412-settings-page);
   `build_cache_clear`) deletes everything in `builds/` except entries in use
@@ -316,7 +320,7 @@ settings**, never in projects:
   starts when all TUs have succeeded. A single-TU project is compiled and
   linked in one invocation.
 * **Limits:**
-  * Timeout per TU: 120 s (configurable, 10–600 s).
+  * Timeout per TU: 120 s (a setting from M5).
   * Memory: 4 GiB per invocation. On Windows, a Job Object
     `JobMemoryLimit`. On Linux, a cgroup-v2 transient scope (`MemoryMax`)
     when a user systemd instance is available; otherwise `RLIMIT_AS`, which
@@ -458,8 +462,9 @@ atomic rename after a successful compile, so the cache cannot be corrupted.
 
 The backend checks these itself and never relies on the UI:
 
-* `build_start` checks trust first. A restricted project gives `restricted`,
-  and no build folder is created and no process is started.
+* `build_start` validates the document and keeps it as the project's latest
+  document, then checks trust: a restricted project gives `restricted`, and
+  no build folder is created and no process is started.
 * `run_start` refuses, in this order: a build of a project that is no longer
   open (`unknownBuild`); a project that is not trusted now (`restricted`); a
   build whose outcome is not `built` or `upToDate` (`buildNotSuccessful`); a

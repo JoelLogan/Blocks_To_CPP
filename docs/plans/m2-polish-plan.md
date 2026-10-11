@@ -1,6 +1,6 @@
 # Blocks2Cpp: improvement plan after the owner's first M2 trial
 
-> **Status: accepted (2026-10-10).** The owner accepted every recommendation of §6 and Appendix A (D1–D18). Written 2026-10-10 from a review of the owner's first M2 trial; work proceeds wave by wave, and the spec and ADR revisions in §5 land with the work they describe.
+> **Status: accepted (2026-10-10).** The owner accepted every recommendation of §6 and Appendix A (D1–D18), so the ADRs of §5 are *Accepted* when they are written (ADR-0012 to ADR-0014 in W0). Written 2026-10-10 from a review of the owner's first M2 trial; work proceeds wave by wave, and the spec and ADR revisions in §5 land with the work they describe.
 
 This plan rests on the owner's 18 observations (U1–U18) and the reports of 14 investigation and audit agents. Everything was checked against HEAD `729a503` on branch `ccr-01f82d9b-v70u20`. This final revision also answers three reviews of the draft, on completeness, spec consistency and feasibility.
 
@@ -231,7 +231,7 @@ The core of W2-1 must land before W4-2, W5-1 and W3-11.
 
 **W0-2 ADR-0012 "Loose blocks are parked".** U5.
 
-- The text is in §5 item 1. Its status is *Proposed* until D1. The ADR README says a Proposed ADR records a decision that work already proceeds on.
+- The text is in §5 item 1. Its status is *Accepted* (D1, decided 2026-10-10).
 - ADR-0011 becomes *Partly superseded*, and the ADR README gains that status form (§5 item 2).
 - Effort S.
 
@@ -260,7 +260,7 @@ The core of W2-1 must land before W4-2, W5-1 and W3-11.
   - W5-2's replaced connection previewer;
   - P-3's patch.
 - The ADR also adds a *Patched dependencies* row to 08 §8.9.
-- The text is in §5 items 4 and 56. It is a prerequisite for those items; as a Proposed ADR, the work can proceed while it is reviewed.
+- The text is in §5 items 4 and 56. It is a prerequisite for those items. Its status is *Accepted* (D6, decided 2026-10-10).
 - Effort S.
 
 **W0-5 Anchor check over all Markdown.** U18-5.
@@ -1385,7 +1385,7 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
 
 ### New ADRs and changes to existing ADRs
 
-1. **[Owner] New `docs/adr/0012-parked-blocks.md`: "Loose blocks are parked: a warning, not an error".** Status: "Proposed (owner to confirm D1: warning or info, no dimming, E0406 stays)".
+1. **[Owner] New `docs/adr/0012-parked-blocks.md`: "Loose blocks are parked: a warning, not an error".** Status: "Accepted (owner decision D1 of 2026-10-10)": a warning, no dimming, E0406 stays, and the parked-stack limitation is accepted until M3.
    - **Decision:**
      - (1) "A top-level block whose catalog shape is statement, reporter or predicate is parked, together with its `stack`. It is saved and shown, but never lowered, generated or run, and being loose never stops a build. Definitions (*when program starts*, *define*, and later struct, class, enum, global and Raw C++ declarations) are never parked."
      - (2) "The analyser reports each enabled parked head once as the lint `B2C-W0505` (default: warning; a project can raise it to an error once lint levels exist, M5). A parked head the user disabled is not reported."
@@ -1401,22 +1401,22 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
    - ADR-0011 status: "Partly superseded by ADR-0012: the placement decision (`B2C-E0604` stays an error; option 5 rejected). The `stack` key and the clipboard shape stay in force."
    - README template status line: "Status: Proposed | Accepted | Partly superseded by ADR-XXXX (names the superseded points) | Superseded by ADR-XXXX".
    - Index row 0011: "Loose stacks are saved intact (placement decision superseded by 0012)", status "Partly superseded by 0012".
-   - New rows for 0012–0014, status Proposed.
-3. **[Owner] New `docs/adr/0013-additive-format-keys.md`: "Additive format keys raise `formatVersion` only when they are used".** It amends ADR-0004 and notes ADR-0011, whose `stack` key stays in format 1. Status: Proposed (D18).
+   - New rows for 0012–0014, status Accepted.
+3. **[Owner] New `docs/adr/0013-additive-format-keys.md`: "Additive format keys raise `formatVersion` only when they are used".** It amends ADR-0004 and notes ADR-0011, whose `stack` key stays in format 1. Status: Accepted (D18, decided 2026-10-10).
    - Decision: "`formatVersion` is the lowest version whose keys cover the file. Each version only adds keys and never changes the meaning of earlier ones: version 2 adds `options.usingNamespaceStd` (M3), version 3 adds `project.lints` (M5), and each later key gets the next number. The writer computes the version from the keys present, so a file that uses no newer key keeps its version and still opens in older apps. Only a change to the meaning or shape of an existing key needs a migration v(n) → v(n+1), and `migratedFrom` reports only such migrations. An unknown key in a file whose `generator.app` is newer than this app is `B2C-E0108` (*made with a newer version of Blocks2Cpp*, without naming a version); otherwise it is `B2C-E0110`."
    - Consequences: "Every reader that accepts `lints` enforces the W0520 rule. `b2c migrate` migrates to the lowest version that covers the file."
-4. **[Owner] New `docs/adr/0014-extending-blockly.md`: "Extending Blockly: allowed seams and patched dependencies".** It supersedes ADR-0002's clause "extended through supported plugin APIs only". Status: Proposed (D6).
+4. **[Owner] New `docs/adr/0014-extending-blockly.md`: "Extending Blockly: allowed seams and patched dependencies".** It supersedes ADR-0002's clause "extended through supported plugin APIs only". Status: Accepted (D6, decided 2026-10-10).
    - Decision:
      - "The editor may use the public and protected methods of documented Blockly and plugin classes (for example `BlockDragStrategy.drag` and `getSearchRadius`, `Dragger.onDrag`, `onDragEnd` and `wouldDeleteDraggable`, `Flyout.getFlyoutScale` and `reflowInternal_`, `ConnectionChecker.doDragChecks`), components replaced through `Blockly.registry` (connection checker, connection previewer, flyouts, toolbox) and `BlockSvg.setDragStrategy`. Private members are not used."
      - "Each subclass of a Blockly or plugin class is listed in the developer guide with the upstream version it was checked against."
      - "A patched dependency (pnpm `patchedDependencies`) is allowed only with benchmark or defect evidence, a linked upstream issue or pull request, the smallest diff, and a test that fails without it."
    - Consequences: "Every upgrade of Blockly or its plugins re-checks the listed seams (M3 spike)."
-5. **[Owner] New ADR-0015, written before W4-1 starts: "Block upgrades run on load; before 1.0 a retired block type is replaced at once".** It amends ADR-0004. Status: Proposed (D18). It records:
+5. **[Owner] New ADR-0015, written before W4-1 starts: "Block upgrades run on load; before 1.0 a retired block type is replaced at once".** It amends ADR-0004. Status: Accepted (D18, decided 2026-10-10). It records:
    - the replacement contract: the ID, position, comment, flags, stack and nested blocks are kept;
    - retired IDs are never reused (`RETIRED_BLOCKS`, validated);
    - upgrades run after the §5.6 limits and before trust is evaluated, never change the security hash, and the result is checked against the limits again;
    - after 1.0, a deprecation period with a badge.
-6. **[Owner] New ADR-0016 (M3): "The live preview runs in a Web Worker".** It amends ADR-0010. Status: Proposed (D15). It records:
+6. **[Owner] New ADR-0016 (M3): "The live preview runs in a Web Worker".** It amends ADR-0010. Status: Accepted (D15, decided 2026-10-10). It records:
    - **What moves:** `update` and `canonical_text` run in the worker.
    - **What stays on the main thread:**
      - scope-index lookups stay synchronous;
@@ -1672,7 +1672,7 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
 68. **§10.2 Risks:**
     - Blockly-performance row: add the readings above, the CI readings (dragging at 5,000 blocks, p95: 40 ms on Linux, 914 ms on Windows) and the mitigation "gated benchmarks with A/B runs; a patched and upstreamed render management and a linear `getDescendants` (M3, if ADR-0014 accepts the patch); the Worker (M3); per-function views (M5)".
     - New row: "Blockly, its plugins and xterm.js move to new majors faster than the app | High | Medium | separate Dependabot PRs, one scheduled migration per milestone, small subclasses listed under ADR-0014 and covered by E2E and visual tests".
-69. **[Owner] §10.3 Product decisions, new rows, each "Proposed" until the owner decides, then dated:**
+69. **[Owner] §10.3 Product decisions, new rows, each "Decided 2026-10-10":**
     - Q10 "Are loose blocks errors? No: parked, warned, never generated (ADR-0012)";
     - Q11 "Preview off the main thread before M5? Yes, in M3 (ADR-0016)";
     - Q12 "Variables listing independent of the selection" (D2);
@@ -1776,7 +1776,7 @@ The structured decisions list has the full options and recommendations. They are
 **Per-wave acceptance:**
 
 - **W0:**
-  - ADR-0012/0013/0014 merged as Proposed;
+  - ADR-0012/0013/0014 merged as Accepted;
   - the anchor check passes on HEAD and fails on a renamed heading;
   - one green minor/patch Dependabot PR per ecosystem.
 - **W1:** every code fix has a test that fails on HEAD, including:

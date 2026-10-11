@@ -4,8 +4,11 @@
 
 ## 10.1 Milestones
 
-> **Implementation status (2026-10-07).** **M2** is in progress: its
-> automated exit criteria are met, and its manual checks are pending. The
+> **Implementation status (2026-10-11).** **M2** is in progress. Its
+> automated exit criteria are met, but the owner's first trial (Debian,
+> 2026-10) found 18 issues, so an [M2 polish wave](#m2-polish-part-of-m2)
+> runs inside M2 before the usability sessions: their participants must be
+> first-time users, so they are not spent on problems already known. The
 > desktop editor ([apps/desktop](../../apps/desktop/README.md),
 > [getting started](../user-guide/getting-started.md)) builds and runs block
 > programs with the user's g++ on Linux and Windows: blocks and a toolbox
@@ -15,20 +18,27 @@
 > and Restricted Mode, the validated clipboard and the reload of files
 > changed outside the app, behind the hardened IPC contract of 36 commands.
 > The guessing-game exit test, assembled from the *Empty* template, and the
-> breadth E2E flows and the visual diff of the canvas pass in CI on both
-> systems (commit `8c531d3`). The first scheduled nightly run, with the E2E
-> security tests, the benchmarks and the fuzzing, passed on both systems
-> (2026-10-07, commit `0709960`). The first measurements on CI's runners,
-> which have no GPU, are a cold start of 1.2 s (Linux) and 2.8 s (Windows),
-> and a p95 frame time while dragging in a 5,000-block workspace of 40 ms
-> (Linux) and 914 ms (Windows): meeting the targets N2–N4 is M5's exit, M2
-> gates regressions only. M2 is done once these are recorded: the usability
-> session with at least three first-time users
-> ([protocol](../manual-tests/m2-usability.md)), the NVDA and Orca pass
-> ([checklist](../manual-tests/m2-accessibility.md)), and the review at the
-> milestone demo that nothing of M3–M6 has an entry point in the app (first
-> run on the code, recorded in the usability protocol). The visual diff's
-> baselines and the benchmarks' history build up from the first CI runs
+> breadth E2E flows pass in CI on both systems (commit `8c531d3`); the visual
+> diff of the canvas runs there too, but compares nothing until its baselines
+> are committed. The first scheduled nightly run, with the E2E security
+> tests, the benchmarks and the fuzzing, passed on both systems (2026-10-07,
+> commit `0709960`). The first measurements on CI's runners, which have no
+> GPU, are a cold start of 1.2 s (Linux) and 2.8 s (Windows), and a p95 frame
+> time while dragging in a 5,000-block workspace of 40 ms (Linux) and 914 ms
+> (Windows): meeting the targets N2–N4 and N12 is M5's exit, M2 gates
+> regressions only. Readings in the app (debug backend, production frontend,
+> Linux under xvfb without a GPU, 2026-10-10): selecting 1.2 s, an edit at
+> the end of `main` 0.85 s, dragging a 1,000-block stack 14 s in all; a
+> toolbox rebuild 0.13–0.17 s at 40 blocks. They are to be measured again in
+> a release build. M2 is done once the polish wave is finished and these are
+> recorded on a polish build: the threat-model review, the first green
+> weekly run, the toolchain matrix (at least the Debian cell, or a recorded
+> deferral), committed visual baselines, the usability sessions with at
+> least three first-time users ([protocol](../manual-tests/m2-usability.md)),
+> the NVDA and Orca pass ([checklist](../manual-tests/m2-accessibility.md)),
+> and the review at the milestone demo that nothing of M3–M6 has an entry
+> point in the app (first run on the code, recorded in the usability
+> protocol). The benchmarks' history builds up from the first CI runs
 > ([09 §9.3](09-quality-and-delivery.md#93-continuous-integration)).
 >
 > **M1** is done: loading and
@@ -87,10 +97,13 @@ readers, high contrast, the toolchain matrix) and updated documentation.
   decoding.
 * Project new/open/save/autosave/recovery. Workspace trust and Restricted
   Mode. IPC hardening (capabilities, isolation, CSP).
-* Dynamic Variables and My Blocks categories, and symbol dropdowns filtered
-  by scope. A type-aware connection checker. Copy and paste through the
-  validated clipboard format. External change detection for open projects
-  (Reload or Keep mine).
+* Dynamic Program, Variables and Functions categories (the standard variable
+  set with scope- and type-filtered menus), and symbol dropdowns filtered by
+  scope. Parked (loose) blocks: kept, warned, never run
+  ([ADR-0012](../adr/0012-parked-blocks.md)). A type-aware connection
+  checker, Scratch-style snapping and wrapping (wrapping moves to M3 if the
+  polish wave cannot fit it). Copy and paste through the validated clipboard
+  format. External change detection for open projects (Reload or Keep mine).
 * Machine settings: a versioned, schema-checked `settings.json`
   (`settings_get`/`settings_update`) and a Settings page (code style, Run on
   errors, console). Build cache eviction (size cap, 30-day pruning) and
@@ -111,9 +124,45 @@ readers, high contrast, the toolchain matrix) and updated documentation.
   1,000 blocks, large-workspace drag, cold start); a visual-diff test of the
   canvas on both OSes; markdownlint, external link check, rustdoc build, WASM
   size budget and cargo-geiger. Fuzz targets for the diagnostics parsers.
+* Docs: `BUILDING.md` (building and running from source) and the
+  getting-started page.
 * **Exit:** a first-time user builds and runs the guessing game
   ([03 §3.13.1](03-block-language.md#3131-guessing-game-input-random-loops-branching))
   without reading docs. E2E tests cover the flow on both OSes.
+
+### M2 polish (part of M2)
+
+The owner's first trial (Debian, 2026-10) found 18 issues, each tracked as an
+issue labelled `M2-polish`. The wave also fixes two data-loss and correctness
+defects, adds DOM-level chrome checks and small-program benchmarks, and
+writes `BUILDING.md`. Its items are split into a must-have set and an
+if-time set, worked on in two parallel streams within a budget of 8 weeks
+(owner's decision of 2026-10-10). The [plan](../plans/m2-polish-plan.md)
+gives each item's cause, fix and tests.
+
+* Decisions and groundwork: parked blocks
+  ([ADR-0012](../adr/0012-parked-blocks.md)), additive format keys
+  ([ADR-0013](../adr/0013-additive-format-keys.md)), the rules for extending
+  Blockly ([ADR-0014](../adr/0014-extending-blockly.md)), spec corrections,
+  Dependabot groups, the issue tracker and an anchor check over all
+  Markdown.
+* Small fixes, the two P0 defects (a drop on the toolbox deleting the blocks
+  below a previewed place; a negative number typed into a slot being
+  rejected) and `BUILDING.md`.
+* A performance guard: the longest main-thread task of every E2E flow, A/B
+  benchmark runs, and selection and edit metrics.
+* Layout (toolbox width, dock sizes, window fit), named canvas controls, the
+  console between runs, and renaming the project.
+* Parked blocks, the standard variable set, a Variables listing that does
+  not depend on the selection, snapping, and the remaining documentation.
+* If time: remembered toolbox and dock sizes, block upgrades on load and one
+  *change* block for every update operator, Scratch-style wrapping, the
+  developer guide, and the other items the plan marks *M2 if time*.
+
+**Exit:** both P0 defects are fixed; each of U1–U18 is fixed or moved to M3
+with the owner's agreement; items marked *M2 if time* move to M3 without
+further sign-off when the wave's budget is spent; the usability protocol and
+the getting-started guide describe the polished editor.
 
 ### M3: Language breadth I
 
@@ -139,6 +188,35 @@ readers, high contrast, the toolchain matrix) and updated documentation.
   suspected generator bugs. Feature gating by C++ standard and toolchain
   capability, with fallbacks. A snapshot test of every catalog block's
   default C++, compiled with `-fsyntax-only`.
+* `switch` (with fall-through), `do … while`, `wait`, *with arguments* on
+  *when program starts* (a checkbox, not a second block), overloads, default
+  arguments and the *moved* parameter mode. Type-specific variable
+  operations, and with *Show advanced blocks* the bitwise compound
+  assignments. The project name in the project settings dialog.
+* The type and slot foundations: an open type representation, typed slots,
+  catalog schema extensions (including the catalog's `headers`),
+  `text + "x"` where C++ allows it, and constant folding for overflow and
+  division by zero.
+* From the M2 polish wave (owner's decisions of 2026-10-10):
+  * the live preview in a Web Worker (ADR-0016, after a single `update()`
+    export), with a compact source map and a C++ panel that pauses while
+    hidden;
+  * the small-program benchmarks gated, once the toolbox refreshes per
+    section and a baseline has been measured;
+  * Blockly 13, continuous-toolbox 13 and xterm.js 6.1, after a spike; the
+    patched Blockly render management and a linear `getDescendants`, if
+    [ADR-0014](../adr/0014-extending-blockly.md) and the measurement allow
+    it;
+  * lowering parked stacks for the scope query and block types
+    ([ADR-0012](../adr/0012-parked-blocks.md));
+  * the Appearance setting (System, Light, Dark) after a `[data-theme]`
+    token refactor, with the console's colours following it, and, if still
+    wanted, *Clear the console when a run starts*;
+  * `pnpm doctor`, and a weekly job that follows `BUILDING.md`'s Debian
+    steps in Debian 12 and 13 containers;
+  * Run reusing the build's analysis, removing unused sandbox folders,
+    newer `g++-N` names, and the skipped-lines marker on Windows;
+  * every polish item moved past the cut line.
 * **Exit:** a typical intro-CS course's assignments (I/O, loops, functions,
   vectors, structs, files) can be completed. Each has a golden test.
 
@@ -166,13 +244,18 @@ readers, high contrast, the toolchain matrix) and updated documentation.
   tidy-up.
 * GDB debugger with block stepping. Trace (glow) mode. Runtime error mapping.
 * Accessibility audit and fixes, i18n infrastructure, and performance targets
-  (N2–N5) met.
+  (N2–N5 and N12) met.
 * User guide and tutorials (beyond M2's getting-started page), and the
   offline help system.
 * Find references, back/forward history and bookmarks. Collapse to
   signatures. A command palette and remappable shortcuts. Focus and
-  Presentation modes. Dock layout (swap, split, remembered). Light, Dark and
-  High Contrast themes with a checked colour-blind-safe category palette.
+  Presentation modes. Dock layout (swap, split). High Contrast themes (light
+  and dark) and a checked colour-blind-safe category palette. The window's
+  size and position remembered. Non-drag ways to place blocks, including a
+  keyboard equivalent of wrapping statements in a C-block.
+* A build is up to date when its generated files are identical
+  ([07 §7.5.1](07-toolchain-build-run.md#751-build-directory)), so editing a
+  parked block no longer recompiles.
 * Code style options in the generator (braces, indentation, pointer
   alignment, line width) and lint levels (in the project file, overridden
   per machine; Q9), with a malicious-project test that a project file cannot
@@ -195,6 +278,8 @@ readers, high contrast, the toolchain matrix) and updated documentation.
   oldest supported systems (N1). Installer size under 30 MB (N6).
   Reproducible release builds (`SOURCE_DATE_EPOCH`, `--remap-path-prefix`).
   Release channels: nightly, beta and stable.
+* Trusted Types enforced on WebView2 when the trial reports no violations
+  for a milestone, or an ADR records why not.
 * Beta programme with learners and teachers. Release gate passed. **1.0**.
 
 ### Post-1.0 candidates
@@ -203,13 +288,15 @@ Clang support · macOS · verified toolchain installer (pinned URLs + SHA-256 +
 signatures) · more library packs (SFML, raylib, Dear ImGui) · Windows
 AppContainer sandbox · import of C++ declarations from headers · classroom
 features (assignment templates, CLI grading reports) · Flatpak · C++ modules
-once GCC support matures · a deprecation path for block types (badge and
-automatic replacement; until a block type is removed, the migration chain is
-enough) · evaluate and adopt Tauri 3 once it is stable and has had a point
-release with no open security advisories. Tauri is confined to the desktop
-adapter (`apps/desktop/src-tauri`) and the frontend's IPC transport
-(`apps/desktop/src/lib/ipc.ts`), so the work is mainly re-verifying the
-security configuration of [08 §8.8](08-security.md#88-webview-and-ipc-hardening)
+once GCC support matures · a toolbox block-size setting (small, medium,
+large) · a deprecation period for block types after 1.0 (badge and automatic
+replacement; before 1.0 an exact replacement retires a type at once, owner's
+decision of 2026-10-10) · evaluate and adopt Tauri 3 once it is stable and
+has had a point release with no open security advisories. Tauri is confined
+to the desktop adapter (`apps/desktop/src-tauri`) and the frontend's IPC
+transport (`apps/desktop/src/lib/ipc.ts`), so the work is mainly
+re-verifying the security configuration of
+[08 §8.8](08-security.md#88-webview-and-ipc-hardening)
 (CSP, capabilities and permissions, the isolation hook, navigation locking),
 updating the adapter, the Linux webview packages and the E2E driver, and a
 full manual test pass on both OSes. A newer Linux webview stack would also
@@ -219,12 +306,13 @@ drop glib 0.18 and its tracked advisory (`osv-scanner.toml`).
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| Blockly performance in WebKitGTK on large workspaces | Medium | Medium | Benchmarks with a regression gate since M2 ([09 §9.2](09-quality-and-delivery.md#92-testing-strategy)). The first readings, taken locally on Linux under a virtual display without a GPU, are above N3 and N4: the preview task at 1,000 blocks about 120 ms at p95 (the native pipeline alone about 19 ms), and dragging at 5,000 blocks about 50 ms per frame at p95. The CI baselines decide whether the Web Worker ([02 §2.6](02-architecture.md#26-process-model-and-concurrency)) comes before M5. Also per-module canvases and collapse/virtualisation. Fallback: recommend splitting modules. |
+| Blockly performance in WebKitGTK on large workspaces | Medium | Medium | The first readings, taken locally on Linux under a virtual display without a GPU, are above N3 and N4: the preview task at 1,000 blocks about 120 ms at p95 (the native pipeline alone about 19 ms), and dragging at 5,000 blocks about 50 ms per frame at p95. CI's readings for dragging at 5,000 blocks (p95) are 40 ms on Linux and 914 ms on Windows. In the app (2026-10-10, debug backend, Linux without a GPU): selecting 1.2 s, an edit at the end of `main` 0.85 s, dragging a 1,000-block stack 14 s in all; a toolbox rebuild 0.13–0.17 s at 40 blocks. Mitigation: gated benchmarks with A/B runs ([09 §9.2](09-quality-and-delivery.md#92-testing-strategy)); a patched and upstreamed render management and a linear `getDescendants` (M3, if the measurement justifies the patch under [ADR-0014](../adr/0014-extending-blockly.md)); the preview in a Web Worker ([02 §2.6](02-architecture.md#26-process-model-and-concurrency), M3); per-function views (M5). Also per-module canvases and collapse/virtualisation. Fallback: recommend splitting modules. |
 | Rendering differences between WebView2 and WebKitGTK | Medium | Low | E2E on both, a visual-diff test of the core canvas, avoid cutting-edge CSS |
 | Type-checker false positives frustrate users | Medium | High | Gradual typing; only report certain errors; defer to g++; a differential test oracle |
 | Windows toolchain variety (broken PATHs, mixed runtimes) | High | Medium | Strong probing, health checks, clear guided setup, a wide manual test matrix |
 | "Anything C++ can do" causes scope creep | High | Medium | The coverage matrix is the contract. Raw C++ and packs cover the long tail. New native blocks need a catalog proposal. |
 | Tauri Isolation pattern / CSP friction with Blockly | Medium | Low | Prototype in M0. Documented exceptions (`style-src 'unsafe-inline'`). |
+| Blockly, its plugins and xterm.js move to new majors faster than the app | High | Medium | Separate Dependabot pull requests, one scheduled migration per milestone, small subclasses listed under [ADR-0014](../adr/0014-extending-blockly.md) and covered by E2E and visual tests |
 | Dependency compromise (npm ecosystem) | Medium | High | §8.9 controls: minimum release age, build-script allowlist, minimal dependencies, scanners |
 | Users trust malicious shared projects | Medium | High | Clear trust UX, Raw C++ visibility, Mark-of-the-Web warnings, sandbox option post-1.0 |
 
@@ -244,3 +332,7 @@ items are the defaults we build toward until the owner says otherwise.
 | Q7 | Update checks | **Opt-in**, asked on first run | Decided 2026-10-04 |
 | Q8 | Primary audience emphasis (learners vs. power users) for default UI | **Learner-first** defaults (friendly labels, advanced hidden), one switch to expert mode | Decided 2026-10-04 |
 | Q9 | Where are lint levels stored? | **In the project file** (`project.lints`), **overridable in each user's machine settings**; the machine value wins when both are set. Errors cannot be changed. See [06 §6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints). | Decided 2026-10-04 |
+| Q10 | Are loose blocks errors? | **No:** they are parked, warned (`B2C-W0505`) and never generated ([ADR-0012](../adr/0012-parked-blocks.md)). | Decided 2026-10-10 |
+| Q11 | Preview off the main thread before M5? | **Yes, in M3:** the compiler core's update runs in a Web Worker (ADR-0016, written before that work starts). | Decided 2026-10-10 |
+| Q12 | Does the Variables listing depend on the selected block? | **No:** it lists every variable of the module, grouped by the function that declares it, and is rebuilt only when variables or functions change. | Decided 2026-10-10 |
+| Q13 | Permissions of new project files | **The user's umask** (usually readable by others); an existing file keeps its permissions, and machine-local files and recovery snapshots stay owner-only (`0600`). | Decided 2026-10-10 |

@@ -38,8 +38,7 @@ A project is a **single JSON file** with the extension `.b2c`.
   "project": {
     "id": "prj_4kq9Xb2LmT7pRz1s",
     "name": "Guessing Game",
-    "description": "",
-    "language": { "standard": "c++20", "gnuExtensions": false },
+    "language": { "standard": "c++20" },
     "options": {
       "showAdvanced": false,
       "manualMemory": false,
@@ -72,6 +71,9 @@ A project is a **single JSON file** with the extension `.b2c`.
   ]
 }
 ```
+
+`description` is written only when it is not empty, and
+`language.gnuExtensions` only when it is `true`.
 
 `options.usingNamespaceStd` (*Textbook style*: `using namespace std;` in
 every generated `.cpp`, [06 §6.14](06-compiler-pipeline.md#614-standard-names-and-using-namespace))
@@ -367,8 +369,12 @@ recorded, so such a project cannot be trusted.
   past its read limit: the records granted longest ago are dropped first.
 * Every change re-reads the file and replaces it atomically while holding an
   exclusive lock on `trust.json.lock` next to it (waiting at most 5 s), so
-  several app instances never undo each other's grants. Every trust check
-  reads the file again, so a revocation in one instance holds in all of them.
+  several app instances never undo each other's grants. Every evaluation
+  reads the file again. Trust is evaluated when a project is opened,
+  reloaded or restored
+  ([08 §8.3.1](08-security.md#831-how-trust-is-decided)), so a revocation in
+  one instance holds in the others the next time they open the project.
+  Build and Run use the open project's evaluated trust.
 * A whole drive or the file-system root cannot be trusted as a folder.
 
 **`recent.json`** (read limit 1 MiB): `{ format: "blocks2cpp/recent",
@@ -396,8 +402,9 @@ could send back ([02 §2.5](02-architecture.md#25-ipc-surface)).
   timestamp, and `hash`, the lower-case hex SHA-256 of the bytes written. That
   hash becomes the baseline for detecting outside changes.
 * **Autosave** writes recovery snapshots to the recovery directory (never next
-  to the project) every 30 s while dirty. Snapshots are deleted on a clean
-  save, a reload (which discards the unsaved changes) or close.
+  to the project) every 30 s while the project has unsaved changes, and when
+  the window loses focus. Snapshots are deleted on a clean save, a reload
+  (which discards the unsaved changes) or close.
 * **External change detection.** If the file changes on disk while open
   (detected by a file watcher and a hash check before save), the user chooses
   *Reload* or *Keep mine (save as…)*.
@@ -462,8 +469,9 @@ running app instance:
 * Project content never goes into logs.
 
 **External changes.** For each open project with a file, the backend watches
-the file's parent folder. Events are debounced for 300 ms per project; then
-the file is hashed again (with the size limit), and only a SHA-256 that
+the file's parent folder. Events are debounced for 300 ms per project, and a
+check happens at most 2 s after the first event while events keep coming;
+then the file is hashed again (with the size limit), and only a SHA-256 that
 differs from the baseline counts as a change. A deleted or renamed file
 counts as changed (`deleted: true`), and then *Reload* is not available. The
 frontend is told through the `projectChangedOnDisk` app event

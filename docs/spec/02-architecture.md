@@ -66,11 +66,14 @@ Blocks_To_CPP/
 │   └── desktop/
 │       ├── src/                    # React + TypeScript frontend
 │       │   ├── app/                #   shell, layout, toolbar, status bar, commands, keybindings
-│       │   ├── editor/             #   Blockly integration, BDM sync, live preview, quick-insert
+│       │   ├── editor/             #   Blockly integration, BDM sync, live preview; quick-insert (M3)
 │       │   ├── panels/             #   code view, problems, console, build output
-│       │   ├── features/           #   project, recovery, toolchain, settings, trust, export
-│       │   ├── i18n/               #   message catalogs
-│       │   └── lib/                #   IPC transport for the generated client, utilities
+│       │   ├── features/           #   project, recovery, external changes, toolchain, settings, trust,
+│       │   │                       #   build and run, analysis notices; export (M3)
+│       │   ├── i18n/               #   message catalogs (M5)
+│       │   ├── lib/                #   IPC transport for the generated client, utilities
+│       │   ├── e2e/                #   test seams for the WebDriver suite (E2E builds only)
+│       │   └── test/               #   Vitest setup and helpers
 │       ├── src-tauri/              # Tauri shell (thin adapters to b2c-app): commands, channels,
 │       │   │                       #   native dialogs, window events, logging, capabilities/
 │       │   ├── isolation/          #   isolation hook: generated allowlist + validator
@@ -130,6 +133,7 @@ Blocks_To_CPP/
 ├── pnpm-workspace.yaml             # pnpm workspace
 ├── rust-toolchain.toml             # pinned Rust toolchain
 ├── deny.toml                       # cargo-deny policy
+├── BUILDING.md                     # build and run from source
 ├── SECURITY.md
 ├── CONTRIBUTING.md
 └── README.md

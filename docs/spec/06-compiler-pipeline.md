@@ -78,8 +78,10 @@ every example at indent widths 2 and 4.
   "missing block" (shown greyed out with a *Missing pack: X* badge, and
   preserved on save) plus diagnostic `B2C-E0601`.
 * Fields are validated against their kinds: dropdown values must be one of the
-  options, numbers must be in range, checkboxes must be booleans, identifiers
-  go through `Ident::new`, and text through the text rules.
+  options, type fields one of the block's types, checkboxes must be
+  booleans, number fields hold non-empty text, and declarations have the
+  `{sym, name}` shape. Whether a number is a valid literal in range (`E0310`,
+  `E0517`) and a name a valid identifier (`E0220`) is checked when lowering.
 * `extra` (mutator state) is validated against the block's declared schema,
   and the ⊕ counts must match the inputs present.
 
@@ -308,6 +310,10 @@ changes the generated code.
 Headers use `#pragma once`. Single-module projects emit only `main.cpp`
 without an anonymous namespace, to keep student code simple.
 
+**In M2** every module is compiled on its own: functions cannot be called
+across modules (`E0206`), their names are unique in the program (`E0211`),
+and helpers are inline in each file.
+
 ## 6.8 Stage ⑥–⑦ Desugaring and emission
 
 ### 6.8.1 Desugaring SAST → CAST
@@ -317,8 +323,8 @@ types, and the typed text leaves below. Desugaring makes every language-level
 construct concrete. For example:
 
 * `Repeat(n, body)` → `for (int <fresh> = 0; <fresh> < n; ++<fresh>)`, where
-  `<fresh>` is a readable unique name (`i`, `i2`, … unless taken, or
-  `repeat_i`).
+  `<fresh>` is the first of `i`, `j`, `k`, `i2`, `i3`, … that nothing
+  visible, nothing in the count and nothing in the body uses.
 * `Print` → a chain of `<<` with per-type adjustments (bool, 8-bit integers,
   enums with auto-generated `operator<<`).
 * `ForEachLine` → `std::ifstream` declaration + `if (!stream)` branch + `while
@@ -350,15 +356,18 @@ pub struct Comment(Box<str>);
 pub struct RawCode { text: Box<str>, origin: Origin, provenance: RawProvenance }
 ```
 
-The emitter's write functions accept only these types, so there is no
-function in `b2c-codegen` that writes an arbitrary `&str` into the output.
-This is enforced by code review and by a Clippy `disallowed_methods`
-configuration that bans `Printer::write_str` outside the token module.
+The emitter's write functions accept only these types or `&'static str`
+text chosen by the generator, so no runtime string reaches the output except
+through a typed leaf. The one function that appends raw text is private to
+the printer module, so the compiler enforces this; code review covers the
+printer module itself.
 
 ### 6.8.3 Pretty-printer
 
 * A Wadler-style document algebra (groups, nesting, soft line breaks) with a
-  configurable line width (default 100).
+  configurable line width (default 100). In M2 only stream statements are
+  broken (each continuation starts with `<<`); the document algebra comes
+  with the code style options (M5).
 * Style options: indent width (2/4/tab, default 4), brace style (attached
   default, or Allman), pointer alignment (`int* p` default), spaces in
   template brackets (never).
@@ -411,6 +420,7 @@ statement (with its comment lines and nested bodies) and expression has one.
 * **Raw code:** ranges inside Raw C++ blocks map to the raw block plus a line
   offset, so the Raw editor can underline the exact line.
 * The editor uses the same map for hover highlighting and click-to-block.
+  (M3) The editor receives the source map in a compact form.
 
 ## 6.10 Includes and support helpers
 
@@ -446,6 +456,8 @@ statement (with its comment lines and nested bodies) and expression has one.
 
 * The exported code is identical to what the IDE builds, minus the IDE-only
   init unit ([07 §7.6](07-toolchain-build-run.md#76-running-programs)).
+* In M1/M2 `b2c generate --export` only drops the banner; the folder layout
+  comes in M3.
 * Library profile paths are machine-specific and are **not** exported by
   default. An opt-in checkbox adds them to `CMakeLists.txt` as cache
   variables, with a warning.
@@ -459,10 +471,10 @@ statement (with its comment lines and nested bodies) and expression has one.
 pub struct Diagnostic {
     pub code: DiagCode,             // e.g. B2C-E0201, or GCC-mapped "C:<option or hash>"
     pub severity: Severity,         // Error | Warning | Info, after lint levels (§6.6)
-    pub message: MessageKey,        // i18n key + typed args; rendered in the UI
+    pub message: MessageKey,        // (M5) i18n key + typed args; plain English text until then
     pub primary: Location,          // block + part (+ token range)
     pub related: Vec<(Location, MessageKey)>,
-    pub fixes: Vec<QuickFix>,       // structured BDM edits, applied via the editor's undo stack
+    pub fixes: Vec<QuickFix>,       // (M3) structured BDM edits, applied via the editor's undo stack
     pub source: DiagSource,         // Analyser | Compiler | Linker | Runtime
     pub raw: Option<String>,        // original compiler text when source != Analyser
 }
@@ -471,9 +483,10 @@ pub struct Diagnostic {
 | Code range | Area |
 | ------------ | ------ |
 | `E01xx` | Loading / format / migration |
-| `E02xx`, `W05xx` | Names, scopes, lints |
+| `E02xx` | Names and scopes |
 | `E03xx` | Types and conversions |
 | `E04xx` | Structure and flow |
+| `E05xx`, `W05xx`, `I05xx` | Flow checks and lints |
 | `E06xx` | Catalog and packs |
 | `E07xx` | Feature gating / codegen limits |
 | `T1xxx` | Toolchain problems (not found, too old, broken install) |
