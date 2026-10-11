@@ -1,7 +1,7 @@
 /**
  * The block editor's toolbox (docs/spec/04-user-interface.md §4.2, 03 §3.6–3.7): the catalog's
  * categories with presets and editable defaults, the dynamic Variables category (with *Make a
- * variable*), Loops (a free counter name) and Functions (with *My Blocks*), in the continuous
+ * variable*), Loops (a free counter name) and Functions (with *Your functions*), in the continuous
  * toolbox or Blockly's category toolbox.
  *
  * - `toolboxPlugin` is the editor plugin (append it to `EDITOR_PLUGINS`).

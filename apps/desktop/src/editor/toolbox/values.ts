@@ -1,7 +1,7 @@
 /**
  * The start values the toolbox fills in (docs/spec/04-user-interface.md §4.2, M2 decision "Smart
  * defaults for inputs without a catalog default"): a new variable starts at a value of its type
- * (`0`, `0.0`, `true`, `'a'`, `""`), and a call from *My Blocks* comes with an argument of each
+ * (`0`, `0.0`, `true`, `'a'`, `""`), and a call from *Your functions* comes with an argument of each
  * parameter's type.
  */
 import type { StaticType } from '@blocks2cpp/b2c-core-wasm';

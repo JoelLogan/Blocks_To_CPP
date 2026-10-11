@@ -60,7 +60,7 @@ export function editorInjectOptions(theme: Blockly.Theme): Blockly.BlocklyOption
     trashcan: true,
     maxTrashcanContents: 0,
     // The starting toolbox and the continuous toolbox's classes, which Blockly picks only at
-    // inject time; the toolbox plugin then fills in presets, Variables and My Blocks. The block
+    // inject time; the toolbox plugin then fills in presets, Variables and Your functions. The block
     // dragger tells the editing session when a drag starts, before Blockly moves anything.
     toolbox: toolbox.toolbox,
     plugins: {

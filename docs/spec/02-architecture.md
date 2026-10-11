@@ -423,7 +423,7 @@ Every command returns either its response or an `IpcError`, tagged by
 | `payloadTooLarge` | `limit` | A document or input is over its limit; it was not parsed |
 | `unknownHandle`, `unknownBuild`, `unknownRun`, `unknownRecent`, `unknownSnapshot`, `unknownToolchain` | | The ID does not exist (any more) |
 | `invalidDocument` | `diagnostics` | The document does not load (`B2C-E01xx`) |
-| `newerFormat` | `needs` | The document was made by a newer version (`B2C-E0108`) |
+| `newerFormat` | `needs` (always `null`: no version taken from the file is shown, ADR-0013) | The document was made by a newer version (`B2C-E0108`) |
 | `restricted` | | Build or run of a project in Restricted Mode |
 | `changedOnDisk` | | Save refused because the file changed outside the app |
 | `noPath` | | Save of a project that was never saved |
@@ -552,7 +552,7 @@ happen only in major releases, which means any `0.x` release until 1.0
 
 | Concern | Windows | Linux |
 | --------- | --------- | ------- |
-| Webview | WebView2 (Evergreen, preinstalled on Win 10/11; the installer bootstraps it if missing) | WebKitGTK 4.1. Known GPU/driver issues are documented with workarounds (e.g. `WEBKIT_DISABLE_DMABUF_RENDERER=1`). |
+| Webview | WebView2 (Evergreen, preinstalled on Win 10/11; the installer bootstraps it if missing) | WebKitGTK 4.1. Known GPU and driver issues are documented with workarounds (e.g. `WEBKIT_DISABLE_DMABUF_RENDERER=1`) in [`BUILDING.md` § Troubleshooting](../../BUILDING.md#troubleshooting). |
 | PTY | ConPTY (Windows 10 1809+) through `CreatePseudoConsole`, the child started suspended and assigned to the Job Object before it runs ([ADR-0008](../adr/0008-pty-and-containment-in-b2c-process.md)); pipe mode as a fallback | `openpty`; the child is a session leader with the PTY as its controlling terminal; pipe mode as a fallback |
 | Process-tree kill | Job Object with `KILL_ON_JOB_CLOSE` | Process group + `killpg`, and a cgroup v2 scope through `systemd-run` when available ([07 §7.5.2](07-toolchain-build-run.md#752-invocation)) |
 | Program runtime DLLs | Link with `-static` by default so `.exe` files run standalone | Dynamic linking (standard) |

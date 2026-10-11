@@ -55,7 +55,8 @@ project, build, run, toolchain, settings, trust and recovery services:
   (`src/features/analysis/`) adds one while the latest change could not be checked
   (`syncFailed`) or the compiler core was restarted (`trapRecovered`).
 - **Dialogs** (`dialogs/`): alerts, confirmations, prompts and choices on Radix's accessible
-  dialog; Blockly's own prompts go through them too.
+  dialog; Blockly's own prompts go through them too, and Blockly's pop-ups (drop-downs, field
+  editors, menus, tooltips) close before a dialog opens (`blocklyPopupsPlugin`).
 - **Shortcuts** (`shortcuts.ts`): `F5` Run, `Shift+F5` Stop, `Ctrl+B` Build, `Ctrl+S` Save,
   everywhere except in a dialog or inside an element marked `data-b2c-shortcuts="off"`. The
   reload keys (`Ctrl+R`, `Ctrl+Shift+R`, `Ctrl+F5`) are cancelled everywhere, and the webview's
@@ -99,8 +100,8 @@ project, build, run, toolchain, settings, trust and recovery services:
   moved stays unchanged for saving.
 - **Toolbox** (`toolbox/`, the `toolboxPlugin`): the catalog's categories in a Scratch-style
   continuous toolbox (category bubbles and one scrolling flyout), with presets and shadows, plus
-  the dynamic Variables (with _Make a variable_), Loops and My Blocks categories, which follow the
-  scope at the selected block.
+  the dynamic Variables (with _Make a variable_), Loops and Functions (with _Your functions_) categories, which
+  follow the scope at the selected block and the module shown.
 - **Diagnostics on blocks** (`diagnostics/`, the `diagnosticsPlugin`): every diagnostic with a
   block shows on it as blockly-ext's `b2c_diagnostic` badge (✖ error, ⚠ warning, ℹ info, each
   with its own shape; the most serious wins), a severity outline (solid, dashed or dotted, so

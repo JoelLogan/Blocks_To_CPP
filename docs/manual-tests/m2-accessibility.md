@@ -204,6 +204,11 @@ Check that:
      fields) and the selected bottom tab's mark are visible.
    - [ ] The focus ring is visible on every control, on the canvas, in the
      toolbox and in the panels.
+   - [ ] The *Debug / Release* drop-down is readable while closed (on Linux
+     also with the default light GTK theme).
+   - [ ] With a project open, the `≡` main menu is drawn over the toolbox,
+     and each item can be clicked across its full width, also at its left
+     edge above the toolbox.
 2. Zoom: set the display scale to 200% (or the webview zoom with Ctrl++).
    - [ ] Nothing is cut off or overlaps; panels can still be resized and
      hidden; the dialogs fit the window.

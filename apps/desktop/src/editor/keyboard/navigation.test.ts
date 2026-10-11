@@ -317,7 +317,7 @@ describe('the toolbox’s blocks rebuilt while the keyboard is in them', () => {
       expect(keyboard.area()).toBe('flyout');
       const before = focused();
 
-      // The preview of an earlier edit lands: My Blocks now lists factorial.
+      // The preview of an earlier edit lands: Your functions now lists factorial.
       const factorial = symbolFixture('s_fact', 'factorial', {
         kind: 'function',
         params: ['s_n'],

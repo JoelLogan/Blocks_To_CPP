@@ -1,6 +1,6 @@
 # 5. Project Format and Persistence
 
-> Status: **Draft v0.1** · Related ADRs: [0004](../adr/0004-project-format.md), [0005](../adr/0005-no-compiler-flags-in-projects.md), [0007](../adr/0007-backend-crates-and-ipc-contract.md), [0011](../adr/0011-loose-blocks-in-m2.md)
+> Status: **Draft v0.1** · Related ADRs: [0004](../adr/0004-project-format.md), [0005](../adr/0005-no-compiler-flags-in-projects.md), [0007](../adr/0007-backend-crates-and-ipc-contract.md), [0011](../adr/0011-loose-blocks-in-m2.md), [0013](../adr/0013-additive-format-keys.md)
 
 ## 5.1 Requirements
 
@@ -243,11 +243,12 @@ Further rules:
 ## 5.7 Versioning and migration
 
 * `formatVersion` is an integer: the lowest version whose keys cover the
-  file (ADR-0013). Each version only adds keys and never changes the meaning
-  of earlier ones: version 2 adds `options.usingNamespaceStd` (M3), version 3
-  adds `project.lints` (M5), and each later key gets the next number. The
-  writer computes the version from the keys present, so a file that uses no
-  newer key keeps its version and still opens in older apps.
+  file ([ADR-0013](../adr/0013-additive-format-keys.md)). Each version only
+  adds keys and never changes the meaning of earlier ones: version 2 adds
+  `options.usingNamespaceStd` (M3), version 3 adds `project.lints` (M5), and
+  each later key gets the next number. The writer computes the version from
+  the keys present, so a file that uses no newer key keeps its version and
+  still opens in older apps.
 * Only a change to the meaning or shape of an existing key needs a migration
   `v(n) → v(n+1)`. `b2c-model` contains the chain of these pure migrations,
   each with golden-file tests, and `migratedFrom` reports only such

@@ -5,7 +5,7 @@
  *
  * - each declaration the item names gets a new symbol ID, so no two blocks created from one item
  *   declare the same symbol;
- * - a call block from *My Blocks* gets its argument labels (`n:`) right away. On the canvas the
+ * - a call block from *Your functions* gets its argument labels (`n:`) right away. On the canvas the
  *   call mutator labels arguments from the analysis, which does not know flyout blocks;
  * - blocks are never recycled between showings, so each showing has exactly the presets it was
  *   built with (default names change between showings).

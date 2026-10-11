@@ -212,3 +212,107 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   game built from blocks), and the protocols of M2's manual checks: screen
   readers, and a usability session with first-time users together with the
   review that nothing of later milestones has an entry point in M2.
+- `BUILDING.md`: one place with the steps to build and run Blocks2Cpp from
+  source on Debian, Ubuntu and Windows (Fedora and Arch untested). It
+  recommends the release build for using and judging the app, and its
+  troubleshooting covers blank windows and Wayland.
+- CI checks the relative links and heading anchors of every Markdown file,
+  and the documentation references in the build scripts' messages
+  (`node site/build.mjs --check-repo-markdown`).
+- Decision records: ADR-0012 (loose blocks are parked: one warning, never
+  generated, never blocking Run), ADR-0013 (`formatVersion` is the lowest
+  version whose keys cover the file; an unknown key from a newer app is
+  `B2C-E0108`) and ADR-0014 (the allowed Blockly seams and patched
+  dependencies), all accepted on 2026-10-10. ADR-0011 and ADR-0002 are
+  partly superseded.
+
+### Changed
+
+- The specification gains goal N12 (interaction latency, met in M5); N4 is
+  measured on the compiler core's update, and G3 says the preview follows
+  within 100 ms of the last change. Places where the text described something
+  other than the code are corrected, and the roadmap places the M2 polish
+  wave inside M2, before the usability sessions.
+- A whole number written with a leading zero (`010`) gets its own message:
+  "Write `10`, not `010`: in C++ a number that starts with 0 is octal."
+- A project saved by a newer Blocks2Cpp with a key this version does not know
+  is reported as "made with a newer version of Blocks2Cpp" (`B2C-E0108`)
+  instead of "unknown key" (`B2C-E0110`). No `B2C-E0108` message names a
+  version taken from the file any more.
+- The toolbox offers each block once: _repeat until_ and _if … else_ are
+  chosen on the block (the loop's _while_/_until_ menu, ⊕ for _else_).
+  `b2c-catalog` rejects a second toolbox entry for a block and an entry label
+  that is a category name.
+- Functions: the _My Blocks_ heading is now _Your functions_, with a hint
+  while the module has no function. Only the shown module's functions are
+  offered, under a module heading only when the project has more than one
+  module. A call to a known function shows ⊖/⊕ only to bring its arguments
+  back in line with the definition.
+- Block labels name every field: "create … constant ☐", "print … new line ☑
+  to [the console ▾]" and "character 'a'"; the character field takes one
+  printable ASCII character. `b2c-catalog` checks that every friendly label
+  shows each field and fixed input, with words next to each checkbox.
+- Variable menus leave out what cannot be changed there: loop counters and
+  read-only parameters (as well as constants) for _set_ and _ask_, and text
+  and true/false variables for _change_ and the update operators. A chosen
+  variable stays shown, and the Variables category presets blocks only to
+  variables their menus offer.
+- With a statement selected, the Variables category lists what is visible
+  just after it, so a selected _create x_ offers `x`. While an edit is being
+  analysed the toolbox keeps its listing instead of flickering.
+- The trash can keeps nothing; Undo brings deleted blocks back. The block
+  menu no longer offers _Inline/External Inputs_, which were never saved. The
+  canvas menu's _Delete N blocks_ counts the blocks it deletes (not
+  expression slots), always asks with _Cancel_ as the default, and one Undo
+  brings them all back; the block menu's _Delete_ counts the same way.
+- ▶ Run and Build stay enabled while the first compiler search runs. The
+  build waits for it (at most 30 s) and the build output says so; if the
+  search finds no g++, the setup page opens.
+- The README's _Get Blocks2Cpp_ section links to `BUILDING.md` instead of
+  listing commands. The getting-started guide and the manual-test protocols
+  ask for a release build made with it, and the build errors for a missing
+  WebAssembly core or its tools point to it.
+- Dependabot groups minor and patch updates per ecosystem and opens each
+  major update on its own. New majors of Blockly and its plugins, xterm.js,
+  TypeScript and Vitest wait for a scheduled migration.
+
+### Fixed
+
+- Dropping a block on the toolbox or the trash can while a place was
+  previewed no longer deletes the blocks below that place. Only the dragged
+  blocks are deleted, no place is previewed while the pointer is there, and
+  the dragged blocks are shown faded (the toolbox is tinted).
+- A negative number typed into a block (`change by -1`) was rejected as "not
+  a number" (`B2C-E0310`). A typed `-` or `+` is now a sign, and
+  `-2147483648` is generated as `-2147483647 - 1`.
+- _Keep asking until valid_ reads the whole line: `3.5` or `12abc` for a
+  whole number asks again, a text answer asks again after an empty line, and
+  a character answer must be one character.
+- `join` writes decimal numbers as `print` does (`2.5`, not `2.500000`),
+  through the new support helper `b2c::to_text`.
+- A category chosen in the toolbox stays selected at every zoom level.
+- A block left loose on the canvas, a block inside a disabled statement and
+  a block the live analysis has not seen yet no longer empty the Variables
+  category or the block's own variable menu; they list what is visible at
+  the end of `main` (the module's functions without `main`) or at the
+  nearest analysed statement before or around them.
+- The toolbox shows a renamed variable's or function's new name at once.
+- The `≡` main menu is drawn over the block toolbox and can be clicked across
+  its full width. Opening a dialog first closes the block editor's
+  drop-downs, field editors, context menus and tooltips, which were drawn
+  over it.
+- The Debug/Release drop-down is readable in the light GTK theme: the app
+  draws it with the toolbar's colours and its own chevron, and the toolbar
+  is 40 px tall again.
+- The toolchain link in the status bar no longer shows a button edge; a
+  page's heading shows its focus ring only after keyboard use; a long
+  project name is cut off before the unsaved-changes marker, which stays in
+  view.
+- A second run no longer writes over the first run's output in the console.
+  Each run starts below a "── New run ──" line, with the terminal's modes
+  reset and the cursor where the last run left it.
+- The console's terminal is fitted inside its box, so the bottom dock no
+  longer scrolls by a few pixels.
+- _Copied_ (C++ panel, setup page, link dialog) disappears after 3 s and is
+  announced on every copy; _Could not copy_ stays until the next attempt.
+  The C++ panel's confirmation no longer moves the code.

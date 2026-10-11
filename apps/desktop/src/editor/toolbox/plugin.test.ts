@@ -166,7 +166,7 @@ describe('the toolbox plugin with the continuous toolbox', () => {
     expect(types).toContain('io.ask');
     // With nothing selected, Variables lists what is visible at the end of main.
     expect(getterRefs(workspace)).toEqual(['s_guess']);
-    // My Blocks: factorial gives a value, so it is a reporter, with its argument labelled.
+    // Your functions: factorial gives a value, so it is a reporter, with its argument labelled.
     const call = flyoutBlocks(workspace).find((block) => block.type === 'func.call');
     expect(call?.getFieldValue('FUNC')).toBe('s_fact');
     expect(call?.getField(argLabelField(0))?.getText()).toBe('n:');
