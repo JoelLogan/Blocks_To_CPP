@@ -10,6 +10,7 @@ import { SHORTCUTS } from '../shortcuts';
 import { useAppStore } from '../store';
 import { Hint } from '../ui/Hint';
 import { GearIcon } from '../ui/icons';
+import { useInputModality } from './inputModality';
 import { MainMenu } from './MainMenu';
 
 /** The top bar's name when no project is open. */
@@ -21,8 +22,12 @@ const CONFIG_LABELS: Record<BuildConfig, string> = { debug: 'Debug', release: 'R
  * The top bar (docs/spec/04-user-interface.md §4.1): the main menu `≡`, the project name with `•`
  * while there are unsaved changes, the session's Debug/Release choice, ► Run, ■ Stop, Build and
  * Settings.
+ *
+ * The toolbar is shown as long as the main window is, so it also tracks whether the keyboard is in
+ * use, for the focus ring of the pages' headings (./inputModality.ts).
  */
 export function Toolbar() {
+  useInputModality();
   return (
     <header className="toolbar">
       <MainMenu />
@@ -38,7 +43,10 @@ export function Toolbar() {
   );
 }
 
-/** The project's name, with the unsaved-changes marker. */
+/**
+ * The project's name, with the unsaved-changes marker. The name alone is cut off with an ellipsis
+ * when it is too long, so the marker after it always stays in view.
+ */
 function ProjectTitle() {
   const { name, dirty } = useAppStore(
     useShallow((state) => ({
@@ -50,10 +58,15 @@ function ProjectTitle() {
     <div className="toolbar-title">
       <span className="app-mark" aria-hidden="true" />
       {name === null ? (
-        <h1 className="project-name">{APP_NAME}</h1>
+        <h1 className="project-name">
+          <span className="project-name-text">{APP_NAME}</span>
+        </h1>
       ) : (
         <h1 className="project-name" data-testid="project-name">
-          <bdi>{name}</bdi>
+          <bdi className="project-name-text" data-testid="project-name-text">
+            {name}
+          </bdi>
+          {/* The marker's space keeps the heading's text as words; on screen, the gap spaces it. */}
           {dirty && (
             <>
               <span className="dirty-marker" aria-hidden="true">

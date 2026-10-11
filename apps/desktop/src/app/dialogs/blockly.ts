@@ -1,12 +1,14 @@
 /**
- * Routes Blockly's own alerts, confirmations and prompts (for example when renaming) through the
- * app's accessible dialogs instead of the browser's `window.alert`, `confirm` and `prompt`
- * (docs/spec/04-user-interface.md §4.8).
+ * The app's dialogs and Blockly: Blockly's own alerts, confirmations and prompts (for example when
+ * renaming) go through the app's accessible dialogs instead of the browser's `window.alert`,
+ * `confirm` and `prompt` (docs/spec/04-user-interface.md §4.8), and the block editor's pop-ups
+ * close before any of the app's dialogs opens (§4.1).
  */
 import * as Blockly from 'blockly/core';
 
+import type { EditorPlugin } from '../editor-types';
 import { dialogs } from './instance';
-import type { DialogService, DialogTextOptions } from './service';
+import type { DialogQueue, DialogService, DialogTextOptions } from './service';
 
 /**
  * Lends Blockly's keyboard focus to the open dialog, as Blockly requires of dialogs that replace
@@ -50,5 +52,28 @@ export function installBlocklyDialogs(service: DialogService = dialogs): () => v
     Blockly.dialog.setAlert();
     Blockly.dialog.setConfirm();
     Blockly.dialog.setPrompt();
+  };
+}
+
+/**
+ * The editor plugin that closes the block editor's pop-ups before one of the app's dialogs opens
+ * (docs/spec/04-user-interface.md §4.1): a field's drop-down or text editor, a context menu, a
+ * tooltip and the trash can's flyout. Blockly attaches them to the page's body above everything
+ * else (the drop-down at z-index 1000, the others near 100000), so one left open would be drawn
+ * over the modal dialog and its overlay. Closing a field's text editor keeps what was typed, as
+ * clicking elsewhere does.
+ *
+ * It is `Blockly.hideChaff()` for the plugin's own workspace rather than the one Blockly last saw
+ * focused, and it is registered only while that workspace exists.
+ */
+export function blocklyPopupsPlugin(
+  queue: Pick<DialogQueue, 'onBeforeShow'> = dialogs,
+): EditorPlugin {
+  return {
+    name: 'dialog-popups',
+    attach: ({ workspace }) =>
+      queue.onBeforeShow(() => {
+        workspace.hideChaff();
+      }),
   };
 }

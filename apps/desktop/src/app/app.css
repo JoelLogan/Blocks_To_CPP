@@ -3,6 +3,20 @@
  * System fonts only: the app loads nothing from the network (docs/spec/08-security.md §8.8).
  * Accessibility (§4.8): visible focus on every control, targets of at least 24×24 px, colour never
  * the only signal, and no motion when the system asks for reduced motion.
+ *
+ * Stacking (z-index), from the bottom; every value the app's style sheets set is on this scale:
+ *
+ *   auto  The window's regions. `.workspace` is isolated (a stacking context of its own), so
+ *         Blockly's layers inside it (the flyout 20, scroll bars 20 and 30, the toolbox 70, the
+ *         drag layer 80) stay inside the canvas and never cover the rest of the window.
+ *      1  Sticky column headings inside a panel (panels.css).
+ *     50  The chrome's pop-ups: the main menu (layout/MainMenu.css) and hints (.hint).
+ *    100  The dialog overlay, and 101 the dialog.
+ *
+ * Above them all are Blockly's pop-ups, which it attaches to the page's body: the drop-down div
+ * (1000), the widget div of context menus and field editors (99999) and its tooltips (100000).
+ * The dialog service closes them before a dialog opens (dialogs/blockly.ts), so none is ever
+ * drawn over a dialog (§4.1).
  */
 
 :root {
@@ -118,6 +132,17 @@ body {
   outline-offset: 2px;
 }
 
+/*
+ * A page's heading takes the focus when the page opens (StartPage.tsx, FeaturePage.tsx), so a
+ * screen reader starts there. Its ring is shown only once the keyboard is in use: after Tab, until
+ * the next pointer press (`data-input` on <html>, layout/inputModality.ts). WebKitGTK would
+ * otherwise draw it when the window starts and after a mouse click.
+ */
+:root:not([data-input='keyboard']) h1[tabindex='-1']:focus-visible,
+:root:not([data-input='keyboard']) h2[tabindex='-1']:focus-visible {
+  outline: none;
+}
+
 .icon {
   flex: none;
   width: 16px;
@@ -159,6 +184,11 @@ body {
   padding: 6px 12px;
   background: var(--b2c-toolbar-bg);
   color: var(--b2c-toolbar-text);
+  /*
+   * The toolbar is dark in both themes, so what the webview draws itself in it (a drop-down's
+   * list, scroll bars) is drawn dark too (§4.8).
+   */
+  color-scheme: dark;
 }
 
 .toolbar :focus-visible {
@@ -182,21 +212,31 @@ body {
 }
 
 .project-name {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+  min-width: 0;
   margin: 0;
-  overflow: hidden;
   font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.01em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-/* User text is isolated, so bidirectional characters in it cannot reorder the toolbar. */
-.project-name bdi {
+/*
+ * Only the name is cut off with an ellipsis, so the unsaved-changes marker after it stays in
+ * view however long the name is. User text is isolated, so bidirectional characters in it cannot
+ * reorder the toolbar.
+ */
+.project-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   unicode-bidi: isolate;
 }
 
 .dirty-marker {
+  flex: none;
   color: var(--b2c-accent);
 }
 
@@ -222,8 +262,25 @@ body {
   cursor: pointer;
 }
 
+/*
+ * The Debug/Release drop-down is drawn by the app, not by the webview: WebKitGTK draws a native
+ * one light in the light scheme whatever its colours, which made its white text unreadable
+ * (§4.8). The chevron is two small triangles in the text colour; the height stays that of the
+ * toolbar's buttons.
+ */
 .toolbar-select {
-  padding-right: 8px;
+  appearance: none;
+  padding-right: 28px;
+  background-color: var(--b2c-toolbar-bg);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    right 15px center,
+    right 10px center;
+  background-repeat: no-repeat;
+  background-size: 5px 5px;
+  color: var(--b2c-toolbar-text);
 }
 
 .toolbar-select option {
@@ -231,9 +288,10 @@ body {
   background: var(--b2c-surface-raised);
 }
 
+/* The colour only: the drop-down keeps its chevron. */
 .toolbar-button:hover,
 .toolbar-select:hover {
-  background: var(--b2c-toolbar-hover);
+  background-color: var(--b2c-toolbar-hover);
 }
 
 .toolbar-button[aria-disabled='true'] {
@@ -260,9 +318,14 @@ body {
     'dock dock dock';
 }
 
+/*
+ * Isolated, so the z-indexes of Blockly's layers (its toolbox is at 70) count only inside the
+ * canvas, and the main menu and hints are drawn over it (see the stacking scale at the top).
+ */
 .workspace {
   grid-area: workspace;
   position: relative;
+  isolation: isolate;
   min-width: 0;
   min-height: 0;
   background: var(--b2c-canvas);
@@ -451,10 +514,12 @@ body {
   border-left: 1px solid var(--b2c-border);
 }
 
+/*
+ * A button that reads as a status item: no edge of its own. `.status-item + .status-item` still
+ * draws the separator before the items after it.
+ */
 .status-link {
-  border-top: 0;
-  border-right: 0;
-  border-bottom: 0;
+  border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
