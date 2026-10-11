@@ -625,6 +625,18 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm install --frozen-lockfile
 
+      # Every Markdown file's relative links and heading anchors, as GitHub
+      # resolves them, and the Markdown references in the build scripts'
+      # messages; lychee below checks external links but no anchors. It runs
+      # before any step regenerates files, so it sees what is committed.
+      - name: Links and heading anchors in all Markdown
+        if: ${{ !cancelled() }}
+        run: node site/build.mjs --check-repo-markdown
+
+      - name: Tests of the anchor check
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @blocks2cpp/site test
+
       # catalog/ is exported by b2c-catalog as packages/catalog-gen/catalog.json,
       # from which catalog-gen generates the Blockly definitions and the block
       # reference (docs/spec/09-quality-and-delivery.md §9.4).

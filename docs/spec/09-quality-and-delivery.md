@@ -174,7 +174,7 @@ GitHub Actions workflows. All actions are SHA-pinned and least-privilege
 
 | Workflow | Trigger | Jobs |
 | ---------- | --------- | ------ |
-| `ci.yml` | PR, push to any branch, weekly, manual | `lint` (rustfmt, clippy, also for the Windows target, markdownlint) · `test` (ubuntu, windows) · `test-cgroup` (the Linux cgroup path) · `gcc` (GCC 11 and 15 containers) · `wasm` (build + size budget) · `coverage` (the gates of §9.2) · `docs` (rustdoc, lychee link check, diagnostic codes documented, generated IPC types and catalog outputs up to date) · `deny` · `secrets` (gitleaks) · `security` (pnpm audit, security suite) · `fuzz` (60 s per target) |
+| `ci.yml` | PR, push to any branch, weekly, manual | `lint` (rustfmt, clippy, also for the Windows target, markdownlint) · `test` (ubuntu, windows) · `test-cgroup` (the Linux cgroup path) · `gcc` (GCC 11 and 15 containers) · `wasm` (build + size budget) · `coverage` (the gates of §9.2) · `docs` (rustdoc, lychee link check, links and heading anchors of every Markdown file, diagnostic codes documented, generated IPC types and catalog outputs up to date) · `deny` · `secrets` (gitleaks) · `security` (pnpm audit, security suite) · `fuzz` (60 s per target) |
 | `desktop.yml` | PR and push touching the app, the crates, the packages or the Rust and Node configuration; manual (optionally making new visual-diff candidates) | `frontend` (`tsc --noEmit`, eslint, prettier, package layering) · `test-web` (Vitest with coverage, after building the WASM core; the unit tests of the E2E harness, the benchmarks and the visual diff; the benchmark comparison's self-test) · `app` (build, tests, release checks and start check on ubuntu and windows) · `e2e` (ubuntu, windows: the exit test and the breadth flows, then the visual diff; the Trusted Types summary, which is meaningful on WebView2) |
 | `codeql.yml` | PR, push, weekly | CodeQL: JavaScript/TypeScript, Rust, GitHub Actions (code scanning, see below) |
 | `osv-scanner.yml` | PR, push, daily | OSV-Scanner over every lockfile; fails on known vulnerabilities and uploads results to code scanning when available |
@@ -206,6 +206,13 @@ Notes on the jobs:
   times, accepts the status codes 200, 206 and 429, skips `localhost`,
   `tauri.localhost`, `ipc.localhost` and `example.com`, and uses no token; it
   runs when Markdown changes and on a schedule.
+* The `docs` job's anchor check (`node site/build.mjs --check-repo-markdown`)
+  reads every Markdown file git tracks, except installed dependencies, fuzz
+  corpora, local tool state and the released entries of `CHANGELOG.md`, and
+  the Markdown references (`file.md#anchor`) in the messages of the build
+  scripts. Each relative link must point to a file in the repository, and
+  each anchor to a heading GitHub gives that anchor; lychee checks no
+  anchors.
 * The weekly dependency health report lists `cargo deny check advisories`
   (including unmaintained crates), `pnpm outdated -r`, the number of
   duplicate crate versions, and `osv-scanner.toml` exceptions that expire
@@ -246,7 +253,8 @@ pages, and every diagnostic links to its reference entry.
   `CHANGELOG.md`. The README's status line and the status note in
   [10 §10.1](10-roadmap.md#101-milestones) are updated when a milestone ends.
 * All Markdown is linted with markdownlint, and external links are checked
-  with lychee (§9.3). rustdoc is built with warnings as errors.
+  with lychee (§9.3). Links and heading anchors are checked for every
+  tracked Markdown file. rustdoc is built with warnings as errors.
 * **In M2** there is no *Help* menu: *Learn more* in Problems opens the
   published diagnostics reference, and the setup page opens the MSYS2 and
   WinLibs sites, in the system browser through fixed links

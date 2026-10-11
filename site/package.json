@@ -6,7 +6,8 @@
   "license": "Apache-2.0 AND OFL-1.1",
   "type": "module",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "test": "node --test --test-reporter=spec build.test.mjs"
   },
   "dependencies": {
     "marked": "18.0.14"
