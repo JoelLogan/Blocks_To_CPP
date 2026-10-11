@@ -1,6 +1,6 @@
 # 8. Security Design and Threat Model
 
-> Status: **Draft v0.1** · Reviewed at every milestone and whenever a trust boundary changes. The reporting policy is in [/SECURITY.md](../../SECURITY.md) · Related ADRs: [0007](../adr/0007-backend-crates-and-ipc-contract.md), [0008](../adr/0008-pty-and-containment-in-b2c-process.md), [0010](../adr/0010-wasm-delivery-under-the-csp.md)
+> Status: **Draft v0.1** · Reviewed at every milestone and whenever a trust boundary changes. The reporting policy is in [/SECURITY.md](../../SECURITY.md) · Related ADRs: [0007](../adr/0007-backend-crates-and-ipc-contract.md), [0008](../adr/0008-pty-and-containment-in-b2c-process.md), [0010](../adr/0010-wasm-delivery-under-the-csp.md), [0014](../adr/0014-extending-blockly.md)
 
 ## 8.1 Scope and assumptions
 
@@ -531,6 +531,7 @@ confirm the main document carries it without a backend command.
 | **cargo-deny** | `advisories` (deny), `licenses` (allowlist), `bans` (duplicate/forbidden crates), `sources` (crates.io only) |
 | **Vulnerability scanning** | RustSec via `cargo-deny`/`cargo-audit`, `pnpm audit`, **OSV-Scanner** across both ecosystems, **CodeQL** (JS/TS, Rust, Actions), GitHub Dependabot alerts. An advisory that does not affect Blocks2Cpp (for example, in code nothing calls) may be recorded as a **tracked exception** in `osv-scanner.toml` with the reason and an expiry date, after which the scan fails again until it is re-checked; an advisory that `pnpm audit` reports is also listed in `auditConfig.ignoreGhsas` of `pnpm-workspace.yaml`, with the same reason and review date. High or critical advisories in shipped dependencies are never excepted. |
 | **Updates** | Dependabot for cargo, npm and github-actions (weekly, grouped). Security updates are raised immediately and are merged with priority after review. |
+| **Patched dependencies** | `patchedDependencies` in pnpm only with an ADR ([ADR-0014](../adr/0014-extending-blockly.md)). Each patch file is reviewed as code (CODEOWNERS), names its upstream issue, is re-applied and re-reviewed on every update of the package, and is removed once upstream ships the fix. Cargo `[patch]` is not used. |
 | **CI hardening** | Actions pinned by full commit SHA; `permissions: {}` by default with per-job least privilege; `persist-credentials: false`; no `pull_request_target` with PR checkout; **zizmor** workflow audits; **OpenSSF Scorecard** |
 | **Secrets** | gitleaks in CI, GitHub secret scanning + push protection. Signing keys live only in a protected `release` environment with required reviewers. |
 | **Reproducibility** | Pinned Rust toolchain (`rust-toolchain.toml`), exact pnpm version (`packageManager`) and Node.js major version (`.node-version`, so CI picks up Node security patches); `SOURCE_DATE_EPOCH`; `--remap-path-prefix` |
@@ -624,7 +625,7 @@ safely), and the suite runs on every PR.
 | **Every PR** | CodeQL · cargo-deny · `pnpm audit` · OSV-Scanner · Clippy (`-D warnings`, security-relevant lints) · ESLint security rules · gitleaks · zizmor (when workflows change) · fuzz smoke run (60 s per target) · escaping property tests · malicious-project suite · security checklist in the PR template (new IPC? new `unsafe`? new dependency? new file write?) |
 | **Nightly** | Extended fuzzing (30 min per target, with a persisted corpus) · full OSV scan against the default branch (`osv-scanner.yml`, daily) · E2E security tests on Windows and Linux |
 | **Weekly** | Dependabot update PRs · OpenSSF Scorecard · review of open security alerts (triaged within the week) · mutation testing of the encoders and validators · dependency health report · `cargo-geiger` report of `unsafe` use |
-| **Per milestone** | Threat-model review (this document) · manual review of all new IPC commands, `unsafe` blocks and file/process code paths · dependency licence and health review |
+| **Per milestone** | Threat-model review (this document), recorded in `docs/security/threat-model-reviews.md` (date, commit, scope, findings, accepted residuals) · manual review of all new IPC commands, `unsafe` blocks and file/process code paths · dependency licence and health review |
 | **Per release** | Release gate (§8.10) · SBOM + provenance · signed artifacts |
 
 **Nightly E2E security tests** run in the real app on both systems

@@ -8,12 +8,15 @@
 
 * Edition 2024. The toolchain is pinned in `rust-toolchain.toml`, and the MSRV
   is declared in the workspace `Cargo.toml` and checked in CI.
-* `rustfmt` (checked). Clippy runs with `-D warnings` plus a curated
-  `pedantic` subset and these lints at `deny`: `unwrap_used`, `expect_used`
-  (outside tests), `panic`, `indexing_slicing` (in parsers/encoders), `todo`,
-  `dbg_macro`, `print_stdout`, plus `disallowed_methods` (e.g.
-  `std::process::Command::new` outside `b2c-process`, raw writes outside the
-  emitter's token module).
+* `rustfmt` (checked). Clippy runs with `-D warnings`, `pedantic` (except
+  `module_name_repetitions` and `must_use_candidate`) and these lints at
+  `deny`: `unwrap_used`, `expect_used` (outside tests), `panic`, `todo`,
+  `unimplemented`, `dbg_macro`, `print_stdout`, `print_stderr`, and
+  `indexing_slicing` in the WebAssembly facade (`b2c-core-wasm`), plus
+  `disallowed_methods` (`std::process::Command::new` outside
+  `b2c-process`). Raw output text is confined by module privacy: the only
+  function that appends raw text is private to the printer module
+  ([06 §6.8.2](06-compiler-pipeline.md#682-typed-text-parse-dont-validate)).
 * `#![forbid(unsafe_code)]` in every crate except `b2c-process`
   ([02 §2.3](02-architecture.md#23-repository-layout)). `b2c-core-wasm` uses
   `deny` instead, because the code `#[wasm_bindgen]` generates contains
@@ -53,6 +56,8 @@
 
 * **Conventional Commits** (`feat:`, `fix:`, `docs:`, `sec:`, …), small
   focused PRs, squash merges.
+* Known defects, open diagnostics and technical debt are tracked as GitHub
+  issues with a milestone label; status notes link them.
 * Branch protection on `main`: required status checks, at least one review,
   CODEOWNERS review for `crates/b2c-process/`, `crates/b2c-ipc/`,
   `crates/b2c-store/`, `crates/b2c-app/`, `apps/desktop/src-tauri/`,
@@ -215,8 +220,9 @@ Notes on the jobs:
 `release.yml`, which arrives before the first signed release (M6). The
 breadth flows and the visual diff in `desktop.yml`'s `e2e` job, and
 `nightly.yml`'s `e2e-app`, `e2e`, `e2e-security` and `bench` jobs, came last
-in M2: their tests pass on Linux, and their Windows runs are not yet
-confirmed ([10 §10.1](10-roadmap.md#101-milestones)). The benchmark gate
+in M2. The Windows runs of the breadth flows and the nightly suites pass,
+like the Linux ones (scheduled runs since 2026-10-07,
+[10 §10.1](10-roadmap.md#101-milestones)). The benchmark gate
 only reports until five scheduled runs per system have been kept, and the
 visual diff only warns until a person commits its baselines.
 

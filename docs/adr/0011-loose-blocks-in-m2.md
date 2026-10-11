@@ -1,6 +1,9 @@
 # ADR-0011: Loose blocks stay errors, and loose stacks are saved intact
 
-* Status: Accepted (confirmed by the owner on 2026-10-05)
+* Status: Partly superseded by [ADR-0012](0012-parked-blocks.md): the
+  placement decision (`B2C-E0604` stays an error; option 5 rejected). The
+  `stack` key and the clipboard shape stay in force. Accepted (confirmed by
+  the owner on 2026-10-05).
 * Date: 2026-10-05
 
 ## Context
