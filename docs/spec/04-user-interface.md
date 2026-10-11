@@ -57,9 +57,10 @@
 ## 4.2 Toolbox
 
 * **Scratch-style continuous toolbox.** Category bubbles on the left; the
-  flyout scrolls continuously through all categories. Choosing a category
-  scrolls the flyout to it, and that category stays selected at every zoom
-  level; scrolling by hand selects the category at the top.
+  flyout scrolls continuously through all categories, and its blocks always
+  show current names. Choosing a category scrolls the flyout to it, and that
+  category stays selected at every zoom level; scrolling by hand selects the
+  category at the top.
 * **Dynamic categories.** *Variables* lists the symbols in scope at the
   current selection. *Functions* lists *define* and *return*, then, under
   *Your functions*, a call block for each function of the module shown, or a
@@ -83,17 +84,22 @@
   ([03 §3.1](03-block-language.md#31-design-philosophy-few-blocks-much-power)).
 
 **In M2:** the toolbox shows Program, Variables, Math, Logic, Text, Control,
-Loops, Input / Output and Functions (with *Your functions*). *Variables* lists
-the symbols in scope at the selected block (with nothing selected, those
-visible at the end of `main`), each with a getter and the blocks whose menu
-may choose it there ([03 §3.6](03-block-language.md#36-symbols-and-scoping)):
-*set*, and *change* and the update block for a number or a character; it
-also offers *Make a variable*. *Loops* gives its
-counted loop the first counter name that is free there, and *Your functions*
-follows the functions as they are defined (default names in
-[03 §3.6](03-block-language.md#36-symbols-and-scoping)). The continuous
-flyout is `@blockly/continuous-toolbox` 7.0.9, the Blockly team's plugin and
-its last release for Blockly 12: it passes the dependency policy
+Loops, Input / Output and Functions (with *Your functions*). *Variables*
+offers *Make a variable* and lists the variables in scope just after the
+selected statement (for a selected value block, at its statement), each with a
+getter and the blocks whose menu may choose it there
+([03 §3.6](03-block-language.md#36-symbols-and-scoping)): *set*, and *change*
+and the update block for a number or a character. With nothing selected, or
+with a block selected that is not inside *when program starts* or a function,
+it lists those visible at the end of `main`; a block inside a disabled
+statement, or one the analysis has not seen yet, lists the scope of the
+nearest analysed statement around or before it. The list never empties while
+the next analysis runs. *Loops* gives its counted loop the first counter name
+that is free there, and *Your functions* follows the functions as they are
+defined (default names in
+[03 §3.6](03-block-language.md#36-symbols-and-scoping)). The
+continuous flyout is `@blockly/continuous-toolbox` 7.0.9, the Blockly team's
+plugin and its last release for Blockly 12: it passes the dependency policy
 ([08 §8.9](08-security.md#89-supply-chain)) and shows the dynamic categories
 in the same scrolling flyout, so M2 needs no fallback to Blockly's category
 toolbox. *Libraries* comes with library packs (M4), *Show advanced blocks* and

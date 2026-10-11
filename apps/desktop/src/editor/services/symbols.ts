@@ -2,6 +2,11 @@
  * The editor services blockly-ext's fields, mutators and connection checker use (blockly-ext
  * `setEditorServices`): the symbols in scope and their names, and static types, all answered from
  * the latest analysis (docs/spec/06-compiler-pipeline.md §6.5–6.6).
+ *
+ * The symbols in scope at a block go through the editor's scope resolver
+ * (`resolveBlockScope`, ../toolbox/scope.ts), the same one the toolbox lists with: a block outside
+ * the program, or one the analysis has no answer for yet, lists what it would see in the program
+ * instead of nothing (03 §3.6).
  */
 import type { CoreWasm, PreviewResult, StaticType, SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import {
@@ -13,6 +18,7 @@ import {
 } from '@blocks2cpp/blockly-ext';
 import type * as Blockly from 'blockly/core';
 
+import { resolveBlockScope, symbolsAtPoint, type SymbolSource } from '../toolbox/scope';
 import type { SymbolNames } from './names';
 
 const STATIC_TYPES: readonly string[] = [
@@ -50,18 +56,51 @@ export interface SymbolServiceDeps {
   readonly preview: () => PreviewResult | null;
   /** Current and last-known names. */
   readonly names: SymbolNames;
+  /** The canvas whose blocks the menus belong to. */
+  readonly workspace: Blockly.Workspace;
 }
 
 /**
- * The symbols in scope at a block (the compiler core's `symbolsInScope`, from the last preview's
- * analysis) and the current name of a symbol (from the document, then the last-known names, then
- * the analysis).
+ * The latest analysis as the compiler core gives it: its scope query (`symbolsInScope`, from the
+ * analysis the core kept from the last preview) and the preview's symbols, with no fallback of the
+ * editor's. Before the project's first preview there are none. Never throws: a trapped core
+ * answers again once the preview pipeline has replaced it, and nothing until then.
  */
-export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
+export function analysisScope(deps: Pick<SymbolServiceDeps, 'core' | 'preview'>): SymbolSource {
   return {
     symbolsAt(blockId, input) {
       const core = deps.core();
-      return core === null ? [] : core.symbolsInScope(blockId, input);
+      if (core === null || deps.preview() === null) {
+        return [];
+      }
+      try {
+        return core.symbolsInScope(blockId, input);
+      } catch {
+        return [];
+      }
+    },
+    allSymbols() {
+      return deps.preview()?.symbols ?? [];
+    },
+  };
+}
+
+/**
+ * The symbols in scope at a block, resolved by the editor's scope resolver over the latest
+ * analysis (a block of the canvas outside the program, or one the analysis has no answer for, gets
+ * what it would see in the program; any other block, such as one in the toolbox's flyout, gets the
+ * scope query's own answer), and the current name of a symbol (from the document, then the
+ * last-known names, then the analysis).
+ */
+export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
+  const scope = analysisScope(deps);
+  return {
+    symbolsAt(blockId, input) {
+      const block = deps.workspace.getBlockById(blockId);
+      if (block === null) {
+        return scope.symbolsAt(blockId, input);
+      }
+      return symbolsAtPoint(resolveBlockScope(deps.workspace, block, input, scope), scope);
     },
     nameOf(symId) {
       const name = deps.names.nameOf(symId);

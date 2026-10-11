@@ -1,8 +1,13 @@
 /**
- * Where the toolbox looks and inserts (docs/spec/03-block-language.md §3.6, 04 §4.2):
+ * Where the toolbox and the block menus look up symbols, and where the toolbox inserts
+ * (docs/spec/03-block-language.md §3.6, 04 §4.2):
  *
- * - the *listing point*, whose symbols the Variables category lists: the selected block, or, with
- *   nothing selected (or a function or `main` selected), the end of that body (`main`'s by default);
+ * - the *listing point*, whose symbols the Variables category lists: just after the selected
+ *   statement, at a selected value block, or, with nothing selected (or a function or `main`
+ *   selected), at the end of that body (`main`'s by default);
+ * - the *scope anchor*: the listing point (or a block's own menu position) resolved so that a
+ *   block the latest analysis does not answer for still lists what it would see
+ *   ({@link resolveScopeAnchor}, {@link resolveBlockScope});
  * - the *insertion point* of *Make a variable*: before the selected statement, at the top of the
  *   selected function, or at the top of `main` (created when there is none);
  * - the names a new declaration must not take there.
@@ -105,9 +110,24 @@ function endOfBody(container: Blockly.Block): ListingPoint {
 }
 
 /**
- * The listing point for a selection: the selected block itself, or the end of the body of a
- * selected `main` or function, or (nothing selected) the end of `main`'s body. `null` when nothing
- * is selected and there is no `main`.
+ * The listing point a selected block asks for: just after a statement (so a selected `create x`
+ * lists `x`), at a value block (what its statement sees there), or at the end of the body of
+ * `main` or a function.
+ */
+function selectionPoint(block: Blockly.Block): ListingPoint {
+  if (isContainer(block)) {
+    return endOfBody(block);
+  }
+  return block.outputConnection === null
+    ? { kind: 'after', blockId: block.id }
+    : { kind: 'at', blockId: block.id, input: null };
+}
+
+/**
+ * The listing point for a selection, as the block structure gives it (not yet resolved against the
+ * analysis, see {@link resolveScopeAnchor}): just after the selected statement, at the selected
+ * value block, or the end of the body of a selected `main` or function, or (nothing selected) the
+ * end of `main`'s body. `null` when nothing is selected and there is no `main`.
  */
 export function listingPoint(
   workspace: Blockly.Workspace,
@@ -118,10 +138,7 @@ export function listingPoint(
     const main = findMain(workspace);
     return main === null ? null : endOfBody(main);
   }
-  if (isContainer(block)) {
-    return endOfBody(block);
-  }
-  return { kind: 'at', blockId: block.id, input: null };
+  return selectionPoint(block);
 }
 
 /** Sorts symbols the way the scope query does: by name, then ID. */
@@ -172,6 +189,162 @@ function enclosingStatement(block: Blockly.Block): Blockly.Block {
 /** Whether a block is part of the program: inside `main` or a function. */
 function isInProgram(block: Blockly.Block): boolean {
   return isContainer(block.getRootBlock());
+}
+
+/**
+ * Whether the analysis knows a symbol declared on this canvas. Every symbol a block of the canvas
+ * can see is declared on it (the module's functions, parameters and variables), so without one
+ * every answer is empty, and a walk to earlier positions would only ask again.
+ */
+function canvasDeclaresSymbols(workspace: Blockly.Workspace, source: SymbolSource): boolean {
+  return source.allSymbols().some((symbol) => workspace.getBlockById(symbol.declBlock) !== null);
+}
+
+/** One step of the walk to a position around or before a block (see {@link resolvePoint}). */
+interface ScopeStep {
+  /** Where to ask next. */
+  readonly point: ListingPoint;
+  /** The block the walk goes on from. */
+  readonly block: Blockly.Block;
+  /** The start of a body of `main` or a function: an answer there is final, even an empty one. */
+  readonly last: boolean;
+}
+
+/**
+ * The nearest position around or before `block` that sees what the block sees, or `null` at the
+ * top of its stack:
+ *
+ * - for a value block, its input in the block that holds it;
+ * - for a statement, the position just after the statement before it in the same list;
+ * - for the first statement of a list, the start of that list. A disabled statement answers for
+ *   its own position there, so the blocks inside it list what it sees.
+ */
+function scopeAround(block: Blockly.Block): ScopeStep | null {
+  const parent = block.getParent();
+  if (parent === null) {
+    return null;
+  }
+  if (block.outputConnection === null) {
+    const previous = block.getPreviousBlock();
+    if (previous?.getNextBlock() === block) {
+      return { point: { kind: 'after', blockId: previous.id }, block: previous, last: false };
+    }
+  }
+  const input = parent.getInputWithBlock(block)?.name ?? null;
+  return {
+    point: { kind: 'at', blockId: parent.id, input },
+    block: parent,
+    last: block.outputConnection === null && isContainer(parent),
+  };
+}
+
+/**
+ * `point` (a position in the program), resolved for the latest analysis: the point itself when its
+ * answer is not empty, and otherwise the nearest position around or before it whose answer is not
+ * empty. A block the analysis has not seen yet (it was just dropped or pasted), and a block inside
+ * a disabled statement, get no answer of their own; what they see is what the statement before
+ * them, or around them, sees.
+ *
+ * The walk stays inside the body it starts in: from inside a function it never reaches `main`,
+ * because a function may see nothing at all. It takes at most {@link MAX_LIST_LENGTH} steps, and
+ * none when the analysis knows no symbol of this canvas. When every answer is empty, `point`
+ * stands.
+ */
+function resolvePoint(
+  workspace: Blockly.Workspace,
+  point: ListingPoint,
+  source: SymbolSource,
+): ListingPoint {
+  if (symbolsAtPoint(point, source).length > 0 || !canvasDeclaresSymbols(workspace, source)) {
+    return point;
+  }
+  let block = workspace.getBlockById(point.blockId);
+  if (block === null || (point.kind === 'at' && point.input !== null && isContainer(block))) {
+    return point;
+  }
+  for (let steps = 0; steps < MAX_LIST_LENGTH; steps += 1) {
+    const step: ScopeStep | null = scopeAround(block);
+    if (step === null) {
+      return point;
+    }
+    if (symbolsAtPoint(step.point, source).length > 0) {
+      return step.point;
+    }
+    if (step.last) {
+      return point;
+    }
+    block = step.block;
+  }
+  return point;
+}
+
+/** The first function definition of the canvas that the analyser reads, or `null`. */
+function firstDefinition(workspace: Blockly.Workspace): Blockly.Block | null {
+  return (
+    workspace
+      .getTopBlocks(true)
+      .find(
+        (block) => block.type === FUNCTION_TYPE && !isSkipped(block) && !isPlaceholder(block),
+      ) ?? null
+  );
+}
+
+/**
+ * What a block outside the program sees (a loose block, or one in a loose stack, which the scope
+ * query has no answer for): what is visible at the end of `main`'s body, resolved like any other
+ * point; in a module without `main`, the module's functions only (as the scope query answers at a
+ * function definition). `null` when the module has neither.
+ */
+function programEnd(workspace: Blockly.Workspace, source: SymbolSource): ListingPoint | null {
+  const main = findMain(workspace);
+  if (main !== null) {
+    return resolvePoint(workspace, endOfBody(main), source);
+  }
+  const definition = firstDefinition(workspace);
+  return definition === null ? null : { kind: 'at', blockId: definition.id, input: null };
+}
+
+/**
+ * The scope anchor of the toolbox: where the Variables and Loops categories look up the symbols
+ * they list for a selection (04 §4.2).
+ *
+ * - With nothing selected, or a block selected that is not inside `main` or a function (a loose
+ *   block, or one in a loose stack), it is the end of `main`'s body; without `main`, the module's
+ *   functions.
+ * - Otherwise it is the {@link listingPoint} of the selection: just after a selected statement, at
+ *   a selected value block, or at the end of the body of a selected `main` or function. When the
+ *   latest analysis has no answer there (a block inside a disabled statement, or one the analysis
+ *   has not seen yet), it is the nearest analysed position around or before it.
+ */
+export function resolveScopeAnchor(
+  workspace: Blockly.Workspace,
+  selected: Blockly.Block | null,
+  source: SymbolSource,
+): ListingPoint | null {
+  const block = projectBlock(selected);
+  if (block === null || !isInProgram(block)) {
+    return programEnd(workspace, source);
+  }
+  return resolvePoint(workspace, selectionPoint(block), source);
+}
+
+/**
+ * The scope anchor of a block's own menus (03 §3.6): the position whose answer is what the block
+ * sees at itself, or (`input`) at the start of one of its statement lists or inside one of its
+ * value inputs. A block outside the program sees what the end of `main`'s body sees; a block the
+ * latest analysis has no answer for sees what the nearest analysed position around or before it
+ * sees, as for {@link resolveScopeAnchor}.
+ */
+export function resolveBlockScope(
+  workspace: Blockly.Workspace,
+  block: Blockly.Block,
+  input: string | null,
+  source: SymbolSource,
+): ListingPoint | null {
+  if (!isInProgram(block)) {
+    return programEnd(workspace, source);
+  }
+  return resolvePoint(workspace, { kind: 'at', blockId: block.id, input }, source);
 }
 
 /**

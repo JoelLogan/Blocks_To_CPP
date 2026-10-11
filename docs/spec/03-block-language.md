@@ -245,13 +245,19 @@ The analyser implements a **gradual** type system that approximates C++:
   already chosen stays shown. Any other type mismatch is left to the
   analyser. The editor gets these lists from the scope query of
   [06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes).
+  A block that is not attached to `main` or a function lists what is visible
+  at the end of `main`'s body (the module's functions when there is no
+  `main`); a block inside a disabled statement, or one the analysis has not
+  seen yet, lists what the nearest analysed statement around or before it
+  sees.
 * **Unlike Scratch, there are no implicit globals.** *Make a variable* in the
   Variables category inserts a declaration at the keyboard cursor (or at the
   top of the selected function). Globals require an explicit top-level
   `global variable` block, and the analyser suggests `const` / `constexpr`
-  where possible. With nothing selected, *Make a variable* inserts at the top
-  of `main` (creating `main` if there is none), and the Variables category
-  lists the symbols visible at the end of `main`'s body.
+  where possible. With nothing selected, or with a block selected that is not
+  attached to `main` or a function, *Make a variable* inserts at the top of
+  `main` (creating `main` if there is none), and the Variables category lists
+  the symbols visible at the end of `main`'s body.
 * **Default names** are the first free name in scope: `value`, `value2`,
   `value3`, … for a new variable; `i`, `j`, `k` for a counted loop; and
   `myFunction` for a new function.

@@ -1,3 +1,4 @@
+import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
@@ -7,11 +8,14 @@ import {
   isContainer,
   listingPoint,
   projectBlock,
+  resolveBlockScope,
+  resolveScopeAnchor,
   symbolsAtPoint,
   takenFunctionNames,
   takenLoopNames,
   takenNamesAtInsertion,
   takenVariableNames,
+  type SymbolSource,
 } from './scope';
 import {
   disposeTestWorkspaces,
@@ -44,6 +48,49 @@ function get(workspace: Blockly.Workspace, id: string): Blockly.Block {
     throw new Error(`no block ${id}`);
   }
   return block;
+}
+
+function present<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) {
+    throw new Error('missing');
+  }
+  return value;
+}
+
+/** Adds a block (Blockly state) to the canvas: after block `after` when given, else loose. */
+function add(
+  workspace: Blockly.Workspace,
+  state: Blockly.serialization.blocks.State,
+  after?: string,
+): Blockly.Block {
+  const block = Blockly.serialization.blocks.append(state, workspace);
+  if (after !== undefined) {
+    present(get(workspace, after).nextConnection).connect(present(block.previousConnection));
+  }
+  return block;
+}
+
+/** The state of a `print` block. */
+function printState(id: string): Blockly.serialization.blocks.State {
+  return { type: 'io.print', id, extraState: { itemCount: 1 } };
+}
+
+/** A source that also records the scope queries it answers (`blockId` or `blockId/input`). */
+function counting(source: SymbolSource): SymbolSource & { readonly asked: string[] } {
+  const asked: string[] = [];
+  return {
+    asked,
+    symbolsAt(blockId, input) {
+      asked.push(input === null ? blockId : `${blockId}/${input}`);
+      return source.symbolsAt(blockId, input);
+    },
+    allSymbols: () => source.allSymbols(),
+  };
+}
+
+/** The names of the symbols visible at a point. */
+function namesAt(point: ReturnType<typeof resolveScopeAnchor>, source: SymbolSource): string[] {
+  return symbolsAtPoint(point, source).map((symbol) => symbol.name);
 }
 
 const guess = symbolFixture('s_guess', 'guess', { declBlock: 'decl' });
@@ -81,16 +128,28 @@ describe('the listing point', () => {
     expect(listingPoint(workspace, null)).toEqual({ kind: 'after', blockId: 'decl' });
   });
 
-  it('is the selected block, or the block that holds a selected shadow', () => {
+  it('is just after a selected statement, also when a shadow of it is selected', () => {
     const workspace = canvas();
+    // A selected `create guess` lists guess.
     expect(listingPoint(workspace, get(workspace, 'decl'))).toEqual({
-      kind: 'at',
+      kind: 'after',
       blockId: 'decl',
-      input: null,
     });
     const shadow = get(workspace, 'print').getInputTargetBlock('ITEM0');
     expect(projectBlock(shadow)?.id).toBe('print');
-    expect(listingPoint(workspace, shadow)).toEqual({ kind: 'at', blockId: 'print', input: null });
+    expect(listingPoint(workspace, shadow)).toEqual({ kind: 'after', blockId: 'print' });
+  });
+
+  it('is at a selected value block', () => {
+    const workspace = canvas();
+    const getter = Blockly.serialization.blocks.append(
+      { type: 'var.get', id: 'getter', fields: { VAR: { ref: 's_guess' } } },
+      workspace,
+    );
+    present(get(workspace, 'print').getInput('ITEM0')?.connection).connect(
+      present(getter.outputConnection),
+    );
+    expect(listingPoint(workspace, getter)).toEqual({ kind: 'at', blockId: 'getter', input: null });
   });
 });
 
@@ -117,6 +176,191 @@ describe('the symbols at a listing point', () => {
     const counter = symbolFixture('s_i', 'i', { kind: 'loopVariable', declBlock: 'loop' });
     const loops = fakeSymbols({ loop: [factorial] }, [counter, factorial]);
     expect(symbolsAtPoint({ kind: 'after', blockId: 'loop' }, loops)).toEqual([factorial]);
+  });
+});
+
+describe('the scope anchor', () => {
+  /**
+   * The scope query's answers for guessDocument(): factorial everywhere in the module, guess below
+   * its declaration, n in factorial's body. Blocks it never analysed get nothing.
+   */
+  const SCOPES: Readonly<Record<string, readonly SymbolInfo[]>> = {
+    main: [factorial],
+    'main/BODY': [factorial],
+    decl: [factorial],
+    'decl/VALUE': [factorial],
+    print: [factorial, guess],
+    fn: [factorial],
+    'fn/BODY': [factorial, n],
+  };
+  const ALL = [factorial, guess, n];
+
+  it('is the end of main for a loose block, and for a block nested in a loose one', () => {
+    const workspace = canvas();
+    const source = fakeSymbols(SCOPES, ALL);
+    const loose = add(workspace, printState('loose'));
+    expect(symbolsAtPoint(listingPoint(workspace, loose), source)).toEqual([]);
+    expect(resolveScopeAnchor(workspace, loose, source)).toEqual({
+      kind: 'after',
+      blockId: 'print',
+    });
+    expect(namesAt(resolveScopeAnchor(workspace, loose, source), source)).toEqual([
+      'factorial',
+      'guess',
+    ]);
+    // Inside a loose C-block.
+    const repeat = add(workspace, {
+      type: 'control.repeat',
+      id: 'looseLoop',
+      inputs: { BODY: { block: printState('nested') } },
+    });
+    const nested = get(workspace, 'nested');
+    expect(nested.getRootBlock()).toBe(repeat);
+    expect(namesAt(resolveScopeAnchor(workspace, nested, source), source)).toEqual([
+      'factorial',
+      'guess',
+    ]);
+    // The block's own menus see the same.
+    expect(resolveBlockScope(workspace, nested, null, source)).toEqual({
+      kind: 'after',
+      blockId: 'print',
+    });
+  });
+
+  it('is the module’s functions for a loose block when there is no main', () => {
+    const workspace = canvas();
+    get(workspace, 'main').dispose(false);
+    const source = fakeSymbols(SCOPES, ALL);
+    const loose = add(workspace, printState('loose'));
+    const functions = { kind: 'at', blockId: 'fn', input: null };
+    expect(resolveScopeAnchor(workspace, loose, source)).toEqual(functions);
+    expect(resolveScopeAnchor(workspace, null, source)).toEqual(functions);
+    expect(resolveBlockScope(workspace, loose, null, source)).toEqual(functions);
+    get(workspace, 'fn').dispose(false);
+    expect(resolveScopeAnchor(workspace, loose, source)).toBeNull();
+  });
+
+  it('is the disabled statement a block is in', () => {
+    const workspace = canvas();
+    add(
+      workspace,
+      {
+        type: 'control.forever',
+        id: 'loop',
+        disabledReasons: [Blockly.constants.MANUALLY_DISABLED],
+        inputs: {
+          BODY: { block: { ...printState('first'), next: { block: printState('second') } } },
+        },
+      },
+      'print',
+    );
+    // The core answers a disabled statement (and its lists) from its own position, and nothing
+    // inside it.
+    const source = fakeSymbols(
+      { ...SCOPES, loop: [factorial, guess], 'loop/BODY': [factorial, guess] },
+      ALL,
+    );
+    const second = get(workspace, 'second');
+    expect(symbolsAtPoint(listingPoint(workspace, second), source)).toEqual([]);
+    expect(resolveScopeAnchor(workspace, second, source)).toEqual({
+      kind: 'at',
+      blockId: 'loop',
+      input: 'BODY',
+    });
+    expect(namesAt(resolveScopeAnchor(workspace, second, source), source)).toEqual([
+      'factorial',
+      'guess',
+    ]);
+  });
+
+  it('is just after the statement before, with its declaration, for a block not analysed yet', () => {
+    const workspace = canvas();
+    const source = fakeSymbols(SCOPES, ALL);
+    const fresh = add(workspace, printState('fresh'), 'decl');
+    expect(fresh.getNextBlock()?.id).toBe('print');
+    expect(resolveScopeAnchor(workspace, fresh, source)).toEqual({
+      kind: 'after',
+      blockId: 'decl',
+    });
+    expect(namesAt(resolveScopeAnchor(workspace, fresh, source), source)).toEqual([
+      'factorial',
+      'guess',
+    ]);
+    // A value block not analysed yet, in the starting value of `create guess`: what is visible
+    // inside that value (not guess).
+    const getter = Blockly.serialization.blocks.append({ type: 'var.get', id: 'v' }, workspace);
+    present(get(workspace, 'decl').getInput('VALUE')?.connection).connect(
+      present(getter.outputConnection),
+    );
+    expect(resolveBlockScope(workspace, getter, null, source)).toEqual({
+      kind: 'at',
+      blockId: 'decl',
+      input: 'VALUE',
+    });
+  });
+
+  it('never leaves a function for main, even when the function sees nothing', () => {
+    const workspace = canvas();
+    const inFunction = Blockly.serialization.blocks.append(printState('inFn'), workspace);
+    present(get(workspace, 'fn').getInput('BODY')?.connection).connect(
+      present(inFunction.previousConnection),
+    );
+    const analysed = fakeSymbols(SCOPES, ALL);
+    expect(namesAt(resolveScopeAnchor(workspace, inFunction, analysed), analysed)).toEqual([
+      'factorial',
+      'n',
+    ]);
+    // A function the analysis knows nothing in: nothing, never main's variables.
+    const unknown = fakeSymbols({ ...SCOPES, 'fn/BODY': [] }, ALL);
+    expect(namesAt(resolveScopeAnchor(workspace, inFunction, unknown), unknown)).toEqual([]);
+    expect(namesAt(resolveScopeAnchor(workspace, get(workspace, 'fn'), unknown), unknown)).toEqual(
+      [],
+    );
+  });
+
+  it('keeps a point that has an answer', () => {
+    const workspace = canvas();
+    const source = fakeSymbols(SCOPES, ALL);
+    expect(resolveScopeAnchor(workspace, get(workspace, 'decl'), source)).toEqual({
+      kind: 'after',
+      blockId: 'decl',
+    });
+    expect(resolveScopeAnchor(workspace, null, source)).toEqual({
+      kind: 'after',
+      blockId: 'print',
+    });
+    expect(resolveScopeAnchor(workspace, get(workspace, 'fn'), source)).toEqual({
+      kind: 'at',
+      blockId: 'fn',
+      input: 'BODY',
+    });
+    expect(resolveBlockScope(workspace, get(workspace, 'print'), null, source)).toEqual({
+      kind: 'at',
+      blockId: 'print',
+      input: null,
+    });
+  });
+
+  it('asks each earlier position at most once, and nothing more without symbols', () => {
+    const workspace = canvas();
+    // 50 statements after print, none of them analysed.
+    let last = 'print';
+    for (let index = 0; index < 50; index += 1) {
+      last = add(workspace, printState(`p${String(index)}`), last).id;
+    }
+    const point = { kind: 'after', blockId: last };
+    // The analysis knows no symbol of this canvas: one question.
+    const empty = counting(fakeSymbols({}, []));
+    expect(resolveScopeAnchor(workspace, get(workspace, last), empty)).toEqual(point);
+    expect(empty.asked).toEqual([last]);
+
+    // A symbol of this canvas (factorial's parameter), but nothing visible anywhere in main: each
+    // position up to the start of main's body once, and the selection's own point stands.
+    const nothing = counting(fakeSymbols({}, [n]));
+    expect(resolveScopeAnchor(workspace, get(workspace, last), nothing)).toEqual(point);
+    expect(nothing.asked).toHaveLength(53);
+    expect(new Set(nothing.asked).size).toBe(53);
+    expect(nothing.asked.at(-1)).toBe('main/BODY');
   });
 });
 

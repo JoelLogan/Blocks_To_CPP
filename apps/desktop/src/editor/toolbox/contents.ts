@@ -44,7 +44,7 @@ import {
   type PresetFieldValue,
 } from './presets';
 import {
-  listingPoint,
+  resolveScopeAnchor,
   symbolsAtPoint,
   takenFunctionNames,
   takenLoopNames,
@@ -235,7 +235,7 @@ function variableItems(symbol: SymbolInfo): B2cBlockInfo[] {
 export function variablesContents(
   context: ContentsContext,
 ): Blockly.utils.toolbox.FlyoutItemInfo[] {
-  const point = listingPoint(context.workspace, context.selected());
+  const point = resolveScopeAnchor(context.workspace, context.selected(), context.symbols);
   const name = firstFreeName(
     'variable',
     takenVariableNames(context.workspace, point, context.symbols),
@@ -262,7 +262,7 @@ export function loopsContents(context: ContentsContext): Blockly.utils.toolbox.F
   if (category === undefined) {
     return [];
   }
-  const point = listingPoint(context.workspace, context.selected());
+  const point = resolveScopeAnchor(context.workspace, context.selected(), context.symbols);
   const name = firstFreeName('loop', takenLoopNames(point, context.symbols));
   return entryItems(category, { 'control.for_range': name });
 }

@@ -4,6 +4,11 @@
  * functions*) and *Make a variable*, and rebuilds the dynamic categories when the selection
  * changes, after each analysis and when another module is shown.
  *
+ * While the canvas has changed since the latest analysis (a preview is pending), the dynamic
+ * categories keep listing for the selection they were last built for: the analysis does not know
+ * the new blocks or places yet, so a listing for a new selection would be one the next analysis
+ * replaces at once. The preview's arrival rebuilds them for the current selection.
+ *
  * The plugin works with either toolbox the workspace was injected with: the continuous toolbox
  * (see register.ts, `toolboxInjectOptions`) or Blockly's category toolbox. The workspace needs a
  * category toolbox to start with; `toolboxInjectOptions()` gives one.
@@ -14,6 +19,7 @@ import * as Blockly from 'blockly/core';
 import { dialogs as appDialogs } from '../../app/dialogs/instance';
 import type { DialogService, DialogTextOptions } from '../../app/dialogs/service';
 import type { EditorContext, EditorPlugin } from '../../app/editor-types';
+import { analysisScope } from '../services/symbols';
 import {
   LOOPS_CATEGORY,
   MAKE_VARIABLE_BUTTON,
@@ -46,28 +52,22 @@ export interface ToolboxPluginOptions {
 }
 
 /**
- * The symbols of the latest analysis: the scope query of the running compiler core (the shell's
- * current core, which replaces a trapped one, else the one the plugin was attached with) and the
- * preview's symbol list. Before the project's first analysis there are none. Never throws.
+ * How long the dynamic categories wait for the analysis of a changed canvas before they follow the
+ * selection again anyway (a preview that never comes: the canvas did not load, or the core failed).
+ */
+export const PREVIEW_WAIT_MS = 1_000;
+
+/**
+ * The symbols of the latest analysis, as the editor's symbol provider reads them
+ * (`analysisScope`, ../services/symbols.ts): the scope query of the running compiler core (the
+ * shell's current core, which replaces a trapped one) and the preview's symbol list. Before the
+ * project's first analysis there are none. Never throws.
+ *
+ * The toolbox resolves its listing points itself (`resolveScopeAnchor`), so it reads the analysis
+ * without the provider's own resolution of each block.
  */
 export function analysisSymbolSource(store: Store, core: () => CoreWasm | null): SymbolSource {
-  return {
-    symbolsAt(blockId, input) {
-      const current = core();
-      if (store.getState().analysis.preview === null || current === null) {
-        return [];
-      }
-      try {
-        return current.symbolsInScope(blockId, input);
-      } catch {
-        // A trapped core answers again once the preview pipeline has replaced it.
-        return [];
-      }
-    },
-    allSymbols() {
-      return store.getState().analysis.preview?.symbols ?? [];
-    },
-  };
+  return analysisScope({ core, preview: () => store.getState().analysis.preview });
 }
 
 /** The project's modules, in document order. */
@@ -159,20 +159,38 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   const selection = new SelectionTracker(workspace);
   /** The selection the dynamic categories were last built for (`undefined`: not built yet). */
   let listedFor: string | null | undefined;
+  /** Whether the canvas changed after the latest analysis arrived (a preview is pending). */
+  let previewPending = false;
+  /**
+   * The selection the dynamic categories list for: the current one, or, while a preview is
+   * pending, the one they were last built for (unless that block is gone).
+   */
+  const listingSelection = (): Blockly.Block | null => {
+    // Asked every time, so the tracker keeps up with the focus.
+    const current = selection.current();
+    if (previewPending && listedFor !== undefined) {
+      if (listedFor === null) {
+        return null;
+      }
+      const listed = workspace.getBlockById(listedFor);
+      if (listed !== null && !listed.isDisposed()) {
+        return listed;
+      }
+    }
+    listedFor = current?.id ?? null;
+    return current;
+  };
   const contentsContext: ContentsContext = {
     workspace,
     symbols,
-    selected: () => {
-      const block = selection.current();
-      listedFor = block?.id ?? null;
-      return block;
-    },
+    selected: listingSelection,
     modules: () => modulesOf(store),
     activeModuleId: () => context.activeModuleId(),
   };
   let detached = false;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
   let selectionTimer: ReturnType<typeof setTimeout> | null = null;
+  let previewTimer: ReturnType<typeof setTimeout> | null = null;
   let making = false;
 
   const refresh = (): void => {
@@ -198,7 +216,8 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   /**
    * Rebuilds the dynamic categories when the focus moved and the selection they list for is no
    * longer the selection (a block was selected, or the canvas background was clicked). Focus moves
-   * that keep the selection, such as into the toolbox, change nothing.
+   * that keep the selection, such as into the toolbox, change nothing, and so does a new selection
+   * while a preview is pending: its arrival rebuilds them.
    */
   const scheduleSelectionCheck = (): void => {
     if (detached || selectionTimer !== null) {
@@ -206,10 +225,36 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     }
     selectionTimer = setTimeout(() => {
       selectionTimer = null;
-      if (!detached && (selection.current()?.id ?? null) !== listedFor) {
+      if (!detached && !previewPending && (selection.current()?.id ?? null) !== listedFor) {
         scheduleRefresh();
       }
     }, 0);
+  };
+
+  /** No preview is pending any more: the listing follows the selection again. */
+  const endPreviewWait = (): void => {
+    previewPending = false;
+    if (previewTimer !== null) {
+      clearTimeout(previewTimer);
+      previewTimer = null;
+    }
+  };
+  /**
+   * The canvas changed, which starts a preview (every change that is not only a UI event does):
+   * keep the listing until it arrives, or until {@link PREVIEW_WAIT_MS} have passed without it.
+   */
+  const notePreviewPending = (): void => {
+    previewPending = true;
+    if (previewTimer !== null) {
+      clearTimeout(previewTimer);
+    }
+    previewTimer = setTimeout(() => {
+      previewTimer = null;
+      if (!detached && previewPending) {
+        previewPending = false;
+        scheduleSelectionCheck();
+      }
+    }, PREVIEW_WAIT_MS);
   };
 
   workspace.registerToolboxCategoryCallback(
@@ -253,7 +298,9 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   }
   const stopReshaping = installStartValueReshaping(workspace);
   const onEvent = (event: Blockly.Events.Abstract): void => {
-    if (event instanceof Blockly.Events.Selected) {
+    if (!event.isUiEvent) {
+      notePreviewPending();
+    } else if (event instanceof Blockly.Events.Selected) {
       selection.noteSelected(event);
       scheduleSelectionCheck();
     }
@@ -263,8 +310,15 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   const focusArea = workspace.getInjectionDiv() as HTMLElement | null;
   focusArea?.addEventListener('focusin', scheduleSelectionCheck);
   const unsubscribe = store.subscribe((state, previous) => {
-    if (
+    // A new preview, or a notice that none is coming (the canvas did not load, the core failed).
+    const analysed =
       state.analysis.preview !== previous.analysis.preview ||
+      state.analysis.notice !== previous.analysis.notice;
+    if (analysed) {
+      endPreviewWait();
+    }
+    if (
+      analysed ||
       state.project?.document.modules !== previous.project?.document.modules ||
       state.project?.activeModuleId !== previous.project?.activeModuleId
     ) {
@@ -274,13 +328,14 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
 
   return () => {
     detached = true;
-    for (const timer of [refreshTimer, selectionTimer]) {
+    for (const timer of [refreshTimer, selectionTimer, previewTimer]) {
       if (timer !== null) {
         clearTimeout(timer);
       }
     }
     refreshTimer = null;
     selectionTimer = null;
+    previewTimer = null;
     unsubscribe();
     focusArea?.removeEventListener('focusin', scheduleSelectionCheck);
     workspace.removeChangeListener(onEvent);

@@ -587,3 +587,25 @@ describe('presets', () => {
     expect(declares('functions', 'func.define')).toEqual({ NAME: 'myFunction' });
   });
 });
+
+describe('the scope Variables and Loops list for a block left loose', () => {
+  it('is the end of main, as for nothing selected', () => {
+    const guess = symbolFixture('s_guess', 'guess');
+    const counter = symbolFixture('s_i', 'i', { kind: 'loopVariable' });
+    const ctx = context({ scopes: { 'main/BODY': [guess, counter] } });
+    const loose = Blockly.serialization.blocks.append(
+      { type: 'io.print', extraState: { itemCount: 1 } },
+      ctx.workspace,
+    );
+    const selected = { ...ctx, selected: () => loose };
+    expect(
+      blocksOf(variablesContents(selected))
+        .filter((block) => block.type === 'var.get')
+        .map((block) => block.fields?.['VAR'] as unknown),
+    ).toEqual([{ ref: 's_guess' }, { ref: 's_i' }]);
+    expect(
+      blocksOf(loopsContents(selected)).find((block) => block.type === 'control.for_range')
+        ?.declares?.['VAR'],
+    ).toBe('j');
+  });
+});
