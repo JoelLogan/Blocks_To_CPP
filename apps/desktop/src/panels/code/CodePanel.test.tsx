@@ -1,8 +1,9 @@
 import { EditorView } from '@codemirror/view';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { expectNoAxeViolations } from '../../test/axe';
+import { REANNOUNCE_MS, TRANSIENT_STATUS_MS } from '../shared/useTransientStatus';
 import type { Diagnostic, GeneratedFile, MappedRange, Part, SourceMap } from '../types';
 import { CodePanel, type CodePanelProps, IDE_INIT_UNIT_PATH, textChange } from './CodePanel';
 
@@ -167,6 +168,84 @@ describe('CodePanel', () => {
       await Promise.resolve();
     });
     expect(screen.getByRole('status').textContent).toBe('Could not copy');
+  });
+
+  describe('the copy confirmation', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Clicks *Copy all* and lets the copy finish. */
+    async function copyAll(): Promise<void> {
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Copy all' }));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    }
+
+    /** Lets `ms` milliseconds pass. */
+    async function wait(ms: number): Promise<void> {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    }
+
+    const status = () => screen.getByRole('status').textContent;
+
+    it('says Copied for 3 seconds, and again after every copy', async () => {
+      vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+      renderPanel();
+      await copyAll();
+      expect(status()).toBe('Copied');
+      await wait(2000);
+
+      await copyAll();
+      // Empty for a moment, so that screen readers announce the second copy too.
+      expect(status()).toBe('');
+      await wait(REANNOUNCE_MS);
+      expect(status()).toBe('Copied');
+      await wait(TRANSIENT_STATUS_MS - 1);
+      expect(status()).toBe('Copied');
+      await wait(1);
+      expect(status()).toBe('');
+    });
+
+    it('keeps "Could not copy" until the next copy', async () => {
+      vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
+      renderPanel();
+      await copyAll();
+      expect(status()).toBe('Could not copy');
+      await wait(10_000);
+      expect(status()).toBe('Could not copy');
+    });
+
+    it('shows the confirmation over the code, outside the flow of the bar', async () => {
+      vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+      renderPanel();
+      await copyAll();
+      expect(screen.getByRole('status').className).toBe('b2c-panel-status b2c-code-copy-status');
+    });
+
+    it('changes nothing once it is gone while a copy is still pending', async () => {
+      let finish: () => void = () => undefined;
+      vi.spyOn(navigator.clipboard, 'writeText').mockReturnValue(
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+      );
+      const { unmount } = renderPanel();
+      fireEvent.click(screen.getByRole('button', { name: 'Copy all' }));
+      unmount();
+      const timers = vi.getTimerCount();
+      finish();
+      await vi.advanceTimersByTimeAsync(0);
+      // The status started no timer: it showed nothing.
+      expect(vi.getTimerCount()).toBeLessThanOrEqual(timers);
+    });
   });
 
   it('shows hidden characters as placeholders without changing the text', () => {

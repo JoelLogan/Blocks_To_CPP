@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import '../panels.css';
 import { copyPlainText } from '../shared/clipboard';
+import { useTransientStatus } from '../shared/useTransientStatus';
 import type { Diagnostic, GeneratedFile, SourceMap } from '../types';
 import { codeViewExtensions, setCodeViewData, type CodeViewCallbacks } from './codeView';
 import { buildSourceMapIndex } from './sourcemap';
@@ -36,13 +37,14 @@ export interface CodePanelProps {
   onSelectBlock: (blockId: string) => void;
 }
 
-type CopyStatus = 'idle' | 'copied' | 'failed';
-
 /**
  * The C++ tab (docs/spec/04-user-interface.md §4.3): the live preview's generated code in a
  * read-only CodeMirror view, with a file switcher, *Copy all* and *Copy selection*, two-way
  * highlighting through the source map and diagnostics in the gutter. It only displays what it is
  * given and reports what the person does; it never reads the app's store.
+ *
+ * A copy says *Copied* for 3 s, or *Could not copy* until the next copy, just below the bar's
+ * right end, over the code, so the message never moves the code (panels.css).
  */
 export function CodePanel(props: CodePanelProps) {
   const {
@@ -61,7 +63,7 @@ export function CodePanel(props: CodePanelProps) {
   const shownHighlight = useRef<string | null>(null);
   const shownPath = useRef<string | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
-  const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle');
+  const copyStatus = useTransientStatus();
   const fileSelectId = useId();
 
   // The editor is created once; it reads the latest callbacks through this ref.
@@ -130,7 +132,11 @@ export function CodePanel(props: CodePanelProps) {
 
   const copy = (value: string) => {
     void copyPlainText(value).then((ok) => {
-      setCopyStatus(ok ? 'copied' : 'failed');
+      if (ok) {
+        copyStatus.show('success', 'Copied');
+      } else {
+        copyStatus.show('failure', 'Could not copy');
+      }
     });
   };
 
@@ -183,8 +189,8 @@ export function CodePanel(props: CodePanelProps) {
         <button type="button" disabled={!hasSelection} onClick={copySelection}>
           Copy selection
         </button>
-        <span className="b2c-panel-status" role="status">
-          {copyStatus === 'copied' ? 'Copied' : copyStatus === 'failed' ? 'Could not copy' : ''}
+        <span className="b2c-panel-status b2c-code-copy-status" role="status">
+          {copyStatus.shown?.text}
         </span>
       </div>
       {activeFile !== null && !buildable && (

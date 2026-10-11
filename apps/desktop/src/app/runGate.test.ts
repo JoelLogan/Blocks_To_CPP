@@ -49,13 +49,33 @@ describe('runGate', () => {
     expect(runGate(state)).toMatchObject({ enabled: false, reason: 'restricted' });
   });
 
-  it('is closed without a usable compiler', () => {
+  it('is closed when the compiler search has ended without a usable compiler', () => {
     const state = readyState();
     state.toolchains.list = [toolchainFixture({ usable: false })];
     expect(runGate(state)).toMatchObject({ enabled: false, reason: 'noToolchain' });
 
     state.toolchains.list = [];
     expect(runGate(state)).toMatchObject({ enabled: false, reason: 'noToolchain' });
+  });
+
+  it('stays open while the first compiler search runs, so the build waits for it', () => {
+    const state = readyState();
+    state.toolchains = { ...state.toolchains, list: [], discovering: true };
+    expect(runGate(state)).toEqual({
+      enabled: true,
+      reason: 'discovering',
+      errorCount: 0,
+      onErrorsMode: 'disableRun',
+    });
+
+    // Errors still come first: there is nothing to build.
+    state.analysis.preview = previewFixture([diagnosticFixture()]);
+    expect(runGate(state)).toMatchObject({ enabled: false, reason: 'errors' });
+
+    // A search that runs while a usable compiler is known holds nothing up.
+    state.analysis.preview = previewFixture([]);
+    state.toolchains.list = [toolchainFixture()];
+    expect(runGate(state)).toMatchObject({ enabled: true, reason: null });
   });
 
   it('is closed while there are errors, with "Disable Run" (the default)', () => {
@@ -108,18 +128,14 @@ describe('runGateMessage', () => {
   const gate = runGate(readyState());
 
   it('says what Run and Build do when they are available', () => {
-    expect(runGateMessage(gate, 'run', { discovering: false })).toBe(
-      'Build if needed, then run (F5)',
-    );
-    expect(runGateMessage(gate, 'build', { discovering: false })).toBe('Build (Ctrl+B)');
+    expect(runGateMessage(gate, 'run')).toBe('Build if needed, then run (F5)');
+    expect(runGateMessage(gate, 'build')).toBe('Build (Ctrl+B)');
   });
 
   it('counts the errors', () => {
     const errors = { ...gate, enabled: false, reason: 'errors' as const, errorCount: 2 };
-    expect(runGateMessage(errors, 'run', { discovering: false })).toBe(
-      '2 errors – click to see the first',
-    );
-    expect(runGateMessage({ ...errors, errorCount: 1 }, 'build', { discovering: false })).toBe(
+    expect(runGateMessage(errors, 'run')).toBe('2 errors – click to see the first');
+    expect(runGateMessage({ ...errors, errorCount: 1 }, 'build')).toBe(
       '1 error – click to see the first',
     );
   });
@@ -130,20 +146,23 @@ describe('runGateMessage', () => {
       enabled: false,
       reason,
     });
-    expect(runGateMessage(closed('noProject'), 'run', { discovering: false })).toBe(
-      'Open or create a project first',
-    );
-    expect(runGateMessage(closed('restricted'), 'run', { discovering: false })).toBe(
+    expect(runGateMessage(closed('noProject'), 'run')).toBe('Open or create a project first');
+    expect(runGateMessage(closed('restricted'), 'run')).toBe(
       'Restricted Mode: trust this project to run it',
     );
-    expect(runGateMessage(closed('restricted'), 'build', { discovering: false })).toBe(
+    expect(runGateMessage(closed('restricted'), 'build')).toBe(
       'Restricted Mode: trust this project to build it',
     );
-    expect(runGateMessage(closed('noToolchain'), 'run', { discovering: false })).toBe(
-      'No g++ found – click to set one up',
+    expect(runGateMessage(closed('noToolchain'), 'run')).toBe('No g++ found – click to set one up');
+  });
+
+  it('says Run and Build start once the compiler search has found g++', () => {
+    const waiting = { ...gate, reason: 'discovering' as const };
+    expect(runGateMessage(waiting, 'run')).toBe(
+      'Looking for a C++ compiler (g++): Run starts once one is found (F5)',
     );
-    expect(runGateMessage(closed('noToolchain'), 'run', { discovering: true })).toBe(
-      'Looking for a C++ compiler (g++)…',
+    expect(runGateMessage(waiting, 'build')).toBe(
+      'Looking for a C++ compiler (g++): the build starts once one is found (Ctrl+B)',
     );
   });
 

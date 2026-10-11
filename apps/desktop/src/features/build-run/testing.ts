@@ -27,7 +27,8 @@ import {
   settingsFixture,
   toolchainFixture,
 } from '../../app/testing/fixtures';
-import type { ConsoleHandle, TerminalSize } from '../../panels';
+import type { ConsoleHandle, ConsoleScreen, TerminalSize } from '../../panels';
+import { emptyScreen } from '../../panels/console/screen';
 
 const decoder = new TextDecoder();
 
@@ -86,6 +87,11 @@ export class FakeConsole implements ConsoleHandle {
 
   size(): TerminalSize {
     return this.terminalSize;
+  }
+
+  /** There is no terminal behind it: its screen is always empty (`text` has what was written). */
+  screen(): ConsoleScreen {
+    return emptyScreen(this.terminalSize.cols, this.terminalSize.rows);
   }
 
   onData(callback: (data: string) => void): () => void {

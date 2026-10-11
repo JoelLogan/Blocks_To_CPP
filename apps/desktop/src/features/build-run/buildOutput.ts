@@ -1,8 +1,8 @@
 /**
  * What the Build output tab shows (docs/spec/04-user-interface.md §4.1, 07 §7.5.3): a line when a
- * build starts, its progress, the toolchain's notes (such as B2C-T1011 *sanitizers dropped*,
- * T1012 *hardening dropped* and T1013 *static linking dropped*), the compiler's and the linker's
- * own text, and how the build ended.
+ * build starts, whether it waits for the compiler search, its progress, the toolchain's notes
+ * (such as B2C-T1011 *sanitizers dropped*, T1012 *hardening dropped* and T1013 *static linking
+ * dropped*), the compiler's and the linker's own text, and how the build ended.
  *
  * It also labels generator bugs (07 §7.5.3 step 4): C++ generated from blocks without errors
  * should always compile, so a `C:` error from anything but a Raw C++ block is marked *This looks
@@ -57,6 +57,15 @@ export function buildStartLine(projectName: string, config: BuildConfig): BuildO
     projectName.length > MAX_NAME_CHARS ? `${projectName.slice(0, MAX_NAME_CHARS)}…` : projectName;
   return { kind: 'progress', text: `Building ${name} (${CONFIG_LABELS[config]})…` };
 }
+
+/**
+ * The line of a build that starts while the first compiler search runs and no usable compiler is
+ * known yet: the backend waits for the search, at most 30 s (07 §7.2).
+ */
+export const DISCOVERY_WAIT_LINE: BuildOutputLine = {
+  kind: 'progress',
+  text: 'Waiting for the search for a C++ compiler (g++) to finish (at most 30 s)…',
+};
 
 /** A progress line: `Compiling (1/1)`. */
 export function progressLine(stage: BuildStage, done: number, total: number): BuildOutputLine {

@@ -30,15 +30,27 @@ describe('gateAllows', () => {
     expect(gateAllows('build', ctx)).toBe(true);
   });
 
-  it('says that the compiler search is still running', () => {
+  it('lets Run and Build wait while the first compiler search runs', () => {
     openRunnableProject();
     useAppStore.getState().actions.setToolchains({ list: [], discovering: true });
     const dialogs = fakeDialogs();
     const ctx = featureContext(createFakeBackend().ipc, {}, dialogs);
-    expect(gateAllows('build', ctx)).toBe(false);
+    ctx.screens.registerScreen('toolchainSetup', () => null);
+    expect(gateAllows('run', ctx)).toBe(true);
+    expect(gateAllows('build', ctx)).toBe(true);
+    expect(dialogs.alert).not.toHaveBeenCalled();
+    expect(useAppStore.getState().ui.screen).not.toBe('toolchainSetup');
+  });
+
+  it('says no compiler was found once the search has ended without one', () => {
+    openRunnableProject();
+    useAppStore.getState().actions.setToolchains({ list: [], discovering: false });
+    const dialogs = fakeDialogs();
+    const ctx = featureContext(createFakeBackend().ipc, {}, dialogs);
+    expect(gateAllows('run', ctx)).toBe(false);
     expect(dialogs.alert).toHaveBeenCalledWith({
       title: 'No C++ compiler',
-      message: 'Blocks2Cpp is still looking for a C++ compiler (g++). Try again in a moment.',
+      message: 'Blocks2Cpp found no C++ compiler (g++) it can use.',
     });
   });
 

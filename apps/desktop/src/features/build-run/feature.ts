@@ -15,6 +15,7 @@
  * the run of the old one are no longer followed and the console is cleared.
  */
 import type { Feature, FeatureContext } from '../../app/features';
+import { runGate } from '../../app/runGate';
 import { BuildController, type BuildFinish } from './buildController';
 import { type Clock, systemClock } from './clock';
 import { type ConsoleBridge, consoleBridge } from './consoleBridge';
@@ -35,6 +36,20 @@ function trigger(ctx: FeatureContext, id: 'problems.focusFirstError'): void {
   ctx.commands.runCommand(id).catch((error: unknown) => {
     console.error(`Command ${id} failed`, error);
   });
+}
+
+/**
+ * After a build that found no usable compiler: once the compiler search has ended without one,
+ * the toolchain setup page is what helps (04 §4.6), so it is shown instead of the first error.
+ * Returns whether it was shown.
+ */
+function showToolchainSetup(ctx: FeatureContext): boolean {
+  const state = ctx.store.getState();
+  if (runGate(state).reason !== 'noToolchain' || ctx.screens.screen('toolchainSetup') === null) {
+    return false;
+  }
+  state.actions.setUi({ screen: 'toolchainSetup' });
+  return true;
 }
 
 /** Whether the open project has an error to show (live, or from the last build). */
@@ -71,9 +86,13 @@ export function createBuildRunFeature(options: BuildRunFeatureOptions = {}): Fea
       showFirstError: () => {
         trigger(ctx, 'problems.focusFirstError');
       },
+      showToolchainSetup: () => showToolchainSetup(ctx),
     });
 
-    /** After a build the person asked for: say why it did not start, or show the first error. */
+    /**
+     * After a build the person asked for: say why it did not start, or show the first error (or
+     * the setup page, when the build found no compiler and the search has ended without one).
+     */
     const afterBuild = async (finish: BuildFinish): Promise<void> => {
       if (finish.kind === 'notStarted') {
         if (finish.code === 'projectErrors') {
@@ -83,11 +102,17 @@ export function createBuildRunFeature(options: BuildRunFeatureOptions = {}): Fea
         }
         return;
       }
+      if (finish.superseded) {
+        return;
+      }
+      if (finish.outcome === 'toolchainProblem' && showToolchainSetup(ctx)) {
+        return;
+      }
       const failed =
         finish.outcome === 'failed' ||
         finish.outcome === 'projectErrors' ||
         finish.outcome === 'toolchainProblem';
-      if (failed && !finish.superseded && hasErrors(ctx)) {
+      if (failed && hasErrors(ctx)) {
         trigger(ctx, 'problems.focusFirstError');
       }
     };

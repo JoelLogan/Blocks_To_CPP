@@ -15,10 +15,11 @@ const PROBLEMS_PANEL = 'problems';
 export type GateContext = Pick<FeatureContext, 'store' | 'commands' | 'screens' | 'dialogs'>;
 
 /**
- * Whether `action` may go ahead now. When it may not, this does what the toolbar would: with
- * errors it shows the first one (`problems.focusFirstError`, in both *Run on errors* modes);
- * without a compiler it opens the toolchain setup page (or says why); in Restricted Mode it says
- * how to leave it. Without a project it does nothing.
+ * Whether `action` may go ahead now. While the first compiler search runs it may: the build waits
+ * for the search (07 §7.2). When it may not, this does what the toolbar would: with errors it
+ * shows the first one (`problems.focusFirstError`, in both *Run on errors* modes); once the
+ * search has found no usable compiler it opens the toolchain setup page (or says why); in
+ * Restricted Mode it says how to leave it. Without a project it does nothing.
  */
 export function gateAllows(action: GatedAction, ctx: GateContext): boolean {
   const state = ctx.store.getState();
@@ -32,7 +33,6 @@ export function gateAllows(action: GatedAction, ctx: GateContext): boolean {
   if (gate.enabled) {
     return true;
   }
-  const discovering = state.toolchains.discovering;
   switch (gate.reason) {
     case 'noToolchain':
       if (ctx.screens.screen('toolchainSetup') !== null) {
@@ -40,16 +40,14 @@ export function gateAllows(action: GatedAction, ctx: GateContext): boolean {
       } else {
         void ctx.dialogs.alert({
           title: 'No C++ compiler',
-          message: discovering
-            ? 'Blocks2Cpp is still looking for a C++ compiler (g++). Try again in a moment.'
-            : 'Blocks2Cpp found no C++ compiler (g++) it can use.',
+          message: 'Blocks2Cpp found no C++ compiler (g++) it can use.',
         });
       }
       return false;
     case 'restricted':
       void ctx.dialogs.alert({
         title: 'Restricted Mode',
-        message: runGateMessage(gate, action, { discovering }),
+        message: runGateMessage(gate, action),
       });
       return false;
     default:

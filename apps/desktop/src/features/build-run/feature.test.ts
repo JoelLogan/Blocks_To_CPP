@@ -22,7 +22,7 @@ import { ACK_INTERVAL_MS } from './acks';
 import { GENERATOR_BUG_LABEL } from './buildOutput';
 import { ConsoleBridge } from './consoleBridge';
 import { createBuildRunFeature } from './feature';
-import { RUN_MODE_RESET, RUN_SEPARATOR, STOP_WAIT_MS } from './runController';
+import { STOP_WAIT_MS } from './runController';
 import {
   createFakeBackend,
   type FakeBackend,
@@ -36,6 +36,16 @@ import {
 
 const HASH = 'a'.repeat(64);
 const OTHER_HASH = 'b'.repeat(64);
+
+/**
+ * The bytes every run starts with (04 §4.5): save the cursor, leave the alternate screen (which
+ * restores the cursor just saved), soft reset. Spelled out rather than imported, so a change to
+ * them is a change to these expectations; integration.test.tsx checks what xterm makes of them.
+ */
+const MODE_RESET = '\u001b7\u001b[?1049l\u001b[!p';
+
+/** Between two runs: the mode reset, then a dim *New run* line. */
+const SEPARATOR = `${MODE_RESET}\r\n\u001b[2m── New run ──\u001b[22m\r\n`;
 
 let backend: FakeBackend;
 let bridge: ConsoleBridge;
@@ -413,7 +423,7 @@ describe('Run', () => {
     expect(state().run.status).toBe('exited');
     expect(state().run.exit?.message).toBe('Finished (exit code 0)');
     // Every run starts by resetting the terminal's modes.
-    expect(terminal.text).toBe(`${RUN_MODE_RESET}Guess a number from 1 to 100!\r\nYour guess: `);
+    expect(terminal.text).toBe(`${MODE_RESET}Guess a number from 1 to 100!\r\nYour guess: `);
     expect(backend.ipc.runAck).toHaveBeenLastCalledWith({ runId: program?.runId, seq: 1 });
     await vi.advanceTimersByTimeAsync(ACK_INTERVAL_MS);
     expect(backend.ipc.runAck).toHaveBeenCalledTimes(1);
@@ -500,7 +510,7 @@ describe('Run', () => {
     second?.output('again');
     await settle();
     expect(state().run.status).toBe('running');
-    expect(terminal.text).toBe(`${RUN_MODE_RESET}working…${RUN_SEPARATOR}again`);
+    expect(terminal.text).toBe(`${MODE_RESET}working…${SEPARATOR}again`);
   });
 
   it("resets the terminal's modes after Clear too, without a separator", async () => {
@@ -518,7 +528,7 @@ describe('Run', () => {
     backend.runs[1]?.send(STARTED);
     backend.runs[1]?.output('hello');
     await settle();
-    expect(terminal.text).toBe(`${RUN_MODE_RESET}hello`);
+    expect(terminal.text).toBe(`${MODE_RESET}hello`);
   });
 
   it('starts the new run anyway when the old one does not report its end', async () => {
@@ -621,10 +631,10 @@ describe('Run', () => {
     await settle();
     // Queued right after batch 1, before the kept tail, although batch 1 is not written yet.
     expect(terminal.skipped).toEqual([1_204_331]);
-    expect(terminal.text).toBe(`${RUN_MODE_RESET}a[skipped 1204331]z`);
+    expect(terminal.text).toBe(`${MODE_RESET}a[skipped 1204331]z`);
     terminal.resolveWrites();
     await settle();
-    expect(terminal.text).toBe(`${RUN_MODE_RESET}a[skipped 1204331]z`);
+    expect(terminal.text).toBe(`${MODE_RESET}a[skipped 1204331]z`);
   });
 
   it('writes a skipped marker that arrives before its batch right after that batch', async () => {
@@ -641,7 +651,7 @@ describe('Run', () => {
     program?.output('b');
     program?.output('z');
     await settle();
-    expect(terminal.text).toBe(`${RUN_MODE_RESET}ab[skipped 7]z`);
+    expect(terminal.text).toBe(`${MODE_RESET}ab[skipped 7]z`);
     // The exit still waits until all the output is on screen.
     program?.send(exitEvent(3));
     await settle();
@@ -794,6 +804,82 @@ describe('the run gate', () => {
     unregister();
   });
 
+  it('builds and runs while the first compiler search runs: the build waits for it', async () => {
+    const unregister = ctx.screens.registerScreen('toolchainSetup', () => null);
+    state().actions.setToolchains({ list: [], discovering: true });
+
+    await run('run.start');
+    expect(backend.builds).toHaveLength(1);
+    expect(dialogs.alert).not.toHaveBeenCalled();
+    expect(state().ui).toMatchObject({ screen: 'editor', bottomTab: 'buildOutput' });
+    expect(state().build.output.map((line) => line.text)).toEqual([
+      'Building Guessing Game (Debug)…',
+      'Waiting for the search for a C++ compiler (g++) to finish (at most 30 s)…',
+    ]);
+
+    // The search finds g++ (`toolchainsUpdated`), the backend builds with it, and the program runs.
+    state().actions.setToolchains({ list: [toolchainFixture()], discovering: false });
+    await finishBuild(0);
+    expect(backend.runs).toHaveLength(1);
+    expect(state().ui.screen).toBe('editor');
+
+    // With a compiler known, a build no longer says it waits.
+    state().actions.updateProject({ contentHash: OTHER_HASH });
+    await run('build.start');
+    expect(state().build.output.map((line) => line.text)).toEqual([
+      'Building Guessing Game (Debug)…',
+    ]);
+    unregister();
+  });
+
+  it.each(['run.start', 'build.start'] as const)(
+    'shows the setup page when the search the build waited for finds no compiler (%s)',
+    async (command) => {
+      const unregister = ctx.screens.registerScreen('toolchainSetup', () => null);
+      state().actions.setToolchains({ list: [], discovering: true });
+      await run(command);
+      expect(state().ui.screen).toBe('editor');
+
+      // The search ends without a usable g++, and the build that waited for it says so.
+      state().actions.setToolchains({ list: [], discovering: false });
+      backend.builds[0]?.send({
+        kind: 'diagnostics',
+        items: [
+          diagnosticFixture({
+            code: 'B2C-T1001',
+            message: 'No g++ was found.',
+            source: 'toolchain',
+            primary: { part: { kind: 'whole' } },
+          }),
+        ],
+      });
+      await finishBuild(0, 'toolchainProblem', null);
+      expect(state().ui.screen).toBe('toolchainSetup');
+      expect(backend.runs).toHaveLength(0);
+      unregister();
+    },
+  );
+
+  it('shows the first error when a build finds no compiler while the search still runs', async () => {
+    const unregister = ctx.screens.registerScreen('toolchainSetup', () => null);
+    state().actions.setToolchains({ list: [], discovering: true });
+    await run('run.start');
+    backend.builds[0]?.send({
+      kind: 'diagnostics',
+      items: [
+        diagnosticFixture({
+          code: 'B2C-T1001',
+          message: 'No g++ was found.',
+          source: 'toolchain',
+          primary: { part: { kind: 'whole' } },
+        }),
+      ],
+    });
+    await finishBuild(0, 'toolchainProblem', null);
+    expect(state().ui).toMatchObject({ screen: 'editor', bottomTab: 'problems' });
+    unregister();
+  });
+
   it.each(['disableRun', 'showProblems'] as const)(
     'shows the first error instead of running with errors (%s)',
     async (onErrors) => {
@@ -852,7 +938,7 @@ describe('the open project', () => {
     backend.runs[1]?.send(STARTED);
     backend.runs[1]?.output('new output');
     await settle();
-    expect(terminal.text).toBe(`${RUN_MODE_RESET}new output`);
+    expect(terminal.text).toBe(`${MODE_RESET}new output`);
   });
 
   it('forgets a build of a closed project', async () => {

@@ -1,9 +1,10 @@
 import { Terminal } from '@xterm/xterm';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { createRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { expectNoAxeViolations } from '../../test/axe';
+import { REANNOUNCE_MS, TRANSIENT_STATUS_MS } from '../shared/useTransientStatus';
 import type { RunExit } from '../types';
 import {
   ConsolePanel,
@@ -14,6 +15,7 @@ import {
   clampScrollback,
   consoleKeyAction,
 } from './ConsolePanel';
+import { LinkDialog } from './LinkDialog';
 
 const IDLE: ConsoleHeader = { state: 'idle', exit: null, elapsedMs: 0, notices: [] };
 const RUNNING: ConsoleHeader = {
@@ -129,6 +131,39 @@ describe('ConsolePanel', () => {
     expect(terminal.options.scrollback).toBe(100_000);
   });
 
+  it('reports what the terminal holds: the active buffer, the viewport and the cursor', async () => {
+    const { handle, terminal } = renderConsole();
+    await act(() => handle.write(encode('one\r\ntwo  ')));
+    const normal = handle.screen();
+    expect(normal).toMatchObject({
+      buffer: 'normal',
+      baseY: 0,
+      viewportY: 0,
+      cursor: { row: 1, column: 5 },
+      cols: terminal.cols,
+      rows: terminal.rows,
+    });
+    expect(normal.lines).toHaveLength(terminal.rows);
+    // Cells nothing was written to are cut; the spaces written are kept.
+    expect(normal.lines.slice(0, 3)).toEqual(['one', 'two  ', '']);
+
+    // Scrolled: the scrollback comes first, and the screen starts at `baseY`.
+    const many = Array.from({ length: terminal.rows + 5 }, (_, i) => `line ${String(i)}`);
+    await act(() => handle.write(encode(`\r\n${many.join('\r\n')}`)));
+    const scrolled = handle.screen();
+    expect(scrolled.baseY).toBe(scrolled.lines.length - terminal.rows);
+    expect(scrolled.viewportY).toBe(scrolled.baseY);
+    expect(scrolled.lines.slice(0, 3)).toEqual(['one', 'two  ', 'line 0']);
+    expect(scrolled.lines[scrolled.cursor.row]).toBe(`line ${String(terminal.rows + 4)}`);
+
+    // A program's alternate screen holds only what that program drew.
+    await act(() => handle.write(encode('\u001b[?1049h\u001b[Hfull screen')));
+    const alternate = handle.screen();
+    expect(alternate.buffer).toBe('alternate');
+    expect(alternate.lines[0]).toBe('full screen');
+    expect(alternate.lines).toHaveLength(terminal.rows);
+  });
+
   it('clamps the scrollback setting', () => {
     expect(clampScrollback(10)).toBe(1000);
     expect(clampScrollback(5000.4)).toBe(5000);
@@ -208,12 +243,82 @@ describe('ConsolePanel', () => {
       await Promise.resolve();
     });
     expect(writeText).toHaveBeenCalledWith('https://example.com/docs?x=1');
-    expect(screen.getByText('Link copied')).toBeDefined();
+    expect(within(dialog).getByRole('status').textContent).toBe('Copied');
     await expectNoAxeViolations(dialog);
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(open).not.toHaveBeenCalled();
+  });
+
+  describe("the link dialog's copy confirmation", () => {
+    const URL = 'https://example.com/a';
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    /** Clicks *Copy link* and lets the copy finish. */
+    async function copyLink(): Promise<void> {
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    }
+
+    async function wait(ms: number): Promise<void> {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    }
+
+    const status = () => within(screen.getByRole('dialog')).getByRole('status').textContent;
+
+    it('says Copied for 3 seconds, and again after every copy', async () => {
+      vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+      render(<LinkDialog url={URL} onClose={vi.fn()} />);
+      await copyLink();
+      expect(status()).toBe('Copied');
+      await wait(1000);
+      await copyLink();
+      expect(status()).toBe('');
+      await wait(REANNOUNCE_MS);
+      expect(status()).toBe('Copied');
+      await wait(TRANSIENT_STATUS_MS);
+      expect(status()).toBe('');
+    });
+
+    it('keeps "Could not copy" until the next copy, and forgets it when it closes', async () => {
+      vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
+      const onClose = vi.fn();
+      const { rerender } = render(<LinkDialog url={URL} onClose={onClose} />);
+      await copyLink();
+      await wait(10_000);
+      expect(status()).toBe('Could not copy');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      rerender(<LinkDialog url={null} onClose={onClose} />);
+      rerender(<LinkDialog url={URL} onClose={onClose} />);
+      expect(status()).toBe('');
+    });
+
+    it('changes nothing once it is gone while a copy is still pending', async () => {
+      let finish: () => void = () => undefined;
+      vi.spyOn(navigator.clipboard, 'writeText').mockReturnValue(
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+      );
+      const { unmount } = render(<LinkDialog url={URL} onClose={vi.fn()} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+      unmount();
+      const timers = vi.getTimerCount();
+      finish();
+      await vi.advanceTimersByTimeAsync(0);
+      // The status started no timer: it showed nothing.
+      expect(vi.getTimerCount()).toBeLessThanOrEqual(timers);
+    });
   });
 
   it('refuses links that are not http or https', () => {

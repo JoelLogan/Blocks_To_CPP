@@ -1,9 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useState } from 'react';
 
 import '../panels.css';
 import { copyPlainText } from '../shared/clipboard';
 import { visibleInvisibles } from '../shared/invisibles';
+import { useTransientStatus } from '../shared/useTransientStatus';
 
 /** The props of {@link LinkDialog}. */
 export interface LinkDialogProps {
@@ -16,17 +16,18 @@ export interface LinkDialogProps {
 /**
  * Shows a link the running program printed (OSC 8) in full, with *Copy link*. Nothing is opened:
  * the program controls the link, and in M2 the app has no way to open it (04 §4.5). An accessible
- * Radix dialog: it traps focus, closes with Escape and returns focus to the console.
+ * Radix dialog: it traps focus, closes with Escape and returns focus to the console. *Copy link*
+ * says *Copied* for 3 seconds, or *Could not copy* until the next attempt.
  */
 export function LinkDialog({ url, onClose }: LinkDialogProps) {
-  const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const status = useTransientStatus();
 
   return (
     <Dialog.Root
       open={url !== null}
       onOpenChange={(open) => {
         if (!open) {
-          setStatus('idle');
+          status.clear();
           onClose();
         }
       }}
@@ -44,14 +45,18 @@ export function LinkDialog({ url, onClose }: LinkDialogProps) {
           </p>
           <div className="b2c-dialog-actions">
             <span className="b2c-panel-status" role="status">
-              {status === 'copied' ? 'Link copied' : status === 'failed' ? 'Could not copy' : ''}
+              {status.shown?.text}
             </span>
             <button
               type="button"
               onClick={() => {
                 if (url !== null) {
                   void copyPlainText(url).then((ok) => {
-                    setStatus(ok ? 'copied' : 'failed');
+                    if (ok) {
+                      status.show('success', 'Copied');
+                    } else {
+                      status.show('failure', 'Could not copy');
+                    }
                   });
                 }
               }}

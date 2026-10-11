@@ -28,6 +28,7 @@ export {
   type ConsoleHeader,
   type ConsoleNotice,
   type ConsolePanelProps,
+  type ConsoleScreen,
   type ConsoleState,
   type TerminalSize,
 } from './console/ConsolePanel';

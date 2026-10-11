@@ -24,10 +24,11 @@ import type {
 
 import type { DialogService } from '../../app/dialogs';
 import { type BuildState, type BuildStatus, useAppStore } from '../../app/store';
-import { selectedToolchain } from '../../app/store/selectors';
+import { hasUsableToolchain, selectedToolchain } from '../../app/store/selectors';
 import {
   buildStartLine,
   diagnosticLines,
+  DISCOVERY_WAIT_LINE,
   finishedLine,
   GENERATOR_BUG_NOTE,
   labelGeneratorBugs,
@@ -216,7 +217,8 @@ export class BuildController {
     if (prepared === null) {
       return null;
     }
-    const { actions, build } = this.#deps.store.getState();
+    const state = this.#deps.store.getState();
+    const { actions, build } = state;
     // The diagnostics of the last build that finished: a cancelled build puts them back.
     let previous: Session['previous'] = {
       diagnostics: build.diagnostics,
@@ -258,7 +260,12 @@ export class BuildController {
     this.#current = session;
 
     actions.setBuild({ status: 'building', buildId: null, progress: null, output: [] });
-    actions.appendBuildOutput([buildStartLine(prepared.projectName, prepared.key.config)]);
+    const firstLines = [buildStartLine(prepared.projectName, prepared.key.config)];
+    if (state.toolchains.discovering && !hasUsableToolchain(state)) {
+      // The backend chooses the compiler once the search has ended (07 §7.2).
+      firstLines.push(DISCOVERY_WAIT_LINE);
+    }
+    actions.appendBuildOutput(firstLines);
 
     this.#deps.ipc
       .buildStart(

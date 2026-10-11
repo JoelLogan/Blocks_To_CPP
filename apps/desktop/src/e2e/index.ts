@@ -110,6 +110,10 @@ export function createE2eHook(deps: E2eHookDeps, transcript: ConsoleTranscript):
       return found.document.text;
     },
     consoleText: () => transcript.text(),
+    consoleScreen: () => {
+      const screen = deps.console.console().screen();
+      return { ...screen, lines: [...screen.lines], cursor: { ...screen.cursor } };
+    },
     trustedTypes: () => {
       const report = deps.trustedTypes();
       return { count: report.count, directives: [...report.directives] };

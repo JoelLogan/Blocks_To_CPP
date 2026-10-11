@@ -128,6 +128,10 @@ toolbox search in M3.
 * Diagnostics are shown as gutter markers in the code panel as well as on
   blocks.
 * *Copy all*, *Copy selection* and *Export project…*.
+* *Copy all*, *Copy selection*, the setup page's *Copy* (§4.6) and the link
+  dialog (§4.5) confirm with *Copied* for 3 seconds and announce every copy;
+  *Could not copy* stays until the next attempt. The confirmation never moves
+  the code.
 * The code panel follows the user's *code style* settings (indent width,
   brace style), which are generator options, not a post-formatter.
 * **In M2** the code style is the indent width only, 2 or 4 spaces (default
@@ -241,7 +245,14 @@ restarted after a crash, a dismissible banner says so.
   link* button and opens nothing.
 * **In M2** opening or creating another project resets the console: output
   still queued from the old program is dropped and the terminal is fully
-  reset. Every run starts with the terminal's modes reset.
+  reset.
+* **Between runs** the console keeps earlier output as scrollback and never
+  writes over it. Every run starts with the terminal's modes reset (the
+  alternate screen left, colours, cursor visibility, scroll region) without
+  moving the cursor, below a dim *── New run ──* line when there is output
+  since the last Clear.
+* The console scrolls by itself, never the panel around it. The terminal is
+  fitted to whole rows and columns inside its padding.
 
 ## 4.6 Toolchain setup experience
 
@@ -279,6 +290,13 @@ restarted after a crash, a dismissible banner says so.
   the first usable one in discovery order and says so with the warning
   `B2C-T1022` ([07 §7.2](07-toolchain-build-run.md#72-discovery)), never
   silently.
+* Each install command has a *Copy* button, which confirms like the code
+  panel's (§4.3).
+* While the first discovery runs and no usable toolchain is known yet,
+  ▶ Run stays enabled: the build waits for the discovery (at most 30 s,
+  [07 §7.2](07-toolchain-build-run.md#72-discovery)) and the build output
+  says so. Only when discovery has finished without a usable g++ does Run
+  open the setup page.
 
 ## 4.7 Command palette and keyboard
 

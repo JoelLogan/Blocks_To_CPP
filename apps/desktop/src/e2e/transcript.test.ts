@@ -4,9 +4,11 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createFakeIpc } from '../app/testing/fixtures';
 import { ConsoleBridge } from '../features/build-run';
 import { systemClock } from '../features/build-run/clock';
+import { RUN_MODE_RESET, RUN_SEPARATOR } from '../features/build-run/runController';
 import { RunSession } from '../features/build-run/runSession';
 import { FakeConsole, settle } from '../features/build-run/testing';
 import type { ConsoleHandle } from '../panels';
+import { emptyScreen } from '../panels/console/screen';
 import { ConsoleTranscript, MAX_TRANSCRIPT_CHARS, plainText, tapConsoleBridge } from './transcript';
 
 const encode = (text: string) => new TextEncoder().encode(text);
@@ -18,6 +20,11 @@ describe('plainText', () => {
     expect(plainText('\u001b]0;title\u0007after')).toBe('after');
     expect(plainText('\u001b]8;;https://example.com\u001b\\link\u001b]8;;\u001b\\')).toBe('link');
     expect(plainText('\u001b(Bcharset\u001bc')).toBe('charset');
+  });
+
+  it("leaves only the separator's text of the console's prelude to a run", () => {
+    expect(plainText(RUN_MODE_RESET)).toBe('');
+    expect(plainText(`out${RUN_SEPARATOR}again`)).toBe('out\n── New run ──\nagain');
   });
 
   it('turns CR LF into LF, drops lone CRs and other controls, keeps tabs', () => {
@@ -62,6 +69,7 @@ function fakeConsole() {
     clear,
     reset,
     size: () => ({ cols: 80, rows: 24 }),
+    screen: () => emptyScreen(80, 24),
     onData: () => () => undefined,
     onResize: () => () => undefined,
     focus,
