@@ -54,7 +54,11 @@ export function editorInjectOptions(theme: Blockly.Theme): Blockly.BlocklyOption
     theme,
     media: MEDIA_PATH,
     sounds: false,
+    // The trash can is a place to drop blocks on and keeps nothing (04 §4.1): restoring from it
+    // would bypass the validated clipboard and carry blocks from one project into the next. Undo
+    // brings deleted blocks back.
     trashcan: true,
+    maxTrashcanContents: 0,
     // The starting toolbox and the continuous toolbox's classes, which Blockly picks only at
     // inject time; the toolbox plugin then fills in presets, Variables and My Blocks. The block
     // dragger tells the editing session when a drag starts, before Blockly moves anything.

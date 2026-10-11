@@ -68,6 +68,12 @@ Connection compatibility is enforced by a custom Blockly `ConnectionChecker`
 backed by the type system ([§3.5](#35-types)). Shapes stop structurally
 invalid programs, and types stop most semantic errors.
 
+**Placing blocks.** While a block is dragged, a grey preview shows the place
+it will connect to when it is dropped. A drop with the pointer over the
+toolbox or the trash can deletes only the dragged blocks and never connects
+them: while the pointer is there no place is previewed, and the dragged
+blocks are shown faded.
+
 ## 3.4 Expression slots
 
 Every value and boolean input accepts either a block or **typed text**. Typed

@@ -249,6 +249,36 @@ describe('the initial toolbox and the inject options', () => {
     });
   });
 
+  it('make the trash can a place to drop blocks that keeps nothing', async () => {
+    registerEditorBlocks();
+    const host = document.createElement('div');
+    document.body.append(host);
+    const workspace = Blockly.inject(host, editorInjectOptions(Blockly.Themes.Zelos));
+    const trashcan = present(workspace.trashcan, 'the trash can');
+    // Still a delete area: a block dropped on it is deleted.
+    expect(
+      workspace
+        .getComponentManager()
+        .hasCapability(trashcan.id, Blockly.ComponentManager.Capability.DELETE_AREA),
+    ).toBe(true);
+    expect(host.querySelector('.blocklyTrashcanFlyout')).toBeNull();
+
+    const block = workspace.newBlock('control.forever');
+    block.initSvg();
+    block.render();
+    block.dispose(false);
+    // Blockly delivers events after a frame; the trash can would store the block then.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // A click opens the stored blocks, 10 ms later.
+    trashcan.click();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(trashcan.contentsIsOpen()).toBe(false);
+
+    workspace.dispose();
+    host.remove();
+  });
+
   it('attaches to an injected workspace and starts the core early', async () => {
     registerEditorBlocks();
     const host = document.createElement('div');

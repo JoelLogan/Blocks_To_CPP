@@ -1,15 +1,24 @@
 /**
- * Saving while a block is dragged (02 §2.4.1): the document is the canvas as it was just before
- * the drag, never the canvas in flux (the dragged block detached, drag previews standing in for
- * values or heading stacks). Blockly's own gestures drive the drags, through the editor's block
- * dragger.
+ * Block drags through the editor's block dragger, driven by Blockly's own gestures with real
+ * pointer events:
+ *
+ * - Saving while a block is dragged (02 §2.4.1): the document is the canvas as it was just before
+ *   the drag, never the canvas in flux (the dragged block detached, drag previews standing in for
+ *   values or heading stacks).
+ * - A drop on a delete area (03 §3.3 "Placing blocks"): it deletes only the dragged blocks and
+ *   never connects them, even when a place was previewed just before. happy-dom lays nothing out,
+ *   so a delete area here is a component with a fixed screen rectangle, as the toolbox's flyout
+ *   and the trash can are in the app; the end-to-end drop on the real toolbox comes with W5-3.
  */
 import type { BdmDocument } from '@blocks2cpp/b2c-core-wasm';
 import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { contrastOf, declarationsOf, parseRules, themeTokens } from '../../app/layout/cssAudit';
 import { useAppStore } from '../../app/store';
-import { B2cBlockDragger } from './drag';
+import { editorInjectOptions } from '../EditorWorkspace';
+import { B2cBlockDragger, B2cBlockDragStrategy, isOverDeleteArea } from './drag';
+import dragCss from './drag.css?raw';
 import {
   canonicalText,
   disposeWorkspaces,
@@ -22,6 +31,7 @@ import {
   testCore,
   type TestSession,
 } from './testing';
+import { allBlocks } from './traverse';
 import { readTopBlocks } from './workspaceToBdm';
 
 const core = await testCore();
@@ -150,5 +160,341 @@ describe.skipIf(core === null)('saving during a drag', () => {
     expect(svg.getTopBlocks(false)).not.toContain(loose);
 
     expect(readTopBlocks(svg).map((node) => node.id)).toEqual(['b011', 'loose1']);
+  });
+});
+
+/**
+ * Waits until Blockly has rendered new blocks and put their connections in its connection
+ * database, which it does a millisecond after a load (the editor's loader does the same).
+ */
+async function placed(): Promise<void> {
+  await Blockly.renderManagement.finishQueuedRenders();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+}
+
+/** Waits until Blockly has delivered (and recorded for undo) the events fired so far. */
+function eventsDelivered(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        setTimeout(resolve, 0);
+      }, 0);
+    });
+  });
+}
+
+/** A delete area left of `edge` (screen pixels), standing in for the toolbox's flyout. */
+class EdgeDeleteArea extends Blockly.DeleteArea {
+  override id = 'test.deleteArea';
+  private readonly edge: number;
+
+  constructor(edge: number) {
+    super();
+    this.edge = edge;
+  }
+
+  override getClientRect(): Blockly.utils.Rect {
+    return new Blockly.utils.Rect(-100_000, 100_000, -100_000, this.edge);
+  }
+}
+
+/** A drag target right of x = 1000 that deletes nothing. */
+class EdgeDragTarget extends Blockly.DragTarget {
+  override id = 'test.dragTarget';
+
+  override getClientRect(): Blockly.utils.Rect {
+    return new Blockly.utils.Rect(-100_000, 100_000, 1000, 100_000);
+  }
+}
+
+/** Where a press on a block starts in the drop tests. */
+const PRESS = { x: 100, y: 100 } as const;
+
+/** Adds a delete area left of `edge`, as the toolbox's flyout is one. */
+function addDeleteArea(svg: Blockly.WorkspaceSvg, edge: number): void {
+  const { Capability } = Blockly.ComponentManager;
+  svg.getComponentManager().addComponent({
+    component: new EdgeDeleteArea(edge),
+    weight: 1,
+    capabilities: [Capability.DELETE_AREA, Capability.DRAG_TARGET],
+  });
+  svg.recordDragTargets();
+}
+
+/**
+ * The guessing game at the editor's start zoom (0.9), with a loose copy of `print "Guess a
+ * number…"` (b004, with its text shadow) to drag.
+ */
+async function withLooseBlock(): Promise<{ svg: Blockly.WorkspaceSvg; dragged: Blockly.BlockSvg }> {
+  const { workspace } = await guessingGame();
+  const svg = workspace as Blockly.WorkspaceSvg;
+  svg.setScale(0.9);
+  const state = present(
+    Blockly.serialization.blocks.save(present(svg.getBlockById('b004'), 'b004'), {
+      addNextBlocks: false,
+      saveIds: false,
+    }),
+    'b004 state',
+  );
+  const dragged = Blockly.serialization.blocks.append(
+    { ...state, x: 600, y: 400 },
+    svg,
+  ) as Blockly.BlockSvg;
+  await placed();
+  return { svg, dragged };
+}
+
+/**
+ * The pointer position (from a press at {@link PRESS}) that brings `block`'s top connection to
+ * 4 units right of and below the next connection of block `id`: a place the drag previews.
+ */
+function pointerNear(
+  svg: Blockly.WorkspaceSvg,
+  block: Blockly.BlockSvg,
+  id: string,
+): { x: number; y: number } {
+  const local = present(block.previousConnection, 'previous');
+  const target = present(svg.getBlockById(id)?.nextConnection, `${id} next`);
+  return {
+    x: PRESS.x + (target.x - local.x + 4) * svg.scale,
+    y: PRESS.y + (target.y - local.y + 4) * svg.scale,
+  };
+}
+
+/** Presses on `block` and selects `selected` (happy-dom gives the pressed block no focus). */
+function press(block: Blockly.BlockSvg, selected: Blockly.BlockSvg = block): void {
+  block.pathObject.svgPath.dispatchEvent(
+    new PointerEvent('pointerdown', { ...POINTER, clientX: PRESS.x, clientY: PRESS.y }),
+  );
+  Blockly.common.setSelected(selected);
+}
+
+function moveTo(point: { x: number; y: number }): void {
+  document.dispatchEvent(
+    new PointerEvent('pointermove', { ...POINTER, clientX: point.x, clientY: point.y }),
+  );
+}
+
+function release(point: { x: number; y: number }): void {
+  document.dispatchEvent(
+    new PointerEvent('pointerup', { ...POINTER, clientX: point.x, clientY: point.y }),
+  );
+}
+
+/** Whether a drag preview (an insertion marker) is on the canvas (`getAllBlocks` omits them). */
+function previewShown(svg: Blockly.WorkspaceSvg): boolean {
+  return allBlocks(svg).some((block) => block.isInsertionMarker());
+}
+
+/** The rules of ./drag.css that show a drop on a delete area. */
+const FADED = '.blocklyDragging.blocklyDraggingDelete';
+const TINTED = '.blocklyToolboxDelete ~ .blocklyFlyout > .blocklyFlyoutBackground';
+
+/** Whether `block` is drawn faded, as a block a drop will delete. */
+function fadedForDelete(block: Blockly.BlockSvg): boolean {
+  return block.getSvgRoot().matches(FADED);
+}
+
+/** The IDs of `main`'s statements, in order. */
+function mainList(svg: Blockly.WorkspaceSvg): string[] {
+  const ids: string[] = [];
+  let block = present(svg.getBlockById('b011'), 'b011').getInputTargetBlock('BODY');
+  while (block !== null) {
+    ids.push(block.id);
+    block = block.getNextBlock();
+  }
+  return ids;
+}
+
+describe.skipIf(core === null)('a drop on a delete area', () => {
+  /** `main`'s statements in the guessing game. */
+  const MAIN = ['b002', 'b003', 'b004', 'b010'];
+
+  afterEach(() => {
+    // A test that failed during a drag leaves it running: end it while its blocks still exist, so
+    // that the next test starts afresh.
+    const workspace = running?.workspace;
+    if (workspace instanceof Blockly.WorkspaceSvg) {
+      workspace.cancelCurrentGesture();
+    }
+  });
+
+  it('deletes only the dragged block after the pointer moved there from a preview', async () => {
+    const { svg, dragged } = await withLooseBlock();
+    const near = pointerNear(svg, dragged, 'b003');
+    addDeleteArea(svg, near.x - 2);
+    const blocks = allBlocks(svg).length;
+
+    press(dragged);
+    moveTo(near);
+    expect(previewShown(svg)).toBe(true);
+    expect(fadedForDelete(dragged)).toBe(false);
+    // Still within snapping distance of b003, but the pointer is over the delete area.
+    const over = { x: near.x - 6, y: near.y };
+    moveTo(over);
+    expect(previewShown(svg)).toBe(false);
+    expect(fadedForDelete(dragged)).toBe(true);
+    release(over);
+
+    expect(dragged.isDeadOrDying()).toBe(true);
+    expect(mainList(svg)).toEqual(MAIN);
+    // The block and its text shadow.
+    expect(allBlocks(svg)).toHaveLength(blocks - 2);
+  });
+
+  it('deletes only the dragged block when released there without a last move', async () => {
+    const { svg, dragged } = await withLooseBlock();
+    const near = pointerNear(svg, dragged, 'b003');
+    addDeleteArea(svg, near.x - 2);
+
+    press(dragged);
+    moveTo(near);
+    expect(previewShown(svg)).toBe(true);
+    release({ x: near.x - 6, y: near.y });
+
+    expect(dragged.isDeadOrDying()).toBe(true);
+    expect(mainList(svg)).toEqual(MAIN);
+    expect(previewShown(svg)).toBe(false);
+  });
+
+  it('treats a dragged shadow as its block', async () => {
+    const { svg, dragged } = await withLooseBlock();
+    const shadow = dragged.getInputTargetBlock('ITEM0');
+    if (!(shadow instanceof Blockly.BlockSvg) || !shadow.isShadow()) {
+      throw new Error('print has no shadow in ITEM0');
+    }
+    const near = pointerNear(svg, dragged, 'b003');
+    addDeleteArea(svg, near.x - 2);
+
+    press(shadow, shadow);
+    moveTo(near);
+    expect(previewShown(svg)).toBe(true);
+    moveTo({ x: near.x - 6, y: near.y });
+    expect(previewShown(svg)).toBe(false);
+    release({ x: near.x - 6, y: near.y });
+
+    expect(dragged.isDeadOrDying()).toBe(true);
+    expect(mainList(svg)).toEqual(MAIN);
+  });
+
+  it('is undone with one Ctrl+Z', async () => {
+    const { svg, dragged } = await withLooseBlock();
+    const id = dragged.id;
+    const near = pointerNear(svg, dragged, 'b003');
+    addDeleteArea(svg, near.x - 2);
+    await eventsDelivered();
+
+    press(dragged);
+    moveTo(near);
+    release({ x: near.x - 6, y: near.y });
+    expect(svg.getBlockById(id)).toBeNull();
+    await eventsDelivered();
+
+    svg.undo(false);
+    const back = present(svg.getBlockById(id), 'the dragged block');
+    expect(back.getParent()).toBeNull();
+    expect(back.getInputTargetBlock('ITEM0')?.isShadow()).toBe(true);
+    expect(mainList(svg)).toEqual(MAIN);
+  });
+
+  it('still connects a block dropped over the canvas', async () => {
+    const { svg, dragged } = await withLooseBlock();
+    const near = pointerNear(svg, dragged, 'b003');
+    addDeleteArea(svg, near.x - 20);
+
+    press(dragged);
+    moveTo(near);
+    expect(previewShown(svg)).toBe(true);
+    release(near);
+
+    expect(dragged.isDeadOrDying()).toBe(false);
+    expect(mainList(svg)).toEqual(['b002', 'b003', dragged.id, 'b004', 'b010']);
+  });
+
+  it('counts only delete areas as places that delete', async () => {
+    const { svg } = await withLooseBlock();
+    svg.getComponentManager().addComponent({
+      component: new EdgeDragTarget(),
+      weight: 1,
+      capabilities: [Blockly.ComponentManager.Capability.DRAG_TARGET],
+    });
+    addDeleteArea(svg, 400);
+    const at = (x: number) => new PointerEvent('pointermove', { clientX: x, clientY: 300 });
+
+    expect(isOverDeleteArea(svg, at(10))).toBe(true);
+    expect(isOverDeleteArea(svg, at(600))).toBe(false);
+    expect(svg.getDragTarget(at(1100))).not.toBeNull();
+    expect(isOverDeleteArea(svg, at(1100))).toBe(false);
+  });
+
+  it('searches for no connection while the pointer is over the area', async () => {
+    const { svg, dragged } = await withLooseBlock();
+    const near = pointerNear(svg, dragged, 'b003');
+    addDeleteArea(svg, near.x - 2);
+
+    /** Exposes the protected search radius. */
+    class Probe extends B2cBlockDragStrategy {
+      radius(): number {
+        return this.getSearchRadius();
+      }
+    }
+    const probe = new Probe(dragged);
+    const at = dragged.getRelativeToSurfaceXY();
+    probe.startDrag();
+    probe.drag(at, new PointerEvent('pointermove', { clientX: near.x - 6, clientY: near.y }));
+    expect(probe.radius()).toBe(-1);
+    probe.drag(at, new PointerEvent('pointermove', { clientX: near.x + 6, clientY: near.y }));
+    expect(probe.radius()).toBeGreaterThan(0);
+    probe.drag(at, new PointerEvent('pointermove', { clientX: near.x - 6, clientY: near.y }));
+    // A move without a pointer event (a programmatic drag) is never over a delete area.
+    probe.drag(at);
+    expect(probe.radius()).toBeGreaterThan(0);
+    probe.endDrag();
+  });
+});
+
+describe('the delete-area feedback', () => {
+  const rules = parseRules(dragCss);
+  const tokens = themeTokens(rules);
+
+  it('fades the dragged blocks', () => {
+    const opacity = Number(declarationsOf(rules, FADED).get('opacity'));
+    expect(opacity).toBeGreaterThan(0.2);
+    expect(opacity).toBeLessThanOrEqual(0.6);
+  });
+
+  it.each(['light', 'dark'] as const)(
+    'tints the flyout in the %s theme, keeping its headings readable',
+    (theme) => {
+      expect(declarationsOf(rules, TINTED).get('fill')).toBe('var(--b2c-flyout-delete)');
+      // Important, to outweigh the fill the Blockly theme sets inline.
+      expect(dragCss).toContain('fill: var(--b2c-flyout-delete) !important;');
+      // The flyout's heading text: Zelos's label colour, or the dark theme's flyout foreground.
+      const heading = theme === 'light' ? '#575e75' : '#e6e9f0';
+      expect(contrastOf(tokens[theme], heading, 'var(--b2c-flyout-delete)')).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    },
+  );
+
+  it('finds the editor’s flyout while a block over the toolbox would be deleted', () => {
+    const workspace = renderedWorkspace(editorInjectOptions(Blockly.Themes.Zelos));
+    const toolbox = present(workspace.getToolbox(), 'toolbox');
+    if (!(toolbox instanceof Blockly.Toolbox)) {
+      throw new Error('the editor has no Blockly toolbox');
+    }
+    const block = Blockly.serialization.blocks.append(
+      { type: 'control.forever' },
+      workspace,
+    ) as Blockly.BlockSvg;
+    const injection = workspace.getInjectionDiv();
+    expect(injection.querySelector(TINTED)).toBeNull();
+
+    // What Blockly's dragger does while a block is dragged over the toolbox.
+    expect(toolbox.wouldDelete(block)).toBe(true);
+    toolbox.onDragEnter(block);
+    expect(injection.querySelector(TINTED)).not.toBeNull();
+    toolbox.onDragExit(block);
+    expect(injection.querySelector(TINTED)).toBeNull();
   });
 });
