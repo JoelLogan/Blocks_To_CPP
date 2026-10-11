@@ -1,0 +1,16 @@
+---
+source: crates/b2c-lang/tests/snapshots.rs
+expression: main
+---
+int main() {
+    int n = 3;
+    for (int i = 0; i < 3; ++i) {
+        std::cout << n << '\n';
+        n += -1;
+    }
+    std::cout << "Liftoff!" << '\n';
+    int lowest = -2147483647 - 1;
+    double below = -0.5;
+    int back = n - -1;
+    return 0;
+}

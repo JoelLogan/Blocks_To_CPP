@@ -369,8 +369,8 @@ limit: number, } | { "code": "unknownHandle" } | { "code": "unknownBuild" } | { 
  */
 diagnostics: Array<Diagnostic>, } | { "code": "newerFormat",
 /**
- * The app version that saved the project, when the file names a plausible
- * one: the user needs at least this version.
+ * Always `None` (`null`): messages never name a version taken from the file,
+ * which could claim any (ADR-0013), so the backend no longer reads one.
  */
 needs: string | null, } | { "code": "restricted" } | { "code": "changedOnDisk" } | { "code": "noPath" } | { "code": "notFound" } | { "code": "staleBuild" } | { "code": "buildNotSuccessful" } | { "code": "projectErrors",
 /**

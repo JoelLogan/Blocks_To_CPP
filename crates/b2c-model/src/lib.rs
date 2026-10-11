@@ -28,6 +28,7 @@ mod migrate;
 mod save;
 mod security;
 mod text_rules;
+mod version;
 mod walk;
 
 pub use clipboard::{

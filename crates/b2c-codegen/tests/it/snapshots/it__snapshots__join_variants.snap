@@ -6,7 +6,23 @@ expression: render(&project)
 // Edit the blocks, not this file – changes here are overwritten.
 
 #include <iostream>
+#include <sstream>
 #include <string>
+
+// ---- Blocks2Cpp support helpers (only those used) ------------------------
+namespace b2c {
+
+/// Returns `value` as text, written exactly as `std::cout << value` would
+/// write it now (2.5 as "2.5", where `std::to_string` gives "2.500000").
+inline std::string to_text(double value) {
+    std::ostringstream out;
+    out.copyfmt(std::cout);
+    out << value;
+    return out.str();
+}
+
+}  // namespace b2c
+// ---- End of Blocks2Cpp support helpers -----------------------------------
 
 int main() {
     int score = 42;
@@ -25,7 +41,7 @@ int main() {
     std::string j9 = std::string("a") + "b";
     bool j10 = std::string("a") < "b";
     bool j11 = "Ada" == name;
-    std::string j12 = std::to_string(ratio) + std::to_string(score);
+    std::string j12 = b2c::to_text(ratio) + std::to_string(score);
     std::string j13 = std::string(done ? "yes" : "no");
     auto j14 = std::string("auto text");
     std::string j15 = std::string();

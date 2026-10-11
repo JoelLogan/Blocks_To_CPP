@@ -96,6 +96,8 @@ rest of the project valid, so that the file tests one thing.
 | `module-name-traversal.b2c` | T9 | A module name that walks out of the output folder | `B2C-E0117` | — |  |
 | `nan-number.b2c` | T5 | `NaN` (not JSON) | `B2C-E0103` | — |  |
 | `nested-block-position.b2c` | T1 | A canvas position on a block inside another block | `B2C-E0128` | — |  |
+| `newer-app-compiler-flags.b2c` | T2 | Compiler flags and include paths in `build` of a file that claims a far newer Blocks2Cpp (`generator.app` beyond 64 bits): refused as made with a newer version, never loaded | `B2C-E0108` | — | The message names no version from the file (ADR-0013) |
+| `newer-app-unknown-keys.b2c` | T1 | Keys this version does not know (`options.usingNamespaceStd`, `lints`) in a file a newer Blocks2Cpp saved (`generator.app` 9.0.0) | `B2C-E0108` | — | The message names no version from the file (ADR-0013) |
 | `newer-block-version.b2c` | T1 | A block from a newer catalog version | accepted | `B2C-E0602` |  |
 | `newer-format-version.b2c` | T1 | A project from a newer Blocks2Cpp (never half-loaded) | `B2C-E0108` | — |  |
 | `nul-in-name.b2c` | T4 | A NUL character in a variable name (C strings end there) | `B2C-E0124` | — |  |

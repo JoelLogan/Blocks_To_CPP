@@ -122,6 +122,22 @@ drafts are stored too (with a `"draft": true` flag), so in-progress text is
 never lost. The token list is flat, so parser recursion depth is bounded by
 expression depth (limit 64) and not by JSON nesting.
 
+A token is an object with exactly one key. The kinds are `num`, `str`, `chr`,
+`ref`, `op`, `kw` and `text`; a new kind needs a new format version
+([05 §5.7](05-project-format.md#57-versioning-and-migration)). Values are
+checked when the slot is parsed, not when the file loads: an `op` or `kw`
+outside this section's grammar, or a `num` that is not an accepted literal,
+is a slot error (`E0310`, …), and the file still loads. In M2 the accepted
+forms are the operators `+ - * / % == != < <= > >= && || ! and or not ?:`,
+parentheses, `true` and `false`, and numbers written as decimal digits with
+an optional fraction and exponent (a whole number has no leading zero, except
+a lone `0`), or as `0x`/`0b` integers, with `'` separators. Suffixes and the
+other operators ([08 §8.4.4](08-security.md#844-numbers)) come with typing in
+slots (M3). A `num` may start with one `-` or `+`, which lowering applies as
+a unary operator; the literal itself (`NumLit`) never carries a sign. The
+file keeps numbers as typed; the generated C++ prints them in canonical form
+([08 §8.4.4](08-security.md#844-numbers)).
+
 **Expand / collapse.** Right-click → *Expand into blocks* converts the parsed
 expression into nested operator/value blocks. *Collapse to text* does the
 reverse whenever the block subtree is expressible in slot syntax. This lets
@@ -133,6 +149,7 @@ tokens (or nothing) shows an internal *shadow* block, which is never saved as
 a `{"block": …}` input:
 
 * a single literal token (`num`, `str`, `chr`) is an editable literal;
+* a number typed with a leading `-` is stored as one `num` token;
 * a single reference (`ref`) is a dropdown of the symbols in scope that fit
   the input;
 * any other token list is shown read-only, as text, and is kept unchanged;
@@ -323,7 +340,7 @@ unsigned comparison, and possible overflow of a literal into its target type
 | Block | Generates |
 | ------- | ----------- |
 | `"hello"` | `"hello"` (escaped per [08 §8.4.2](08-security.md#842-string-and-character-literals)) |
-| `join (a) (b) ⊕` | Idiomatic per part: `std::string(a) + b`, `+ std::to_string(n)`, `+ std::string(1, c)`; `std::format` when the *formatting style* setting is `format` and the toolchain supports it |
+| `join (a) (b) ⊕` | Idiomatic per part: `std::string(a) + b`, `+ std::to_string(n)` for whole numbers and `+ b2c::to_text(x)` for decimal numbers, which writes the number exactly as `print` would, `+ std::string(1, c)`; `std::format` when the *formatting style* setting is `format` and the toolchain supports it |
 | `format ("{} scored {}") with (name) (score) ⊕` | `std::format("{} scored {}", name, score)` (C++20 with GCC 13+; otherwise an `std::ostringstream` helper) |
 | `length of (s)` | `s.size()` |
 | `letter (i) of (s)` | `s.at(i)` |
@@ -353,8 +370,8 @@ unsigned comparison, and possible overflow of a literal into its target type
 | Block | Generates | Notes |
 | ------- | ----------- | ------- |
 | `print (a) (b) ⊕ [no separator ▾] ☑ new line` | `std::cout << a << b << '\n';` | `bool` prints as `true`/`false` (via `(b ? "true" : "false")`); 8-bit integers print as numbers (unary `+`); separators can be spaces or commas; `print to error stream` uses `std::cerr` |
-| `ask ("Name? ") and save answer in [name ▾]` | string: `std::cout << "Name? "; std::getline(std::cin >> std::ws, name);` | `std::ws` avoids the classic "getline after `>>`" bug |
-| (same, numeric target) `[keep asking until valid ▾]` | `age = b2c::ask<int>("Age? ");` | The helper asks again after invalid input, with a short message such as *"Please enter a whole number."* At end of input (e.g. stdin from a file) it prints *"Input ended"* and exits with code 1 instead of looping forever. `simple` mode emits `std::cin >> age;`. |
+| `ask ("Name? ") and save answer in [name ▾]` | *keep asking until valid* (default): `name = b2c::ask_line("Name? ");` reads one line; an empty line asks again | Leading spaces are dropped. `simple` mode emits `std::cout << "Name? "; std::getline(std::cin >> std::ws, name);`, where `std::ws` avoids the classic "getline after `>>`" bug |
+| (same, numeric target) `[keep asking until valid ▾]` | `age = b2c::ask<int>("Age? ");` | The helper asks again after invalid input, with a short message such as *"Please enter a whole number."* An answer is valid only when the whole line, apart from spaces, is one value of the variable's type: `3.5` or `12abc` for a whole number asks again with *Please enter a whole number.* At end of input (e.g. stdin from a file) it prints *"Input ended"* and exits with code 1 instead of looping forever. `simple` mode emits `std::cin >> age;`. |
 | `read [word ▾] into [w]` | `std::cin >> w;` / `std::getline(std::cin, w);` | |
 | `show numbers with (2) decimal places` | `std::cout << std::fixed << std::setprecision(2);` | |
 
@@ -509,8 +526,9 @@ Clear organisation is a core requirement, not polish:
 ## 3.9 Support helpers
 
 Some blocks generate a call into a tiny, readable **support library** of
-helpers in the `b2c` namespace: `random_int`, `random_real`, `ask<T>`, `trim`,
-`split`, `to_upper`, `replace_all`, `Stopwatch` and similar.
+helpers in the `b2c` namespace: `random_int`, `random_real`, `ask<T>`,
+`to_text`, `trim`, `split`, `to_upper`, `replace_all`, `Stopwatch` and
+similar.
 
 * Helpers are plain C++ with Doxygen comments, versioned with the catalog, and
   emitted **only if used**.
@@ -774,15 +792,15 @@ token, needs about 30.
 ```cpp
 // Generated by Blocks2Cpp from project "Guessing Game", module "main".
 #include <iostream>
-#include <limits>
 #include <random>
+#include <sstream>
 #include <string>
 
 // ---- Blocks2Cpp support helpers (only those used) --------------------
 namespace b2c {
 /// Returns a uniformly distributed integer in [low, high].
 inline int random_int(int low, int high) { /* … */ }
-/// Prints `prompt` and reads a T, re-prompting until the input is valid.
+/// Prints `prompt` and reads one line holding a T, asking again until it is valid.
 template <typename T> T ask(const std::string& prompt) { /* … */ }
 }  // namespace b2c
 // -------------------------------------------------------------------------

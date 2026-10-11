@@ -8,7 +8,6 @@
 //! size before parsing a single byte.
 
 use b2c_model::{Document, LoadError};
-use serde::Deserialize;
 use serde_json::Value;
 
 use crate::commands::IpcRequest;
@@ -73,7 +72,7 @@ fn serde_error(error: &serde_json::Error) -> IpcError {
 /// # Errors
 /// * [`IpcError::PayloadTooLarge`] for a document over the size limit;
 /// * [`IpcError::NewerFormat`] for a project made by a newer version
-///   (`B2C-E0108`);
+///   (`B2C-E0108`), naming no version: the file could claim any (ADR-0013);
 /// * [`IpcError::InvalidDocument`] with the loader's diagnostics otherwise.
 pub fn parse_document(text: &str) -> Result<Document, IpcError> {
     parse_document_with(text, b2c_model::load)
@@ -88,48 +87,17 @@ pub(crate) fn parse_document_with(
     if text.len() > MAX_DOCUMENT_BYTES {
         return Err(IpcError::too_large(MAX_DOCUMENT_BYTES));
     }
-    load(text.as_bytes()).map_err(|error| load_error(text, &error))
+    load(text.as_bytes()).map_err(|error| load_error(&error))
 }
 
-fn load_error(text: &str, error: &LoadError) -> IpcError {
+fn load_error(error: &LoadError) -> IpcError {
     if error.diagnostics.iter().any(|d| d.code.0 == NEWER_FORMAT_CODE) {
-        IpcError::NewerFormat {
-            needs: saved_by(text),
-        }
+        IpcError::NewerFormat { needs: None }
     } else {
         IpcError::InvalidDocument {
             diagnostics: convert_all(&error.diagnostics),
         }
     }
-}
-
-/// The header keys [`saved_by`] reads; serde skips everything else.
-#[derive(Deserialize)]
-struct Header {
-    #[serde(default)]
-    generator: Option<GeneratorHeader>,
-}
-
-#[derive(Deserialize)]
-struct GeneratorHeader {
-    #[serde(default)]
-    app: Option<Value>,
-}
-
-/// The app version that saved the document (`generator.app`), when it looks like
-/// a version: 1 to 32 ASCII letters, digits, `.`, `-` or `+`, the same rule the
-/// loader uses for its message. Only called after the loader accepted the JSON
-/// syntax (it reported `B2C-E0108`, which comes after parsing).
-fn saved_by(text: &str) -> Option<String> {
-    let header = serde_json::from_str::<Header>(text).ok()?;
-    let Some(Value::String(app)) = header.generator?.app else {
-        return None;
-    };
-    let plausible = (1..=32).contains(&app.len())
-        && app
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'+'));
-    plausible.then_some(app)
 }
 
 /// The standard base64 alphabet (RFC 4648 §4).
@@ -224,6 +192,8 @@ mod tests {
     use std::cell::Cell;
     use std::time::{Duration, Instant};
 
+    use serde::Deserialize;
+
     use super::*;
 
     #[test]
@@ -263,17 +233,20 @@ mod tests {
     }
 
     #[test]
-    fn newer_formats_name_the_version_they_need() {
-        let error = parse_document(
+    fn newer_formats_name_no_version_from_the_file() {
+        // A newer format, and a key this version does not know in a file a
+        // newer app saved: both are "made with a newer version", and neither
+        // names the version the file claims (ADR-0013).
+        for text in [
             r#"{"format": "blocks2cpp/project", "formatVersion": 7, "generator": {"app": "3.1.0", "catalog": "2.0.0"}, "anything": ["goes"]}"#,
-        )
-        .unwrap_err();
-        assert_eq!(
-            error,
-            IpcError::NewerFormat {
-                needs: Some("3.1.0".to_owned())
-            }
-        );
+            r#"{"format": "blocks2cpp/project", "formatVersion": 1, "generator": {"app": "9.0.0", "catalog": "1.0.0"}, "lints": {}}"#,
+        ] {
+            assert_eq!(
+                parse_document(text).unwrap_err(),
+                IpcError::NewerFormat { needs: None },
+                "{text}"
+            );
+        }
         for generator in [
             r#""generator": {"app": "<b>evil</b>"}"#,
             r#""generator": {"app": 3}"#,

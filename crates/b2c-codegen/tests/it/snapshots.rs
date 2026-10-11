@@ -909,14 +909,21 @@ fn helpers_compile_under_every_supported_standard() {
     let n = b.var("n", Type::Int);
     let name = b.var("name", Type::String);
     let yes = b.var("yes", Type::Bool);
+    let letter = b.var("letter", Type::Char);
+    let x = b.var("x", Type::Double);
     let main = b.main(vec![
         b.declare(&n, Some(b.random(b.int("1"), b.int("6")))),
         b.declare(&name, None),
         b.declare(&yes, None),
+        b.declare(&letter, None),
+        b.declare(&x, None),
         b.ask(Some(b.str("n: ")), &n, AskMode::KeepAsking),
         b.ask(Some(b.str("name: ")), &name, AskMode::KeepAsking),
         b.ask(Some(b.str("yes: ")), &yes, AskMode::KeepAsking),
-        b.print(vec![b.get(&n), b.get(&name), b.get(&yes)]),
+        b.ask(Some(b.str("letter: ")), &letter, AskMode::KeepAsking),
+        b.ask(Some(b.str("x: ")), &x, AskMode::KeepAsking),
+        b.print(vec![b.get(&n), b.get(&name), b.get(&yes), b.get(&letter)]),
+        b.print(vec![b.join(vec![b.str("x = "), b.get(&x)])]),
     ]);
     let project = generate_checked(&b.program(vec![main]), &options("Standards"));
     for standard in ["c++17", "c++20", "c++23"] {

@@ -59,6 +59,23 @@ fn int_min(magnitude: &str, origin: &Origin) -> Option<Expr> {
     })
 }
 
+/// What an octal-looking whole number such as `010` or `0'100` means in
+/// decimal: its digits without the leading zeros (`10`, `100`; `0` for
+/// `00`). C++ would read the number as octal, so it is refused with this
+/// suggestion. `None` for anything else.
+fn without_octal_zeros(digits: &str) -> Option<&str> {
+    let looks_octal = digits.len() > 1
+        && digits.starts_with('0')
+        && !digits.ends_with('\'')
+        && !digits.contains("''")
+        && digits.bytes().all(|b| b.is_ascii_digit() || b == b'\'');
+    if !looks_octal {
+        return None;
+    }
+    let decimal = digits.trim_start_matches(['0', '\'']);
+    Some(if decimal.is_empty() { "0" } else { decimal })
+}
+
 /// The value of an input, before deciding whether it was required.
 enum InputValue {
     Value(Expr),
@@ -230,15 +247,23 @@ impl Lowerer<'_> {
             self.incomplete(location, "The number in this block is damaged. Type it again.");
             return error_expr(origin);
         };
-        let text = text.trim();
-        let (negative, digits) = match text.strip_prefix('-') {
+        self.signed_number(text.trim(), origin, location)
+    }
+
+    /// A number as typed in a number block or saved as one `num` token
+    /// (`{"num": "-1"}`): an optional `-` or `+`, then a literal (spec §3.4).
+    /// The literal itself never carries the sign, because C++ has no negative
+    /// literals: `-` becomes unary minus, `+` changes nothing, and
+    /// `-2147483648` becomes `-2147483647 - 1`, as `INT_MIN` is written.
+    fn signed_number(&mut self, typed: &str, origin: Origin, location: Location) -> Expr {
+        let (negative, digits) = match typed.strip_prefix('-') {
             Some(rest) => (true, rest),
-            None => (false, text.strip_prefix('+').unwrap_or(text)),
+            None => (false, typed.strip_prefix('+').unwrap_or(typed)),
         };
         if negative && let Some(min) = int_min(digits, &origin) {
             return min;
         }
-        let literal = self.number_literal(digits, origin.clone(), location);
+        let literal = self.number_literal(digits, typed, origin.clone(), location);
         if negative && literal.ty != Type::Error {
             let ty = literal.ty.clone();
             Expr {
@@ -254,12 +279,14 @@ impl Lowerer<'_> {
         }
     }
 
-    /// A numeric literal: `int` unless it has a decimal point or exponent.
-    fn number_literal(&mut self, text: &str, origin: Origin, location: Location) -> Expr {
-        let hex = text.starts_with("0x") || text.starts_with("0X");
-        let is_double = !hex && text.contains(['.', 'e', 'E']);
+    /// A numeric literal without a sign: `int` unless it has a decimal point
+    /// or exponent. `typed` is the whole text as the user typed it (with its
+    /// sign), for messages.
+    fn number_literal(&mut self, digits: &str, typed: &str, origin: Origin, location: Location) -> Expr {
+        let hex = digits.starts_with("0x") || digits.starts_with("0X");
+        let is_double = !hex && digits.contains(['.', 'e', 'E']);
         let num_type = if is_double { NumType::Double } else { NumType::Int };
-        match NumLit::parse(text, num_type) {
+        match NumLit::parse(digits, num_type) {
             Ok(literal) if is_double => Expr {
                 kind: ExprKind::Float(literal),
                 ty: Type::Double,
@@ -271,32 +298,43 @@ impl Lowerer<'_> {
                 origin,
             },
             Err(NumError::Syntax(_)) => {
-                let message = if text.is_empty() {
+                let message = if typed.is_empty() {
                     String::from("A number is needed here, such as 42 or 3.14.")
+                } else if let Some(decimal) = without_octal_zeros(digits) {
+                    let sign = typed.strip_suffix(digits).unwrap_or_default();
+                    format!(
+                        "Write {}, not {}: in C++ a number that starts with 0 is octal.",
+                        quoted(&format!("{sign}{decimal}")),
+                        quoted(typed)
+                    )
                 } else {
                     format!(
                         "{} is not a number. Write whole numbers like 42 and decimal numbers like 3.14.",
-                        quoted(text)
+                        quoted(typed)
                     )
                 };
                 self.diags.error(codes::BAD_NUMBER, location, message);
                 error_expr(origin)
             }
             Err(NumError::OutOfRange { .. }) => {
+                let negative = typed.starts_with('-');
                 let message = if is_double {
-                    format!("{} is too large for a decimal number.", quoted(text))
-                } else if text.chars().all(|c| c.is_ascii_digit()) {
-                    format!(
-                        "{} is too large for a whole number (the largest is 2147483647). Write it as a decimal \
-                         number, such as {}.0, if you need it.",
-                        quoted(text),
-                        shown(text)
-                    )
+                    format!("{} is too large for a decimal number.", quoted(typed))
                 } else {
-                    format!(
-                        "{} is too large for a whole number (the largest is 2147483647).",
-                        quoted(text)
-                    )
+                    let limit = if negative {
+                        "too small for a whole number (the smallest is -2147483648)"
+                    } else {
+                        "too large for a whole number (the largest is 2147483647)"
+                    };
+                    if digits.chars().all(|c| c.is_ascii_digit()) {
+                        format!(
+                            "{} is {limit}. Write it as a decimal number, such as {}.0, if you need it.",
+                            quoted(typed),
+                            shown(typed)
+                        )
+                    } else {
+                        format!("{} is {limit}.", quoted(typed))
+                    }
                 };
                 self.diags.error(codes::LITERAL_OVERFLOW, location, message);
                 error_expr(origin)
@@ -603,7 +641,7 @@ impl Lowerer<'_> {
         match &tree.kind {
             SyntaxKind::Number(text) => {
                 let location = origin.location();
-                self.number_literal(text, origin, location)
+                self.signed_number(text, origin, location)
             }
             SyntaxKind::Str(text) => {
                 let location = origin.location();

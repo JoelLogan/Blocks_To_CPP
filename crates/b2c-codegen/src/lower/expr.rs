@@ -220,20 +220,32 @@ impl Lowerer<'_> {
     }
 
     /// Converts a desugared expression to a `std::string` object:
-    /// `std::string(text)`, `std::string(1, c)`, `std::to_string(n)` or
-    /// `std::string(b ? "true" : "false")`.
+    /// `std::string(text)`, `std::string(1, c)`, `std::to_string(n)`,
+    /// `b2c::to_text(x)` or `std::string(b ? "true" : "false")`.
     pub(super) fn std_string_of(&mut self, expr: &Expr, lowered: CExpr) -> CExpr {
         self.include("<string>");
         match expr.ty {
             Type::String if is_std_string(expr) => lowered,
             Type::String => CExpr::call_fixed("std::string", vec![lowered]),
             Type::Char => CExpr::call_fixed("std::string", vec![int_literal(1), lowered]),
-            Type::Int | Type::Double => CExpr::call_fixed("std::to_string", vec![lowered]),
+            Type::Int | Type::Double => self.number_text(&expr.ty, lowered),
             Type::Bool => {
                 let text = bool_text(expr, lowered);
                 CExpr::call_fixed("std::string", vec![text])
             }
             Type::Void | Type::Error => lowered,
+        }
+    }
+
+    /// A number as text, written as `print` writes it (spec §3.7.4): a whole
+    /// number with `std::to_string(n)`, a decimal number with
+    /// `b2c::to_text(x)`, because `std::to_string` writes 2.5 as `2.500000`.
+    fn number_text(&mut self, ty: &Type, lowered: CExpr) -> CExpr {
+        if *ty == Type::Double {
+            self.use_helper(Helper::ToText);
+            CExpr::call_fixed("b2c::to_text", vec![lowered])
+        } else {
+            CExpr::call_fixed("std::to_string", vec![lowered])
         }
     }
 
@@ -249,7 +261,7 @@ impl Lowerer<'_> {
             let lowered = self.expr(item);
             let part = match item.ty {
                 Type::Char => CExpr::call_fixed("std::string", vec![int_literal(1), lowered]),
-                Type::Int | Type::Double => CExpr::call_fixed("std::to_string", vec![lowered]),
+                Type::Int | Type::Double => self.number_text(&item.ty, lowered),
                 Type::Bool => bool_text(item, lowered),
                 Type::String | Type::Void | Type::Error => lowered,
             };

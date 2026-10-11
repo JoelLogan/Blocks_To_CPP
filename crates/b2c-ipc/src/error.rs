@@ -110,8 +110,8 @@ pub enum IpcError {
     /// (`docs/spec/05-project-format.md` §5.7).
     #[error("project made by a newer version")]
     NewerFormat {
-        /// The app version that saved the project, when the file names a plausible
-        /// one: the user needs at least this version.
+        /// Always `None` (`null`): messages never name a version taken from the file,
+        /// which could claim any (ADR-0013), so the backend no longer reads one.
         needs: Option<String>,
     },
     /// The project is in Restricted Mode, so it cannot be built or run

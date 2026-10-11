@@ -65,7 +65,10 @@ every example at indent widths 2 and 4.
   allocation-heavy work (the size check happens before parsing).
 * Strongly typed structs with `deny_unknown_fields`. Field values are decoded
   into enums and newtypes, never left as untyped JSON. The decoder reports
-  every problem it finds, not just the first.
+  every problem it finds, not just the first. An unknown key is `B2C-E0110`,
+  or `B2C-E0108` (*made with a newer version*) when the file's
+  `generator.app` is newer than this app
+  ([05 §5.7](05-project-format.md#57-versioning-and-migration)).
 * Format migrations (the `formatVersion` chain) run on the parsed JSON tree
   before decoding, because an older file may not fit the current types. The
   upgraded tree then goes through the full decoder and validation.
@@ -120,7 +123,10 @@ enum Expr {
   ([03 §3.4](03-block-language.md#34-expression-slots)) is parsed by a
   hand-written recursive-descent / precedence-climbing parser with an explicit
   depth limit of 64. It produces the same `Expr` nodes that blocks produce, so
-  later stages cannot tell a typed expression from a block-built one.
+  later stages cannot tell a typed expression from a block-built one. A `num`
+  token, like a number block, may start with one `-` or `+`, which lowering
+  applies as a unary operator: a `NumLit` never carries a sign, and
+  `-2147483648` becomes `-2147483647 - 1`.
 * **Library-pack blocks** lower to `Template` nodes that hold the parsed
   template and their argument `Expr`s ([03 §3.11.2](03-block-language.md#3112-template-lowering-library-blocks)).
 * **Disabled blocks** are dropped here, though their symbols are still

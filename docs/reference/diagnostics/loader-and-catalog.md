@@ -128,17 +128,28 @@ file is not a JSON object at all.
 
 ### B2C-E0108: made with a newer version of Blocks2Cpp
 
-The project uses a newer file format than this version of Blocks2Cpp
-understands (any whole number above the current format version, however
-large). It is refused as a whole instead of being half loaded, so nothing in
-it is lost or misread.
+The project was saved by a newer version of Blocks2Cpp, in one of two ways
+([spec §5.7](../../spec/05-project-format.md#57-versioning-and-migration)):
 
-> This project was made with a newer version of Blocks2Cpp (needs ≥ 0.3.0; it uses project format 2, and this version reads format 1). Update Blocks2Cpp to open it.
+* it uses a newer file format than this version understands (any whole
+  number above the current format version, however large); or
+* it has a key that this version does not know, and its `generator.app` is a
+  newer version than this app (compared by SemVer precedence). Each format
+  version only adds keys, so such a key is one that the newer version added,
+  not a mistake (otherwise it is [`B2C-E0110`](#b2c-e0110-unknown-key)).
+
+The file is refused as a whole instead of being half loaded, so nothing in it
+is lost or misread. The message never names a version taken from the file,
+because the file could claim any.
+
+> This project was made with a newer version of Blocks2Cpp, which saves projects in a newer format than this version can read. Update Blocks2Cpp to open it.
+>
+> "project.options" has the key "usingNamespaceStd", which this version of Blocks2Cpp does not know. The project was made with a newer version of Blocks2Cpp; update Blocks2Cpp to open it.
 
 Blocks copied in a newer version of Blocks2Cpp can use a newer clipboard
 format, and are refused the same way when pasted:
 
-> These blocks were copied from a newer version of Blocks2Cpp (they use clipboard format 2, and this version reads format 1). Update Blocks2Cpp to paste them.
+> These blocks were copied from a newer version of Blocks2Cpp, which copies blocks in a newer format than this version can read. Update Blocks2Cpp to paste them.
 
 **Fix:** update Blocks2Cpp.
 
@@ -165,6 +176,10 @@ their own data in the `"x-ext"` object, which is preserved but never
 interpreted.
 
 > "project" has an unknown key "junk0". Remove it or check its spelling.
+
+In a file whose `generator.app` is a newer version than this app, an unknown
+key is reported as [`B2C-E0108`](#b2c-e0108-made-with-a-newer-version-of-blocks2cpp)
+instead: the newer version added it.
 
 **Fix:** remove the key or correct its spelling. Machine-specific settings
 belong in the app's settings, not in the project.
