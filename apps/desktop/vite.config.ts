@@ -52,7 +52,7 @@ function wasmCoreBuilt(): Plugin {
               'Build it from the repository root with ' +
               '`pnpm --filter @blocks2cpp/b2c-core-wasm build` (set B2C_SKIP_WASM_OPT=1 without ' +
               "binaryen's wasm-opt), then run this again. It needs the wasm-bindgen CLI of the " +
-              'version in Cargo.lock: see packages/b2c-core-wasm/README.md#build.',
+              'version in Cargo.lock: see BUILDING.md#the-webassembly-core-does-not-build.',
           );
         }
         return resolved;

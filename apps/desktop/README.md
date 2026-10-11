@@ -273,6 +273,9 @@ project, build, run, toolchain, settings, trust and recovery services:
 
 ## Requirements
 
+[`BUILDING.md`](../../BUILDING.md) installs all of these on Debian, Ubuntu and Windows, step by
+step; this list is a summary for contributors.
+
 - Node.js 22.13 or later and pnpm 11 (the exact version is pinned in the root `package.json`;
   see [site/README.md](../../site/README.md#build-locally) for Corepack)
 - Rust: the toolchain pinned in [`rust-toolchain.toml`](../../rust-toolchain.toml), installed
@@ -302,7 +305,9 @@ project, build, run, toolchain, settings, trust and recovery services:
 
 ## Develop
 
-From the repository root:
+Set up your machine with [`BUILDING.md`](../../BUILDING.md) first. The development server below
+is for changing the app, not for judging its speed or looks
+([why](../../BUILDING.md#develop)); use the release build for that. From the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -385,6 +390,9 @@ no webview libraries. Name the crate (`-p blocks2cpp-desktop`) to build the app.
 
 ## Build
 
+[`BUILDING.md`](../../BUILDING.md) has the complete steps for each system, from installing the
+tools to [starting the app](../../BUILDING.md#run-blocks2cpp). In short:
+
 Build the WebAssembly core first, as for `dev` ([Develop](#develop)); without it the frontend
 build stops with _"The WebAssembly core of the editor has not been built"_. From the repository
 root:
@@ -402,7 +410,8 @@ Installers are configured for Windows (MSI and NSIS) and Linux (AppImage, `.deb`
 
 On Linux, if the window stays blank (some GPU drivers, virtual machines or a virtual display), start
 the app with `WEBKIT_DISABLE_DMABUF_RENDERER=1`
-([§2.8](../../docs/spec/02-architecture.md#28-cross-platform-considerations)).
+([§2.8](../../docs/spec/02-architecture.md#28-cross-platform-considerations); more in
+[`BUILDING.md`](../../BUILDING.md#troubleshooting)).
 
 ## Security settings
 

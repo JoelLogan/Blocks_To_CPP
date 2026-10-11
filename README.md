@@ -34,50 +34,25 @@ run in a built-in terminal.
 > includes typing expressions into slots and exporting a project. The full
 > technical specification is in [`docs/spec/`](docs/spec/README.md).
 
-## Try it
+## Get Blocks2Cpp
 
-You need [Rust](https://rustup.rs) and g++ 11 or newer (on Windows,
-[MSYS2](https://www.msys2.org)'s UCRT64 g++). The pinned Rust toolchain is
-installed automatically.
+There are no installers yet, so you build Blocks2Cpp from its source code.
+[`BUILDING.md`](BUILDING.md) has every step for Debian, Ubuntu and Windows:
+what to install, how to build the desktop app and the command-line tool, and
+how to start them. To build and run the programs you make, the app needs
+g++ 11 or newer; it shows you how to install it if you have none.
 
-### The desktop editor
-
-The desktop app also needs [Node.js](https://nodejs.org) 22.13 or newer with
-[pnpm](https://pnpm.io), and on Linux the WebKitGTK libraries
-([details](apps/desktop/README.md#requirements)):
-
-```sh
-pnpm install --frozen-lockfile
-pnpm --filter @blocks2cpp/b2c-core-wasm build   # the compiler core the editor runs (WebAssembly)
-pnpm desktop:dev                                 # open the app, reloading as you edit
-```
-
-Building the WebAssembly core needs the wasm-bindgen CLI
-(`cargo install wasm-bindgen-cli --version 0.2.129 --locked`) and binaryen's
-`wasm-opt` (`sudo apt install binaryen` on Debian and Ubuntu); without
-`wasm-opt`, set `B2C_SKIP_WASM_OPT=1`
-([details](packages/b2c-core-wasm/README.md#build)).
 Then follow [Getting started](docs/user-guide/getting-started.md): it walks
 you from the first start to a number-guessing game built from blocks.
-
-### The command-line tool
-
-```sh
-cargo build --release -p b2c-cli
-./target/release/b2c run examples/hello_world.b2c        # build and run
-./target/release/b2c run examples/guessing_game.b2c      # an interactive program
-./target/release/b2c generate examples/fizzbuzz.b2c --out generated   # see the C++
-./target/release/b2c check examples/primes.b2c           # check without building
-./target/release/b2c toolchains                          # the compilers found
-```
-
 [`examples/`](examples/README.md) has 15 projects to try, and
-[`docs/reference/cli.md`](docs/reference/cli.md) describes every command.
+[`docs/reference/cli.md`](docs/reference/cli.md) describes every command of
+the command-line tool.
 
 ## Documentation
 
 | Document                                                            | Description                                                                                                                       |
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| [Building Blocks2Cpp](BUILDING.md)                                  | What to install, and how to build, start and update the app and the command-line tool on Linux and Windows                        |
 | [User guide](docs/user-guide/README.md)                             | Getting started with the desktop editor: setting up g++, building and running a first program, Restricted Mode                    |
 | [Specification website](https://joellogan.github.io/Blocks_To_CPP/) | The whole specification and decision records on one page, built from `docs/` by [`site/`](site/README.md)                         |
 | [Specification](docs/spec/README.md)                                | Architecture, block language, project format, translation pipeline, toolchain/build/run, security model, quality process, roadmap |

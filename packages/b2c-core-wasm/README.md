@@ -131,7 +131,9 @@ so type checking works without a build.
 
 ## Build
 
-Needs the pinned Rust toolchain (with `wasm32-unknown-unknown`), the wasm-bindgen CLI of the
+[`BUILDING.md`](../../BUILDING.md) sets these tools up on each system and builds the core as part of
+the app ([troubleshooting](../../BUILDING.md#the-webassembly-core-does-not-build)). In short, it
+needs the pinned Rust toolchain (with `wasm32-unknown-unknown`), the wasm-bindgen CLI of the
 version pinned in `Cargo.lock` (0.2.129) and binaryen's `wasm-opt` (the `binaryen` package of
 Ubuntu 24.04, version 108, is new enough; CI uses release 133):
 

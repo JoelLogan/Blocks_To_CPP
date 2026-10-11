@@ -130,6 +130,7 @@ Blocks_To_CPP/
 ├── pnpm-workspace.yaml             # pnpm workspace
 ├── rust-toolchain.toml             # pinned Rust toolchain
 ├── deny.toml                       # cargo-deny policy
+├── BUILDING.md                     # build and run from source
 ├── SECURITY.md
 ├── CONTRIBUTING.md
 └── README.md

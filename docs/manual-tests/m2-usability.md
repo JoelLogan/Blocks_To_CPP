@@ -32,10 +32,10 @@ shortcut in M2
 
 ## What you need
 
-1. A build of the commit under test (`pnpm desktop:build`, or the executable
-   only with `pnpm --filter @blocks2cpp/desktop tauri build --no-bundle`; see
-   the [desktop app's README](../../apps/desktop/README.md#build)). Write the
-   commit into each session record.
+1. A release build of the commit under test, made and started as
+   [`BUILDING.md`](../../BUILDING.md#run-blocks2cpp) describes; never the
+   development server (`pnpm desktop:dev`), which is slower and looks and
+   behaves differently. Write the commit into each session record.
 2. A computer with g++ 11 or newer installed and on the path, so the status
    bar names it when the app starts. (The setup page is covered by the
    end-to-end tests. To try it with a participant as well, run that session

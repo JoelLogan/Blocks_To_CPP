@@ -213,6 +213,9 @@ Notes on the jobs:
   scripts. Each relative link must point to a file in the repository, and
   each anchor to a heading GitHub gives that anchor; lychee checks no
   anchors.
+* (M3) A weekly `build-docs` job runs `BUILDING.md`'s Debian steps word for
+  word in Debian 12 and 13 containers, up to a release build that starts
+  under xvfb.
 * The weekly dependency health report lists `cargo deny check advisories`
   (including unmaintained crates), `pnpm outdated -r`, the number of
   duplicate crate versions, and `osv-scanner.toml` exceptions that expire
@@ -243,6 +246,7 @@ the code it describes.
 | Diagnostics reference | `docs/reference/diagnostics/` | Users | **Generated** from the message catalog plus explanations; CI fails if a code is undocumented |
 | API docs | rustdoc / TSDoc | Contributors | Built in CI; `missing_docs` warnings |
 | CLI reference | `docs/reference/cli.md` | Users, CI authors | Generated from `clap` definitions |
+| `BUILDING.md` | Repo root | Everyone who builds from source (all users until M6), contributors | The one place with prerequisites, install commands and build and run steps per system, kept apart from design notes; its Debian and Windows packages and build commands are the ones CI uses |
 | Desktop app README | `apps/desktop/README.md` | Contributors | The dependency table (version, release date, licence, why) and the *Adding an IPC command* steps; updated in the PR that adds a dependency or a command |
 | `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md` | Repo root | Everyone | Keep a Changelog format |
 
@@ -255,6 +259,10 @@ pages, and every diagnostic links to its reference entry.
 * All Markdown is linted with markdownlint, and external links are checked
   with lychee (§9.3). Links and heading anchors are checked for every
   tracked Markdown file. rustdoc is built with warnings as errors.
+* Build steps are written once: other documents link to `BUILDING.md`.
+  Pinned tool versions appear only there and in their source of truth (such
+  as `Cargo.lock`). Until the desktop app's README is cut to a code map, it
+  and the WebAssembly core's README still repeat a summary of them.
 * **In M2** there is no *Help* menu: *Learn more* in Problems opens the
   published diagnostics reference, and the setup page opens the MSYS2 and
   WinLibs sites, in the system browser through fixed links
