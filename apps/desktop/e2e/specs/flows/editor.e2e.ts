@@ -1,14 +1,15 @@
 /**
  * The block editor in the real webview (docs/spec/04-user-interface.md §4.2–4.4, 03 §3.6):
  *
- * - a variable menu lists the variables in scope at the block: the *ask* menu only those it may
- *   change (no `const`), a getter's also the `const` ones, never those declared later or in
- *   another function;
+ * - a variable menu lists the variables in scope at the block: the *ask* and *set* menus only
+ *   those they may change (no `const`, no loop counter), a getter's also the others, never those
+ *   declared later or in another function;
  * - the connection checker refuses a text block in *repeat (10) times*, where a number fits;
  * - clicking a line of the C++ panel selects the block that made it;
- * - a block can be dragged from every toolbox category.
+ * - a block can be dragged from every toolbox category;
+ * - a category chosen in the toolbox stays selected at every zoom level.
  */
-import { By } from 'selenium-webdriver';
+import { By, type WebDriver } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -19,8 +20,8 @@ import {
   statementsOf,
 } from '../../support/bdm';
 import { currentDocument, dragFromToolbox, fieldOf, foldCodePanel } from '../../support/editor';
-import { clickMiddle } from '../../support/ui';
-import { waitFor } from '../../support/wait';
+import { clickMiddle, openCategory, textContent } from '../../support/ui';
+import { sleep, waitFor } from '../../support/wait';
 import {
   closeMenu,
   dragValueFromToolbox,
@@ -56,6 +57,34 @@ function topBlocks(doc: ProjectDocument): readonly BlockNode[] {
   return doc.modules[0]?.workspace.blocks ?? [];
 }
 
+/** The toolbox categories of M2, in toolbox order (catalog/toolbox.toml). */
+const CATEGORIES = [
+  'Program',
+  'Variables',
+  'Math',
+  'Logic',
+  'Text',
+  'Control',
+  'Loops',
+  'Input / Output',
+  'Functions',
+];
+
+/** The text of the selected toolbox category row (its icon, then its name), or `null`. */
+async function selectedCategory(driver: WebDriver): Promise<string | null> {
+  const rows = await driver.findElements(By.css('.blocklyToolboxCategory.blocklyToolboxSelected'));
+  return rows.length === 1 && rows[0] !== undefined ? textContent(driver, rows[0]) : null;
+}
+
+/**
+ * Clicks one of Blockly's zoom controls on the canvas, then waits for the canvas transition (half a
+ * second) and the flyout, which follows the canvas zoom in M2.
+ */
+async function clickZoom(driver: WebDriver, control: 'In' | 'Out'): Promise<void> {
+  await clickMiddle(driver, await driver.findElement(By.css(`.blocklyZoom${control}`)));
+  await sleep(800);
+}
+
 describe('Block editor', () => {
   it('lists the variables in scope in the ask and getter menus', async (context) => {
     const flow = startFlow(context);
@@ -65,14 +94,33 @@ describe('Block editor', () => {
     await foldCodePanel(app);
 
     // `ask … and save answer in score`, inside `for i from 1 to 3`, after `score`, `const limit`
-    // and `name`; `later` comes after the loop and `inner` is in another function.
+    // and `name`; `later` comes after the loop and `inner` is in another function. The ask may
+    // change neither the constant `limit` nor the loop's counter `i` (03 §3.6).
     await clickMiddle(app.driver, await fieldOf(app, 'b_ask', 'VAR'));
-    expect((await menuLabels(app.driver)).sort()).toEqual(['i', 'name', 'score']);
+    expect((await menuLabels(app.driver)).sort()).toEqual(['name', 'score']);
     await closeMenu(app.driver);
 
-    // A getter may read a constant too.
+    // A getter may read a constant and the counter too.
     await clickMiddle(app.driver, await fieldOf(app, 'b_get', 'VAR'));
     expect((await menuLabels(app.driver)).sort()).toEqual(['i', 'limit', 'name', 'score']);
+    await closeMenu(app.driver);
+
+    // `set score to 1` at the end of the loop leaves out `i` and `limit` as well, once the
+    // analysis has seen it (its C++ is in the preview).
+    const set = {
+      id: 'b_set',
+      type: 'var.set',
+      v: 1,
+      fields: { VAR: { ref: 's_score' } },
+      inputs: { VALUE: { expr: [{ num: '1' }] } },
+    };
+    await app.hook.insertBlocks('b_loop', 'BODY', [set]);
+    await waitFor(async () => ((await app.hook.code()).includes('score = 1;') ? true : null), {
+      timeout: UI_TIMEOUT_MS,
+      message: 'the C++ of the inserted set block',
+    });
+    await clickMiddle(app.driver, await fieldOf(app, 'b_set', 'VAR'));
+    expect((await menuLabels(app.driver)).sort()).toEqual(['name', 'score']);
     await closeMenu(app.driver);
   }, 180_000);
 
@@ -196,4 +244,36 @@ describe('Block editor', () => {
       { timeout: UI_TIMEOUT_MS, message: 'func.define from Functions on the canvas' },
     );
   }, 180_000);
+
+  it('keeps the chosen category selected at every zoom level', async (context) => {
+    const flow = startFlow(context);
+    const app = await flow.launch();
+    await newEmptyProject(app);
+    await foldCodePanel(app);
+
+    // The flyout follows the canvas zoom in M2. Five zoom levels: the start, two steps out, then
+    // one and two steps in from the start.
+    const rounds: { readonly label: string; readonly clicks: readonly ('In' | 'Out')[] }[] = [
+      { label: 'the start zoom', clicks: [] },
+      { label: 'one step out', clicks: ['Out'] },
+      { label: 'two steps out', clicks: ['Out'] },
+      { label: 'one step in', clicks: ['In', 'In', 'In'] },
+      { label: 'two steps in', clicks: ['In'] },
+    ];
+    for (const round of rounds) {
+      for (const control of round.clicks) {
+        await clickZoom(app.driver, control);
+      }
+      for (const name of CATEGORIES) {
+        await openCategory(app.driver, name);
+        // The plugin selects the category at the scroll position once the scroll has ended; a
+        // selection that jumps back does so within a few frames.
+        await sleep(300);
+        const selected = await selectedCategory(app.driver);
+        expect(selected?.endsWith(name), `${name} at ${round.label}: ${String(selected)}`).toBe(
+          true,
+        );
+      }
+    }
+  }, 300_000);
 });

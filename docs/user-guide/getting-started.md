@@ -130,20 +130,22 @@ when program starts
    first one and name it `guess`. Leave its value at `0`.
 4. **Say hello.** From **Input / Output**, drag a _print_ block below the
    variables. Click its text and type `Guess a number from 1 to 100!`.
-5. **Repeat until the guess is right.** From **Loops**, drag _repeat until_
-   below the print. From **Math**, drag the comparison block (`0 < 0`) into
-   the loop's condition and choose `=` in its middle. Then click the loop to
-   select it, open **Variables** (it now lists the variables you can use
-   there) and drag `guess` into the left side of the comparison and `secret`
-   into the right side.
+5. **Repeat until the guess is right.** From **Loops**, drag _repeat while_
+   below the print, then click _while_ and choose _until_ in its menu. From
+   **Math**, drag the comparison block (`0 < 0`) into the loop's condition
+   and choose `=` in its middle. Then click the loop to select it, open
+   **Variables** (it now lists the variables you can use there) and drag
+   `guess` into the left side of the comparison and `secret` into the right
+   side.
 6. **Ask for a guess.** From **Input / Output**, drag _ask "Your answer: "
    and save answer in …_ into the loop. Change the question to _Your guess:_
    (with a space after the colon) and choose `guess` in the variable menu. Until you do, the block shows an
    error badge and Problems explains it: that is how Blocks2Cpp shows a
    mistake on the block that has it.
-7. **Answer the guess.** From **Control**, drag _if … else_ below the ask,
-   inside the loop. Press the **⊕** after _else if_ to add an _else if_ part.
-   Put a comparison `guess < secret` into the first condition and
+7. **Answer the guess.** From **Control**, drag _if_ below the ask, inside the
+   loop. Press the **⊕** after _else if_ to add an _else if_ part, and the
+   **⊕** after _else_ to add the _else_ part (a **⊖** takes a part away
+   again). Put a comparison `guess < secret` into the first condition and
    `guess > secret` into the second, and a _print_ into each of the three
    parts: `Too low!`, `Too high!` and `Correct!`.
 

@@ -58,7 +58,7 @@ describe('variadicSpec', () => {
     expect(spec.joinTexts).toEqual([]);
     expect(spec.joinField).toBeNull();
     expect(spec.gated).toEqual([]);
-    expect(spec.anchorArgs).toEqual(['SEP', 'NEWLINE']);
+    expect(spec.anchorArgs).toEqual(['SEP', 'NEWLINE', 'STREAM']);
   });
 
   it('reads logic.operation with its joining field', () => {

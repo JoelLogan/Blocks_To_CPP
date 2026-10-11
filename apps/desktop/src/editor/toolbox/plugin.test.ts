@@ -209,6 +209,22 @@ describe('the toolbox plugin with the continuous toolbox', () => {
     expect(getterRefs(workspace)).toEqual([]);
   });
 
+  it('lists the functions of the module shown, and follows another module being shown', async () => {
+    const workspace = attached('continuous');
+    await settle();
+    const calls = () =>
+      flyoutBlocks(workspace)
+        .filter((block) => block.type === 'func.call')
+        .map((block): unknown => block.getFieldValue('FUNC'));
+    expect(calls()).toEqual(['s_fact']);
+    // factorial belongs to mod_main: once another module is shown, it is not offered there.
+    act(() => {
+      useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_other' });
+    });
+    await settle();
+    expect(calls()).toEqual([]);
+  });
+
   it('draws category bubbles with the catalog icon, coloured from the theme', () => {
     const workspace = attached('continuous');
     const program = category(workspace, 'Program') as Blockly.ToolboxCategory;
@@ -253,7 +269,7 @@ describe('the toolbox plugin with the category toolbox', () => {
     expect(getterRefs(workspace)).toEqual([]);
   });
 
-  it('names a new loop and lists My Blocks in their categories', () => {
+  it('names a new loop and lists the calls under Your functions in their categories', () => {
     const workspace = attached('category');
     const toolbox = workspace.getToolbox() as Blockly.Toolbox;
     toolbox.setSelectedItem(category(workspace, 'Loops'));

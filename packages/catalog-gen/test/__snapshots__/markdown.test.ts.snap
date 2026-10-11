@@ -71,7 +71,7 @@ Toolbox icon: ƒ. Back to [all categories](README.md).
 
 1. \`functions.make\`
 
-*My Blocks*: the editor also adds a call block for every function of the project: \`functions.use\`.
+Under *Your functions*, the editor also adds a call block for every function of the module shown: \`functions.use\`.
 ",
   "loops.md": "# Loops
 

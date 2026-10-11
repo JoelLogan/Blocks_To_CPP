@@ -39,7 +39,7 @@ export function registerB2cFields(): void {
 export interface CatalogFieldOptions {
   /** For a `symbol_ref` field: which symbols it lists (default `variables`). */
   readonly kinds?: SymbolRefKinds;
-  /** For a `text` field: exactly one character may be typed. */
+  /** For a `text` field: exactly one printable ASCII character may be typed. */
   readonly singleChar?: boolean;
 }
 

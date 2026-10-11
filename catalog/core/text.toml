@@ -22,7 +22,7 @@ version = 1
 category = "text"
 shape = "reporter"
 output = "char"
-label = { friendly = "letter '%VALUE'", cpp = "'%VALUE'" }
+label = { friendly = "character '%VALUE'", cpp = "'%VALUE'" }
 lowering = "builtin"
 help = "A single character, such as 'a'."
 

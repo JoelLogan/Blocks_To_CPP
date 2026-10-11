@@ -57,10 +57,17 @@
 ## 4.2 Toolbox
 
 * **Scratch-style continuous toolbox.** Category bubbles on the left; the
-  flyout scrolls continuously through all categories.
+  flyout scrolls continuously through all categories. Choosing a category
+  scrolls the flyout to it, and that category stays selected at every zoom
+  level; scrolling by hand selects the category at the top.
 * **Dynamic categories.** *Variables* lists the symbols in scope at the
-  current selection. *My Blocks* lists call blocks for every user-defined
-  function, grouped by module. *Libraries* lists installed packs.
+  current selection. *Functions* lists *define* and *return*, then, under
+  *Your functions*, a call block for each function of the module shown, or a
+  one-line hint when there is none; module headings appear only when the
+  project has more than one module. A call block of a known function has as
+  many arguments as the function has parameters: it shows no ⊖/⊕ while they
+  match, and only the one that brings it back in line when the definition
+  changes. *Libraries* lists installed packs.
 * **Beginner / Advanced.** Advanced categories and rarely used blocks are
   hidden until *Show advanced blocks* is enabled (per project, defaulting to
   the user preference).
@@ -68,18 +75,22 @@
   Insert).
 * The categories, their order, icons, colours and entries come from
   `catalog/toolbox.toml` ([03 §3.11.1](03-block-language.md#3111-catalog-format)).
-  Entries can carry **presets**, so one block appears in useful forms:
-  *repeat until*, *if … else*, a new `int` variable starting at `0`, or *ask*
-  with the prompt `"Your answer: "`. A new variable's start value follows its
-  type (`0`, `0.0`, `true`, `'a'`, `""`), and a call from *My Blocks* comes
-  with a default argument of each parameter's type.
+  Entries can carry **presets** that fill in values (a new `int` starting at
+  `0`; *ask* with `"Your answer: "`). A new variable's start value follows
+  its type (`0`, `0.0`, `true`, `'a'`, `""`), and a call from *Your
+  functions* comes with a default argument of each parameter's type. A block
+  whose forms differ only by a dropdown or ⊕ part appears once
+  ([03 §3.1](03-block-language.md#31-design-philosophy-few-blocks-much-power)).
 
 **In M2:** the toolbox shows Program, Variables, Math, Logic, Text, Control,
-Loops, Input / Output and Functions (*My Blocks*). *Variables* lists the
-symbols in scope at the selected block (with nothing selected, those visible
-at the end of `main`) and offers *Make a variable*; *Loops* gives its counted
-loop the first counter name that is free there, and *My Blocks* follows the
-functions as they are defined (default names in
+Loops, Input / Output and Functions (with *Your functions*). *Variables* lists
+the symbols in scope at the selected block (with nothing selected, those
+visible at the end of `main`), each with a getter and the blocks whose menu
+may choose it there ([03 §3.6](03-block-language.md#36-symbols-and-scoping)):
+*set*, and *change* and the update block for a number or a character; it
+also offers *Make a variable*. *Loops* gives its
+counted loop the first counter name that is free there, and *Your functions*
+follows the functions as they are defined (default names in
 [03 §3.6](03-block-language.md#36-symbols-and-scoping)). The continuous
 flyout is `@blockly/continuous-toolbox` 7.0.9, the Blockly team's plugin and
 its last release for Blockly 12: it passes the dependency policy

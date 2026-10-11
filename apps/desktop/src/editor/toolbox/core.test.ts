@@ -1,7 +1,7 @@
 // The toolbox with the real compiler core (packages/b2c-core-wasm, built with
 // `pnpm --filter @blocks2cpp/b2c-core-wasm build`): the scope query decides what the Variables
-// category lists, and the analysis's symbols what My Blocks lists. Skipped without a build unless
-// B2C_REQUIRE_WASM is set (as in CI).
+// category lists, and the analysis's symbols what Your functions lists. Skipped without a build
+// unless B2C_REQUIRE_WASM is set (as in CI).
 import type { BdmDocument, CoreWasm } from '@blocks2cpp/b2c-core-wasm';
 import { B2cSymbolDeclField } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
@@ -120,6 +120,7 @@ function headlessContext(text: string): ContentsContext {
     symbols: analysisSymbolSource(useAppStore, () => theCore()),
     selected: () => null,
     modules: () => document.modules.map(({ id, name }) => ({ id, name })),
+    activeModuleId: () => document.modules[0]?.id ?? '',
   };
 }
 
@@ -188,7 +189,7 @@ describe.skipIf(core === null)('the toolbox with the compiler core', { timeout: 
     expect(variableBlocks(workspace).filter(([, ref]) => ref === 's_guess')).toHaveLength(4);
   });
 
-  it('shows factorial in My Blocks as a reporter with its argument labelled', async () => {
+  it('shows factorial under Your functions as a reporter with its argument labelled', async () => {
     const items = blocksOf(functionsContents(headlessContext(factorialText)));
     const call = items.find((item) => item.type === 'func.call');
     expect(call?.fields).toEqual({ FUNC: { ref: 's_factorial' } });

@@ -18,4 +18,4 @@ Toolbox icon: ƒ. Back to [all categories](README.md).
 1. `func.define`
 2. `func.return`
 
-*My Blocks*: the editor also adds a call block for every function of the project: `func.call` and `func.call_stmt`.
+Under *Your functions*, the editor also adds a call block for every function of the module shown: `func.call` and `func.call_stmt`.

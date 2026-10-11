@@ -9,7 +9,9 @@
 //! with `include_str!` and checked against the catalog here, so the editor
 //! (through the generated definitions of `packages/catalog-gen`) only ever
 //! sees a toolbox that fits the catalog. The checks: every entry names a
-//! block of its own category, every catalog block is reachable through an
+//! block of its own category, no block has two entries (spec §3.1: a block
+//! whose forms differ only by a choice on the block appears once), no entry
+//! label is a category name, every catalog block is reachable through an
 //! entry or a dynamic category, and every preset value fits its field,
 //! `extra` key or input.
 
@@ -75,7 +77,8 @@ pub struct ToolboxCategory {
 pub enum DynamicCategory {
     /// A getter for every variable in scope, and setters preset to it.
     Variables,
-    /// *My Blocks*: a call block for every function of the project.
+    /// Under *Your functions*: a call block for every function of the module
+    /// shown.
     Functions,
 }
 
@@ -103,7 +106,7 @@ impl DynamicCategory {
 pub struct ToolboxEntry {
     /// The catalog block ID.
     pub block: String,
-    /// A label shown with the block, e.g. `repeat until`.
+    /// A label shown above the block (never a category name).
     #[serde(default)]
     pub label: Option<String>,
     /// Values that differ from the catalog defaults.
@@ -291,6 +294,9 @@ impl Checker {
         if toolbox.categories.is_empty() {
             checker.problem(None, None, String::from("the toolbox has no categories"));
         }
+        let category_names: BTreeSet<&str> = toolbox.categories.iter().map(|c| c.name.as_str()).collect();
+        // The first entry of each block: (category, position).
+        let mut first_entries: BTreeMap<&str, (Category, usize)> = BTreeMap::new();
         let mut previous: Option<Category> = None;
         for (index, category) in toolbox.categories.iter().enumerate() {
             let mut problems = Vec::new();
@@ -304,7 +310,8 @@ impl Checker {
                 _ => previous = Some(category.id),
             }
             problems.extend(check_category(category, catalog));
-            if !problems.is_empty() {
+            let usable = problems.is_empty();
+            if !usable {
                 checker.bad_categories.insert(index);
             }
             for message in problems {
@@ -312,10 +319,29 @@ impl Checker {
             }
             for (position, entry) in category.entries.iter().enumerate() {
                 let mut problems = check_entry(category.id, entry, catalog);
-                if category.entries[..position].contains(entry) {
-                    problems.push(String::from(
-                        "the same block with the same label and preset is listed twice",
+                if let Some(label) = entry.label.as_deref().filter(|l| category_names.contains(l)) {
+                    // The continuous toolbox takes a flyout label that reads like a category's
+                    // name for that category's heading, so choosing the category would scroll
+                    // to the entry instead.
+                    problems.push(format!(
+                        "the label {label:?} is the name of a category: use other words"
                     ));
+                }
+                // Only an entry that is kept counts as the block's entry: one in the wrong
+                // category, or in a category that is left out, is reported for that.
+                match first_entries.get(entry.block.as_str()) {
+                    _ if !usable => {}
+                    Some((first_category, first_position)) => problems.push(format!(
+                        "the block {} already has an entry (category {first_category}, entry {}): a \
+                         block has one entry at most, and its other forms are chosen on the block \
+                         (spec §3.1)",
+                        entry.block,
+                        first_position + 1
+                    )),
+                    None if problems.is_empty() => {
+                        first_entries.insert(entry.block.as_str(), (category.id, position));
+                    }
+                    None => {}
                 }
                 if !problems.is_empty() {
                     checker.bad_entries.insert((index, position));

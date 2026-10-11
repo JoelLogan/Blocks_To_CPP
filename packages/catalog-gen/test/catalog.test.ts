@@ -65,12 +65,35 @@ describe('the generated outputs', () => {
 
   it('keep the labels, outputs and presets the editor relies on', () => {
     const byId = new Map(generated.BLOCK_DEFS.map((block) => [block.id, block]));
+    // Every field is named by the words around it (03 §3.11.1).
     expect(byId.get('io.print')?.labelParts).toEqual([
       { text: 'print' },
       { arg: 'ITEM' },
       { repeat: true },
       { arg: 'SEP' },
+      { text: 'new line' },
       { arg: 'NEWLINE' },
+      { text: 'to' },
+      { arg: 'STREAM' },
+    ]);
+    expect(byId.get('io.print')?.fields.find((field) => field.name === 'STREAM')?.options).toEqual([
+      ['the console', 'out'],
+      ['the error stream', 'err'],
+    ]);
+    expect(byId.get('var.declare')?.labelParts).toEqual([
+      { text: 'create' },
+      { arg: 'TYPE' },
+      { text: 'variable' },
+      { arg: 'NAME' },
+      { text: '=' },
+      { arg: 'VALUE' },
+      { text: 'constant' },
+      { arg: 'CONST' },
+    ]);
+    expect(byId.get('text.char')?.labelParts).toEqual([
+      { text: "character '" },
+      { arg: 'VALUE' },
+      { text: "'" },
     ]);
     expect(byId.get('program.main')?.statementsNotInLabel).toEqual(['BODY']);
     expect(byId.get('control.if')?.statementsNotInLabel).toEqual([]);
@@ -90,14 +113,13 @@ describe('the generated outputs', () => {
       expect(block.output !== null, block.id).toBe(value);
     }
     const entries = generated.TOOLBOX.flatMap((category) => category.entries);
-    expect(entries.find((e) => e.label === 'repeat until')).toEqual({
-      block: 'control.while',
-      label: 'repeat until',
-      preset: { fields: { MODE: 'until' } },
-    });
-    expect(entries.find((e) => e.label === 'if … else')?.preset).toEqual({
-      extra: { hasElse: true },
-    });
+    // One idea, one block, one toolbox entry (03 §3.1): *until* and *else* are chosen on the
+    // block, so `control.while` and `control.if` appear once, as the catalog defines them.
+    expect(new Set(entries.map((e) => e.block)).size).toBe(entries.length);
+    expect(entries.filter((e) => e.label !== null)).toEqual([]);
+    for (const block of ['control.while', 'control.if']) {
+      expect(entries.find((e) => e.block === block)).toEqual({ block, label: null, preset: null });
+    }
     expect(entries.find((e) => e.block === 'io.ask')?.preset).toEqual({
       inputs: { PROMPT: [{ str: 'Your answer: ' }] },
     });

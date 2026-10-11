@@ -23,7 +23,7 @@ describe('parseLabel', () => {
       ],
     ],
     ['"%VALUE"', [{ text: '"' }, { arg: 'VALUE' }, { text: '"' }]],
-    ["letter '%VALUE'", [{ text: "letter '" }, { arg: 'VALUE' }, { text: "'" }]],
+    ["character '%VALUE'", [{ text: "character '" }, { arg: 'VALUE' }, { text: "'" }]],
     [
       'ask %PROMPT and save answer in %VAR (%MODE)',
       [

@@ -3,14 +3,17 @@
 # Categories come in the order of §3.7. Each has a name, an icon (so colour is never the only
 # cue) and a colour token, which is the category ID; the colour values live in the editor theme.
 # `dynamic` marks a category whose blocks the editor adds for the open project: `variables`
-# (getters and setters for the variables in scope) and `functions` (My Blocks: a call block for
-# every function).
+# (getters and setters for the variables in scope) and `functions` (under *Your functions*, a
+# call block for every function of the module shown).
 #
 # Entries are shown in order. An entry names a block, with an optional label (shown above it)
 # and an optional preset: field values, `extra` values and input tokens that differ from the
-# catalog defaults. b2c-catalog validates this file against the catalog (every block exists and
-# sits in its own category, every catalog block is reachable, presets fit their block), and the
-# block definitions and the block reference are generated from the validated result
+# catalog defaults. A preset fills in values; it never stands in for a choice the block offers
+# in place (a dropdown, a ⊕/⊖ part or a checkbox), so each block has at most one entry (spec
+# §3.1, "One idea, one block, one toolbox entry"). b2c-catalog validates this file against the
+# catalog (every block exists, sits in its own category and has one entry at most, every catalog
+# block is reachable, no label is a category name, presets fit their block), and the block
+# definitions and the block reference are generated from the validated result
 # (packages/catalog-gen).
 
 [[category]]
@@ -99,11 +102,6 @@ colour = "control"
 [[category.entry]]
 block = "control.if"
 
-[[category.entry]]
-block = "control.if"
-label = "if … else"
-preset = { extra = { hasElse = true } }
-
 [[category]]
 id = "loops"
 name = "Loops"
@@ -115,11 +113,6 @@ block = "control.repeat"
 
 [[category.entry]]
 block = "control.while"
-
-[[category.entry]]
-block = "control.while"
-label = "repeat until"
-preset = { fields = { MODE = "until" } }
 
 [[category.entry]]
 block = "control.for_range"

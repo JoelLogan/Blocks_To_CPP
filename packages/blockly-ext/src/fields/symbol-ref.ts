@@ -7,8 +7,8 @@
  * - The field always shows the current name of the symbol it refers to
  *   ({@link SymbolProvider.nameOf}), so a rename shows at once; a reference whose declaration is
  *   gone shows `missing (sym_…)`. The analyser's diagnostic (B2C-E0201–E0204) explains it.
- * - A reference that is out of scope stays selected and shown; it is never changed or dropped by
- *   the editor.
+ * - A reference that is out of scope, or no longer of the field's kinds, stays selected and shown
+ *   (first in its menu); it is never changed or dropped by the editor.
  *
  * Blockly's own value (`getValue()`) is the symbol ID, or null when nothing is chosen;
  * {@link B2cSymbolRefField.getRef} gives the project value.
@@ -21,12 +21,16 @@ import { visibleInvisibles } from '../text';
 import { isSymbolRefValue, type SymbolRefValue } from './values';
 
 /**
- * Which symbols a reference field lists:
+ * Which symbols a reference field lists (docs/spec/03-block-language.md §3.6):
  * - `variables`: variables, parameters and loop counters (getters, expression slots);
- * - `assignable`: the same without `const` variables (set, change, update, ask);
+ * - `assignable`: what a block may change there: the same without `const` variables, `for` loop
+ *   counters and read-only parameters (set, ask), which the analyser refuses (B2C-E0308);
+ * - `numeric`: the assignable ones holding a whole number, a decimal number or a character, or of
+ *   a type the analysis could not tell (change, the update operators): text cannot be counted with
+ *   (B2C-E0302) and true/false only with a warning (B2C-W0519);
  * - `functions`: functions (calls).
  */
-export type SymbolRefKinds = 'variables' | 'assignable' | 'functions';
+export type SymbolRefKinds = 'variables' | 'assignable' | 'numeric' | 'functions';
 
 /** Options of a reference field. */
 export interface SymbolRefFieldConfig {
@@ -38,7 +42,23 @@ export interface SymbolRefFieldConfig {
   readonly ariaLabel?: string;
 }
 
-const KINDS: readonly SymbolRefKinds[] = ['variables', 'assignable', 'functions'];
+const KINDS: readonly SymbolRefKinds[] = ['variables', 'assignable', 'numeric', 'functions'];
+
+/** The value types `change` and the update operators work on (`error`: not known). */
+const NUMERIC_TYPES: ReadonlySet<string> = new Set(['int', 'double', 'char', 'error']);
+
+/** Whether a block may change the symbol where it is visible (03 §3.6). */
+function isAssignable(symbol: SymbolInfo): boolean {
+  switch (symbol.kind) {
+    case 'variable':
+      return symbol.isConst !== true;
+    case 'parameter':
+      return symbol.mode !== 'read_only';
+    case 'loopVariable':
+    case 'function':
+      return false;
+  }
+}
 
 /** Whether a symbol belongs in a menu of the given kinds. */
 export function symbolMatchesKinds(symbol: SymbolInfo, kinds: SymbolRefKinds): boolean {
@@ -46,7 +66,9 @@ export function symbolMatchesKinds(symbol: SymbolInfo, kinds: SymbolRefKinds): b
     case 'functions':
       return symbol.kind === 'function';
     case 'assignable':
-      return symbol.kind !== 'function' && !(symbol.kind === 'variable' && symbol.isConst === true);
+      return isAssignable(symbol);
+    case 'numeric':
+      return isAssignable(symbol) && NUMERIC_TYPES.has(symbol.type);
     case 'variables':
       return symbol.kind !== 'function';
   }

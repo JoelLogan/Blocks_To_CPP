@@ -20,6 +20,7 @@ import {
   ValueField,
 } from './test-fixtures';
 import { B2C_MUTATOR_ITEMS, B2C_MUTATOR_NAMES, type B2cMutatorBlock } from './types';
+import { BUTTONS_INPUT } from './variadic';
 
 let workspace: Blockly.Workspace;
 
@@ -679,5 +680,112 @@ describe('call argument labels', () => {
     expect(workspace.getUndoStack()).toEqual([]);
     expect(labelTexts(call, 'ARG0')).toEqual(['other:']);
     names.set('sym_name', 'name');
+  });
+});
+
+describe('call argument buttons', () => {
+  /** The parameters of `sym_greet` in the latest analysis. */
+  let params: string[];
+
+  function callTo(ref: unknown, count: number, on = workspace): B2cMutatorBlock {
+    const call = on.newBlock('func.call_stmt');
+    if (!isB2cMutatorBlock(call)) {
+      throw new Error('no mutator');
+    }
+    const field = call.getField('FUNC');
+    if (!(field instanceof ValueField)) {
+      throw new Error('FUNC is not a value field');
+    }
+    field.setValue(ref);
+    call.b2cSetExtra({ argCount: count });
+    return call;
+  }
+
+  beforeEach(() => {
+    params = ['sym_name', 'sym_times'];
+    const names = new Map([
+      ['sym_name', 'name'],
+      ['sym_times', 'times'],
+      ['sym_extra', 'extra'],
+    ]);
+    configureMutators({
+      symbols: {
+        symbolsAt: () => [{ id: 'sym_greet', kind: 'function', params }],
+        nameOf: (id) => names.get(id) ?? null,
+      },
+    });
+  });
+
+  it('are hidden on a call to a known function, whose arguments follow its parameters', () => {
+    const call = callTo({ ref: 'sym_greet' }, 2);
+    expect(buttonKeys(call)).toEqual([]);
+    expect(labelTexts(call, 'ARG0')).toEqual(['name:']);
+    expect(labelTexts(call, 'ARG1')).toEqual(['times:']);
+  });
+
+  it('offer only the button that brings the arguments back to the parameters', () => {
+    const short = callTo({ ref: 'sym_greet' }, 1);
+    expect(buttonKeys(short)).toEqual(['count:add']);
+    press(short, 'count:add');
+    expect(short.b2cGetExtra()).toEqual({ argCount: 2 });
+    expect(buttonKeys(short)).toEqual([]);
+    expect(labelTexts(short, 'ARG1')).toEqual(['times:']);
+
+    const long = callTo({ ref: 'sym_greet' }, 3);
+    expect(buttonKeys(long)).toEqual(['count:remove']);
+    press(long, 'count:remove');
+    expect(long.b2cGetExtra()).toEqual({ argCount: 2 });
+    expect(buttonKeys(long)).toEqual([]);
+  });
+
+  it('follow the definition after each analysis, recording nothing', async () => {
+    const call = callTo({ ref: 'sym_greet' }, 2);
+    const inputs = inputNames(call);
+    await flushEvents();
+    workspace.clearUndo();
+    params = ['sym_name', 'sym_times', 'sym_extra'];
+    refreshMutatorLabels(workspace);
+    expect(buttonKeys(call)).toEqual(['count:add']);
+    params = ['sym_name'];
+    refreshMutatorLabels(workspace);
+    expect(buttonKeys(call)).toEqual(['count:remove']);
+    params = ['sym_name', 'sym_times'];
+    refreshMutatorLabels(workspace);
+    expect(buttonKeys(call)).toEqual([]);
+    await flushEvents();
+    expect(workspace.getUndoStack()).toEqual([]);
+    expect(call.b2cGetExtra()).toEqual({ argCount: 2 });
+    // The button row stays in its place.
+    expect(inputNames(call)).toEqual(inputs);
+    expect(inputs).toContain(BUTTONS_INPUT);
+  });
+
+  it('are both shown on a call whose function is not known', () => {
+    for (const ref of [null, { ref: 'sym_missing' }]) {
+      expect(buttonKeys(callTo(ref, 1)), JSON.stringify(ref)).toEqual([
+        'count:remove',
+        'count:add',
+      ]);
+    }
+    configureMutators({ symbols: null });
+    expect(buttonKeys(callTo({ ref: 'sym_greet' }, 1))).toEqual(['count:remove', 'count:add']);
+  });
+
+  it('are never shown on a call in the toolbox', () => {
+    const flyout = new Blockly.Workspace();
+    // What a flyout's own workspace sets (headless here).
+    flyout.internalIsFlyout = true;
+    try {
+      // The toolbox builds calls from the analysis, which does not know its blocks.
+      configureMutators({ symbols: { symbolsAt: () => [], nameOf: () => null } });
+      for (const count of [0, 1, 3]) {
+        expect(buttonKeys(callTo({ ref: 'sym_greet' }, count, flyout)), String(count)).toEqual([]);
+      }
+      // Other variadic blocks keep theirs there.
+      const print = flyout.newBlock('io.print');
+      expect(buttonKeys(print)).toEqual(['count:add']);
+    } finally {
+      flyout.dispose();
+    }
   });
 });

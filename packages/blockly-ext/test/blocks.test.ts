@@ -135,6 +135,9 @@ describe('registerB2cBlocks', () => {
     expect(kindsOf('var.get', 'VAR')).toBe('variables');
     expect(kindsOf('var.set', 'VAR')).toBe('assignable');
     expect(kindsOf('io.ask', 'VAR')).toBe('assignable');
+    // change and the update operators count: text and true/false variables cannot take part.
+    expect(kindsOf('var.change', 'VAR')).toBe('numeric');
+    expect(kindsOf('var.update', 'VAR')).toBe('numeric');
     expect(kindsOf('func.call', 'FUNC')).toBe('functions');
     const char = workspace.newBlock('text.char').getField('VALUE');
     expect(char instanceof B2cTextField && char.singleChar).toBe(true);
@@ -178,12 +181,13 @@ describe('blockLayout', () => {
       'dummy:b2c_row0["times"]',
       'statement:BODY[]',
     ]);
+    // The words naming a checkbox come right before it (03 §3.11.1).
     expect(describeLayout(def('var.declare'))).toEqual([
       'value:VALUE["create" TYPE "variable" NAME "="]',
-      'dummy:b2c_row0[CONST]',
+      'dummy:b2c_row0["constant" CONST]',
     ]);
     expect(describeLayout(def('math.arithmetic'))).toEqual(['value:A[]', 'value:B[OP]']);
-    expect(describeLayout(def('text.char'))).toEqual([`dummy:b2c_row0["letter '" VALUE "'"]`]);
+    expect(describeLayout(def('text.char'))).toEqual([`dummy:b2c_row0["character '" VALUE "'"]`]);
     expect(describeLayout(def('program.main'))).toEqual([
       'dummy:b2c_row0["when program starts"]',
       'statement:BODY[]',
@@ -193,7 +197,7 @@ describe('blockLayout', () => {
   it('leaves repeated and optional parts to the mutator, at the repeat anchor', () => {
     expect(describeLayout(def('io.print'))).toEqual([
       `anchor:${REPEAT_ANCHOR}[]`,
-      'dummy:b2c_row0[SEP NEWLINE STREAM]',
+      'dummy:b2c_row0[SEP "new line" NEWLINE "to" STREAM]',
     ]);
     expect(describeLayout(def('text.join'))).toEqual([`anchor:${REPEAT_ANCHOR}[]`]);
     expect(describeLayout(def('logic.operation'))).toEqual([
@@ -235,6 +239,33 @@ describe('blockLayout', () => {
       'value:LIMIT["then" MODE EXTRA]',
       'statement:AFTER[]',
     ]);
+  });
+
+  it('shows the words of the label next to the fields they name, on the created block', () => {
+    const workspace = headlessWorkspace();
+    /** The text of the label field right before field `name` in its row, or null. */
+    const wordsBefore = (type: string, name: string): string | null => {
+      const block = workspace.newBlock(type);
+      for (const input of block.inputList) {
+        const index = input.fieldRow.findIndex((field) => field.name === name);
+        if (index >= 0) {
+          const before = input.fieldRow[index - 1];
+          return before instanceof Blockly.FieldLabel ? before.getText() : null;
+        }
+      }
+      throw new Error(`${type} has no field ${name}`);
+    };
+    expect(wordsBefore('var.declare', 'CONST')).toBe('constant');
+    expect(wordsBefore('io.print', 'NEWLINE')).toBe('new line');
+    expect(wordsBefore('io.print', 'STREAM')).toBe('to');
+    // Every checkbox of the catalog has words right before it.
+    for (const blockDef of BLOCK_DEFS) {
+      for (const field of blockDef.fields.filter((candidate) => candidate.kind === 'checkbox')) {
+        expect(wordsBefore(blockDef.id, field.name), `${blockDef.id}.${field.name}`).toMatch(
+          /\p{L}/u,
+        );
+      }
+    }
   });
 
   it('places every catalog field exactly once, and every fixed input', () => {

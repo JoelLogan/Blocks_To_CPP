@@ -19,17 +19,18 @@ export function isCatalogBlockType(type: string): boolean {
 
 /**
  * Field choices by block type and field name:
- * - which symbols a reference lists (docs/spec/03-block-language.md §3.6): getters list every
- *   variable; set, change, update and ask leave out constants; calls list functions;
- * - text.char takes exactly one character.
+ * - which symbols a reference lists (docs/spec/03-block-language.md §3.6, `SymbolRefKinds`):
+ *   getters list every variable; set and ask only what may be changed there; change and update
+ *   only that of a number or character type; calls list functions;
+ * - text.char takes one printable ASCII character.
  */
 export const CATALOG_FIELD_OPTIONS: Readonly<
   Record<string, Readonly<Record<string, CatalogFieldOptions>>>
 > = Object.freeze({
   'var.get': { VAR: { kinds: 'variables' } },
   'var.set': { VAR: { kinds: 'assignable' } },
-  'var.change': { VAR: { kinds: 'assignable' } },
-  'var.update': { VAR: { kinds: 'assignable' } },
+  'var.change': { VAR: { kinds: 'numeric' } },
+  'var.update': { VAR: { kinds: 'numeric' } },
   'io.ask': { VAR: { kinds: 'assignable' } },
   'func.call': { FUNC: { kinds: 'functions' } },
   'func.call_stmt': { FUNC: { kinds: 'functions' } },

@@ -240,6 +240,7 @@ pub(crate) fn check_block(def: &BlockDef) -> Vec<String> {
     }
     check_output(def, &mut problems);
     check_labels(def, &mut problems);
+    check_friendly_label(def, &mut problems);
     problems
 }
 
@@ -490,6 +491,97 @@ fn check_labels(def: &BlockDef, problems: &mut Vec<String>) {
     }
 }
 
+/// One piece of a label template: text, or a `%NAME` placeholder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LabelPiece<'a> {
+    /// Text between placeholders (with its spaces, and any `…`).
+    Text(&'a str),
+    /// The name of a `%NAME` placeholder.
+    Arg(&'a str),
+}
+
+/// Splits a label template into text and `%NAME` pieces, with the
+/// grammar of the editor's label parser (`packages/catalog-gen`): a `%`
+/// followed by `[A-Z][A-Z0-9_]*` is a placeholder, any other `%` is text.
+fn label_pieces(label: &str) -> Vec<LabelPiece<'_>> {
+    let mut pieces = Vec::new();
+    let mut text_start = 0;
+    let mut index = 0;
+    let bytes = label.as_bytes();
+    while index < bytes.len() {
+        let starts_name = bytes[index] == b'%' && bytes.get(index + 1).is_some_and(u8::is_ascii_uppercase);
+        if !starts_name {
+            index += 1;
+            continue;
+        }
+        let name_start = index + 1;
+        let name_end = bytes[name_start..]
+            .iter()
+            .position(|b| !(b.is_ascii_uppercase() || b.is_ascii_digit() || *b == b'_'))
+            .map_or(bytes.len(), |offset| name_start + offset);
+        if text_start < index {
+            pieces.push(LabelPiece::Text(&label[text_start..index]));
+        }
+        pieces.push(LabelPiece::Arg(&label[name_start..name_end]));
+        text_start = name_end;
+        index = name_end;
+    }
+    if text_start < label.len() {
+        pieces.push(LabelPiece::Text(&label[text_start..]));
+    }
+    pieces
+}
+
+/// The friendly label is all a block shows, so it must name every part a
+/// user sets on the block (spec §3.11.1): every field and every value input
+/// that is not repeated (repeated inputs come with the block's ⊕/⊖ parts)
+/// appears in it as `%NAME`, and a checkbox stands next to words that say
+/// what ticking it means (`new line %NEWLINE`), because a bare ☑ explains
+/// nothing.
+fn check_friendly_label(def: &BlockDef, problems: &mut Vec<String>) {
+    let pieces = label_pieces(&def.label.friendly);
+    let shown: BTreeSet<&str> = pieces
+        .iter()
+        .filter_map(|piece| match piece {
+            LabelPiece::Arg(name) => Some(*name),
+            LabelPiece::Text(_) => None,
+        })
+        .collect();
+    let parts = def
+        .field
+        .iter()
+        .map(|field| ("field", field.name.as_str()))
+        .chain(
+            def.input
+                .iter()
+                .filter(|input| input.repeat.is_none())
+                .map(|input| ("input", input.name.as_str())),
+        );
+    for (what, name) in parts {
+        if !shown.contains(name) {
+            problems.push(format!(
+                "the friendly label does not show the {what} {name}: add %{name} where it belongs"
+            ));
+        }
+    }
+    let has_words = |piece: Option<&LabelPiece<'_>>| matches!(piece, Some(LabelPiece::Text(text)) if text.chars().any(char::is_alphabetic));
+    for field in def.field.iter().filter(|field| field.kind == FieldKind::Checkbox) {
+        let name = field.name.as_str();
+        for (index, piece) in pieces.iter().enumerate() {
+            if *piece != LabelPiece::Arg(name) {
+                continue;
+            }
+            let before = index.checked_sub(1).and_then(|i| pieces.get(i));
+            if !has_words(before) && !has_words(pieces.get(index + 1)) {
+                problems.push(format!(
+                    "the checkbox {name} has no words next to it in the friendly label: say what \
+                     ticking it means, as in \"new line %NEWLINE\""
+                ));
+            }
+        }
+    }
+}
+
 fn all_unique<T: Ord>(items: &[T]) -> bool {
     let set: BTreeSet<&T> = items.iter().collect();
     set.len() == items.len()
@@ -578,6 +670,96 @@ mod tests {
     #[test]
     fn the_test_definition_is_valid() {
         assert_eq!(check_block(&def()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn labels_split_into_text_and_placeholders() {
+        use LabelPiece::{Arg, Text};
+        assert_eq!(
+            label_pieces("print %ITEM … %SEP new line %NEWLINE to %STREAM"),
+            [
+                Text("print "),
+                Arg("ITEM"),
+                Text(" … "),
+                Arg("SEP"),
+                Text(" new line "),
+                Arg("NEWLINE"),
+                Text(" to "),
+                Arg("STREAM"),
+            ]
+        );
+        assert_eq!(label_pieces("%A%B_2 x"), [Arg("A"), Arg("B_2"), Text(" x")]);
+        // A % that does not start an upper-case name is text, as in the editor's parser.
+        assert_eq!(
+            label_pieces("100% of %x and %_Y %"),
+            [Text("100% of %x and %_Y %")]
+        );
+        assert_eq!(label_pieces("'%VALUE'"), [Text("'"), Arg("VALUE"), Text("'")]);
+        assert_eq!(label_pieces(""), []);
+    }
+
+    #[test]
+    fn friendly_labels_show_every_field_and_fixed_input() {
+        // The test definition shows X; its ITEM is repeated, so ⊕/⊖ show it.
+        assert_eq!(
+            problems_after(|d| d.label.friendly = "do it with %ITEM".into()),
+            ["the friendly label does not show the field X: add %X where it belongs"]
+        );
+        let fixed_item = |d: &mut BlockDef| {
+            d.input[0].repeat = None;
+            d.extra.remove(0);
+        };
+        assert_eq!(problems_after(fixed_item), Vec::<String>::new());
+        assert_eq!(
+            problems_after(|d| {
+                fixed_item(d);
+                d.label.friendly = "do %X".into();
+            }),
+            ["the friendly label does not show the input ITEM: add %ITEM where it belongs"]
+        );
+        // The C++ label may leave parts out, and statement inputs may be left
+        // out of both (they go after the label).
+        assert_eq!(
+            problems_after(|d| d.label.cpp = "f();".into()),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_checkbox_needs_words_next_to_it() {
+        let checkbox = |d: &mut BlockDef, label: &str| {
+            d.field[0] = FieldDef {
+                name: "X".into(),
+                kind: FieldKind::Checkbox,
+                options: vec![],
+                types: vec![],
+                default: Some(FieldDefault::Bool(true)),
+            };
+            d.label.friendly = label.into();
+        };
+        for good in [
+            "print %ITEM … new line %X",
+            "%X new line %ITEM",
+            "%ITEM … constant %X",
+            "do %X",
+            "%X once",
+        ] {
+            assert_eq!(
+                problems_after(|d| checkbox(d, good)),
+                Vec::<String>::new(),
+                "{good}"
+            );
+        }
+        let expected = "the checkbox X has no words next to it in the friendly label: say what \
+                        ticking it means, as in \"new line %NEWLINE\"";
+        for bad in ["%ITEM … %X", "%X %ITEM", "%X", "%ITEM = %X …", "'%X'"] {
+            assert_eq!(problems_after(|d| checkbox(d, bad)), [expected], "{bad}");
+        }
+        // A dropdown or a type field needs no words: its choices say it.
+        assert_eq!(
+            problems_after(|d| d.label.friendly = "%X %ITEM".into()),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -674,12 +856,16 @@ mod tests {
     }
 
     /// The test definition as a reporter (no statement inputs) with the
-    /// given output type and extra fields.
+    /// given output type and extra fields (shown in its friendly label).
     fn value_block(shape: Shape, output: Option<OutputType>, fields: Vec<FieldDef>) -> Vec<String> {
         problems_after(|d| {
             d.shape = shape;
             d.statement.clear();
             d.output = output;
+            for field in &fields {
+                d.label.friendly.push_str(" %");
+                d.label.friendly.push_str(&field.name);
+            }
             d.field.extend(fields);
         })
     }
