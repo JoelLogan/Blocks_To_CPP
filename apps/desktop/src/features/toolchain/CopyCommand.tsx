@@ -1,29 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
-
 import { copyPlainText } from '../../panels/shared/clipboard';
-
-/** What the last copy did. */
-type CopyState = 'idle' | 'copied' | 'failed';
+import { useTransientStatus } from '../../panels/shared/useTransientStatus';
 
 /**
  * A command to type in a terminal, with a *Copy* button. The command is plain selectable text, so
- * it can also be copied by hand when the clipboard refuses (the button then says so).
+ * it can also be copied by hand when the clipboard refuses (the button then says so, until the
+ * next attempt). A successful copy says *Copied* for 3 seconds (04 §4.6).
  */
 export function CopyCommand({ command }: { command: string }) {
-  const [state, setState] = useState<CopyState>('idle');
-  const mounted = useRef(true);
-
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const status = useTransientStatus();
 
   const copy = async () => {
-    const copied = await copyPlainText(command);
-    if (mounted.current) {
-      setState(copied ? 'copied' : 'failed');
+    if (await copyPlainText(command)) {
+      status.show('success', 'Copied');
+    } else {
+      status.show('failure', 'Could not copy: select the command and press Ctrl+C');
     }
   };
 
@@ -42,8 +32,7 @@ export function CopyCommand({ command }: { command: string }) {
         Copy<span className="visually-hidden"> the command {command}</span>
       </button>
       <span className="copy-command-status" role="status">
-        {state === 'copied' && 'Copied'}
-        {state === 'failed' && 'Could not copy: select the command and press Ctrl+C'}
+        {status.shown?.text}
       </span>
     </div>
   );

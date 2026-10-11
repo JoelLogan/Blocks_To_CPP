@@ -114,8 +114,7 @@ function GatedButton({
   label: string;
 }) {
   const gate = useAppStore(useShallow(runGate));
-  const discovering = useAppStore((state) => state.toolchains.discovering);
-  const message = runGateMessage(gate, action, { discovering });
+  const message = runGateMessage(gate, action);
   const descriptionId = useId();
   return (
     <>

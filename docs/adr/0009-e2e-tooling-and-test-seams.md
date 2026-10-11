@@ -91,8 +91,9 @@ chosen instead.
   cannot see the frontend. The E2E job's own build must contain both, as a
   positive control.
 * The tests read the console through the hook's transcript of what the console
-  was given, because xterm.js's DOM renderer only has the rows on screen; they
-  check what is visible in `.xterm-rows` and type through
+  was given and through the terminal's buffer with its scrollback
+  (`consoleScreen()`), because xterm.js's DOM renderer only has the rows on
+  screen; they check what is visible in `.xterm-rows` and type through
   `.xterm-helper-textarea`. Stable `data-testid` attributes mark the toolbar,
   status bar, docks, start page, console header, Problems and banners.
 

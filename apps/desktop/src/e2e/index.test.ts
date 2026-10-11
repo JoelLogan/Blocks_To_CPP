@@ -8,7 +8,9 @@ import type { EditorHandle } from '../app/editor-types';
 import { resetAppStore, useAppStore } from '../app/store';
 import { projectFixture } from '../app/testing/fixtures';
 import { ConsoleBridge } from '../features/build-run';
+import { FakeConsole } from '../features/build-run/testing';
 import type { TrustedTypesReport } from '../lib/trustedTypes';
+import type { ConsoleScreen } from '../panels';
 import { createE2eHook, E2E_HOOK_NAME, type E2eHookDeps, installE2eHook } from './index';
 import { ConsoleTranscript } from './transcript';
 
@@ -35,6 +37,24 @@ function fakeEditor(): EditorHandle & { readonly selectBlockMock: ReturnType<typ
     workspace: {} as Blockly.WorkspaceSvg,
     selectBlockMock,
   };
+}
+
+/** A console screen with a second run below the first. */
+const SHOWN: ConsoleScreen = {
+  buffer: 'normal',
+  lines: ['1', '', '── New run ──', '1', ''],
+  baseY: 2,
+  viewportY: 1,
+  cursor: { row: 4, column: 0 },
+  cols: 40,
+  rows: 3,
+};
+
+/** A console that shows `shown`. */
+function screenConsole(shown: ConsoleScreen): FakeConsole {
+  const terminal = new FakeConsole();
+  terminal.screen = () => shown;
+  return terminal;
 }
 
 function deps(overrides: Partial<E2eHookDeps> = {}): E2eHookDeps {
@@ -111,6 +131,28 @@ describe('createE2eHook', () => {
     expect(hook.code()).toBe('int main() {}\n\n#pragma once\n');
   });
 
+  it("reads the console's screen through the bridge, as plain data", () => {
+    const bridge = new ConsoleBridge();
+    const hook = createE2eHook(deps({ console: bridge }), new ConsoleTranscript());
+    // No console attached: an empty screen of the size a run would get.
+    expect(hook.consoleScreen()).toEqual({
+      buffer: 'normal',
+      lines: [],
+      baseY: 0,
+      viewportY: 0,
+      cursor: { row: 0, column: 0 },
+      cols: 80,
+      rows: 24,
+    });
+
+    const terminal = screenConsole(SHOWN);
+    bridge.attach(terminal);
+    const screen = hook.consoleScreen();
+    expect(screen).toEqual(SHOWN);
+    expect(screen.lines).not.toBe(SHOWN.lines);
+    expect(screen.cursor).not.toBe(SHOWN.cursor);
+  });
+
   it('selects and centres a block, and needs the editor for the canvas helpers', () => {
     const editor = fakeEditor();
     const hook = createE2eHook(deps({ editor: () => editor }), new ConsoleTranscript());
@@ -166,7 +208,10 @@ describe('installE2eHook', () => {
     const bridge = new ConsoleBridge();
     const uninstall = installE2eHook(deps({ target, console: bridge }));
 
-    const hook = target[E2E_HOOK_NAME] as { consoleText(): string };
+    const hook = target[E2E_HOOK_NAME] as {
+      consoleText(): string;
+      consoleScreen(): ConsoleScreen;
+    };
     expect(hook).toBeDefined();
     expect(Object.keys(target)).toEqual([]);
     expect(() => {
@@ -175,6 +220,9 @@ describe('installE2eHook', () => {
 
     await bridge.write(new TextEncoder().encode('Too low!\r\n'));
     expect(hook.consoleText()).toBe('Too low!\n');
+    // The screen comes through the bridge the transcript taps.
+    bridge.attach(screenConsole(SHOWN));
+    expect(hook.consoleScreen()).toEqual(SHOWN);
 
     uninstall();
     expect(E2E_HOOK_NAME in target).toBe(false);

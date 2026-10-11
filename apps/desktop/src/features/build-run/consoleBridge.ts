@@ -11,6 +11,7 @@
 import type { RunMode } from '@blocks2cpp/ipc-types';
 
 import type { ConsoleHandle, TerminalSize } from '../../panels';
+import { emptyScreen } from '../../panels/console/screen';
 
 /** The size a run starts with when no console is attached (a classic terminal). */
 export const DEFAULT_TERMINAL_SIZE: TerminalSize = Object.freeze({ cols: 80, rows: 24 });
@@ -22,6 +23,7 @@ const DETACHED_CONSOLE: ConsoleHandle = Object.freeze({
   clear: () => undefined,
   reset: () => undefined,
   size: () => DEFAULT_TERMINAL_SIZE,
+  screen: () => emptyScreen(DEFAULT_TERMINAL_SIZE.cols, DEFAULT_TERMINAL_SIZE.rows),
   onData: () => () => undefined,
   onResize: () => () => undefined,
   focus: () => undefined,

@@ -16,8 +16,10 @@ import {
 import { LinkDialog } from './LinkDialog';
 import { safeLinkUrl } from './links';
 import { OutputScheduler } from './outputScheduler';
+import { type ConsoleScreen, emptyScreen, readScreen } from './screen';
 
 export type { ConsoleHeader, ConsoleNotice, ConsoleState } from './header';
+export type { ConsoleScreen } from './screen';
 
 /** The scrollback range of the Settings page (04 §4.5) and its default. */
 export const MIN_SCROLLBACK_LINES = 1000;
@@ -27,6 +29,10 @@ export const DEFAULT_SCROLLBACK_LINES = 10_000;
 /** The terminal sizes `run_resize` accepts (02 §2.5): 2–1000 columns, 1–1000 rows. */
 export const COLS_RANGE = { min: 2, max: 1000 } as const;
 export const ROWS_RANGE = { min: 1, max: 1000 } as const;
+
+/** The size the handle reports before the terminal is open (xterm's own default). */
+const DEFAULT_COLS = 80;
+const DEFAULT_ROWS = 24;
 
 /** A terminal size in character cells. */
 export interface TerminalSize {
@@ -56,6 +62,11 @@ export interface ConsoleHandle {
   reset(): void;
   /** The terminal's current size. */
   size(): TerminalSize;
+  /**
+   * What the terminal holds now: its active buffer as text, the viewport and the cursor, as far
+   * as it has processed what it was given (writes reach it at most 60 times a second).
+   */
+  screen(): ConsoleScreen;
   /** Calls `callback` with what the person types (or pastes); returns an unsubscribe function. */
   onData(callback: (data: string) => void): () => void;
   /** Calls `callback` when the fitted size changes; returns an unsubscribe function. */
@@ -334,9 +345,15 @@ export function ConsolePanel({
         scheduler.reset();
       },
       size: () => ({
-        cols: terminal.current?.cols ?? 80,
-        rows: terminal.current?.rows ?? 24,
+        cols: terminal.current?.cols ?? DEFAULT_COLS,
+        rows: terminal.current?.rows ?? DEFAULT_ROWS,
       }),
+      screen: () => {
+        const term = terminal.current;
+        return term === null
+          ? emptyScreen(DEFAULT_COLS, DEFAULT_ROWS)
+          : readScreen(term.buffer.active, term.cols, term.rows);
+      },
       onData: (callback) => subscribe(dataListeners, callback),
       onResize: (callback) => subscribe(resizeListeners, callback),
       focus: () => {

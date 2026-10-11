@@ -21,6 +21,27 @@ export interface E2eTrustedTypesReport {
   readonly directives: string[];
 }
 
+/** What the console's terminal holds (src/panels/console/screen.ts). */
+export interface E2eConsoleScreen {
+  /** The buffer shown: the normal one, with the scrollback, or a program's alternate screen. */
+  readonly buffer: 'normal' | 'alternate';
+  /**
+   * Every row of the buffer, scrollback first, as text without the cells at its end that nothing
+   * was written to. A line too long for one row continues on the next.
+   */
+  readonly lines: readonly string[];
+  /** The index in `lines` of the screen's top row when scrolled to the end; above it is scrollback. */
+  readonly baseY: number;
+  /** The index in `lines` of the top row shown (`baseY` unless scrolled up). */
+  readonly viewportY: number;
+  /** The cursor: its row (an index in `lines`) and its column. */
+  readonly cursor: { readonly row: number; readonly column: number };
+  /** The terminal's width in character cells. */
+  readonly cols: number;
+  /** The terminal's height in character cells. */
+  readonly rows: number;
+}
+
 /**
  * `window.__B2C_E2E__`: what the end-to-end tests can call through WebDriver's `executeScript`.
  * Every call throws (a JavaScript error in WebDriver) when its arguments are not valid.
@@ -46,6 +67,12 @@ export interface E2eHookContract {
    * terminal when the console is cleared is painted after the clear but is not in the transcript.
    */
   consoleText(): string;
+  /**
+   * What the console's terminal shows: its active buffer (scrollback and screen) as text lines,
+   * the viewport and the cursor, as far as the terminal has processed its output. Unlike
+   * {@link consoleText} it shows the effect of cursor moves and of Clear, as the person sees it.
+   */
+  consoleScreen(): E2eConsoleScreen;
   /** The Content Security Policy violations seen so far. */
   trustedTypes(): E2eTrustedTypesReport;
   /** Selects a block and centres the canvas on it. */

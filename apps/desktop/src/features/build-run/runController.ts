@@ -44,11 +44,19 @@ const ROWS = { min: 1, max: 1000 } as const;
 const RUN_ID = /^rn_[0-9a-f]{32}$/;
 
 /**
- * What the console gets at the start of every run: the terminal's modes are reset (the last
- * program may have left the alternate screen, hidden the cursor or changed colours), so they never
- * carry over, even after *Clear*.
+ * What the console gets at the start of every run (04 §4.5): the terminal's modes are reset, so
+ * nothing the last program left behind carries over, even after *Clear* (the alternate screen,
+ * a hidden cursor, colours, a scroll region, origin mode), and the cursor stays where it is, so
+ * the new run writes below the earlier output instead of over it.
+ *
+ * 1. `ESC 7` (DECSC) saves the cursor where it is.
+ * 2. `ESC [ ? 1049 l` leaves the alternate screen. It also restores a saved cursor, even on the
+ *    normal screen: without step 1 that is the one the last run's step 3 put at the screen's top
+ *    row, so the new run would overwrite the old one. After a program that left the alternate
+ *    screen on (`ESC [ ? 1049 h`), the cursor goes back to where that program entered it.
+ * 3. `ESC [ ! p` (DECSTR, a soft reset) resets the modes, colours and character sets.
  */
-export const RUN_MODE_RESET = '\u001b[?1049l\u001b[!p';
+export const RUN_MODE_RESET = '\u001b7\u001b[?1049l\u001b[!p';
 
 /**
  * What the console shows between two runs when the last one wrote output: the mode reset, then a
@@ -73,6 +81,11 @@ export interface RunControllerDeps {
   readonly dialogs: DialogService;
   /** Shows the first error (the `problems.focusFirstError` command). */
   readonly showFirstError: () => void;
+  /**
+   * After a build that found no usable compiler: shows the toolchain setup page when the
+   * compiler search has ended without one (04 §4.6). Returns whether it did.
+   */
+  readonly showToolchainSetup: () => boolean;
 }
 
 /** `size` within the bounds `run_start` accepts. */
@@ -221,6 +234,12 @@ export class RunController {
         return finish.buildId;
       case 'cancelled':
         return finish.superseded ? 'retry' : null;
+      case 'toolchainProblem':
+        // Once the compiler search has found no usable g++, the setup page helps more.
+        if (!this.#deps.showToolchainSetup()) {
+          this.#buildFailed();
+        }
+        return null;
       default:
         this.#buildFailed();
         return null;

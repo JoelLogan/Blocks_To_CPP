@@ -126,7 +126,8 @@ The hook exists only in the frontend built with `vite build --mode e2e`
 It reports readiness, inserts blocks as the clipboard's paste does (one undo step; a refused
 insertion changes nothing and leaves no undo step), reads the canonical document, the console
 transcript (the terminal only has the rows on screen; the transcript also has the console's
-separators and its "… N lines skipped" markers), the C++ of the code panel and the Trusted Types
+separators and its "… N lines skipped" markers), what the terminal holds (its active buffer with
+the scrollback, as the person sees it), the C++ of the code panel and the Trusted Types
 counts, selects a block, and locates blocks, fields, connections and grab points on screen so that
 the test can click and drag with real pointer input. CI checks that a release
 build contains neither the hook nor the backend's `B2C_E2E_*` variables.

@@ -104,6 +104,7 @@ function tappedHandle(handle: ConsoleHandle, transcript: ConsoleTranscript): Con
       handle.reset();
     },
     size: () => handle.size(),
+    screen: () => handle.screen(),
     onData: (callback: (data: string) => void) => handle.onData(callback),
     onResize: (callback: (size: TerminalSize) => void) => handle.onResize(callback),
     focus: () => {

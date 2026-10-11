@@ -1,15 +1,19 @@
 /**
- * Whether Run and Build are available, and why not (docs/spec/04-user-interface.md §4.1, §4.4;
- * 07 §7.6.1). The backend checks the same preconditions again and refuses on its own; the gate
- * only keeps the toolbar honest and explains itself.
+ * Whether Run and Build are available, and why not (docs/spec/04-user-interface.md §4.1, §4.4,
+ * §4.6; 07 §7.2, §7.6.1). The backend checks the same preconditions again and refuses on its own;
+ * the gate only keeps the toolbar honest and explains itself.
  */
 import type { OnErrors } from '@blocks2cpp/ipc-types';
 
 import { hasUsableToolchain, liveErrors } from './store/selectors';
 import type { AppData } from './store/state';
 
-/** Why Run and Build are held back. */
-export type RunGateReason = 'noProject' | 'restricted' | 'noToolchain' | 'errors';
+/**
+ * Why Run and Build are held back, or wait: `noToolchain` once the compiler search has ended
+ * without a usable g++, and `discovering` while the first search runs and no usable g++ is known
+ * yet. Run and Build stay enabled then: the build waits for the search (at most 30 s, 07 §7.2).
+ */
+export type RunGateReason = 'noProject' | 'restricted' | 'noToolchain' | 'errors' | 'discovering';
 
 /** The result of {@link runGate}. */
 export interface RunGate {
@@ -48,11 +52,15 @@ export function runGate(
   if (state.project.trust.state === 'restricted') {
     return gate(false, 'restricted');
   }
-  if (!hasUsableToolchain(state)) {
+  const usable = hasUsableToolchain(state);
+  if (!usable && !state.toolchains.discovering) {
     return gate(false, 'noToolchain');
   }
   if (errorCount > 0) {
     return gate(onErrorsMode === 'showProblems', 'errors');
+  }
+  if (!usable) {
+    return gate(true, 'discovering');
   }
   return gate(true, null);
 }
@@ -69,11 +77,7 @@ export function countErrors(count: number): string {
  * The tooltip of the Run or Build button: what it does, or why it is held back and what clicking
  * it does instead.
  */
-export function runGateMessage(
-  gate: RunGate,
-  action: GatedAction,
-  options: { discovering: boolean },
-): string {
+export function runGateMessage(gate: RunGate, action: GatedAction): string {
   switch (gate.reason) {
     case 'noProject':
       return 'Open or create a project first';
@@ -82,11 +86,13 @@ export function runGateMessage(
         ? 'Restricted Mode: trust this project to run it'
         : 'Restricted Mode: trust this project to build it';
     case 'noToolchain':
-      return options.discovering
-        ? 'Looking for a C++ compiler (g++)…'
-        : 'No g++ found – click to set one up';
+      return 'No g++ found – click to set one up';
     case 'errors':
       return `${countErrors(gate.errorCount)} – click to see the first`;
+    case 'discovering':
+      return action === 'run'
+        ? 'Looking for a C++ compiler (g++): Run starts once one is found (F5)'
+        : 'Looking for a C++ compiler (g++): the build starts once one is found (Ctrl+B)';
     case null:
       return action === 'run' ? 'Build if needed, then run (F5)' : 'Build (Ctrl+B)';
   }

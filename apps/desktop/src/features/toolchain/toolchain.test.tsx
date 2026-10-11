@@ -8,11 +8,12 @@ import type {
   ToolchainListResponse,
 } from '@blocks2cpp/ipc-types';
 import { IpcCallError } from '@blocks2cpp/ipc-types';
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resetAppStore, useAppStore } from '../../app/store';
 import { appInfoFixture, projectFixture, toolchainFixture } from '../../app/testing/fixtures';
+import { REANNOUNCE_MS, TRANSIENT_STATUS_MS } from '../../panels/shared/useTransientStatus';
 import { expectNoAxeViolations } from '../../test/axe';
 import {
   deferred,
@@ -21,6 +22,7 @@ import {
   settle,
   type TestFeatureContext,
 } from '../settings/page/testing';
+import { CopyCommand } from './CopyCommand';
 import { toolchainFeature } from './feature';
 import { INSTALL_COMMANDS } from './instructions';
 import { failureText, LINK_ADDRESSES, pageTitle } from './ToolchainPage';
@@ -242,6 +244,77 @@ describe('the setup page', () => {
     expect(region('Install g++ on Linux').textContent).toContain(
       'Could not copy: select the command and press Ctrl+C',
     );
+  });
+
+  describe("a command's copy confirmation", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Clicks *Copy* and lets the copy finish. */
+    async function copy(): Promise<void> {
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Copy the command/ }));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    }
+
+    async function wait(ms: number): Promise<void> {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    }
+
+    const status = () => screen.getByRole('status').textContent;
+
+    it('says Copied for 3 seconds, and again after every copy', async () => {
+      vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+      render(<CopyCommand command={INSTALL_COMMANDS.apt} />);
+      await copy();
+      expect(status()).toBe('Copied');
+      await wait(2500);
+      await copy();
+      expect(status()).toBe('');
+      await wait(REANNOUNCE_MS);
+      expect(status()).toBe('Copied');
+      await wait(TRANSIENT_STATUS_MS);
+      expect(status()).toBe('');
+    });
+
+    it('keeps the way to copy by hand until the next copy', async () => {
+      const writeText = vi
+        .spyOn(navigator.clipboard, 'writeText')
+        .mockRejectedValueOnce(new Error('NotAllowedError'))
+        .mockResolvedValueOnce();
+      render(<CopyCommand command={INSTALL_COMMANDS.apt} />);
+      await copy();
+      await wait(10_000);
+      expect(status()).toBe('Could not copy: select the command and press Ctrl+C');
+      await copy();
+      await wait(REANNOUNCE_MS);
+      expect(writeText).toHaveBeenCalledTimes(2);
+      expect(status()).toBe('Copied');
+    });
+
+    it('changes nothing once it is gone while a copy is still pending', async () => {
+      let finish: () => void = () => undefined;
+      vi.spyOn(navigator.clipboard, 'writeText').mockReturnValue(
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+      );
+      const { unmount } = render(<CopyCommand command={INSTALL_COMMANDS.apt} />);
+      fireEvent.click(screen.getByRole('button', { name: /Copy the command/ }));
+      unmount();
+      finish();
+      await vi.advanceTimersByTimeAsync(0);
+      // The status started no timer: it showed nothing.
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 
   it('says a link could not be opened, with its address', async () => {

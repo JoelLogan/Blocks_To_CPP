@@ -133,6 +133,7 @@
 .b2c-panel-status {
   margin-left: auto;
   color: var(--b2c-text-muted, #4f596c);
+  white-space: nowrap;
 }
 
 .b2c-panel-empty {
@@ -159,6 +160,37 @@
   color: var(--b2c-text-muted, #4f596c);
 }
 
+/*
+ * The copy confirmation never moves the code (04 §4.3). In the bar it would need a line of its
+ * own whenever the bar is full (the C++ dock's usual width), so it floats just below the bar's
+ * right end, over the code, and lets the pointer through to it. Its z-index counts only inside
+ * the panel, so it never covers a dialog.
+ */
+.b2c-code-panel {
+  isolation: isolate;
+}
+
+.b2c-code-panel .b2c-panel-bar {
+  position: relative;
+}
+
+.b2c-code-copy-status {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 8px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.b2c-code-copy-status:not(:empty) {
+  padding: 2px 8px;
+  border: 1px solid var(--b2c-border, #c9cfdb);
+  border-radius: 4px;
+  background: var(--b2c-surface-raised, #ffffff);
+  color: var(--b2c-text, #1b2130);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 15%);
+}
+
 .b2c-code-not-buildable {
   margin: 0;
   padding: 4px 8px;
@@ -167,10 +199,12 @@
   color: var(--b2c-panel-warning-text);
 }
 
+/* Its own stacking context, so CodeMirror's layers stay below the copy confirmation. */
 .b2c-code-editor {
   position: relative;
   flex: 1;
   min-height: 0;
+  isolation: isolate;
 }
 
 .b2c-code-editor[hidden] {
@@ -317,15 +351,26 @@
   color: var(--b2c-text-muted, #4f596c);
 }
 
+/*
+ * The console scrolls by itself, never the panel around it (04 §4.5). The fit add-on sizes the
+ * terminal to its host's whole height minus the padding of xterm's own element, so the padding
+ * sits on that element: padding on the host would fit one row too many, which then spilled out
+ * and made the dock panel scroll. Nothing may spill out of the host or the console's dock panel.
+ */
 .b2c-console-terminal {
   flex: 1;
   min-height: 0;
-  padding: 4px 0 0 6px;
+  overflow: hidden;
   background: var(--b2c-console-bg);
 }
 
 .b2c-console-terminal .xterm {
   height: 100%;
+  padding: 4px 0 0 6px;
+}
+
+.dock-panel:has(> .b2c-console-panel) {
+  overflow: hidden;
 }
 
 /* Build output */
