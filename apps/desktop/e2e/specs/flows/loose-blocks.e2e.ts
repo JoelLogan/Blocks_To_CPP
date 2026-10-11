@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { BlockNode, ProjectDocument } from '../../support/bdm';
+import { panCanvas, visibleCanvas } from '../../support/canvas';
 import { currentDocument, fieldOf, foldCodePanel } from '../../support/editor';
 import { clickMiddle } from '../../support/ui';
 import { sleep, waitFor } from '../../support/wait';
@@ -55,6 +56,11 @@ describe('Loose blocks', () => {
       message: 'getters of secret and guess in the toolbox',
     });
 
+    // The guessing game fills the canvas beside the open flyout. Pan it to the left, under the
+    // flyout, so the blocks below are dropped on empty canvas, out of reach of main's connections.
+    const canvas = await visibleCanvas(app.driver);
+    await panCanvas(app.driver, { x: -(canvas.right - canvas.left - 40), y: 0 });
+
     // A print dropped loose stays selected; once the analysis and the toolbox's rebuild have run,
     // the getters are still listed.
     await dropOnCanvas(app, { category: 'Input / Output', type: 'io.print' });
@@ -64,8 +70,10 @@ describe('Loose blocks', () => {
     expect(await listsGetter(app, SECRET)).toBe(true);
     expect(await listsGetter(app, GUESS)).toBe(true);
 
-    // A set dropped loose: its variable menu lists main's variables.
-    await dropOnCanvas(app, { category: 'Variables', type: 'var.set', fields: { VAR: SECRET } });
+    // A set dropped loose: its variable menu lists main's variables. The category lists each
+    // variable's blocks in name order, and only the first variable's (guess) are sure to be in
+    // view without scrolling the flyout.
+    await dropOnCanvas(app, { category: 'Variables', type: 'var.set', fields: { VAR: GUESS } });
     const set = await looseBlock(app, 'var.set');
     await sleep(SETTLE_MS);
     await clickMiddle(app.driver, await fieldOf(app, set.id, 'VAR'));

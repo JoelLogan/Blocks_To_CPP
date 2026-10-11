@@ -62,6 +62,11 @@ const MENU_HITS_SCRIPT = `
       : '';
     return element.tagName.toLowerCase() + id + classes;
   };
+  // An item's label without what is hidden from assistive technology (the shortcut "Ctrl+S").
+  const labelOf = (item) => Array.from(item.childNodes)
+    .filter((node) => !(node instanceof Element && node.getAttribute('aria-hidden') === 'true'))
+    .map((node) => node.textContent || '')
+    .join(' ');
   const items = Array.from(document.querySelectorAll('[role="menu"] [role="menuitem"]'));
   return items.map((item) => {
     const r = item.getBoundingClientRect();
@@ -74,7 +79,7 @@ const MENU_HITS_SCRIPT = `
       [middleX, r.bottom - inset],
     ];
     return {
-      label: (item.textContent || '').replace(/\\s+/g, ' ').trim(),
+      label: labelOf(item).replace(/\\s+/g, ' ').trim(),
       points: points.map(([x, y]) => {
         const hit = document.elementFromPoint(x, y);
         return {
