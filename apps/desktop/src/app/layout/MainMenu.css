@@ -13,11 +13,17 @@
   line-height: 1;
 }
 
+/*
+ * Above the canvas and its toolbox, which app.css's `.workspace` keeps in a stacking context of
+ * their own (the stacking scale is at the top of app.css). The list has the app's colours, not
+ * the toolbar's, so it follows the system's scheme rather than the toolbar's dark one.
+ */
 .main-menu-list {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
   z-index: 50;
+  color-scheme: light dark;
   display: flex;
   flex-direction: column;
   min-width: 220px;

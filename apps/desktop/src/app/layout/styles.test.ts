@@ -141,6 +141,15 @@ describe.each(THEMES)('colour contrast in the %s theme', (theme) => {
     }
   });
 
+  it('reads the Debug/Release drop-down at 4.5:1, also under the pointer', () => {
+    const select = declarationsOf(ALL_RULES, '.toolbar-select');
+    const hover = declarationsOf(ALL_RULES, '.toolbar-select:hover');
+    const text = select.get('color') ?? '';
+    for (const background of [select.get('background-color'), hover.get('background-color')]) {
+      expect(contrastOf(tokens, text, background ?? '')).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it('draws the keyboard ring on the canvas and on every block colour', () => {
     const ring = resolveValue(tokens, token('--b2c-kb-ring')) ?? '';
     const edge = resolveValue(tokens, token('--b2c-kb-ring-edge')) ?? '';
@@ -178,6 +187,10 @@ describe('the focus', () => {
       '.main-menu-list:focus-visible': 'the focused menu item has its own ring',
       '.feature-page-title:focus': 'the :focus-visible rule draws the ring for keyboard users',
       '.start-title:focus': 'the :focus-visible rule draws the ring for keyboard users',
+      ":root:not([data-input='keyboard']) h1[tabindex='-1']:focus-visible":
+        'a heading focused from code shows its ring once the keyboard is in use',
+      ":root:not([data-input='keyboard']) h2[tabindex='-1']:focus-visible":
+        'a heading focused from code shows its ring once the keyboard is in use',
     };
     const hiding = ALL_RULES.filter((rule) => {
       const outline = rule.declarations.get('outline');
@@ -197,6 +210,21 @@ describe('the focus', () => {
     );
   });
 
+  it('is drawn on a heading focused from code only once the keyboard is in use', () => {
+    const hidden = ALL_RULES.filter((rule) =>
+      rule.selectors.some((selector) => selector.includes('[data-input=')),
+    );
+    expect(hidden.flatMap((rule) => rule.selectors)).toEqual([
+      ":root:not([data-input='keyboard']) h1[tabindex='-1']:focus-visible",
+      ":root:not([data-input='keyboard']) h2[tabindex='-1']:focus-visible",
+    ]);
+    expect(hidden[0]?.declarations.get('outline')).toBe('none');
+    // The pages' headings take the focus from code: these are the headings the rule covers.
+    expect(declarationsOf(ALL_RULES, '.start-title:focus-visible').get('outline')).toMatch(
+      /^2px solid /,
+    );
+  });
+
   it('is drawn on the canvas by the keyboard plugin', () => {
     const keyboard = parseRules(sheet('editor/keyboard/keyboard.css'));
     const ring = keyboard.find((rule) =>
@@ -204,6 +232,106 @@ describe('the focus', () => {
     );
     expect(ring?.declarations.get('stroke')).toBe('var(--b2c-kb-ring)');
     expect(pixels(ring?.declarations.get('stroke-width'))).toBeGreaterThanOrEqual(2);
+  });
+});
+
+/** The z-index each rule sets, by selector. */
+function zIndexes(): { selector: string; value: number }[] {
+  return ALL_RULES.flatMap((rule) => {
+    const value = rule.declarations.get('z-index');
+    return value === undefined
+      ? []
+      : rule.selectors.map((selector) => ({ selector, value: Number(value) }));
+  });
+}
+
+/** The stacking scale documented at the top of app.css. */
+function stackingScale(): string {
+  const text = sheet('app/app.css');
+  const start = text.indexOf('Stacking (z-index)');
+  expect(start, 'the stacking scale in app.css').toBeGreaterThan(0);
+  return text.slice(start, text.indexOf('*/', start));
+}
+
+describe('the stacking (04 §4.1: menus, hints and dialogs above the canvas)', () => {
+  it('keeps Blockly’s layers, such as its toolbox at 70, inside the canvas', () => {
+    expect(declarationsOf(ALL_RULES, '.workspace').get('isolation')).toBe('isolate');
+    expect(declarationsOf(ALL_RULES, '.workspace').get('position')).toBe('relative');
+  });
+
+  it('draws the main menu and hints above the canvas, and dialogs above them', () => {
+    const z = (selector: string) => Number(declarationsOf(ALL_RULES, selector).get('z-index'));
+    expect(z('.main-menu-list')).toBeGreaterThan(0);
+    expect(z('.hint')).toBeGreaterThan(0);
+    expect(z('.dialog-overlay')).toBeGreaterThan(Math.max(z('.main-menu-list'), z('.hint')));
+    expect(z('.dialog')).toBeGreaterThan(z('.dialog-overlay'));
+  });
+
+  it('uses only z-indexes the scale in app.css documents', () => {
+    const scale = stackingScale();
+    const found = zIndexes();
+    expect(found.length).toBeGreaterThan(0);
+    for (const { selector, value } of found) {
+      expect(Number.isInteger(value), selector).toBe(true);
+      expect(scale, `${selector} z-index ${String(value)}`).toMatch(
+        new RegExp(`(^|\\s)${String(value)}(\\s|$)`, 'm'),
+      );
+    }
+  });
+});
+
+describe('the toolbar', () => {
+  const select = declarationsOf(ALL_RULES, '.toolbar-select');
+
+  it('draws the Debug/Release drop-down itself, in the toolbar’s colours', () => {
+    expect(select.get('appearance')).toBe('none');
+    expect(select.get('background-color')).toBe('var(--b2c-toolbar-bg)');
+    expect(select.get('color')).toBe('var(--b2c-toolbar-text)');
+    // What the webview still draws itself in the toolbar is drawn dark, like the toolbar.
+    expect(declarationsOf(ALL_RULES, '.toolbar').get('color-scheme')).toBe('dark');
+  });
+
+  it('gives the drop-down a chevron in its text colour, kept under the pointer', () => {
+    const chevron = select.get('background-image') ?? '';
+    expect(chevron).toContain('linear-gradient');
+    expect(chevron).toContain('currentColor');
+    expect(select.get('background-repeat')).toBe('no-repeat');
+    // Room for the chevron after the text.
+    expect(pixels(select.get('padding-right'))).toBeGreaterThanOrEqual(24);
+    // The `background` shorthand would remove the chevron under the pointer.
+    const hover = declarationsOf(ALL_RULES, '.toolbar-select:hover');
+    expect(hover.has('background')).toBe(false);
+    expect(hover.get('background-color')).toBe('var(--b2c-toolbar-hover)');
+  });
+
+  it('keeps the drop-down as tall as the buttons, so the toolbar keeps its height', () => {
+    const button = declarationsOf(ALL_RULES, '.toolbar-button');
+    for (const property of ['min-height', 'padding', 'border', 'font']) {
+      expect(select.get(property), property).toBe(button.get(property));
+    }
+    for (const property of ['height', 'max-height', 'padding-top', 'padding-bottom']) {
+      expect(select.has(property), property).toBe(false);
+    }
+  });
+
+  it('cuts off only the project’s name, so the unsaved-changes marker stays in view', () => {
+    const text = declarationsOf(ALL_RULES, '.project-name-text');
+    expect(text.get('text-overflow')).toBe('ellipsis');
+    expect(text.get('overflow')).toBe('hidden');
+    expect(text.get('white-space')).toBe('nowrap');
+    expect(text.get('min-width')).toBe('0');
+    const heading = declarationsOf(ALL_RULES, '.project-name');
+    expect(heading.get('display')).toBe('flex');
+    expect(heading.get('min-width')).toBe('0');
+    expect(heading.has('text-overflow')).toBe(false);
+    expect(heading.has('overflow')).toBe(false);
+    expect(declarationsOf(ALL_RULES, '.dirty-marker').get('flex')).toBe('none');
+  });
+});
+
+describe('the status bar', () => {
+  it('draws no edge around the toolchain link', () => {
+    expect(declarationsOf(ALL_RULES, '.status-link').get('border')).toBe('0');
   });
 });
 

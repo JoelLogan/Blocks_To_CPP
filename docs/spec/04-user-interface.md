@@ -40,8 +40,10 @@
   *Save* (`Ctrl+S`), *Save as…* and *Close project*; the items about the open
   project appear only while one is open.
 * The top bar shows the project name, followed by `•` while there are unsaved
-  changes. The window title does not change: the webview has no window
-  permission ([08 §8.8](08-security.md#88-webview-and-ipc-hardening)).
+  changes; a name too long for the bar is cut off with `…` before the `•`,
+  which stays in view. The window title does not change: the webview has no
+  window permission
+  ([08 §8.8](08-security.md#88-webview-and-ipc-hardening)).
 * The **Debug / Release** dropdown in the toolbar lasts for the session,
   starts at *Debug* and is never saved in the project. The project settings
   dialog comes in M3.
@@ -61,6 +63,9 @@
 * The status bar says *Saved* (with the time after a save in this session)
   or *Unsaved* while there are unsaved changes or the project has no file
   yet.
+* Menus, hints and dialogs are always drawn above the canvas, the toolbox and
+  dragged blocks; opening a dialog first closes the block editor's drop-downs
+  and field editors.
 
 ## 4.2 Toolbox
 
@@ -337,6 +342,12 @@ console and selected text.
   [the M2 accessibility checklist](../manual-tests/m2-accessibility.md). The
   High Contrast themes, the checked colour-blind-safe palette, UI scaling,
   24 px splitter targets and non-drag alternatives come in M5.
+* **In M2** the app and the blocks follow the system's light or dark setting;
+  the console is dark in both. Controls the webview draws itself, such as the
+  Debug/Release drop-down, are styled explicitly, so their contrast holds in
+  both themes; this is checked in the running app on both systems. A page's
+  heading takes the focus when the page opens, and shows its focus ring once
+  the keyboard is in use (after Tab).
 
 ## 4.9 Localisation
 

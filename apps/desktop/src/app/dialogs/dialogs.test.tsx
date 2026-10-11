@@ -3,7 +3,9 @@ import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { expectNoAxeViolations } from '../../test/axe';
-import { installBlocklyDialogs } from './blockly';
+import type { EditorContext } from '../editor-types';
+import { useAppStore } from '../store';
+import { blocklyPopupsPlugin, installBlocklyDialogs } from './blockly';
 import { DialogHost } from './DialogHost';
 import { createDialogQueue, type DialogQueue, MAX_PENDING_DIALOGS } from './service';
 
@@ -399,5 +401,199 @@ describe('installBlocklyDialogs', () => {
     Blockly.dialog.alert('native');
     expect(alert).toHaveBeenCalledWith('native');
     expect(queue.store.getState().queue).toHaveLength(0);
+  });
+});
+
+describe('onBeforeShow', () => {
+  it('runs the hooks before a dialog is shown, while the queue is still as it was', async () => {
+    const queue = renderHost();
+    const seen: number[] = [];
+    queue.onBeforeShow(() => {
+      seen.push(queue.store.getState().queue.length);
+      // Nothing of the dialog is on the page yet.
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    const { answer } = await open(() => queue.alert({ message: 'Saved.' }));
+    expect(seen).toEqual([0]);
+    expect(screen.getByRole('dialog', { name: 'Saved.' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    await answer;
+  });
+
+  it('runs them again when the next waiting dialog comes up, not when it is queued', async () => {
+    const queue = renderHost();
+    const hook = vi.fn();
+    queue.onBeforeShow(hook);
+
+    const { answer: first } = await open(() => queue.alert({ message: 'First' }));
+    const { answer: second } = await open(() => queue.alert({ message: 'Second' }));
+    expect(hook).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    await first;
+    expect(hook).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole('dialog', { name: 'Second' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    await second;
+    // The queue is empty now: nothing more comes up.
+    expect(hook).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not run them while cancelAll empties the queue', async () => {
+    const queue = createDialogQueue();
+    const hook = vi.fn();
+    queue.onBeforeShow(hook);
+    const answers = [queue.confirm({ message: 'a' }), queue.confirm({ message: 'b' })];
+    expect(hook).toHaveBeenCalledTimes(1);
+
+    queue.cancelAll();
+    await expect(Promise.all(answers)).resolves.toEqual([false, false]);
+    expect(hook).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops calling a hook once it is removed, and keeps each registration apart', () => {
+    const queue = createDialogQueue();
+    const hook = vi.fn();
+    const removeFirst = queue.onBeforeShow(hook);
+    queue.onBeforeShow(hook);
+    removeFirst();
+
+    void queue.alert({ message: 'once' });
+    expect(hook).toHaveBeenCalledTimes(1);
+    queue.cancelAll();
+  });
+
+  it('shows the dialog when a hook throws, and logs the error', async () => {
+    const queue = renderHost();
+    const failure = new Error('hook failed');
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const after = vi.fn();
+    queue.onBeforeShow(() => {
+      throw failure;
+    });
+    queue.onBeforeShow(after);
+
+    const { answer } = await open(() => queue.alert({ message: 'Still shown' }));
+    expect(screen.getByRole('dialog', { name: 'Still shown' })).toBeTruthy();
+    expect(logged).toHaveBeenCalledWith('A hook before a dialog failed', failure);
+    expect(after).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    await answer;
+  });
+
+  it('does not run the hooks again for a dialog a hook asks for', () => {
+    const queue = createDialogQueue();
+    let calls = 0;
+    queue.onBeforeShow(() => {
+      calls += 1;
+      if (calls === 1) {
+        void queue.alert({ message: 'asked for by the hook' });
+      }
+    });
+
+    void queue.alert({ message: 'outer' });
+    expect(calls).toBe(1);
+    expect(queue.store.getState().queue.map((request) => request.options.message)).toEqual([
+      'asked for by the hook',
+      'outer',
+    ]);
+    queue.cancelAll();
+  });
+});
+
+describe('blocklyPopupsPlugin', () => {
+  /** An injected workspace with the plugin attached to `queue` (by default the app's). */
+  function attachPlugin(queue?: DialogQueue) {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const workspace = Blockly.inject(host, { sounds: false });
+    const context: EditorContext = {
+      workspace,
+      store: useAppStore,
+      core: () => null,
+      selectBlock: () => undefined,
+      activeModuleId: () => '',
+    };
+    const detach = (
+      queue === undefined ? blocklyPopupsPlugin() : blocklyPopupsPlugin(queue)
+    ).attach(context);
+    return {
+      workspace,
+      detach,
+      dispose: () => {
+        Blockly.WidgetDiv.hide();
+        Blockly.DropDownDiv.hideWithoutAnimation();
+        workspace.dispose();
+        host.remove();
+      },
+    };
+  }
+
+  /**
+   * Opens a field's drop-down and a field editor (or a context menu) over `workspace`, as Blockly
+   * shows them.
+   */
+  function openPopups(workspace: Blockly.WorkspaceSvg): { closeEditor: () => void } {
+    const closeEditor = vi.fn();
+    Blockly.DropDownDiv.setBoundsElement(workspace.getParentSvg().parentElement);
+    Blockly.DropDownDiv.show(new Blockly.FieldTextInput('x'), false, 0, 0, 0, 0, false);
+    Blockly.WidgetDiv.show({}, false, closeEditor, workspace, false);
+    expect(Blockly.DropDownDiv.isVisible()).toBe(true);
+    expect(Blockly.WidgetDiv.isVisible()).toBe(true);
+    return { closeEditor };
+  }
+
+  it('is named for the list of editor plugins', () => {
+    expect(blocklyPopupsPlugin(createDialogQueue()).name).toBe('dialog-popups');
+  });
+
+  it('closes Blockly’s drop-down and widget before a dialog opens over them', async () => {
+    const queue = renderHost();
+    const editor = attachPlugin(queue);
+    try {
+      const { closeEditor } = openPopups(editor.workspace);
+
+      const { answer } = await open(() => queue.confirm({ message: 'Delete 3 blocks?' }));
+      expect(Blockly.DropDownDiv.isVisible()).toBe(false);
+      expect(Blockly.WidgetDiv.isVisible()).toBe(false);
+      // A field editor is closed as a click elsewhere closes it, which keeps what was typed.
+      expect(closeEditor).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('dialog', { name: 'Delete 3 blocks?' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await expect(answer).resolves.toBe(false);
+    } finally {
+      editor.detach();
+      editor.dispose();
+    }
+  });
+
+  it('leaves the pop-ups alone once it is detached', () => {
+    const queue = createDialogQueue();
+    const editor = attachPlugin(queue);
+    try {
+      editor.detach();
+      openPopups(editor.workspace);
+      void queue.alert({ message: 'After the editor' });
+      expect(Blockly.DropDownDiv.isVisible()).toBe(true);
+      expect(Blockly.WidgetDiv.isVisible()).toBe(true);
+      queue.cancelAll();
+    } finally {
+      editor.dispose();
+    }
+  });
+
+  it("uses the app's dialog queue by default", async () => {
+    const { dialogs } = await import('./instance');
+    const editor = attachPlugin();
+    try {
+      const hide = vi.spyOn(editor.workspace, 'hideChaff');
+      void dialogs.alert({ message: 'Default queue' });
+      expect(hide).toHaveBeenCalledTimes(1);
+      dialogs.cancelAll();
+    } finally {
+      editor.detach();
+      editor.dispose();
+    }
   });
 });

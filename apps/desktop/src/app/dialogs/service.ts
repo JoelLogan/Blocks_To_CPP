@@ -113,6 +113,15 @@ export interface DialogQueue extends DialogService {
   readonly store: StoreApi<DialogQueueState>;
   /** Settles every request with its cancel result and empties the queue. */
   cancelAll(): void;
+  /**
+   * Calls `hook` each time a dialog is about to be shown: when a request arrives at an empty
+   * queue, and when the next waiting request comes up. It runs before the queue changes, so before
+   * `DialogHost` renders the dialog or moves the focus into it; the block editor closes its own
+   * pop-ups there, which Blockly draws above everything else (docs/spec/04-user-interface.md
+   * §4.1). A hook that throws is logged and does not stop the dialog. Returns the function that
+   * removes the hook.
+   */
+  onBeforeShow(hook: () => void): () => void;
 }
 
 /** Settles `request` with the result it gets when it is dismissed. */
@@ -136,7 +145,31 @@ export function settleCancelled(request: DialogRequest): void {
 /** Creates an empty queue. */
 export function createDialogQueue(): DialogQueue {
   const store = createStore<DialogQueueState>()(() => ({ queue: [] }));
+  const beforeShowHooks = new Set<() => void>();
+  /** Set while the hooks run, so a hook that itself asks for a dialog does not run them again. */
+  let runningHooks = false;
+  /** Set while {@link DialogQueue.cancelAll} empties the queue. */
+  let cancelling = false;
   let nextId = 1;
+
+  /** Runs the {@link DialogQueue.onBeforeShow} hooks, each on its own. */
+  function beforeShow(): void {
+    if (runningHooks) {
+      return;
+    }
+    runningHooks = true;
+    try {
+      for (const hook of [...beforeShowHooks]) {
+        try {
+          hook();
+        } catch (error: unknown) {
+          console.error('A hook before a dialog failed', error);
+        }
+      }
+    } finally {
+      runningHooks = false;
+    }
+  }
 
   /**
    * Adds a request. Its `settle` calls `done`, which removes it from the queue and returns whether
@@ -150,19 +183,39 @@ export function createDialogQueue(): DialogQueue {
         return false;
       }
       settled = true;
+      const { queue } = store.getState();
+      // The next waiting request is about to be shown in its place.
+      if (!cancelling && queue[0]?.id === id && queue.length > 1) {
+        beforeShow();
+      }
       store.setState((state) => ({ queue: state.queue.filter((queued) => queued.id !== id) }));
       return true;
     });
-    if (store.getState().queue.length >= MAX_PENDING_DIALOGS) {
+    const { queue } = store.getState();
+    if (queue.length >= MAX_PENDING_DIALOGS) {
       console.warn(`Too many dialogs at once; "${request.kind}" was cancelled`);
       settleCancelled(request);
       return;
+    }
+    if (queue.length === 0) {
+      beforeShow();
     }
     store.setState((state) => ({ queue: [...state.queue, request] }));
   }
 
   return {
     store,
+
+    onBeforeShow(hook) {
+      // A wrapper of its own, so registering the same function twice gives two removable hooks.
+      const entry = () => {
+        hook();
+      };
+      beforeShowHooks.add(entry);
+      return () => {
+        beforeShowHooks.delete(entry);
+      };
+    },
 
     alert(options) {
       return new Promise<void>((resolve) => {
@@ -230,8 +283,14 @@ export function createDialogQueue(): DialogQueue {
     },
 
     cancelAll() {
-      for (const request of store.getState().queue) {
-        settleCancelled(request);
+      // No dialog comes up while the queue empties, so the hooks do not run.
+      cancelling = true;
+      try {
+        for (const request of store.getState().queue) {
+          settleCancelled(request);
+        }
+      } finally {
+        cancelling = false;
       }
     },
   };

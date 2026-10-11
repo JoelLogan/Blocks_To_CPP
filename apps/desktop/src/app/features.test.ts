@@ -91,6 +91,7 @@ describe('the lists later waves extend', () => {
       'clipboard',
       'menus',
       'keyboard',
+      'dialog-popups',
     ]);
   });
 
