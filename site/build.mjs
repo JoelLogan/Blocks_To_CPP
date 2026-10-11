@@ -7,16 +7,22 @@
 // page, duplicate anchors, raw HTML or images in the docs, and non-HTTPS external
 // links, so the published page can never silently drift from the repository.
 //
+// With --check-repo-markdown it builds nothing and checks every Markdown file of
+// the repository instead (see checkRepositoryMarkdown): relative links must point
+// to files that exist, and heading anchors to headings that exist, as GitHub
+// resolves them. CI runs it in the docs job (docs/spec/09-quality-and-delivery.md §9.3).
+//
 // Usage: node build.mjs            (from site/, or `pnpm site:build` from the root)
+//        node site/build.mjs --check-repo-markdown
 // Env:   B2C_SITE_COMMIT=<sha>     commit shown in the footer (defaults to GITHUB_SHA,
 //                                  then `git rev-parse HEAD`, then "a local working copy")
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Marked, Renderer } from 'marked';
 
 const SITE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -42,6 +48,30 @@ const CODE_LANGUAGES = new Map([
   ['markdown', 'Markdown'],
   ['sh', 'Shell'],
 ]);
+
+/**
+ * Paths the all-Markdown check skips (repository-relative): installed dependencies,
+ * local tool state such as agent worktrees, and fuzz corpora and crash artifacts,
+ * which are generated inputs rather than documents.
+ */
+const UNCHECKED_MARKDOWN = [/(^|\/)node_modules\//, /^\.claude\//, /^fuzz\/(corpus|artifacts)\//];
+
+/**
+ * CHANGELOG.md is checked down to its first released version only: released
+ * entries are history, written against the repository as it was then, and are
+ * not edited when a heading they link to is renamed later.
+ */
+const CHANGELOG_FILE = 'CHANGELOG.md';
+const RELEASED_VERSION_HEADING = /^## (?!\[Unreleased\])/m;
+
+/**
+ * Source files whose messages name Markdown files by their repository path, such
+ * as "see BUILDING.md#troubleshooting". The all-Markdown check reads each `*.md`
+ * path (with its anchor, if any) in them as a link from the repository root, so
+ * a reference must be written in one piece, not split across strings.
+ */
+const SOURCE_FILES_WITH_DOC_REFERENCES = ['apps/desktop/vite.config.ts', 'packages/b2c-core-wasm/scripts/build.mjs'];
+const DOC_REFERENCE = /(?<![\w./:#-])(?:[\w.-]+\/)*[\w.-]+\.md(?:#[\w-]+)?(?![\w/])/g;
 
 /** Static assets copied verbatim into dist/assets (paths relative to src/). */
 const ASSETS = [
@@ -143,14 +173,45 @@ function* headingTokens(tokens) {
   }
 }
 
-/** Decodes a percent-encoded URL part; reports and returns null if it is malformed. */
-function safeDecode(doc, href, value) {
+/**
+ * Splits a relative link into its percent-decoded path (`target`), its query and
+ * its decoded fragment. Reports a malformed %-escape or a backslash through
+ * `report` and returns null.
+ */
+function parseLinkTarget(href, report) {
+  const hashIndex = href.indexOf('#');
+  const beforeHash = hashIndex === -1 ? href : href.slice(0, hashIndex);
+  const queryIndex = beforeHash.indexOf('?');
+  let target;
+  let fragment;
   try {
-    return decodeURIComponent(value);
+    target = decodeURIComponent(queryIndex === -1 ? beforeHash : beforeHash.slice(0, queryIndex));
+    fragment = hashIndex === -1 ? '' : decodeURIComponent(href.slice(hashIndex + 1));
   } catch {
-    problem(doc, `link "${href}" contains a malformed %-escape`);
+    report(`link "${href}" contains a malformed %-escape`);
     return null;
   }
+  if (target.includes('\\')) {
+    report(`link "${href}" uses a backslash; use "/" between path segments`);
+    return null;
+  }
+  return { target, query: queryIndex === -1 ? '' : beforeHash.slice(queryIndex + 1), fragment };
+}
+
+/**
+ * The repository path a relative link target points to: from the repository root
+ * when it starts with "/" (as on GitHub), otherwise from the folder of `fromFile`.
+ * Reports a target outside the repository and returns null.
+ */
+function repositoryPathOf(fromFile, target, href, report) {
+  const repoPath = target.startsWith('/')
+    ? path.posix.normalize(target.slice(1))
+    : path.posix.normalize(path.posix.join(path.posix.dirname(fromFile), target));
+  if (repoPath === '..' || repoPath.startsWith('../')) {
+    report(`link "${href}" points outside the repository`);
+    return null;
+  }
+  return repoPath;
 }
 
 /**
@@ -190,11 +251,11 @@ async function discoverDocuments() {
  * heading literally titled "A 1" after two "A"s becomes "a-1-1"). If a heading
  * uses a named entity this build cannot decode, its anchor cannot be computed
  * reliably, so the file is marked `uncertain` and anchors into it are not checked.
- * Cached per file.
+ * Cached per file in `cache` (the site build's cache by default).
  */
 const externalAnchorCache = new Map();
-function githubAnchorsOf(absolutePath) {
-  let result = externalAnchorCache.get(absolutePath);
+function githubAnchorsOf(absolutePath, cache = externalAnchorCache) {
+  let result = cache.get(absolutePath);
   if (!result) {
     const anchors = new Set();
     const occurrences = new Map();
@@ -210,9 +271,44 @@ function githubAnchorsOf(absolutePath) {
       anchors.add(slug);
     }
     result = { anchors, uncertain };
-    externalAnchorCache.set(absolutePath, result);
+    cache.set(absolutePath, result);
   }
   return result;
+}
+
+/**
+ * Checks a link to a file or folder of the repository at `repoDir`: it must
+ * exist, and an anchor into a Markdown file must be one of its GitHub heading
+ * anchors, or with `?plain=1` (the source view) a line anchor such as `#L10`.
+ * Fragments on other files (e.g. "LICENSE#L5" line anchors) are left to GitHub.
+ * Returns whether the target is a folder, or null when it does not exist.
+ */
+function checkRepositoryTarget(repoDir, repoPath, { query, fragment }, href, report, anchorCache) {
+  const absolute = path.join(repoDir, ...repoPath.split('/'));
+  const relative = path.relative(repoDir, absolute);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    report(`link "${href}" points outside the repository`);
+    return null;
+  }
+  if (!existsSync(absolute)) {
+    report(`link "${href}" points to "${repoPath}", which does not exist`);
+    return null;
+  }
+  const isDirectory = statSync(absolute).isDirectory();
+  if (fragment && !isDirectory && repoPath.endsWith('.md')) {
+    // Rendered Markdown has heading anchors; the source view (?plain=1) has line anchors.
+    if (/(^|&)plain=1(&|$)/.test(query)) {
+      if (!/^L\d+(-L\d+)?$/.test(fragment)) {
+        report(`link "${href}" uses ?plain=1, which only supports line anchors such as #L10`);
+      }
+    } else {
+      const { anchors, uncertain } = githubAnchorsOf(absolute, anchorCache);
+      if (!uncertain && !anchors.has(fragment)) {
+        report(`link "${href}" points to a heading that does not exist in "${repoPath}"`);
+      }
+    }
+  }
+  return isDirectory;
 }
 
 /**
@@ -245,27 +341,20 @@ function stripNumberPrefix(tokens, prefix) {
 /** Resolves a Markdown link target to a page anchor or an absolute URL. */
 function resolveHref(href, doc, docsByFile, pendingAnchors) {
   const broken = { url: '#', external: false };
+  const report = (message) => problem(doc, message);
   if (/^https:\/\//i.test(href)) return { url: href, external: true };
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
-    problem(doc, `link "${href}" must use https:// or point to a file in the repository`);
+    report(`link "${href}" must use https:// or point to a file in the repository`);
     return broken;
   }
 
-  const hashIndex = href.indexOf('#');
-  const beforeHash = hashIndex === -1 ? href : href.slice(0, hashIndex);
-  const fragment = hashIndex === -1 ? '' : safeDecode(doc, href, href.slice(hashIndex + 1));
+  const parts = parseLinkTarget(href, report);
+  if (parts === null) return broken;
   // A query (e.g. "?plain=1") only changes how GitHub displays a file. It is kept on
   // links to GitHub and ignored for documents on the page.
-  const queryIndex = beforeHash.indexOf('?');
-  const query = queryIndex === -1 ? '' : beforeHash.slice(queryIndex + 1);
-  const target = safeDecode(doc, href, queryIndex === -1 ? beforeHash : beforeHash.slice(0, queryIndex));
-  if (fragment === null || target === null) return broken;
-  if (target.includes('\\')) {
-    problem(doc, `link "${href}" uses a backslash; use "/" between path segments`);
-    return broken;
-  }
+  const { target, query, fragment } = parts;
   if (query && !/^[A-Za-z0-9_.-]+=[A-Za-z0-9_.-]*(&[A-Za-z0-9_.-]+=[A-Za-z0-9_.-]*)*$/.test(query)) {
-    problem(doc, `link "${href}" has a query string the site cannot pass through`);
+    report(`link "${href}" has a query string the site cannot pass through`);
     return broken;
   }
 
@@ -278,46 +367,18 @@ function resolveHref(href, doc, docsByFile, pendingAnchors) {
 
   if (target === '') return anchorIn(doc);
 
-  const repoPath = target.startsWith('/')
-    ? path.posix.normalize(target.slice(1))
-    : path.posix.normalize(path.posix.join(path.posix.dirname(doc.file), target));
-  if (repoPath === '..' || repoPath.startsWith('../')) {
-    problem(doc, `link "${href}" points outside the repository`);
-    return broken;
-  }
+  const repoPath = repositoryPathOf(doc.file, target, href, report);
+  if (repoPath === null) return broken;
 
   const linkedDoc = docsByFile.get(repoPath);
   if (linkedDoc) return anchorIn(linkedDoc);
   if ((repoPath.startsWith(`${SPEC_DIR}/`) || repoPath.startsWith(`${ADR_DIR}/`)) && repoPath.endsWith('.md')) {
-    problem(doc, `link "${href}" points to "${repoPath}", which is not a document on the page`);
+    report(`link "${href}" points to "${repoPath}", which is not a document on the page`);
     return broken;
   }
 
-  const absolute = path.join(REPO_DIR, ...repoPath.split('/'));
-  const relative = path.relative(REPO_DIR, absolute);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    problem(doc, `link "${href}" points outside the repository`);
-    return broken;
-  }
-  if (!existsSync(absolute)) {
-    problem(doc, `link "${href}" points to "${repoPath}", which does not exist`);
-    return broken;
-  }
-  const isDirectory = statSync(absolute).isDirectory();
-  const lineAnchor = /^L\d+(-L\d+)?$/.test(fragment);
-  const sourceView = /(^|&)plain=1(&|$)/.test(query);
-  if (fragment && !isDirectory && repoPath.endsWith('.md')) {
-    // Rendered Markdown has heading anchors; the source view (?plain=1) has line anchors.
-    if (sourceView) {
-      if (!lineAnchor) problem(doc, `link "${href}" uses ?plain=1, which only supports line anchors such as #L10`);
-    } else {
-      const { anchors, uncertain } = githubAnchorsOf(absolute);
-      if (!uncertain && !anchors.has(fragment)) {
-        problem(doc, `link "${href}" points to a heading that does not exist in "${repoPath}"`);
-      }
-    }
-  }
-  // Fragments on other files (e.g. "LICENSE#L5" line anchors) are left to GitHub.
+  const isDirectory = checkRepositoryTarget(REPO_DIR, repoPath, parts, href, report, externalAnchorCache);
+  if (isDirectory === null) return broken;
   const view = isDirectory ? 'tree' : 'blob';
   const encodedPath = repoPath.split('/').map(encodeURIComponent).join('/');
   const encodedQuery = query ? `?${query}` : '';
@@ -504,7 +565,113 @@ function fillTemplate(template, values) {
   return output;
 }
 
-async function main() {
+/**
+ * The Markdown files the all-Markdown check covers, sorted: every `*.md` file git
+ * tracks, plus new files it does not ignore (so a document is checked before it
+ * is committed), minus UNCHECKED_MARKDOWN and files deleted from the working tree.
+ */
+function repositoryMarkdownFiles(repoDir) {
+  const listed = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', '*.md'], {
+    cwd: repoDir,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return [...new Set(listed.split('\0'))]
+    .filter((file) => file !== '' && !UNCHECKED_MARKDOWN.some((pattern) => pattern.test(file)))
+    .filter((file) => existsSync(path.join(repoDir, ...file.split('/'))))
+    .sort();
+}
+
+/** The 1-based line of a character offset. */
+function lineAt(source, offset) {
+  let line = 1;
+  for (let index = source.indexOf('\n'); index !== -1 && index < offset; index = source.indexOf('\n', index + 1)) {
+    line += 1;
+  }
+  return line;
+}
+
+/**
+ * Checks one link of the all-Markdown check, as GitHub resolves it from
+ * `fromFile` (repository-relative; "" for the repository root). Links with a
+ * scheme (https:, mailto:, …) are external and left to lychee.
+ */
+function checkRepositoryLink(repoDir, fromFile, href, report, anchorCache) {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) return;
+  const parts = parseLinkTarget(href, report);
+  if (parts === null) return;
+  const repoPath = parts.target === '' ? fromFile : repositoryPathOf(fromFile, parts.target, href, report);
+  if (repoPath === null) return;
+  checkRepositoryTarget(repoDir, repoPath, parts, href, report, anchorCache);
+}
+
+/**
+ * The all-Markdown check (`--check-repo-markdown`). Unlike the site build, which
+ * checks only the page's documents, it covers every Markdown file of the
+ * repository (repositoryMarkdownFiles; CHANGELOG.md up to its first released
+ * version) and the Markdown references in SOURCE_FILES_WITH_DOC_REFERENCES. Each
+ * relative link and image must point to a file or folder that exists inside the
+ * repository, and each anchor into a Markdown file (including the file's own) to
+ * a heading GitHub gives that anchor. External links are lychee's job.
+ *
+ * Returns the number of Markdown files checked and the problems found, each as
+ * "file:line: message".
+ */
+export function checkRepositoryMarkdown(repoDir = REPO_DIR) {
+  const found = [];
+  const anchorCache = new Map();
+  const files = repositoryMarkdownFiles(repoDir);
+
+  for (const file of files) {
+    let source = readFileSync(path.join(repoDir, ...file.split('/')), 'utf8').replace(/\r\n?/g, '\n');
+    if (file === CHANGELOG_FILE) {
+      const history = source.search(RELEASED_VERSION_HEADING);
+      if (history !== -1) source = source.slice(0, history);
+    }
+    // Tokens come in document order, so each link's source text is searched for
+    // after the previous one's to find its line.
+    let cursor = 0;
+    lexer.walkTokens(lexer.lexer(source), (token) => {
+      if (token.type !== 'link' && token.type !== 'image') return;
+      let offset = source.indexOf(token.raw, cursor);
+      if (offset === -1) offset = source.indexOf(token.raw);
+      if (offset !== -1) cursor = offset + 1;
+      const where = offset === -1 ? file : `${file}:${lineAt(source, offset)}`;
+      checkRepositoryLink(repoDir, file, token.href, (message) => found.push(`${where}: ${message}`), anchorCache);
+    });
+  }
+
+  for (const file of SOURCE_FILES_WITH_DOC_REFERENCES) {
+    const absolute = path.join(repoDir, ...file.split('/'));
+    if (!existsSync(absolute)) {
+      found.push(`${file}: does not exist; update SOURCE_FILES_WITH_DOC_REFERENCES in site/build.mjs`);
+      continue;
+    }
+    const source = readFileSync(absolute, 'utf8');
+    for (const match of source.matchAll(DOC_REFERENCE)) {
+      const where = `${file}:${lineAt(source, match.index)}`;
+      checkRepositoryLink(repoDir, '', match[0], (message) => found.push(`${where}: ${message}`), anchorCache);
+    }
+  }
+  return { files: files.length, problems: found };
+}
+
+/** Runs the all-Markdown check and reports its result; throws a BuildError listing every problem. */
+function runRepositoryMarkdownCheck() {
+  const { files, problems: found } = checkRepositoryMarkdown();
+  if (found.length > 0) {
+    throw new BuildError(
+      `${found.length} broken link${found.length === 1 ? '' : 's'} or anchor${found.length === 1 ? '' : 's'} ` +
+        `in the repository's Markdown:\n  - ${found.join('\n  - ')}`,
+    );
+  }
+  console.log(
+    `Checked ${files} Markdown files and ${SOURCE_FILES_WITH_DOC_REFERENCES.length} source files: ` +
+      'every relative link and heading anchor resolves.',
+  );
+}
+
+async function buildSite() {
   const documents = await discoverDocuments();
   const docsByFile = new Map(documents.map((doc) => [doc.file, doc]));
   const sources = new Map();
@@ -562,7 +729,24 @@ async function main() {
   console.log(`Built site/dist/index.html (${kib} KiB) from ${documents.length} documents.`);
 }
 
-main().catch((error) => {
-  console.error(error instanceof BuildError ? error.message : error);
-  process.exitCode = 1;
-});
+async function main(args) {
+  if (args.length === 0) return buildSite();
+  if (args.length === 1 && args[0] === '--check-repo-markdown') return runRepositoryMarkdownCheck();
+  throw new BuildError(`Unknown arguments: ${args.join(' ')}\nUsage: node build.mjs [--check-repo-markdown]`);
+}
+
+/** Whether this file is the script Node was started with, rather than imported (by its tests). */
+function isMainModule() {
+  try {
+    return pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url;
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
+  main(process.argv.slice(2)).catch((error) => {
+    console.error(error instanceof BuildError ? error.message : error);
+    process.exitCode = 1;
+  });
+}

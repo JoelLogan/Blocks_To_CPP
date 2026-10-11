@@ -14,8 +14,9 @@ listed [at the end](#what-is-not-here-yet).
   [Setting up a compiler](#setting-up-a-compiler)). Blocks2Cpp never downloads
   a compiler for you.
 - **Blocks2Cpp itself.** There are no installers yet; they come with the 1.0
-  release work. Until then the app is built from its source code, as
-  [the desktop app's README](../../apps/desktop/README.md#develop) describes.
+  release work. Until then you build the app from its source code with
+  [`BUILDING.md`](../../BUILDING.md) and start it as its section
+  [Run Blocks2Cpp](../../BUILDING.md#run-blocks2cpp) describes.
 
 ## The first start
 

@@ -27,13 +27,16 @@ What the tests cannot check: what a screen reader actually says, how the real
 webview (WebView2 or WebKitGTK) draws focus and colours, zoom and reflow, and
 the operating system's reduced-motion setting. That is this pass.
 
-Run it on a release build of the commit you are signing off, once on Windows
-with NVDA and once on Linux with Orca. Record the result in the sign-off
-table at the end and file an issue for each failure, quoting the step.
+Run it on a release build of the commit you are signing off, made as
+[`BUILDING.md`](../../BUILDING.md#run-blocks2cpp) describes (never the
+development server, which differs in speed and looks), once on Windows with
+NVDA and once on Linux with Orca. Record the result in the sign-off table at
+the end and file an issue for each failure, quoting the step.
 
 ## Before you start
 
-1. Install the build under test and a supported g++ (GCC 11 or newer).
+1. Build the commit under test with [`BUILDING.md`](../../BUILDING.md) (the
+   release build) and install a supported g++ (GCC 11 or newer).
 2. Windows: install the current NVDA release and use its default settings
    (browse mode on, *Speak typed characters* on). Linux: use Orca from the
    distribution (GNOME), with *Speak object under mouse* off.

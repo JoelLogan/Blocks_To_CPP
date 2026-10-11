@@ -77,6 +77,13 @@ const REQUIRED_FEATURES = [
 ];
 const OPTIONAL_FEATURES = ['--enable-bulk-memory-opt', '--enable-call-indirect-overlong'];
 
+/**
+ * Where a missing or unsuitable tool is explained for each system. The repository's anchor
+ * check (site/build.mjs --check-repo-markdown) checks this reference, so keep it in one piece.
+ */
+const TOOLS_HELP =
+  'How to install these tools on each system: BUILDING.md#the-webassembly-core-does-not-build';
+
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(packageDir, '..', '..');
 const pkgDir = path.join(packageDir, 'pkg');
@@ -180,11 +187,13 @@ function checkTools(bindgenVersion) {
   }
 
   if (problems.length === 1) {
-    throw new BuildError(problems[0]);
+    throw new BuildError(`${problems[0]}\n${TOOLS_HELP}`);
   }
   if (problems.length > 1) {
     const list = problems.map((problem) => `  - ${problem}`).join('\n');
-    throw new BuildError(`${problems.length} tools are missing or unsuitable:\n${list}`);
+    throw new BuildError(
+      `${problems.length} tools are missing or unsuitable:\n${list}\n${TOOLS_HELP}`,
+    );
   }
   return { wasmBindgen, wasmOpt };
 }
