@@ -357,9 +357,11 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
       };
       expect(refused(`${'['.repeat(10_000)}${']'.repeat(10_000)}`)).toEqual(['B2C-E0104']);
       expect(refused(`{"pad": "${'x'.repeat(33 * 1024 * 1024)}"}`)).toEqual(['B2C-E0101']);
-      expect(
-        refused(made.payload.replace('"catalog": "1.0.0",', '"catalog": "1.0.0", "catalog": "2",')),
-      ).toEqual(['B2C-E0105']);
+      const catalogKey = `"catalog": "${core.version().catalog}",`;
+      expect(made.payload).toContain(catalogKey);
+      expect(refused(made.payload.replace(catalogKey, `${catalogKey} "catalog": "2",`))).toEqual([
+        'B2C-E0105',
+      ]);
       expect(
         refused(
           made.payload.replace(
@@ -401,7 +403,7 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
         ),
       ).toBe('invalidArguments');
       // The instance keeps working.
-      expect(core.version().catalog).toBe('1.0.0');
+      expect(core.version().catalog).toBe('1.1.0');
     });
   });
 });

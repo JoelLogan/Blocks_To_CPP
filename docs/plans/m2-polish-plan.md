@@ -1017,7 +1017,7 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
   - Golden files `crates/b2c-catalog/tests/migrations/*.b2c`.
   - b2c-app: open, save, `.bak`, `blocksUpgraded`.
   - WASM paste.
-  - A file whose `catalog` is 1.1.0 opened by a 1.0.0 catalog gives E0602.
+  - A file whose `catalog` is newer than the app's (1.2.0 opened by the 1.1.0 catalog) gives E0602.
   - The trust hash is unchanged by an upgrade.
   - `upgrade_document` added to the resolve fuzz target and to the mutation-testing list of 09 §9.2.
 - Effort L.
@@ -1027,7 +1027,7 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
 - **Change:**
   - `var.change` v1 gains `OP`: *by* / *down by* / *times* / *divided by* / *mod*, default `add`.
   - `var.update@1` is replaced by `var.change@1` (VALUE → BY) through W4-1, and is listed as retired.
-  - `generator.catalog` goes to 1.1.0.
+  - `generator.catalog` goes to 1.2.0 (W1's label and help changes took it to 1.1.0).
   - The C++ output is identical.
   - **Also updated:**
     - `crates/b2c-catalog/src/toolbox.rs:86`;
@@ -1763,7 +1763,7 @@ The structured decisions list has the full options and recommendations. They are
 | A custom previewer disposes user blocks or leaves the canvas changed after a cancelled preview | Never call the base `hideInsertionMarker` with user blocks inside the marker | Real-pointer `drag.test.ts`; a revert-drag property test; Escape test; placement E2E on both systems |
 | Parked blocks hide real mistakes (ADR-0011's concern) | Visible W0505; lint levels in M5; catalog errors still block | A property test that parked stacks never change the C++; round-trip tests that the editor never detaches a stack by itself |
 | W4-1 corrupts files, or changes trust, during upgrade | Pure replacements; limits checked again; the security hash never changes; `.b2c.bak`; past the cut line, so not right before the sessions | Golden migration files; idempotence; fuzz target and mutation list; trust-hash equality test |
-| A new field (W4-5) opens badly in an older build | Catalog version comparison (E0602) lands in W4-1, before W4-5 | A test with a `catalog` 1.1.0 file opened by a 1.0.0 catalog |
+| A new field (W4-5) opens badly in an older build | Catalog version comparison (E0602) lands in W4-1, before W4-5 | A test with a `catalog` 1.2.0 file opened by the 1.1.0 catalog |
 | `screenReaderMode` slows fast output | Batching exists; fallback to a throttled `role=log` mirror | Flood E2E and the long-task recorder; NVDA/Orca pass |
 | Overriding Blockly's protected methods and the plugin's internals breaks on the M3 upgrade | ADR-0014 seam list; small subclasses; upstream reports for U17 and the drop-delete bug | The M3 spike branch runs every suite and the chrome checks |
 | What the owner sees differs in a release build (dev server, StrictMode) | `BUILDING.md` in W1; W2-2 | The owner re-checks in a release build on Debian |

@@ -53,8 +53,14 @@ pub use toolbox::{
     ToolboxError, ToolboxProblem,
 };
 
-/// The catalog version (semver of the `catalog/` directory).
-pub const CATALOG_VERSION: &str = "1.0.0";
+/// The catalog version (semver of the `catalog/` directory). Compatible changes
+/// (a field, `extra` key or input with a default; a dropdown option; label, help
+/// or colour text) raise the minor version, breaking ones a block's `version`
+/// (spec §3.11.3).
+///
+/// 1.1.0: the labels name every field and the help texts mention ⊕/⊖ and the
+/// loop menu (M2 polish W1-8, W1-17). Files from 1.0.0 load unchanged.
+pub const CATALOG_VERSION: &str = "1.1.0";
 
 /// A loaded, validated catalog.
 #[derive(Debug, Clone, PartialEq)]

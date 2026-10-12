@@ -32,12 +32,21 @@ const TEMPLATE_FILES: Readonly<Record<string, string>> = import.meta.glob<string
   { query: '?raw', import: 'default', eager: true },
 );
 
+/**
+ * A bundled template as `project_new` sends it: the backend names this app and catalog as its
+ * generator (crates/b2c-app/src/templates.rs), here those of {@link appInfoFixture}.
+ */
 function templateFile(name: string): string {
   const text = TEMPLATE_FILES[`../../../../../crates/b2c-app/templates/${name}`];
   if (text === undefined) {
     throw new Error(`the template ${name} is missing`);
   }
-  return text;
+  const { appVersion, catalogVersion } = appInfoFixture();
+  const generator = /("generator": \{\s*"app": )"[^"]*"(,\s*"catalog": )"[^"]*"/;
+  if (!generator.test(text)) {
+    throw new Error(`the template ${name} has no generator`);
+  }
+  return text.replace(generator, `$1"${appVersion}"$2"${catalogVersion}"`);
 }
 
 /** The *Empty* template, as `project_new` sends it. */

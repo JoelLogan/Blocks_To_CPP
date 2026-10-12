@@ -209,7 +209,9 @@ describe.skipIf(!WITH_CORE)('untrusted clipboard data', () => {
     focus(editor, 'b009');
     pressCtrl('V');
     const valid = payloadOf(editor.document(), 'b004');
-    pasteEvent(valid.replace('"catalog": "1.0.0",', '"catalog": "1.0.0", "catalog": "9.9.9",'));
+    const catalogKey = `"catalog": "${core.version().catalog}",`;
+    expect(valid).toContain(catalogKey);
+    pasteEvent(valid.replace(catalogKey, `${catalogKey} "catalog": "9.9.9",`));
     expect(JSON.stringify(editor.document())).toBe(before);
     expect(editor.notices).toHaveLength(1);
     const notice = editor.notices[0];

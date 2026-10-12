@@ -433,7 +433,7 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       await harness.feature.lifecycle.save();
       const sent = harness.ipc.projectSave.mock.calls[0]?.[0].document ?? '';
       expect(sent).toBe(HELLO_TEXT);
-      expect(project().document.generator).toEqual({ app: '0.1.0', catalog: '1.0.0' });
+      expect(project().document.generator).toEqual({ app: '0.1.0', catalog: '1.1.0' });
       expect(project().savedCanonicalText).toBe(HELLO_TEXT);
     });
 

@@ -52,6 +52,34 @@ fn every_example_resolves_without_problems() {
     assert!(count >= 15);
 }
 
+/// A file saved by the 1.0.0 catalog, before W1's label and help changes raised
+/// the catalog to 1.1.0 (03 §3.11.3), still resolves without problems, with the
+/// blocks whose labels changed (print to a stream, a constant, a character), and
+/// its generator is kept.
+#[test]
+fn a_file_from_the_1_0_0_catalog_still_resolves() {
+    assert_ne!(b2c_catalog::CATALOG_VERSION, "1.0.0");
+    let value = project(
+        json!([
+            {"id": "b1", "type": "var.declare", "v": 1,
+             "fields": {"CONST": true, "NAME": {"sym": "s_c", "name": "c"}, "TYPE": "char"},
+             "inputs": {"VALUE": {"block": {"id": "b2", "type": "text.char", "v": 1,
+                                            "fields": {"VALUE": "z"}}}}},
+            {"id": "b3", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+             "fields": {"NEWLINE": true, "SEP": "none", "STREAM": "err"},
+             "inputs": {"ITEM0": {"expr": [{"ref": "s_c"}]}}}
+        ]),
+        json!([]),
+    );
+    assert_eq!(value["generator"]["catalog"], "1.0.0");
+    let (document, diagnostics) = common::resolve(&value);
+    assert_eq!(diagnostics, []);
+    assert_eq!(document.generator.catalog, "1.0.0");
+    // Saved again, it still names the catalog that wrote it.
+    let saved = b2c_model::to_canonical_json(&document);
+    assert!(saved.contains(r#""catalog": "1.0.0""#), "{saved}");
+}
+
 #[test]
 fn diagnostics_come_from_the_catalog_stage() {
     let value = project(json!([{"id": "b1", "type": "nope.nope", "v": 1}]), json!([]));

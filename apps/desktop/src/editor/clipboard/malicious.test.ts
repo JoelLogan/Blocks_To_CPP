@@ -128,10 +128,10 @@ describe.skipIf(!WITH_CORE)('malicious payloads', () => {
   });
 
   it('a key twice in one object: B2C-E0105', () => {
-    const twice = validPayload().replace(
-      '"catalog": "1.0.0",',
-      '"catalog": "1.0.0", "catalog": "1.0.0",',
-    );
+    const catalogKey = `"catalog": "${core.version().catalog}",`;
+    const valid = validPayload();
+    expect(valid).toContain(catalogKey);
+    const twice = valid.replace(catalogKey, `${catalogKey} ${catalogKey}`);
     expect(refusedCodes(twice)).toEqual(['B2C-E0105']);
   });
 

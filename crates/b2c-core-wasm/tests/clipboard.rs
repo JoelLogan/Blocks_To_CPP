@@ -1031,11 +1031,9 @@ fn generated_attacks_are_refused() {
     big.push_str("\"}");
     assert_eq!(refused(&big), ["B2C-E0101"]);
     // Duplicate keys, prototype keys, another format, a whole project.
-    let duplicate = payload.replacen(
-        "\"catalog\": \"1.0.0\",",
-        "\"catalog\": \"1.0.0\", \"catalog\": \"9\",",
-        1,
-    );
+    let catalog = format!("\"catalog\": \"{}\",", b2c_catalog::CATALOG_VERSION);
+    assert!(payload.contains(&catalog));
+    let duplicate = payload.replacen(&catalog, &format!("{catalog} \"catalog\": \"9\","), 1);
     assert_eq!(refused(&duplicate), ["B2C-E0105"]);
     let proto = payload.replacen(
         "\"refs\": {",

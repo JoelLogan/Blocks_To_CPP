@@ -763,11 +763,15 @@ User-installed packs are **code** and are subject to workspace trust
 
 ### 3.11.3 Block versioning
 
-Block IDs are stable and never reused. A breaking change to a block's
-inputs/fields bumps `version`, and the catalog ships a migration (pure
-function, BDM → BDM) from every older version. Removing a block type
-requires a deprecation period of one minor release in which the block still
-loads, shows a deprecation badge, and offers an automatic replacement.
+Block IDs are stable and never reused. **Compatible** changes (a field,
+`extra` key or input with a default; a dropdown option; label, help or
+colour text) keep `version` and raise `generator.catalog`'s minor version;
+the catalog is 1.1.0 since M2's labels name every field. A breaking change
+to a block's inputs/fields bumps `version`, and the catalog ships a
+migration (pure function, BDM → BDM) from every older version. Removing a
+block type requires a deprecation period of one minor release in which the
+block still loads, shows a deprecation badge, and offers an automatic
+replacement.
 
 ## 3.12 C++ coverage matrix
 

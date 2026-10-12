@@ -145,7 +145,7 @@ export interface ToolboxCategoryJson {
 }
 
 /** The catalog version (semver of catalog/). */
-export const CATALOG_VERSION = '1.0.0';
+export const CATALOG_VERSION = '1.1.0';
 
 /** Every block definition of the catalog, sorted by ID. */
 export const BLOCK_DEFS: readonly BlockDefJson[] = [
