@@ -225,6 +225,36 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `B2C-E0108`) and ADR-0014 (the allowed Blockly seams and patched
   dependencies), all accepted on 2026-10-10. ADR-0011 and ADR-0002 are
   partly superseded.
+- An A/B benchmark job (`.github/workflows/bench-ab.yml`). The `bench-ab`
+  label on a pull request (and each push while it has the label), or a manual
+  run, builds the base and the head and runs the chosen webview benchmarks
+  against both in alternating runs on one runner, 10 samples per side. A
+  gated metric more than 10% worse than the base fails
+  (`tools/bench-compare.py ab`).
+- `apps/desktop/e2e/bench/accepted.json` records intended slowdowns. The
+  nightly comparison restarts an accepted metric's history instead of
+  failing, and an A/B run passes a metric that its head newly accepts. The
+  benchmark history file is now format version 2; version 1 is still read.
+- Benchmarks `webview.select-1000.max-task` (gated: the longest task after a
+  click that selects a block at 1,000 blocks, 8 scopes in turn),
+  `webview.guessing-game.select.max-task` and
+  `webview.guessing-game.edit.max-task` (reported only).
+- Every end-to-end flow reports its longest main-thread tasks, named with the
+  app's User Timing spans that overlap them (`long-tasks-<launch>.json` per
+  test, `long-tasks.md` in the E2E job summaries). Report only; it never
+  fails a test.
+- User Timing spans for the preview pipeline and its phases, the toolbox
+  refresh, block selection and the code panel (`b2c:preview`,
+  `b2c:toolbox-refresh`, `b2c:select`, `b2c:code-panel`). The benchmarks
+  print each span's time per edit or click beside their metrics.
+- The end-to-end test hook's `scrollCanvasBy(dx, dy)` and `timings()` (the
+  latest duration of each User Timing span).
+- Manual test: an M2 performance profile protocol
+  (`docs/manual-tests/m2-performance-profile.md`). It records the owner's
+  system, re-measures the first-start layout (U6) and lag (U11) in a release
+  build, profiles clicks that change nothing, and checks whether GTK reports
+  a primary monitor under Wayland. A release build is profiled unchanged
+  through WebKitGTK's remote inspector.
 
 ### Changed
 
@@ -281,6 +311,17 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `@tauri-apps/api` and `@tauri-apps/cli`) with the dialog plugin 2.8.1,
   `getrandom` 0.4, Vite 8.3.2, ESLint 10.12, typescript-eslint 8.71 and other
   patch releases, and the MSYS2 setup action 2.33.0.
+- `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
+  until the page has finished what the edit started. It is accepted in
+  `accepted.json`, so its history restarts.
+- Each edit does less work in the editor: call blocks are labelled from the
+  preview's symbols instead of one scope query each, the preview stores an
+  edit in two store updates, autosave no longer compares the saved text on
+  every update, and the Problems list and the C++ panel stay idle while
+  hidden and catch up when shown.
+- The security specification (08 §8.8) notes that WebKitGTK's remote Web
+  Inspector (`WEBKIT_INSPECTOR_SERVER`, `WEBKIT_INSPECTOR_HTTP_SERVER`) can
+  inspect release builds, and what it exposes while it is on.
 
 ### Fixed
 

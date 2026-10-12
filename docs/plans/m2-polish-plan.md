@@ -651,6 +651,13 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
   - bench-unit Vitest for the new drivers.
   - Unit tests for the recorder's gap detection.
 - Effort L, of which the core is M. The W2 gate depends on W2-1 only.
+- *Status (2026-10-12):* the must-have core is merged; readings are local (debug backend, E2E frontend build, Linux under xvfb without a GPU).
+  - *Long-task recorder:* `e2e/support/longtasks.ts`, started by `launchApp` and the flows' launcher. It uses a timer heartbeat instead of a MessageChannel one, which costs about 1.5 cores in WebKitGTK. It names the app's `b2c:` User Timing spans that overlap each task (P-2) and writes `long-tasks.md` into the E2E job summaries. Linux E2E run: 44 launches recorded, longest task per launch 147–792 ms (median 476 ms; a preview run with the C++ panel), and 3.0 s in the 10,000,000-line flood.
+  - *A/B job:* `bench-ab.yml` (label `bench-ab`, or by hand), `ab-rounds.sh` and `bench-compare.py ab`. It is linted (actionlint, zizmor) but has not run on GitHub yet. The first A/B, run locally, is P-2's (below).
+  - *Acceptance file:* `accepted.json` (history format 2). `edit-1000.p95` is accepted for its new definition.
+  - *Metrics:* `select-1000.max-task` about 1.0 s (10 clicks, 50–1,286 ms: a click whose scope has one variable costs about 60 ms). `edit-1000.p95` (gated; C++ panel shown, until the page settles) about 1.4 s. Guessing game: `select` 15 ms and `edit` 37–41 ms (report-only). The spans show `b2c:select` at about 1 ms and `b2c:toolbox-refresh` at about 0 ms per click (medians), so most of the 1 s task after a click at 1,000 blocks lies outside them. W4-2 should profile it before assuming the flyout is the cause.
+  - *Merge rule:* in 09 §9.2.
+  - *If time:* the User Timing spans and the Vitest counters for store updates and scope queries came with P-2. Not done: `drag-stack-1000` and `drag-over-5000`, `declare-variable`, the flyout `show()` counter, and instruction counts for the WASM core.
 
 **W2-2 Profile on the owner's machine.** Refs: U11-9, U18-8.
 
@@ -705,6 +712,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
   - Set `"preventOverflow": true` on the main window in `apps/desktop/src-tauri/tauri.conf.json`.
   - Tauri 2.12 then clamps the window to the monitor's work area only when it would overflow (`tauri-runtime-wry-2.12.0 lib.rs:4463-4520`), and keeps 1280×800 wherever that fits.
   - No custom monitor code.
+  - *Finding (W2-2):* GTK 3.24's Wayland backend has no primary monitor (`gdk_display_get_primary_monitor` returns none), and tao and `tauri-runtime-wry` use it for both `center` and `preventOverflow`, so under Wayland neither does anything. W3-3 therefore needs a fallback that fits the window to `current_monitor()` (or the first of `available_monitors()`) after it is created, or at least an info log line naming the monitor used. The owner's profile record confirms it.
 - **E2E seam:**
   - An environment variable `B2C_E2E_WINDOW_SIZE=WxH`, read in `window.rs` only in builds with the E2E hooks.
   - Flows and benchmarks pin their size with it, and the size cases (800×560, 1024×700, 1280×800) set it per test.
@@ -1181,6 +1189,12 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
   - Counters: 0 `symbolsInScope` calls from labels with 50 call blocks; at most 2 store notifications per run; no `buildProblemItems` while the Console tab is shown.
   - React Profiler render counts.
 - Effort S.
+- *Status (2026-10-12):* done. The A/B was run locally: base 9c098e9 (W2-1 without P-2) and head (with P-2), 2 rounds of 5 samples in alternating runs (10 per side), debug backend, Linux under xvfb.
+  - `preview-1000.p95`: 120.5 → 101.5 ms (−15.8%), an improvement past the 10% threshold.
+  - `edit-1000.p95`: 1,338.5 → 1,411.5 ms (+5.5%), within noise; Blockly's rendering dominates.
+  - `select-1000.max-task`: 1,001 → 999 ms (−0.2%).
+  - Guessing game: `select` 15 → 15 ms; `edit` 40.5 → 36.5 ms (−9.9%, just under the threshold).
+  - No gated metric regressed. Per edit at 1,000 blocks, `b2c:preview` takes about 66 ms (`analyse` 32, `canonical` 22, `read` 7) and the code panel about 4 ms.
 
 **P-3 Render-management spike (if time).** Ref: U11-2.
 
@@ -1652,6 +1666,7 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
     - "M2 is done once the polish wave is finished and these are recorded on a polish build: the threat-model review, the first green weekly run, the toolchain matrix (at least the Debian cell, or a recorded deferral), committed visual baselines, the usability sessions, NVDA/Orca, the demo review."
     - *(correction)* "the visual diff passes" becomes "it runs but compares nothing until its baselines are committed".
     - Readings: "(debug backend, production frontend, Linux under xvfb without a GPU, 2026-10-10): selecting 1.2 s, an edit at the end of `main` 0.85 s, dragging a 1,000-block stack 14 s in all; a toolbox rebuild 0.13–0.17 s at 40 blocks. To be measured again in a release build (W2-2)."
+    - *Benchmarked 2026-10-12 (W2-1, after P-2; debug backend, E2E frontend, Linux under xvfb):* the longest task after a click at 1,000 blocks about 1.0 s (`select-1000.max-task`), an edit until the page settles with the C++ panel shown about 1.4 s at p95 (`edit-1000.p95`), the preview task about 100 ms at p95; on the guessing game a selection 15 ms and an edit about 37 ms.
 65. **§10.1 M2 bullets:**
     - "Dynamic Program, Variables and Functions categories (standard variable set with scope- and type-filtered menus)";
     - "Parked (loose) blocks: kept, warned, never run (ADR-0012)";
@@ -1770,7 +1785,7 @@ The structured decisions list has the full options and recommendations. They are
 | Overriding Blockly's protected methods and the plugin's internals breaks on the M3 upgrade | ADR-0014 seam list; small subclasses; upstream reports for U17 and the drop-delete bug | The M3 spike branch runs every suite and the chrome checks |
 | What the owner sees differs in a release build (dev server, StrictMode) | `BUILDING.md` in W1; W2-2 | The owner re-checks in a release build on Debian |
 | The fractional-scaling wheel bug (U14b) is not the owner's actual glitch | Ask for a recording; the WebKitGTK compositing workaround is documented | Manual test at 125% and 150%; WheelEvent unit tests |
-| `preventOverflow` finds no primary monitor on Wayland (*hypothesis*) | Checked on the owner's session in W2-2; the window still opens at 1280×800 | Manual check; the profile record |
+| `preventOverflow` finds no primary monitor on Wayland (near-certain: GTK 3.24's Wayland backend has none, W2-2) | A fallback from the window's current monitor in W3-3; checked on the owner's session in W2-2; the window still opens at 1280×800 | Manual check; the profile record |
 | Dependabot's `ignore` also suppresses security pull requests (*hypothesis*) | OSV-Scanner and `pnpm audit` still fail CI; the 08 §8.9 wording covers manual fixes | Read GitHub's documentation in W0-6 |
 | The Worker's CSP is not enforced (M3, *hypothesis*) | ADR-0016 requires verification on both webviews | A test page in the M3 spike |
 | The benchmark history is lost when the default branch changes (RD-8e) | Move the history before 1.0 | Noted in W7-2; checked at the M6 release preparation |
