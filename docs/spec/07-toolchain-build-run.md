@@ -260,7 +260,10 @@ settings**, never in projects:
   hash, and no generated or IDE file changed on disk. A build that has to
   rewrite any of those files deletes the manifest first, so a new generator
   version that produces different code for the same project hash always
-  recompiles.
+  recompiles. (M5) A build whose generated files are byte-identical to the
+  last successful build's is up to date even when the project hash changed,
+  so editing a parked block does not recompile
+  ([ADR-0012](../adr/0012-parked-blocks.md)).
 * **Object cache key** = SHA-256(toolchain fingerprint ‖ normalised argv
   without output paths ‖ TU contents ‖ contents of all generated project
   headers ‖ support header). System headers are covered by the toolchain

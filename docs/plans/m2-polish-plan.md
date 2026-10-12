@@ -288,6 +288,7 @@ The core of W2-1 must land before W4-2, W5-1 and W3-11.
 - Add labels: owner-feedback, M2-polish, tech-debt, usability, perf, security-followup.
 - Add a "Known issue" template with fields for evidence: commit, run, logs and hypothesis.
 - Open one issue per U-item and per work item, and link them from 10 §10.1.
+- *Status:* the template is `.github/ISSUE_TEMPLATE/known-issue.yml`. The labels and issues are the owner's (agents may not open issues); until they exist, 10 §10.1 says the items are to be tracked there.
 - Effort S.
 
 **W0-8 Spec corrections that need no code.** These are the §5 revisions marked *correction*:
@@ -325,7 +326,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
     - Otherwise it returns Blockly's radius until W5-1 lands, and W5-1's radius after that.
   - **The final position.** In `B2cBlockDragger.onDragEnd`, when `wouldDeleteDraggable(e, root)` is true, call `this.onDrag(e, totalDelta)` before `super.onDragEnd`. The strategy then sees the final position, and `endDrag` has no candidate.
   - **Feedback.** `.blocklyDraggingDelete` fades the dragged block, and the flyout is tinted while the toolbox has `blocklyToolboxDelete` (`core/toolbox/toolbox.ts:603`).
-  - **Upstream.** Report the bug to Blockly.
+  - **Upstream.** Report the bug to Blockly. *Status:* drafted in [`upstream/blockly-drop-on-delete-area-deletes-stack.md`](upstream/blockly-drop-on-delete-area-deletes-stack.md); the owner files it and records the link in `editor/sync/drag.ts` and the ADR-0014 seam list.
 - **Tests** in `editor/sync/drag.test.ts`, with real pointer events. happy-dom reports every rect as 0, so stub `workspace.getDragTarget` to return a registered DELETE_AREA component when the pointer's x is below a threshold.
   - Move X near A.next over the canvas, then over the stub area: no insertion marker is shown. Drop: X is disposed and A→B→C is intact.
   - Move near A.next, then send `pointerup` over the delete area with no `pointermove` in between: same result.
@@ -438,7 +439,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
   - `B2cContinuousFlyout.scrollTo(position + 0.5)` (`toolbox/continuous.ts:153-156`), with a comment explaining the plugin's rounding.
   - `b2c-catalog` rejects a static entry label equal to a category name.
   - The dynamic headings live in `contents.ts`, so a TypeScript test in `contents.test.ts` checks that no heading or entry label equals a category name; the plugin finds categories by label text.
-  - Report both plugin defects upstream.
+  - Report both plugin defects upstream. *Status:* drafted in [`upstream/continuous-toolbox-category-selection.md`](upstream/continuous-toolbox-category-selection.md); the owner files it and records the link in `toolbox/continuous.ts` and the ADR-0014 seam list.
 - **Tests:**
   - A table test over 7 scales × fractional positions, with a relative error of 1e-12.
   - A happy-dom test that `super` receives p + 0.5.
@@ -604,7 +605,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 - **Tests:**
   - The W0-5 anchor check and markdownlint.
   - Follow it word for word in `debian:12` and `debian:13` containers, up to `tauri build --no-bundle` and an `xvfb-run` start (as in `desktop.yml:448`).
-  - Follow the Windows section on a clean runner.
+  - Follow the Windows section on a clean runner. A GitHub runner is a server edition whose PowerShell already runs scripts (RemoteSigned), so the check is also needed on a Windows client edition, whose default policy (Restricted) blocks Corepack's `pnpm.ps1`; `BUILDING.md` step 4 sets the policy for the user.
   - The owner confirms the commands without reading other files.
 - Effort M. Depends on W0-5 and D7.
 
@@ -889,7 +890,7 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
   - **Catalog resolution.** `resolve.rs check_place` (`:231-259`) reports nothing for a top-level statement, reporter or predicate.
     - Definitions are never parked.
     - E0604 stays for the placements the editor cannot produce.
-    - E0601–E0605 inside parked code remain errors.
+    - Every catalog error except placement (E0601–E0603 and E0605–E0614) inside parked code remains an error.
   - **The W0505 lint.** `Lowerer::program` (`crates/b2c-lang/src/lower/mod.rs:231-256`) reports `B2C-W0505` once per enabled parked head, counting the stacked blocks.
     - A disabled head is silent.
     - Wording: "This block isn't attached to *when program starts* or a function, so it doesn't run."
@@ -1390,7 +1391,7 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
      - (1) "A top-level block whose catalog shape is statement, reporter or predicate is parked, together with its `stack`. It is saved and shown, but never lowered, generated or run, and being loose never stops a build. Definitions (*when program starts*, *define*, and later struct, class, enum, global and Raw C++ declarations) are never parked."
      - (2) "The analyser reports each enabled parked head once as the lint `B2C-W0505` (default: warning; a project can raise it to an error once lint levels exist, M5). A parked head the user disabled is not reported."
      - (3) "`B2C-E0604` remains for the placements the editor cannot produce: a hat or definition inside a block, a statement in a value input, a reporter as a step, and blocks stacked below a block that is not a statement."
-     - (4) "Parked blocks are checked against the catalog like every other block. An unknown or newer block type, or an invalid field or `extra` (`E0601`–`E0605`), stays an error wherever the block is, so a damaged or unsupported block (including a Raw C++ block before M4, 08 §8.3.1) still stops the build."
+     - (4) "Parked blocks are checked against the catalog like every other block. Every catalog check except placement (an unknown or newer block type, a block version that cannot be upgraded, and an unknown, missing or invalid field, input, `extra` setting or parameter: `E0601`–`E0603` and `E0605`–`E0614`) stays an error wherever the block is, so a damaged or unsupported block (including a Raw C++ block before M4, 08 §8.3.1) still stops the build."
      - (5) "Parked code is not analysed until it is attached. The scope query answers parked blocks with the parked scope (06 §6.5)."
    - **Consequences:**
      - "Run works with parked code; `b2c check` exits 0 with a warning; the generated C++ is identical with or without parked blocks."
@@ -1817,7 +1818,7 @@ The structured decisions list has the full options and recommendations. They are
 
 **Options.**
 
-(a) Parked (ADR-0012). A loose statement or value block, with its stack, is saved and shown and gets one warning B2C-W0505 per stack. It is never generated and never blocks Run. A block you disabled gets no warning. Definitions are never parked, and damaged or unknown blocks (E0601-E0605) still stop the build. (b) The same, but with severity 'info'. (c) Keep error E0604 but let Run go ahead; this splits the CLI from the app. (d) Keep ADR-0011 as it is. Sub-choices: (1) Should parked blocks also look dimmed or dashed? (2) Should a second 'when program starts' be parked instead of being error E0406? (3) In M2, parked code is not analysed. A variable created inside a parked stack is not offered by the menus of the blocks below it, and is not listed in Variables, until the stack is attached. Parked value blocks also accept any value in their slots. Accept this until M3, or lower parked stacks for the scope query now (about 1-2 weeks, on the critical path)?
+(a) Parked (ADR-0012). A loose statement or value block, with its stack, is saved and shown and gets one warning B2C-W0505 per stack. It is never generated and never blocks Run. A block you disabled gets no warning. Definitions are never parked, and damaged or unknown blocks (every catalog error except placement: E0601-E0603 and E0605-E0614) still stop the build. (b) The same, but with severity 'info'. (c) Keep error E0604 but let Run go ahead; this splits the CLI from the app. (d) Keep ADR-0011 as it is. Sub-choices: (1) Should parked blocks also look dimmed or dashed? (2) Should a second 'when program starts' be parked instead of being error E0406? (3) In M2, parked code is not analysed. A variable created inside a parked stack is not offered by the menus of the blocks below it, and is not listed in Variables, until the stack is attached. Parked value blocks also accept any value in their slots. Accept this until M3, or lower parked stacks for the scope query now (about 1-2 weeks, on the critical path)?
 
 **Recommendation.** (a), with W0505 as a warning, so a project can raise it to an error once lint levels arrive in M5. No dimming: the badge is enough, and Scratch shows nothing. Keep E0406 for a second 'when program starts', because it would be unclear which one runs. Accept the parked-stack limitation for M2, document it in ADR-0012, the spec and the getting-started guide, and lower parked stacks in M3 (M3-4).
 

@@ -273,8 +273,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   ask for a release build made with it, and the build errors for a missing
   WebAssembly core or its tools point to it.
 - Dependabot groups minor and patch updates per ecosystem and opens each
-  major update on its own. New majors of Blockly and its plugins, xterm.js,
-  TypeScript and Vitest wait for a scheduled migration.
+  major update on its own. The Tauri crates and packages, which must move
+  together, have groups of their own. New majors of Blockly and its plugins,
+  xterm.js (with its add-ons' minor versions), TypeScript and Vitest wait for
+  a scheduled migration.
 
 ### Fixed
 

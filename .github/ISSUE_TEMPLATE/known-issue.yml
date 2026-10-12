@@ -1,0 +1,42 @@
+name: Known issue
+description: A defect the maintainers already know of, tracked with its evidence (docs/spec/09-quality-and-delivery.md §9.1).
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a defect found during a milestone (for example a U-item or work item of the M2 polish plan). **Security problems go to private vulnerability reporting instead** (see SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong?
+      description: What happens, and what should happen instead (link the spec section that says so).
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: The commit the defect was seen on.
+    validations:
+      required: true
+  - type: input
+    id: run
+    attributes:
+      label: Run
+      description: The CI run, benchmark or manual test where it shows, if any.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and evidence
+      description: Logs, screenshots, measurements or a project file (.b2c) that shows it.
+      render: text
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis
+      description: The suspected cause, with the code it points to, and how to confirm it.
+  - type: input
+    id: plan
+    attributes:
+      label: Plan item
+      description: The plan or roadmap item that fixes it, for example "W1-12" or "M3-3".

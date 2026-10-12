@@ -132,13 +132,14 @@ readers, high contrast, the toolchain matrix) and updated documentation.
 
 ### M2 polish (part of M2)
 
-The owner's first trial (Debian, 2026-10) found 18 issues, each tracked as an
-issue labelled `M2-polish`. The wave also fixes two data-loss and correctness
-defects, adds DOM-level chrome checks and small-program benchmarks, and
-writes `BUILDING.md`. Its items are split into a must-have set and an
-if-time set, worked on in two parallel streams within a budget of 8 weeks
-(owner's decision of 2026-10-10). The [plan](../plans/m2-polish-plan.md)
-gives each item's cause, fix and tests.
+The owner's first trial (Debian, 2026-10) found 18 issues (U1 to U18), each to
+be tracked as an issue labelled `M2-polish` once the owner has created the
+labels and issues (W0-7); this section then links them. The wave also fixes
+two data-loss and correctness defects, adds DOM-level chrome checks and
+small-program benchmarks, and writes `BUILDING.md`. Its items are split into
+a must-have set and an if-time set, worked on in two parallel streams within
+a budget of 8 weeks (owner's decision of 2026-10-10). The
+[plan](../plans/m2-polish-plan.md) gives each item's cause, fix and tests.
 
 * Decisions and groundwork: parked blocks
   ([ADR-0012](../adr/0012-parked-blocks.md)), additive format keys
@@ -203,7 +204,9 @@ the getting-started guide describe the polished editor.
     hidden;
   * the small-program benchmarks gated, once the toolbox refreshes per
     section and a baseline has been measured;
-  * Blockly 13, continuous-toolbox 13 and xterm.js 6.1, after a spike; the
+  * Blockly 13, continuous-toolbox 13 and xterm.js 6.1 with its add-ons,
+    after a spike that also checks which workarounds the
+    [upstream reports](../plans/upstream/README.md) let go; the
     patched Blockly render management and a linear `getDescendants`, if
     [ADR-0014](../adr/0014-extending-blockly.md) and the measurement allow
     it;

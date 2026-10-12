@@ -57,7 +57,8 @@
 * **Conventional Commits** (`feat:`, `fix:`, `docs:`, `sec:`, …), small
   focused PRs, squash merges.
 * Known defects, open diagnostics and technical debt are tracked as GitHub
-  issues with a milestone label; status notes link them.
+  issues with a milestone label; status notes link them. The *Known issue*
+  template asks for the evidence: commit, run, logs and hypothesis.
 * Branch protection on `main`: required status checks, at least one review,
   CODEOWNERS review for `crates/b2c-process/`, `crates/b2c-ipc/`,
   `crates/b2c-store/`, `crates/b2c-app/`, `apps/desktop/src-tauri/`,
@@ -170,7 +171,10 @@ Details of each level as M2 sets them up:
   branch for the same system, kept in the Actions cache per system
   (`tools/bench-compare.py`). More than 10% worse fails; until 5 baselines
   exist the comparison is only reported. M2 gates regressions; meeting the
-  targets N2–N4 ([01 §1.4](01-overview.md#14-goals)) is part of M5.
+  targets N2–N4 and N12 ([01 §1.4](01-overview.md#14-goals)) is part of M5.
+  N12 (interaction latency) has no benchmark yet: the M2 polish wave adds
+  them (selecting a block, choosing a category, the longest main-thread
+  task).
 
 ## 9.3 Continuous integration
 

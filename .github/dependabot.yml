@@ -4,6 +4,12 @@
 # Minor and patch updates are grouped per ecosystem, so one pull request a week brings each
 # ecosystem up to date; a major update gets a pull request of its own, so a breaking change
 # never holds back a fix. The groups apply to version updates only (the default `applies-to`).
+#
+# Tauri is the exception. `tauri build` refuses a `tauri` crate and an `@tauri-apps/api` package
+# of different major or minor versions, and the `@tauri-apps/cli` is kept on the same version, so
+# on a Tauri minor release either half alone fails CI. The Tauri crates and the @tauri-apps
+# packages therefore have a group of their own in each ecosystem, outside the minor-and-patch
+# groups, and the two pull requests are combined by hand.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -27,9 +33,19 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      cargo-tauri:
+        patterns:
+          - tauri
+          - "tauri-*"
+        update-types:
+          - minor
+          - patch
       cargo-minor-and-patch:
         patterns:
           - "*"
+        exclude-patterns:
+          - tauri
+          - "tauri-*"
         update-types:
           - minor
           - patch
@@ -41,9 +57,17 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      npm-tauri:
+        patterns:
+          - "@tauri-apps/*"
+        update-types:
+          - minor
+          - patch
       npm-minor-and-patch:
         patterns:
           - "*"
+        exclude-patterns:
+          - "@tauri-apps/*"
         update-types:
           - minor
           - patch
@@ -61,6 +85,11 @@ updates:
       - dependency-name: "@xterm/*"
         update-types:
           - version-update:semver-major
+      # xterm.js's add-ons are 0.x and released with it, so their minor version is the breaking
+      # step (@xterm/addon-fit 0.11 is the add-on for xterm.js 6): they wait with xterm.js.
+      - dependency-name: "@xterm/addon-*"
+        update-types:
+          - version-update:semver-minor
       - dependency-name: typescript
         update-types:
           - version-update:semver-major

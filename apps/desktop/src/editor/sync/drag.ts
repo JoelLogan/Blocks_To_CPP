@@ -19,7 +19,9 @@
  * while the pointer is over a delete area, and {@link B2cBlockDragger} makes one last move to the
  * drop point before a deleting drop, so nothing is connected when the dragged blocks are deleted.
  * Both use only public and protected members of Blockly's documented classes (ADR-0014), checked
- * against Blockly 12.5.1.
+ * against Blockly 12.5.1. They go once Blockly fixes the defect. It is still to be reported
+ * upstream: the owner files the report drafted in `docs/plans/upstream/` and records its link
+ * here.
  */
 import * as Blockly from 'blockly/core';
 

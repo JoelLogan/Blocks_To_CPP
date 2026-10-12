@@ -164,9 +164,18 @@ programs are on the path.
    corepack enable
    ```
 
-4. In a new (normal) PowerShell window, get the source into a short folder
-   such as `C:\src` (long paths can break the build), and install the Rust
-   toolchain, the wasm-bindgen CLI and the editor's packages:
+4. Open a new (normal) PowerShell window. The `pnpm` command Corepack added
+   is a PowerShell script, and Windows runs no scripts until you allow them,
+   so first allow scripts for your account (this needs no administrator
+   rights):
+
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+   ```
+
+   Then get the source into a short folder such as `C:\src` (long paths can
+   break the build), and install the Rust toolchain, the wasm-bindgen CLI and
+   the editor's packages:
 
    ```powershell
    mkdir C:\src -Force; cd C:\src
@@ -334,5 +343,9 @@ runs as a native Wayland window. `echo $XDG_SESSION_TYPE` prints
   build): clone into a short folder such as `C:\src`.
 - **`cargo` or `pnpm` is not found**: open a new PowerShell window after the
   `winget install` and `corepack enable` steps.
+- **_"pnpm.ps1 cannot be loaded because running scripts is disabled on this
+  system"_**: PowerShell blocks the `pnpm` script that Corepack added. Run
+  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` as in step 4, or type
+  `pnpm.cmd` instead of `pnpm`.
 - **The linker `link.exe` is not found**: the C++ Build Tools are missing
   their C++ workload; run step 1's second command again.

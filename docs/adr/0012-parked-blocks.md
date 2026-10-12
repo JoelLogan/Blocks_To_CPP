@@ -74,10 +74,12 @@ Three further questions were decided with option 1:
    definition inside a block, a statement in a value input, a reporter as a
    step, and blocks stacked below a block that is not a statement.
 4. **Catalog checks still apply.** Parked blocks are checked against the
-   catalog like every other block. An unknown or newer block type, or an
-   invalid field or `extra` (`B2C-E0601`–`B2C-E0605`), stays an error
-   wherever the block is, so a damaged or unsupported block (including a Raw
-   C++ block before M4,
+   catalog like every other block. Every catalog check except placement (an
+   unknown or newer block type, a block version that cannot be upgraded, and
+   an unknown, missing or invalid field, input, `extra` setting or
+   parameter: `B2C-E0601` to `B2C-E0603` and `B2C-E0605` to `B2C-E0614`)
+   stays an error wherever the block is, so a damaged or unsupported block
+   (including a Raw C++ block before M4,
    [08 §8.3.1](../spec/08-security.md#831-how-trust-is-decided)) still stops
    the build.
 5. **Parked code is not analysed until it is attached.** The scope query

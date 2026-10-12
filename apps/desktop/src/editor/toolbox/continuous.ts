@@ -170,7 +170,9 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
    * selected, and the selection seemed to jump back. Half a unit more rounds to at least the
    * heading's position, and stays far below the next heading. It also keeps the target of the
    * first category above 0, which the plugin's `if (this.scrollTarget)` takes for "not
-   * scrolling", so it would select categories on the way up. Both defects are reported upstream.
+   * scrolling", so it would select categories on the way up. Both defects are still to be
+   * reported upstream: the owner files the report drafted in `docs/plans/upstream/` and records
+   * its link here; the slack goes once the plugin is fixed.
    */
   override scrollTo(position: number): void {
     this.scrollAnimationFraction = prefersReducedMotion() ? 1 : CATEGORY_SCROLL_FRACTION;
