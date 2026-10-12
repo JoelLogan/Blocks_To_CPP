@@ -59,7 +59,8 @@ env:
   AB_SAMPLES: "5"
 
 jobs:
-  # What to build and run, from the event; the inputs are checked here, never put in a script.
+  # What to build and run, from the event. The inputs reach the script only as environment
+  # variables, and are checked there.
   plan:
     name: Plan the A/B run
     # A label event starts it only for the bench-ab label; other events need the label on the
