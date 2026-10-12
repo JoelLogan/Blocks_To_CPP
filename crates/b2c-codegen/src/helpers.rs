@@ -30,8 +30,15 @@ impl Helper {
     pub(crate) fn headers(self) -> &'static [&'static str] {
         match self {
             Self::RandomInt => &["<random>", "<utility>"],
-            Self::AskLine => &["<cstdlib>", "<iostream>", "<string>"],
-            Self::Ask => &["<cctype>", "<cstdlib>", "<iostream>", "<sstream>", "<string>"],
+            Self::AskLine => &["<cstdlib>", "<iostream>", "<limits>", "<string>"],
+            Self::Ask => &[
+                "<cctype>",
+                "<cstdlib>",
+                "<iostream>",
+                "<limits>",
+                "<sstream>",
+                "<string>",
+            ],
             Self::ToText => &["<iostream>", "<sstream>", "<string>"],
         }
     }
@@ -73,8 +80,13 @@ const ASK_LINE: &str = "\
 /// Prints `prompt` and reads one line of text, without its leading spaces.
 /// An empty line asks again. At the end of the input (for example when the
 /// input comes from a file), prints \"Input ended\" to the error stream and
-/// exits with code 1.
+/// exits with code 1. If an earlier plain `std::cin >>` read failed, its
+/// line is dropped first, so the answer is read from the next line.
 inline std::string ask_line(const std::string& prompt = \"\") {
+\tif (std::cin.fail() && !std::cin.eof()) {
+\t\tstd::cin.clear();
+\t\tstd::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\\n');
+\t}
 \twhile (true) {
 \t\tstd::cout << prompt;
 \t\tstd::string line;
@@ -157,9 +169,14 @@ inline bool read_value(std::istream& in, bool& value) {
 /// the whole line must be one `T`, so `3.5` or `12abc` is not a whole
 /// number. At the end of the input (for example when the input comes from a
 /// file), prints \"Input ended\" to the error stream and exits with code 1
-/// instead of asking forever.
+/// instead of asking forever. If an earlier plain `std::cin >>` read failed,
+/// its line is dropped first, so the answer is read from the next line.
 template <typename T>
 T ask(const std::string& prompt = \"\") {
+\tif (std::cin.fail() && !std::cin.eof()) {
+\t\tstd::cin.clear();
+\t\tstd::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\\n');
+\t}
 \twhile (true) {
 \t\tstd::cout << prompt;
 \t\tstd::string line;

@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <string>
@@ -87,9 +88,14 @@ inline bool read_value(std::istream& in, bool& value) {
 /// the whole line must be one `T`, so `3.5` or `12abc` is not a whole
 /// number. At the end of the input (for example when the input comes from a
 /// file), prints "Input ended" to the error stream and exits with code 1
-/// instead of asking forever.
+/// instead of asking forever. If an earlier plain `std::cin >>` read failed,
+/// its line is dropped first, so the answer is read from the next line.
 template <typename T>
 T ask(const std::string& prompt = "") {
+    if (std::cin.fail() && !std::cin.eof()) {
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
     while (true) {
         std::cout << prompt;
         std::string line;

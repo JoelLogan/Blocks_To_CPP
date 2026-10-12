@@ -196,6 +196,75 @@ fn simple_ask_uses_plain_streams() {
     assert_eq!(out.stdout(), "Name? 7, Bob Smith\n");
 }
 
+/// A program that asks for `first` in `first_mode`, then for `second` with
+/// keep asking, and prints both.
+fn ask_twice(first: Type, first_mode: AskMode, second: Type) -> Program {
+    let b = Builder::new();
+    let a = b.var("a", first);
+    let z = b.var("z", second);
+    let main = b.main(vec![
+        b.declare(&a, None),
+        b.declare(&z, None),
+        b.ask(Some(b.str("A? ")), &a, first_mode),
+        b.ask(Some(b.str("Z? ")), &z, AskMode::KeepAsking),
+        b.print_with(
+            vec![b.get(&a), b.get(&z)],
+            PrintSeparator::Comma,
+            true,
+            OutputStream::Out,
+        ),
+    ]);
+    b.program(vec![main])
+}
+
+#[test]
+fn keep_asking_after_a_simple_ask_reads_the_next_line() {
+    for (first, second, stdin, expected) in [
+        (Type::Int, Type::String, "42\nAda\n", "A? Z? 42, Ada\n"),
+        (Type::Int, Type::Int, "42\n9\n", "A? Z? 42, 9\n"),
+        (Type::Int, Type::Int, "42 and more\n9\n", "A? Z? 42, 9\n"),
+        (Type::Char, Type::Bool, "y\nyes\n", "A? Z? y, true\n"),
+        (Type::Double, Type::Char, "2.5\nq\n", "A? Z? 2.5, q\n"),
+        (Type::String, Type::Int, "Ada\n9\n", "A? Z? Ada, 9\n"),
+    ] {
+        let program = ask_twice(first.clone(), AskMode::Simple, second.clone());
+        let Some(out) = run(&program, stdin) else { return };
+        assert!(
+            out.status.success(),
+            "{first:?} then {second:?}: {}",
+            out.stderr()
+        );
+        assert_eq!(
+            out.stdout(),
+            expected,
+            "{first:?} then {second:?}, stdin {stdin:?}"
+        );
+        assert_eq!(out.stderr(), "");
+    }
+}
+
+#[test]
+fn keep_asking_after_a_failed_simple_ask_drops_its_line() {
+    for (second, stdin, expected) in [
+        (Type::Int, "abc\n9\n", "A? Z? 0, 9\n"),
+        (Type::String, "abc\nAda\n", "A? Z? 0, Ada\n"),
+    ] {
+        let program = ask_twice(Type::Int, AskMode::Simple, second.clone());
+        let Some(out) = run(&program, stdin) else { return };
+        assert!(out.status.success(), "{second:?}: {}", out.stderr());
+        assert_eq!(out.stdout(), expected, "{second:?}, stdin {stdin:?}");
+    }
+    let program = ask_twice(Type::Int, AskMode::Simple, Type::Int);
+    let Some(out) = run(&program, "abc") else { return };
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "the input ended after the failed read"
+    );
+    assert_eq!(out.stdout(), "A? Z? ");
+    assert_eq!(out.stderr(), "Input ended\n");
+}
+
 #[test]
 fn random_int_stays_within_its_bounds() {
     let b = Builder::new();

@@ -287,7 +287,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `-2147483648` is generated as `-2147483647 - 1`.
 - _Keep asking until valid_ reads the whole line: `3.5` or `12abc` for a
   whole number asks again, a text answer asks again after an empty line, and
-  a character answer must be one character.
+  a character answer must be one character. A _simple_ ask for a number,
+  character or true/false value drops the rest of its line, and a failed
+  one is cleared, so a later _keep asking_ ask reads the next answer.
 - `join` writes decimal numbers as `print` does (`2.5`, not `2.500000`),
   through the new support helper `b2c::to_text`.
 - A category chosen in the toolbox stays selected at every zoom level.
