@@ -25,6 +25,15 @@ fn block_location(block: &str, part: Part) -> Location {
     }
 }
 
+/// This app's version as major, minor and patch, without any pre-release or
+/// build part.
+fn this_app_version() -> [u64; 3] {
+    let version = env!("CARGO_PKG_VERSION");
+    let core = version.split(['-', '+']).next().unwrap();
+    let numbers: Vec<u64> = core.split('.').map(|n| n.parse().unwrap()).collect();
+    numbers.try_into().unwrap()
+}
+
 fn loads(value: &Value) -> Document {
     match load(&bytes(value)) {
         Ok(document) => document,
@@ -159,8 +168,19 @@ fn e0108_unknown_keys_in_a_file_from_a_newer_app() {
             diagnostic.message
         );
     }
-    // Any newer SemVer counts, however large; a newer pre-release too.
-    for app in ["99999999999999999999999.0.0", "0.1.1-alpha.1", "1.0.0+build.7"] {
+    // Any newer SemVer counts, however large; a newer pre-release too, and
+    // build metadata does not hide a newer version. The cases are derived
+    // from this app's version, so they stay newer when it is raised.
+    let [major, minor, patch] = this_app_version();
+    let next_patch = format!("{major}.{minor}.{}", patch + 1);
+    for app in [
+        String::from("99999999999999999999999.0.0"),
+        format!("{next_patch}-alpha.1"),
+        format!("{next_patch}+build.7"),
+        format!("{}.0.0-alpha.1", major + 1),
+        format!("{major}.{}.0+build.7", minor + 1),
+    ] {
+        let app = app.as_str();
         let mut document = base();
         document["generator"]["app"] = json!(app);
         document["project"]["lints"] = json!({});
