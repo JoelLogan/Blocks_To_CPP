@@ -278,7 +278,7 @@ version = "0.1.0"
 dependencies = [
  "b2c-ir",
  "b2c-model",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "insta",
  "proptest",
  "serde",
@@ -343,7 +343,7 @@ dependencies = [
  "b2c-ir",
  "b2c-model",
  "b2c-process",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "proptest",
  "rustix",
  "serde",
