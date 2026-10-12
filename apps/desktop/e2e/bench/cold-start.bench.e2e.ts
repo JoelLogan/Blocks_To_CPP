@@ -12,11 +12,11 @@ import { describe, expect, it } from 'vitest';
 
 import { harnessSettings } from '../support/env';
 import { measureColdStart } from './launch';
-import { writeMetric } from './results';
+import { benchSamples, writeMetric } from './results';
 import { median, rounded } from './stats';
 
-/** How many timed starts make the metric (the comparison needs at least 10 samples). */
-const LAUNCHES = 10;
+/** How many timed starts make the metric (results.ts `benchSamples`, 10 by default). */
+const LAUNCHES = benchSamples();
 
 describe('webview benchmark: cold start', () => {
   it(`times ${String(LAUNCHES)} starts of the app to the editor's readiness marker`, async () => {

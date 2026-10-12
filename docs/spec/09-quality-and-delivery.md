@@ -87,7 +87,7 @@
 | **Desktop E2E** | selenium-webdriver + Vitest + `tauri-driver` (Windows + Linux) | Create project, Quick Insert, build, run with input, stop; open an untrusted project → Restricted Mode; trust flow; save/reload; crash recovery |
 | **Visual diff** | WebDriver screenshots + pixelmatch | The canvas with a known project on both systems |
 | **Security regression** | Custom harness | `tests/security/projects/*.b2c` with asserted outcomes ([08 §8.12](08-security.md#812-threat-summary)) |
-| **Performance** | `criterion` + scripted workspace benchmarks | Codegen p95 at 1k blocks, drag frame time at 5k blocks, cold start. More than 10% regression fails CI on the benchmark job. |
+| **Performance** | `criterion` + scripted workspace benchmarks | Codegen p95 at 1k blocks, edits and selections at 1k blocks, drag frame time at 5k blocks, cold start; the longest main-thread task of every E2E flow (reported). More than 10% regression fails CI on the nightly benchmark job and on a pull request's A/B job. |
 | **Manual** | Per milestone | Screen readers (NVDA on Windows, Orca on Linux), high-contrast themes, real-world toolchain matrix (WinLibs, TDM, Scoop, Strawberry, distro GCCs), and sessions with first-time users where an exit criterion needs them; protocols and results in [`docs/manual-tests/`](../manual-tests/README.md) |
 
 **Coverage gates:** core compiler crates ≥ 90% lines, all Rust ≥ 80%, and
@@ -163,20 +163,40 @@ Details of each level as M2 sets them up:
   analyse, generate, and the whole preview) on a generated 1,000-block
   module. Through the E2E harness, the webview benchmarks measure cold start
   to the editor's readiness marker, the p95 of the preview pipeline's task at
-  1,000 blocks (reading the canvas, `canonical()` and `preview()` in
-  WebAssembly and storing the result, found by an in-page heartbeat) and the
-  p95 frame time while dragging in a 5,000-block workspace (one sample is a
-  drag away and back). The time from an edit to its C++ is reported too, not
-  gated. Every timing is taken inside the page, never across WebDriver. A
-  run takes the median of at least 10 samples and compares it with the
-  baseline, the median of the last 5 successful nightly runs on the default
-  branch for the same system, kept in the Actions cache per system
+  1,000 blocks (reading the canvas, the compiler core's update in
+  WebAssembly, `canonical()` and `preview()` until a single `update()`
+  export replaces them, and storing the result, found by an in-page
+  heartbeat) and the p95 frame time while dragging in a 5,000-block
+  workspace (one sample is a drag away and back). The edit benchmark
+  includes Blockly's rendering with the C++ panel open (from an edit until
+  the page has finished what it started); selecting blocks in 8 scopes at
+  1,000 blocks measures the longest task after a click; and, on the guessing
+  game, the longest task after a selection and after an edit is reported.
+  Every timing is taken inside the page, never across WebDriver. A run takes
+  the median of at least 10 samples and compares it with the baseline, the
+  median of the last 5 successful nightly runs on the default branch for the
+  same system, kept in the Actions cache per system
   (`tools/bench-compare.py`). More than 10% worse fails; until 5 baselines
-  exist the comparison is only reported. M2 gates regressions; meeting the
-  targets N2–N4 and N12 ([01 §1.4](01-overview.md#14-goals)) is part of M5.
-  N12 (interaction latency) has no benchmark yet: the M2 polish wave adds
-  them (selecting a block, choosing a category, the longest main-thread
-  task).
+  exist the comparison is only reported.
+  * Every E2E flow records its longest main-thread task (a heartbeat in the
+    page, from the window's readiness until the test ends); the report never
+    fails a test.
+  * A change expected to alter a gated metric runs the A/B benchmark job on
+    its pull request (`bench-ab.yml`): base and head are built and measured
+    in alternating runs on one runner, at least 10 samples each, and the
+    head's medians are compared with the base's at the same 10%. An intended
+    slowdown is recorded in `apps/desktop/e2e/bench/accepted.json` with its
+    reason, which restarts that metric's baseline: the first nightly run
+    that sees the entry does not fail on it and starts the metric's history
+    again, and an A/B run whose head adds the entry passes.
+  * The M2 polish wave's Variables listing, zoom-aware snap radius and
+    screen-reader console output (W4-2, W5-1 and W3-11 of the
+    [plan](../plans/m2-polish-plan.md)) merge only with a green A/B run
+    attached, or once their metrics have at least 5 nightly baselines.
+  * M2 gates regressions. Absolute interaction budgets on small programs are
+    reported in M2 and gated from M3 once the toolbox refreshes per section.
+    Meeting N2–N4 and N12 ([01 §1.4](01-overview.md#14-goals)) at
+    1,000–5,000 blocks is part of M5.
 
 ## 9.3 Continuous integration
 
@@ -186,13 +206,14 @@ GitHub Actions workflows. All actions are SHA-pinned and least-privilege
 | Workflow | Trigger | Jobs |
 | ---------- | --------- | ------ |
 | `ci.yml` | PR, push to any branch, weekly, manual | `lint` (rustfmt, clippy, also for the Windows target, markdownlint) · `test` (ubuntu, windows) · `test-cgroup` (the Linux cgroup path) · `gcc` (GCC 11 and 15 containers) · `wasm` (build + size budget) · `coverage` (the gates of §9.2) · `docs` (rustdoc, lychee link check, links and heading anchors of every Markdown file, diagnostic codes documented, generated IPC types and catalog outputs up to date) · `deny` · `secrets` (gitleaks) · `security` (pnpm audit, security suite) · `fuzz` (60 s per target) |
-| `desktop.yml` | PR and push touching the app, the crates, the packages or the Rust and Node configuration; manual (optionally making new visual-diff candidates) | `frontend` (`tsc --noEmit`, eslint, prettier, package layering) · `test-web` (Vitest with coverage, after building the WASM core; the unit tests of the E2E harness, the benchmarks and the visual diff; the benchmark comparison's self-test) · `app` (build, tests, release checks and start check on ubuntu and windows) · `e2e` (ubuntu, windows: the exit test and the breadth flows, then the visual diff; the Trusted Types summary, which is meaningful on WebView2) |
+| `desktop.yml` | PR and push touching the app, the crates, the packages or the Rust and Node configuration; manual (optionally making new visual-diff candidates) | `frontend` (`tsc --noEmit`, eslint, prettier, package layering) · `test-web` (Vitest with coverage, after building the WASM core; the unit tests of the E2E harness, the benchmarks and the visual diff; the benchmark comparison's self-test and the acceptance file's check) · `app` (build, tests, release checks and start check on ubuntu and windows) · `e2e` (ubuntu, windows: the exit test and the breadth flows, then the visual diff; the Trusted Types summary, which is meaningful on WebView2; the longest main-thread task of each flow, reported) |
 | `codeql.yml` | PR, push, weekly | CodeQL: JavaScript/TypeScript, Rust, GitHub Actions (code scanning, see below) |
 | `osv-scanner.yml` | PR, push, daily | OSV-Scanner over every lockfile; fails on known vulnerabilities and uploads results to code scanning when available |
 | `scorecard.yml` | Push to `main`, weekly, branch-protection changes | OpenSSF Scorecard (code scanning, see below) |
 | `workflow-audit.yml` | PR and push touching `.github/`; weekly and manual (adding online audits) | zizmor (auditor persona) |
 | `pages.yml` | PR and push touching `docs/`, `site/`, `LICENSE`, `SECURITY.md`, the Node/pnpm config or the workflow itself; manual | Build the specification website (fails on broken links or anchors, unpublished docs and raw HTML); deploy to GitHub Pages from the default branch |
-| `nightly.yml` | Daily, manual | `fuzz` (30 minutes per target, one job per target, with a kept corpus) · `links` (lychee over all Markdown) · `e2e-app` (the app under test, built once per OS for the jobs below) · `e2e` (both OSes, every flow and the visual diff) · `e2e-security` (both OSes, [08 §8.13](08-security.md#813-continuous-security-process)) · `bench` (both OSes, with the 10% gate) |
+| `nightly.yml` | Daily, manual | `fuzz` (30 minutes per target, one job per target, with a kept corpus) · `links` (lychee over all Markdown) · `e2e-app` (the app under test, built once per OS for the jobs below) · `e2e` (both OSes, every flow and the visual diff) · `e2e-security` (both OSes, [08 §8.13](08-security.md#813-continuous-security-process)) · `bench` (both OSes, with the 10% gate and the acceptance file) |
+| `bench-ab.yml` | The `bench-ab` label on a PR (and each push while it has the label); manual (base and head refs, benchmarks, systems) | `plan` (checks the inputs) · `app` (the app under test from the base and from the head, per OS) · `bench` (ubuntu, windows: the head's benchmarks against both builds in alternating runs on one runner, 10 samples each, compared at 10% with the head's acceptance file; §9.2) |
 | `weekly.yml` | Weekly, manual | `mutants` (`cargo-mutants`) · `dependency-health` (report) · `geiger` (`cargo-geiger`, report only) · `fuzz-cmin` (corpus minimisation) |
 | `release.yml` | Signed tag `v*` | Build and bundle (Windows MSI/NSIS, Linux AppImage/deb/rpm), sign, SBOMs, provenance attestations, draft GitHub Release. Runs in the protected `release` environment. |
 
@@ -238,8 +259,10 @@ breadth flows and the visual diff in `desktop.yml`'s `e2e` job, and
 `nightly.yml`'s `e2e-app`, `e2e`, `e2e-security` and `bench` jobs, came last
 in M2. The Windows runs of the breadth flows and the nightly suites pass,
 like the Linux ones (scheduled runs since 2026-10-07,
-[10 §10.1](10-roadmap.md#101-milestones)). The benchmark gate
-only reports until five scheduled runs per system have been kept, and the
+[10 §10.1](10-roadmap.md#101-milestones)). The nightly benchmark gate
+only reports a metric until five scheduled runs per system have kept it;
+the A/B job (`bench-ab.yml`) and the long-task recorder came with the M2
+polish wave, and the A/B job gates a labelled pull request at once. The
 visual diff only warns until a person commits its baselines.
 
 ## 9.4 Documentation

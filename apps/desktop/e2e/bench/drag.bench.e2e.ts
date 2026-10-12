@@ -45,17 +45,17 @@ import {
   QUIET_SCRIPT,
 } from './page';
 import { openProjectFile } from './project';
-import { writeMetric } from './results';
+import { benchSamples, writeMetric } from './results';
 import { deltas, median, percentile, rounded } from './stats';
 
 /** The workspace size. */
 const BLOCKS = 5_000;
 
 /**
- * Timed pairs of drags (away and back); each pair's p95 frame time is one sample (the comparison
- * needs at least 10).
+ * Timed pairs of drags (away and back); each pair's p95 frame time is one sample (results.ts
+ * `benchSamples`, 10 by default).
  */
-const PAIRS = 10;
+const PAIRS = benchSamples();
 
 /** Pointer moves per drag, and how long each takes: a drag of about a second. */
 const STEPS = 60;
@@ -257,7 +257,7 @@ describe('webview benchmark: dragging in a 5,000-block workspace', () => {
       const file = writeBenchProject(folder, { blocks: BLOCKS, dragHandle: true });
       const handle = handleId(BLOCKS);
       const started = Date.now();
-      const app = await launchApp(context, { dialogs: { open: [file] } });
+      const app = await launchApp(context, { dialogs: { open: [file] }, recordLongTasks: false });
       await openProjectFile(app, {
         blockId: MAIN_ID,
         code: 'void dragMe()',

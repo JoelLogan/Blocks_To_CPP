@@ -77,6 +77,14 @@ export interface E2eHookContract {
   trustedTypes(): E2eTrustedTypesReport;
   /** Selects a block and centres the canvas on it. */
   selectBlock(id: string): void;
+  /**
+   * Scrolls the canvas by `dx`, `dy` CSS pixels, as dragging its empty background that far does,
+   * but without the drag's side effects: the focus and the selection stay as they are (a
+   * background drag selects nothing). Blockly keeps the canvas within its content's bounds, so
+   * the canvas may move less. The benchmarks use it to bring a block into view before they click
+   * it, so that the click changes the selection from the block selected before.
+   */
+  scrollCanvasBy(dx: number, dy: number): void;
   /** The C++ the code panel shows (every file it lists, in order), from the live preview. */
   code(): string;
   /** The SVG group of a block on the canvas or in the toolbox's flyout, or `null`. */

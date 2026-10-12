@@ -251,10 +251,13 @@ jobs:
           pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/bench/vitest.bench.config.ts --project bench-unit
           pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/visual/vitest.visual.config.ts --project visual-unit
 
-      # The nightly benchmark gate's comparison against synthetic baselines (equal, +9% and +11%
-      # medians, too few baselines or samples, malformed files, history updates).
-      - name: Benchmark comparison (self-test)
-        run: python3 tools/bench-compare.py --self-test
+      # The benchmark gate's comparison against synthetic baselines (equal, +9% and +11% medians,
+      # too few baselines or samples, malformed files, history updates, acceptances, A/B runs),
+      # and the acceptance file of intended slowdowns, which the nightly and A/B jobs read.
+      - name: Benchmark comparison (self-test, acceptance file)
+        run: |
+          python3 tools/bench-compare.py --self-test
+          python3 tools/bench-compare.py check-accepted apps/desktop/e2e/bench/accepted.json
 
       - name: Write the coverage summary
         if: ${{ !cancelled() }}
@@ -744,6 +747,20 @@ jobs:
             cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "No Trusted Types report was written." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Every flow's longest main-thread task (docs/spec/09-quality-and-delivery.md §9.2): reported,
+      # never failing (N12 is met in M5).
+      - name: Write the long-task summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          SUMMARY: ${{ runner.temp }}/e2e-artifacts/long-tasks.md
+        run: |
+          if [ -f "$SUMMARY" ]; then
+            cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No long-task report was written." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Write the visual diff summary

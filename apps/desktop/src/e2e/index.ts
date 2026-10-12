@@ -70,6 +70,19 @@ function stringArg(value: unknown, name: string): string {
   return value;
 }
 
+/** The farthest {@link E2eHook.scrollCanvasBy} scrolls in one call, in CSS pixels. */
+const MAX_SCROLL = 1_000_000;
+
+/** A scroll distance from the test, checked: a finite number of at most {@link MAX_SCROLL}. */
+function scrollArg(value: unknown, name: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > MAX_SCROLL) {
+    throw new TypeError(
+      `${name} must be a number of pixels from -${String(MAX_SCROLL)} to ${String(MAX_SCROLL)}`,
+    );
+  }
+  return value;
+}
+
 /** Field values to match, checked: an object of strings, at most 16 of them. */
 function fieldsArg(value: unknown): Readonly<Record<string, string>> {
   if (value === undefined || value === null) {
@@ -124,6 +137,13 @@ export function createE2eHook(deps: E2eHookDeps, transcript: ConsoleTranscript):
         throw new Error('The editor is not open');
       }
       editor.selectBlock(stringArg(id, 'id'), { center: true });
+    },
+    scrollCanvasBy: (dx: number, dy: number) => {
+      const x = scrollArg(dx, 'dx');
+      const y = scrollArg(dy, 'dy');
+      const workspace = workspaceOf(deps.editor());
+      // What a drag of the background does (Blockly's WorkspaceDragger), without the gesture.
+      workspace.scroll(workspace.scrollX + x, workspace.scrollY + y);
     },
     code: () => {
       const files = deps.store.getState().analysis.preview?.files ?? [];

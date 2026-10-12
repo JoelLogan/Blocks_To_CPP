@@ -23,8 +23,10 @@ machine's folders are scripted, through the app's `e2e-hooks` feature.
   build and run with input); their launcher (`specs/flows/lib/launch.ts`) keeps one profile across
   launches. [`specs/security/`](specs/security/README.md) are the security tests of 08 §8.13,
   which run nightly (`nightly.yml`, `e2e-security`), not in the PR job.
-- **Benchmarks and visual diff:** [`bench/`](bench/README.md) (cold start, the preview at 1,000
-  blocks, dragging in a 5,000-block workspace; nightly, with the 10% gate) and
+- **Benchmarks and visual diff:** [`bench/`](bench/README.md) (cold start, the preview and edits
+  at 1,000 blocks, selecting blocks at 1,000 blocks, the guessing game's selections and edits,
+  dragging in a 5,000-block workspace; nightly, with the 10% gate, and in the A/B job on labelled
+  pull requests) and
   [`visual/`](visual/README.md) (the canvas screenshot against per-system baselines). The PR job
   runs `pnpm --filter @blocks2cpp/desktop run e2e --exclude 'specs/security/**'` and then the visual
   diff; `support/global.ts` clears the Trusted Types report, `visual/global.ts` only rewrites its
@@ -105,6 +107,18 @@ are appended to `trusted-types.jsonl`, and `trusted-types.md` summarises them wh
 (the CI job adds it to its summary): the Trusted Types trial of
 [08 §8.8](../../../docs/spec/08-security.md#88-webview-and-ipc-hardening), which never fails a test.
 
+From the window's readiness until the test ends, the long-task recorder
+([`support/longtasks.ts`](support/longtasks.ts)) notes the page's main-thread tasks of 50 ms or more
+(N12's limit), by a timer that sets itself again as soon as it runs: a gap between its beats is a
+task, at most one beat (a few milliseconds) longer. For each launch of the app, the longest task,
+the 10 longest with the `b2c:` User Timing marks and measures that overlap them, and the count go to
+`long-tasks-<launch>.json` in the test's folder, a line on standard output and `long-tasks.jsonl`,
+which `long-tasks.md` summarises when the run ends (the CI jobs add it to their summary). It is a
+report ([09 §9.2](../../../docs/spec/09-quality-and-delivery.md#92-testing-strategy); N12 is met in
+M5) and never fails a test; a page replaced during the test loses its record, which the report
+says. The flows' launcher records each launch until it ends. The option `recordLongTasks: false` of
+`launchApp` turns it off, as the benchmarks do.
+
 ## Writing a test
 
 `launchApp(context)` ([`support/app.ts`](support/app.ts)) starts the app for a test and closes it
@@ -129,7 +143,8 @@ transcript (the terminal only has the rows on screen; the transcript also has th
 separators and its "… N lines skipped" markers), what the terminal holds (its active buffer with
 the scrollback, as the person sees it), the C++ of the code panel and the Trusted Types
 counts, selects a block, and locates blocks, fields, connections and grab points on screen so that
-the test can click and drag with real pointer input. CI checks that a release
+the test can click and drag with real pointer input; it also scrolls the canvas without changing
+the selection (`scrollCanvasBy`, for the benchmarks' clicks). CI checks that a release
 build contains neither the hook nor the backend's `B2C_E2E_*` variables.
 
 Find elements by their `data-testid`; the stable ones are listed in the app's README. Wait for

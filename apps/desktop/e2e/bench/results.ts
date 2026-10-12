@@ -13,8 +13,14 @@ import { rounded } from './stats';
 /** The results format tag (tools/bench-compare.py RESULTS_FORMAT). */
 export const RESULTS_FORMAT = 'blocks2cpp/bench-results';
 
-/** The fewest samples a metric may have: the comparison refuses fewer. */
+/**
+ * The fewest samples a metric may have in a run of its own: the comparison refuses fewer. The A/B
+ * job's runs take fewer each ({@link benchSamples}) and the comparison adds them up.
+ */
 export const MIN_SAMPLES = 10;
+
+/** The most samples {@link benchSamples} allows. */
+export const MAX_RUN_SAMPLES = 1_000;
 
 /** The most samples a metric may have (tools/bench-compare.py MAX_SAMPLES). */
 export const MAX_SAMPLES = 100_000;
@@ -70,8 +76,31 @@ export function benchOutDir(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(harnessSettings(env).artifacts, 'bench');
 }
 
-/** Checks a metric before it is written; throws {@link BenchResultsError}. */
-export function checkMetric(metric: BenchMetric): void {
+/**
+ * How many samples each benchmark takes: `B2C_BENCH_SAMPLES` (a whole number from 1 to
+ * {@link MAX_RUN_SAMPLES}), by default {@link MIN_SAMPLES}. The A/B job sets it lower and
+ * alternates several runs of the two builds, whose samples the comparison then adds up
+ * (tools/bench-compare.py `ab`).
+ */
+export function benchSamples(env: NodeJS.ProcessEnv = process.env): number {
+  const value = env['B2C_BENCH_SAMPLES'];
+  if (value === undefined || value === '') {
+    return MIN_SAMPLES;
+  }
+  const count = Number(value);
+  if (!/^[0-9]+$/.test(value) || count < 1 || count > MAX_RUN_SAMPLES) {
+    throw new BenchResultsError(
+      `B2C_BENCH_SAMPLES must be a whole number from 1 to ${String(MAX_RUN_SAMPLES)}`,
+    );
+  }
+  return count;
+}
+
+/**
+ * Checks a metric before it is written; throws {@link BenchResultsError}. It needs at least
+ * `minSamples` samples ({@link MIN_SAMPLES} unless a run takes fewer, see {@link benchSamples}).
+ */
+export function checkMetric(metric: BenchMetric, minSamples: number = MIN_SAMPLES): void {
   if (metric.name.length > 64 || !METRIC_NAME.test(metric.name)) {
     throw new BenchResultsError(`${metric.name} is not a metric name`);
   }
@@ -82,9 +111,9 @@ export function checkMetric(metric: BenchMetric): void {
   if (metric.description.length > 200 || controls) {
     throw new BenchResultsError(`${metric.name}: the description must be one short line`);
   }
-  if (metric.samples.length < MIN_SAMPLES || metric.samples.length > MAX_SAMPLES) {
+  if (metric.samples.length < minSamples || metric.samples.length > MAX_SAMPLES) {
     throw new BenchResultsError(
-      `${metric.name} has ${String(metric.samples.length)} samples; ${String(MIN_SAMPLES)} to ${String(MAX_SAMPLES)} are needed`,
+      `${metric.name} has ${String(metric.samples.length)} samples; ${String(minSamples)} to ${String(MAX_SAMPLES)} are needed`,
     );
   }
   if (!metric.samples.every((sample) => Number.isFinite(sample) && sample >= 0)) {
@@ -93,8 +122,12 @@ export function checkMetric(metric: BenchMetric): void {
 }
 
 /** The results file of one metric, as tools/bench-compare.py reads it. */
-export function resultsJson(metric: BenchMetric, os: BenchOs): string {
-  checkMetric(metric);
+export function resultsJson(
+  metric: BenchMetric,
+  os: BenchOs,
+  minSamples: number = MIN_SAMPLES,
+): string {
+  checkMetric(metric, minSamples);
   const file = {
     format: RESULTS_FORMAT,
     formatVersion: 1,
@@ -104,13 +137,17 @@ export function resultsJson(metric: BenchMetric, os: BenchOs): string {
   return `${JSON.stringify(file, null, 2)}\n`;
 }
 
-/** Writes the metric's results file into `dir` and returns its path. */
+/**
+ * Writes the metric's results file into `dir` and returns its path. A run that takes fewer than
+ * {@link MIN_SAMPLES} samples ({@link benchSamples}) may write that many.
+ */
 export function writeMetric(
   metric: BenchMetric,
   dir: string = benchOutDir(),
   os: BenchOs = benchOs(),
+  env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const text = resultsJson(metric, os);
+  const text = resultsJson(metric, os, Math.min(MIN_SAMPLES, benchSamples(env)));
   mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${metric.name}.json`);
   writeFileSync(file, text);

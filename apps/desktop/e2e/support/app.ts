@@ -2,8 +2,9 @@
  * Launching the app under test (docs/adr/0009-e2e-tooling-and-test-seams.md): each test gets a
  * fresh temporary profile (`B2C_E2E_ROOT`), a dialog script (`B2C_E2E_DIALOGS`, empty by default,
  * so every native dialog is cancelled instead of waiting for a person), the toolchain folders
- * (`B2C_E2E_TOOLCHAIN_DIRS`), its own `tauri-driver` and a WebDriver session. When the test ends
- * the app is closed and the profile deleted; a failed test first saves its artifacts.
+ * (`B2C_E2E_TOOLCHAIN_DIRS`), its own `tauri-driver` and a WebDriver session. Once the window is
+ * ready the long-task recorder starts (./longtasks.ts). When the test ends the recorder's record is
+ * saved, the app is closed and the profile deleted; a failed test first saves its artifacts.
  */
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -24,6 +25,7 @@ import {
 import { TauriDriver } from './driver';
 import { appEnvironment, harnessSettings, type HarnessSettings } from './env';
 import { HookClient } from './hook';
+import { finishLongTaskRecorder, startLongTaskRecorder } from './longtasks';
 import { sleep, waitFor, withTimeout } from './wait';
 
 /** How long the window may take to start (02 §2.5.7 start-up, backend and features). */
@@ -45,6 +47,16 @@ const TRUSTED_TYPES_TIMEOUT_MS = 10_000;
 /** How long the clean-up after a test may take in all (Vitest's hook timeout). */
 const FINISH_TIMEOUT_MS = 120_000;
 
+/** How many times each test has launched the app so far (a test may launch it more than once). */
+const launches = new Map<string, number>();
+
+/** The number of a test's next launch, from 1. */
+function nextLaunch(test: string): number {
+  const launch = (launches.get(test) ?? 0) + 1;
+  launches.set(test, launch);
+  return launch;
+}
+
 /** What the native dialogs answer (src-tauri/src/e2e.rs `DialogScript`). */
 export interface DialogScript {
   readonly open?: readonly (string | null)[];
@@ -57,6 +69,11 @@ export interface DialogScript {
 export interface LaunchOptions {
   /** The dialog script; none answers every dialog with Cancel. */
   readonly dialogs?: DialogScript;
+  /**
+   * Whether the long-task recorder runs (./longtasks.ts; default `true`). The benchmarks turn it
+   * off: they time the page's tasks themselves, and nothing else may run in the page meanwhile.
+   */
+  readonly recordLongTasks?: boolean;
 }
 
 /** The app under test. */
@@ -216,6 +233,9 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
   writeFileSync(dialogs, JSON.stringify(options.dialogs ?? {}));
 
   const test = context.task.name;
+  const launch = nextLaunch(test);
+  const recordLongTasks = options.recordLongTasks ?? true;
+  let recording = false;
   const nativeLogStart = settings.nativeDriverLog === null ? 0 : fileSize(settings.nativeDriverLog);
   let driverProcess: TauriDriver | null = null;
   let driver: WebDriver | null = null;
@@ -282,6 +302,10 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
   context.onTestFinished(async ({ task }) => {
     const failed = task.result?.state === 'fail';
     try {
+      // First, so that reading the failure's artifacts is not part of the record.
+      if (recording) {
+        await finishLongTaskRecorder(app.driver, { root: settings.artifacts, test, launch });
+      }
       if (failed) {
         await saveFailureArtifacts(app, test);
       }
@@ -304,5 +328,9 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
   }, FINISH_TIMEOUT_MS);
 
   await waitUntilReady(app);
+  if (recordLongTasks) {
+    recording = true;
+    await startLongTaskRecorder(app.driver);
+  }
   return app;
 }

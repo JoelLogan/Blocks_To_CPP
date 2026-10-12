@@ -113,16 +113,29 @@ export type EditResult =
        * task of at least the given length ran then.
        */
       readonly task: PageTask | null;
+      /**
+       * When the page had finished what the edit started: the end of the last long task before
+       * it was quiet for the settle time (at least {@link seen}). {@link seen} without a settle
+       * time.
+       */
+      readonly settled: number;
+      /**
+       * The longest task from the insertion (which is part of it) until {@link settled}; `null`
+       * when none was as long as a long task.
+       */
+      readonly longest: PageTask | null;
     }
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'timeout' };
 
 /**
  * Runs in the webview (`executeAsyncScript(EDIT_SCRIPT, hookName, parentId, input, blocks, marker,
- * timeoutMs, longTaskMs)`): inserts `blocks` through the test hook, then checks the code the
- * editor shows (`hook.code()`, from the live preview's result) until it contains `marker`, and
- * calls back with an {@link EditResult}. The check runs between the page's tasks, so it never
- * delays the preview.
+ * timeoutMs, longTaskMs, settleMs)`): inserts `blocks` through the test hook, then checks the
+ * code the editor shows (`hook.code()`, from the live preview's result) until it contains
+ * `marker`, and calls back with an {@link EditResult}. The check runs between the page's tasks, so
+ * it never delays the preview. With a `settleMs` above 0 it then waits until no long task has run
+ * for that long, so that what the edit started after its preview (the C++ panel's update) is part
+ * of the result; without one it calls back as soon as the marker shows.
  *
  * Meanwhile a heartbeat (a message the page posts to itself again and again) finds the long
  * tasks: between two beats the page ran something else, and a gap of at least `longTaskMs` is a
@@ -130,16 +143,18 @@ export type EditResult =
  * puts its result in the store at its end, so the first long task after which the marker is in
  * the code is the pipeline's run: that is how its length is measured from outside the app. (The
  * beat after a long task was posted before anything that task queued, such as React's render, so
- * it runs first and the gap holds that one task.)
+ * it runs first and the gap holds that one task.) The insertion runs in this script's own task,
+ * before the first beat, so the first gap holds it.
  */
 export const EDIT_SCRIPT = `
-  const [hookName, parentId, input, blocks, marker, timeoutMs, longTaskMs] = arguments;
+  const [hookName, parentId, input, blocks, marker, timeoutMs, longTaskMs, settleMs] = arguments;
   const done = arguments[arguments.length - 1];
   const hook = window[hookName];
   if (typeof hook !== 'object' || hook === null) {
     done({ kind: 'error', message: 'The end-to-end hook is not installed' });
     return;
   }
+  const settle = typeof settleMs === 'number' && settleMs > 0 ? settleMs : 0;
   let finished = false;
   let failed = null;
   const shows = () => {
@@ -152,6 +167,15 @@ export const EDIT_SCRIPT = `
   };
   let inserted = null;
   let task = null;
+  let longest = null;
+  let lastLongEnd = null;
+  let seen = null;
+  const noteLong = (start, ms, end) => {
+    if (longest === null || ms > longest.ms) {
+      longest = { start, ms };
+    }
+    lastLongEnd = lastLongEnd === null ? end : Math.max(lastLongEnd, end);
+  };
   const channel = new MessageChannel();
   let last = performance.now();
   channel.port1.onmessage = () => {
@@ -159,6 +183,9 @@ export const EDIT_SCRIPT = `
       return;
     }
     const now = performance.now();
+    if (now - last >= longTaskMs) {
+      noteLong(last, now - last, now);
+    }
     if (now - last >= longTaskMs && inserted !== null && task === null && shows()) {
       task = { start: last, ms: now - last };
     }
@@ -181,24 +208,49 @@ export const EDIT_SCRIPT = `
     return;
   }
   inserted = performance.now();
+  const seenResult = (settled) => ({ kind: 'seen', begin, inserted, seen, task, settled, longest });
   const poll = () => {
     if (finished) {
       return;
     }
     const now = performance.now();
-    if (shows()) {
-      // No beat since the pipeline's task ended: the gap still open is that task.
-      if (task === null && now - last >= longTaskMs) {
-        task = { start: last, ms: now - last };
+    // No beat since a long task ended: the gap still open is that task.
+    const open = now - last >= longTaskMs;
+    if (seen === null) {
+      if (shows()) {
+        if (task === null && open) {
+          task = { start: last, ms: now - last };
+        }
+        if (open) {
+          noteLong(last, now - last, now);
+        }
+        seen = now;
+        if (settle === 0) {
+          finish(seenResult(now));
+          return;
+        }
+      } else if (failed !== null) {
+        finish({ kind: 'error', message: failed });
+        return;
+      } else if (now - begin > timeoutMs) {
+        finish({ kind: 'timeout' });
+        return;
       }
-      finish({ kind: 'seen', begin, inserted, seen: now, task });
-    } else if (failed !== null) {
-      finish({ kind: 'error', message: failed });
-    } else if (now - begin > timeoutMs) {
-      finish({ kind: 'timeout' });
     } else {
-      setTimeout(poll, 1);
+      if (open) {
+        noteLong(last, now - last, now);
+      }
+      const busyUntil = Math.max(seen, lastLongEnd === null ? seen : lastLongEnd);
+      if (now - busyUntil >= settle) {
+        finish(seenResult(busyUntil));
+        return;
+      }
+      if (now - seen > timeoutMs) {
+        finish({ kind: 'timeout' });
+        return;
+      }
     }
+    setTimeout(poll, 1);
   };
   setTimeout(poll, 0);
 `;
@@ -251,6 +303,136 @@ export const GONE_SCRIPT = `
   };
   poll();
 `;
+
+/** The window property the task recorder of a click keeps its state in while it runs. */
+export const TASKS_KEY = '__B2C_BENCH_TASKS__';
+
+/** The most long tasks {@link TASKS_START_SCRIPT} keeps. */
+export const MAX_TASKS = 1_000;
+
+/**
+ * Runs in the webview (`executeScript(TASKS_START_SCRIPT, TASKS_KEY, longTaskMs)`): starts timing
+ * the page's tasks for a click that follows, until {@link TASKS_SETTLE_SCRIPT}. A heartbeat (a
+ * message the page posts to itself again and again, as in {@link EDIT_SCRIPT}) notes every gap of
+ * at least `longTaskMs` between its beats: a task, or the page's rendering, ran then. A listener
+ * on the window's capture phase notes when the pointer is first pressed; it only observes.
+ * Returns `false` when a recorder is already running.
+ */
+export const TASKS_START_SCRIPT = `
+  const [key, longTaskMs] = arguments;
+  if (Object.prototype.hasOwnProperty.call(window, key)) {
+    return false;
+  }
+  const state = { longTaskMs, tasks: [], pressed: null, stopped: false, last: performance.now() };
+  const channel = new MessageChannel();
+  channel.port1.onmessage = () => {
+    if (state.stopped) {
+      return;
+    }
+    const now = performance.now();
+    if (now - state.last >= longTaskMs && state.tasks.length < ${String(MAX_TASKS)}) {
+      state.tasks.push({ start: state.last, ms: now - state.last });
+    }
+    state.last = now;
+    channel.port2.postMessage(null);
+  };
+  channel.port2.postMessage(null);
+  const onDown = () => {
+    if (state.pressed === null) {
+      state.pressed = performance.now();
+    }
+  };
+  window.addEventListener('pointerdown', onDown, true);
+  state.stop = () => {
+    state.stopped = true;
+    channel.port1.close();
+    window.removeEventListener('pointerdown', onDown, true);
+  };
+  Object.defineProperty(window, key, { value: state, configurable: true });
+  return true;
+`;
+
+/** What {@link TASKS_SETTLE_SCRIPT} calls back with (page clock, milliseconds). */
+export type ClickResult =
+  | {
+      readonly kind: 'settled';
+      /** When the pointer was pressed. */
+      readonly pressed: number;
+      /** The end of the last long task before the page was quiet for the settle time. */
+      readonly settled: number;
+      /** The long tasks from the start of the recording, in order. */
+      readonly tasks: readonly PageTask[];
+    }
+  | { readonly kind: 'no-press' }
+  | { readonly kind: 'busy' }
+  | { readonly kind: 'error'; readonly message: string };
+
+/**
+ * Runs in the webview (`executeAsyncScript(TASKS_SETTLE_SCRIPT, TASKS_KEY, settleMs, timeoutMs)`):
+ * waits until the pointer has been pressed and then no long task has run for `settleMs`, stops
+ * the recorder of {@link TASKS_START_SCRIPT} and calls back with a {@link ClickResult}: `no-press`
+ * when no press came within `timeoutMs`, `busy` when the page did not settle within `timeoutMs`
+ * of the press.
+ */
+export const TASKS_SETTLE_SCRIPT = `
+  const [key, settleMs, timeoutMs] = arguments;
+  const done = arguments[arguments.length - 1];
+  const state = window[key];
+  if (typeof state !== 'object' || state === null || typeof state.stop !== 'function') {
+    done({ kind: 'error', message: 'No task recorder is running' });
+    return;
+  }
+  const begin = performance.now();
+  let openUntil = null;
+  const finish = (result) => {
+    state.stop();
+    delete window[key];
+    done(result);
+  };
+  const poll = () => {
+    const now = performance.now();
+    if (state.pressed === null) {
+      if (now - begin > timeoutMs) {
+        finish({ kind: 'no-press' });
+      } else {
+        setTimeout(poll, 1);
+      }
+      return;
+    }
+    // No beat since a long task ended: the gap still open is that task, busy until now.
+    if (now - state.last >= state.longTaskMs) {
+      openUntil = now;
+    }
+    let busyUntil = Math.max(state.pressed, openUntil === null ? state.pressed : openUntil);
+    for (const task of state.tasks) {
+      busyUntil = Math.max(busyUntil, task.start + task.ms);
+    }
+    if (now - busyUntil >= settleMs) {
+      finish({ kind: 'settled', pressed: state.pressed, settled: busyUntil, tasks: state.tasks.slice() });
+    } else if (now - state.pressed > timeoutMs) {
+      finish({ kind: 'busy' });
+    } else {
+      setTimeout(poll, 1);
+    }
+  };
+  setTimeout(poll, 0);
+`;
+
+/**
+ * The longest task after the press of a click (one that ended after it, so the task that handled
+ * the press counts): `null` when none was long.
+ */
+export function longestAfterPress(
+  result: Extract<ClickResult, { kind: 'settled' }>,
+): PageTask | null {
+  let longest: PageTask | null = null;
+  for (const task of result.tasks) {
+    if (task.start + task.ms > result.pressed && (longest === null || task.ms > longest.ms)) {
+      longest = task;
+    }
+  }
+  return longest;
+}
 
 /** The window property the frame recorder keeps its state in while it runs. */
 export const FRAMES_KEY = '__B2C_BENCH_FRAMES__';

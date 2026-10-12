@@ -172,6 +172,31 @@ describe('createE2eHook', () => {
     }).toThrow('The editor is not open');
   });
 
+  it('scrolls the canvas by a distance without touching the selection', () => {
+    const editor = fakeEditor();
+    const scroll = vi.fn();
+    const workspace = { scrollX: -120, scrollY: 40, scroll };
+    const hook = createE2eHook(
+      deps({
+        editor: () => ({ ...editor, workspace: workspace as unknown as Blockly.WorkspaceSvg }),
+      }),
+      new ConsoleTranscript(),
+    );
+    hook.scrollCanvasBy(30, -15.5);
+    expect(scroll).toHaveBeenCalledWith(-90, 24.5);
+    expect(editor.selectBlockMock).not.toHaveBeenCalled();
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 2_000_000, '5']) {
+      expect(() => {
+        hook.scrollCanvasBy(bad as number, 0);
+      }).toThrow(TypeError);
+    }
+    expect(scroll).toHaveBeenCalledTimes(1);
+    const closed = createE2eHook(deps(), new ConsoleTranscript());
+    expect(() => {
+      closed.scrollCanvasBy(1, 1);
+    }).toThrow('The editor is not open');
+  });
+
   it('checks the arguments of the canvas helpers', () => {
     const editor = fakeEditor();
     const hook = createE2eHook(deps({ editor: () => editor }), new ConsoleTranscript());

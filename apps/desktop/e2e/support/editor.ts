@@ -65,6 +65,21 @@ export async function foldCodePanel(app: App): Promise<void> {
   await sleep(300);
 }
 
+/** Shows the C++ panel again after {@link foldCodePanel}. */
+export async function showCodePanel(app: App): Promise<void> {
+  await clickTestId(app.driver, 'right-dock-toggle');
+  await waitFor(
+    async () => {
+      const dock = await app.driver.findElements(
+        By.css('aside.right-dock[data-collapsed="false"]'),
+      );
+      return dock.length > 0;
+    },
+    { timeout: 5_000, message: 'the C++ panel to show' },
+  );
+  await sleep(300);
+}
+
 /** Scrolls the canvas so block `blockId` is in the middle of what is visible, and selects it. */
 export async function centerOn(app: App, blockId: string): Promise<void> {
   await app.hook.selectBlock(blockId);
@@ -93,7 +108,7 @@ export async function fieldOf(
 }
 
 /** Waits for a block's grab point: the block must be on screen and not covered. */
-function grabPointOf(app: App, blockId: string) {
+export function grabPointOf(app: App, blockId: string): Promise<E2ePoint> {
   return waitFor(() => app.hook.grabPoint(blockId), {
     timeout: 10_000,
     interval: 200,
@@ -152,7 +167,7 @@ const CORNER_INSET = 12;
  * A point just inside block `blockId`'s top left corner, where its grab point is searched from
  * first, whether or not the toolbox's flyout covers it there.
  */
-async function blockCorner(app: App, blockId: string): Promise<E2ePoint> {
+export async function blockCorner(app: App, blockId: string): Promise<E2ePoint> {
   const element = await waitFor(() => app.hook.blockElement(blockId), {
     timeout: 10_000,
     message: `block ${blockId} on the canvas`,
