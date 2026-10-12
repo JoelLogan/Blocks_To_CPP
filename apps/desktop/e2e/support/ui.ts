@@ -193,6 +193,9 @@ export async function openCategory(driver: WebDriver, name: string): Promise<voi
     },
     { timeout: 10_000, message: `the toolbox category "${name}"` },
   );
+  // In a short window the category column scrolls, and WebKitWebDriver does not scroll a row
+  // below its visible part into view for the click (it reports the row as not interactable).
+  await driver.executeScript('arguments[0].scrollIntoView({ block: "nearest" });', category);
   await category.click();
   // The flyout scrolls with an animation that lasts a number of frames.
   await waitForFlyout(driver);

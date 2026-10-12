@@ -2,14 +2,14 @@
  * A negative number typed into a block (docs/spec/03-block-language.md §3.4): a countdown whose
  * `change n by (1)` gets `-1` typed into its number. The number is saved as it was typed, as one
  * `num` token; the analyser accepts it, so there are no problems and Run is not held back; the C++
- * panel shows `n += -1;`; and the program counts down when it runs.
+ * panel's code (read from the test hook) has `n += -1;`; and the program counts down when it runs.
  */
 import { Key } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
 import { NodeIds, statementsOf } from '../../support/bdm';
 import { waitForConsoleState } from '../../support/console';
-import { fieldOf, runHeldBack, waitForErrors } from '../../support/editor';
+import { fieldOf, foldCodePanel, runHeldBack, waitForErrors } from '../../support/editor';
 import { pressKey, typeIntoField } from '../../support/ui';
 import { waitFor } from '../../support/wait';
 import { waitForTranscript } from './lib/console';
@@ -34,6 +34,8 @@ describe('Countdown', () => {
     const app = await flow.launch();
     await waitForToolchain(app);
     const mainId = await newEmptyProject(app);
+    // The C++ is read from the test hook, so the panel is folded away to give the canvas room.
+    await foldCodePanel(app);
     const ids = new NodeIds('countdown');
     // n = 3; repeat 3 times { print n; change n by 1 }; print "Liftoff!"
     const change = changeBy(ids, COUNTER, { expr: [{ num: '1' }] });

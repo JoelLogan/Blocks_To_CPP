@@ -4,6 +4,7 @@
  */
 import { By, type WebDriver, type WebElement } from 'selenium-webdriver';
 
+import type { E2ePoint } from '../../src/e2e/contract';
 import type { App } from './app';
 import { parseDocument, type ProjectDocument } from './bdm';
 import { drag, dropPoint } from './drag';
@@ -144,9 +145,38 @@ export async function dragFromToolbox(
   await sleep(300);
 }
 
-/** Drags block `blockId` by `dx`, `dy` pixels on the canvas. */
+/** How far inside a block's top left corner {@link blockCorner} lies, in CSS pixels. */
+const CORNER_INSET = 12;
+
+/**
+ * A point just inside block `blockId`'s top left corner, where its grab point is searched from
+ * first, whether or not the toolbox's flyout covers it there.
+ */
+async function blockCorner(app: App, blockId: string): Promise<E2ePoint> {
+  const element = await waitFor(() => app.hook.blockElement(blockId), {
+    timeout: 10_000,
+    message: `block ${blockId} on the canvas`,
+  });
+  const box: unknown = await app.driver.executeScript(
+    'const r = arguments[0].getBoundingClientRect(); return [r.left, r.top];',
+    element,
+  );
+  if (!Array.isArray(box) || box.length !== 2 || !box.every((n) => typeof n === 'number')) {
+    throw new Error(`Block ${blockId} has no position on screen`);
+  }
+  const [left, top] = box as [number, number];
+  return { x: Math.round(left + CORNER_INSET), y: Math.round(top + CORNER_INSET) };
+}
+
+/**
+ * Drags block `blockId` by `dx`, `dy` pixels on the canvas. The block is centred, and then the
+ * canvas is panned until its top left corner is well inside the visible canvas: Blockly centres a
+ * block in the canvas's view, which the toolbox's flyout overlaps, so a wide block's start (where
+ * it is grabbed) can lie under the flyout.
+ */
 export async function dragBy(app: App, blockId: string, dx: number, dy: number): Promise<void> {
   await centerOn(app, blockId);
+  await bringIntoView(app.driver, () => blockCorner(app, blockId));
   const grab = await grabPointOf(app, blockId);
   await drag(app.driver, grab, { x: grab.x + dx, y: grab.y + dy });
   await sleep(300);

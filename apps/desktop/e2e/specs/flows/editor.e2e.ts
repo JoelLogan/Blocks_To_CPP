@@ -9,7 +9,7 @@
  * - a block can be dragged from every toolbox category;
  * - a category chosen in the toolbox stays selected at every zoom level.
  */
-import { By, type WebDriver } from 'selenium-webdriver';
+import { By, WebElement, type WebDriver } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -55,6 +55,38 @@ function nested(node: BlockNode | undefined, input: string): BlockNode | null {
 /** The top-level blocks of the first module. */
 function topBlocks(doc: ProjectDocument): readonly BlockNode[] {
   return doc.modules[0]?.workspace.blocks ?? [];
+}
+
+/** Runs in the webview: the C++ panel's drawn lines, with their white space collapsed. */
+const DRAWN_CODE_LINES = `
+  return [...document.querySelectorAll('[data-testid="code-panel"] .cm-line')].map((line) =>
+    (line.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+  );
+`;
+
+/**
+ * Runs in the webview: the C++ panel's drawn line whose text is `arguments[0]` (white space
+ * collapsed), or `null` after scrolling the panel on by nine tenths of its height (back to the top
+ * from the end), so that CodeMirror draws the next lines before the next look.
+ */
+const FIND_CODE_LINE = `
+  const wanted = arguments[0];
+  for (const line of document.querySelectorAll('[data-testid="code-panel"] .cm-line')) {
+    if ((line.textContent ?? '').replace(/\\s+/g, ' ').trim() === wanted) {
+      return line;
+    }
+  }
+  const scroller = document.querySelector('[data-testid="code-panel"] .cm-scroller');
+  if (scroller !== null) {
+    const end = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1;
+    scroller.scrollTop = end ? 0 : scroller.scrollTop + scroller.clientHeight * 0.9;
+  }
+  return null;
+`;
+
+/** Whether a value WebDriver returned is an element. */
+function isWebElement(value: unknown): value is WebElement {
+  return value instanceof WebElement;
 }
 
 /** The toolbox categories of M2, in toolbox order (catalog/toolbox.toml). */
@@ -156,30 +188,17 @@ describe('Block editor', () => {
     expect(await isSelected(app, ASK_BLOCK)).toBe(false);
 
     // CodeMirror draws only the lines near its viewport, so the panel is scrolled on (and back to
-    // the top at the end) until the line is drawn; whitespace is compared loosely.
-    const normalise = (text: string): string => text.replace(/\s+/g, ' ').trim();
-    const lines = () => app.driver.findElements(By.css('[data-testid="code-panel"] .cm-line'));
+    // the top at the end) until the line is drawn; one script per look reads every drawn line.
     const line = await waitFor(
       async () => {
-        for (const candidate of await lines()) {
-          if (normalise(await candidate.getText()) === ASK_LINE) {
-            return candidate;
-          }
-        }
-        await app.driver.executeScript(
-          `const scroller = document.querySelector('[data-testid="code-panel"] .cm-scroller');
-           if (scroller !== null) {
-             const end = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1;
-             scroller.scrollTop = end ? 0 : scroller.scrollTop + scroller.clientHeight / 2;
-           }`,
-        );
-        return null;
+        const found: unknown = await app.driver.executeScript(FIND_CODE_LINE, ASK_LINE);
+        return isWebElement(found) ? found : null;
       },
       {
         timeout: UI_TIMEOUT_MS,
         interval: 250,
         message: async () => {
-          const shown = await Promise.all((await lines()).map((found) => found.getText()));
+          const shown = await app.driver.executeScript<string[]>(DRAWN_CODE_LINES);
           return `the line ${ASK_LINE} in the C++ panel; it shows ${String(shown.length)} lines: ${JSON.stringify(shown.slice(0, 40))}`;
         },
       },
@@ -251,8 +270,9 @@ describe('Block editor', () => {
     await newEmptyProject(app);
     await foldCodePanel(app);
 
-    // The flyout follows the canvas zoom in M2. Five zoom levels: the start, two steps out, then
-    // one and two steps in from the start.
+    // The flyout keeps its own scale whatever the canvas zoom (04 §4.2), which must not change
+    // the category selected either. Five zoom levels: the start, two steps out, then one and two
+    // steps in from the start.
     const rounds: { readonly label: string; readonly clicks: readonly ('In' | 'Out')[] }[] = [
       { label: 'the start zoom', clicks: [] },
       { label: 'one step out', clicks: ['Out'] },
