@@ -84,12 +84,25 @@ export function exceedsDocumentLimit(text: string): boolean {
   return new TextEncoder().encode(text).length > MAX_DOCUMENT_BYTES;
 }
 
-/** What decides the timer and what counts as already written, per project state. */
-function savedMarker(project: ProjectState | null): string {
-  if (project === null) {
-    return '';
+/**
+ * Whether two project states are the same save of the same project: the same handle, saved at the
+ * same time with the same text. A change of any of them (a save, which deletes the snapshot, or
+ * another project) means the latest snapshot no longer counts as written.
+ *
+ * It compares the fields themselves, which the store keeps as the same strings while they do not
+ * change, so the check costs nothing per store update even for a large project.
+ */
+function sameSave(a: ProjectState | null, b: ProjectState | null): boolean {
+  if (a === b) {
+    return true;
   }
-  return `${project.handle}\u0000${project.savedAt ?? ''}\u0000${project.savedCanonicalText ?? ''}`;
+  return (
+    a !== null &&
+    b !== null &&
+    a.handle === b.handle &&
+    a.savedAt === b.savedAt &&
+    a.savedCanonicalText === b.savedCanonicalText
+  );
 }
 
 /** Starts autosave for the store's open project; see the module comment. */
@@ -198,7 +211,11 @@ export function startAutosave(deps: AutosaveDeps): Autosave {
   follow(deps.store.getState().project);
   const unsubscribe = deps.store.subscribe((state, previous) => {
     const project = state.project;
-    if (savedMarker(project) !== savedMarker(previous.project) || project?.dirty !== true) {
+    if (project === previous.project) {
+      // Another slice changed (the analysis, the user interface, a build or run).
+      return;
+    }
+    if (!sameSave(project, previous.project) || project?.dirty !== true) {
       // A save (which deletes the snapshot), another project, or no unsaved changes: the next
       // snapshot is written even when its text equals the last one.
       written = null;

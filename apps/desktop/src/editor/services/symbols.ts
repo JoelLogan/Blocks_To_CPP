@@ -89,8 +89,9 @@ export function analysisScope(deps: Pick<SymbolServiceDeps, 'core' | 'preview'>)
  * The symbols in scope at a block, resolved by the editor's scope resolver over the latest
  * analysis (a block of the canvas outside the program, or one the analysis has no answer for, gets
  * what it would see in the program; any other block, such as one in the toolbox's flyout, gets the
- * scope query's own answer), and the current name of a symbol (from the document, then the
- * last-known names, then the analysis).
+ * scope query's own answer), the current name of a symbol (from the document, then the last-known
+ * names, then the analysis), and the parameters of the function a call names
+ * ({@link calledFunctionParams}).
  */
 export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
   const scope = analysisScope(deps);
@@ -110,7 +111,36 @@ export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
       const preview = deps.preview();
       return preview === null ? null : (symbolsById(preview).get(symId)?.name ?? null);
     },
+    functionParams: (blockId, funcId) => calledFunctionParams(deps, blockId, funcId),
   };
+}
+
+/**
+ * The parameters (symbol IDs, in order) of function `funcId` for a call block `blockId` of the
+ * canvas, from the latest preview's symbols by ID (a table built once per preview, so labelling
+ * every call after an analysis costs no scope query): `null` when there is no preview, the call
+ * is not on the canvas (one in the toolbox's flyout is labelled by the toolbox), or `funcId` is
+ * not a function of the module shown (a call to another module's function is `B2C-E0206`).
+ *
+ * A call names its function by symbol ID, and every function of a module is visible everywhere in
+ * it, so the answer does not depend on where the call is. The one exception the scope query knows
+ * is a local variable that hides the function's name: the call still shows the function's
+ * parameters, and the analyser reports it (`B2C-E0205`, "rename the variable").
+ */
+function calledFunctionParams(
+  deps: Pick<SymbolServiceDeps, 'preview' | 'workspace'>,
+  blockId: string,
+  funcId: string,
+): readonly string[] | null {
+  const preview = deps.preview();
+  if (preview === null || deps.workspace.getBlockById(blockId) === null) {
+    return null;
+  }
+  const fn = symbolsById(preview).get(funcId);
+  if (fn?.kind !== 'function' || deps.workspace.getBlockById(fn.declBlock) === null) {
+    return null;
+  }
+  return fn.params;
 }
 
 /** The symbol a reference reporter names: `var.get`'s VAR, a call's FUNC, a reference shadow. */

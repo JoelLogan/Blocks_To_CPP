@@ -3,7 +3,8 @@
  * editor services and expression shadows of blockly-ext core).
  *
  * * `symbols` gives the parameter names that label a call's arguments. It is structurally a subset
- *   of the editor's `SymbolProvider`, so the editor can pass that object unchanged.
+ *   of the editor's `SymbolProvider`, so the editor can pass that object unchanged; its optional
+ *   `functionParams` lets the labels skip the scope query.
  * * `inputShadow` gives the shadow a new value input shows (the catalog default as an expression
  *   shadow, 03 §3.4). Without it, new inputs start empty.
  * * `newSymbolId` makes the symbol ID of a new parameter. Without it, IDs are `sym_` and 17 random
@@ -27,6 +28,14 @@ export interface MutatorSymbols {
   symbolsAt(blockId: string, input: string | null): readonly MutatorSymbolInfo[];
   /** The current name of a symbol, or `null` when it is unknown. */
   nameOf(symId: string): string | null;
+  /**
+   * The parameters (their symbol IDs, in order) of the function `funcId` that a call at block
+   * `blockId` names, or `null` when that call has no such function to call. Optional: without it,
+   * a call looks its function up among {@link symbolsAt} at itself, one scope query per call
+   * block every time the labels are refreshed. An editor that answers from a table it builds once
+   * per analysis gives it, so refreshing the labels of every call costs no scope query.
+   */
+  functionParams?(blockId: string, funcId: string): readonly string[] | null;
 }
 
 /** The shadow state for a new value input, or `null` for none. */

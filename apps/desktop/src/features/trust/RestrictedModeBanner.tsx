@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { useStore } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 
 import { useAppStore } from '../../app/store';
 import { LockIcon } from '../../app/ui/icons';
@@ -30,7 +31,12 @@ function focusRun(): void {
  * that Build and Run are off, and offers *Trust…*, which opens the backend's native trust dialog.
  */
 export function RestrictedModeBanner({ controller }: { controller: TrustController }) {
-  const project = useAppStore((state) => state.project);
+  // The handle and the trust state only, so an edit does not render the banner again.
+  const project = useAppStore(
+    useShallow((state) =>
+      state.project === null ? null : { handle: state.project.handle, trust: state.project.trust },
+    ),
+  );
   const { busy, message } = useStore(controller.state);
   const titleId = useId();
 

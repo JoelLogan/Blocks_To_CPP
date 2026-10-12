@@ -304,6 +304,9 @@ export class VariadicController implements MutatorController {
    * for a name that is not known), or `null` when the function is not known: nothing is chosen,
    * the reference is missing or not a function, or the analysis has not seen the block yet. Always
    * `null` for the other mutators.
+   *
+   * The editor's `functionParams` answers without a scope query when it has one; otherwise the
+   * function is looked up among the symbols visible at the block.
    */
   private calledParameters(): CalledParameters {
     const symbols = mutatorHooks().symbols;
@@ -315,10 +318,15 @@ export class VariadicController implements MutatorController {
       return null;
     }
     try {
-      const fn = symbols
-        .symbolsAt(this.block.id, null)
-        .find((symbol) => symbol.id === ref && symbol.kind === 'function');
-      return fn?.params === undefined ? null : fn.params.map((param) => symbols.nameOf(param));
+      const params =
+        symbols.functionParams === undefined
+          ? symbols
+              .symbolsAt(this.block.id, null)
+              .find((symbol) => symbol.id === ref && symbol.kind === 'function')?.params
+          : symbols.functionParams(this.block.id, ref);
+      return params === undefined || params === null
+        ? null
+        : params.map((param) => symbols.nameOf(param));
     } catch {
       // The symbols come from the latest analysis; failing there must not break the block.
       return null;

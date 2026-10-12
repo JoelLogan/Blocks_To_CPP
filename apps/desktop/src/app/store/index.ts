@@ -46,6 +46,15 @@ export interface AppActions {
   updateProject: (patch: Partial<ProjectState>) => void;
   /** Merges into the analysis slice. */
   setAnalysis: (patch: Partial<AnalysisState>) => void;
+  /**
+   * Merges into the open project and into the analysis slice in one update, so the store's
+   * subscribers hear of both once (the preview pipeline stores an edit this way). Does nothing
+   * when no project is open.
+   */
+  updateProjectAndAnalysis: (
+    project: Partial<ProjectState>,
+    analysis: Partial<AnalysisState>,
+  ) => void;
   /** Merges into the build slice. */
   setBuild: (patch: Partial<BuildState>) => void;
   /**
@@ -100,6 +109,17 @@ export const useAppStore = create<AppState>()((set) => ({
     },
     setAnalysis: (patch) => {
       set((state) => ({ analysis: { ...state.analysis, ...patch } }));
+    },
+    updateProjectAndAnalysis: (project, analysis) => {
+      // Without a project the state is given back unchanged, which notifies nobody.
+      set((state) =>
+        state.project === null
+          ? state
+          : {
+              project: { ...state.project, ...project },
+              analysis: { ...state.analysis, ...analysis },
+            },
+      );
     },
     setBuild: (patch) => {
       set((state) => ({ build: { ...state.build, ...patch } }));

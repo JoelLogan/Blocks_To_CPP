@@ -66,6 +66,13 @@ export interface SymbolProvider {
    * §3.6).
    */
   nameOf(symId: string): string | null;
+  /**
+   * Optional: the parameter symbol IDs, in order, of the function `funcId` that a call block
+   * `blockId` names, or null when that call has no such function to call. The call-argument
+   * mutator labels arguments with it; without it, the mutator looks the function up with
+   * {@link symbolsAt}, one scope query per call block whenever the labels are refreshed.
+   */
+  functionParams?(blockId: string, funcId: string): readonly string[] | null;
 }
 
 /** Static types from the latest analysis. */

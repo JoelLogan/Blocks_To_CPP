@@ -3,7 +3,7 @@
  * removed parts, one undo step per click, shadows, limits and call-argument labels.
  */
 import * as Blockly from 'blockly/core';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MutatorButton } from './buttons';
 import { buttonKey } from './controller';
@@ -680,6 +680,36 @@ describe('call argument labels', () => {
     expect(workspace.getUndoStack()).toEqual([]);
     expect(labelTexts(call, 'ARG0')).toEqual(['other:']);
     names.set('sym_name', 'name');
+  });
+
+  it('come from the editor’s function parameters without a scope query when it has them', () => {
+    const symbolsAt = vi.fn(() => []);
+    const functionParams = vi.fn((_blockId: string, funcId: string) =>
+      funcId === 'sym_greet' ? ['sym_name', 'sym_times'] : null,
+    );
+    configureMutators({
+      symbols: { symbolsAt, nameOf: (id) => names.get(id) ?? null, functionParams },
+    });
+    const calls = Array.from({ length: 50 }, () => callTo({ ref: 'sym_greet' }, 2));
+    const unknown = callTo({ ref: 'sym_missing' }, 1);
+    functionParams.mockClear();
+    refreshMutatorLabels(workspace);
+    expect(symbolsAt).not.toHaveBeenCalled();
+    expect(functionParams).toHaveBeenCalledTimes(51);
+    expect(functionParams).toHaveBeenCalledWith(unknown.id, 'sym_missing');
+    for (const call of calls) {
+      expect(labelTexts(call, 'ARG1')).toEqual(['times:']);
+    }
+    expect(labelTexts(unknown, 'ARG0')).toEqual([]);
+    expect(buttonKeys(unknown)).toEqual(['count:remove', 'count:add']);
+
+    // A failing table is an unknown function, as a failing scope query is.
+    functionParams.mockImplementation(() => {
+      throw new Error('stale');
+    });
+    refreshMutatorLabels(workspace);
+    expect(calls.map((call) => labelTexts(call, 'ARG0'))).toEqual(calls.map(() => []));
+    expect(symbolsAt).not.toHaveBeenCalled();
   });
 });
 
