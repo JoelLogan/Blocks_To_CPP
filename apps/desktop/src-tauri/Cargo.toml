@@ -37,7 +37,7 @@ e2e-hooks = []
 # `@tauri-apps/api` and `@tauri-apps/cli` packages in ../package.json.
 [build-dependencies]
 # `isolation` must match the isolation pattern in tauri.conf.json (tauri-build checks it).
-tauri-build = { version = "2.7.0", features = ["isolation"] }
+tauri-build = { version = "2.7.1", features = ["isolation"] }
 # The command table: build.rs gives every command its own permission.
 b2c-ipc.workspace = true
 
@@ -47,7 +47,7 @@ b2c-ipc.workspace = true
 # purpose: `dynamic-acl` (capabilities are fixed at build time), `devtools` (so
 # release builds have no web inspector), `tray-icon`, and `dbus` (unused, and it
 # would need libdbus to build).
-tauri = { version = "2.12.0", default-features = false, features = [
+tauri = { version = "2.12.1", default-features = false, features = [
   "wry",
   "compression",
   "isolation",
@@ -78,7 +78,7 @@ rfd = { version = "0.16.0", default-features = false, features = ["common-contro
 
 [dev-dependencies]
 # The mock runtime (`tauri::test`), for command and channel tests without a webview.
-tauri = { version = "2.12.0", default-features = false, features = ["test"] }
+tauri = { version = "2.12.1", default-features = false, features = ["test"] }
 tempfile.workspace = true
 
 [lints]
