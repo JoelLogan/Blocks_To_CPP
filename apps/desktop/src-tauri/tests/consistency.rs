@@ -194,26 +194,50 @@ fn the_security_settings_are_those_of_the_spec() {
     assert!(windows[0].get("devtools").is_none());
 }
 
-#[test]
-fn no_devtools_and_no_permissive_tauri_features() {
-    let manifest = read("Cargo.toml");
-    for line in manifest
+/// The Cargo features that would open the window up (08 §8.8): the developer
+/// tools and Tauri's permissive features.
+const FORBIDDEN_FEATURES: [&str; 4] = ["devtools", "dynamic-acl", "protocol-asset", "shell-open"];
+
+/// The first line of `manifest` (comments aside) that enables a forbidden
+/// feature, by its name (`"devtools"`) or through a dependency
+/// (`"tauri/devtools"`, `"wry/devtools"`), with the feature's name.
+fn forbidden_feature(manifest: &str) -> Option<(&'static str, &str)> {
+    manifest
         .lines()
         .map(str::trim)
         .filter(|line| !line.starts_with('#'))
-    {
-        for forbidden in [
-            "\"devtools\"",
-            "\"dynamic-acl\"",
-            "\"protocol-asset\"",
-            "\"shell-open\"",
-        ] {
-            assert!(
-                !line.contains(forbidden),
-                "Cargo.toml enables {forbidden}: {line}"
-            );
-        }
+        .find_map(|line| {
+            FORBIDDEN_FEATURES
+                .into_iter()
+                .find(|feature| {
+                    line.contains(&format!("\"{feature}\"")) || line.contains(&format!("/{feature}\""))
+                })
+                .map(|feature| (feature, line))
+        })
+}
+
+#[test]
+fn no_devtools_and_no_permissive_tauri_features() {
+    if let Some((feature, line)) = forbidden_feature(&read("Cargo.toml")) {
+        panic!("Cargo.toml enables {feature}: {line}");
     }
+}
+
+#[test]
+fn a_forbidden_feature_is_found_by_name_and_through_a_dependency() {
+    assert_eq!(forbidden_feature("[features]\ne2e-hooks = []\n"), None);
+    assert_eq!(
+        forbidden_feature("[features]\nprofiling = [\"tauri/devtools\"]\n"),
+        Some(("devtools", "profiling = [\"tauri/devtools\"]"))
+    );
+    assert_eq!(
+        forbidden_feature("tauri = { version = \"2\", features = [\"protocol-asset\"] }"),
+        Some((
+            "protocol-asset",
+            "tauri = { version = \"2\", features = [\"protocol-asset\"] }"
+        ))
+    );
+    assert_eq!(forbidden_feature("# devtools = [\"tauri/devtools\"]"), None);
 }
 
 #[test]
