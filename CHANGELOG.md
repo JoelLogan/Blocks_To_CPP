@@ -276,7 +276,7 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   major update on its own. The Tauri crates and packages, which must move
   together, have groups of their own. New majors of Blockly and its plugins,
   xterm.js (with its add-ons' minor versions), TypeScript and Vitest wait for
-  a scheduled migration.
+  a scheduled migration, and those of `@types/node` for the Node.js runtime.
 - Dependencies updated to releases at least 7 days old: Tauri 2.12.1 (crate,
   `@tauri-apps/api` and `@tauri-apps/cli`) with the dialog plugin 2.8.1,
   `getrandom` 0.4, Vite 8.3.2, ESLint 10.12, typescript-eslint 8.71 and other
