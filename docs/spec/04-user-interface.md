@@ -74,7 +74,11 @@
   flyout scrolls continuously through all categories, and its blocks always
   show current names. Choosing a category scrolls the flyout to it, and that
   category stays selected at every zoom level; scrolling by hand selects the
-  category at the top.
+  category at the top. The flyout shows its blocks at one size whatever the
+  canvas zoom (three quarters of their size at 100 %), is as wide as its
+  widest block up to 320 px, is opaque, and cuts off a block wider than
+  itself (which can still be dragged out). When less than 200 px of canvas
+  would remain beside it, the flyout narrows, down to 160 px.
 * **Dynamic categories.** *Variables* lists the symbols in scope at the
   current selection. *Functions* lists *define* and *return*, then, under
   *Your functions*, a call block for each function of the module shown, or a

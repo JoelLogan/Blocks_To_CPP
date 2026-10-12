@@ -84,6 +84,12 @@ function categoryStyles(mode: ThemeMode): Record<string, Blockly.Theme.CategoryS
   return styles;
 }
 
+/**
+ * The toolbox's flyout is opaque (docs/spec/04-user-interface.md §4.2): it cuts off blocks wider
+ * than itself, and canvas blocks showing through it would read as part of those blocks.
+ */
+const FLYOUT_OPACITY = 1;
+
 /** The light theme (`b2c-light`). */
 export const b2cLightTheme: Blockly.Theme = Blockly.Theme.defineTheme('b2c-light', {
   name: 'b2c-light',
@@ -93,6 +99,7 @@ export const b2cLightTheme: Blockly.Theme = Blockly.Theme.defineTheme('b2c-light
   componentStyles: {
     workspaceBackgroundColour: CANVAS_COLOUR.light,
     scrollbarColour: '#c5cbd8',
+    flyoutOpacity: FLYOUT_OPACITY,
   },
 });
 
@@ -107,6 +114,7 @@ export const b2cDarkTheme: Blockly.Theme = Blockly.Theme.defineTheme('b2c-dark',
     scrollbarColour: '#4a5263',
     flyoutBackgroundColour: '#232836',
     flyoutForegroundColour: '#e6e9f0',
+    flyoutOpacity: FLYOUT_OPACITY,
     toolboxBackgroundColour: '#1b1f29',
     toolboxForegroundColour: '#e6e9f0',
   },

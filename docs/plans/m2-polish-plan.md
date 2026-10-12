@@ -666,6 +666,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-1 Flyout scale and width.** Refs: U6a, R-FLYOUT, A04-05.
 
+- *Status:* partly done, to fix the Windows E2E failures of Desktop run 38277029920: the 0.75 scale, the width min(natural, 320 px) narrowing down to 160 px to leave 200 px of canvas, `flyoutOpacity: 1`, the unit tests and an E2E check at the Windows runner's 1028×749; the user width (with W3-2) and the E2E at 1024×700 through W3-3's seam remain.
 - **Change** in `B2cContinuousFlyout` (`toolbox/continuous.ts:146-173`):
   - `getFlyoutScale()` returns 0.75 (D9).
   - Re-implement `reflowInternal_` without calling `super`:

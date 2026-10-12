@@ -11,12 +11,16 @@
  *   taller than the toolbar's buttons. CI runs it in GTK's default light theme; the drop-down is
  *   the app's own drawing, so it reads the same in the dark one.
  * - The status bar's toolchain link has no edge of its own.
+ * - At the Windows runner's window size (1028 × 749 CSS pixels) with the C++ panel shown, the
+ *   toolbox's flyout (blocks at 0.75, at most 320 px wide) leaves at least 200 px of canvas beside
+ *   it (04 §4.2). A native driver that cannot resize the window leaves the app's own size, where
+ *   the canvas is wider still.
  */
 import { By, type WebDriver } from 'selenium-webdriver';
 import { PNG } from 'pngjs';
 import { describe, expect, it } from 'vitest';
 
-import { byTestId, clickTestId, testId } from '../../support/ui';
+import { byTestId, clickTestId, testId, waitForFlyout } from '../../support/ui';
 import { waitFor } from '../../support/wait';
 import { textContrast } from './lib/contrast';
 import { startFlow } from './lib/launch';
@@ -144,6 +148,41 @@ interface ToolbarFacts {
  */
 const TEXT_AREA_INSET = { left: 4, top: 4, right: 28, bottom: 4 } as const;
 
+/** The window size of the Windows CI runner, in CSS pixels (its screen is 1024 × 768). */
+const RUNNER_WINDOW = { width: 1028, height: 749 } as const;
+
+/** How the workspace is shared out, from {@link LAYOUT_SCRIPT}. */
+interface WorkspaceLayout {
+  /** The page's size. */
+  readonly viewport: readonly [number, number];
+  /** The right edge of the toolbox's flyout and of the canvas. */
+  readonly flyoutRight: number;
+  readonly canvasRight: number;
+  /** The flyout's width, and the scale its blocks are drawn at. */
+  readonly flyoutWidth: number;
+  readonly flyoutScale: number | null;
+  /** Whether the C++ panel is shown. */
+  readonly codePanelShown: boolean;
+}
+
+/** Runs in the webview: the {@link WorkspaceLayout}. */
+const LAYOUT_SCRIPT = `
+  const workspace = document.querySelector('[data-testid="workspace"]');
+  const canvas = workspace.querySelector('svg.blocklySvg').getBoundingClientRect();
+  const flyout = workspace.querySelector('svg.blocklyToolboxFlyout');
+  const blocks = flyout.querySelector('.blocklyBlockCanvas').getAttribute('transform') || '';
+  const scale = /scale\\(([0-9.]+)\\)/.exec(blocks);
+  const dock = document.querySelector('aside.right-dock');
+  return {
+    viewport: [window.innerWidth, window.innerHeight],
+    flyoutRight: flyout.getBoundingClientRect().right,
+    canvasRight: canvas.right,
+    flyoutWidth: flyout.getBoundingClientRect().width,
+    flyoutScale: scale === null ? null : Number(scale[1]),
+    codePanelShown: dock !== null && dock.getAttribute('data-collapsed') !== 'true',
+  };
+`;
+
 describe('The window’s chrome', () => {
   it('draws the main menu above the toolbox, where Close project works at its left edge', async (context) => {
     const flow = startFlow(context);
@@ -201,6 +240,29 @@ describe('The window’s chrome', () => {
       { timeout: UI_TIMEOUT_MS, message: 'the start page after Close project' },
     );
   }, 180_000);
+
+  it('leaves the canvas 200 px beside the toolbox at the Windows runner’s size', async (context) => {
+    const flow = startFlow(context);
+    const app = await flow.launch();
+    const { driver } = app;
+    // The Windows runner's window has this size by itself (the screen is smaller than the app's
+    // 1280 × 800); WebKitWebDriver resizes the window to it, and WebView2's driver may not.
+    await driver
+      .manage()
+      .window()
+      .setRect({ ...RUNNER_WINDOW })
+      .catch(() => undefined);
+    await newEmptyProject(app);
+    await waitForTestId(driver, 'workspace', true);
+    await waitForFlyout(driver);
+
+    const layout = await driver.executeScript<WorkspaceLayout>(LAYOUT_SCRIPT);
+    const facts = JSON.stringify(layout);
+    expect(layout.codePanelShown, facts).toBe(true);
+    expect(layout.flyoutScale, facts).toBe(0.75);
+    expect(layout.flyoutWidth, facts).toBeLessThanOrEqual(320.5);
+    expect(layout.canvasRight - layout.flyoutRight, facts).toBeGreaterThanOrEqual(200);
+  }, 120_000);
 
   it('draws the Debug/Release drop-down readable and no taller than the buttons', async (context) => {
     const flow = startFlow(context);

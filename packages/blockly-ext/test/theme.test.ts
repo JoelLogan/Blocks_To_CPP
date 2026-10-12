@@ -83,6 +83,11 @@ describe('themes', () => {
     expect(b2cTheme('dark')).toBe(b2cDarkTheme);
   });
 
+  it('draw the toolbox flyout opaque, so the canvas does not show through it', () => {
+    expect(b2cLightTheme.getComponentStyle('flyoutOpacity')).toBe('1');
+    expect(b2cDarkTheme.getComponentStyle('flyoutOpacity')).toBe('1');
+  });
+
   it.each([
     ['light', b2cLightTheme],
     ['dark', b2cDarkTheme],
