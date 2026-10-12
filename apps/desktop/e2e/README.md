@@ -117,7 +117,12 @@ which `long-tasks.md` summarises when the run ends (the CI jobs add it to their 
 report ([09 §9.2](../../../docs/spec/09-quality-and-delivery.md#92-testing-strategy); N12 is met in
 M5) and never fails a test; a page replaced during the test loses its record, which the report
 says. The flows' launcher records each launch until it ends. The option `recordLongTasks: false` of
-`launchApp` turns it off, as the benchmarks do.
+`launchApp` turns it off, as the benchmarks do. The app measures its preview pipeline (and each
+phase of it), the toolbox refresh, the selection handler and the code panel's update as User Timing
+spans ([`src/lib/timing.ts`](../src/lib/timing.ts): `b2c:preview`, `b2c:toolbox-refresh`,
+`b2c:select`, `b2c:code-panel`) and keeps only the latest entry of each name in the browser's
+buffer, so the recorder observes the entries as they come (`PerformanceObserver`) to name the tasks
+they overlap. The hook's `timings()` gives the latest duration of each span.
 
 ## Writing a test
 

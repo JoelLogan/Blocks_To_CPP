@@ -26,7 +26,15 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { launchApp } from '../support/app';
 import { NodeIds, print } from '../support/bdm';
 import { REPOSITORY_ROOT } from '../support/env';
-import { deleteBlock, SETTLE_MS, timedClick, timedEdit, waitUntilQuiet } from './interaction';
+import {
+  deleteBlock,
+  SETTLE_MS,
+  type SpanTimes,
+  spanSummary,
+  timedClick,
+  timedEdit,
+  waitUntilQuiet,
+} from './interaction';
 import { openProjectFile } from './project';
 import { benchSamples, writeMetric } from './results';
 import { median, rounded } from './stats';
@@ -72,12 +80,16 @@ describe('webview benchmark: the guessing game', () => {
       };
       await timedClick(app, target(GUESSING_TARGETS.length - 1));
       const select: number[] = [];
+      const selectSpans: SpanTimes[] = [];
       for (let sample = 0; sample < samples; sample += 1) {
-        select.push((await timedClick(app, target(sample))).longestMs);
+        const timed = await timedClick(app, target(sample));
+        select.push(timed.longestMs);
+        selectSpans.push(timed.spans);
       }
 
       const ids = new NodeIds('bench');
       const edit: number[] = [];
+      const editSpans: SpanTimes[] = [];
       for (let sample = 0; sample < samples; sample += 1) {
         const marker = `bench edit ${String(sample)}`;
         const timed = await timedEdit(app, print(ids, marker), {
@@ -87,6 +99,7 @@ describe('webview benchmark: the guessing game', () => {
           settleMs: SETTLE_MS,
         });
         edit.push(timed.longestMs);
+        editSpans.push(timed.spans);
         await deleteBlock(app, timed.id, marker, true);
       }
 
@@ -109,7 +122,9 @@ describe('webview benchmark: the guessing game', () => {
       });
       process.stdout.write(
         `Guessing game: longest task after a selection median ${String(rounded(median(select), 1))} ms, ` +
-          `after an edit median ${String(rounded(median(edit), 1))} ms\n`,
+          `after an edit median ${String(rounded(median(edit), 1))} ms\n` +
+          `  spans per selection (median): ${spanSummary(selectSpans)}\n` +
+          `  spans per edit (median): ${spanSummary(editSpans)}\n`,
       );
       expect(select).toHaveLength(samples);
       expect(edit).toHaveLength(samples);

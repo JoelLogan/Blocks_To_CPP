@@ -9,7 +9,7 @@ import path from 'node:path';
 import type { WebDriver } from 'selenium-webdriver';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { FakeLoop, runScript, TIMER_CLAMP_MS } from './fake-page';
+import { type FakeEntry, FakeLoop, FakeObservers, runScript, TIMER_CLAMP_MS } from './fake-page';
 import {
   clearLongTasks,
   finishLongTaskRecorder,
@@ -30,8 +30,11 @@ import {
   writeLongTaskSummary,
 } from './longtasks';
 
-/** A fake page: the loop, its window and the document's visibility. */
-function page(entries: { name: string; startTime: number; duration: number; type: string }[] = []) {
+/**
+ * A fake page: the loop, its window and the document's visibility. With `observers`, the page has
+ * a `PerformanceObserver`.
+ */
+function page(entries: FakeEntry[] = [], observers?: FakeObservers) {
   const loop = new FakeLoop();
   loop.clampTimers = true;
   const window: Record<string, unknown> = {};
@@ -44,6 +47,7 @@ function page(entries: { name: string; startTime: number; duration: number; type
       timeOrigin: loop.timeOrigin,
       getEntriesByType: (type: string) => entries.filter((entry) => entry.type === type),
     },
+    ...(observers === undefined ? {} : { PerformanceObserver: observers.constructorFor() }),
   });
   const start = () =>
     runScript(LONG_TASKS_START_SCRIPT, globals, [LONG_TASKS_KEY, LONG_TASK_MS, KEPT_TASKS]);
@@ -122,12 +126,86 @@ describe('the recorder in the page', () => {
     loop.busy(80, 200);
     loop.runUntil(400);
     const found = parsePageLongTasks(stop());
-    expect(found?.tasks[0]?.marks).toEqual(['b2c:toolbox', 'b2c:preview']);
+    // Longest span first: the measure, then the mark (no duration).
+    expect(found?.tasks[0]?.marks).toEqual(['b2c:preview', 'b2c:toolbox']);
     expect(Object.prototype.hasOwnProperty.call(window, LONG_TASKS_KEY)).toBe(false);
     // Stopped: no beat runs any more, so the loop runs dry.
     loop.busy(500, 10);
     loop.run(() => false);
     expect(stop()).toBeNull();
+  });
+});
+
+describe('the recorder and the User Timing spans of the app', () => {
+  // The app keeps only the latest entry of each span name in the browser's buffer
+  // (src/lib/timing.ts), so the recorder must see the entries as they come.
+  const measure = (name: string, startTime: number, duration: number): FakeEntry => ({
+    name,
+    startTime,
+    duration,
+    type: 'measure',
+  });
+
+  it('names a task with the spans an observer saw, whether they came before or after its beat', () => {
+    const observers = new FakeObservers();
+    const buffer: FakeEntry[] = [];
+    const { loop, start, stop } = page(buffer, observers);
+    start();
+    // The first task's span reaches the observer within the task, before the beat that notes it.
+    loop.post(() => {
+      loop.now += 90;
+      observers.deliver([measure('b2c:preview', 205, 85), measure('other:thing', 210, 5)]);
+    }, 200);
+    // The second task's span reaches the observer in a task of its own, after that beat.
+    loop.post(() => {
+      loop.now += 70;
+      loop.post(() => {
+        observers.deliver([measure('b2c:preview', 602, 66), measure('b2c:select', 601, 1)]);
+      }, 20);
+    }, 600);
+    // A third task has no span; the span after it does not overlap it.
+    loop.busy(60, 1_000);
+    loop.post(() => {
+      observers.deliver([measure('b2c:toolbox-refresh', 1_200, 10)]);
+    }, 1_200);
+    loop.runUntil(1_400);
+    // The buffer only holds the latest entry of each name, as in the app.
+    buffer.push(measure('b2c:preview', 602, 66), measure('b2c:toolbox-refresh', 1_200, 10));
+    const found = parsePageLongTasks(stop());
+    expect(found?.tasks.map((task) => task.marks)).toEqual([
+      ['b2c:preview'],
+      ['b2c:preview', 'b2c:select'],
+      [],
+    ]);
+    expect(observers.observed).toEqual([['mark', 'measure']]);
+    expect(observers.disconnected).toBe(1);
+    expect(observers.observing).toBe(0);
+  });
+
+  it('lists the names of the longest spans of a task, longest first, each once', () => {
+    const observers = new FakeObservers();
+    const buffer: FakeEntry[] = [];
+    const { loop, start, stop } = page(buffer, observers);
+    start();
+    loop.post(() => {
+      loop.now += 80;
+      // Span i lasts i ms; each comes twice, the second time shorter.
+      const spans = Array.from({ length: MAX_MARKS + 3 }, (_, index) =>
+        measure(`b2c:span-${String(index)}`, 301, index),
+      );
+      observers.deliver([...spans, ...spans.map((span) => ({ ...span, duration: 0 }))]);
+    }, 300);
+    loop.runUntil(600);
+    // One more in the buffer only, longer than all of them.
+    buffer.push(measure('b2c:buffered', 302, 50));
+    const marks = parsePageLongTasks(stop())?.tasks[0]?.marks ?? [];
+    expect(marks).toEqual([
+      'b2c:buffered',
+      ...Array.from(
+        { length: MAX_MARKS - 1 },
+        (_, index) => `b2c:span-${String(MAX_MARKS + 2 - index)}`,
+      ),
+    ]);
   });
 });
 

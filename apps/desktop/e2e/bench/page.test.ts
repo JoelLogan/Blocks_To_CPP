@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { FakeLoop, runScript as start } from '../support/fake-page';
+import { FakeLoop, FakeObservers, runScript as start } from '../support/fake-page';
 import {
   EDIT_SCRIPT,
   type EditResult,
@@ -155,11 +155,12 @@ function edit(
   longTaskMs = 4,
   timeoutMs = 30_000,
   settleMs = 0,
+  extra: Record<string, unknown> = {},
 ): EditResult | null {
   let result: EditResult | null = null;
   start(
     EDIT_SCRIPT,
-    loop.globals({ window }),
+    loop.globals({ window, ...extra }),
     [
       '__B2C_E2E__',
       'b0',
@@ -280,6 +281,37 @@ describe('EDIT_SCRIPT', () => {
     expect(edit(loop, window, 4, 1_000, 200)).toEqual({ kind: 'timeout' });
   });
 
+  it('gives the app’s spans of the edit, those not delivered yet too, and stops observing', () => {
+    const loop = new FakeLoop();
+    const observers = new FakeObservers();
+    const window = editor(loop, { renderMs: 300, previewMs: 90 });
+    // Spans of the edit, before its preview task (which starts at 350): one delivered at once,
+    // one still pending when the marker shows.
+    loop.post(() => {
+      observers.deliver([
+        { name: 'b2c:preview:analyse', startTime: 360, duration: 40, type: 'measure' },
+      ]);
+      observers.hold([{ name: 'b2c:preview', startTime: 351, duration: 90, type: 'measure' }]);
+      observers.deliver([{ name: 'other', startTime: 360, duration: 1, type: 'measure' }]);
+    }, 340);
+    const result = edit(loop, window, 4, 30_000, 0, {
+      PerformanceObserver: observers.constructorFor(),
+    });
+    expect(result?.kind === 'seen' ? result.spans : null).toEqual([
+      { name: 'b2c:preview:analyse', start: 360, ms: 40 },
+      { name: 'b2c:preview', start: 351, ms: 90 },
+    ]);
+    expect(observers.observed).toEqual([['measure']]);
+    expect(observers.disconnected).toBe(1);
+    expect(observers.observing).toBe(0);
+  });
+
+  it('gives no spans in a page without an observer', () => {
+    const loop = new FakeLoop();
+    const result = edit(loop, editor(loop, { renderMs: 30, previewMs: 9 }));
+    expect(result?.kind === 'seen' ? result.spans : null).toEqual([]);
+  });
+
   it('reports a missing hook', () => {
     const loop = new FakeLoop();
     expect(edit(loop, {})).toEqual({
@@ -297,6 +329,7 @@ describe('previewTask', () => {
     seen: 1_000,
     settled: 1_000,
     longest: null,
+    spans: [],
   } as const;
 
   it('accepts a task between the insertion and the preview', () => {
@@ -315,7 +348,7 @@ describe('previewTask', () => {
 });
 
 /** A fake window whose pointer presses run the capture listeners, and a press that takes time. */
-function clickPage(loop: FakeLoop) {
+function clickPage(loop: FakeLoop, observers?: FakeObservers) {
   const listeners = new Map<string, Set<() => void>>();
   const window: Record<string, unknown> = {
     addEventListener: (type: string, listener: () => void) => {
@@ -327,7 +360,10 @@ function clickPage(loop: FakeLoop) {
       listeners.get(type)?.delete(listener);
     },
   };
-  const globals = loop.globals({ window });
+  const globals = loop.globals({
+    window,
+    ...(observers === undefined ? {} : { PerformanceObserver: observers.constructorFor() }),
+  });
   /** A press at `delay` whose handling (selecting a block) takes `ms`. */
   const press = (delay: number, ms: number) => {
     loop.post(() => {
@@ -381,6 +417,30 @@ describe('TASKS_START_SCRIPT and TASKS_SETTLE_SCRIPT', () => {
     expect(Object.prototype.hasOwnProperty.call(page.window, TASKS_KEY)).toBe(false);
   });
 
+  it('give the app’s spans from the start of the recording, and stop observing', () => {
+    const loop = new FakeLoop();
+    const observers = new FakeObservers();
+    const page = clickPage(loop, observers);
+    page.startRecorder();
+    page.press(100, 15);
+    loop.post(() => {
+      observers.deliver([{ name: 'b2c:select', startTime: 100, duration: 14, type: 'measure' }]);
+    }, 116);
+    loop.post(() => {
+      loop.now += 160;
+      observers.deliver([
+        { name: 'b2c:toolbox-refresh', startTime: 130, duration: 159, type: 'measure' },
+      ]);
+    }, 130);
+    const result = page.settle(300, 10_000);
+    expect(result?.kind === 'settled' ? result.spans : null).toEqual([
+      { name: 'b2c:select', start: 100, ms: 14 },
+      { name: 'b2c:toolbox-refresh', start: 130, ms: 159 },
+    ]);
+    expect(observers.disconnected).toBe(1);
+    expect(observers.observing).toBe(0);
+  });
+
   it('counts the task that handled the press, which began before it', () => {
     const loop = new FakeLoop();
     const page = clickPage(loop);
@@ -428,6 +488,7 @@ describe('longestAfterPress', () => {
         { start: 95, ms: 20 },
         { start: 200, ms: 50 },
       ],
+      spans: [],
     } as const;
     expect(longestAfterPress(result)).toEqual({ start: 200, ms: 50 });
     expect(longestAfterPress({ ...result, tasks: [{ start: 0, ms: 50 }] })).toBeNull();

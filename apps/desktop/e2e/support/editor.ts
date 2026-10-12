@@ -17,17 +17,40 @@ export async function currentDocument(app: App): Promise<ProjectDocument> {
   return parseDocument(await app.hook.documentText());
 }
 
-/** The Problems panel's summary (`No problems`, `1 error`, …), also while its tab is hidden. */
+/**
+ * The Problems panel's summary (`No problems`, `1 error`, …). Read it with the Problems tab shown
+ * ({@link showProblems}): a hidden Problems panel keeps what it showed last and catches up once
+ * when it is shown again.
+ */
 export function problemsSummary(driver: WebDriver): Promise<string> {
   return testIdText(driver, 'problems-summary');
 }
 
-/** Waits until the Problems panel names `count` errors (or, with `atLeast`, that many or more). */
+/**
+ * Shows the Problems tab of the bottom dock (opening the dock if it is collapsed), as a person
+ * looking at Problems does. A run shows the Console tab again by itself.
+ */
+export async function showProblems(driver: WebDriver): Promise<void> {
+  await clickTestId(driver, 'dock-tab-problems');
+  await waitFor(
+    async () =>
+      (await driver.findElements(By.css('[data-testid="dock-tab-problems"][aria-selected="true"]')))
+        .length > 0 &&
+      (await driver.findElements(By.css('section.bottom-dock[data-collapsed="false"]'))).length > 0,
+    { timeout: 10_000, message: 'the Problems tab' },
+  );
+}
+
+/**
+ * Shows the Problems tab and waits until it names `count` errors (or, with `atLeast`, that many or
+ * more).
+ */
 export async function waitForErrors(
   app: App,
   count: number,
   options: { readonly atLeast?: boolean; readonly timeout?: number } = {},
 ): Promise<string> {
+  await showProblems(app.driver);
   return waitFor(
     async () => {
       const summary = await problemsSummary(app.driver);

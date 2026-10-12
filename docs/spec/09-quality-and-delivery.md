@@ -181,6 +181,12 @@ Details of each level as M2 sets them up:
   * Every E2E flow records its longest main-thread task (a heartbeat in the
     page, from the window's readiness until the test ends); the report never
     fails a test.
+  * The app measures its preview pipeline and each of its phases, the
+    toolbox refresh, the selection handler and the code panel's update as
+    User Timing spans (`b2c:…`); nothing in the app shows them. The long-task
+    recorder names the spans that overlap each task it keeps, and the
+    benchmarks report each span's time per edit or click beside their
+    metrics; the E2E hook gives each span's latest duration.
   * A change expected to alter a gated metric runs the A/B benchmark job on
     its pull request (`bench-ab.yml`): base and head are built and measured
     in alternating runs on one runner, at least 10 samples each, and the

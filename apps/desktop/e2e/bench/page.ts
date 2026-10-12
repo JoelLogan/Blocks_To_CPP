@@ -97,6 +97,61 @@ export interface PageTask {
   readonly ms: number;
 }
 
+/**
+ * A User Timing span the app measured while an interaction was timed (src/lib/timing.ts: one
+ * `performance.measure` entry named `b2c:…` per span; page clock, milliseconds).
+ */
+export interface PageSpan {
+  readonly name: string;
+  readonly start: number;
+  readonly ms: number;
+}
+
+/** The most spans {@link EDIT_SCRIPT} and {@link TASKS_SETTLE_SCRIPT} return. */
+export const MAX_SPANS = 1_000;
+
+/**
+ * Page-script code that observes the app's `b2c:` User Timing measures from now on into `spans`
+ * (a `PerformanceObserver`, where the page has one: the app keeps only the latest entry of each
+ * name in the browser's buffer). `takeSpans()` adds what the observer has not delivered yet and
+ * stops it. The observer only reads; without one, `spans` stays empty.
+ */
+const SPANS_OBSERVER = `
+  const spans = [];
+  const keepSpans = (entries) => {
+    for (const entry of entries) {
+      if (typeof entry.name === 'string' && entry.name.startsWith('b2c:')
+          && typeof entry.startTime === 'number' && typeof entry.duration === 'number'
+          && spans.length < ${String(MAX_SPANS)}) {
+        spans.push({ name: entry.name.slice(0, 80), start: entry.startTime, ms: entry.duration });
+      }
+    }
+  };
+  let spanObserver = null;
+  try {
+    if (typeof PerformanceObserver === 'function') {
+      spanObserver = new PerformanceObserver((list) => keepSpans(list.getEntries()));
+      spanObserver.observe({ entryTypes: ['measure'] });
+    }
+  } catch (error) {
+    spanObserver = null;
+  }
+  const takeSpans = () => {
+    if (spanObserver !== null) {
+      try {
+        if (typeof spanObserver.takeRecords === 'function') {
+          keepSpans(spanObserver.takeRecords());
+        }
+        spanObserver.disconnect();
+      } catch (error) {
+        // The spans kept so far are all there is.
+      }
+      spanObserver = null;
+    }
+    return spans.slice();
+  };
+`;
+
 /** What {@link EDIT_SCRIPT} calls back with (page clock, milliseconds). */
 export type EditResult =
   | {
@@ -124,6 +179,8 @@ export type EditResult =
        * when none was as long as a long task.
        */
       readonly longest: PageTask | null;
+      /** The app's spans from just before the insertion until the script called back. */
+      readonly spans: readonly PageSpan[];
     }
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'timeout' };
@@ -144,7 +201,8 @@ export type EditResult =
  * the code is the pipeline's run: that is how its length is measured from outside the app. (The
  * beat after a long task was posted before anything that task queued, such as React's render, so
  * it runs first and the gap holds that one task.) The insertion runs in this script's own task,
- * before the first beat, so the first gap holds it.
+ * before the first beat, so the first gap holds it. The app's User Timing spans of the edit are
+ * observed meanwhile (`spans`).
  */
 export const EDIT_SCRIPT = `
   const [hookName, parentId, input, blocks, marker, timeoutMs, longTaskMs, settleMs] = arguments;
@@ -193,11 +251,13 @@ export const EDIT_SCRIPT = `
     channel.port2.postMessage(null);
   };
   channel.port2.postMessage(null);
+  ${SPANS_OBSERVER}
   const finish = (result) => {
     if (!finished) {
       finished = true;
       channel.port1.close();
-      done(result);
+      const kept = takeSpans();
+      done(result.kind === 'seen' ? { ...result, spans: kept } : result);
     }
   };
   const begin = performance.now();
@@ -315,8 +375,9 @@ export const MAX_TASKS = 1_000;
  * the page's tasks for a click that follows, until {@link TASKS_SETTLE_SCRIPT}. A heartbeat (a
  * message the page posts to itself again and again, as in {@link EDIT_SCRIPT}) notes every gap of
  * at least `longTaskMs` between its beats: a task, or the page's rendering, ran then. A listener
- * on the window's capture phase notes when the pointer is first pressed; it only observes.
- * Returns `false` when a recorder is already running.
+ * on the window's capture phase notes when the pointer is first pressed, and the app's User
+ * Timing spans are observed; both only observe. Returns `false` when a recorder is already
+ * running.
  */
 export const TASKS_START_SCRIPT = `
   const [key, longTaskMs] = arguments;
@@ -343,10 +404,12 @@ export const TASKS_START_SCRIPT = `
     }
   };
   window.addEventListener('pointerdown', onDown, true);
+  ${SPANS_OBSERVER}
   state.stop = () => {
     state.stopped = true;
     channel.port1.close();
     window.removeEventListener('pointerdown', onDown, true);
+    return takeSpans();
   };
   Object.defineProperty(window, key, { value: state, configurable: true });
   return true;
@@ -362,6 +425,8 @@ export type ClickResult =
       readonly settled: number;
       /** The long tasks from the start of the recording, in order. */
       readonly tasks: readonly PageTask[];
+      /** The app's spans from the start of the recording until it stopped. */
+      readonly spans: readonly PageSpan[];
     }
   | { readonly kind: 'no-press' }
   | { readonly kind: 'busy' }
@@ -385,9 +450,9 @@ export const TASKS_SETTLE_SCRIPT = `
   const begin = performance.now();
   let openUntil = null;
   const finish = (result) => {
-    state.stop();
+    const spans = state.stop();
     delete window[key];
-    done(result);
+    done(result.kind === 'settled' ? { ...result, spans } : result);
   };
   const poll = () => {
     const now = performance.now();

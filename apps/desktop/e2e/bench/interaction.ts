@@ -2,7 +2,9 @@
  * The webview benchmarks' interactions with the editor, timed inside the page (bench/page.ts):
  * an edit made through the test hook (its preview, and everything it starts until the page is
  * quiet again) and a click on a block with real pointer input (the longest task it causes). The
- * preview, selection and guessing-game benchmarks use them.
+ * preview, selection and guessing-game benchmarks use them. Each also gives the app's User Timing
+ * spans of the interaction (src/lib/timing.ts), which the benchmarks report next to their metrics
+ * to say where the time went; an app without them gives none.
  */
 import { Button, Key, Origin } from 'selenium-webdriver';
 
@@ -18,6 +20,8 @@ import {
   type EditResult,
   GONE_SCRIPT,
   longestAfterPress,
+  MAX_SPANS,
+  type PageSpan,
   PREVIEW_DEBOUNCE_MS,
   previewTask,
   QUIET_SCRIPT,
@@ -25,6 +29,7 @@ import {
   TASKS_SETTLE_SCRIPT,
   TASKS_START_SCRIPT,
 } from './page';
+import { median, rounded } from './stats';
 
 /** The shortest main-thread task the heartbeats record (bench/page.ts). */
 export const LONG_TASK_MS = 4;
@@ -41,6 +46,72 @@ export const SETTLE_MS = 300;
  */
 export const INTERACTION_TIMEOUT_MS = 25_000;
 
+/** The time of each User Timing span of the app in one interaction, by name (milliseconds). */
+export type SpanTimes = Readonly<Record<string, number>>;
+
+function isPageSpan(value: unknown): value is PageSpan {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const span = value as Record<string, unknown>;
+  return (
+    typeof span['name'] === 'string' &&
+    span['name'].startsWith('b2c:') &&
+    span['name'].length <= 80 &&
+    typeof span['start'] === 'number' &&
+    Number.isFinite(span['start']) &&
+    typeof span['ms'] === 'number' &&
+    Number.isFinite(span['ms']) &&
+    span['ms'] >= 0
+  );
+}
+
+/**
+ * The time of each span name that began at `from` or later (page clock), added up: the spans of
+ * the interaction that began then. What the page returned is checked; anything else is none.
+ */
+export function spanTimes(spans: unknown, from: number): SpanTimes {
+  const times: Record<string, number> = {};
+  if (!Array.isArray(spans) || spans.length > MAX_SPANS) {
+    return times;
+  }
+  for (const span of spans) {
+    if (isPageSpan(span) && span.start >= from) {
+      times[span.name] = (times[span.name] ?? 0) + span.ms;
+    }
+  }
+  return times;
+}
+
+/** How many spans {@link spanSummary} names. */
+export const SUMMARY_SPANS = 6;
+
+/**
+ * One line naming the spans with the longest medians over the interactions (an interaction where
+ * a span did not run counts 0 for it), longest first: `b2c:toolbox-refresh 812.4 ms, …`. Says so
+ * when the app measured no span.
+ */
+export function spanSummary(interactions: readonly SpanTimes[]): string {
+  const names = new Set<string>();
+  for (const times of interactions) {
+    for (const name of Object.keys(times)) {
+      names.add(name);
+    }
+  }
+  if (names.size === 0 || interactions.length === 0) {
+    return 'no User Timing spans (this build of the app measures none)';
+  }
+  const medians = [...names].map((name) => ({
+    name,
+    ms: median(interactions.map((times) => times[name] ?? 0)),
+  }));
+  medians.sort((a, b) => b.ms - a.ms || a.name.localeCompare(b.name));
+  return medians
+    .slice(0, SUMMARY_SPANS)
+    .map((span) => `${span.name} ${String(rounded(span.ms, 1))} ms`)
+    .join(', ');
+}
+
 /** One timed edit (milliseconds). */
 export interface TimedEdit {
   /** The inserted block. */
@@ -56,6 +127,8 @@ export interface TimedEdit {
   readonly settledMs: number;
   /** The longest task from the edit until then (0 when none was as long as a long task). */
   readonly longestMs: number;
+  /** The app's spans from the edit until the page called back. */
+  readonly spans: SpanTimes;
 }
 
 /** What an edit measured, from {@link EDIT_SCRIPT}'s result; throws when the edit failed. */
@@ -79,6 +152,7 @@ export function editMeasurement(id: string, result: unknown): TimedEdit {
     editMs: less(edit.seen),
     settledMs: less(edit.settled),
     longestMs: edit.longest?.ms ?? 0,
+    spans: spanTimes(edit.spans, edit.begin),
   };
 }
 
@@ -185,6 +259,8 @@ export interface TimedClick {
   readonly longestMs: number;
   /** From the press until the page had finished what the click started. */
   readonly respondMs: number;
+  /** The app's spans from the press until the page had finished. */
+  readonly spans: SpanTimes;
 }
 
 /** What a click measured, from {@link TASKS_SETTLE_SCRIPT}'s result; throws when it failed. */
@@ -198,6 +274,7 @@ export function clickMeasurement(id: string, result: unknown): TimedClick {
       return {
         longestMs: longestAfterPress(click)?.ms ?? 0,
         respondMs: Math.max(0, click.settled - click.pressed),
+        spans: spanTimes(click.spans, click.pressed),
       };
     case 'no-press':
       throw new Error(`The click on block ${id} never reached the page`);

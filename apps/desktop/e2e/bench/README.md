@@ -28,6 +28,13 @@ the page ran something else, a task or its rendering, and a gap of 4 ms or more 
 benchmark takes 10 samples, or `B2C_BENCH_SAMPLES` (the A/B runs take fewer per run and add them
 up).
 
+While an edit or a click is timed, the page also observes the app's User Timing spans
+([`src/lib/timing.ts`](../../src/lib/timing.ts): the preview pipeline `b2c:preview` and its phases,
+`b2c:toolbox-refresh`, `b2c:select` and `b2c:code-panel`). The preview, selection and
+guessing-game benchmarks print the median time of each span per interaction under their summary
+line, which says where the time went (`spans per click (median): b2c:toolbox-refresh … ms, …`).
+The spans are not metrics; an app built before they existed shows none.
+
 - **Cold start** ([`launch.ts`](launch.ts)): the time starts just before the session request and
   ends at the page clock's time (its time origin plus `performance.now()`) when the readiness marker
   first holds, checked every 4 ms. Right after the session starts the window may not show the app's

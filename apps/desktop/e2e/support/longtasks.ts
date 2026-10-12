@@ -17,9 +17,12 @@
  * cores of WebKitGTK, which would slow the flows down.) Gaps while the window is hidden are not
  * counted: browsers slow hidden pages' timers down.
  *
- * User Timing entries whose names start with `b2c:` (marks, and measures, which the app may add
- * around its pipeline, toolbox refresh and selection handling) that overlap a recorded task are
- * named with it, so the report can say what ran; without them the report has the times only.
+ * User Timing entries whose names start with `b2c:` that overlap a recorded task are named with
+ * it, so the report can say what ran; without them the report has the times only. The app
+ * measures its preview pipeline and its phases, the toolbox refresh, the selection handler and the
+ * code panel's update that way (src/lib/timing.ts), and keeps only the latest entry of each name
+ * in the browser's buffer, so the recorder observes the entries as they are added
+ * (`PerformanceObserver`) and also reads the buffer when it stops.
  */
 import {
   appendFileSync,
@@ -45,8 +48,11 @@ export const LONG_TASK_MS = 50;
 /** How many of the longest tasks a record keeps. */
 export const KEPT_TASKS = 10;
 
-/** The most `b2c:` User Timing names a task lists. */
+/** The most `b2c:` User Timing names a task lists: those of the longest spans that overlap it. */
 export const MAX_MARKS = 8;
+
+/** The most `b2c:` names the page keeps per task before it picks the longest {@link MAX_MARKS}. */
+const NAMES_PER_TASK = 64;
 
 /** The run's report: one JSON object per recorded launch. */
 export const LONG_TASKS_REPORT = 'long-tasks.jsonl';
@@ -57,9 +63,16 @@ export const LONG_TASKS_SUMMARY = 'long-tasks.md';
 /** How long starting or reading the recorder may take. */
 const SCRIPT_TIMEOUT_MS = 10_000;
 
+/** How many of the latest `b2c:` User Timing entries the recorder keeps to name the next task. */
+export const RECENT_MARKS = 256;
+
 /**
- * Runs in the webview (`executeScript(LONG_TASKS_START_SCRIPT, key, longTaskMs, keep)`): starts
- * the recorder; `false` when one already runs. Only the recorder's own state is added to the page.
+ * Runs in the webview (`executeScript(LONG_TASKS_START_SCRIPT, key, longTaskMs, keep, maxMarks)`):
+ * starts the recorder; `false` when one already runs. Only the recorder's own state is added to
+ * the page. A `PerformanceObserver` (where the page has one) names each kept task with the `b2c:`
+ * entries that overlap it: an entry can come before the beat that notes its task or after it, so
+ * a new task is matched with the latest entries ({@link RECENT_MARKS}) and a new entry with the
+ * kept tasks. Each task keeps the longest duration seen per name.
  */
 export const LONG_TASKS_START_SCRIPT = `
   const [key, longTaskMs, keep] = arguments;
@@ -68,19 +81,62 @@ export const LONG_TASKS_START_SCRIPT = `
   }
   const begin = performance.now();
   const state = { beats: 0, count: 0, totalMs: 0, hiddenMs: 0, tasks: [], stopped: false };
+  const recent = [];
+  const name = (task, entry) => {
+    if (entry.start <= task.start + task.ms && entry.end >= task.start) {
+      const ms = Math.max(0, entry.end - entry.start);
+      const known = task.marks.get(entry.name);
+      if (known !== undefined) {
+        task.marks.set(entry.name, Math.max(known, ms));
+      } else if (task.marks.size < ${String(NAMES_PER_TASK)}) {
+        task.marks.set(entry.name, ms);
+      }
+    }
+  };
   let last = begin;
   const note = (start, ms) => {
     state.count += 1;
     state.totalMs += ms;
     const tasks = state.tasks;
     if (tasks.length < keep || ms > tasks[tasks.length - 1].ms) {
-      tasks.push({ start, ms });
+      const task = { start, ms, marks: new Map() };
+      for (const entry of recent) {
+        name(task, entry);
+      }
+      tasks.push(task);
       tasks.sort((a, b) => b.ms - a.ms);
       if (tasks.length > keep) {
         tasks.pop();
       }
     }
   };
+  let observer = null;
+  try {
+    if (typeof PerformanceObserver === 'function') {
+      observer = new PerformanceObserver((list) => {
+        if (state.stopped) {
+          return;
+        }
+        for (const entry of list.getEntries()) {
+          if (typeof entry.name !== 'string' || !entry.name.startsWith('b2c:')) {
+            continue;
+          }
+          const seen = { name: entry.name.slice(0, 80), start: entry.startTime,
+            end: entry.startTime + (entry.duration || 0) };
+          recent.push(seen);
+          if (recent.length > ${String(RECENT_MARKS)}) {
+            recent.shift();
+          }
+          for (const task of state.tasks) {
+            name(task, seen);
+          }
+        }
+      });
+      observer.observe({ entryTypes: ['mark', 'measure'] });
+    }
+  } catch (error) {
+    observer = null;
+  }
   const beat = () => {
     if (state.stopped) {
       return;
@@ -99,8 +155,17 @@ export const LONG_TASKS_START_SCRIPT = `
   setTimeout(beat, 0);
   const stop = () => {
     state.stopped = true;
+    if (observer !== null) {
+      try {
+        observer.disconnect();
+      } catch (error) {
+        // Nothing to do: it is not called again.
+      }
+    }
     return { begin, end: performance.now(), beats: state.beats, count: state.count,
-      totalMs: state.totalMs, hiddenMs: state.hiddenMs, tasks: state.tasks.slice() };
+      totalMs: state.totalMs, hiddenMs: state.hiddenMs,
+      tasks: state.tasks.map((task) => ({ start: task.start, ms: task.ms,
+        spans: [...task.marks].map(([name, ms]) => ({ name, ms })) })) };
   };
   Object.defineProperty(window, key, { value: { stop }, configurable: true });
   return true;
@@ -108,8 +173,10 @@ export const LONG_TASKS_START_SCRIPT = `
 
 /**
  * Runs in the webview (`executeScript(LONG_TASKS_STOP_SCRIPT, key, maxMarks)`): stops the recorder
- * and returns what it found (a {@link PageLongTasks}), with the `b2c:` User Timing names that
- * overlap each kept task; `null` when no recorder runs (the page was replaced since it started).
+ * and returns what it found (a {@link PageLongTasks}), each kept task with the `b2c:` User Timing
+ * names the observer matched and those of the entries still in the browser's buffer that overlap
+ * it, longest span first, at most `maxMarks`; `null` when no recorder runs (the page was replaced
+ * since it started).
  */
 export const LONG_TASKS_STOP_SCRIPT = `
   const [key, maxMarks] = arguments;
@@ -127,14 +194,16 @@ export const LONG_TASKS_STOP_SCRIPT = `
     entries = [];
   }
   found.tasks = found.tasks.map((task) => {
-    const names = [];
+    const spans = new Map(task.spans.map((span) => [span.name, span.ms]));
     for (const entry of entries) {
-      const end = entry.startTime + (entry.duration || 0);
-      if (entry.startTime <= task.start + task.ms && end >= task.start && names.length < maxMarks
-          && !names.includes(entry.name)) {
-        names.push(entry.name.slice(0, 80));
+      const ms = Math.max(0, entry.duration || 0);
+      const entryName = entry.name.slice(0, 80);
+      if (entry.startTime <= task.start + task.ms && entry.startTime + ms >= task.start
+          && !(spans.get(entryName) >= ms)) {
+        spans.set(entryName, ms);
       }
     }
+    const names = [...spans].sort((a, b) => b[1] - a[1]).slice(0, maxMarks).map(([name]) => name);
     return { start: task.start, ms: task.ms, marks: names };
   });
   return found;
@@ -144,7 +213,7 @@ export const LONG_TASKS_STOP_SCRIPT = `
 export interface PageTask {
   readonly start: number;
   readonly ms: number;
-  /** The `b2c:` User Timing names that overlap the task. */
+  /** The `b2c:` User Timing names that overlap the task, longest span first. */
   readonly marks: readonly string[];
 }
 

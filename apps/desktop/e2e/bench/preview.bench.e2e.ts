@@ -26,7 +26,15 @@ import { type App, launchApp } from '../support/app';
 import { NodeIds, print } from '../support/bdm';
 import { foldCodePanel, showCodePanel } from '../support/editor';
 import { MAIN_ID, writeBenchProject } from './document';
-import { deleteBlock, LONG_TASK_MS, SETTLE_MS, timedEdit, type TimedEdit } from './interaction';
+import {
+  deleteBlock,
+  LONG_TASK_MS,
+  SETTLE_MS,
+  type SpanTimes,
+  spanSummary,
+  timedEdit,
+  type TimedEdit,
+} from './interaction';
 import { openProjectFile } from './project';
 import { benchSamples, writeMetric } from './results';
 import { median, percentile, rounded } from './stats';
@@ -48,17 +56,24 @@ afterAll(() => {
   }
 });
 
+/** What {@link rounds} measured: each round's p95, and the app's spans of every edit. */
+interface Rounds {
+  readonly samples: number[];
+  readonly spans: SpanTimes[];
+}
+
 /**
  * Makes `samples` rounds of {@link EDITS} edits, each deleted again, and returns each round's p95
- * of what `measure` takes from an edit.
+ * of what `measure` takes from an edit, with the spans of the edits.
  */
 async function rounds(
   app: App,
   phase: { readonly name: string; readonly settleMs: number; readonly samples: number },
   measure: (edit: TimedEdit) => number,
-): Promise<number[]> {
+): Promise<Rounds> {
   const ids = new NodeIds(phase.name);
   const result: number[] = [];
+  const spans: SpanTimes[] = [];
   for (let round = 0; round < phase.samples; round += 1) {
     const values: number[] = [];
     for (let edit = 0; edit < EDITS; edit += 1) {
@@ -70,11 +85,12 @@ async function rounds(
         settleMs: phase.settleMs,
       });
       values.push(measure(timed));
+      spans.push(timed.spans);
       await deleteBlock(app, timed.id, marker, phase.settleMs > 0);
     }
     result.push(percentile(values, 95));
   }
-  return result;
+  return { samples: result, spans };
 }
 
 describe('webview benchmark: the live preview and edits at 1,000 blocks', () => {
@@ -90,22 +106,18 @@ describe('webview benchmark: the live preview and edits at 1,000 blocks', () => 
 
       // The preview pipeline's own task: folded, the C++ panel's rendering is not part of it.
       await foldCodePanel(app);
-      const previewSamples = await rounds(
-        app,
-        { name: 'preview', settleMs: 0, samples },
-        (timed) => {
-          if (timed.previewMs === null) {
-            throw new Error(
-              `No task of at least ${String(LONG_TASK_MS)} ms brought the edit's preview`,
-            );
-          }
-          return timed.previewMs;
-        },
-      );
+      const preview = await rounds(app, { name: 'preview', settleMs: 0, samples }, (timed) => {
+        if (timed.previewMs === null) {
+          throw new Error(
+            `No task of at least ${String(LONG_TASK_MS)} ms brought the edit's preview`,
+          );
+        }
+        return timed.previewMs;
+      });
 
       // The whole edit as a person sees it, with the C++ panel shown.
       await showCodePanel(app);
-      const editSamples = await rounds(
+      const edit = await rounds(
         app,
         { name: 'edit', settleMs: SETTLE_MS, samples },
         (timed) => timed.settledMs,
@@ -118,7 +130,7 @@ describe('webview benchmark: the live preview and edits at 1,000 blocks', () => 
         better: 'lower',
         gate: true,
         description: `Preview pipeline task (canvas, canonical, preview, store) at 1,000 blocks; ${per}`,
-        samples: previewSamples,
+        samples: preview.samples,
       });
       writeMetric({
         name: 'webview.edit-1000.p95',
@@ -126,14 +138,16 @@ describe('webview benchmark: the live preview and edits at 1,000 blocks', () => 
         better: 'lower',
         gate: true,
         description: `Edit until the page settles (rendering, preview, C++ panel shown) less the 50 ms debounce, 1,000 blocks; ${per}`,
-        samples: editSamples,
+        samples: edit.samples,
       });
       process.stdout.write(
-        `At 1,000 blocks: preview task p95 median ${String(rounded(median(previewSamples), 1))} ms, ` +
-          `edit until settled p95 median ${String(rounded(median(editSamples), 1))} ms\n`,
+        `At 1,000 blocks: preview task p95 median ${String(rounded(median(preview.samples), 1))} ms, ` +
+          `edit until settled p95 median ${String(rounded(median(edit.samples), 1))} ms\n` +
+          `  spans per edit, C++ panel folded (median): ${spanSummary(preview.spans)}\n` +
+          `  spans per edit, C++ panel shown (median): ${spanSummary(edit.spans)}\n`,
       );
-      expect(previewSamples).toHaveLength(samples);
-      expect(editSamples).toHaveLength(samples);
+      expect(preview.samples).toHaveLength(samples);
+      expect(edit.samples).toHaveLength(samples);
     },
     TEST_TIMEOUT_MS,
   );

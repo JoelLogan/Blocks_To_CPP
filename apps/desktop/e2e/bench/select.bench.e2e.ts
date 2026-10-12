@@ -20,7 +20,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { launchApp } from '../support/app';
 import { foldCodePanel } from '../support/editor';
 import { MAIN_ID, writeBenchProject } from './document';
-import { timedClick } from './interaction';
+import { type SpanTimes, spanSummary, timedClick } from './interaction';
 import { openProjectFile } from './project';
 import { benchSamples, writeMetric } from './results';
 import { median, rounded } from './stats';
@@ -70,10 +70,12 @@ describe('webview benchmark: selecting blocks at 1,000 blocks', () => {
       await timedClick(app, target(targets.length - 1));
       const longest: number[] = [];
       const respond: number[] = [];
+      const spans: SpanTimes[] = [];
       for (let sample = 0; sample < samples; sample += 1) {
         const timed = await timedClick(app, target(sample));
         longest.push(timed.longestMs);
         respond.push(timed.respondMs);
+        spans.push(timed.spans);
       }
       writeMetric({
         name: 'webview.select-1000.max-task',
@@ -85,7 +87,8 @@ describe('webview benchmark: selecting blocks at 1,000 blocks', () => {
       });
       process.stdout.write(
         `Selecting at 1,000 blocks: longest task median ${String(rounded(median(longest), 1))} ms, ` +
-          `settled after median ${String(rounded(median(respond), 1))} ms (${String(samples)} clicks)\n`,
+          `settled after median ${String(rounded(median(respond), 1))} ms (${String(samples)} clicks)\n` +
+          `  spans per click (median): ${spanSummary(spans)}\n`,
       );
       expect(longest).toHaveLength(samples);
     },

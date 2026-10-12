@@ -7,7 +7,14 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { clickMeasurement, editMeasurement, INTERACTION_TIMEOUT_MS } from './interaction';
+import {
+  clickMeasurement,
+  editMeasurement,
+  INTERACTION_TIMEOUT_MS,
+  spanSummary,
+  spanTimes,
+  SUMMARY_SPANS,
+} from './interaction';
 import { PREVIEW_DEBOUNCE_MS } from './page';
 
 describe('editMeasurement', () => {
@@ -19,15 +26,20 @@ describe('editMeasurement', () => {
     task: { start: 780, ms: 110 },
     settled: 1_260,
     longest: { start: 100, ms: 600 },
+    spans: [
+      { name: 'b2c:preview', start: 780, ms: 110 },
+      { name: 'b2c:code-panel', start: 950, ms: 30 },
+    ],
   } as const;
 
-  it('takes the preview task, the times less the debounce and the longest task', () => {
+  it('takes the preview task, the times less the debounce, the longest task and the spans', () => {
     expect(editMeasurement('b1', seen)).toEqual({
       id: 'b1',
       previewMs: 110,
       editMs: 900 - 10 - PREVIEW_DEBOUNCE_MS,
       settledMs: 1_260 - 10 - PREVIEW_DEBOUNCE_MS,
       longestMs: 600,
+      spans: { 'b2c:preview': 110, 'b2c:code-panel': 30 },
     });
   });
 
@@ -79,11 +91,22 @@ describe('clickMeasurement', () => {
         { start: 990, ms: 40 },
         { start: 1_100, ms: 380 },
       ],
+      spans: [
+        { name: 'b2c:toolbox-refresh', start: 400, ms: 290 },
+        { name: 'b2c:select', start: 1_001, ms: 12 },
+        { name: 'b2c:toolbox-refresh', start: 1_100, ms: 370 },
+      ],
     };
-    expect(clickMeasurement('b9', result)).toEqual({ longestMs: 380, respondMs: 480 });
-    expect(clickMeasurement('b9', { ...result, tasks: [] })).toEqual({
+    // A span that began before the press is not the click's.
+    expect(clickMeasurement('b9', result)).toEqual({
+      longestMs: 380,
+      respondMs: 480,
+      spans: { 'b2c:select': 12, 'b2c:toolbox-refresh': 370 },
+    });
+    expect(clickMeasurement('b9', { ...result, tasks: [], spans: [] })).toEqual({
       longestMs: 0,
       respondMs: 480,
+      spans: {},
     });
   });
 
@@ -96,5 +119,44 @@ describe('clickMeasurement', () => {
       'No recorder',
     );
     expect(() => clickMeasurement('b9', null)).toThrow('unexpected');
+  });
+});
+
+describe('spanTimes', () => {
+  it('adds up the time of each span name from a point on, and ignores what is not a span', () => {
+    const spans = [
+      { name: 'b2c:preview', start: 10, ms: 5 },
+      { name: 'b2c:preview', start: 40, ms: 7.5 },
+      { name: 'b2c:select', start: 50, ms: 1 },
+      { name: 'b2c:early', start: 9, ms: 100 },
+      { name: 'other', start: 60, ms: 3 },
+      { name: 'b2c:bad', start: 60, ms: -1 },
+      { name: 'b2c:nan', start: 60, ms: Number.NaN },
+      { name: 7, start: 60, ms: 3 },
+      null,
+    ];
+    expect(spanTimes(spans, 10)).toEqual({ 'b2c:preview': 12.5, 'b2c:select': 1 });
+    expect(spanTimes('spans', 0)).toEqual({});
+    expect(spanTimes(undefined, 0)).toEqual({});
+  });
+});
+
+describe('spanSummary', () => {
+  it('names the spans with the longest medians, a span missing from an interaction counting 0', () => {
+    const summary = spanSummary([
+      { 'b2c:toolbox-refresh': 900, 'b2c:select': 2 },
+      { 'b2c:toolbox-refresh': 1_100, 'b2c:select': 3, 'b2c:code-panel': 40 },
+      { 'b2c:select': 2.25 },
+    ]);
+    expect(summary).toBe('b2c:toolbox-refresh 900 ms, b2c:select 2.3 ms, b2c:code-panel 0 ms');
+  });
+
+  it('names at most a few spans, and says when there were none', () => {
+    const many = Object.fromEntries(
+      Array.from({ length: SUMMARY_SPANS + 2 }, (_, index) => [`b2c:s${String(index)}`, index]),
+    );
+    expect(spanSummary([many]).split(', ')).toHaveLength(SUMMARY_SPANS);
+    expect(spanSummary([{}, {}])).toMatch(/^no User Timing spans/);
+    expect(spanSummary([])).toMatch(/^no User Timing spans/);
   });
 });

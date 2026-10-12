@@ -137,6 +137,79 @@ export class FakeLoop {
   }
 }
 
+/** A User Timing entry of a fake page. */
+export interface FakeEntry {
+  readonly name: string;
+  readonly startTime: number;
+  readonly duration: number;
+  readonly type: string;
+}
+
+/** What a fake observer's callback is given. */
+interface FakeEntryList {
+  getEntries(): FakeEntry[];
+}
+
+/**
+ * The `PerformanceObserver`s of a fake page: a test hands them entries at once
+ * ({@link FakeObservers.deliver}) or leaves entries pending, as a browser does until its observer
+ * task runs ({@link FakeObservers.hold}), which `takeRecords()` then returns.
+ */
+export class FakeObservers {
+  readonly #callbacks = new Set<(list: FakeEntryList) => void>();
+  readonly #pending: FakeEntry[] = [];
+  readonly #counts = { disconnected: 0 };
+  /** The entry types each `observe()` asked for. */
+  readonly observed: string[][] = [];
+
+  /** How many observers were disconnected. */
+  get disconnected(): number {
+    return this.#counts.disconnected;
+  }
+
+  /** How many observers observe. */
+  get observing(): number {
+    return this.#callbacks.size;
+  }
+
+  /** Hands `entries` to every observer that observes. */
+  deliver(entries: FakeEntry[]): void {
+    for (const callback of this.#callbacks) {
+      callback({ getEntries: () => entries });
+    }
+  }
+
+  /** Leaves `entries` pending: an observer's `takeRecords()` returns them. */
+  hold(entries: FakeEntry[]): void {
+    this.#pending.push(...entries);
+  }
+
+  /** A `PerformanceObserver` class for the page. */
+  constructorFor(): unknown {
+    const callbacks = this.#callbacks;
+    const pending = this.#pending;
+    const counts = this.#counts;
+    const observed = this.observed;
+    return class {
+      readonly #callback: (list: FakeEntryList) => void;
+      constructor(callback: (list: FakeEntryList) => void) {
+        this.#callback = callback;
+      }
+      observe(options: { entryTypes: string[] }): void {
+        observed.push([...options.entryTypes]);
+        callbacks.add(this.#callback);
+      }
+      takeRecords(): FakeEntry[] {
+        return pending.splice(0);
+      }
+      disconnect(): void {
+        counts.disconnected += 1;
+        callbacks.delete(this.#callback);
+      }
+    };
+  }
+}
+
 /** Runs a page script as WebDriver does: a function body called with the arguments. */
 export function runScript(
   script: string,
