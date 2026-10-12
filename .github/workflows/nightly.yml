@@ -444,7 +444,7 @@ jobs:
       - name: Install g++ (MSYS2 UCRT64)
         if: runner.os == 'Windows'
         id: msys2
-        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           msystem: UCRT64
           update: false
@@ -630,7 +630,7 @@ jobs:
       - name: Install g++ (MSYS2 UCRT64)
         if: runner.os == 'Windows'
         id: msys2
-        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           msystem: UCRT64
           update: false
@@ -798,7 +798,7 @@ jobs:
       - name: Install g++ (MSYS2 UCRT64)
         if: runner.os == 'Windows'
         id: msys2
-        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           msystem: UCRT64
           update: false
