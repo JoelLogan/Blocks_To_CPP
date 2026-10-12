@@ -132,9 +132,10 @@ readers, high contrast, the toolchain matrix) and updated documentation.
 
 ### M2 polish (part of M2)
 
-The owner's first trial (Debian, 2026-10) found 18 issues (U1 to U18), each to
-be tracked as an issue labelled `M2-polish` once the owner has created the
-labels and issues (W0-7); this section then links them. The wave also fixes
+The owner's first trial (Debian, 2026-10) found 18 issues (U1 to U18). They
+are tracked in the [plan](../plans/m2-polish-plan.md), not as GitHub issues:
+the owner deferred the issue tracker (W0-7) and the upstream reports on
+2026-10-12. The wave also fixes
 two data-loss and correctness defects, adds DOM-level chrome checks and
 small-program benchmarks, and writes `BUILDING.md`. Its items are split into
 a must-have set and an if-time set, worked on in two parallel streams within
@@ -145,8 +146,8 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
   ([ADR-0012](../adr/0012-parked-blocks.md)), additive format keys
   ([ADR-0013](../adr/0013-additive-format-keys.md)), the rules for extending
   Blockly ([ADR-0014](../adr/0014-extending-blockly.md)), spec corrections,
-  Dependabot groups, the issue tracker and an anchor check over all
-  Markdown.
+  Dependabot groups and an anchor check over all Markdown (the issue
+  tracker is deferred).
 * Small fixes, the two P0 defects (a drop on the toolbox deleting the blocks
   below a previewed place; a negative number typed into a slot being
   rejected) and `BUILDING.md`.

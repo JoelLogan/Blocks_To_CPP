@@ -56,9 +56,11 @@
 
 * **Conventional Commits** (`feat:`, `fix:`, `docs:`, `sec:`, …), small
   focused PRs, squash merges.
-* Known defects, open diagnostics and technical debt are tracked as GitHub
-  issues with a milestone label; status notes link them. The *Known issue*
-  template asks for the evidence: commit, run, logs and hypothesis.
+* Known defects, open diagnostics and technical debt are tracked in the
+  plans under `docs/plans/` and in the roadmap's status notes. GitHub issues
+  with milestone labels replace them once the owner sets up the issue tracker
+  (deferred on 2026-10-12); the *Known issue* template, which asks for the
+  evidence (commit, run, logs and hypothesis), is ready for that.
 * Branch protection on `main`: required status checks, at least one review,
   CODEOWNERS review for `crates/b2c-process/`, `crates/b2c-ipc/`,
   `crates/b2c-store/`, `crates/b2c-app/`, `apps/desktop/src-tauri/`,

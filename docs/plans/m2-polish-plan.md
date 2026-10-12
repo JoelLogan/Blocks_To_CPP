@@ -134,7 +134,7 @@ Person-days below count S as 0.5–1, M as 2–5 and L as 5–10. The midpoint e
 
 | Wave | Must-have | M2 if time |
 |---|---|---|
-| W0 | W0-1 to W0-7 (7 S); W0-8 (M) | none |
+| W0 | W0-1 to W0-6 (6 S); W0-8 (M); W0-7 deferred (F-8) | none |
 | W1 | W1-0a, W1-0b, W1-1 to W1-5, W1-7 to W1-17, W1-19 (19 S); W1-6, W1-18 (2 M) | none |
 | W2 | W2-1 core (M); W2-2 (S) | the rest of W2-1 (M) |
 | W3 | W3-2, W3-3, W3-7, W3-11, W3-12, W3-13 (6 S); W3-1, W3-5, W3-6, W3-8 (4 M) | W3-4, W3-9, W3-10 (3 M) |
@@ -288,7 +288,7 @@ The core of W2-1 must land before W4-2, W5-1 and W3-11.
 - Add labels: owner-feedback, M2-polish, tech-debt, usability, perf, security-followup.
 - Add a "Known issue" template with fields for evidence: commit, run, logs and hypothesis.
 - Open one issue per U-item and per work item, and link them from 10 §10.1.
-- *Status:* the template is `.github/ISSUE_TEMPLATE/known-issue.yml`. The labels and issues are the owner's (agents may not open issues); until they exist, 10 §10.1 says the items are to be tracked there.
+- *Status:* deferred by the owner on 2026-10-12 (future list F-8). The template `.github/ISSUE_TEMPLATE/known-issue.yml` exists; the labels and issues are not created, and this plan tracks the items instead (10 §10.1, 09 §9.1).
 - Effort S.
 
 **W0-8 Spec corrections that need no code.** These are the §5 revisions marked *correction*:
@@ -1266,6 +1266,7 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
 - **F-5 "Clear the console when a run starts".** M3, if D5 chooses (c).
 - **F-6 A toolbox block-size setting (S/M/L).** Later (D9).
 - **F-7 A build counts as up to date when its generated files are identical.** U5-e, M5. Until then, editing a parked block makes the next Run recompile.
+- **F-8 The issue tracker and the upstream reports.** Deferred by the owner on 2026-10-12: the labels and one issue per U-item and work item (W0-7), and filing the drafts in `docs/plans/upstream/` with Blockly and blockly-samples. Until then this plan and the roadmap's status notes track the work.
 
 ### M3 work moved out of M2
 

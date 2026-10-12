@@ -3,7 +3,8 @@
 Defects found in our dependencies while working on Blocks2Cpp, written up as
 reports for their projects. The agents of the M2 polish wave may not open
 issues on GitHub, so the owner files each report and records its link in the
-table and in the code that works around the defect. Once upstream ships a
+table and in the code that works around the defect. Filing is deferred for
+now (owner, 2026-10-12; plan F-8). Once upstream ships a
 fix, the workaround is removed (ADR-0014).
 
 | Report | Project | Worked around in | Filed |
