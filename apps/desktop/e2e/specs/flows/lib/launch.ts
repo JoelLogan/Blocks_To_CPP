@@ -8,7 +8,8 @@
  * scripts, the drivers' logs and the test's project files) and starts the app as often as the test
  * asks, one at a time, each with its own `tauri-driver`, dialog script and environment. When the
  * test finishes, a failed test's artifacts are saved as `launchApp` saves them, the Trusted Types
- * counts of the last app are reported, the app is closed and the folder removed.
+ * counts of the last app are reported, the app is closed and the folder removed. Each launch runs
+ * the long-task recorder from its readiness until it ends (quit, killed or its window closed).
  *
  * The harness's own pieces are reused: `TauriDriver`, `HookClient`, the settings and the app's
  * environment, the artifact files and `waitUntilReady`.
@@ -33,6 +34,7 @@ import {
 import { TauriDriver } from '../../../support/driver';
 import { appEnvironment, harnessSettings } from '../../../support/env';
 import { HookClient } from '../../../support/hook';
+import { finishLongTaskRecorder, startLongTaskRecorder } from '../../../support/longtasks';
 import { sleep, waitFor, withTimeout } from '../../../support/wait';
 import { crashProcess, findAppProcess, waitForProcessEnd } from './processes';
 import { requestWindowClose } from './window';
@@ -166,20 +168,43 @@ class Launch implements FlowApp {
   readonly folders: FlowFolders;
   readonly launch: number;
   readonly #driverProcess: TauriDriver;
+  readonly #test: string;
   #end: AppEnd = 'running';
   #pid: number | null = null;
+  #recording = false;
 
   constructor(
     session: WebDriver,
     driverProcess: TauriDriver,
     folders: FlowFolders,
     launch: number,
+    test: string,
   ) {
     this.driver = session;
     this.hook = new HookClient(session);
     this.#driverProcess = driverProcess;
     this.folders = folders;
     this.launch = launch;
+    this.#test = test;
+  }
+
+  /** Starts the long-task recorder (../../../support/longtasks.ts) once the window is ready. */
+  async recordLongTasks(): Promise<void> {
+    this.#recording = true;
+    await startLongTaskRecorder(this.driver);
+  }
+
+  /** Saves the long-task record of this launch, before it ends (once; later calls do nothing). */
+  async saveLongTasks(): Promise<void> {
+    if (!this.#recording) {
+      return;
+    }
+    this.#recording = false;
+    await finishLongTaskRecorder(this.driver, {
+      root: this.settings.artifacts,
+      test: this.#test,
+      launch: this.launch,
+    });
   }
 
   get root(): string {
@@ -212,6 +237,7 @@ class Launch implements FlowApp {
     if (this.#end !== 'running') {
       return;
     }
+    await this.saveLongTasks();
     const pid = await this.pid().catch(() => null);
     this.#end = 'quit';
     await withTimeout(this.driver.quit(), QUIT_TIMEOUT_MS, 'the WebDriver session to end').catch(
@@ -230,6 +256,7 @@ class Launch implements FlowApp {
     if (this.#end !== 'running') {
       throw new Error(`The app is not running (${this.#end})`);
     }
+    await this.saveLongTasks();
     const pid = await this.pid();
     this.#end = 'killed';
     await crashProcess(pid);
@@ -243,6 +270,7 @@ class Launch implements FlowApp {
     if (this.#end !== 'running') {
       throw new Error(`The app is not running (${this.#end})`);
     }
+    await this.saveLongTasks();
     await requestWindowClose(await this.pid());
   }
 
@@ -430,9 +458,10 @@ export class FlowSession {
         { cause: error },
       );
     }
-    const app = new Launch(session, driverProcess, this.folders, launch);
+    const app = new Launch(session, driverProcess, this.folders, launch, this.#test);
     this.#current = app;
     await waitUntilReady(app);
+    await app.recordLongTasks();
     return app;
   }
 
@@ -443,6 +472,8 @@ export class FlowSession {
     const dir = failed ? artifactDir(settings.artifacts, this.#test) : null;
     try {
       if (app !== null && app.end === 'running') {
+        // First, so that reading the failure's artifacts is not part of the record.
+        await app.saveLongTasks();
         if (dir !== null) {
           await saveFailureArtifacts(app, dir);
         }

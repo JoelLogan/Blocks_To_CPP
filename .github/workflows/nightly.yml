@@ -10,10 +10,13 @@
 # - e2e: every end-to-end flow and the visual diff of the block canvas, on Linux and Windows;
 # - e2e-security: the E2E security tests (docs/spec/08-security.md §8.13 "Nightly"), both systems;
 # - bench: the benchmarks (docs/spec/09-quality-and-delivery.md §9.2): criterion on the native
-#   pipeline and, through the E2E harness, cold start, the preview at 1,000 blocks and dragging
-#   in a 5,000-block workspace. tools/bench-compare.py compares the medians with the baseline (the
+#   pipeline and, through the E2E harness, cold start, the preview and edits at 1,000 blocks,
+#   selecting blocks at 1,000 blocks, the guessing game's selections and edits, and dragging in a
+#   5,000-block workspace. tools/bench-compare.py compares the medians with the baseline (the
 #   last 5 scheduled runs on this system, kept in the Actions cache) and fails at more than 10%
-#   worse; until 5 runs are kept it only reports.
+#   worse; until 5 runs are kept it only reports. A slowdown recorded in
+#   apps/desktop/e2e/bench/accepted.json restarts that metric's history instead of failing. Pull
+#   requests are gated by the A/B job (bench-ab.yml).
 # The full OSV scan of the default branch runs daily in osv-scanner.yml and is not repeated here.
 name: Nightly
 
@@ -548,12 +551,14 @@ jobs:
         shell: bash
         run: apps/desktop/e2e/scripts/show-logs.sh "$B2C_E2E_ARTIFACTS"
 
-      # The Trusted Types trial (docs/spec/08-security.md §8.8) and the visual diff, as in desktop.yml.
-      - name: Write the Trusted Types and visual diff summaries
+      # The Trusted Types trial (docs/spec/08-security.md §8.8), the longest main-thread tasks
+      # (report-only, docs/spec/09-quality-and-delivery.md §9.2) and the visual diff, as in
+      # desktop.yml.
+      - name: Write the Trusted Types, long-task and visual diff summaries
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          for summary in trusted-types.md visual/visual-diff.md; do
+          for summary in trusted-types.md long-tasks.md visual/visual-diff.md; do
             if [ -f "$B2C_E2E_ARTIFACTS/$summary" ]; then
               cat "$B2C_E2E_ARTIFACTS/$summary" >> "$GITHUB_STEP_SUMMARY"
             else
@@ -713,15 +718,17 @@ jobs:
         shell: bash
         run: apps/desktop/e2e/scripts/show-logs.sh "$B2C_E2E_ARTIFACTS"
 
-      - name: Write the Trusted Types summary
+      - name: Write the Trusted Types and long-task summaries
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          if [ -f "$B2C_E2E_ARTIFACTS/trusted-types.md" ]; then
-            cat "$B2C_E2E_ARTIFACTS/trusted-types.md" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "No Trusted Types report was written." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          for summary in trusted-types.md long-tasks.md; do
+            if [ -f "$B2C_E2E_ARTIFACTS/$summary" ]; then
+              cat "$B2C_E2E_ARTIFACTS/$summary" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "No $summary was written." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
 
       - name: Upload screenshots and logs
         if: failure()
@@ -736,13 +743,13 @@ jobs:
   # apps/desktop/e2e/bench/README.md): the native pipeline (criterion) first, while the runner is
   # quiet, then the webview benchmarks in the app under test. tools/bench-compare.py compares the
   # medians with the history of this system (the last 5 scheduled runs, kept in the Actions
-  # cache); only a scheduled run without a regression is added to the history.
+  # cache); only a scheduled run without an unaccepted regression is added to the history.
   bench:
     name: Benchmarks (${{ matrix.os }})
     needs: e2e-app
     if: ${{ !cancelled() && needs.e2e-app.result != 'skipped' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 75
+    timeout-minutes: 110
     permissions:
       contents: read # check out the repository
     strategy:
@@ -863,8 +870,9 @@ jobs:
         shell: pwsh
         run: ./apps/desktop/e2e/scripts/msedgedriver.ps1 -OutDir (Join-Path $env:RUNNER_TEMP 'msedgedriver')
 
-      # Cold start (10 launches), the preview at 1,000 blocks and dragging at 5,000 blocks, one
-      # results file per metric in B2C_BENCH_OUT.
+      # Cold start (10 launches), the preview and edits at 1,000 blocks, selecting at 1,000 blocks,
+      # the guessing game and dragging at 5,000 blocks, one results file per metric in
+      # B2C_BENCH_OUT.
       - name: Run the webview benchmarks (Linux)
         if: runner.os == 'Linux'
         env:
@@ -892,19 +900,21 @@ jobs:
           restore-keys: bench-history-${{ matrix.system }}-
 
       # Fails at more than 10% worse on a gated metric once it has 5 baselines; otherwise only
-      # reports. The history file gets this run only when nothing regressed.
+      # reports. A metric the acceptance file newly accepts does not fail, and its history
+      # restarts with this run. The history file gets this run only when nothing else regressed.
       - name: Compare with the baseline
         if: ${{ !cancelled() }}
         shell: bash
         run: |
           "$PYTHON" tools/bench-compare.py compare --os "$BENCH_SYSTEM" \
             --results-dir "$B2C_BENCH_OUT" --history "$HISTORY" \
+            --accepted apps/desktop/e2e/bench/accepted.json \
             --update-history "$HISTORY" --run-id "$GITHUB_RUN_ID" --commit "$GITHUB_SHA" \
             --summary "$GITHUB_STEP_SUMMARY"
 
       # Only the scheduled run (always on the default branch) keeps its medians as a baseline,
-      # and only when every benchmark ran and none regressed; manual runs compare without
-      # changing the history.
+      # and only when every benchmark ran and none regressed unaccepted; manual runs compare
+      # without changing the history (an acceptance then applies to the next scheduled run).
       - name: Keep the benchmark history
         if: ${{ success() && github.event_name == 'schedule' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

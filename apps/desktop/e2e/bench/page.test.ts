@@ -3,10 +3,9 @@
  * deterministic event loop: tasks (timers, posted messages, animation frames) run in order on a
  * virtual clock, and a task can take time, as the editor's rendering and preview do.
  */
-import { runInNewContext } from 'node:vm';
-
 import { describe, expect, it } from 'vitest';
 
+import { FakeLoop, runScript as start } from '../support/fake-page';
 import {
   EDIT_SCRIPT,
   type EditResult,
@@ -24,125 +23,12 @@ import {
   QUIET_SCRIPT,
   READY_SCRIPT,
   type ReadyResult,
+  type ClickResult,
+  longestAfterPress,
+  TASKS_KEY,
+  TASKS_SETTLE_SCRIPT,
+  TASKS_START_SCRIPT,
 } from './page';
-
-/** How long the fake loop's own work takes per task, in virtual milliseconds. */
-const TASK_COST_MS = 0.25;
-
-/** A deterministic event loop on a virtual clock. */
-class FakeLoop {
-  now = 0;
-  readonly timeOrigin = 1_700_000_000_000;
-  #queue: { at: number; seq: number; run: () => void }[] = [];
-  #seq = 0;
-  #frames: ((time: number) => void)[] = [];
-  #frameQueued = false;
-  #nextFrame = 0;
-  /** Animation frames come every this many milliseconds; `null`: none at all. */
-  frameEvery: number | null = 16;
-
-  post(run: () => void, delay = 0): void {
-    this.#queue.push({ at: this.now + Math.max(0, delay), seq: this.#seq, run });
-    this.#seq += 1;
-  }
-
-  /** Queues the next animation frame when callbacks wait for one. */
-  #queueFrame(): void {
-    const every = this.frameEvery;
-    if (every === null || this.#frameQueued || this.#frames.length === 0) {
-      return;
-    }
-    this.#frameQueued = true;
-    this.#queue.push({
-      at: Math.max(this.#nextFrame, this.now),
-      seq: this.#seq,
-      run: () => {
-        this.#frameQueued = false;
-        this.#nextFrame = this.now + every;
-        for (const callback of this.#frames.splice(0)) {
-          callback(this.now);
-        }
-      },
-    });
-    this.#seq += 1;
-  }
-
-  /** Runs tasks in order until `until()` holds or nothing is left (or a safety limit). */
-  run(until: () => boolean, limit = 200_000): void {
-    for (let step = 0; step < limit && !until(); step += 1) {
-      this.#queueFrame();
-      let next: { at: number; seq: number; run: () => void } | undefined;
-      for (const task of this.#queue) {
-        if (
-          next === undefined ||
-          task.at < next.at ||
-          (task.at === next.at && task.seq < next.seq)
-        ) {
-          next = task;
-        }
-      }
-      if (next === undefined) {
-        return;
-      }
-      this.#queue.splice(this.#queue.indexOf(next), 1);
-      this.now = Math.max(this.now, next.at);
-      next.run();
-      this.now += TASK_COST_MS;
-    }
-  }
-
-  /** The globals a page script sees. */
-  globals(extra: Record<string, unknown> = {}): Record<string, unknown> {
-    const post = (run: () => void, delay = 0): void => {
-      this.post(run, delay);
-    };
-    /** A message channel whose messages are tasks of this loop. */
-    class FakeChannel {
-      readonly port1: { onmessage: (() => void) | null; close: () => void } = {
-        onmessage: null,
-        close: () => {
-          this.closed = true;
-        },
-      };
-      readonly port2 = {
-        postMessage: () => {
-          post(() => {
-            if (!this.closed) {
-              this.port1.onmessage?.();
-            }
-          });
-        },
-      };
-      closed = false;
-    }
-    return {
-      performance: { now: () => this.now, timeOrigin: this.timeOrigin },
-      setTimeout: (run: () => void, ms = 0) => {
-        post(run, ms);
-        return 0;
-      },
-      requestAnimationFrame: (callback: (time: number) => void) => {
-        this.#frames.push(callback);
-        return this.#frames.length;
-      },
-      MessageChannel: FakeChannel,
-      ...extra,
-    };
-  }
-}
-
-/** Runs a page script as WebDriver does: a function body called with the arguments. */
-function start(
-  script: string,
-  globals: Record<string, unknown>,
-  args: unknown[],
-  done?: (value: unknown) => void,
-): unknown {
-  const body = runInNewContext(`(function () {${script}})`, globals) as (
-    ...values: unknown[]
-  ) => unknown;
-  return done === undefined ? body(...args) : body(...args, done);
-}
 
 describe('READY_SCRIPT', () => {
   function page(loop: FakeLoop, readyAt: number) {
@@ -221,10 +107,21 @@ describe('PAGE_SCRIPT', () => {
   });
 });
 
-/** A fake editor: an insertion re-renders, then (after the debounce) the preview runs. */
+/**
+ * A fake editor: an insertion (taking `insertMs` itself) re-renders, then (after the debounce)
+ * the preview runs, and then, `afterMs` later, a task of `panelMs` updates the C++ panel.
+ */
 function editor(
   loop: FakeLoop,
-  options: { renderMs: number; previewMs: number; failInsert?: boolean; neverPreview?: boolean },
+  options: {
+    renderMs: number;
+    previewMs: number;
+    insertMs?: number;
+    panelMs?: number;
+    afterMs?: number;
+    failInsert?: boolean;
+    neverPreview?: boolean;
+  },
 ) {
   let code = 'int main() {}';
   const hook = {
@@ -232,6 +129,7 @@ function editor(
       if (options.failInsert === true) {
         throw new Error('Block b9 has no input BODY');
       }
+      loop.now += options.insertMs ?? 0;
       // Blockly renders in a later task; the change event starts the 50 ms debounce.
       loop.post(() => {
         loop.now += options.renderMs;
@@ -240,6 +138,9 @@ function editor(
         loop.post(() => {
           loop.now += options.previewMs;
           code = `int main() { ${blocks.map((block) => block.text).join(' ')} }`;
+          if (options.panelMs !== undefined) {
+            loop.busy(options.panelMs, options.afterMs ?? 0);
+          }
         }, options.renderMs + 50);
       }
     },
@@ -253,12 +154,22 @@ function edit(
   window: Record<string, unknown>,
   longTaskMs = 4,
   timeoutMs = 30_000,
+  settleMs = 0,
 ): EditResult | null {
   let result: EditResult | null = null;
   start(
     EDIT_SCRIPT,
     loop.globals({ window }),
-    ['__B2C_E2E__', 'b0', 'BODY', [{ text: 'marker 1' }], 'marker 1', timeoutMs, longTaskMs],
+    [
+      '__B2C_E2E__',
+      'b0',
+      'BODY',
+      [{ text: 'marker 1' }],
+      'marker 1',
+      timeoutMs,
+      longTaskMs,
+      settleMs,
+    ],
     (value) => {
       result = value as EditResult;
     },
@@ -313,6 +224,62 @@ describe('EDIT_SCRIPT', () => {
     expect(result).toEqual({ kind: 'timeout' });
   });
 
+  it('stops at the preview without a settle time, whatever follows it', () => {
+    const loop = new FakeLoop();
+    const window = editor(loop, { renderMs: 300, previewMs: 90, panelMs: 200, afterMs: 5 });
+    const result = edit(loop, window);
+    expect(result?.kind).toBe('seen');
+    if (result?.kind !== 'seen') {
+      return;
+    }
+    expect(result.settled).toBe(result.seen);
+    expect(result.longest?.ms).toBeGreaterThanOrEqual(300);
+    expect(result.longest?.ms).toBeLessThan(301);
+  });
+
+  it('with a settle time, waits for the work after the preview and finds the longest task', () => {
+    const loop = new FakeLoop();
+    const window = editor(loop, {
+      renderMs: 300,
+      previewMs: 90,
+      insertMs: 40,
+      panelMs: 450,
+      afterMs: 5,
+    });
+    const result = edit(loop, window, 4, 30_000, 200);
+    expect(result?.kind).toBe('seen');
+    if (result?.kind !== 'seen') {
+      return;
+    }
+    // The preview task is still found, and the C++ panel's update is part of the settled time.
+    expect(previewTask(result)?.ms).toBeGreaterThanOrEqual(90);
+    expect(previewTask(result)?.ms).toBeLessThan(91);
+    expect(result.settled - result.seen).toBeGreaterThanOrEqual(5 + 450);
+    expect(result.settled - result.seen).toBeLessThan(5 + 450 + 5);
+    expect(result.longest?.ms).toBeGreaterThanOrEqual(450);
+    expect(result.longest?.ms).toBeLessThan(451);
+    // It called back once the page had been quiet for the settle time, not much later.
+    expect(loop.now - result.settled).toBeGreaterThanOrEqual(200);
+    expect(loop.now - result.settled).toBeLessThan(210);
+  });
+
+  it('counts the insertion itself as a task', () => {
+    const loop = new FakeLoop();
+    const window = editor(loop, { renderMs: 10, previewMs: 10, insertMs: 700 });
+    const result = edit(loop, window, 4, 30_000, 100);
+    expect(result?.kind === 'seen' ? result.longest?.ms : null).toBeGreaterThanOrEqual(700);
+  });
+
+  it('times out when the page never settles', () => {
+    const loop = new FakeLoop();
+    const window = editor(loop, { renderMs: 10, previewMs: 10 });
+    // A task of 50 ms every 100 ms: never 200 ms without a long task.
+    for (let index = 0; index < 50; index += 1) {
+      loop.busy(50, 100 * index);
+    }
+    expect(edit(loop, window, 4, 1_000, 200)).toEqual({ kind: 'timeout' });
+  });
+
   it('reports a missing hook', () => {
     const loop = new FakeLoop();
     expect(edit(loop, {})).toEqual({
@@ -323,7 +290,14 @@ describe('EDIT_SCRIPT', () => {
 });
 
 describe('previewTask', () => {
-  const seen = { kind: 'seen', begin: 0, inserted: 1, seen: 1_000 } as const;
+  const seen = {
+    kind: 'seen',
+    begin: 0,
+    inserted: 1,
+    seen: 1_000,
+    settled: 1_000,
+    longest: null,
+  } as const;
 
   it('accepts a task between the insertion and the preview', () => {
     expect(previewTask({ ...seen, task: { start: 800, ms: 200 } })).toEqual({
@@ -337,6 +311,126 @@ describe('previewTask', () => {
     expect(previewTask({ ...seen, task: { start: 0, ms: 50 } })).toBeNull();
     expect(previewTask({ ...seen, task: { start: 900, ms: 200 } })).toBeNull();
     expect(previewTask({ ...seen, task: { start: 900, ms: 0 } })).toBeNull();
+  });
+});
+
+/** A fake window whose pointer presses run the capture listeners, and a press that takes time. */
+function clickPage(loop: FakeLoop) {
+  const listeners = new Map<string, Set<() => void>>();
+  const window: Record<string, unknown> = {
+    addEventListener: (type: string, listener: () => void) => {
+      const set = listeners.get(type) ?? new Set();
+      set.add(listener);
+      listeners.set(type, set);
+    },
+    removeEventListener: (type: string, listener: () => void) => {
+      listeners.get(type)?.delete(listener);
+    },
+  };
+  const globals = loop.globals({ window });
+  /** A press at `delay` whose handling (selecting a block) takes `ms`. */
+  const press = (delay: number, ms: number) => {
+    loop.post(() => {
+      for (const listener of listeners.get('pointerdown') ?? []) {
+        listener();
+      }
+      loop.now += ms;
+    }, delay);
+  };
+  const settle = (settleMs: number, timeoutMs: number): ClickResult | null => {
+    let result: ClickResult | null = null;
+    start(TASKS_SETTLE_SCRIPT, globals, [TASKS_KEY, settleMs, timeoutMs], (value) => {
+      result = value as ClickResult;
+    });
+    loop.run(() => result !== null);
+    return result;
+  };
+  return {
+    window,
+    listeners,
+    press,
+    settle,
+    startRecorder: () => start(TASKS_START_SCRIPT, globals, [TASKS_KEY, 4]),
+  };
+}
+
+describe('TASKS_START_SCRIPT and TASKS_SETTLE_SCRIPT', () => {
+  it('time the tasks a click starts until the page settles', () => {
+    const loop = new FakeLoop();
+    const page = clickPage(loop);
+    expect(page.startRecorder()).toBe(true);
+    expect(page.startRecorder()).toBe(false);
+    loop.busy(40, 20); // before the press: not the click's
+    page.press(100, 15); // the press's own task
+    loop.busy(160, 130); // the toolbox's rebuild
+    loop.busy(30, 330); // a follow-up
+    const result = page.settle(300, 10_000);
+    expect(result?.kind).toBe('settled');
+    if (result?.kind !== 'settled') {
+      return;
+    }
+    expect(result.pressed).toBeGreaterThanOrEqual(100);
+    expect(result.settled).toBeGreaterThanOrEqual(360);
+    expect(result.settled).toBeLessThan(362);
+    expect(loop.now - result.settled).toBeGreaterThanOrEqual(300);
+    const longest = longestAfterPress(result);
+    expect(longest?.ms).toBeGreaterThanOrEqual(160);
+    expect(longest?.ms).toBeLessThan(161);
+    // Stopped: the listener is gone and the key deleted.
+    expect(page.listeners.get('pointerdown')?.size).toBe(0);
+    expect(Object.prototype.hasOwnProperty.call(page.window, TASKS_KEY)).toBe(false);
+  });
+
+  it('counts the task that handled the press, which began before it', () => {
+    const loop = new FakeLoop();
+    const page = clickPage(loop);
+    page.startRecorder();
+    page.press(50, 220);
+    const result = page.settle(100, 10_000);
+    expect(
+      result?.kind === 'settled' ? longestAfterPress(result)?.ms : null,
+    ).toBeGreaterThanOrEqual(220);
+  });
+
+  it('says when no press came, or the page never settled', () => {
+    const quiet = new FakeLoop();
+    const none = clickPage(quiet);
+    none.startRecorder();
+    expect(none.settle(100, 500)).toEqual({ kind: 'no-press' });
+
+    const busy = new FakeLoop();
+    const page = clickPage(busy);
+    page.startRecorder();
+    page.press(10, 5);
+    for (let index = 0; index < 40; index += 1) {
+      busy.busy(30, 20 + 50 * index);
+    }
+    expect(page.settle(100, 1_000)).toEqual({ kind: 'busy' });
+  });
+
+  it('needs a running recorder', () => {
+    const loop = new FakeLoop();
+    expect(clickPage(loop).settle(100, 500)).toEqual({
+      kind: 'error',
+      message: 'No task recorder is running',
+    });
+  });
+});
+
+describe('longestAfterPress', () => {
+  it('takes the longest task that ended after the press', () => {
+    const result = {
+      kind: 'settled',
+      pressed: 100,
+      settled: 500,
+      tasks: [
+        { start: 10, ms: 80 },
+        { start: 95, ms: 20 },
+        { start: 200, ms: 50 },
+      ],
+    } as const;
+    expect(longestAfterPress(result)).toEqual({ start: 200, ms: 50 });
+    expect(longestAfterPress({ ...result, tasks: [{ start: 0, ms: 50 }] })).toBeNull();
   });
 });
 

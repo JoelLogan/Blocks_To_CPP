@@ -113,6 +113,48 @@ export function panTowards(point: E2ePoint, rect: Rect): E2ePoint {
   };
 }
 
+/**
+ * How far to scroll so that `point` comes to the same comfortable place as {@link panTowards}, in
+ * one go: scrolling through the test hook has no drag's reach to stay within.
+ */
+export function scrollTowards(point: E2ePoint, rect: Rect): E2ePoint {
+  return {
+    x: Math.round(rect.left + (rect.right - rect.left) / 3 - point.x),
+    y: Math.round(rect.top + ((rect.bottom - rect.top) * 2) / 5 - point.y),
+  };
+}
+
+/** What {@link scrollIntoView} scrolls with: the test hook's `scrollCanvasBy`. */
+export interface CanvasScroller {
+  scrollCanvasBy(dx: number, dy: number): Promise<void>;
+}
+
+/**
+ * Scrolls the canvas through the test hook until the point `locate` gives is well inside the
+ * visible canvas, and returns that point. Unlike {@link bringIntoView} it keeps the focus and the
+ * selection (dragging the background selects nothing), and it reaches any part of the canvas:
+ * `locate` may give a point off screen.
+ */
+export async function scrollIntoView(
+  driver: WebDriver,
+  scroller: CanvasScroller,
+  locate: () => Promise<E2ePoint>,
+): Promise<E2ePoint> {
+  let point = await locate();
+  for (let scroll = 0; scroll < MAX_PANS; scroll += 1) {
+    const rect = await visibleCanvas(driver);
+    if (wellInside(point, rect)) {
+      return point;
+    }
+    const delta = scrollTowards(point, rect);
+    await scroller.scrollCanvasBy(delta.x, delta.y);
+    // Blockly moves the canvas at once; the page paints it in its next frame.
+    await sleep(100);
+    point = await locate();
+  }
+  throw new Error(`Could not scroll (${String(point.x)}, ${String(point.y)}) into view`);
+}
+
 /** Pans the canvas by `delta` by dragging its empty background. */
 export async function panCanvas(driver: WebDriver, delta: E2ePoint): Promise<void> {
   const rect = await visibleCanvas(driver);

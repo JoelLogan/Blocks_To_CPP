@@ -1,0 +1,18 @@
+{
+  "format": "blocks2cpp/bench-accepted",
+  "formatVersion": 1,
+  "accepted": [
+    {
+      "metric": "webview.edit-1000.p95",
+      "system": "linux",
+      "commit": "bd3dbaae72e3c8af389205a95bbfbee5a20ab42e",
+      "reason": "Redefined (W2-1): C++ panel shown, timed until the page settles; was until the C++ was in the state"
+    },
+    {
+      "metric": "webview.edit-1000.p95",
+      "system": "windows",
+      "commit": "bd3dbaae72e3c8af389205a95bbfbee5a20ab42e",
+      "reason": "Redefined (W2-1): C++ panel shown, timed until the page settles; was until the C++ was in the state"
+    }
+  ]
+}

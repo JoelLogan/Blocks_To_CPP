@@ -85,6 +85,11 @@ export class HookClient {
     return this.call('selectBlock', id);
   }
 
+  /** Scrolls the canvas by `dx`, `dy` CSS pixels, keeping the focus and the selection. */
+  scrollCanvasBy(dx: number, dy: number): Promise<void> {
+    return this.call('scrollCanvasBy', dx, dy);
+  }
+
   code(): Promise<string> {
     return this.call('code');
   }

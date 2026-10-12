@@ -13,6 +13,7 @@ import { REPOSITORY_ROOT } from '../support/env';
 import {
   type BenchMetric,
   benchOs,
+  benchSamples,
   benchOutDir,
   BenchResultsError,
   checkMetric,
@@ -69,6 +70,18 @@ describe('benchOutDir', () => {
   });
 });
 
+describe('benchSamples', () => {
+  it('is B2C_BENCH_SAMPLES, a whole number from 1 to 1,000, or 10', () => {
+    expect(benchSamples({})).toBe(MIN_SAMPLES);
+    expect(benchSamples({ B2C_BENCH_SAMPLES: '' })).toBe(MIN_SAMPLES);
+    expect(benchSamples({ B2C_BENCH_SAMPLES: '5' })).toBe(5);
+    expect(benchSamples({ B2C_BENCH_SAMPLES: '1000' })).toBe(1_000);
+    for (const bad of ['0', '1001', '2.5', '-3', 'ten', ' 5']) {
+      expect(() => benchSamples({ B2C_BENCH_SAMPLES: bad }), bad).toThrow(BenchResultsError);
+    }
+  });
+});
+
 describe('checkMetric', () => {
   it('accepts a good metric', () => {
     expect(() => {
@@ -116,9 +129,22 @@ describe('resultsJson and writeMetric', () => {
 
   it('writes <name>.json into the folder', () => {
     const folder = tempFolder();
-    const file = writeMetric(metric, folder, 'windows');
+    const file = writeMetric(metric, folder, 'windows', {});
     expect(file).toBe(path.join(folder, 'webview.cold-start.json'));
     expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ os: 'windows' });
+  });
+
+  it('writes as few samples as a run takes (an A/B run), but no fewer', () => {
+    const folder = tempFolder();
+    const five = { ...metric, samples: metric.samples.slice(0, 5) };
+    expect(() => writeMetric(five, folder, 'linux', {})).toThrow(BenchResultsError);
+    expect(writeMetric(five, folder, 'linux', { B2C_BENCH_SAMPLES: '5' })).toBe(
+      path.join(folder, 'webview.cold-start.json'),
+    );
+    const four = { ...metric, samples: metric.samples.slice(0, 4) };
+    expect(() => writeMetric(four, folder, 'linux', { B2C_BENCH_SAMPLES: '5' })).toThrow(
+      BenchResultsError,
+    );
   });
 
   it.skipIf(!python)('produces files that tools/bench-compare.py accepts', () => {

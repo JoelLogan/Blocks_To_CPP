@@ -1,22 +1,32 @@
 # Benchmarks
 
 The performance benchmarks of [09 §9.2](../../../../docs/spec/09-quality-and-delivery.md#92-testing-strategy)
-and their regression gate. M2 measures and gates regressions; meeting the absolute targets N2–N4 of
-[01 §1.4](../../../../docs/spec/01-overview.md) is M5's exit. The nightly `bench` job of
+and their regression gate. M2 measures and gates regressions; meeting the absolute targets N2–N4
+and N12 of [01 §1.4](../../../../docs/spec/01-overview.md) is M5's exit, and absolute budgets on
+small programs are only reported until M3. The nightly `bench` job of
 [`nightly.yml`](../../../../.github/workflows/nightly.yml) runs them on Ubuntu (under `xvfb`) and
-Windows and compares them with the baseline.
+Windows and compares them with the baseline; the A/B job of
+[`bench-ab.yml`](../../../../.github/workflows/bench-ab.yml) compares a pull request's build with
+its base's on one runner.
 
-| Metric                                            | What is measured                                                                                                                                                                                                       | Gated | Target        |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------- |
-| `native.pipeline.preview`                         | criterion: load, resolve, analyse and generate the 1,000-block document natively, as the editor's WebAssembly core runs them                                                                                           | yes   | N4            |
-| `native.pipeline.{load,resolve,analyze,generate}` | criterion: each stage on its own                                                                                                                                                                                       | no    |               |
-| `webview.cold-start`                              | From the WebDriver session request (which starts the app) to the readiness marker: the start page shown, Blockly's workspace injected and the toolbox rendered; 10 starts with fresh profiles, after one warm-up start | yes   | N2: < 2 s     |
-| `webview.preview-1000.p95`                        | The preview pipeline's task in the app at 1,000 blocks: reading the canvas, `canonical()` and `preview()` in WebAssembly, storing the result; p95 of 10 edits per sample, 10 samples                                   | yes   | N4: < 50 ms   |
-| `webview.edit-1000.p95`                           | From an edit to its C++ in the editor's state, less the pipeline's 50 ms debounce (adds Blockly's re-rendering of the edited stack)                                                                                    | no    |               |
-| `webview.drag-5000.frame-p95`                     | Frame times while a block is dragged away and back with real pointer input in a 5,000-block workspace; p95 of one pair of drags per sample, 10 samples after a warm-up pair                                            | yes   | N3: ≤ 33.3 ms |
+| Metric                                            | What is measured                                                                                                                                                                                                                     | Gated | Target        |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | ------------- |
+| `native.pipeline.preview`                         | criterion: load, resolve, analyse and generate the 1,000-block document natively, as the editor's WebAssembly core runs them                                                                                                         | yes   | N4            |
+| `native.pipeline.{load,resolve,analyze,generate}` | criterion: each stage on its own                                                                                                                                                                                                     | no    |               |
+| `webview.cold-start`                              | From the WebDriver session request (which starts the app) to the readiness marker: the start page shown, Blockly's workspace injected and the toolbox rendered; 10 starts with fresh profiles, after one warm-up start               | yes   | N2: < 2 s     |
+| `webview.preview-1000.p95`                        | The preview pipeline's task in the app at 1,000 blocks, C++ panel folded: reading the canvas, `canonical()` and `preview()` in WebAssembly, storing the result; p95 of 10 edits per sample, 10 samples                               | yes   | N4: < 50 ms   |
+| `webview.edit-1000.p95`                           | From an edit until the page has finished what it started (Blockly's re-rendering of the edited stack, the preview, the C++ panel's update), with the C++ panel shown, less the pipeline's 50 ms debounce; p95 of 10 edits per sample | yes   | N12           |
+| `webview.select-1000.max-task`                    | The longest main-thread task after a click that selects a block at 1,000 blocks, in 8 scopes in turn (the toolbox lists what each sees); one click per sample, 10 samples after a warm-up click                                      | yes   | N12           |
+| `webview.guessing-game.select.max-task`           | The guessing game (40 blocks, C++ panel shown): the longest task after a click that selects a block in another scope; one click per sample                                                                                           | no    | N12: ≤ 50 ms  |
+| `webview.guessing-game.edit.max-task`             | The guessing game: the longest task after a print is added to `main`, until the page has finished what it started; one edit per sample                                                                                               | no    | N12: ≤ 50 ms  |
+| `webview.drag-5000.frame-p95`                     | Frame times while a block is dragged away and back with real pointer input in a 5,000-block workspace; p95 of one pair of drags per sample, 10 samples after a warm-up pair                                                          | yes   | N3: ≤ 33.3 ms |
 
 Every timing of the webview benchmarks is taken inside the page with its own clock
-([`page.ts`](page.ts)), so WebDriver's round trips are not part of any measurement:
+([`page.ts`](page.ts)), so WebDriver's round trips are not part of any measurement. A heartbeat (a
+message the page posts to itself again and again) finds the page's long tasks: between two beats
+the page ran something else, a task or its rendering, and a gap of 4 ms or more counts. Each
+benchmark takes 10 samples, or `B2C_BENCH_SAMPLES` (the A/B runs take fewer per run and add them
+up).
 
 - **Cold start** ([`launch.ts`](launch.ts)): the time starts just before the session request and
   ends at the page clock's time (its time origin plus `performance.now()`) when the readiness marker
@@ -30,12 +40,29 @@ Every timing of the webview benchmarks is taken inside the page with its own clo
   a start slower. When the marker already holds at the first look at a document, or when its wait
   begins, the time is an upper bound. The benchmark's summary line counts those starts, and the
   restarted ones.
-- **Preview** ([`preview.bench.e2e.ts`](preview.bench.e2e.ts)): a print with a unique text is added
-  at the end of `main` through the test hook, and the page checks the hook's `code()` until the
-  text is there. A heartbeat (a message the page posts to itself again and again) finds the long
-  tasks meanwhile; the first one after which the text is in the code is the pipeline's run, which
-  happens in one task because its WebAssembly calls are synchronous. The print is then deleted with
-  the keyboard (selected, then _Delete_), so every edit is made to the same 1,000 blocks.
+- **Preview and edits** ([`preview.bench.e2e.ts`](preview.bench.e2e.ts)): a print with a unique
+  text is added at the end of `main` through the test hook, and the page checks the hook's
+  `code()` until the text is there ([`interaction.ts`](interaction.ts) `timedEdit`). With the C++
+  panel folded, the first long task after which the text is in the code is the pipeline's run,
+  which happens in one task because its WebAssembly calls are synchronous. Then, with the panel
+  shown, the page also waits until it has run no long task for 300 ms, and the edit lasts until
+  the end of the last one. The print is then deleted with the keyboard (selected, then _Delete_),
+  so every edit is made to the same 1,000 blocks; in the second phase the page is also left to
+  settle afterwards, outside the timing.
+- **Selecting** ([`select.bench.e2e.ts`](select.bench.e2e.ts), the guessing game's in
+  [`guessing.bench.e2e.ts`](guessing.bench.e2e.ts)): the blocks of [`targets.ts`](targets.ts) are
+  clicked in turn with real pointer input, each in another scope than the one before, so every
+  click changes the selection and what the toolbox lists. Before each click, outside the timing,
+  the canvas is scrolled through the test hook (`scrollCanvasBy`, which keeps the selection, unlike
+  a drag of the background) until the block is well inside the visible canvas, and the page is left
+  to settle (10 frames in a row within 50 ms). The page times its tasks from the press until it
+  has run no long task for 300 ms ([`interaction.ts`](interaction.ts) `timedClick`); the longest
+  task that ended after the press is the sample. The block must not be selected before and must be
+  selected after. At 1,000 blocks the C++ panel is folded, as in the drag benchmark, to leave the
+  canvas room on a small window.
+- **Guessing game edits** ([`guessing.bench.e2e.ts`](guessing.bench.e2e.ts)): as the second phase
+  of the preview benchmark, in the example `examples/guessing_game.b2c`; the sample is the longest
+  task from the insertion (which is part of it) until the page has settled.
 - **Drag** ([`drag.bench.e2e.ts`](drag.bench.e2e.ts)): a separate `func.define` beside `main` is
   dragged away and back across empty canvas in 60 moves of 16 ms each, and the page records the
   timestamps of the animation frames that run while the pointer drags. Before each drag, outside
@@ -52,6 +79,10 @@ Every timing of the webview benchmarks is taken inside the page with its own clo
   fails the run with where it is on screen, and a drop that loses it with what the page looked
   like (the drag, the window, the elements under the drop point, where the flyout, the zoom
   controls and the trash can are, and the last press and release).
+
+The benchmarks turn off the end-to-end harness's long-task recorder (`launchApp`'s
+`recordLongTasks: false`, see [`../README.md`](../README.md)): they time the page's tasks
+themselves.
 
 ## The generated document
 
@@ -74,7 +105,8 @@ cargo bench -p b2c-core-wasm --bench pipeline -- --quick
 ```
 
 The webview benchmarks need the app under test, `tauri-driver`, `WebKitWebDriver` and `xvfb`, as the
-end-to-end tests do (see [`../README.md`](../README.md)):
+end-to-end tests do (see [`../README.md`](../README.md)); a file name after `--project bench` runs
+only that benchmark (`select.bench`, for example):
 
 ```sh
 B2C_BENCH_OUT=/tmp/b2c-bench WEBKIT_DISABLE_DMABUF_RENDERER=1 xvfb-run -a \
@@ -92,13 +124,18 @@ pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/bench/vitest.benc
 ## The comparison
 
 [`tools/bench-compare.py`](../../../../tools/bench-compare.py) (Python 3, no dependencies) converts
-criterion's samples into a results file and compares a run with the history of its system:
+criterion's samples into a results file and compares a run with the history of its system, or a
+head build's runs with a base build's:
 
 ```sh
 python3 tools/bench-compare.py criterion --dir target/criterion --group pipeline --os linux \
   --gate preview --out /tmp/b2c-bench/native.pipeline.json
 python3 tools/bench-compare.py compare --os linux --results-dir /tmp/b2c-bench \
-  --history history.json [--update-history history.json --run-id ID --commit SHA]
+  --history history.json --accepted apps/desktop/e2e/bench/accepted.json \
+  [--update-history history.json --run-id ID --commit SHA]
+python3 tools/bench-compare.py ab --os linux --base /tmp/ab/base --head /tmp/ab/head \
+  --accepted apps/desktop/e2e/bench/accepted.json --accepted-base base-accepted.json
+python3 tools/bench-compare.py check-accepted apps/desktop/e2e/bench/accepted.json
 python3 tools/bench-compare.py --self-test
 ```
 
@@ -107,13 +144,58 @@ python3 tools/bench-compare.py --self-test
 - A gated metric more than 10% worse fails the run (exit status 1). Until a metric has 5 baselines,
   or for an ungated metric, the comparison is only reported. Unusable input exits with status 2.
 - The table goes to standard output and, with `--summary`, to the job summary.
-- With `--update-history`, a run without a regression is added to the history, which keeps the last
-  5 runs. The nightly job keeps the history of each system in the Actions cache
+- With `--update-history`, a run without an unaccepted regression is added to the history, which
+  keeps the last 5 runs. The nightly job keeps the history of each system in the Actions cache
   (`bench-history-<system>-<run>`), and only a scheduled run (always on the default branch) in which
-  every benchmark ran and none regressed is kept. A manual run compares without changing it.
-- After a deliberate change in performance, delete that system's `bench-history-*` cache entries
-  (_Actions → Caches_); the gate is then informational again until 5 new runs are kept.
+  every benchmark ran and none regressed unaccepted is kept. A manual run compares without changing
+  it.
 
-Results files (`blocks2cpp/bench-results`, one per producer) and the history
-(`blocks2cpp/bench-history`) are JSON with a format tag, checked strictly when read (sizes, names,
-finite non-negative samples, no unknown or duplicate keys); the script's docstring describes both.
+### Intended slowdowns: `accepted.json`
+
+A change that makes a gated metric slower on purpose (a definition that measures more, a feature
+that costs time) records it in [`accepted.json`](accepted.json), one entry per metric and system:
+
+```json
+{
+  "metric": "webview.edit-1000.p95",
+  "system": "linux",
+  "commit": "<the commit whose performance is accepted: 7 to 40 lower-case hex digits>",
+  "reason": "One line: why the slowdown is intended"
+}
+```
+
+- The first nightly run that sees an entry, and has its metric, does not fail on that metric: the
+  metric's history restarts with that run (its older medians are dropped) and the history notes the
+  entry as applied, so it applies once. The metric is then reported until it has 5 new baselines.
+- An A/B run does not fail on a metric that the head's file accepts and the base's file does not:
+  the change under test brings the entry. For an entry added together with the change, `commit` is
+  the head commit that the A/B run measured.
+- Entries stay as a record; one taken out of the file is also forgotten by the history. The
+  history file (format version 2) lists the applied entries; version 1 files are still read.
+
+### A/B runs
+
+The A/B job ([`bench-ab.yml`](../../../../.github/workflows/bench-ab.yml)) gates a pull request
+at once, also for metrics that have no history yet. It runs when the `bench-ab` label is added to a
+pull request (and on each push while it has the label), or by hand with a base and a head ref, the
+benchmarks (`preview`, `select`, `guessing`, `cold-start`, `drag`; by default the first three) and
+the systems (both, Linux or Windows). It builds the app under test from each ref, and then on one
+runner per system [`ab-rounds.sh`](ab-rounds.sh) runs the head's benchmarks against both builds in
+alternating runs (base, head, head, base: 2 rounds of 5 samples, 10 per side), and `bench-compare.py
+ab` compares the head's medians with the base's at 10%. The head's harness measures both builds, so
+a benchmark that needs a newer test hook can be compared only once the base has it.
+
+A change expected to alter a gated metric runs the A/B job on its pull request. W4-2, W5-1 and W3-11
+of the M2 polish wave merge only with a green A/B run attached, or once their metrics have at least
+5 nightly baselines. Locally, with two builds of the app:
+
+```sh
+AB_XVFB=1 apps/desktop/e2e/bench/ab-rounds.sh /tmp/base/blocks2cpp-desktop \
+  /tmp/head/blocks2cpp-desktop /tmp/ab preview.bench select.bench guessing.bench
+python3 tools/bench-compare.py ab --os linux --base /tmp/ab/base --head /tmp/ab/head
+```
+
+Results files (`blocks2cpp/bench-results`, one per producer), the history
+(`blocks2cpp/bench-history`) and the acceptance file (`blocks2cpp/bench-accepted`) are JSON with a
+format tag, checked strictly when read (sizes, names, finite non-negative samples, no unknown or
+duplicate keys); the script's docstring describes them.
