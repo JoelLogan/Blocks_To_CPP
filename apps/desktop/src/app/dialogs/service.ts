@@ -122,6 +122,13 @@ export interface DialogQueue extends DialogService {
    * removes the hook.
    */
   onBeforeShow(hook: () => void): () => void;
+  /**
+   * Runs the {@link DialogQueue.onBeforeShow} hooks now, for what covers the editor without going
+   * through the queue: the console's link dialog, just before it opens. The block editor's
+   * pop-ups close there too, so none is drawn over that dialog (docs/spec/04-user-interface.md
+   * §4.1).
+   */
+  beforeModal(): void;
 }
 
 /** Settles `request` with the result it gets when it is dismissed. */
@@ -205,6 +212,10 @@ export function createDialogQueue(): DialogQueue {
 
   return {
     store,
+
+    beforeModal() {
+      beforeShow();
+    },
 
     onBeforeShow(hook) {
       // A wrapper of its own, so registering the same function twice gives two removable hooks.

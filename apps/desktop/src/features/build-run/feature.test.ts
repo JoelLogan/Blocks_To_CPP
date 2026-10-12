@@ -832,6 +832,35 @@ describe('the run gate', () => {
     unregister();
   });
 
+  it('remembers the compiler the search found for a build that waited for it', async () => {
+    state().actions.setToolchains({ list: [], discovering: true });
+    await run('run.start');
+    state().actions.setToolchains({ list: [toolchainFixture()], discovering: false });
+    await finishBuild(0);
+    backend.runs[0]?.send(exitEvent(0));
+    await settle();
+
+    // Nothing changed: Run again runs the same program without a build or the Build output tab.
+    state().actions.setUi({ bottomTab: 'console' });
+    await run('run.again');
+    expect(backend.builds).toHaveLength(1);
+    expect(backend.runs).toHaveLength(2);
+    expect(backend.runs[1]?.request.buildId).toBe(backend.builds[0]?.buildId);
+    expect(state().ui.bottomTab).toBe('console');
+    backend.runs[1]?.send(exitEvent(0));
+    await settle();
+
+    // Another compiler still builds again.
+    state().actions.setToolchains({
+      list: [
+        toolchainFixture({ selected: false }),
+        toolchainFixture({ id: 'tc_fedcba9876543210', selected: true }),
+      ],
+    });
+    await run('run.again');
+    expect(backend.builds).toHaveLength(2);
+  });
+
   it.each(['run.start', 'build.start'] as const)(
     'shows the setup page when the search the build waited for finds no compiler (%s)',
     async (command) => {

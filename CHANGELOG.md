@@ -300,7 +300,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   nearest analysed statement before or around them.
 - The toolbox shows a renamed variable's or function's new name at once.
 - The `≡` main menu is drawn over the block toolbox and can be clicked across
-  its full width. Opening a dialog first closes the block editor's
+  its full width. Opening a dialog (the console's link dialog too) or a
+  full-window page such as Settings first closes the block editor's
   drop-downs, field editors, context menus and tooltips, which were drawn
   over it.
 - The Debug/Release drop-down is readable in the light GTK theme: the app
@@ -312,9 +313,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   view.
 - A second run no longer writes over the first run's output in the console.
   Each run starts below a "── New run ──" line, with the terminal's modes
-  reset and the cursor where the last run left it.
+  reset and the cursor where the last run left it. On Windows, where each
+  program's pseudoconsole repaints the screen from the top, the console
+  first scrolls what it shows into the scrollback.
 - The console's terminal is fitted inside its box, so the bottom dock no
-  longer scrolls by a few pixels.
+  longer scrolls by a few pixels. A console header taller than a small bottom
+  dock (an open notice) scrolls by itself, so Stop, Run again and Clear stay
+  reachable.
 - _Copied_ (C++ panel, setup page, link dialog) disappears after 3 s and is
   announced on every copy; _Could not copy_ stays until the next attempt.
   The C++ panel's confirmation no longer moves the code.

@@ -43,6 +43,7 @@ import {
   ProblemsPanel,
 } from '../panels';
 import { triggerCommand } from './commands';
+import { dialogs } from './dialogs/instance';
 import { getEditorHandle } from './editor-types';
 import { useAppStore } from './store';
 
@@ -200,6 +201,11 @@ function consoleCleared(): void {
   consoleBridge.cleared();
 }
 
+/** Before the console's link dialog: the block editor's pop-ups close, as before any dialog. */
+function closeEditorPopups(): void {
+  dialogs.beforeModal();
+}
+
 /**
  * The Console tab: the running (or last) program's terminal. The header follows the run slice
  * (state, exit text, elapsed time, the *Running with IDE helpers* and *Process group only*
@@ -236,6 +242,7 @@ export function ConnectedConsolePanel() {
       onRunAgain={runAgain}
       onClear={consoleCleared}
       mode={mode}
+      onBeforeLinkDialog={closeEditorPopups}
       ref={attach}
     />
   );

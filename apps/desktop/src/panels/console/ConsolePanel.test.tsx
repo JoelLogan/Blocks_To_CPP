@@ -321,6 +321,23 @@ describe('ConsolePanel', () => {
     });
   });
 
+  it('says a link dialog is about to open before it shows, so the editor closes its pop-ups', () => {
+    const shownBefore: boolean[] = [];
+    const onBeforeLinkDialog = vi.fn(() => {
+      shownBefore.push(screen.queryByRole('dialog') !== null);
+    });
+    const { terminal } = renderConsole({ onBeforeLinkDialog });
+    act(() => {
+      terminal.options.linkHandler?.activate(new MouseEvent('click'), 'https://example.com/', {
+        start: { x: 1, y: 1 },
+        end: { x: 2, y: 1 },
+      });
+    });
+    expect(onBeforeLinkDialog).toHaveBeenCalledTimes(1);
+    expect(shownBefore).toEqual([false]);
+    expect(screen.getByRole('dialog', { name: 'Link from your program' })).toBeTruthy();
+  });
+
   it('refuses links that are not http or https', () => {
     const { terminal } = renderConsole();
     expect(terminal.options.linkHandler?.allowNonHttpProtocols).toBe(false);

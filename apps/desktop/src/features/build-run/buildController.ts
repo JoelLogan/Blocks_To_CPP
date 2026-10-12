@@ -479,7 +479,11 @@ export class BuildController {
           projectHash,
           config: session.key.config,
         };
-        this.#rememberToolchain(session.buildId, session.key.toolchainId);
+        // A build that waited for the compiler search started without a toolchain; the backend
+        // built with the one the search selected, which is the selected one now (07 §7.2).
+        const toolchainId =
+          session.key.toolchainId ?? selectedToolchain(this.#deps.store.getState())?.id ?? null;
+        this.#rememberToolchain(session.buildId, toolchainId);
       }
       actions.setBuild(patch);
       actions.appendBuildOutput([finishedLine(event.outcome, event.elapsedMs, errorCount)]);

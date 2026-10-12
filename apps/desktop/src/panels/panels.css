@@ -302,7 +302,15 @@
 
 /* Console */
 
+/*
+ * In a short bottom dock an open notice can make the header taller than the panel. The header
+ * then scrolls by itself (the terminal shrinks to nothing), so Stop, Run again and Clear can
+ * always be scrolled to while the dock panel around it never scrolls.
+ */
 .b2c-console-header {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
   font-variant-numeric: tabular-nums;
 }
 
@@ -355,7 +363,8 @@
  * The console scrolls by itself, never the panel around it (04 §4.5). The fit add-on sizes the
  * terminal to its host's whole height minus the padding of xterm's own element, so the padding
  * sits on that element: padding on the host would fit one row too many, which then spilled out
- * and made the dock panel scroll. Nothing may spill out of the host or the console's dock panel.
+ * and made the dock panel scroll. Nothing may spill out of the host or the console's dock panel;
+ * a header taller than the panel scrolls itself (above).
  */
 .b2c-console-terminal {
   flex: 1;
@@ -400,6 +409,7 @@
 .b2c-dialog-overlay {
   position: fixed;
   inset: 0;
+  z-index: 100;
   background: var(--b2c-overlay, rgb(10 14 24 / 45%));
 }
 
@@ -407,6 +417,7 @@
   position: fixed;
   top: 50%;
   left: 50%;
+  z-index: 101;
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   padding: 16px 20px;

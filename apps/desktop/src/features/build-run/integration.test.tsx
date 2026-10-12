@@ -7,6 +7,7 @@
  * (04 §4.5). Vitest runs every test file in its own module graph, so the freeze stays in this file.
  */
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { IPC_VERSION } from '@blocks2cpp/ipc-types';
 import { Terminal } from '@xterm/xterm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -269,6 +270,30 @@ describe('the console between runs', () => {
     expect(shown.buffer).toBe('normal');
     expect(shown.lines[shown.cursor.row - 1]).toBe('third');
     expect(shown.cursor.column).toBe(0);
+  });
+
+  it('on Windows, keeps the earlier run when the pseudoconsole clears the screen and paints from the top', async () => {
+    const env = showConsole();
+    useAppStore.getState().actions.setAppInfo({
+      appVersion: '0.1.0',
+      ipcVersion: IPC_VERSION,
+      platform: 'windows',
+      catalogVersion: '1',
+    });
+    /**
+     * How ConPTY, created without cursor inheritance, starts every program: it hides the cursor,
+     * erases the screen (which xterm.js does without keeping the rows), homes the cursor and
+     * paints the program's first frame from the top-left corner.
+     */
+    const conptyFrame = (text: string) =>
+      `\u001b[?25l\u001b[2J\u001b[m\u001b[H${text}\u001b]0;C:\\game.exe\u0007\u001b[?25h`;
+    // A first run longer than the screen, then one shorter than it.
+    const first = Array.from({ length: env.terminal.rows + 3 }, (_, i) => `first ${String(i + 1)}`);
+    await finishProgram(await startProgram(env), [conptyFrame(`${first.join('\r\n')}\r\n`)]);
+    await finishProgram(await startProgram(env, 'run.again'), [conptyFrame('second\r\n')]);
+    await finishProgram(await startProgram(env), [conptyFrame('third\r\n')]);
+
+    expect(shownLines()).toEqual([...first, SEPARATOR_LINE, 'second', SEPARATOR_LINE, 'third']);
   });
 
   it('starts at the top without a separator after Clear', async () => {

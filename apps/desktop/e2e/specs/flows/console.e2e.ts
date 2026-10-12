@@ -7,9 +7,11 @@
  * - at three heights of the bottom dock the terminal is fitted to whole rows inside its padding,
  *   and neither it nor the dock panel around it scrolls. Each height is chosen so that the host's
  *   height is two pixels more than a whole number of rows, which a fit that ignores the padding
- *   gets wrong.
+ *   gets wrong;
+ * - with a notice open in the smallest bottom dock, the header scrolls by itself to Stop, Run
+ *   again and Clear.
  */
-import { By, type WebDriver } from 'selenium-webdriver';
+import { By, Key, type WebDriver } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
 import { NodeIds } from '../../support/bdm';
@@ -129,6 +131,50 @@ async function waitForFit(driver: WebDriver, height: number): Promise<Geometry> 
   );
 }
 
+/** The console header and its buttons, read in the webview. */
+interface Header {
+  /** The header's own scrolling: how far its content reaches, and how much of it shows. */
+  readonly scrollHeight: number;
+  readonly clientHeight: number;
+  /** The console's dock panel: the same. */
+  readonly panelScrollHeight: number;
+  readonly panelClientHeight: number;
+  /** For each button, what is under the middle of it (its test ID, or `null`). */
+  readonly hits: Readonly<Record<string, string | null>>;
+}
+
+const BUTTONS = ['console-stop', 'console-run-again', 'console-clear'];
+
+const HEADER = `
+  const header = document.querySelector('[data-testid="console-header"]');
+  const panel = header && header.closest('[data-dock-panel]');
+  if (!header || !panel) {
+    return null;
+  }
+  const hits = {};
+  for (const id of arguments[0]) {
+    const box = document.querySelector('[data-testid="' + id + '"]').getBoundingClientRect();
+    const found = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    const owner = found && found.closest('[data-testid]');
+    hits[id] = owner ? owner.getAttribute('data-testid') : null;
+  }
+  return {
+    scrollHeight: header.scrollHeight,
+    clientHeight: header.clientHeight,
+    panelScrollHeight: panel.scrollHeight,
+    panelClientHeight: panel.clientHeight,
+    hits,
+  };
+`;
+
+async function header(driver: WebDriver): Promise<Header> {
+  const found: Header | null = await driver.executeScript(HEADER, BUTTONS);
+  if (found === null) {
+    throw new Error('The console shows no header');
+  }
+  return found;
+}
+
 /** Drags the bottom dock's splitter so that the dock grows by `delta` pixels (or shrinks). */
 async function resizeBottomDock(driver: WebDriver, delta: number): Promise<void> {
   const splitter = await driver.findElement(
@@ -151,14 +197,19 @@ describe('Console', () => {
     expect(screen.buffer).toBe('normal');
     const shown = screen.lines.map((line) => line.trimEnd()).filter((line) => line !== '');
     if (process.platform === 'win32') {
-      // Windows' pseudoconsole paints each new program's screen from its own top-left corner
-      // (with cursor moves), so there only the end of the second run on screen and the order of
-      // what the console was given are checked.
+      // Windows' pseudoconsole clears the screen and paints each new program from the top-left
+      // corner (with cursor moves), so the console first scrolls what it shows into the
+      // scrollback. How the pseudoconsole scrolls a program's own lines is its affair, so there
+      // the end of the first run, the New run line after it and the end of the second run are
+      // checked on screen, and the order of what the console was given.
+      const separator = shown.indexOf(SEPARATOR);
+      expect(separator, 'the New run line is gone').toBeGreaterThan(0);
+      expect(shown[separator - 1], 'the end of the first run is gone').toBe(String(LINES));
       expect(shown.at(-1)).toBe(String(LINES));
       const transcript = await app.hook.consoleText();
-      const separator = transcript.indexOf(SEPARATOR);
-      expect(separator).toBeGreaterThan(transcript.indexOf(`\n${String(LINES)}`));
-      expect(finishedRuns(transcript.slice(separator))).toBe(1);
+      const given = transcript.indexOf(SEPARATOR);
+      expect(given).toBeGreaterThan(transcript.indexOf(`\n${String(LINES)}`));
+      expect(finishedRuns(transcript.slice(given))).toBe(1);
     } else {
       // Everything the first run printed is still there, the scrollback included.
       expect(shown).toEqual([...RUN_OUTPUT, SEPARATOR, ...RUN_OUTPUT]);
@@ -189,5 +240,47 @@ describe('Console', () => {
       // Whole rows fill the host: less than one row's height is left below the last.
       expect(fitted.hostBottom - fitted.screenBottom, where).toBeLessThan(fitted.cellHeight);
     }
+  }, 240_000);
+
+  it('scrolls a header taller than the smallest dock by itself, to its buttons', async (context) => {
+    const app = await counterProject(context);
+    await clickTestId(app.driver, 'toolbar-run');
+    await waitForRun(app, 1);
+    await showConsole(app.driver);
+
+    // Every run from the app has IDE helpers, so the header has at least that notice. Open it,
+    // then make the bottom dock as small as it goes.
+    await app.driver.findElement(By.css('[data-testid="console-notice"] summary')).click();
+    const splitter = await app.driver.findElement(
+      By.css('[role="separator"][aria-label="Resize the bottom panel"]'),
+    );
+    await splitter.sendKeys(Key.HOME);
+    await waitFor(
+      async () =>
+        (await splitter.getAttribute('aria-valuenow')) ===
+        (await splitter.getAttribute('aria-valuemin')),
+      { timeout: UI_TIMEOUT_MS, message: 'the bottom dock at its smallest' },
+    );
+    const before = await waitFor(
+      async () => {
+        const now = await header(app.driver);
+        return now.scrollHeight > now.clientHeight ? now : null;
+      },
+      {
+        timeout: UI_TIMEOUT_MS,
+        message: 'the header to be taller than the dock (so this test checks something)',
+      },
+    );
+    expect(before.panelScrollHeight, 'the dock panel scrolls').toBe(before.panelClientHeight);
+
+    // The header scrolls by itself (as the wheel or its scroll bar would), and then every button
+    // is there to be clicked; the dock panel around it still does not scroll.
+    await app.driver.executeScript(
+      `const header = document.querySelector('[data-testid="console-header"]');
+       header.scrollTop = header.scrollHeight;`,
+    );
+    const after = await header(app.driver);
+    expect(after.hits).toEqual(Object.fromEntries(BUTTONS.map((id) => [id, id])));
+    expect(after.panelScrollHeight, 'the dock panel scrolls').toBe(after.panelClientHeight);
   }, 240_000);
 });

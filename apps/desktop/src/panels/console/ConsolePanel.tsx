@@ -92,6 +92,11 @@ export interface ConsolePanelProps {
    * also returns the cursor, as no terminal driver translates it. Defaults to `pty`.
    */
   mode?: RunMode;
+  /**
+   * Called just before the link dialog opens. The app closes the block editor's pop-ups there,
+   * which would otherwise be drawn over the dialog (04 §4.1).
+   */
+  onBeforeLinkDialog?: () => void;
   /** Receives the {@link ConsoleHandle}. */
   ref?: Ref<ConsoleHandle>;
 }
@@ -211,6 +216,7 @@ export function ConsolePanel({
   onRunAgain,
   onClear,
   mode = 'pty',
+  onBeforeLinkDialog,
   ref,
 }: ConsolePanelProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -221,6 +227,11 @@ export function ConsolePanel({
   const [dataListeners] = useState(() => new Set<(data: string) => void>());
   const [resizeListeners] = useState(() => new Set<(size: TerminalSize) => void>());
   const [link, setLink] = useState<string | null>(null);
+  // The terminal is created once; its link handler reads the newest callback from here.
+  const beforeLinkDialog = useRef(onBeforeLinkDialog);
+  useEffect(() => {
+    beforeLinkDialog.current = onBeforeLinkDialog;
+  }, [onBeforeLinkDialog]);
 
   useEffect(() => {
     const element = host.current;
@@ -239,6 +250,7 @@ export function ConsolePanel({
         activate: (_event, target) => {
           const url = safeLinkUrl(target);
           if (url !== null) {
+            beforeLinkDialog.current?.();
             setLink(url);
           }
         },

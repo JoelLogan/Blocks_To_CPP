@@ -64,8 +64,9 @@
   or *Unsaved* while there are unsaved changes or the project has no file
   yet.
 * Menus, hints and dialogs are always drawn above the canvas, the toolbox and
-  dragged blocks; opening a dialog first closes the block editor's drop-downs
-  and field editors.
+  dragged blocks; opening a dialog (the console's link dialog included) or a
+  full-window page such as Settings first closes the block editor's
+  drop-downs and field editors.
 
 ## 4.2 Toolbox
 
@@ -250,7 +251,9 @@ restarted after a crash, a dismissible banner says so.
   writes over it. Every run starts with the terminal's modes reset (the
   alternate screen left, colours, cursor visibility, scroll region) without
   moving the cursor, below a dim *── New run ──* line when there is output
-  since the last Clear.
+  since the last Clear. On Windows, whose pseudoconsole clears the screen
+  and paints each new program from the top-left corner, the console first
+  scrolls everything it shows, that line included, into the scrollback.
 * The console scrolls by itself, never the panel around it. The terminal is
   fitted to whole rows and columns inside its padding.
 

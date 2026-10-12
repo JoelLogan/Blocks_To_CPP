@@ -34,6 +34,14 @@ describe('the console', () => {
     expect(style('.b2c-console-terminal').get('overflow')).toBe('hidden');
     expect(style('.dock-panel:has(> .b2c-console-panel)').get('overflow')).toBe('hidden');
   });
+
+  it('scrolls a header taller than its panel by itself, so its buttons stay reachable', () => {
+    // An open notice in the smallest bottom dock: the dock panel clips, so the header must scroll.
+    const header = style('.b2c-console-header');
+    expect(header.get('overflow-y')).toBe('auto');
+    expect(header.get('min-height')).toBe('0');
+    expect(header.get('max-height')).toBe('100%');
+  });
 });
 
 describe('the status next to panel buttons', () => {

@@ -583,6 +583,57 @@ describe('blocklyPopupsPlugin', () => {
     }
   });
 
+  it('closes them before a dialog outside the queue (the console link) opens', () => {
+    const queue = createDialogQueue();
+    const editor = attachPlugin(queue);
+    try {
+      const { closeEditor } = openPopups(editor.workspace);
+      queue.beforeModal();
+      expect(Blockly.DropDownDiv.isVisible()).toBe(false);
+      expect(Blockly.WidgetDiv.isVisible()).toBe(false);
+      expect(closeEditor).toHaveBeenCalledTimes(1);
+      expect(queue.store.getState().queue).toEqual([]);
+    } finally {
+      editor.detach();
+      editor.dispose();
+    }
+  });
+
+  it('closes them when a full-window page replaces the editor, and only then', () => {
+    const { actions } = useAppStore.getState();
+    actions.setUi({ screen: 'editor' });
+    const editor = attachPlugin(createDialogQueue());
+    let attached = true;
+    try {
+      const hide = vi.spyOn(editor.workspace, 'hideChaff');
+      actions.setUi({ bottomTab: 'console' });
+      expect(hide).not.toHaveBeenCalled();
+
+      openPopups(editor.workspace);
+      actions.setUi({ screen: 'settings' });
+      expect(Blockly.DropDownDiv.isVisible()).toBe(false);
+      expect(Blockly.WidgetDiv.isVisible()).toBe(false);
+      expect(hide).toHaveBeenCalledTimes(1);
+
+      actions.setUi({ screen: 'editor' });
+      expect(hide).toHaveBeenCalledTimes(1);
+      actions.setUi({ screen: 'toolchainSetup' });
+      expect(hide).toHaveBeenCalledTimes(2);
+
+      editor.detach();
+      attached = false;
+      actions.setUi({ screen: 'editor' });
+      actions.setUi({ screen: 'settings' });
+      expect(hide).toHaveBeenCalledTimes(2);
+    } finally {
+      if (attached) {
+        editor.detach();
+      }
+      editor.dispose();
+      actions.setUi({ screen: 'start' });
+    }
+  });
+
   it("uses the app's dialog queue by default", async () => {
     const { dialogs } = await import('./instance');
     const editor = attachPlugin();

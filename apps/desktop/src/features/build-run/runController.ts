@@ -16,6 +16,7 @@ import type {
   Containment,
   Handle,
   IpcClient,
+  Platform,
   RunEvent,
   RunId,
   RunStartResponse,
@@ -63,6 +64,23 @@ export const RUN_MODE_RESET = '\u001b7\u001b[?1049l\u001b[!p';
  * dim separator line.
  */
 export const RUN_SEPARATOR = `${RUN_MODE_RESET}\r\n\u001b[2m── New run ──\u001b[22m\r\n`;
+
+/**
+ * What the console gets before a run when earlier output is in it: {@link RUN_SEPARATOR}, and on
+ * Windows one more line break for each of the terminal's `rows` but one.
+ *
+ * Windows' pseudoconsole (ConPTY, created without cursor inheritance) starts each program by
+ * clearing the screen and painting from its top-left corner. xterm.js erases the visible rows
+ * without keeping them, so the line breaks first scroll everything shown, the separator
+ * included, into the scrollback: the new program then paints on empty rows (04 §4.5). On Linux
+ * the program writes where the cursor is, and nothing is added.
+ */
+export function runSeparator(platform: Platform | null | undefined, rows: number): string {
+  if (platform !== 'windows') {
+    return RUN_SEPARATOR;
+  }
+  return RUN_SEPARATOR + '\r\n'.repeat(Math.max(0, Math.floor(rows) - 1));
+}
 
 /** The backend errors after which Run builds again and tries once more. */
 const REBUILD_CODES: ReadonlySet<FailureCode> = new Set<FailureCode>([
@@ -294,7 +312,9 @@ export class RunController {
       ipc,
       bridge,
       clock: this.#deps.clock,
-      prelude: bridge.used ? RUN_SEPARATOR : RUN_MODE_RESET,
+      prelude: bridge.used
+        ? runSeparator(store.getState().appInfo?.platform, bridge.console().size().rows)
+        : RUN_MODE_RESET,
       hooks: {
         onStarted: (started) => {
           if (this.#isCurrent(session, handle)) {

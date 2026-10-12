@@ -54,6 +54,7 @@ export {
   clampSize,
   RUN_MODE_RESET,
   RUN_SEPARATOR,
+  runSeparator,
   RunController,
   STOP_WAIT_MS,
 } from './runController';

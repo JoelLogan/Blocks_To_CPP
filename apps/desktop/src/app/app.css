@@ -15,8 +15,9 @@
  *
  * Above them all are Blockly's pop-ups, which it attaches to the page's body: the drop-down div
  * (1000), the widget div of context menus and field editors (99999) and its tooltips (100000).
- * The dialog service closes them before a dialog opens (dialogs/blockly.ts), so none is ever
- * drawn over a dialog (§4.1).
+ * The editor closes them before a dialog opens (the dialog service's, and the console's link
+ * dialog) and when a full-window page replaces it (dialogs/blockly.ts), so none is ever drawn
+ * over a dialog or a page (§4.1).
  */
 
 :root {

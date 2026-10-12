@@ -56,7 +56,9 @@ project, build, run, toolchain, settings, trust and recovery services:
   (`syncFailed`) or the compiler core was restarted (`trapRecovered`).
 - **Dialogs** (`dialogs/`): alerts, confirmations, prompts and choices on Radix's accessible
   dialog; Blockly's own prompts go through them too, and Blockly's pop-ups (drop-downs, field
-  editors, menus, tooltips) close before a dialog opens (`blocklyPopupsPlugin`).
+  editors, menus, tooltips) close before a dialog opens, the console's link dialog included
+  (`dialogs.beforeModal()`), and when a full-window page replaces the editor
+  (`blocklyPopupsPlugin`).
 - **Shortcuts** (`shortcuts.ts`): `F5` Run, `Shift+F5` Stop, `Ctrl+B` Build, `Ctrl+S` Save,
   everywhere except in a dialog or inside an element marked `data-b2c-shortcuts="off"`. The
   reload keys (`Ctrl+R`, `Ctrl+Shift+R`, `Ctrl+F5`) are cancelled everywhere, and the webview's
