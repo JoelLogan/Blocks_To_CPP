@@ -5,18 +5,23 @@ Most of Blocks2Cpp is tested automatically
 golden, property, fuzz and mutation tests, component tests with automated
 accessibility checks, and end-to-end tests that drive the real app on Windows
 and Linux. Some things no test can judge: what a screen reader really says,
-or whether a person who has never seen the app finds their way. Those are
-checked by hand at the end of each milestone, following the protocols here
+whether a person who has never seen the app finds their way, or how fast the
+app is on a user's own computer. Those are checked by hand at the end of each
+milestone, following the protocols here
 ([10 §10.1](../spec/10-roadmap.md#101-milestones)).
 
 ## Protocols
 
-| Protocol                                                 | Milestone | What it checks                                                                                                                                                      | Status                                                                 |
-| -------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| [M2 accessibility](m2-accessibility.md)                  | M2        | Screen readers (NVDA on Windows, Orca on Linux), the Tab order, the block editor's keys, colour, contrast, zoom, reflow and reduced motion in the real webviews     | Not run yet                                                            |
-| [M2 usability ("without reading docs")](m2-usability.md) | M2        | At least three first-time users build and play the guessing game without documentation; and the exclusion review: nothing of M3–M6 has an entry point in the M2 app | Exclusion review run on the code; sessions and demo review not run yet |
+| Protocol                                                 | Milestone | What it checks                                                                                                                                                                                                                           | Status                                                                 |
+| -------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| [M2 accessibility](m2-accessibility.md)                  | M2        | Screen readers (NVDA on Windows, Orca on Linux), the Tab order, the block editor's keys, colour, contrast, zoom, reflow and reduced motion in the real webviews                                                                          | Not run yet                                                            |
+| [M2 usability ("without reading docs")](m2-usability.md) | M2        | At least three first-time users build and play the guessing game without documentation; and the exclusion review: nothing of M3–M6 has an entry point in the M2 app                                                                      | Exclusion review run on the code; sessions and demo review not run yet |
+| [M2 performance profile](m2-performance-profile.md)      | M2        | The owner's computer in a release build: webview, graphics driver, compositing, Wayland or X11, display scale; the first-start layout (U6) and lag (U11); a profile of clicks that change nothing; whether GTK reports a primary monitor | Not run yet                                                            |
 
-M2 is declared done only once both are recorded in their sign-off tables.
+M2 is declared done only once the accessibility and usability protocols are
+recorded in their sign-off tables. The performance profile blocks nothing: it
+informs the performance budgets (W2-2 of the
+[polish plan](../plans/m2-polish-plan.md#w2--performance-guard)).
 
 ## Running a protocol
 

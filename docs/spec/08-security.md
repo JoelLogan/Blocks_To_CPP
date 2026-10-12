@@ -450,6 +450,23 @@ Links to individual diagnostic codes and bundled offline help come in M5.
   `main` window. The `fs`, `shell`, `http` and `process` plugins are **not
   included**, and `dialog` is used from Rust only.
 * `withGlobalTauri: false`. DevTools are disabled in release builds.
+* **WebKitGTK's remote Web Inspector** still works in them: a process
+  started with `WEBKIT_INSPECTOR_SERVER` or `WEBKIT_INSPECTOR_HTTP_SERVER`
+  set lets whoever connects to that address inspect and script every page,
+  whatever the app's own settings (checked with WebKitGTK 2.52.6). The
+  [performance profile](../manual-tests/m2-performance-profile.md) uses it,
+  so no build turns on Tauri's `devtools` feature for profiling. Only whoever
+  sets the app's environment can turn it on: the user, on purpose, or
+  same-user malware, which is out of scope (§8.1). While it is on, anything
+  that reaches the address controls the page and can call every IPC command
+  the page can, such as saving projects and building and running trusted
+  ones: other accounts on the same computer through `127.0.0.1`, and with
+  `WEBKIT_INSPECTOR_HTTP_SERVER` any web page open in a browser, because its
+  WebSocket accepts every origin. The protocol therefore
+  uses `WEBKIT_INSPECTOR_SERVER` on `127.0.0.1`, for one session. On
+  Windows the corresponding variable, `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`,
+  has no effect in release builds: the browser arguments wry sets take
+  precedence over it.
 * The **Isolation pattern** is enabled. An isolated iframe validates every IPC
   message against an allowlist of command names and payload shapes before the
   backend sees it.

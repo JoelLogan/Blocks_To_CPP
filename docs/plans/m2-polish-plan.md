@@ -654,6 +654,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W2-2 Profile on the owner's machine.** Refs: U11-9, U18-8.
 
+- *Status:* protocol written ([`m2-performance-profile.md`](../manual-tests/m2-performance-profile.md)); the owner's run is pending. A release build is profiled as it is, through WebKitGTK's remote inspector (`WEBKIT_INSPECTOR_SERVER` and an `inspector://` window; checked with WebKitGTK 2.52.6 on a web view without developer tools), so no build with Tauri's `devtools` feature is added; 08 §8.8 records what the inspector exposes. The primary-monitor hypothesis is expected to hold: GTK 3.24's Wayland backend does not implement `gdk_display_get_primary_monitor`, which tao calls for Tauri's `center` and `preventOverflow`.
 - The owner probably ran `pnpm desktop:dev`: a debug backend, React StrictMode, and no CSP.
 - Re-measure U6 and U11 in a release build made with `BUILDING.md`.
 - Profile the no-op clicks that took 130–210 ms (cause unknown).
