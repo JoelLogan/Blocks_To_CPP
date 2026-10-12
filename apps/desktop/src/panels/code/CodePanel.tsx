@@ -2,6 +2,7 @@ import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
+import { startSpan } from '../../lib/timing';
 import '../panels.css';
 import { copyPlainText } from '../shared/clipboard';
 import { useTransientStatus } from '../shared/useTransientStatus';
@@ -101,11 +102,13 @@ export function CodePanel(props: CodePanelProps) {
 
   const text = activeFile?.contents ?? '';
   const path = activeFile?.path ?? null;
+  // Shows new code, diagnostics or a highlight: the User Timing span `b2c:code-panel`.
   useEffect(() => {
     const editor = view.current;
     if (editor === null) {
       return;
     }
+    const span = startSpan('b2c:code-panel');
     const doc = editor.state.doc.toString();
     const highlightChanged = shownHighlight.current !== highlightBlockId;
     shownHighlight.current = highlightBlockId;
@@ -128,6 +131,7 @@ export function CodePanel(props: CodePanelProps) {
           : [EditorView.scrollIntoView(Math.min(scrollTo, text.length), { y: 'nearest' })]),
       ],
     });
+    span.end();
   }, [text, path, index, diagnostics, highlightBlockId]);
 
   const copy = (value: string) => {

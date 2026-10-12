@@ -22,6 +22,7 @@ import {
   projectFixture,
   settingsFixture,
 } from '../../app/testing/fixtures';
+import { latestTimings, resetTimings } from '../../lib/timing';
 import { type CoreHost, createCoreHost } from './coreHost';
 import { PreviewPipeline } from './pipeline';
 import type { PreviewService } from './service';
@@ -344,6 +345,73 @@ describe('the preview pipeline', () => {
     await pipeline.runNow();
     expect(useAppStore.getState().analysis.notice).toBeNull();
     pipeline.dispose();
+  });
+
+  it('notifies the store’s subscribers at most twice per run', async () => {
+    openProject();
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      read: readDocument,
+    });
+    let notifications = 0;
+    const unsubscribe = useAppStore.subscribe(() => {
+      notifications += 1;
+    });
+    try {
+      docVersion = 1;
+      await pipeline.runNow();
+      expect(notifications).toBe(2);
+      expect(useAppStore.getState().analysis.seq).toBe(1);
+      expect(useAppStore.getState().project?.document.project.name).toBe('Edit 1');
+
+      // Also when the canvas loads again after a sync failure, which clears the notice.
+      useAppStore.getState().actions.setAnalysis({ notice: 'syncFailed' });
+      notifications = 0;
+      docVersion = 2;
+      await pipeline.runNow();
+      expect(notifications).toBe(2);
+      expect(useAppStore.getState().analysis).toMatchObject({ seq: 2, notice: null });
+    } finally {
+      unsubscribe();
+      pipeline.dispose();
+    }
+  });
+
+  it('measures each run and its phases as User Timing spans', async () => {
+    resetTimings();
+    openProject();
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      read: readDocument,
+    });
+    await pipeline.runNow();
+    const timings = latestTimings();
+    for (const span of [
+      'b2c:preview',
+      'b2c:preview:read',
+      'b2c:preview:canonical',
+      'b2c:preview:commit',
+      'b2c:preview:analyse',
+      'b2c:preview:publish',
+    ] as const) {
+      expect(timings[span], span).toBeGreaterThanOrEqual(0);
+    }
+    pipeline.dispose();
+
+    // A run whose document does not load is not a preview: nothing more is recorded.
+    resetTimings();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const failing = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore({ canonical: () => ({ ok: false, diagnostics: [] }) })),
+      read: readDocument,
+    });
+    await failing.runNow();
+    expect(latestTimings()['b2c:preview']).toBeNull();
+    expect(latestTimings()['b2c:preview:canonical']).not.toBeNull();
+    failing.dispose();
   });
 
   it('does nothing without a project, or when the core cannot start', async () => {

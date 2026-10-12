@@ -9,6 +9,7 @@
 import * as Blockly from 'blockly/core';
 
 import type { EditorContext } from '../../app/editor-types';
+import { timed } from '../../lib/timing';
 
 /** The document block a workspace element ID stands for: shadows give their owner; else null. */
 export function documentBlockId(workspace: Blockly.Workspace, id: string | null): string | null {
@@ -50,7 +51,10 @@ export function attachHighlightTracking(ctx: EditorContext): () => void {
 
   const onEvent = (event: Blockly.Events.Abstract): void => {
     if (event instanceof Blockly.Events.Selected) {
-      setSelection(documentBlockId(workspace, event.newElementId ?? null));
+      // The selection handler: the User Timing span `b2c:select`.
+      timed('b2c:select', () => {
+        setSelection(documentBlockId(workspace, event.newElementId ?? null));
+      });
     } else if (event instanceof Blockly.Events.BlockDelete) {
       const deleted = new Set(event.ids ?? []);
       const { selection, hoverBlock } = store.getState().ui;

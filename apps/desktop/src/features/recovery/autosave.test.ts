@@ -146,6 +146,53 @@ describe('autosave every 30 seconds', () => {
   });
 });
 
+describe('autosave on store updates', () => {
+  it('reads none of the project’s texts when another part of the state changes', () => {
+    open({ dirty: true, canonicalText: '{"v":1}', savedCanonicalText: '{"v":0}' });
+    const project = useAppStore.getState().project;
+    if (project === null) {
+      throw new Error('no project');
+    }
+    // The saved text as a getter that counts its reads (an edit replaces the project object).
+    let reads = 0;
+    const counted = Object.defineProperty({ ...project }, 'savedCanonicalText', {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return '{"v":0}';
+      },
+    });
+    useAppStore.setState({ project: counted });
+    start();
+    const { setUi, setAnalysis } = useAppStore.getState().actions;
+    for (let index = 0; index < 100; index += 1) {
+      setUi({ hoverBlock: `b${String(index)}` });
+      setAnalysis({ seq: index });
+    }
+    expect(reads).toBe(0);
+  });
+
+  it('writes the text again after a save that changed only the time, or only the saved text', async () => {
+    open({ dirty: true, canonicalText: '{"v":1}', savedAt: '2026-10-05T10:00:00Z' });
+    start();
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
+    expect(recoverySave).toHaveBeenCalledTimes(1);
+
+    useAppStore.getState().actions.updateProject({ savedAt: '2026-10-05T11:00:00Z' });
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
+    expect(recoverySave).toHaveBeenCalledTimes(2);
+
+    useAppStore.getState().actions.updateProject({ savedCanonicalText: '{"v":0}' });
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
+    expect(recoverySave).toHaveBeenCalledTimes(3);
+
+    // An edit that leaves the save alone is written once, as before.
+    useAppStore.getState().actions.updateProject({ contentHash: 'c'.repeat(64) });
+    await vi.advanceTimersByTimeAsync(2 * AUTOSAVE_INTERVAL_MS);
+    expect(recoverySave).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe('autosave when the window loses focus', () => {
   it('writes a snapshot at once while there are unsaved changes, and none otherwise', async () => {
     open();

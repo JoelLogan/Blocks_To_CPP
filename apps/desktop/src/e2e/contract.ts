@@ -43,6 +43,15 @@ export interface E2eConsoleScreen {
 }
 
 /**
+ * The latest duration, in milliseconds, of each User Timing span the app measures
+ * (src/lib/timing.ts), by span name: `b2c:preview` and its phases `b2c:preview:read`,
+ * `b2c:preview:canonical`, `b2c:preview:commit`, `b2c:preview:analyse` and `b2c:preview:publish`;
+ * `b2c:toolbox-refresh`; `b2c:select`; `b2c:code-panel`. A span that has not run since the window
+ * started is `null`.
+ */
+export type E2eTimings = Readonly<Record<string, number | null>>;
+
+/**
  * `window.__B2C_E2E__`: what the end-to-end tests can call through WebDriver's `executeScript`.
  * Every call throws (a JavaScript error in WebDriver) when its arguments are not valid.
  */
@@ -87,6 +96,8 @@ export interface E2eHookContract {
   scrollCanvasBy(dx: number, dy: number): void;
   /** The C++ the code panel shows (every file it lists, in order), from the live preview. */
   code(): string;
+  /** The latest duration of each User Timing span (read-only; a copy). */
+  timings(): E2eTimings;
   /** The SVG group of a block on the canvas or in the toolbox's flyout, or `null`. */
   blockElement(id: string): Element | null;
   /**

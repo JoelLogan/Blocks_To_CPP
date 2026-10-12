@@ -9,6 +9,7 @@ import { resetAppStore, useAppStore } from '../app/store';
 import { projectFixture } from '../app/testing/fixtures';
 import { ConsoleBridge } from '../features/build-run';
 import { FakeConsole } from '../features/build-run/testing';
+import { resetTimings, timed, TIMING_SPANS } from '../lib/timing';
 import type { TrustedTypesReport } from '../lib/trustedTypes';
 import type { ConsoleScreen } from '../panels';
 import { createE2eHook, E2E_HOOK_NAME, type E2eHookDeps, installE2eHook } from './index';
@@ -210,6 +211,23 @@ describe('createE2eHook', () => {
     expect(() =>
       hook.flyoutBlockId('io.print', { MODE: 1 } as unknown as Record<string, string>),
     ).toThrow('string values');
+  });
+
+  it('gives a copy of the latest User Timing durations, null for spans that have not run', () => {
+    resetTimings();
+    const hook = createE2eHook(deps(), new ConsoleTranscript());
+    const before = hook.timings();
+    expect(Object.keys(before)).toEqual([...TIMING_SPANS]);
+    expect(Object.values(before).every((duration) => duration === null)).toBe(true);
+
+    timed('b2c:select', () => undefined);
+    const after = hook.timings();
+    expect(after['b2c:select']).toBeGreaterThanOrEqual(0);
+    expect(after['b2c:preview']).toBeNull();
+    // A copy: changing it changes nothing in the app.
+    (after as Record<string, number | null>)['b2c:select'] = -1;
+    expect(hook.timings()['b2c:select']).toBeGreaterThanOrEqual(0);
+    resetTimings();
   });
 
   it('probes the Trusted Types policy with a constant string', () => {

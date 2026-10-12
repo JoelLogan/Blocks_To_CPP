@@ -17,6 +17,7 @@ import type { BootPhase } from '../app/bootstrap';
 import type { EditorHandle } from '../app/editor-types';
 import type { useAppStore } from '../app/store';
 import { type ConsoleBridge, documentToBuild } from '../features/build-run';
+import { latestTimings } from '../lib/timing';
 import type { TrustedTypesReport } from '../lib/trustedTypes';
 import { isHiddenFile } from '../panels';
 import { insertBlocks } from './blocks';
@@ -152,6 +153,7 @@ export function createE2eHook(deps: E2eHookDeps, transcript: ConsoleTranscript):
         .map((file) => file.contents)
         .join('\n');
     },
+    timings: () => latestTimings(),
     blockElement: (id: string) => blockElement(workspaceOf(deps.editor()), stringArg(id, 'id')),
     fieldElement: (blockId: string, field: string, input?: string | null) =>
       fieldElement(

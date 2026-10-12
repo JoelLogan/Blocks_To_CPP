@@ -6,6 +6,7 @@ import {
   EXPR_SHADOW_TYPE,
   getEditorServices,
   isExprShadowType,
+  refreshMutatorLabels,
   resetEditorServices,
 } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
@@ -288,6 +289,114 @@ describe.skipIf(realCore === null)('the scope of a block’s menus with the comp
     expect(core.symbolsInScope(getter.id, null)).toEqual([]);
     const field = getter.getField('VAR') as B2cSymbolRefField;
     expect(field.menuOptions().map(([label]) => label)).toEqual(['guess', 'secret']);
+  });
+});
+
+/** `greet(who)` (`f`, a void function of one parameter) and `main` calling it `count` times. */
+function callsDocument(count: number): BdmDocument {
+  const doc = documentFixture();
+  const call = (index: number) => ({
+    id: `call${String(index)}`,
+    type: 'func.call_stmt',
+    v: 1,
+    extra: { argCount: 1 },
+    fields: { FUNC: { ref: 's_greet' } },
+    inputs: { ARG0: { expr: [{ num: String(index) }] } },
+  });
+  doc.modules = [
+    {
+      id: 'mod_main',
+      name: 'main',
+      workspace: {
+        blocks: [
+          {
+            id: 'f',
+            type: 'func.define',
+            v: 1,
+            x: 400,
+            y: 0,
+            extra: { params: [{ sym: 's_who', name: 'who', type: 'int', mode: 'copy' }] },
+            fields: { NAME: { sym: 's_greet', name: 'greet' }, RETURNS: 'void' },
+          },
+          {
+            id: 'main',
+            type: 'program.main',
+            v: 1,
+            x: 0,
+            y: 0,
+            statements: { BODY: Array.from({ length: count }, (_, index) => call(index)) },
+          },
+        ],
+      },
+    },
+  ];
+  return doc;
+}
+
+describe('the parameters of the function a call names', () => {
+  const greet = symbol('s_greet', 'greet', {
+    kind: 'function',
+    params: ['s_who'],
+    returns: 'void',
+    type: 'void',
+    declBlock: 'f',
+  });
+  const elsewhere = symbol('s_other', 'other', {
+    kind: 'function',
+    params: [],
+    returns: 'void',
+    type: 'void',
+    module: 'mod_other',
+    declBlock: 'f_other',
+  });
+
+  it('come from the latest preview for a call on the canvas, without asking the core', () => {
+    const workspace = headlessWorkspace();
+    Blockly.serialization.blocks.append({ type: 'func.define', id: 'f' }, workspace);
+    Blockly.serialization.blocks.append({ type: 'func.call_stmt', id: 'call' }, workspace);
+    const symbolsInScope = vi.fn(() => []);
+    let current: PreviewResult | null = null;
+    const { symbols } = createSymbolServices({
+      core: () => ({ symbolsInScope }) as unknown as CoreWasm,
+      preview: () => current,
+      workspace,
+    });
+    expect(symbols.functionParams?.('call', 's_greet')).toBeNull();
+    current = { ...previewFixture(), symbols: [greet, elsewhere, symbol('s_x', 'x')] };
+    expect(symbols.functionParams?.('call', 's_greet')).toEqual(['s_who']);
+    // Not a function, unknown, or another module's function (its definition is not shown here).
+    expect(symbols.functionParams?.('call', 's_x')).toBeNull();
+    expect(symbols.functionParams?.('call', 's_missing')).toBeNull();
+    expect(symbols.functionParams?.('call', 's_other')).toBeNull();
+    // A call in the toolbox's flyout is labelled by the toolbox.
+    expect(symbols.functionParams?.('flyout_call', 's_greet')).toBeNull();
+    expect(symbolsInScope).not.toHaveBeenCalled();
+  });
+});
+
+describe.skipIf(realCore === null)('call argument labels with the compiler core', () => {
+  it('cost no scope query after an analysis, with 50 calls on the canvas', async () => {
+    const core = present(realCore, 'the compiler core');
+    const symbolsInScope = vi.fn((blockId: string, input: string | null) =>
+      core.symbolsInScope(blockId, input),
+    );
+    running = startSession({ ...core, symbolsInScope }, callsDocument(50));
+    const { workspace, session } = running;
+    await session.flush();
+    expect(useAppStore.getState().analysis.preview).not.toBeNull();
+    const calls = workspace.getBlocksByType('func.call_stmt', false);
+    expect(calls).toHaveLength(50);
+    // The call mutator's label before ARG0 (blockly-ext's `B2C_LABEL_` and the input's name).
+    const labels = () => calls.map((call) => call.getField('B2C_LABEL_ARG0')?.getText() ?? null);
+    expect(new Set(labels())).toEqual(new Set(['who:']));
+
+    // Another analysis (a block added loose) relabels every call from the preview's symbols.
+    symbolsInScope.mockClear();
+    workspace.newBlock('io.print').initModel();
+    await session.flush();
+    refreshMutatorLabels(workspace);
+    expect(symbolsInScope).not.toHaveBeenCalled();
+    expect(new Set(labels())).toEqual(new Set(['who:']));
   });
 });
 

@@ -19,6 +19,7 @@ import * as Blockly from 'blockly/core';
 import { dialogs as appDialogs } from '../../app/dialogs/instance';
 import type { DialogService, DialogTextOptions } from '../../app/dialogs/service';
 import type { EditorContext, EditorPlugin } from '../../app/editor-types';
+import { timed } from '../../lib/timing';
 import { analysisScope } from '../services/symbols';
 import {
   LOOPS_CATEGORY,
@@ -193,9 +194,12 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   let previewTimer: ReturnType<typeof setTimeout> | null = null;
   let making = false;
 
+  /** Rebuilds the open dynamic category (the User Timing span `b2c:toolbox-refresh`). */
   const refresh = (): void => {
     try {
-      workspace.refreshToolboxSelection();
+      timed('b2c:toolbox-refresh', () => {
+        workspace.refreshToolboxSelection();
+      });
     } catch (error: unknown) {
       console.error('The toolbox could not be refreshed', error);
     }

@@ -51,16 +51,29 @@ export function saveStateLabel(
 /**
  * The status bar (docs/spec/04-user-interface.md §4.1): the toolchain a build would use, the
  * project's C++ standard, the configuration, the save state and the Restricted Mode indicator.
+ * It selects only what it shows, so an edit that changes none of it does not render it again.
  */
 export function StatusBar() {
-  const project = useAppStore((state) => state.project);
+  const project = useAppStore(
+    useShallow((state) =>
+      state.project === null
+        ? null
+        : {
+            standard: standardLabel(state.project),
+            dirty: state.project.dirty,
+            fileName: state.project.fileName,
+            savedAt: state.project.savedAt,
+            restricted: state.project.trust.state === 'restricted',
+          },
+    ),
+  );
   const config = useAppStore((state) => state.build.config);
   return (
     <footer className="status-bar">
       <ToolchainStatus />
       {project !== null && (
         <span className="status-item" data-testid="status-standard">
-          {standardLabel(project)}
+          {project.standard}
         </span>
       )}
       <span className="status-item" data-testid="status-config">
@@ -71,7 +84,7 @@ export function StatusBar() {
           {saveStateLabel(project)}
         </span>
       )}
-      {project?.trust.state === 'restricted' && (
+      {project?.restricted === true && (
         <span className="status-item status-restricted" data-testid="status-restricted">
           <LockIcon />
           Restricted Mode

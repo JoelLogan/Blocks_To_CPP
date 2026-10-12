@@ -7,6 +7,11 @@
  * the Blockly-free parts of the editor's diagnostics and highlighting, and reach the workspace only
  * through the editor handle. The console reaches the run through the build and run feature's
  * console bridge, which is Blockly-free too.
+ *
+ * The docks keep their panels mounted while they are hidden (./layout/EditorLayout.tsx). The C++
+ * tab while its dock is collapsed, and Problems while another tab is chosen or its dock is
+ * collapsed, keep what they last showed and do none of their work on an edit; each catches up
+ * once when it is shown again (./store/whileShown.ts).
  */
 import type { GeneratedFile } from '@blocks2cpp/b2c-core-wasm';
 import {
@@ -18,7 +23,6 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { useShallow } from 'zustand/react/shallow';
 
 import { pathCatalog, subscribePathCatalog } from '../editor/diagnostics/catalog';
 import {
@@ -45,7 +49,8 @@ import {
 import { triggerCommand } from './commands';
 import { dialogs } from './dialogs/instance';
 import { getEditorHandle } from './editor-types';
-import { useAppStore } from './store';
+import { type AppState, useAppStore } from './store';
+import { useAppStoreWhileShown } from './store/whileShown';
 
 /** The content of each dock slot. */
 export interface DockPanelContents {
@@ -66,10 +71,24 @@ function EmptyPanel({ children }: { children: ReactNode }) {
   return <p className="empty-panel">{children}</p>;
 }
 
-/** The diagnostics to show; recomputed only when one of their sources changes. */
-function useDiagnosticInputs(): DiagnosticInputs {
-  const { preview, buildDiagnostics, diagnosticsHash, contentHash } = useAppStore(
-    useShallow(diagnosticSources),
+/** Whether the C++ dock is open, so its tab is on screen. */
+function codeShown(state: AppState): boolean {
+  return !state.ui.rightCollapsed;
+}
+
+/** Whether the bottom dock is open with the Problems tab chosen, so Problems is on screen. */
+function problemsShown(state: AppState): boolean {
+  return !state.ui.bottomCollapsed && state.ui.bottomTab === 'problems';
+}
+
+/**
+ * The diagnostics to show; recomputed only when one of their sources changes while the panel is
+ * `shown` (a hidden panel keeps the ones it last showed).
+ */
+function useDiagnosticInputs(shown: boolean): DiagnosticInputs {
+  const { preview, buildDiagnostics, diagnosticsHash, contentHash } = useAppStoreWhileShown(
+    shown,
+    diagnosticSources,
   );
   return useMemo(
     () => diagnosticInputsFrom({ preview, buildDiagnostics, diagnosticsHash, contentHash }),
@@ -85,17 +104,17 @@ function selectFromCode(blockId: string): void {
 /**
  * The C++ tab: the live preview's files and source map, the diagnostics in the gutter, the hovered
  * (or else the selected) block's code highlighted, and a click selecting the block that produced
- * the code. Before there is any code it shows a note.
+ * the code. Before there is any code it shows a note. While its dock is collapsed it keeps what it
+ * showed, and takes the latest once when the dock opens.
  */
 export function ConnectedCodePanel() {
-  const { preview, hover, selection } = useAppStore(
-    useShallow((state) => ({
-      preview: state.analysis.preview,
-      hover: state.ui.hoverBlock,
-      selection: state.ui.selection,
-    })),
-  );
-  const inputs = useDiagnosticInputs();
+  const shown = useAppStore(codeShown);
+  const { preview, hover, selection } = useAppStoreWhileShown(shown, (state) => ({
+    preview: state.analysis.preview,
+    hover: state.ui.hoverBlock,
+    selection: state.ui.selection,
+  }));
+  const inputs = useDiagnosticInputs(shown);
   const diagnostics = useMemo(() => codePanelDiagnostics(inputs), [inputs]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const files = preview?.files ?? NO_FILES;
@@ -140,11 +159,15 @@ function showRawMessage(): void {
 
 /**
  * The Problems tab: the live preview's diagnostics and the last build's, with module and block
- * path. Without a project it shows a note.
+ * path. Without a project it shows a note. While it is not on screen it keeps its rows, and builds
+ * them again once when it is shown.
  */
 export function ConnectedProblemsPanel() {
-  const document = useAppStore((state) => state.project?.document ?? null);
-  const inputs = useDiagnosticInputs();
+  const shown = useAppStore(problemsShown);
+  const { document } = useAppStoreWhileShown(shown, (state) => ({
+    document: state.project?.document ?? null,
+  }));
+  const inputs = useDiagnosticInputs(shown);
   // Block paths name blocks with the catalog the editor provides; recompute when it arrives.
   const catalog = useSyncExternalStore(subscribePathCatalog, pathCatalog);
   const items = useMemo(

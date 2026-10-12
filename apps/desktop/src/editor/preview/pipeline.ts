@@ -8,6 +8,10 @@
  * 2. runs the core's `preview()` with the machine's indent width, and puts the result in
  *    `analysis.preview` (diagnostics, generated C++, source map, symbols, block types).
  *
+ * Each step is one store update (the project with the run's sequence number, then the preview),
+ * so the store's subscribers hear of a run at most twice. Each run and each of its phases is a
+ * User Timing span (`b2c:preview`, `b2c:preview:read`, …, src/lib/timing.ts).
+ *
  * A sequence number discards results that a newer run has overtaken. When the core traps, the
  * instance is replaced, the run is tried once more on the new one, and the analysis gets the
  * notice `trapRecovered`. When the document read from the canvas does not load (blocks nested
@@ -26,6 +30,7 @@ import {
 } from '@blocks2cpp/b2c-core-wasm';
 
 import type { AnalysisNotice, useAppStore } from '../../app/store';
+import { startSpan, timed } from '../../lib/timing';
 import type { CoreHost } from './coreHost';
 import { mainThreadPreviewService, type PreviewService } from './service';
 
@@ -150,14 +155,17 @@ export class PreviewPipeline {
     try {
       let core = await this.core();
       check();
+      const run = startSpan('b2c:preview');
+      const read = startSpan('b2c:preview:read');
       const doc = this.options.read();
       if (doc === null) {
         return;
       }
       const json = JSON.stringify(doc);
+      read.end();
       let canonical: CanonicalResult;
       try {
-        canonical = core.canonical(json);
+        canonical = timed('b2c:preview:canonical', () => core.canonical(json));
       } catch (error: unknown) {
         if (!(error instanceof CoreTrap)) {
           throw error;
@@ -172,14 +180,13 @@ export class PreviewPipeline {
         this.setNotice('syncFailed');
         return;
       }
-      this.commit(doc, canonical);
-      if (this.options.store.getState().analysis.notice === 'syncFailed') {
-        // The canvas loads again: what the project holds is what it shows.
-        this.options.store.getState().actions.setAnalysis({ notice: null });
-      }
+      const loaded = canonical;
+      timed('b2c:preview:commit', () => {
+        this.commit(seq, doc, loaded);
+      });
 
-      this.options.store.getState().actions.setAnalysis({ seq });
       const previewOptions: PreviewOptions = { indentWidth: this.indentWidth() };
+      const analyse = startSpan('b2c:preview:analyse');
       let result: PreviewResult;
       try {
         result = await this.service.preview(json, previewOptions);
@@ -193,16 +200,20 @@ export class PreviewPipeline {
         result = await this.service.preview(json, previewOptions);
       }
       check();
-      const { analysis, actions } = this.options.store.getState();
-      actions.setAnalysis({
-        preview: result,
-        notice: trapped
-          ? 'trapRecovered'
-          : analysis.notice === 'syncFailed'
-            ? null
-            : analysis.notice,
+      analyse.end();
+      timed('b2c:preview:publish', () => {
+        const { analysis, actions } = this.options.store.getState();
+        actions.setAnalysis({
+          preview: result,
+          notice: trapped
+            ? 'trapRecovered'
+            : analysis.notice === 'syncFailed'
+              ? null
+              : analysis.notice,
+        });
+        this.options.onPreviewed?.(result);
       });
-      this.options.onPreviewed?.(result);
+      run.end();
     } catch (error: unknown) {
       if (error instanceof Abandoned) {
         return;
@@ -219,18 +230,29 @@ export class PreviewPipeline {
     }
   }
 
-  /** Makes `doc` the open project's document, with its canonical text and hash. */
-  private commit(doc: BdmDocument, canonical: Extract<CanonicalResult, { ok: true }>): void {
-    const { project, actions } = this.options.store.getState();
+  /**
+   * Makes `doc` the open project's document, with its canonical text and hash, and records run
+   * `seq` as the latest preview request, in one store update. A canvas that loads again clears the
+   * `syncFailed` notice: what the project holds is what it shows.
+   */
+  private commit(
+    seq: number,
+    doc: BdmDocument,
+    canonical: Extract<CanonicalResult, { ok: true }>,
+  ): void {
+    const { project, analysis, actions } = this.options.store.getState();
     if (project === null) {
       return;
     }
-    actions.updateProject({
-      document: doc,
-      canonicalText: canonical.text,
-      contentHash: canonical.hash,
-      dirty: canonical.text !== project.savedCanonicalText,
-    });
+    actions.updateProjectAndAnalysis(
+      {
+        document: doc,
+        canonicalText: canonical.text,
+        contentHash: canonical.hash,
+        dirty: canonical.text !== project.savedCanonicalText,
+      },
+      analysis.notice === 'syncFailed' ? { seq, notice: null } : { seq },
+    );
     this.options.onCommitted?.(doc);
   }
 
