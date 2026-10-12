@@ -78,7 +78,7 @@
 * **Dynamic categories.** *Variables* lists the symbols in scope at the
   current selection. *Functions* lists *define* and *return*, then, under
   *Your functions*, a call block for each function of the module shown, or a
-  one-line hint when there is none; module headings appear only when the
+  short hint when there is none; module headings appear only when the
   project has more than one module. A call block of a known function has as
   many arguments as the function has parameters: it shows no ⊖/⊕ while they
   match, and only the one that brings it back in line when the definition

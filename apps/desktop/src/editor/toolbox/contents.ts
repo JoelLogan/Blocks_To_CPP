@@ -66,8 +66,17 @@ export const MAKE_VARIABLE_BUTTON = 'B2C_MAKE_VARIABLE';
 export const MAKE_VARIABLE_TEXT = 'Make a variable';
 /** The heading above the call blocks (D11 of the M2 polish plan). */
 export const YOUR_FUNCTIONS_HEADING = 'Your functions';
-/** What the Functions category says under its heading while the module has no function. */
-export const NO_FUNCTIONS_HINT = 'Define a function above. A block that runs it appears here.';
+/**
+ * What the Functions category says under its heading while the module has no function: two short
+ * lines, so that each stays readable in the flyout at its narrowest (it cuts off longer text).
+ */
+export const NO_FUNCTIONS_HINT: readonly string[] = Object.freeze([
+  'No functions yet.',
+  'Define one above.',
+]);
+
+/** The gap between the lines of {@link NO_FUNCTIONS_HINT}, which read as one hint. */
+const HINT_LINE_GAP = 4;
 
 /** The toolbox item kind of the toolbox's categories (`B2cToolboxCategory`). */
 export const B2C_CATEGORY_KIND = 'b2c_category';
@@ -332,7 +341,12 @@ export function functionsContents(
     )
     .slice(0, MAX_LISTED_FUNCTIONS);
   if (functions.length === 0) {
-    items.push(label(NO_FUNCTIONS_HINT));
+    NO_FUNCTIONS_HINT.forEach((line, index) => {
+      if (index > 0) {
+        items.push(separator(HINT_LINE_GAP));
+      }
+      items.push(label(line));
+    });
     return items;
   }
   const byId = new Map(all.map((symbol) => [symbol.id, symbol]));

@@ -397,9 +397,15 @@ describe('the Functions category and Your functions', () => {
   it('shows a hint under Your functions while the module has no functions', () => {
     const items = functionsContents(context());
     expect(typesOf(items)).toEqual(['func.define', 'func.return']);
-    expect(labelsOf(items)).toEqual([YOUR_FUNCTIONS_HEADING, NO_FUNCTIONS_HINT]);
+    expect(labelsOf(items)).toEqual([YOUR_FUNCTIONS_HEADING, ...NO_FUNCTIONS_HINT]);
     expect(YOUR_FUNCTIONS_HEADING).toBe('Your functions');
-    expect(NO_FUNCTIONS_HINT).toBe('Define a function above. A block that runs it appears here.');
+    expect(NO_FUNCTIONS_HINT).toEqual(['No functions yet.', 'Define one above.']);
+    // The two lines read as one hint: a small gap between them, not the flyout's usual one.
+    expect(items.slice(-3).map((item) => [item.kind, 'gap' in item ? item.gap : null])).toEqual([
+      ['label', null],
+      ['sep', 4],
+      ['label', null],
+    ]);
   });
 
   it('lists a call for every function under Your functions, with no module heading for one module', () => {
@@ -455,7 +461,11 @@ describe('the Functions category and Your functions', () => {
         active: 'mod_extra',
       }),
     );
-    expect(labelsOf(empty)).toEqual([YOUR_FUNCTIONS_HEADING, 'Module: helpers', NO_FUNCTIONS_HINT]);
+    expect(labelsOf(empty)).toEqual([
+      YOUR_FUNCTIONS_HEADING,
+      'Module: helpers',
+      ...NO_FUNCTIONS_HINT,
+    ]);
     expect(typesOf(empty)).toEqual(['func.define', 'func.return']);
   });
 
@@ -528,7 +538,9 @@ describe('headings and labels', () => {
     // Projects whose own names are category names, too.
     const texts = shownTexts([...categoryNames, 'main']);
     expect(texts).toContain(YOUR_FUNCTIONS_HEADING);
-    expect(texts).toContain(NO_FUNCTIONS_HINT);
+    for (const line of NO_FUNCTIONS_HINT) {
+      expect(texts).toContain(line);
+    }
     expect(texts).toContain(MAKE_VARIABLE_TEXT);
     expect(texts).toContain('Module: Program');
     for (const text of texts) {
