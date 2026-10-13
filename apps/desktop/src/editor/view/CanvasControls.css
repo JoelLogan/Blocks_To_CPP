@@ -1,0 +1,49 @@
+/*
+ * The canvas controls (src/editor/view/CanvasControls.tsx): a row of buttons at the top right of
+ * the visible canvas. ./placement.ts sets their place (`top`, `right`) and their greatest width
+ * from Blockly's metrics, so they never cover the toolbox or its flyout; a narrow canvas wraps
+ * them onto another row. No z-index: they come after the canvas in the document, so they are drawn
+ * over it, and Blockly's own layers (the toolbox, scroll bars, a dragged block) stay above them.
+ */
+.canvas-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--b2c-control-border);
+  border-radius: 6px;
+  background: var(--b2c-surface-raised);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 20%);
+}
+
+.canvas-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--b2c-text);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.canvas-control:hover {
+  background: var(--b2c-border);
+}
+
+/* The minus and plus signs, drawn larger than the text beside them. */
+.canvas-control > [aria-hidden='true'] {
+  font-size: 18px;
+}

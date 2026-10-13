@@ -8,7 +8,7 @@
 ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ≡  Guessing Game ▼  │ main × │ player × │ + │   [Debug ▼]  ► Run  ■ Stop  Build  Settings    │  ← toolbar
 ├──────────┬───────────────────────────────────────────────────────────┬───────────────────────┤
-│ ● Program│  Find   tidy   collapse all          zoom - + reset       │  C++   Outline   Help │
+│ ● Program│  Find   tidy   collapse all     zoom − + 100% show all    │  C++   Outline   Help │
 │ ● Vars   │                                                           │ ───────────────────── │
 │ ● Math   │                                                           │ 1 #include <iostream> │
 │ ● Logic  │            Blockly workspace (Zelos renderer)             │ 2                     │
@@ -58,6 +58,13 @@
   One Undo brings all of them back.
 * Dropping a block on the trash can deletes it; the trash can keeps nothing,
   and Undo brings deleted blocks back.
+* The canvas has *Zoom out*, *Zoom in*, *Reset zoom* (back to 100 % around
+  the centre; it shows the zoom now) and *Show all blocks*, which scrolls to
+  the blocks without changing the zoom: it centres them where they fit, and
+  otherwise shows their top-left corner. `Ctrl` + wheel or a pinch zooms
+  around the pointer; `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom from the keyboard.
+  The controls are named buttons at the top right of the canvas, never over
+  the toolbox, and reachable with Tab after the canvas.
 * Docks are resizable and collapsible. Swapping, splitting and remembering
   them, Focus mode and Presentation mode come in M5.
 * The status bar says *Saved* (with the time after a save in this session)
@@ -329,7 +336,10 @@ places a pointer drag could drop it, type rule included; `Enter` puts it
 there, `Escape` cancels), `T` opens the toolbox, whose categories and blocks
 are reached with the arrow keys (adding a block from it is one undo step),
 and copy, paste, duplicate, delete, undo and the block menu (`Ctrl+Enter`)
-act on the keyboard focus. The
+act on the keyboard focus. `Ctrl+=` / `Ctrl+-` zoom the canvas around its
+centre and `Ctrl+0` resets the zoom to 100 %, and the new zoom is announced;
+`Ctrl` + wheel and a pinch zoom around the pointer, and the plain wheel
+scrolls. The
 shortcuts `F5`, `Shift+F5`, `Ctrl+B` and `Ctrl+S` work; the command palette,
 remapping, Find, Go to definition, Find references and Rename come in M5, and
 Quick Insert in M3. Full screen-reader announcements for the workspace and
@@ -358,13 +368,13 @@ console and selected text.
   primitives.
 * **In M2** every panel and dialog is checked with axe-core in the component
   tests and reachable by keyboard, and the Tab order runs toolbar, toolbox,
-  the toolbox's blocks, canvas, then the docks. The canvas and the toolbox's
-  blocks have names and describe their keys; a polite live region announces
-  the block or place the keyboard reaches; Blockly's own animations, and the
-  toolbox's scroll to a category, follow the reduced-motion setting; focus
-  returns where it was when a dialog closes, the block canvas included; and it
-  stays in the editor when the focused block is deleted or the toolbox's
-  blocks are rebuilt.
+  the toolbox's blocks, canvas, the canvas's zoom controls, then the docks.
+  The canvas and the toolbox's blocks have names and describe their keys; a
+  polite live region announces the block or place the keyboard reaches;
+  Blockly's own animations, and the toolbox's scroll to a category, follow the
+  reduced-motion setting; focus returns where it was when a dialog closes, the
+  block canvas included; and it stays in the editor when the focused block is
+  deleted or the toolbox's blocks are rebuilt.
   The manual screen-reader pass (NVDA, Orca) follows
   [the M2 accessibility checklist](../manual-tests/m2-accessibility.md). The
   High Contrast themes, the checked colour-blind-safe palette, UI scaling,
