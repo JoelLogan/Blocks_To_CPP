@@ -397,7 +397,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   build cannot run (its end-to-end hook lacks a method the benchmark calls)
   is skipped with a notice, and a benchmark that fails is left out of the
   comparison; the job summary lists both. Only a gated regression or a
-  benchmark that failed on the head fails the job. Before, the first failure
+  benchmark that failed on the head fails the job, and a run that left a
+  benchmark out says it is not conclusive for it. Before, the first failure
   stopped every benchmark of the run.
 - `apps/desktop/e2e/bench/accepted.json` (format version 2) gives each entry
   a kind: `redefined` restarts a metric's nightly history only; `accepted`,

@@ -10,7 +10,9 @@
 # the base's does not; a redefinition never waives an A/B difference, since the head's benchmarks
 # measure both builds. A benchmark the base build cannot run (its end-to-end hook lacks a method
 # the benchmark calls) is skipped, and one that fails is left out of the comparison: both are
-# listed in the summary, and only a benchmark that failed on the head fails the job.
+# listed in the summary, and only a benchmark that failed on the head fails the job. A run that left
+# a benchmark out ends "Not conclusive" (with a warning annotation): it says nothing about that
+# benchmark's metrics, so it does not count for a merge rule that needs them.
 #
 # What runs here (the trust boundary): these jobs build and run the code of both commits, so a
 # caller may pass only commits its own run may execute.
@@ -357,7 +359,8 @@ jobs:
           apps/desktop/e2e/bench/ab-rounds.sh "$BASE_APP" "$HEAD_APP" "$AB_OUT" "${filters[@]}"
 
       # Fails on a gated regression, or on a benchmark that failed on the head; the skipped
-      # benchmarks and those that failed on the base are listed after the table.
+      # benchmarks and those that failed on the base are listed after the table, and the summary
+      # (and a warning annotation) says the run is not conclusive for them.
       - name: Compare the head with the base
         shell: bash
         run: |

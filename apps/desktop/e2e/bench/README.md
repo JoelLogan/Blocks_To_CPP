@@ -267,14 +267,17 @@ others:
 Only the benchmarks that ran in every round on both sides are compared (the others' results files
 move to `left-out/`). `ab-rounds.sh` records what happened to each benchmark in `ab-runs.tsv`, and
 `bench-compare.py ab --runs` lists the skipped and failed ones under the table. The job fails on a
-gated regression or on a benchmark that failed on the head; a skip, or a failure on the base, is
-reported only.
+gated regression or on a benchmark that failed on the head; a skip, or a failure on the base, does
+not fail it, but the summary then ends "Not conclusive" for those benchmarks (and the job shows a
+warning): the run says nothing about their metrics.
 
 A change expected to alter a gated metric runs the A/B job on its pull request. W4-2, W5-1 and W3-11
-of the M2 polish wave merge only with a green A/B run attached, or once their metrics have at least
-5 nightly baselines: the toolbox's listing (W4-2) is measured by `select-1000.max-task`, the snap
-radius (W5-1) by `drag-5000.frame-p95`, and the console's screen-reader output (W3-11) by
-`console-200000.run`, all part of a pull request's run. Locally, with two builds of the app:
+of the M2 polish wave merge only with a green A/B run attached whose table compares their metric,
+or once their metrics have at least 5 nightly baselines: the toolbox's listing (W4-2) is measured by
+`select-1000.max-task`, the snap radius (W5-1) by `drag-5000.frame-p95`, and the console's
+screen-reader output (W3-11) by `console-200000.run`, all part of a pull request's run. A run that
+is not conclusive for the benchmark of one of them (the base build cannot run it, or it failed on
+the base) does not count. Locally, with two builds of the app:
 
 ```sh
 AB_XVFB=1 apps/desktop/e2e/bench/ab-rounds.sh /tmp/base/blocks2cpp-desktop \

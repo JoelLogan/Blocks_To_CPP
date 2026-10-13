@@ -640,7 +640,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
   - **A/B bench job.** Started by a PR label or `workflow_dispatch`. It builds base and head and runs the affected metrics alternately on one runner (at least 10 samples each), comparing medians at the 10% threshold.
   - **Acceptance file.** `apps/desktop/e2e/bench/accepted.json` holds entries of {metric, system, commit, reason}. `bench-compare.py` restarts that metric's history from the accepting run.
   - **Metrics:** `webview.select-1000.max-task`; `webview.edit-1000.p95` with the C++ panel open; guessing-game `select` and `edit` (report-only).
-  - **Merge rule:** W4-2, W5-1 and W3-11 merge only with a green A/B run attached, or once their metrics have at least 5 baselines.
+  - **Merge rule:** W4-2, W5-1 and W3-11 merge only with a green A/B run attached whose table compares their metric (a run that left their benchmark out says "Not conclusive"), or once their metrics have at least 5 baselines.
 - **If time (M):**
   - `webview.drag-stack-1000.frame-p95`, `webview.drag-over-5000.frame-p95` and `declare-variable`.
   - User Timing marks around the pipeline phases, the toolbox refresh, the selection handler and the code-panel update. The bench reads them; in the app they are exposed only through the E2E hook.

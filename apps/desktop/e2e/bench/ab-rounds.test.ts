@@ -272,6 +272,11 @@ describe.skipIf(!bash)('ab-rounds.sh', () => {
     expect(passed.stdout).toContain(
       '- `drag.bench`: failed on the base in round 2; the head ran it without failing.',
     );
+    // Green, but it says nothing about the benchmarks left out.
+    expect(passed.stdout).toContain(
+      'Not conclusive: `select.bench`, `drag.bench` were not compared',
+    );
+    expect(passed.stdout).not.toContain('No gated metric regressed.');
     expect(passed.status).toBe(0);
 
     const headFailed = setup(['head drag.bench 1 fail']);
@@ -290,6 +295,7 @@ describe.skipIf(!bash)('ab-rounds.sh', () => {
     expect(rounds(nothing, ['preview.bench']).status).toBe(0);
     const empty = compare(nothing);
     expect(empty.stdout).toContain('No benchmark was compared.');
+    expect(empty.stdout).toContain('Not conclusive: `preview.bench` was not compared');
     expect(empty.status).toBe(0);
   });
 

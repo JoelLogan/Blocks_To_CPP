@@ -961,6 +961,30 @@ def runs_markdown(runs: list[BenchRun]) -> list[str]:
     return lines
 
 
+def not_compared(runs: list[BenchRun] | None) -> list[str]:
+    """The benchmarks the head ran but the base did not (skipped, or failed on the base only).
+
+    Their metrics are missing from the table, so the run says nothing about them: it is not
+    conclusive for them, though nothing failed on the head.
+    """
+    return [
+        run.bench
+        for run in runs or []
+        if run.outcome == "skipped" or (run.base_failed and not run.head_failed)
+    ]
+
+
+def not_conclusive_line(benches: list[str]) -> str:
+    """What the summary says about benchmarks that were not compared (see not_compared)."""
+    names = ", ".join(f"`{bench}`" for bench in benches)
+    were = "was" if len(benches) == 1 else "were"
+    its = "its metrics" if len(benches) == 1 else "their metrics"
+    return (
+        f"Not conclusive: {names} {were} not compared, so this run does not meet the merge rule "
+        f"of docs/spec/09-quality-and-delivery.md §9.2 for {its}."
+    )
+
+
 def ab_markdown(
     system: str,
     comparisons: list[Comparison],
@@ -1013,7 +1037,16 @@ def ab_markdown(
             lines.append("")
     if runs is not None:
         lines.extend(runs_markdown(runs))
-    lines.append(regressions_line(comparisons))
+    # A run that compared everything it ran says whether a gated metric regressed. One that left
+    # benchmarks out never says "No gated metric regressed." alone: a green job is then not
+    # evidence for their metrics (a change that the base cannot run its benchmark for).
+    missing = not_compared(runs)
+    if missing and not any(comparison.failed for comparison in comparisons):
+        lines.append("No compared gated metric regressed.")
+    else:
+        lines.append(regressions_line(comparisons))
+    if missing:
+        lines.append(not_conclusive_line(missing))
     head_failed = [run.bench for run in runs or [] if run.head_failed]
     if head_failed:
         lines.append(f"Failed on the head: {', '.join(f'`{bench}`' for bench in head_failed)}.")
@@ -1052,6 +1085,11 @@ def command_ab(arguments: argparse.Namespace) -> int:
         arguments,
         ab_markdown(system, comparisons, threshold=arguments.threshold, runs=runs, redefined=redefined),
     )
+    missing = not_compared(runs)
+    if missing:
+        # A GitHub Actions annotation, so a green job still shows it was not conclusive (benchmark
+        # names are plain, checked by read_runs).
+        print(f"::warning title=A/B benchmarks not conclusive::{not_conclusive_line(missing)}")
     head_failed = any(run.head_failed for run in runs or [])
     return 1 if head_failed or any(comparison.failed for comparison in comparisons) else 0
 
@@ -1797,8 +1835,8 @@ def self_test() -> int:
         # --- A/B with the rounds' record: skipped and failed benchmarks. ---
         hook_note = "the app's end-to-end hook has no scrollCanvasBy, which the select benchmark needs"
         head100 = ab_side("head100-runs", halves("m.time", 100.0))
-        expect(
-            "A/B runs: a skip and a failure on the base are reported, and pass",
+        skipped_and_base_failed = expect(
+            "A/B runs: a skip and a failure on the base are reported, pass, and are not conclusive",
             ab(base100, head100, "--runs", str(_runs(root / "runs-base.tsv", [
                 "preview.bench\tcompared\t0\t0\t",
                 f"select.bench\tskipped\t0\t0\t{hook_note}",
@@ -1809,7 +1847,22 @@ def self_test() -> int:
             "Not compared:",
             f"- `select.bench`: skipped, as the base build cannot run it: {hook_note}.",
             "- `drag.bench`: failed on the base in round 1; the head ran it without failing. Not compared",
-            "No gated metric regressed.",
+            "No compared gated metric regressed.",
+            "Not conclusive: `select.bench`, `drag.bench` were not compared, so this run does not meet "
+            "the merge rule of docs/spec/09-quality-and-delivery.md §9.2 for their metrics.",
+            "::warning title=A/B benchmarks not conclusive::Not conclusive: `select.bench`, `drag.bench`",
+        )
+        if "No gated metric regressed." in skipped_and_base_failed:
+            failures.append("A/B runs: a run that left benchmarks out says no gated metric regressed")
+        expect(
+            "A/B runs: one benchmark left out is named alone",
+            ab(base100, head100, "--runs", str(_runs(root / "runs-one.tsv", [
+                "preview.bench\tcompared\t0\t0\t",
+                "select.bench\tfailed\t2\t0\t",
+            ]))),
+            0,
+            "Not conclusive: `select.bench` was not compared, so this run does not meet the merge rule "
+            "of docs/spec/09-quality-and-delivery.md §9.2 for its metrics.",
         )
         expect(
             "A/B runs: a benchmark that failed on the head fails the comparison",
@@ -1836,11 +1889,22 @@ def self_test() -> int:
         empty_head.mkdir(parents=True)
         all_skipped = _runs(root / "runs-skipped.tsv", [f"select.bench\tskipped\t0\t0\t{hook_note}"])
         expect(
-            "A/B runs: nothing to compare when every benchmark was skipped passes",
+            "A/B runs: nothing to compare when every benchmark was skipped passes, not conclusive",
             ab(empty_base, empty_head, "--runs", str(all_skipped)),
             0,
             "No benchmark was compared.",
             "skipped, as the base build cannot run it",
+            "Not conclusive: `select.bench` was not compared",
+        )
+        expect(
+            "A/B runs: a regression beside a benchmark left out is still a regression",
+            ab(base100, head111, "--runs", str(_runs(root / "runs-regressed.tsv", [
+                "preview.bench\tcompared\t0\t0\t",
+                "drag.bench\tfailed\t1\t0\t",
+            ]))),
+            1,
+            "Regressed: `m.time`",
+            "Not conclusive: `drag.bench` was not compared",
         )
         expect(
             "A/B: without the record, a side without results is refused",

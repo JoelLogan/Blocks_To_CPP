@@ -211,10 +211,13 @@ Details of each level as M2 sets them up:
   * The M2 polish wave's Variables listing, zoom-aware snap radius and
     screen-reader console output (W4-2, W5-1 and W3-11 of the
     [plan](../plans/m2-polish-plan.md)) merge only with a green A/B run
-    attached, or once their metrics have at least 5 nightly baselines. Their
-    metrics are the selection at 1,000 blocks, dragging at 5,000 blocks and
-    the console's output; a pull request's A/B run takes every benchmark
-    but cold start, so it includes them.
+    attached whose table compares their metric, or once their metrics have
+    at least 5 nightly baselines. Their metrics are the selection at 1,000
+    blocks, dragging at 5,000 blocks and the console's output; a pull
+    request's A/B run takes every benchmark but cold start. A benchmark the
+    base build cannot run, or that fails on the base, is left out without
+    failing the job, and the summary then ends "Not conclusive" for it: such
+    a run does not count for the rule.
   * M2 gates regressions. Absolute interaction budgets on small programs are
     reported in M2 and gated from M3 once the toolbox refreshes per section.
     Meeting N2–N4 and N12 ([01 §1.4](01-overview.md#14-goals)) at
