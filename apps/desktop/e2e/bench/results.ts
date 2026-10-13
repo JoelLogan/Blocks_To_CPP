@@ -96,6 +96,29 @@ export function benchSamples(env: NodeJS.ProcessEnv = process.env): number {
   return count;
 }
 
+/** The largest offset {@link benchOffset} allows. */
+export const MAX_OFFSET = 100_000;
+
+/**
+ * Where in its list of targets a benchmark that goes round one starts: `B2C_BENCH_OFFSET` (a whole
+ * number from 0 to {@link MAX_OFFSET}), by default 0. The A/B job's runs take fewer samples each
+ * ({@link benchSamples}), so each of its rounds starts where the previous one stopped
+ * (e2e/bench/ab-rounds.sh): its runs together click the targets a nightly run does.
+ */
+export function benchOffset(env: NodeJS.ProcessEnv = process.env): number {
+  const value = env['B2C_BENCH_OFFSET'];
+  if (value === undefined || value === '') {
+    return 0;
+  }
+  const offset = Number(value);
+  if (!/^[0-9]+$/.test(value) || offset > MAX_OFFSET) {
+    throw new BenchResultsError(
+      `B2C_BENCH_OFFSET must be a whole number from 0 to ${String(MAX_OFFSET)}`,
+    );
+  }
+  return offset;
+}
+
 /**
  * Checks a metric before it is written; throws {@link BenchResultsError}. It needs at least
  * `minSamples` samples ({@link MIN_SAMPLES} unless a run takes fewer, see {@link benchSamples}).

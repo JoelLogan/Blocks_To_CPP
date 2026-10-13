@@ -12,7 +12,10 @@
 # Environment:
 #   AB_ROUNDS   rounds (default 2); round n runs the base first when n is odd, the head first
 #               otherwise (base, head, head, base, ...)
-#   AB_SAMPLES  samples per benchmark and run (default 5; B2C_BENCH_SAMPLES of the runs)
+#   AB_SAMPLES  samples per benchmark and run (default 5; B2C_BENCH_SAMPLES of the runs). Round n
+#               starts the benchmarks that go round a list of targets (the selection ones) at
+#               (n - 1) * AB_SAMPLES (B2C_BENCH_OFFSET), the same for both builds, so the rounds
+#               together click the targets a nightly run does
 #   AB_XVFB     1: run each benchmark run under xvfb-run (Linux CI)
 # The rest of the harness's settings (e2e/README.md) are passed through.
 set -euo pipefail
@@ -52,14 +55,16 @@ run() {
   local side=$1 app=$2 round=$3
   shift 3
   local results="$out/$side/round-$round"
+  local offset=$(((round - 1) * samples))
   mkdir -p "$results"
-  echo "::group::Round $round, $side ($samples samples per benchmark)"
+  echo "::group::Round $round, $side ($samples samples per benchmark from target $offset)"
   local command=(pnpm --filter @blocks2cpp/desktop exec vitest run
     --config e2e/bench/vitest.bench.config.ts --project bench "$@")
   if [ "${AB_XVFB:-0}" = "1" ]; then
     command=(xvfb-run --auto-servernum "${command[@]}")
   fi
-  B2C_E2E_APP=$app B2C_BENCH_OUT=$results B2C_BENCH_SAMPLES=$samples "${command[@]}"
+  B2C_E2E_APP=$app B2C_BENCH_OUT=$results B2C_BENCH_SAMPLES=$samples B2C_BENCH_OFFSET=$offset \
+    "${command[@]}"
   echo "::endgroup::"
 }
 

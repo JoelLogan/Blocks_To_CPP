@@ -8,7 +8,9 @@
  * - `webview.guessing-game.select.max-task`: blocks in different scopes are clicked in turn with
  *   real pointer input (bench/targets.ts `GUESSING_TARGETS`), each scrolled into view first
  *   through the test hook; the longest task from the press until the page has run no long task
- *   for 300 ms. A first click warms up and is not counted.
+ *   for 300 ms, which includes the rebuild of the toolbox's flyout for the new scope (checked
+ *   after each click). A first click warms up and is not counted. The clicks start at target
+ *   `B2C_BENCH_OFFSET`, as in the 1,000-block selection benchmark.
  * - `webview.guessing-game.edit.max-task`: a print with a unique text is added at the end of
  *   `main` through the test hook; the longest task from the insertion until its C++ is in the
  *   editor's state and the page has run no long task for 300 ms (Blockly's rendering, the
@@ -36,9 +38,9 @@ import {
   waitUntilQuiet,
 } from './interaction';
 import { openProjectFile } from './project';
-import { benchSamples, writeMetric } from './results';
+import { benchOffset, benchSamples, writeMetric } from './results';
 import { median, rounded } from './stats';
-import { GUESSING_MAIN_ID, GUESSING_TARGETS } from './targets';
+import { GUESSING_MAIN_ID, GUESSING_TARGETS, targetAt } from './targets';
 
 /** How long opening the example may take. */
 const OPEN_TIMEOUT_MS = 60_000;
@@ -59,6 +61,7 @@ describe('webview benchmark: the guessing game', () => {
     'times the longest task after selections and after edits',
     async (context) => {
       const samples = benchSamples();
+      const offset = benchOffset();
       const folder = mkdtempSync(path.join(tmpdir(), 'b2c-bench-guessing-'));
       folders.push(folder);
       const file = path.join(folder, 'guessing_game.b2c');
@@ -71,18 +74,11 @@ describe('webview benchmark: the guessing game', () => {
       });
       await waitUntilQuiet(app, 'opening the guessing game');
 
-      const target = (index: number): string => {
-        const id = GUESSING_TARGETS[index % GUESSING_TARGETS.length];
-        if (id === undefined) {
-          throw new Error(`No target ${String(index)}`);
-        }
-        return id;
-      };
-      await timedClick(app, target(GUESSING_TARGETS.length - 1));
+      await timedClick(app, targetAt(GUESSING_TARGETS, offset + GUESSING_TARGETS.length - 1));
       const select: number[] = [];
       const selectSpans: SpanTimes[] = [];
       for (let sample = 0; sample < samples; sample += 1) {
-        const timed = await timedClick(app, target(sample));
+        const timed = await timedClick(app, targetAt(GUESSING_TARGETS, offset + sample));
         select.push(timed.longestMs);
         selectSpans.push(timed.spans);
       }

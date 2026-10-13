@@ -58,15 +58,19 @@ The spans are not metrics; an app built before they existed shows none.
   settle afterwards, outside the timing.
 - **Selecting** ([`select.bench.e2e.ts`](select.bench.e2e.ts), the guessing game's in
   [`guessing.bench.e2e.ts`](guessing.bench.e2e.ts)): the blocks of [`targets.ts`](targets.ts) are
-  clicked in turn with real pointer input, each in another scope than the one before, so every
-  click changes the selection and what the toolbox lists. Before each click, outside the timing,
-  the canvas is scrolled through the test hook (`scrollCanvasBy`, which keeps the selection, unlike
-  a drag of the background) until the block is well inside the visible canvas, and the page is left
-  to settle (10 frames in a row within 50 ms). The page times its tasks from the press until it
-  has run no long task for 300 ms ([`interaction.ts`](interaction.ts) `timedClick`); the longest
-  task that ended after the press is the sample. The block must not be selected before and must be
-  selected after. At 1,000 blocks the C++ panel is folded, as in the drag benchmark, to leave the
-  canvas room on a small window.
+  clicked in turn with real pointer input, the button held for 50 ms as a person's click holds it,
+  each in another scope than the one before, so every click changes the selection and what the
+  toolbox lists. Before each click, outside the timing, the canvas is scrolled through the test
+  hook (`scrollCanvasBy`, which keeps the selection, unlike a drag of the background) until the
+  block is well inside the visible canvas, and the page is left to settle (10 frames in a row
+  within 50 ms). The page times its tasks from the press until it has run no long task for 300 ms
+  ([`interaction.ts`](interaction.ts) `timedClick`); the longest task that ended after the press
+  is the sample, the toolbox's rebuild of its flyout for the new scope included (it runs 100 ms
+  after the release). The block must not be selected before and must be selected after, and once
+  the page has settled the toolbox must show the getters `targets.ts` names for the block and not
+  those it names as left out, which tell its listing from the one before: a click after which the
+  toolbox was not rebuilt fails the run rather than give a fast sample. At 1,000 blocks the C++
+  panel is folded, as in the drag benchmark, to leave the canvas room on a small window.
 - **Guessing game edits** ([`guessing.bench.e2e.ts`](guessing.bench.e2e.ts)): as the second phase
   of the preview benchmark, in the example `examples/guessing_game.b2c`; the sample is the longest
   task from the insertion (which is part of it) until the page has settled.
@@ -193,9 +197,11 @@ landed on the base branch after the pull request branched off count for neither 
 head's `accepted.json` is the merged file. It builds the app under test from each ref, and then on
 one runner per system [`ab-rounds.sh`](ab-rounds.sh) runs the head's benchmarks against both builds
 in alternating runs (base, head, head, base: 2 rounds of 5 samples, 10 per side), and
-`bench-compare.py ab` compares the head's medians with the base's at 10%. The head's harness
-measures both builds, so a benchmark that needs a newer test hook can be compared only once the
-base has it.
+`bench-compare.py ab` compares the head's medians with the base's at 10%. Each round starts the
+selection benchmarks where the round before stopped (`B2C_BENCH_OFFSET`, the same for both builds),
+so each side clicks the same 10 targets as a nightly run, all 8 scopes of `select-1000` among them.
+The head's harness measures both builds, so a benchmark that needs a newer test hook can be
+compared only once the base has it.
 
 A change expected to alter a gated metric runs the A/B job on its pull request. W4-2, W5-1 and W3-11
 of the M2 polish wave merge only with a green A/B run attached, or once their metrics have at least

@@ -12,11 +12,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { REPOSITORY_ROOT } from '../support/env';
 import {
   type BenchMetric,
+  benchOffset,
   benchOs,
   benchSamples,
   benchOutDir,
   BenchResultsError,
   checkMetric,
+  MAX_OFFSET,
   MIN_SAMPLES,
   RESULTS_FORMAT,
   resultsJson,
@@ -78,6 +80,19 @@ describe('benchSamples', () => {
     expect(benchSamples({ B2C_BENCH_SAMPLES: '1000' })).toBe(1_000);
     for (const bad of ['0', '1001', '2.5', '-3', 'ten', ' 5']) {
       expect(() => benchSamples({ B2C_BENCH_SAMPLES: bad }), bad).toThrow(BenchResultsError);
+    }
+  });
+});
+
+describe('benchOffset', () => {
+  it('is B2C_BENCH_OFFSET, a whole number from 0 to 100,000, or 0', () => {
+    expect(benchOffset({})).toBe(0);
+    expect(benchOffset({ B2C_BENCH_OFFSET: '' })).toBe(0);
+    expect(benchOffset({ B2C_BENCH_OFFSET: '0' })).toBe(0);
+    expect(benchOffset({ B2C_BENCH_OFFSET: '5' })).toBe(5);
+    expect(benchOffset({ B2C_BENCH_OFFSET: String(MAX_OFFSET) })).toBe(MAX_OFFSET);
+    for (const bad of ['100001', '2.5', '-3', 'five', ' 5', '1e3']) {
+      expect(() => benchOffset({ B2C_BENCH_OFFSET: bad }), bad).toThrow(BenchResultsError);
     }
   });
 });
