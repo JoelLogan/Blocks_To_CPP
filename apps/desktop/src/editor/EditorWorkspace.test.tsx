@@ -11,12 +11,15 @@ import { type EditorContext, type EditorPlugin, getEditorHandle } from '../app/e
 import { EDITOR_PLUGINS } from '../app/editorPlugins';
 import { resetAppStore, useAppStore } from '../app/store';
 import { documentFixture, projectFixture } from '../app/testing/fixtures';
+import { pressTab } from '../app/layout/sequentialFocus';
 import { expectNoAxeViolations } from '../test/axe';
 import { attachEditor, EditorWorkspace, editorInjectOptions } from './EditorWorkspace';
+import { createKeyboardPlugin } from './keyboard';
 import { createCoreHost } from './preview/coreHost';
 import { registerEditorBlocks } from './services';
 import { B2cBlockDragger } from './sync/drag';
-import { present } from './sync/testing';
+import { present, setViewSize } from './sync/testing';
+import { CONTROLS_COMPONENT_ID } from './view/placement';
 
 /** The colour-scheme media query the component reads. */
 const scheme = vi.hoisted(() => {
@@ -225,6 +228,49 @@ describe('the block editor', () => {
     unmount();
   });
 
+  it('puts the canvas controls over the canvas, next in the Tab order, and takes them away with it', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    useAppStore.getState().actions.setProject(projectFixture());
+    // As in the app: the keyboard plugin puts the toolbox's blocks before the canvas.
+    EDITOR_PLUGINS.push(createKeyboardPlugin({ matchMedia: null }));
+    const { container, unmount } = render(<EditorWorkspace />);
+    const [workspace] = mainWorkspaces();
+    if (workspace === undefined) {
+      throw new Error('no workspace');
+    }
+    // The window lays the editor out: the resize observer resizes the workspace.
+    setViewSize(workspace, 1000, 700);
+    act(() => {
+      FakeResizeObserver.instances[0]?.callback();
+    });
+
+    // In the workspace's container, right after Blockly's injection `div`.
+    const group = screen.getByRole('group', { name: 'Canvas zoom' });
+    expect(group.parentElement).toBe(container.querySelector('.blockly-host'));
+    expect(group.previousElementSibling).toBe(workspace.getInjectionDiv());
+    expect(group.style.display).toBe('');
+    // Blockly's own SVG zoom controls are gone.
+    expect(container.querySelector('.blocklyZoom')).toBeNull();
+
+    // Tab goes from the canvas to the controls.
+    const canvas = workspace.getSvgGroup();
+    if (!(canvas instanceof SVGElement)) {
+      throw new Error('the canvas is not an SVG element');
+    }
+    canvas.focus();
+    const reached: (string | null)[] = [];
+    for (let step = 0; step < 4; step++) {
+      act(() => {
+        reached.push(pressTab()?.getAttribute('aria-label') ?? null);
+      });
+    }
+    expect(reached).toEqual(['Zoom out', 'Zoom in', 'Reset zoom (now 90%)', 'Show all blocks']);
+
+    unmount();
+    expect(group.isConnected).toBe(false);
+    expect(workspace.getComponentManager().getComponent(CONTROLS_COMPONENT_ID)).toBeUndefined();
+  });
+
   it('has no module switcher for a single module', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     useAppStore.getState().actions.setProject(projectFixture());
@@ -239,7 +285,15 @@ describe('the initial toolbox and the inject options', () => {
     const options = editorInjectOptions(Blockly.Themes.Zelos);
     const contents = (options.toolbox as { contents: { name: string }[] }).contents;
     expect(contents.map((category) => category.name)).toContain('Program');
-    expect(options.zoom).toMatchObject({ minScale: 0.1, maxScale: 4 });
+    // The wheel scrolls, Ctrl + wheel and a pinch zoom; the editor draws its own zoom controls.
+    expect(options.zoom).toMatchObject({
+      controls: false,
+      wheel: true,
+      pinch: true,
+      minScale: 0.1,
+      maxScale: 4,
+    });
+    expect(options.move).toMatchObject({ wheel: true });
     expect(options.plugins).toEqual({
       connectionChecker: 'b2c_checker',
       blockDragger: B2cBlockDragger,

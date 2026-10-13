@@ -8,7 +8,8 @@
  */
 import { B2C_CHECKER_NAME, b2cDarkTheme, b2cLightTheme } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { dialogs as appDialogs } from '../app/dialogs';
 import type { DialogService as AppDialogService } from '../app/dialogs/service';
@@ -38,6 +39,7 @@ import { MAX_ZOOM, MIN_ZOOM } from './sync/limits';
 import { clearWorkspace } from './sync/traverse';
 import { EditorSession } from './sync/session';
 import { toolboxInjectOptions } from './toolbox';
+import { CanvasControls } from './view/CanvasControls';
 
 /**
  * Where Blockly loads its images and cursors from: the dev server serves them straight from the
@@ -70,10 +72,12 @@ export function editorInjectOptions(theme: Blockly.Theme): Blockly.BlocklyOption
     },
     grid: { spacing: 24, length: 2, colour: '#8f98ab55', snap: true },
     move: { scrollbars: true, drag: true, wheel: true },
-    // The project format's zoom range (05 §5.3), so a saved view is shown as it was saved.
+    // The project format's zoom range (05 §5.3), so a saved view is shown as it was saved. The
+    // wheel scrolls; Ctrl + wheel and a pinch zoom around the pointer (04 §4.7). Blockly's SVG zoom
+    // controls are replaced by the editor's named buttons (./view/CanvasControls.tsx).
     zoom: {
-      controls: true,
-      wheel: false,
+      controls: false,
+      wheel: true,
       pinch: true,
       startScale: 0.9,
       maxScale: MAX_ZOOM,
@@ -193,9 +197,20 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
   };
 }
 
-/** The block workspace with the module switcher above it. */
+/** An injected workspace and the element it was injected into. */
+interface InjectedCanvas {
+  readonly workspace: Blockly.WorkspaceSvg;
+  readonly host: HTMLElement;
+}
+
+/**
+ * The block workspace with the module switcher above it, and the canvas controls over its top
+ * right corner: they are rendered into the workspace's container after Blockly's injection `div`,
+ * so they share its coordinates and follow the canvas in the Tab order.
+ */
 export function EditorWorkspace() {
   const host = useRef<HTMLDivElement>(null);
+  const [canvas, setCanvas] = useState<InjectedCanvas | null>(null);
 
   useEffect(() => {
     const element = host.current;
@@ -224,8 +239,10 @@ export function EditorWorkspace() {
       workspace.setTheme(theme());
     };
     darkScheme.addEventListener('change', onSchemeChange);
+    setCanvas({ workspace, host: element });
 
     return () => {
+      setCanvas(null);
       darkScheme.removeEventListener('change', onSchemeChange);
       resizeObserver.disconnect();
       editor.detach();
@@ -242,6 +259,8 @@ export function EditorWorkspace() {
     <>
       <ModuleSwitcher />
       <div ref={host} className="blockly-host" />
+      {canvas !== null &&
+        createPortal(<CanvasControls workspace={canvas.workspace} />, canvas.host)}
     </>
   );
 }

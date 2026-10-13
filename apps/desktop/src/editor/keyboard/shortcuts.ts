@@ -5,6 +5,10 @@
  * Alt, Shift or the Windows key Blockly's registry does not match them, so they never take a key
  * from the clipboard (`Ctrl+C`…), undo (`Ctrl+Z`) or the window's shortcuts (`F5`, `Ctrl+S`).
  *
+ * The zoom keys are the exception: `Ctrl+=` (also `Ctrl++` and the keypad's `Ctrl++`) and `Ctrl+-`
+ * zoom the canvas one step around its middle, and `Ctrl+0` resets the zoom to 100 % (decision D10
+ * of the M2 polish plan, ../view/zoom.ts); the new zoom is announced.
+ *
  * The registry is global while each editor has its own canvas: the keys are registered when the
  * first editor attaches and removed when the last one detaches; a key goes to the editor of the
  * canvas (or toolbox, or flyout) it was pressed in. A held block (./mover.ts) gets its keys before
@@ -12,6 +16,7 @@
  */
 import * as Blockly from 'blockly/core';
 
+import { resetZoom, zoomAnnouncement, zoomStep } from '../view/zoom';
 import type { CursorStep, EditorKeyboard } from './navigation';
 
 /** The names of the shortcuts, all prefixed so they cannot clash with Blockly's own. */
@@ -24,6 +29,9 @@ export const KEYBOARD_SHORTCUT_NAMES = {
   move: 'b2c_kb_move',
   toolbox: 'b2c_kb_toolbox',
   escape: 'b2c_kb_escape',
+  zoomIn: 'b2c_kb_zoom_in',
+  zoomOut: 'b2c_kb_zoom_out',
+  zoomReset: 'b2c_kb_zoom_reset',
 } as const;
 
 const editors = new Map<Blockly.WorkspaceSvg, EditorKeyboard>();
@@ -50,7 +58,7 @@ function keysAllowed(editor: EditorKeyboard): boolean {
 /** One shortcut: `run` returns whether it handled the key (else Blockly's own, if any, runs). */
 function shortcut(
   name: string,
-  keyCodes: number[],
+  keyCodes: (number | string)[],
   run: (editor: EditorKeyboard, event: Event) => boolean,
   allowCollision = false,
 ): Blockly.ShortcutRegistry.KeyboardShortcut {
@@ -78,6 +86,23 @@ function shortcut(
   };
 }
 
+/** `keyCode` with Ctrl held, as Blockly's registry matches it (Shift too when `shift`). */
+function withCtrl(keyCode: number, shift = false): string {
+  const { KeyCodes } = Blockly.utils;
+  return Blockly.ShortcutRegistry.registry.createSerializedKey(
+    keyCode,
+    shift ? [KeyCodes.CTRL, KeyCodes.SHIFT] : [KeyCodes.CTRL],
+  );
+}
+
+/** Zooms the editor's canvas with `zoom` and announces the new zoom. */
+function zoomBy(zoom: (workspace: Blockly.WorkspaceSvg) => number) {
+  return (editor: EditorKeyboard) => {
+    editor.announcer.announce(zoomAnnouncement(zoom(editor.workspace)));
+    return true;
+  };
+}
+
 /** The cursor step of an arrow key, mirrored for right-to-left canvases. */
 function arrow(step: CursorStep, mirrored: CursorStep) {
   return (editor: EditorKeyboard) => editor.step(editor.workspace.RTL ? mirrored : step);
@@ -97,6 +122,22 @@ function keyboardShortcuts(): Blockly.ShortcutRegistry.KeyboardShortcut[] {
     shortcut(names.move, [KeyCodes.M], (editor) => editor.pickUp()),
     shortcut(names.toolbox, [KeyCodes.T], (editor) => editor.openToolbox()),
     shortcut(names.escape, [KeyCodes.ESC], (editor) => editor.escape(), true),
+    // `=` and `+` share a key on most layouts; `Ctrl++` is that key with Shift.
+    shortcut(
+      names.zoomIn,
+      [withCtrl(KeyCodes.EQUALS), withCtrl(KeyCodes.EQUALS, true), withCtrl(KeyCodes.NUM_PLUS)],
+      zoomBy((workspace) => zoomStep(workspace, 'in')),
+    ),
+    shortcut(
+      names.zoomOut,
+      [withCtrl(KeyCodes.DASH), withCtrl(KeyCodes.NUM_MINUS)],
+      zoomBy((workspace) => zoomStep(workspace, 'out')),
+    ),
+    shortcut(
+      names.zoomReset,
+      [withCtrl(KeyCodes.ZERO), withCtrl(KeyCodes.NUM_ZERO)],
+      zoomBy(resetZoom),
+    ),
   ];
 }
 

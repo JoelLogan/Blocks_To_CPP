@@ -754,7 +754,7 @@ export const DROP_REPORT_SCRIPT = `
     under,
     trash: rect('.blocklyTrash'),
     flyout: rect('svg.blocklyToolboxFlyout'),
-    zoom: rect('.blocklyZoom'),
+    zoom: rect('[data-testid="canvas-controls"]'),
     pointer: window[key] ?? null,
   };
 `;

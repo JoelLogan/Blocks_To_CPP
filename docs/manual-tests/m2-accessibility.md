@@ -74,12 +74,14 @@ Tab repeatedly. Expected order:
 5. The toolbox's blocks (announced as **Blocks to add**)
 6. The block canvas (announced as **Block canvas**, followed by the first
    block, for example "block “main”")
-7. *Resize the C++ panel* (a separator), *Hide the C++ panel*
-8. The C++ panel: *File* drop-down, *Copy all*, the code
-9. *Resize the bottom panel*, the bottom tabs (Problems, Console, Build
-   output: one stop, arrow keys switch tabs), *Hide the bottom panel*
-10. The open tab's contents
-11. The status bar's toolchain button
+7. The canvas's zoom controls: *Zoom out*, *Zoom in*, *Reset zoom* (with
+   the zoom now) and *Show all blocks*
+8. *Resize the C++ panel* (a separator), *Hide the C++ panel*
+9. The C++ panel: *File* drop-down, *Copy all*, the code
+10. *Resize the bottom panel*, the bottom tabs (Problems, Console, Build
+    output: one stop, arrow keys switch tabs), *Hide the bottom panel*
+11. The open tab's contents
+12. The status bar's toolchain button
 
 Shift+Tab goes the same way back. Check that:
 
@@ -112,6 +114,8 @@ reader announces where the focus is or what happened.
 | Ctrl+D | Duplicate the block |
 | Ctrl+Z / Ctrl+Y | Undo or redo |
 | Ctrl+Enter | Open the block’s menu |
+| Ctrl+= / Ctrl+- | Zoom in or out |
+| Ctrl+0 | Reset the zoom to 100% |
 
 ### While moving a block
 
@@ -222,9 +226,14 @@ Check that:
    - [ ] With a project open, the `≡` main menu is drawn over the toolbox,
      and each item can be clicked across its full width, also at its left
      edge above the toolbox.
-2. Zoom: set the display scale to 200% (or the webview zoom with Ctrl++).
+2. Zoom: set the display scale to 200%.
    - [ ] Nothing is cut off or overlaps; panels can still be resized and
      hidden; the dialogs fit the window.
+   - [ ] With the focus on the canvas, Ctrl+= and Ctrl+- zoom the canvas
+     (not the window) around its middle and Ctrl+0 resets it to 100%; each
+     time the screen reader says the new zoom ("Zoom 108%"). The zoom
+     controls do the same, and *Show all blocks* scrolls to the blocks
+     without changing the zoom.
 3. Reflow: make the window 640 px wide (320 CSS px at 200%).
    - [ ] The start page and the dialogs reflow without scrolling sideways.
      (The editor itself needs more width; that is expected in M2.)

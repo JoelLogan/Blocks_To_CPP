@@ -20,7 +20,13 @@ import {
   statementsOf,
 } from '../../support/bdm';
 import { currentDocument, dragFromToolbox, fieldOf, foldCodePanel } from '../../support/editor';
-import { clickMiddle, openCategory, textContent } from '../../support/ui';
+import {
+  clickMiddle,
+  clickTestId,
+  openCategory,
+  textContent,
+  waitForFlyout,
+} from '../../support/ui';
 import { sleep, waitFor } from '../../support/wait';
 import {
   closeMenu,
@@ -109,12 +115,12 @@ async function selectedCategory(driver: WebDriver): Promise<string | null> {
 }
 
 /**
- * Clicks one of Blockly's zoom controls on the canvas, then waits for the canvas transition (half a
- * second) and the flyout, which follows the canvas zoom in M2.
+ * Clicks the canvas's *Zoom in* or *Zoom out* control (src/editor/view/CanvasControls.tsx), then
+ * waits until the toolbox's flyout has settled (it is laid out again at every zoom).
  */
 async function clickZoom(driver: WebDriver, control: 'In' | 'Out'): Promise<void> {
-  await clickMiddle(driver, await driver.findElement(By.css(`.blocklyZoom${control}`)));
-  await sleep(800);
+  await clickTestId(driver, control === 'In' ? 'canvas-zoom-in' : 'canvas-zoom-out');
+  await waitForFlyout(driver);
 }
 
 describe('Block editor', () => {

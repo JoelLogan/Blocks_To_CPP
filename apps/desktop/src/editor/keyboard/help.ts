@@ -38,6 +38,8 @@ export const KEY_MAP: readonly KeyHelp[] = [
   { scope: 'canvas', keys: 'Ctrl+D', action: 'Duplicate the block' },
   { scope: 'canvas', keys: 'Ctrl+Z / Ctrl+Y', action: 'Undo or redo' },
   { scope: 'canvas', keys: 'Ctrl+Enter', action: 'Open the block’s menu' },
+  { scope: 'canvas', keys: 'Ctrl+= / Ctrl+-', action: 'Zoom in or out' },
+  { scope: 'canvas', keys: 'Ctrl+0', action: 'Reset the zoom to 100%' },
   { scope: 'move', keys: '↓ / ↑ (or → / ←)', action: 'Next or previous place for the block' },
   { scope: 'move', keys: 'Enter or Space', action: 'Put the block there' },
   { scope: 'move', keys: 'Escape', action: 'Leave the block where it was' },
@@ -58,7 +60,7 @@ export const KEY_MAP: readonly KeyHelp[] = [
 export const CANVAS_DESCRIPTION =
   'Arrow keys move between blocks and their parts. Enter edits a field. M moves a block. ' +
   'T opens the toolbox. Delete removes a block. Ctrl+C, Ctrl+X, Ctrl+V and Ctrl+D copy, ' +
-  'cut, paste and duplicate. Ctrl+Z undoes.';
+  'cut, paste and duplicate. Ctrl+Z undoes. Ctrl+= and Ctrl+- zoom, Ctrl+0 resets the zoom.';
 
 /** What the toolbox's blocks tell screen readers about their keys. */
 export const FLYOUT_DESCRIPTION =

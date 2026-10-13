@@ -82,6 +82,11 @@ project, build, run, toolchain, settings, trust and recovery services:
   blocks back) and a starting category toolbox that the toolbox plugin replaces. It installs the
   editor services, starts an editing session, publishes the `EditorHandle` and attaches
   `EDITOR_PLUGINS`.
+- **Canvas controls** (`view/`): _Zoom out_, _Zoom in_, _Reset zoom_ (to 100 %, showing the
+  zoom now) and _Show all blocks_ (scrolls to the blocks, keeps the zoom) as named HTML buttons
+  at the canvas's top right, placed as a Blockly positionable component so they never cover the
+  toolbox; `Ctrl+=`, `Ctrl+-` and `Ctrl+0` on the canvas (the keyboard plugin) and `Ctrl` +
+  wheel zoom too. Blockly's own zoom controls are off.
 - **Sync** (`sync/`): `loadModule` builds a module's canvas from a loaded document and
   `readModule` reads it back (statements as arrays, loose stacks as `stack`, positions as whole
   numbers within ±10⁷). Both are iterative. Blocks the editor cannot show faithfully (unknown
@@ -388,7 +393,9 @@ Elements the tests find carry a `data-testid`; never rename or remove one. The s
 `console-header`, `console-state`, `console-elapsed`, `console-stop`, `console-run-again`,
 `console-clear`, `console-terminal`, `console-notice`), `build-output-panel`,
 `build-output-line`, `keyboard-announcer`, `app-dialog`, `feature-page-back` (the settings and
-toolchain pages' _Back_ button), and those pages' `settings-*` and `toolchain-*` IDs.
+toolchain pages' _Back_ button), and those pages' `settings-*` and `toolchain-*` IDs. The canvas
+controls are `canvas-controls`, `canvas-zoom-out`, `canvas-zoom-in`, `canvas-zoom-reset` and
+`canvas-show-all`.
 
 **Windows hardening.** `blocks2cpp_desktop::run()` first restricts where DLLs are loaded from
 (`harden_dll_search`: the system folder and the app's own; a failure is logged and start-up
