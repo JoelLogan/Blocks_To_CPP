@@ -1,11 +1,13 @@
 /**
  * Keyboard navigation of the block editor against the real Blockly (docs/spec/04-user-interface.md
  * §4.7): the arrow keys on the canvas, Enter on fields and on the canvas, the toolbox and its
- * blocks (also when they are rebuilt under the keyboard), and Escape.
+ * blocks (also when they are rebuilt under the keyboard), its buttons, headings and notes, and
+ * Escape.
  */
 import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { ChoiceOptions, DialogService } from '../../app/dialogs';
 import { useAppStore } from '../../app/store';
 import { type B2cContinuousToolbox, CONTINUOUS_REFRESH_DELAY_MS } from '../toolbox/continuous';
 import { createToolboxPlugin } from '../toolbox/plugin';
@@ -351,6 +353,115 @@ describe('the toolbox’s blocks rebuilt while the keyboard is in them', () => {
       expect(onLiveNode()).toBe(true);
     },
   );
+});
+
+describe('the toolbox’s buttons, headings and notes', () => {
+  const guess = symbolFixture('s_guess', 'guess', { declBlock: 'decl' });
+  const n = symbolFixture('s_n', 'n', { kind: 'parameter', mode: 'copy', declBlock: 'fn' });
+  const factorial = symbolFixture('s_fact', 'factorial', {
+    kind: 'function',
+    params: ['s_n'],
+    returns: 'int',
+    declBlock: 'fn',
+  });
+
+  /** The editor with the toolbox plugin, after an analysis that knows guess, n and factorial. */
+  async function withToolbox(
+    options: Parameters<typeof createToolboxPlugin>[0] = {},
+  ): Promise<KeyboardEditor> {
+    editor = keyboardEditor({ plugins: [createToolboxPlugin(options)] });
+    const state = useAppStore.getState();
+    useAppStore.setState({
+      analysis: {
+        ...state.analysis,
+        seq: state.analysis.seq + 1,
+        preview: {
+          stage: 'generate',
+          diagnostics: [],
+          files: [],
+          sourceMap: null,
+          buildable: true,
+          placeholders: 0,
+          contentHash: 'a'.repeat(64),
+          blockTypes: {},
+          symbols: [factorial, guess, n],
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, CONTINUOUS_REFRESH_DELAY_MS + 50));
+    return editor;
+  }
+
+  /** Presses `key` `times` times and returns what each press announced. */
+  function walk(keyboard: KeyboardEditor['keyboard'], key: string, times: number): string[] {
+    const said: string[] = [];
+    for (let i = 0; i < times; i++) {
+      press(key);
+      said.push(keyboard.announcer.last);
+    }
+    return said;
+  }
+
+  /** T, then → to the toolbox's blocks (its first category's label). */
+  function intoToolbox({ block, keyboard }: KeyboardEditor): void {
+    focus(block('print'));
+    press('t');
+    press('ArrowRight');
+    expect(keyboard.announcer.last).toBe('category “Program”');
+  }
+
+  it('are reached with ↓ and ↑ and announced for what they are', { timeout: 20_000 }, async () => {
+    const opened = await withToolbox();
+    intoToolbox(opened);
+    const { keyboard } = opened;
+    expect(walk(keyboard, 'ArrowDown', 12)).toEqual([
+      // A note of two lines is one stop, read as a whole.
+      'note: Your program starts at “when program starts”.',
+      'block “stop program with exit code”',
+      'category “Variables”',
+      'button “Make a variable”',
+      'block “create int variable value”',
+      'block “set”',
+      'block “change”',
+      // The getters' group headings, and each getter named with its group.
+      'heading “In when program starts”',
+      'block “guess”, in when program starts',
+      'heading “In factorial”',
+      'block “n”, in factorial',
+      'category “Math”',
+    ]);
+    expect(walk(keyboard, 'ArrowUp', 3)).toEqual([
+      'block “n”, in factorial',
+      'heading “In factorial”',
+      'block “guess”, in when program starts',
+    ]);
+    expect(nameOf(focused())).toMatch(/^block:/);
+    // Enter on a heading or a note does nothing but say where ↓ goes.
+    press('ArrowUp');
+    press('Enter');
+    expect(keyboard.announcer.last).toBe('Down arrow goes to the next block.');
+  });
+
+  it('include Make a variable, which Enter presses', { timeout: 20_000 }, async () => {
+    const prompt = vi.fn<DialogService['prompt']>(() => Promise.resolve(null));
+    const opened = await withToolbox({
+      dialogs: {
+        prompt,
+        alert: vi.fn<DialogService['alert']>(() => Promise.resolve()),
+        choose: vi.fn((options: ChoiceOptions<string>) =>
+          Promise.resolve(options.cancel),
+        ) as DialogService['choose'],
+      },
+    });
+    intoToolbox(opened);
+    walk(opened.keyboard, 'ArrowDown', 4);
+    expect(opened.keyboard.announcer.last).toBe('button “Make a variable”');
+    expect(nameOf(focused())).toBe('button:Make a variable');
+    press('Enter');
+    await vi.waitFor(() => {
+      expect(prompt).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 /** A document whose only module is empty. */

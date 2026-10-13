@@ -34,6 +34,7 @@ import {
   PROGRAM_CATEGORY,
   VARIABLES_CATEGORY,
   dynamicContentsKey,
+  failedCategoryNote,
   functionsContents,
   initialToolboxDefinition,
   programContents,
@@ -150,7 +151,7 @@ function guarded(
       return build(context);
     } catch (error: unknown) {
       console.error(`The toolbox category ${name} could not be built`, error);
-      return [{ kind: 'label', text: 'These blocks could not be shown.', id: undefined }];
+      return failedCategoryNote();
     }
   };
 }

@@ -46,7 +46,11 @@ export const KEY_MAP: readonly KeyHelp[] = [
   { scope: 'toolbox', keys: '↓ / ↑', action: 'Next or previous category' },
   { scope: 'toolbox', keys: '→ or Enter', action: 'Go to the category’s blocks' },
   { scope: 'toolbox', keys: 'Escape', action: 'Back to the canvas' },
-  { scope: 'flyout', keys: '↓ / ↑', action: 'Next or previous block or button' },
+  {
+    scope: 'flyout',
+    keys: '↓ / ↑',
+    action: 'Next or previous block, button, heading or note',
+  },
   {
     scope: 'flyout',
     keys: 'Enter or Space',
@@ -64,7 +68,8 @@ export const CANVAS_DESCRIPTION =
 
 /** What the toolbox's blocks tell screen readers about their keys. */
 export const FLYOUT_DESCRIPTION =
-  'Up and down arrows choose a block. Enter adds it, then arrow keys choose where it goes. ' +
+  'Up and down arrows choose a block, a button, a heading or a note. Enter adds the block, ' +
+  'then arrow keys choose where it goes, or presses the button. ' +
   'Left arrow goes back to the categories, Escape back to the canvas.';
 
 /** The accessible name of the canvas. */

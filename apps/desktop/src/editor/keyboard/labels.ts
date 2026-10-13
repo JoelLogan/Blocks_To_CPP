@@ -13,6 +13,7 @@ import { visibleInvisibles } from '../../panels/shared/invisibles';
 import { blockLabel, MAX_LABEL_CHARS, shorten } from '../diagnostics/blockPath';
 import { readFields } from '../sync/blockState';
 import { blockDefOf } from '../sync/catalog';
+import { flyoutGroupOf, flyoutLabelKind, flyoutNoteText } from './flyoutItems';
 import type { DropTarget } from './targets';
 
 /** The names of the symbols a document declares, by symbol ID (for references such as `guess`). */
@@ -20,9 +21,39 @@ export type SymbolNames = ReadonlyMap<string, string>;
 
 const NO_NAMES: SymbolNames = new Map();
 
+/** The most characters of a toolbox note an announcement reads (a note is a sentence or two). */
+const MAX_NOTE_CHARS = 160;
+
 /** Text as shown in an announcement: hidden characters visible, on one line, shortened. */
-function shownText(text: string): string {
-  return shorten(visibleInvisibles(text).replace(/\s+/g, ' ').trim(), MAX_LABEL_CHARS);
+function shownText(text: string, max = MAX_LABEL_CHARS): string {
+  return shorten(visibleInvisibles(text).replace(/\s+/g, ' ').trim(), max);
+}
+
+/** A heading as a phrase that follows a block's name: *In greet* → `in greet`. */
+function asPhrase(heading: string): string {
+  return heading.charAt(0).toLowerCase() + heading.slice(1);
+}
+
+/**
+ * What a button or label of the toolbox's flyout is (./flyoutItems.ts): `button “Make a
+ * variable”`, `category “Variables”`, `heading “In greet”`, or `note: ` and the note's whole text.
+ */
+function describeFlyoutButton(button: Blockly.FlyoutButton): string {
+  const text = shownText(button.getButtonText());
+  if (!button.isLabel()) {
+    return `button ${quoted(text)}`;
+  }
+  switch (flyoutLabelKind(button)) {
+    case 'category':
+      return `category ${quoted(text)}`;
+    case 'group':
+    case 'heading':
+      return `heading ${quoted(text)}`;
+    case 'note':
+      return `note: ${shownText(flyoutNoteText(button), MAX_NOTE_CHARS)}`;
+    case 'noteLine':
+      return `note: ${shownText(button.getButtonText(), MAX_NOTE_CHARS)}`;
+  }
 }
 
 /** The name a block's fields declare (a variable's or a loop counter's), or `null`. */
@@ -142,7 +173,9 @@ export function describeTarget(target: DropTarget, names: SymbolNames = NO_NAMES
 
 /**
  * What the keyboard cursor is on, as one short phrase: `block “print”`, `field “int” of “create
- * guess”`, `value “0” in “create guess”`, `empty input of “print”`, `the canvas`. Never throws.
+ * guess”`, `value “0” in “create guess”`, `empty input of “print”`, `the canvas`; in the toolbox's
+ * flyout also `block “i”, in greet`, `button “Make a variable”`, `category “Variables”`, `heading
+ * “In greet”` and `note: …`. Never throws.
  */
 export function describeNode(node: unknown, names: SymbolNames = NO_NAMES): string {
   try {
@@ -166,14 +199,16 @@ export function describeNode(node: unknown, names: SymbolNames = NO_NAMES): stri
         return owner === null ? value : `${value} in ${quoted(describeBlock(owner, names))}`;
       }
       const disabled = node.isEnabled() ? '' : ', disabled';
-      return `block ${quoted(describeBlock(node, names))}${disabled}`;
+      // A getter of the toolbox's Variables category is named with its group: `, in greet`.
+      const group = flyoutGroupOf(node);
+      const where = group === null ? '' : `, ${asPhrase(shownText(group))}`;
+      return `block ${quoted(describeBlock(node, names))}${where}${disabled}`;
     }
     if (node instanceof Blockly.RenderedConnection) {
       return `empty input of ${quoted(describeBlock(node.getSourceBlock(), names))}`;
     }
     if (node instanceof Blockly.FlyoutButton) {
-      const text = shownText(node.getButtonText());
-      return node.isLabel() ? `category ${quoted(text)}` : `button ${quoted(text)}`;
+      return describeFlyoutButton(node);
     }
     if (node instanceof Blockly.WorkspaceSvg) {
       return node.isFlyout ? 'the toolbox’s blocks' : 'the canvas';

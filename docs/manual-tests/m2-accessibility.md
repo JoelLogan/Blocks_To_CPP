@@ -141,7 +141,7 @@ reader announces where the focus is or what happened.
 
 | Keys | Action |
 | --- | --- |
-| ↓ / ↑ | Next or previous block or button |
+| ↓ / ↑ | Next or previous block, button, heading or note |
 | Enter or Space | Add the block (then choose where it goes), or press the button |
 | ← | Back to the categories |
 | Escape | Back to the canvas |
@@ -163,6 +163,11 @@ Check that:
   the canvas; ↓ works at once.
 - [ ] *Make a variable* in the toolbox's blocks opens the app's dialog; the
   focus goes into the dialog and comes back afterwards.
+- [ ] In the toolbox's blocks, ↓ also stops on *Make a variable* ("button
+  “Make a variable”"), on the Variables category's group headings ("heading
+  “In greet”"), and on the Program category's note, read as a whole ("note:
+  Your program starts at “when program starts”."). A getter is announced
+  with its group ("block “i”, in greet").
 - [ ] Ctrl+C then Ctrl+V pastes a copy; Ctrl+Z undoes it.
 - [ ] Tab always leaves the canvas, also while moving a block (the move is
   cancelled).

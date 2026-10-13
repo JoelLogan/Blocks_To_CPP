@@ -7,12 +7,16 @@
  * with Enter, going between the canvas, the toolbox and its blocks, adding a block from the toolbox
  * and moving a block (./mover.ts).
  *
+ * In the toolbox's blocks, `↓` and `↑` also stop on its buttons, headings and notes
+ * (./flyoutItems.ts), which Blockly's cursor skips.
+ *
  * Each action returns whether it handled the key, so that Blockly's own shortcut for the same key
  * (if any) runs otherwise.
  */
 import * as Blockly from 'blockly/core';
 
 import type { Announcer } from './announcer';
+import { flyoutLabelKind, isFlyoutStop } from './flyoutItems';
 import { blockOfNode } from './keepFocus';
 import { describeNode, type SymbolNames } from './labels';
 import { KeyboardMover } from './mover';
@@ -157,10 +161,20 @@ export class EditorKeyboard {
     const node = focusedNode();
     let reached: Blockly.IFocusableNode | null;
     if (node === null || node === workspace) {
-      reached = this.firstOrLast(cursor, step);
-    } else if (area === 'flyout' && (step === 'in' || step === 'out')) {
-      // The toolbox's blocks are a list: → does nothing and ← goes back to the categories.
-      return step === 'out' ? this.focusToolbox() : true;
+      reached = this.firstOrLast(cursor, step, area === 'flyout');
+    } else if (area === 'flyout') {
+      // The toolbox's blocks are a list of blocks, buttons, headings and notes: ↓ and ↑ go
+      // through it (round), → does nothing and ← goes back to the categories.
+      if (step === 'in' || step === 'out') {
+        return step === 'out' ? this.focusToolbox() : true;
+      }
+      reached =
+        step === 'next'
+          ? cursor.getNextNode(node, isFlyoutStop, true)
+          : cursor.getPreviousNode(node, isFlyoutStop, true);
+      if (reached !== null) {
+        cursor.setCurNode(reached);
+      }
     } else {
       switch (step) {
         case 'next':
@@ -285,9 +299,14 @@ export class EditorKeyboard {
 
   /**
    * Where the cursor starts when nothing in its tree has the focus: the first node going forwards,
-   * the last block (`previous`) or the last node (`out`) going backwards. Focuses it.
+   * the last block (`previous`; in the flyout, its last item) or the last node (`out`) going
+   * backwards. Focuses it.
    */
-  private firstOrLast(cursor: Blockly.LineCursor, step: CursorStep): Blockly.IFocusableNode | null {
+  private firstOrLast(
+    cursor: Blockly.LineCursor,
+    step: CursorStep,
+    inFlyout: boolean,
+  ): Blockly.IFocusableNode | null {
     const first = cursor.getFirstNode();
     if (first === null) {
       return null;
@@ -301,9 +320,13 @@ export class EditorKeyboard {
       cursor.setCurNode(last);
       return last;
     }
-    // The block before the first one, going round: the last block.
+    // The block (or flyout item) before the first one, going round: the last one.
     cursor.setCurNode(first);
-    return cursor.prev() ?? first;
+    const last = inFlyout ? cursor.getPreviousNode(first, isFlyoutStop, true) : cursor.prev();
+    if (inFlyout && last !== null) {
+      cursor.setCurNode(last);
+    }
+    return last ?? first;
   }
 
   /** Focuses the toolbox (its selected category), remembering the canvas cursor. */
@@ -355,7 +378,11 @@ export class EditorKeyboard {
   private activateInFlyout(node: Blockly.IFocusableNode | null): boolean {
     if (node instanceof Blockly.FlyoutButton) {
       if (node.isLabel()) {
-        this.announcer.announce('Down arrow goes to the category’s blocks.');
+        this.announcer.announce(
+          flyoutLabelKind(node) === 'category'
+            ? 'Down arrow goes to the category’s blocks.'
+            : 'Down arrow goes to the next block.',
+        );
         return true;
       }
       const callback = this.workspace.getButtonCallback(node.callbackKey);

@@ -461,6 +461,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `B2C-E0203` when that variable is out of scope.
 - The Program category offers _when program starts_ only while the project
   has none, and otherwise says where the program starts.
+- In the toolbox's blocks, ↓ and ↑ also stop on _Make a variable_, on the
+  Variables category's group headings and on notes (a two-line note is read
+  as one), so _Make a variable_ can be pressed from the keyboard; a getter is
+  announced with its group ("block “i”, in greet").
 - The toolbox's list of blocks is rebuilt only when what Program, Variables
   and Functions show changes (the module's variables and functions, whether
   the project has _when program starts_, the modules). It is never rebuilt

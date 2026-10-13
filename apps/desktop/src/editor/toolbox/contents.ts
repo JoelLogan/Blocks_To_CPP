@@ -23,6 +23,8 @@
  * rendered by Blockly as SVG text (never HTML); project names show hidden characters as visible
  * placeholders (M2 decision "Hidden characters in block text fields"). No heading reads like a
  * category's name: the continuous toolbox finds a category's place in the flyout by that text.
+ * Notes and the headings of the groups of getters carry a CSS class that tells the keyboard what
+ * they are (../keyboard/flyoutItems.ts).
  */
 import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import {
@@ -41,6 +43,11 @@ import {
 } from '@blocks2cpp/blockly-ext';
 import type * as Blockly from 'blockly/core';
 
+import {
+  FLYOUT_GROUP_CLASS,
+  FLYOUT_NOTE_CLASS,
+  FLYOUT_NOTE_LINE_CLASS,
+} from '../keyboard/flyoutItems';
 import { candidateName } from './names';
 import {
   catalogPresetExtra,
@@ -134,9 +141,14 @@ export interface ContentsContext {
   programModuleId(): string | null;
 }
 
-/** A flyout label (Blockly draws it as SVG text). */
-function label(text: string): Blockly.utils.toolbox.LabelInfo {
-  return { kind: 'label', text, id: undefined };
+/** A flyout label, with the CSS class Blockly gives its SVG group (Blockly types it loosely). */
+type ClassedLabelInfo = Blockly.utils.toolbox.LabelInfo & { readonly 'web-class'?: string };
+
+/** A flyout label (Blockly draws it as SVG text), with a CSS class saying what it is if given. */
+function label(text: string, cssClass?: string): ClassedLabelInfo {
+  return cssClass === undefined
+    ? { kind: 'label', text, id: undefined }
+    : { kind: 'label', text, id: undefined, 'web-class': cssClass };
 }
 
 /** A gap between groups of blocks in a flyout. */
@@ -144,11 +156,18 @@ function separator(gap: number): Blockly.utils.toolbox.SeparatorInfo {
   return { kind: 'sep', gap, id: undefined, cssconfig: undefined };
 }
 
-/** A note of several short lines that read as one. */
+/** A note of several short lines that read as one (and are read as one by the keyboard). */
 function note(lines: readonly string[]): Blockly.utils.toolbox.FlyoutItemInfo[] {
   return lines.flatMap((line, index) =>
-    index === 0 ? [label(line)] : [separator(HINT_LINE_GAP), label(line)],
+    index === 0
+      ? [label(line, FLYOUT_NOTE_CLASS)]
+      : [separator(HINT_LINE_GAP), label(line, FLYOUT_NOTE_LINE_CLASS)],
   );
+}
+
+/** The note a category shows instead of its blocks when it could not be built. */
+export function failedCategoryNote(): Blockly.utils.toolbox.FlyoutItemInfo[] {
+  return note(['These blocks could not be shown.']);
 }
 
 /** A project name as a label shows it: hidden characters visible, long names cut. */
@@ -409,7 +428,7 @@ export function variablesContents(
     }
     const heading = groupHeading(group.owner);
     if (heading !== null) {
-      items.push(label(heading));
+      items.push(label(heading, FLYOUT_GROUP_CLASS));
     }
     for (const symbol of shown) {
       items.push(presetBlock(GET_TYPE, { fields: { [VAR_FIELD]: { ref: symbol.id } } }));
@@ -417,7 +436,7 @@ export function variablesContents(
     listed += shown.length;
   }
   if (total > listed) {
-    items.push(label(moreVariablesNote(total - listed)));
+    items.push(...note([moreVariablesNote(total - listed)]));
   }
   return items;
 }

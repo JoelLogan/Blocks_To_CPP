@@ -415,7 +415,9 @@ arrow keys move between blocks and their fields and inputs, `Enter` edits a
 field, `M` picks a block up so the arrow keys choose where it goes (the
 places a pointer drag could drop it, type rule included; `Enter` puts it
 there, `Escape` cancels), `T` opens the toolbox, whose categories and blocks
-are reached with the arrow keys (adding a block from it is one undo step),
+are reached with the arrow keys (adding a block from it is one undo step;
+`↓`/`↑` also stop on its buttons, such as *Make a variable*, its headings and
+its notes, and a getter is announced with the group it is listed in),
 and copy, paste, duplicate, delete, undo and the block menu (`Ctrl+Enter`)
 act on the keyboard focus. `Ctrl+=` / `Ctrl+-` zoom the canvas around its
 centre and `Ctrl+0` resets the zoom to 100 %, and the new zoom is announced;
