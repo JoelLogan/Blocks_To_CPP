@@ -24,15 +24,20 @@ first gesture after a page scroll). Only the trash can and the window's left edg
 
 ## Steps to reproduce
 
-1. Inject a workspace with a toolbox whose flyout never closes (`@blockly/continuous-toolbox`, or
-   a flyout with `autoClose` false) on the left.
-2. Subclass `VerticalFlyout` so that `reflowInternal_` places the flyout and calls
+1. Subclass `VerticalFlyout` so that `reflowInternal_` places the flyout and calls
    `targetWorkspace.recordDragTargets()` only when its computed width differs from the width it
    last applied (rather than from `width_`, which `show` resets).
-3. Show the flyout twice with the same contents (for example a dynamic category built again), so
+2. Inject a workspace with that flyout in a toolbox whose flyout never closes
+   (`@blockly/continuous-toolbox`, or a flyout with `autoClose` false) on the left, and a block on
+   the workspace.
+3. Make one gesture on the workspace, for example drag its background a little. Blockly records the
+   drag targets at the first gesture on a workspace (`Gesture.doStart` calls
+   `updateScreenCalculationsIfScrolled`, whose last recorded page scroll starts as `null`), so this
+   gesture has to come before the next step: a first gesture made after it records the right
+   rectangles again and hides the defect.
+4. Show the flyout twice with the same contents (for example a dynamic category built again), so
    the width does not change.
-4. Make one gesture on the workspace first (Blockly records drag targets at the first gesture), then
-   drag a block from the workspace and release it over the middle of the flyout.
+5. Drag the block and release it over the middle of the flyout.
 
 **Expected:** the block is deleted; while the pointer is over the flyout the block is shown with
 the delete style and the toolbox has `blocklyToolboxDelete`.
