@@ -78,12 +78,14 @@
   The controls are named buttons at the top right of the canvas, never over
   the toolbox, and reachable with Tab after the canvas.
 * On first start the window opens at 1280 × 800, made smaller when the
-  screen's work area is smaller (where the system names no primary monitor,
-  as under Wayland, the app fits it to the monitor it opens on). The C++ dock
+  screen's work area is smaller (where the system names no primary monitor
+  and knows no work area, as under Wayland, the app fits it to the monitor it
+  opens on, less 64 × 100 px for panels and the title bar). The C++ dock
   starts at 30 % of the window's width (280–480 px) and the bottom dock at
   28 % of its height (120–280 px); each follows the window's size until it
-  is resized. Each dock takes at most 65 % of the window, and the C++ dock
-  never leaves the canvas less than 200 px beside the toolbox's flyout at its
+  is resized. Each dock takes at most 65 % of the editor's area (the window
+  less the toolbar, any banner and the status bar), and the C++ dock never
+  leaves the canvas less than 200 px beside the toolbox's flyout at its
   narrowest; resizing the window keeps these limits. The toolbox's flyout and
   the docks are resizable by pointer and keyboard, and the docks are
   collapsible. When less than 200 px of canvas would remain, the flyout

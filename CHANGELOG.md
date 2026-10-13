@@ -367,11 +367,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   inspect release builds, and what it exposes while it is on.
 - The window fits the screen: Tauri's `preventOverflow`, plus a fallback
   where the system names no primary monitor (Wayland) that fits the window
-  to the monitor it opens on and logs which monitor was used.
+  to the monitor it opens on, less room for panels and the title bar (GTK
+  knows no work area there), and logs which monitor was used.
 - The C++ and bottom panels start at a share of the window (30 % of its
   width, 280–480 px; 28 % of its height, 120–280 px), follow the window until
-  resized, and never take more than 65 % of it. The C++ panel is hidden when
-  the window is too small for it and shown again when it fits.
+  resized, and never take more than 65 % of the editor's area (the window
+  less the toolbar, any banner and the status bar). The C++ panel is hidden
+  when the window is too small for it and shown again when it fits.
 - `Ctrl` + mouse wheel and a pinch now zoom the canvas around the pointer;
   the plain wheel still scrolls. Blockly's own zoom buttons are gone,
   including the reset that went back to 90 %.

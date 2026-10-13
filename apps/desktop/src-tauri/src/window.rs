@@ -44,8 +44,8 @@ pub(crate) const TRUSTED_TYPES_REPORT_ONLY: &str = "require-trusted-types-for 's
 /// the window may only show the app itself, at this platform's app origin,
 /// it can never open another window, the app's HTML carries the report-only
 /// Trusted Types policy ([`add_trusted_types_report_only`]; in every build,
-/// so the trial sees what users run), and the window fits its monitor's
-/// work area also where Tauri finds no primary monitor ([`fit_to_monitor`]).
+/// so the trial sees what users run), and the window fits its monitor also
+/// where Tauri finds no primary monitor ([`fit_to_monitor`]).
 ///
 /// End-to-end builds take the window's size from [`WINDOW_SIZE_ENV`]; a value
 /// that is not `WIDTHxHEIGHT` stops the app, so a test never runs at a size it
@@ -122,18 +122,21 @@ fn parse_window_size(text: &str) -> Option<(u32, u32)> {
     Some((extent(width)?, extent(height)?))
 }
 
-/// Fits the editor window into its monitor's work area when Tauri could not,
-/// and logs which monitor it fitted to (`docs/spec/04-user-interface.md`
-/// §4.1: the window opens at 1280 × 800, smaller when the screen is).
+/// Fits the editor window into its monitor when Tauri could not, and logs
+/// which monitor it fitted to (`docs/spec/04-user-interface.md` §4.1: the
+/// window opens at 1280 × 800, smaller when the screen is).
 ///
-/// Tauri's `preventOverflow` (and `center`) uses the primary monitor, and
-/// does nothing without one. GTK 3's Wayland backend has none
-/// (`gdk_display_get_primary_monitor` returns nothing), so there the window
-/// is fitted here to the monitor it is on, or the first monitor when that is
-/// not known yet (a Wayland window is placed by the compositor). `min_size`
-/// is the window's smallest inner size in CSS pixels, from
-/// `tauri.conf.json`. Nothing here stops the app: without a monitor the
-/// window keeps the size it was given.
+/// Tauri's `preventOverflow` (and `center`) uses the primary monitor's work
+/// area, and does nothing without a primary monitor. GTK 3's Wayland backend
+/// has none (`gdk_display_get_primary_monitor` returns nothing), so there
+/// the window is fitted here to the monitor it is on, or the first monitor
+/// when that is not known yet (a Wayland window is placed by the
+/// compositor). That backend knows no work area either: GDK reports the
+/// whole monitor as one, so the window is fitted to the monitor less room
+/// for panels and its title bar ([`fit_bounds`]). `min_size` is the
+/// window's smallest inner size in CSS pixels, from `tauri.conf.json`.
+/// Nothing here stops the app: without a monitor the window keeps the size
+/// it was given.
 fn fit_to_monitor<R: Runtime>(window: &WebviewWindow<R>, min_size: Option<(f64, f64)>) {
     if let Ok(Some(monitor)) = window.primary_monitor() {
         tracing::info!(
@@ -161,8 +164,8 @@ fn fit_to_monitor<R: Runtime>(window: &WebviewWindow<R>, min_size: Option<(f64, 
     let min = min_size.map_or(PhysicalSize::new(0, 0), |(width, height)| {
         LogicalSize::new(width, height).to_physical::<u32>(scale)
     });
-    let work_area = monitor.work_area().size;
-    let fitted = fitted_inner_size(inner, work_area, min);
+    let (bounds, work_area_known) = fit_bounds(*monitor.size(), monitor.work_area().size, scale);
+    let fitted = fitted_inner_size(inner, bounds, min);
     if let Some(size) = fitted
         && let Err(error) = window.set_size(size)
     {
@@ -171,11 +174,41 @@ fn fit_to_monitor<R: Runtime>(window: &WebviewWindow<R>, min_size: Option<(f64, 
     tracing::info!(
         monitor = %describe_monitor(&monitor),
         which,
-        work_area = %format!("{}x{}", work_area.width, work_area.height),
+        work_area_known,
+        bounds = %format!("{}x{}", bounds.width, bounds.height),
         scale,
         resized = fitted.is_some(),
         "no primary monitor (as under Wayland): the window was fitted to a monitor here"
     );
+}
+
+/// The room, in CSS pixels (width, height), kept free on a monitor whose
+/// work area is not known ([`fit_bounds`]): for panels and docks (a top
+/// panel and a dock, or a taskbar) and the window's title bar.
+const UNKNOWN_WORK_AREA_MARGIN: (f64, f64) = (64.0, 100.0);
+
+/// The largest inner size, in physical pixels, a window fitted to a monitor
+/// of `monitor_size` may have, and whether the monitor's `work_area` was
+/// known. GDK reports the whole monitor as its work area where its backend
+/// knows none (GTK 3 under Wayland, which is when this fitting runs): then
+/// [`UNKNOWN_WORK_AREA_MARGIN`] (at `scale`) is kept free instead. A work
+/// area smaller than the monitor is used as it is, like Tauri's
+/// `preventOverflow` does.
+fn fit_bounds(
+    monitor_size: PhysicalSize<u32>,
+    work_area: PhysicalSize<u32>,
+    scale: f64,
+) -> (PhysicalSize<u32>, bool) {
+    if work_area != monitor_size {
+        return (work_area, true);
+    }
+    let (width, height) = UNKNOWN_WORK_AREA_MARGIN;
+    let margin = LogicalSize::new(width, height).to_physical::<u32>(scale);
+    let bounds = PhysicalSize::new(
+        monitor_size.width.saturating_sub(margin.width),
+        monitor_size.height.saturating_sub(margin.height),
+    );
+    (bounds, false)
 }
 
 /// A monitor for the log: its name (on Linux its model) and where it is.
@@ -193,17 +226,19 @@ fn describe_monitor(monitor: &Monitor) -> String {
 }
 
 /// The inner size, in physical pixels, that keeps a window whose inner size
-/// is `inner` within a monitor's `work_area`, never below `min`; `None` when
-/// it fits already. Like Tauri's `preventOverflow` on Linux, the window's
-/// frame is not counted: it is not known before the window is shown.
+/// is `inner` within `bounds` ([`fit_bounds`]), never below `min`; `None`
+/// when it fits already. Like Tauri's `preventOverflow` on Linux, the
+/// window's frame is not counted here: it is not known before the window is
+/// shown (where the work area is not known, [`fit_bounds`] leaves room for
+/// it).
 fn fitted_inner_size(
     inner: PhysicalSize<u32>,
-    work_area: PhysicalSize<u32>,
+    bounds: PhysicalSize<u32>,
     min: PhysicalSize<u32>,
 ) -> Option<PhysicalSize<u32>> {
     let fitted = PhysicalSize::new(
-        inner.width.min(work_area.width).max(min.width),
-        inner.height.min(work_area.height).max(min.height),
+        inner.width.min(bounds.width).max(min.width),
+        inner.height.min(bounds.height).max(min.height),
     );
     (fitted != inner).then_some(fitted)
 }
@@ -308,7 +343,7 @@ fn keep_open(backend: &Backend) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
     use b2c_app::{BackendConfig, Dialogs, TrustChoice, TrustPrompt};
@@ -574,6 +609,50 @@ mod tests {
         assert_eq!(fitted_inner_size(size(800, 560), size(640, 480), min), None);
     }
 
+    /// 04 §4.1 under Wayland: GDK reports the whole monitor as its work
+    /// area, so the window was fitted to 1280 × 768 on a 1366 × 768 screen
+    /// and its title bar and the panel pushed its bottom off the screen.
+    /// Room is kept for them now; a work area that is known is used as it is.
+    #[test]
+    fn an_unknown_work_area_keeps_room_for_panels_and_the_title_bar() {
+        let min = size(800, 560);
+        let fitted = |monitor: PhysicalSize<u32>, work_area: PhysicalSize<u32>, scale: f64| {
+            let (bounds, _) = fit_bounds(monitor, work_area, scale);
+            fitted_inner_size(size(1280, 800), bounds, min)
+        };
+        // Not known (the work area is the whole monitor).
+        assert_eq!(
+            fit_bounds(size(1366, 768), size(1366, 768), 1.0),
+            (size(1302, 668), false)
+        );
+        assert_eq!(
+            fitted(size(1366, 768), size(1366, 768), 1.0),
+            Some(size(1280, 668))
+        );
+        assert_eq!(
+            fitted(size(1280, 800), size(1280, 800), 1.0),
+            Some(size(1216, 700))
+        );
+        assert_eq!(fitted(size(1920, 1080), size(1920, 1080), 1.0), None);
+        // At a scale of 2 the room is twice as many physical pixels.
+        assert_eq!(
+            fit_bounds(size(2732, 1536), size(2732, 1536), 2.0),
+            (size(2604, 1336), false)
+        );
+        // Never below the minimum.
+        assert_eq!(fitted(size(800, 600), size(800, 600), 1.0), Some(size(800, 560)));
+        assert_eq!(fit_bounds(size(40, 40), size(40, 40), 1.0), (size(0, 0), false));
+        // Known: used as it is.
+        assert_eq!(
+            fit_bounds(size(1366, 768), size(1366, 736), 1.0),
+            (size(1366, 736), true)
+        );
+        assert_eq!(
+            fitted(size(1366, 768), size(1366, 736), 1.0),
+            Some(size(1280, 736))
+        );
+    }
+
     /// Dialogs that are never shown in these tests.
     struct NoDialogs;
 
@@ -581,7 +660,7 @@ mod tests {
         fn open_project(&self) -> Option<PathBuf> {
             None
         }
-        fn save_project_as(&self, _suggested_file_name: &str) -> Option<PathBuf> {
+        fn save_project_as(&self, _suggested_file_name: &str, _folder: Option<&Path>) -> Option<PathBuf> {
             None
         }
         fn pick_compiler(&self) -> Option<PathBuf> {
