@@ -18,7 +18,8 @@
 # gives a read-only token and the pull request's own cache scope. A manual run (bench-ab.yml)
 # can write to the cache scope of the branch it runs on, the default branch's included, which
 # other runs restore from; it runs only commits of the repository's own history. No job saves to
-# the Actions cache (they only restore from it), and none has secrets.
+# the Actions cache (they only restore from it; setup-msys2's package cache is off), and none has
+# secrets.
 name: Bench A/B (jobs)
 
 on:
@@ -263,7 +264,9 @@ jobs:
       - name: Install dependencies under the supply-chain policy
         run: pnpm install --frozen-lockfile
 
-      # The app finds a compiler as on a user's machine, so it opens on its start page.
+      # The app finds a compiler as on a user's machine, so it opens on its start page. The
+      # action's package cache is off: it would save the pacman cache during this step, and no
+      # A/B job saves to the Actions cache (the header's trust boundary).
       - name: Install g++ (MSYS2 UCRT64)
         if: runner.os == 'Windows'
         id: msys2
@@ -272,6 +275,7 @@ jobs:
           msystem: UCRT64
           update: false
           install: mingw-w64-ucrt-x86_64-gcc
+          cache: false
 
       - name: Put g++ on PATH and name its folder for the app
         if: runner.os == 'Windows'
