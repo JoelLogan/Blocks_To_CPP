@@ -148,25 +148,29 @@ mod tests {
         assert!(!is_newer(APP_VERSION, APP_VERSION));
     }
 
+    /// The test vector the desktop app's copy of this rule
+    /// (`apps/desktop/src/features/project/version.ts`) is tested against too.
+    fn vector() -> serde_json::Value {
+        serde_json::from_str(include_str!("../tests/fixtures/semver-precedence.json")).unwrap()
+    }
+
+    /// The strings of a JSON array.
+    fn strings(value: &serde_json::Value) -> Vec<&str> {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect()
+    }
+
     #[test]
     fn precedence_follows_semver() {
         // The precedence example of SemVer 2.0.0 §11, in increasing order,
         // with a larger number than 64 bits hold at the end.
-        let ordered = [
-            "1.0.0-alpha",
-            "1.0.0-alpha.1",
-            "1.0.0-alpha.beta",
-            "1.0.0-beta",
-            "1.0.0-beta.2",
-            "1.0.0-beta.11",
-            "1.0.0-rc.1",
-            "1.0.0",
-            "1.0.1",
-            "1.1.0",
-            "1.10.0",
-            "2.0.0",
-            "99999999999999999999999.0.0",
-        ];
+        let vector = vector();
+        let ordered = strings(&vector["ordered"]);
+        assert!(ordered.len() >= 13);
         for (i, a) in ordered.iter().enumerate() {
             for (j, b) in ordered.iter().enumerate() {
                 assert_eq!(is_newer(a, b), i > j, "{a} newer than {b}?");
@@ -176,40 +180,29 @@ mod tests {
 
     #[test]
     fn build_metadata_does_not_count() {
-        assert!(!is_newer("1.0.0+build.7", "1.0.0"));
-        assert!(!is_newer("1.0.0", "1.0.0+build.7"));
-        assert!(is_newer("1.0.1+0", "1.0.0"));
+        let vector = vector();
+        for pair in vector["equal"].as_array().unwrap() {
+            let pair = strings(pair);
+            assert!(!is_newer(pair[0], pair[1]), "{pair:?}");
+        }
+        for pair in vector["newer"].as_array().unwrap() {
+            let pair = strings(pair);
+            assert!(is_newer(pair[0], pair[1]), "{pair:?}");
+        }
     }
 
     #[test]
     fn text_that_is_not_semver_is_never_newer() {
-        for text in [
-            "",
-            "9",
-            "9.0",
-            "9.0.0.0",
-            "v9.0.0",
-            "09.0.0",
-            "9.00.0",
-            "9.0.0-",
-            "9.0.0-01",
-            "9.0.0-a..b",
-            "9.0.0+",
-            "9.0.0+a+b",
-            "9.0.0+a_b",
-            "9.0.0 ",
-            " 9.0.0",
-            "9.0.0-é",
-            "-9.0.0",
-            "9..0",
-        ] {
+        let vector = vector();
+        for text in strings(&vector["notSemver"]) {
             assert!(Version::parse(text).is_none(), "{text:?}");
             assert!(!is_newer(text, "0.1.0"), "{text:?}");
         }
         // Leading zeros are allowed in alphanumeric pre-release identifiers
         // and in build metadata.
-        assert!(Version::parse("9.0.0-0a.0").is_some());
-        assert!(Version::parse("9.0.0+007").is_some());
+        for text in strings(&vector["semver"]) {
+            assert!(Version::parse(text).is_some(), "{text:?}");
+        }
         assert!(!is_newer("1.0.0", "not a version"));
     }
 }

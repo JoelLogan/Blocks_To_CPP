@@ -5,9 +5,19 @@
  */
 import type { BdmDocument, BdmGenerator } from '@blocks2cpp/b2c-core-wasm';
 
-/** The document with `generator` replaced. */
+import { isNewerVersion } from './version';
+
+/**
+ * The document with `generator` naming this app (`generator.app`) and the newer of its own catalog
+ * and this app's (`generator.catalog`, 05 §5.3): a save never lowers the catalog a file names, so
+ * the blocks a newer catalog made, which this app keeps unchanged, are still reported as made by a
+ * newer version (`B2C-E0602`) after the save, and not as unknown (ADR-0015).
+ */
 export function withGenerator(doc: BdmDocument, generator: BdmGenerator): BdmDocument {
-  return { ...doc, generator: { app: generator.app, catalog: generator.catalog } };
+  const catalog = isNewerVersion(doc.generator.catalog, generator.catalog)
+    ? doc.generator.catalog
+    : generator.catalog;
+  return { ...doc, generator: { app: generator.app, catalog } };
 }
 
 /**

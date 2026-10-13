@@ -32,7 +32,9 @@ export interface CoreVersion {
  * blocks upgraded (05 §5.7), not resolved against the catalog, keys in canonical order) and a
  * `B2C-E0603` for each block that could not be upgraded, or the loader's `B2C-E01xx` problems.
  * Every number in the document is one JavaScript holds exactly (05 §5.6), so
- * `canonical(JSON.stringify(document))` gives the same text and hash as `canonical()` of the file.
+ * `canonical(JSON.stringify(document))` gives the same text and hash as `canonical()` of the file
+ * when the load upgraded no block; an upgraded document is the file changed, and `canonical()` of
+ * the file gives the text before the upgrade.
  */
 export type LoadResult =
   | { ok: true; document: BdmDocument; diagnostics: Diagnostic[] }

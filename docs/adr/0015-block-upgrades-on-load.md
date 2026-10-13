@@ -90,12 +90,19 @@ Three more questions came with it:
   upgraded blocks are checked against 05 §5.6 again. A block whose upgrade
   fails or would break one of these rules stays exactly as it was and is
   reported as `B2C-E0603`: the build stops, and the editor shows the block
-  as a placeholder and saves it unchanged.
+  as a placeholder and saves it unchanged. The whole upgraded document (or
+  clipboard payload) is then checked once more: if its security hash or
+  summary changed, or it no longer passes 05 §5.6, no single block is to
+  blame, so every upgrade of the document is undone and each upgraded block
+  is reported as `B2C-E0603`.
 * **Saving.** An upgraded project counts as changed. The upgraded form is
   written only when the user saves, and the save keeps the file as it was as
   `<name>.b2c.bak`. `b2c migrate` applies block upgrades as well
   (`--in-place` keeps the `.b2c.bak`), `b2c fmt` never upgrades, and
-  `b2c check`, `generate` and `build` upgrade in memory only.
+  `b2c check`, `generate` and `build` upgrade in memory only. A save, and a
+  `b2c migrate` that upgraded blocks, names this app's catalog in
+  `generator.catalog` unless the file names a newer one, which is kept
+  ([05 §5.3](../spec/05-project-format.md#53-top-level-structure)).
 * **Newer catalogs (D18, option b).** A compatible change (a field, `extra`
   key or input with a default; a dropdown option) keeps the block's version
   and raises the catalog's minor version. When a document's
@@ -121,8 +128,10 @@ Three more questions came with it:
 * A replacement that would have to change Raw C++ text, libraries, packs or
   defines cannot be written under this ADR: it needs a new version of the
   security hash (`b2c-trust-v2`), so the project asks for trust again.
-* Opened in an older app, a file saved after a replacement names a newer
-  catalog, so the successor's new fields or options are reported as made by
-  a newer catalog instead of with the advice to remove them.
+* Opened in an older app, a file saved (or migrated) after a replacement
+  names a newer catalog, so the successor's new fields or options are
+  reported as made by a newer catalog instead of with the advice to remove
+  them. Saving the file in the older app keeps that newer catalog, so the
+  report does not change after the save.
 * M2 ships the mechanism with empty tables. The first replacement,
   `var.update` → `var.change`, raises the catalog to 1.2.0.

@@ -90,9 +90,13 @@ older version, and blocks of a type that was replaced by another,
 prints the result, or rewrites the file with `--in-place`, keeping the file
 as it was as `<name>.b2c.bak`; a file that is already current is left alone.
 When a block cannot be upgraded (`B2C-E0603`), the problems are printed and
-nothing is written (exit code `1`). Printed to a terminal, control and
-invisible characters in project text are shown as JSON `\uXXXX` escapes (the
-same JSON value); piped output is the file exactly.
+nothing is written (exit code `1`). When blocks were upgraded, the file names
+this version of Blocks2Cpp and its block catalog in `generator`, as a save in
+the app does; a newer catalog the file already names is kept
+([spec §5.3](../spec/05-project-format.md#53-top-level-structure)). Printed
+to a terminal, control and invisible characters in project text are shown as
+JSON `\uXXXX` escapes (the same JSON value); piped output is the file
+exactly.
 
 `b2c check`, `generate`, `build` and `run` upgrade old blocks in memory only
 and never change the file.

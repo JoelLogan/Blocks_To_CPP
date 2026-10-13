@@ -428,7 +428,7 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - A project or clipboard payload from a newer block catalog reports unknown
   fields, inputs, settings and options as `B2C-E0602` (made by a newer
   version) and keeps the block unchanged. Before, they were `B2C-E0605`.
-- The IPC responses of `project_open`, `project_open_recent`,
+- The IPC responses of `project_open_dialog`, `project_open_recent`,
   `project_reload` and `recovery_restore` gain `blocksUpgraded`.
 - Unknown or damaged blocks stay errors wherever they are, including blocks
   left on the canvas (a Raw C++ block, a block from a missing pack, a newer
@@ -550,3 +550,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   program starts_ that runs, as the compiler does, not of a disabled one
   above it; _Make a variable_ inserts there too. Without _when program
   starts_, a new loose block sees the module's functions.
+- Saving in the app no longer lowers the block catalog a file names
+  (`generator.catalog`). A project from a newer catalog saved in an older
+  app named the older catalog afterwards, so its newer blocks turned from
+  `B2C-E0602` ("Update Blocks2Cpp") into `B2C-E0605` ("Remove it").
+- `b2c migrate` names this version and its block catalog in `generator` when
+  it upgraded blocks, as a save in the app does (never an older catalog than
+  the file named).

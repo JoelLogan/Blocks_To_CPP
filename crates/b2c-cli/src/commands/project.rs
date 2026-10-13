@@ -168,7 +168,10 @@ pub(crate) fn fmt(path: &Path, check_only: bool) -> Status {
 /// its blocks (05 §5.7), printing the result or (with `--in-place`)
 /// rewriting the file and keeping the previous version as `<name>.b2c.bak`.
 /// A file that is already current is left alone. When a block cannot be
-/// upgraded, its problems are printed and nothing is written.
+/// upgraded, its problems are printed and nothing is written. A file whose
+/// blocks were upgraded names this app and the current catalog in
+/// `generator`, as the app's save does, but never an older catalog than it
+/// named ([`stamp_generator`]).
 pub(crate) fn migrate(path: &Path, in_place: bool) -> Status {
     migrate_with(path, in_place, &BlockUpgrades::SHIPPED)
 }
@@ -192,6 +195,9 @@ fn migrate_with(path: &Path, in_place: bool, upgrades: &BlockUpgrades<'_>) -> St
         ));
         return Status::ProjectErrors;
     }
+    if upgrade.changed() {
+        stamp_generator(&mut document);
+    }
     let canonical = b2c_model::to_canonical_json(&document);
     if in_place {
         if canonical.as_bytes() == bytes.as_slice() {
@@ -208,6 +214,21 @@ fn migrate_with(path: &Path, in_place: bool, upgrades: &BlockUpgrades<'_>) -> St
             out(&canonical);
         }
         Status::Success
+    }
+}
+
+/// Names this app in `generator.app` and the current catalog in
+/// `generator.catalog`, as the app's save does (05 §5.3), for a document
+/// whose blocks were upgraded: the upgraded blocks have the current form, so
+/// an older app that opens the file reports a newer field or option of
+/// theirs as made by a newer catalog (`B2C-E0602`), not as unknown
+/// (ADR-0015). A newer catalog the file names is kept, so the blocks a newer
+/// catalog made stay `B2C-E0602` here too.
+fn stamp_generator(document: &mut b2c_model::Document) {
+    let generator = &mut document.generator;
+    generator.app = String::from(env!("CARGO_PKG_VERSION"));
+    if !b2c_model::is_newer_version(&generator.catalog, b2c_build::CATALOG_VERSION) {
+        generator.catalog = String::from(b2c_build::CATALOG_VERSION);
     }
 }
 
@@ -267,6 +288,10 @@ mod tests {
         assert!(say.inputs.contains_key("ITEM0"));
         assert_eq!(migrated, b2c_model::to_canonical_json(&document));
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), old_project());
+        // The upgraded blocks have the current form, so the file names the
+        // current catalog and this app, as the app's save writes them.
+        assert_eq!(document.generator.catalog, b2c_build::CATALOG_VERSION);
+        assert_eq!(document.generator.app, env!("CARGO_PKG_VERSION"));
 
         // With the shipped tables `test.say` is only an unknown type (check
         // reports it): migrate writes the canonical form and keeps the block.
@@ -275,5 +300,24 @@ mod tests {
         let kept = b2c_model::load(&std::fs::read(&path).unwrap()).unwrap();
         let say = &kept.modules[0].workspace.blocks[0].statements["BODY"][0];
         assert_eq!(say.block_type, "test.say");
+        // Nothing was upgraded, so `generator` stays as the file had it.
+        assert_eq!(kept.generator.catalog, "1.0.0");
+    }
+
+    /// A file from a newer catalog keeps naming it after an upgrade, so the
+    /// blocks that catalog made stay `B2C-E0602`.
+    #[test]
+    fn migrate_never_names_an_older_catalog() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("newer.b2c");
+        let newer = old_project().replace("\"catalog\":\"1.0.0\"", "\"catalog\":\"99.0.0\"");
+        assert!(newer.contains("99.0.0"));
+        std::fs::write(&path, &newer).unwrap();
+        assert_eq!(migrate_with(&path, true, &TEST_UPGRADES), Status::Success);
+        let document = b2c_model::load(&std::fs::read(&path).unwrap()).unwrap();
+        let say = &document.modules[0].workspace.blocks[0].statements["BODY"][0];
+        assert_eq!(say.block_type, "io.print");
+        assert_eq!(document.generator.catalog, "99.0.0");
+        assert_eq!(document.generator.app, env!("CARGO_PKG_VERSION"));
     }
 }

@@ -496,6 +496,36 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       expect(project().savedCanonicalText).toBe(HELLO_TEXT);
     });
 
+    it('keeps a newer catalog the file names, so its newer blocks stay made by a newer version', async () => {
+      // A print with a field this catalog does not know, from a file of catalog 99.0.0 (ADR-0015).
+      const doc = JSON.parse(HELLO_TEXT) as BdmDocument;
+      const newer = JSON.parse(
+        JSON.stringify(doc).replace('"fields":{', '"fields":{"VOLUME":"3",'),
+      ) as BdmDocument;
+      const newerText = core.canonical(
+        JSON.stringify({ ...newer, generator: { ...newer.generator, catalog: '99.0.0' } }),
+      );
+      if (!newerText.ok) {
+        throw new Error('the newer document does not load');
+      }
+      expect(newerText.text).toContain('"VOLUME": "3"');
+      await openFile(newerText.text, HANDLE_A);
+      harness.ipc.projectSave.mockResolvedValueOnce({
+        savedAt: '2026-10-05T10:42:00Z',
+        hash: 'f'.repeat(64),
+      });
+      await harness.feature.lifecycle.save();
+      const sent = harness.ipc.projectSave.mock.calls[0]?.[0].document ?? '';
+      expect(sent).toContain('"catalog": "99.0.0"');
+      expect(sent).toContain('"VOLUME": "3"');
+      expect(project().document.generator).toEqual({ app: '0.1.0', catalog: '99.0.0' });
+      // The preview of what the project now holds still says "made by a newer version".
+      const preview = core.preview(JSON.stringify(project().document), { indentWidth: 4 });
+      const codes = preview.diagnostics.map((diagnostic) => diagnostic.code);
+      expect(codes).toContain('B2C-E0602');
+      expect(codes).not.toContain('B2C-E0605');
+    });
+
     it('falls back to Save as when the backend has no file for the project', async () => {
       await openFile(HELLO_TEXT, HANDLE_A);
       makeDirty();

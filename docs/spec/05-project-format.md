@@ -75,6 +75,16 @@ A project is a **single JSON file** with the extension `.b2c`.
 `description` is written only when it is not empty, and
 `language.gnuExtensions` only when it is `true`.
 
+`generator` names the app and the block catalog that saved the file. A save
+writes this app's version and the newer of the two catalogs, the file's and
+this app's (SemVer precedence, as for `generator.app` in §5.7): a save never
+lowers `generator.catalog`. So the blocks of a file from a newer catalog,
+kept unchanged in an older app, are still reported as made by a newer
+version (`B2C-E0602`,
+[03 §3.11.3](03-block-language.md#3113-block-versioning)) after that app
+saved the file, and not as unknown. `b2c migrate` writes
+`generator` the same way when it upgraded blocks.
+
 `project.name` is the display name shown in the top bar, the recent list,
 recovery offers, the trust dialog and the generated header comment. It is
 independent of the file's name; renaming
@@ -281,14 +291,19 @@ Further rules:
   ([08 §8.3.1](08-security.md#831-how-trust-is-decided)): the text fields of
   `raw.*` blocks, libraries, packs and defines are carried over unchanged; a
   change that must alter them bumps the hash's version tag (`b2c-trust-v2`)
-  and asks for trust again. The upgraded document is checked against §5.6
-  again, and a violation leaves that block unchanged with `B2C-E0603`. The
-  project is marked changed; the upgraded form is written only on explicit
-  save, keeping the `.b2c.bak`.
+  and asks for trust again. Each upgraded block is checked against these
+  rules and §5.6 again, and a violation leaves that block unchanged with
+  `B2C-E0603`. The whole upgraded document (or clipboard payload) is then
+  checked once more: its security hash and summary must be unchanged, and it
+  must still pass §5.6. If it does not, every upgrade of the document is
+  undone and each upgraded block is reported as `B2C-E0603`. The project is
+  marked changed; the upgraded form is written only on explicit save,
+  keeping the `.b2c.bak`.
 * `b2c migrate` applies format migrations and block upgrades and writes the
-  result (`--in-place` keeps `.b2c.bak`). `b2c fmt` only re-serialises and
-  never upgrades blocks. `b2c check`, `generate` and `build` upgrade in
-  memory only.
+  result (`--in-place` keeps `.b2c.bak`); when it upgraded blocks, it writes
+  `generator` as a save does (§5.3). `b2c fmt` only re-serialises and never
+  upgrades blocks. `b2c check`, `generate` and `build` upgrade in memory
+  only.
 
 ## 5.8 What is deliberately **not** stored in a project
 

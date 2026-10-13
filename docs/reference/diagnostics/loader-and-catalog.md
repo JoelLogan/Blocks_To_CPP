@@ -554,7 +554,9 @@ the block has a field, input, setting in `extra` or dropdown choice that
 this version does not know. Such a newer addition is not reported as unknown
 (`B2C-E0605`, `E0607`, `E0608`, `E0610`, `E0611`): the block is kept
 unchanged (shown as a placeholder in the editor), and saving the project
-preserves it.
+preserves it. The save also keeps the newer catalog version the file names
+(`generator.catalog`), so the block is still reported this way after the
+save.
 
 > This "print" block was made with a newer version of Blocks2Cpp: it is version 2, and this version knows only up to version 1. Update Blocks2Cpp to use it.
 >
@@ -576,7 +578,11 @@ broken a rule every upgrade keeps (it never adds or removes blocks, never
 makes an expression longer, never changes the IDs of what the block
 declares, never changes what workspace trust looks at, and stays within the
 limits of project files). The block is kept unchanged (shown as a
-placeholder in the editor), and saving the project preserves it.
+placeholder in the editor), and saving the project preserves it. When the
+upgraded project as a whole would break such a rule (it would change what
+workspace trust looks at, or go past a limit of project files), no single
+block is to blame: every upgrade of the project is undone, and each block
+that was upgraded is reported (*upgrading the old blocks would …*).
 
 > This "leave loop" block is version 0, which this version of Blocks2Cpp cannot upgrade to version 1.
 >
@@ -587,6 +593,8 @@ placeholder in the editor), and saving the project preserves it.
 > This block is version 2 of a retired kind of block, and this version of Blocks2Cpp cannot upgrade it.
 >
 > This "print" block is version 1, and upgrading it would add a block, so it was left as it was. This is a bug in Blocks2Cpp.
+>
+> This "print" block is version 1, and upgrading the old blocks would change what workspace trust looks at (Raw C++, libraries or blocks that use files), so it was left as it was. This is a bug in Blocks2Cpp.
 
 **Fix:** replace the block with a new one from the toolbox. The messages
 that end with *This is a bug in Blocks2Cpp* come from an upgrade that ships

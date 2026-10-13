@@ -22,16 +22,16 @@ if (loaded.ok) {
 }
 ```
 
-| Function                                            | Result                                                                                                              |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `version()`                                         | `{app, catalog, formatVersion, sourceMapVersion}`                                                                   |
-| `load(bytes)`                                       | `{ok: true, document, diagnostics: []}` (migrated, not resolved, canonical key order) or `{ok: false, diagnostics}` |
-| `canonical(documentJson)`                           | `{ok: true, text, hash, diagnostics: []}`: what a save writes (05 §5.2) and the content hash (05 §5.11)             |
-| `preview(documentJson, { indentWidth })`            | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols}`                 |
-| `symbolsInScope(blockId, input)`                    | `SymbolInfo[]` or `null`: what a block may refer to (06 §6.5), from the **last preview's** analysis                 |
-| `conversionTable()`                                 | `[{from, to, conversion}]` for all 49 pairs of static types: the analyser's rule (06 §6.6)                          |
-| `clipboardMake(documentJson, blockIds)`             | `{ok: true, payload, text?, diagnostics: []}`: the clipboard payload (05 §5.12) and the blocks' C++                 |
-| `pastePrepare(text, documentJson, target, seedHex)` | `{ok: true, blocks, unresolved, diagnostics}`: a payload's blocks ready to insert at `target`                       |
+| Function                                            | Result                                                                                                                                                                                              |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version()`                                         | `{app, catalog, formatVersion, sourceMapVersion}`                                                                                                                                                   |
+| `load(bytes)`                                       | `{ok: true, document, diagnostics}` (migrated, blocks upgraded (05 §5.7), not resolved, canonical key order; a `B2C-E0603` for each block that could not be upgraded) or `{ok: false, diagnostics}` |
+| `canonical(documentJson)`                           | `{ok: true, text, hash, diagnostics: []}`: what a save writes (05 §5.2) and the content hash (05 §5.11)                                                                                             |
+| `preview(documentJson, { indentWidth })`            | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols}`                                                                                                 |
+| `symbolsInScope(blockId, input)`                    | `SymbolInfo[]` or `null`: what a block may refer to (06 §6.5), from the **last preview's** analysis                                                                                                 |
+| `conversionTable()`                                 | `[{from, to, conversion}]` for all 49 pairs of static types: the analyser's rule (06 §6.6)                                                                                                          |
+| `clipboardMake(documentJson, blockIds)`             | `{ok: true, payload, text?, diagnostics: []}`: the clipboard payload (05 §5.12) and the blocks' C++                                                                                                 |
+| `pastePrepare(text, documentJson, target, seedHex)` | `{ok: true, blocks, unresolved, diagnostics}`: a payload's blocks ready to insert at `target`                                                                                                       |
 
 - **Every document that enters the editor goes through `load()` first.** Never build editor state
   from a plain `JSON.parse` of untrusted text, and never merge loaded objects into others with
