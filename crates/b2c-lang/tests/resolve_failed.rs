@@ -35,7 +35,12 @@ fn exercise(document: &Document, what: &str) -> Analysis {
     assert_eq!(known.len(), symbols.len(), "{what}: a symbol listed twice");
     let blocks = all_blocks(document);
     let ids: BTreeSet<&BlockId> = blocks.iter().map(|(_, _, block)| &block.id).collect();
-    for (_, top, block) in &blocks {
+    for (module, top, block) in &blocks {
+        let parked = document
+            .modules
+            .get(*module)
+            .map(|m| analysis.parked_scope(&m.id))
+            .unwrap_or_default();
         let mut inputs: Vec<Option<&str>> = vec![None, Some("NO_SUCH_INPUT")];
         inputs.extend(block.statements.keys().map(|name| Some(name.as_str())));
         inputs.extend(block.inputs.keys().map(|name| Some(name.as_str())));
@@ -58,8 +63,8 @@ fn exercise(document: &Document, what: &str) -> Analysis {
             );
             let item = matches!(block.block_type.as_str(), "program.main" | "func.define");
             assert!(
-                !*top || item || found.is_empty(),
-                "{what}: the unattached block {} sees symbols",
+                !*top || item || found == parked,
+                "{what}: the parked block {} does not see the parked scope",
                 block.id
             );
         }

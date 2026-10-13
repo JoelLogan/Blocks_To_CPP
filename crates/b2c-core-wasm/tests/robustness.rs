@@ -154,10 +154,10 @@ fn the_malicious_project_suite_through_scope_and_clipboard() {
         preview(&text, 4);
         let made = parse(&b2c_core_wasm::clipboard_make(&text, "[]"));
         if let Some(expected) = &case.loader {
-            // Nothing is kept from a document that does not load.
+            // Nothing is kept from a document that does not load: no answer.
             assert_eq!(
                 b2c_core_wasm::symbols_in_scope("b001", None),
-                "[]",
+                "null",
                 "{}",
                 case.file
             );
@@ -176,7 +176,9 @@ fn the_malicious_project_suite_through_scope_and_clipboard() {
             for input in [None, Some(String::from("BODY"))] {
                 let output = b2c_core_wasm::symbols_in_scope(id, input);
                 let symbols: Value = serde_json::from_str(&output).unwrap();
-                for symbol in symbols.as_array().unwrap() {
+                // `null`: no answer (a block nested too deeply).
+                assert!(symbols.is_array() || symbols.is_null(), "{}: {output}", case.file);
+                for symbol in symbols.as_array().into_iter().flatten() {
                     assert_text_is_safe(&case.file, "a symbol name", symbol["name"].as_str().unwrap());
                 }
             }

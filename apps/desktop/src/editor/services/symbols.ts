@@ -4,9 +4,11 @@
  * the latest analysis (docs/spec/06-compiler-pipeline.md §6.5–6.6).
  *
  * The symbols in scope at a block go through the editor's scope resolver
- * (`resolveBlockScope`, ../toolbox/scope.ts), the same one the toolbox lists with: a block outside
- * the program, or one the analysis has no answer for yet, lists what it would see in the program
- * instead of nothing (03 §3.6).
+ * (`resolveBlockScope`, ../toolbox/scope.ts), the same one the toolbox lists with. The compiler
+ * core answers for every block it has analysed, a parked block (the end of `main`'s body) and a
+ * block inside a disabled statement (what that statement sees) included; only a block the latest
+ * analysis has not seen yet (one dropped or pasted since) lists what its place gives it instead of
+ * nothing (03 §3.6).
  */
 import type { CoreWasm, PreviewResult, StaticType, SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import {
@@ -18,7 +20,7 @@ import {
 } from '@blocks2cpp/blockly-ext';
 import type * as Blockly from 'blockly/core';
 
-import { resolveBlockScope, symbolsAtPoint, type SymbolSource } from '../toolbox/scope';
+import { symbolsAtBlock, type SymbolSource } from '../toolbox/scope';
 import type { SymbolNames } from './names';
 
 const STATIC_TYPES: readonly string[] = [
@@ -62,9 +64,10 @@ export interface SymbolServiceDeps {
 
 /**
  * The latest analysis as the compiler core gives it: its scope query (`symbolsInScope`, from the
- * analysis the core kept from the last preview) and the preview's symbols, with no fallback of the
- * editor's. Before the project's first preview there are none. Never throws: a trapped core
- * answers again once the preview pipeline has replaced it, and nothing until then.
+ * analysis the core kept from the last preview, `null` for a block that analysis has not seen) and
+ * the preview's symbols, with no fallback of the editor's. Before the project's first preview there
+ * are none, and every block sees nothing. Never throws: a trapped core answers again once the
+ * preview pipeline has replaced it, and nothing until then.
  */
 export function analysisScope(deps: Pick<SymbolServiceDeps, 'core' | 'preview'>): SymbolSource {
   return {
@@ -87,11 +90,10 @@ export function analysisScope(deps: Pick<SymbolServiceDeps, 'core' | 'preview'>)
 
 /**
  * The symbols in scope at a block, resolved by the editor's scope resolver over the latest
- * analysis (a block of the canvas outside the program, or one the analysis has no answer for, gets
- * what it would see in the program; any other block, such as one in the toolbox's flyout, gets the
- * scope query's own answer), the current name of a symbol (from the document, then the last-known
- * names, then the analysis), and the parameters of the function a call names
- * ({@link calledFunctionParams}).
+ * analysis (a block of the canvas the analysis has not seen yet gets what its place gives it; any
+ * other block, such as one in the toolbox's flyout, gets the scope query's own answer, or nothing),
+ * the current name of a symbol (from the document, then the last-known names, then the analysis),
+ * and the parameters of the function a call names ({@link calledFunctionParams}).
  */
 export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
   const scope = analysisScope(deps);
@@ -99,9 +101,9 @@ export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
     symbolsAt(blockId, input) {
       const block = deps.workspace.getBlockById(blockId);
       if (block === null) {
-        return scope.symbolsAt(blockId, input);
+        return scope.symbolsAt(blockId, input) ?? [];
       }
-      return symbolsAtPoint(resolveBlockScope(deps.workspace, block, input, scope), scope);
+      return symbolsAtBlock(deps.workspace, block, input, scope);
     },
     nameOf(symId) {
       const name = deps.names.nameOf(symId);

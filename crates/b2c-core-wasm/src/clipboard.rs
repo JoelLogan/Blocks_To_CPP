@@ -24,8 +24,9 @@
 //!
 //! A paste target is `{module, block, input}` ([`crate::PasteTarget`]):
 //!
-//! * no block: the module's canvas, where only the module's functions are
-//!   visible;
+//! * no block: the module's canvas, where the pasted blocks are parked, so
+//!   they see the parked scope (06 §6.5): what is visible at the end of the
+//!   module's `main` body, or the module's functions alone without one;
 //! * a block and an input: what the scope query gives there (the start of
 //!   that statement list, or inside that value input);
 //! * a block without an input: directly after the block in its statement
@@ -33,12 +34,15 @@
 //!   itself creates, if it is a `var.declare` the analyser accepted (it hides
 //!   any other symbol with its name).
 //!
-//! A disabled statement in a list the analyser reaches has the scope of its
-//! position, like an enabled block there. A block the analyser does not
-//! reach (inside a disabled block, loose on the canvas, or in a loose stack)
-//! has no scope of its own, so its place sees what the canvas sees. The
-//! analysis is the one kept from the last preview when it belongs to the
-//! same document (same content hash), otherwise a new one.
+//! The scope query answers for every block of the analysed document, so a
+//! paste into or after a parked block (loose, in a loose stack, or nested in
+//! one) has the parked scope too, and one into or after a block inside a
+//! disabled statement has that statement's scope (05 §5.12). A disabled
+//! statement in a list the analyser reaches has the scope of its position,
+//! like an enabled block there. Only a block nested too deeply has no
+//! answer; its place sees the module's functions, which are visible
+//! everywhere in it. The analysis is the one kept from the last preview when
+//! it belongs to the same document (same content hash), otherwise a new one.
 //!
 //! # How references are bound
 //!

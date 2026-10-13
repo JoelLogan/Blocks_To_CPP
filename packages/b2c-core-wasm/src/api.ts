@@ -111,16 +111,17 @@ export type ClipboardMakeResult =
   | { ok: false; diagnostics: Diagnostic[] };
 
 /**
- * Where pasted blocks go, and so which symbols their references can bind to:
- * - `block: null`: the module's canvas (only the module's functions are visible);
+ * Where pasted blocks go, and so which symbols their references can bind to (05 §5.12):
+ * - `block: null`: the module's canvas, where the pasted blocks are parked: the parked scope,
+ *   what is visible at the end of the module's `main` body (its functions alone without one);
  * - `block` with an `input`: the start of that statement list of the block, or inside that value
  *   input;
  * - `block` with `input: null`: directly after the block in its statement list (a variable the
  *   block itself creates is visible).
  *
  * A disabled statement in a list the analyser reaches has the scope of its position, like an
- * enabled block there. A block the analyser does not reach (inside a disabled block, or loose on
- * the canvas) sees what the canvas sees.
+ * enabled block there; a block inside a disabled statement has that statement's scope; and a
+ * paste into or after a parked block has the parked scope.
  */
 export interface PasteTarget {
   /** The module ID. */
@@ -187,13 +188,20 @@ export interface CoreWasm {
   /**
    * The symbols a block may refer to, from the analysis of the **last preview** (06 §6.5), sorted
    * by name, then ID. `input` null (or a value input) gives what is visible at the block; the
-   * name of one of its statement inputs gives what is visible at the start of that list. A
-   * disabled statement in a list the analyser reaches answers for its position, like an enabled
-   * block there. Empty before a successful preview and for blocks the analyser does not reach
-   * (inside a disabled block, loose, or nested too deeply). Call it only after your own preview
-   * has finished, so the answer is about the document you show.
+   * name of one of its statement inputs gives what is visible at the start of that list.
+   *
+   * Every block of the previewed document answers: a disabled block in a list or input the
+   * analyser reaches answers for its position, like an enabled block there, and every block
+   * nested in it like it; a parked block (loose, in a loose stack, or nested in one) answers with
+   * the parked scope, what is visible at the end of its module's `main` body (the module's
+   * functions alone without one).
+   *
+   * `null` when that analysis has **no answer** for the block: before a successful preview, for a
+   * block the previewed document does not have (one added since), and for one nested too deeply.
+   * An empty list means that nothing is visible there. Call it only after your own preview has
+   * finished, so the answer is about the document you show.
    */
-  symbolsInScope(blockId: string, input: string | null): SymbolInfo[];
+  symbolsInScope(blockId: string, input: string | null): SymbolInfo[] | null;
   /** The analyser's conversion rule for every pair of static types (49 rows). */
   conversionTable(): ConversionRow[];
   /**

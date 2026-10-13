@@ -267,11 +267,12 @@ The analyser implements a **gradual** type system that approximates C++:
   already chosen stays shown. Any other type mismatch is left to the
   analyser. The editor gets these lists from the scope query of
   [06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes).
-  A block that is not attached to `main` or a function lists what is visible
-  at the end of `main`'s body (the module's functions when there is no
-  `main`); a block inside a disabled statement, or one the analysis has not
-  seen yet, lists what the nearest analysed statement around or before it
-  sees.
+  A parked block's dropdowns list what is visible at the end of `main`'s
+  body (the module's functions when there is no `main`); a block inside a
+  disabled statement lists what is visible at that statement. A block the
+  analysis has not seen yet (just dropped or pasted) lists what its place
+  gives it: what the statement before it, or the list or input around it,
+  sees, or, on the canvas, the end of `main`'s body.
 * **Unlike Scratch, there are no implicit globals.** *Make a variable* in the
   Variables category inserts a declaration at the keyboard cursor (or at the
   top of the selected function). Globals require an explicit top-level

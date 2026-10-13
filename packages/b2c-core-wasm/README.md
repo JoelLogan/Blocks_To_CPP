@@ -28,7 +28,7 @@ if (loaded.ok) {
 | `load(bytes)`                                       | `{ok: true, document, diagnostics: []}` (migrated, not resolved, canonical key order) or `{ok: false, diagnostics}` |
 | `canonical(documentJson)`                           | `{ok: true, text, hash, diagnostics: []}`: what a save writes (05 §5.2) and the content hash (05 §5.11)             |
 | `preview(documentJson, { indentWidth })`            | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols}`                 |
-| `symbolsInScope(blockId, input)`                    | `SymbolInfo[]`: what a block may refer to (06 §6.5), from the **last preview's** analysis                           |
+| `symbolsInScope(blockId, input)`                    | `SymbolInfo[]` or `null`: what a block may refer to (06 §6.5), from the **last preview's** analysis                 |
 | `conversionTable()`                                 | `[{from, to, conversion}]` for all 49 pairs of static types: the analyser's rule (06 §6.6)                          |
 | `clipboardMake(documentJson, blockIds)`             | `{ok: true, payload, text?, diagnostics: []}`: the clipboard payload (05 §5.12) and the blocks' C++                 |
 | `pastePrepare(text, documentJson, target, seedHex)` | `{ok: true, blocks, unresolved, diagnostics}`: a payload's blocks ready to insert at `target`                       |
@@ -55,10 +55,13 @@ if (loaded.ok) {
 it without running the pipeline again. **Call it only after your own preview has finished**, so the
 answer is about the document on screen. With `input` null (or a value input) it lists what is
 visible at the block; with one of the block's statement inputs (`BODY`, `DO0`, `ELSE`, …), what is
-visible at the start of that list, including a loop's counter and a function's parameters. It
-answers `[]` before a successful preview (a preview whose document does not load forgets the
-analysis) and for blocks the analyser does not reach (inside a disabled block, loose, or nested
-too deeply); a disabled statement in a list the analyser reaches answers for its position.
+visible at the start of that list, including a loop's counter and a function's parameters. Every
+block of the previewed document answers: a disabled block in a list or input the analyser reaches
+answers for its position, a block nested in it like it, and a parked block (loose, in a loose
+stack, or nested in one) with the parked scope, what is visible at the end of its module's `main`
+body. It answers `null` (no answer) before a successful preview (a preview whose document does not
+load forgets the analysis), for a block that document does not have, and for one nested too
+deeply; `[]` means that nothing is visible there.
 `conversionTable()` lets the connection checker refuse exactly the connections the analyser would
 report (`invalid`).
 
@@ -90,12 +93,13 @@ The editor uses the DOM `copy`, `cut` and `paste` events with `application/x-blo
   - The `blocks` are ready to insert as they are. On the canvas a copied loose stack stays one
     block with `stack`; in or after a block, its stacked blocks follow the head in `blocks` and
     no block has `stack` (a block inside another one cannot have one, `B2C-E0139`).
-  - `target` is `{module, block, input}`: `block: null` is the module's canvas (only functions are
-    visible); a `block` with an `input` is the start of that statement list (or that value
-    input); a `block` with `input: null` is the place **directly after** the block in its list,
-    where a variable the block itself creates is visible. A disabled statement in a list the
-    analyser reaches has the scope of its position; a block the analyser does not reach (inside a
-    disabled block, or loose) sees what the canvas sees.
+  - `target` is `{module, block, input}`: `block: null` is the module's canvas, where pasted
+    blocks are parked and see the parked scope (the end of `main`'s body); a `block` with an
+    `input` is the start of that statement list (or that value input); a `block` with
+    `input: null` is the place **directly after** the block in its list, where a variable the
+    block itself creates is visible. A disabled statement in a list the analyser reaches has the
+    scope of its position, a block inside a disabled statement has that statement's scope, and a
+    paste into or after a parked block has the parked scope (05 §5.12).
   - `seedHex` is 64 hex digits of fresh randomness; use `randomSeedHex()` (from
     `crypto.getRandomValues`) for every paste or duplicate. The core itself uses no randomness, so
     the same seed always gives the same IDs.

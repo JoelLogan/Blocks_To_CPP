@@ -193,9 +193,35 @@ describe.skipIf(core === null)('the toolbox with the compiler core', { timeout: 
     loose.initSvg();
     loose.render();
     await settle();
-    // The next analysis does not lower the loose block: the scope query has no answer for it.
+    // A new analysis of the document without the loose block: the scope query has no answer for
+    // it yet, and the toolbox lists the end of main for it.
     analyse(theCore(), document);
-    expect(theCore().symbolsInScope(loose.id, null)).toEqual([]);
+    expect(theCore().symbolsInScope(loose.id, null)).toBeNull();
+    select(workspace, loose.id);
+    await settle();
+    expect(
+      variableBlocks(workspace)
+        .filter(([type]) => type === 'var.get')
+        .map(([, ref]) => ref),
+    ).toEqual(['s_guess', 's_secret']);
+
+    // Once analysed, the loose block is parked: the core itself answers with the end of main.
+    document.modules[0]?.workspace.blocks.push({
+      id: loose.id,
+      type: 'io.print',
+      v: 1,
+      x: 600,
+      y: 40,
+      extra: { itemCount: 1 },
+    });
+    analyse(theCore(), document);
+    expect(
+      theCore()
+        .symbolsInScope(loose.id, null)
+        ?.map((symbol) => symbol.name),
+    ).toEqual(['guess', 'secret']);
+    select(workspace, 'b002');
+    await settle();
     select(workspace, loose.id);
     await settle();
     expect(
@@ -221,8 +247,12 @@ describe.skipIf(core === null)('the toolbox with the compiler core', { timeout: 
       }
     });
     await settle();
-    // The ask block (b005) is inside the disabled loop (b010).
-    expect(theCore().symbolsInScope('b005', null)).toEqual([]);
+    // The ask block (b005) is inside the disabled loop (b010): the core answers like the loop.
+    expect(
+      theCore()
+        .symbolsInScope('b005', null)
+        ?.map((symbol) => symbol.name),
+    ).toEqual(['guess', 'secret']);
     select(workspace, 'b005');
     await settle();
     expect(getters(workspace)).toEqual(['s_guess', 's_secret']);

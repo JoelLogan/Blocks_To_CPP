@@ -64,6 +64,9 @@ pub(crate) fn run(document: &Document) -> Analysis {
     };
     let mut lowerer = Lowerer::new(document, first.id.clone());
     let modules = lowerer.program();
+    // Parked blocks and skipped definitions answer the scope query too; the
+    // parked scope is known once every `main` is lowered.
+    lowerer.index.record_unlowered(document);
     let trail = lowerer.scopes.take_trail();
     let functions = lowerer
         .functions
@@ -393,7 +396,9 @@ impl<'d> Lowerer<'d> {
     fn main(&mut self, block: &Block) -> Item {
         self.begin_item(ItemCtx::Main);
         self.record_block(&block.id);
-        let body = self.body(block, "BODY", false);
+        let (body, end) = self.body_and_end(block, "BODY", false);
+        // What parked blocks see (06 §6.5).
+        self.index.record_main_end(end);
         Item {
             kind: ItemKind::Main(MainDef { body }),
             origin: self.origin(&block.id, Part::Whole),
@@ -681,6 +686,15 @@ impl<'d> Lowerer<'d> {
     fn record_input(&mut self, block: &BlockId, input: &str) {
         let point = self.point();
         self.index.record_input(block, input, point);
+    }
+
+    /// Records a disabled block that the lowering skips where an enabled one
+    /// would be lowered (a statement of a list, or the value of an input):
+    /// it answers for this position, and so does every block nested in it.
+    /// Like a lowered block, it is recorded only within [`MAX_BLOCK_DEPTH`].
+    fn record_skipped(&mut self, block: &Block) {
+        let point = self.point();
+        self.index.record_tree(block, point, self.depth + 1);
     }
 
     /// Starts lowering the starting value of a variable, or the header of a

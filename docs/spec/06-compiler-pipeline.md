@@ -157,7 +157,11 @@ enum Expr {
 
 **Scope query.** `b2c_lang::Analysis` answers from an index recorded while
 lowering, from the same scope stack the analyser resolves names with, so a
-dropdown never offers a symbol the analyser would reject:
+dropdown on an attached block never offers a symbol that is out of scope
+there. A parked block's dropdowns offer the parked scope, the field's filter
+leaves out symbols the block can never accept, and other type mismatches are
+left to the analyser
+([03 §3.6](03-block-language.md#36-symbols-and-scoping)):
 
 * `symbols_in_scope(block, None)`, or with the name of a value input or
   field, gives what is visible **at the block**: declarations before it in the
@@ -168,12 +172,34 @@ dropdown never offers a symbol the analyser would reject:
   the **start of that statement list**, including the loop counter and
   parameters that the block itself declares.
 * Declarations in disabled blocks are left out. A disabled statement in a
-  statement list that the analyser reaches answers for its position, like an
-  enabled block there (for its own dropdowns and for a paste directly after
-  it); since a disabled declaration declares nothing, the same symbols are
-  visible at it and after it. An unknown block, or one outside the SAST (a
-  loose block, a block inside a disabled block, or one nested too deeply),
-  gives an empty list. The result is sorted by name, then by ID.
+  statement list that the analyser reaches (or a disabled value block in an
+  input it reaches) answers for its position, like an enabled block there
+  (for its own dropdowns and for a paste directly after it); since a
+  disabled declaration declares nothing, the same symbols are visible at it
+  and after it. A block nested in a disabled statement answers like that
+  statement.
+* A parked block (loose, in a parked stack, or nested in one) answers with
+  the **parked scope**: what is visible at the end of its module's `main`
+  body, or the module's functions alone when there is no `main`;
+  declarations inside parked blocks declare nothing. A `when program
+  starts` or function definition that the analyser skips (a disabled one),
+  and every block in it, answers with the module's functions.
+* An unknown block, or one nested too deeply, gives an empty list. The
+  result is sorted by name, then by ID. Every walk that records these
+  answers is iterative and stops at the analyser's depth limit, and the
+  index keeps one position per block, so it grows linearly with the
+  document.
+* `scope_at(block, input)` is the same query, but gives no answer (`None`;
+  `null` from the WASM core) instead of an empty list for a block the
+  analysis has no position for: one added since (for the editor) or nested
+  too deeply. The editor resolves such a block from its place: the
+  statement before it, the list or input around it, or, on the canvas, the
+  parked scope ([03 §3.6](03-block-language.md#36-symbols-and-scoping)).
+  `scope_after(block)` is what a block inserted directly after `block` sees
+  (the variable `block` creates, if the analyser accepted it, is added and
+  hides any other symbol with its name), and `parked_scope(module)` is what
+  a block placed on the module's canvas sees. Paste re-binding uses them
+  ([05 §5.12](05-project-format.md#512-clipboard-format)).
 * `symbol_infos()` lists every symbol, and `block_types()` gives the static
   type of each value block, which the editor's connection checker uses
   together with `conversion(from, to)`, the analyser's own conversion rule
