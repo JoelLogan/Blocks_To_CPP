@@ -9,6 +9,11 @@
  * the new blocks or places yet, so a listing for a new selection would be one the next analysis
  * replaces at once. The preview's arrival rebuilds them for the current selection.
  *
+ * Blockly refreshes no toolbox while a gesture is in progress, and a click selects its block when
+ * the pointer is pressed, so the rebuild a selection asks for comes while the button is still
+ * held. Such a rebuild waits until the gesture has ended (the pointer released, or the press
+ * cancelled) instead of being lost.
+ *
  * The plugin works with either toolbox the workspace was injected with: the continuous toolbox
  * (see register.ts, `toolboxInjectOptions`) or Blockly's category toolbox. The workspace needs a
  * category toolbox to start with; `toolboxInjectOptions()` gives one.
@@ -19,7 +24,6 @@ import * as Blockly from 'blockly/core';
 import { dialogs as appDialogs } from '../../app/dialogs/instance';
 import type { DialogService, DialogTextOptions } from '../../app/dialogs/service';
 import type { EditorContext, EditorPlugin } from '../../app/editor-types';
-import { timed } from '../../lib/timing';
 import { analysisScope } from '../services/symbols';
 import {
   LOOPS_CATEGORY,
@@ -193,13 +197,54 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   let selectionTimer: ReturnType<typeof setTimeout> | null = null;
   let previewTimer: ReturnType<typeof setTimeout> | null = null;
   let making = false;
+  /** The document whose pointer releases end a gesture (the workspace's). */
+  const pointerDocument =
+    (workspace.getInjectionDiv() as HTMLElement | null)?.ownerDocument ?? document;
+  /** Whether a refresh waits for the gesture in progress to end ({@link waitForGestureEnd}). */
+  let waitingForGesture = false;
 
-  /** Rebuilds the open dynamic category (the User Timing span `b2c:toolbox-refresh`). */
+  /** No refresh waits for a gesture any more. */
+  const stopWaitingForGesture = (): void => {
+    if (waitingForGesture) {
+      waitingForGesture = false;
+      pointerDocument.removeEventListener('pointerup', onGestureEnd, true);
+      pointerDocument.removeEventListener('pointercancel', onGestureEnd, true);
+    }
+  };
+  /**
+   * The pointer was released or the press cancelled: refresh once Blockly has ended the gesture.
+   * Blockly ends it in its own listener for the same event, after this one (which listens in the
+   * capture phase, as Blockly stops the event there); the refresh comes in a later task, and waits
+   * again if a gesture is still in progress then (another finger still down).
+   */
+  function onGestureEnd(): void {
+    stopWaitingForGesture();
+    scheduleRefresh();
+  }
+  /** Refreshes the toolbox once the gesture in progress has ended. */
+  const waitForGestureEnd = (): void => {
+    if (!waitingForGesture) {
+      waitingForGesture = true;
+      pointerDocument.addEventListener('pointerup', onGestureEnd, true);
+      pointerDocument.addEventListener('pointercancel', onGestureEnd, true);
+    }
+  };
+
+  /**
+   * Rebuilds the dynamic categories: the continuous toolbox rebuilds its flyout a little later
+   * and measures that as the User Timing span `b2c:toolbox-refresh` (continuous.ts), Blockly's
+   * category toolbox rebuilds the open dynamic category at once. While a gesture is in progress
+   * Blockly would ignore the refresh, so it waits for the gesture to end.
+   */
   const refresh = (): void => {
+    if (Blockly.Gesture.inProgress()) {
+      if (!detached) {
+        waitForGestureEnd();
+      }
+      return;
+    }
     try {
-      timed('b2c:toolbox-refresh', () => {
-        workspace.refreshToolboxSelection();
-      });
+      workspace.refreshToolboxSelection();
     } catch (error: unknown) {
       console.error('The toolbox could not be refreshed', error);
     }
@@ -340,6 +385,7 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     refreshTimer = null;
     selectionTimer = null;
     previewTimer = null;
+    stopWaitingForGesture();
     unsubscribe();
     focusArea?.removeEventListener('focusin', scheduleSelectionCheck);
     workspace.removeChangeListener(onEvent);

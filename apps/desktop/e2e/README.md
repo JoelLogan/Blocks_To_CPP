@@ -118,8 +118,9 @@ report ([09 §9.2](../../../docs/spec/09-quality-and-delivery.md#92-testing-stra
 M5) and never fails a test; a page replaced during the test loses its record, which the report
 says. The flows' launcher records each launch until it ends. The option `recordLongTasks: false` of
 `launchApp` turns it off, as the benchmarks do. The app measures its preview pipeline (and each
-phase of it), the toolbox refresh, the selection handler and the code panel's update as User Timing
-spans ([`src/lib/timing.ts`](../src/lib/timing.ts): `b2c:preview`, `b2c:toolbox-refresh`,
+phase of it), each rebuild of the toolbox's flyout (a task of its own, 100 ms after the change that
+asked for it), the selection handler and the code panel's update as User Timing spans
+([`src/lib/timing.ts`](../src/lib/timing.ts): `b2c:preview`, `b2c:toolbox-refresh`,
 `b2c:select`, `b2c:code-panel`) and keeps only the latest entry of each name in the browser's
 buffer, so the recorder observes the entries as they come (`PerformanceObserver`) to name the tasks
 they overlap. The hook's `timings()` gives the latest duration of each span.

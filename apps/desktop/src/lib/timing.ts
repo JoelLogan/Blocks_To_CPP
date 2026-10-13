@@ -13,7 +13,11 @@
  *   - `b2c:preview:analyse`: the compiler core's `preview()`;
  *   - `b2c:preview:publish`: storing the preview and relabelling the canvas, with what the
  *     store's subscribers do at once.
- * - `b2c:toolbox-refresh`: rebuilding the toolbox's open dynamic category.
+ * - `b2c:toolbox-refresh`: rebuilding the continuous toolbox's flyout (src/editor/toolbox/
+ *   continuous.ts): building its dynamic categories for the current selection and analysis, with
+ *   their scope queries, and showing the flyout again when its contents changed. It runs in a
+ *   task of its own, 100 ms after the last change that asked for it (a selection, an analysis),
+ *   and after the gesture that made the selection has ended.
  * - `b2c:select`: the selection handler, which puts the selected block in the store, with what
  *   the store's subscribers do at once.
  * - `b2c:code-panel`: the code panel taking new code, diagnostics or a highlight.

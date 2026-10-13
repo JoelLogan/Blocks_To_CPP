@@ -243,8 +243,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   app's User Timing spans that overlap them (`long-tasks-<launch>.json` per
   test, `long-tasks.md` in the E2E job summaries). Report only; it never
   fails a test.
-- User Timing spans for the preview pipeline and its phases, the toolbox
-  refresh, block selection and the code panel (`b2c:preview`,
+- User Timing spans for the preview pipeline and its phases, each rebuild of
+  the toolbox's flyout, block selection and the code panel (`b2c:preview`,
   `b2c:toolbox-refresh`, `b2c:select`, `b2c:code-panel`). The benchmarks
   print each span's time per edit or click beside their metrics.
 - The end-to-end test hook's `scrollCanvasBy(dx, dy)` and `timings()` (the
@@ -327,6 +327,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 
 ### Fixed
 
+- The Variables category follows a block selected with an ordinary click.
+  Blockly selects a block when the button is pressed and refreshes no toolbox
+  until it is released, so after a click that held the button a moment the
+  toolbox kept listing the previous scope until the next edit; the rebuild
+  now waits for the release.
 - Dropping a block on the toolbox or the trash can while a place was
   previewed no longer deletes the blocks below that place. Only the dragged
   blocks are deleted, no place is previewed while the pointer is there, and

@@ -32,6 +32,7 @@ import {
 } from '@blockly/continuous-toolbox';
 import * as Blockly from 'blockly/core';
 
+import { timed } from '../../lib/timing';
 import { keepFlyoutFocus } from '../keyboard/keepFocus';
 import { prefersReducedMotion } from '../keyboard/motion';
 
@@ -56,7 +57,8 @@ function dynamicCategoryKey(item: Blockly.utils.toolbox.FlyoutItemInfo): string 
  *
  * - a refresh builds the dynamic categories itself and shows the flyout again only when what it
  *   would show changed (the analysis and the selection change much more often than the toolbox's
- *   blocks do, and rebuilding hundreds of flyout blocks on every edit is slow);
+ *   blocks do, and rebuilding hundreds of flyout blocks on every edit is slow); each rebuild is
+ *   the User Timing span `b2c:toolbox-refresh` (src/lib/timing.ts);
  * - a dynamic category that cannot be built is left out instead of failing the whole flyout;
  * - showing the flyout again disposes every item in it, so a keyboard focus that was on one goes
  *   to the same item in the new contents instead of being lost (the keyboard plugin's
@@ -84,20 +86,24 @@ export class B2cContinuousToolbox extends ContinuousToolbox {
 
   /**
    * Shows every category in the flyout now. With `force` false, the flyout is left as it is when
-   * its contents have not changed. Returns whether the flyout was shown again.
+   * its contents have not changed. Returns whether the flyout was shown again. The whole rebuild
+   * (building the dynamic categories, comparing and showing the flyout) is the User Timing span
+   * `b2c:toolbox-refresh`.
    */
   showAllCategories(force = true): boolean {
-    const contents = this.flyoutContents();
-    const serialised = JSON.stringify(contents);
-    const flyout = this.getFlyout();
-    if (!force && serialised === this.shownContents && flyout.isVisible()) {
-      return false;
-    }
-    keepFlyoutFocus(flyout, () => {
-      flyout.show(contents);
+    return timed('b2c:toolbox-refresh', () => {
+      const contents = this.flyoutContents();
+      const serialised = JSON.stringify(contents);
+      const flyout = this.getFlyout();
+      if (!force && serialised === this.shownContents && flyout.isVisible()) {
+        return false;
+      }
+      keepFlyoutFocus(flyout, () => {
+        flyout.show(contents);
+      });
+      this.shownContents = serialised;
+      return true;
     });
-    this.shownContents = serialised;
-    return true;
   }
 
   /** The items of every category, with the dynamic categories built for the current project. */

@@ -6,6 +6,7 @@ import { createElement } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setCore } from '../../app/core';
+import { latestTimings, resetTimings } from '../../lib/timing';
 import { DialogHost, createDialogQueue, type DialogService } from '../../app/dialogs';
 import { resetAppStore, useAppStore } from '../../app/store';
 import { documentFixture } from '../../app/testing/fixtures';
@@ -345,6 +346,114 @@ describe('the toolbox plugin with the continuous toolbox', () => {
     expect(first?.name).toBe('value');
     expect(second?.name).toBe('value');
     expect(second?.sym).not.toBe(first?.sym);
+  });
+});
+
+/**
+ * Presses the pointer on the canvas as far as Blockly's state goes: a gesture is in progress, as
+ * from Blockly's handling of a `pointerdown` until the release.
+ */
+function press(workspace: Blockly.WorkspaceSvg): Blockly.Gesture {
+  const gesture = new Blockly.Gesture(new PointerEvent('pointerdown'), workspace);
+  workspace.currentGesture_ = gesture;
+  return gesture;
+}
+
+/**
+ * Dispatches `type` on the document; with `gesture`, Blockly's own listener ends it then, as on a
+ * release (it listens on the document in the bubbling phase).
+ */
+function release(
+  type: 'pointerup' | 'pointercancel',
+  gesture: Blockly.Gesture | null = null,
+): void {
+  const end = (): void => {
+    gesture?.dispose();
+  };
+  document.addEventListener(type, end, { once: true });
+  document.dispatchEvent(new PointerEvent(type, { bubbles: true }));
+}
+
+describe('a selection made while the pointer is held', () => {
+  it('rebuilds Variables once the press that selected the block is released', async () => {
+    const workspace = attached('continuous');
+    await settle();
+    // Blockly selects a block when it is pressed, and ignores toolbox refreshes until the release.
+    const gesture = press(workspace);
+    select(workspace, 'fn');
+    await settle();
+    expect(getterRefs(workspace)).toEqual(['s_guess']);
+    release('pointerup', gesture);
+    await settle();
+    expect(getterRefs(workspace)).toEqual(['s_n']);
+  });
+
+  it('rebuilds once a cancelled press has ended', async () => {
+    const workspace = attached('continuous');
+    await settle();
+    const gesture = press(workspace);
+    select(workspace, 'fn');
+    await settle();
+    release('pointercancel', gesture);
+    await settle();
+    expect(getterRefs(workspace)).toEqual(['s_n']);
+  });
+
+  it('waits again when the gesture goes on after a release (another finger still down)', async () => {
+    const workspace = attached('continuous');
+    await settle();
+    const gesture = press(workspace);
+    select(workspace, 'fn');
+    await settle();
+    release('pointerup');
+    await settle();
+    expect(getterRefs(workspace)).toEqual(['s_guess']);
+    release('pointerup', gesture);
+    await settle();
+    expect(getterRefs(workspace)).toEqual(['s_n']);
+  });
+
+  it('stops waiting when it is detached', async () => {
+    const workspace = injectedWorkspace('continuous');
+    const document_ = guessDocument();
+    loadModule(workspace, document_);
+    storeAnalysis(document_, [factorial, guess, n]);
+    const detach = createToolboxPlugin().attach(editorContext(workspace, fakeCore(SCOPES)));
+    await settle();
+    const gesture = press(workspace);
+    select(workspace, 'fn');
+    await settle();
+    const remove = vi.spyOn(document, 'removeEventListener');
+    detach();
+    expect(remove).toHaveBeenCalledWith('pointerup', expect.any(Function), true);
+    expect(remove).toHaveBeenCalledWith('pointercancel', expect.any(Function), true);
+    const refreshes = vi.spyOn(workspace, 'refreshToolboxSelection');
+    release('pointerup', gesture);
+    await settle();
+    expect(refreshes).not.toHaveBeenCalled();
+  });
+});
+
+describe('the span b2c:toolbox-refresh', () => {
+  it('covers the continuous toolbox’s rebuild of its flyout, which comes later', async () => {
+    const workspace = attached('continuous');
+    await settle();
+    resetTimings();
+    const flyout = (workspace.getToolbox() as B2cContinuousToolbox).getFlyout();
+    const show = flyout.show.bind(flyout);
+    // A slow showing of the flyout: the span must include it.
+    const slowMs = 30;
+    vi.spyOn(flyout, 'show').mockImplementation((contents) => {
+      const end = performance.now() + slowMs;
+      while (performance.now() < end) {
+        // Busy, as a large flyout's rebuild is.
+      }
+      show(contents);
+    });
+    select(workspace, 'fn');
+    await settle();
+    expect(getterRefs(workspace)).toEqual(['s_n']);
+    expect(latestTimings()['b2c:toolbox-refresh']).toBeGreaterThanOrEqual(slowMs);
   });
 });
 

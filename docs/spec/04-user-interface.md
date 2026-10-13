@@ -80,13 +80,15 @@
   itself (which can still be dragged out). When less than 200 px of canvas
   would remain beside it, the flyout narrows, down to 160 px.
 * **Dynamic categories.** *Variables* lists the symbols in scope at the
-  current selection. *Functions* lists *define* and *return*, then, under
-  *Your functions*, a call block for each function of the module shown, or a
-  short hint when there is none; module headings appear only when the
-  project has more than one module. A call block of a known function has as
-  many arguments as the function has parameters: it shows no ⊖/⊕ while they
-  match, and only the one that brings it back in line when the definition
-  changes. *Libraries* lists installed packs.
+  current selection; for a block selected with a click it does so once the
+  button is released, however long it was held. *Functions* lists *define*
+  and *return*, then, under *Your functions*, a call block for each
+  function of the module shown, or a short hint when there is none; module
+  headings appear only when the project has more than one module. A call
+  block of a known function has as many arguments as the function has
+  parameters: it shows no ⊖/⊕ while they match, and only the one that
+  brings it back in line when the definition changes. *Libraries* lists
+  installed packs.
 * **Beginner / Advanced.** Advanced categories and rarely used blocks are
   hidden until *Show advanced blocks* is enabled (per project, defaulting to
   the user preference).
