@@ -95,9 +95,9 @@ pub fn analyze(document: &Document) -> Analysis {
 ///   to a default is not a mistake of its own;
 /// * a field or input the catalog reported an error at (an invalid choice,
 ///   a missing input, a field of the wrong kind);
-/// * a function input (`params[…]`) of a block whose `extra` settings, where
-///   the function inputs are kept, the catalog reported an error at (on the
-///   whole block).
+/// * a function input (`params[…]`) of a block the catalog reported an
+///   error on as a whole: the function inputs are kept in the block's
+///   `extra` settings, whose problems the catalog reports on the whole block.
 ///
 /// Everything else, the program and the scope query included, is exactly
 /// what [`analyze`] gives.
@@ -147,6 +147,7 @@ enum PartKey<'a> {
 }
 
 impl<'a> PartKey<'a> {
+    /// The key of a diagnostic's part; `None` for a token range.
     fn of(part: &'a Part) -> Option<Self> {
         match part {
             Part::Whole => Some(Self::Whole),
