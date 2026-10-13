@@ -92,8 +92,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   preview 50 ms after each change, fresh symbol IDs for duplicated and pasted
   blocks, and a module switcher.
 - The editor's toolbox: the catalog's categories in a continuous, Scratch-style
-  toolbox with presets, and Variables, Loops and My Blocks categories that follow
-  the scope at the selected block.
+  toolbox with presets, and Program, Variables and Functions categories built
+  from the project.
 - Problems on blocks: a badge with a shape per severity, an outline and a mark
   on the exact part, for live and last-build diagnostics (dimmed once the
   project changed), and two-way highlighting between blocks, the C++ view and
@@ -344,12 +344,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   shows each field and fixed input, with words next to each checkbox.
 - Variable menus leave out what cannot be changed there: loop counters and
   read-only parameters (as well as constants) for _set_ and _ask_, and text
-  and true/false variables for _change_ and the update operators. A chosen
+  and true/false variables for _change_. A chosen
   variable stays shown, and the Variables category presets blocks only to
   variables their menus offer.
-- With a statement selected, the Variables category lists what is visible
-  just after it, so a selected _create x_ offers `x`. While an edit is being
-  analysed the toolbox keeps its listing instead of flickering.
 - The trash can keeps nothing; Undo brings deleted blocks back. The block
   menu no longer offers _Inline/External Inputs_, which were never saved. The
   canvas menu's _Delete N blocks_ counts the blocks it deletes (not
@@ -452,28 +449,60 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   scope resolver keeps its fallback only for blocks the latest analysis has
   not seen; an empty answer is final, and a block's menus ask the core once.
 
+- The Variables category no longer follows the selected block. It offers
+  _Make a variable_ (which now asks for a name and then a type: `int`,
+  `double`, `bool`, `char` or `string`), the _create_ block, one _set_ block,
+  one _change_ block while a number or character variable exists, and a getter
+  for every variable of the module, grouped by the function that declares it
+  (at most 50).
+- A block taken from the toolbox gets a free default name where it is
+  dropped. A _set_ or _change_ block whose variable is not visible there takes
+  the first fitting variable that is, as part of the same drop (one Undo
+  removes it). A getter keeps its variable and shows `B2C-E0203` when that
+  variable is out of scope.
+- The Program category offers _when program starts_ only while the project
+  has none, and otherwise says where the program starts.
+- The toolbox's list of blocks is rebuilt only when what Program, Variables
+  and Functions show changes (the module's variables and functions, whether
+  the project has _when program starts_, the modules). It is never rebuilt
+  during a drag, a field edit, an open menu or a category scroll, and it keeps
+  the category in view and the selected category.
+- A block still in the toolbox lists every variable of the module in its
+  menu, grouped like the category.
+- The _change_ block has a menu: _by_, _down by_, _times_, _divided by_ and
+  _mod_ (`+=`, `-=`, `*=`, `/=`, `%=`), so the Variables category offers one
+  block for all of them. The block catalog is now 1.2.0. A project saved with
+  it and opened in an older version reports the menu as made by a newer
+  version (`B2C-E0602`) and keeps it.
+
+### Removed
+
+- The separate update block (`[score ▾] [*= ▾] (2)`, `var.update`) is
+  retired. Projects that use it open with the _change_ block in its place,
+  with the same operator, value and C++. The project is marked changed, and
+  saving keeps the original as `.b2c.bak`. `b2c migrate` rewrites such files.
+
 ### Fixed
 
-- The Variables category follows a block selected with an ordinary click.
-  Blockly selects a block when the button is pressed and refreshes no toolbox
-  until it is released, so after a click that held the button a moment the
-  toolbox kept listing the previous scope until the next edit; the rebuild
-  now waits for the release.
 - Dropping a block on the toolbox or the trash can while a place was
   previewed no longer deletes the blocks below that place. Only the dragged
   blocks are deleted, no place is previewed while the pointer is there, and
   the dragged blocks are shown faded (over the toolbox, the toolbox is tinted
   too).
 - A block dropped anywhere on the toolbox is deleted again. After the
-  toolbox's list of blocks was rebuilt (opening a project, selecting a block in
-  another scope, making a variable), a drop on the categories or the open list
+  toolbox's list of blocks was rebuilt (opening a project, making a variable), a
+  drop on the categories or the open list
   deleted nothing, showed no faded blocks and still previewed places, until
   the window or a dock was resized; only the trash can and the window's left
   edge deleted. The pointer decides, at any height: a drop with the pointer
   left of the toolbox's right edge deletes, also over the toolbar or the bottom
   dock, and while the pointer is there the whole toolbox, its categories
   included, is tinted. Over the trash can the dragged blocks are faded and the
-  trash can opens its lid, but the toolbox is not tinted.
+  trash can opens its lid, but the toolbox is not tinted. The places where a
+  drop deletes are recorded in the animation frame after the toolbox's list of
+  blocks changes or moves (or when a drag starts before that frame), so
+  rebuilding the list after an edit no longer makes the page lay itself out an
+  extra time, and a drag no longer measures them again when nothing moved.
 - A negative number typed into a block (`change by -1`) was rejected as "not
   a number" (`B2C-E0310`). A typed `-` or `+` is now a sign, and
   `-2147483648` is generated as `-2147483647 - 1`.
@@ -486,8 +515,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   through the new support helper `b2c::to_text`.
 - A category chosen in the toolbox stays selected at every zoom level.
 - A block left loose on the canvas, a block inside a disabled statement and
-  a block the live analysis has not seen yet no longer empty the Variables
-  category or the block's own variable menu; they list what is visible at
+  a block the live analysis has not seen yet no longer empty the block's own
+  variable menu; it lists what is visible at
   the end of `main` (the module's functions without `main`) or at the
   nearest analysed statement before or around them.
 - The toolbox shows a renamed variable's or function's new name at once.
@@ -545,11 +574,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - Pasting on the canvas, or into or directly after a parked block, binds
   references to the variables visible at the end of `main`; pasting into or
   after a block inside a disabled statement binds them as at that statement.
-- A block just dropped on the canvas, before the next preview, and the
-  Variables category with nothing selected now see the end of the _when
-  program starts_ that runs, as the compiler does, not of a disabled one
-  above it; _Make a variable_ inserts there too. Without _when program
-  starts_, a new loose block sees the module's functions.
+- A block just dropped on the canvas, before the next preview, now sees the
+  end of the _when program starts_ that runs, as the compiler does, not of a
+  disabled one above it; _Make a variable_ with nothing selected inserts there
+  too. Without _when program starts_, a new loose block sees the module's
+  functions.
 - Saving in the app no longer lowers the block catalog a file names
   (`generator.catalog`). A project from a newer catalog saved in an older
   app named the older catalog afterwards, so its newer blocks turned from

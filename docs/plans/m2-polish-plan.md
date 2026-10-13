@@ -1006,6 +1006,8 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
 
 **W4-6 Dynamic Program category.** Ref: FA-7.
 
+- *Status:* done (2026-10-13). `programContents` (`editor/toolbox/contents.ts`) is the dynamic category `B2C_PROGRAM`: *when program starts* only while the project has none, otherwise the note "Your program starts at “when program starts”." (or "… in the module “X”." when another module has it), then the category's other entries (*stop program*). Where the program starts is part of the toolbox's contents key, so deleting `main` rebuilds the flyout. Tests: `contents.test.ts` with and without `main`, `plugin.test.ts` ("offers when program starts again once main is deleted", "says where the program starts when another module has it"); forcing the `main` entry fails two of them. *Deviation:* Program is dynamic in the editor only; `catalog/toolbox.toml` and its dynamic kinds (03 §3.11.1: Variables and Functions) are unchanged.
+
 - **Change:**
   - *Program* offers *when program starts* only while the project has none.
   - Otherwise it shows a label saying where the program starts.
@@ -1051,6 +1053,8 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
 - Effort L.
 
 **W4-5 Merge `var.update` into `var.change` (if time).** Ref: U3-2.
+
+- *Status:* done (2026-10-13). `var.change` v1 has the menu `OP` (*by*, *down by*, *times*, *divided by*, *mod*; default `add`; a file without it still adds), lowered through `choice()` (an unknown value is `B2C-E0430` at the field); the catalog is 1.2.0. `var.update` v1 is retired and replaced on load by `var.change` v1 (`BLOCK_REPLACEMENTS`, `RETIRED_BLOCKS`; `VALUE` → `BY`, the same operator; an unknown operator, a non-text `OP` or a block that already has `BY` stays unchanged with `B2C-E0603`), in the app's open, reload and restore, the WASM `load` and `paste_prepare`, the CLI and resolve. The C++ is unchanged (`by` the literal 1 is still `++x`). Tests: `blocks.rs`, `types.rs`, `slots.rs`, `props.rs` and `checked.rs` in b2c-lang (the old update cases as `change_op`, the same SAST); `update_blocks_become_change_blocks` and `update_blocks_that_cannot_be_changed_are_kept`; the golden `tests/migrations/var_update.b2c`; a 1.2.0 file under the 1.1.0 catalog is `E0602` for `OP` (`upgrade.rs`); `update_blocks_open_as_change_blocks` (b2c-app), the WASM load and paste tests, and the CLI's `migrate` tests (every example byte for byte, the golden upgraded file); mutants of `upgrade.rs` 103 tested, 0 missed; `resolve` and `frontend` fuzzed 180 s and 120 s without a crash. After the merge the Variables category shows one *change* and no update block (integration). *Deviations:* no example used `var.update`, so none was migrated (the round trip is shown on every example); the C++ operators are named in *change*'s help text until the C++ label mode (M3) gives each option its own label; the CLI's `migrate` tests were added; the bench document's second change of a unit is `var.change` with `sub` (new parity digests).
 
 - **Change:**
   - `var.change` v1 gains `OP`: *by* / *down by* / *times* / *divided by* / *mod*, default `add`.

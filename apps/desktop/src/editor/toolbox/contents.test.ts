@@ -845,7 +845,7 @@ describe('coverage of the catalog', () => {
       ...typesOf(variablesContents(ctx)),
       ...typesOf(functionsContents(ctx)),
     ];
-    expect(BLOCK_DEFS).toHaveLength(32);
+    expect(BLOCK_DEFS).toHaveLength(31);
     expect([...new Set(reached)].sort()).toEqual(BLOCK_DEFS.map((def) => def.id).sort());
     const count = (type: string) => reached.filter((reachedType) => reachedType === type).length;
     for (const def of BLOCK_DEFS) {
