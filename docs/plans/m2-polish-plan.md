@@ -856,7 +856,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
   - axe.
   - A flood E2E with the long-task recorder.
   - The NVDA/Orca pass (W7-6).
-- Effort S. Depends on the W2-1 core, with an A/B run attached.
+- Effort S. Depends on the W2-1 core, with an A/B run attached: its `console` benchmark (`webview.console-200000.run`, a program's 200,000 lines in the console) is the metric the mode can slow down.
 
 **W3-12 Probe once more after a timeout.** Ref: RD-10.
 

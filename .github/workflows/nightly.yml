@@ -11,12 +11,12 @@
 # - e2e-security: the E2E security tests (docs/spec/08-security.md §8.13 "Nightly"), both systems;
 # - bench: the benchmarks (docs/spec/09-quality-and-delivery.md §9.2): criterion on the native
 #   pipeline and, through the E2E harness, cold start, the preview and edits at 1,000 blocks,
-#   selecting blocks at 1,000 blocks, the guessing game's selections and edits, and dragging in a
-#   5,000-block workspace. tools/bench-compare.py compares the medians with the baseline (the
-#   last 5 scheduled runs on this system, kept in the Actions cache) and fails at more than 10%
-#   worse; until 5 runs are kept it only reports. A slowdown recorded in
-#   apps/desktop/e2e/bench/accepted.json restarts that metric's history instead of failing. Pull
-#   requests are gated by the A/B job (bench-ab.yml).
+#   selecting blocks at 1,000 blocks, the guessing game's selections and edits, a program's
+#   output in the console, and dragging in a 5,000-block workspace. tools/bench-compare.py
+#   compares the medians with the baseline (the last 5 scheduled runs on this system, kept in the
+#   Actions cache) and fails at more than 10% worse; until 5 runs are kept it only reports. A
+#   slowdown recorded in apps/desktop/e2e/bench/accepted.json restarts that metric's history
+#   instead of failing. Pull requests are gated by the A/B job (bench-ab.yml).
 # The full OSV scan of the default branch runs daily in osv-scanner.yml and is not repeated here.
 name: Nightly
 
@@ -871,8 +871,8 @@ jobs:
         run: ./apps/desktop/e2e/scripts/msedgedriver.ps1 -OutDir (Join-Path $env:RUNNER_TEMP 'msedgedriver')
 
       # Cold start (10 launches), the preview and edits at 1,000 blocks, selecting at 1,000 blocks,
-      # the guessing game and dragging at 5,000 blocks, one results file per metric in
-      # B2C_BENCH_OUT.
+      # the guessing game, a program's 200,000 lines in the console (it runs programs, so the job
+      # has g++) and dragging at 5,000 blocks, one results file per metric in B2C_BENCH_OUT.
       - name: Run the webview benchmarks (Linux)
         if: runner.os == 'Linux'
         env:

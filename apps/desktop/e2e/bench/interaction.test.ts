@@ -13,6 +13,7 @@ import {
   editMeasurement,
   INTERACTION_TIMEOUT_MS,
   listingMismatch,
+  runMeasurement,
   spanSummary,
   spanTimes,
   SUMMARY_SPANS,
@@ -140,6 +141,34 @@ describe('spanTimes', () => {
     expect(spanTimes(spans, 10)).toEqual({ 'b2c:preview': 12.5, 'b2c:select': 1 });
     expect(spanTimes('spans', 0)).toEqual({});
     expect(spanTimes(undefined, 0)).toEqual({});
+  });
+});
+
+describe('runMeasurement', () => {
+  const result = {
+    kind: 'settled',
+    pressed: 1_000,
+    settled: 2_650,
+    until: 2_600,
+    tasks: [
+      { start: 1_200, ms: 30 },
+      { start: 2_590, ms: 60 },
+    ],
+    spans: [{ name: 'b2c:select', start: 900, ms: 1 }],
+  };
+
+  it('takes the time until the console said Finished, and the longest task until it settled', () => {
+    expect(runMeasurement(result)).toEqual({ longestMs: 60, runMs: 1_600, spans: {} });
+  });
+
+  it('fails when the console’s state was not waited for, or the run was not measured', () => {
+    expect(() => runMeasurement({ ...result, until: null })).toThrow('without waiting');
+    expect(() => runMeasurement({ kind: 'no-press' })).toThrow('never reached the page');
+    expect(() => runMeasurement({ kind: 'busy' })).toThrow('had not finished');
+    expect(() => runMeasurement({ kind: 'error', message: 'Not a regular expression' })).toThrow(
+      'Not a regular expression',
+    );
+    expect(() => runMeasurement('settled')).toThrow('unexpected');
   });
 });
 

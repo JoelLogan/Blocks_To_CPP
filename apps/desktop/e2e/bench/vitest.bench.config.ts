@@ -1,7 +1,7 @@
 // The webview benchmarks (docs/spec/09-quality-and-delivery.md §9.2 "Benchmarks"): cold start, the
 // preview and edits at 1,000 blocks, selecting blocks at 1,000 blocks, the guessing game's
-// selections and edits, and dragging in a 5,000-block workspace, in the real app through the E2E
-// harness. The nightly `bench` job runs them and compares the results with the baseline, and the
+// selections and edits, a program's output in the console, and dragging in a 5,000-block
+// workspace, in the real app through the E2E harness. The nightly `bench` job runs them and compares the results with the baseline, and the
 // A/B job (ab-rounds.sh) compares two builds (tools/bench-compare.py). See README.md here.
 //
 // Two projects:

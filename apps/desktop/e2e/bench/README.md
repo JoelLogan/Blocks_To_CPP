@@ -19,6 +19,8 @@ its base's on one runner.
 | `webview.select-1000.max-task`                    | The longest main-thread task after a click that selects a block at 1,000 blocks, in 8 scopes in turn (the toolbox lists what each sees); one click per sample, 10 samples after a warm-up click                                      | yes   | N12           |
 | `webview.guessing-game.select.max-task`           | The guessing game (40 blocks, C++ panel shown): the longest task after a click that selects a block in another scope; one click per sample                                                                                           | no    | N12: ≤ 50 ms  |
 | `webview.guessing-game.edit.max-task`             | The guessing game: the longest task after a print is added to `main`, until the page has finished what it started; one edit per sample                                                                                               | no    | N12: ≤ 50 ms  |
+| `webview.console-200000.run`                      | From a click on ► Run until the console says _Finished_, for a built program that prints 200,000 lines (the console cleared before); the median of 3 runs per sample                                                                 | yes   |               |
+| `webview.console-200000.max-task`                 | The longest main-thread task of such a run, until the page has finished what the run started; the median of 3 runs per sample                                                                                                        | no    | N12           |
 | `webview.drag-5000.frame-p95`                     | Frame times while a block is dragged away and back with real pointer input in a 5,000-block workspace; p95 of one pair of drags per sample, 10 samples after a warm-up pair                                                          | yes   | N3: ≤ 33.3 ms |
 
 Every timing of the webview benchmarks is taken inside the page with its own clock
@@ -74,6 +76,20 @@ The spans are not metrics; an app built before they existed shows none.
 - **Guessing game edits** ([`guessing.bench.e2e.ts`](guessing.bench.e2e.ts)): as the second phase
   of the preview benchmark, in the example `examples/guessing_game.b2c`; the sample is the longest
   task from the insertion (which is part of it) until the page has settled.
+- **Console output** ([`console.bench.e2e.ts`](console.bench.e2e.ts)): a new project from the
+  _Empty_ template gets, through the test hook, a program that prints a first line, 200,000 lines in
+  a _repeat_ loop and a last line, and is run once to build it. Each run then clears the console,
+  outside the timing, and clicks ► Run with real pointer input; the page times from the press until
+  the console's state line says _Finished_ (`TASKS_SETTLE_SCRIPT` waits for it to leave _Finished_
+  and come back), and records its tasks until it has run no long task for 300 ms. The run is the
+  program writing its lines and the console showing them (the backend's output events, the
+  terminal's parsing and rendering, and, once it is on, its accessibility tree), which keeps the
+  page busy most of the time; it varies by about 10% from run to run, so a sample is the median of 3
+  runs. The time stops at _Finished_ rather than when the page settles: a few short tasks of the
+  window's chrome come after the run on timers, which made that end point vary twice as much.
+  After each run the console must end with the last line and hold no "… N lines skipped" marker:
+  the output, about 3 MB, stays below the 4 MiB the backend lets go unacknowledged, so nothing is
+  dropped. The program runs on the machine's g++, as in the end-to-end tests.
 - **Drag** ([`drag.bench.e2e.ts`](drag.bench.e2e.ts)): a separate `func.define` beside `main` is
   dragged away and back across empty canvas in 60 moves of 16 ms each, and the page records the
   timestamps of the animation frames that run while the pointer drags. Before each drag, outside
@@ -189,7 +205,8 @@ that costs time) records it in [`accepted.json`](accepted.json), one entry per m
 The A/B job ([`bench-ab.yml`](../../../../.github/workflows/bench-ab.yml)) gates a pull request
 at once, also for metrics that have no history yet. It runs when the `bench-ab` label is added to a
 pull request (and on each push while it has the label), or by hand with a base and a head ref, the
-benchmarks (`preview`, `select`, `guessing`, `cold-start`, `drag`; by default the first three) and
+benchmarks (`preview`, `select`, `guessing`, `console`, `cold-start`, `drag`; by default, and on a
+pull request, all but `cold-start`) and
 the systems (both, Linux or Windows). On a pull request the head is the pull request merged into
 its base branch (the merge commit GitHub makes for it) and the base is that branch, the merge
 commit's first parent: the two builds differ by the pull request's changes only, so commits that
@@ -205,11 +222,14 @@ compared only once the base has it.
 
 A change expected to alter a gated metric runs the A/B job on its pull request. W4-2, W5-1 and W3-11
 of the M2 polish wave merge only with a green A/B run attached, or once their metrics have at least
-5 nightly baselines. Locally, with two builds of the app:
+5 nightly baselines: the toolbox's listing (W4-2) is measured by `select-1000.max-task`, the snap
+radius (W5-1) by `drag-5000.frame-p95`, and the console's screen-reader output (W3-11) by
+`console-200000.run`, all part of a pull request's run. Locally, with two builds of the app:
 
 ```sh
 AB_XVFB=1 apps/desktop/e2e/bench/ab-rounds.sh /tmp/base/blocks2cpp-desktop \
-  /tmp/head/blocks2cpp-desktop /tmp/ab preview.bench select.bench guessing.bench
+  /tmp/head/blocks2cpp-desktop /tmp/ab preview.bench select.bench guessing.bench console.bench \
+  drag.bench
 python3 tools/bench-compare.py ab --os linux --base /tmp/ab/base --head /tmp/ab/head
 ```
 

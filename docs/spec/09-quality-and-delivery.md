@@ -170,12 +170,14 @@ Details of each level as M2 sets them up:
   workspace (one sample is a drag away and back). The edit benchmark
   includes Blockly's rendering with the C++ panel open (from an edit until
   the page has finished what it started); selecting blocks in 8 scopes at
-  1,000 blocks measures the longest task after a click; and, on the guessing
-  game, the longest task after a selection and after an edit is reported.
-  Every timing is taken inside the page, never across WebDriver. A run takes
-  the median of at least 10 samples and compares it with the baseline, the
-  median of the last 5 successful nightly runs on the default branch for the
-  same system, kept in the Actions cache per system
+  1,000 blocks measures the longest task after a click; a program's output
+  in the console is timed from a click on ► Run until the console says
+  *Finished*, for 200,000 lines (the median of 3 runs per sample); and, on
+  the guessing game, the longest task after a selection and after an edit
+  is reported. Every timing is taken inside the page, never across
+  WebDriver. A run takes the median of at least 10 samples and compares it
+  with the baseline, the median of the last 5 successful nightly runs on the
+  default branch for the same system, kept in the Actions cache per system
   (`tools/bench-compare.py`). More than 10% worse fails; until 5 baselines
   exist the comparison is only reported.
   * Every E2E flow records its longest main-thread task (a heartbeat in the
@@ -199,7 +201,10 @@ Details of each level as M2 sets them up:
   * The M2 polish wave's Variables listing, zoom-aware snap radius and
     screen-reader console output (W4-2, W5-1 and W3-11 of the
     [plan](../plans/m2-polish-plan.md)) merge only with a green A/B run
-    attached, or once their metrics have at least 5 nightly baselines.
+    attached, or once their metrics have at least 5 nightly baselines. Their
+    metrics are the selection at 1,000 blocks, dragging at 5,000 blocks and
+    the console's output; a pull request's A/B run takes every benchmark
+    but cold start, so it includes them.
   * M2 gates regressions. Absolute interaction budgets on small programs are
     reported in M2 and gated from M3 once the toolbox refreshes per section.
     Meeting N2–N4 and N12 ([01 §1.4](01-overview.md#14-goals)) at
@@ -220,7 +225,7 @@ GitHub Actions workflows. All actions are SHA-pinned and least-privilege
 | `workflow-audit.yml` | PR and push touching `.github/`; weekly and manual (adding online audits) | zizmor (auditor persona) |
 | `pages.yml` | PR and push touching `docs/`, `site/`, `LICENSE`, `SECURITY.md`, the Node/pnpm config or the workflow itself; manual | Build the specification website (fails on broken links or anchors, unpublished docs and raw HTML); deploy to GitHub Pages from the default branch |
 | `nightly.yml` | Daily, manual | `fuzz` (30 minutes per target, one job per target, with a kept corpus) · `links` (lychee over all Markdown) · `e2e-app` (the app under test, built once per OS for the jobs below) · `e2e` (both OSes, every flow and the visual diff) · `e2e-security` (both OSes, [08 §8.13](08-security.md#813-continuous-security-process)) · `bench` (both OSes, with the 10% gate and the acceptance file) |
-| `bench-ab.yml` | The `bench-ab` label on a PR (and each push while it has the label); manual (base and head refs, benchmarks, systems) | `plan` (checks the inputs) · `app` (the app under test from the base and from the head, per OS) · `bench` (ubuntu, windows: the head's benchmarks against both builds in alternating runs on one runner, 10 samples each, compared at 10% with the head's acceptance file; §9.2) |
+| `bench-ab.yml` | The `bench-ab` label on a PR (and each push while it has the label); manual (base and head refs, benchmarks, systems) | `plan` (checks the inputs; on a PR the head is its merge commit and the base that commit's first parent) · `app` (the app under test from the base and from the head, per OS) · `bench` (ubuntu, windows: the head's benchmarks against both builds in alternating runs on one runner, 10 samples each, compared at 10% with the head's acceptance file; §9.2) |
 | `weekly.yml` | Weekly, manual | `mutants` (`cargo-mutants`) · `dependency-health` (report) · `geiger` (`cargo-geiger`, report only) · `fuzz-cmin` (corpus minimisation) |
 | `release.yml` | Signed tag `v*` | Build and bundle (Windows MSI/NSIS, Linux AppImage/deb/rpm), sign, SBOMs, provenance attestations, draft GitHub Release. Runs in the protected `release` environment. |
 

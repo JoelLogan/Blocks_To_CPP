@@ -23,6 +23,7 @@ import {
   QUIET_SCRIPT,
   READY_SCRIPT,
   type ReadyResult,
+  RUN_OUTPUT_SCRIPT,
   type ClickResult,
   longestAfterPress,
   TASKS_KEY,
@@ -347,8 +348,19 @@ describe('previewTask', () => {
   });
 });
 
-/** A fake window whose pointer presses run the capture listeners, and a press that takes time. */
+/** The console's state line of a fake page: what `document.querySelector` finds for it. */
+const STATE_SELECTOR = '[data-testid="console-state"]';
+
+/**
+ * A fake window whose pointer presses run the capture listeners, and a press that takes time. Its
+ * document has one element, the console's state line, whose text is `stateLine.text`.
+ */
 function clickPage(loop: FakeLoop, observers?: FakeObservers) {
+  const stateLine = { text: 'Finished (exit code 0)' };
+  const document = {
+    querySelector: (selector: string) =>
+      selector === STATE_SELECTOR ? { textContent: stateLine.text } : null,
+  };
   const listeners = new Map<string, Set<() => void>>();
   const window: Record<string, unknown> = {
     addEventListener: (type: string, listener: () => void) => {
@@ -362,6 +374,7 @@ function clickPage(loop: FakeLoop, observers?: FakeObservers) {
   };
   const globals = loop.globals({
     window,
+    document,
     ...(observers === undefined ? {} : { PerformanceObserver: observers.constructorFor() }),
   });
   /** A press at `delay` whose handling (selecting a block) takes `ms`. */
@@ -373,19 +386,30 @@ function clickPage(loop: FakeLoop, observers?: FakeObservers) {
       loop.now += ms;
     }, delay);
   };
-  const settle = (settleMs: number, timeoutMs: number): ClickResult | null => {
+  const settle = (
+    settleMs: number,
+    timeoutMs: number,
+    ...until: [selector: string, pattern: string] | []
+  ): ClickResult | null => {
     let result: ClickResult | null = null;
-    start(TASKS_SETTLE_SCRIPT, globals, [TASKS_KEY, settleMs, timeoutMs], (value) => {
+    start(TASKS_SETTLE_SCRIPT, globals, [TASKS_KEY, settleMs, timeoutMs, ...until], (value) => {
       result = value as ClickResult;
     });
     loop.run(() => result !== null);
     return result;
+  };
+  /** Sets the console's state line to `text` at `delay`. */
+  const showState = (text: string, delay: number) => {
+    loop.post(() => {
+      stateLine.text = text;
+    }, delay);
   };
   return {
     window,
     listeners,
     press,
     settle,
+    showState,
     startRecorder: () => start(TASKS_START_SCRIPT, globals, [TASKS_KEY, 4]),
   };
 }
@@ -475,6 +499,59 @@ describe('TASKS_START_SCRIPT and TASKS_SETTLE_SCRIPT', () => {
       message: 'No task recorder is running',
     });
   });
+
+  it('wait, when asked, until an element has left a text and come back to it (a run)', () => {
+    const loop = new FakeLoop();
+    const page = clickPage(loop);
+    page.startRecorder();
+    page.press(100, 15);
+    page.showState('Running', 150);
+    // The console writes the program's output, then the page is quiet for longer than the settle
+    // time before the run ends.
+    loop.busy(50, 200);
+    loop.busy(50, 300);
+    page.showState('Finished (exit code 0)', 1_000);
+    loop.busy(20, 1_010); // the last of the output, after the state line
+    const result = page.settle(300, 10_000, STATE_SELECTOR, '^Finished');
+    expect(result?.kind).toBe('settled');
+    if (result?.kind !== 'settled') {
+      return;
+    }
+    expect(result.until).toBeGreaterThanOrEqual(1_000);
+    expect(result.until).toBeLessThan(1_002);
+    expect(result.settled).toBeGreaterThanOrEqual(1_030);
+    expect(result.settled).toBeLessThan(1_032);
+    expect(longestAfterPress(result)?.ms).toBeGreaterThanOrEqual(50);
+    // Without the condition the page settles before the run has ended.
+    const plain = new FakeLoop();
+    const early = clickPage(plain);
+    early.startRecorder();
+    early.press(100, 15);
+    early.showState('Running', 150);
+    plain.busy(50, 200);
+    plain.busy(50, 300);
+    early.showState('Finished (exit code 0)', 1_000);
+    const settled = early.settle(300, 10_000);
+    expect(settled?.kind === 'settled' ? settled.settled : null).toBeLessThan(400);
+    expect(settled?.kind === 'settled' ? settled.until : undefined).toBeNull();
+  });
+
+  it('are busy when the text waited for does not come back, and refuse a bad expression', () => {
+    const loop = new FakeLoop();
+    const page = clickPage(loop);
+    page.startRecorder();
+    page.press(100, 15);
+    page.showState('Running', 150);
+    expect(page.settle(100, 2_000, STATE_SELECTOR, '^Finished')).toEqual({ kind: 'busy' });
+
+    const bad = clickPage(new FakeLoop());
+    bad.startRecorder();
+    expect(bad.settle(100, 2_000, STATE_SELECTOR, '(')).toEqual({
+      kind: 'error',
+      message: 'Not a regular expression: (',
+    });
+    expect(Object.prototype.hasOwnProperty.call(bad.window, TASKS_KEY)).toBe(false);
+  });
 });
 
 describe('longestAfterPress', () => {
@@ -483,6 +560,7 @@ describe('longestAfterPress', () => {
       kind: 'settled',
       pressed: 100,
       settled: 500,
+      until: null,
       tasks: [
         { start: 10, ms: 80 },
         { start: 95, ms: 20 },
@@ -586,6 +664,30 @@ describe('the frame recorder', () => {
     expect(page.count()).toBe(0);
     expect(Object.prototype.hasOwnProperty.call(page.window, FRAMES_KEY)).toBe(false);
     expect(start(FRAMES_STOP_SCRIPT, globals, [FRAMES_KEY])).toBeNull();
+  });
+});
+
+describe('RUN_OUTPUT_SCRIPT', () => {
+  /** The script's result for a transcript. */
+  const outputOf = (transcript: string, line: string): unknown =>
+    start(
+      RUN_OUTPUT_SCRIPT,
+      new FakeLoop().globals({ window: { hook: { consoleText: () => transcript } } }),
+      ['hook', line],
+    );
+
+  it('counts the line, finds the last line and no skipped marker', () => {
+    const transcript = ['START', 'line', 'line', 'line x', 'line', 'END', '', ''].join('\n');
+    expect(outputOf(transcript, 'line')).toEqual({ lines: 3, skipped: false, last: 'END' });
+  });
+
+  it('notices the flood protection’s markers', () => {
+    expect(outputOf('START\nline\n… 1,204 lines skipped\nEND\n', 'line')).toEqual({
+      lines: 1,
+      skipped: true,
+      last: 'END',
+    });
+    expect(outputOf('… output skipped\n', 'line')).toMatchObject({ skipped: true, lines: 0 });
   });
 });
 

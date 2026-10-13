@@ -230,7 +230,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   run, builds the base and the head and runs the chosen webview benchmarks
   against both in alternating runs on one runner, 10 samples per side. A
   gated metric more than 10% worse than the base fails
-  (`tools/bench-compare.py ab`).
+  (`tools/bench-compare.py ab`). On a pull request the head is the pull
+  request merged into its base branch and the base is that branch, and every
+  benchmark but cold start runs; the selection benchmarks' rounds start where
+  the round before stopped, so both sides click the same targets as a nightly
+  run.
 - `apps/desktop/e2e/bench/accepted.json` records intended slowdowns. The
   nightly comparison restarts an accepted metric's history instead of
   failing, and an A/B run passes a metric that its head newly accepts. The
@@ -238,7 +242,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - Benchmarks `webview.select-1000.max-task` (gated: the longest task after a
   click that selects a block at 1,000 blocks, 8 scopes in turn),
   `webview.guessing-game.select.max-task` and
-  `webview.guessing-game.edit.max-task` (reported only).
+  `webview.guessing-game.edit.max-task` (reported only). A click fails the
+  run unless the toolbox then lists the clicked block's scope, so every
+  sample includes the toolbox's rebuild.
+- Benchmarks of a program's output in the console:
+  `webview.console-200000.run` (gated: from a click on Run until the console
+  says Finished, for 200,000 lines, the median of 3 runs per sample) and
+  `webview.console-200000.max-task` (reported only).
 - Every end-to-end flow reports its longest main-thread tasks, named with the
   app's User Timing spans that overlap them (`long-tasks-<launch>.json` per
   test, `long-tasks.md` in the E2E job summaries). Report only; it never

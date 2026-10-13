@@ -333,6 +333,42 @@ export function previewTask(result: Extract<EditResult, { kind: 'seen' }>): Page
   return task;
 }
 
+/** What {@link RUN_OUTPUT_SCRIPT} returns. */
+export interface RunOutput {
+  /** How many lines of the console's transcript are the line asked about. */
+  readonly lines: number;
+  /** Whether the transcript has a "… N lines skipped" marker (output dropped, 07 §7.6.5). */
+  readonly skipped: boolean;
+  /** The transcript's last line that is not empty. */
+  readonly last: string;
+}
+
+/**
+ * Runs in the webview (`executeScript(RUN_OUTPUT_SCRIPT, hookName, line)`): a {@link RunOutput}
+ * of the console's transcript (the hook's `consoleText()`), counted in the page so that only the
+ * counts cross WebDriver.
+ */
+export const RUN_OUTPUT_SCRIPT = `
+  const [hookName, line] = arguments;
+  const text = String(window[hookName].consoleText());
+  const rows = text.split('\\n');
+  let lines = 0;
+  let last = '';
+  for (const row of rows) {
+    if (row === line) {
+      lines += 1;
+    }
+    if (row.trim() !== '') {
+      last = row;
+    }
+  }
+  return {
+    lines: lines,
+    skipped: /… ([\\d,]+) lines? skipped|… output skipped/.test(text),
+    last: last.slice(0, 200),
+  };
+`;
+
 /** What {@link GONE_SCRIPT} calls back with. */
 export type GoneResult = 'gone' | 'timeout' | 'error';
 
@@ -421,8 +457,13 @@ export type ClickResult =
       readonly kind: 'settled';
       /** When the pointer was pressed. */
       readonly pressed: number;
-      /** The end of the last long task before the page was quiet for the settle time. */
+      /**
+       * The end of the last long task before the page was quiet for the settle time, or, when
+       * that came first, when the element waited for showed the text waited for.
+       */
       readonly settled: number;
+      /** When the element waited for showed the text waited for; `null` when none was. */
+      readonly until: number | null;
       /** The long tasks from the start of the recording, in order. */
       readonly tasks: readonly PageTask[];
       /** The app's spans from the start of the recording until it stopped. */
@@ -438,14 +479,32 @@ export type ClickResult =
  * the recorder of {@link TASKS_START_SCRIPT} and calls back with a {@link ClickResult}: `no-press`
  * when no press came within `timeoutMs`, `busy` when the page did not settle within `timeoutMs`
  * of the press.
+ *
+ * With two more arguments, a CSS selector and a regular expression (its source), the page counts
+ * as busy until the first element the selector finds has shown text that the expression does not
+ * match and then text that it matches, after the press (a click on ► Run: the console's state
+ * leaves the last run's *Finished* and comes back to it); `until` is when it did. The element is
+ * read at each check, every millisecond or so between the page's tasks.
  */
 export const TASKS_SETTLE_SCRIPT = `
-  const [key, settleMs, timeoutMs] = arguments;
+  const args = Array.prototype.slice.call(arguments, 0, -1);
+  const [key, settleMs, timeoutMs] = args;
   const done = arguments[arguments.length - 1];
   const state = window[key];
   if (typeof state !== 'object' || state === null || typeof state.stop !== 'function') {
     done({ kind: 'error', message: 'No task recorder is running' });
     return;
+  }
+  let until = null;
+  if (args.length >= 5) {
+    try {
+      until = { selector: String(args[3]), pattern: new RegExp(String(args[4])), left: false, at: null };
+    } catch (error) {
+      state.stop();
+      delete window[key];
+      done({ kind: 'error', message: 'Not a regular expression: ' + String(args[4]) });
+      return;
+    }
   }
   const begin = performance.now();
   let openUntil = null;
@@ -464,6 +523,15 @@ export const TASKS_SETTLE_SCRIPT = `
       }
       return;
     }
+    if (until !== null && until.at === null) {
+      const element = document.querySelector(until.selector);
+      const text = element === null ? '' : String(element.textContent || '');
+      if (!until.pattern.test(text)) {
+        until.left = true;
+      } else if (until.left) {
+        until.at = now;
+      }
+    }
     // No beat since a long task ended: the gap still open is that task, busy until now.
     if (now - state.last >= state.longTaskMs) {
       openUntil = now;
@@ -472,8 +540,18 @@ export const TASKS_SETTLE_SCRIPT = `
     for (const task of state.tasks) {
       busyUntil = Math.max(busyUntil, task.start + task.ms);
     }
-    if (now - busyUntil >= settleMs) {
-      finish({ kind: 'settled', pressed: state.pressed, settled: busyUntil, tasks: state.tasks.slice() });
+    const waiting = until !== null && until.at === null;
+    if (until !== null && until.at !== null) {
+      busyUntil = Math.max(busyUntil, until.at);
+    }
+    if (!waiting && now - busyUntil >= settleMs) {
+      finish({
+        kind: 'settled',
+        pressed: state.pressed,
+        settled: busyUntil,
+        until: until === null ? null : until.at,
+        tasks: state.tasks.slice(),
+      });
     } else if (now - state.pressed > timeoutMs) {
       finish({ kind: 'busy' });
     } else {

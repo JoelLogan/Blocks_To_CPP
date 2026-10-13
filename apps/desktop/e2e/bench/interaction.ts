@@ -14,7 +14,7 @@ import type { App } from '../support/app';
 import type { BlockNode } from '../support/bdm';
 import { scrollIntoView } from '../support/canvas';
 import { blockCorner, grabPointOf } from '../support/editor';
-import { pressKey } from '../support/ui';
+import { byTestId, middleOf, pressKey } from '../support/ui';
 import {
   type ClickResult,
   EDIT_SCRIPT,
@@ -377,4 +377,89 @@ export async function timedClick(app: App, target: ClickTarget): Promise<TimedCl
     throw new Error(mismatch);
   }
   return timed;
+}
+
+/** The console's state line, and what it says once a program has ended (panels/console/header.ts). */
+export const CONSOLE_STATE = '[data-testid="console-state"]';
+export const CONSOLE_FINISHED = 'Finished';
+
+/** What a run measured (milliseconds). */
+export interface TimedRun {
+  /**
+   * The longest task from the press on ► Run until the page had finished what the run started
+   * (0 when none was as long as a long task).
+   */
+  readonly longestMs: number;
+  /**
+   * From the press until the console's state said the program had finished. The console takes
+   * the output in order before the end of the run, and its work keeps the page busy most of that
+   * time, so this is how long the console took to show it; the page's few short tasks after
+   * that (the run's end in the window's chrome) are left out, as their timers make it noisy.
+   */
+  readonly runMs: number;
+  /** The app's spans from the press until the page had finished. */
+  readonly spans: SpanTimes;
+}
+
+/** What a run measured, from {@link TASKS_SETTLE_SCRIPT}'s result; throws when it failed. */
+export function runMeasurement(result: unknown): TimedRun {
+  if (typeof result !== 'object' || result === null || !('kind' in result)) {
+    throw new Error('The task recorder returned something unexpected');
+  }
+  const run = result as ClickResult;
+  switch (run.kind) {
+    case 'settled':
+      if (run.until === null) {
+        throw new Error('The run was timed without waiting for the console to say it finished');
+      }
+      return {
+        longestMs: longestAfterPress(run)?.ms ?? 0,
+        runMs: Math.max(0, run.until - run.pressed),
+        spans: spanTimes(run.spans, run.pressed),
+      };
+    case 'no-press':
+      throw new Error('The click on ► Run never reached the page');
+    case 'busy':
+      throw new Error(
+        `The program had not finished, or the page was still busy, ${String(INTERACTION_TIMEOUT_MS / 1000)} s after the click on ► Run`,
+      );
+    case 'error':
+      throw new Error(`Timing the run failed: ${run.message}`);
+  }
+}
+
+/**
+ * Clicks ► Run in the toolbar with real pointer input (the button held 50 ms) and times the run
+ * until the console's state says the program has finished, then records the page's tasks until
+ * it has run no long task for {@link SETTLE_MS} (bench/page.ts `TASKS_SETTLE_SCRIPT` with the
+ * state line to wait for). The project must have been built already, so the run does not include
+ * a compile, and the page is left to settle first, outside the timing.
+ */
+export async function timedRun(app: App): Promise<TimedRun> {
+  await waitUntilQuiet(app, 'before the run');
+  const point = await middleOf(app.driver, await app.driver.findElement(byTestId('toolbar-run')));
+  const started: unknown = await app.driver.executeScript(
+    TASKS_START_SCRIPT,
+    TASKS_KEY,
+    LONG_TASK_MS,
+  );
+  if (started !== true) {
+    throw new Error('A task recorder was already running in the page');
+  }
+  await app.driver
+    .actions({ async: true })
+    .move({ x: Math.round(point.x), y: Math.round(point.y), origin: Origin.VIEWPORT })
+    .press(Button.LEFT)
+    .pause(50)
+    .release(Button.LEFT)
+    .perform();
+  const result: unknown = await app.driver.executeAsyncScript(
+    TASKS_SETTLE_SCRIPT,
+    TASKS_KEY,
+    SETTLE_MS,
+    INTERACTION_TIMEOUT_MS,
+    CONSOLE_STATE,
+    CONSOLE_FINISHED,
+  );
+  return runMeasurement(result);
 }
