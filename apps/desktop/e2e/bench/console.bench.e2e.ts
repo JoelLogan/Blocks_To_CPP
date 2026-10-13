@@ -30,7 +30,13 @@ import { waitFor } from '../support/wait';
 import { newEmptyProject, repeat } from '../specs/flows/lib/project';
 import { BUILD_TIMEOUT_MS, waitForToolchain } from '../specs/flows/lib/ui';
 import { requireHookMethods } from './capabilities';
-import { type SpanTimes, spanSummary, type TimedRun, timedRun } from './interaction';
+import {
+  INTERACTION_TIMEOUT_MS,
+  type SpanTimes,
+  spanSummary,
+  type TimedRun,
+  timedRun,
+} from './interaction';
 import { RUN_OUTPUT_SCRIPT, type RunOutput } from './page';
 import { benchSamples, writeMetric } from './results';
 import { median, rounded } from './stats';
@@ -46,8 +52,16 @@ const LAST = 'B2C-CONSOLE-LAST';
 /** How many runs one sample takes the median of. */
 const RUNS_PER_SAMPLE = 3;
 
+/**
+ * How long one run may take. On Windows the pseudoconsole throttles the program to the speed at
+ * which it renders its own screen (its pipe fills and the program waits; see
+ * specs/flows/flood.e2e.ts), so 200,000 lines take tens of seconds there, against about a second
+ * on Linux: a run there gets two minutes, elsewhere the benchmarks' usual limit.
+ */
+const RUN_TIMEOUT_MS = process.platform === 'win32' ? 120_000 : INTERACTION_TIMEOUT_MS;
+
 /** How long the whole benchmark may take (the first run compiles the program). */
-const TEST_TIMEOUT_MS = 900_000;
+const TEST_TIMEOUT_MS = process.platform === 'win32' ? 3_000_000 : 900_000;
 
 /** The console's transcript, counted in the page. */
 async function runOutput(app: Awaited<ReturnType<typeof launchApp>>): Promise<RunOutput> {
@@ -126,7 +140,7 @@ describe('webview benchmark: a program’s output in the console', () => {
         const runs: TimedRun[] = [];
         for (let index = 0; index < RUNS_PER_SAMPLE; index += 1) {
           await clearConsole(app);
-          const timed = await timedRun(app);
+          const timed = await timedRun(app, RUN_TIMEOUT_MS);
           expect(await consoleState(app.driver)).toMatch(/Finished \(exit code 0\)/);
           await checkOutput(app);
           runs.push(timed);

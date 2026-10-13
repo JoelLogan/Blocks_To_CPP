@@ -164,7 +164,10 @@ describe('runMeasurement', () => {
   it('fails when the console’s state was not waited for, or the run was not measured', () => {
     expect(() => runMeasurement({ ...result, until: null })).toThrow('without waiting');
     expect(() => runMeasurement({ kind: 'no-press' })).toThrow('never reached the page');
-    expect(() => runMeasurement({ kind: 'busy' })).toThrow('had not finished');
+    expect(() => runMeasurement({ kind: 'busy' })).toThrow(
+      'had not finished, or the page was still busy, 25 s',
+    );
+    expect(() => runMeasurement({ kind: 'busy' }, 120_000)).toThrow('busy, 120 s after');
     expect(() => runMeasurement({ kind: 'error', message: 'Not a regular expression' })).toThrow(
       'Not a regular expression',
     );

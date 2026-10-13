@@ -10,7 +10,7 @@
 import { Button, Key, Origin } from 'selenium-webdriver';
 
 import { E2E_HOOK_NAME, type E2ePoint } from '../../src/e2e/contract';
-import type { App } from '../support/app';
+import { type App, SCRIPT_TIMEOUT_MS } from '../support/app';
 import type { BlockNode } from '../support/bdm';
 import { scrollIntoView } from '../support/canvas';
 import { blockCorner, grabPointOf } from '../support/editor';
@@ -44,9 +44,13 @@ export const SETTLE_MS = 300;
 
 /**
  * How long an edit's preview, or a click's work, may take before the benchmark fails: below
- * WebDriver's script timeout (30 s, support/app.ts), so the page's own timeout is what reports it.
+ * WebDriver's script timeout (support/app.ts `SCRIPT_TIMEOUT_MS`), so the page's own timeout is
+ * what reports it.
  */
 export const INTERACTION_TIMEOUT_MS = 25_000;
+
+/** How much longer than the page's own timeout WebDriver waits for its answer. */
+const SCRIPT_TIMEOUT_MARGIN_MS = 5_000;
 
 /** The time of each User Timing span of the app in one interaction, by name (milliseconds). */
 export type SpanTimes = Readonly<Record<string, number>>;
@@ -401,8 +405,14 @@ export interface TimedRun {
   readonly spans: SpanTimes;
 }
 
-/** What a run measured, from {@link TASKS_SETTLE_SCRIPT}'s result; throws when it failed. */
-export function runMeasurement(result: unknown): TimedRun {
+/**
+ * What a run measured, from {@link TASKS_SETTLE_SCRIPT}'s result; throws when it failed.
+ * `timeoutMs` is the time the page was given ({@link timedRun}), for the message.
+ */
+export function runMeasurement(
+  result: unknown,
+  timeoutMs: number = INTERACTION_TIMEOUT_MS,
+): TimedRun {
   if (typeof result !== 'object' || result === null || !('kind' in result)) {
     throw new Error('The task recorder returned something unexpected');
   }
@@ -421,7 +431,7 @@ export function runMeasurement(result: unknown): TimedRun {
       throw new Error('The click on ► Run never reached the page');
     case 'busy':
       throw new Error(
-        `The program had not finished, or the page was still busy, ${String(INTERACTION_TIMEOUT_MS / 1000)} s after the click on ► Run`,
+        `The program had not finished, or the page was still busy, ${String(timeoutMs / 1000)} s after the click on ► Run`,
       );
     case 'error':
       throw new Error(`Timing the run failed: ${run.message}`);
@@ -433,9 +443,14 @@ export function runMeasurement(result: unknown): TimedRun {
  * until the console's state says the program has finished, then records the page's tasks until
  * it has run no long task for {@link SETTLE_MS} (bench/page.ts `TASKS_SETTLE_SCRIPT` with the
  * state line to wait for). The project must have been built already, so the run does not include
- * a compile, and the page is left to settle first, outside the timing.
+ * a compile, and the page is left to settle first, outside the timing. The run may take
+ * `timeoutMs`; WebDriver's script timeout is raised for it when that is longer than the session's,
+ * and set back afterwards.
  */
-export async function timedRun(app: App): Promise<TimedRun> {
+export async function timedRun(
+  app: App,
+  timeoutMs: number = INTERACTION_TIMEOUT_MS,
+): Promise<TimedRun> {
   await waitUntilQuiet(app, 'before the run');
   const point = await middleOf(app.driver, await app.driver.findElement(byTestId('toolbar-run')));
   const started: unknown = await app.driver.executeScript(
@@ -453,13 +468,24 @@ export async function timedRun(app: App): Promise<TimedRun> {
     .pause(50)
     .release(Button.LEFT)
     .perform();
-  const result: unknown = await app.driver.executeAsyncScript(
-    TASKS_SETTLE_SCRIPT,
-    TASKS_KEY,
-    SETTLE_MS,
-    INTERACTION_TIMEOUT_MS,
-    CONSOLE_STATE,
-    CONSOLE_FINISHED,
-  );
-  return runMeasurement(result);
+  const longer = timeoutMs + SCRIPT_TIMEOUT_MARGIN_MS > SCRIPT_TIMEOUT_MS;
+  if (longer) {
+    await app.driver.manage().setTimeouts({ script: timeoutMs + SCRIPT_TIMEOUT_MARGIN_MS });
+  }
+  let result: unknown;
+  try {
+    result = await app.driver.executeAsyncScript(
+      TASKS_SETTLE_SCRIPT,
+      TASKS_KEY,
+      SETTLE_MS,
+      timeoutMs,
+      CONSOLE_STATE,
+      CONSOLE_FINISHED,
+    );
+  } finally {
+    if (longer) {
+      await app.driver.manage().setTimeouts({ script: SCRIPT_TIMEOUT_MS });
+    }
+  }
+  return runMeasurement(result, timeoutMs);
 }

@@ -31,6 +31,9 @@ import { sleep, waitFor, withTimeout } from './wait';
 /** How long the window may take to start (02 §2.5.7 start-up, backend and features). */
 export const READY_TIMEOUT_MS = 30_000;
 
+/** WebDriver's script timeout of a session: how long one `executeScript` call may take. */
+export const SCRIPT_TIMEOUT_MS = 30_000;
+
 /**
  * How long ending the WebDriver session (which closes the app) may take before the driver and
  * whatever it started are stopped anyway. selenium-webdriver's requests have no timeout of their
@@ -293,7 +296,9 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
       .withCapabilities(capabilities)
       .build();
     driver = session;
-    await session.manage().setTimeouts({ script: 30_000, implicit: 0, pageLoad: 60_000 });
+    await session
+      .manage()
+      .setTimeouts({ script: SCRIPT_TIMEOUT_MS, implicit: 0, pageLoad: 60_000 });
     app = { driver: session, hook: new HookClient(session), settings, root };
   } catch (error: unknown) {
     // No session: keep what the driver and the app wrote (the native driver's output is in

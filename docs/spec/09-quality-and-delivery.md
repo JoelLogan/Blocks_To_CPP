@@ -172,7 +172,9 @@ Details of each level as M2 sets them up:
   the page has finished what it started); selecting blocks in 8 scopes at
   1,000 blocks measures the longest task after a click; a program's output
   in the console is timed from a click on ► Run until the console says
-  *Finished*, for 200,000 lines (the median of 3 runs per sample); and, on
+  *Finished*, for 200,000 lines (the median of 3 runs per sample; on
+  Windows the pseudoconsole throttles the program, so a run takes tens of
+  seconds there and may take 2 minutes); and, on
   the guessing game, the longest task after a selection and after an edit
   is reported. Every timing is taken inside the page, never across
   WebDriver. A run takes the median of at least 10 samples and compares it

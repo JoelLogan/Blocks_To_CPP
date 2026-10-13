@@ -89,7 +89,10 @@ The spans are not metrics; an app built before they existed shows none.
   window's chrome come after the run on timers, which made that end point vary twice as much.
   After each run the console must end with the last line and hold no "… N lines skipped" marker:
   the output, about 3 MB, stays below the 4 MiB the backend lets go unacknowledged, so nothing is
-  dropped. The program runs on the machine's g++, as in the end-to-end tests.
+  dropped. The program runs on the machine's g++, as in the end-to-end tests. On Windows the
+  pseudoconsole throttles the program to the speed at which it renders its own screen (its pipe
+  fills and the program waits), so a run takes tens of seconds there rather than about one: a run
+  may take 2 minutes on Windows and 25 s elsewhere.
 - **Drag** ([`drag.bench.e2e.ts`](drag.bench.e2e.ts)): a separate `func.define` beside `main` is
   dragged away and back across empty canvas in 60 moves of 16 ms each, and the page records the
   timestamps of the animation frames that run while the pointer drags. Before each drag, outside
