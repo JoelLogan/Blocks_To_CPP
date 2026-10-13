@@ -271,7 +271,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   (pointer or keyboard). By default it is as wide as its blocks, at most
   320 px, and it narrows to leave the canvas at least 200 px.
 - The toolbox's width, the panels' sizes and whether each panel is hidden are
-  remembered on this computer (`settings.json` `ui.layout`).
+  remembered on this computer (`settings.json` `ui.layout`), written as soon
+  as a change ends, so closing the window right after it keeps it.
 - Canvas controls: _Zoom out_, _Zoom in_, _Reset zoom_ (back to 100 %; the
   button shows the zoom now) and _Show all blocks_ (scrolls to the blocks
   without changing the zoom) are named buttons at the canvas's top right,

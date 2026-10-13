@@ -395,15 +395,15 @@ describe('remembering the layout', () => {
     vi.useRealTimers();
   });
 
-  it('writes the changes together, half a second after the last one', async () => {
+  it('writes the steps of a series together, half a second after the last one', async () => {
     const page = install();
     const layout = { rightDockWidth: 300, toolboxWidth: 200 };
     page.ipc.settingsUpdate.mockResolvedValue(updated(settingsFixture({ ui: { layout } })));
 
-    rememberLayout({ rightDockWidth: 290 });
+    rememberLayout({ rightDockWidth: 290 }, false);
     vi.advanceTimersByTime(LAYOUT_WRITE_DELAY_MS - 100);
-    rememberLayout({ rightDockWidth: 300 });
-    rememberLayout({ toolboxWidth: 200 });
+    rememberLayout({ rightDockWidth: 300 }, false);
+    rememberLayout({ toolboxWidth: 200 }, false);
     vi.advanceTimersByTime(LAYOUT_WRITE_DELAY_MS - 1);
     expect(page.ipc.settingsUpdate).not.toHaveBeenCalled();
 
@@ -414,13 +414,35 @@ describe('remembering the layout', () => {
     expect(useAppStore.getState().settings.value?.ui.layout).toEqual(layout);
   });
 
+  // The backend lets a window without unsaved changes close at once, and nothing is written then:
+  // a dock hidden right before closing the window was forgotten.
+  it('writes a settled change at once, with the steps still waiting', async () => {
+    const page = install();
+    page.ipc.settingsUpdate.mockResolvedValue(updated(settingsFixture()));
+
+    rememberLayout({ rightDockWidth: 300 }, false);
+    rememberLayout({ bottomCollapsed: true }, true);
+    // Queued behind the updates before it: no timer.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(page.ipc.settingsUpdate.mock.calls).toEqual([
+      [{ ui: { layout: { rightDockWidth: 300, bottomCollapsed: true } } }],
+    ]);
+    // Nothing is left to write later.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LAYOUT_WRITE_DELAY_MS * 2);
+    });
+    expect(page.ipc.settingsUpdate).toHaveBeenCalledTimes(1);
+  });
+
   it('only logs a layout that could not be saved: the page shows no error for it', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const page = install();
     page.ipc.settingsUpdate.mockRejectedValue(
       new IpcCallError('settings_update', { code: 'io', kind: 'permissionDenied' }),
     );
-    rememberLayout({ bottomCollapsed: true });
+    rememberLayout({ bottomCollapsed: true }, true);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(LAYOUT_WRITE_DELAY_MS);
     });
@@ -438,7 +460,7 @@ describe('remembering the layout', () => {
   it('writes what is left at once when uninstalled, and then takes no more changes', async () => {
     const page = install();
     page.ipc.settingsUpdate.mockResolvedValue(updated(settingsFixture()));
-    rememberLayout({ bottomDockHeight: 150 });
+    rememberLayout({ bottomDockHeight: 150 }, false);
     uninstall?.();
     uninstall = null;
     // The write is queued behind the updates before it: no timer.
@@ -449,7 +471,7 @@ describe('remembering the layout', () => {
       [{ ui: { layout: { bottomDockHeight: 150 } } }],
     ]);
 
-    rememberLayout({ bottomDockHeight: 200 });
+    rememberLayout({ bottomDockHeight: 200 }, true);
     vi.advanceTimersByTime(LAYOUT_WRITE_DELAY_MS * 2);
     expect(page.ipc.settingsUpdate).toHaveBeenCalledTimes(1);
   });

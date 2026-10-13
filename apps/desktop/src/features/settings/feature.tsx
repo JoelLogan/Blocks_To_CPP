@@ -27,8 +27,9 @@ export const SETTINGS_BANNER_ORDER = 100;
  * When `settings.json` had problems at start-up, a window banner says so until the person opens
  * the page or dismisses it; the page lists the notices.
  *
- * It also remembers the editor's layout (05 §5.9 `ui.layout`): the changes the layout hands on are
- * written together half a second after the last one (./layout.ts), and once more at uninstall.
+ * It also remembers the editor's layout (05 §5.9 `ui.layout`): a settled change the layout hands on
+ * is written at once, the steps of a splitter's series together half a second after the last one
+ * (./layout.ts), and what is left at uninstall.
  */
 export function createSettingsFeature(options: SettingsFeatureOptions = {}): Feature {
   const banners = options.banners ?? appBanners;

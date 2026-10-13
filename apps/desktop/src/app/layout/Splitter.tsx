@@ -20,8 +20,12 @@ export interface SplitterProps {
   value: number;
   min: number;
   max: number;
-  /** Called with the new size, already clamped to `min`–`max`. */
-  onChange: (value: number) => void;
+  /**
+   * Called with the new size, already clamped to `min`–`max`. `settled` is false for a step of a
+   * series that may go on (an arrow key, a pointer drag while it lasts) and true for a change that
+   * ends one (`Home`, `End`, the end of a drag), so a caller that saves the size can save it then.
+   */
+  onChange: (value: number, settled: boolean) => void;
   /**
    * Called on Enter: collapses the panel (the window-splitter pattern of WAI-ARIA). If that removes
    * the splitter, the caller moves the keyboard focus to the control that restores the panel.
@@ -45,7 +49,8 @@ function clamp(value: number, min: number, max: number): number {
 /**
  * A bar that resizes the panel beside it, by pointer and by keyboard (WAI-ARIA window splitter):
  * arrow keys move it by {@link STEP} pixels (Shift: {@link BIG_STEP}), Home and End go to the
- * smallest and largest size, and Enter collapses the panel when it can be collapsed.
+ * smallest and largest size, and Enter collapses the panel when it can be collapsed. A pointer drag
+ * reports each move, and its end once more as settled.
  */
 export function Splitter({
   orientation,
@@ -60,8 +65,11 @@ export function Splitter({
   className,
   style,
 }: SplitterProps) {
-  /** Where a pointer drag started: the pointer position and the size then. */
-  const drag = useRef<{ start: number; size: number } | null>(null);
+  /**
+   * Where a pointer drag started (the pointer position and the size then), and the size it last
+   * reported (`null` until it moves).
+   */
+  const drag = useRef<{ start: number; size: number; last: number | null } | null>(null);
   const vertical = orientation === 'vertical';
   /** +1 when moving the bar right or down makes the panel larger (it is before the bar). */
   const direction = side === 'before' ? 1 : -1;
@@ -72,6 +80,8 @@ export function Splitter({
     const forward = vertical ? 'ArrowRight' : 'ArrowDown';
     const backward = vertical ? 'ArrowLeft' : 'ArrowUp';
     let next: number;
+    // An arrow key may be held or pressed again; Home and End are where the series ends.
+    let settled = false;
     switch (event.key) {
       case forward:
         next = value + direction * step;
@@ -81,9 +91,11 @@ export function Splitter({
         break;
       case 'Home':
         next = min;
+        settled = true;
         break;
       case 'End':
         next = max;
+        settled = true;
         break;
       case 'Enter':
         if (onCollapse === undefined) {
@@ -96,10 +108,18 @@ export function Splitter({
         return;
     }
     event.preventDefault();
-    onChange(clamp(next, min, max));
+    onChange(clamp(next, min, max), settled);
   };
 
   const position = (event: PointerEvent) => (vertical ? event.clientX : event.clientY);
+  /** Ends a drag: the size it last reported is settled (nothing when it never moved). */
+  const endDrag = (): void => {
+    const last = drag.current?.last ?? null;
+    drag.current = null;
+    if (last !== null) {
+      onChange(last, true);
+    }
+  };
 
   // A focusable separator is the WAI-ARIA window-splitter widget; jsx-a11y counts every separator
   // as static content.
@@ -123,24 +143,27 @@ export function Splitter({
         }
         event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);
-        drag.current = { start: position(event), size: value };
+        drag.current = { start: position(event), size: value, last: null };
       }}
       onPointerMove={(event) => {
         const current = drag.current;
         if (current === null) {
           return;
         }
-        onChange(clamp(current.size + direction * (position(event) - current.start), min, max));
+        current.last = clamp(
+          current.size + direction * (position(event) - current.start),
+          min,
+          max,
+        );
+        onChange(current.last, false);
       }}
       onPointerUp={(event) => {
-        drag.current = null;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
           event.currentTarget.releasePointerCapture(event.pointerId);
         }
+        endDrag();
       }}
-      onPointerCancel={() => {
-        drag.current = null;
-      }}
+      onPointerCancel={endDrag}
     />
   );
   /* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */

@@ -370,7 +370,7 @@ function readSettings(layout: LayoutSettings): void {
 
 describe('the remembered layout', () => {
   /** The saver the settings feature would register; removed after each test. */
-  let saved: Mock<(change: LayoutPatch) => void>;
+  let saved: Mock<(change: LayoutPatch, settled: boolean) => void>;
   let unregister: () => void;
 
   beforeEach(() => {
@@ -411,7 +411,7 @@ describe('the remembered layout', () => {
     // Shown again: the remembered height, and the change is handed on.
     fireEvent.click(screen.getByRole('button', { name: 'Show the bottom panel' }));
     expect(valueOf(separator('Resize the bottom panel'), 'now')).toBe(150);
-    expect(saved.mock.calls).toEqual([[{ bottomCollapsed: false }]]);
+    expect(saved.mock.calls).toEqual([[{ bottomCollapsed: false }, true]]);
   });
 
   it('is taken from the settings when they arrive after the layout, and only once', () => {
@@ -430,7 +430,7 @@ describe('the remembered layout', () => {
     expect(flyout.setWidth).toHaveBeenLastCalledWith(200);
     fireEvent.click(screen.getByRole('button', { name: 'Show the C++ panel' }));
     expect(valueOf(separator('Resize the C++ panel'), 'now')).toBe(300);
-    expect(saved.mock.calls).toEqual([[{ rightCollapsed: false }]]);
+    expect(saved.mock.calls).toEqual([[{ rightCollapsed: false }, true]]);
 
     // Later answers (such as the one to a saved change) change nothing.
     readSettings({ rightDockWidth: 500, rightCollapsed: true });
@@ -448,10 +448,11 @@ describe('the remembered layout', () => {
     fireEvent.keyDown(separator('Resize the C++ panel'), { key: 'ArrowLeft' });
     fireEvent.keyDown(separator('Resize the bottom panel'), { key: 'End' });
     fireEvent.keyDown(separator('Resize the toolbox'), { key: 'ArrowRight' });
+    // Arrow keys are steps of a series; End ends one (it is written at once).
     expect(saved.mock.calls).toEqual([
-      [{ rightDockWidth: 307 + STEP }],
-      [{ bottomDockHeight: 413 }],
-      [{ toolboxWidth: 320 + STEP }],
+      [{ rightDockWidth: 307 + STEP }, false],
+      [{ bottomDockHeight: 413 }, true],
+      [{ toolboxWidth: 320 + STEP }, false],
     ]);
     saved.mockClear();
 
@@ -468,10 +469,12 @@ describe('the remembered layout', () => {
     act(() => {
       useAppStore.getState().actions.setUi({ bottomTab: 'console', bottomCollapsed: false });
     });
+    // Showing or hiding a dock is settled: written at once, so closing the window right after it
+    // keeps it.
     expect(saved.mock.calls).toEqual([
-      [{ rightCollapsed: true }],
-      [{ bottomCollapsed: true }],
-      [{ bottomCollapsed: false }],
+      [{ rightCollapsed: true }, true],
+      [{ bottomCollapsed: true }, true],
+      [{ bottomCollapsed: false }, true],
     ]);
   });
 });

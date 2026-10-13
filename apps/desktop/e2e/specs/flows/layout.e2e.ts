@@ -13,7 +13,9 @@
  *   hits there. Dragging it widens the flyout and the blocks stay clear of it; End makes the
  *   flyout as wide as leaves the canvas 200 px;
  * - the toolbox's width, the docks' sizes and whether each dock is hidden are written to
- *   settings.json (`ui.layout`, 05 §5.9) and are as they were left after a restart.
+ *   settings.json (`ui.layout`, 05 §5.9) and are as they were left after a restart; a dock hidden,
+ *   and a splitter moved to its end, right before the window is closed are written as well (the
+ *   backend lets a window without unsaved changes close straight away).
  *
  * Where the screen is smaller than the size asked for (the Windows runner's is 1024 × 768), the
  * app keeps the window on the screen; the checks follow the window's real size.
@@ -289,4 +291,21 @@ describe('The editor’s layout', () => {
     const bottom = await second.driver.findElement(By.css('section.bottom-dock'));
     expect(await bottom.getAttribute('data-collapsed')).toBe('true');
   }, 240_000);
+
+  it('keeps a change made right before the window is closed', async (context) => {
+    const flow = startFlow(context);
+    const settingsFile = path.join(flow.folders.profile, 'config', 'settings.json');
+    const app = await flow.launch({ windowSize: { width: 1280, height: 800 } });
+    await newEmptyProject(app);
+    await waitForTestId(app.driver, 'workspace', true);
+    await waitForFlyout(app.driver);
+
+    // A new Empty project has no unsaved changes, so the close asks nothing.
+    await focusSeparator(app, 'Resize the C++ panel');
+    await pressKey(app.driver, Key.HOME);
+    await app.driver.findElement(By.css('[data-testid="bottom-dock-toggle"]')).click();
+    await app.closeWindow();
+    await app.waitForExit();
+    expect(savedLayout(settingsFile)).toMatchObject({ rightDockWidth: 200, bottomCollapsed: true });
+  }, 180_000);
 });

@@ -350,8 +350,11 @@ M4).
   ([04 §4.1](04-user-interface.md#41-main-window-layout)): the width of the
   toolbox's flyout, the docks' sizes and whether each dock is hidden. A key
   is absent until the user first changes it, and while it is absent the
-  first-start rule of 04 §4.1 applies. The app writes the changes together
-  half a second after the last one, so a splitter drag writes the file once.
+  first-start rule of 04 §4.1 applies. The app writes a change at once when
+  it ends what the user did (a dock shown or hidden, the end of a splitter
+  drag, `Home` or `End` on a splitter), so closing the window right after it
+  keeps it; the arrow-key steps on a splitter are written together half a
+  second after the last one.
   Each value is validated on its own like the others; a `ui` or `ui.layout`
   that is not an object is reset as a whole, with a notice naming it, and
   unknown keys inside them are kept.

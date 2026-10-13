@@ -239,7 +239,7 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
           change.rightCollapsed = remembered.right;
         }
         if (change.bottomCollapsed !== undefined || change.rightCollapsed !== undefined) {
-          rememberLayout(change);
+          rememberLayout(change, true);
         }
       }),
     [],
@@ -363,11 +363,11 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
             value={Math.round(toolbox.layout.width)}
             min={toolbox.layout.min}
             max={toolbox.layout.max}
-            onChange={(width) => {
+            onChange={(width, settled) => {
               toolboxGiven.current = { flyout: toolbox.layout.setWidth, width };
               toolbox.layout.setWidth(width);
               setToolboxChosen(width);
-              rememberLayout({ toolboxWidth: Math.round(width) });
+              rememberLayout({ toolboxWidth: Math.round(width) }, settled);
             }}
             label="Resize the toolbox"
             className="splitter-toolbox"
@@ -382,9 +382,9 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
           value={rightWidth}
           min={RIGHT_DOCK.min}
           max={rightLimit}
-          onChange={(width) => {
+          onChange={(width, settled) => {
             setRightChosen(width);
-            rememberLayout({ rightDockWidth: width });
+            rememberLayout({ rightDockWidth: width }, settled);
           }}
           onCollapse={() => {
             collapseFromSplitter({ rightCollapsed: true }, rightToggle);
@@ -429,9 +429,9 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
           value={bottomHeight}
           min={BOTTOM_DOCK.min}
           max={bottomLimit}
-          onChange={(height) => {
+          onChange={(height, settled) => {
             setBottomChosen(height);
-            rememberLayout({ bottomDockHeight: height });
+            rememberLayout({ bottomDockHeight: height }, settled);
           }}
           onCollapse={() => {
             collapseFromSplitter({ bottomCollapsed: true }, bottomToggle);
