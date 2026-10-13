@@ -467,6 +467,36 @@ describe('ConsolePanel', () => {
     expect(terminal.buffer.active.baseY).toBe(0);
   });
 
+  // xterm.js's `clear()` counts a screen that never scrolled, with the cursor on its first row, as
+  // already clear: Clear left every row below the first one.
+  it('empties a screen that never scrolled with the cursor on its first row', async () => {
+    for (const home of ['\u001b[H', '\u001b[2A', '\u001b[1;1H']) {
+      const { handle, terminal, unmount } = renderConsole({ header: IDLE });
+      await act(() => handle.write(encode(`line A\r\nline B\r\nline C${home}`)));
+      expect(terminal.buffer.active.baseY).toBe(0);
+      expect(terminal.buffer.active.cursorY).toBe(0);
+      fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+      await act(() => handle.write(encode('')));
+      expect(
+        lines(terminal).filter((line) => line !== ''),
+        JSON.stringify(home),
+      ).toEqual([]);
+      unmount();
+    }
+  });
+
+  it("keeps only the cursor's row when a running program left the cursor on the first row", async () => {
+    const { handle, terminal } = renderConsole();
+    await act(() => handle.write(encode('board 1\r\nboard 2\r\nboard 3\u001b[1;4H')));
+    expect(terminal.buffer.active.cursorY).toBe(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await act(() => handle.write(encode('')));
+    expect(lines(terminal).filter((line) => line !== '')).toEqual(['board 1']);
+    // The cursor stays where the program put it.
+    expect(terminal.buffer.active.cursorY).toBe(0);
+    expect(terminal.buffer.active.cursorX).toBe(3);
+  });
+
   it('empties both screens when a program that ended left its full screen on', async () => {
     const { handle, terminal } = renderConsole({ header: IDLE });
     await act(() => handle.write(encode('kept below\r\n\u001b[?1049h\u001b[5;5Hfull screen')));
@@ -642,6 +672,27 @@ describe('ConsolePanel wheel, fitting and screen readers', () => {
     });
     const tree = container.querySelector('.xterm-accessibility');
     expect(tree?.querySelector('[role="list"]')?.textContent).toContain('last line');
+  });
+
+  // xterm.js announces at most 20 lines and then nothing until a key or a blur; a run started with
+  // F5 from the console is neither, so the next run was never announced.
+  it('announces each run afresh, however much the run before printed', async () => {
+    const { handle, container } = renderConsole();
+    terminalInput(container).focus();
+    const many = Array.from({ length: 30 }, (_, i) => String(i + 1));
+    await act(() => handle.write(encode(`${many.join('\r\n')}\r\n`)));
+    await waitForAccessibility(container, (tree) =>
+      (tree.querySelector('.live-region')?.textContent ?? '').includes('21'),
+    );
+
+    // The next run: its separator, then the view goes to the end (once per run).
+    void handle.write(encode('\r\n── New run ──\r\n'));
+    handle.scrollToBottom();
+    await act(() => handle.write(encode('Guess a number from 1 to 100!\r\nYour guess: ')));
+    await waitForAccessibility(container, (tree) =>
+      (tree.querySelector('.live-region')?.textContent ?? '').includes('Your guess:'),
+    );
+    expect(document.activeElement).toBe(terminalInput(container));
   });
 
   it('builds the accessibility tree afresh when the terminal is cleared or reset', async () => {

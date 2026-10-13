@@ -4,7 +4,9 @@
  * in between combined into that write, and at most one write in progress. Each `write` resolves
  * once the terminal has processed its bytes, which is when the console may acknowledge them to the
  * backend (`run_ack`). Scrolling to the end of the output joins the same queue
- * ({@link OutputScheduler.scrollToBottom}), so it happens once the terminal has what came before.
+ * ({@link OutputScheduler.scrollToBottom}), so it happens once the terminal has what came before
+ * and before it is given anything that came after (the console starts a run's screen reader
+ * announcements there).
  */
 
 /** The shortest time between two writes into the terminal: 17 ms, so under 60 writes a second. */
@@ -132,9 +134,10 @@ export class OutputScheduler {
 
   /**
    * Scrolls the view to the end of the output once the terminal has processed everything queued
-   * before this call (and whatever is written with it), in order with the output: at once when
-   * nothing is queued or being written. The view then follows new output again until the person
-   * scrolls up. Without a terminal there is nothing to scroll.
+   * before this call, in order with the output: at once when nothing is queued or being written,
+   * and before the terminal is given anything queued after it (which waits for the next write).
+   * The view then follows new output again until the person scrolls up. Without a terminal there is
+   * nothing to scroll.
    */
   scrollToBottom(): void {
     const last = this.#pending.at(-1);
@@ -212,7 +215,8 @@ export class OutputScheduler {
       return;
     }
 
-    // Take whole entries up to the size limit (always at least one).
+    // Take whole entries up to the size limit (always at least one), and none after one that
+    // scrolls: the scroll comes between them.
     let take = 0;
     let size = 0;
     for (const entry of this.#pending) {
@@ -221,6 +225,9 @@ export class OutputScheduler {
       }
       size += entry.data.length;
       take++;
+      if (entry.scroll) {
+        break;
+      }
     }
     const batch = this.#pending.splice(0, take);
     const data = concat(batch, size);

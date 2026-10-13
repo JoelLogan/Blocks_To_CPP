@@ -17,7 +17,9 @@
  * {@link FLOOD_QUIET_MS}.
  *
  * The tree is also built afresh when the terminal is cleared or reset, so neither the rows nor the
- * announcements of output that is gone linger.
+ * announcements of output that is gone linger, and when a run starts: xterm.js announces at most 20
+ * lines and then nothing until a key is pressed in the terminal or it loses the focus, and a run
+ * started with F5 from the console (which keeps the focus) is neither.
  */
 
 /** Writes larger than this (about a thousand short lines in one write) count as a flood. */
@@ -82,8 +84,8 @@ export class ScreenReaderSupport {
   }
 
   /**
-   * The terminal was cleared or reset: the accessibility tree is built afresh (during a pause it
-   * is built when the pause ends).
+   * The terminal was cleared or reset, or a run starts: the accessibility tree is built afresh, and
+   * new output is announced again (during a pause it is built when the pause ends).
    */
   restart(): void {
     if (this.#resume === null) {

@@ -162,8 +162,21 @@ function fittingSize(fit: FitAddon): TerminalSize | null {
   };
 }
 
-/** Erases the line with the cursor and returns the cursor to its start. */
-const ERASE_LINE = '\u001b[2K\r';
+/**
+ * Erases the whole screen and puts the cursor in its top-left corner. After `clear()` this leaves
+ * nothing, also where `clear()` does nothing: xterm.js counts a screen that never scrolled, with
+ * the cursor on its first row, as already clear, whatever the rows below hold.
+ */
+const ERASE_SCREEN = '\u001b[H\u001b[2J';
+
+/**
+ * Erases the rows below the cursor's and puts the cursor back where it was, at the 1-based
+ * `column`, with relative moves only, never `ESC 7`/`ESC 8`, which would replace a cursor position
+ * the program saved itself.
+ */
+function eraseBelowCursorRow(column: number): string {
+  return `\u001b[1B\r\u001b[J\u001b[1A\u001b[${String(column)}G`;
+}
 
 /** Calls every listener; one that throws is reported without stopping the others or xterm. */
 function notify<T>(listeners: ReadonlySet<(value: T) => void>, value: T): void {
@@ -353,18 +366,25 @@ export function ConsolePanel({
         term.write(data, done);
       },
       clear: () => {
+        const buffer = term.buffer.active;
         if (programRunning.current) {
-          // xterm keeps the line with the cursor: the prompt the program waits at.
-          term.clear();
+          // xterm keeps the line with the cursor: the prompt the program waits at. It does nothing
+          // on a screen that never scrolled with the cursor on its first row, so the rows below
+          // are erased here then.
+          if (buffer.baseY === 0 && buffer.cursorY === 0 && term.rows > 1) {
+            term.write(eraseBelowCursorRow(buffer.cursorX + 1));
+          } else {
+            term.clear();
+          }
           screenReader.restart();
-        } else if (term.buffer.active.type === 'alternate') {
+        } else if (buffer.type === 'alternate') {
           // A program left its full screen on: a reset leaves it and empties both screens.
           term.reset();
           screenReader.restart();
         } else {
-          // Nothing runs: the line xterm keeps is erased as well, so nothing is left.
+          // Nothing runs: the scrollback goes, and then every row on screen, so nothing is left.
           term.clear();
-          term.write(ERASE_LINE, () => {
+          term.write(ERASE_SCREEN, () => {
             if (!disposed) {
               screenReader.restart();
             }
@@ -377,6 +397,10 @@ export function ConsolePanel({
       },
       scrollToBottom: () => {
         term.scrollToBottom();
+        // Sent once per run, after its separator: the run's output is announced afresh. xterm.js
+        // stops announcing after 20 lines until a key or a blur, and F5 from the console is
+        // neither, so a run started from there would never be announced.
+        screenReader.restart();
       },
     });
     return () => {

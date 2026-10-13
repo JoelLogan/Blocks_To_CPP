@@ -321,8 +321,9 @@ dismissible banner says so.
   scrollback, and new output is announced in batches, at most once a second.
   Output that pours in faster than anyone can listen to (more than 16 KiB
   given to the terminal at once) is not announced; a second after such a
-  flood the rows on screen are offered again. Clear and opening another
-  project start the screen reader's view afresh.
+  flood the rows on screen are offered again. Clear, opening another project
+  and each run start the screen reader's view afresh, so a run's output is
+  announced however much the run before printed.
 
 ## 4.6 Toolchain setup experience
 

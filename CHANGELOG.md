@@ -292,7 +292,7 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - The "Your latest change was not checked" banner has an _Undo last change_
   button.
 - Screen readers can read the console: the rows on screen line by line, and
-  new output as it arrives (not during an output flood).
+  new output as it arrives, afresh for each run (not during an output flood).
 - The toolchain page lists the compilers a search skipped and why (inside an
   open project's folder, the build cache, the folder the app was started
   from, or a network folder).

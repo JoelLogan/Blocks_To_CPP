@@ -219,7 +219,7 @@ describe('OutputScheduler', () => {
     expect(sink.events.filter((event) => event === 'reset')).toHaveLength(2);
   });
 
-  it('scrolls to the end in order with the output: after what was queued before it', () => {
+  it('scrolls to the end in order with the output: after what was queued before it, before what came after', () => {
     const timers = new FakeTimers();
     const sink = new FakeSink(timers, true);
     const scheduler = new OutputScheduler(timers);
@@ -237,17 +237,31 @@ describe('OutputScheduler', () => {
     sink.finish();
     expect(sink.events).toEqual(['scroll', 'write:old run', 'scroll']);
 
-    // Behind queued output (a run's separator): after the write that takes it, and only once.
+    // Behind queued output (a run's separator): after the write that takes it, only once, and
+    // before the output queued after it, which the next write takes (the console starts the run's
+    // screen reader announcements at the scroll, so the run's first output is announced).
     void scheduler.write(bytes('separator'));
     scheduler.scrollToBottom();
     scheduler.scrollToBottom();
     void scheduler.write(bytes('first output'));
+    void scheduler.write(bytes(' and more'));
     timers.advance(MIN_WRITE_INTERVAL_MS);
-    expect(sink.events.slice(3)).toEqual(['write:separatorfirst output']);
+    expect(sink.events.slice(3)).toEqual(['write:separator']);
     sink.finish();
-    expect(sink.events.slice(3)).toEqual(['write:separatorfirst output', 'scroll']);
+    expect(sink.events.slice(3)).toEqual(['write:separator', 'scroll']);
     timers.advance(MIN_WRITE_INTERVAL_MS);
-    expect(sink.events.slice(3)).toEqual(['write:separatorfirst output', 'scroll']);
+    expect(sink.events.slice(3)).toEqual([
+      'write:separator',
+      'scroll',
+      'write:first output and more',
+    ]);
+    sink.finish();
+    timers.advance(MIN_WRITE_INTERVAL_MS);
+    expect(sink.events.slice(3)).toEqual([
+      'write:separator',
+      'scroll',
+      'write:first output and more',
+    ]);
   });
 
   it('forgets a scroll with the output a reset drops, and scrolls nothing without a terminal', () => {
