@@ -11,9 +11,18 @@
 //!
 //! A block directly on the canvas may carry a loose statement stack (spec
 //! §5.4, ADR-0011): the blocks attached below it. Stacked blocks are checked
-//! like blocks in a statement list. The stack itself is in the wrong place
-//! (`B2C-E0604`), reported once, on its head: a statement head is not inside
-//! `main` or a function, and nothing can be attached below any other shape.
+//! like blocks in a statement list. A statement, reporter or predicate
+//! directly on the canvas is *parked* with its stack (ADR-0012): it is checked
+//! against the catalog like every other block, but its place is not a catalog
+//! problem (the analyser reports it as the warning `B2C-W0505`).
+//! `B2C-E0604` (*block in the wrong place*) is left for the placements the
+//! editor cannot produce: a hat or definition inside a block, a statement in
+//! a value input, a reporter or predicate as a step, and blocks stacked below
+//! a block that is not a statement (reported once, on the head).
+//!
+//! Messages name a block by its short name ([`block_noun`]), never by its
+//! catalog ID, except for an unknown block type (`B2C-E0601`) and a broken
+//! catalog definition (`B2C-E0620`, a bug report).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -156,12 +165,7 @@ impl Resolver<'_> {
             return;
         }
         if block.v > def.version {
-            let message = format!(
-                "This block was made with a newer version of Blocks2Cpp: it is version {} of {}, and this version knows only up to version {}. Update Blocks2Cpp to use it.",
-                block.v,
-                quote(&def.id),
-                def.version
-            );
+            let message = newer_block_message(def, block.v);
             self.diags.error(codes::NEWER_BLOCK, location, message);
             self.children(block);
             return;
@@ -169,17 +173,7 @@ impl Resolver<'_> {
         if block.v < def.version {
             let saved = block.v;
             if let Err(error) = migrate::upgrade(block, def.version, self.migrations) {
-                let message = match error {
-                    MigrationError::NoPath { .. } => format!(
-                        "This block is version {saved} of {}, which this version of Blocks2Cpp cannot upgrade to version {}.",
-                        quote(&def.id),
-                        def.version
-                    ),
-                    MigrationError::Failed { from, reason } => format!(
-                        "This block is version {saved} of {}, and upgrading it from version {from} failed: {reason}.",
-                        quote(&def.id)
-                    ),
-                };
+                let message = old_block_message(def, saved, &error);
                 self.diags.error(codes::OLD_BLOCK, location, message);
                 self.children(block);
                 return;
@@ -210,8 +204,12 @@ impl Resolver<'_> {
     // Shapes
     // -----------------------------------------------------------------------
 
+    /// Reports a block whose shape does not fit its place (`B2C-E0604`). Only
+    /// the placements the editor cannot produce are reported (ADR-0012): a
+    /// statement, reporter or predicate directly on the canvas is parked,
+    /// which is the analyser's to report (`B2C-W0505`), not an error.
     fn check_place(&mut self, def: &BlockDef, position: Position, location: &Location) {
-        let kind = quote(&def.id);
+        let noun = block_noun(def);
         if let Position::TopLevel { stacked } = position
             && stacked > 0
             && def.shape != Shape::Statement
@@ -219,41 +217,29 @@ impl Resolver<'_> {
             // Only a statement has a connection below it (spec §3.3).
             let message = if stacked == 1 {
                 format!(
-                    "1 block is stacked below this {kind} block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it."
+                    "1 block is stacked below this {noun}, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it."
                 )
             } else {
                 format!(
-                    "{stacked} blocks are stacked below this {kind} block, but nothing can be attached below it, so the stacked blocks would never run. Move them inside a block, or delete them."
+                    "{stacked} blocks are stacked below this {noun}, but nothing can be attached below it, so the stacked blocks would never run. Move them inside a block, or delete them."
                 )
             };
             self.diags.error(codes::WRONG_PLACE, location.clone(), message);
         }
         let message = match (position, def.shape) {
-            (Position::TopLevel { .. }, Shape::Hat | Shape::Definition)
+            // Hats and definitions belong on the canvas, and every other
+            // shape is parked there.
+            (Position::TopLevel { .. }, _)
             | (Position::Statement, Shape::Statement)
             | (Position::Value, Shape::Reporter | Shape::Predicate) => return,
-            (Position::TopLevel { stacked: 0 }, Shape::Statement) => format!(
-                "This {kind} block is not inside \"when program starts\" or a function, so it would never run. Move it inside one, or delete it."
-            ),
-            (Position::TopLevel { stacked }, Shape::Statement) => format!(
-                "This {kind} block and the {} below it are not inside \"when program starts\" or a function, so they would never run. Move them inside one, or delete them.",
-                if stacked == 1 {
-                    String::from("block")
-                } else {
-                    format!("{stacked} blocks")
-                }
-            ),
-            (Position::TopLevel { .. }, Shape::Reporter | Shape::Predicate) => format!(
-                "This {kind} block gives a value, but it is not plugged into another block. Put it into an input, or delete it."
-            ),
             (Position::Statement | Position::Value, Shape::Hat | Shape::Definition) => {
-                format!("A {kind} block must sit directly on the canvas, not inside another block.")
+                format!("A {noun} must sit directly on the canvas, not inside another block.")
             }
             (Position::Statement, Shape::Reporter | Shape::Predicate) => format!(
-                "This {kind} block gives a value and cannot be a step on its own. Put it into an input of another block."
+                "This {noun} gives a value and cannot be a step on its own. Put it into an input of another block."
             ),
             (Position::Value, Shape::Statement) => {
-                format!("This {kind} block is a step, not a value, so it cannot be plugged into an input.")
+                format!("This {noun} is a step, not a value, so it cannot be plugged into an input.")
             }
         };
         self.diags.error(codes::WRONG_PLACE, location.clone(), message);
@@ -666,6 +652,55 @@ fn unknown_block_message(block_type: &str) -> String {
     }
 }
 
+/// A block's short name (03 §3.11.1): its friendly label up to the first
+/// field or input, without the spaces and punctuation that lead into it
+/// (`print`, `repeat`, `when program starts`, `character` for `character
+/// '%VALUE'`). `None` when the label starts with a field or input
+/// (`%A %OP %B`, `"%VALUE"`).
+fn short_name(def: &BlockDef) -> Option<&str> {
+    let label = def.label.friendly.as_str();
+    let end = label.find(['%', '…']).unwrap_or(label.len());
+    let name = label[..end]
+        .trim_end_matches(|c: char| c.is_whitespace() || "'\"([{=,:".contains(c))
+        .trim_start();
+    (!name.is_empty()).then_some(name)
+}
+
+/// How a message names a block: `"print" block`, or `block` for a block
+/// without a short name, as in *This "print" block …* and *This block …*.
+/// The catalog ID is never shown (03 §3.11.1).
+fn block_noun(def: &BlockDef) -> String {
+    match short_name(def) {
+        Some(name) => format!("{} block", quote(name)),
+        None => String::from("block"),
+    }
+}
+
+/// The message of `B2C-E0602`: a block saved by a newer version of its
+/// definition than the catalog has.
+fn newer_block_message(def: &BlockDef, saved: u32) -> String {
+    format!(
+        "This {} was made with a newer version of Blocks2Cpp: it is version {saved}, and this version knows only up to version {}. Update Blocks2Cpp to use it.",
+        block_noun(def),
+        def.version
+    )
+}
+
+/// The message of `B2C-E0603`: a block saved as version `saved` of its
+/// definition, which could not be upgraded.
+fn old_block_message(def: &BlockDef, saved: u32, error: &MigrationError) -> String {
+    let noun = block_noun(def);
+    match error {
+        MigrationError::NoPath { .. } => format!(
+            "This {noun} is version {saved}, which this version of Blocks2Cpp cannot upgrade to version {}.",
+            def.version
+        ),
+        MigrationError::Failed { from, reason } => {
+            format!("This {noun} is version {saved}, and upgrading it from version {from} failed: {reason}.")
+        }
+    }
+}
+
 fn field_location(location: &Location, name: &str) -> Location {
     location.clone().with_part(Part::Field {
         name: name.to_owned(),
@@ -830,7 +865,7 @@ mod tests {
         assert_eq!(diagnostics[0].code.0, codes::OLD_BLOCK);
         assert_eq!(
             diagnostics[0].message,
-            "This block is version 1 of \"io.print\", and upgrading it from version 1 failed: the separator is unknown."
+            "This \"print\" block is version 1, and upgrading it from version 1 failed: the separator is unknown."
         );
         let print = &completed.modules[0].workspace.blocks[0].statements["BODY"][0];
         assert_eq!(print.v, 1, "a failed upgrade leaves the block as it was");
@@ -838,7 +873,7 @@ mod tests {
         let (_, diagnostics) = run_with(&document("space"), &catalog, &[]);
         assert_eq!(
             diagnostics[0].message,
-            "This block is version 1 of \"io.print\", which this version of Blocks2Cpp cannot upgrade to version 2."
+            "This \"print\" block is version 1, which this version of Blocks2Cpp cannot upgrade to version 2."
         );
     }
 
@@ -880,30 +915,55 @@ mod tests {
     }
 
     #[test]
-    fn a_loose_stack_is_reported_once_on_its_head() {
+    fn a_parked_stack_is_no_catalog_problem() {
+        // A statement on the canvas, with a stack below it, is parked
+        // (ADR-0012): the analyser reports it, not the catalog.
         let (head, stacked, diagnostics) = resolve_stack(print("b1"), vec![print("b2"), print("b3")]);
-        assert_eq!(
-            codes_and_blocks(&diagnostics),
-            [(codes::WRONG_PLACE.to_owned(), "b1".to_owned())]
-        );
-        assert_eq!(
-            diagnostics[0].message,
-            "This \"io.print\" block and the 2 blocks below it are not inside \"when program starts\" or a function, so they would never run. Move them inside one, or delete them."
-        );
-        // Stacked blocks are completed like any other block.
+        assert_eq!(diagnostics, []);
+        // Parked blocks are completed like any other block.
         assert!(head.inputs.contains_key("ITEM0"));
         assert!(stacked.iter().all(|b| b.inputs.contains_key("ITEM0")));
+        // A head alone, a disabled head, and parked values: no problem either.
+        let disabled = serde_json::json!({"id": "b1", "type": "io.print", "v": 1, "disabled": true});
+        let reporter =
+            serde_json::json!({"id": "b1", "type": "math.number", "v": 1, "fields": {"VALUE": "1"}});
+        let predicate = serde_json::json!({"id": "b1", "type": "logic.boolean", "v": 1});
+        for head in [print("b1"), disabled, reporter, predicate] {
+            let (_, _, diagnostics) = resolve_stack(head, vec![]);
+            assert_eq!(diagnostics, []);
+        }
+    }
 
-        let (_, _, diagnostics) = resolve_stack(print("b1"), vec![print("b2")]);
+    #[test]
+    fn parked_blocks_keep_every_other_catalog_check() {
+        let bad_field =
+            serde_json::json!({"id": "b1", "type": "io.print", "v": 1, "fields": {"SEP": "tabs"}});
+        let (_, _, diagnostics) = resolve_stack(bad_field, vec![]);
         assert_eq!(
-            diagnostics[0].message,
-            "This \"io.print\" block and the block below it are not inside \"when program starts\" or a function, so they would never run. Move them inside one, or delete them."
+            codes_and_blocks(&diagnostics),
+            [(codes::BAD_FIELD.to_owned(), "b1".to_owned())]
         );
-        // Without a stack, the message is about the block alone.
-        let (_, _, diagnostics) = resolve_stack(print("b1"), vec![]);
+        // An unknown type (such as Raw C++ before M4) stays an error when it
+        // is parked, as the head and in the stack.
+        let raw = serde_json::json!({"id": "b1", "type": "raw.cpp", "v": 1});
+        let unknown = serde_json::json!({"id": "b2", "type": "x.nope", "v": 1});
+        let (_, _, diagnostics) = resolve_stack(raw, vec![unknown]);
+        assert_eq!(
+            codes_and_blocks(&diagnostics),
+            [
+                (codes::UNKNOWN_BLOCK.to_owned(), "b1".to_owned()),
+                (codes::UNKNOWN_BLOCK.to_owned(), "b2".to_owned()),
+            ]
+        );
+        let newer = serde_json::json!({"id": "b1", "type": "control.break", "v": 2});
+        let (_, _, diagnostics) = resolve_stack(newer, vec![]);
+        assert_eq!(
+            codes_and_blocks(&diagnostics),
+            [(codes::NEWER_BLOCK.to_owned(), "b1".to_owned())]
+        );
         assert_eq!(
             diagnostics[0].message,
-            "This \"io.print\" block is not inside \"when program starts\" or a function, so it would never run. Move it inside one, or delete it."
+            "This \"leave loop\" block was made with a newer version of Blocks2Cpp: it is version 2, and this version knows only up to version 1. Update Blocks2Cpp to use it."
         );
     }
 
@@ -914,22 +974,35 @@ mod tests {
         let reporter = serde_json::json!({"id": "b4", "type": "math.number", "v": 1});
         let hat = serde_json::json!({"id": "b5", "type": "program.main", "v": 1});
         let unknown = serde_json::json!({"id": "b6", "type": "x.nope", "v": 1});
-        let (_, _, diagnostics) =
-            resolve_stack(print("b1"), vec![print("b2"), bad_field, reporter, hat, unknown]);
+        let join = serde_json::json!({"id": "b7", "type": "text.join", "v": 1});
+        let (_, _, diagnostics) = resolve_stack(
+            print("b1"),
+            vec![print("b2"), bad_field, reporter, hat, unknown, join],
+        );
         assert_eq!(
             codes_and_blocks(&diagnostics),
             [
-                (codes::WRONG_PLACE.to_owned(), "b1".to_owned()),
                 (codes::BAD_FIELD.to_owned(), "b3".to_owned()),
-                // A value or a hat is not a statement, so it cannot be
-                // stacked either.
+                // A value or a hat is not a statement, so the editor cannot
+                // stack it.
                 (codes::WRONG_PLACE.to_owned(), "b4".to_owned()),
                 (codes::WRONG_PLACE.to_owned(), "b5".to_owned()),
                 (codes::UNKNOWN_BLOCK.to_owned(), "b6".to_owned()),
+                (codes::WRONG_PLACE.to_owned(), "b7".to_owned()),
             ]
         );
-        assert!(diagnostics[0].message.contains("the 5 blocks below it"));
-        assert!(diagnostics[2].message.contains("cannot be a step on its own"));
+        let messages: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
+        assert_eq!(
+            messages[1..3],
+            [
+                "This block gives a value and cannot be a step on its own. Put it into an input of another block.",
+                "A \"when program starts\" block must sit directly on the canvas, not inside another block.",
+            ]
+        );
+        assert_eq!(
+            messages[4],
+            "This \"join\" block gives a value and cannot be a step on its own. Put it into an input of another block."
+        );
     }
 
     #[test]
@@ -942,20 +1015,27 @@ mod tests {
         );
         assert_eq!(
             diagnostics[0].message,
-            "1 block is stacked below this \"program.main\" block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it."
+            "1 block is stacked below this \"when program starts\" block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it."
         );
         let (_, _, diagnostics) = resolve_stack(main, vec![print("b2"), print("b3")]);
         assert!(
             diagnostics[0]
                 .message
-                .starts_with("2 blocks are stacked below this \"program.main\" block")
+                .starts_with("2 blocks are stacked below this \"when program starts\" block")
         );
-        // A loose value block with a stack: both problems, on the head.
+        // A parked value block with a stack: the stack is the one problem,
+        // reported on the head.
         let number = serde_json::json!({"id": "b1", "type": "math.number", "v": 1});
         let (_, _, diagnostics) = resolve_stack(number, vec![print("b2")]);
-        assert_eq!(codes_and_blocks(&diagnostics).len(), 2);
-        assert!(diagnostics.iter().all(|d| d.code.0 == codes::WRONG_PLACE));
-        assert!(diagnostics[1].message.contains("gives a value"));
+        assert_eq!(
+            codes_and_blocks(&diagnostics),
+            [(codes::WRONG_PLACE.to_owned(), "b1".to_owned())]
+        );
+        assert!(
+            diagnostics[0]
+                .message
+                .starts_with("1 block is stacked below this block, but nothing can be attached below it")
+        );
         // A head the catalog does not know: its stack is still checked.
         let unknown = serde_json::json!({"id": "b1", "type": "x.nope", "v": 1});
         let bad_field =
@@ -982,7 +1062,7 @@ mod tests {
     }
 
     #[test]
-    fn a_document_with_a_loose_stack_resolves_with_one_placement_error() {
+    fn a_document_with_a_parked_stack_resolves_cleanly() {
         let document: Document = serde_json::from_value(serde_json::json!({
             "format": "blocks2cpp/project", "formatVersion": 1,
             "generator": {"app": "0.1.0", "catalog": "1.0.0"},
@@ -995,14 +1075,88 @@ mod tests {
         }))
         .expect("document");
         let (completed, diagnostics) = run(&document, crate::core_catalog());
-        assert_eq!(
-            codes_and_blocks(&diagnostics),
-            [(codes::WRONG_PLACE.to_owned(), "b1".to_owned())]
-        );
+        assert_eq!(diagnostics, []);
         // The stack survives resolving, completed like any other block.
         let head = &completed.modules[0].workspace.blocks[1];
         assert_eq!(head.stack.len(), 2);
         assert_eq!(head.stack[1].id.as_str(), "b3");
+        assert!(head.stack[1].inputs.contains_key("ITEM0"));
+    }
+
+    /// The short names of the core blocks (03 §3.11.1): the friendly label up
+    /// to the first field or input.
+    #[test]
+    fn short_names() {
+        let catalog = crate::core_catalog();
+        let name = |id: &str| short_name(&catalog.blocks[id]);
+        assert_eq!(name("io.print"), Some("print"));
+        assert_eq!(name("io.ask"), Some("ask"));
+        assert_eq!(name("program.main"), Some("when program starts"));
+        assert_eq!(name("program.exit"), Some("stop program with exit code"));
+        assert_eq!(name("control.while"), Some("repeat"));
+        assert_eq!(name("control.if"), Some("if"));
+        assert_eq!(name("control.break"), Some("leave loop"));
+        assert_eq!(name("var.declare"), Some("create"));
+        assert_eq!(name("func.define"), Some("define"));
+        // The quote that leads into the field goes too.
+        assert_eq!(name("text.char"), Some("character"));
+        // Labels that start with a field or input have no short name.
+        for id in [
+            "math.number",
+            "math.arithmetic",
+            "text.literal",
+            "var.get",
+            "func.call",
+        ] {
+            assert_eq!(name(id), None, "{id}");
+        }
+        assert_eq!(block_noun(&catalog.blocks["io.print"]), "\"print\" block");
+        assert_eq!(block_noun(&catalog.blocks["math.number"]), "block");
+        for def in catalog.blocks.values() {
+            if let Some(name) = short_name(def) {
+                assert!(!name.contains(['%', '…']), "{}: {name}", def.id);
+                assert_eq!(name, name.trim(), "{}", def.id);
+                assert_ne!(name, def.id);
+            }
+        }
+    }
+
+    /// Every message about a block of a known type names it without its
+    /// catalog ID (03 §3.11.1): misplaced, with a stack below a value, newer
+    /// than the catalog or too old to upgrade.
+    #[test]
+    fn messages_never_show_a_catalog_id() {
+        let catalog = crate::core_catalog();
+        for def in catalog.blocks.values() {
+            let id = def.id.as_str();
+            let versioned = |v: u32| serde_json::json!({"id": "b1", "type": id, "v": v});
+            let mut diagnostics = Vec::new();
+            for position in [Position::Statement, Position::Value] {
+                let mut resolver = Resolver {
+                    catalog,
+                    migrations: BLOCK_MIGRATIONS,
+                    broken: broken_definitions(catalog),
+                    reported_broken: BTreeSet::new(),
+                    module: None,
+                    diags: Diags::default(),
+                };
+                for v in [def.version, def.version + 1, 0] {
+                    resolver.block(&mut block(versioned(v)), position);
+                }
+                diagnostics.extend(resolver.diags.finish());
+            }
+            let (_, _, stacked) = resolve_stack(versioned(def.version), vec![print("b2")]);
+            diagnostics.extend(stacked);
+            for code in [codes::NEWER_BLOCK, codes::OLD_BLOCK, codes::WRONG_PLACE] {
+                assert!(
+                    diagnostics.iter().any(|d| d.code.0 == code),
+                    "{id}: no {code} in {diagnostics:?}"
+                );
+            }
+            for diagnostic in &diagnostics {
+                assert!(!diagnostic.message.contains(id), "{id}: {}", diagnostic.message);
+            }
+        }
     }
 
     #[test]

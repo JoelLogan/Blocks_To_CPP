@@ -53,6 +53,24 @@ pub(crate) fn a_type(ty: &Type) -> &'static str {
     }
 }
 
+/// The message of `B2C-W0505` on the head of a parked stack (ADR-0012): a
+/// block left on the canvas outside `when program starts` and every
+/// function. `gives_value` is true for a reporter or predicate; otherwise
+/// the head is a statement with `stacked` blocks below it.
+pub(crate) fn parked(gives_value: bool, stacked: usize) -> String {
+    const PLACES: &str = "attached to 'when program starts' or a function";
+    if gives_value {
+        return String::from(
+            "This block gives a value, but it isn't plugged into another block, so it isn't used.",
+        );
+    }
+    match stacked {
+        0 => format!("This block isn't {PLACES}, so it doesn't run."),
+        1 => format!("This block and the block below it aren't {PLACES}, so they don't run."),
+        n => format!("This block and the {n} blocks below it aren't {PLACES}, so they don't run."),
+    }
+}
+
 /// Collects diagnostics in the order they are found.
 #[derive(Debug, Default)]
 pub(crate) struct Diags {
@@ -99,6 +117,30 @@ mod tests {
         let s = shown(&long);
         assert_eq!(s.chars().count(), MAX_SHOWN_CHARS + 1);
         assert!(s.ends_with('…'));
+    }
+
+    #[test]
+    fn parked_messages() {
+        assert_eq!(
+            parked(false, 0),
+            "This block isn't attached to 'when program starts' or a function, so it doesn't run."
+        );
+        assert_eq!(
+            parked(false, 1),
+            "This block and the block below it aren't attached to 'when program starts' or a function, so they don't run."
+        );
+        assert_eq!(
+            parked(false, 12),
+            "This block and the 12 blocks below it aren't attached to 'when program starts' or a function, so they don't run."
+        );
+        // A value block's message is the same with or without a stack (the
+        // stack itself is the catalog's B2C-E0604).
+        for stacked in [0, 3] {
+            assert_eq!(
+                parked(true, stacked),
+                "This block gives a value, but it isn't plugged into another block, so it isn't used."
+            );
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # 5. Project Format and Persistence
 
-> Status: **Draft v0.1** · Related ADRs: [0004](../adr/0004-project-format.md), [0005](../adr/0005-no-compiler-flags-in-projects.md), [0007](../adr/0007-backend-crates-and-ipc-contract.md), [0011](../adr/0011-loose-blocks-in-m2.md), [0013](../adr/0013-additive-format-keys.md)
+> Status: **Draft v0.1** · Related ADRs: [0004](../adr/0004-project-format.md), [0005](../adr/0005-no-compiler-flags-in-projects.md), [0007](../adr/0007-backend-crates-and-ipc-contract.md), [0011](../adr/0011-loose-blocks-in-m2.md), [0012](../adr/0012-parked-blocks.md), [0013](../adr/0013-additive-format-keys.md)
 
 ## 5.1 Requirements
 
@@ -162,14 +162,16 @@ small and bounded.
 
 **Loose blocks.** The editor saves whatever is on the canvas, including blocks
 that are not inside the program or a function
-([ADR-0011](../adr/0011-loose-blocks-in-m2.md)):
+([ADR-0011](../adr/0011-loose-blocks-in-m2.md),
+[ADR-0012](../adr/0012-parked-blocks.md)):
 
-* A loose block is an ordinary top-level block with `x` and `y`. Catalog
-  resolution reports a top-level statement, reporter or predicate as
-  `B2C-E0604` (*block in the wrong place*), an error, so the project cannot be
-  built until the block is moved into the program or a function, or deleted.
-  The analyser treats loose blocks as outside the program: they are not
-  lowered, declare no symbols and generate no code.
+* A loose block is an ordinary top-level block with `x` and `y`. A loose
+  statement, reporter or predicate, with its stack, is *parked*
+  (ADR-0012): it is saved and shown, but not lowered; it declares nothing,
+  generates nothing and never stops a build. The analyser reports each
+  enabled parked head once as `B2C-W0505`. Parked blocks are still checked
+  against the catalog, so an unknown or damaged block is an error wherever
+  it is.
 * A **loose stack** of statements is saved intact: its first block is the
   top-level block, and `"stack": [ … ]` holds the statement blocks attached
   below it, in order. Stack elements are ordinary block nodes without `x`,
@@ -182,9 +184,9 @@ that are not inside the program or a function
   error found when the blocks are checked against the catalog (stage ② of
   [06 §6.3](06-compiler-pipeline.md#63-stage--resolve-catalog)), because the
   loader does not know block shapes.
-* A loose stack is reported once, as `E0604` on its head block; the stacked
-  blocks are checked against the catalog like any other block but get no
-  placement error of their own.
+* A parked stack is reported once, as `W0505` on its enabled head; its
+  stacked blocks get no placement diagnostic. `B2C-E0604` remains for
+  placements the editor cannot produce.
 * `stack` is content: it is part of the canonical serialisation and of the
   project hash (§5.11).
 

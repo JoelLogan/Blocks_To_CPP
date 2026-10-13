@@ -187,6 +187,15 @@ shows the first one in Problems. Each problem has a _Learn more_ link to the
 diagnostics reference. Settings can make Run open Problems instead (see
 [Settings](#settings)); either way, a project with errors is never built.
 
+**Blocks left loose.** A block you leave on the canvas, outside _when
+program starts_ or a function, is kept but does not run. It shows a ⚠
+warning (_This block isn't attached to 'when program starts' or a
+function_), and ► Run still works: the program runs without it. Attach the
+block to run it, delete it, or disable it (_Disable Block_ in its
+right-click menu) to keep it without the warning. A variable created in a
+loose stack can be chosen in the blocks below it once the stack is
+attached.
+
 ## Save it
 
 Press **Ctrl+S** (or **≡ → Save**). A new project has no file yet, so your

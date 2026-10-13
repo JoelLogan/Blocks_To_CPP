@@ -1,5 +1,7 @@
+import type { BdmDocument } from '@blocks2cpp/b2c-core-wasm';
 import { describe, expect, it } from 'vitest';
 
+import { EXAMPLE_PROJECTS, testCore } from '../editor/sync/testing';
 import { countErrors, runGate, runGateMessage } from './runGate';
 import { initialAppData } from './store/state';
 import {
@@ -121,6 +123,34 @@ describe('runGate', () => {
     state.toolchains.list = [];
     state.analysis.preview = previewFixture([diagnosticFixture()]);
     expect(runGate(state).reason).toBe('restricted');
+  });
+});
+
+const core = await testCore();
+
+describe.skipIf(core === null)('runGate with the compiler core', () => {
+  it('allows Run with a block left loose on the canvas: it is parked, a warning (ADR-0012)', () => {
+    const doc = JSON.parse(EXAMPLE_PROJECTS['hello_world.b2c'] ?? '') as BdmDocument;
+    doc.modules[0]?.workspace.blocks.push({
+      id: 'b_parked',
+      type: 'io.print',
+      v: 1,
+      x: 400,
+      y: 40,
+    });
+    const preview = core?.preview(JSON.stringify(doc), { indentWidth: 4 });
+    expect(preview?.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+      ['B2C-W0505', 'warning'],
+    ]);
+    expect(preview?.buildable).toBe(true);
+    const state = readyState();
+    state.analysis.preview = preview ?? null;
+    expect(runGate(state)).toEqual({
+      enabled: true,
+      reason: null,
+      errorCount: 0,
+      onErrorsMode: 'disableRun',
+    });
   });
 });
 

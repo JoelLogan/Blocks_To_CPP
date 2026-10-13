@@ -19,7 +19,12 @@ of the [translation pipeline](../../spec/06-compiler-pipeline.md#61-overview):
 * **`B2C-E06xx`: catalog.** `b2c-catalog` checks every block against its
   definition in the block catalog ([spec §6.3](../../spec/06-compiler-pipeline.md#63-stage--resolve-catalog)).
   The project still opens, with the problem shown on the block, but it cannot
-  be built until it is fixed.
+  be built until it is fixed. Blocks left loose on the canvas are checked
+  too: they are *parked* ([ADR-0012](../../adr/0012-parked-blocks.md)), which
+  is no catalog problem in itself, but every other problem below is an error
+  wherever the block is. Messages name a block by its label up to its first
+  field or input (*the "print" block*), never by its catalog ID, except for
+  an unknown block type (`B2C-E0601`) and a broken definition (`B2C-E0620`).
 
 All of them are **errors**. Text from the project file that appears in a
 message is quoted, cut after 40 characters, and invisible or control
@@ -538,7 +543,7 @@ checked.
 The block was saved by a newer version of its definition than this version
 of Blocks2Cpp knows.
 
-> This block was made with a newer version of Blocks2Cpp: it is version 2 of "io.print", and this version knows only up to version 1. Update Blocks2Cpp to use it.
+> This "print" block was made with a newer version of Blocks2Cpp: it is version 2, and this version knows only up to version 1. Update Blocks2Cpp to use it.
 
 **Fix:** update Blocks2Cpp.
 
@@ -551,38 +556,40 @@ here no upgrade exists (for example for version 0, which never existed), or
 the upgrade failed because the block does not have the shape its version
 promises. The block is kept unchanged.
 
-> This block is version 0 of "control.break", which this version of Blocks2Cpp cannot upgrade to version 1.
+> This "leave loop" block is version 0, which this version of Blocks2Cpp cannot upgrade to version 1.
 >
-> This block is version 1 of "io.print", and upgrading it from version 1 failed: the separator is unknown.
+> This "print" block is version 1, and upgrading it from version 1 failed: the separator is unknown.
 
 **Fix:** replace the block with a new one from the toolbox.
 
 ### B2C-E0604: block in the wrong place
 
-The block's shape does not fit where it is: `when program starts` and
-function definitions sit directly on the canvas; statement blocks go in
-statement lists (inside `when program starts`, a function or a loop); value
-blocks go into inputs.
+The block sits where the editor could never put it, so the file was made or
+changed outside Blocks2Cpp: `when program starts` or a function definition
+inside another block, a statement block plugged into a value input, a value
+block used as a step in a statement list, or blocks stacked below a block
+that is not a statement.
 
-> This "io.print" block is not inside "when program starts" or a function, so it would never run. Move it inside one, or delete it.
->
-> A "program.main" block must sit directly on the canvas, not inside another block.
->
-> This "io.print" block is a step, not a value, so it cannot be plugged into an input.
+A statement or value block left loose directly on the canvas is not in the
+wrong place: it is *parked* ([ADR-0012](../../adr/0012-parked-blocks.md)).
+It does not run, and the analyser points it out with the warning
+[`B2C-W0505`](analyser.md#b2c-w0505-block-not-attached).
 
-Blocks stacked below a loose block on the canvas (its `"stack"`, see
+> A "when program starts" block must sit directly on the canvas, not inside another block.
+>
+> This "leave loop" block is a step, not a value, so it cannot be plugged into an input.
+>
+> This block gives a value and cannot be a step on its own. Put it into an input of another block.
+
+Only a statement block has a connection below it, so blocks stacked below
+any other block on the canvas (its `"stack"`, see
 [spec §5.4](../../spec/05-project-format.md#54-block-nodes)) are reported
-once, on the block at the top of the stack. The stacked blocks are still
-checked like any other blocks, but get no message of their own for their
-place:
+once, on that block. The stacked blocks are still checked like any other
+blocks:
 
-> This "io.print" block and the 2 blocks below it are not inside "when program starts" or a function, so they would never run. Move them inside one, or delete them.
+> 1 block is stacked below this "when program starts" block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it.
 
-Only a statement block can have blocks below it:
-
-> 1 block is stacked below this "program.main" block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it.
-
-**Fix:** move the block where the message says.
+**Fix:** move the block where the message says, or delete it.
 
 ### B2C-E0605: unknown field
 

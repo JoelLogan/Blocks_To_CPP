@@ -61,7 +61,7 @@ rest of the project valid, so that the file tests one thing.
 | `duplicate-key.b2c` | T5 | A block's `type` appears twice; parsers disagree about which one counts | `B2C-E0105` | — |  |
 | `duplicate-module-ids.b2c` | T1 | Two modules with the same ID | `B2C-E0116` | — |  |
 | `duplicate-symbol-ids.b2c` | T1 | Two variables and a parameter declaring the same symbol ID | `B2C-E0115` | — |  |
-| `hat-inside-statement.b2c` | T1 | A second `when program starts` inside the first | accepted | `B2C-E0604` |  |
+| `hat-inside-statement.b2c` | T1 | A second `when program starts` inside the first | accepted | `B2C-E0604` | A placement the editor cannot produce stays an error; only blocks left on the canvas are parked ([ADR-0012](../../../docs/adr/0012-parked-blocks.md)) |
 | `homoglyph-identifier.b2c` | T3 | A name with a Cyrillic `о` that looks like `score` | accepted | clean | The analyser accepts only ASCII names (08 §8.4.1) |
 | `huge-coordinates.b2c` | T5 | Canvas coordinates beyond ±10⁷ (and beyond 32 bits) | `B2C-E0129` | — |  |
 | `huge-format-version.b2c` | T5 | A `formatVersion` beyond 32 bits (refused as a newer format, never truncated) | `B2C-E0108` | — |  |
@@ -108,13 +108,14 @@ rest of the project valid, so that the file tests one thing.
 | `oversized-number-literal.b2c` | T3 | A number literal far beyond every number type | accepted | clean | Range-checked by `NumLit` (`B2C-E0517`) |
 | `oversized-string.b2c` | T5 | A string literal of 64 KiB + 1 byte | `B2C-E0123` | — |  |
 | `pack-path-traversal.b2c` | T9/T13 | A library pack ID that walks out of the packs folder | `B2C-E0136` | — |  |
+| `parked-raw-cpp-block.b2c` | T2 | A Raw C++ block (not available in this version), with a block stacked below it, left loose on the canvas instead of in the program | accepted | `B2C-E0601` | Parked blocks are checked against the catalog like any other, so the build stops ([ADR-0012](../../../docs/adr/0012-parked-blocks.md)) |
 | `proto-key-in-token.b2c` | T6 | A `__proto__` key as an expression token | `B2C-E0127` | — |  |
 | `proto-key-in-x-ext.b2c` | T6 | `__proto__` and `constructor` inside `x-ext` | accepted | clean | Preserved as data, never interpreted (05 §5.6) |
 | `proto-key.b2c` | T6 | A top-level `__proto__` key | `B2C-E0127` | — |  |
 | `prototype-key-in-extra.b2c` | T6 | A `prototype` key in a block's `extra` | `B2C-E0127` | — |  |
 | `raw-cpp-block.b2c` | T2 | A Raw C++ block (not available in this version) | accepted | `B2C-E0601` |  |
 | `run-args-shell.b2c` | T2 | Shell syntax in program arguments | accepted | clean | Arguments are an argv list, never a shell command (07 §7.6) |
-| `statement-in-value-input.b2c` | T1 | A statement block plugged into a value input | accepted | `B2C-E0604` |  |
+| `statement-in-value-input.b2c` | T1 | A statement block plugged into a value input | accepted | `B2C-E0604` | A placement the editor cannot produce stays an error; only blocks left on the canvas are parked ([ADR-0012](../../../docs/adr/0012-parked-blocks.md)) |
 | `tag-characters-in-block-type.b2c` | T4/T7 | Invisible Unicode tag characters (U+E0001–U+E007F, "ASCII smuggling") hiding `rm -rf` in a block type | accepted | `B2C-E0601` | The message shows them as `\u{E00XX}` escapes |
 | `tag-characters-in-module-name.b2c` | T4/T7/T9 | The same hidden text in a module name | `B2C-E0117` | — |  |
 | `tag-characters-in-string-literal.b2c` | T4 | The same hidden text in a string literal | accepted | clean | `StrLit` writes them as `\U000E00XX` (08 §8.4.2) |

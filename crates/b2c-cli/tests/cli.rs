@@ -118,6 +118,73 @@ fn check_reports_errors_with_exit_1() {
     assert!(stdout(&output).contains("error[B2C-E01"), "{}", stdout(&output));
 }
 
+/// A block left loose on the canvas is parked (ADR-0012): `check` lists one
+/// warning and exits with 0, and `generate` writes exactly the C++ of the
+/// project without it (the golden `main.cpp`).
+#[test]
+fn a_parked_block_is_a_warning_and_changes_no_cpp() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut project: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(example("hello_world")).unwrap()).unwrap();
+    project["modules"][0]["workspace"]["blocks"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "id": "b_parked", "type": "io.print", "v": 1, "x": 400, "y": 40,
+            "inputs": {"ITEM0": {"expr": [{"str": "not run"}]}}
+        }));
+    let file = dir.path().join("parked.b2c");
+    std::fs::write(&file, serde_json::to_vec(&project).unwrap()).unwrap();
+    let file = file.to_str().unwrap();
+
+    let output = b2c(&["check", file]);
+    assert_eq!(output.status.code(), Some(0), "{}", stdout(&output));
+    let text = stdout(&output);
+    assert_eq!(text.matches("warning[B2C-W0505]").count(), 1, "{text}");
+    assert_eq!(text.matches("[B2C-").count(), 1, "{text}");
+    assert!(text.contains("1 warning\n"), "{text}");
+    assert!(text.ends_with(": no errors\n"), "{text}");
+
+    let output = b2c(&["check", file, "--format", "json"]);
+    assert_eq!(output.status.code(), Some(0));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["ok"], true);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0]["code"], "B2C-W0505");
+    assert_eq!(diagnostics[0]["severity"], "warning");
+
+    let out = dir.path().join("generated");
+    let output = b2c(&["generate", file, "--out", out.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let golden = std::fs::read(repo_root().join("tests/golden/hello_world/main.cpp")).unwrap();
+    assert_eq!(std::fs::read(out.join("main.cpp")).unwrap(), golden);
+}
+
+/// `check` runs the analyser even when the catalog rejects a block, so it
+/// lists the problems the app lists (06 §6.1).
+#[test]
+fn check_lists_catalog_and_analyser_problems_together() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut project: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(example("hello_world")).unwrap()).unwrap();
+    let body = project["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"]
+        .as_array_mut()
+        .unwrap();
+    body.push(serde_json::json!({"id": "b_unknown", "type": "pack.unknown", "v": 1}));
+    body.push(serde_json::json!({
+        "id": "b_ghost", "type": "io.print", "v": 1,
+        "inputs": {"ITEM0": {"expr": [{"ref": "sym_ghost"}]}}
+    }));
+    let file = dir.path().join("both.b2c");
+    std::fs::write(&file, serde_json::to_vec(&project).unwrap()).unwrap();
+    let output = b2c(&["check", file.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(1));
+    let text = stdout(&output);
+    assert!(text.contains("error[B2C-E0601]"), "{text}");
+    assert!(text.contains("error[B2C-E0201]"), "{text}");
+}
+
 #[test]
 fn check_json_is_versioned() {
     let output = b2c(&[

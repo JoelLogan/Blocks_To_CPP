@@ -556,6 +556,33 @@ Codes by area:
 * **How to fix:** give the variable a starting value in its `create` block,
   or set it first.
 
+## B2C-W0505 Block not attached
+
+* **Severity:** warning (from M5 a project can raise it to an error with a
+  lint level)
+* **Meaning:** a block lies on the canvas without being attached to `when
+  program starts` or a function, so it is *parked*
+  ([ADR-0012](../../adr/0012-parked-blocks.md)): it is saved and shown, but it
+  does not run and the generated C++ does not change. Run still works. A
+  statement with blocks attached below it is one parked stack, reported once,
+  on its top block. A parked block that you disabled is not reported.
+  Parked code is not checked until it is attached, apart from the block
+  catalog's checks (an unknown block type, for example, is still an error).
+  A variable created inside a parked stack cannot be chosen in the blocks
+  below it until the stack is attached (until M3).
+* **Example:** a `print ("Hello")` dropped next to `when program starts`
+  instead of inside it.
+* **Message:** one of:
+  * "This block isn't attached to 'when program starts' or a function, so it
+    doesn't run."
+  * "This block and the 2 blocks below it aren't attached to 'when program
+    starts' or a function, so they don't run."
+  * "This block gives a value, but it isn't plugged into another block, so it
+    isn't used." (a value block, such as `(a + b)`)
+* **How to fix:** attach the block where it should run (or plug a value block
+  into an input), delete it, or disable it to keep it parked without a
+  warning.
+
 ## B2C-W0510 Whole-number division where a decimal is expected
 
 * **Severity:** warning

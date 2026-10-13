@@ -23,8 +23,10 @@ the contract it consumes, not on the crate that produced it.
 Every stage is a **pure, deterministic function**: no I/O, no clock, no
 randomness, and no global mutable state. The same code runs natively in the
 backend and CLI, and as WebAssembly in the editor. A stage that finds errors
-still produces output where it can, so the editor can always show as much C++
-as possible. Building, however, requires stages ①–⑤ to report zero errors.
+still produces output where it can. The editor's preview, `b2c check` and
+the build all run stages ①–⑤ on any document that loads, so they report the
+same diagnostics; only a load failure stops early. Generating and compiling
+files requires zero errors.
 
 **The live preview is best-effort.** Once stage ① succeeds, the editor's
 preview (`b2c-core-wasm`) continues through catalog and analyser errors and
@@ -131,6 +133,11 @@ enum Expr {
   template and their argument `Expr`s ([03 §3.11.2](03-block-language.md#3112-template-lowering-library-blocks)).
 * **Disabled blocks** are dropped here, though their symbols are still
   declared for diagnostics.
+* **Parked blocks** (top-level statements, reporters and predicates with
+  their stacks, [05 §5.4](05-project-format.md#54-block-nodes)) are not
+  lowered. The analyser reports `W0505` on each enabled parked head (warning
+  by default; a project can raise it to an error from M5) and records the
+  parked scope (§6.5).
 
 ## 6.5 Stage ④ Names and scopes
 
@@ -214,13 +221,15 @@ queries from the analysis cached by its last preview.
   outside a loop (`E0401`), unreachable statements after
   `return`/`break`/`throw` (`W0502`), use before initialisation for scalars
   (`W0503`), use after `move` (`W0504`), `rethrow` outside a catch (`E0402`).
-* **Lints:** integer division into a floating-point context (`W0510`), `==`
-  on floating-point values (`W0511`), signed/unsigned comparison (`W0512`),
-  `forever` without an exit (`I0513`), raw `new` without a matching owner
-  (`W0515`), capturing locals by reference in a detached context (`W0516`),
-  and the name-spelling notes of
+* **Lints:** a parked block (`W0505`, §6.4), integer division into a
+  floating-point context (`W0510`), `==` on floating-point values (`W0511`),
+  signed/unsigned comparison (`W0512`), `forever` without an exit (`I0513`),
+  raw `new` without a matching owner (`W0515`), capturing locals by
+  reference in a detached context (`W0516`), and the name-spelling notes of
   [§6.14](#614-standard-names-and-using-namespace) (`I0523`, `I0524`,
-  `W0525`). Literal overflow (`E0517`) is an error.
+  `W0525`). Literal overflow (`E0517`) is an error. The diagnostics
+  reference in `docs/reference/diagnostics/` is the normative list of the
+  codes that are reported (§6.12).
 * **Lint levels.** Every analyser warning and info code (`W05xx` and
   `I05xx`, including the flow checks above) can be set to `off`, `info`,
   `warning` or `error`:

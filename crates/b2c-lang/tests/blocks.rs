@@ -618,7 +618,9 @@ fn unknown_blocks_are_skipped_silently() {
                 Some(input(json!({"id": "u3", "type": "pack.thing", "v": 1}))),
             ),
         ]),
-        json!({"id": "loose", "type": "io.print", "v": 1}),
+        // Parked on the canvas too: the catalog reports the type (B2C-E0601),
+        // so the analyser does not report it as parked (B2C-W0505).
+        json!({"id": "loose", "type": "pack.loose", "v": 1}),
     ]);
     assert_clean(&a);
     assert_eq!(main_stmts(&a).len(), 1);

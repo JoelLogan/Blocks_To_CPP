@@ -721,7 +721,11 @@ b2c migrate   <project.b2c> [--in-place]
 b2c fmt       <project.b2c> [--check]
 ```
 
-* Same pipeline, same limits and same argv construction as the app.
+* Same pipeline, same limits and same argv construction as the app. Once
+  the project loads, `b2c check` and the build run the catalog check and
+  the analyser together, as the editor's preview does, so the CLI lists the
+  same problems as the app ([06 §6.1](06-compiler-pipeline.md#61-overview));
+  warnings alone, such as a parked block's `B2C-W0505`, never fail them.
 * The CLI does not consult the GUI trust store. Running `b2c build` on a named
   file is an explicit user decision, like running `make`. This is documented
   prominently.
