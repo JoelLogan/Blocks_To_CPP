@@ -158,9 +158,8 @@ export interface ToolboxEntry {
  * Drags a block from the toolbox so that its `previous` connection lands on connection `target` of
  * block `targetId`, where Blockly snaps it in.
  *
- * The target is centred (and selected) first. The toolbox follows the selection (the Variables
- * category lists what is in scope there), so it may build its flyout again; only then is the
- * category opened and the flyout block looked up.
+ * The target is centred (and selected) first, then the category is opened and the flyout block
+ * looked up.
  */
 export async function dragFromToolbox(
   app: App,

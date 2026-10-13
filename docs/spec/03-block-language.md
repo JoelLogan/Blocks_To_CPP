@@ -277,16 +277,18 @@ The analyser implements a **gradual** type system that approximates C++:
   gives it: what the statement before it, or the list or input around it,
   sees, or, on the canvas, the end of `main`'s body.
 * **Unlike Scratch, there are no implicit globals.** *Make a variable* in the
-  Variables category inserts a declaration at the keyboard cursor (or at the
-  top of the selected function). Globals require an explicit top-level
+  Variables category asks for a name and a type (`int` by default) and
+  inserts a declaration before the selected statement (or at the top of the
+  selected function). Globals require an explicit top-level
   `global variable` block, and the analyser suggests `const` / `constexpr`
-  where possible. With nothing selected, or with a block selected that is not
-  attached to `main` or a function, *Make a variable* inserts at the top of
-  `main` (creating `main` if there is none), and the Variables category lists
-  the symbols visible at the end of `main`'s body.
-* **Default names** are the first free name in scope: `value`, `value2`,
-  `value3`, … for a new variable; `i`, `j`, `k` for a counted loop; and
-  `myFunction` for a new function.
+  where possible. With nothing selected, *Make a variable* inserts at the top
+  of `main` (creating `main` if there is none). The Variables category lists
+  every variable of the module, grouped by the function that declares it,
+  and does not depend on the selection
+  ([04 §4.2](04-user-interface.md#42-toolbox)).
+* **Default names** are the first free name in scope where the block is
+  dropped: `value`, `value2`, `value3`, … for a new variable; `i`, `j`, `k`
+  for a counted loop; and `myFunction` for a new function.
 * **Identifiers are validated** ([08 §8.4.1](08-security.md#841-identifiers)):
   ASCII `[A-Za-z][A-Za-z0-9_]{0,63}`, not a keyword, not reserved, and not a
   standard macro name. Duplicate names in one scope are errors with a rename
@@ -354,10 +356,14 @@ A project has exactly one `main`; a second one is an analyser error.
 | `create [int ▾] variable [score] = (0) constant ☐` | `int score = 0;` (`const int` when ticked; the ⚙ popover with `constexpr` and `static` replaces the checkbox in M3 as a compatible change) |
 | `create [auto ▾] [a], [b] ⊕ from (pairValue)` | `auto [a, b] = pairValue;` (structured binding) |
 | `set [score ▾] to (expr)` | `score = expr;` |
-| `change [score ▾] by (1)` | `score += 1;` (and `++score;` when the value is the literal 1) |
+| `change [score ▾] by (1)` | `score += 1;` (and `++score;` when the value is the literal 1), for number and character variables |
 | `[score ▾] [*= ▾] (2)` | `score *= 2;` (all compound operators) |
 | `(score)` | `score` |
 | `global [constant ▾] [double] [kGravity] = (9.81)` *(top level)* | `constexpr double kGravity = 9.81;` |
+
+The toolbox does not repeat these blocks per variable: it shows one *set*,
+one *change* and one update block whose menu chooses the variable
+([04 §4.2](04-user-interface.md#42-toolbox)).
 
 ### 3.7.3 Math and Logic
 

@@ -294,50 +294,10 @@ export function clickMeasurement(id: string, result: unknown): TimedClick {
 }
 
 /**
- * What is wrong with the toolbox's listing after a click on `target`, given the symbols of
- * `target.lists` and `target.omits` whose getters the flyout shows (`listed`); `null` when it is
- * the target's listing.
- */
-export function listingMismatch(target: ClickTarget, listed: ReadonlySet<string>): string | null {
-  const missing = target.lists.filter((sym) => !listed.has(sym));
-  const extra = target.omits.filter((sym) => listed.has(sym));
-  if (missing.length === 0 && extra.length === 0) {
-    return null;
-  }
-  const parts = [
-    ...(missing.length > 0 ? [`no getter of ${missing.join(', ')}`] : []),
-    ...(extra.length > 0 ? [`a getter of ${extra.join(', ')}`] : []),
-  ];
-  return (
-    `After the click on block ${target.id} the toolbox shows ${parts.join(' and ')}: ` +
-    'it was not rebuilt for the new selection while the click was timed'
-  );
-}
-
-/**
- * Which of `symbols` the toolbox's flyout shows a getter (`var.get`) of, asked in one script.
- */
-async function listedGetters(app: App, symbols: readonly string[]): Promise<Set<string>> {
-  const listed: unknown = await app.driver.executeScript(
-    `const [hookName, symbols] = arguments;
-     return symbols.filter((sym) => window[hookName].flyoutBlockId('var.get', { VAR: sym }) !== null);`,
-    E2E_HOOK_NAME,
-    symbols,
-  );
-  if (!Array.isArray(listed) || !listed.every((sym) => typeof sym === 'string')) {
-    throw new Error('The page did not say which getters the toolbox shows');
-  }
-  return new Set(listed);
-}
-
-/**
  * Clicks block `target.id` with real pointer input, holding the button 50 ms as a person's click
  * does, and times what the click starts (bench/page.ts `TASKS_START_SCRIPT`). The block is
  * scrolled into view first and the page left to settle, both outside the timing. The block must
- * not be selected before and must be selected after: the click changes the selection. Once the
- * page has settled, the toolbox must list what the block sees (`target.lists` and
- * `target.omits`): a click whose rebuild of the toolbox did not happen while it was timed fails
- * the run instead of giving a sample without that work.
+ * not be selected before and must be selected after: the click changes the selection.
  */
 export async function timedClick(app: App, target: ClickTarget): Promise<TimedClick> {
   const id = target.id;
@@ -372,13 +332,6 @@ export async function timedClick(app: App, target: ClickTarget): Promise<TimedCl
     throw new Error(
       `The click at (${String(point.x)}, ${String(point.y)}) did not select block ${id}`,
     );
-  }
-  const mismatch = listingMismatch(
-    target,
-    await listedGetters(app, [...target.lists, ...target.omits]),
-  );
-  if (mismatch !== null) {
-    throw new Error(mismatch);
   }
   return timed;
 }

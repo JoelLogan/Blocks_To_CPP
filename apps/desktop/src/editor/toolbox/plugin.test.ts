@@ -1,27 +1,42 @@
 import type { BdmDocument, SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
-import { B2cSymbolDeclField, DEFAULT_EDITOR_SERVICES } from '@blocks2cpp/blockly-ext';
+import {
+  B2cSymbolDeclField,
+  B2cSymbolRefField,
+  DEFAULT_EDITOR_SERVICES,
+  toolboxSymbolGroups,
+} from '@blocks2cpp/blockly-ext';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as Blockly from 'blockly/core';
 import { createElement } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setCore } from '../../app/core';
-import { DialogHost, createDialogQueue, type DialogService } from '../../app/dialogs';
+import {
+  DialogHost,
+  createDialogQueue,
+  type ChoiceOptions,
+  type DialogService,
+} from '../../app/dialogs';
 import { resetAppStore, useAppStore } from '../../app/store';
 import { documentFixture } from '../../app/testing/fixtures';
 import { latestTimings, resetTimings } from '../../lib/timing';
 import { createSymbolServices, installEditorServices, servicesSessionHooks } from '../services';
 import { ICON_CLASS, CATEGORY_CLASS } from './category';
-import { B2cContinuousToolbox, CONTINUOUS_REFRESH_DELAY_MS } from './continuous';
 import {
-  LOOPS_CATEGORY,
+  B2cContinuousFlyout,
+  B2cContinuousToolbox,
+  CONTINUOUS_REFRESH_DELAY_MS,
+} from './continuous';
+import {
   MAKE_VARIABLE_BUTTON,
   MY_BLOCKS_CATEGORY,
+  PROGRAM_CATEGORY,
+  PROGRAM_HERE_NOTE,
   VARIABLES_CATEGORY,
 } from './contents';
 import { argLabelField } from './inflater';
 import type { MakeVariableResult } from './makeVariable';
-import { PREVIEW_WAIT_MS, analysisSymbolSource, createToolboxPlugin } from './plugin';
+import { analysisSymbolSource, createToolboxPlugin } from './plugin';
 import {
   disposeTestWorkspaces,
   editorContext,
@@ -51,6 +66,7 @@ afterEach(() => {
   setCore(null);
   disposeTestWorkspaces();
   resetAppStore();
+  vi.restoreAllMocks();
 });
 
 /** Waits for Blockly's events, our refresh and the continuous toolbox's delayed rebuild. */
@@ -75,6 +91,26 @@ const SCOPES: Record<string, readonly SymbolInfo[]> = {
   fn: [factorial],
   'fn/BODY': [factorial, n],
 };
+
+/** Dialogs for Make a variable: the name `name`, then the first type offered (int). */
+function makeDialogs(name: Promise<string | null> | (() => Promise<string | null>)) {
+  return {
+    prompt: vi.fn<DialogService['prompt']>(typeof name === 'function' ? name : () => name),
+    alert: vi.fn<DialogService['alert']>(() => Promise.resolve()),
+    choose: firstChoice(),
+  };
+}
+
+/**
+ * A spy for {@link DialogService.choose} answering with the first choice. (A spy's call signature
+ * is not generic, so it is cast to the service's.)
+ */
+function firstChoice() {
+  const spy = vi.fn((options: ChoiceOptions<string>) =>
+    Promise.resolve(options.choices[0]?.id ?? options.cancel),
+  );
+  return spy as typeof spy & DialogService['choose'];
+}
 
 /** An injected workspace with the guess document and the plugin attached. */
 function attached(
@@ -109,12 +145,44 @@ function publishPreview(symbols?: readonly SymbolInfo[]): void {
   });
 }
 
+/** The analysis with a new variable `count`, declared by a new `create` block in main. */
+function addCount(workspace: Blockly.WorkspaceSvg): void {
+  const block = Blockly.serialization.blocks.append(
+    {
+      type: 'var.declare',
+      id: 'countDecl',
+      fields: { TYPE: 'int', NAME: { sym: 's_count', name: 'count' }, CONST: false },
+    },
+    workspace,
+  );
+  const below = workspace.getBlockById('print')?.nextConnection;
+  if (below === undefined || block.previousConnection === null) {
+    throw new Error('no place for count');
+  }
+  below.connect(block.previousConnection);
+  publishPreview([
+    factorial,
+    guess,
+    n,
+    symbolFixture('s_count', 'count', { declBlock: 'countDecl' }),
+  ]);
+}
+
 /** The blocks the flyout shows, in order. */
 function flyoutBlocks(workspace: Blockly.WorkspaceSvg): Blockly.BlockSvg[] {
   const flyout = workspace.getToolbox()?.getFlyout();
   return (flyout?.getContents() ?? []).flatMap((item) => {
     const element = item.getElement();
     return element instanceof Blockly.BlockSvg ? [element] : [];
+  });
+}
+
+/** The labels and buttons the flyout shows, in order. */
+function flyoutTexts(workspace: Blockly.WorkspaceSvg): string[] {
+  const flyout = workspace.getToolbox()?.getFlyout();
+  return (flyout?.getContents() ?? []).flatMap((item) => {
+    const element = item.getElement();
+    return element instanceof Blockly.FlyoutButton ? [element.getButtonText()] : [];
   });
 }
 
@@ -156,150 +224,116 @@ function category(workspace: Blockly.WorkspaceSvg, name: string): Blockly.IToolb
   return item;
 }
 
+/** The continuous toolbox of a workspace. */
+function continuousToolbox(workspace: Blockly.WorkspaceSvg): B2cContinuousToolbox {
+  const toolbox = workspace.getToolbox();
+  if (!(toolbox instanceof B2cContinuousToolbox)) {
+    throw new Error('not the continuous toolbox');
+  }
+  return toolbox;
+}
+
 describe('the toolbox plugin with the continuous toolbox', () => {
   it('shows every category in one flyout, with the dynamic ones built from the analysis', async () => {
     const workspace = attached('continuous');
-    expect(workspace.getToolbox()).toBeInstanceOf(B2cContinuousToolbox);
     await settle();
 
     const types = flyoutBlocks(workspace).map((block) => block.type);
-    expect(types).toContain('program.main');
     expect(types).toContain('io.ask');
-    // With nothing selected, Variables lists what is visible at the end of main.
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
+    // The canvas has main: Program says where the program starts instead of offering another.
+    expect(types).not.toContain('program.main');
+    expect(flyoutTexts(workspace)).toEqual(expect.arrayContaining([...PROGRAM_HERE_NOTE]));
+    // Every variable of the module, grouped by the function that declares it.
+    expect(getterRefs(workspace)).toEqual(['s_guess', 's_n']);
+    expect(flyoutTexts(workspace)).toEqual(
+      expect.arrayContaining(['In when program starts', 'In factorial']),
+    );
+    // One set, one change and one update, for main's guess.
+    expect(
+      flyoutBlocks(workspace)
+        .filter((block) => ['var.set', 'var.change', 'var.update'].includes(block.type))
+        .map((block): unknown => [block.type, block.getFieldValue('VAR')]),
+    ).toEqual([
+      ['var.set', 's_guess'],
+      ['var.change', 's_guess'],
+      ['var.update', 's_guess'],
+    ]);
     // Your functions: factorial gives a value, so it is a reporter, with its argument labelled.
     const call = flyoutBlocks(workspace).find((block) => block.type === 'func.call');
     expect(call?.getFieldValue('FUNC')).toBe('s_fact');
     expect(call?.getField(argLabelField(0))?.getText()).toBe('n:');
   });
 
-  it('rebuilds Variables when the selection changes', async () => {
+  it('never shows its flyout again when the selection changes', async () => {
     const workspace = attached('continuous');
     await settle();
-    select(workspace, 'fn');
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
-
-    select(workspace, 'print');
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
-  });
-
-  it('lists what is visible just after a selected statement', async () => {
-    const workspace = attached('continuous');
-    await settle();
-    // `create int guess` itself: guess is visible after it.
-    select(workspace, 'decl');
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
-  });
-
-  it('lists the end of main for a block dropped loose on the canvas', async () => {
-    const workspace = attached('continuous');
-    await settle();
-    select(workspace, 'fn');
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
-    const loose = workspace.newBlock('io.print');
-    loose.initSvg();
-    loose.render();
-    await settle();
-    // Its analysis: the scope query has no answer for a loose block.
-    publishPreview();
-    select(workspace, loose.id);
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
-  });
-
-  it('keeps the selection while the focus is in the toolbox or its flyout', async () => {
-    const workspace = attached('continuous');
-    await settle();
-    select(workspace, 'fn');
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
-    // Clicking a category moves the focus to the toolbox; the block stays the selection.
-    const toolbox = workspace.getToolbox() as B2cContinuousToolbox;
-    Blockly.getFocusManager().focusTree(toolbox);
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
-    // Clicking the canvas background ends the selection: the end of main is listed again.
+    const toolbox = continuousToolbox(workspace);
+    const show = vi.spyOn(toolbox.getFlyout(), 'show');
+    const build = vi.spyOn(toolbox, 'flyoutContents');
+    for (const id of ['fn', 'print', 'decl', 'main']) {
+      select(workspace, id);
+      await settle();
+    }
+    // The canvas background, and the toolbox.
     Blockly.getFocusManager().focusNode(workspace);
     await settle();
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
+    Blockly.getFocusManager().focusTree(toolbox);
+    await settle();
+    expect(show).not.toHaveBeenCalled();
+    expect(build).not.toHaveBeenCalled();
+    expect(getterRefs(workspace)).toEqual(['s_guess', 's_n']);
   });
 
-  it('does not redraw the flyout when nothing it shows changed', async () => {
+  it('shows its flyout again once a variable is added, and once only', async () => {
     const workspace = attached('continuous');
     await settle();
-    const toolbox = workspace.getToolbox() as B2cContinuousToolbox;
+    const show = vi.spyOn(continuousToolbox(workspace).getFlyout(), 'show');
+    addCount(workspace);
+    await settle();
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(getterRefs(workspace)).toEqual(['s_count', 's_guess', 's_n']);
+  });
+
+  it('builds nothing after an edit or an analysis that changes nothing it shows', async () => {
+    const workspace = attached('continuous');
+    await settle();
+    const toolbox = continuousToolbox(workspace);
     const show = vi.spyOn(toolbox.getFlyout(), 'show');
-    // A block moved without changing any scope, and its new analysis with the same symbols.
+    const build = vi.spyOn(toolbox, 'flyoutContents');
+    // A block moved, a field changed (Blockly asks the toolbox to refresh), and their analysis.
     workspace.getBlockById('fn')?.moveBy(10, 10);
+    workspace.getBlockById('print')?.setFieldValue(false, 'NEWLINE');
     await settle();
     publishPreview();
     await settle();
+    expect(build).not.toHaveBeenCalled();
     expect(show).not.toHaveBeenCalled();
-    // A different selection changes the Variables category: the flyout is redrawn.
-    select(workspace, 'fn');
-    await settle();
-    expect(show).toHaveBeenCalledTimes(1);
     // Forcing always redraws.
     expect(toolbox.showAllCategories(true)).toBe(true);
     expect(toolbox.showAllCategories(false)).toBe(false);
   });
 
-  it('keeps its listing while a preview is pending, and follows the selection once it comes', async () => {
+  it('rebuilds after each analysis that changes what it shows', async () => {
     const workspace = attached('continuous');
     await settle();
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
-    // The canvas changes: the analysis does not know where things are any more.
-    workspace.getBlockById('fn')?.moveBy(10, 10);
-    await settle();
-    select(workspace, 'fn');
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
-    // The preview comes: the listing is the selection's.
-    publishPreview();
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
-  });
-
-  it('follows the selection again when no preview comes', async () => {
-    const workspace = attached('continuous');
-    await settle();
-    workspace.getBlockById('fn')?.moveBy(10, 10);
-    await settle();
-    select(workspace, 'fn');
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
-    await new Promise((resolve) => setTimeout(resolve, PREVIEW_WAIT_MS));
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
-  });
-
-  it('follows the selection again when the canvas cannot be analysed', async () => {
-    const workspace = attached('continuous');
-    await settle();
-    workspace.getBlockById('fn')?.moveBy(10, 10);
-    await settle();
-    select(workspace, 'fn');
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
-    useAppStore.setState((state) => ({ analysis: { ...state.analysis, notice: 'syncFailed' } }));
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
-  });
-
-  it('rebuilds after each analysis', async () => {
-    const workspace = attached('continuous');
-    await settle();
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
+    expect(getterRefs(workspace)).toEqual(['s_guess', 's_n']);
     useAppStore.setState((state) => ({
       analysis: { ...state.analysis, seq: 2, preview: null },
     }));
     await settle();
-    // No analysis: nothing is known to be in scope.
+    // No analysis: no variable is known.
     expect(getterRefs(workspace)).toEqual([]);
+  });
+
+  it('offers when program starts again once main is deleted', async () => {
+    const workspace = attached('continuous');
+    await settle();
+    expect(flyoutBlocks(workspace).map((block) => block.type)).not.toContain('program.main');
+    workspace.getBlockById('main')?.dispose(false);
+    publishPreview([factorial, n]);
+    await settle();
+    expect(flyoutBlocks(workspace).map((block) => block.type)).toContain('program.main');
+    expect(flyoutTexts(workspace)).not.toContain(PROGRAM_HERE_NOTE[0]);
   });
 
   it('lists the functions of the module shown, and follows another module being shown', async () => {
@@ -341,11 +375,99 @@ describe('the toolbox plugin with the continuous toolbox', () => {
           ?.getField('NAME') as B2cSymbolDeclField | undefined
       )?.getDecl();
     const first = nameOf();
-    (workspace.getToolbox() as B2cContinuousToolbox).showAllCategories();
+    continuousToolbox(workspace).showAllCategories();
     const second = nameOf();
     expect(first?.name).toBe('value');
     expect(second?.name).toBe('value');
     expect(second?.sym).not.toBe(first?.sym);
+  });
+
+  it('gives a block in the flyout every variable of the module in its menu, grouped', async () => {
+    const workspace = attached('continuous');
+    await settle();
+    const menuOf = (type: string): unknown[] => {
+      const block = flyoutBlocks(workspace).find((candidate) => candidate.type === type);
+      const field = block?.getField('VAR');
+      if (!(field instanceof B2cSymbolRefField)) {
+        throw new Error(`no ${type} in the flyout`);
+      }
+      return field.menuOptions();
+    };
+    const between = Blockly.FieldDropdown.SEPARATOR;
+    expect(menuOf('var.get')).toEqual([['guess', 's_guess'], between, ['n', 's_n']]);
+    expect(menuOf('var.set')).toEqual([['guess', 's_guess'], between, ['n', 's_n']]);
+    // Once the toolbox is gone, the flyout's menus have nothing of it.
+    for (const detach of detachers.splice(0)) {
+      detach();
+    }
+    expect(toolboxSymbolGroups()).toBeNull();
+  });
+});
+
+/** The flyout's scroll offset, in pixels. */
+function flyoutScroll(flyout: B2cContinuousFlyout): number {
+  return -flyout.getWorkspace().scrollY;
+}
+
+/** Where a category's heading is on screen, relative to the top of the flyout's view, in pixels. */
+function headingTop(flyout: B2cContinuousFlyout, name: string): number {
+  const position = flyout.getCategoryScrollPosition(name);
+  if (position === null) {
+    throw new Error(`no heading of ${name}`);
+  }
+  return position * flyout.getWorkspace().scale - flyoutScroll(flyout);
+}
+
+/** Lets the flyout's scroll (and the plugin's frame after it) finish. */
+function frames(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 100));
+}
+
+describe('the flyout shown again with new contents', () => {
+  /** The guess document on a laid-out canvas, its flyout scrolled so that `name` is at the top. */
+  async function scrolledTo(name: string): Promise<{
+    workspace: Blockly.WorkspaceSvg;
+    flyout: B2cContinuousFlyout;
+  }> {
+    const workspace = attached('continuous');
+    workspace.setCachedParentSvgSize(1000, 500);
+    workspace.resize();
+    await settle();
+    const flyout = continuousToolbox(workspace).getFlyout();
+    if (!(flyout instanceof B2cContinuousFlyout)) {
+      throw new Error('not the continuous flyout');
+    }
+    const position = flyout.getCategoryScrollPosition(name) ?? 0;
+    flyout.getWorkspace().scrollbar?.setY((position + 10) * flyout.getWorkspace().scale);
+    await frames();
+    return { workspace, flyout };
+  }
+
+  it('keeps the category at the top of its view where it was (Math, after a new variable)', async () => {
+    const { workspace, flyout } = await scrolledTo('Math');
+    const before = headingTop(flyout, 'Math');
+    expect(flyoutScroll(flyout)).toBeGreaterThan(0);
+    expect(before).toBeLessThan(0);
+    const scrollBefore = flyoutScroll(flyout);
+    const positionBefore = flyout.getCategoryScrollPosition('Math') ?? 0;
+    addCount(workspace);
+    await settle();
+    await frames();
+    // Variables, above Math, grew by a getter: the flyout scrolled with it.
+    expect(flyout.getCategoryScrollPosition('Math') ?? 0).toBeGreaterThan(positionBefore);
+    expect(flyoutScroll(flyout)).toBeGreaterThan(scrollBefore);
+    expect(headingTop(flyout, 'Math')).toBeCloseTo(before, 6);
+  });
+
+  it('keeps the selected category selected', async () => {
+    const { workspace, flyout } = await scrolledTo('Math');
+    const toolbox = continuousToolbox(workspace);
+    toolbox.selectCategoryByName('Functions');
+    addCount(workspace);
+    await settle();
+    await frames();
+    expect(toolbox.getSelectedItem()?.getName()).toBe('Functions');
+    expect(headingTop(flyout, 'Math')).toBeLessThan(0);
   });
 });
 
@@ -374,46 +496,46 @@ function release(
   document.dispatchEvent(new PointerEvent(type, { bubbles: true }));
 }
 
-describe('a selection made while the pointer is held', () => {
-  it('rebuilds Variables once the press that selected the block is released', async () => {
+describe('a rebuild asked for while the pointer is pressed', () => {
+  it('comes once the press is released', async () => {
     const workspace = attached('continuous');
     await settle();
-    // Blockly selects a block when it is pressed, and ignores toolbox refreshes until the release.
+    // Blockly refreshes no toolbox while a gesture runs.
     const gesture = press(workspace);
-    select(workspace, 'fn');
+    addCount(workspace);
     await settle();
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
+    expect(getterRefs(workspace)).toEqual(['s_guess', 's_n']);
     release('pointerup', gesture);
     await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
+    expect(getterRefs(workspace)).toEqual(['s_count', 's_guess', 's_n']);
   });
 
-  it('rebuilds once a cancelled press has ended', async () => {
+  it('comes once a cancelled press has ended', async () => {
     const workspace = attached('continuous');
     await settle();
     const gesture = press(workspace);
-    select(workspace, 'fn');
+    addCount(workspace);
     await settle();
     release('pointercancel', gesture);
     await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
+    expect(getterRefs(workspace)).toEqual(['s_count', 's_guess', 's_n']);
   });
 
   it('waits again when the gesture goes on after a release (another finger still down)', async () => {
     const workspace = attached('continuous');
     await settle();
     const gesture = press(workspace);
-    select(workspace, 'fn');
+    addCount(workspace);
     await settle();
     release('pointerup');
     await settle();
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
+    expect(getterRefs(workspace)).toEqual(['s_guess', 's_n']);
     release('pointerup', gesture);
     await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
+    expect(getterRefs(workspace)).toEqual(['s_count', 's_guess', 's_n']);
   });
 
-  it('stops waiting when it is detached', async () => {
+  it('stops waiting when the toolbox is detached', async () => {
     const workspace = injectedWorkspace('continuous');
     const document_ = guessDocument();
     loadModule(workspace, document_);
@@ -421,7 +543,7 @@ describe('a selection made while the pointer is held', () => {
     const detach = createToolboxPlugin().attach(editorContext(workspace, fakeCore(SCOPES)));
     await settle();
     const gesture = press(workspace);
-    select(workspace, 'fn');
+    addCount(workspace);
     await settle();
     const remove = vi.spyOn(document, 'removeEventListener');
     detach();
@@ -439,7 +561,7 @@ describe('the span b2c:toolbox-refresh', () => {
     const workspace = attached('continuous');
     await settle();
     resetTimings();
-    const flyout = (workspace.getToolbox() as B2cContinuousToolbox).getFlyout();
+    const flyout = continuousToolbox(workspace).getFlyout();
     const show = flyout.show.bind(flyout);
     // A slow showing of the flyout: the span must include it.
     const slowMs = 30;
@@ -450,27 +572,34 @@ describe('the span b2c:toolbox-refresh', () => {
       }
       show(contents);
     });
-    select(workspace, 'fn');
+    addCount(workspace);
     await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
+    expect(getterRefs(workspace)).toEqual(['s_count', 's_guess', 's_n']);
     expect(latestTimings()['b2c:toolbox-refresh']).toBeGreaterThanOrEqual(slowMs);
   });
 });
 
 describe('the toolbox plugin with the category toolbox', () => {
-  it('shows a dynamic category when it is selected and rebuilds it on selection change', async () => {
+  it('shows a dynamic category when it is selected, whatever block is selected', async () => {
     const workspace = attached('category');
     const toolbox = workspace.getToolbox() as Blockly.Toolbox;
     expect(toolbox).not.toBeInstanceOf(B2cContinuousToolbox);
     toolbox.setSelectedItem(category(workspace, 'Variables'));
-    expect(getterRefs(workspace)).toEqual(['s_guess']);
-
+    expect(getterRefs(workspace)).toEqual(['s_guess', 's_n']);
+    const flyout = toolbox.getFlyout();
+    if (flyout === null) {
+      throw new Error('no flyout');
+    }
+    const show = vi.spyOn(flyout, 'show');
     select(workspace, 'fn');
     await settle();
-    expect(getterRefs(workspace)).toEqual(['s_n']);
+    expect(show).not.toHaveBeenCalled();
+    addCount(workspace);
+    await settle();
+    expect(getterRefs(workspace)).toEqual(['s_count', 's_guess', 's_n']);
   });
 
-  it('names a new loop and lists the calls under Your functions in their categories', () => {
+  it('names a new loop i and a new function myFunction, and lists the calls under Your functions', () => {
     const workspace = attached('category');
     const toolbox = workspace.getToolbox() as Blockly.Toolbox;
     toolbox.setSelectedItem(category(workspace, 'Loops'));
@@ -579,19 +708,22 @@ describe('attaching and detaching', () => {
     const workspace = injectedWorkspace('continuous');
     storeAnalysis(documentFixture(), []);
     const detach = createToolboxPlugin().attach(editorContext(workspace, fakeCore({})));
-    for (const key of [VARIABLES_CATEGORY, LOOPS_CATEGORY, MY_BLOCKS_CATEGORY]) {
+    const keys = [PROGRAM_CATEGORY, VARIABLES_CATEGORY, MY_BLOCKS_CATEGORY];
+    for (const key of keys) {
       expect(workspace.getToolboxCategoryCallback(key)).not.toBeNull();
     }
     expect(workspace.getButtonCallback(MAKE_VARIABLE_BUTTON)).not.toBeNull();
+    expect(toolboxSymbolGroups()).not.toBeNull();
 
     detach();
-    for (const key of [VARIABLES_CATEGORY, LOOPS_CATEGORY, MY_BLOCKS_CATEGORY]) {
+    for (const key of keys) {
       expect(workspace.getToolboxCategoryCallback(key)).toBeNull();
     }
     expect(workspace.getButtonCallback(MAKE_VARIABLE_BUTTON)).toBeNull();
+    expect(toolboxSymbolGroups()).toBeNull();
     // The toolbox went back to static categories, which need no callbacks.
     expect(() => {
-      (workspace.getToolbox() as B2cContinuousToolbox).showAllCategories();
+      continuousToolbox(workspace).showAllCategories();
     }).not.toThrow();
   });
 
@@ -632,43 +764,42 @@ describe('attaching and detaching', () => {
 });
 
 describe('Make a variable from the flyout button', () => {
-  it('asks for a name and inserts the declaration, once at a time', async () => {
+  it('asks for a name and a type and inserts the declaration, once at a time', async () => {
     const results: MakeVariableResult[] = [];
     let answer: (value: string | null) => void = () => undefined;
-    const prompt = vi.fn<DialogService['prompt']>(
+    const dialogs = makeDialogs(
       () =>
         new Promise<string | null>((resolve) => {
           answer = resolve;
         }),
     );
     const workspace = attached('continuous', {
-      dialogs: { prompt, alert: vi.fn(() => Promise.resolve()) },
+      dialogs,
       onMakeVariable: (result) => results.push(result),
     });
     const button = workspace.getButtonCallback(MAKE_VARIABLE_BUTTON);
     button?.({} as Blockly.FlyoutButton);
     button?.({} as Blockly.FlyoutButton);
-    expect(prompt).toHaveBeenCalledTimes(1);
-    expect(prompt.mock.calls[0]?.[0]).toMatchObject({ defaultValue: 'value' });
+    expect(dialogs.prompt).toHaveBeenCalledTimes(1);
+    expect(dialogs.prompt.mock.calls[0]?.[0]).toMatchObject({ defaultValue: 'value' });
 
     answer('score');
     await settle();
+    expect(dialogs.choose).toHaveBeenCalledTimes(1);
     expect(results).toHaveLength(1);
     expect(results[0]?.status).toBe('created');
     // Nothing selected: it goes to the top of main, before `create int guess`.
     const main = workspace.getBlockById('main');
     const first = main?.getInputTargetBlock('BODY');
     expect((first?.getField('NAME') as B2cSymbolDeclField).getDecl()?.name).toBe('score');
+    expect(first?.getFieldValue('TYPE')).toBe('int');
     expect(first?.getNextBlock()?.id).toBe('decl');
   });
 
   it('inserts before the block selected on the canvas, though the focus is on the button', async () => {
     const results: MakeVariableResult[] = [];
     const workspace = attached('continuous', {
-      dialogs: {
-        prompt: vi.fn(() => Promise.resolve('score')),
-        alert: vi.fn(() => Promise.resolve()),
-      },
+      dialogs: makeDialogs(Promise.resolve('score')),
       onMakeVariable: (result) => results.push(result),
     });
     await settle();
@@ -730,6 +861,26 @@ describe('Make a variable through the app’s dialogs', () => {
     expect(results).toEqual([{ status: 'refused', reason: 'noMain' }]);
     expect(Blockly.getFocusManager().ephemeralFocusTaken()).toBe(false);
     expect(workspace.getAllBlocks(false)).toHaveLength(0);
+  });
+
+  it('says where the program starts when another module has it', async () => {
+    const workspace = injectedWorkspace('continuous');
+    const document = documentFixture();
+    document.modules = [
+      { id: 'mod_main', name: 'helpers', workspace: { blocks: [] } },
+      {
+        id: 'mod_game',
+        name: 'game',
+        workspace: { blocks: [{ id: 'main', type: 'program.main', v: 1, x: 0, y: 0 }] },
+      },
+    ];
+    storeAnalysis(document, []);
+    detachers.push(createToolboxPlugin().attach(editorContext(workspace, fakeCore({}))));
+    await settle();
+    expect(flyoutTexts(workspace)).toEqual(
+      expect.arrayContaining(['Your program starts in', 'the module “game”.']),
+    );
+    expect(flyoutBlocks(workspace).map((block) => block.type)).not.toContain('program.main');
   });
 });
 

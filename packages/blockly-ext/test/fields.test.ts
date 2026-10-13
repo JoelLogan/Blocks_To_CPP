@@ -1,6 +1,6 @@
 /** The seven Blocks2Cpp fields (src/fields/). */
 import * as Blockly from 'blockly/core';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   B2cCheckboxField,
@@ -15,6 +15,7 @@ import {
   createCatalogField,
   readB2cField,
   setEditorServices,
+  setToolboxSymbols,
   writeB2cField,
   type B2cFieldValue,
   type SymbolInfo,
@@ -522,6 +523,79 @@ describe('symbol references', () => {
       ['x (2)', 's_2'],
       ['a⟨U+200B⟩b', 's_3'],
     ]);
+  });
+
+  describe('of a block still in the toolbox’s flyout', () => {
+    afterEach(() => {
+      setToolboxSymbols(null);
+    });
+
+    /** A block of `type` as the flyout has it: in no place of the program. */
+    function flyoutBlock(type: string): Blockly.Block {
+      const block = headlessWorkspace().newBlock(type);
+      block.isInFlyout = true;
+      return block;
+    }
+
+    it('list the toolbox’s groups with a separator between them, without asking the scope', () => {
+      const queries = fakeSymbols({}, {});
+      setToolboxSymbols(() => [
+        [symbol('s_guess', 'guess'), symbol('s_max', 'MAX', 'variable', { isConst: true })],
+        // Every symbol here is a constant: set leaves the whole group out, and its separator.
+        [symbol('s_limit', 'LIMIT', 'variable', { isConst: true })],
+        [symbol('s_n', 'n', 'parameter', { mode: 'copy' }), symbol('s_guess2', 'guess')],
+      ]);
+      const set = flyoutBlock('var.set').getField('VAR') as B2cSymbolRefField;
+      expect(set.menuOptions()).toEqual([
+        ['guess', 's_guess'],
+        Blockly.FieldDropdown.SEPARATOR,
+        ['n', 's_n'],
+        ['guess (2)', 's_guess2'],
+      ]);
+      const get = flyoutBlock('var.get').getField('VAR') as B2cSymbolRefField;
+      expect(get.menuOptions()).toEqual([
+        ['guess', 's_guess'],
+        ['MAX', 's_max'],
+        Blockly.FieldDropdown.SEPARATOR,
+        ['LIMIT', 's_limit'],
+        Blockly.FieldDropdown.SEPARATOR,
+        ['n', 's_n'],
+        ['guess (2)', 's_guess2'],
+      ]);
+      expect(queries).toEqual([]);
+    });
+
+    it('keep the chosen variable first when the groups do not have it', () => {
+      fakeSymbols({}, { s_gone: 'gone' });
+      setToolboxSymbols(() => [[symbol('s_a', 'a')]]);
+      const field = flyoutBlock('var.get').getField('VAR') as B2cSymbolRefField;
+      field.setRef({ ref: 's_gone' });
+      expect(field.menuOptions()).toEqual([
+        ['gone', 's_gone'],
+        ['a', 's_a'],
+      ]);
+    });
+
+    it('list the scope’s answer when the toolbox gives no groups, and on the canvas always', () => {
+      fakeSymbols({}, {});
+      const inFlyout = flyoutBlock('var.get');
+      fakeSymbols({ [inFlyout.id]: [symbol('s_x', 'x')] }, {});
+      const field = inFlyout.getField('VAR') as B2cSymbolRefField;
+      expect(field.menuOptions()).toEqual([['x', 's_x']]);
+
+      setToolboxSymbols(() => [[symbol('s_a', 'a')]]);
+      const onCanvas = headlessWorkspace().newBlock('var.get');
+      fakeSymbols({ [onCanvas.id]: [symbol('s_b', 'b')] }, {});
+      expect((onCanvas.getField('VAR') as B2cSymbolRefField).menuOptions()).toEqual([['b', 's_b']]);
+    });
+
+    it('offer nothing to choose when the toolbox’s source fails', () => {
+      setToolboxSymbols(() => {
+        throw new Error('not attached');
+      });
+      const field = flyoutBlock('var.get').getField('VAR') as B2cSymbolRefField;
+      expect(field.menuOptions()).toEqual([['no variables here', '']]);
+    });
   });
 
   it('survive a symbol provider that throws', () => {

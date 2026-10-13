@@ -39,19 +39,10 @@ export type HookMethod = keyof E2eHookContract;
 export const BENCH_HOOK_METHODS = {
   // Opening the document (openProjectFile), the edits (EDIT_SCRIPT) and deleting them.
   preview: ['blockElement', 'code', 'insertBlocks', 'selectBlock'],
-  // Opening the document, then timedClick: scrolling each target into view, where to press, and
-  // which getters the toolbox lists afterwards.
-  select: ['blockElement', 'code', 'scrollCanvasBy', 'grabPoint', 'flyoutBlockId'],
+  // Opening the document, then timedClick: scrolling each target into view and where to press.
+  select: ['blockElement', 'code', 'scrollCanvasBy', 'grabPoint'],
   // The clicks of `select` and the edits of `preview`, on the guessing game.
-  guessing: [
-    'blockElement',
-    'code',
-    'scrollCanvasBy',
-    'grabPoint',
-    'flyoutBlockId',
-    'insertBlocks',
-    'selectBlock',
-  ],
+  guessing: ['blockElement', 'code', 'scrollCanvasBy', 'grabPoint', 'insertBlocks', 'selectBlock'],
   // The Empty template's `main` (from the document), the program, and the console's transcript.
   console: ['document', 'insertBlocks', 'consoleText'],
   // Opening the document, centring on the handle, where the handle is and where to grab it.

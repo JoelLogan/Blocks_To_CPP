@@ -1,19 +1,22 @@
 /**
  * Creates the toolbox's blocks in a flyout (flyout item kind `b2c_block`, see presets.ts).
  *
- * It is Blockly's block inflater with three differences:
+ * It is Blockly's block inflater with four differences:
  *
  * - each declaration the item names gets a new symbol ID, so no two blocks created from one item
  *   declare the same symbol;
  * - a call block from *Your functions* gets its argument labels (`n:`) right away. On the canvas the
  *   call mutator labels arguments from the analysis, which does not know flyout blocks;
  * - blocks are never recycled between showings, so each showing has exactly the presets it was
- *   built with (default names change between showings).
+ *   built with (presets change between showings);
+ * - each block remembers the item it was built from, so a block dragged out of it can be settled
+ *   where it lands (./landing.ts).
  *
  * Its items have their own type, so the flyout gives them back to this inflater to dispose of.
  */
 import * as Blockly from 'blockly/core';
 
+import { rememberToolboxItem } from './landing';
 import { B2C_BLOCK_KIND, blockState, type B2cBlockInfo } from './presets';
 
 /** The field name of the flyout-only label before argument `index`. */
@@ -48,15 +51,13 @@ export function applyArgLabels(block: Blockly.Block, labels: readonly string[]):
 /** The flyout inflater of the toolbox's blocks. */
 export class B2cBlockInflater extends Blockly.BlockFlyoutInflater {
   override load(state: object, flyout: Blockly.IFlyout): Blockly.FlyoutItem {
-    let argLabels: readonly string[] | undefined;
-    let blockState: object = state;
-    if (isB2cBlockInfo(state)) {
-      argLabels = state.argLabels;
-      blockState = plainBlockInfo(state);
-    }
-    const block = super.load(blockState, flyout).getElement();
-    if (argLabels !== undefined && block instanceof Blockly.BlockSvg) {
-      applyArgLabels(block, argLabels);
+    const info = isB2cBlockInfo(state) ? state : null;
+    const block = super.load(info === null ? state : plainBlockInfo(info), flyout).getElement();
+    if (info !== null && block instanceof Blockly.BlockSvg) {
+      rememberToolboxItem(block, info);
+      if (info.argLabels !== undefined) {
+        applyArgLabels(block, info.argLabels);
+      }
     }
     return new Blockly.FlyoutItem(block, B2C_BLOCK_KIND);
   }

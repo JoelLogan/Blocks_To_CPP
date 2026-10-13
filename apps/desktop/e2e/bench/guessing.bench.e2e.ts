@@ -8,8 +8,7 @@
  * - `webview.guessing-game.select.max-task`: blocks in different scopes are clicked in turn with
  *   real pointer input (bench/targets.ts `GUESSING_TARGETS`), each scrolled into view first
  *   through the test hook; the longest task from the press until the page has run no long task
- *   for 300 ms, which includes the rebuild of the toolbox's flyout for the new scope (checked
- *   after each click). A first click warms up and is not counted. The clicks start at target
+ *   for 300 ms. A first click warms up and is not counted. The clicks start at target
  *   `B2C_BENCH_OFFSET`, as in the 1,000-block selection benchmark.
  * - `webview.guessing-game.edit.max-task`: a print with a unique text is added at the end of
  *   `main` through the test hook; the longest task from the insertion until its C++ is in the

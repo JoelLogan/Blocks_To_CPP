@@ -1,23 +1,17 @@
 /**
  * The blocks the selection benchmarks click, in turn (docs/spec/09-quality-and-delivery.md §9.2:
  * "selecting blocks in 8 scopes at 1,000 blocks"; on the guessing game, the longest task after a
- * selection). Each click must change the selection and the scope the toolbox lists, as clicking
- * around a program does: consecutive blocks see different variables, and so do the last and the
- * first, because the benchmark goes round the list. Each target also names getters the toolbox
- * lists, and getters it does not list, once the block is selected; they tell its listing from the
- * one before, so a click after which the toolbox was not rebuilt fails the benchmark instead of
- * giving a fast sample (interaction.ts `timedClick`).
+ * selection). Each click must change the selection, as clicking around a program does:
+ * consecutive blocks are in different scopes (they see different variables), and so are the last
+ * and the first, because the benchmark goes round the list. The toolbox does not depend on the
+ * selection (04 §4.2), so a click does not rebuild its flyout.
  */
 import { UNIT_BLOCKS } from './document';
 
-/** A block a selection benchmark clicks, and what the toolbox lists once it is selected. */
+/** A block a selection benchmark clicks. */
 export interface ClickTarget {
   /** The block. */
   readonly id: string;
-  /** Symbols the Variables category lists a getter (`var.get`) of. */
-  readonly lists: readonly string[];
-  /** Symbols it lists no getter of. */
-  readonly omits: readonly string[];
 }
 
 /**
@@ -59,30 +53,16 @@ const TARGET_PARTS: readonly UnitPart[] = [
   'sum',
 ];
 
-/** The parts of a unit inside its loop, which see the loop's counter. */
-const INNER_PARTS: readonly UnitPart[] = ['if', 'change', 'update'];
-
 /** The ID of a part of unit `unit` of a document without a drag handle. */
 export function unitBlockId(unit: number, part: UnitPart): string {
   return `b${String(1 + unit * UNIT_BLOCKS + UNIT_PARTS.indexOf(part))}`;
-}
-
-/** The symbol of unit `unit`'s variable (`value_<unit>`) in a generated document. */
-export function valueSymbol(unit: number): string {
-  return `s_value_${String(unit)}`;
-}
-
-/** The symbol of unit `unit`'s loop counter (`i_<unit>`) in a generated document. */
-export function counterSymbol(unit: number): string {
-  return `s_i_${String(unit)}`;
 }
 
 /**
  * The {@link SCOPES} blocks the 1,000-block selection benchmark clicks in turn, in a generated
  * document of `blocks` blocks without a drag handle: one in each of 8 units spread from the first
  * to the last, so each sees a different set of the units' variables, and kinds alternating between
- * the loop's body and `main`'s. A block in unit `u` sees `value_u` and not `value_(u+1)`, and its
- * loop's counter `i_u` only inside the loop.
+ * the loop's body and `main`'s.
  *
  * @throws Error when the document has fewer than {@link SCOPES} units.
  */
@@ -93,21 +73,10 @@ export function selectionTargets(blocks: number): ClickTarget[] {
       `A document of ${String(blocks)} blocks has fewer than ${String(SCOPES)} units`,
     );
   }
-  return TARGET_PARTS.map((part, index) => {
-    const unit = Math.round((index * (units - 1)) / (SCOPES - 1));
-    const inner = INNER_PARTS.includes(part);
-    const later = unit + 1 < units ? [valueSymbol(unit + 1)] : [];
-    return {
-      id: unitBlockId(unit, part),
-      lists: inner ? [valueSymbol(unit), counterSymbol(unit)] : [valueSymbol(unit)],
-      omits: inner ? later : [...later, counterSymbol(unit)],
-    };
-  });
+  return TARGET_PARTS.map((part, index) => ({
+    id: unitBlockId(Math.round((index * (units - 1)) / (SCOPES - 1)), part),
+  }));
 }
-
-/** The symbols of the guessing game's variables. */
-const SECRET = 's_secret';
-const GUESS = 's_guess';
 
 /**
  * The blocks of the guessing game (examples/guessing_game.b2c) its selection benchmark clicks in
@@ -115,10 +84,10 @@ const GUESS = 's_guess';
  * `guess`), `create secret` (`secret`), the *Correct!* print (`secret` and `guess`).
  */
 export const GUESSING_TARGETS: readonly ClickTarget[] = [
-  { id: 'b001', lists: [], omits: [SECRET, GUESS] },
-  { id: 'b006', lists: [SECRET, GUESS], omits: [] },
-  { id: 'b002', lists: [SECRET], omits: [GUESS] },
-  { id: 'b008', lists: [SECRET, GUESS], omits: [] },
+  { id: 'b001' },
+  { id: 'b006' },
+  { id: 'b002' },
+  { id: 'b008' },
 ];
 
 /** `program.main` of the guessing game, where its edit benchmark adds a print. */

@@ -1,13 +1,15 @@
+import type { StaticType } from '@blocks2cpp/b2c-core-wasm';
 import { readExprShadow, type TokenJson } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { newVariableBlock } from './contents';
-import { blockState } from './presets';
+import { blockState, presetBlock } from './presets';
 import {
   START_VALUE_EVENT,
   StartValueChange,
   installStartValueReshaping,
+  reshapeSetValue,
   reshapeStartValue,
 } from './reshape';
 import { disposeTestWorkspaces, headlessWorkspace, setUpToolboxBlocks } from './testing';
@@ -20,6 +22,9 @@ beforeAll(() => {
 afterEach(() => {
   disposeTestWorkspaces();
 });
+
+/** A type lookup that knows no symbol. */
+const NO_TYPES = (): null => null;
 
 /** One round of Blockly's event firing: after a frame. */
 function frame(): Promise<void> {
@@ -76,7 +81,7 @@ describe('start values (M2 smart defaults)', () => {
 describe('reshaping a new variable’s start value', () => {
   it('follows the type while the value is still the old type’s start value', async () => {
     const { workspace, block } = newVariable();
-    const stop = installStartValueReshaping(workspace);
+    const stop = installStartValueReshaping(workspace, NO_TYPES);
     await events();
     const steps: [string, readonly TokenJson[]][] = [
       ['double', [{ num: '0.0' }]],
@@ -95,7 +100,7 @@ describe('reshaping a new variable’s start value', () => {
 
   it('leaves a value the user changed, a block in the slot, and auto alone', async () => {
     const { workspace, block } = newVariable();
-    const stop = installStartValueReshaping(workspace);
+    const stop = installStartValueReshaping(workspace, NO_TYPES);
     block.getInputTargetBlock('VALUE')?.setFieldValue('42', 'VALUE');
     await events();
     block.setFieldValue('double', 'TYPE');
@@ -122,7 +127,7 @@ describe('reshaping a new variable’s start value', () => {
 
   it('is undone and redone together with the type change', async () => {
     const { workspace, block } = newVariable();
-    const stop = installStartValueReshaping(workspace);
+    const stop = installStartValueReshaping(workspace, NO_TYPES);
     await events();
     workspace.clearUndo();
     block.setFieldValue('bool', 'TYPE');
@@ -163,14 +168,14 @@ describe('reshaping a new variable’s start value', () => {
 
   it('stops when uninstalled, and ignores changes it did not make', async () => {
     const { workspace, block } = newVariable();
-    const stop = installStartValueReshaping(workspace);
+    const stop = installStartValueReshaping(workspace, NO_TYPES);
     stop();
     block.setFieldValue('double', 'TYPE');
     await events();
     expect(startValue(block)).toEqual([{ num: '0' }]);
 
     // Loading (events off) and undo replays are not the user changing the type.
-    const again = installStartValueReshaping(workspace);
+    const again = installStartValueReshaping(workspace, NO_TYPES);
     Blockly.Events.disable();
     try {
       block.setFieldValue('bool', 'TYPE');
@@ -180,5 +185,88 @@ describe('reshaping a new variable’s start value', () => {
     await events();
     expect(startValue(block)).toEqual([{ num: '0' }]);
     again();
+  });
+});
+
+describe('reshaping the value of set when its variable changes', () => {
+  /** The types of the variables the tests choose: int, double, text, and one not known. */
+  const TYPES: Readonly<Record<string, StaticType>> = {
+    s_count: 'int',
+    s_price: 'double',
+    s_name: 'string',
+  };
+  const typeOf = (sym: string): StaticType | null => TYPES[sym] ?? null;
+
+  /** `set count to 0`, as the toolbox gives it, on a new headless canvas. */
+  function newSet(): { workspace: Blockly.Workspace; block: Blockly.Block } {
+    const workspace = headlessWorkspace();
+    const block = Blockly.serialization.blocks.append(
+      blockState(
+        presetBlock('var.set', {
+          fields: { VAR: { ref: 's_count' } },
+          inputs: { VALUE: [{ num: '0' }] },
+        }),
+      ),
+      workspace,
+      { recordUndo: true },
+    );
+    return { workspace, block };
+  }
+
+  it('follows the new variable’s type while the value is still the old type’s start value', async () => {
+    const { workspace, block } = newSet();
+    const stop = installStartValueReshaping(workspace, typeOf);
+    await events();
+    block.setFieldValue('s_price', 'VAR');
+    await events();
+    expect(startValue(block)).toEqual([{ num: '0.0' }]);
+    block.setFieldValue('s_name', 'VAR');
+    await events();
+    expect(startValue(block)).toEqual([{ str: '' }]);
+    // A variable whose type the analysis does not know (yet): the value stays.
+    block.setFieldValue('s_new', 'VAR');
+    await events();
+    expect(startValue(block)).toEqual([{ str: '' }]);
+    stop();
+  });
+
+  it('leaves a value the user typed alone', async () => {
+    const { workspace, block } = newSet();
+    const stop = installStartValueReshaping(workspace, typeOf);
+    block.getInputTargetBlock('VALUE')?.setFieldValue('7', 'VALUE');
+    await events();
+    block.setFieldValue('s_price', 'VAR');
+    await events();
+    expect(startValue(block)).toEqual([{ num: '7' }]);
+    expect(reshapeSetValue(block, 'int', 'double')).toBeNull();
+    stop();
+  });
+
+  it('is one undo step with the choice of the variable', async () => {
+    const { workspace, block } = newSet();
+    const stop = installStartValueReshaping(workspace, typeOf);
+    await events();
+    workspace.clearUndo();
+    block.setFieldValue('s_price', 'VAR');
+    await events();
+    expect(workspace.getUndoStack().map((event) => event.type)).toEqual([
+      'change',
+      START_VALUE_EVENT,
+    ]);
+    workspace.undo(false);
+    await events();
+    expect(block.getFieldValue('VAR')).toBe('s_count');
+    expect(startValue(block)).toEqual([{ num: '0' }]);
+    stop();
+  });
+
+  it('changes only set blocks, and only between known types', () => {
+    const { block } = newSet();
+    expect(reshapeSetValue(block, null, 'double')).toBeNull();
+    expect(reshapeSetValue(block, 'int', null)).toBeNull();
+    expect(reshapeSetValue(newVariable().block, 'int', 'double')).toBeNull();
+    const change = reshapeSetValue(block, 'int', 'char');
+    expect(change).toBeInstanceOf(StartValueChange);
+    expect(startValue(block)).toEqual([{ chr: 'a' }]);
   });
 });

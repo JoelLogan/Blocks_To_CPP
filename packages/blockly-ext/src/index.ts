@@ -36,12 +36,15 @@ export {
   getEditorServices,
   resetEditorServices,
   setEditorServices,
+  setToolboxSymbols,
+  toolboxSymbolGroups,
   type DialogService,
   type EditorServices,
   type PassMode,
   type SymbolInfo,
   type SymbolKind,
   type SymbolProvider,
+  type ToolboxSymbolSource,
   type TypeOracle,
 } from './services';
 export * from './shadows';

@@ -149,6 +149,45 @@ export function resetEditorServices(): void {
   configureMutators({ symbols: null });
 }
 
+/**
+ * What the reference fields of a block still in the toolbox's flyout list: groups of symbols, shown
+ * one after the other with a separator between groups (docs/spec/04-user-interface.md §4.2: every
+ * variable of the module shown, grouped like the Variables category). A block in the flyout is in
+ * no place of the program, so the scope query has nothing to say about it.
+ */
+export type ToolboxSymbolSource = () => readonly (readonly SymbolInfo[])[];
+
+let toolboxSymbols: ToolboxSymbolSource | null = null;
+
+/**
+ * Sets what the reference fields of blocks in the toolbox's flyout list (the editor's toolbox sets
+ * it while it is attached), or with `null` goes back to none: such a field then lists what
+ * {@link SymbolProvider.symbolsAt} answers for its block, as every other field does. It is separate
+ * from {@link setEditorServices}: the toolbox knows the module shown and how the Variables
+ * category groups its variables, the symbol services do not.
+ */
+export function setToolboxSymbols(source: ToolboxSymbolSource | null): void {
+  toolboxSymbols = source;
+}
+
+/**
+ * The groups of symbols a reference field of a block in the toolbox's flyout lists, or `null` when
+ * the toolbox has set none ({@link setToolboxSymbols}). A source that throws, or answers with
+ * something other than lists, gives no groups (an empty list).
+ */
+export function toolboxSymbolGroups(): readonly (readonly SymbolInfo[])[] | null {
+  const source = toolboxSymbols;
+  if (source === null) {
+    return null;
+  }
+  try {
+    const groups = source();
+    return Array.isArray(groups) ? groups.filter((group) => Array.isArray(group)) : [];
+  } catch {
+    return [];
+  }
+}
+
 /** The symbols at a block, or none when the provider fails. */
 export function symbolsAt(blockId: string, input: string | null): readonly SymbolInfo[] {
   try {

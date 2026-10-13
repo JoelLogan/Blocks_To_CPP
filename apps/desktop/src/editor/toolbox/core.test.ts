@@ -1,7 +1,7 @@
 // The toolbox with the real compiler core (packages/b2c-core-wasm, built with
-// `pnpm --filter @blocks2cpp/b2c-core-wasm build`): the scope query decides what the Variables
-// category lists, and the analysis's symbols what Your functions lists. Skipped without a build
-// unless B2C_REQUIRE_WASM is set (as in CI).
+// `pnpm --filter @blocks2cpp/b2c-core-wasm build`): the analysis's symbols decide what the
+// Variables category and Your functions list, and the scope query what a block sees where it is
+// dropped. Skipped without a build unless B2C_REQUIRE_WASM is set (as in CI).
 import type { BdmDocument, CoreWasm } from '@blocks2cpp/b2c-core-wasm';
 import { B2cSymbolDeclField } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
@@ -11,7 +11,7 @@ import exitCodeText from '../../../../../examples/exit_code.b2c?raw';
 import factorialText from '../../../../../examples/factorial.b2c?raw';
 import guessingGameText from '../../../../../examples/guessing_game.b2c?raw';
 import { setCore } from '../../app/core';
-import type { DialogService } from '../../app/dialogs';
+import type { ChoiceOptions, DialogService } from '../../app/dialogs';
 import { resetAppStore, useAppStore } from '../../app/store';
 import {
   MAKE_VARIABLE_BUTTON,
@@ -19,6 +19,7 @@ import {
   variablesContents,
   type ContentsContext,
 } from './contents';
+import { symbolsAtBlock, symbolsAtConnection } from './scope';
 import { CONTINUOUS_REFRESH_DELAY_MS } from './continuous';
 import { argLabelField } from './inflater';
 import type { MakeVariableResult } from './makeVariable';
@@ -125,9 +126,9 @@ function headlessContext(text: string): ContentsContext {
   return {
     workspace,
     symbols: analysisSymbolSource(useAppStore, () => theCore()),
-    selected: () => null,
     modules: () => document.modules.map(({ id, name }) => ({ id, name })),
     activeModuleId: () => document.modules[0]?.id ?? '',
+    programModuleId: () => document.modules[0]?.id ?? null,
   };
 }
 
@@ -138,104 +139,84 @@ function blocksOf(items: readonly Blockly.utils.toolbox.FlyoutItemInfo[]): B2cBl
 // Each test opens a whole project in a real workspace and runs the compiler core on it, which takes
 // seconds under coverage on a CI runner.
 describe.skipIf(core === null)('the toolbox with the compiler core', { timeout: 20_000 }, () => {
-  it('lists guess below “create int guess”, and not above it', async () => {
+  it('lists every variable of main, whatever is selected, with one set, change and update', async () => {
     const workspace = open(guessingGameText);
     await settle();
-    // b004 (print) is below both declarations; b002 (create secret) is above create guess.
-    select(workspace, 'b004');
-    await settle();
-    expect(variableBlocks(workspace)).toEqual([
-      ['var.get', 's_guess'],
+    const listed = [
       ['var.set', 's_guess'],
       ['var.change', 's_guess'],
       ['var.update', 's_guess'],
+      ['var.get', 's_guess'],
       ['var.get', 's_secret'],
+    ];
+    expect(variableBlocks(workspace)).toEqual(listed);
+    // b002 (create secret) sees only secret, b005 (the ask) both: the toolbox stays as it is.
+    const show = vi.spyOn(present(workspace.getToolbox()?.getFlyout()), 'show');
+    for (const id of ['b002', 'b005', 'b011']) {
+      select(workspace, id);
+      await settle();
+    }
+    expect(show).not.toHaveBeenCalled();
+    expect(variableBlocks(workspace)).toEqual(listed);
+  });
+
+  it('presets set, change and update to a variable that may be changed', async () => {
+    const workspace = open(guessingGameText, {}, (document) => {
+      const main = document.modules[0]?.workspace.blocks.find((block) => block.id === 'b011');
+      const guess = main?.statements?.['BODY']?.find((block) => block.id === 'b003');
+      if (guess?.fields !== undefined) {
+        guess.fields['CONST'] = true;
+      }
+    });
+    await settle();
+    expect(variableBlocks(workspace)).toEqual([
       ['var.set', 's_secret'],
       ['var.change', 's_secret'],
       ['var.update', 's_secret'],
-    ]);
-
-    // Just after `create int secret` (b002), secret is visible, guess is not yet.
-    select(workspace, 'b002');
-    await settle();
-    expect(variableBlocks(workspace).map(([, ref]) => ref)).not.toContain('s_guess');
-    expect(variableBlocks(workspace).filter(([type]) => type === 'var.get')).toEqual([
-      ['var.get', 's_secret'],
-    ]);
-
-    // Inside the loop, both are visible.
-    select(workspace, 'b005');
-    await settle();
-    expect(variableBlocks(workspace).filter(([type]) => type === 'var.get')).toEqual([
       ['var.get', 's_guess'],
       ['var.get', 's_secret'],
     ]);
   });
 
-  it('lists what is visible at the end of main when nothing is selected', async () => {
-    const workspace = open(guessingGameText);
-    await settle();
+  it('groups the variables by the function that declares them', () => {
+    const items = blocksOf(variablesContents(headlessContext(factorialText)));
     expect(
-      variableBlocks(workspace)
-        .filter(([type]) => type === 'var.get')
-        .map(([, ref]) => ref),
-    ).toEqual(['s_guess', 's_secret']);
+      items
+        .filter((item) => item.type === 'var.get')
+        .map((item) => item.fields?.['VAR'] as unknown),
+    ).toEqual([{ ref: 's_i' }, { ref: 's_n' }]);
   });
 
-  it('lists main’s variables for a block left loose on the canvas', async () => {
+  it('gives a block dropped loose on the canvas main’s variables, from the core', async () => {
     const document = loadDocument(theCore(), guessingGameText);
     const workspace = open(guessingGameText);
     await settle();
-    select(workspace, 'b002');
-    await settle();
-    expect(variableBlocks(workspace).filter(([type]) => type === 'var.get')).toHaveLength(1);
-    const loose = workspace.newBlock('io.print');
+    const symbols = analysisSymbolSource(useAppStore, () => theCore());
+    const loose = workspace.newBlock('var.set');
     loose.initSvg();
     loose.render();
-    await settle();
-    // A new analysis of the document without the loose block: the scope query has no answer for
-    // it yet, and the toolbox lists the end of main for it.
-    analyse(theCore(), document);
+    // Not analysed yet: what its place gives it, the end of main.
     expect(theCore().symbolsInScope(loose.id, null)).toBeNull();
-    select(workspace, loose.id);
-    await settle();
-    expect(
-      variableBlocks(workspace)
-        .filter(([type]) => type === 'var.get')
-        .map(([, ref]) => ref),
-    ).toEqual(['s_guess', 's_secret']);
-
+    expect(symbolsAtConnection(workspace, loose, symbols).map((symbol) => symbol.name)).toEqual([
+      'guess',
+      'secret',
+    ]);
     // Once analysed, the loose block is parked: the core itself answers with the end of main.
     document.modules[0]?.workspace.blocks.push({
       id: loose.id,
-      type: 'io.print',
+      type: 'var.set',
       v: 1,
       x: 600,
       y: 40,
-      extra: { itemCount: 1 },
     });
     analyse(theCore(), document);
-    expect(
-      theCore()
-        .symbolsInScope(loose.id, null)
-        ?.map((symbol) => symbol.name),
-    ).toEqual(['guess', 'secret']);
-    select(workspace, 'b002');
-    await settle();
-    select(workspace, loose.id);
-    await settle();
-    expect(
-      variableBlocks(workspace)
-        .filter(([type]) => type === 'var.get')
-        .map(([, ref]) => ref),
-    ).toEqual(['s_guess', 's_secret']);
+    expect(symbolsAtBlock(workspace, loose, null, symbols).map((symbol) => symbol.name)).toEqual([
+      'guess',
+      'secret',
+    ]);
   });
 
-  it('lists what a disabled loop sees, and what the statement before sees, for blocks without an answer', async () => {
-    const getters = (workspace: Blockly.WorkspaceSvg): unknown[] =>
-      variableBlocks(workspace)
-        .filter(([type]) => type === 'var.get')
-        .map(([, ref]) => ref);
+  it('gives what a disabled loop sees, and what the statement before sees, to blocks without an answer', async () => {
     const loop = (document: BdmDocument) =>
       document.modules[0]?.workspace.blocks
         .find((block) => block.id === 'b011')
@@ -247,53 +228,28 @@ describe.skipIf(core === null)('the toolbox with the compiler core', { timeout: 
       }
     });
     await settle();
+    const symbols = analysisSymbolSource(useAppStore, () => theCore());
+    const names = (block: Blockly.Block) =>
+      symbolsAtBlock(workspace, block, null, symbols).map((symbol) => symbol.name);
     // The ask block (b005) is inside the disabled loop (b010): the core answers like the loop.
-    expect(
-      theCore()
-        .symbolsInScope('b005', null)
-        ?.map((symbol) => symbol.name),
-    ).toEqual(['guess', 'secret']);
-    select(workspace, 'b005');
-    await settle();
-    expect(getters(workspace)).toEqual(['s_guess', 's_secret']);
-
-    // A block the analysis has not seen yet, just after `create int guess` (b003); the listing
-    // was last built for `create int secret` (b002).
-    select(workspace, 'b002');
-    await settle();
-    expect(getters(workspace)).toEqual(['s_secret']);
+    expect(names(present(workspace.getBlockById('b005')))).toEqual(['guess', 'secret']);
+    // A block the analysis has not seen yet, just after `create int guess` (b003).
     const fresh = workspace.newBlock('io.print');
     fresh.initSvg();
     fresh.render();
     present(workspace.getBlockById('b003')).nextConnection.connect(
       present(fresh.previousConnection),
     );
-    await settle();
-    // A new preview of the same analysis (the core still has no answer for the new block).
-    const state = useAppStore.getState().analysis;
-    useAppStore.setState({
-      analysis: { ...state, seq: state.seq + 1, preview: { ...present(state.preview) } },
-    });
-    select(workspace, fresh.id);
-    await settle();
-    expect(getters(workspace)).toEqual(['s_guess', 's_secret']);
-  });
-
-  it('leaves constants out of set, change and update', async () => {
-    const workspace = open(guessingGameText, {}, (document) => {
-      const main = document.modules[0]?.workspace.blocks.find((block) => block.id === 'b011');
-      const secret = main?.statements?.['BODY']?.find((block) => block.id === 'b002');
-      if (secret?.fields !== undefined) {
-        secret.fields['CONST'] = true;
-      }
-    });
-    await settle();
-    select(workspace, 'b004');
-    await settle();
-    expect(variableBlocks(workspace).filter(([, ref]) => ref === 's_secret')).toEqual([
-      ['var.get', 's_secret'],
-    ]);
-    expect(variableBlocks(workspace).filter(([, ref]) => ref === 's_guess')).toHaveLength(4);
+    expect(theCore().symbolsInScope(fresh.id, null)).toBeNull();
+    expect(names(fresh)).toEqual(['guess', 'secret']);
+    // Just after `create int secret` (b002), guess is not visible yet.
+    const early = workspace.newBlock('io.print');
+    early.initSvg();
+    early.render();
+    present(workspace.getBlockById('b002')).nextConnection.connect(
+      present(early.previousConnection),
+    );
+    expect(names(early)).toEqual(['secret']);
   });
 
   it('shows factorial under Your functions as a reporter with its argument labelled', async () => {
@@ -327,24 +283,16 @@ describe.skipIf(core === null)('the toolbox with the compiler core', { timeout: 
     expect(block?.outputConnection).toBeNull();
   });
 
-  it('lists the variables of the scope query at a counted loop', () => {
-    const context = headlessContext(factorialText);
-    // Inside the loop's print (b006), the counter i is visible.
-    const inLoop = blocksOf(
-      variablesContents({ ...context, selected: () => context.workspace.getBlockById('b006') }),
-    );
-    expect(
-      inLoop
-        .filter((item) => item.type === 'var.get')
-        .map((item) => item.fields?.['VAR'] as unknown),
-    ).toEqual([{ ref: 's_i' }]);
-  });
-
   it('makes a variable before the selected statement, with a name free there', async () => {
     const results: MakeVariableResult[] = [];
     const prompt = vi.fn<DialogService['prompt']>(() => Promise.resolve('tries'));
+    const spy = vi.fn((options: ChoiceOptions<string>) =>
+      Promise.resolve(options.choices[0]?.id ?? options.cancel),
+    );
+    // A spy's call signature is not generic, so it is cast to the service's.
+    const choose = spy as typeof spy & DialogService['choose'];
     const workspace = open(guessingGameText, {
-      dialogs: { prompt, alert: vi.fn(() => Promise.resolve()) },
+      dialogs: { prompt, choose, alert: vi.fn(() => Promise.resolve()) },
       onMakeVariable: (result) => results.push(result),
     });
     await settle();

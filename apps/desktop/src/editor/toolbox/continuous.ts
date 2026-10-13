@@ -10,8 +10,11 @@
  * and chosen per workspace through the injection options (`toolboxInjectOptions`, register.ts),
  * with these changes:
  *
- * - the toolbox shows the flyout again only when its contents changed, and its delayed refresh is
- *   cancelled when the toolbox is disposed;
+ * - the toolbox builds its dynamic categories only when what they depend on changed, shows the
+ *   flyout again only when its contents changed, never while a block is dragged, a field editor
+ *   or a menu is open or the flyout scrolls to a category, and then keeps the category in view
+ *   and the selected category (04 §4.2); its delayed refresh is cancelled when the toolbox is
+ *   disposed;
  * - the flyout never recycles blocks (the toolbox's blocks change between showings: default names,
  *   fresh symbol IDs), so it keeps a recycler of its own that stays empty instead of needing the
  *   plugin's recycler to replace Blockly's block inflater for every flyout;
@@ -27,7 +30,9 @@
  * - the canvas records where the flyout is as a place where a drop deletes after every layout of
  *   the flyout, and whenever the flyout moves or changes size (03 §3.3 "Placing blocks");
  * - the flyout tells the window's layout where it is and how wide it may be made
- *   (`app/layout/flyoutLayout.ts`), whenever that changes.
+ *   (`app/layout/flyoutLayout.ts`), whenever that changes;
+ * - the flyout tells the toolbox which canvas block it creates from which of its blocks, so a
+ *   block taken from the toolbox is settled where it is dropped (./landing.ts).
  */
 import {
   ContinuousFlyout,
@@ -41,6 +46,7 @@ import { announceFlyoutLayout, CANVAS_MIN_WIDTH } from '../../app/layout/flyoutL
 import { timed } from '../../lib/timing';
 import { keepFlyoutFocus } from '../keyboard/keepFocus';
 import { prefersReducedMotion } from '../keyboard/motion';
+import { noteCreatedFromToolbox } from './landing';
 
 /** How long the toolbox waits after the last change before it rebuilds the flyout. */
 export const CONTINUOUS_REFRESH_DELAY_MS = 100;
@@ -59,12 +65,17 @@ function dynamicCategoryKey(item: Blockly.utils.toolbox.FlyoutItemInfo): string 
 }
 
 /**
- * The continuous toolbox, with four changes:
+ * The continuous toolbox, with these changes:
  *
- * - a refresh builds the dynamic categories itself and shows the flyout again only when what it
- *   would show changed (the analysis and the selection change much more often than the toolbox's
- *   blocks do, and rebuilding hundreds of flyout blocks on every edit is slow); each rebuild is
- *   the User Timing span `b2c:toolbox-refresh` (src/lib/timing.ts);
+ * - a refresh builds the dynamic categories itself, and only when what they depend on changed
+ *   ({@link B2cContinuousToolbox.setContentsKey}: the module's variables and functions, not the
+ *   selection or every edit), and shows the flyout again only when what it would show changed
+ *   (rebuilding hundreds of flyout blocks is slow); each rebuild is the User Timing span
+ *   `b2c:toolbox-refresh` (src/lib/timing.ts);
+ * - a refresh waits while a block is dragged, while a field editor or a menu is open, and while
+ *   the flyout scrolls to a chosen category (04 §4.2), and then shows the flyout again where it
+ *   was: the category at the top of the view stays there, as far into it as before, and the
+ *   selected category stays selected;
  * - a dynamic category that cannot be built is left out instead of failing the whole flyout;
  * - showing the flyout again disposes every item in it, so a keyboard focus that was on one goes
  *   to the same item in the new contents instead of being lost (the keyboard plugin's
@@ -75,41 +86,132 @@ export class B2cContinuousToolbox extends ContinuousToolbox {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   /** The serialised flyout contents last shown, or `null` before the first showing. */
   private shownContents: string | null = null;
+  /** What the dynamic categories depend on ({@link setContentsKey}), or `null`. */
+  private contentsKey: (() => string) | null = null;
+  /** The key the flyout's contents were last built for, or `null` (build at the next refresh). */
+  private builtKey: string | null = null;
+  /**
+   * The flyout's scroll offset (pixels) right after it was last shown again, while a category was
+   * selected; `null` otherwise. Until the flyout scrolls elsewhere, a selection by the scroll
+   * position is not the user's: the selected category stays selected.
+   */
+  private keptAt: number | null = null;
 
-  /** Rebuilds the flyout a little after the last call (changes come in bursts). */
+  /**
+   * Sets what the dynamic categories' contents depend on, as a key (the toolbox plugin's): a
+   * refresh then builds them only when the key differs from the one they were last built for.
+   * Blockly asks the toolbox to refresh after every change of a block, most of which change
+   * nothing it shows. With `null`, every refresh builds them and compares what it would show.
+   */
+  setContentsKey(key: (() => string) | null): void {
+    this.contentsKey = key;
+    this.builtKey = null;
+  }
+
+  /** The current contents key, or `null` without one (or when it cannot be computed). */
+  private currentKey(): string | null {
+    if (this.contentsKey === null) {
+      return null;
+    }
+    try {
+      return this.contentsKey();
+    } catch (error: unknown) {
+      console.error('The toolbox could not tell whether its contents changed', error);
+      return null;
+    }
+  }
+
+  /**
+   * Rebuilds the flyout a little after the last call (changes come in bursts), unless its contents
+   * key has not changed since it was last built.
+   */
   override refreshSelection(): void {
     if (!this.getFlyout().isVisible()) {
       return;
     }
+    if (this.builtKey !== null && this.currentKey() === this.builtKey) {
+      return;
+    }
+    this.refreshLater();
+  }
+
+  /** Rebuilds the flyout after {@link CONTINUOUS_REFRESH_DELAY_MS}, once nothing holds it back. */
+  private refreshLater(): void {
     if (this.refreshTimer !== null) {
       clearTimeout(this.refreshTimer);
     }
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = null;
-      this.showAllCategories(false);
+      if (this.mustWait()) {
+        this.refreshLater();
+      } else {
+        this.showAllCategories(false);
+      }
     }, CONTINUOUS_REFRESH_DELAY_MS);
   }
 
   /**
+   * Whether showing the flyout again must wait (04 §4.2): while a block is dragged (or the pointer
+   * is pressed on one), while a field editor or a menu is open (on the canvas or in the flyout,
+   * whose blocks a new showing would replace), and while the flyout scrolls to a chosen category.
+   */
+  private mustWait(): boolean {
+    const flyout = this.getFlyout();
+    return (
+      Blockly.Gesture.inProgress() ||
+      this.getWorkspace().isDragging() ||
+      Blockly.WidgetDiv.isVisible() ||
+      Blockly.DropDownDiv.isVisible() ||
+      (flyout instanceof B2cContinuousFlyout && flyout.isScrollingToCategory())
+    );
+  }
+
+  /**
    * Shows every category in the flyout now. With `force` false, the flyout is left as it is when
-   * its contents have not changed. Returns whether the flyout was shown again. The whole rebuild
-   * (building the dynamic categories, comparing and showing the flyout) is the User Timing span
-   * `b2c:toolbox-refresh`.
+   * its contents have not changed. Returns whether the flyout was shown again. The flyout keeps
+   * the category at the top of its view where it was ({@link B2cContinuousFlyout.scrollAnchor}),
+   * and the selected category stays selected. The whole rebuild (building the dynamic
+   * categories, comparing and showing the flyout) is the User Timing span `b2c:toolbox-refresh`.
    */
   showAllCategories(force = true): boolean {
     return timed('b2c:toolbox-refresh', () => {
+      const key = this.currentKey();
       const contents = this.flyoutContents();
       const serialised = JSON.stringify(contents);
       const flyout = this.getFlyout();
+      this.builtKey = key;
       if (!force && serialised === this.shownContents && flyout.isVisible()) {
         return false;
       }
+      const anchor =
+        flyout instanceof B2cContinuousFlyout && this.shownContents !== null
+          ? flyout.scrollAnchor()
+          : null;
       keepFlyoutFocus(flyout, () => {
         flyout.show(contents);
       });
+      if (anchor !== null && flyout instanceof B2cContinuousFlyout) {
+        flyout.scrollToAnchor(anchor);
+      }
+      this.keptAt = this.getSelectedItem() === null ? null : -flyout.getWorkspace().scrollY;
       this.shownContents = serialised;
       return true;
     });
+  }
+
+  /**
+   * Selects the category `name` without scrolling (what the plugin does when the flyout's scroll
+   * stops at a category), except right after the flyout was shown again: that scroll is not the
+   * user's, so the selected category stays selected (04 §4.2) until the flyout scrolls elsewhere.
+   */
+  override selectCategoryByName(name: string): void {
+    if (this.keptAt !== null) {
+      if (Math.abs(-this.getFlyout().getWorkspace().scrollY - this.keptAt) < 1) {
+        return;
+      }
+      this.keptAt = null;
+    }
+    super.selectCategoryByName(name);
   }
 
   /** The items of every category, with the dynamic categories built for the current project. */
@@ -139,6 +241,7 @@ export class B2cContinuousToolbox extends ContinuousToolbox {
   override render(toolboxDef: Blockly.utils.toolbox.ToolboxInfo): void {
     super.render(toolboxDef);
     this.shownContents = null;
+    this.builtKey = null;
   }
 
   override dispose(): void {
@@ -209,12 +312,49 @@ export function flyoutWidth(natural: number, room: number, chosen: number | null
   return Math.max(0, Math.min(natural, FLYOUT_WIDTH.preferred, limit));
 }
 
+/** The longest a scroll to a chosen category is taken to run (04 §4.2 refresh rules), in ms. */
+export const MAX_CATEGORY_SCROLL_MS = 1_000;
+
+/**
+ * How long a scroll to a chosen category may stand still before it is taken to have ended, in ms:
+ * a few frames, in each of which a running scroll moves.
+ */
+export const CATEGORY_SCROLL_STILL_MS = 50;
+
+/** A scroll to a chosen category, as {@link B2cContinuousFlyout} follows it (pixels, ms). */
+interface CategoryScroll {
+  /** Where it ends. */
+  readonly target: number;
+  /** When it started (`performance.now()`). */
+  readonly since: number;
+  /** Where the flyout was when it was last looked at. */
+  seen: number;
+  /** When that was. */
+  seenAt: number;
+}
+
+/**
+ * Where the flyout is scrolled to: the category whose heading is at or above the top of the view,
+ * and how far below its heading the view starts, in workspace units.
+ */
+export interface FlyoutScrollAnchor {
+  readonly category: string;
+  readonly offset: number;
+}
+
 /**
  * The continuous flyout, without block recycling, without its scroll animation on request, landing
- * on a chosen category at every zoom level, with a fixed block scale and a width the user can
- * choose, recorded as a drop target wherever it is, and telling the window's layout where it is.
+ * on a chosen category at every zoom level, keeping the category in view when its contents are
+ * shown again, with a fixed block scale and a width the user can choose, recorded as a drop target
+ * wherever it is, telling the window's layout where it is, and telling the toolbox which blocks it
+ * creates on the canvas (./landing.ts).
  */
 export class B2cContinuousFlyout extends ContinuousFlyout {
+  /**
+   * The scroll to the category chosen last, or `null`: the toolbox shows no new contents while it
+   * runs.
+   */
+  private categoryScroll: CategoryScroll | null = null;
   /** The width the flyout's contents need, in pixels, as of the last reflow. */
   private naturalWidth = 0;
 
@@ -417,7 +557,105 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
    */
   override scrollTo(position: number): void {
     this.scrollAnimationFraction = prefersReducedMotion() ? 1 : CATEGORY_SCROLL_FRACTION;
+    // Where the plugin's animation ends: the target, or the lowest point the flyout scrolls to.
+    const workspace = this.getWorkspace();
+    const metrics = workspace.getMetrics();
+    const target = Math.min(
+      (position + CATEGORY_SCROLL_SLACK) * workspace.scale,
+      metrics.scrollHeight - metrics.viewHeight,
+    );
+    const since = performance.now();
     super.scrollTo(position + CATEGORY_SCROLL_SLACK);
+    // The plugin takes its first step at once, and a short scroll ends with it.
+    const seen = -workspace.scrollY;
+    this.categoryScroll =
+      Math.abs(target - seen) < 1 ? null : { target, since, seen, seenAt: since };
+  }
+
+  /**
+   * Whether the flyout is still scrolling to the category chosen last: it has not reached its
+   * target yet, has moved in the last {@link CATEGORY_SCROLL_STILL_MS} (a scroll that stands still
+   * has ended, or cannot reach its target), and started at most {@link MAX_CATEGORY_SCROLL_MS}
+   * ago (a scroll that never ends must not hold the toolbox back for ever).
+   */
+  isScrollingToCategory(): boolean {
+    const scroll = this.categoryScroll;
+    if (scroll === null) {
+      return false;
+    }
+    const now = performance.now();
+    const current = -this.getWorkspace().scrollY;
+    const still = Math.abs(current - scroll.seen) < 1;
+    if (
+      Math.abs(scroll.target - current) < 1 ||
+      now - scroll.since > MAX_CATEGORY_SCROLL_MS ||
+      (still && now - scroll.seenAt >= CATEGORY_SCROLL_STILL_MS)
+    ) {
+      this.categoryScroll = null;
+      return false;
+    }
+    if (!still) {
+      scroll.seen = current;
+      scroll.seenAt = now;
+    }
+    return true;
+  }
+
+  /**
+   * Where the view starts (04 §4.2): the last category whose heading is at or above the top of the
+   * view, and how far below its heading the view starts. `null` at the very top, or before the
+   * flyout has shown its categories: there is nothing to keep then.
+   */
+  scrollAnchor(): FlyoutScrollAnchor | null {
+    const toolbox = this.targetWorkspace.getToolbox();
+    const workspace = this.getWorkspace();
+    const scroll = -workspace.scrollY / workspace.scale;
+    if (!(toolbox instanceof Blockly.Toolbox) || this.getContents().length === 0 || scroll < 1) {
+      return null;
+    }
+    let anchor: { category: string; position: number } | null = null;
+    for (const item of toolbox.getToolboxItems()) {
+      if (!(item instanceof Blockly.ToolboxCategory)) {
+        continue;
+      }
+      const category = item.getName();
+      const position = this.getCategoryScrollPosition(category);
+      if (position !== null && position <= scroll && (anchor?.position ?? -1) <= position) {
+        anchor = { category, position };
+      }
+    }
+    return anchor === null ? null : { category: anchor.category, offset: scroll - anchor.position };
+  }
+
+  /**
+   * Scrolls at once to where `anchor` says the view started, in contents shown since: the heading
+   * of its category, as far below it as before (or as far down as the flyout scrolls).
+   */
+  scrollToAnchor(anchor: FlyoutScrollAnchor): void {
+    const position = this.getCategoryScrollPosition(anchor.category);
+    if (position === null) {
+      return;
+    }
+    const workspace = this.getWorkspace();
+    const metrics = workspace.getMetrics();
+    const target = Math.max(
+      0,
+      Math.min(
+        (position + anchor.offset) * workspace.scale,
+        metrics.scrollHeight - metrics.viewHeight,
+      ),
+    );
+    workspace.scrollbar?.setY(target);
+  }
+
+  /**
+   * Creates a block on the canvas from `original`, a block of this flyout (Blockly's), and tells
+   * the toolbox, which settles a block taken from it where it is dropped (./landing.ts).
+   */
+  override createBlock(original: Blockly.BlockSvg): Blockly.BlockSvg {
+    const block = super.createBlock(original);
+    noteCreatedFromToolbox(original, block);
+    return block;
   }
 
   /**

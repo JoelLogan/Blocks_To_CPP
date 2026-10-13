@@ -1,7 +1,6 @@
 /**
- * Which canvas block the toolbox treats as selected (docs/spec/03-block-language.md §3.6,
- * 04 §4.2): the Variables category lists the symbols at it, the counted loop and *Make a variable*
- * name and place their declarations by it.
+ * Which canvas block the toolbox treats as selected (docs/spec/04-user-interface.md §4.2):
+ * *Make a variable* places its declaration by it. What the toolbox lists does not depend on it.
  *
  * In Blockly 12 the selection is the focused node, so it ends as soon as the focus moves into the
  * toolbox or its flyout: clicking a category, scrolling to a block or pressing *Make a variable*

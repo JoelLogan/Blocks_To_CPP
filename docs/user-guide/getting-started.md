@@ -125,21 +125,22 @@ when program starts
 1. **Start a project.** On the start page, choose _New project → Empty
    project_. The canvas shows a _when program starts_ block: everything
    attached below it runs when the program starts.
-2. **Make the secret number.** From **Variables**, drag _create int variable
-   value = 0_ under _when program starts_. Click the name _value_ and type
-   `secret`. From **Math**, drag _random integer from 1 to 6_ onto the `0`, so
+2. **Make the secret number.** In **Variables**, press _Make a variable_,
+   type `secret` and press **Next**, then choose `int` (a whole number). A
+   _create int variable secret = 0_ block appears under _when program
+   starts_. From **Math**, drag _random integer from 1 to 6_ onto the `0`, so
    it replaces it, then click the `6` and type `100`.
-3. **Make the guess.** Drag another _create int variable_ block below the
-   first one and name it `guess`. Leave its value at `0`.
+3. **Make the guess.** From **Variables**, drag _create int variable value =
+   0_ below the first one. Click the name _value_ and type `guess`. Leave its
+   value at `0`.
 4. **Say hello.** From **Input / Output**, drag a _print_ block below the
    variables. Click its text and type `Guess a number from 1 to 100!`.
 5. **Repeat until the guess is right.** From **Loops**, drag _repeat while_
    below the print, then click _while_ and choose _until_ in its menu. From
    **Math**, drag the comparison block (`0 < 0`) into the loop's condition
-   and choose `=` in its middle. Then click the loop to select it, open
-   **Variables** (it now lists the variables you can use there) and drag
-   `guess` into the left side of the comparison and `secret` into the right
-   side.
+   and choose `=` in its middle. Then open **Variables**, which has a block
+   for each of your variables, and drag `guess` into the left side of the
+   comparison and `secret` into the right side.
 6. **Ask for a guess.** From **Input / Output**, drag _ask "Your answer: "
    and save answer in …_ into the loop. Change the question to _Your guess:_
    (with a space after the colon) and choose `guess` in the variable menu. Until you do, the block shows an

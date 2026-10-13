@@ -1,7 +1,8 @@
 /**
- * *Make a variable* (docs/spec/03-block-language.md §3.6, 04 §4.2): asks for a name in the app's
- * accessible dialog (never `window.prompt`), suggesting the first free name, and inserts a
- * `create` block with that name and a fresh symbol ID:
+ * *Make a variable* (docs/spec/03-block-language.md §3.6, 04 §4.2): asks for a name and then a
+ * type in the app's accessible dialogs (never `window.prompt`), suggesting the first free name and
+ * `int`, and inserts a `create` block of that type, with that name, a fresh symbol ID and the
+ * type's start value:
  *
  * - before the selected statement (the statement holding a selected value block), so the selected
  *   block can use it;
@@ -11,10 +12,10 @@
  * There are no implicit globals: the variable is always declared inside `main` or a function. The
  * insertion is one undo step.
  */
-import { MAX_NAME_CHARS } from '@blocks2cpp/blockly-ext';
+import { MAX_NAME_CHARS, displayTypeName } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
-import type { DialogService } from '../../app/dialogs';
+import type { DialogChoice, DialogService } from '../../app/dialogs';
 import { newVariableBlock } from './contents';
 import { variableNameProblem } from './identifiers';
 import { firstFreeName } from './names';
@@ -28,10 +29,26 @@ import {
   type SymbolSource,
 } from './scope';
 
-/** The dialog's title. */
+/** The dialogs' title. */
 export const MAKE_VARIABLE_TITLE = 'Make a variable';
-/** The dialog's question, which is also the text field's label. */
+/** The name dialog's question, which is also the text field's label. */
 export const MAKE_VARIABLE_QUESTION = 'Name of the new variable';
+
+/**
+ * The types *Make a variable* offers, as `create`'s TYPE values (decision D3 of the M2 polish
+ * plan), with what each holds; the first is the default.
+ */
+export const VARIABLE_TYPES: readonly { readonly type: string; readonly holds: string }[] =
+  Object.freeze([
+    { type: 'int', holds: 'a whole number' },
+    { type: 'double', holds: 'a decimal number' },
+    { type: 'bool', holds: 'true or false' },
+    { type: 'char', holds: 'one character' },
+    { type: 'std::string', holds: 'text' },
+  ]);
+
+/** The answer of the type dialog that cancels. */
+const CANCEL = 'cancel';
 
 /** Where a new `main` goes, relative to the top left of the visible canvas (or the origin). */
 const NEW_MAIN_OFFSET = 40;
@@ -43,7 +60,7 @@ export interface MakeVariableContext {
   /** The symbols of the latest analysis (for the suggested name and the name check). */
   readonly symbols: SymbolSource;
   /** The app's dialogs. */
-  readonly dialogs: Pick<DialogService, 'prompt' | 'alert'>;
+  readonly dialogs: Pick<DialogService, 'prompt' | 'alert' | 'choose'>;
   /** The selected block of the canvas, or `null`. */
   selected(): Blockly.Block | null;
   /** Whether another module of the project has `main` (so this canvas must not get one). */
@@ -91,13 +108,14 @@ function bodyConnection(container: Blockly.Block): Blockly.Connection | null {
 }
 
 /**
- * Inserts a declaration of `name` at `point`, as one undo step. The statement that was at that
- * place moves down below the new block.
+ * Inserts a declaration of `name`, of type `type` (a `create` TYPE value, `int` by default), at
+ * `point`, as one undo step. The statement that was at that place moves down below the new block.
  */
 export function insertDeclaration(
   workspace: Blockly.Workspace,
   point: InsertionPoint,
   name: string,
+  type = 'int',
 ): Blockly.Block {
   const existingGroup = Blockly.Events.getGroup();
   if (existingGroup === '') {
@@ -117,7 +135,7 @@ export function insertDeclaration(
           ? null
           : bodyConnection(container);
     const block = Blockly.serialization.blocks.append(
-      blockState(newVariableBlock(name)),
+      blockState(newVariableBlock(name, type)),
       workspace,
       {
         recordUndo: true,
@@ -152,7 +170,37 @@ function revealWhenRendered(block: Blockly.Block): void {
     });
 }
 
-/** Asks for a name and creates the variable (see the module comment). */
+/** The question of the type dialog for a variable named `name`. */
+export function typeQuestion(name: string): string {
+  const kinds = VARIABLE_TYPES.map(({ type, holds }) => `${displayTypeName(type)}: ${holds}`).join(
+    ', ',
+  );
+  return `What kind of value does “${name}” hold? ${kinds}.`;
+}
+
+/** Asks for the new variable's type; `null` when the user cancels. */
+async function askType(
+  dialogs: MakeVariableContext['dialogs'],
+  name: string,
+): Promise<string | null> {
+  const choices: DialogChoice<string>[] = [
+    ...VARIABLE_TYPES.map(({ type }, index) => ({
+      id: type,
+      label: displayTypeName(type),
+      ...(index === 0 ? { primary: true } : {}),
+    })),
+    { id: CANCEL, label: 'Cancel' },
+  ];
+  const answer = await dialogs.choose({
+    title: MAKE_VARIABLE_TITLE,
+    message: typeQuestion(name),
+    choices,
+    cancel: CANCEL,
+  });
+  return VARIABLE_TYPES.some(({ type }) => type === answer) ? answer : null;
+}
+
+/** Asks for a name and a type, and creates the variable (see the module comment). */
 export async function makeVariable(context: MakeVariableContext): Promise<MakeVariableResult> {
   const { workspace } = context;
   if (workspace.isReadOnly()) {
@@ -173,7 +221,7 @@ export async function makeVariable(context: MakeVariableContext): Promise<MakeVa
     title: MAKE_VARIABLE_TITLE,
     message: MAKE_VARIABLE_QUESTION,
     defaultValue: firstFreeName('variable', taken),
-    okLabel: 'Create',
+    okLabel: 'Next',
     maxLength: MAX_NAME_CHARS,
     validate: (value) => variableNameProblem(value, taken),
   });
@@ -184,13 +232,17 @@ export async function makeVariable(context: MakeVariableContext): Promise<MakeVa
   if (variableNameProblem(name, taken) !== null) {
     return { status: 'refused', reason: 'invalidName' };
   }
+  const type = await askType(context.dialogs, name);
+  if (type === null) {
+    return { status: 'cancelled' };
+  }
   if (!isCurrent(point, workspace)) {
     point = insertionPoint(workspace, context.selected());
   }
   if (workspace.isReadOnly()) {
     return { status: 'refused', reason: 'readOnly' };
   }
-  const block = insertDeclaration(workspace, point, name);
+  const block = insertDeclaration(workspace, point, name, type);
   revealWhenRendered(block);
   return { status: 'created', block };
 }

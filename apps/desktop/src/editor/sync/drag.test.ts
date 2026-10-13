@@ -13,17 +13,22 @@
  *   toolbox are e2e/specs/flows/tray-delete.e2e.ts.
  * - The feedback: the dragged blocks are faded, and over the toolbox the whole toolbox (the
  *   category column and the flyout) is tinted, with the category names still readable.
+ * - A drop on the canvas is settled in the drag's event group (`handleBlockDrops`): a *set*
+ *   taken from the toolbox gets a variable visible where it lands, a getter keeps its variable,
+ *   one Undo takes the drop back, and the drop runs one preview (04 §4.2).
  */
-import type { BdmDocument } from '@blocks2cpp/b2c-core-wasm';
+import type { BdmDocument, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
 import { b2cDarkTheme, b2cLightTheme } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import appCss from '../../app/app.css?raw';
 import { contrastOf, declarationsOf, parseRules, themeTokens } from '../../app/layout/cssAudit';
 import { useAppStore } from '../../app/store';
 import { editorInjectOptions } from '../EditorWorkspace';
-import { B2cBlockDragger, B2cBlockDragStrategy, isOverDeleteArea } from './drag';
+import type { PreviewService } from '../preview/service';
+import { createToolboxPlugin, toolboxInjectOptions } from '../toolbox';
+import { B2cBlockDragger, B2cBlockDragStrategy, handleBlockDrops, isOverDeleteArea } from './drag';
 import dragCss from './drag.css?raw';
 import {
   canonicalText,
@@ -569,5 +574,286 @@ describe('the delete-area feedback', () => {
     toolbox.onDragExit(block);
     expect(injection.querySelector(TINTED)).toBeNull();
     expect(injection.querySelector(COLUMN_TINTED)).toBeNull();
+  });
+});
+
+describe.skipIf(core === null)('a block dropped on the canvas', () => {
+  afterEach(() => {
+    const workspace = running?.workspace;
+    if (workspace instanceof Blockly.WorkspaceSvg) {
+      workspace.cancelCurrentGesture();
+    }
+  });
+
+  it('is settled by the drop handler in the drag’s event group, and one Undo takes all back', async () => {
+    const { svg, dragged } = await withLooseBlock();
+    const id = dragged.id;
+    const settled: { block: string; group: string }[] = [];
+    const stop = handleBlockDrops(svg, (block) => {
+      settled.push({ block: block.id, group: Blockly.Events.getGroup() });
+      block.setFieldValue(false, 'NEWLINE');
+    });
+    await eventsDelivered();
+    const groups = new Set<string>();
+    const record = (event: Blockly.Events.Abstract): void => {
+      if (!event.isUiEvent) {
+        groups.add(event.group);
+      }
+    };
+    svg.addChangeListener(record);
+
+    const near = pointerNear(svg, dragged, 'b003');
+    press(dragged);
+    moveTo(near);
+    release(near);
+    stop();
+    expect(Blockly.Events.getGroup()).toBe('');
+    expect(settled).toHaveLength(1);
+    expect(settled[0]?.block).toBe(id);
+    expect(settled[0]?.group).not.toBe('');
+    expect(mainList(svg)).toEqual(['b002', 'b003', id, 'b004', 'b010']);
+    expect(dragged.getFieldValue('NEWLINE')).toBe('FALSE');
+    await eventsDelivered();
+    svg.removeChangeListener(record);
+    expect([...groups]).toEqual([settled[0]?.group]);
+
+    svg.undo(false);
+    await eventsDelivered();
+    expect(mainList(svg)).toEqual(['b002', 'b003', 'b004', 'b010']);
+    expect(svg.getBlockById(id)?.getFieldValue('NEWLINE')).toBe('TRUE');
+  });
+
+  it('is not settled when the drop deletes it', async () => {
+    const { svg, dragged } = await withLooseBlock();
+    const near = pointerNear(svg, dragged, 'b003');
+    addDeleteArea(svg, near.x - 2);
+    const settled: string[] = [];
+    const stop = handleBlockDrops(svg, (block) => settled.push(block.id));
+    press(dragged);
+    moveTo(near);
+    release({ x: near.x - 6, y: near.y });
+    stop();
+    expect(dragged.isDeadOrDying()).toBe(true);
+    expect(settled).toEqual([]);
+  });
+});
+
+/**
+ * The guessing game with `define greet (times)` beside main: main declares `secret` and `guess`
+ * (b002, b003), greet a parameter `times` and a `create int count` (b_count) in its body.
+ */
+function gameWithGreet(): string {
+  const doc = JSON.parse(
+    present(EXAMPLE_PROJECTS['guessing_game.b2c'], 'guessing game'),
+  ) as BdmDocument;
+  doc.modules[0]?.workspace.blocks.push({
+    id: 'greet',
+    type: 'func.define',
+    v: 1,
+    x: 700,
+    y: 40,
+    extra: { params: [{ sym: 's_times', name: 'times', type: 'int', mode: 'copy' }] },
+    fields: { NAME: { sym: 's_greet', name: 'greet' }, RETURNS: 'void' },
+    statements: {
+      BODY: [
+        {
+          id: 'b_count',
+          type: 'var.declare',
+          v: 1,
+          fields: { TYPE: 'int', NAME: { sym: 's_count', name: 'count' }, CONST: false },
+          inputs: { VALUE: { expr: [{ num: '0' }] } },
+        },
+      ],
+    },
+  });
+  return JSON.stringify(doc);
+}
+
+/** A preview service on the core that counts the previews it runs. */
+function countingPreviews(): PreviewService & { readonly runs: () => number } {
+  const wasm = present(core, 'core');
+  let runs = 0;
+  return {
+    runs: () => runs,
+    preview(json, options): Promise<PreviewResult> {
+      runs += 1;
+      return Promise.resolve(wasm.preview(json, options));
+    },
+  };
+}
+
+/** Waits until the toolbox has rebuilt its flyout after the latest analysis. */
+function toolboxSettled(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 200));
+}
+
+/**
+ * The game with greet on an editor canvas with the editor's block dragger and the toolbox (its
+ * plugin attached to the session's core and store), the toolbox's flyout built.
+ */
+async function withToolbox(): Promise<{
+  svg: Blockly.WorkspaceSvg;
+  flyout: Blockly.IFlyout;
+  previews: ReturnType<typeof countingPreviews>;
+}> {
+  const wasm = present(core, 'core');
+  const toolbox = toolboxInjectOptions();
+  const svg = renderedWorkspace({
+    toolbox: toolbox.toolbox,
+    plugins: { ...toolbox.plugins, blockDragger: B2cBlockDragger },
+    move: { scrollbars: true, drag: true },
+  });
+  setViewSize(svg, 1600, 900);
+  Blockly.svgResize(svg);
+  const previews = countingPreviews();
+  const session = startSession(wasm, loadText(wasm, gameWithGreet()), {
+    workspace: svg,
+    service: previews,
+  });
+  const detach = createToolboxPlugin().attach({
+    workspace: svg,
+    store: useAppStore,
+    core: () => wasm,
+    selectBlock: () => undefined,
+    activeModuleId: () => useAppStore.getState().project?.activeModuleId ?? '',
+  });
+  running = {
+    ...session,
+    dispose() {
+      detach();
+      session.dispose();
+    },
+  };
+  await session.session.flush();
+  await Blockly.renderManagement.finishQueuedRenders();
+  await toolboxSettled();
+  await placed();
+  return { svg, flyout: present(svg.getFlyout(), 'flyout'), previews };
+}
+
+/** The flyout block of `type` (whose VAR is `ref`, when given). */
+function flyoutBlock(flyout: Blockly.IFlyout, type: string, ref?: string): Blockly.BlockSvg {
+  return present(
+    flyout
+      .getWorkspace()
+      .getTopBlocks(true)
+      .find(
+        (block) => block.type === type && (ref === undefined || block.getFieldValue('VAR') === ref),
+      ),
+    `${type} in the flyout`,
+  );
+}
+
+/**
+ * Drags `original` out of the toolbox's flyout with the pointer and drops it with its `own`
+ * connection 4 units right of and below connection `target`, where Blockly connects it. Returns
+ * the block created on the canvas.
+ */
+async function dragFromFlyout(
+  svg: Blockly.WorkspaceSvg,
+  original: Blockly.BlockSvg,
+  own: 'previous' | 'output',
+  target: Blockly.RenderedConnection,
+): Promise<Blockly.BlockSvg> {
+  const before = new Set(svg.getAllBlocks(false).map((block) => block.id));
+  original.pathObject.svgPath.dispatchEvent(
+    new PointerEvent('pointerdown', { ...POINTER, clientX: PRESS.x, clientY: PRESS.y }),
+  );
+  // Past the drag radius: Blockly creates the block on the canvas and drags it.
+  const started = { x: PRESS.x + 40, y: PRESS.y };
+  moveTo(started);
+  const created = present(
+    svg.getAllBlocks(false).find((block) => !before.has(block.id) && block.type === original.type),
+    'the block taken from the toolbox',
+  );
+  const connection = present(
+    own === 'previous' ? created.previousConnection : created.outputConnection,
+    `${own} connection`,
+  );
+  const at = created.getRelativeToSurfaceXY();
+  const offset = connection.getOffsetInBlock();
+  const goal = {
+    x: started.x + (target.x - offset.x + 4 - at.x) * svg.scale,
+    y: started.y + (target.y - offset.y + 4 - at.y) * svg.scale,
+  };
+  moveTo(goal);
+  release(goal);
+  await placed();
+  return created;
+}
+
+describe.skipIf(core === null)('a block dragged from the toolbox', () => {
+  /**
+   * Blockly ripples a connection it makes with an SVG animation; happy-dom has no SMIL, so the
+   * animation's `beginElement` is a no-op here.
+   */
+  const svgElement = SVGElement.prototype as SVGElement & { beginElement?: () => void };
+  const hadBeginElement = typeof svgElement.beginElement === 'function';
+
+  beforeEach(() => {
+    if (!hadBeginElement) {
+      svgElement.beginElement = () => undefined;
+    }
+  });
+
+  afterEach(() => {
+    const workspace = running?.workspace;
+    if (workspace instanceof Blockly.WorkspaceSvg) {
+      workspace.cancelCurrentGesture();
+    }
+    if (!hadBeginElement) {
+      delete svgElement.beginElement;
+    }
+  });
+
+  it('is a set preset to main’s guess that takes a variable of greet, in one drop and one preview', async () => {
+    const { svg, flyout, previews } = await withToolbox();
+    const preset = flyoutBlock(flyout, 'var.set');
+    expect(preset.getFieldValue('VAR')).toBe('s_guess');
+    await eventsDelivered();
+    svg.clearUndo();
+    const runs = previews.runs();
+
+    const set = await dragFromFlyout(
+      svg,
+      preset,
+      'previous',
+      present(svg.getBlockById('b_count')?.nextConnection, 'below create count'),
+    );
+    expect(set.getPreviousBlock()?.id).toBe('b_count');
+    // In greet, count and times are visible (and fit): count comes first by name.
+    expect(set.getFieldValue('VAR')).toBe('s_count');
+    await running?.session.flush();
+    await eventsDelivered();
+    // One preview for the drop and its new variable.
+    expect(previews.runs() - runs).toBe(1);
+    const diagnostics = useAppStore.getState().analysis.preview?.diagnostics ?? [];
+    expect(diagnostics.filter((diagnostic) => diagnostic.primary.block === set.id)).toEqual([]);
+
+    // One Undo takes the drop back: the block is gone, greet's body as it was.
+    svg.undo(false);
+    await eventsDelivered();
+    expect(svg.getBlockById(set.id)).toBeNull();
+    expect(svg.getBlockById('b_count')?.getNextBlock()).toBeNull();
+  });
+
+  it('is a getter of greet’s times that keeps it in main, where it is B2C-E0203', async () => {
+    const { svg, flyout } = await withToolbox();
+    const getter = flyoutBlock(flyout, 'var.get', 's_times');
+    // The print of main (b004): its text slot.
+    const print = present(svg.getBlockById('b004'), 'b004');
+    const dropped = await dragFromFlyout(
+      svg,
+      getter,
+      'output',
+      present(print.getInput('ITEM0')?.connection as Blockly.RenderedConnection, 'ITEM0'),
+    );
+    expect(dropped.getParent()?.id).toBe('b004');
+    expect(dropped.getFieldValue('VAR')).toBe('s_times');
+    await running?.session.flush();
+    const codes = (useAppStore.getState().analysis.preview?.diagnostics ?? [])
+      .filter((diagnostic) => diagnostic.primary.block === dropped.id)
+      .map((diagnostic) => diagnostic.code);
+    expect(codes).toEqual(['B2C-E0203']);
   });
 });

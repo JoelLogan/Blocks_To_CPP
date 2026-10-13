@@ -124,7 +124,7 @@ describe('requireHookMethods', () => {
     folders.push(folder);
     const note = path.join(folder, 'notes', 'base-round-1-select.bench.txt');
     const { context: ctx, skipped } = context();
-    const older = hookOf(['blockElement', 'code', 'grabPoint', 'flyoutBlockId']);
+    const older = hookOf(['blockElement', 'code', 'grabPoint']);
     await expect(
       requireHookMethods(ctx, appWith(older), 'select', { B2C_BENCH_SKIP_NOTE: note }),
     ).rejects.toThrow('skipped');

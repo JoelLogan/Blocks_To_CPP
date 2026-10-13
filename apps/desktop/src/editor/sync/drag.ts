@@ -35,6 +35,11 @@
  * (and the toolbox's flyout records them after each of its layouts, `toolbox/continuous.ts`). The
  * record at the drag start goes once Blockly records after it displays the flyout (also still to
  * be reported: the report drafted in `docs/plans/upstream/`).
+ *
+ * A block dropped on the canvas is settled by the workspace's {@link BlockDropHandler}
+ * ({@link handleBlockDrops}) inside the drag's Blockly event group: the toolbox gives a block
+ * taken from it a free name, or a variable the drop point can see (04 §4.2, `toolbox/landing.ts`),
+ * and one Undo takes back the drop and all of that.
  */
 import * as Blockly from 'blockly/core';
 
@@ -62,6 +67,31 @@ export function listenToBlockDrags(
   return () => {
     if (LISTENERS.get(workspace) === listener) {
       LISTENERS.delete(workspace);
+    }
+  };
+}
+
+/**
+ * Settles a block just dropped on the canvas (not deleted), inside the drop's Blockly event group:
+ * the toolbox gives a block taken from it a free name or another variable there (04 §4.2,
+ * `toolbox/landing.ts`). Every event it fires joins the drop, so one Undo takes all of it back.
+ */
+export type BlockDropHandler = (block: Blockly.BlockSvg) => void;
+
+const DROP_HANDLERS = new WeakMap<Blockly.WorkspaceSvg, BlockDropHandler>();
+
+/**
+ * Makes `handler` settle the blocks dropped on `workspace` (one handler per workspace; a new one
+ * replaces the old). Returns the function that stops it.
+ */
+export function handleBlockDrops(
+  workspace: Blockly.WorkspaceSvg,
+  handler: BlockDropHandler,
+): () => void {
+  DROP_HANDLERS.set(workspace, handler);
+  return () => {
+    if (DROP_HANDLERS.get(workspace) === handler) {
+      DROP_HANDLERS.delete(workspace);
     }
   };
 }
@@ -181,8 +211,15 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
    * Ends the drag. Blockly's gesture passes the pointer's total movement; when the drop deletes
    * the dragged blocks, the block is first moved to the drop point, so the strategy drops any
    * preview the last move left behind and nothing is connected before the delete.
+   *
+   * A block dropped on the canvas is then settled by the workspace's {@link BlockDropHandler}
+   * (`handleBlockDrops`) in the drag's Blockly event group, which Blockly's dragger closes: the
+   * group is taken before Blockly ends the drag, opened again for the handler, and closed after
+   * it. A block taken from the toolbox was created in the same group (Blockly's gesture starts it
+   * first), so one Undo removes the block, its move and what the handler changed.
    */
   override onDragEnd(e: PointerEvent, totalDelta?: Blockly.utils.Coordinate): void {
+    const group = Blockly.Events.getGroup();
     try {
       const root =
         this.draggable instanceof Blockly.BlockSvg ? this.draggable.getRootBlock() : null;
@@ -190,6 +227,7 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
         this.onDrag(e, totalDelta);
       }
       super.onDragEnd(e);
+      this.settleDrop(group);
     } finally {
       const listener = LISTENERS.get(this.workspace);
       if (listener !== undefined) {
@@ -197,6 +235,26 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
           listener.onDragEnd();
         });
       }
+    }
+  }
+
+  /**
+   * Has the workspace's {@link BlockDropHandler} settle the dropped block, in event group `group`
+   * (the drag's), unless the drop deleted it.
+   */
+  private settleDrop(group: string): void {
+    const handler = DROP_HANDLERS.get(this.workspace);
+    const block = this.draggable instanceof Blockly.BlockSvg ? this.draggable : null;
+    if (handler === undefined || block === null || block.isDeadOrDying()) {
+      return;
+    }
+    Blockly.Events.setGroup(group === '' ? true : group);
+    try {
+      tell(() => {
+        handler(block);
+      });
+    } finally {
+      Blockly.Events.setGroup(false);
     }
   }
 }

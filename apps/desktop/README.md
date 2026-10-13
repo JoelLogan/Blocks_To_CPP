@@ -113,8 +113,10 @@ project, build, run, toolchain, settings, trust and recovery services:
   moved stays unchanged for saving.
 - **Toolbox** (`toolbox/`, the `toolboxPlugin`): the catalog's categories in a Scratch-style
   continuous toolbox (category bubbles and one scrolling flyout), with presets and shadows, plus
-  the dynamic Variables (with _Make a variable_), Loops and Functions (with _Your functions_) categories, which
-  follow the scope at the selected block and the module shown.
+  the dynamic Program, Variables (with _Make a variable_) and Functions (with _Your functions_)
+  categories, which follow the project's variables and functions and the module shown, not the
+  selection. A block taken from the toolbox gets a free default name, or a variable visible where
+  it is dropped, as part of the drop (`landing.ts`).
 - **Diagnostics on blocks** (`diagnostics/`, the `diagnosticsPlugin`): every diagnostic with a
   block shows on it as blockly-ext's `b2c_diagnostic` badge (✖ error, ⚠ warning, ℹ info, each
   with its own shape; the most serious wins), a severity outline (solid, dashed or dotted, so
