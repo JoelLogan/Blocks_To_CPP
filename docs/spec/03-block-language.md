@@ -270,7 +270,8 @@ The analyser implements a **gradual** type system that approximates C++:
   analyser. The editor gets these lists from the scope query of
   [06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes).
   A parked block's dropdowns list what is visible at the end of `main`'s
-  body (the module's functions when there is no `main`); a block inside a
+  body (of the enabled *when program starts*, never a disabled one; the
+  module's functions when there is no `main`); a block inside a
   disabled statement lists what is visible at that statement. A block the
   analysis has not seen yet (just dropped or pasted) lists what its place
   gives it: what the statement before it, or the list or input around it,

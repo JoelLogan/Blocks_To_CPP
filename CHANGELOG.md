@@ -545,3 +545,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - Pasting on the canvas, or into or directly after a parked block, binds
   references to the variables visible at the end of `main`; pasting into or
   after a block inside a disabled statement binds them as at that statement.
+- A block just dropped on the canvas, before the next preview, and the
+  Variables category with nothing selected now see the end of the _when
+  program starts_ that runs, as the compiler does, not of a disabled one
+  above it; _Make a variable_ inserts there too. Without _when program
+  starts_, a new loose block sees the module's functions.

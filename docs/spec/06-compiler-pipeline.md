@@ -199,7 +199,10 @@ left to the analyser
 * A parked block (loose, in a parked stack, or nested in one) answers with
   the **parked scope**: what is visible at the end of its module's `main`
   body, or the module's functions alone when there is no `main`;
-  declarations inside parked blocks declare nothing. A `when program
+  declarations inside parked blocks declare nothing. That `main` is the one
+  the analyser lowers first: the enabled one with the smallest block ID (a
+  disabled one is skipped, and a second enabled one is `E0406`). The
+  editor's own fallback picks the same one. A `when program
   starts` or function definition that the analyser skips (a disabled one),
   and every block in it, answers with the module's functions.
 * An unknown block, or one nested too deeply, gives an empty list. The

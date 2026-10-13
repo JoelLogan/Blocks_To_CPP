@@ -71,9 +71,21 @@ export function isContainer(block: Blockly.Block): boolean {
   return block.type === MAIN_TYPE || block.type === FUNCTION_TYPE;
 }
 
-/** The first `main` on the canvas (a project has one; extra ones are analyser errors). */
+/**
+ * The `main` of the canvas, as the analyser chooses it (06 §6.5): the enabled `main` with the
+ * smallest block ID, because the analyser lowers the top-level blocks in block ID order and skips
+ * the disabled ones (a second enabled `main` is an error, `B2C-E0406`). Its body's end is the
+ * parked scope. Without an enabled `main`, the topmost one; `null` when the canvas has none.
+ */
 export function findMain(workspace: Blockly.Workspace): Blockly.Block | null {
-  return workspace.getTopBlocks(true).find((block) => block.type === MAIN_TYPE) ?? null;
+  const mains = workspace.getTopBlocks(true).filter((block) => block.type === MAIN_TYPE);
+  let chosen: Blockly.Block | null = null;
+  for (const main of mains) {
+    if (!isSkipped(main) && (chosen === null || main.id < chosen.id)) {
+      chosen = main;
+    }
+  }
+  return chosen ?? mains[0] ?? null;
 }
 
 /**
@@ -309,10 +321,11 @@ function firstDefinition(workspace: Blockly.Workspace): Blockly.Block | null {
 }
 
 /**
- * The end of `main`'s body, resolved like any other point: what the Variables category lists with
- * nothing selected, and the parked scope that a block on the canvas sees (06 §6.5). In a module
- * without `main`, the module's functions only (as the scope query answers at a function
- * definition). `null` when the module has neither.
+ * The end of `main`'s body ({@link findMain}), resolved like any other point: what the Variables
+ * category lists with nothing selected, and the parked scope that a block on the canvas sees
+ * (06 §6.5). In a module without `main`, the module's functions only (as the scope query answers
+ * at a function definition, and from the program's symbols when it has not seen that definition
+ * yet). `null` when the module has neither.
  */
 function programEnd(workspace: Blockly.Workspace, source: SymbolSource): Resolved | null {
   const main = findMain(workspace);
@@ -324,7 +337,14 @@ function programEnd(workspace: Blockly.Workspace, source: SymbolSource): Resolve
     return null;
   }
   const point: ListingPoint = { kind: 'at', blockId: definition.id, input: null };
-  return { point, symbols: answerAt(point, source) ?? [] };
+  return { point, symbols: answerAt(point, source) ?? canvasFunctions(workspace, source) };
+}
+
+/** The functions defined on this canvas that the latest analysis knows, sorted like the query. */
+function canvasFunctions(workspace: Blockly.Workspace, source: SymbolSource): SymbolInfo[] {
+  return functionSymbols(source)
+    .filter((symbol) => workspace.getBlockById(symbol.declBlock) !== null)
+    .sort(bySymbolOrder);
 }
 
 /**

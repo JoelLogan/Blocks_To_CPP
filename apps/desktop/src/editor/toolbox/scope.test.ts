@@ -11,6 +11,7 @@ import {
   resolveBlockScope,
   resolveConnectionScope,
   resolveScopeAnchor,
+  symbolsAtConnection,
   symbolsAtPoint,
   takenFunctionNames,
   takenLoopNames,
@@ -279,6 +280,69 @@ describe('the scope anchor', () => {
     get(workspace, 'fn').dispose(false);
     expect(resolveScopeAnchor(workspace, null, source)).toBeNull();
     expect(namesAt(resolveScopeAnchor(workspace, loose, source), source)).toEqual([]);
+  });
+
+  it('is the end of the main the analyser runs, not of a disabled main above it', () => {
+    // A disabled main above the enabled one: a valid program (a disabled main does not count), whose
+    // parked scope is the end of the enabled main's body, as the core answers (06 §6.5).
+    const workspace = canvas();
+    add(workspace, {
+      type: 'program.main',
+      id: 'aMain',
+      x: 40,
+      y: -400,
+      disabledReasons: [Blockly.constants.MANUALLY_DISABLED],
+      inputs: { BODY: { block: printState('offPrint') } },
+    });
+    expect(workspace.getTopBlocks(true)[0]?.id).toBe('aMain');
+    const source = fakeSymbols(SCOPES, ALL);
+    const endOfMain = { kind: 'after', blockId: 'print' };
+    expect(findMain(workspace)?.id).toBe('main');
+    expect(listingPoint(workspace, null)).toEqual(endOfMain);
+    expect(resolveScopeAnchor(workspace, null, source)).toEqual(endOfMain);
+    // A loose block the analysis has not seen yet, its menus and its connection.
+    const loose = add(workspace, printState('loose'));
+    expect(resolveScopeAnchor(workspace, loose, source)).toEqual(endOfMain);
+    expect(resolveConnectionScope(workspace, loose, source)).toEqual(endOfMain);
+    expect(symbolsAtConnection(workspace, loose, source).map((symbol) => symbol.name)).toEqual([
+      'factorial',
+      'guess',
+    ]);
+    // Make a variable inserts into the main that runs.
+    expect(insertionPoint(workspace, null)).toEqual({
+      kind: 'top',
+      container: get(workspace, 'main'),
+    });
+    // Of two enabled mains (an error, B2C-E0406), the analyser runs the one with the smaller ID;
+    // without an enabled one, the topmost stands.
+    add(workspace, { type: 'program.main', id: 'zzMain', x: 40, y: -800 });
+    expect(findMain(workspace)?.id).toBe('main');
+    get(workspace, 'main').setDisabledReason(true, Blockly.constants.MANUALLY_DISABLED);
+    get(workspace, 'zzMain').setDisabledReason(true, Blockly.constants.MANUALLY_DISABLED);
+    expect(findMain(workspace)?.id).toBe('zzMain');
+  });
+
+  it('is the module’s functions for a new loose block without main, before any analysis of them', () => {
+    const workspace = canvas();
+    get(workspace, 'main').dispose(false);
+    // The analysis has not seen the function definition yet, but knows its symbol.
+    const source = fakeSymbols({}, ALL);
+    const loose = add(workspace, printState('loose'));
+    expect(symbolsAtConnection(workspace, loose, source).map((symbol) => symbol.name)).toEqual([
+      'factorial',
+    ]);
+    // Functions of other canvases are not this module's.
+    const elsewhere = symbolFixture('s_other', 'other', {
+      kind: 'function',
+      params: [],
+      returns: 'void',
+      declBlock: 'elsewhere',
+    });
+    expect(
+      symbolsAtConnection(workspace, loose, fakeSymbols({}, [...ALL, elsewhere])).map(
+        (symbol) => symbol.name,
+      ),
+    ).toEqual(['factorial']);
   });
 
   it('is the core’s own answer for a block in a disabled statement, even an empty one', () => {

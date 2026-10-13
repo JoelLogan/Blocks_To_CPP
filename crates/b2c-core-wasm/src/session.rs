@@ -9,8 +9,8 @@
 //! tests create their own.
 //!
 //! What is kept is the analysis of the last **successful** load: a preview
-//! whose document did not load forgets it, so the scope query answers `[]`
-//! until the next good preview. The clipboard functions are given the
+//! whose document did not load forgets it, so the scope query has no answer
+//! (`None`, `null` from the export) until the next good preview. The clipboard functions are given the
 //! document they work on; they use the kept analysis only when that
 //! document has the same content hash (05 §5.11) as the previewed one, and
 //! otherwise analyse it themselves, so they are always right about the
