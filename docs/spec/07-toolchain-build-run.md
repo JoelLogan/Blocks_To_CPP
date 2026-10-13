@@ -110,10 +110,14 @@ CLI share.
 A compiler whose probe timed out is probed once more with a 30 s timeout
 before it is reported unusable (security software can delay the first start
 of a new program); the setup page says so while that runs ("Checking g++
-again…"). A probe in which any invocation timed out reports `B2C-T1023`
-(it timed out; check it again with *Rescan*) instead of "did not run" or
-"broken", is not usable, and is not reused: the compiler is probed again the
-next time it is needed.
+again…"). A probe in which an essential check timed out (the version and
+target questions, `cc1plus`, hello world, the standards, the library
+features, the diagnostics formats) reports `B2C-T1023` (it timed out; check
+it again with *Rescan*) instead of "did not run" or "broken", is not usable,
+and is not reused: the compiler is probed again the next time it is needed.
+An optional check that times out (sanitizers, hardening, static linking)
+only makes that capability unavailable, as when it fails: a sanitizer's test
+program that hangs on this system never makes the compiler unusable.
 
 | Probe | Method | Used for |
 | ------- | -------- | ---------- |

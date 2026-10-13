@@ -274,7 +274,9 @@ compiler whose first check times out (10 seconds per test) is checked once
 more with 30 seconds per test before this is reported; the toolchain page
 says "Checking g++ again…" while that runs. It is checked again the next time
 it is needed, by a build or a rescan
-([spec §7.3](../../spec/07-toolchain-build-run.md#73-capability-probing)).
+([spec §7.3](../../spec/07-toolchain-build-run.md#73-capability-probing)). A
+test of an optional capability (sanitizers, hardening, static linking) that
+times out is not reported this way: only that capability is unavailable.
 
 This usually means the computer was busy, or security software was checking
 the compiler the first time it ran (common right after installing it, or

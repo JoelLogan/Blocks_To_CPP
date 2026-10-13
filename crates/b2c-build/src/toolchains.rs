@@ -803,10 +803,12 @@ impl ToolchainRegistry {
         let candidate = explicit_candidate(entry.path(), Platform::host())?;
         let probe = self.probe_candidate(&candidate, default_jobs(), cancel)?;
         let fresh = Entry::new(entry.source, entry.found_as.clone(), probe);
-        // An entry that could not be probed before has no real fingerprint,
-        // and one whose probe timed out is unchanged: neither changed, they
-        // were only checked again.
-        let notes = if entry.probe.fingerprint.sha256.is_empty() || entry.probe.is_current() {
+        // Only a compiler whose file changed gets the note. An entry that
+        // could not be probed before has no real fingerprint, and one whose
+        // probe timed out, or that an older version of the app probed
+        // (another `PROBE_FORMAT`), has an unchanged file: they are only
+        // checked again.
+        let notes = if entry.probe.fingerprint.sha256.is_empty() || entry.probe.fingerprint.is_current() {
             Vec::new()
         } else {
             vec![codes::toolchain_changed(&entry.found_as)]

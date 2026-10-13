@@ -13,13 +13,18 @@
 //! format, sanitizers, hardening, static linking). With g++ 13 on four
 //! cores the whole probe takes about a second.
 //!
-//! A probe in which any invocation timed out says nothing reliable: its
+//! A probe in which an essential check timed out says nothing reliable: its
 //! record carries `B2C-T1023` ([`codes::probe_timed_out`]) instead of the
 //! "did not run" or "broken" verdict the missing answers would give, is not
 //! usable, and is not reused ([`Toolchain::is_reusable`]). Callers probe such
 //! a compiler once more with [`ProbeOptions::for_retry`] before they report
 //! it (spec §7.3): security software often holds up the first start of a new
-//! program, and a cold disk cache can slow the first compile down.
+//! program, and a cold disk cache can slow the first compile down. The
+//! essential checks are the quick questions, hello world, the standards, the
+//! library features and the diagnostics formats. An optional one
+//! (sanitizers, hardening, static linking) that times out only makes its
+//! capability unavailable, as when it fails: a sanitizer's test program that
+//! hangs on this system must not make the compiler unusable.
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -376,6 +381,7 @@ pub fn probe(path: &Path, options: &ProbeOptions) -> Result<Toolchain, ProbeErro
         cancel: options.cancel.as_ref(),
         exe_suffix: "",
         timed_out: AtomicBool::new(false),
+        essential: true,
     };
     let toolchain = prober.run(fingerprint, options.jobs.max(1));
     if options.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
@@ -392,8 +398,12 @@ struct Prober<'a> {
     timeout: Duration,
     cancel: Option<&'a CancelToken>,
     exe_suffix: &'static str,
-    /// Set when any invocation ran into the timeout.
+    /// Set when an invocation of an essential check ran into the timeout
+    /// (never for an [`Prober::optional`] one).
     timed_out: AtomicBool,
+    /// Whether a timeout is noted in `timed_out`: false for the optional
+    /// checks.
+    essential: bool,
 }
 
 /// The result of a sanitizer run.
@@ -404,9 +414,9 @@ enum SanitizerRun {
     Fails,
 }
 
-impl Prober<'_> {
-    /// Runs the probe; a probe in which anything timed out is reported as
-    /// timed out ([`mark_timed_out`]).
+impl<'a> Prober<'a> {
+    /// Runs the probe; a probe in which an essential check timed out is
+    /// reported as timed out ([`mark_timed_out`]).
     fn run(mut self, fingerprint: Fingerprint, jobs: usize) -> Toolchain {
         let mut toolchain = self.checks(fingerprint, jobs);
         if self.timed_out.load(Ordering::Relaxed) {
@@ -514,7 +524,8 @@ impl Prober<'_> {
                 .iter()
                 .enumerate()
                 .map(|(index, flags)| {
-                    Box::new(move || self.links(&format!("hardening-{index}"), HELLO, flags)) as Job<'_, bool>
+                    Box::new(move || self.optional().links(&format!("hardening-{index}"), HELLO, flags))
+                        as Job<'_, bool>
                 })
                 .collect();
             parallel(jobs, jobs_list)
@@ -614,7 +625,7 @@ impl Prober<'_> {
             jobs_list.push((
                 Check::AddressUndefined,
                 Box::new(|| {
-                    Answer::Sanitizer(self.sanitizer_run(
+                    Answer::Sanitizer(self.optional().sanitizer_run(
                         "asan",
                         &["-fsanitize=address,undefined", "-fno-sanitize-recover=undefined"],
                         true,
@@ -624,7 +635,7 @@ impl Prober<'_> {
             jobs_list.push((
                 Check::Undefined,
                 Box::new(|| {
-                    Answer::Sanitizer(self.sanitizer_run(
+                    Answer::Sanitizer(self.optional().sanitizer_run(
                         "ubsan",
                         &["-fsanitize=undefined", "-fno-sanitize-recover=undefined"],
                         false,
@@ -634,19 +645,19 @@ impl Prober<'_> {
             if version.major >= 14 {
                 jobs_list.push((
                     Check::Fhardened,
-                    Box::new(|| Answer::Bool(self.links("fhardened", HELLO, &["-fhardened"]))),
+                    Box::new(|| Answer::Bool(self.optional().links("fhardened", HELLO, &["-fhardened"]))),
                 ));
             }
         } else {
             jobs_list.push((
                 Check::Static,
-                Box::new(|| Answer::Bool(self.links_and_runs("static", HELLO, &["-static"]))),
+                Box::new(|| Answer::Bool(self.optional().links_and_runs("static", HELLO, &["-static"]))),
             ));
         }
         jobs_list.push((
             Check::UndefinedTrap,
             Box::new(|| {
-                Answer::Sanitizer(self.sanitizer_run(
+                Answer::Sanitizer(self.optional().sanitizer_run(
                     "ubsan-trap",
                     &["-fsanitize=undefined", "-fsanitize-undefined-trap-on-error"],
                     false,
@@ -655,10 +666,26 @@ impl Prober<'_> {
         ));
         jobs_list.push((
             Check::HardeningAll,
-            Box::new(move || Answer::Bool(self.links("hardening", HELLO, &all_hardening))),
+            Box::new(move || Answer::Bool(self.optional().links("hardening", HELLO, &all_hardening))),
         ));
 
         jobs_list
+    }
+
+    /// The same session for an optional check (a sanitizer, hardening,
+    /// static linking; see the module documentation): its timeouts are not
+    /// noted, so one only makes the check fail.
+    fn optional(&self) -> Prober<'a> {
+        Prober {
+            gxx: self.gxx.clone(),
+            dir: self.dir.clone(),
+            env: self.env.clone(),
+            timeout: self.timeout,
+            cancel: self.cancel,
+            exe_suffix: self.exe_suffix,
+            timed_out: AtomicBool::new(false),
+            essential: false,
+        }
     }
 
     /// A Blocks2Cpp process command for a program in the probe folder.
@@ -691,9 +718,10 @@ impl Prober<'_> {
         result
     }
 
-    /// Remembers an invocation that ran into the timeout.
+    /// Remembers an invocation of an essential check that ran into the
+    /// timeout.
     fn note_timeout(&self, result: &Result<Captured, String>) {
-        if matches!(result, Ok(captured) if captured.timed_out) {
+        if self.essential && matches!(result, Ok(captured) if captured.timed_out) {
             self.timed_out.store(true, Ordering::Relaxed);
         }
     }
@@ -1213,6 +1241,67 @@ mod tests {
         assert!(!toolchain.is_usable());
         assert!(toolchain.is_current());
         assert!(!toolchain.is_reusable(), "a timed-out check is done again");
+    }
+
+    /// A fake GCC 13 on Linux that passes every check, except that the
+    /// programs it builds with `-fsanitize=address` hang (as with an older
+    /// libasan on a kernel with high `vm.mmap_rnd_bits`).
+    #[cfg(unix)]
+    const HANGING_ASAN_GXX: &str = r#"#!/bin/sh
+case "$1" in
+  -dumpfullversion|-dumpversion) echo 13.2.0; exit 0 ;;
+  -dumpmachine) echo x86_64-linux-gnu; exit 0 ;;
+  --version) echo 'g++ (GCC) 13.2.0'; exit 0 ;;
+  -print-prog-name=cc1plus) echo "$0"; exit 0 ;;
+esac
+output=''
+asan=''
+previous=''
+for argument in "$@"; do
+  case "$argument" in
+    -fsanitize=address*) asan=yes ;;
+  esac
+  if [ "$previous" = '-o' ]; then output="$argument"; fi
+  previous="$argument"
+done
+if [ -n "$output" ]; then
+  if [ -n "$asan" ]; then
+    printf '#!/bin/sh\nexec sleep 30\n' > "$output"
+  else
+    printf '#!/bin/sh\necho b2c-probe-ok\n' > "$output"
+  fi
+  chmod +x "$output"
+fi
+exit 0
+"#;
+
+    /// Spec §7.3: an optional check that times out (here AddressSanitizer's
+    /// test program, which hangs) only makes its capability unavailable. It
+    /// made the whole compiler unusable (`B2C-T1023`).
+    #[cfg(unix)]
+    #[test]
+    fn an_optional_check_that_times_out_leaves_the_compiler_usable() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("g++");
+        std::fs::write(&fake, HANGING_ASAN_GXX).unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let options = ProbeOptions {
+            timeout: Duration::from_millis(500),
+            jobs: 8,
+            ..ProbeOptions::default()
+        };
+        let toolchain = probe(&fake, &options).unwrap();
+        assert!(!toolchain.timed_out(), "{:?}", toolchain.problems);
+        assert!(toolchain.is_usable(), "{:?}", toolchain.problems);
+        assert!(toolchain.is_reusable());
+        assert!(toolchain.capabilities.hello_world);
+        assert!(!toolchain.capabilities.sanitizers.address_undefined);
+        assert!(!toolchain.capabilities.sanitizers.leak_detection);
+        assert!(toolchain.capabilities.sanitizers.undefined);
+        assert!(toolchain.capabilities.sanitizers.undefined_trap);
     }
 
     #[test]

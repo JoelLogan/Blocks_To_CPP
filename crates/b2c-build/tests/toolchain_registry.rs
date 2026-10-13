@@ -1298,3 +1298,37 @@ fn records_from_before_the_timeout_rule_are_probed_again() {
     assert_eq!(prober.calls(), 2);
     assert!(listed.toolchains[0].usable, "{:?}", listed.toolchains[0].problems);
 }
+
+/// A record that an older version of the app saved (another probe format)
+/// is probed again at build time, but its compiler did not change: no
+/// `B2C-T1009` note says it was probably updated.
+#[test]
+fn a_record_of_an_older_format_is_probed_again_without_a_note() {
+    let root = Root::new();
+    let bin = root.join("bin");
+    let gxx = install(&bin, "gcc 13.3");
+    let prober = FakeProber::new();
+    let older_format = |root: &Root| {
+        let mut json: serde_json::Value = serde_json::from_slice(&fs::read(root.store()).unwrap()).unwrap();
+        json["toolchains"][0]["probe"]["format"] = serde_json::json!(1);
+        fs::write(root.store(), serde_json::to_vec(&json).unwrap()).unwrap();
+    };
+    root.registry(std::slice::from_ref(&bin), &prober)
+        .rescan(&[], None);
+    assert_eq!(prober.calls(), 1);
+
+    // Chosen by order.
+    older_format(&root);
+    let reopened = root.registry(std::slice::from_ref(&bin), &prober);
+    let (toolchain, notes) = ready(reopened.choose(None, None));
+    assert_eq!(prober.calls(), 2, "the old record is probed again");
+    assert!(notes.is_empty(), "{notes:?}");
+    assert!(toolchain.is_current());
+
+    // Chosen as the selected compiler.
+    older_format(&root);
+    let reopened = root.registry(std::slice::from_ref(&bin), &prober);
+    let (_, notes) = ready(reopened.choose(Some(&ToolchainId::for_driver(&gxx)), None));
+    assert_eq!(prober.calls(), 3);
+    assert!(notes.is_empty(), "{notes:?}");
+}

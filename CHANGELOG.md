@@ -486,7 +486,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   that way, even across Rescan. It is now checked once more with 30 s per
   test, and the page says "Checking g++ again…" while that runs. If it still
   times out, it is reported as `B2C-T1023`, with a hint to rescan, and
-  checked again the next time it is needed. Toolchain records saved by older
-  versions are checked again once.
+  checked again the next time it is needed. A test of an optional capability
+  (sanitizers, hardening, static linking) that times out only turns that
+  capability off. Toolchain records saved by older versions are checked again
+  once, without a note that the compiler changed.
 - `tools/bench-compare.py` writes UTF-8 on Windows too. Before, "§9.2" in the
   A/B summary came out as a code-page byte in the job log.
