@@ -347,14 +347,18 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - Dropping a block on the toolbox or the trash can while a place was
   previewed no longer deletes the blocks below that place. Only the dragged
   blocks are deleted, no place is previewed while the pointer is there, and
-  the dragged blocks are shown faded (the toolbox is tinted).
+  the dragged blocks are shown faded (over the toolbox, the toolbox is tinted
+  too).
 - A block dropped anywhere on the toolbox is deleted again. After the
   toolbox's list of blocks was rebuilt (opening a project, selecting a block in
   another scope, making a variable), a drop on the categories or the open list
   deleted nothing, showed no faded blocks and still previewed places, until
   the window or a dock was resized; only the trash can and the window's left
-  edge deleted. The pointer decides, and the whole toolbox, its categories
-  included, is tinted while a drop would delete.
+  edge deleted. The pointer decides, at any height: a drop with the pointer
+  left of the toolbox's right edge deletes, also over the toolbar or the bottom
+  dock, and while the pointer is there the whole toolbox, its categories
+  included, is tinted. Over the trash can the dragged blocks are faded and the
+  trash can opens its lid, but the toolbox is not tinted.
 - A negative number typed into a block (`change by -1`) was rejected as "not
   a number" (`B2C-E0310`). A typed `-` or `+` is now a sign, and
   `-2147483648` is generated as `-2147483647 - 1`.

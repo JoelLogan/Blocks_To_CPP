@@ -72,9 +72,13 @@ invalid programs, and types stop most semantic errors.
 it will connect to when it is dropped. A drop with the pointer anywhere over
 the toolbox (its categories and its open list of blocks alike) or over the
 trash can deletes only the dragged blocks and never connects them. The
-pointer decides, not how much of the dragged blocks lies over the toolbox.
-While the pointer is there no place is previewed, the dragged blocks are
-shown faded, and the whole toolbox is tinted.
+toolbox counts at any height: a drop with the pointer left of its right edge
+deletes, also above or below the editor (over the toolbar or the bottom
+dock). The pointer decides, not how much of the dragged blocks lies over the
+toolbox. While a drop would delete, no place is previewed and the dragged
+blocks are shown faded. While the pointer is left of the toolbox's right
+edge, the whole toolbox is tinted as well; over the trash can, the toolbox is
+not tinted and the trash can opens its lid instead.
 
 ## 3.4 Expression slots
 

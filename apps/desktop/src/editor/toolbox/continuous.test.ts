@@ -6,8 +6,8 @@
  *   (`@blockly/continuous-toolbox` 7.0.9) picks that category again;
  * - it draws its blocks at one scale whatever the canvas zoom, and is at most 320 px wide,
  *   narrower when the canvas would have less than 200 px beside it;
- * - after every showing, the canvas knows where it is as a place where a drop deletes
- *   (03 §3.3 "Placing blocks").
+ * - after every showing, the canvas knows where it is as a place where a drop deletes, at any
+ *   height (03 §3.3 "Placing blocks").
  */
 import { ContinuousFlyout } from '@blockly/continuous-toolbox';
 import * as Blockly from 'blockly/core';
@@ -321,10 +321,13 @@ function layOutFlyout(workspace: Blockly.WorkspaceSvg, height = 700): void {
   });
 }
 
-/** What a drop at `x` (screen pixels) would land on: the toolbox, another target, or nothing. */
-function dropTargetAt(workspace: Blockly.WorkspaceSvg, x: number): string | null {
+/**
+ * What a drop at `x`, `y` (screen pixels; by default halfway down the flyout) would land on: the
+ * toolbox, another target, or nothing.
+ */
+function dropTargetAt(workspace: Blockly.WorkspaceSvg, x: number, y = 300): string | null {
   const target = workspace.getDragTarget(
-    new PointerEvent('pointermove', { clientX: x, clientY: 300 }),
+    new PointerEvent('pointermove', { clientX: x, clientY: y }),
   );
   const toolbox: unknown = workspace.getToolbox();
   return target === null ? null : target === toolbox ? 'the toolbox' : target.id;
@@ -376,5 +379,24 @@ describe('the flyout as a place where a drop deletes', () => {
     expect(flyout.getWidth()).toBe(width);
     expect(dropTargetAt(workspace, COLUMN + width + 20)).toBe('the toolbox');
     expect(dropTargetAt(workspace, COLUMN + 40 + width + 1)).toBeNull();
+  });
+
+  it('reaches up and down without end, as Blockly makes it', () => {
+    // A drop with the pointer left of the flyout's right edge deletes at any height, also over
+    // the toolbar above the editor or the bottom dock below it (03 §3.3 "Placing blocks").
+    const workspace = laidOutWorkspace();
+    const flyout = continuousFlyout(workspace);
+    const contents = workspaceContents(workspace);
+    flyout.show(contents);
+    flyout.show(contents);
+    const right = COLUMN + flyout.getWidth();
+    for (const y of [-500, -1, 701, 5000]) {
+      for (const x of [COLUMN / 2, COLUMN + 1, right - 1]) {
+        expect(dropTargetAt(workspace, x, y), `x = ${String(x)}, y = ${String(y)}`).toBe(
+          'the toolbox',
+        );
+      }
+      expect(dropTargetAt(workspace, right + 1, y), `y = ${String(y)}`).toBeNull();
+    }
   });
 });

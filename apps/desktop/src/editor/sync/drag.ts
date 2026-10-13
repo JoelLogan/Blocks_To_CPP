@@ -13,6 +13,11 @@
  * A drop with the pointer over a delete area (anywhere over the toolbox, its category column and
  * its always-open flyout alike, or over the trash can) deletes the dragged blocks and never
  * connects them; it is the pointer that counts, not how much of the blocks lies over the area.
+ * The toolbox's area has no top or bottom (Blockly's `VerticalFlyout.getClientRect`, which the
+ * continuous toolbox's `getClientRect` returns, reaches up and down without end), so a drop with
+ * the pointer left of the flyout's right edge deletes at any height, also over the app's toolbar
+ * above the editor or the bottom dock below it.
+ *
  * Blockly 12 decides "delete" from the pointer-up event but applies the connection its last
  * pointer move previewed, then deletes the dragged stack's first block together with everything
  * that connection put below it. Blockly's gesture also ends a drag without a last move (a fast

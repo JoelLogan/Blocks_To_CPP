@@ -11,8 +11,8 @@
  *   lays nothing out, so a delete area here is a component with a screen rectangle of its own, as
  *   the toolbox's flyout and the trash can are in the app; the end-to-end drops on the real
  *   toolbox are e2e/specs/flows/tray-delete.e2e.ts.
- * - The feedback: the dragged blocks are faded, and the whole toolbox (the category column and
- *   the flyout) is tinted, with the category names still readable.
+ * - The feedback: the dragged blocks are faded, and over the toolbox the whole toolbox (the
+ *   category column and the flyout) is tinted, with the category names still readable.
  */
 import type { BdmDocument } from '@blocks2cpp/b2c-core-wasm';
 import { b2cDarkTheme, b2cLightTheme } from '@blocks2cpp/blockly-ext';
