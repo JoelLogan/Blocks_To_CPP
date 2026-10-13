@@ -46,6 +46,43 @@ const MARKUP_NAME = `<i data-b2c-xss onclick="__b2cXss=1">x</i>`;
 const BUILD_TIMEOUT_MS = 120_000;
 
 /**
+ * ASCII `text` as the C++ generator writes it in a string literal, quotes included: the rules of
+ * the string-literal encoder (`StrLit::to_cpp` and `encode_literal_char` in
+ * crates/b2c-ir/src/text.rs; docs/spec/08-security.md §8.4.2), in its order. A backslash is
+ * doubled, so an escaped quote cannot be undone by a backslash before it. Text beyond ASCII is
+ * refused: the encoder also escapes invisible code points, which this copy does not list.
+ */
+function cppStringLiteral(text: string): string {
+  let literal = '"';
+  let previous = '';
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code > 0x7f) {
+      throw new Error(`cppStringLiteral covers ASCII text only, not U+${code.toString(16)}`);
+    }
+    if (character === '\\') {
+      literal += '\\\\';
+    } else if (character === '?' && previous === '?') {
+      literal += '\\?';
+    } else if (character === '\n') {
+      literal += '\\n';
+    } else if (character === '\t') {
+      literal += '\\t';
+    } else if (character === '\r') {
+      literal += '\\r';
+    } else if (character === '"') {
+      literal += '\\"';
+    } else if (code < 0x20 || code === 0x7f) {
+      literal += `\\${code.toString(8).padStart(3, '0')}`;
+    } else {
+      literal += character;
+    }
+    previous = character;
+  }
+  return `${literal}"`;
+}
+
+/**
  * Console text in the form the checks compare: as it is on Linux; without white space on
  * Windows, where the pseudoconsole may repaint a line with cursor moves instead of spaces and line
  * breaks (as the exit test's checks allow, e2e/specs/exit).
@@ -123,8 +160,9 @@ describe('E2E security 5: markup in a project is shown as text', () => {
       },
       { timeout: 15_000, message: 'the C++ of the project' },
     );
-    expect(code).toContain(`"${MARKUP.script}"`);
-    expect(code).toContain(`"${MARKUP.variable.replace(/"/g, '\\"')}"`);
+    // The variable's value has quotes, which the literal escapes.
+    expect(code).toContain(cppStringLiteral(MARKUP.script));
+    expect(code).toContain(cppStringLiteral(MARKUP.variable));
     expect(code).toContain(MARKUP.pinnedComment);
     await waitForErrors(app, 0);
     await expectClean(app, 'the project in Restricted Mode');
