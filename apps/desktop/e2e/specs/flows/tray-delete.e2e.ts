@@ -4,16 +4,21 @@
  * again, as opening a project, selecting a block in another scope or making a variable does: a new
  * variable adds its getter. Blockly records where the flyout is while it is not displayed, so after
  * such a rebuild a drop on the flyout or the category column deleted nothing until the layout
- * changed; only the trash can and the window's left edge still deleted.
+ * changed; only the trash can and the window's left edge still deleted. The editor records the
+ * drop places again in the animation frame after each layout or move of the flyout (or at the
+ * start of a drag that comes first, `src/editor/sync/dragTargets.ts`), so the drags here, which
+ * start after that frame, check the frame's record.
  *
  * A *print* at the end of `main`'s body is dropped with the pointer
  *
  * - on the flyout's middle, on its right part (12 px inside its right edge), on the category
  *   column's middle, and in the flyout's strip above the editor (over the toolbar) and below it
- *   (over the bottom dock), since the toolbox counts at any height: while the pointer is there,
- *   the toolbox is marked as a place that deletes (`blocklyToolboxDelete`), the category column is
- *   tinted as the flyout is and its names stay readable (4.5:1), and the block is faded; the drop
- *   deletes it, and Ctrl+Z puts it back at the end of `main`'s body;
+ *   (over the bottom dock), since the toolbox counts at any height, and on the flyout's right part
+ *   once more after the flyout was made 80 px wider with the *Resize the toolbox* splitter (which
+ *   moves its edge without a rebuild): while the pointer is there, the toolbox is marked as a place
+ *   that deletes (`blocklyToolboxDelete`), the category column is tinted as the flyout is and its
+ *   names stay readable (4.5:1), and the block is faded; the drop deletes it, and Ctrl+Z puts it
+ *   back at the end of `main`'s body;
  * - on the trash can: the block is faded and the can opens its lid, but the toolbox is neither
  *   marked nor tinted; the drop deletes it, and Ctrl+Z puts it back;
  * - 15 px right of the flyout, on the canvas: nothing is marked, nothing is faded, and the block
@@ -29,7 +34,7 @@ import { describe, expect, it } from 'vitest';
 import type { E2ePoint } from '../../../src/e2e/contract';
 import { type BlockNode, declareInt, moduleNodes, NodeIds, print } from '../../support/bdm';
 import { bringIntoView, panCanvas } from '../../support/canvas';
-import { pressAndMove, releaseButton } from '../../support/drag';
+import { drag, pressAndMove, releaseButton } from '../../support/drag';
 import { blockCorner, centerOn, currentDocument, grabPointOf } from '../../support/editor';
 import { sleep, waitFor } from '../../support/wait';
 import { contrastRatio } from './lib/contrast';
@@ -157,6 +162,11 @@ interface Drop {
   readonly outcome: Outcome;
   /** The place is above or below the editor (checked). */
   readonly outsideEditor?: true;
+  /**
+   * Before the drag, the flyout is made this many pixels wider with the *Resize the toolbox*
+   * splitter, by pointer; it stays so for the drops after.
+   */
+  readonly widenBy?: number;
 }
 
 /** Halfway across the flyout. */
@@ -196,6 +206,12 @@ const DROPS: readonly Drop[] = [
     outsideEditor: true,
   },
   {
+    where: 'the flyout’s right part, after the flyout was made wider with its splitter',
+    at: (layout, grab) => ({ x: layout.flyout.right - 12, y: grab.y }),
+    outcome: 'deleted by the toolbox',
+    widenBy: 80,
+  },
+  {
     where: 'the trash can',
     at: (layout) => layout.trash,
     outcome: 'deleted by the trash can',
@@ -222,6 +238,39 @@ async function layoutOf(app: FlowApp): Promise<Layout> {
     windowHeight: height,
     trash: { x: tx, y: ty },
   };
+}
+
+/** Runs in the webview: the middle of the *Resize the toolbox* splitter, or `null`. */
+const SPLITTER_SCRIPT = `
+  const bar = document.querySelector(
+    '[data-testid="workspace"] [role="separator"][aria-label="Resize the toolbox"]',
+  );
+  if (bar === null) {
+    return null;
+  }
+  const r = bar.getBoundingClientRect();
+  return [r.left + r.width / 2, r.top + r.height / 2];
+`;
+
+/**
+ * Makes the flyout `by` pixels wider with the *Resize the toolbox* splitter, by pointer, and waits
+ * until it is. The flyout's edge moves without a rebuild of its contents.
+ */
+async function widenFlyout(app: FlowApp, by: number): Promise<void> {
+  const before = await layoutOf(app);
+  const found: unknown = await app.driver.executeScript(SPLITTER_SCRIPT);
+  if (!Array.isArray(found) || found.length !== 2 || !found.every((n) => typeof n === 'number')) {
+    throw new Error(`The Resize the toolbox splitter is not on screen: ${String(found)}`);
+  }
+  const [x = 0, y = 0] = found.map(Number);
+  await drag(app.driver, { x, y }, { x: x + by, y });
+  await waitFor(
+    async () => {
+      const now = await layoutOf(app);
+      return Math.abs(now.flyout.right - (before.flyout.right + by)) < 1.5 ? true : null;
+    },
+    { timeout: UI_TIMEOUT_MS, message: `the flyout ${String(by)} px wider` },
+  );
 }
 
 /**
@@ -290,6 +339,10 @@ describe('Dropping a block on the toolbox', () => {
       });
       // The toolbox's rebuild is debounced; let any second one run before the drag.
       await sleep(400);
+      if (drop.widenBy !== undefined) {
+        await widenFlyout(app, drop.widenBy);
+        await bringIntoView(app.driver, () => blockCorner(app, block.id));
+      }
 
       const layout = await layoutOf(app);
       const grab = await grabPointOf(app, block.id);

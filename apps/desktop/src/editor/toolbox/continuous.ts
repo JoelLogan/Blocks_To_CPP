@@ -24,8 +24,10 @@
  *   made it with the *Resize the toolbox* splitter, by default at most
  *   {@link FLYOUT_WIDTH}.preferred wide; it narrows when the canvas would otherwise have less than
  *   {@link FLYOUT_WIDTH}.canvas beside it, and a wider block is cut off at its edge (04 §4.2);
- * - the canvas records where the flyout is as a place where a drop deletes after every layout of
- *   the flyout, and whenever the flyout moves or changes size (03 §3.3 "Placing blocks");
+ * - after every layout of the flyout, and whenever the flyout moves or changes size, the canvas's
+ *   record of where the flyout is as a place where a drop deletes is marked stale, and recorded
+ *   again in the next animation frame or at the start of a drag that comes first (03 §3.3
+ *   "Placing blocks", `sync/dragTargets.ts`);
  * - the flyout tells the window's layout where it is and how wide it may be made
  *   (`app/layout/flyoutLayout.ts`), whenever that changes.
  */
@@ -41,6 +43,7 @@ import { announceFlyoutLayout, CANVAS_MIN_WIDTH } from '../../app/layout/flyoutL
 import { timed } from '../../lib/timing';
 import { keepFlyoutFocus } from '../keyboard/keepFocus';
 import { prefersReducedMotion } from '../keyboard/motion';
+import { markDragTargetsStale } from '../sync/dragTargets';
 
 /** How long the toolbox waits after the last change before it rebuilds the flyout. */
 export const CONTINUOUS_REFRESH_DELAY_MS = 100;
@@ -212,7 +215,8 @@ export function flyoutWidth(natural: number, room: number, chosen: number | null
 /**
  * The continuous flyout, without block recycling, without its scroll animation on request, landing
  * on a chosen category at every zoom level, with a fixed block scale and a width the user can
- * choose, recorded as a drop target wherever it is, and telling the window's layout where it is.
+ * choose, recorded as a drop target wherever it is (without laying the page out for it), and
+ * telling the window's layout where it is.
  */
 export class B2cContinuousFlyout extends ContinuousFlyout {
   /** The width the flyout's contents need, in pixels, as of the last reflow. */
@@ -251,12 +255,16 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
    * - the flyout is placed again and the canvas resized only when the width changes. Blockly's
    *   version compares with `width_`, which `Flyout.show` has just set to 0, so it did that work
    *   on every showing, that is on every rebuild of a dynamic category;
-   * - the canvas records its drag targets after every layout, whatever the width. `Flyout.show`
-   *   records them only while the flyout is not displayed (its `setVisible(true)` records before
-   *   it displays the flyout again), when the flyout, and the toolbox that stands for it, end at
-   *   the window's left edge. Blockly's version recorded again because it placed the flyout every
-   *   time; without a record here, a drop on the flyout or the category column deleted nothing
-   *   after a rebuild until the layout changed (03 §3.3 "Placing blocks");
+   * - the canvas's record of its drag targets is marked stale after every layout, whatever the
+   *   width (`sync/dragTargets.ts`): it is recorded again in the next animation frame, or at the
+   *   start of a drag that comes first. `Flyout.show` records them only while the flyout is not
+   *   displayed (its `setVisible(true)` records before it displays the flyout again), when the
+   *   flyout, and the toolbox that stands for it, end at the window's left edge. Blockly's version
+   *   recorded again because it placed the flyout every time; without a later record, a drop on
+   *   the flyout or the category column deleted nothing after a rebuild until the layout changed
+   *   (03 §3.3 "Placing blocks"). A record here, at once, would read the flyout's place on screen
+   *   and so make the browser lay the page out, the flyout's new blocks and the canvas included,
+   *   in every rebuild: after nearly every edit, since each new preview may rebuild the flyout;
    * - the window's layout hears of a new width ({@link announceLayout}).
    *
    * The editor's canvas is left to right and has scrollbars, so Blockly's right alignment for
@@ -276,15 +284,17 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
       this.place();
       this.targetWorkspace.resizeContents();
     }
-    this.targetWorkspace.recordDragTargets();
+    markDragTargetsStale(this.targetWorkspace);
     this.announceLayout();
   }
 
   /**
    * Places the flyout beside the toolbox. Blockly does this whenever the workspace is resized (the
    * window, or a dock beside the canvas), so the width is fitted to the room left first. A new
-   * width resizes the canvas; a new width or place makes the canvas record its drag targets, so
-   * that a drop counts where the flyout now is, and the window's layout hears of it.
+   * width resizes the canvas; a new width or place marks the canvas's record of its drag targets
+   * stale (`sync/dragTargets.ts`), so that from the next animation frame on, or from the start of
+   * a drag that comes first, a drop counts where the flyout now is; and the window's layout hears
+   * of it.
    */
   override position(): void {
     const resized = this.fitWidth();
@@ -293,7 +303,7 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
       this.targetWorkspace.resizeContents();
     }
     if (resized || moved) {
-      this.targetWorkspace.recordDragTargets();
+      markDragTargetsStale(this.targetWorkspace);
     }
     this.announceLayout();
   }

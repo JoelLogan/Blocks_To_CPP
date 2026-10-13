@@ -7,10 +7,12 @@
  *   values or heading stacks).
  * - A drop on a delete area (03 §3.3 "Placing blocks"): it deletes only the dragged blocks and
  *   never connects them, even when a place was previewed just before, and the area counts where
- *   it is when the drag starts, even if it moved since the canvas last recorded it. happy-dom
- *   lays nothing out, so a delete area here is a component with a screen rectangle of its own, as
- *   the toolbox's flyout and the trash can are in the app; the end-to-end drops on the real
- *   toolbox are e2e/specs/flows/tray-delete.e2e.ts.
+ *   it is when the drag starts, even if it moved since the canvas last recorded it: a drag that
+ *   starts before the frame that records the moved area records it at its start, and a drag that
+ *   starts after reads no area's place (./dragTargets.ts). happy-dom lays nothing out, so a delete
+ *   area here is a component with a screen rectangle of its own, as the toolbox's flyout and the
+ *   trash can are in the app; the end-to-end drops on the real toolbox are
+ *   e2e/specs/flows/tray-delete.e2e.ts.
  * - The feedback: the dragged blocks are faded, and over the toolbox the whole toolbox (the
  *   category column and the flyout) is tinted, with the category names still readable.
  */
@@ -25,6 +27,7 @@ import { useAppStore } from '../../app/store';
 import { editorInjectOptions } from '../EditorWorkspace';
 import { B2cBlockDragger, B2cBlockDragStrategy, isOverDeleteArea } from './drag';
 import dragCss from './drag.css?raw';
+import { markDragTargetsStale } from './dragTargets';
 import {
   canonicalText,
   disposeWorkspaces,
@@ -198,12 +201,19 @@ class EdgeDeleteArea extends Blockly.DeleteArea {
    */
   edge: number;
 
+  /**
+   * How often the area's place on screen was read (in a browser, a read after any change to the
+   * page lays it out at once): once for each record of the canvas's drag targets.
+   */
+  reads = 0;
+
   constructor(edge: number) {
     super();
     this.edge = edge;
   }
 
   override getClientRect(): Blockly.utils.Rect {
+    this.reads += 1;
     return new Blockly.utils.Rect(-100_000, 100_000, -100_000, this.edge);
   }
 }
@@ -418,15 +428,20 @@ describe.skipIf(core === null)('a drop on a delete area', () => {
     release(PRESS);
     const near = pointerNear(svg, dragged, 'b003');
     const over = { x: near.x - 6, y: near.y };
-    // Recorded with its edge far left of the pointer's way, then moved without a new record: the
-    // toolbox's flyout after a rebuild of its contents, which Blockly records while the flyout is
-    // not displayed (its edge then at the window's left edge).
+    // Recorded with its edge far left of the pointer's way, then moved, and the record marked
+    // stale: the toolbox's flyout after a rebuild of its contents, which Blockly records while the
+    // flyout is not displayed (its edge then at the window's left edge). The drag starts in the
+    // same task, before the frame that would record it.
     const area = addDeleteArea(svg, over.x - 100);
-    area.edge = near.x - 2;
     await eventsDelivered();
+    area.edge = near.x - 2;
+    markDragTargetsStale(svg);
+    area.reads = 0;
 
     press(dragged);
     moveTo(near);
+    // Recorded once, at the drag's start.
+    expect(area.reads).toBe(1);
     expect(previewShown(svg)).toBe(true);
     moveTo(over);
     expect(fadedForDelete(dragged)).toBe(true);
@@ -436,12 +451,58 @@ describe.skipIf(core === null)('a drop on a delete area', () => {
     expect(svg.getBlockById(id)).toBeNull();
     expect(mainList(svg)).toEqual(MAIN);
     await eventsDelivered();
+    // The frame then had nothing left to record.
+    expect(area.reads).toBe(1);
 
     svg.undo(false);
     const back = present(svg.getBlockById(id), 'the dragged block');
     expect(back.getParent()).toBeNull();
     expect(back.getInputTargetBlock('ITEM0')?.isShadow()).toBe(true);
     expect(mainList(svg)).toEqual(MAIN);
+  });
+
+  it('reads no area’s place when the drag starts after the frame that recorded it', async () => {
+    const { svg, dragged } = await withLooseBlock();
+    const id = dragged.id;
+    press(dragged);
+    release(PRESS);
+    const near = pointerNear(svg, dragged, 'b003');
+    const over = { x: near.x - 6, y: near.y };
+    const area = addDeleteArea(svg, over.x - 100);
+    area.edge = near.x - 2;
+    markDragTargetsStale(svg);
+    area.reads = 0;
+    await eventsDelivered();
+    // Recorded once, in the frame.
+    expect(area.reads).toBe(1);
+
+    press(dragged);
+    moveTo(near);
+    moveTo(over);
+    expect(fadedForDelete(dragged)).toBe(true);
+    release(over);
+
+    expect(svg.getBlockById(id)).toBeNull();
+    expect(area.reads).toBe(1);
+  });
+
+  it('reads no area’s place for a drag when nothing moved', async () => {
+    const { svg, dragged } = await withLooseBlock();
+    const near = pointerNear(svg, dragged, 'b003');
+    const area = addDeleteArea(svg, near.x - 20);
+    press(dragged);
+    release(PRESS);
+    await eventsDelivered();
+    area.reads = 0;
+
+    for (let drag = 0; drag < 3; drag += 1) {
+      press(dragged);
+      moveTo({ x: PRESS.x + 200, y: PRESS.y + 40 * drag });
+      release({ x: PRESS.x + 200, y: PRESS.y + 40 * drag });
+    }
+    await eventsDelivered();
+    expect(dragged.isDeadOrDying()).toBe(false);
+    expect(area.reads).toBe(0);
   });
 
   it('still connects a block dropped over the canvas', async () => {
