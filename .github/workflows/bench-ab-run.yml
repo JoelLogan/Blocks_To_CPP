@@ -3,10 +3,14 @@
 # bench-ab-pr.yml for a pull request and bench-ab.yml by hand. They build the app under test (as
 # nightly.yml's e2e-app job does) from a base and a head commit, then on one runner per system run
 # the chosen webview benchmarks of the head's checkout against both builds, in alternating runs
-# (apps/desktop/e2e/bench/ab-rounds.sh: base, head, head, base, ...; 10 samples per side), and
-# compare the medians at the 10% threshold (tools/bench-compare.py ab). A gated metric more than
-# 10% worse fails, unless the head's apps/desktop/e2e/bench/accepted.json accepts it and the
-# base's does not.
+# (apps/desktop/e2e/bench/ab-rounds.sh: base, head, head, base, ...; 10 samples per side; each
+# benchmark in a Vitest call of its own), and compare the medians at the 10% threshold
+# (tools/bench-compare.py ab). A gated metric more than 10% worse fails, unless the head's
+# apps/desktop/e2e/bench/accepted.json accepts it as an intended slowdown (kind "accepted") and
+# the base's does not; a redefinition never waives an A/B difference, since the head's benchmarks
+# measure both builds. A benchmark the base build cannot run (its end-to-end hook lacks a method
+# the benchmark calls) is skipped, and one that fails is left out of the comparison: both are
+# listed in the summary, and only a benchmark that failed on the head fails the job.
 #
 # What runs here (the trust boundary): these jobs build and run the code of both commits, so a
 # caller may pass only commits its own run may execute.
@@ -335,6 +339,10 @@ jobs:
         shell: pwsh
         run: ./apps/desktop/e2e/scripts/msedgedriver.ps1 -OutDir (Join-Path $env:RUNNER_TEMP 'msedgedriver')
 
+      # Each benchmark runs in its own Vitest call, and the rounds go on when one is skipped or
+      # fails: the script records what happened to each in $AB_OUT/ab-runs.tsv for the comparison,
+      # and fails only when its arguments are not usable. Each run's artifacts go into
+      # $B2C_E2E_ARTIFACTS/<side>/round-<n>/<benchmark>/.
       - name: Run the benchmarks against both builds, alternating
         shell: bash
         env:
@@ -348,10 +356,12 @@ jobs:
           read -r -a filters <<< "$FILTERS"
           apps/desktop/e2e/bench/ab-rounds.sh "$BASE_APP" "$HEAD_APP" "$AB_OUT" "${filters[@]}"
 
+      # Fails on a gated regression, or on a benchmark that failed on the head; the skipped
+      # benchmarks and those that failed on the base are listed after the table.
       - name: Compare the head with the base
         shell: bash
         run: |
-          arguments=(--accepted apps/desktop/e2e/bench/accepted.json)
+          arguments=(--accepted apps/desktop/e2e/bench/accepted.json --runs "$AB_OUT/ab-runs.tsv")
           if [ -f ab-base/apps/desktop/e2e/bench/accepted.json ]; then
             arguments+=(--accepted-base ab-base/apps/desktop/e2e/bench/accepted.json)
           fi
@@ -368,13 +378,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Show the benchmark logs (on failure)
-        if: failure()
+      # A failed benchmark run leaves its logs (only a failed test saves them), also when the job
+      # passes: a failure on the base does not fail it.
+      - name: Show the logs of the failed benchmark runs
+        if: ${{ !cancelled() && hashFiles('e2e-artifacts/**/*.log') != '' }}
         shell: bash
         run: apps/desktop/e2e/scripts/show-logs.sh "$B2C_E2E_ARTIFACTS"
 
       - name: Upload screenshots and logs
-        if: failure()
+        if: ${{ !cancelled() && hashFiles('e2e-artifacts/**/*.log') != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ab-artifacts-${{ matrix.system }}

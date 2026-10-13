@@ -195,11 +195,19 @@ Details of each level as M2 sets them up:
     in alternating runs on one runner, at least 10 samples each, and the
     head's medians are compared with the base's at the same 10%. By hand
     (`bench-ab.yml`), the job measures the commit it runs on against one of
-    that commit's ancestors, and nothing else (§9.3). An intended
-    slowdown is recorded in `apps/desktop/e2e/bench/accepted.json` with its
-    reason, which restarts that metric's baseline: the first nightly run
-    that sees the entry does not fail on it and starts the metric's history
-    again, and an A/B run whose head adds the entry passes.
+    that commit's ancestors, and nothing else (§9.3). Each benchmark runs
+    on its own: one that the base's build cannot run (its E2E hook lacks a
+    method the benchmark calls) is skipped, one that fails is left out of
+    the comparison, and the summary lists both. The job fails on a gated
+    regression or on a benchmark that failed on the head.
+  * A change of a gated metric that is meant is recorded in
+    `apps/desktop/e2e/bench/accepted.json` with its reason and its kind:
+    `redefined` (the benchmark now measures something else) or `accepted`
+    (an intended slowdown). Either kind restarts that metric's baseline:
+    the first nightly run that sees the entry does not fail on it and
+    starts the metric's history again. An A/B run whose head adds an
+    `accepted` entry passes; a redefinition never waives an A/B difference,
+    because both builds are measured with the head's benchmarks.
   * The M2 polish wave's Variables listing, zoom-aware snap radius and
     screen-reader console output (W4-2, W5-1 and W3-11 of the
     [plan](../plans/m2-polish-plan.md)) merge only with a green A/B run
@@ -229,7 +237,7 @@ GitHub Actions workflows. All actions are SHA-pinned and least-privilege
 | `nightly.yml` | Daily, manual | `fuzz` (30 minutes per target, one job per target, with a kept corpus) · `links` (lychee over all Markdown) · `e2e-app` (the app under test, built once per OS for the jobs below) · `e2e` (both OSes, every flow and the visual diff) · `e2e-security` (both OSes, [08 §8.13](08-security.md#813-continuous-security-process)) · `bench` (both OSes, with the 10% gate and the acceptance file) |
 | `bench-ab-pr.yml` | The `bench-ab` label on a PR (and each push while it has the label) | `base` (the PR's merge commit is the head, its first parent the base) · `ab` (`bench-ab-run.yml`, every benchmark but cold start, both OSes) |
 | `bench-ab.yml` | Manual (base, benchmarks, systems) | `base` (the dispatched commit is the head; checks that the base is one of its ancestors, by default its merge base with the default branch) · `ab` (`bench-ab-run.yml`) |
-| `bench-ab-run.yml` | Called by the two above | `plan` (checks the inputs) · `app` (the app under test from the base and from the head, per OS) · `bench` (ubuntu, windows: the head's benchmarks against both builds in alternating runs on one runner, 10 samples each, compared at 10% with the head's acceptance file; §9.2) |
+| `bench-ab-run.yml` | Called by the two above | `plan` (checks the inputs) · `app` (the app under test from the base and from the head, per OS) · `bench` (ubuntu, windows: the head's benchmarks against both builds in alternating runs on one runner, 10 samples each, each benchmark on its own, those the base cannot run skipped; compared at 10% with the head's acceptance file; §9.2) |
 | `weekly.yml` | Weekly, manual | `mutants` (`cargo-mutants`) · `dependency-health` (report) · `geiger` (`cargo-geiger`, report only) · `fuzz-cmin` (corpus minimisation) |
 | `release.yml` | Signed tag `v*` | Build and bundle (Windows MSI/NSIS, Linux AppImage/deb/rpm), sign, SBOMs, provenance attestations, draft GitHub Release. Runs in the protected `release` environment. |
 
