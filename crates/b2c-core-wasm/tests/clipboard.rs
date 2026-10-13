@@ -684,9 +684,10 @@ fn a_pasted_stack_is_unstacked_inside_a_statement_list() {
         .push(head);
     let document = value.to_string();
     let (payload, _) = copy(&document, &["L1"]);
-    // The loose stack itself is an error (B2C-E0604); the pastes add none.
+    // The loose stack is parked, a warning (B2C-W0505, ADR-0012); neither it
+    // nor the pastes add an error.
     let before = errors(&preview(&document, 4));
-    assert_eq!(before.len(), 1, "{before:?}");
+    assert!(before.is_empty(), "{before:?}");
 
     for (block, input) in [(Some("b011"), Some("BODY")), (Some("b004"), None)] {
         let pasted = paste_ok(&payload, &document, &target("mod_main", block, input), 28);

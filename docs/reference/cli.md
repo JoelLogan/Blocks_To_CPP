@@ -25,8 +25,13 @@ b2c fmt        <project.b2c> [--check]
 ### `b2c check`
 
 Loads the project, checks every block against the block catalog and runs the
-analyser. It prints every problem and exits with `0` when there are no
-errors (warnings are allowed) or `1` when there are.
+analyser. Both always run once the project has loaded, so `check` lists the
+catalog's and the analyser's problems together: the same problems the app's
+Problems panel lists. It prints every problem and exits with `0` when there
+are no errors, even with warnings (such as `B2C-W0505` for a block left
+loose on the canvas, which is parked and does not run), or `1` when there
+are errors. `b2c build`, `b2c generate` and `b2c run` stop on the same
+errors and accept the same warnings.
 
 ### `b2c generate`
 
@@ -94,7 +99,7 @@ already formatted (exit code `1` if not), which is useful in CI.
 | Code | Meaning |
 | ------ | --------- |
 | `0` | Success |
-| `1` | The project has errors (or, for `fmt --check`, is not formatted) |
+| `1` | The project has errors; warnings alone never give `1` (or, for `fmt --check`, the file is not formatted) |
 | `2` | Usage problem: bad arguments, or a file that cannot be read or written |
 | `3` | Toolchain problem: no suitable g++ found, it is broken or cannot be started, or it crashed |
 

@@ -204,7 +204,14 @@ fn e0602_and_e0603_versions() {
         json!([]),
     );
     assert_eq!(codes(&value), ["B2C-E0602", "B2C-E0603"]);
-    assert!(messages(&value)[0].starts_with("This block was made with a newer version of Blocks2Cpp"));
+    // The block is named by its label, never by its catalog ID (03 §3.11.1).
+    assert_eq!(
+        messages(&value),
+        [
+            "This \"leave loop\" block was made with a newer version of Blocks2Cpp: it is version 2, and this version knows only up to version 1. Update Blocks2Cpp to use it.",
+            "This \"leave loop\" block is version 0, which this version of Blocks2Cpp cannot upgrade to version 1.",
+        ]
+    );
 }
 
 // --- E0604: shapes and places -----------------------------------------------
@@ -219,8 +226,12 @@ fn e0604_blocks_in_the_wrong_place() {
              "inputs": {"VALUE": {"block": {"id": "b4", "type": "control.break", "v": 1}}}}
         ]),
         json!([
-            {"id": "b5", "type": "io.print", "v": 1, "extra": {"itemCount": 1}},
-            {"id": "b6", "type": "logic.boolean", "v": 1}
+            // Blocks stacked below a block that is not a statement.
+            {"id": "b5", "type": "logic.boolean", "v": 1,
+             "stack": [{"id": "b6", "type": "control.break", "v": 1}]},
+            {"id": "b7", "type": "func.define", "v": 1, "fields": {"NAME": {"sym": "s_f", "name": "f"}},
+             "extra": {"params": []},
+             "stack": [{"id": "b8", "type": "control.break", "v": 1}, {"id": "b9", "type": "control.break", "v": 1}]}
         ]),
     );
     let (_, diagnostics) = common::resolve(&value);
@@ -235,18 +246,72 @@ fn e0604_blocks_in_the_wrong_place() {
             ("B2C-E0604", "b2"),
             ("B2C-E0604", "b4"),
             ("B2C-E0604", "b5"),
-            ("B2C-E0604", "b6"),
+            ("B2C-E0604", "b7"),
         ]
     );
+    // Blocks are named by their label, never by their catalog ID (03 §3.11.1).
     let text: Vec<&str> = diagnostics.iter().map(|d| d.message.as_str()).collect();
     assert_eq!(
         text,
         [
-            "This \"math.number\" block gives a value and cannot be a step on its own. Put it into an input of another block.",
-            "A \"program.main\" block must sit directly on the canvas, not inside another block.",
-            "This \"control.break\" block is a step, not a value, so it cannot be plugged into an input.",
-            "This \"io.print\" block is not inside \"when program starts\" or a function, so it would never run. Move it inside one, or delete it.",
-            "This \"logic.boolean\" block gives a value, but it is not plugged into another block. Put it into an input, or delete it.",
+            "This block gives a value and cannot be a step on its own. Put it into an input of another block.",
+            "A \"when program starts\" block must sit directly on the canvas, not inside another block.",
+            "This \"leave loop\" block is a step, not a value, so it cannot be plugged into an input.",
+            "1 block is stacked below this block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it.",
+            "2 blocks are stacked below this \"define\" block, but nothing can be attached below it, so the stacked blocks would never run. Move them inside a block, or delete them.",
+        ]
+    );
+}
+
+/// Statements, reporters and predicates left on the canvas are parked
+/// (ADR-0012): the catalog reports nothing about their place, also for a
+/// stack, a disabled head and the blocks nested in them, while every other
+/// catalog check still applies to them.
+#[test]
+fn parked_blocks_are_not_misplaced() {
+    let print = |id: &str| json!({"id": id, "type": "io.print", "v": 1, "extra": {"itemCount": 1}});
+    let value = project(
+        json!([]),
+        json!([
+            print("b1"),
+            {"id": "b2", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+             "stack": [print("b3"), {"id": "b4", "type": "control.repeat", "v": 1,
+                                     "statements": {"BODY": [print("b5")]}}]},
+            {"id": "b6", "type": "io.print", "v": 1, "disabled": true, "extra": {"itemCount": 1}},
+            {"id": "b7", "type": "logic.boolean", "v": 1},
+            {"id": "b8", "type": "math.arithmetic", "v": 1,
+             "inputs": {"A": {"block": {"id": "b9", "type": "math.number", "v": 1, "fields": {"VALUE": "2"}}}}},
+        ]),
+    );
+    assert_eq!(codes(&value), Vec::<String>::new());
+
+    // Catalog errors inside parked code stay errors (E0601–E0603, E0605–E0614).
+    let value = project(
+        json!([]),
+        json!([
+            {"id": "b1", "type": "raw.cpp", "v": 1},
+            {"id": "b2", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+             "stack": [{"id": "b3", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+                        "fields": {"SEP": "tabs"}},
+                       {"id": "b4", "type": "control.break", "v": 2}]},
+            {"id": "b5", "type": "io.print", "v": 1, "disabled": true, "extra": {"itemCount": 33}},
+            {"id": "b6", "type": "var.set", "v": 1, "fields": {"VAR": {"ref": "s"}},
+             "inputs": {"VALUE": {"block": {"id": "b7", "type": "x.nope", "v": 1}}}},
+        ]),
+    );
+    let (_, diagnostics) = common::resolve(&value);
+    let found: Vec<(&str, &str)> = diagnostics
+        .iter()
+        .map(|d| (d.code.0.as_str(), d.primary.block.as_ref().unwrap().as_str()))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            ("B2C-E0601", "b1"),
+            ("B2C-E0607", "b3"),
+            ("B2C-E0602", "b4"),
+            ("B2C-E0613", "b5"),
+            ("B2C-E0601", "b7"),
         ]
     );
 }

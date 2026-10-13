@@ -356,12 +356,18 @@ describe.skipIf(!WITH_CORE)('many duplicates', () => {
       expect(syms.filter((sym) => FRESH_SYMBOL_ID.test(sym))).toHaveLength(1000);
       expect(canonical(after)).toBeTruthy();
       await session.session.flush();
-      // The only errors are the loose blocks' own ("not in a program", B2C-E0604).
-      const errors = (useAppStore.getState().analysis.preview?.diagnostics ?? []).filter(
-        (diagnostic) => diagnostic.severity === 'error',
-      );
-      expect(errors).toHaveLength(1001);
-      expect(errors.every((diagnostic) => diagnostic.code === 'B2C-E0604')).toBe(true);
+      // The loose declarations are parked (ADR-0012): one warning each (B2C-W0505), and no
+      // error, so the program still builds.
+      const preview = useAppStore.getState().analysis.preview;
+      const diagnostics = preview?.diagnostics ?? [];
+      expect(diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
+      expect(diagnostics).toHaveLength(1001);
+      expect(
+        diagnostics.every(
+          (diagnostic) => diagnostic.code === 'B2C-W0505' && diagnostic.severity === 'warning',
+        ),
+      ).toBe(true);
+      expect(preview?.buildable).toBe(true);
     } finally {
       session.dispose();
     }

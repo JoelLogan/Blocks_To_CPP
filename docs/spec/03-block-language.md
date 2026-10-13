@@ -80,6 +80,16 @@ blocks are shown faded. While the pointer is left of the toolbox's right
 edge, the whole toolbox is tinted as well; over the trash can, the toolbox is
 not tinted and the trash can opens its lid instead.
 
+**Parked blocks.** As in Scratch, a statement or value block, or a stack of
+them, can be left anywhere on the canvas. Only statements attached to *when
+program starts* or to a function run; definitions are never parked. Parked
+blocks are saved, show the ⚠ badge of `B2C-W0505` (*not attached*), are not
+analysed until they are attached and never stop Run
+([ADR-0012](../adr/0012-parked-blocks.md)). The block catalog still checks
+them, so an unknown or damaged block is an error wherever it is. Until M3,
+a variable created inside a parked stack can be chosen in the blocks below
+it only once the stack is attached.
+
 ## 3.4 Expression slots
 
 Every value and boolean input accepts either a block or **typed text**. Typed
@@ -678,8 +688,14 @@ help     = "A random whole number between the two values, including both."
   variable number of parts (`control.if`, `io.print`, `text.join`,
   `logic.operation`, `func.define`, `func.call`, `func.call_stmt`) get ⊕/⊖
   mutators from `blockly-ext`, keyed by block ID; their text still comes from
-  the catalog label. A shorter label for block paths in the Problems list
-  (an optional `short` key) is left for the localisation work of M5.
+  the catalog label.
+* **Messages.** Messages and block paths use a block's short name: its
+  friendly label up to the first field or input (*print*, *repeat*, *when
+  program starts*). A message about a block whose label starts with a field
+  or input says *this block*. Messages never show a block's catalog ID,
+  except for an unknown block type (`E0601`) and a broken catalog definition
+  (`E0620`, a bug report). An optional `short` key for a shorter name is
+  left for the localisation work of M5.
 * **Output types.** `output` is required for `reporter` and `predicate`
   shapes and forbidden for the others. Its values are `any`, `bool`, `int`,
   `double`, `number`, `char`, `string`, `symbol` and `field:<NAME>`.

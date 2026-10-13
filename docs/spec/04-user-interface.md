@@ -241,6 +241,10 @@ changes only what the toolbar does:
 Either way the backend refuses to build or run a project with analyser errors
 ([07 §7.6.1](07-toolchain-build-run.md#761-preconditions)).
 
+**Parked blocks.** A block left loose on the canvas shows the ⚠ badge of
+`B2C-W0505` and is listed in Problems, but ▶ Run stays enabled; the program
+runs without it ([ADR-0012](../adr/0012-parked-blocks.md)).
+
 **Compiler messages from the last build.** g++ and linker diagnostics stay on
 their blocks and in Problems after the project changes, dimmed and marked
 *from the last build*, for as long as the content hash differs from the

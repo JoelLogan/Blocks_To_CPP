@@ -12,7 +12,9 @@ pub(crate) const UNKNOWN_BLOCK: &str = "B2C-E0601";
 pub(crate) const NEWER_BLOCK: &str = "B2C-E0602";
 /// A block of an older version that cannot be upgraded.
 pub(crate) const OLD_BLOCK: &str = "B2C-E0603";
-/// A block in a place its shape does not allow.
+/// A block in a place its shape does not allow and the editor cannot produce
+/// (a statement, reporter or predicate directly on the canvas is parked
+/// instead, ADR-0012).
 pub(crate) const WRONG_PLACE: &str = "B2C-E0604";
 /// A field the block type does not have.
 pub(crate) const UNKNOWN_FIELD: &str = "B2C-E0605";

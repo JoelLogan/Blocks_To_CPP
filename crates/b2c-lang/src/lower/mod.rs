@@ -28,7 +28,7 @@ use crate::access::{self, FieldProblem};
 use crate::codes;
 use crate::collect::{self, DeclInfo, DeclKind, DeclStatus, MAX_BLOCK_DEPTH};
 use crate::flow;
-use crate::messages::{Diags, quoted};
+use crate::messages::{self, Diags, quoted};
 use crate::nesting;
 use crate::query::{Point, ScopeIndex};
 use crate::scope::{HideMark, ListKey, PARAMS_LIST, Scopes};
@@ -182,6 +182,29 @@ fn sorted_blocks(module: &b2c_model::Module) -> Vec<&Block> {
     blocks
 }
 
+/// Block types the analyser lowers as values (`Lowerer::value_block`): the
+/// reporters and predicates of the catalog. A test checks the list against
+/// the catalog's shapes.
+fn is_value_type(block_type: &str) -> bool {
+    matches!(
+        block_type,
+        "var.get"
+            | "math.number"
+            | "math.arithmetic"
+            | "math.compare"
+            | "math.random_int"
+            | "math.convert"
+            | "logic.boolean"
+            | "logic.operation"
+            | "logic.not"
+            | "logic.ternary"
+            | "text.literal"
+            | "text.char"
+            | "text.join"
+            | "func.call"
+    )
+}
+
 impl<'d> Lowerer<'d> {
     fn new(document: &'d Document, module: ModuleId) -> Self {
         let decls = collect::collect(document);
@@ -241,7 +264,10 @@ impl<'d> Lowerer<'d> {
                 let (item, keep) = match block.block_type.as_str() {
                     "program.main" => (Some(self.main(block)), chosen_main.as_ref() == Some(&block.id)),
                     "func.define" => (self.function(block), true),
-                    _ => (None, false),
+                    _ => {
+                        self.report_parked(block);
+                        (None, false)
+                    }
                 };
                 if let Some(item) = item {
                     if self.check_nesting(&item) {
@@ -259,6 +285,29 @@ impl<'d> Lowerer<'d> {
             });
         }
         modules
+    }
+
+    /// Reports a parked stack (ADR-0012, 05 §5.4): an enabled top-level
+    /// statement or value block, with the blocks stacked below it, is not
+    /// part of the program, so it is not lowered and does not run. It gets
+    /// one `B2C-W0505`, on its head, which counts the stacked blocks. A head
+    /// the user disabled is not reported (the caller skips it), and neither
+    /// is a block type the analyser does not lower: the catalog reports an
+    /// unknown type (`B2C-E0601`).
+    fn report_parked(&mut self, head: &Block) {
+        let gives_value = if access::is_statement_type(&head.block_type) {
+            false
+        } else if is_value_type(&head.block_type) {
+            true
+        } else {
+            return;
+        };
+        let location = self.loc(&head.id, Part::Whole);
+        self.diags.warning(
+            codes::PARKED,
+            location,
+            messages::parked(gives_value, head.stack.len()),
+        );
     }
 
     /// Reports an item that nests too deeply for the later stages (unless
