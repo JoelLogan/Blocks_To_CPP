@@ -45,8 +45,10 @@ b2c-ipc.workspace = true
 # Features: the WebView2/WebKitGTK runtime (`wry`), compressed embedded assets,
 # the isolation pattern, modern Windows controls and X11 on Linux. Left out on
 # purpose: `dynamic-acl` (capabilities are fixed at build time), `devtools` (so
-# release builds have no web inspector), `tray-icon`, and `dbus` (unused, and it
-# would need libdbus to build).
+# release builds have no built-in developer tools; WebKitGTK's remote Web
+# Inspector is a separate path that the app's environment turns on, see
+# docs/spec/08-security.md §8.8), `tray-icon`, and `dbus` (unused, and it would
+# need libdbus to build).
 tauri = { version = "2.12.1", default-features = false, features = [
   "wry",
   "compression",

@@ -449,8 +449,10 @@ These implement [docs/spec/08-security.md §8.8](../../docs/spec/08-security.md#
 - **Navigation.** The window may navigate only within the app (and to the dev server during
   development), and requests to open new windows are denied (`src-tauri/src/window.rs`).
 - `withGlobalTauri: false` (no `window.__TAURI__`), `freezePrototype: true`
-  (`Object.prototype` is frozen against prototype pollution), and the web inspector is only in
-  debug builds: the `devtools` Cargo feature is off.
+  (`Object.prototype` is frozen against prototype pollution), and Tauri's developer tools are only
+  in debug builds: the `devtools` Cargo feature is off. WebKitGTK's remote Web Inspector can still
+  be turned on through the app's environment, also in release builds
+  ([08 §8.8](../../docs/spec/08-security.md#88-webview-and-ipc-hardening)).
 - **Frontend rules** (ESLint): no `innerHTML`, `outerHTML`, `insertAdjacentHTML`,
   `document.write`, `eval`, `new Function`, string arguments to `setTimeout`/`setInterval`, or
   `dangerouslySetInnerHTML`; `eslint-plugin-no-unsanitized` checks the remaining DOM sinks.
@@ -580,7 +582,8 @@ Notes:
 - **Test tooling** (`vitest`, `@vitest/coverage-v8`, `happy-dom`, Testing Library, `axe-core`) adds
   about 70 development-only packages; none of it reaches the app bundle.
 - **`tauri` features:** `wry`, `compression`, `isolation`, `common-controls-v6` and `x11`.
-  Left out: `devtools` (no web inspector in release builds), `dynamic-acl` (capabilities are fixed
+  Left out: `devtools` (no built-in developer tools in release builds; WebKitGTK's remote
+  inspector is a separate path, see 08 §8.8), `dynamic-acl` (capabilities are fixed
   at build time), `tray-icon`, and `dbus` (unused, and it would need libdbus to build).
 - **`rfd` 0.16.0**, not 0.17: `tauri-plugin-dialog` 2.8.1 still requires `rfd` 0.16, and the
   Windows trust dialog uses the plugin's copy, so `rfd` moves when the plugin does. On Windows it

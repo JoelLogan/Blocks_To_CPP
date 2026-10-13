@@ -336,10 +336,10 @@ For each interaction in the table:
 | ID | Interaction | How |
 | --- | --- | --- |
 | I0 | Nothing (baseline) | Leave the app alone for the ten seconds. |
-| I1 | Select across scopes | Click *create int variable secret* (nothing is declared before it) and the *ask* block inside *repeat while* (both variables are visible there), alternately. Each click changes the variables the Variables category lists. |
+| I1 | Select across scopes | Click *create int variable secret* (nothing is declared before it) and the *ask* block inside *repeat until* (both variables are visible there), alternately. Each click changes the variables the Variables category lists. |
 | I2 | Click the selected block | Click the block that is already selected. This changes nothing. |
 | I3 | Click the empty canvas | Click the empty canvas once before you start the watcher (this deselects). Then click the empty canvas three times. This changes nothing. |
-| I4 | Select within one scope | Click the *print* block after the two *create variable* blocks and the *repeat while* block, alternately (the same variables are visible at both). |
+| I4 | Select within one scope | Click the *print* block after the two *create variable* blocks and the *repeat until* block, alternately (the same variables are visible at both). |
 | I5 | Choose a category | Click *Variables*, then another category, then *Variables* in the toolbox. |
 | I6 | Open a drop-down | Open the variable menu of the *ask* block (where it says `guess`) and close it with Escape. |
 | I7 | Edit a number | Click the `100` of *random integer from 1 to 100*, type `50`, press Enter; then set it back to `100`, and once more to `50`. |
