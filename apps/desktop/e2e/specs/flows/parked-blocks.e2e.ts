@@ -117,11 +117,14 @@ describe('Parked blocks', () => {
       { timeout: UI_TIMEOUT_MS, message: 'an ask left loose on the canvas' },
     );
     const warnings = stacks === 1 ? '1 warning' : `${String(stacks)} warnings`;
+    // The build of step (4) may leave the compiler's notes as info messages (on Windows, about
+    // the hardening flags MSYS2's g++ lacks); they count neither as warnings nor as errors.
+    const onlyWarnings = new RegExp(`^${warnings}(, \\d+ info messages?)?$`);
     await showProblems(app.driver);
-    await waitFor(async () => (await problemsSummary(app.driver)) === warnings, {
+    await waitFor(async () => onlyWarnings.test(await problemsSummary(app.driver)), {
       timeout: UI_TIMEOUT_MS,
       message: async () =>
-        `"${warnings}" in Problems (it says "${await problemsSummary(app.driver)}")`,
+        `"${warnings}" and no errors in Problems (it says "${await problemsSummary(app.driver)}")`,
     });
     expect(await runHeldBack(app.driver)).toBe(false);
   }, 180_000);
