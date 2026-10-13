@@ -69,6 +69,18 @@ pub use toolchains::{ToolchainChoice, ToolchainReport, list_toolchains};
 /// The version of the block catalog the app builds with (`app_info`, and the
 /// `generator.catalog` of new projects).
 pub use b2c_catalog::CATALOG_VERSION;
+/// Block upgrades on load (`docs/spec/05-project-format.md` §5.7,
+/// ADR-0015), for the app and the command-line tool, which use the block
+/// catalog only through this crate. The build itself upgrades in memory, in
+/// the resolve stage.
+pub use b2c_catalog::{
+    BlockMigration, BlockReplacement, BlockUpgrades, UpgradeReport, core_catalog, upgrade_document,
+    upgrade_document_with,
+};
+/// Saving a project file atomically, keeping the previous version as
+/// `<name>.b2c.bak` (`docs/spec/05-project-format.md` §5.10), for
+/// `b2c migrate --in-place`.
+pub use b2c_store::save_project;
 
 /// Operating-system helpers for the desktop app and the command-line tool, so
 /// neither needs a direct dependency on `b2c-process`

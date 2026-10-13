@@ -59,6 +59,7 @@ beforeEach(() => {
     document: '{}',
     trust: TRUSTED,
     fileName: 'game.b2c',
+    blocksUpgraded: false,
   });
   harness.ipc.recoveryDiscard.mockResolvedValue({});
 });
@@ -139,7 +140,13 @@ describe('the recovery offer', () => {
     harness.ipc.recoveryRestore.mockReturnValueOnce(
       new Promise((resolve) => {
         finish = () => {
-          resolve({ handle: HANDLE_B, document: '{}', trust: TRUSTED, fileName: null });
+          resolve({
+            handle: HANDLE_B,
+            document: '{}',
+            trust: TRUSTED,
+            fileName: null,
+            blocksUpgraded: false,
+          });
         };
       }),
     );

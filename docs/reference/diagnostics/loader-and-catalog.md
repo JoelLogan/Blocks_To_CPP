@@ -540,27 +540,52 @@ checked.
 
 ### B2C-E0602: block from a newer version
 
-The block was saved by a newer version of its definition than this version
-of Blocks2Cpp knows.
+The block was made by a newer version of Blocks2Cpp. Either it was saved by
+a newer version of its definition than this version knows, or the project
+(or the pasted blocks) came from a newer block catalog
+([spec §3.11.3](../../spec/03-block-language.md#3113-block-versioning)) and
+the block has a field, input, setting in `extra` or dropdown choice that
+this version does not know. Such a newer addition is not reported as unknown
+(`B2C-E0605`, `E0607`, `E0608`, `E0610`, `E0611`): the block is kept
+unchanged (shown as a placeholder in the editor), and saving the project
+preserves it.
 
 > This "print" block was made with a newer version of Blocks2Cpp: it is version 2, and this version knows only up to version 1. Update Blocks2Cpp to use it.
+>
+> This "change" block was made with a newer version of Blocks2Cpp: it has the field "OP", which this version does not know. Update Blocks2Cpp to use it; until then the block is kept as it is.
 
 **Fix:** update Blocks2Cpp.
 
 ### B2C-E0603: block version cannot be upgraded
 
-The block was saved with an older version of its definition. Blocks2Cpp
-upgrades such blocks automatically
-([spec §3.11.3](../../spec/03-block-language.md#3113-block-versioning)), but
-here no upgrade exists (for example for version 0, which never existed), or
-the upgrade failed because the block does not have the shape its version
-promises. The block is kept unchanged.
+The block was saved with an older version of its definition, or is of a
+block type that was retired (merged into another). Blocks2Cpp upgrades such
+blocks when a project, a recovery snapshot or pasted blocks are loaded, and
+the project then has unsaved changes
+([spec §5.7](../../spec/05-project-format.md#57-versioning-and-migration)).
+Here the upgrade was not possible: no upgrade exists (for example for
+version 0, which never existed), the upgrade failed because the block does
+not have the shape its version promises, or the upgraded block would have
+broken a rule every upgrade keeps (it never adds or removes blocks, never
+makes an expression longer, never changes the IDs of what the block
+declares, never changes what workspace trust looks at, and stays within the
+limits of project files). The block is kept unchanged (shown as a
+placeholder in the editor), and saving the project preserves it.
 
 > This "leave loop" block is version 0, which this version of Blocks2Cpp cannot upgrade to version 1.
 >
 > This "print" block is version 1, and upgrading it from version 1 failed: the separator is unknown.
+>
+> This block is version 1 of a retired kind of block, which is now the "change" block, and replacing it failed: the block has no VALUE input.
+>
+> This block is version 2 of a retired kind of block, and this version of Blocks2Cpp cannot upgrade it.
+>
+> This "print" block is version 1, and upgrading it would add a block, so it was left as it was. This is a bug in Blocks2Cpp.
 
-**Fix:** replace the block with a new one from the toolbox.
+**Fix:** replace the block with a new one from the toolbox. The messages
+that end with *This is a bug in Blocks2Cpp* come from an upgrade that ships
+with Blocks2Cpp: [report the bug](../../../CONTRIBUTING.md) with the
+project file.
 
 ### B2C-E0604: block in the wrong place
 

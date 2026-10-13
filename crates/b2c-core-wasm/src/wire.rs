@@ -5,12 +5,12 @@
 //! result is the [`FacadeError::Encode`] envelope instead.
 
 use b2c_ir::{Diagnostic, SymbolInfo};
-use b2c_model::{Block, Document, LoadError};
+use b2c_model::{Block, LoadError};
 use serde::Serialize;
 
 use crate::clipboard::Unresolved;
 use crate::error::{FacadeError, Failure};
-use crate::facade::{Canonical, Preview, VersionInfo};
+use crate::facade::{Canonical, Loaded, Preview, VersionInfo};
 use crate::scope::ConversionRow;
 use crate::session::{ClipboardMade, Pasted};
 
@@ -66,21 +66,26 @@ pub(crate) fn version(info: &VersionInfo) -> String {
     encode(info)
 }
 
-/// `{"ok": true, "document": {…}, "diagnostics": []}` with the document in
-/// canonical key order, or the failure.
+/// `{"ok": true, "document": {…}, "diagnostics": [...]}` with the document
+/// in canonical key order and the blocks that could not be upgraded
+/// (`B2C-E0603`), or the failure.
 ///
 /// The document is written by `b2c_model`'s canonical writer (struct keys in
 /// declaration order, map keys sorted, top-level blocks by ID) and then
 /// compacted, rather than through `serde_json`, so the key order cannot
 /// depend on `serde_json` features, and the text is not parsed again.
-pub(crate) fn load(result: &Result<Document, LoadError>) -> String {
+pub(crate) fn load(result: &Result<Loaded, LoadError>) -> String {
     match result {
-        Ok(document) => {
-            let compact = compact_json(&b2c_model::to_canonical_json(document));
-            let mut out = String::with_capacity(compact.len().saturating_add(48));
+        Ok(loaded) => {
+            let compact = compact_json(&b2c_model::to_canonical_json(&loaded.document));
+            let diagnostics = encode(&loaded.diagnostics);
+            let capacity = compact.len().saturating_add(diagnostics.len()).saturating_add(48);
+            let mut out = String::with_capacity(capacity);
             out.push_str(r#"{"ok":true,"document":"#);
             out.push_str(&compact);
-            out.push_str(r#","diagnostics":[]}"#);
+            out.push_str(r#","diagnostics":"#);
+            out.push_str(&diagnostics);
+            out.push('}');
             out
         }
         Err(problem) => failure(problem),
@@ -246,7 +251,7 @@ mod tests {
 
     #[test]
     fn failure_shape() {
-        let text = load(&b2c_model::load(b"[]"));
+        let text = load(&crate::facade::load_document(b"[]"));
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["ok"], false);
         assert!(value.get("document").is_none());

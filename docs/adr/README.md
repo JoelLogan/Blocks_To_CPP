@@ -23,6 +23,7 @@ points that no longer hold; the rest stays in force.
 | [0012](0012-parked-blocks.md) | Loose blocks are parked: a warning, not an error | Accepted |
 | [0013](0013-additive-format-keys.md) | Additive format keys raise `formatVersion` only when they are used | Accepted |
 | [0014](0014-extending-blockly.md) | Extending Blockly: allowed seams and patched dependencies | Accepted |
+| [0015](0015-block-upgrades-on-load.md) | Block upgrades run on load; before 1.0 a retired block type is replaced at once | Accepted |
 
 A *Proposed* ADR records a decision that work already proceeds on, with
 points the owner still confirms or reverses (each marked *owner to confirm*).

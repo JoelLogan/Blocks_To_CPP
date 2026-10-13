@@ -83,7 +83,7 @@ pub struct ProjectOpened {
     /// The project's handle.
     pub handle: Handle,
     /// The project as BDM JSON text (migrated to the current format when it was
-    /// older).
+    /// older, with its blocks upgraded).
     pub document: String,
     /// Its trust state.
     pub trust: Trust,
@@ -92,6 +92,10 @@ pub struct ProjectOpened {
     /// The format version the file had, when it was migrated in memory; `null`
     /// when it is current.
     pub migrated_from: Option<u32>,
+    /// True when a block was upgraded in memory
+    /// (`docs/spec/05-project-format.md` §5.7): the project starts with
+    /// unsaved changes, and saving keeps the file as it was as `.b2c.bak`.
+    pub blocks_upgraded: bool,
 }
 
 /// The response of `project_open_dialog`.
@@ -125,12 +129,15 @@ id_request!(
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectReloadResponse {
-    /// The project as BDM JSON text.
+    /// The project as BDM JSON text, with its blocks upgraded.
     pub document: String,
     /// Its trust state, checked again.
     pub trust: Trust,
     /// The format version the file had, when it was migrated in memory.
     pub migrated_from: Option<u32>,
+    /// True when a block was upgraded in memory (05 §5.7): the project
+    /// starts with unsaved changes.
+    pub blocks_upgraded: bool,
 }
 
 /// Defines a request with a handle and a document.

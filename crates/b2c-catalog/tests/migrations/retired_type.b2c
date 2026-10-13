@@ -1,0 +1,77 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": { "app": "0.1.0", "catalog": "1.0.0" },
+  "project": {
+    "id": "prj_retired",
+    "name": "A retired block type",
+    "language": { "standard": "c++20" },
+    "build": { "libraries": ["m"], "defines": [{ "name": "LEVEL", "value": { "int": 2 } }] }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_say_old",
+                  "type": "test.say",
+                  "v": 0,
+                  "disabled": true,
+                  "comment": { "text": "An old say block", "pinned": true },
+                  "fields": { "LOUD": true },
+                  "inputs": {
+                    "WHAT": {
+                      "block": {
+                        "id": "b_sum",
+                        "type": "math.arithmetic",
+                        "v": 1,
+                        "fields": { "OP": "add" },
+                        "inputs": {
+                          "A": { "block": { "id": "b_two", "type": "math.number", "v": 1, "fields": { "VALUE": "2" } } },
+                          "B": { "expr": [{ "num": "3" }] }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b_loop",
+                  "type": "control.forever",
+                  "v": 1,
+                  "collapsed": true,
+                  "statements": {
+                    "BODY": [
+                      { "id": "b_say_inner", "type": "test.say", "v": 1, "inputs": { "WHAT": { "expr": [{ "str": "again" }] } } }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b_say_loose",
+            "type": "test.say",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "inputs": { "WHAT": { "expr": [{ "str": "parked" }] } },
+            "stack": [
+              { "id": "b_say_stacked", "type": "test.say", "v": 1, "inputs": { "WHAT": { "expr": [{ "num": "7" }] } } },
+              { "id": "b_print", "type": "io.print", "v": 1 }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

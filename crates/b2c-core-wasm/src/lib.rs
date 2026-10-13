@@ -11,7 +11,7 @@
 //! | Export | Returns |
 //! |--------|---------|
 //! | [`version`] | `{app, catalog, formatVersion, sourceMapVersion}` |
-//! | [`load`] | `{ok, document?, diagnostics}`: the loaded document (migrated, not resolved), in canonical key order |
+//! | [`load`] | `{ok, document?, diagnostics}`: the loaded document (migrated, blocks upgraded, not resolved), in canonical key order |
 //! | [`canonical`] | `{ok, text?, hash?, diagnostics}`: the canonical file text (05 §5.2) and the content hash (05 §5.11) |
 //! | [`preview`] | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols}` |
 //! | [`symbols_in_scope`] | `[SymbolInfo, …]` or `null`: what a block may refer to, from the last preview's analysis (06 §6.5) |
@@ -72,7 +72,7 @@ pub use args::PasteTarget;
 pub use clipboard::{NOT_DECLARED, Unresolved};
 pub use error::{FacadeError, Failure};
 pub use facade::{
-    APP_VERSION, Canonical, GENERATOR_INCOMPLETE, Preview, SOURCE_MAP_VERSION, Stage, VersionInfo,
+    APP_VERSION, Canonical, GENERATOR_INCOMPLETE, Loaded, Preview, SOURCE_MAP_VERSION, Stage, VersionInfo,
     canonical_document, load_document, preview_document, version_info,
 };
 pub use options::{IndentWidth, MAX_OPTIONS_BYTES, PreviewOptions};
@@ -111,12 +111,14 @@ pub fn version() -> String {
     wire::version(&version_info())
 }
 
-/// Loads untrusted project bytes (stage ①, 05 §5.6).
+/// Loads untrusted project bytes (stage ①, 05 §5.6) and upgrades its blocks
+/// (05 §5.7).
 ///
-/// Returns `{"ok": true, "document": {…}, "diagnostics": []}` with the
-/// document migrated to the current format (but not resolved against the
-/// catalog) in canonical key order, or `{"ok": false, "diagnostics": [...]}`
-/// with the `B2C-E01xx` problems.
+/// Returns `{"ok": true, "document": {…}, "diagnostics": [...]}` with the
+/// document migrated to the current format and its blocks upgraded (but not
+/// resolved against the catalog) in canonical key order, and a `B2C-E0603`
+/// for each block that could not be upgraded (left as it was), or
+/// `{"ok": false, "diagnostics": [...]}` with the `B2C-E01xx` problems.
 #[wasm_bindgen]
 pub fn load(bytes: &[u8]) -> String {
     wire::load(&load_document(bytes))

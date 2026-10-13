@@ -1,0 +1,180 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_retired",
+    "name": "A retired block type",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      },
+      "defines": [
+        {
+          "name": "LEVEL",
+          "value": {
+            "int": 2
+          }
+        }
+      ],
+      "libraries": [
+        "m"
+      ]
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_say_old",
+                  "type": "io.print",
+                  "v": 1,
+                  "disabled": true,
+                  "comment": {
+                    "text": "An old say block",
+                    "pinned": true
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "block": {
+                        "id": "b_sum",
+                        "type": "math.arithmetic",
+                        "v": 1,
+                        "fields": {
+                          "OP": "add"
+                        },
+                        "inputs": {
+                          "A": {
+                            "block": {
+                              "id": "b_two",
+                              "type": "math.number",
+                              "v": 1,
+                              "fields": {
+                                "VALUE": "2"
+                              }
+                            }
+                          },
+                          "B": {
+                            "expr": [
+                              {
+                                "num": "3"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b_loop",
+                  "type": "control.forever",
+                  "v": 1,
+                  "collapsed": true,
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b_say_inner",
+                        "type": "io.print",
+                        "v": 1,
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "again"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b_say_loose",
+            "type": "io.print",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "inputs": {
+              "ITEM0": {
+                "expr": [
+                  {
+                    "str": "parked"
+                  }
+                ]
+              }
+            },
+            "stack": [
+              {
+                "id": "b_say_stacked",
+                "type": "io.print",
+                "v": 1,
+                "inputs": {
+                  "ITEM0": {
+                    "expr": [
+                      {
+                        "num": "7"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "b_print",
+                "type": "io.print",
+                "v": 1
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

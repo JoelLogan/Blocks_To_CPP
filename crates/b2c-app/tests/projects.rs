@@ -522,6 +522,107 @@ fn reload_reads_the_file_again() {
 }
 
 #[test]
+fn old_blocks_are_upgraded_on_open_and_reload_and_saved_with_a_backup() {
+    let app = TestApp::with_test_upgrades();
+    let original = common::old_say_project();
+    let path = app.write("old.b2c", original.as_bytes());
+    let file = b2c_model::load(original.as_bytes()).unwrap();
+    let opened = app.open(&path);
+    assert!(opened.blocks_upgraded);
+    assert_eq!(opened.migrated_from, None);
+    let document = b2c_model::load(opened.document.as_bytes()).unwrap();
+    let say = &document.modules[0].workspace.blocks[0].statements["BODY"][0];
+    assert_eq!((say.id.as_str(), say.block_type.as_str()), ("b_say", "io.print"));
+    assert!(say.inputs.contains_key("ITEM0"));
+    assert_eq!(say.comment.as_ref().map(|c| c.text.as_str()), Some("kept"));
+    // Trust is evaluated on content whose security hash is the file's.
+    assert_eq!(
+        b2c_model::security_hash(&document),
+        b2c_model::security_hash(&file)
+    );
+    // The project has unsaved changes; the file is untouched until a save.
+    assert!(app.backend.has_dirty());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+
+    // Saving writes the upgraded form and keeps the file as it was in .bak.
+    app.backend
+        .project_save(ProjectSaveRequest {
+            handle: opened.handle.clone(),
+            document: opened.document.clone(),
+        })
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), opened.document);
+    assert_eq!(
+        std::fs::read_to_string(app.projects().join("old.b2c.bak")).unwrap(),
+        original
+    );
+    app.backend
+        .project_set_dirty(ProjectSetDirtyRequest {
+            handle: opened.handle.clone(),
+            dirty: false,
+        })
+        .unwrap();
+
+    // Reloading the saved file has nothing to upgrade and starts clean.
+    let reloaded = app
+        .backend
+        .project_reload(ProjectReloadRequest {
+            handle: opened.handle.clone(),
+        })
+        .unwrap();
+    assert!(!reloaded.blocks_upgraded);
+    assert_eq!(reloaded.document, opened.document);
+    assert!(!app.backend.has_dirty());
+    // An old file put back outside the app is upgraded again on reload.
+    std::fs::write(&path, &original).unwrap();
+    let reloaded = app
+        .backend
+        .project_reload(ProjectReloadRequest {
+            handle: opened.handle,
+        })
+        .unwrap();
+    assert!(reloaded.blocks_upgraded);
+    assert_eq!(reloaded.document, opened.document);
+    assert!(app.backend.has_dirty());
+
+    // Without the test-only replacement, nothing is upgraded: the block
+    // keeps its unknown type, and the project opens clean.
+    let plain = TestApp::new();
+    let path = plain.write("old.b2c", original.as_bytes());
+    let opened = plain.open(&path);
+    assert!(!opened.blocks_upgraded);
+    assert!(opened.document.contains("\"test.say\""));
+    assert!(!plain.backend.has_dirty());
+}
+
+#[test]
+fn an_upgraded_project_keeps_the_trust_of_its_file() {
+    let app = TestApp::with_test_upgrades();
+    let path = app.write("old.b2c", common::old_say_project().as_bytes());
+    let opened = app.open(&path);
+    assert_eq!(opened.trust.state, TrustState::Restricted);
+    app.dialogs.will_trust(b2c_app::TrustChoice::TrustProject);
+    let granted = app
+        .backend
+        .trust_grant(b2c_ipc::dto::TrustGrantRequest {
+            handle: opened.handle.clone(),
+        })
+        .unwrap()
+        .trust;
+    assert_eq!(granted.state, TrustState::Trusted);
+    app.backend
+        .project_close(ProjectCloseRequest {
+            handle: opened.handle,
+        })
+        .unwrap();
+    // The record holds the upgraded document's security hash, which is the
+    // file's: opening the old file again finds it trusted.
+    let again = app.open(&path);
+    assert!(again.blocks_upgraded);
+    assert_eq!(again.trust.state, TrustState::Trusted);
+}
+
+#[test]
 fn closing_forgets_the_handle() {
     let app = TestApp::new();
     let created = app

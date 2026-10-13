@@ -30,6 +30,7 @@ beforeEach(() => {
     document: '{}',
     trust: TRUSTED,
     migratedFrom: null,
+    blocksUpgraded: false,
   });
   saveAs = vi.fn<() => void | Promise<void>>(() => undefined);
   harness.commands.registerCommand('project.saveAs', saveAs);

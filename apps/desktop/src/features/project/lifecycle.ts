@@ -56,6 +56,7 @@ import { limitMessage, reachedLimit } from './limits';
 import type { ProjectQueue } from './link';
 import { type LifecycleOperation, type ProjectModel, shownRecentEntries } from './model';
 import { MAX_SHOWN_PATH_CHARS, shownName, shownText } from './text';
+import { blocksUpgradedAlert } from './upgraded';
 
 /** The answers of the unsaved-changes prompt. */
 export type UnsavedChoice = 'save' | 'discard' | 'cancel';
@@ -469,19 +470,29 @@ export class ProjectLifecycle implements ProjectQueue {
     );
   }
 
-  /** Shows a project the backend opened from its file. */
-  private showOpened(opened: ProjectOpened): Promise<boolean> {
-    return this.show(
+  /**
+   * Shows a project the backend opened from its file. When the backend upgraded blocks of it
+   * (05 §5.7), the shown document is not what the file holds: the project has unsaved changes
+   * until it is saved, and an alert says so.
+   */
+  private async showOpened(opened: ProjectOpened): Promise<boolean> {
+    const shown = await this.show(
       {
         handle: opened.handle,
         documentText: opened.document,
         trust: opened.trust,
         fileName: opened.fileName,
         migratedFrom: opened.migratedFrom,
-        savedText: opened.document,
+        // The file's own text, unless its blocks were upgraded: then nothing shown is saved yet.
+        savedText: opened.blocksUpgraded ? null : opened.document,
       },
       shownName(opened.fileName),
     );
+    if (shown && opened.blocksUpgraded) {
+      // Not awaited: the alert stays open while other operations run.
+      void this.ctx.dialogs.alert(blocksUpgradedAlert(opened.fileName));
+    }
+    return shown;
   }
 
   /**

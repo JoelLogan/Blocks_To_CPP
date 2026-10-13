@@ -66,14 +66,32 @@ pub fn version_info() -> VersionInfo {
     }
 }
 
+/// A loaded document and what upgrading its blocks reported.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Loaded {
+    /// The document: migrated to the current format, with its blocks
+    /// upgraded (05 §5.7), not resolved against the catalog.
+    pub document: Document,
+    /// A `B2C-E0603` for each block that could not be upgraded and was left
+    /// as it was.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
 /// Loads untrusted project bytes: [`b2c_model::load`], with every limit and
-/// rule of 05 §5.6 and the format migrations. The document is not resolved
-/// against the catalog.
+/// rule of 05 §5.6 and the format migrations, then the block upgrades of
+/// 05 §5.7 (`b2c_catalog::upgrade_document`), so the editor never sees a
+/// block it would have to show as a placeholder only because it is old. The
+/// document is not resolved against the catalog.
 ///
 /// # Errors
 /// Every problem found, as `B2C-E01xx` loader diagnostics.
-pub fn load_document(bytes: &[u8]) -> Result<Document, LoadError> {
-    b2c_model::load(bytes)
+pub fn load_document(bytes: &[u8]) -> Result<Loaded, LoadError> {
+    let mut document = b2c_model::load(bytes)?;
+    let upgraded = b2c_catalog::upgrade_document(&mut document, b2c_catalog::core_catalog());
+    Ok(Loaded {
+        document,
+        diagnostics: upgraded.diagnostics,
+    })
 }
 
 /// A document's canonical serialisation and content hash.
@@ -321,6 +339,9 @@ mod tests {
         assert!(!preview.buildable);
         assert_eq!(preview.diagnostics.len(), 1);
         assert!(load_document(b"{").is_err());
+        let loaded = load_document(HELLO.as_bytes()).unwrap();
+        assert_eq!(loaded.document, b2c_model::load(HELLO.as_bytes()).unwrap());
+        assert!(loaded.diagnostics.is_empty());
         assert!(canonical_document("{").is_err());
     }
 

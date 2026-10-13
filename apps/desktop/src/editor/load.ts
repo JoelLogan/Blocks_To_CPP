@@ -30,7 +30,8 @@ export interface OpenDocumentArgs {
   /**
    * The text of the project as last saved, which decides whether it has unsaved changes: the same
    * as `documentText` for a project opened from its file, the file's text for a restored
-   * recovery snapshot, `null` for a project that was never saved.
+   * recovery snapshot, `null` for a project that was never saved or whose blocks the backend
+   * upgraded on load (05 §5.7: the file still holds the old form).
    */
   savedText: string | null;
 }

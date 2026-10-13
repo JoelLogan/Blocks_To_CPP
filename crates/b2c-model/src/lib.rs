@@ -12,6 +12,7 @@
 //! * [`security_hash`] and [`security_summary`]: what workspace trust looks
 //!   at (spec §8.3).
 //! * [`limits`]: the validation limits.
+//! * [`is_newer_version`]: SemVer precedence, for the versions a file names.
 //!
 //! Pure functions only: no I/O, no clock, no randomness; compiles for
 //! `wasm32-unknown-unknown`.
@@ -42,3 +43,4 @@ pub use ids::{
 pub use load::{LoadError, load};
 pub use save::{content_hash, to_canonical_json};
 pub use security::{SecuritySummary, hex, security_hash, security_summary};
+pub use version::is_newer as is_newer_version;

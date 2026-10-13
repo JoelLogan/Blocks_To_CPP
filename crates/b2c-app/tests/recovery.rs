@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use b2c_app::{Backend, BackendConfig, Services, TrustChoice};
+use b2c_build::BlockUpgrades;
 use b2c_build::toolchains::DiscoveryScope;
 use b2c_ipc::dto::{
     AppEvent, ProjectCloseRequest, ProjectNewRequest, ProjectReloadRequest, ProjectSaveAsDialogRequest,
@@ -55,10 +56,16 @@ fn crash(backend: Arc<Backend>) {
 /// Simulates a crash of `app`'s backend and starts a new one on the same
 /// folders, with new dialogs.
 fn crash_and_restart(app: &mut TestApp) {
+    crash_and_restart_with(app, BlockUpgrades::SHIPPED);
+}
+
+/// [`crash_and_restart`], with a new backend that upgrades blocks with
+/// `block_upgrades`.
+fn crash_and_restart_with(app: &mut TestApp, block_upgrades: BlockUpgrades<'static>) {
     let dialogs = FakeDialogs::new();
     let opener = Arc::new(FakeOpener::default());
     let root = app.root();
-    let backend = Backend::start_with(
+    let backend = Backend::start_with_block_upgrades(
         BackendConfig {
             dirs: app.dirs.clone(),
             app_version: "0.1.0",
@@ -70,6 +77,7 @@ fn crash_and_restart(app: &mut TestApp) {
             prober: app.prober.clone(),
             opener: opener.clone(),
         },
+        block_upgrades,
     )
     .unwrap();
     let old = std::mem::replace(&mut app.backend, backend);
@@ -244,6 +252,35 @@ fn a_snapshot_survives_a_crash_and_a_clean_save_deletes_it() {
     // Nothing is left for the next start either.
     crash_and_restart(&mut app);
     assert!(list(&app).is_empty());
+}
+
+#[test]
+fn a_restored_snapshot_has_its_blocks_upgraded() {
+    // Written by a backend that cannot upgrade the old block, restored by
+    // one that can.
+    let mut app = TestApp::new();
+    let path = app.write("old.b2c", common::old_say_project().as_bytes());
+    let opened = app.open(&path);
+    assert!(!opened.blocks_upgraded);
+    snapshot(&app, &opened.handle, &opened.document).unwrap();
+
+    crash_and_restart_with(&mut app, common::TEST_UPGRADES);
+    let restored = restore_only(&app);
+    assert!(restored.blocks_upgraded);
+    assert!(restored.document.contains("\"io.print\""));
+    assert!(!restored.document.contains("\"test.say\""));
+    assert!(app.backend.has_dirty());
+    // The security hash did not change, so the snapshot still matches its
+    // metadata: restricted only because the file was never trusted.
+    assert_restricted(restored.trust, RestrictedReason::NoRecord);
+
+    // A snapshot with nothing to upgrade says so.
+    let mut app = TestApp::new();
+    let path = app.write("game.b2c", example_text("hello_world").as_bytes());
+    let opened = app.open(&path);
+    snapshot(&app, &opened.handle, &opened.document).unwrap();
+    crash_and_restart_with(&mut app, common::TEST_UPGRADES);
+    assert!(!restore_only(&app).blocks_upgraded);
 }
 
 #[test]

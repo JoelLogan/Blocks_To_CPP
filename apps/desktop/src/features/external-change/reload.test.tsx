@@ -102,6 +102,7 @@ describe.skipIf(core === null)('Reload with the real core', () => {
       document: GUESSING_GAME,
       trust: CHANGED_OUTSIDE,
       migratedFrom: null,
+      blocksUpgraded: false,
     });
     uninstall = installExternalChangeFeature(harness.ctx).uninstall;
     harness.events.emit({ kind: 'projectChangedOnDisk', handle, deleted: false });

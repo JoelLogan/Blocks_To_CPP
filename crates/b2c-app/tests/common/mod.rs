@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
 
 use b2c_app::{Backend, BackendConfig, Dialogs, Services, TrustChoice, TrustPrompt, UrlOpener};
 use b2c_build::toolchains::{DiscoveryScope, Prober};
+use b2c_build::{BlockReplacement, BlockUpgrades};
 use b2c_ipc::dto::{
     AppEvent, BuildConfig, BuildEvent, BuildStartRequest, ProjectOpenDialogResponse, ProjectOpened, RunEvent,
 };
@@ -37,6 +38,50 @@ use b2c_toolchain::probe::{
     Toolchain,
 };
 use b2c_toolchain::target::{GccVersion, Target};
+
+/// The test-only retired block type `test.say` v1, replaced by `io.print`
+/// v1: its `WHAT` input becomes `ITEM0`. No shipped catalog defines it.
+fn say_to_print(block: &mut b2c_model::Block) -> Result<(), String> {
+    let what = block.inputs.remove("WHAT").ok_or("the block has no WHAT input")?;
+    block.inputs.insert(String::from("ITEM0"), what);
+    Ok(())
+}
+
+/// The shipped block upgrade tables with the test-only replacement of
+/// `test.say` (the shipped tables are empty in M2: `var.update` is the first
+/// type to be retired).
+pub const TEST_UPGRADES: BlockUpgrades<'static> = BlockUpgrades {
+    migrations: BlockUpgrades::SHIPPED.migrations,
+    replacements: &[BlockReplacement {
+        from: "test.say",
+        version: 1,
+        to: "io.print",
+        to_version: 1,
+        apply: say_to_print,
+    }],
+    retired: &["test.say"],
+};
+
+/// A project whose `main` says "hi" with the test-only retired `test.say`
+/// block (see [`TEST_UPGRADES`]), with a define so that it has a security
+/// hash worth keeping.
+pub fn old_say_project() -> String {
+    serde_json::json!({
+        "format": "blocks2cpp/project", "formatVersion": 1,
+        "generator": {"app": "0.1.0", "catalog": "1.0.0"},
+        "project": {"id": "prj_old_say", "name": "Old say",
+                    "language": {"standard": "c++20"},
+                    "build": {"defines": [{"name": "LEVEL", "value": {"int": 1}}]}},
+        "modules": [{"id": "mod_main", "name": "main", "workspace": {"blocks": [
+            {"id": "b_main", "type": "program.main", "v": 1, "x": 10, "y": 20,
+             "statements": {"BODY": [
+                {"id": "b_say", "type": "test.say", "v": 1, "comment": {"text": "kept"},
+                 "inputs": {"WHAT": {"expr": [{"str": "hi"}]}}}
+             ]}}
+        ]}}]
+    })
+    .to_string()
+}
 
 /// The repository root.
 pub fn repo_root() -> PathBuf {
@@ -397,6 +442,22 @@ impl TestApp {
 
     /// A backend with `compiler` and `prober`.
     pub fn with(compiler: Compiler, prober: Arc<TestProber>) -> Self {
+        Self::with_upgrades(compiler, prober, BlockUpgrades::SHIPPED)
+    }
+
+    /// A backend that finds no compiler and upgrades blocks with the shipped
+    /// tables and the test-only ones of [`TEST_UPGRADES`].
+    pub fn with_test_upgrades() -> Self {
+        Self::with_upgrades(Compiler::None, TestProber::new(), TEST_UPGRADES)
+    }
+
+    /// A backend with `compiler`, `prober` and the block upgrade tables
+    /// `block_upgrades`.
+    pub fn with_upgrades(
+        compiler: Compiler,
+        prober: Arc<TestProber>,
+        block_upgrades: BlockUpgrades<'static>,
+    ) -> Self {
         let root = tempfile::tempdir().unwrap();
         // The plain canonical form: on Windows `canonicalize` gives a `\\?\` path, which
         // MinGW g++ cannot open sources under. The app's own folders are never verbatim.
@@ -432,7 +493,7 @@ impl TestApp {
         let dirs = Dirs::under_root(&root_path.join("app"));
         let dialogs = FakeDialogs::new();
         let opener = Arc::new(FakeOpener::default());
-        let backend = Backend::start_with(
+        let backend = Backend::start_with_block_upgrades(
             BackendConfig {
                 dirs: dirs.clone(),
                 app_version: "0.1.0",
@@ -444,6 +505,7 @@ impl TestApp {
                 prober: prober.clone(),
                 opener: opener.clone(),
             },
+            block_upgrades,
         )
         .unwrap();
         Self {

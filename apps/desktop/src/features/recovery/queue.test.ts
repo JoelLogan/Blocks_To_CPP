@@ -126,6 +126,7 @@ describe.skipIf(!CORE_BUILT)('restore in the project lifecycle', () => {
       document: RESTORED_TEXT,
       trust: CREATED_HERE,
       fileName: null,
+      blocksUpgraded: false,
     });
     expect(await restoring).toBe(true);
     expect(useAppStore.getState().project).toMatchObject({ handle: HANDLE_A, dirty: true });
@@ -153,6 +154,7 @@ describe.skipIf(!CORE_BUILT)('restore in the project lifecycle', () => {
       document: RESTORED_TEXT,
       trust: CREATED_HERE,
       fileName: null,
+      blocksUpgraded: false,
     });
 
     const restoring = recovery.controller.restore(snapshotInfo(1).snapshotId);

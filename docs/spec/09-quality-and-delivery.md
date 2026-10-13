@@ -115,8 +115,9 @@ Details of each level as M2 sets them up:
   corpus.
 * **Mutation testing** (`.cargo/mutants.toml`) covers `b2c-ir/src/text.rs`,
   `b2c-toolchain/src/{flags,env,discovery}.rs`, `b2c-model/src/json.rs` and
-  `decode/`, `b2c-build/src/build_dir.rs` and `check_program` in
-  `b2c-process/src/command.rs`, excluding the generated
+  `decode/`, `upgrade_document` in `b2c-catalog/src/upgrade.rs` (block
+  upgrades on load, 05 §5.7), `b2c-build/src/build_dir.rs` and
+  `check_program` in `b2c-process/src/command.rs`, excluding the generated
   `reserved_names.rs`. Any missed mutant fails the job; timeouts and unviable
   mutants are reported only.
 * **Desktop E2E** ([ADR-0009](../adr/0009-e2e-tooling-and-test-seams.md)):

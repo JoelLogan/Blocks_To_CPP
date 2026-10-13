@@ -305,18 +305,18 @@ separately.
 | `app_subscribe` | none; channel `onEvent` | `{}` | The channel for app events (§2.5.3). Called once at startup; a later call replaces the channel. |
 | `app_quit` | `{}` | `{}` | Shuts down (§2.6) and exits. |
 | `project_new` | `{ template }` | `{ handle, document, trust }` | `template` is `empty` or `helloWorld`, bundled in the binary. The handle has no path and is trusted (`createdHere`). |
-| `project_open_dialog` | `{}` | cancelled, or `{ handle, document, trust, fileName, migratedFrom }` | Native open dialog **in the backend**, filtered to `*.b2c`. `migratedFrom` is the file's older `formatVersion`, or `null`. |
-| `project_open_recent` | `{ recentId }` | `{ handle, document, trust, fileName, migratedFrom }` | A file that no longer exists gives `notFound` and stays in the list. |
-| `project_reload` | `{ handle }` | `{ document, trust, migratedFrom }` | Reads the bound file again after an outside change; trust is evaluated again. The unsaved changes are discarded, and so is their recovery snapshot. |
+| `project_open_dialog` | `{}` | cancelled, or `{ handle, document, trust, fileName, migratedFrom, blocksUpgraded }` | Native open dialog **in the backend**, filtered to `*.b2c`. `migratedFrom` is the file's older `formatVersion`, or `null`. `blocksUpgraded` is true when [05 §5.7](05-project-format.md#57-versioning-and-migration) upgraded a block in memory. |
+| `project_open_recent` | `{ recentId }` | `{ handle, document, trust, fileName, migratedFrom, blocksUpgraded }` | A file that no longer exists gives `notFound` and stays in the list. `blocksUpgraded` is true when 05 §5.7 upgraded a block in memory. |
+| `project_reload` | `{ handle }` | `{ document, trust, migratedFrom, blocksUpgraded }` | Reads the bound file again after an outside change; trust is evaluated again. The unsaved changes are discarded, and so is their recovery snapshot. `blocksUpgraded` is true when 05 §5.7 upgraded a block in memory. |
 | `project_save` | `{ handle, document }` | `{ savedAt, hash }` | Atomic write, only to the path bound to `handle` ([05 §5.10](05-project-format.md#510-saving-and-recovery)). |
 | `project_save_as_dialog` | `{ handle, document }` | cancelled, or `{ handle, savedAt, hash, fileName }` | Rebinds the handle to the path chosen in a native dialog. |
 | `project_close` | `{ handle }` | `{}` | Cancels the project's build, stops its program and forgets the handle. A `build_start` or `run_start` still preparing when the close comes stops what it started ([07 §7.6.1](07-toolchain-build-run.md#761-preconditions)). |
-| `project_set_dirty` | `{ handle, dirty }` | `{}` | Lets the backend ask before the window closes (§2.6). The backend's flag is only what this command last reported: a save never clears it, since the editor may have changed while the save was on its way. Open, new and reload start clean, a restore starts dirty. |
+| `project_set_dirty` | `{ handle, dirty }` | `{}` | Lets the backend ask before the window closes (§2.6). The backend's flag is only what this command last reported: a save never clears it, since the editor may have changed while the save was on its way. Open, new and reload start clean unless `blocksUpgraded` is true; a restore starts dirty. |
 | `recent_list` | `{}` | `{ entries: [{ recentId, projectName, displayPath, lastOpenedAt }] }` | Newest first, at most 10. |
 | `recent_remove` | `{ recentId }` | `{}` | |
 | `recovery_save` | `{ handle, document }` | `{}` | Writes the handle's recovery snapshot. |
 | `recovery_list` | `{}` | `{ snapshots: [{ snapshotId, projectName, savedAt, hasPath }] }` | Only snapshots of app instances that are no longer running. |
-| `recovery_restore` | `{ snapshotId }` | `{ handle, document, trust, fileName }` | `fileName` is `null` for a project that was never saved. Trust follows [08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode). |
+| `recovery_restore` | `{ snapshotId }` | `{ handle, document, trust, fileName, blocksUpgraded }` | `fileName` is `null` for a project that was never saved. Trust follows [08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode). `blocksUpgraded` is true when 05 §5.7 upgraded a block in memory. |
 | `recovery_discard` | `{ snapshotId }` | `{}` | |
 | `trust_get` | `{ handle }` | `{ trust }` | |
 | `trust_grant` | `{ handle }` | `{ trust }` | Shows the **native** trust dialog from the backend, so the webview cannot silently grant trust. Returns the unchanged trust when the user stays in Restricted Mode or cancels. |

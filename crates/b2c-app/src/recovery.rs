@@ -22,7 +22,8 @@
 //!   ([`Backend::discard_snapshot_of`]). Dropping the backend without
 //!   shutting down (a crash) leaves the snapshots for the next start.
 //! * **Restoring.** `recovery_restore` loads the snapshot's document with the
-//!   strict loader, opens it under a new handle (counted against the limit of
+//!   strict loader, upgrades its blocks in memory (05 §5.7; `blocksUpgraded`,
+//!   before trust), opens it under a new handle (counted against the limit of
 //!   open projects) with unsaved changes, writes the restored project's own
 //!   snapshot and only then discards the old one, so a second crash loses
 //!   nothing. A project that had a file is bound to it again (its canonical
@@ -391,8 +392,10 @@ impl Backend {
         let (bytes, meta) = store
             .read(snapshot_id)
             .map_err(|error| snapshot_error("read a recovery snapshot", &error))?;
-        let document = load_snapshot(&bytes)?;
+        let mut document = load_snapshot(&bytes)?;
         drop(bytes);
+        // After the limits of 05 §5.6 (the loader) and before trust.
+        let blocks_upgraded = self.upgrade_blocks(&mut document);
         let text = canonical_text(&document)?;
         let restored = self.restored(&document, &meta);
         let entry = ProjectEntry {
@@ -438,6 +441,7 @@ impl Backend {
             document: text,
             trust: restored.trust.to_dto(restored.mark_of_the_web),
             file_name: restored.path.as_deref().map(file_name),
+            blocks_upgraded,
         })
     }
 

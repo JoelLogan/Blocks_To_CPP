@@ -82,17 +82,26 @@ by hand.
 
 ### `b2c migrate`
 
-Upgrades a project file written by an older version of Blocks2Cpp to the
-current format. It prints the result, or rewrites the file with `--in-place`.
-Printed to a terminal, control and invisible characters in project text are
-shown as JSON `\uXXXX` escapes (the same JSON value); piped output is the
-file exactly.
+Upgrades a project file written by an older version of Blocks2Cpp: it
+migrates the file to the current format and upgrades its blocks (blocks of an
+older version, and blocks of a type that was replaced by another,
+[spec §5.7](../spec/05-project-format.md#57-versioning-and-migration)). It
+prints the result, or rewrites the file with `--in-place`, keeping the file
+as it was as `<name>.b2c.bak`; a file that is already current is left alone.
+When a block cannot be upgraded (`B2C-E0603`), the problems are printed and
+nothing is written (exit code `1`). Printed to a terminal, control and
+invisible characters in project text are shown as JSON `\uXXXX` escapes (the
+same JSON value); piped output is the file exactly.
+
+`b2c check`, `generate`, `build` and `run` upgrade old blocks in memory only
+and never change the file.
 
 ### `b2c fmt`
 
 Rewrites the project file in its canonical form: the same layout the app
-saves, so diffs stay small. `--check` only reports whether the file is
-already formatted (exit code `1` if not), which is useful in CI.
+saves, so diffs stay small. It never upgrades blocks (that is `b2c migrate`).
+`--check` only reports whether the file is already formatted (exit code `1`
+if not), which is useful in CI.
 
 ## Exit codes
 

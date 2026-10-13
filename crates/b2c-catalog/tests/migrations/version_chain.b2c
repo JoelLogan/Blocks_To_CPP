@@ -1,0 +1,61 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": { "app": "0.1.0", "catalog": "1.0.0" },
+  "project": {
+    "id": "prj_chain",
+    "name": "A chain of migrations",
+    "language": { "standard": "c++20" }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_decl",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": { "NAME": { "sym": "s_score", "name": "score" }, "TYPE": "int", "CONST": false },
+                  "inputs": { "VALUE": { "expr": [{ "num": "0" }] } }
+                },
+                {
+                  "id": "b_count_v1",
+                  "type": "test.counter",
+                  "v": 1,
+                  "comment": { "text": "Saved before STEP was renamed" },
+                  "fields": { "VARIABLE": { "ref": "s_score" } },
+                  "inputs": { "STEP": { "expr": [{ "num": "5" }] } }
+                },
+                {
+                  "id": "b_count_v2",
+                  "type": "test.counter",
+                  "v": 2,
+                  "fields": { "VARIABLE": { "ref": "s_score" } },
+                  "inputs": {
+                    "BY": { "block": { "id": "b_ten", "type": "math.number", "v": 1, "fields": { "VALUE": "10" } } }
+                  }
+                },
+                {
+                  "id": "b_count_v3",
+                  "type": "test.counter",
+                  "v": 3,
+                  "fields": { "VAR": { "ref": "s_score" } }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

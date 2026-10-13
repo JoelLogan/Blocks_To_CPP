@@ -109,7 +109,9 @@ decision the user makes explicitly, once, per project.**
   * `defines`: the project's defines in file order, in their file shape.
 
   It is stored as lower-case hex in `rawCodeHashAtGrant`. Moving blocks,
-  comments and ordinary block edits never change it.
+  comments and ordinary block edits never change it. Trust is evaluated on
+  the upgraded document, whose security hash equals the file's
+  ([05 §5.7](05-project-format.md#57-versioning-and-migration)).
 * **Matching.** A project record applies only when both the project ID and
   the canonical path are equal (paths compared ignoring ASCII letter case on
   Windows). The project is trusted when the hash is equal too. When the ID and

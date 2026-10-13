@@ -3,7 +3,9 @@
 * Status: Accepted
 * Date: 2026-10-02
 * Amended by [ADR-0013](0013-additive-format-keys.md): when `formatVersion`
-  changes and what a migration is.
+  changes and what a migration is; and by
+  [ADR-0015](0015-block-upgrades-on-load.md): block upgrades run whenever a
+  document is loaded, and a retired block type is replaced.
 
 ## Context
 

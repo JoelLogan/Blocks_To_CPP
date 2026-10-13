@@ -789,12 +789,24 @@ User-installed packs are **code** and are subject to workspace trust
 Block IDs are stable and never reused. **Compatible** changes (a field,
 `extra` key or input with a default; a dropdown option; label, help or
 colour text) keep `version` and raise `generator.catalog`'s minor version;
-the catalog is 1.1.0 since M2's labels name every field. A breaking change
-to a block's inputs/fields bumps `version`, and the catalog ships a
-migration (pure function, BDM → BDM) from every older version. Removing a
-block type requires a deprecation period of one minor release in which the
-block still loads, shows a deprecation badge, and offers an automatic
-replacement.
+the catalog is 1.1.0 since M2's labels name every field. A file that leaves
+the new key out loads with the default, and the editor keeps leaving it out
+while the block keeps that default; blocks a newer editor creates write it.
+When a document or clipboard payload names a `generator.catalog` newer than
+this app's, a block with an unknown field, input, `extra` key or option is
+reported as made by a newer catalog (`B2C-E0602`, not `E0605`), shown as a
+placeholder and kept unchanged on save.
+
+**Breaking** changes raise `version` and ship a migration (a pure BDM → BDM
+function). **Merging or retiring a block type** ships a *replacement* from
+the old type and version to its successor that keeps the block's ID,
+position, comment, flags, stack and nested blocks, and lists the old ID as
+retired ([ADR-0015](../adr/0015-block-upgrades-on-load.md)). Before 1.0 an
+exact replacement takes the place of a deprecation period. Migrations and
+replacements run when a document is loaded, before the editor or compiler
+see it ([05 §5.7](05-project-format.md#57-versioning-and-migration)), so the
+editor never shows an upgradable block as a placeholder. Each has a
+golden-file test.
 
 ## 3.12 C++ coverage matrix
 
