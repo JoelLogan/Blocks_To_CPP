@@ -598,9 +598,11 @@ fn entry_block(id: String, block: &str, preset: Option<&Preset>) -> Value {
 }
 
 /// Every toolbox entry, dropped where its shape belongs, resolves with only
-/// the problems the editor fixes when the block is dropped: the name of a
-/// new variable or function, the variable an `ask` stores into, and the
-/// parameter list of a new function.
+/// the problem the editor fixes when the block is dropped: the parameter
+/// list of a new function. A name or variable nobody has chosen yet (a new
+/// variable's or function's name, the variable an `ask` stores into) is
+/// absent, which is no catalog problem: the analyser reports it once the
+/// block is part of the program (ADR-0012).
 #[test]
 fn every_toolbox_block_resolves_apart_from_what_the_editor_fills_in() {
     let mut body = Vec::new();
@@ -635,16 +637,10 @@ fn every_toolbox_block_resolves_apart_from_what_the_editor_fills_in() {
             (types[block].clone(), d.code.0.clone(), part)
         })
         .collect();
-    let expected: BTreeSet<(String, String, String)> = [
-        ("var.declare", "B2C-E0606", "NAME"),
-        ("control.for_range", "B2C-E0606", "VAR"),
-        ("io.ask", "B2C-E0606", "VAR"),
-        ("func.define", "B2C-E0606", "NAME"),
-        ("func.define", "B2C-E0612", "Whole"),
-    ]
-    .into_iter()
-    .map(|(a, b, c)| (a.to_owned(), b.to_owned(), c.to_owned()))
-    .collect();
+    let expected: BTreeSet<(String, String, String)> = [("func.define", "B2C-E0612", "Whole")]
+        .into_iter()
+        .map(|(a, b, c)| (a.to_owned(), b.to_owned(), c.to_owned()))
+        .collect();
     assert_eq!(found, expected, "{diagnostics:#?}");
     // The second program.main (from the toolbox) is the analyser's business,
     // not the catalog's.

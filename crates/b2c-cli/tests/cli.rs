@@ -161,6 +161,85 @@ fn a_parked_block_is_a_warning_and_changes_no_cpp() {
     assert_eq!(std::fs::read(out.join("main.cpp")).unwrap(), golden);
 }
 
+/// `examples/hello_world.b2c` with `change` applied, written to `dir`.
+fn hello_world_with(dir: &Path, name: &str, change: impl FnOnce(&mut serde_json::Value)) -> PathBuf {
+    let mut project: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(example("hello_world")).unwrap()).unwrap();
+    change(&mut project);
+    let file = dir.join(name);
+    std::fs::write(&file, serde_json::to_vec(&project).unwrap()).unwrap();
+    file
+}
+
+/// An `ask` straight from the toolbox, before a variable is chosen (the
+/// editor saves it without the field `VAR`), is parked like any other
+/// block: alone on the canvas, or below a `create` in a loose stack, it is
+/// one warning and `check` exits with 0 (ADR-0012). Attached, the missing
+/// variable is one error, reported once.
+#[test]
+fn a_parked_ask_without_a_variable_is_only_a_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let ask = serde_json::json!({
+        "id": "b_ask", "type": "io.ask", "v": 1,
+        "inputs": {"PROMPT": {"expr": [{"str": "Your answer: "}]}}
+    });
+    let mut loose = ask.clone();
+    loose["x"] = 400.into();
+    loose["y"] = 40.into();
+    let mut stack = serde_json::json!({
+        "id": "b_create", "type": "var.declare", "v": 1, "x": 400, "y": 200,
+        "fields": {"TYPE": "int", "NAME": {"sym": "sym_guess", "name": "guess"}},
+        "stack": [ask.clone()]
+    });
+    stack["stack"][0]["id"] = "b_ask2".into();
+    for (name, block) in [("loose.b2c", loose), ("stack.b2c", stack)] {
+        let file = hello_world_with(dir.path(), name, |project| {
+            project["modules"][0]["workspace"]["blocks"]
+                .as_array_mut()
+                .unwrap()
+                .push(block);
+        });
+        let output = b2c(&["check", file.to_str().unwrap()]);
+        let text = stdout(&output);
+        assert_eq!(output.status.code(), Some(0), "{name}: {text}");
+        assert_eq!(text.matches("[B2C-").count(), 1, "{name}: {text}");
+        assert!(text.contains("warning[B2C-W0505]"), "{name}: {text}");
+    }
+
+    let file = hello_world_with(dir.path(), "attached.b2c", |project| {
+        project["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"]
+            .as_array_mut()
+            .unwrap()
+            .push(ask);
+    });
+    let output = b2c(&["check", file.to_str().unwrap()]);
+    let text = stdout(&output);
+    assert_eq!(output.status.code(), Some(1), "{text}");
+    assert_eq!(text.matches("[B2C-").count(), 1, "{text}");
+    assert!(
+        text.contains("error[B2C-E0430]: Choose a variable in this block."),
+        "{text}"
+    );
+    assert!(text.contains("1 error"), "{text}");
+}
+
+/// A problem the block catalog reports is not reported again by the
+/// analyser: a dropdown value that is not an option is one error, not two
+/// (06 §6.1).
+#[test]
+fn check_reports_each_problem_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = hello_world_with(dir.path(), "bogus.b2c", |project| {
+        project["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"][0]["fields"]["SEP"] =
+            "bogus".into();
+    });
+    let output = b2c(&["check", file.to_str().unwrap()]);
+    let text = stdout(&output);
+    assert_eq!(output.status.code(), Some(1), "{text}");
+    assert_eq!(text.matches("[B2C-").count(), 1, "{text}");
+    assert!(text.contains("error[B2C-E0607]"), "{text}");
+}
+
 /// `check` runs the analyser even when the catalog rejects a block, so it
 /// lists the problems the app lists (06 §6.1).
 #[test]

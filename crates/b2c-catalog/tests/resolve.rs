@@ -346,8 +346,6 @@ fn e0605_to_e0607_fields() {
             ("B2C-E0607", &field("b1", "NEWLINE")),
             ("B2C-E0607", &field("b2", "TYPE")),
             ("B2C-E0607", &field("b2", "NAME")),
-            ("B2C-E0606", &field("b3", "VAR")),
-            ("B2C-E0606", &field("b4", "VAR")),
             ("B2C-E0604", &location("b5", Part::Whole)),
             ("B2C-E0607", &field("b5", "VAR")),
         ]
@@ -360,14 +358,28 @@ fn e0605_to_e0607_fields() {
         diagnostics[3].message,
         "The field TYPE is \"int; system(\\\"x\\\"); int\", but it must be one of the types \"int\", \"double\", \"bool\", \"char\", \"std::string\" or \"auto\"."
     );
+    // The absent variable of b3 and the absent counter name of b4 are what
+    // the editor saves while nothing is chosen yet: the analyser's to report
+    // once the blocks are part of the program (ADR-0012), not the catalog's.
+}
+
+/// A field without a default that is not a name or reference is
+/// `B2C-E0606` when it is absent (the core catalog has none yet, so the test
+/// takes the default away from one).
+#[test]
+fn e0606_a_missing_field_without_a_default() {
+    let mut catalog = b2c_catalog::core_catalog().clone();
+    let print = catalog.blocks.get_mut("io.print").unwrap();
+    print.field.iter_mut().find(|f| f.name == "SEP").unwrap().default = None;
+    let value = project(json!([{"id": "b1", "type": "io.print", "v": 1}]), json!([]));
+    let (_, diagnostics) = b2c_catalog::resolve(&common::load(&value), &catalog);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].code.0, "B2C-E0606");
     assert_eq!(
-        diagnostics[5].message,
-        "This block needs to know which variable or function it uses: its field VAR is missing."
+        diagnostics[0].primary,
+        location("b1", Part::Field { name: "SEP".into() })
     );
-    assert_eq!(
-        diagnostics[6].message,
-        "This block needs a name: its field VAR is missing."
-    );
+    assert_eq!(diagnostics[0].message, "This block is missing its field SEP.");
 }
 
 #[test]

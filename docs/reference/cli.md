@@ -27,7 +27,8 @@ b2c fmt        <project.b2c> [--check]
 Loads the project, checks every block against the block catalog and runs the
 analyser. Both always run once the project has loaded, so `check` lists the
 catalog's and the analyser's problems together: the same problems the app's
-Problems panel lists. It prints every problem and exits with `0` when there
+Problems panel lists, each one once (the analyser does not repeat a problem
+the catalog reported). It prints every problem and exits with `0` when there
 are no errors, even with warnings (such as `B2C-W0505` for a block left
 loose on the canvas, which is parked and does not run), or `1` when there
 are errors. `b2c build`, `b2c generate` and `b2c run` stop on the same

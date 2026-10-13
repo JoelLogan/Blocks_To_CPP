@@ -310,7 +310,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   program starts' or a function, so it doesn't run."), are never generated,
   no longer disable ▶ Run, and no longer make `b2c check` fail. A loose block
   you disable gives no warning. `B2C-E0604` now covers only placements the
-  editor cannot produce.
+  editor cannot produce. A block straight from the toolbox whose variable or
+  name is not chosen yet (an _ask_) is parked the same way: the block catalog
+  no longer reports the empty choice (`B2C-E0606`), and the analyser asks for
+  it (`B2C-E0430`, "Choose a variable in this block.") once the block is
+  attached.
 
 ### Changed
 
@@ -432,6 +436,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - `b2c check` and builds run the analyser even when the block catalog
   reports errors, so the command line lists the same problems as the app's
   Problems panel. `b2c check` exits with 0 when there are only warnings.
+  Each problem is listed once, in the app too: the analyser no longer repeats
+  as `B2C-E0430` a field or input the catalog rejected (a dropdown value that
+  is not an option was two errors), nor reports the choices and inputs of a
+  block kept unchanged because a newer version made it (`B2C-E0602`) or it
+  is too old to upgrade (`B2C-E0603`), whose advice to choose the setting
+  again would have replaced the newer value.
 - Catalog messages name blocks by their label (This "print" block …)
   instead of their catalog ID ("io.print"), and Problems' block paths and
   the canvas's keyboard announcements name the program block _when program

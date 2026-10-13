@@ -2,8 +2,9 @@
 //!
 //! [`preview_document`] re-composes the front half of the pipeline exactly
 //! as `b2c_build::run_frontend` does (this crate may not depend on
-//! `b2c-build`): `b2c_model::load`, `b2c_catalog::resolve` against the core
-//! catalog, `b2c_lang::analyze`, then `b2c_codegen::generate_with_report`
+//! `b2c-build`): `b2c_model::load`, `b2c_catalog::resolve_report` against
+//! the core catalog, `b2c_lang::analyze_checked` (which does not repeat the
+//! catalog's problems), then `b2c_codegen::generate_with_report`
 //! with the same [`CodegenOptions`] (the workspace version as the app
 //! version, the "do not edit" banner on, support helpers inline), so an
 //! error-free project previews byte for byte as it builds. Two conformance
@@ -233,9 +234,9 @@ pub(crate) fn codegen_options(project_name: &str, options: PreviewOptions) -> Co
 /// Resolves and analyses a loaded document (stages ② to ⑥), returning the
 /// analysis and the catalog's diagnostics.
 pub(crate) fn analyse(loaded: &Document) -> (Document, Vec<Diagnostic>, Analysis) {
-    let (document, diagnostics) = b2c_catalog::resolve(loaded, b2c_catalog::core_catalog());
-    let analysis = b2c_lang::analyze(&document);
-    (document, diagnostics, analysis)
+    let resolved = b2c_catalog::resolve_report(loaded, b2c_catalog::core_catalog());
+    let analysis = b2c_lang::analyze_checked(&resolved.document, &resolved.diagnostics, &resolved.unchecked);
+    (resolved.document, resolved.diagnostics, analysis)
 }
 
 /// The whole preview pipeline on untrusted bytes (see [`preview_document`]).

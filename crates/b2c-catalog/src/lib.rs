@@ -38,6 +38,10 @@
 //! * A document or payload from a newer catalog (`generator.catalog`) has its
 //!   unknown fields, inputs, `extra` settings and options reported as made by
 //!   a newer catalog (`B2C-E0602`), not as unknown (spec §3.11.3).
+//! * An absent name or reference field (nothing chosen yet in the editor) is
+//!   left to the analyser (ADR-0012), and [`resolve_report`] lists the blocks
+//!   kept without a check, so the analyser does not repeat the catalog's
+//!   problems (`b2c_lang::analyze_checked`).
 //!
 //! The editor never reads the TOML files: a test exports the validated
 //! catalog and toolbox as `packages/catalog-gen/catalog.json`, from which
@@ -53,9 +57,10 @@ mod stack;
 mod toolbox;
 mod upgrade;
 
+use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
-use b2c_ir::Diagnostic;
+use b2c_ir::{BlockId, Diagnostic};
 use b2c_model::{Clipboard, Document};
 
 pub use migrate::{BLOCK_MIGRATIONS, BlockMigration};
@@ -134,6 +139,14 @@ pub fn toolbox() -> &'static Toolbox {
 /// Resolving the completed document again reports the same problems and
 /// changes nothing.
 ///
+/// A name or reference field that is absent (a `symbol_decl` or
+/// `symbol_ref` field without a value) is not reported: the editor saves a
+/// block in which nothing is chosen yet that way, and the analyser reports
+/// it (`B2C-E0430`) once the block is part of the program, so a parked or
+/// disabled block without one never stops a build (ADR-0012).
+///
+/// [`resolve_report`] also tells which blocks were kept without a check.
+///
 /// ```
 /// let bytes = br#"{
 ///   "format": "blocks2cpp/project", "formatVersion": 1,
@@ -152,6 +165,31 @@ pub fn toolbox() -> &'static Toolbox {
 /// assert!(print.inputs.contains_key("ITEM0"));
 /// ```
 pub fn resolve(document: &Document, catalog: &Catalog) -> (Document, Vec<Diagnostic>) {
+    let report = resolve::run(document, catalog);
+    (report.document, report.diagnostics)
+}
+
+/// What [`resolve_report`] found.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolveReport {
+    /// The completed copy of the document, as [`resolve`] returns it.
+    pub document: Document,
+    /// Every problem found, as [`resolve`] returns them.
+    pub diagnostics: Vec<Diagnostic>,
+    /// The blocks kept exactly as they were, without a check against a
+    /// definition: of an unknown type (`B2C-E0601`), made by a newer catalog
+    /// (`B2C-E0602`), too old to upgrade (`B2C-E0603`), or of a type whose
+    /// definition is broken (`B2C-E0620`; only the first such block carries
+    /// the diagnostic). The blocks nested in them were checked. The analyser
+    /// does not report the fields and inputs of these blocks again
+    /// (`b2c_lang::analyze_checked`).
+    pub unchecked: BTreeSet<BlockId>,
+}
+
+/// [`resolve`], also telling which blocks were kept without a check
+/// ([`ResolveReport::unchecked`]), as the build and the editor's preview need
+/// it to analyse the document without repeating the catalog's problems.
+pub fn resolve_report(document: &Document, catalog: &Catalog) -> ResolveReport {
     resolve::run(document, catalog)
 }
 

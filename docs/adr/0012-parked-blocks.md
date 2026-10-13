@@ -4,6 +4,8 @@
 * Date: 2026-10-10
 * Partly supersedes [ADR-0011](0011-loose-blocks-in-m2.md): its placement
   decision. ADR-0011's `stack` key and clipboard shape stay in force.
+* Amended on 2026-10-13 (review of the M2 polish wave W4a): point 4 leaves
+  an absent name or reference field to the analyser.
 
 ## Context
 
@@ -81,7 +83,13 @@ Three further questions were decided with option 1:
    stays an error wherever the block is, so a damaged or unsupported block
    (including a Raw C++ block before M4,
    [08 §8.3.1](../spec/08-security.md#831-how-trust-is-decided)) still stops
-   the build.
+   the build. An absent name or reference field (a new variable's name, the
+   variable an *ask* stores into) is not a missing field: it is how the
+   editor saves a block straight from the toolbox, in which nothing is
+   chosen yet, and such a block is neither damaged nor unsupported. The
+   analyser reports it (`B2C-E0430`, *Choose a variable in this block.*)
+   once the block is attached, so a parked or disabled block without one
+   never stops the build.
 5. **Parked code is not analysed until it is attached.** The scope query
    answers parked blocks with the parked scope
    ([06 §6.5](../spec/06-compiler-pipeline.md#65-stage--names-and-scopes)):

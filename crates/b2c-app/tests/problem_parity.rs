@@ -142,3 +142,171 @@ fn a_parked_block_is_buildable_in_the_cli_and_the_preview() {
     let plain = preview_document(std::str::from_utf8(&bytes).unwrap(), &PreviewOptions::default());
     assert_eq!(preview.files, plain.files);
 }
+
+/// `/statements/BODY` of hello world's `when program starts`.
+const BODY: &str = "/modules/0/workspace/blocks/0/statements/BODY";
+
+/// Hello world's `print` block.
+const PRINT: &str = "/modules/0/workspace/blocks/0/statements/BODY/0";
+
+/// An `ask` straight from the toolbox: no variable chosen yet, so the
+/// editor saves it without the field `VAR`.
+fn unchosen_ask() -> serde_json::Value {
+    serde_json::json!({
+        "id": "b_ask", "type": "io.ask", "v": 1,
+        "inputs": {"PROMPT": {"expr": [{"str": "Your answer: "}]}}
+    })
+}
+
+/// `create int guess = 1`.
+fn create_guess() -> serde_json::Value {
+    serde_json::json!({
+        "id": "b_create", "type": "var.declare", "v": 1,
+        "fields": {"TYPE": "int", "NAME": {"sym": "sym_guess", "name": "guess"}},
+        "inputs": {"VALUE": {"expr": [{"num": "1"}]}}
+    })
+}
+
+/// Puts `block` directly on hello world's canvas, at (400, 40).
+fn on_canvas(project: &mut serde_json::Value, mut block: serde_json::Value) {
+    block["x"] = 400.into();
+    block["y"] = 40.into();
+    project["modules"][0]["workspace"]["blocks"]
+        .as_array_mut()
+        .unwrap()
+        .push(block);
+}
+
+/// Attaches `block` at the end of hello world's `when program starts`.
+fn attach(project: &mut serde_json::Value, block: serde_json::Value) {
+    project
+        .pointer_mut(BODY)
+        .unwrap()
+        .as_array_mut()
+        .unwrap()
+        .push(block);
+}
+
+/// A case of [`each_problem_is_listed_once`]: what it is, the project, the
+/// diagnostics it lists and whether it builds.
+type Case = (&'static str, String, &'static [&'static str], bool);
+
+/// Blocks in which nothing is chosen yet, parked and attached.
+fn unchosen_cases() -> Vec<Case> {
+    vec![
+        (
+            "a parked ask without a variable",
+            hello_world_with(|project| on_canvas(project, unchosen_ask())),
+            &["B2C-W0505 Warning"],
+            true,
+        ),
+        (
+            "an ask without a variable below a create, in a loose stack",
+            hello_world_with(|project| {
+                let mut head = create_guess();
+                head["stack"] = serde_json::json!([unchosen_ask()]);
+                on_canvas(project, head);
+            }),
+            &["B2C-W0505 Warning"],
+            true,
+        ),
+        (
+            "an attached ask without a variable",
+            hello_world_with(|project| attach(project, unchosen_ask())),
+            &["B2C-E0430 Error"],
+            false,
+        ),
+        (
+            "an attached create without a name",
+            hello_world_with(|project| {
+                let mut block = create_guess();
+                block["fields"].as_object_mut().unwrap().remove("NAME");
+                attach(project, block);
+            }),
+            &["B2C-E0430 Error"],
+            false,
+        ),
+    ]
+}
+
+/// Problems the catalog reports, and blocks it keeps unchecked.
+fn catalog_cases() -> Vec<Case> {
+    vec![
+        (
+            "a dropdown value that is not an option",
+            hello_world_with(|project| {
+                project.pointer_mut(PRINT).unwrap()["fields"]["SEP"] = "bogus".into();
+            }),
+            &["B2C-E0607 Error"],
+            false,
+        ),
+        (
+            "newer dropdown options",
+            hello_world_with(|project| {
+                project["generator"]["catalog"] = "1.2.0".into();
+                let print = project.pointer_mut(PRINT).unwrap();
+                print["fields"]["SEP"] = "tabs".into();
+                print["inputs"]["ITEM0"] = serde_json::json!({"block": {
+                    "id": "b_pow", "type": "math.arithmetic", "v": 1, "fields": {"OP": "pow"},
+                    "inputs": {"A": {"expr": [{"num": "2"}]}, "B": {"expr": [{"num": "3"}]}}
+                }});
+            }),
+            &["B2C-E0602 Error", "B2C-E0602 Error"],
+            false,
+        ),
+        (
+            "a newer field, with an input left to its default",
+            hello_world_with(|project| {
+                project["generator"]["catalog"] = "1.2.0".into();
+                attach(project, create_guess());
+                let change = serde_json::json!({
+                    "id": "b_change", "type": "var.change", "v": 1,
+                    "fields": {"VAR": {"ref": "sym_guess"}, "OP": "mul"}
+                });
+                attach(project, change);
+            }),
+            &["B2C-E0602 Error"],
+            false,
+        ),
+        (
+            "an old block with a choice that is not an option",
+            hello_world_with(|project| {
+                let print = project.pointer_mut(PRINT).unwrap();
+                print["v"] = 0.into();
+                print["fields"]["SEP"] = "bogus".into();
+            }),
+            &["B2C-E0603 Error"],
+            false,
+        ),
+    ]
+}
+
+/// Each problem is listed once, in both, and a block straight from the
+/// toolbox in which nothing is chosen yet is parked like any other:
+///
+/// * an `ask` without its variable (the editor saves an unchosen variable as
+///   an absent field), alone on the canvas or below a `create` in a loose
+///   stack, is one warning and builds (▶ Run stays enabled); attached, it is
+///   one error (`B2C-E0430`), not also a catalog error;
+/// * a field the catalog rejects is the catalog's error alone, not also the
+///   analyser's (`B2C-E0607` for a dropdown value that is not an option);
+/// * a block the catalog keeps unchecked, from a newer catalog (`B2C-E0602`)
+///   or too old to upgrade (`B2C-E0603`), is that error alone: a choice this
+///   catalog does not know, or an input left to a default it did not fill
+///   in, is no second error.
+#[test]
+fn each_problem_is_listed_once() {
+    for (what, text, expected, buildable) in unchosen_cases().into_iter().chain(catalog_cases()) {
+        let preview = preview_document(&text, &PreviewOptions::default());
+        assert_eq!(
+            listed(&preview.diagnostics),
+            expected,
+            "{what}: {:#?}",
+            preview.diagnostics
+        );
+        assert_eq!(preview.buildable, buildable, "{what}");
+        let cli = run_frontend(text.as_bytes(), &FrontendOptions::default());
+        assert_eq!(cli.diagnostics, preview.diagnostics, "{what}");
+        assert_eq!(cli.generated.is_some(), buildable, "{what}");
+    }
+}

@@ -22,9 +22,15 @@ of the [translation pipeline](../../spec/06-compiler-pipeline.md#61-overview):
   be built until it is fixed. Blocks left loose on the canvas are checked
   too: they are *parked* ([ADR-0012](../../adr/0012-parked-blocks.md)), which
   is no catalog problem in itself, but every other problem below is an error
-  wherever the block is. Messages name a block by its label up to its first
-  field or input (*the "print" block*), never by its catalog ID, except for
-  an unknown block type (`B2C-E0601`) and a broken definition (`B2C-E0620`).
+  wherever the block is. A variable or name that is not chosen yet is no
+  catalog problem either (see `B2C-E0606`). Messages name a block by its
+  label up to its first field or input (*the "print" block*), never by its
+  catalog ID, except for an unknown block type (`B2C-E0601`) and a broken
+  definition (`B2C-E0620`). The analyser does not report a problem of this
+  list again ([spec §6.1](../../spec/06-compiler-pipeline.md#61-overview)),
+  so a field or input the catalog rejected, and the fields and inputs of a
+  block kept as it is (`B2C-E0601` to `B2C-E0603`, `B2C-E0620`), get no
+  second message.
 
 All of them are **errors**. Text from the project file that appears in a
 message is quoted, cut after 40 characters, and invisible or control
@@ -626,10 +632,20 @@ The block has a field its definition does not have.
 
 ### B2C-E0606: required field missing
 
-A field without a default value is missing, such as the name a `create
-variable` block declares or the variable a `set` block changes.
+A field without a default value is missing. A name or a reference to a
+variable or function is the exception: the name a `create variable` block
+declares, or the variable a `set` or `ask` block uses, is absent while
+nothing is chosen yet, which is how the editor saves a block straight from
+the toolbox. That is not a catalog problem, so such a block left loose or
+disabled never stops a build
+([ADR-0012](../../adr/0012-parked-blocks.md)); once the block is part of the
+program, the analyser asks for the choice
+([`B2C-E0430`](analyser.md#b2c-e0430-incomplete-or-damaged-block)). The core
+block catalog has no other field without a default, so this code is only
+reported for library packs and for files made outside the editor against
+such a catalog.
 
-> This block needs to know which variable or function it uses: its field VAR is missing.
+> This block is missing its field SEP.
 
 **Fix:** choose a value for the field in the editor.
 

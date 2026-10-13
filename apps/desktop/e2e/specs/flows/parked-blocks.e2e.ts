@@ -2,7 +2,9 @@
  * A block left loose on the canvas is parked (docs/adr/0012-parked-blocks.md, 03 §3.3, 04 §4.4):
  * a *print* dragged from the toolbox onto an empty part of the canvas is listed in Problems as one
  * warning (`B2C-W0505`), not an error, so ▶ Run stays enabled; the C++ panel's code (read from the
- * test hook) has only the attached *print*, and F5 runs the program without the parked block.
+ * test hook) has only the attached *print*, and F5 runs the program without the parked block. An
+ * *ask* from the toolbox, whose variable is not chosen yet, is parked the same way: only warnings,
+ * and Run is still not held back.
  */
 import { By, Key } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
@@ -95,5 +97,32 @@ describe('Parked blocks', () => {
     );
     await waitForConsoleState(app.driver, /Finished \(exit code 0\)$/, UI_TIMEOUT_MS);
     expect(transcript).not.toContain(TOOLBOX_PRINT);
+
+    // (5) An ask from the toolbox has no variable chosen yet (the editor saves it without one). Left
+    // loose, it is parked too: one warning for each loose stack, no error, and Run is not held back.
+    await dropOnCanvas(app, { category: 'Input / Output', type: 'io.ask' });
+    const stacks = await waitFor(
+      async () => {
+        const blocks = (await currentDocument(app)).modules[0]?.workspace.blocks ?? [];
+        const loose = blocks.filter((block) => block.type !== 'program.main');
+        const ask = loose
+          .flatMap((block) => [block, ...(block.stack ?? [])])
+          .find((block) => block.type === 'io.ask');
+        if (ask === undefined) {
+          return null;
+        }
+        expect(ask.fields?.['VAR']).toBeUndefined();
+        return loose.length;
+      },
+      { timeout: UI_TIMEOUT_MS, message: 'an ask left loose on the canvas' },
+    );
+    const warnings = stacks === 1 ? '1 warning' : `${String(stacks)} warnings`;
+    await showProblems(app.driver);
+    await waitFor(async () => (await problemsSummary(app.driver)) === warnings, {
+      timeout: UI_TIMEOUT_MS,
+      message: async () =>
+        `"${warnings}" in Problems (it says "${await problemsSummary(app.driver)}")`,
+    });
+    expect(await runHeldBack(app.driver)).toBe(false);
   }, 180_000);
 });

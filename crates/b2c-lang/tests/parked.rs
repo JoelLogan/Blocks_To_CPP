@@ -8,11 +8,11 @@
 
 mod common;
 
-use b2c_catalog::Shape;
+use b2c_catalog::{FieldKind, Shape};
 use b2c_codegen::{CodegenOptions, generate};
 use b2c_ir::diag::{DiagSource, Diagnostic, Part, Severity};
 use b2c_ir::ids::BlockId;
-use b2c_lang::{Analysis, analyze};
+use b2c_lang::{Analysis, analyze, analyze_checked};
 use common::*;
 use serde_json::{Value, json};
 
@@ -201,4 +201,82 @@ fn parked_blocks_never_change_the_program() {
         generate(&with.program, &options),
         generate(&without.program, &options)
     );
+}
+
+/// The catalog's and the analyser's diagnostics, as the build and the
+/// editor's preview list them (`code part`).
+fn checked(blocks: Vec<Value>) -> Vec<String> {
+    let report = b2c_catalog::resolve_report(&doc(blocks), b2c_catalog::core_catalog());
+    let analysis = analyze_checked(&report.document, &report.diagnostics, &report.unchecked);
+    report
+        .diagnostics
+        .iter()
+        .chain(&analysis.diagnostics)
+        .map(|d| match &d.primary.part {
+            Part::Field { name } => format!("{} {name}", d.code.0),
+            _ => d.code.0.clone(),
+        })
+        .collect()
+}
+
+/// A block straight from the toolbox, in which nothing is chosen yet: the
+/// editor saves an unchosen name or reference as an absent field. Parked,
+/// it is only the warning, also below a `create` in a loose stack (the
+/// Scratch habit of building on the side, ADR-0012); disabled, it is
+/// nothing; attached, it is one `B2C-E0430` at the field. Every block of the
+/// catalog with a name or reference field, so a new one cannot bring the
+/// catalog's error back.
+#[test]
+fn a_parked_block_with_nothing_chosen_yet_is_only_a_warning() {
+    let mut seen = 0;
+    for def in b2c_catalog::core_catalog().blocks.values() {
+        let Some(field) = def
+            .field
+            .iter()
+            .find(|f| matches!(f.kind, FieldKind::SymbolDecl | FieldKind::SymbolRef))
+        else {
+            continue;
+        };
+        seen += 1;
+        let missing = format!("B2C-E0430 {}", field.name);
+        let mut block = json!({"id": "p1", "type": def.id, "v": def.version, "x": 400, "y": 40});
+        // A value for every input without a default (the `set` of the
+        // Variables category comes with one).
+        for input in &def.input {
+            if input.default.is_empty() && !input.optional && input.repeat.is_none() {
+                block["inputs"][&input.name] = num("0");
+            }
+        }
+        if def.shape == Shape::Definition {
+            block["extra"] = json!({"params": []});
+            assert_eq!(
+                checked(vec![main(vec![]), block.clone()]),
+                [missing.as_str()],
+                "{}",
+                def.id
+            );
+            block["disabled"] = json!(true);
+            let found = checked(vec![main(vec![]), block]);
+            assert!(found.is_empty(), "{}: {found:?}", def.id);
+            continue;
+        }
+        assert_eq!(checked(vec![main(vec![]), block.clone()]), [PARKED], "{}", def.id);
+        let mut disabled = block.clone();
+        disabled["disabled"] = json!(true);
+        let found = checked(vec![main(vec![]), disabled]);
+        assert!(found.is_empty(), "{}: {found:?}", def.id);
+        let attached = match def.shape {
+            Shape::Statement => main(vec![block]),
+            _ => main(vec![print(vec![json!({"block": block})])]),
+        };
+        assert_eq!(checked(vec![attached]), [missing.as_str()], "{}", def.id);
+    }
+    assert!(seen >= 9, "{seen}");
+
+    // Built on the side: a `create` with an `ask` below it, whose variable
+    // can be chosen once the stack is attached (M3, ADR-0012).
+    let mut head = on_canvas(declare("int", "guess", Some(num("1"))), "p2");
+    head["stack"] =
+        json!([{"id": "p3", "type": "io.ask", "v": 1, "inputs": {"PROMPT": text("Your answer: ")}}]);
+    assert_eq!(checked(vec![main(vec![]), head]), [PARKED]);
 }

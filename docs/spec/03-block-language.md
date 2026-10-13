@@ -86,9 +86,11 @@ program starts* or to a function run; definitions are never parked. Parked
 blocks are saved, show the ⚠ badge of `B2C-W0505` (*not attached*), are not
 analysed until they are attached and never stop Run
 ([ADR-0012](../adr/0012-parked-blocks.md)). The block catalog still checks
-them, so an unknown or damaged block is an error wherever it is. Until M3,
-a variable created inside a parked stack can be chosen in the blocks below
-it only once the stack is attached.
+them, so an unknown or damaged block is an error wherever it is. A block in
+which nothing is chosen yet (an *ask* without its variable, straight from
+the toolbox) is not damaged: it asks for the choice only once it is
+attached. Until M3, a variable created inside a parked stack can be chosen
+in the blocks below it only once the stack is attached.
 
 ## 3.4 Expression slots
 

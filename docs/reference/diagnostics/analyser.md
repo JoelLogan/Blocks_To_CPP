@@ -425,7 +425,13 @@ Codes by area:
 * **Meaning:** a block lacks something the analyser needs: a value in a value
   input, a name, a chosen variable or function, or a valid setting (type,
   dropdown choice, checkbox, function input row). Also reported when the
-  block in a value input is disabled.
+  block in a value input is disabled. A block from the toolbox in which
+  nothing is chosen yet gets it once it is attached; left loose or disabled,
+  it gets nothing ([ADR-0012](../../adr/0012-parked-blocks.md)). A field or
+  input the block catalog already reported (`B2C-E06xx`), and the fields
+  and inputs of a block the catalog kept as it is (made by a newer version,
+  `B2C-E0602`, or too old to upgrade, `B2C-E0603`), are not reported again
+  ([spec §6.1](../../spec/06-compiler-pipeline.md#61-overview)).
 * **Example:** an `if` block whose condition slot is empty, or a `set` block
   with no variable chosen.
 * **Message:** "This block needs a condition." / "Choose a variable in this
@@ -568,6 +574,8 @@ Codes by area:
   on its top block. A parked block that you disabled is not reported.
   Parked code is not checked until it is attached, apart from the block
   catalog's checks (an unknown block type, for example, is still an error).
+  A variable or name that is not chosen yet is not an error while the block
+  is parked (`B2C-E0430` asks for it once the block is attached).
   A variable created inside a parked stack cannot be chosen in the blocks
   below it until the stack is attached (until M3).
 * **Example:** a `print ("Hello")` dropped next to `when program starts`

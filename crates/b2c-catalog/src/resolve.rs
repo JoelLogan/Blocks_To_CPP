@@ -11,7 +11,16 @@
 //! Defaults filled in: absent fields with a default, absent `count`/`flag`
 //! extras with a default, and absent value inputs with default tokens (the
 //! "shadow" blocks of the editor). Statement inputs are never filled: an
-//! absent one simply means an empty list.
+//! absent one simply means an empty list. An absent name or reference (a
+//! `symbol_decl` or `symbol_ref` field) is no catalog problem: it is what the
+//! editor saves while nothing is chosen yet, and the analyser reports it
+//! (`B2C-E0430`) once the block is part of the program, so a parked or
+//! disabled block without one never stops a build (ADR-0012).
+//!
+//! Every block that is kept exactly as it was, without being checked against
+//! a definition (`B2C-E0601`, `B2C-E0602`, `B2C-E0603`, `B2C-E0620`), is
+//! listed in [`crate::ResolveReport::unchecked`], so the analyser does not
+//! report its fields and inputs again.
 //!
 //! A block directly on the canvas may carry a loose statement stack (spec
 //! §5.4, ADR-0011): the blocks attached below it. Stacked blocks are checked
@@ -31,16 +40,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use b2c_ir::{BlockId, Diagnostic, Location, ModuleId, Part, SymbolId};
+use b2c_ir::{BlockId, Location, ModuleId, Part, SymbolId};
 use b2c_model::{Block, Document, ExprInput, FieldValue, Input};
 use serde_json::Value;
 
-use crate::Catalog;
 use crate::codes::{self, Diags};
 use crate::definitions::{self, PARAM_MODES, count_default, default_tokens, repeat_index};
 use crate::schema::{BlockDef, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, Shape};
 use crate::stack;
 use crate::upgrade::{self, BlockUpgrades};
+use crate::{Catalog, ResolveReport};
 
 /// Where a block sits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,27 +76,14 @@ enum Resolved {
 }
 
 /// Runs the resolve stage with the shipped block upgrades.
-pub(crate) fn run(document: &Document, catalog: &Catalog) -> (Document, Vec<Diagnostic>) {
+pub(crate) fn run(document: &Document, catalog: &Catalog) -> ResolveReport {
     run_with(document, catalog, &BlockUpgrades::SHIPPED)
 }
 
 /// Runs the resolve stage with the given block upgrades.
-fn run_with(
-    document: &Document,
-    catalog: &Catalog,
-    upgrades: &BlockUpgrades<'_>,
-) -> (Document, Vec<Diagnostic>) {
+fn run_with(document: &Document, catalog: &Catalog, upgrades: &BlockUpgrades<'_>) -> ResolveReport {
     let mut completed = document.clone();
-    let mut resolver = Resolver {
-        catalog,
-        upgrades,
-        failed_upgrades: BTreeMap::new(),
-        newer_catalog: b2c_model::is_newer_version(&document.generator.catalog, &catalog.version),
-        broken: broken_definitions(catalog),
-        reported_broken: BTreeSet::new(),
-        module: None,
-        diags: Diags::default(),
-    };
+    let mut resolver = Resolver::new(catalog, upgrades, &document.generator.catalog);
     let has_blocks = completed.modules.iter().any(|m| !m.workspace.blocks.is_empty());
     if catalog.blocks.is_empty() {
         if has_blocks {
@@ -97,7 +93,7 @@ fn run_with(
                 "No block definitions are available (the block catalog is empty or could not be loaded), so no block can be checked. This is a bug in Blocks2Cpp.",
             );
         }
-        return (completed, resolver.diags.finish());
+        return resolver.finish(completed);
     }
     for failure in upgrade::document(&mut completed, catalog, upgrades).failed {
         resolver
@@ -113,7 +109,7 @@ fn run_with(
             stack::restore(block, stacked);
         }
     }
-    (completed, resolver.diags.finish())
+    resolver.finish(completed)
 }
 
 /// The first problem of every broken definition.
@@ -138,6 +134,36 @@ struct Resolver<'c> {
     reported_broken: BTreeSet<String>,
     module: Option<ModuleId>,
     diags: Diags,
+    /// The blocks kept as they were without being checked against a
+    /// definition ([`ResolveReport::unchecked`]).
+    unchecked: BTreeSet<BlockId>,
+}
+
+impl<'c> Resolver<'c> {
+    /// A resolver for a document that names `document_catalog` as its
+    /// catalog version.
+    fn new(catalog: &'c Catalog, upgrades: &'c BlockUpgrades<'c>, document_catalog: &str) -> Self {
+        Self {
+            catalog,
+            upgrades,
+            failed_upgrades: BTreeMap::new(),
+            newer_catalog: b2c_model::is_newer_version(document_catalog, &catalog.version),
+            broken: broken_definitions(catalog),
+            reported_broken: BTreeSet::new(),
+            module: None,
+            diags: Diags::default(),
+            unchecked: BTreeSet::new(),
+        }
+    }
+
+    /// What the stage found in `completed`, the document it completed.
+    fn finish(self, completed: Document) -> ResolveReport {
+        ResolveReport {
+            document: completed,
+            diagnostics: self.diags.finish(),
+            unchecked: self.unchecked,
+        }
+    }
 }
 
 impl Resolver<'_> {
@@ -161,6 +187,7 @@ impl Resolver<'_> {
         let location = Location::block(self.module.clone(), block.id.clone());
         let catalog = self.catalog;
         let Some(def) = catalog.blocks.get(&block.block_type) else {
+            self.unchecked.insert(block.id.clone());
             if self.upgrades.is_retired(&block.block_type) {
                 // A retired type whose replacement failed.
                 let message = self.upgrade_failure(block);
@@ -176,6 +203,7 @@ impl Resolver<'_> {
             return;
         };
         if let Some(problem) = self.broken.get(&def.id) {
+            self.unchecked.insert(block.id.clone());
             if self.reported_broken.insert(def.id.clone()) {
                 let message = format!(
                     "The block catalog's definition of {} is broken ({problem}), so blocks of this type cannot be checked. This is a bug in the catalog.",
@@ -187,6 +215,7 @@ impl Resolver<'_> {
             return;
         }
         if block.v > def.version {
+            self.unchecked.insert(block.id.clone());
             let message = newer_block_message(def, block.v);
             self.diags.error(codes::NEWER_BLOCK, location, message);
             self.children(block);
@@ -194,6 +223,7 @@ impl Resolver<'_> {
         }
         if block.v < def.version {
             // The document was upgraded first, so this block could not be.
+            self.unchecked.insert(block.id.clone());
             let message = self.upgrade_failure(block);
             self.diags.error(codes::OLD_BLOCK, location, message);
             self.children(block);
@@ -202,6 +232,7 @@ impl Resolver<'_> {
         if self.newer_catalog
             && let Some(message) = upgrade::newer_catalog_problem(def, block)
         {
+            self.unchecked.insert(block.id.clone());
             self.diags.error(codes::NEWER_BLOCK, location, message);
             self.children(block);
             return;
@@ -466,17 +497,13 @@ impl Resolver<'_> {
                         .fields
                         .insert(field.name.clone(), FieldValue::Text(text.clone()));
                 }
+                // Nothing chosen yet: the editor saves an unchosen name or
+                // reference as an absent field. That is the analyser's to
+                // report, once the block is part of the program (ADR-0012).
+                None if matches!(field.kind, FieldKind::SymbolDecl | FieldKind::SymbolRef) => {}
                 None => {
                     let name = &field.name;
-                    let message = match field.kind {
-                        FieldKind::SymbolDecl => {
-                            format!("This block needs a name: its field {name} is missing.")
-                        }
-                        FieldKind::SymbolRef => format!(
-                            "This block needs to know which variable or function it uses: its field {name} is missing."
-                        ),
-                        _ => format!("This block is missing its field {name}."),
-                    };
+                    let message = format!("This block is missing its field {name}.");
                     self.diags
                         .error(codes::MISSING_FIELD, field_location(location, name), message);
                 }
@@ -815,7 +842,14 @@ pub(crate) fn quote(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use b2c_ir::Diagnostic;
+
     use super::*;
+
+    /// The completed document and the diagnostics of a report.
+    fn parts(report: ResolveReport) -> (Document, Vec<Diagnostic>) {
+        (report.document, report.diagnostics)
+    }
 
     /// A synthetic `io.print` v1 → v2 step: the separator `space` was
     /// renamed to `spaces`.
@@ -871,7 +905,7 @@ mod tests {
     #[test]
     fn older_blocks_are_upgraded_before_they_are_checked() {
         let catalog = catalog_v2();
-        let (completed, diagnostics) = run_with(&document("space"), &catalog, &CHAIN);
+        let (completed, diagnostics) = parts(run_with(&document("space"), &catalog, &CHAIN));
         assert_eq!(diagnostics, []);
         let print = &completed.modules[0].workspace.blocks[0].statements["BODY"][0];
         assert_eq!(print.v, 2);
@@ -879,7 +913,7 @@ mod tests {
         // The upgraded block is complete, and resolving it again is a no-op.
         assert_eq!(print.fields["STREAM"], FieldValue::Text("out".into()));
         assert_eq!(
-            run_with(&completed, &catalog, &CHAIN),
+            parts(run_with(&completed, &catalog, &CHAIN)),
             (completed.clone(), vec![])
         );
     }
@@ -887,7 +921,7 @@ mod tests {
     #[test]
     fn blocks_that_cannot_be_upgraded_are_reported() {
         let catalog = catalog_v2();
-        let (completed, diagnostics) = run_with(&document("bad"), &catalog, &CHAIN);
+        let (completed, diagnostics) = parts(run_with(&document("bad"), &catalog, &CHAIN));
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code.0, codes::OLD_BLOCK);
         assert_eq!(
@@ -901,7 +935,7 @@ mod tests {
             migrations: &[],
             ..CHAIN
         };
-        let (_, diagnostics) = run_with(&document("space"), &catalog, &none);
+        let (_, diagnostics) = parts(run_with(&document("space"), &catalog, &none));
         assert_eq!(
             diagnostics[0].message,
             "This \"print\" block is version 1, which this version of Blocks2Cpp cannot upgrade to version 2."
@@ -942,7 +976,7 @@ mod tests {
             }]}}]
         });
         let document = b2c_model::load(&serde_json::to_vec(&value).unwrap()).unwrap();
-        let (completed, diagnostics) = run_with(&document, crate::core_catalog(), &RETIRING);
+        let (completed, diagnostics) = parts(run_with(&document, crate::core_catalog(), &RETIRING));
         let body = &completed.modules[0].workspace.blocks[0].statements["BODY"];
         assert_eq!(body[0].block_type, "io.print");
         assert!(body[0].inputs.contains_key("ITEM0"));
@@ -959,7 +993,7 @@ mod tests {
             "This block is version 1 of a retired kind of block, which is now the \"print\" block, and replacing it failed: the block has no WHAT input."
         );
         // Without the replacement, the type is simply unknown.
-        let (_, diagnostics) = run(&document, crate::core_catalog());
+        let (_, diagnostics) = parts(run(&document, crate::core_catalog()));
         assert_eq!(diagnostics.len(), 2);
         assert!(diagnostics.iter().all(|d| d.code.0 == codes::UNKNOWN_BLOCK));
     }
@@ -993,7 +1027,7 @@ mod tests {
         };
         let resolve = |catalog: &str| {
             let document = b2c_model::load(&serde_json::to_vec(&value(catalog)).unwrap()).unwrap();
-            run(&document, crate::core_catalog())
+            parts(run(&document, crate::core_catalog()))
         };
         let (completed, diagnostics) = resolve("1.2.0");
         assert_eq!(
@@ -1031,16 +1065,8 @@ mod tests {
     /// catalog, as the stage does for every block on a canvas.
     fn resolve_stack(head: Value, stacked: Vec<Value>) -> (Block, Vec<Block>, Vec<Diagnostic>) {
         let catalog = crate::core_catalog();
-        let mut resolver = Resolver {
-            catalog,
-            upgrades: &BlockUpgrades::SHIPPED,
-            failed_upgrades: BTreeMap::new(),
-            newer_catalog: false,
-            broken: broken_definitions(catalog),
-            reported_broken: BTreeSet::new(),
-            module: ModuleId::new("m").ok(),
-            diags: Diags::default(),
-        };
+        let mut resolver = Resolver::new(catalog, &BlockUpgrades::SHIPPED, &catalog.version);
+        resolver.module = ModuleId::new("m").ok();
         let mut head = block(head);
         let mut stacked: Vec<Block> = stacked.into_iter().map(block).collect();
         resolver.top_level(&mut head, &mut stacked);
@@ -1208,6 +1234,59 @@ mod tests {
         assert_eq!(head.stack.len(), 2);
     }
 
+    /// Every block kept as it was without a check is listed as unchecked,
+    /// and only those (not the blocks nested in them): the analyser does
+    /// not report their fields and inputs again.
+    #[test]
+    fn blocks_kept_without_a_check_are_listed() {
+        let mut catalog = crate::core_catalog().clone();
+        // A broken definition: a dropdown default that is not an option.
+        let ask = catalog.blocks.get_mut("io.ask").unwrap();
+        ask.field.iter_mut().find(|f| f.name == "MODE").unwrap().default =
+            Some(FieldDefault::Text(String::from("bogus")));
+        let document = |generator: &str, body: Vec<Value>| {
+            let value = serde_json::json!({
+                "format": "blocks2cpp/project", "formatVersion": 1,
+                "generator": {"app": "0.1.0", "catalog": generator},
+                "project": {"id": "p", "name": "P", "language": {"standard": "c++20"}},
+                "modules": [{"id": "m", "name": "main", "workspace": {"blocks": [{
+                    "id": "b_main", "type": "program.main", "v": 1, "statements": {"BODY": body}
+                }]}}]
+            });
+            b2c_model::load(&serde_json::to_vec(&value).unwrap()).unwrap()
+        };
+        let body = vec![
+            print("b_ok"),
+            serde_json::json!({"id": "b_unknown", "type": "x.nope", "v": 1, "statements": {"X": [print("b_inner")]}}),
+            serde_json::json!({"id": "b_newer", "type": "control.break", "v": 2}),
+            serde_json::json!({"id": "b_old", "type": "io.print", "v": 0}),
+            serde_json::json!({"id": "b_ask1", "type": "io.ask", "v": 1}),
+            serde_json::json!({"id": "b_ask2", "type": "io.ask", "v": 1}),
+        ];
+        let report = run(&document("1.0.0", body), &catalog);
+        let unchecked: Vec<&str> = report.unchecked.iter().map(BlockId::as_str).collect();
+        assert_eq!(unchecked, ["b_ask1", "b_ask2", "b_newer", "b_old", "b_unknown"]);
+        // Only the first block of a broken definition carries the diagnostic.
+        let broken = report
+            .diagnostics
+            .iter()
+            .filter(|d| d.code.0 == codes::BROKEN_DEFINITION);
+        assert_eq!(broken.count(), 1);
+
+        let mut newer = print("b_newer_field");
+        newer["fields"] = serde_json::json!({"VOLUME": "3"});
+        let report = run(
+            &document("99.0.0", vec![print("b_ok"), newer]),
+            crate::core_catalog(),
+        );
+        let unchecked: Vec<&str> = report.unchecked.iter().map(BlockId::as_str).collect();
+        assert_eq!(unchecked, ["b_newer_field"]);
+        assert_eq!(
+            codes_and_blocks(&report.diagnostics),
+            [(codes::NEWER_BLOCK.to_owned(), "b_newer_field".to_owned())]
+        );
+    }
+
     #[test]
     fn a_document_with_a_parked_stack_resolves_cleanly() {
         let document: Document = serde_json::from_value(serde_json::json!({
@@ -1221,7 +1300,7 @@ mod tests {
             ]}}]
         }))
         .expect("document");
-        let (completed, diagnostics) = run(&document, crate::core_catalog());
+        let (completed, diagnostics) = parts(run(&document, crate::core_catalog()));
         assert_eq!(diagnostics, []);
         // The stack survives resolving, completed like any other block.
         let head = &completed.modules[0].workspace.blocks[1];
@@ -1280,16 +1359,8 @@ mod tests {
             let versioned = |v: u32| serde_json::json!({"id": "b1", "type": id, "v": v});
             let mut diagnostics = Vec::new();
             for position in [Position::Statement, Position::Value] {
-                let mut resolver = Resolver {
-                    catalog,
-                    upgrades: &BlockUpgrades::SHIPPED,
-                    failed_upgrades: BTreeMap::new(),
-                    newer_catalog: true,
-                    broken: broken_definitions(catalog),
-                    reported_broken: BTreeSet::new(),
-                    module: None,
-                    diags: Diags::default(),
-                };
+                let mut resolver = Resolver::new(catalog, &BlockUpgrades::SHIPPED, &catalog.version);
+                resolver.newer_catalog = true;
                 let mut from_newer_catalog = versioned(def.version);
                 from_newer_catalog["fields"] = serde_json::json!({"B2C_NEWER": "x"});
                 for value in [
@@ -1312,7 +1383,7 @@ mod tests {
                 "modules": [{"id": "m", "name": "main", "workspace": {"blocks": [versioned(0)]}}]
             });
             let old = b2c_model::load(&serde_json::to_vec(&old).unwrap()).unwrap();
-            let (_, walked) = run(&old, catalog);
+            let (_, walked) = parts(run(&old, catalog));
             assert!(
                 walked.iter().any(|d| d.code.0 == codes::OLD_BLOCK),
                 "{id}: no {} in {walked:?}",

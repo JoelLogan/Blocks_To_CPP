@@ -111,7 +111,9 @@ impl Frontend {
 ///
 /// Once the project has loaded, the catalog check and the analyser always
 /// both run, even when the catalog rejects some blocks, so `b2c check`, the
-/// build and the editor's preview list the same problems (spec §6.1).
+/// build and the editor's preview list the same problems (spec §6.1). The
+/// analyser does not repeat what the catalog reported
+/// (`b2c_lang::analyze_checked`), so one mistake gives one message.
 /// Generated C++ is produced only for a project without errors (building
 /// requires stages ①–⑤ to report zero errors). Warnings, such as a parked
 /// block's `B2C-W0505`, never stop it.
@@ -161,13 +163,14 @@ fn run_stages<E>(
     let project_hash = Some(b2c_model::content_hash(&loaded));
     checkpoint()?;
 
-    let (document, mut diagnostics) = b2c_catalog::resolve(&loaded, b2c_catalog::core_catalog());
+    let resolved = b2c_catalog::resolve_report(&loaded, b2c_catalog::core_catalog());
+    let (document, mut diagnostics) = (resolved.document, resolved.diagnostics);
     let catalog_errors = b2c_ir::has_errors(&diagnostics);
     checkpoint()?;
 
     // The analyser accepts a document the catalog rejected (it skips what it
     // cannot lower), as the editor's preview relies on.
-    let analysis = b2c_lang::analyze(&document);
+    let analysis = b2c_lang::analyze_checked(&document, &diagnostics, &resolved.unchecked);
     diagnostics.extend(analysis.diagnostics);
     if catalog_errors || b2c_ir::has_errors(&diagnostics) {
         return Ok(Frontend {

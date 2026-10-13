@@ -29,8 +29,12 @@ randomness, and no global mutable state. The same code runs natively in the
 backend and CLI, and as WebAssembly in the editor. A stage that finds errors
 still produces output where it can. The editor's preview, `b2c check` and
 the build all run stages ①–⑤ on any document that loads, so they report the
-same diagnostics; only a load failure stops early. Generating and compiling
-files requires zero errors.
+same diagnostics; only a load failure stops early. Each problem is reported
+once: the analyser does not repeat as `E0430` a problem the catalog reported
+at the same field or input (or, for a function input, on the whole block),
+nor report the fields and inputs of a block the catalog kept as it was
+without a check (`E0601`–`E0603`, `E0620`). Generating and compiling files
+requires zero errors.
 
 **The live preview is best-effort.** Once stage ① succeeds, the editor's
 preview (`b2c-core-wasm`) continues through catalog and analyser errors and
@@ -96,6 +100,11 @@ every example at indent widths 2 and 4.
   booleans, number fields hold non-empty text, and declarations have the
   `{sym, name}` shape. Whether a number is a valid literal in range (`E0310`,
   `E0517`) and a name a valid identifier (`E0220`) is checked when lowering.
+  An absent name or reference field is how the editor saves a block in which
+  nothing is chosen yet, so it is not a catalog problem: lowering reports it
+  (`E0430`, *Choose a variable in this block.*), and a parked or disabled
+  block without one never stops a build
+  ([ADR-0012](../adr/0012-parked-blocks.md)).
 * `extra` (mutator state) is validated against the block's declared schema,
   and the ⊕ counts must match the inputs present.
 
