@@ -653,8 +653,8 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 - Effort L, of which the core is M. The W2 gate depends on W2-1 only.
 - *Status (2026-10-12):* the must-have core is merged; readings are local (debug backend, E2E frontend build, Linux under xvfb without a GPU).
   - *Long-task recorder:* `e2e/support/longtasks.ts`, started by `launchApp` and the flows' launcher. It uses a timer heartbeat instead of a MessageChannel one, which costs about 1.5 cores in WebKitGTK. It names the app's `b2c:` User Timing spans that overlap each task (P-2) and writes `long-tasks.md` into the E2E job summaries. Linux E2E run: 44 launches recorded, longest task per launch 147–792 ms (median 476 ms; a preview run with the C++ panel), and 3.0 s in the 10,000,000-line flood.
-  - *A/B job:* `bench-ab-run.yml`, started by `bench-ab-pr.yml` (label `bench-ab`) or `bench-ab.yml` (by hand, the dispatched commit against one of its ancestors), `ab-rounds.sh` and `bench-compare.py ab`. It is linted (actionlint, zizmor) but has not run on GitHub yet. The first A/B, run locally, is P-2's (below; its selection readings were taken again after the review fixes).
-  - *Acceptance file:* `accepted.json` (history format 2). `edit-1000.p95` is accepted for its new definition.
+  - *A/B job:* `bench-ab-run.yml`, started by `bench-ab-pr.yml` (label `bench-ab`) or `bench-ab.yml` (by hand, the dispatched commit against one of its ancestors), `ab-rounds.sh` and `bench-compare.py ab`. It is linted (actionlint, zizmor) and has run on GitHub (runs 38331705145 and 38336846988); since W3 it runs each benchmark in its own Vitest call, skips with a notice a benchmark whose base build lacks a hook method it calls, leaves a failed benchmark out of the comparison, and fails only on a gated regression or a failure on the head. The first A/B, run locally, is P-2's (below; its selection readings were taken again after the review fixes).
+  - *Acceptance file:* `accepted.json` (format version 2 since W3; the benchmark history is format 2 too). Each entry has a kind: `redefined` restarts a metric's nightly history only, `accepted` (an intended slowdown) also passes an A/B run. `edit-1000.p95`'s two entries are redefinitions.
   - *Metrics (re-measured 2026-10-13, after the review fixes below):* `select-1000.max-task` about 1.2 s (10 clicks, 353–1,414 ms). `edit-1000.p95` (gated; C++ panel shown, until the page settles) about 1.4 s. Guessing game: `select` about 140 ms (123–179 ms) and `edit` 31–49 ms (report-only). Per click, `b2c:select` takes about 0 ms and `b2c:toolbox-refresh`, the flyout's rebuild, about 550 ms at 1,000 blocks and about 120 ms on the guessing game (medians), so the rebuild W4-2 targets is most of a selection's cost. The longest task at 1,000 blocks is longer than the rebuild alone (a review probe found the press's own task at about 1.1 s for one target), so W4-2 should profile the press too. `console-200000.run` (gated, added by the review) about 0.75–0.8 s; its longest task about 110 ms (report-only).
   - *Review fixes (2026-10-13):* the first readings were wrong for selection. The benchmark's click holds the button 50 ms, and the app ignored the rebuild a selection asks for while the button was down (Blockly refreshes no toolbox during a gesture), so no guessing-game click and about half of those at 1,000 blocks rebuilt the flyout (the 15 ms above was a click without it), and users saw the previous scope after an ordinary click. The toolbox now rebuilds once the button is up, and a timed click fails unless the toolbox lists the clicked block's scope. `b2c:toolbox-refresh` wrapped only the scheduling of the rebuild (about 0 ms) and now covers the rebuild itself. On a pull request the A/B job measures the pull request merged into its base against that base, and runs every benchmark but cold start; its rounds start where the round before stopped, so they click all 8 scopes. The `console` benchmark gives W3-11's merge rule a metric. A panel hidden while another project is opened starts afresh.
   - *Merge rule:* in 09 §9.2.
@@ -710,7 +710,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-3 Window and dock defaults.** Refs: U6b, A04-08.
 
-- *Status:* done. `preventOverflow` is on (config test `the_main_window_fits_the_screen` in `src-tauri/tests/consistency.rs`). Where Tauri finds no primary monitor, `window.rs` fits the window, once it is created, to `current_monitor()` or else the first of `available_monitors()`, never below 800×560, and logs at info level the monitor it used (its name, size and place), the work area, the scale and whether it resized; with a primary monitor it logs that Tauri fitted the window. The seam `B2C_E2E_WINDOW_SIZE` is read in `window.rs` with `e2e-hooks` only; a value that is not `WIDTHxHEIGHT` stops the app. `launchApp` and the flows' launcher take a `windowSize`, which `layout.e2e.ts` and `chrome.e2e.ts` use; the other flows and the benchmarks keep the app's own size (pinning them is left to the integrator with the re-baseline). The docks start as planned and follow the window until the user resizes them; the size shown is the chosen one kept within the limits (no dead zone), and the limit is the splitter's `aria-valuemax`. *Deviation:* the C++ dock's largest width is min(960, 65 % of the editor area, what leaves 200 px of canvas beside the narrowest flyout), not min(960, 65 %): with 65 % alone a drag could leave less than 200 px of canvas in any window narrower than about 1,330 px, and hiding the dock in the middle of a drag would surprise. So the flyout narrows first, then the C++ dock, which is hidden only when even its 200 px do not fit (a window below about 670 px) and shown again when it fits, unless the user showed or hid it meanwhile. Sizes with the 100 px category column of the Linux E2E app (C++ dock, flyout, canvas): 800×560: 280, 214, 200 px; 1024×700: 307, 320, 291 px; 1028×749: 308, 320, 294 px; 1280×800: 384, 320, 470 px. The benchmark re-baseline (`accepted.json`) is left to the integrator.
+- *Status:* done. `preventOverflow` is on (config test `the_main_window_fits_the_screen` in `src-tauri/tests/consistency.rs`). Where Tauri finds no primary monitor, `window.rs` fits the window, once it is created, to `current_monitor()` or else the first of `available_monitors()`, never below 800×560, and logs at info level the monitor it used (its name, size and place), the work area, the scale and whether it resized; with a primary monitor it logs that Tauri fitted the window. The seam `B2C_E2E_WINDOW_SIZE` is read in `window.rs` with `e2e-hooks` only; a value that is not `WIDTHxHEIGHT` stops the app. `launchApp` and the flows' launcher take a `windowSize`, which `layout.e2e.ts` and `chrome.e2e.ts` use; the other flows and the benchmarks keep the app's own size (the integration ran the flows and exit specs at 800×560, 1024×700 and 1028×749 through the seam instead). The docks start as planned and follow the window until the user resizes them; the size shown is the chosen one kept within the limits (no dead zone), and the limit is the splitter's `aria-valuemax`. *Deviation:* the C++ dock's largest width is min(960, 65 % of the editor area, what leaves 200 px of canvas beside the narrowest flyout), not min(960, 65 %): with 65 % alone a drag could leave less than 200 px of canvas in any window narrower than about 1,330 px, and hiding the dock in the middle of a drag would surprise. So the flyout narrows first, then the C++ dock, which is hidden only when even its 200 px do not fit (a window below about 670 px) and shown again when it fits, unless the user showed or hid it meanwhile. Sizes with the 100 px category column of the Linux E2E app (C++ dock, flyout, canvas): 800×560: 280, 214, 200 px; 1024×700: 307, 320, 291 px; 1028×749: 308, 320, 294 px; 1280×800: 384, 320, 470 px. *Re-baseline (integration):* an A/B of every webview benchmark between 8d34abc (the old geometry) and the merged W3 (local, Linux under xvfb at 1280×1024, 10 samples per side) moved no gated metric by more than 6.6 %: cold start 2,029 → 2,029 ms, `preview-1000.p95` 114 → 112.5 ms, `edit-1000.p95` 1,532 → 1,627 ms (+6.2 %), `select-1000.max-task` 1,286 → 1,272 ms, `drag-5000.frame-p95` 58 → 58.5 ms, `console-200000.run` 843.5 → 899 ms (+6.6 %, W3-11). So `accepted.json` gets no entry. The Windows runner's geometry changed more (the C++ dock 308 px instead of 380): if its next nightly fails a gated metric on geometry, a `redefined` entry records it then.
 - **Window:**
   - Set `"preventOverflow": true` on the main window in `apps/desktop/src-tauri/tauri.conf.json`.
   - Tauri 2.12 then clamps the window to the monitor's work area only when it would overflow (`tauri-runtime-wry-2.12.0 lib.rs:4463-4520`), and keeps 1280×800 wherever that fits.
@@ -754,6 +754,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-5 Canvas controls.** Refs: U12, A04-16, FA-2.
 
+- *Status:* done. Blockly's SVG zoom controls are off and `zoom.wheel` is on, so `Ctrl` + wheel and a pinch zoom around the pointer and the plain wheel scrolls. `editor/view/zoom.ts` (`zoomStep`, `resetZoom` to 100 % around the centre, `showAllBlocks` keeping the scale; public Blockly API only) and `CanvasControls.tsx`: four named HTML buttons at the canvas's top right (*Reset zoom* shows the zoom now), portalled after Blockly's injection div so they come right after the canvas in the Tab order, placed as a Blockly `IPositionable` and again when the flyout's SVG resizes, never over the flyout. `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom and announce the zoom. The bench page's drop report and `editor.e2e.ts` use the new controls; E2E `canvas-controls.e2e.ts`. Deviations: *Show all* centres or keeps the 24-unit margin per axis; zooming is instant (Blockly's canvas transition is internal).
 - **Change:**
   - `zoom: { controls: false, wheel: true }`.
   - A new `editor/view/zoom.ts`:
@@ -771,6 +772,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-6 Rename the project.** Refs: U10, S5-1, A04-12, FA-12.
 
+- *Status:* done. `app/layout/ProjectTitle.tsx`: the name is a button that turns into a field (Enter or blur keeps, Escape cancels); `checkProjectName` trims, counts 1–100 code points, refuses line breaks and control characters and then asks `core.canonical()`. `EditorSession.updateProjectInfo` sets `project.name` as an unsaved change through the preview pipeline (the header comment follows; not undoable, D12). *Rename project…* in ≡. `project_save` now calls `touch_recent`, so a plain save renames the recent entry and moves it to the front. E2E `rename-project.e2e.ts` (rename, save, reopen from the recent list).
 - **Change:**
   - `ProjectTitle` becomes a button that turns into an input. Enter or blur keeps the name, and Escape cancels.
   - The name is trimmed, has 1–100 characters on one line, and is checked with `core.canonical()`.
@@ -785,6 +787,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-7 A run brings its output into view.** Refs: U4b, U4c.
 
+- *Status:* done. `ConsoleHandle.scrollToBottom()` goes through the output scheduler and is issued by `RunSession` right after the run's prelude (the *New run* separator), so the scroll is ordered after it. An idle Clear empties the console completely (`clear()` plus `ESC[2K\r`, or `reset()` while a finished program left the alternate screen on); while a program runs, its prompt line stays. Integration tests with a real xterm; E2E in `console.e2e.ts`.
 - **Change:**
   - `ConsoleHandle.scrollToBottom()`, applied in order through the scheduler when a run starts. It is a no-op in `DETACHED_CONSOLE` and `FakeConsole`.
   - When idle, Clear empties the screen completely: `clear()` plus `ESC[2K\r`. While a program runs, the prompt line stays.
@@ -795,6 +798,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-8 Console wheel and refit.** Refs: U14b, U14c.
 
+- *Status:* done; the cause is verified for WebKitGTK 2.52 at device scale 2 (GNOME's 125 % and 150 %): real wheel actions while output streams left the view at the end. `panels/console/wheel.ts` scrolls by lines with the remainder kept, only on the normal screen without mouse tracking or modifiers; `refit.ts` fits once per animation frame, rows at once and columns after 100 ms. The manual step at 125 % and 150 % is in `m2-usability.md`. WebView2 at fractional scales is the original 1.2 case, not re-checked.
 - **Wheel:**
   - Use `attachCustomWheelEventHandler`, but take over only when the normal buffer is active, mouse tracking is `none`, and no modifier is held.
   - It converts pixel, line and page deltas into lines, keeps the remainder, calls `term.scrollLines`, and calls `preventDefault`.
@@ -810,6 +814,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-9 Visible Undo and Redo (if time).** Ref: FA-5.
 
+- *Status:* done. *Undo* and *Redo* in ≡, enabled from Blockly's undo and redo stacks and only on the editor screen; *Undo last change* on the sync-failure banner; a window-level `Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z` (capture phase) outside text fields, dialogs, Blockly's own areas and a starting or running console. `features/project/limits.ts` names the limits a user can reach (`B2C-E0104`, `E0101`, `E0121`) in the banner and on Save instead of calling them a bug; the pipeline keeps the loader's codes with `syncFailed` (`AnalysisState.syncCodes`).
 - **Cause:**
   - Blockly binds its shortcuts on the injection div only (`core/inject.ts:75-79`).
   - `app/shortcuts.ts:52-70` handles only run, stop, build and save.
@@ -829,6 +834,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-10 Compiler discovery folder rules (if time).** Ref: S7-2.
 
+- *Status:* done. Excluded folders have a kind (project, cache, current directory) and one rule: a project folder or the cache is excluded with its tree, except that a project folder that is the home folder or a root is excluded as that folder only; the current directory is always that folder only. The rule covers a rescan, the build-time check (`B2C-T1002`) and *Choose g++ manually…*. At startup the desktop app enters `<cache>/cwd` (empty, owner-only, never through a link); the CLI keeps the caller's folder. Skipped compilers (at most 64) are listed on the toolchain page with their reason; `toolchain_list` and `toolchainsUpdated` gain optional `skipped` and `rechecking`.
 - **Cause:**
   - Discovery excludes whole folder trees by subtree match (`crates/b2c-toolchain/src/discovery.rs:390-392`), and adds the current directory to the excluded list (`:59-64`).
   - Excluded folders: `crates/b2c-app/src/toolchains.rs:31-36`.
@@ -850,6 +856,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-11 Console output for screen readers.** Ref: FA-1.
 
+- *Status:* done. `screenReaderMode` is on, paused for any single write over 16 KiB and resumed with a fresh accessibility tree 1 s after the last such write; Clear and the sink's reset start the tree afresh; a running program's Tab keydown is cancelled (the mode leaves Shift+Tab uncancelled). Not the `role="log"` mirror: measured in WebKitGTK 2.52, the mode always on cost +90 % unpaced and +5 % / +24 % at 4,000 / 8,000 lines per 16 ms; with the pause +1.4 % / +3 %. A/B of `webview.console-200000.run` at integration (local, Linux under xvfb, debug backend; 4 rounds, 20 samples per side): 862 → 897.5 ms (+4.1 %) for the console merge alone (8d34abc → 1b4a74c), and 851 → 932.5 ms (+9.6 %; a 2-round run: 843.5 → 899 ms, +6.6 %) for all of W3 against 8d34abc: green, under the 10 % gate, but close to it. Its longest task (report only) grows from about 120–134 ms to about 174 ms; likely the mode turned off at the flood's first big write or back on 1 s after the last (not profiled). The NVDA/Orca pass is W7-6.
 - **Cause:** `screenReaderMode` is off (`ConsolePanel.tsx:219-232`), and xterm marks `.xterm-rows` `aria-hidden`.
 - **Change:**
   - `screenReaderMode: true`. The accessibility tree is reset together with the terminal.
@@ -864,6 +871,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-12 Probe once more after a timeout.** Ref: RD-10.
 
+- *Status:* done; the cause is confirmed: a compile round that timed out made the hello check fail, which gave `B2C-T1006`, and that record was reused while its fingerprint was current. A timed-out probe now reports `B2C-T1023` ("timed out … Rescan") instead of T1003/T1006, is probed once more with at least 30 s per test (`ProbeOptions::for_retry`) in scans, the build-time check, manual adds and the CLI's choice, and a timed-out record is never reused. `PROBE_FORMAT` is 2, so records of older builds are probed again once. The page says "Checking g++ again…" while the second probe runs (`toolchainsUpdated` at its start and end). Not changed: a second probe in `b2c-build` `compile.rs`'s own recheck (a compiler swapped between the registry's choice and the compile), which now reports T1023 with the Rescan advice.
 - **Cause:** unknown.
   - *Hypothesis:* the first start of g++ on a cold Windows machine exceeds the 10 s probe timeout (`probe.rs:34`).
   - A failed probe is stored as unusable (`crates/b2c-build/src/toolchains.rs:1047-1066`).
@@ -1244,6 +1252,9 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
 - Effort M.
 
 **W7-4 A green weekly run.** Ref: RD-6. Dispatch `weekly.yml` by hand; the only run so far came before the fixes. Effort S.
+
+- *Finding (2026-10-13, with W3's A/B work):* the scheduled Weekly runs at 9e9bd35 (38256411360, 38256451584) and the run at 205ab1d (37310642141) failed only in mutation shards, each ending "The runner has received a shutdown signal" 17–37 minutes into the shard. Some mutants turn a bounded loop into an endless one that allocates: `crates/b2c-toolchain/src/flags.rs:313` `index += 1` → `*= 1` in `filter_pkg_config` dies in 5 s under a 2 GiB address-space cap (reproduced locally) and, uncapped, fills the hosted runner's 16 GB within the per-mutant timeout. Several `b2c-model` `json.rs` mutants (`+=` → `*=`/`-=`) loop without allocating and cost a full timeout each (reported only).
+- *Proposed fix (not applied):* run `cargo mutants` in a memory-capped scope (as `ci.yml`'s test-cgroup job: `systemd-run --user --scope -p MemoryMax=12G -p MemorySwapMax=0 cargo mutants …`, which also covers doctests), or at least a `prlimit --as` target runner; shorten the per-mutant timeout (`--timeout` or `timeout_multiplier`); then dispatch `weekly.yml`.
 
 **W7-5 Toolchain matrix.** Refs: RD-7, D16.
 
