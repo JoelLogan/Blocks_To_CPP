@@ -344,9 +344,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   shows each field and fixed input, with words next to each checkbox.
 - Variable menus leave out what cannot be changed there: loop counters and
   read-only parameters (as well as constants) for _set_ and _ask_, and text
-  and true/false variables for _change_. A chosen
-  variable stays shown, and the Variables category presets blocks only to
-  variables their menus offer.
+  and true/false variables for _change_. A chosen variable stays shown, and
+  the Variables category presets blocks only to variables their menus offer.
 - The trash can keeps nothing; Undo brings deleted blocks back. The block
   menu no longer offers _Inline/External Inputs_, which were never saved. The
   canvas menu's _Delete N blocks_ counts the blocks it deletes (not
@@ -458,8 +457,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - A block taken from the toolbox, with the pointer or the keyboard, gets a
   free default name where it is put. A _set_ or _change_ block whose variable
   is not visible there takes the first fitting variable that is, as part of
-  the same drop (one Undo removes it). A getter keeps its variable and shows `B2C-E0203` when that
-  variable is out of scope.
+  the same drop (one Undo removes it). A getter keeps its variable and shows
+  `B2C-E0203` when that variable is out of scope.
 - The Program category offers _when program starts_ only while the project
   has none, and otherwise says where the program starts.
 - The toolbox's list of blocks is rebuilt only when what Program, Variables
@@ -490,19 +489,19 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   the dragged blocks are shown faded (over the toolbox, the toolbox is tinted
   too).
 - A block dropped anywhere on the toolbox is deleted again. After the
-  toolbox's list of blocks was rebuilt (opening a project, making a variable), a
-  drop on the categories or the open list
-  deleted nothing, showed no faded blocks and still previewed places, until
-  the window or a dock was resized; only the trash can and the window's left
-  edge deleted. The pointer decides, at any height: a drop with the pointer
-  left of the toolbox's right edge deletes, also over the toolbar or the bottom
-  dock, and while the pointer is there the whole toolbox, its categories
-  included, is tinted. Over the trash can the dragged blocks are faded and the
-  trash can opens its lid, but the toolbox is not tinted. The places where a
-  drop deletes are recorded in the animation frame after the toolbox's list of
-  blocks changes or moves (or when a drag starts before that frame), so
-  rebuilding the list after an edit no longer makes the page lay itself out an
-  extra time, and a drag no longer measures them again when nothing moved.
+  toolbox's list of blocks was rebuilt (opening a project, making a variable),
+  a drop on the categories or the open list deleted nothing, showed no faded
+  blocks and still previewed places, until the window or a dock was resized;
+  only the trash can and the window's left edge deleted. The pointer decides,
+  at any height: a drop with the pointer left of the toolbox's right edge
+  deletes, also over the toolbar or the bottom dock, and while the pointer is
+  there the whole toolbox, its categories included, is tinted. Over the trash
+  can the dragged blocks are faded and the trash can opens its lid, but the
+  toolbox is not tinted. The places where a drop deletes are recorded in the
+  animation frame after the toolbox's list of blocks changes or moves (or when
+  a drag starts before that frame), so rebuilding the list after an edit no
+  longer makes the page lay itself out an extra time, and a drag no longer
+  measures them again when nothing moved.
 - A negative number typed into a block (`change by -1`) was rejected as "not
   a number" (`B2C-E0310`). A typed `-` or `+` is now a sign, and
   `-2147483648` is generated as `-2147483647 - 1`.
@@ -516,9 +515,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - A category chosen in the toolbox stays selected at every zoom level.
 - A block left loose on the canvas, a block inside a disabled statement and
   a block the live analysis has not seen yet no longer empty the block's own
-  variable menu; it lists what is visible at
-  the end of `main` (the module's functions without `main`) or at the
-  nearest analysed statement before or around them.
+  variable menu; it lists what is visible at the end of `main` (the module's
+  functions without `main`) or at the nearest analysed statement before or
+  around them.
 - The toolbox shows a renamed variable's or function's new name at once.
 - The `≡` main menu is drawn over the block toolbox and can be clicked across
   its full width. Opening a dialog (the console's link dialog too) or a
