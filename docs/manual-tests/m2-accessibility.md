@@ -74,12 +74,14 @@ Tab repeatedly. Expected order:
 5. The toolbox's blocks (announced as **Blocks to add**)
 6. The block canvas (announced as **Block canvas**, followed by the first
    block, for example "block “main”")
-7. *Resize the C++ panel* (a separator), *Hide the C++ panel*
-8. The C++ panel: *File* drop-down, *Copy all*, the code
-9. *Resize the bottom panel*, the bottom tabs (Problems, Console, Build
-   output: one stop, arrow keys switch tabs), *Hide the bottom panel*
-10. The open tab's contents
-11. The status bar's toolchain button
+7. *Resize the toolbox* (a separator, with its width in pixels; the arrow
+   keys, Home and End change the width of the toolbox's blocks)
+8. *Resize the C++ panel* (a separator), *Hide the C++ panel*
+9. The C++ panel: *File* drop-down, *Copy all*, the code
+10. *Resize the bottom panel*, the bottom tabs (Problems, Console, Build
+    output: one stop, arrow keys switch tabs), *Hide the bottom panel*
+11. The open tab's contents
+12. The status bar's toolchain button
 
 Shift+Tab goes the same way back. Check that:
 
@@ -88,8 +90,9 @@ Shift+Tab goes the same way back. Check that:
   no ring visible).
 - [ ] Hidden things are never reached: a collapsed panel's contents, a tab
   that is not open.
-- [ ] With a panel hidden (*Hide the C++ panel*), Tab goes from the canvas
-  to its *Show the C++ panel* button, never into the hidden panel.
+- [ ] With a panel hidden (*Hide the C++ panel*), Tab goes from
+  *Resize the toolbox* to its *Show the C++ panel* button, never into the
+  hidden panel.
 
 ## 3. Block editor keys
 
@@ -234,9 +237,10 @@ Check that:
   page's buttons are at least 24 × 24 CSS pixels (check with the webview's
   developer tools in a debug build).
 - [ ] Known limitation in M2: the splitter bars between the canvas and the
-  panels are 6 px wide. They can be focused and moved with the arrow keys,
-  and every panel has a *Hide* button, so a pointer user does not depend on
-  the bar. Larger hit areas and a non-drag alternative for the bars and for
+  panels, and the one at the toolbox's edge, are 6 px wide. They can be
+  focused and moved with the arrow keys, every panel has a *Hide* button and
+  the toolbox works at its default width, so a pointer user does not depend
+  on the bars. Larger hit areas and a non-drag alternative for the bars and for
   block dragging (WCAG 2.5.7) are part of the M5 audit.
 
 ## Sign-off

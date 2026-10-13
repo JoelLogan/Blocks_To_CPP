@@ -58,8 +58,22 @@
   One Undo brings all of them back.
 * Dropping a block on the trash can deletes it; the trash can keeps nothing,
   and Undo brings deleted blocks back.
-* Docks are resizable and collapsible. Swapping, splitting and remembering
-  them, Focus mode and Presentation mode come in M5.
+* On first start the window opens at 1280 × 800, made smaller when the
+  screen's work area is smaller (where the system names no primary monitor,
+  as under Wayland, the app fits it to the monitor it opens on). The C++ dock
+  starts at 30 % of the window's width (280–480 px) and the bottom dock at
+  28 % of its height (120–280 px); each follows the window's size until it
+  is resized. Each dock takes at most 65 % of the window, and the C++ dock
+  never leaves the canvas less than 200 px beside the toolbox's flyout at its
+  narrowest; resizing the window keeps these limits. The toolbox's flyout and
+  the docks are resizable by pointer and keyboard, and the docks are
+  collapsible. When less than 200 px of canvas would remain, the flyout
+  narrows first, then the C++ dock, which is hidden when even its narrowest
+  width does not fit and shown again when it fits. Swapping, splitting and
+  remembering docks, Focus mode and Presentation mode come in M5.
+* A canvas opens with the view it was saved with; one saved without a view
+  (a template) shows its blocks in the middle of the canvas, or their
+  top-left corner when they do not fit, clear of the toolbox.
 * The status bar says *Saved* (with the time after a save in this session)
   or *Unsaved* while there are unsaved changes or the project has no file
   yet.
@@ -75,10 +89,12 @@
   show current names. Choosing a category scrolls the flyout to it, and that
   category stays selected at every zoom level; scrolling by hand selects the
   category at the top. The flyout shows its blocks at one size whatever the
-  canvas zoom (three quarters of their size at 100 %), is as wide as its
-  widest block up to 320 px, is opaque, and cuts off a block wider than
-  itself (which can still be dragged out). When less than 200 px of canvas
-  would remain beside it, the flyout narrows, down to 160 px.
+  canvas zoom (three quarters of their size at 100 %), is as wide as the user
+  drags its edge with the *Resize the toolbox* splitter (from 160 px; by
+  default as wide as its widest block, up to 320 px), is opaque, and cuts off
+  a block wider than itself (which can still be dragged out). When less than
+  200 px of canvas would remain beside it, the flyout narrows, down to
+  160 px.
 * **Dynamic categories.** *Variables* lists the symbols in scope at the
   current selection; for a block selected with a click it does so once the
   button is released, however long it was held. *Functions* lists *define*
@@ -358,7 +374,8 @@ console and selected text.
   primitives.
 * **In M2** every panel and dialog is checked with axe-core in the component
   tests and reachable by keyboard, and the Tab order runs toolbar, toolbox,
-  the toolbox's blocks, canvas, then the docks. The canvas and the toolbox's
+  the toolbox's blocks, canvas, the *Resize the toolbox* separator, then the
+  docks. The canvas and the toolbox's
   blocks have names and describe their keys; a polite live region announces
   the block or place the keyboard reaches; Blockly's own animations, and the
   toolbox's scroll to a category, follow the reduced-motion setting; focus

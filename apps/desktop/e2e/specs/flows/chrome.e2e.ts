@@ -11,10 +11,11 @@
  *   taller than the toolbar's buttons. CI runs it in GTK's default light theme; the drop-down is
  *   the app's own drawing, so it reads the same in the dark one.
  * - The status bar's toolchain link has no edge of its own.
- * - At the Windows runner's window size (1028 × 749 CSS pixels) with the C++ panel shown, the
- *   toolbox's flyout (blocks at 0.75, at most 320 px wide) leaves at least 200 px of canvas beside
- *   it (04 §4.2). A native driver that cannot resize the window leaves the app's own size, where
- *   the canvas is wider still.
+ * - At the Windows runner's window size (1028 × 749 CSS pixels, set through the app's window-size
+ *   seam) with the C++ panel shown, the toolbox's flyout (blocks at 0.75, at most 320 px wide)
+ *   leaves at least 200 px of canvas beside it (04 §4.2). Where the screen is smaller, the app
+ *   keeps the window on it, and the canvas still keeps its 200 px. ./layout.e2e.ts checks the
+ *   layout at more sizes.
  */
 import { By, type WebDriver } from 'selenium-webdriver';
 import { PNG } from 'pngjs';
@@ -243,15 +244,9 @@ describe('The window’s chrome', () => {
 
   it('leaves the canvas 200 px beside the toolbox at the Windows runner’s size', async (context) => {
     const flow = startFlow(context);
-    const app = await flow.launch();
+    // The window-size seam: WebDriver's setRect may not resize WebView2's web view.
+    const app = await flow.launch({ windowSize: RUNNER_WINDOW });
     const { driver } = app;
-    // The Windows runner's window has this size by itself (the screen is smaller than the app's
-    // 1280 × 800); WebKitWebDriver resizes the window to it, and WebView2's driver may not.
-    await driver
-      .manage()
-      .window()
-      .setRect({ ...RUNNER_WINDOW })
-      .catch(() => undefined);
     await newEmptyProject(app);
     await waitForTestId(driver, 'workspace', true);
     await waitForFlyout(driver);

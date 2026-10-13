@@ -32,7 +32,7 @@ import {
   writeArtifact,
 } from '../../../support/artifacts';
 import { TauriDriver } from '../../../support/driver';
-import { appEnvironment, harnessSettings } from '../../../support/env';
+import { appEnvironment, harnessSettings, type WindowSize } from '../../../support/env';
 import { HookClient } from '../../../support/hook';
 import { finishLongTaskRecorder, startLongTaskRecorder } from '../../../support/longtasks';
 import { sleep, waitFor, withTimeout } from '../../../support/wait';
@@ -79,6 +79,11 @@ export interface FlowLaunchOptions {
    * `B2C_E2E_TOOLCHAIN_DIRS` and `B2C_LOG`.
    */
   readonly env?: Readonly<Record<string, string>>;
+  /**
+   * The window's size in CSS pixels (the app's `B2C_E2E_WINDOW_SIZE`), so the layout is the same
+   * on every system; without it the app opens at its own size.
+   */
+  readonly windowSize?: WindowSize;
 }
 
 /** The folders of a flow test. */
@@ -424,7 +429,11 @@ export class FlowSession {
     const dialogs = path.join(this.folders.root, `dialogs-${String(launch)}.json`);
     writeFileSync(dialogs, JSON.stringify(options.dialogs ?? {}));
     const env = {
-      ...appEnvironment(settings, { root: this.folders.profile, dialogs }),
+      ...appEnvironment(settings, {
+        root: this.folders.profile,
+        dialogs,
+        ...(options.windowSize === undefined ? {} : { windowSize: options.windowSize }),
+      }),
       ...checkedOverrides(options.env ?? {}),
     };
 

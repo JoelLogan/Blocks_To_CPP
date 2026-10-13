@@ -1,5 +1,13 @@
 import * as Tabs from '@radix-ui/react-tabs';
-import { type ReactNode, type Ref, useEffect, useId, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  type Ref,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { flushSync } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -8,16 +16,41 @@ import { DockPanels } from '../panels';
 import { type BottomTab, useAppStore } from '../store';
 import { problemCount } from '../store/selectors';
 import { ChevronIcon } from '../ui/icons';
+import { type FlyoutLayout, listenToFlyoutLayout } from './flyoutLayout';
 import { focusIfLost } from './focus';
+import {
+  BOTTOM_DOCK,
+  clampSize,
+  dockMaximum,
+  MAX_DOCK_SHARE,
+  RIGHT_DOCK,
+  rightDockMaximum,
+  startSize,
+} from './sizes';
 import { Splitter } from './Splitter';
+import './EditorLayout.css';
 
-/** The right dock's width: initial, smallest and largest, in CSS pixels. */
-export const RIGHT_DOCK = { initial: 380, min: 200, max: 960 } as const;
-/** The bottom dock's height: initial, smallest and largest, in CSS pixels. */
-export const BOTTOM_DOCK = { initial: 220, min: 96, max: 720 } as const;
+/** A width and a height, in CSS pixels. */
+interface Size {
+  readonly width: number;
+  readonly height: number;
+}
 
-/** The largest share of the window a dock may take, so the workspace always stays visible. */
-const MAX_DOCK_SHARE = '65%';
+/** The window's inner size. */
+function windowSize(): Size {
+  return { width: window.innerWidth, height: window.innerHeight };
+}
+
+/**
+ * The toolbox's flyout as it last announced itself, with where the *Resize the toolbox* splitter
+ * goes in the workspace region: at the flyout's right edge, as high as the canvas.
+ */
+interface ToolboxEdge {
+  readonly layout: FlyoutLayout;
+  readonly left: number;
+  readonly top: number;
+  readonly bottom: number;
+}
 
 const BOTTOM_TABS: readonly { value: BottomTab; label: string }[] = [
   { value: 'console', label: 'Console' },
@@ -33,13 +66,21 @@ function isBottomTab(value: string): value is BottomTab {
  * The editor's part of the window (docs/spec/04-user-interface.md §4.1): the workspace (with
  * Blockly's toolbox on its left) in the centre, the C++ dock on the right and the dock with the
  * console, Problems and the build output at the bottom. Both docks can be resized (by pointer or
- * keyboard) and collapsed; their sizes last for the session (remembering them is M5).
+ * keyboard) and collapsed, and so can the toolbox's flyout be resized, with the *Resize the
+ * toolbox* splitter at its right edge; the sizes last for the session.
+ *
+ * The docks start at a share of the window and follow it until the user resizes them; each is
+ * kept within the limits of ./sizes.ts as the window changes, and the C++ dock is hidden when even
+ * its narrowest width would leave the canvas less than 200 px beside the narrowest flyout (the
+ * flyout narrows first; it is shown again when the window has room for it, unless the user showed
+ * or hid it meanwhile).
  *
  * The docks' panels stay mounted while they are hidden, so the console keeps its content.
  * Collapsing a dock with Enter on its splitter removes the splitter, so the keyboard focus moves to
  * the dock's show/hide button, which stays and expands it again.
  */
 export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidden: boolean }) {
+  const layoutElement = useRef<HTMLDivElement>(null);
   const workspaceRegion = useRef<HTMLElement>(null);
   const wasHidden = useRef(hidden);
   // Shown again (a page closed, such as the start page's "Back to the project"): the control that
@@ -51,8 +92,61 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
     }
     wasHidden.current = hidden;
   }, [hidden]);
-  const [rightWidth, setRightWidth] = useState<number>(RIGHT_DOCK.initial);
-  const [bottomHeight, setBottomHeight] = useState<number>(BOTTOM_DOCK.initial);
+  /** The editor area's size as last measured, or `null` before it was laid out. */
+  const [area, setArea] = useState<Size | null>(null);
+  /** The window's size when the editor area was last measured (the docks' start sizes). */
+  const [windowExtent, setWindowExtent] = useState<Size>(windowSize);
+  /** The sizes the user gave the docks, or `null` while they keep their start sizes. */
+  const [rightChosen, setRightChosen] = useState<number | null>(null);
+  const [bottomChosen, setBottomChosen] = useState<number | null>(null);
+  const [toolbox, setToolbox] = useState<ToolboxEdge | null>(null);
+  /** Whether the C++ dock was hidden because it did not fit (and the user has not touched it). */
+  const rightHiddenToFit = useRef(false);
+
+  // Measured before the first paint, and before the editor's own effects lay the canvas out.
+  useLayoutEffect(() => {
+    const element = layoutElement.current;
+    if (element === null) {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const box = entries.at(-1)?.contentRect;
+      if (box === undefined || box.width <= 0 || box.height <= 0) {
+        // Hidden (a page replaces the editor): the sizes it had still hold.
+        return;
+      }
+      setArea({ width: box.width, height: box.height });
+      setWindowExtent(windowSize());
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  // The flyout announces itself from inside the workspace region, also while the editor attaches
+  // to the canvas (after this effect, which is why it is a layout effect).
+  useLayoutEffect(() => {
+    const region = workspaceRegion.current;
+    if (region === null) {
+      return;
+    }
+    return listenToFlyoutLayout(region, (layout, from) => {
+      if (layout.width <= 0) {
+        setToolbox(null);
+        return;
+      }
+      const outer = region.getBoundingClientRect();
+      const inner = from.getBoundingClientRect();
+      setToolbox({
+        layout,
+        left: inner.left - outer.left + layout.left + layout.width,
+        top: inner.top - outer.top,
+        bottom: outer.bottom - inner.bottom,
+      });
+    });
+  }, []);
+
   const { rightCollapsed, bottomCollapsed } = useAppStore(
     useShallow((state) => ({
       rightCollapsed: state.ui.rightCollapsed,
@@ -75,21 +169,66 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
     patch: { rightCollapsed: true } | { bottomCollapsed: true },
     toggle: { readonly current: HTMLButtonElement | null },
   ) => {
+    if ('rightCollapsed' in patch) {
+      rightHiddenToFit.current = false;
+    }
     flushSync(() => {
       setUi(patch);
     });
     toggle.current?.focus();
   };
 
+  // The largest sizes now (the splitters' `aria-valuemax`), and the sizes shown within them.
+  const rightMaximum =
+    area === null
+      ? RIGHT_DOCK.max
+      : rightDockMaximum(
+          area.width,
+          toolbox === null ? null : { left: toolbox.layout.left, min: toolbox.layout.min },
+        );
+  const rightLimit = Math.max(RIGHT_DOCK.min, rightMaximum);
+  const rightWidth = clampSize(
+    rightChosen ?? startSize(RIGHT_DOCK, windowExtent.width),
+    RIGHT_DOCK.min,
+    rightLimit,
+  );
+  const bottomLimit = area === null ? BOTTOM_DOCK.max : dockMaximum(BOTTOM_DOCK, area.height);
+  const bottomHeight = clampSize(
+    bottomChosen ?? startSize(BOTTOM_DOCK, windowExtent.height),
+    BOTTOM_DOCK.min,
+    bottomLimit,
+  );
+  const rightDoesNotFit = rightMaximum < RIGHT_DOCK.min;
+
+  // Hides the C++ dock while it does not fit, and shows it again once it does, unless the user
+  // showed or hid it in the meantime.
+  useEffect(() => {
+    const { ui, actions } = useAppStore.getState();
+    if (rightDoesNotFit) {
+      if (!ui.rightCollapsed) {
+        rightHiddenToFit.current = true;
+        actions.setUi({ rightCollapsed: true });
+      }
+    } else if (rightHiddenToFit.current) {
+      rightHiddenToFit.current = false;
+      if (ui.rightCollapsed) {
+        actions.setUi({ rightCollapsed: false });
+      }
+    }
+  }, [rightDoesNotFit]);
+
+  // `min()` keeps a dock within its share of the area before it was first measured.
+  const share = `${String(MAX_DOCK_SHARE * 100)}%`;
   const columns = rightCollapsed
     ? 'minmax(0, 1fr) 0 auto'
-    : `minmax(0, 1fr) auto min(${String(rightWidth)}px, ${MAX_DOCK_SHARE})`;
+    : `minmax(0, 1fr) auto min(${String(rightWidth)}px, ${share})`;
   const rows = bottomCollapsed
     ? 'minmax(0, 1fr) 0 auto'
-    : `minmax(0, 1fr) auto min(${String(bottomHeight)}px, ${MAX_DOCK_SHARE})`;
+    : `minmax(0, 1fr) auto min(${String(bottomHeight)}px, ${share})`;
 
   return (
     <div
+      ref={layoutElement}
       className="editor-layout"
       hidden={hidden}
       style={{ gridTemplateColumns: columns, gridTemplateRows: rows }}
@@ -103,6 +242,21 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
         data-testid="workspace"
       >
         {workspace}
+        {toolbox !== null && (
+          <Splitter
+            orientation="vertical"
+            side="before"
+            value={Math.round(toolbox.layout.width)}
+            min={toolbox.layout.min}
+            max={toolbox.layout.max}
+            onChange={(width) => {
+              toolbox.layout.setWidth(width);
+            }}
+            label="Resize the toolbox"
+            className="splitter-toolbox"
+            style={{ left: toolbox.left, top: toolbox.top, bottom: toolbox.bottom }}
+          />
+        )}
       </main>
 
       {!rightCollapsed && (
@@ -110,8 +264,8 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
           orientation="vertical"
           value={rightWidth}
           min={RIGHT_DOCK.min}
-          max={RIGHT_DOCK.max}
-          onChange={setRightWidth}
+          max={rightLimit}
+          onChange={setRightChosen}
           onCollapse={() => {
             collapseFromSplitter({ rightCollapsed: true }, rightToggle);
           }}
@@ -137,6 +291,7 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
             aria-controls={`${rightId}-content`}
             aria-label={rightCollapsed ? 'Show the C++ panel' : 'Hide the C++ panel'}
             onClick={() => {
+              rightHiddenToFit.current = false;
               setUi({ rightCollapsed: !rightCollapsed });
             }}
           >
@@ -153,8 +308,8 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
           orientation="horizontal"
           value={bottomHeight}
           min={BOTTOM_DOCK.min}
-          max={BOTTOM_DOCK.max}
-          onChange={setBottomHeight}
+          max={bottomLimit}
+          onChange={setBottomChosen}
           onCollapse={() => {
             collapseFromSplitter({ bottomCollapsed: true }, bottomToggle);
           }}

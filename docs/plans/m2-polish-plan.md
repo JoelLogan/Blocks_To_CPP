@@ -675,14 +675,14 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-1 Flyout scale and width.** Refs: U6a, R-FLYOUT, A04-05.
 
-- *Status:* partly done, to fix the Windows E2E failures of Desktop run 38277029920: the 0.75 scale, the width min(natural, 320 px) narrowing down to 160 px to leave 200 px of canvas, `flyoutOpacity: 1`, the unit tests and an E2E check at the Windows runner's 1028×749; the user width (with W3-2) and the E2E at 1024×700 through W3-3's seam remain.
+- *Status:* done. First, to fix the Windows E2E failures of Desktop run 38277029920 (35a9c6d): the 0.75 scale, the width min(natural, 320 px) narrowing down to 160 px to leave 200 px of canvas, `flyoutOpacity: 1`, the unit tests and an E2E check at the Windows runner's 1028×749. Then with W3-2 and W3-3: the user's width (160 px up to what leaves 200 px of canvas, at most 1200 px; kept while the window allows it, given back when it grows again), announced to the layout by a DOM event of the flyout (`app/layout/flyoutLayout.ts`, Blockly-free); only the toolbox's flyout announces itself, because Blockly's trash can builds its own flyout from the same registered class. The E2E checks at 800×560, 1024×700, 1028×749 and 1280×800 go through W3-3's window-size seam (`specs/flows/layout.e2e.ts`).
 - **Change** in `B2cContinuousFlyout` (`toolbox/continuous.ts:146-173`):
   - `getFlyoutScale()` returns 0.75 (D9).
   - Re-implement `reflowInternal_` without calling `super`:
     - set `workspace_.scale = getFlyoutScale()`, because `VerticalFlyout.layout_` sets it straight to the canvas scale (`core/flyout_vertical.ts:227`);
     - compute the clamped user width (default min(natural, 320 px), range 160 px up to region − 200 px);
     - keep the last applied width in its own field, because `Flyout.show()` sets `width_ = 0` before reflowing (`core/flyout_base.ts:647-651`);
-    - call `position()`, `targetWorkspace.resizeContents()` and `recordDragTargets()` only when that remembered width changes.
+    - call `position()` and `targetWorkspace.resizeContents()` only when that remembered width changes. The drag targets are recorded after every reflow, whatever the width, and by `position()` whenever the flyout moved or changed size (its private `place()` compares x, y, width and height): since the tray-delete fix (dc02606..36a5e5d), so that a drop anywhere on the toolbox deletes after every rebuild (`specs/flows/tray-delete.e2e.ts`).
   - `flyoutOpacity: 1` in both Blockly themes (`packages/blockly-ext/src/theme/themes.ts:88-97`).
 - **Tests:**
   - The scale stays 0.75 after `setScale(1.5)`.
@@ -695,6 +695,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-2 Toolbox splitter.** Ref: U6.
 
+- *Status:* done. `Splitter` takes `side`, `className` and `style`, and Enter collapses only a panel that can be collapsed (`onCollapse` is optional). The *Resize the toolbox* splitter is laid over the canvas's left edge, at the flyout's right edge, placed from the flyout's announcement (`EditorLayout.css`); its range is the flyout's, 160 px to what leaves 200 px of canvas, and that is its `aria-valuemax`. *Deviation:* in the Tab order it comes after the canvas (and the canvas's own controls), not between the toolbox's blocks and the canvas as §5 item 35 had it: the only place between them in the document is inside Blockly's injection div, where Blockly's keyboard shortcuts would hear the splitter's arrow keys, Home and End first; it also keeps the canvas one Tab from the toolbox's blocks. Tests: `Splitter.test.tsx`; `EditorLayout.test.tsx` (keys, pointer, `aria-valuemax`, axe); `tabOrder.test.tsx`; `continuous.test.ts` (the width is kept when the canvas zooms); `layout.e2e.ts` (a pointer drag and End in the app).
 - **Change:**
   - Generalise `Splitter.tsx`: a `side: before|after` prop, plus className and style props.
   - Position it at the toolbox width plus the flyout width inside `.workspace`.
@@ -709,6 +710,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-3 Window and dock defaults.** Refs: U6b, A04-08.
 
+- *Status:* done. `preventOverflow` is on (config test `the_main_window_fits_the_screen` in `src-tauri/tests/consistency.rs`). Where Tauri finds no primary monitor, `window.rs` fits the window, once it is created, to `current_monitor()` or else the first of `available_monitors()`, never below 800×560, and logs at info level the monitor it used (its name, size and place), the work area, the scale and whether it resized; with a primary monitor it logs that Tauri fitted the window. The seam `B2C_E2E_WINDOW_SIZE` is read in `window.rs` with `e2e-hooks` only; a value that is not `WIDTHxHEIGHT` stops the app. `launchApp` and the flows' launcher take a `windowSize`, which `layout.e2e.ts` and `chrome.e2e.ts` use; the other flows and the benchmarks keep the app's own size (pinning them is left to the integrator with the re-baseline). The docks start as planned and follow the window until the user resizes them; the size shown is the chosen one kept within the limits (no dead zone), and the limit is the splitter's `aria-valuemax`. *Deviation:* the C++ dock's largest width is min(960, 65 % of the editor area, what leaves 200 px of canvas beside the narrowest flyout), not min(960, 65 %): with 65 % alone a drag could leave less than 200 px of canvas in any window narrower than about 1,330 px, and hiding the dock in the middle of a drag would surprise. So the flyout narrows first, then the C++ dock, which is hidden only when even its 200 px do not fit (a window below about 670 px) and shown again when it fits, unless the user showed or hid it meanwhile. Sizes with the 100 px category column of the Linux E2E app (C++ dock, flyout, canvas): 800×560: 280, 214, 200 px; 1024×700: 307, 320, 291 px; 1028×749: 308, 320, 294 px; 1280×800: 384, 320, 470 px. The benchmark re-baseline (`accepted.json`) is left to the integrator.
 - **Window:**
   - Set `"preventOverflow": true` on the main window in `apps/desktop/src-tauri/tauri.conf.json`.
   - Tauri 2.12 then clamps the window to the monitor's work area only when it would overflow (`tauri-runtime-wry-2.12.0 lib.rs:4463-4520`), and keeps 1280×800 wherever that fits.
@@ -875,6 +877,7 @@ Tests: markdownlint, lychee and the anchor check. Effort M.
 
 **W3-13 First view clear of the flyout.** Ref: U6c.
 
+- *Status:* done; the cause was another one. Measured in the E2E app at 1280×800 after *Empty project*: the main block's left edge was exactly on the flyout's right edge (both at 420 px; the canvas at `translate(384, -36)`). The start page opens a project while the editor is hidden, and Blockly pads its scrollable area by half the view's size, which is then 0, so its only scroll position puts the blocks' top-left corner on the view's; a document without a saved view kept that view once the editor was shown. A width change of the flyout was not the cause: Blockly's scrollbars translate the canvas again when the flyout's width changes (checked in a unit experiment). Change: `settleView` shows a module without a saved view with its blocks centred along each axis where they fit with 24 units to spare, else with their top-left corner 24 units inside the view, once the editor has a size (the flyout then already fitted) and again after Blockly's first render. *Deviation:* no overlap check on width changes (none arises from them), and the centring applies to every document without a saved view, not only templates. Tests: three `session.test.ts` cases (each fails without the change) and `layout.e2e.ts` at four sizes.
 - **Cause (*hypothesis*):** `settleView` (`editor/sync/session.ts:426-446`) restores the view before the flyout's first reflow widens it (`continuous.ts:33, 67-78`).
 - **Change:**
   - After the flyout's first reflow, and whenever its width changes, check whether the top blocks' bounding box overlaps the flyout.

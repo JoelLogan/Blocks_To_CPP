@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../test/axe';
 import { App } from './App';
 import { commands } from './commands';
-import { BOTTOM_DOCK, RIGHT_DOCK } from './layout/EditorLayout';
+import { BOTTOM_DOCK, RIGHT_DOCK, startSize } from './layout/sizes';
 import { STEP } from './layout/Splitter';
 import { screens } from './screens';
 import { resetAppStore, useAppStore } from './store';
@@ -399,11 +399,15 @@ describe('the docks', () => {
     renderApp();
     const right = screen.getByRole('separator', { name: 'Resize the C++ panel' });
     const bottom = screen.getByRole('separator', { name: 'Resize the bottom panel' });
-    expect(right.getAttribute('aria-valuenow')).toBe(String(RIGHT_DOCK.initial));
+    expect(right.getAttribute('aria-valuenow')).toBe(
+      String(startSize(RIGHT_DOCK, window.innerWidth)),
+    );
     expect(right.getAttribute('aria-orientation')).toBe('vertical');
 
     fireEvent.keyDown(right, { key: 'ArrowLeft' });
-    expect(right.getAttribute('aria-valuenow')).toBe(String(RIGHT_DOCK.initial + STEP));
+    expect(right.getAttribute('aria-valuenow')).toBe(
+      String(startSize(RIGHT_DOCK, window.innerWidth) + STEP),
+    );
     fireEvent.keyDown(right, { key: 'End' });
     expect(right.getAttribute('aria-valuenow')).toBe(String(RIGHT_DOCK.max));
     fireEvent.keyDown(right, { key: 'Home' });
@@ -412,9 +416,13 @@ describe('the docks', () => {
     expect(right.getAttribute('aria-valuenow')).toBe(String(RIGHT_DOCK.min));
 
     fireEvent.keyDown(bottom, { key: 'ArrowUp', shiftKey: true });
-    expect(bottom.getAttribute('aria-valuenow')).toBe(String(BOTTOM_DOCK.initial + 64));
+    expect(bottom.getAttribute('aria-valuenow')).toBe(
+      String(startSize(BOTTOM_DOCK, window.innerHeight) + 64),
+    );
     fireEvent.keyDown(bottom, { key: 'ArrowDown' });
-    expect(bottom.getAttribute('aria-valuenow')).toBe(String(BOTTOM_DOCK.initial + 64 - STEP));
+    expect(bottom.getAttribute('aria-valuenow')).toBe(
+      String(startSize(BOTTOM_DOCK, window.innerHeight) + 64 - STEP),
+    );
     fireEvent.keyDown(bottom, { key: 'x' });
     fireEvent.keyDown(bottom, { key: 'Enter' });
     expect(useAppStore.getState().ui.bottomCollapsed).toBe(true);
@@ -431,18 +439,26 @@ describe('the docks', () => {
     right.releasePointerCapture = releasePointerCapture;
 
     fireEvent.pointerMove(right, { clientX: 500 });
-    expect(right.getAttribute('aria-valuenow')).toBe(String(RIGHT_DOCK.initial));
+    expect(right.getAttribute('aria-valuenow')).toBe(
+      String(startSize(RIGHT_DOCK, window.innerWidth)),
+    );
     fireEvent.pointerDown(right, { button: 2, clientX: 500 });
     fireEvent.pointerMove(right, { clientX: 400 });
-    expect(right.getAttribute('aria-valuenow')).toBe(String(RIGHT_DOCK.initial));
+    expect(right.getAttribute('aria-valuenow')).toBe(
+      String(startSize(RIGHT_DOCK, window.innerWidth)),
+    );
 
     fireEvent.pointerDown(right, { button: 0, clientX: 500, pointerId: 1 });
     fireEvent.pointerMove(right, { clientX: 450, pointerId: 1 });
-    expect(right.getAttribute('aria-valuenow')).toBe(String(RIGHT_DOCK.initial + 50));
+    expect(right.getAttribute('aria-valuenow')).toBe(
+      String(startSize(RIGHT_DOCK, window.innerWidth) + 50),
+    );
     fireEvent.pointerUp(right, { pointerId: 1 });
     expect(releasePointerCapture).toHaveBeenCalledWith(1);
     fireEvent.pointerMove(right, { clientX: 300 });
-    expect(right.getAttribute('aria-valuenow')).toBe(String(RIGHT_DOCK.initial + 50));
+    expect(right.getAttribute('aria-valuenow')).toBe(
+      String(startSize(RIGHT_DOCK, window.innerWidth) + 50),
+    );
 
     const bottom = screen.getByRole('separator', { name: 'Resize the bottom panel' });
     bottom.setPointerCapture = vi.fn();

@@ -11,7 +11,7 @@ import { resetAppStore, useAppStore } from '../../app/store';
 import { documentFixture, previewFixture, projectFixture } from '../../app/testing/fixtures';
 import { createCoreHost } from '../preview/coreHost';
 import { SyncError } from './errors';
-import { EditorSession, type SessionHooks } from './session';
+import { EditorSession, FIRST_VIEW_MARGIN, type SessionHooks } from './session';
 import {
   disposeWorkspaces,
   headlessWorkspace,
@@ -424,6 +424,71 @@ describe('the editing session', () => {
       });
     },
   );
+
+  /** The middle of the blocks and of the view, and the view's edges, in workspace units. */
+  function placement(workspace: Blockly.WorkspaceSvg) {
+    const blocks = workspace.getBlocksBoundingBox();
+    const view = workspace.getMetricsManager().getViewMetrics(true);
+    return {
+      blocks,
+      view,
+      offCentre: [
+        (blocks.left + blocks.right) / 2 - (view.left + view.width / 2),
+        (blocks.top + blocks.bottom) / 2 - (view.top + view.height / 2),
+      ],
+    };
+  }
+
+  it('centres a module without a saved view that opened while the editor was hidden', async () => {
+    const doc = twoModules();
+    const main = present(doc.modules[0], 'the main module');
+    delete main.workspace.viewport;
+    // The start page opens projects while the editor is hidden: the view has no size yet, and
+    // Blockly scrolls the blocks' top-left corner onto the view's (against the toolbox's flyout).
+    const workspace = renderedWorkspace({ move: { scrollbars: true, drag: true } });
+    const session = start(doc, workspace);
+    await vi.advanceTimersByTimeAsync(50);
+
+    setViewSize(workspace, 1000, 700);
+    session.resize();
+    await vi.advanceTimersByTimeAsync(50);
+    const { blocks, view, offCentre } = placement(workspace);
+    expect(blocks.left - view.left).toBeGreaterThan(FIRST_VIEW_MARGIN);
+    expect(Math.abs(offCentre[0] ?? Infinity)).toBeLessThan(1);
+    expect(Math.abs(offCentre[1] ?? Infinity)).toBeLessThan(1);
+    // Showing the first view is not the user moving it: nothing is saved for it.
+    expect(session.currentDocument().modules[0]?.workspace.viewport).toBeUndefined();
+  });
+
+  it('centres a module without a saved view in an editor already shown', async () => {
+    const doc = twoModules();
+    delete present(doc.modules[0], 'the main module').workspace.viewport;
+    const workspace = renderedWorkspace({ move: { scrollbars: true, drag: true } });
+    setViewSize(workspace, 800, 500);
+    Blockly.svgResize(workspace);
+    start(doc, workspace);
+    await vi.advanceTimersByTimeAsync(50);
+    const { offCentre } = placement(workspace);
+    expect(Math.abs(offCentre[0] ?? Infinity)).toBeLessThan(1);
+    expect(Math.abs(offCentre[1] ?? Infinity)).toBeLessThan(1);
+  });
+
+  it('shows the top-left corner of blocks that do not fit, a margin inside the view', async () => {
+    const doc = twoModules();
+    const main = present(doc.modules[0], 'the main module');
+    delete main.workspace.viewport;
+    main.workspace.blocks.push({ ...forever('far'), x: 3000, y: 2000 });
+    const workspace = renderedWorkspace({ move: { scrollbars: true, drag: true } });
+    const session = start(doc, workspace);
+    await vi.advanceTimersByTimeAsync(50);
+    setViewSize(workspace, 1000, 700);
+    session.resize();
+    await vi.advanceTimersByTimeAsync(50);
+    const { blocks, view } = placement(workspace);
+    expect(blocks.left - view.left).toBeCloseTo(FIRST_VIEW_MARGIN, 6);
+    expect(blocks.top - view.top).toBeCloseTo(FIRST_VIEW_MARGIN, 6);
+    expect(isShown(workspace, 'a')).toBe(true);
+  });
 
   it('keeps reading until a drag has ended', async () => {
     const session = start(twoModules(), renderedWorkspace());

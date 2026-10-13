@@ -20,11 +20,14 @@
  *   reduced motion;
  * - the scroll to a chosen category goes half a unit past its heading, so that the category stays
  *   selected at every zoom level (04 §4.2);
- * - the flyout draws its blocks at one scale whatever the canvas zoom, and is at most
- *   {@link FLYOUT_WIDTH}.preferred wide, narrower when the canvas would otherwise have less than
- *   {@link FLYOUT_WIDTH}.canvas beside it; a wider block is cut off at its edge (04 §4.2);
+ * - the flyout draws its blocks at one scale whatever the canvas zoom, and is as wide as the user
+ *   made it with the *Resize the toolbox* splitter, by default at most
+ *   {@link FLYOUT_WIDTH}.preferred wide; it narrows when the canvas would otherwise have less than
+ *   {@link FLYOUT_WIDTH}.canvas beside it, and a wider block is cut off at its edge (04 §4.2);
  * - the canvas records where the flyout is as a place where a drop deletes after every layout of
- *   the flyout, and whenever the flyout moves or changes size (03 §3.3 "Placing blocks").
+ *   the flyout, and whenever the flyout moves or changes size (03 §3.3 "Placing blocks");
+ * - the flyout tells the window's layout where it is and how wide it may be made
+ *   (`app/layout/flyoutLayout.ts`), whenever that changes.
  */
 import {
   ContinuousFlyout,
@@ -34,6 +37,7 @@ import {
 } from '@blockly/continuous-toolbox';
 import * as Blockly from 'blockly/core';
 
+import { announceFlyoutLayout, CANVAS_MIN_WIDTH } from '../../app/layout/flyoutLayout';
 import { timed } from '../../lib/timing';
 import { keepFlyoutFocus } from '../keyboard/keepFocus';
 import { prefersReducedMotion } from '../keyboard/motion';
@@ -169,33 +173,53 @@ export const CATEGORY_SCROLL_SLACK = 0.5;
 export const FLYOUT_SCALE = 0.75;
 
 /**
- * The flyout's width, in CSS pixels (04 §4.2, D9): as wide as its widest item, but at most
- * `preferred` (a wider block is cut off at the flyout's edge and can still be dragged out); when
- * the canvas would have less than `canvas` beside it, the flyout narrows, down to `min`.
+ * The flyout's width, in CSS pixels (04 §4.2, D9). By default it is as wide as its widest item,
+ * but at most `preferred` (a wider block is cut off at the flyout's edge and can still be dragged
+ * out). The user can make it anything from `min` to `max` with the *Resize the toolbox* splitter.
+ * Either way, when the canvas would have less than `canvas` beside it, the flyout narrows, down to
+ * `min`.
  */
-export const FLYOUT_WIDTH = Object.freeze({ preferred: 320, min: 160, canvas: 200 });
+export const FLYOUT_WIDTH = Object.freeze({
+  preferred: 320,
+  min: 160,
+  max: 1200,
+  canvas: CANVAS_MIN_WIDTH,
+});
+
+/**
+ * The widest the flyout may be when it and the canvas share `room` pixels (the workspace right of
+ * the category column): what leaves the canvas {@link FLYOUT_WIDTH}.canvas, within
+ * {@link FLYOUT_WIDTH}.min–max.
+ */
+export function flyoutWidthLimit(room: number): number {
+  return Math.max(FLYOUT_WIDTH.min, Math.min(FLYOUT_WIDTH.max, room - FLYOUT_WIDTH.canvas));
+}
 
 /**
  * The flyout's width for contents `natural` pixels wide (its widest item at {@link FLYOUT_SCALE},
- * with the margins and the scrollbar), when the flyout and the canvas share `room` pixels (the
- * workspace right of the category column): see {@link FLYOUT_WIDTH}.
+ * with the margins and the scrollbar), when the flyout and the canvas share `room` pixels: the
+ * width the user `chosen`, or by default the natural width up to {@link FLYOUT_WIDTH}.preferred,
+ * and never wider than {@link flyoutWidthLimit}.
  */
-export function flyoutWidth(natural: number, room: number): number {
-  const limit = Math.max(
-    FLYOUT_WIDTH.min,
-    Math.min(FLYOUT_WIDTH.preferred, room - FLYOUT_WIDTH.canvas),
-  );
-  return Math.max(0, Math.min(natural, limit));
+export function flyoutWidth(natural: number, room: number, chosen: number | null = null): number {
+  const limit = flyoutWidthLimit(room);
+  if (chosen !== null) {
+    return Math.min(Math.max(chosen, FLYOUT_WIDTH.min), limit);
+  }
+  return Math.max(0, Math.min(natural, FLYOUT_WIDTH.preferred, limit));
 }
 
 /**
  * The continuous flyout, without block recycling, without its scroll animation on request, landing
- * on a chosen category at every zoom level, with a fixed block scale and a limited width, and
- * recorded as a drop target wherever it is.
+ * on a chosen category at every zoom level, with a fixed block scale and a width the user can
+ * choose, recorded as a drop target wherever it is, and telling the window's layout where it is.
  */
 export class B2cContinuousFlyout extends ContinuousFlyout {
   /** The width the flyout's contents need, in pixels, as of the last reflow. */
   private naturalWidth = 0;
+
+  /** The width the user chose with the *Resize the toolbox* splitter, or `null` for the default. */
+  private chosenWidth: number | null = null;
 
   /**
    * The width last applied, in pixels. Blockly's own `width_` cannot tell whether the width
@@ -203,8 +227,14 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
    */
   private appliedWidth = 0;
 
+  /** The widest the flyout may be in the room it had when it was last fitted, in pixels. */
+  private widthLimit: number = FLYOUT_WIDTH.min;
+
   /** Where the flyout was last placed: its x and y, width and height, in pixels. */
   private placement: readonly number[] = [];
+
+  /** What the layout was last told ({@link announceLayout}), or `null` before the first time. */
+  private announced: string | null = null;
 
   /** The flyout draws its blocks at {@link FLYOUT_SCALE}, whatever the canvas zoom. */
   override getFlyoutScale(): number {
@@ -213,10 +243,11 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
 
   /**
    * Lays the flyout out for its contents: Blockly 12.5.1's `VerticalFlyout.reflowInternal_`
-   * re-implemented rather than wrapped (ADR-0014), with four changes:
+   * re-implemented rather than wrapped (ADR-0014), with five changes:
    *
    * - the scale is {@link getFlyoutScale} (`VerticalFlyout.layout_` set it to the canvas's);
-   * - the width is {@link flyoutWidth} of the contents' natural width, not the natural width;
+   * - the width is {@link flyoutWidth} of the contents' natural width and of the width the user
+   *   chose, not the natural width;
    * - the flyout is placed again and the canvas resized only when the width changes. Blockly's
    *   version compares with `width_`, which `Flyout.show` has just set to 0, so it did that work
    *   on every showing, that is on every rebuild of a dynamic category;
@@ -225,7 +256,8 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
    *   it displays the flyout again), when the flyout, and the toolbox that stands for it, end at
    *   the window's left edge. Blockly's version recorded again because it placed the flyout every
    *   time; without a record here, a drop on the flyout or the category column deleted nothing
-   *   after a rebuild until the layout changed (03 §3.3 "Placing blocks").
+   *   after a rebuild until the layout changed (03 §3.3 "Placing blocks");
+   * - the window's layout hears of a new width ({@link announceLayout}).
    *
    * The editor's canvas is left to right and has scrollbars, so Blockly's right alignment for
    * right-to-left workspaces and its translation for a workspace without scrollbars are left out.
@@ -245,13 +277,14 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
       this.targetWorkspace.resizeContents();
     }
     this.targetWorkspace.recordDragTargets();
+    this.announceLayout();
   }
 
   /**
    * Places the flyout beside the toolbox. Blockly does this whenever the workspace is resized (the
    * window, or a dock beside the canvas), so the width is fitted to the room left first. A new
    * width resizes the canvas; a new width or place makes the canvas record its drag targets, so
-   * that a drop counts where the flyout now is.
+   * that a drop counts where the flyout now is, and the window's layout hears of it.
    */
   override position(): void {
     const resized = this.fitWidth();
@@ -262,6 +295,46 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
     if (resized || moved) {
       this.targetWorkspace.recordDragTargets();
     }
+    this.announceLayout();
+  }
+
+  /** Tells the window's layout that the flyout is gone, so it stops offering to resize it. */
+  override dispose(): void {
+    const toolboxFlyout = this.isToolboxFlyout();
+    const target = this.targetWorkspace.getInjectionDiv();
+    super.dispose();
+    if (!toolboxFlyout) {
+      return;
+    }
+    announceFlyoutLayout(target, {
+      left: 0,
+      width: 0,
+      min: FLYOUT_WIDTH.min,
+      max: FLYOUT_WIDTH.min,
+      setWidth: () => undefined,
+    });
+  }
+
+  /**
+   * Sets the width the user chose (the *Resize the toolbox* splitter), kept within
+   * {@link FLYOUT_WIDTH}.min–max, or with `null` goes back to the default. The flyout is fitted
+   * to it at once, and again whenever the room beside the toolbox changes.
+   */
+  private readonly setChosenWidth = (width: number | null): void => {
+    this.chosenWidth =
+      width === null || !Number.isFinite(width)
+        ? null
+        : Math.round(Math.min(Math.max(width, FLYOUT_WIDTH.min), FLYOUT_WIDTH.max));
+    this.position();
+  };
+
+  /**
+   * Whether this is the toolbox's flyout. Blockly's trash can builds its own flyout from the same
+   * registered class (`FLYOUTS_VERTICAL_TOOLBOX`); that one is never resized by the user, and the
+   * window's layout must not hear of it.
+   */
+  private isToolboxFlyout(): boolean {
+    return this.targetWorkspace.getToolbox()?.getFlyout() === this;
   }
 
   /**
@@ -281,19 +354,47 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
   }
 
   /**
-   * Sets the flyout's width for its contents and the room the workspace has for it and the canvas;
-   * returns whether that differs from the width last applied.
+   * Sets the flyout's width for its contents, the width the user chose and the room the workspace
+   * has for it and the canvas; returns whether that differs from the width last applied.
    */
   private fitWidth(): boolean {
     const metrics = this.targetWorkspace.getMetricsManager();
     const room = metrics.getSvgMetrics().width - metrics.getToolboxMetrics().width;
-    const width = flyoutWidth(this.naturalWidth, room);
+    this.widthLimit = flyoutWidthLimit(room);
+    const width = flyoutWidth(this.naturalWidth, room, this.chosenWidth);
     this.width_ = width;
     if (width === this.appliedWidth) {
       return false;
     }
     this.appliedWidth = width;
     return true;
+  }
+
+  /**
+   * Tells the window's layout (`app/layout/flyoutLayout.ts`) where the toolbox's flyout is, how
+   * wide it is and how wide it may be made, when any of that changed since it was last told. Its
+   * top and height count too: the layout measures where the canvas is when they change (a module
+   * switcher shown above it).
+   */
+  private announceLayout(): void {
+    if (!this.isToolboxFlyout()) {
+      return;
+    }
+    const left = this.getX();
+    const width = this.getWidth();
+    const max = this.widthLimit;
+    const key = [left, this.getY(), width, this.getHeight(), max].join(' ');
+    if (key === this.announced) {
+      return;
+    }
+    this.announced = key;
+    announceFlyoutLayout(this.targetWorkspace.getInjectionDiv(), {
+      left,
+      width,
+      min: FLYOUT_WIDTH.min,
+      max,
+      setWidth: this.setChosenWidth,
+    });
   }
 
   /**

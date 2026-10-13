@@ -2,7 +2,13 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { appEnvironment, harnessSettings, HarnessSettingsError, REPOSITORY_ROOT } from './env';
+import {
+  appEnvironment,
+  harnessSettings,
+  HarnessSettingsError,
+  REPOSITORY_ROOT,
+  windowSizeValue,
+} from './env';
 
 describe('harnessSettings', () => {
   it('defaults to the debug build, tauri-driver on PATH and /usr/bin on Linux', () => {
@@ -77,5 +83,36 @@ describe('appEnvironment', () => {
     );
     expect(windows['WEBKIT_DISABLE_DMABUF_RENDERER']).toBeUndefined();
     expect(windows['B2C_E2E_TOOLCHAIN_DIRS']).toBe('C:\\msys64\\ucrt64\\bin');
+  });
+
+  it('sets the window’s size when a test asks for one', () => {
+    const settings = harnessSettings({}, 'linux');
+    const profile = { root: '/tmp/x/profile', dialogs: '/tmp/x/dialogs.json' };
+    const sized = appEnvironment(
+      settings,
+      { ...profile, windowSize: { width: 1024, height: 700 } },
+      { B2C_E2E_WINDOW_SIZE: '1280x800' },
+      'linux',
+    );
+    expect(sized['B2C_E2E_WINDOW_SIZE']).toBe('1024x700');
+    // Otherwise the harness's own environment decides (unset: the app's own size).
+    expect(appEnvironment(settings, profile, {}, 'linux')['B2C_E2E_WINDOW_SIZE']).toBeUndefined();
+    expect(
+      appEnvironment(settings, profile, { B2C_E2E_WINDOW_SIZE: '800x560' }, 'linux')[
+        'B2C_E2E_WINDOW_SIZE'
+      ],
+    ).toBe('800x560');
+  });
+
+  it('refuses a window size that is not whole pixels from 1 to 10000', () => {
+    expect(windowSizeValue({ width: 800, height: 560 })).toBe('800x560');
+    for (const size of [
+      { width: 0, height: 560 },
+      { width: 800.5, height: 560 },
+      { width: 800, height: 10_001 },
+      { width: Number.NaN, height: 560 },
+    ]) {
+      expect(() => windowSizeValue(size)).toThrow(HarnessSettingsError);
+    }
   });
 });

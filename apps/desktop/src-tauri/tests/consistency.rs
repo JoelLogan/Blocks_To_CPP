@@ -194,6 +194,22 @@ fn the_security_settings_are_those_of_the_spec() {
     assert!(windows[0].get("devtools").is_none());
 }
 
+/// 04 §4.1: the window opens at 1280 × 800, centred, and is made smaller
+/// when the screen's work area is (Tauri's `preventOverflow`; where Tauri
+/// finds no primary monitor, `src/window.rs` fits it), never below 800 × 560.
+#[test]
+fn the_main_window_fits_the_screen() {
+    let config = json("tauri.conf.json");
+    let window = &config["app"]["windows"][0];
+    assert_eq!(window["label"], "main");
+    assert_eq!(window["width"], 1280);
+    assert_eq!(window["height"], 800);
+    assert_eq!(window["minWidth"], 800);
+    assert_eq!(window["minHeight"], 560);
+    assert_eq!(window["center"], true);
+    assert_eq!(window["preventOverflow"], true);
+}
+
 /// The Cargo features that would open the window up (08 §8.8): the developer
 /// tools and Tauri's permissive features.
 const FORBIDDEN_FEATURES: [&str; 4] = ["devtools", "dynamic-acl", "protocol-asset", "shell-open"];

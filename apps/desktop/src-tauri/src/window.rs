@@ -1,7 +1,8 @@
 //! The editor window: opening it with the navigation rules and the response
 //! header that the configuration file cannot express
-//! (`docs/spec/08-security.md` §8.8), and closing it with unsaved changes
-//! (`docs/spec/02-architecture.md` §2.6).
+//! (`docs/spec/08-security.md` §8.8), fitting it to the screen
+//! (`docs/spec/04-user-interface.md` §4.1), and closing it with unsaved
+//! changes (`docs/spec/02-architecture.md` §2.6).
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -10,10 +11,25 @@ use b2c_app::Backend;
 use tauri::http::header::{CONTENT_SECURITY_POLICY_REPORT_ONLY, CONTENT_TYPE};
 use tauri::http::{HeaderMap, HeaderValue, Response, Uri};
 use tauri::webview::NewWindowResponse;
-use tauri::{App, Manager as _, Runtime, Url, WebviewWindowBuilder, Window, WindowEvent};
+use tauri::{
+    App, LogicalSize, Manager as _, Monitor, PhysicalSize, Runtime, Url, WebviewWindow, WebviewWindowBuilder,
+    Window, WindowEvent,
+};
 
 /// The label of the editor window, as in `tauri.conf.json` and `capabilities/`.
 pub(crate) const MAIN_WINDOW: &str = "main";
+
+/// The variable that sets the editor window's inner size in end-to-end
+/// builds (feature `e2e-hooks`): `WIDTHxHEIGHT` in CSS pixels, such as
+/// `1024x700`, so a test lays the window out alike on every system
+/// (`WebDriver`'s `setRect` may not resize the web view itself). The window
+/// is still kept on the screen. Other builds ignore it.
+#[cfg(feature = "e2e-hooks")]
+pub(crate) const WINDOW_SIZE_ENV: &str = "B2C_E2E_WINDOW_SIZE";
+
+/// The largest width or height [`parse_window_size`] accepts, in CSS pixels.
+#[cfg(any(test, feature = "e2e-hooks"))]
+const MAX_WINDOW_EXTENT: u32 = 10_000;
 
 /// The policy of the Trusted Types trial (`docs/spec/08-security.md` §8.8),
 /// sent as `Content-Security-Policy-Report-Only`: a string passed to a DOM
@@ -26,9 +42,14 @@ pub(crate) const TRUSTED_TYPES_REPORT_ONLY: &str = "require-trusted-types-for 's
 /// Opens the editor window from its entry in `tauri.conf.json` (which has
 /// `"create": false`), adding what the configuration file cannot express:
 /// the window may only show the app itself, at this platform's app origin,
-/// it can never open another window, and the app's HTML carries the
-/// report-only Trusted Types policy ([`add_trusted_types_report_only`]; in
-/// every build, so the trial sees what users run).
+/// it can never open another window, the app's HTML carries the report-only
+/// Trusted Types policy ([`add_trusted_types_report_only`]; in every build,
+/// so the trial sees what users run), and the window fits its monitor's
+/// work area also where Tauri finds no primary monitor ([`fit_to_monitor`]).
+///
+/// End-to-end builds take the window's size from [`WINDOW_SIZE_ENV`]; a value
+/// that is not `WIDTHxHEIGHT` stops the app, so a test never runs at a size it
+/// did not ask for.
 pub(crate) fn open_main_window<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
     let config = app.config();
     let window = config
@@ -60,8 +81,131 @@ pub(crate) fn open_main_window<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
             Some(arguments) => builder.additional_browser_args(&arguments),
             None => builder,
         };
-    builder.build()?;
+    #[cfg(feature = "e2e-hooks")]
+    let builder = match std::env::var_os(WINDOW_SIZE_ENV) {
+        None => builder,
+        Some(value) => {
+            let (width, height) = value.to_str().and_then(parse_window_size).ok_or_else(|| {
+                tauri::Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("{WINDOW_SIZE_ENV} must be WIDTHxHEIGHT in CSS pixels, such as 1024x700"),
+                ))
+            })?;
+            tracing::warn!(
+                width,
+                height,
+                "end-to-end hooks: the window's size comes from {WINDOW_SIZE_ENV}"
+            );
+            builder.inner_size(f64::from(width), f64::from(height))
+        }
+    };
+    let min_size = window.min_width.zip(window.min_height);
+    let window = builder.build()?;
+    fit_to_monitor(&window, min_size);
     Ok(())
+}
+
+/// Parses a window size `WIDTHxHEIGHT` ([`WINDOW_SIZE_ENV`]): two whole
+/// numbers from 1 to [`MAX_WINDOW_EXTENT`], decimal digits only, around a
+/// lower-case `x`.
+#[cfg(any(test, feature = "e2e-hooks"))]
+fn parse_window_size(text: &str) -> Option<(u32, u32)> {
+    let extent = |part: &str| -> Option<u32> {
+        if part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        part.parse::<u32>()
+            .ok()
+            .filter(|value| (1..=MAX_WINDOW_EXTENT).contains(value))
+    };
+    let (width, height) = text.split_once('x')?;
+    Some((extent(width)?, extent(height)?))
+}
+
+/// Fits the editor window into its monitor's work area when Tauri could not,
+/// and logs which monitor it fitted to (`docs/spec/04-user-interface.md`
+/// §4.1: the window opens at 1280 × 800, smaller when the screen is).
+///
+/// Tauri's `preventOverflow` (and `center`) uses the primary monitor, and
+/// does nothing without one. GTK 3's Wayland backend has none
+/// (`gdk_display_get_primary_monitor` returns nothing), so there the window
+/// is fitted here to the monitor it is on, or the first monitor when that is
+/// not known yet (a Wayland window is placed by the compositor). `min_size`
+/// is the window's smallest inner size in CSS pixels, from
+/// `tauri.conf.json`. Nothing here stops the app: without a monitor the
+/// window keeps the size it was given.
+fn fit_to_monitor<R: Runtime>(window: &WebviewWindow<R>, min_size: Option<(f64, f64)>) {
+    if let Ok(Some(monitor)) = window.primary_monitor() {
+        tracing::info!(
+            monitor = %describe_monitor(&monitor),
+            "the window was fitted to the primary monitor (Tauri's preventOverflow)"
+        );
+        return;
+    }
+    let found = match window.current_monitor() {
+        Ok(Some(monitor)) => Some((monitor, "the window's monitor")),
+        _ => window
+            .available_monitors()
+            .ok()
+            .and_then(|monitors| monitors.into_iter().next())
+            .map(|monitor| (monitor, "the first monitor")),
+    };
+    let Some((monitor, which)) = found else {
+        tracing::info!("no monitor is known: the window keeps the size it was given");
+        return;
+    };
+    let Ok(inner) = window.inner_size() else {
+        return;
+    };
+    let scale = monitor.scale_factor();
+    let min = min_size.map_or(PhysicalSize::new(0, 0), |(width, height)| {
+        LogicalSize::new(width, height).to_physical::<u32>(scale)
+    });
+    let work_area = monitor.work_area().size;
+    let fitted = fitted_inner_size(inner, work_area, min);
+    if let Some(size) = fitted
+        && let Err(error) = window.set_size(size)
+    {
+        tracing::warn!(%error, "the window could not be fitted to its monitor");
+    }
+    tracing::info!(
+        monitor = %describe_monitor(&monitor),
+        which,
+        work_area = %format!("{}x{}", work_area.width, work_area.height),
+        scale,
+        resized = fitted.is_some(),
+        "no primary monitor (as under Wayland): the window was fitted to a monitor here"
+    );
+}
+
+/// A monitor for the log: its name (on Linux its model) and where it is.
+fn describe_monitor(monitor: &Monitor) -> String {
+    let size = monitor.size();
+    let position = monitor.position();
+    format!(
+        "{} ({}x{} at {},{})",
+        monitor.name().map_or("unnamed", String::as_str),
+        size.width,
+        size.height,
+        position.x,
+        position.y
+    )
+}
+
+/// The inner size, in physical pixels, that keeps a window whose inner size
+/// is `inner` within a monitor's `work_area`, never below `min`; `None` when
+/// it fits already. Like Tauri's `preventOverflow` on Linux, the window's
+/// frame is not counted: it is not known before the window is shown.
+fn fitted_inner_size(
+    inner: PhysicalSize<u32>,
+    work_area: PhysicalSize<u32>,
+    min: PhysicalSize<u32>,
+) -> Option<PhysicalSize<u32>> {
+    let fitted = PhysicalSize::new(
+        inner.width.min(work_area.width).max(min.width),
+        inner.height.min(work_area.height).max(min.height),
+    );
+    (fitted != inner).then_some(fitted)
 }
 
 /// Adds the Trusted Types trial's report-only policy
@@ -365,6 +509,69 @@ mod tests {
         let csp = config["app"]["security"]["csp"].as_str().unwrap();
         assert!(!csp.contains("trusted-types"), "{csp}");
         assert_eq!(TRUSTED_TYPES_REPORT_ONLY, "require-trusted-types-for 'script'");
+    }
+
+    #[test]
+    fn a_window_size_is_width_x_height_in_whole_pixels() {
+        assert_eq!(parse_window_size("1024x700"), Some((1024, 700)));
+        assert_eq!(parse_window_size("800x560"), Some((800, 560)));
+        assert_eq!(parse_window_size("1x10000"), Some((1, 10_000)));
+        for invalid in [
+            "",
+            "1024",
+            "1024x",
+            "x700",
+            "1024X700",
+            "1024 x 700",
+            " 1024x700",
+            "1024x700 ",
+            "1024x700x1",
+            "+1024x700",
+            "-1024x700",
+            "1024.5x700",
+            "0x700",
+            "1024x0",
+            "10001x700",
+            "99999999999x700",
+            "１０２４x700",
+        ] {
+            assert_eq!(parse_window_size(invalid), None, "{invalid:?}");
+        }
+    }
+
+    fn size(width: u32, height: u32) -> PhysicalSize<u32> {
+        PhysicalSize::new(width, height)
+    }
+
+    /// 04 §4.1: the window keeps 1280 × 800 where that fits, and is made
+    /// smaller where the work area is smaller, never below its minimum.
+    #[test]
+    fn a_window_is_fitted_to_the_work_area_only_when_it_overflows() {
+        let min = size(800, 560);
+        // It fits: nothing changes.
+        assert_eq!(fitted_inner_size(size(1280, 800), size(1920, 1052), min), None);
+        assert_eq!(fitted_inner_size(size(1280, 800), size(1280, 800), min), None);
+        // A 1366 × 768 laptop with a 32 px panel: only the height shrinks.
+        assert_eq!(
+            fitted_inner_size(size(1280, 800), size(1366, 736), min),
+            Some(size(1280, 736))
+        );
+        // The Windows runner's 1024 × 768 screen with a 48 px taskbar.
+        assert_eq!(
+            fitted_inner_size(size(1280, 800), size(1024, 720), min),
+            Some(size(1024, 720))
+        );
+        // At a scale of 2, in physical pixels.
+        assert_eq!(
+            fitted_inner_size(size(2560, 1600), size(2560, 1440), size(1600, 1120)),
+            Some(size(2560, 1440))
+        );
+        // Never below the minimum, even on a smaller screen.
+        assert_eq!(
+            fitted_inner_size(size(1280, 800), size(640, 480), min),
+            Some(size(800, 560))
+        );
+        assert_eq!(fitted_inner_size(size(800, 560), size(640, 480), min), None);
     }
 
     /// Dialogs that are never shown in these tests.
