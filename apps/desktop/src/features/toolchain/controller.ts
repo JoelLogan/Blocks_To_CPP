@@ -6,9 +6,17 @@
  *
  * The bootstrap already reads the list once and applies every `toolchainsUpdated` event to the
  * store. The controller's own reads never overwrite something newer: an answer is applied only
- * when nothing changed the list while it was on its way.
+ * when nothing changed the list while it was on its way. The compilers a search skipped and
+ * whether a compiler is being checked again (07 §7.2–§7.3) come with the same answers and events;
+ * the page keeps them in its own state.
  */
-import type { Diagnostic, Toolchain, ToolchainId } from '@blocks2cpp/ipc-types';
+import type {
+  Diagnostic,
+  SkippedToolchain,
+  Toolchain,
+  ToolchainId,
+  ToolchainListResponse,
+} from '@blocks2cpp/ipc-types';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 
 import type { FeatureContext } from '../../app/features';
@@ -40,6 +48,36 @@ export interface ToolchainPageState {
   selecting: ToolchainId | null;
   /** What the last action found, or `null`. */
   outcome: ToolchainOutcome | null;
+  /** The compilers the last search skipped because of where they are (07 §7.2). */
+  skipped: SkippedToolchain[];
+  /** Whether a compiler whose check timed out is being checked once more (07 §7.3). */
+  rechecking: boolean;
+}
+
+/** The most skipped compilers kept; the backend sends at most 64. */
+export const MAX_SKIPPED = 64;
+
+/** What the backend says besides the list itself (a list answer or a `toolchainsUpdated` event). */
+type ListDetails = Pick<ToolchainListResponse, 'skipped' | 'rechecking'>;
+
+/**
+ * The skipped compilers of an answer or event, keeping only well-formed entries: the backend
+ * ships with the frontend, but its messages are checked before use like any other input.
+ */
+export function skippedOf(details: ListDetails): SkippedToolchain[] {
+  const skipped: unknown = details.skipped;
+  if (!Array.isArray(skipped)) {
+    return [];
+  }
+  return skipped
+    .filter((entry: unknown): entry is SkippedToolchain => {
+      if (typeof entry !== 'object' || entry === null) {
+        return false;
+      }
+      const { displayPath, reason } = entry as Record<string, unknown>;
+      return typeof displayPath === 'string' && typeof reason === 'string';
+    })
+    .slice(0, MAX_SKIPPED);
 }
 
 /** Whether the setup page is needed: discovery has finished and no compiler can build. */
@@ -71,6 +109,8 @@ export class ToolchainController {
       busy: null,
       selecting: null,
       outcome: null,
+      skipped: [],
+      rechecking: false,
     }));
   }
 
@@ -80,9 +120,10 @@ export class ToolchainController {
    */
   start(): void {
     this.disposers.push(
-      this.ctx.events.on('toolchainsUpdated', () => {
+      this.ctx.events.on('toolchainsUpdated', (event) => {
         // The bootstrap has put the event's list into the store already.
         this.listVersion += 1;
+        this.applyDetails(event);
       }),
       this.ctx.store.subscribe((state) => {
         this.considerSetupPage(state);
@@ -114,7 +155,7 @@ export class ToolchainController {
       if (this.disposed || version !== this.listVersion) {
         return;
       }
-      this.applyList(response.toolchains, response.discovering);
+      this.applyList(response.toolchains, response.discovering, response);
     } catch (error: unknown) {
       console.error('Could not read the toolchain list', failureCode(error));
     }
@@ -141,7 +182,7 @@ export class ToolchainController {
       actions.setToolchains({ discovering: true });
       try {
         const response = await this.ctx.ipc.toolchainRescan();
-        this.applyList(response.toolchains, response.discovering);
+        this.applyList(response.toolchains, response.discovering, response);
         return {
           kind: 'rescanned',
           found: response.toolchains.length,
@@ -210,10 +251,24 @@ export class ToolchainController {
     this.page.setState({ outcome: null });
   }
 
-  /** Puts a list into the store and counts it as a change. */
-  private applyList(list: Toolchain[], discovering: boolean): void {
+  /**
+   * Puts a list into the store and counts it as a change; `details`, from the same answer, replace
+   * the skipped compilers and the recheck state.
+   */
+  private applyList(list: Toolchain[], discovering: boolean, details?: ListDetails): void {
     this.listVersion += 1;
     this.ctx.store.getState().actions.setToolchains({ list, discovering });
+    if (details !== undefined) {
+      this.applyDetails(details);
+    }
+  }
+
+  /** Puts the skipped compilers and the recheck state of an answer or event into the page. */
+  private applyDetails(details: ListDetails): void {
+    if (this.disposed) {
+      return;
+    }
+    this.page.setState({ skipped: skippedOf(details), rechecking: details.rechecking === true });
   }
 
   /**

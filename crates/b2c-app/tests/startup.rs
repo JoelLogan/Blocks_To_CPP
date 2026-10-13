@@ -2,8 +2,9 @@
 //! (`docs/spec/01-overview.md` N2, `docs/spec/02-architecture.md` §2.5–§2.7,
 //! `docs/spec/07-toolchain-build-run.md` §7.2–§7.3): a cold start that never
 //! probes, background discovery with its event, the folders discovery never
-//! searches, toolchain selection and manual compilers, settings, help links,
-//! the app info, clearing the build cache and shutting down.
+//! searches, a second probe after a timeout, toolchain selection and manual
+//! compilers, settings, help links, the app info, clearing the build cache
+//! and shutting down.
 
 // Test code: helpers fail the test by panicking.
 #![allow(
@@ -25,6 +26,7 @@ use b2c_ipc::dto::{
 };
 use b2c_ipc::{IpcError, LinkId, decode};
 use b2c_store::Dirs;
+use b2c_toolchain::discovery::ExcludedFolder;
 use common::{Compiler, FakeDialogs, TestApp, TestProber, app_sink, wait_events};
 use serde_json::json;
 
@@ -55,6 +57,7 @@ fn startup_never_probes_and_discovery_reports_when_done() {
     let Some(AppEvent::ToolchainsUpdated {
         toolchains,
         discovering,
+        ..
     }) = all.last()
     else {
         panic!("{all:?}");
@@ -70,8 +73,14 @@ fn startup_never_probes_and_discovery_reports_when_done() {
 fn discovery_never_searches_the_cache_or_the_current_directory() {
     let app = TestApp::new();
     let excluded = app.backend.excluded_folders();
-    assert!(excluded.contains(&app.dirs.cache), "{excluded:?}");
-    assert!(excluded.contains(&app.root().join("cwd")), "{excluded:?}");
+    assert!(
+        excluded.contains(&ExcludedFolder::cache(&app.dirs.cache)),
+        "{excluded:?}"
+    );
+    assert!(
+        excluded.contains(&ExcludedFolder::current_dir(app.root().join("cwd"))),
+        "{excluded:?}"
+    );
 
     // A g++ in the current directory is never found.
     #[cfg(unix)]
@@ -104,7 +113,11 @@ fn discovery_never_searches_the_cache_or_the_current_directory() {
         std::fs::write(&project, common::example("hello_world")).unwrap();
         dialogs.will_open(&project);
         backend.project_open_dialog().unwrap();
-        assert!(backend.excluded_folders().contains(&projects));
+        assert!(
+            backend
+                .excluded_folders()
+                .contains(&ExcludedFolder::project(&projects))
+        );
     }
 }
 
@@ -427,4 +440,100 @@ fn startup_prunes_builds_unused_for_30_days() {
     }
     assert!(recent.exists());
     assert!(sandbox.exists(), "sandboxes are never pruned");
+}
+
+/// 07 §7.3 (W3-12): while a compiler whose probe timed out is probed once
+/// more, the app sends `toolchainsUpdated` with `rechecking`, and again when
+/// that ends, so the setup page can say "Checking g++ again…". The compiler
+/// that answers the second time is usable.
+#[cfg(unix)]
+#[test]
+fn a_second_probe_after_a_timeout_is_announced() {
+    use std::path::Path;
+    use std::sync::{Mutex, mpsc};
+
+    use b2c_build::toolchains::Prober;
+    use b2c_toolchain::fingerprint::Fingerprint;
+    use b2c_toolchain::probe::{PROBE_RETRY_TIMEOUT, ProbeError, ProbeOptions, Toolchain};
+
+    /// Times out unless given the longer timeout of a second probe; its
+    /// first call waits until the test has subscribed to the events.
+    struct SlowOnce {
+        go: Mutex<Option<mpsc::Receiver<()>>>,
+    }
+
+    impl Prober for SlowOnce {
+        fn probe(&self, path: &Path, options: &ProbeOptions) -> Result<Toolchain, ProbeError> {
+            let go = self.go.lock().unwrap().take();
+            if let Some(go) = go {
+                go.recv().unwrap();
+            }
+            let fingerprint = Fingerprint::compute(path).map_err(|source| ProbeError::Unreadable {
+                path: path.to_path_buf(),
+                source,
+            })?;
+            let mut toolchain = common::fake_gcc(fingerprint);
+            if options.timeout < PROBE_RETRY_TIMEOUT {
+                toolchain
+                    .problems
+                    .push(b2c_toolchain::codes::probe_timed_out(path, options.timeout));
+            }
+            Ok(toolchain)
+        }
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let base = b2c_toolchain::paths::canonical(root.path()).unwrap();
+    let bin = base.join("bin");
+    common::write_script(&bin, "g++", "exit 0");
+    let cwd = base.join("cwd");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let (go, wait) = mpsc::channel();
+    let backend = Backend::start_with(
+        BackendConfig {
+            dirs: Dirs::under_root(&base.join("app")),
+            app_version: "0.1.0",
+            discovery_scope: DiscoveryScope::Only(vec![bin]),
+            cwd: Some(cwd),
+        },
+        FakeDialogs::new(),
+        Services {
+            prober: Arc::new(SlowOnce {
+                go: Mutex::new(Some(wait)),
+            }),
+            opener: Arc::new(common::FakeOpener::default()),
+        },
+    )
+    .unwrap();
+    let events = app_sink();
+    backend.app_subscribe(events.clone());
+    go.send(()).unwrap();
+    let all = wait_events(&events, |events| {
+        events.iter().any(|event| {
+            matches!(
+                event,
+                AppEvent::ToolchainsUpdated {
+                    discovering: false,
+                    ..
+                }
+            )
+        })
+    });
+    let updates: Vec<(bool, bool)> = all
+        .iter()
+        .filter_map(|event| match event {
+            AppEvent::ToolchainsUpdated {
+                discovering,
+                rechecking,
+                ..
+            } => Some((*rechecking, *discovering)),
+            _ => None,
+        })
+        .collect();
+    // Rechecking, rechecking over, discovery over.
+    assert_eq!(updates, [(true, true), (false, true), (false, false)]);
+    let list = backend.toolchain_list().unwrap();
+    assert!(!list.rechecking);
+    assert!(list.toolchains[0].usable, "{:?}", list.toolchains[0].problems);
+    backend.shutdown();
 }

@@ -235,6 +235,7 @@ impl Backend {
             shut_down: AtomicBool::new(false),
         });
         backend.install_build_hook();
+        backend.watch_toolchain_rechecks();
         backend.start_discovery();
         backend.start_maintenance();
         tracing::info!(app_version, "backend started");

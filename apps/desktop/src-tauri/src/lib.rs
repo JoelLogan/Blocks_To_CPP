@@ -31,6 +31,10 @@
 //! permission to call it. On Windows, [`run`] first restricts where DLLs are
 //! loaded from (§8.7), and the application manifest (`build.rs`) declares
 //! long-path awareness (§8.6).
+//!
+//! The app works in its own empty, owner-only folder, `<cache>/cwd`
+//! ([`enter_working_folder`]), whatever folder it was started from
+//! (`docs/spec/07-toolchain-build-run.md` §7.2).
 
 mod channels;
 mod commands;
@@ -42,6 +46,7 @@ mod window;
 
 use std::fmt;
 use std::io::Write as _;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -55,11 +60,16 @@ use tauri::{App, AppHandle, Manager as _, RunEvent, Runtime};
 /// `apps/desktop/package.json`).
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The app's working folder below the cache root (`<cache>/cwd`): its
+/// current directory while it runs ([`enter_working_folder`]).
+pub const WORKING_FOLDER: &str = "cwd";
+
 /// Starts the app and runs it until it exits: restricts where DLLs are
 /// loaded from (Windows), finds the app's folders, starts the log file and
-/// the panic hook, builds the Tauri app (commands, dialog plugin, window
-/// events), starts the [`Backend`] and opens the editor window. When the app
-/// exits, every build and program is stopped ([`Backend::shutdown`]).
+/// the panic hook, makes `<cache>/cwd` the current directory
+/// ([`enter_working_folder`]), builds the Tauri app (commands, dialog plugin,
+/// window events), starts the [`Backend`] and opens the editor window. When
+/// the app exits, every build and program is stopped ([`Backend::shutdown`]).
 ///
 /// `main` calls nothing else, so the DLL hardening is the first thing the
 /// process does.
@@ -72,7 +82,7 @@ pub fn run() -> ExitCode {
     // is not fatal (the default search order stays in effect); it is
     // reported once the log is up.
     let dll_search = b2c_build::os::harden_dll_search();
-    let launch = match Launch::from_env() {
+    let mut launch = match Launch::from_env() {
         Ok(launch) => launch,
         Err(error) => {
             if let Err(dll_error) = &dll_search {
@@ -97,6 +107,15 @@ pub fn run() -> ExitCode {
     }
     #[cfg(feature = "e2e-hooks")]
     tracing::warn!("this is an end-to-end test build: its folders, dialogs and toolchains can be scripted");
+    launch.cwd = match enter_working_folder(&launch.dirs.cache) {
+        Ok(folder) => Some(folder),
+        Err(error) => {
+            // Discovery still excludes the current directory (that folder
+            // only), so this costs only the defence in depth.
+            tracing::warn!(%error, "the app's working folder could not be entered; it keeps the folder it was started from");
+            None
+        }
+    };
     match start(launch) {
         Ok(code) => code,
         Err(error) => failed_to_start(&error),
@@ -172,6 +191,36 @@ enum LaunchError {
     Tauri(#[from] tauri::Error),
 }
 
+/// Makes the empty, owner-only folder `<cache>/cwd` ([`WORKING_FOLDER`]) the
+/// process's current directory and returns it
+/// (`docs/spec/07-toolchain-build-run.md` §7.2). The folder the app was
+/// started from (`/`, the home folder, a downloaded project's folder) then
+/// plays no part: nothing the app or a library resolves against the current
+/// directory can come from there, and toolchain discovery, which never
+/// searches the current directory, excludes only this empty folder (inside
+/// the build cache, which it excludes anyway). The command-line tool keeps
+/// the caller's current directory.
+///
+/// The folder is created owner-only, never through a link
+/// ([`b2c_store::ensure_private_dir`]). Nothing ever writes to it; a folder
+/// that is not empty is used anyway, with a warning, since nothing in it is
+/// run or read.
+///
+/// # Errors
+/// When the folder cannot be created as a private folder (for example
+/// because a link or a file is in the way) or entered; the current directory
+/// is then unchanged.
+pub fn enter_working_folder(cache: &Path) -> std::io::Result<PathBuf> {
+    let folder = cache.join(WORKING_FOLDER);
+    b2c_store::ensure_private_dir(&folder).map_err(std::io::Error::other)?;
+    std::env::set_current_dir(&folder)?;
+    if std::fs::read_dir(&folder).is_ok_and(|mut entries| entries.next().is_some()) {
+        tracing::warn!("the app's working folder is not empty; nothing in it is used");
+    }
+    tracing::debug!(folder = %folder.display(), "working folder");
+    Ok(folder)
+}
+
 /// What the app reports when [`b2c_build::os::harden_dll_search`] failed.
 const DLL_SEARCH_WARNING: &str =
     "where DLLs are loaded from could not be restricted; continuing with the default search order";
@@ -197,11 +246,15 @@ fn failed_to_start(error: &LaunchError) -> ExitCode {
     ExitCode::FAILURE
 }
 
-/// How the app starts: its folders, where toolchain discovery looks, and (in
-/// end-to-end builds) a script that answers the native dialogs.
+/// How the app starts: its folders, where toolchain discovery looks, its
+/// current directory, and (in end-to-end builds) a script that answers the
+/// native dialogs.
 struct Launch {
     dirs: Dirs,
     discovery: DiscoveryScope,
+    /// The working folder once [`run`] entered it; `None` keeps the folder
+    /// the app was started from (the backend reads it).
+    cwd: Option<PathBuf>,
     #[cfg(feature = "e2e-hooks")]
     dialog_script: Option<e2e::DialogScript>,
 }
@@ -231,6 +284,7 @@ impl Launch {
             Ok(Self {
                 dirs,
                 discovery,
+                cwd: None,
                 dialog_script: options.dialogs,
             })
         }
@@ -239,6 +293,7 @@ impl Launch {
             Ok(Self {
                 dirs: Dirs::from_env().map_err(LaunchError::Folders)?,
                 discovery: DiscoveryScope::Default,
+                cwd: None,
             })
         }
     }
@@ -282,7 +337,7 @@ fn setup<R: Runtime>(app: &mut App<R>, mut launch: Launch) -> Result<(), LaunchE
             dirs: launch.dirs,
             app_version: APP_VERSION,
             discovery_scope: launch.discovery,
-            cwd: None,
+            cwd: launch.cwd,
         },
         dialogs,
     )?;

@@ -3,6 +3,7 @@ import type {
   Distro,
   Empty,
   Platform,
+  SkippedToolchain,
   Toolchain,
   ToolchainAddDialogResponse,
   ToolchainListResponse,
@@ -24,8 +25,10 @@ import {
 } from '../settings/page/testing';
 import { CopyCommand } from './CopyCommand';
 import { toolchainFeature } from './feature';
+import { MAX_SKIPPED } from './controller';
 import { INSTALL_COMMANDS } from './instructions';
-import { failureText, LINK_ADDRESSES, pageTitle } from './ToolchainPage';
+import { GENERIC_SKIP_REASON, REASONS, SKIP_REASONS } from './reasons';
+import { failureText, LINK_ADDRESSES, pageTitle, RECHECKING_TEXT } from './ToolchainPage';
 
 /** A toolchain diagnostic. */
 function problem(code: string, message: string, severity: Diagnostic['severity'] = 'error') {
@@ -82,6 +85,8 @@ interface InstallOptions {
   distro?: Distro | null;
   list?: Toolchain[];
   discovering?: boolean;
+  /** The compilers the backend's list says it skipped. */
+  skipped?: SkippedToolchain[];
 }
 
 /** Installs the feature as the app would, after the bootstrap read the list. */
@@ -94,7 +99,11 @@ function install(options: InstallOptions = {}): TestFeatureContext {
     noUsableToolchain: !list.some((toolchain) => toolchain.usable),
     distro: options.distro ?? null,
   });
-  created.ipc.toolchainList.mockResolvedValue({ toolchains: list, discovering });
+  created.ipc.toolchainList.mockResolvedValue({
+    toolchains: list,
+    discovering,
+    ...(options.skipped === undefined ? {} : { skipped: options.skipped }),
+  });
   useAppStore.getState().actions.setToolchains({ list, discovering });
   uninstall = toolchainFeature(created.ctx);
   return created;
@@ -109,10 +118,20 @@ async function showPage(options: InstallOptions = {}): Promise<TestFeatureContex
 }
 
 /** Plays a `toolchainsUpdated` event as the bootstrap delivers it: store first, then the bus. */
-function pushToolchains(target: TestFeatureContext, list: Toolchain[], discovering: boolean): void {
+function pushToolchains(
+  target: TestFeatureContext,
+  list: Toolchain[],
+  discovering: boolean,
+  details: Pick<ToolchainListResponse, 'skipped' | 'rechecking'> = {},
+): void {
   act(() => {
     useAppStore.getState().actions.setToolchains({ list, discovering });
-    target.ctx.events.emit({ kind: 'toolchainsUpdated', toolchains: list, discovering });
+    target.ctx.events.emit({
+      kind: 'toolchainsUpdated',
+      toolchains: list,
+      discovering,
+      ...details,
+    });
   });
 }
 
@@ -783,5 +802,145 @@ describe('texts', () => {
     expect(failureText('openLink', 'io')).toBe('Your web browser could not be opened.');
     expect(failureText('openLink', 'io', 'msys2Install')).toContain(LINK_ADDRESSES.msys2Install);
     expect(failureText('add', 'transport')).toContain('(transport)');
+  });
+});
+
+describe('skipped compilers', () => {
+  const SKIPPED: SkippedToolchain[] = [
+    { displayPath: '/home/ada/game/bin/g++', reason: 'projectFolder' },
+    { displayPath: '/home/ada/.cache/blocks2cpp/builds/g++', reason: 'buildCache' },
+    { displayPath: '/home/ada/g++', reason: 'currentFolder' },
+    { displayPath: '\\\\server\\share\\bin\\g++.exe', reason: 'networkFolder' },
+  ];
+
+  const section = () => screen.queryByRole('region', { name: 'Compilers that were skipped' });
+  const rows = () => screen.queryAllByTestId('toolchain-skipped-row');
+
+  it('lists each one with the reason it is never used', async () => {
+    await showPage({ list: [LINUX_GCC], skipped: SKIPPED });
+
+    expect(section()).not.toBeNull();
+    expect(rows().map((row) => row.textContent)).toEqual(
+      SKIPPED.map((entry) => `${entry.displayPath}${SKIP_REASONS[entry.reason]}`),
+    );
+    expect(rows()[0]?.querySelector('bdi')?.textContent).toBe('/home/ada/game/bin/g++');
+    await expectNoAxeViolations(screen.getByTestId('toolchain-page'));
+  });
+
+  it('shows no section when nothing was skipped', async () => {
+    await showPage({ list: [LINUX_GCC] });
+    expect(section()).toBeNull();
+  });
+
+  it('follows the newest answer: an event, then a rescan', async () => {
+    const page = await showPage({ list: [LINUX_GCC] });
+
+    pushToolchains(page, [LINUX_GCC], false, { skipped: SKIPPED.slice(0, 1) });
+    expect(rows()).toHaveLength(1);
+
+    page.ipc.toolchainRescan.mockResolvedValueOnce({
+      toolchains: [LINUX_GCC],
+      discovering: false,
+      skipped: SKIPPED,
+    });
+    fireEvent.click(screen.getByTestId('toolchain-rescan'));
+    await settle();
+    expect(rows()).toHaveLength(SKIPPED.length);
+
+    page.ipc.toolchainRescan.mockResolvedValueOnce({ toolchains: [LINUX_GCC], discovering: false });
+    fireEvent.click(screen.getByTestId('toolchain-rescan'));
+    await settle();
+    expect(section()).toBeNull();
+  });
+
+  it('keeps only well-formed entries, at most 64, and names an unknown reason plainly', async () => {
+    const page = await showPage();
+
+    const odd = [
+      { displayPath: 7, reason: 'projectFolder' },
+      'g++',
+      null,
+      { displayPath: '/opt/new/g++', reason: 'aReasonFromLater' },
+    ] as unknown as SkippedToolchain[];
+    pushToolchains(page, [], false, { skipped: odd });
+    expect(rows().map((row) => row.textContent)).toEqual([`/opt/new/g++${GENERIC_SKIP_REASON}`]);
+
+    pushToolchains(page, [], false, { skipped: 'all of them' as unknown as SkippedToolchain[] });
+    expect(section()).toBeNull();
+
+    const many: SkippedToolchain[] = Array.from({ length: 100 }, (_, index) => ({
+      displayPath: `/p${String(index)}/g++`,
+      reason: 'projectFolder',
+    }));
+    pushToolchains(page, [], false, { skipped: many });
+    expect(rows()).toHaveLength(MAX_SKIPPED);
+  });
+
+  it('shows hidden characters in a location', async () => {
+    await showPage({
+      skipped: [{ displayPath: '/home/ada/\u202Eexe.g++', reason: 'projectFolder' }],
+    });
+    expect(rows()[0]?.textContent).toContain('⟨U+202E⟩');
+  });
+});
+
+describe('checking g++ again', () => {
+  const status = () => screen.getByTestId('toolchain-status').textContent;
+
+  it('says so while a compiler whose check timed out is checked once more', async () => {
+    const page = await showPage({ discovering: true });
+    expect(status()).toContain('Looking for g++');
+
+    pushToolchains(page, [], true, { rechecking: true });
+    expect(status()).toContain(RECHECKING_TEXT);
+    expect(status()).toContain('up to 30 seconds');
+
+    pushToolchains(page, [], true);
+    expect(status()).not.toContain(RECHECKING_TEXT);
+    expect(status()).toContain('Looking for g++');
+  });
+
+  it('labels the Rescan button while its search checks a compiler again', async () => {
+    const page = await showPage();
+    const answer = deferred<ToolchainListResponse>();
+    page.ipc.toolchainRescan.mockReturnValue(answer.promise);
+    const rescan = screen.getByTestId('toolchain-rescan');
+
+    fireEvent.click(rescan);
+    await settle();
+    expect(rescan.textContent).toBe('Looking for g++…');
+
+    pushToolchains(page, [], true, { rechecking: true });
+    expect(rescan.textContent).toBe(RECHECKING_TEXT);
+    expect(status()).toContain(RECHECKING_TEXT);
+
+    await act(async () => {
+      answer.resolve({ toolchains: [LINUX_GCC], discovering: false });
+      await answer.promise;
+    });
+    await settle();
+    expect(status()).not.toContain(RECHECKING_TEXT);
+    expect(screen.getByTestId('toolchain-outcome').textContent).toContain('1 can build');
+  });
+
+  it('explains a check that timed out, not as a broken installation', async () => {
+    const slow = toolchainFixture({
+      ...OLD_GCC,
+      id: 'tc_4444444444444444',
+      version: '13.2.0',
+      displayPath: '/usr/bin/g++-13',
+      problems: [
+        problem(
+          'B2C-T1023',
+          'Checking the compiler /usr/bin/g++-13 timed out: a test did not finish within 30 seconds.',
+        ),
+      ],
+    });
+    await showPage({ list: [slow] });
+
+    const item = screen.getByTestId('toolchain-tc_4444444444444444');
+    expect(within(item).getByText(REASONS['B2C-T1023']?.title ?? '')).toBeTruthy();
+    expect(item.textContent).toContain('Press Rescan to check it again.');
+    expect(item.textContent).not.toContain('broken');
   });
 });

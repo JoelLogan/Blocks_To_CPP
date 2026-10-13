@@ -34,17 +34,24 @@ WinLibs. On Linux, install `g++` with your package manager.
 | [B2C-T1020](#b2c-t1020-compiler-on-a-network-folder) | warning | The compiler is on a network folder |
 | [B2C-T1021](#b2c-t1021-no-leak-detection) | note | Leak detection is not available where programs run |
 | [B2C-T1022](#b2c-t1022-the-selected-compiler-cannot-be-used) | warning | The selected compiler is missing or unusable, so another one was used |
+| [B2C-T1023](#b2c-t1023-checking-the-compiler-timed-out) | error | Checking the compiler took too long, so whether it works is not known |
 
 ## B2C-T1001: no usable compiler
 
 No g++ 11 or newer was found in the folders on `PATH` or in the usual
 install locations (on Windows: MSYS2, WinLibs, Scoop, Chocolatey, WinGet,
 TDM-GCC and Strawberry Perl folders; on Linux: `/usr/bin`, `/usr/local/bin`
-and the GCC toolsets in `/opt/rh`). The project folder and the current folder
-are never searched, so a project cannot bring its own "compiler".
+and the GCC toolsets in `/opt/rh`). The open projects' folders and the
+current folder are never searched, so a project cannot bring its own
+"compiler". The current folder, and a project folder that is your home folder
+or a drive root, count as that folder only: the folders below them, such as
+`~/.local/bin`, are still searched
+([spec §7.2](../../spec/07-toolchain-build-run.md#72-discovery)).
 
 **How to fix:** install g++ as described at the top of this page, then try
-again. `b2c toolchains` lists what was found and why each one was rejected.
+again. `b2c toolchains` lists what was found and why each one was rejected;
+the app's toolchain page also lists the compilers a search skipped because of
+where they are.
 
 ## B2C-T1002: the chosen compiler cannot be used
 
@@ -57,7 +64,10 @@ Windows). Batch files (`.bat`, `.cmd`) are never accepted. In the app,
 The same code refuses a compiler, chosen or found, that lies inside the open
 project's folder: a project must never bring its own compiler, so such a
 program is never run. In the app, *Choose g++ manually…* also refuses a file
-inside an open project's folder or the build cache before running it.
+inside an open project's folder or the build cache before running it. A
+project folder that is your home folder or a drive root holds only the files
+directly in it, so a compiler in `~/.local/bin` can be used for a project
+saved in the home folder.
 
 *Example:* "The compiler C:\tools\g++.cmd cannot be used: only .exe programs
 can be used (never .bat or .cmd scripts)."
@@ -67,11 +77,13 @@ path, from a folder outside your projects.
 
 ## B2C-T1003: the compiler did not run
 
-Asking the compiler for its version failed: it could not be started, it
-crashed, or it did not answer within 10 seconds.
+Asking the compiler for its version failed: it could not be started or it
+crashed, or Blocks2Cpp could not check it at all (for example because no
+temporary folder could be made). A compiler that did not answer in time is
+[B2C-T1023](#b2c-t1023-checking-the-compiler-timed-out) instead.
 
-*Example:* "The compiler /usr/bin/g++ could not be used: it did not answer
-within 10000 ms."
+*Example:* "The compiler /usr/bin/g++ could not be used: it did not report a
+version."
 
 **How to fix:** check that the compiler works on its own (`g++ --version` in
 a terminal). Security software sometimes blocks new programs; allow it there.
@@ -94,7 +106,9 @@ planned but not available yet.
 
 The compiler answered, but cannot do its job: its C++ compiler program
 (`cc1plus`) is missing, it could not build and run a tiny test program, or it
-cannot compile C++20.
+cannot compile C++20. A test that did not finish in time is reported as
+[B2C-T1023](#b2c-t1023-checking-the-compiler-timed-out), not as a broken
+installation.
 
 *Example:* "The installation of /usr/bin/g++ is incomplete: its C++ compiler
 program (cc1plus) is missing. Reinstall the compiler (for example the g++
@@ -250,3 +264,28 @@ to stop this warning."
 
 **How to fix:** open the toolchain list, then reinstall the compiler you
 selected and choose *Rescan*, or select another compiler as the default.
+
+## B2C-T1023: checking the compiler timed out
+
+One of the small tests Blocks2Cpp runs to check a compiler (its version, a
+tiny program, the C++ standards and features it supports) did not finish in
+time, so it is not known whether the compiler works, and it is not used. A
+compiler whose first check times out (10 seconds per test) is checked once
+more with 30 seconds per test before this is reported; the toolchain page
+says "Checking g++ again…" while that runs. It is checked again the next time
+it is needed, by a build or a rescan
+([spec §7.3](../../spec/07-toolchain-build-run.md#73-capability-probing)).
+
+This usually means the computer was busy, or security software was checking
+the compiler the first time it ran (common right after installing it, or
+after the computer was restored or started).
+
+*Example:* "Checking the compiler /usr/bin/g++ timed out: a test did not
+finish within 30 seconds, so it is not known whether this compiler works. The
+computer may have been busy, or security software may have been checking the
+compiler. Check it again with Rescan in the toolchain list (or `b2c
+toolchains`)."
+
+**How to fix:** press *Rescan* in the toolchain list (or run `b2c
+toolchains`). If it keeps timing out, check that the compiler works on its
+own (`g++ --version` in a terminal), and allow it in your security software.

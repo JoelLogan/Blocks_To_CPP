@@ -15,19 +15,32 @@
 //!   of [`b2c_toolchain::discovery`]. The folders the caller excludes (the
 //!   open projects' folders), the cache root (the folder that holds the
 //!   probes' folder) and the process's current directory are never
-//!   searched. A compiler whose fingerprint is unchanged
+//!   searched, with the folder rules of [`Exclusions`]: a project folder that
+//!   is the user's home folder or a root, and the current directory, are
+//!   excluded as that folder only. The compilers a scan skips because of
+//!   where they are are listed with the reason ([`ToolchainListResponse`]'s
+//!   `skipped`). A compiler whose fingerprint is unchanged
 //!   is not probed again; the others are probed at most
 //!   [`MAX_PARALLEL_PROBES`] at a time, each invocation with the 10 s
 //!   [`PROBE_TIMEOUT`], in a private temporary folder, with the sanitised
 //!   environment ([`HostEnv::from_process`] with no pass-through). Scans
 //!   that overlap are ordered by an epoch: only the newest one's result is
 //!   kept, so a slow background discovery never overwrites a newer rescan.
+//! * **A probe that timed out** (`B2C-T1023`) is run once more with the 30 s
+//!   [`PROBE_RETRY_TIMEOUT`](b2c_toolchain::probe::PROBE_RETRY_TIMEOUT)
+//!   before the compiler is reported, whenever the registry probes a
+//!   compiler (a scan, the check before a build, a compiler picked by hand,
+//!   the command line's choice); while that runs the list says `rechecking`
+//!   and the listener of [`ToolchainRegistry::on_progress`] is called. A
+//!   record that still timed out is not reused: the compiler is probed again
+//!   the next time it is needed.
 //! * **Manual compilers** ([`ToolchainRegistry::add_explicit`], for *Choose
 //!   g++ manually…*) are checked by
 //!   [`explicit_candidate`] plus the name rules of 07 §7.2 (never `.bat` or
 //!   `.cmd`; on Windows only a file named exactly `g++.exe`), canonicalised,
 //!   refused (`B2C-T1002`) inside the folders the caller excludes (the open
-//!   projects' folders and the cache root) before anything runs them,
+//!   projects' folders and the cache root, with the same folder rules)
+//!   before anything runs them,
 //!   probed and kept with the source `manual`, even when they fail their
 //!   health checks. A rescan keeps them, probes them again when they
 //!   changed, and forgets them only when their file is gone.
@@ -36,7 +49,8 @@
 //!   when it changed), then the others in discovery order. A selection that
 //!   is missing, unusable or inside the project's folder gives the warning
 //!   `B2C-T1022` and falls back, never silently; any compiler inside the
-//!   project's folder is refused (`B2C-T1002`, binary planting, 08 §8.5).
+//!   project's folder (with the same folder rules) is refused (`B2C-T1002`,
+//!   binary planting, 08 §8.5).
 //!   A build session chooses with [`ToolchainRegistry::choose_cancellable`],
 //!   which stops waiting for a discovery, and stops probing, as soon as the
 //!   build is cancelled.
@@ -63,13 +77,16 @@ use std::time::{Duration, Instant};
 
 use b2c_ipc::ToolchainId;
 use b2c_ipc::dto::{
-    Distro, Platform as IpcPlatform, Toolchain as ToolchainDto, ToolchainListResponse, ToolchainSetupInfo,
-    ToolchainSource,
+    Distro, Platform as IpcPlatform, SkipReason as IpcSkipReason, SkippedToolchain,
+    Toolchain as ToolchainDto, ToolchainListResponse, ToolchainSetupInfo, ToolchainSource,
 };
 use b2c_ir::{DiagSource, Diagnostic, Location, Severity};
 use b2c_process::CancelToken;
 use b2c_toolchain::codes::{self, SelectionProblem};
-use b2c_toolchain::discovery::{Candidate, CandidateSource, DiscoveryEnv, discover, explicit_candidate};
+use b2c_toolchain::discovery::{
+    Candidate, CandidateSource, Discovery, DiscoveryEnv, ExcludedFolder, ExcludedKind, Exclusions,
+    SkipReason, Skipped, explicit_candidate, home_folder, search,
+};
 use b2c_toolchain::env::HostEnv;
 use b2c_toolchain::fingerprint::Fingerprint;
 use b2c_toolchain::probe::{
@@ -99,6 +116,13 @@ pub const DISCOVERY_WAIT: Duration = Duration::from_secs(30);
 /// How often [`ToolchainRegistry::choose_cancellable`] looks at the build's
 /// cancellation token while it waits for a discovery.
 const CANCEL_POLL: Duration = Duration::from_millis(50);
+
+/// The most skipped compilers listed ([`ToolchainListResponse`]'s
+/// `skipped`); real computers have none or a few.
+pub const MAX_SKIPPED: usize = 64;
+
+/// What [`ToolchainRegistry::on_progress`] calls.
+type ProgressListener = Arc<dyn Fn() + Send + Sync>;
 
 /// Probes a compiler. [`RealProber`] runs g++; tests substitute their own.
 pub trait Prober: Send + Sync {
@@ -132,7 +156,7 @@ pub enum DiscoveryScope {
     /// Only these folders, searched like `PATH` entries in this order, and
     /// no well-known location: for end-to-end tests
     /// (`B2C_E2E_TOOLCHAIN_DIRS`) and tests. The exclusions still apply,
-    /// including the current directory.
+    /// including the current directory (as that folder only).
     Only(Vec<PathBuf>),
 }
 
@@ -170,9 +194,14 @@ pub struct ToolchainRegistry {
     probe_temp: Option<PathBuf>,
     scope: DiscoveryScope,
     prober: Arc<dyn Prober>,
+    /// The user's home folder: a project folder that is this folder is
+    /// excluded as that folder only.
+    home: Option<PathBuf>,
     state: Mutex<State>,
     /// Signalled whenever a scan ends.
     idle: Condvar,
+    /// Called when a second probe after a timeout starts or ends.
+    progress: Mutex<Option<ProgressListener>>,
 }
 
 /// The list and the scans running on it.
@@ -189,7 +218,12 @@ struct State {
     /// Whether a scan has finished since the registry was opened.
     scanned: bool,
     /// What the last scan excluded, for a scan that `choose` starts itself.
-    last_excluded: Vec<PathBuf>,
+    last_excluded: Vec<ExcludedFolder>,
+    /// The compilers the last scan skipped because of where they are, at
+    /// most [`MAX_SKIPPED`].
+    skipped: Vec<Skipped>,
+    /// Second probes after a timeout running now.
+    rechecking: usize,
 }
 
 impl fmt::Debug for ToolchainRegistry {
@@ -228,12 +262,31 @@ impl ToolchainRegistry {
             probe_temp,
             scope,
             prober,
+            home: home_folder(),
             state: Mutex::new(State {
                 entries,
                 ..State::default()
             }),
             idle: Condvar::new(),
+            progress: Mutex::new(None),
         }
+    }
+
+    /// This registry with `home` as the user's home folder, in place of the
+    /// one [`ToolchainRegistry::open`] reads from the environment
+    /// ([`home_folder`]): for tests and end-to-end runs with their own home.
+    #[must_use]
+    pub fn with_home(mut self, home: Option<PathBuf>) -> Self {
+        self.home = home;
+        self
+    }
+
+    /// Calls `listener` (on the probing thread, with no lock held) whenever a
+    /// second probe after a timeout starts or ends, so the app can send the
+    /// list (with `rechecking`) to the UI. A later listener replaces an
+    /// earlier one.
+    pub fn on_progress(&self, listener: impl Fn() + Send + Sync + 'static) {
+        *self.progress.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(listener));
     }
 
     /// The list as it is now, without probing (`toolchain_list`), with the
@@ -248,6 +301,8 @@ impl ToolchainRegistry {
                 .map(|entry| entry_dto(entry, selected))
                 .collect(),
             discovering: state.scanning > 0,
+            skipped: state.skipped.iter().map(skipped_dto).collect(),
+            rechecking: state.rechecking > 0,
         }
     }
 
@@ -257,7 +312,11 @@ impl ToolchainRegistry {
     /// (`probe_temp`'s parent) and the current directory are always excluded
     /// too. When a newer scan started meanwhile, its result wins and this
     /// returns the list as it is.
-    pub fn rescan(&self, excluded: &[PathBuf], selected: Option<&ToolchainId>) -> ToolchainListResponse {
+    pub fn rescan(
+        &self,
+        excluded: &[ExcludedFolder],
+        selected: Option<&ToolchainId>,
+    ) -> ToolchainListResponse {
         self.begin_scan();
         {
             let _running = ScanGuard {
@@ -273,7 +332,7 @@ impl ToolchainRegistry {
     /// `done` when it is over, whatever happened (also when the thread could
     /// not start). [`ToolchainRegistry::list`] reports `discovering` from
     /// the moment this returns.
-    pub fn spawn_discovery(self: &Arc<Self>, excluded: Vec<PathBuf>, done: Box<dyn FnOnce() + Send>) {
+    pub fn spawn_discovery(self: &Arc<Self>, excluded: Vec<ExcludedFolder>, done: Box<dyn FnOnce() + Send>) {
         self.begin_scan();
         let guard = ScanGuard {
             registry: Arc::clone(self),
@@ -295,19 +354,23 @@ impl ToolchainRegistry {
     /// Adds a compiler the user picked (`toolchain_add_dialog`): it must
     /// pass [`explicit_candidate`] (absolute, an executable file; a network
     /// path gives the warning `B2C-T1020`) and the name rules (never `.bat`
-    /// or `.cmd`; on Windows only `g++.exe`), must not lie inside any of the
-    /// `excluded` folders (the open projects' folders and the cache root:
-    /// a project must never bring its own compiler, 08 §8.5), and is then
-    /// probed. That check compares canonical paths and comes before the
-    /// probe, which runs the program. It is then kept with the source
-    /// `manual`, even when it is not usable (its problems say why),
-    /// replacing an entry for the same file. The DTO's `selected` is false:
-    /// the caller knows the selection.
+    /// or `.cmd`; on Windows only `g++.exe`), must not lie in any of the
+    /// `excluded` folders (the open projects' folders and the cache root,
+    /// with the folder rules of [`Exclusions`]: a project must never bring
+    /// its own compiler, 08 §8.5), and is then probed. That check compares
+    /// canonical paths and comes before the probe, which runs the program.
+    /// It is then kept with the source `manual`, even when it is not usable
+    /// (its problems say why), replacing an entry for the same file. The
+    /// DTO's `selected` is false: the caller knows the selection.
     ///
     /// # Errors
     /// The `B2C-T1002` refusal, or the `B2C-T1003` probe failure; nothing is
     /// added (or run) then.
-    pub fn add_explicit(&self, path: &Path, excluded: &[PathBuf]) -> Result<ToolchainDto, Vec<Diagnostic>> {
+    pub fn add_explicit(
+        &self,
+        path: &Path,
+        excluded: &[ExcludedFolder],
+    ) -> Result<ToolchainDto, Vec<Diagnostic>> {
         self.add_explicit_for(path, excluded, Platform::host())
     }
 
@@ -315,15 +378,18 @@ impl ToolchainRegistry {
     fn add_explicit_for(
         &self,
         path: &Path,
-        excluded: &[PathBuf],
+        excluded: &[ExcludedFolder],
         platform: Platform,
     ) -> Result<ToolchainDto, Vec<Diagnostic>> {
         manual_name_allowed(path, platform).map_err(|refusal| vec![refusal])?;
         let candidate = explicit_candidate(path, platform).map_err(|refusal| vec![refusal])?;
-        if let Some(folder) = excluded_folder_of(&candidate.path, excluded) {
-            tracing::info!("a compiler picked by hand inside a project folder or the cache was refused");
-            tracing::debug!(path = %candidate.path.display(), folder = %folder.display(), "refused compiler");
-            return Err(vec![inside_excluded(&candidate.found_as)]);
+        if let Some(kind) = Exclusions::new(excluded, self.home.as_deref()).holding(&candidate.path) {
+            tracing::info!(
+                ?kind,
+                "a compiler picked by hand inside an excluded folder was refused"
+            );
+            tracing::debug!(path = %candidate.path.display(), "refused compiler");
+            return Err(vec![inside_excluded(&candidate.found_as, kind)]);
         }
         let probe = self
             .probe_candidate(&candidate, default_jobs(), None)
@@ -437,7 +503,7 @@ impl ToolchainRegistry {
     /// One discovery: finds the candidates, probes what changed and, unless
     /// a newer scan started meanwhile, makes the result the list and saves
     /// it. The caller counts the scan ([`ToolchainRegistry::begin_scan`]).
-    fn scan(&self, excluded: &[PathBuf]) {
+    fn scan(&self, excluded: &[ExcludedFolder]) {
         let started = Instant::now();
         let (epoch, snapshot) = {
             let mut state = self.lock();
@@ -445,14 +511,16 @@ impl ToolchainRegistry {
             excluded.clone_into(&mut state.last_excluded);
             (state.epoch, state.entries.clone())
         };
-        let found = self.discover_and_probe(excluded, &snapshot);
+        let mut found = self.discover_and_probe(excluded, &snapshot);
         let probed = found.probed;
+        let skipped = std::mem::take(&mut found.skipped);
         let mut state = self.lock();
         if state.epoch != epoch {
             tracing::debug!("a newer toolchain scan started, so this one's result is dropped");
             return;
         }
         state.entries = merge(found, &state.entries);
+        state.skipped = skipped;
         state.scanned = true;
         self.save(&state.entries);
         let usable = state
@@ -464,8 +532,13 @@ impl ToolchainRegistry {
             toolchains = state.entries.len(),
             usable,
             probed,
+            skipped = state.skipped.len(),
             elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
             "toolchain discovery finished"
+        );
+        tracing::debug!(
+            skipped = ?state.skipped.iter().map(|skipped| (skipped.found_as.display().to_string(), skipped.reason)).collect::<Vec<_>>(),
+            "compilers skipped because of where they are"
         );
         tracing::debug!(
             paths = ?state.entries.iter().map(|entry| entry.found_as.display().to_string()).collect::<Vec<_>>(),
@@ -492,14 +565,18 @@ impl ToolchainRegistry {
     /// The discovered candidates and the manual entries of `snapshot`, each
     /// taken from the snapshot when unchanged and probed otherwise, in
     /// parallel.
-    fn discover_and_probe(&self, excluded: &[PathBuf], snapshot: &[Entry]) -> ScanResult {
+    fn discover_and_probe(&self, excluded: &[ExcludedFolder], snapshot: &[Entry]) -> ScanResult {
         let manual: HashSet<&Path> = snapshot
             .iter()
             .filter(|entry| entry.is_manual())
             .map(Entry::path)
             .collect();
-        let mut jobs: Vec<Job> = self
-            .candidates(excluded)
+        let Discovery {
+            candidates,
+            mut skipped,
+        } = self.candidates(excluded);
+        skipped.truncate(MAX_SKIPPED);
+        let mut jobs: Vec<Job> = candidates
             .into_iter()
             .filter(|candidate| !manual.contains(candidate.path.as_path()))
             .take(MAX_DISCOVERED)
@@ -527,7 +604,10 @@ impl ToolchainRegistry {
             .filter(|job| matches!(job, Job::Discovered(_, None)))
             .count();
         let per_probe = (default_jobs() / new.clamp(1, workers)).max(1);
-        let mut result = ScanResult::default();
+        let mut result = ScanResult {
+            skipped,
+            ..ScanResult::default()
+        };
         for resolved in parallel(jobs, workers, &|job| self.resolve(job, per_probe))
             .into_iter()
             .flatten()
@@ -546,27 +626,31 @@ impl ToolchainRegistry {
         result
     }
 
-    /// The candidates discovery finds, never in `excluded`, in the cache
-    /// root (the folder of the probes' folder) or in the current directory.
-    fn candidates(&self, excluded: &[PathBuf]) -> Vec<Candidate> {
+    /// What discovery finds: the candidates, never in `excluded`, in the
+    /// cache root (the folder of the probes' folder) or in the current
+    /// directory, and the compilers it skipped there.
+    fn candidates(&self, excluded: &[ExcludedFolder]) -> Discovery {
         let mut excluded = excluded.to_vec();
         excluded.extend(
             self.probe_temp
                 .as_deref()
                 .and_then(Path::parent)
-                .map(Path::to_path_buf),
+                .map(ExcludedFolder::cache),
         );
         match &self.scope {
             // Adds the current directory itself.
-            DiscoveryScope::Default => discover(&DiscoveryEnv::from_process(excluded)),
+            DiscoveryScope::Default => search(&DiscoveryEnv {
+                home: self.home.clone(),
+                ..DiscoveryEnv::from_process(excluded)
+            }),
             DiscoveryScope::Only(dirs) => {
                 // A fresh, empty root, so that no well-known folder exists.
                 let Ok(empty_root) = tempfile::tempdir() else {
                     tracing::warn!("no temporary folder for toolchain discovery; nothing was searched");
-                    return Vec::new();
+                    return Discovery::default();
                 };
-                excluded.extend(std::env::current_dir().ok());
-                discover(&DiscoveryEnv {
+                excluded.extend(std::env::current_dir().ok().map(ExcludedFolder::current_dir));
+                search(&DiscoveryEnv {
                     platform: Platform::host(),
                     path: dirs.clone(),
                     root: empty_root.path().to_path_buf(),
@@ -576,6 +660,7 @@ impl ToolchainRegistry {
                     msys2_roots: Vec::new(),
                     extra_dirs: Vec::new(),
                     excluded,
+                    home: self.home.clone(),
                 })
             }
         }
@@ -588,7 +673,7 @@ impl ToolchainRegistry {
         match job {
             Job::Discovered(candidate, cached) => {
                 let source = source_of(&candidate);
-                let unchanged = cached.filter(|entry| entry.probe.is_current());
+                let unchanged = cached.filter(|entry| entry.probe.is_reusable());
                 let probed = unchanged.is_none();
                 let probe =
                     unchanged.map_or_else(|| self.probe_or_unprobed(&candidate, jobs), |entry| entry.probe);
@@ -599,7 +684,7 @@ impl ToolchainRegistry {
             }
             Job::Manual(entry) => {
                 let key = entry.path().to_path_buf();
-                if entry.probe.is_current() {
+                if entry.probe.is_reusable() {
                     return Resolved::Manual {
                         key,
                         entry: Some(entry),
@@ -626,8 +711,9 @@ impl ToolchainRegistry {
         }
     }
 
-    /// Probes a candidate; its location warnings come first in the result's
-    /// problems. `cancel` stops the probe early.
+    /// Probes a candidate, and once more with [`ProbeOptions::for_retry`]
+    /// when that timed out (07 §7.3); its location warnings come first in the
+    /// result's problems. `cancel` stops the probe early.
     ///
     /// # Errors
     /// The `B2C-T1003` diagnostic when it cannot be probed at all (also when
@@ -642,7 +728,15 @@ impl ToolchainRegistry {
             cancel: cancel.cloned(),
             ..self.probe_options(jobs)
         };
-        match self.prober.probe(&candidate.path, &options) {
+        let probed = match self.prober.probe(&candidate.path, &options) {
+            Ok(first) if first.timed_out() && !is_cancelled(cancel) => {
+                tracing::info!("checking a compiler timed out; checking it once more with a longer timeout");
+                let _rechecking = RecheckGuard::start(self);
+                self.prober.probe(&candidate.path, &options.for_retry())
+            }
+            other => other,
+        };
+        match probed {
             Ok(mut toolchain) => {
                 let mut problems = candidate.warnings.clone();
                 problems.append(&mut toolchain.problems);
@@ -703,15 +797,16 @@ impl ToolchainRegistry {
         entry: &Entry,
         cancel: Option<&CancelToken>,
     ) -> Result<(Entry, Vec<Diagnostic>), Diagnostic> {
-        if entry.probe.is_current() {
+        if entry.probe.is_reusable() {
             return Ok((entry.clone(), Vec::new()));
         }
         let candidate = explicit_candidate(entry.path(), Platform::host())?;
         let probe = self.probe_candidate(&candidate, default_jobs(), cancel)?;
         let fresh = Entry::new(entry.source, entry.found_as.clone(), probe);
-        // An entry that could not be probed before has no real fingerprint:
-        // it did not change, it was only checked for the first time.
-        let notes = if entry.probe.fingerprint.sha256.is_empty() {
+        // An entry that could not be probed before has no real fingerprint,
+        // and one whose probe timed out is unchanged: neither changed, they
+        // were only checked again.
+        let notes = if entry.probe.fingerprint.sha256.is_empty() || entry.probe.is_current() {
             Vec::new()
         } else {
             vec![codes::toolchain_changed(&entry.found_as)]
@@ -733,11 +828,13 @@ impl ToolchainRegistry {
         cancel: Option<&CancelToken>,
     ) -> Attempt {
         let entries = self.lock().entries.clone();
+        let project_folder = self.project_folder(project);
+        let is_inside = |path: &Path| project_folder.holding(path).is_some();
         let mut attempt = Attempt::default();
         if let Some(id) = selected {
             match entries.iter().find(|entry| entry.id == *id) {
                 None => attempt.selection = Some(SelectionProblem::Missing),
-                Some(entry) if is_inside(entry.path(), project) => {
+                Some(entry) if is_inside(entry.path()) => {
                     attempt.selection = Some(SelectionProblem::InsideProject);
                     attempt.rejected.push(codes::inside_project(entry.path()));
                 }
@@ -761,7 +858,7 @@ impl ToolchainRegistry {
             if is_cancelled(cancel) {
                 break;
             }
-            if is_inside(entry.path(), project) {
+            if is_inside(entry.path()) {
                 attempt.rejected.push(codes::inside_project(entry.path()));
                 continue;
             }
@@ -775,6 +872,35 @@ impl ToolchainRegistry {
             }
         }
         attempt
+    }
+
+    /// The project's folder as an exclusion (none without a project), with
+    /// the folder rules of [`Exclusions`]: a project folder that is the
+    /// user's home folder or a root holds only the files directly in it.
+    fn project_folder(&self, project: Option<&Path>) -> Exclusions {
+        let folders: Vec<ExcludedFolder> = project.map(ExcludedFolder::project).into_iter().collect();
+        Exclusions::new(&folders, self.home.as_deref())
+    }
+
+    /// Counts a second probe after a timeout as running (or ended) and
+    /// tells the progress listener.
+    fn set_rechecking(&self, running: bool) {
+        {
+            let mut state = self.lock();
+            if running {
+                state.rechecking += 1;
+            } else {
+                state.rechecking = state.rechecking.saturating_sub(1);
+            }
+        }
+        let listener = self
+            .progress
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(listener) = listener {
+            listener();
+        }
     }
 
     /// Before choosing again: waits for a running scan (at most
@@ -861,10 +987,42 @@ fn is_cancelled(cancel: Option<&CancelToken>) -> bool {
 
 /// What a scan that `choose` starts excludes: what the last scan excluded,
 /// and the project's folder.
-fn excluded_for(state: &State, project: Option<&Path>) -> Vec<PathBuf> {
+fn excluded_for(state: &State, project: Option<&Path>) -> Vec<ExcludedFolder> {
     let mut excluded = state.last_excluded.clone();
-    excluded.extend(project.map(Path::to_path_buf));
+    excluded.extend(project.map(ExcludedFolder::project));
     excluded
+}
+
+/// The IPC view of a skipped compiler.
+fn skipped_dto(skipped: &Skipped) -> SkippedToolchain {
+    SkippedToolchain {
+        display_path: skipped.found_as.to_string_lossy().into_owned(),
+        reason: match skipped.reason {
+            SkipReason::Excluded(ExcludedKind::Project) => IpcSkipReason::ProjectFolder,
+            SkipReason::Excluded(ExcludedKind::Cache) => IpcSkipReason::BuildCache,
+            SkipReason::Excluded(ExcludedKind::CurrentDir) => IpcSkipReason::CurrentFolder,
+            SkipReason::NetworkFolder => IpcSkipReason::NetworkFolder,
+        },
+    }
+}
+
+/// A second probe after a timeout, counted while it runs (also when it
+/// panics).
+struct RecheckGuard<'a> {
+    registry: &'a ToolchainRegistry,
+}
+
+impl<'a> RecheckGuard<'a> {
+    fn start(registry: &'a ToolchainRegistry) -> Self {
+        registry.set_rechecking(true);
+        Self { registry }
+    }
+}
+
+impl Drop for RecheckGuard<'_> {
+    fn drop(&mut self) {
+        self.registry.set_rechecking(false);
+    }
 }
 
 /// The DTO of an entry.
@@ -920,6 +1078,8 @@ struct ScanResult {
     manual: HashMap<PathBuf, Option<Entry>>,
     /// How many compilers were probed.
     probed: usize,
+    /// The compilers discovery skipped, at most [`MAX_SKIPPED`].
+    skipped: Vec<Skipped>,
 }
 
 /// The new list after a scan: what it discovered, then the manual entries of
@@ -988,31 +1148,24 @@ fn manual_name_allowed(path: &Path, platform: Platform) -> Result<(), Diagnostic
     ))
 }
 
-/// Whether `path` is inside the project folder (both canonical).
-fn is_inside(path: &Path, project: Option<&Path>) -> bool {
-    project.is_some_and(|dir| path.starts_with(dir))
-}
-
-/// The folder of `excluded` that the canonical `path` lies in, if any. Each
-/// folder is compared in its canonical form (as given when it no longer
-/// exists), as discovery compares them.
-fn excluded_folder_of(path: &Path, excluded: &[PathBuf]) -> Option<PathBuf> {
-    excluded
-        .iter()
-        .map(|dir| b2c_toolchain::paths::canonical(dir).unwrap_or_else(|_| dir.clone()))
-        .find(|dir| path.starts_with(dir))
-}
-
 /// The `B2C-T1002` refusal of a compiler picked by hand inside a folder
-/// where compilers are never run.
-fn inside_excluded(found_as: &Path) -> Diagnostic {
+/// where compilers are never run, of the given kind.
+fn inside_excluded(found_as: &Path, kind: ExcludedKind) -> Diagnostic {
+    let why = match kind {
+        ExcludedKind::Project => {
+            "it is inside an open project's folder, and a project must never bring its own compiler"
+        }
+        ExcludedKind::Cache => "it is inside the build cache, where compilers are never run",
+        ExcludedKind::CurrentDir => {
+            "it is in the folder Blocks2Cpp was started from, where compilers are never run"
+        }
+    };
     Diagnostic::error(
         codes::BAD_TOOLCHAIN_PATH,
         DiagSource::Toolchain,
         Location::project(),
         format!(
-            "The compiler {} cannot be used: it is inside an open project's folder or the build cache, \
-             and a project must never bring its own compiler. Choose a g++ installed outside your projects.",
+            "The compiler {} cannot be used: {why}. Choose a g++ installed outside your projects.",
             found_as.display()
         ),
     )
@@ -1232,14 +1385,19 @@ impl ToolchainRegistry {
     /// `b2c build` without `--toolchain`: the first usable compiler in
     /// discovery order. Only the candidates up to that one are checked; new
     /// or changed ones are probed and remembered.
-    fn select_discovered(&self, excluded: &[PathBuf]) -> Selected {
+    fn select_discovered(&self, excluded: &[ExcludedFolder]) -> Selected {
         let snapshot = self.lock().entries.clone();
         let mut rejected = Vec::new();
-        for candidate in self.candidates(excluded).into_iter().take(MAX_DISCOVERED) {
+        for candidate in self
+            .candidates(excluded)
+            .candidates
+            .into_iter()
+            .take(MAX_DISCOVERED)
+        {
             let known = snapshot
                 .iter()
                 .find(|entry| entry.path() == candidate.path)
-                .filter(|entry| entry.probe.is_current())
+                .filter(|entry| entry.probe.is_reusable())
                 .cloned();
             let entry = known.unwrap_or_else(|| {
                 let probe = self.probe_or_unprobed(&candidate, default_jobs());
@@ -1286,7 +1444,7 @@ pub(crate) fn select(choice: &ToolchainChoice, cache_root: &Path) -> Selected {
     let registry = ToolchainRegistry::for_cli(Some(cache_root));
     match choice {
         ToolchainChoice::Path(path) => registry.select_path(path),
-        ToolchainChoice::Auto => registry.select_discovered(&[cache_root.to_path_buf()]),
+        ToolchainChoice::Auto => registry.select_discovered(&[ExcludedFolder::cache(cache_root)]),
     }
 }
 
@@ -1314,7 +1472,7 @@ pub struct ToolchainReport {
 /// run.
 pub fn list_toolchains(cache_root: Option<&Path>) -> Vec<ToolchainReport> {
     let registry = ToolchainRegistry::for_cli(cache_root);
-    let excluded: Vec<PathBuf> = cache_root.map(Path::to_path_buf).into_iter().collect();
+    let excluded: Vec<ExcludedFolder> = cache_root.map(ExcludedFolder::cache).into_iter().collect();
     registry.rescan(&excluded, None);
     registry.lock().entries.iter().map(report).collect()
 }
@@ -1441,7 +1599,10 @@ mod tests {
         let problems = registry
             .add_explicit_for(
                 &root.join("g++.exe"),
-                &[PathBuf::from("/elsewhere"), root.clone()],
+                &[
+                    ExcludedFolder::project("/elsewhere"),
+                    ExcludedFolder::project(&root),
+                ],
                 Platform::Windows,
             )
             .unwrap_err();
@@ -1454,7 +1615,11 @@ mod tests {
         );
         assert_eq!(prober.0.load(Ordering::SeqCst), 0);
         let added = registry
-            .add_explicit_for(&root.join("g++.exe"), &[root.join("other")], Platform::Windows)
+            .add_explicit_for(
+                &root.join("g++.exe"),
+                &[ExcludedFolder::project(root.join("other"))],
+                Platform::Windows,
+            )
             .unwrap();
         assert_eq!(added.source, ToolchainSource::Manual);
         assert_eq!(prober.0.load(Ordering::SeqCst), 1);
@@ -1485,6 +1650,7 @@ mod tests {
                 discovered,
                 manual,
                 probed: 0,
+                skipped: Vec::new(),
             },
             &current,
         );
@@ -1576,41 +1742,86 @@ mod tests {
         shared::<DiscoveryScope>();
     }
 
+    /// The build-time check: a compiler below the project's folder is
+    /// inside it, unless the folder is the user's home folder or a root,
+    /// which holds only the files directly in it (07 §7.2).
     #[test]
-    fn inside_means_below_the_folder() {
-        let project = Some(Path::new("/home/ada/game"));
-        assert!(is_inside(Path::new("/home/ada/game/bin/g++"), project));
-        assert!(is_inside(Path::new("/home/ada/game"), project));
-        assert!(!is_inside(Path::new("/home/ada/game2/g++"), project));
-        assert!(!is_inside(Path::new("/usr/bin/g++"), project));
-        assert!(!is_inside(Path::new("/home/ada/game/g++"), None));
+    fn inside_the_project_follows_the_folder_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = b2c_toolchain::paths::canonical(dir.path()).unwrap();
+        let home = root.join("home");
+        let registry = ToolchainRegistry::with_store(
+            None,
+            None,
+            DiscoveryScope::Only(Vec::new()),
+            Arc::new(Counting::default()),
+        )
+        .with_home(Some(home.clone()));
+        let inside =
+            |path: PathBuf, project: Option<&Path>| registry.project_folder(project).holding(&path).is_some();
+        let game = home.join("game");
+        assert!(inside(game.join("bin").join("g++"), Some(&game)));
+        assert!(inside(game.join("g++"), Some(&game)));
+        assert!(!inside(home.join("game2").join("g++"), Some(&game)));
+        assert!(!inside(game.join("g++"), None));
+        // The home folder: only the files directly in it.
+        assert!(inside(home.join("g++"), Some(&home)));
+        assert!(!inside(home.join(".local").join("bin").join("g++"), Some(&home)));
+        // A root: the same.
+        let top = root.ancestors().last().unwrap().to_path_buf();
+        assert!(!inside(root.join("bin").join("g++"), Some(&top)));
+        assert!(inside(top.join("g++"), Some(&top)));
     }
 
     #[test]
-    fn excluded_folders_contain_their_whole_tree_only() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = b2c_toolchain::paths::canonical(dir.path()).unwrap();
-        let game = root.join("game");
-        std::fs::create_dir_all(game.join("tools")).unwrap();
-        let gxx = game.join("tools").join("g++");
-        // Compared in canonical form, also when given through a parent link.
-        let roundabout = game.join("tools").join(std::path::Component::ParentDir);
-        assert_eq!(excluded_folder_of(&gxx, &[roundabout]), Some(game.clone()));
-        assert_eq!(
-            excluded_folder_of(&gxx, std::slice::from_ref(&game)),
-            Some(game.clone())
+    fn refusals_name_the_kind_of_folder() {
+        let path = Path::new("/home/ada/game/g++");
+        let project = inside_excluded(path, ExcludedKind::Project);
+        assert_eq!(project.code.0, codes::BAD_TOOLCHAIN_PATH);
+        assert!(
+            project.message.contains("inside an open project's folder"),
+            "{}",
+            project.message
         );
-        // A folder that does not exist is compared as given.
-        assert_eq!(
-            excluded_folder_of(Path::new("/gone/game/g++"), &[PathBuf::from("/gone/game")]),
-            Some(PathBuf::from("/gone/game"))
+        assert!(project.message.contains(&path.display().to_string()));
+        let cache = inside_excluded(path, ExcludedKind::Cache);
+        assert!(
+            cache.message.contains("inside the build cache"),
+            "{}",
+            cache.message
         );
-        // A sibling whose name starts the same is not inside.
-        assert_eq!(
-            excluded_folder_of(&root.join("game2").join("g++"), std::slice::from_ref(&game)),
-            None
-        );
-        assert_eq!(excluded_folder_of(&gxx, &[]), None);
+        let current = inside_excluded(path, ExcludedKind::CurrentDir);
+        assert!(current.message.contains("started from"), "{}", current.message);
+    }
+
+    #[test]
+    fn skipped_compilers_map_to_the_ipc_reasons() {
+        let skipped = |reason| {
+            skipped_dto(&Skipped {
+                path: PathBuf::from("/real/g++"),
+                found_as: PathBuf::from("/shown/g++"),
+                reason,
+            })
+        };
+        for (reason, expected) in [
+            (
+                SkipReason::Excluded(ExcludedKind::Project),
+                IpcSkipReason::ProjectFolder,
+            ),
+            (
+                SkipReason::Excluded(ExcludedKind::Cache),
+                IpcSkipReason::BuildCache,
+            ),
+            (
+                SkipReason::Excluded(ExcludedKind::CurrentDir),
+                IpcSkipReason::CurrentFolder,
+            ),
+            (SkipReason::NetworkFolder, IpcSkipReason::NetworkFolder),
+        ] {
+            let dto = skipped(reason);
+            assert_eq!(dto.reason, expected);
+            assert_eq!(dto.display_path, "/shown/g++");
+        }
     }
 
     #[test]

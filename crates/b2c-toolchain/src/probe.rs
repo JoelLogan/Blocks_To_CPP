@@ -12,11 +12,20 @@
 //! everything else (hello world, standards, library features, diagnostics
 //! format, sanitizers, hardening, static linking). With g++ 13 on four
 //! cores the whole probe takes about a second.
+//!
+//! A probe in which any invocation timed out says nothing reliable: its
+//! record carries `B2C-T1023` ([`codes::probe_timed_out`]) instead of the
+//! "did not run" or "broken" verdict the missing answers would give, is not
+//! usable, and is not reused ([`Toolchain::is_reusable`]). Callers probe such
+//! a compiler once more with [`ProbeOptions::for_retry`] before they report
+//! it (spec §7.3): security software often holds up the first start of a new
+//! program, and a cold disk cache can slow the first compile down.
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -32,6 +41,9 @@ use crate::target::{GccVersion, Platform, Target, TargetOs};
 
 /// Timeout for each probe invocation (spec §7.3).
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Timeout for each invocation when a compiler whose probe timed out is
+/// probed once more (spec §7.3, [`ProbeOptions::for_retry`]).
+pub const PROBE_RETRY_TIMEOUT: Duration = Duration::from_secs(30);
 /// The oldest supported GCC major version (spec §7.1).
 pub const MIN_GCC_MAJOR: u32 = 11;
 /// Version of the [`Toolchain`] record; cached records with another version
@@ -233,6 +245,22 @@ impl Toolchain {
     pub fn is_current(&self) -> bool {
         self.format == PROBE_FORMAT && self.fingerprint.is_current()
     }
+
+    /// Whether the probe timed out (`B2C-T1023`): the record then says
+    /// nothing reliable about the compiler.
+    pub fn timed_out(&self) -> bool {
+        self.problems
+            .iter()
+            .any(|problem| problem.code.0 == codes::PROBE_TIMED_OUT)
+    }
+
+    /// Whether this record can stand for the compiler without probing it
+    /// again: [`Toolchain::is_current`], and its probe did not time out (a
+    /// probe that timed out is done again the next time the compiler is
+    /// needed).
+    pub fn is_reusable(&self) -> bool {
+        self.is_current() && !self.timed_out()
+    }
 }
 
 /// Settings for [`probe`].
@@ -251,6 +279,19 @@ pub struct ProbeOptions {
     pub jobs: usize,
     /// Stops probing early.
     pub cancel: Option<CancelToken>,
+}
+
+impl ProbeOptions {
+    /// These options for probing a compiler once more after its probe timed
+    /// out (spec §7.3): the same, with a timeout of at least
+    /// [`PROBE_RETRY_TIMEOUT`].
+    #[must_use]
+    pub fn for_retry(&self) -> Self {
+        Self {
+            timeout: self.timeout.max(PROBE_RETRY_TIMEOUT),
+            ..self.clone()
+        }
+    }
 }
 
 impl Default for ProbeOptions {
@@ -332,6 +373,7 @@ pub fn probe(path: &Path, options: &ProbeOptions) -> Result<Toolchain, ProbeErro
         timeout: options.timeout,
         cancel: options.cancel.as_ref(),
         exe_suffix: "",
+        timed_out: AtomicBool::new(false),
     };
     let toolchain = prober.run(fingerprint, options.jobs.max(1));
     if options.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
@@ -348,6 +390,8 @@ struct Prober<'a> {
     timeout: Duration,
     cancel: Option<&'a CancelToken>,
     exe_suffix: &'static str,
+    /// Set when any invocation ran into the timeout.
+    timed_out: AtomicBool,
 }
 
 /// The result of a sanitizer run.
@@ -359,7 +403,18 @@ enum SanitizerRun {
 }
 
 impl Prober<'_> {
+    /// Runs the probe; a probe in which anything timed out is reported as
+    /// timed out ([`mark_timed_out`]).
     fn run(mut self, fingerprint: Fingerprint, jobs: usize) -> Toolchain {
+        let mut toolchain = self.checks(fingerprint, jobs);
+        if self.timed_out.load(Ordering::Relaxed) {
+            mark_timed_out(&mut toolchain, self.timeout);
+        }
+        toolchain
+    }
+
+    /// Both rounds of checks.
+    fn checks(&mut self, fingerprint: Fingerprint, jobs: usize) -> Toolchain {
         let mut toolchain = Toolchain {
             format: PROBE_FORMAT,
             fingerprint,
@@ -398,11 +453,9 @@ impl Prober<'_> {
         };
         let version_output = answer(0).or_else(|| answer(1));
         let Some(version_output) = version_output else {
+            // A question that timed out is reported by `run` instead.
             let reason = match answers.first() {
                 Some(Some(Err(error))) => error.clone(),
-                Some(Some(Ok(captured))) if captured.timed_out => {
-                    format!("it did not answer within {} ms", self.timeout.as_millis())
-                }
                 _ => String::from("it did not report a version"),
             };
             toolchain.problems.push(codes::error(
@@ -628,10 +681,19 @@ impl Prober<'_> {
     fn gxx(&self, args: &[&str]) -> Result<Captured, String> {
         let mut command = self.command(&self.gxx)?;
         command.args(args);
-        run_captured(&command).map_err(|error| match error {
+        let result = run_captured(&command).map_err(|error| match error {
             ProcessError::Spawn { source, .. } => source.to_string(),
             other => other.to_string(),
-        })
+        });
+        self.note_timeout(&result);
+        result
+    }
+
+    /// Remembers an invocation that ran into the timeout.
+    fn note_timeout(&self, result: &Result<Captured, String>) {
+        if matches!(result, Ok(captured) if captured.timed_out) {
+            self.timed_out.store(true, Ordering::Relaxed);
+        }
     }
 
     /// Writes `name.cpp` and returns its file name.
@@ -672,7 +734,9 @@ impl Prober<'_> {
     fn execute(&self, program: &Path, extra_env: &[(&str, &str)]) -> Result<Captured, String> {
         let mut command = self.command(program)?;
         command.envs(extra_env.iter().map(|(name, value)| (*name, *value)));
-        run_captured(&command).map_err(|error| error.to_string())
+        let result = run_captured(&command).map_err(|error| error.to_string());
+        self.note_timeout(&result);
+        result
     }
 
     fn printed_marker(result: &Result<Captured, String>) -> bool {
@@ -799,6 +863,19 @@ const FEATURES: &[(Check, &str, &str)] = &[
         "struct Point { int x; int y; };\nint main() { Point p{.x = 1, .y = 2}; return p.x + p.y - 3; }\n",
     ),
 ];
+
+/// Reports a probe in which an invocation timed out (spec §7.3): the "did
+/// not run" (`B2C-T1003`) and "broken" (`B2C-T1006`) verdicts that missing
+/// answers give are dropped, since nothing is known about them, and
+/// `B2C-T1023` comes first. The verdicts based on answers that did come
+/// (Clang, too old) stay.
+fn mark_timed_out(toolchain: &mut Toolchain, timeout: Duration) {
+    toolchain
+        .problems
+        .retain(|problem| problem.code.0 != codes::NOT_RUNNABLE && problem.code.0 != codes::BROKEN_INSTALL);
+    let timed_out = codes::probe_timed_out(&toolchain.fingerprint.path, timeout);
+    toolchain.problems.insert(0, timed_out);
+}
 
 /// Round 1 checks on the answers: Clang, the GCC version and minimum, the
 /// target and an installed `cc1plus`. Records problems in `toolchain` and
@@ -1102,6 +1179,58 @@ mod tests {
         assert!(toolchain.problems[0].message.contains("GCC 9.4.0"));
     }
 
+    /// Spec §7.3 (W3-12): a GCC that answers the quick questions but whose
+    /// test compiles do not finish in time was reported as a broken
+    /// installation (`B2C-T1006`). It is reported as timed out now.
+    #[cfg(unix)]
+    #[test]
+    fn a_compiler_too_slow_for_its_test_compiles_has_timed_out_not_broken() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("g++");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\ncase \"$1\" in\n  -dumpfullversion|-dumpversion) echo 13.2.0 ;;\n  -dumpmachine) echo x86_64-linux-gnu ;;\n  --version) echo 'g++ (GCC) 13.2.0' ;;\n  -print-prog-name=cc1plus) echo \"$0\" ;;\n  *) exec sleep 30 ;;\nesac\n",
+        )
+        .unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let options = ProbeOptions {
+            timeout: Duration::from_millis(300),
+            jobs: 8,
+            ..ProbeOptions::default()
+        };
+        let toolchain = probe(&fake, &options).unwrap();
+        let codes: Vec<&str> = toolchain.problems.iter().map(|p| p.code.0.as_str()).collect();
+        assert_eq!(codes, [codes::PROBE_TIMED_OUT], "{:?}", toolchain.problems);
+        assert!(toolchain.problems[0].message.contains("timed out"));
+        assert!(toolchain.problems[0].message.contains("within 300 ms"));
+        assert_eq!(toolchain.kind, CompilerKind::Gcc);
+        assert!(toolchain.timed_out());
+        assert!(!toolchain.is_usable());
+        assert!(toolchain.is_current());
+        assert!(!toolchain.is_reusable(), "a timed-out check is done again");
+    }
+
+    #[test]
+    fn a_retry_waits_at_least_thirty_seconds() {
+        let quick = ProbeOptions {
+            timeout: Duration::from_millis(300),
+            jobs: 3,
+            ..ProbeOptions::default()
+        };
+        let retry = quick.for_retry();
+        assert_eq!(retry.timeout, PROBE_RETRY_TIMEOUT);
+        assert_eq!(PROBE_RETRY_TIMEOUT, Duration::from_secs(30));
+        assert_eq!(retry.jobs, 3);
+        let patient = ProbeOptions {
+            timeout: Duration::from_mins(1),
+            ..ProbeOptions::default()
+        };
+        assert_eq!(patient.for_retry().timeout, Duration::from_mins(1));
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_hanging_compiler_times_out() {
@@ -1119,11 +1248,13 @@ mod tests {
         let start = std::time::Instant::now();
         let toolchain = probe(&fake, &options).unwrap();
         assert!(start.elapsed() < Duration::from_secs(10));
-        assert_eq!(toolchain.problems[0].code.0, codes::NOT_RUNNABLE);
+        let codes: Vec<&str> = toolchain.problems.iter().map(|p| p.code.0.as_str()).collect();
+        assert_eq!(codes, [codes::PROBE_TIMED_OUT]);
         assert!(
-            toolchain.problems[0].message.contains("did not answer"),
+            toolchain.problems[0].message.contains("within 300 ms"),
             "{}",
             toolchain.problems[0].message
         );
+        assert!(toolchain.timed_out());
     }
 }

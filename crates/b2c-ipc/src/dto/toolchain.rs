@@ -86,6 +86,35 @@ pub struct Toolchain {
     pub problems: Vec<Diagnostic>,
 }
 
+string_enum! {
+    /// Why discovery skipped a compiler it found
+    /// (`docs/spec/07-toolchain-build-run.md` §7.2).
+    pub enum SkipReason {
+        /// It is inside an open project's folder: a project must never bring
+        /// its own compiler.
+        ProjectFolder = "projectFolder",
+        /// It is inside the build cache.
+        BuildCache = "buildCache",
+        /// It is in the folder the program was started from (the current
+        /// directory).
+        CurrentFolder = "currentFolder",
+        /// It is on a network (UNC) folder.
+        NetworkFolder = "networkFolder",
+    }
+}
+
+/// A compiler discovery found but skipped because of where it is; it is never
+/// run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedToolchain {
+    /// Where it is, for display only: the path it was found as.
+    pub display_path: String,
+    /// Why it was skipped.
+    pub reason: SkipReason,
+}
+
 /// The response of `toolchain_list` and `toolchain_rescan`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -96,6 +125,14 @@ pub struct ToolchainListResponse {
     /// Whether background discovery is still running; a `toolchainsUpdated` app
     /// event follows when it finishes.
     pub discovering: bool,
+    /// The compilers the last discovery skipped because of where they are, in
+    /// discovery order; omitted when there are none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped: Vec<SkippedToolchain>,
+    /// Whether a compiler whose check timed out is being checked once more,
+    /// with a longer timeout; omitted when false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub rechecking: bool,
 }
 
 /// The response of `toolchain_add_dialog`.

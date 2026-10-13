@@ -53,8 +53,9 @@ pub use settings::{
     SettingsNotice, SettingsPatch, SettingsUpdateResponse, ToolchainSettings,
 };
 pub use toolchain::{
-    CppStandard, Distro, Toolchain, ToolchainAddDialogResponse, ToolchainCapabilities, ToolchainListResponse,
-    ToolchainSelectRequest, ToolchainSetupInfo, ToolchainSource,
+    CppStandard, Distro, SkipReason, SkippedToolchain, Toolchain, ToolchainAddDialogResponse,
+    ToolchainCapabilities, ToolchainListResponse, ToolchainSelectRequest, ToolchainSetupInfo,
+    ToolchainSource,
 };
 pub use trust::{
     RestrictedReason, Trust, TrustGetRequest, TrustGrantRequest, TrustResponse, TrustRevokeRequest,

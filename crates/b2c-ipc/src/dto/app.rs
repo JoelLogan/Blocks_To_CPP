@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::dto::{SettingsNotice, Toolchain};
+use crate::dto::{SettingsNotice, SkippedToolchain, Toolchain};
 use crate::ids::Handle;
 use crate::macros::string_enum;
 
@@ -60,12 +60,21 @@ pub enum AppEvent {
         /// unavailable).
         deleted: bool,
     },
-    /// Background toolchain discovery produced a new list.
+    /// Background toolchain discovery produced a new list, or a compiler whose
+    /// check timed out started or finished being checked once more.
     ToolchainsUpdated {
         /// The toolchain list.
         toolchains: Vec<Toolchain>,
         /// Whether discovery is still running.
         discovering: bool,
+        /// The compilers the last discovery skipped because of where they are;
+        /// omitted when there are none.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        skipped: Vec<SkippedToolchain>,
+        /// Whether a compiler whose check timed out is being checked once
+        /// more; omitted when false.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        rechecking: bool,
     },
     /// Settings were reset or read partially when they were loaded.
     SettingsNotice {
