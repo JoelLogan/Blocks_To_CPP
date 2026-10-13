@@ -30,6 +30,7 @@ import { type App, launchApp } from '../support/app';
 import { bringIntoView, visibleCanvas } from '../support/canvas';
 import { centerOn, foldCodePanel } from '../support/editor';
 import { waitFor } from '../support/wait';
+import { requireHookMethods } from './capabilities';
 import { handleId, MAIN_ID, writeBenchProject } from './document';
 import { aimDelta, checkLanding, describePlace, type DragAim, isBlockPlace } from './handle';
 import {
@@ -258,6 +259,7 @@ describe('webview benchmark: dragging in a 5,000-block workspace', () => {
       const handle = handleId(BLOCKS);
       const started = Date.now();
       const app = await launchApp(context, { dialogs: { open: [file] }, recordLongTasks: false });
+      await requireHookMethods(context, app, 'drag');
       await openProjectFile(app, {
         blockId: MAIN_ID,
         code: 'void dragMe()',

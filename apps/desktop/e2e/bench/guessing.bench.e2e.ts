@@ -28,6 +28,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { launchApp } from '../support/app';
 import { NodeIds, print } from '../support/bdm';
 import { REPOSITORY_ROOT } from '../support/env';
+import { requireHookMethods } from './capabilities';
 import {
   deleteBlock,
   SETTLE_MS,
@@ -67,6 +68,7 @@ describe('webview benchmark: the guessing game', () => {
       const file = path.join(folder, 'guessing_game.b2c');
       copyFileSync(path.join(REPOSITORY_ROOT, 'examples', 'guessing_game.b2c'), file);
       const app = await launchApp(context, { dialogs: { open: [file] }, recordLongTasks: false });
+      await requireHookMethods(context, app, 'guessing');
       await openProjectFile(app, {
         blockId: GUESSING_MAIN_ID,
         code: 'Guess a number',

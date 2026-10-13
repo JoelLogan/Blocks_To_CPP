@@ -21,6 +21,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { launchApp } from '../support/app';
 import { foldCodePanel } from '../support/editor';
+import { requireHookMethods } from './capabilities';
 import { MAIN_ID, writeBenchProject } from './document';
 import { type SpanTimes, spanSummary, timedClick } from './interaction';
 import { openProjectFile } from './project';
@@ -58,6 +59,7 @@ describe('webview benchmark: selecting blocks at 1,000 blocks', () => {
       folders.push(folder);
       const file = writeBenchProject(folder, { blocks: BLOCKS, dragHandle: false });
       const app = await launchApp(context, { dialogs: { open: [file] }, recordLongTasks: false });
+      await requireHookMethods(context, app, 'select');
       await openProjectFile(app, { blockId: MAIN_ID, code: 'value_0', timeout: OPEN_TIMEOUT_MS });
       await foldCodePanel(app);
 

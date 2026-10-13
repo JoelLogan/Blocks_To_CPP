@@ -111,6 +111,13 @@ The benchmarks turn off the end-to-end harness's long-task recorder (`launchApp`
 `recordLongTasks: false`, see [`../README.md`](../README.md)): they time the page's tasks
 themselves.
 
+Right after the launch, each benchmark that uses the test hook checks that the app's hook has the
+methods it calls ([`capabilities.ts`](capabilities.ts) lists them per benchmark; cold start calls
+none). A missing method fails the benchmark at once, naming the method, unless
+`B2C_BENCH_SKIP_NOTE` (an absolute path) is set: then the benchmark is skipped and writes why into
+that file. The A/B job sets it for the base's runs, whose build may be older than the benchmarks
+([A/B runs](#ab-runs)). A benchmark that starts to call another hook method adds it to its list.
+
 ## The generated document
 
 [`document.ts`](document.ts) here and
@@ -161,7 +168,8 @@ python3 tools/bench-compare.py compare --os linux --results-dir /tmp/b2c-bench \
   --history history.json --accepted apps/desktop/e2e/bench/accepted.json \
   [--update-history history.json --run-id ID --commit SHA]
 python3 tools/bench-compare.py ab --os linux --base /tmp/ab/base --head /tmp/ab/head \
-  --accepted apps/desktop/e2e/bench/accepted.json --accepted-base base-accepted.json
+  --accepted apps/desktop/e2e/bench/accepted.json --accepted-base base-accepted.json \
+  --runs /tmp/ab/ab-runs.tsv
 python3 tools/bench-compare.py check-accepted apps/desktop/e2e/bench/accepted.json
 python3 tools/bench-compare.py --self-test
 ```
@@ -170,35 +178,46 @@ python3 tools/bench-compare.py --self-test
   the medians of the last 5 runs in the history that have the metric in the same unit.
 - A gated metric more than 10% worse fails the run (exit status 1). Until a metric has 5 baselines,
   or for an ungated metric, the comparison is only reported. Unusable input exits with status 2.
-- The table goes to standard output and, with `--summary`, to the job summary.
+- The table goes to standard output (as UTF-8 on every system) and, with `--summary`, to the job
+  summary.
 - With `--update-history`, a run without an unaccepted regression is added to the history, which
   keeps the last 5 runs. The nightly job keeps the history of each system in the Actions cache
   (`bench-history-<system>-<run>`), and only a scheduled run (always on the default branch) in which
   every benchmark ran and none regressed unaccepted is kept. A manual run compares without changing
   it.
 
-### Intended slowdowns: `accepted.json`
+### Redefinitions and intended slowdowns: `accepted.json`
 
-A change that makes a gated metric slower on purpose (a definition that measures more, a feature
-that costs time) records it in [`accepted.json`](accepted.json), one entry per metric and system:
+A change that makes a gated metric slower on purpose records it in [`accepted.json`](accepted.json)
+(format version 2), one entry per metric and system, of one of two kinds:
+
+- `redefined`: the benchmark now measures something else (a definition that measures more), so the
+  old baselines no longer compare;
+- `accepted`: an intended slowdown (a feature that costs time).
 
 ```json
 {
   "metric": "webview.edit-1000.p95",
   "system": "linux",
   "commit": "<the commit whose performance is accepted: 7 to 40 lower-case hex digits>",
+  "kind": "redefined | accepted",
   "reason": "One line: why the slowdown is intended"
 }
 ```
 
-- The first nightly run that sees an entry, and has its metric, does not fail on that metric: the
-  metric's history restarts with that run (its older medians are dropped) and the history notes the
-  entry as applied, so it applies once. The metric is then reported until it has 5 new baselines.
-- An A/B run does not fail on a metric that the head's file accepts and the base's file does not:
-  the change under test brings the entry. For an entry added together with the change, `commit` is
-  the pull request's head commit (the A/B run measures it merged into the base).
-- Entries stay as a record; one taken out of the file is also forgotten by the history. The
-  history file (format version 2) lists the applied entries; version 1 files are still read.
+- The first nightly run that sees an entry of either kind, and has its metric, does not fail on that
+  metric: the metric's history restarts with that run (its older medians are dropped) and the
+  history notes the entry as applied, so it applies once. The metric is then reported until it has
+  5 new baselines.
+- An A/B run does not fail on a metric that the head's file accepts (`accepted`) and the base's file
+  does not: the change under test brings the entry. For an entry added together with the change,
+  `commit` is the pull request's head commit (the A/B run measures it merged into the base).
+- A redefinition never waives an A/B difference: the head's benchmarks measure both builds, so both
+  medians follow the new definition, and a difference between them is the change's.
+- Every entry needs its kind (`check-accepted` refuses a file without, and so do the nightly and
+  A/B comparisons; only an A/B run's base file may still be format version 1, without kinds).
+- Entries stay as a record; one taken out of the file is also forgotten by the history. The history
+  file (format version 2) lists the applied entries; version 1 files are still read.
 
 ### A/B runs
 
@@ -232,8 +251,24 @@ The jobs build the app under test from each commit, and then on one runner per s
 (base, head, head, base: 2 rounds of 5 samples, 10 per side), and `bench-compare.py ab` compares
 the head's medians with the base's at 10%. Each round starts the selection benchmarks where the
 round before stopped (`B2C_BENCH_OFFSET`, the same for both builds), so each side clicks the same
-10 targets as a nightly run, all 8 scopes of `select-1000` among them. The head's harness measures
-both builds, so a benchmark that needs a newer test hook can be compared only once the base has it.
+10 targets as a nightly run, all 8 scopes of `select-1000` among them.
+
+Each benchmark runs in a Vitest call of its own, and one that cannot be compared does not stop the
+others:
+
+- The head's harness measures both builds, so a benchmark that calls a test-hook method the base's
+  build lacks cannot run on the base (`scrollCanvasBy` came with the W2-1 core, so the selection
+  benchmarks need a base from after it). The base's runs set `B2C_BENCH_SKIP_NOTE`, so such a
+  benchmark is skipped there, with the reason, and not run on the head either.
+- A benchmark that fails is not started again; the head still runs it in the round where the base
+  failed, so that a failure of the head's build is found too. Each run's artifacts go into
+  `$B2C_E2E_ARTIFACTS/<side>/round-<n>/<benchmark>/`, and the job shows the logs of a failed run.
+
+Only the benchmarks that ran in every round on both sides are compared (the others' results files
+move to `left-out/`). `ab-rounds.sh` records what happened to each benchmark in `ab-runs.tsv`, and
+`bench-compare.py ab --runs` lists the skipped and failed ones under the table. The job fails on a
+gated regression or on a benchmark that failed on the head; a skip, or a failure on the base, is
+reported only.
 
 A change expected to alter a gated metric runs the A/B job on its pull request. W4-2, W5-1 and W3-11
 of the M2 polish wave merge only with a green A/B run attached, or once their metrics have at least
@@ -245,7 +280,8 @@ radius (W5-1) by `drag-5000.frame-p95`, and the console's screen-reader output (
 AB_XVFB=1 apps/desktop/e2e/bench/ab-rounds.sh /tmp/base/blocks2cpp-desktop \
   /tmp/head/blocks2cpp-desktop /tmp/ab preview.bench select.bench guessing.bench console.bench \
   drag.bench
-python3 tools/bench-compare.py ab --os linux --base /tmp/ab/base --head /tmp/ab/head
+python3 tools/bench-compare.py ab --os linux --base /tmp/ab/base --head /tmp/ab/head \
+  --runs /tmp/ab/ab-runs.tsv
 ```
 
 Results files (`blocks2cpp/bench-results`, one per producer), the history

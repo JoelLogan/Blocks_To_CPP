@@ -14,17 +14,25 @@ The benchmark gate of docs/spec/09-quality-and-delivery.md §9.2, in two ways:
   compared with base's at the same threshold, so a pull request is gated at
   once, also for metrics that have no history yet.
 
-An intended slowdown is recorded in the acceptance file
+A change of a gated metric that is meant is recorded in the acceptance file
 (apps/desktop/e2e/bench/accepted.json): an entry {metric, system, commit,
-reason}. The first nightly run that sees an entry does not fail on that
+kind, reason}, of one of two kinds:
+
+* "redefined": the benchmark now measures something else (a new definition
+  of the metric), so the old baselines no longer compare;
+* "accepted": an intended slowdown (a feature that costs time).
+
+The first nightly run that sees an entry of either kind does not fail on that
 metric; its history restarts from that run (the older medians of the metric
 are dropped, and the history notes the entry as applied, so later runs gate
 against the new baselines once there are 5). An A/B run does not fail on a
-metric that the head's acceptance file accepts and the base's does not yet.
-The commit names the change whose performance is accepted (for an entry added
-with the change itself, the pull request's head commit, which its A/B run
-measured merged into the base); together with the metric and the system it
-identifies the entry.
+metric that the head's acceptance file accepts ("accepted") and the base's
+does not yet. A redefinition never waives an A/B difference: both builds are
+measured with the head's benchmarks, so their medians compare under the new
+definition. The commit names the change whose performance is accepted (for an
+entry added with the change itself, the pull request's head commit, which its
+A/B run measured merged into the base); together with the metric and the
+system it identifies the entry.
 
 Inputs and outputs are JSON files with a format tag:
 
@@ -47,11 +55,21 @@ Inputs and outputs are JSON files with a format tag:
                  "medians": {"<metric>": {"value": 1234.5, "unit": "ms"}}}],
        "accepted": [{"metric": "<metric>", "commit": "<sha>"}]}
 
-* acceptances (``blocks2cpp/bench-accepted``):
+* acceptances (``blocks2cpp/bench-accepted``); version 1 (entries without a
+  kind) is read only as the base's file of an A/B run, where the kinds do not
+  matter:
 
-      {"format": "blocks2cpp/bench-accepted", "formatVersion": 1,
+      {"format": "blocks2cpp/bench-accepted", "formatVersion": 2,
        "accepted": [{"metric": "webview.edit-1000.p95", "system": "linux",
-                     "commit": "<7 to 40 hex digits>", "reason": "..."}]}
+                     "commit": "<7 to 40 hex digits>",
+                     "kind": "redefined" | "accepted", "reason": "..."}]}
+
+* the A/B rounds' record (``blocks2cpp/ab-runs``, written by
+  apps/desktop/e2e/bench/ab-rounds.sh): a tab-separated text file, the line
+  ``blocks2cpp/ab-runs<TAB>1`` and then one line per benchmark:
+
+      <benchmark>  compared|skipped|failed  <base's failed round or 0>
+      <head's failed round or 0>  <why it was skipped, or nothing>
 
 Commands (run from anywhere; paths are taken as given):
 
@@ -71,24 +89,31 @@ Commands (run from anywhere; paths are taken as given):
         runs.
 
     bench-compare.py ab --os linux --base PATH... --head PATH... \\
-        [--accepted head-accepted.json --accepted-base base-accepted.json] [--summary summary.md]
+        [--accepted head-accepted.json --accepted-base base-accepted.json] \\
+        [--runs ab-runs.tsv] [--summary summary.md]
         Compares the head's metrics with the base's: each PATH is a results
         file or a folder searched for *.json at any depth (one folder per
         alternating run), and a metric's samples are added up over a side's
-        files.
+        files. With --runs (the record of ab-rounds.sh), the benchmarks that
+        were skipped or failed are listed after the table, a side may have no
+        results files (nothing was compared), and a benchmark that failed on
+        the head fails the comparison.
 
     bench-compare.py check-accepted accepted.json
-        Checks an acceptance file.
+        Checks an acceptance file (formatVersion 2: every entry has a kind).
 
     bench-compare.py --self-test
         Checks this script against synthetic fixtures (equal, +9% and +11%
         medians, too few baselines, too few samples, malformed input, history
-        updates, acceptances restarting a history, A/B comparisons, the
-        criterion conversion).
+        updates, acceptances and redefinitions restarting a history, A/B
+        comparisons with both kinds and with skipped and failed benchmarks,
+        the criterion conversion, UTF-8 output).
 
-Exit status: 0 when nothing regressed (or only informational comparisons
-were made), 1 on a regression of a gated metric, 2 when the input is not
-usable (the message says why).
+The output is UTF-8 on every system (a Windows console or pipe would
+otherwise take the locale's code page). Exit status: 0 when nothing regressed
+(or only informational comparisons were made), 1 on a regression of a gated
+metric or, for ab with --runs, a benchmark that failed on the head, 2 when
+the input is not usable (the message says why).
 """
 
 from __future__ import annotations
@@ -98,8 +123,10 @@ import datetime as dt
 import io
 import json
 import math
+import os
 import re
 import statistics
+import subprocess
 import sys
 import tempfile
 from contextlib import redirect_stderr, redirect_stdout
@@ -109,11 +136,17 @@ from pathlib import Path
 RESULTS_FORMAT = "blocks2cpp/bench-results"
 HISTORY_FORMAT = "blocks2cpp/bench-history"
 ACCEPTED_FORMAT = "blocks2cpp/bench-accepted"
-# Results and acceptance files; a history is written as HISTORY_VERSION and
-# read in any of HISTORY_VERSIONS (version 1 has no applied acceptances).
+RUNS_FORMAT = "blocks2cpp/ab-runs"
+# Results files; a history is written as HISTORY_VERSION and read in any of
+# HISTORY_VERSIONS (version 1 has no applied acceptances).
 FORMAT_VERSION = 1
 HISTORY_VERSION = 2
 HISTORY_VERSIONS = (1, 2)
+# Acceptance files: version 2 gives every entry a kind; version 1 (no kinds)
+# is read only as an A/B run's base file.
+ACCEPTED_VERSION = 2
+ACCEPTED_VERSIONS = (1, 2)
+RUNS_VERSION = 1
 
 # The defaults of the gate (09 §9.2).
 DEFAULT_THRESHOLD = 0.10
@@ -133,6 +166,10 @@ MAX_REASON = 200
 # The results files of one side of an A/B comparison (several runs of several
 # benchmarks).
 MAX_AB_FILES = 512
+# The A/B rounds' record: benchmarks, rounds and the length of a skip's reason.
+MAX_RUNS = 64
+MAX_ROUNDS = 20
+MAX_RUN_NOTE = 300
 COMMIT = re.compile(r"^[0-9a-f]{7,40}$")
 SYSTEMS = ("linux", "windows", "macos")
 UNITS = ("ns", "us", "ms", "s")
@@ -140,6 +177,8 @@ DIRECTIONS = ("lower", "higher")
 METRIC_NAME = re.compile(r"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
 MAX_METRIC_NAME = 64
 BENCH_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+# A webview benchmark as ab-rounds.sh names it: its file's name without .e2e.ts.
+AB_BENCH_NAME = re.compile(r"^[a-z][a-z0-9-]{0,31}\.bench$")
 RUN_FIELD = re.compile(r"^[0-9A-Za-z._-]{1,64}$")
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
@@ -150,7 +189,14 @@ RUN_KEYS = {"run", "commit", "date", "medians"}
 MEDIAN_KEYS = {"value", "unit"}
 APPLIED_KEYS = {"metric", "commit"}
 ACCEPTED_KEYS = {"format", "formatVersion", "accepted"}
-ACCEPTANCE_KEYS = {"metric", "system", "commit", "reason"}
+ACCEPTANCE_KEYS = {1: {"metric", "system", "commit", "reason"}, 2: {"metric", "system", "commit", "kind", "reason"}}
+# The kinds of acceptance entries: a new definition of the metric restarts its
+# nightly history only; an intended slowdown also passes an A/B run.
+REDEFINED = "redefined"
+ACCEPTED = "accepted"
+KINDS = (REDEFINED, ACCEPTED)
+# What ab-rounds.sh says happened to a benchmark.
+RUN_OUTCOMES = ("compared", "skipped", "failed")
 
 
 class InputError(Exception):
@@ -198,6 +244,8 @@ class Acceptance:
     metric: str
     system: str
     commit: str
+    # REDEFINED or ACCEPTED; None in a version 1 file (read only as an A/B base's).
+    kind: str | None
     reason: str
 
     @property
@@ -223,7 +271,9 @@ class Comparison:
     baselines: int
     baseline: float | None
     change: float | None
-    status: str  # new, informational, ok, regression, worse-ungated, accepted
+    # new, informational, ok, regression, worse-ungated, accepted (both modes),
+    # redefined (compare only), missing (ab only)
+    status: str
     # The A/B comparison's base: its sample count (0 when the base lacks the metric).
     base_samples: int = 0
 
@@ -411,11 +461,21 @@ def commit_id(value: object, where: str) -> str:
     return value
 
 
-def read_accepted(path: Path) -> list[Acceptance]:
-    """The entries of an acceptance file (apps/desktop/e2e/bench/accepted.json)."""
+def read_accepted(path: Path, *, kinds: bool = True) -> list[Acceptance]:
+    """The entries of an acceptance file (apps/desktop/e2e/bench/accepted.json).
+
+    With `kinds` (every use but an A/B run's base file), the file must give
+    each entry its kind (formatVersion 2); without, a version 1 file is read
+    too, and its entries have no kind.
+    """
     where = f"acceptance file {path}"
     raw = read_json(path, "The acceptance file")
-    format_header(raw, ACCEPTED_FORMAT, where)
+    version = format_header(raw, ACCEPTED_FORMAT, where, ACCEPTED_VERSIONS)
+    if kinds and version < ACCEPTED_VERSION:
+        raise InputError(
+            f"{where} has formatVersion {version}, whose entries have no kind: set formatVersion "
+            f"{ACCEPTED_VERSION} and give each entry a kind ({' or '.join(repr(kind) for kind in KINDS)})"
+        )
     value = exact_keys(raw, ACCEPTED_KEYS, where)
     items = value["accepted"]
     if not isinstance(items, list) or len(items) > MAX_ACCEPTED:
@@ -424,7 +484,10 @@ def read_accepted(path: Path) -> list[Acceptance]:
     seen: set[tuple[str, str, str]] = set()
     for index, item in enumerate(items):
         entry_where = f"{where}, entry {index}"
-        entry = exact_keys(item, ACCEPTANCE_KEYS, entry_where)
+        entry = exact_keys(item, ACCEPTANCE_KEYS[version], entry_where)
+        kind = entry.get("kind")
+        if version >= ACCEPTED_VERSION and kind not in KINDS:
+            raise InputError(f"{entry_where}: kind must be one of {', '.join(KINDS)}")
         reason = entry["reason"]
         if (
             not isinstance(reason, str)
@@ -437,6 +500,7 @@ def read_accepted(path: Path) -> list[Acceptance]:
             metric=metric_name(entry["metric"], entry_where),
             system=system_name(entry["system"], entry_where),
             commit=commit_id(entry["commit"], entry_where),
+            kind=kind,
             reason=reason,
         )
         identity = (acceptance.metric, acceptance.system, acceptance.commit)
@@ -494,12 +558,13 @@ def compare_metric(
     *,
     threshold: float,
     baseline_runs: int,
-    accepted: bool = False,
+    restart: str | None = None,
 ) -> Comparison:
     """Compares one metric with the median of its last `baseline_runs` baselines.
 
-    With `accepted` (an acceptance this history has not applied yet), the run
-    restarts the metric's history: its change is shown, and it never fails.
+    With `restart` (the kind, REDEFINED or ACCEPTED, of an acceptance entry
+    this history has not applied yet), the run restarts the metric's history:
+    its change is shown, and it never fails.
     """
     values = [
         run.medians[metric.name].value
@@ -507,11 +572,11 @@ def compare_metric(
         if metric.name in run.medians and run.medians[metric.name].unit == metric.unit
     ][-baseline_runs:]
     if not values:
-        return Comparison(metric, 0, None, None, "accepted" if accepted else "new")
+        return Comparison(metric, 0, None, None, restart or "new")
     baseline = statistics.median(values)
     change, worse = relative_change(metric.median, baseline, metric, threshold)
-    if accepted:
-        status = "accepted"
+    if restart is not None:
+        status = restart
     elif len(values) < baseline_runs:
         status = "informational"
     elif not worse:
@@ -530,6 +595,7 @@ STATUS_TEXT = {
     "regression": "**regression**",
     "worse-ungated": "worse (not gated)",
     "accepted": "accepted: the history restarts here",
+    "redefined": "redefined: the history restarts here",
 }
 
 AB_STATUS_TEXT = {
@@ -538,7 +604,7 @@ AB_STATUS_TEXT = {
     "ok": "ok",
     "regression": "**regression**",
     "worse-ungated": "worse (not gated)",
-    "accepted": "accepted (accepted.json)",
+    "accepted": "accepted: an intended slowdown (accepted.json)",
 }
 
 
@@ -565,7 +631,8 @@ def summary_markdown(
         "",
         f"Median of each metric's samples against the median of the last {baseline_runs} nightly "
         f"runs on the default branch; a gated metric more than {threshold:.0%} worse fails, unless "
-        "apps/desktop/e2e/bench/accepted.json accepts it (docs/spec/09-quality-and-delivery.md §9.2).",
+        "apps/desktop/e2e/bench/accepted.json newly redefines it or accepts it as an intended slowdown "
+        "(docs/spec/09-quality-and-delivery.md §9.2).",
         "",
         "| Metric | Gated | Samples | Median | Baseline (runs) | Change | Result |",
         "| --- | --- | ---: | ---: | ---: | ---: | --- |",
@@ -606,11 +673,11 @@ def write_summary(arguments: argparse.Namespace, text: str) -> None:
             summary.write(text)
 
 
-def acceptances_for(path: str | None, system: str) -> list[Acceptance]:
-    """The entries of an acceptance file for `system` (none without a file)."""
+def acceptances_for(path: str | None, system: str, *, kinds: bool = True) -> list[Acceptance]:
+    """The entries of an acceptance file for `system` (none without a file); see read_accepted."""
     if path is None:
         return []
-    return [entry for entry in read_accepted(Path(path)) if entry.system == system]
+    return [entry for entry in read_accepted(Path(path), kinds=kinds) if entry.system == system]
 
 
 def command_compare(arguments: argparse.Namespace) -> int:
@@ -662,14 +729,19 @@ def command_compare(arguments: argparse.Namespace) -> int:
     # An entry applies to the first run that has its metric; the history notes it then.
     pending = [entry for entry in entries if entry.key not in history.applied]
     applied_now = [entry for entry in pending if entry.metric in metrics]
-    applying = {entry.metric: entry for entry in applied_now}
+    # Either kind restarts the history; the table says which (an intended slowdown
+    # when any of the metric's new entries is one).
+    restarts: dict[str, str] = {}
+    for entry in applied_now:
+        if restarts.get(entry.metric) != ACCEPTED:
+            restarts[entry.metric] = entry.kind or ACCEPTED
     comparisons = [
         compare_metric(
             metrics[name],
             history,
             threshold=arguments.threshold,
             baseline_runs=arguments.baseline_runs,
-            accepted=name in applying,
+            restart=restarts.get(name),
         )
         for name in sorted(metrics)
     ]
@@ -677,11 +749,12 @@ def command_compare(arguments: argparse.Namespace) -> int:
         system, comparisons, threshold=arguments.threshold, baseline_runs=arguments.baseline_runs
     )
     for entry in sorted(applied_now, key=lambda entry: (entry.metric, entry.commit)):
-        text += f"\nAccepted `{entry.metric}` ({entry.commit}): {entry.reason}"
+        what = "Redefined" if entry.kind == REDEFINED else "Accepted"
+        text += f"\n{what} `{entry.metric}` ({entry.commit}): {entry.reason}"
     waiting = sorted({entry.metric for entry in pending if entry.metric not in metrics})
     if waiting:
         text += f"\nAccepted, waiting for a run that has the metric: {', '.join(f'`{name}`' for name in waiting)}."
-    if applying or waiting:
+    if applied_now or waiting:
         text += "\n"
     write_summary(arguments, text)
 
@@ -727,8 +800,11 @@ def update_history(
 # --- A/B comparison ------------------------------------------------------------
 
 
-def results_paths(values: list[str], what: str) -> list[Path]:
-    """The results files of one side: files as given, folders searched at any depth."""
+def results_paths(values: list[str], what: str, *, allow_empty: bool = False) -> list[Path]:
+    """The results files of one side: files as given, folders searched at any depth.
+
+    With `allow_empty` (the rounds' record says what ran), a side may have none.
+    """
     paths: list[Path] = []
     for value in values:
         path = Path(value)
@@ -738,7 +814,7 @@ def results_paths(values: list[str], what: str) -> list[Path]:
             paths.append(path)
         else:
             raise InputError(f"{what} {path} is neither a results file nor a folder")
-    if not paths:
+    if not paths and not allow_empty:
         raise InputError(f"{what} has no results files (*.json)")
     if len(paths) > MAX_AB_FILES:
         raise InputError(f"{what} has {len(paths)} results files; at most {MAX_AB_FILES} are read")
@@ -799,17 +875,115 @@ def compare_ab(base: Metric | None, head: Metric | None, *, threshold: float, ac
     return Comparison(head, 0, base.median, change, status, base_samples=len(base.samples))
 
 
-def ab_markdown(system: str, comparisons: list[Comparison], *, threshold: float) -> str:
+@dataclass(frozen=True)
+class BenchRun:
+    """What the A/B rounds did with one benchmark (a line of ab-rounds.sh's record)."""
+
+    bench: str
+    outcome: str  # compared, skipped or failed (RUN_OUTCOMES)
+    # The rounds in which the base's and the head's runs failed (0: none).
+    base_failed: int
+    head_failed: int
+    # Why the base could not run it (skipped only).
+    note: str
+
+
+def read_runs(path: Path) -> list[BenchRun]:
+    """The record of the A/B rounds (``blocks2cpp/ab-runs``, see the module's docstring)."""
+    where = f"the A/B rounds' record {path}"
+    try:
+        size = path.stat().st_size
+    except OSError as error:
+        raise InputError(f"{where} cannot be read: {error.strerror}") from error
+    if size > MAX_FILE_BYTES:
+        raise InputError(f"{where} is {size} bytes; at most {MAX_FILE_BYTES} are read")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as error:
+        raise InputError(f"{where} cannot be read: {error}") from error
+    if not lines or lines[0] != f"{RUNS_FORMAT}\t{RUNS_VERSION}":
+        raise InputError(f"{where} does not start with the line '{RUNS_FORMAT}<tab>{RUNS_VERSION}'")
+    if len(lines) - 1 > MAX_RUNS:
+        raise InputError(f"{where} has {len(lines) - 1} benchmarks; at most {MAX_RUNS} are read")
+    runs: list[BenchRun] = []
+    for number, line in enumerate(lines[1:], start=2):
+        line_where = f"{where}, line {number}"
+        fields = line.split("\t")
+        if len(fields) != 5:
+            raise InputError(f"{line_where} has {len(fields)} tab-separated fields, not 5")
+        bench, outcome, base_failed, head_failed, note = fields
+        if not AB_BENCH_NAME.match(bench):
+            raise InputError(f"{line_where}: {bench!r} is not a benchmark name (such as preview.bench)")
+        if any(run.bench == bench for run in runs):
+            raise InputError(f"{line_where} names {bench} again")
+        if outcome not in RUN_OUTCOMES:
+            raise InputError(f"{line_where}: the outcome must be one of {', '.join(RUN_OUTCOMES)}")
+        rounds = []
+        for value in (base_failed, head_failed):
+            if not re.fullmatch(r"[0-9]{1,2}", value) or int(value) > MAX_ROUNDS:
+                raise InputError(f"{line_where}: a failed round must be a number from 0 to {MAX_ROUNDS}")
+            rounds.append(int(value))
+        if len(note) > MAX_RUN_NOTE or any(ord(c) < 0x20 or ord(c) == 0x7F for c in note):
+            raise InputError(f"{line_where}: the note must be one line of at most {MAX_RUN_NOTE} characters")
+        failed = rounds[0] > 0 or rounds[1] > 0
+        if (outcome == "failed") != failed or (outcome == "skipped") != (note != ""):
+            raise InputError(
+                f"{line_where}: a failed benchmark (and only one) names the round it failed in, "
+                "and a skipped one (and only one) says why"
+            )
+        runs.append(BenchRun(bench, outcome, rounds[0], rounds[1], note))
+    return runs
+
+
+def markdown_text(text: str) -> str:
+    """Plain text for a Markdown line: what Markdown or HTML would read differently is escaped."""
+    escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return re.sub(r"([\\`*_\[\]|#])", r"\\\1", escaped)
+
+
+def runs_markdown(runs: list[BenchRun]) -> list[str]:
+    """The lines on the benchmarks that were not compared (none when all were)."""
+    lines: list[str] = []
+    for run in runs:
+        if run.outcome == "skipped":
+            lines.append(f"- `{run.bench}`: skipped, as the base build cannot run it: {markdown_text(run.note)}.")
+        elif run.outcome == "failed":
+            parts = []
+            if run.base_failed:
+                parts.append(f"failed on the base in round {run.base_failed}")
+            if run.head_failed:
+                parts.append(f"**failed on the head** in round {run.head_failed}")
+            elif run.base_failed:
+                parts.append("the head ran it without failing")
+            lines.append(f"- `{run.bench}`: {'; '.join(parts)}. Not compared; the job's log has its output.")
+    if lines:
+        lines = ["Not compared:", "", *lines, ""]
+    return lines
+
+
+def ab_markdown(
+    system: str,
+    comparisons: list[Comparison],
+    *,
+    threshold: float,
+    runs: list[BenchRun] | None = None,
+    redefined: frozenset[str] = frozenset(),
+) -> str:
     lines = [
         f"### A/B benchmarks ({system})",
         "",
         "Median of the head's samples against the median of the base's, measured in alternating "
         f"runs on one runner; a gated metric more than {threshold:.0%} worse fails, unless the head's "
-        "apps/desktop/e2e/bench/accepted.json newly accepts it (docs/spec/09-quality-and-delivery.md §9.2).",
+        "apps/desktop/e2e/bench/accepted.json newly accepts it as an intended slowdown "
+        "(docs/spec/09-quality-and-delivery.md §9.2).",
         "",
-        "| Metric | Gated | Base median (samples) | Head median (samples) | Change | Result |",
-        "| --- | --- | ---: | ---: | ---: | --- |",
     ]
+    if not comparisons:
+        lines.append("No benchmark was compared.")
+        lines.append("")
+    else:
+        lines.append("| Metric | Gated | Base median (samples) | Head median (samples) | Change | Result |")
+        lines.append("| --- | --- | ---: | ---: | ---: | --- |")
     for comparison in comparisons:
         metric = comparison.metric
         if comparison.status == "missing":
@@ -827,8 +1001,22 @@ def ab_markdown(system: str, comparisons: list[Comparison], *, threshold: float)
             f"| `{metric.name}` | {'yes' if metric.gate else 'no'} | {base} | {head} | {change} | "
             f"{AB_STATUS_TEXT[comparison.status]} |"
         )
-    lines.append("")
+    if comparisons:
+        lines.append("")
+    for comparison in comparisons:
+        if comparison.failed and comparison.metric.name in redefined:
+            lines.append(
+                f"`{comparison.metric.name}` has a new entry in accepted.json, but of the kind "
+                "`redefined`: a new definition restarts the nightly history and never waives an A/B "
+                "difference, as both builds are measured with the head's benchmarks."
+            )
+            lines.append("")
+    if runs is not None:
+        lines.extend(runs_markdown(runs))
     lines.append(regressions_line(comparisons))
+    head_failed = [run.bench for run in runs or [] if run.head_failed]
+    if head_failed:
+        lines.append(f"Failed on the head: {', '.join(f'`{bench}`' for bench in head_failed)}.")
     return "\n".join(lines) + "\n"
 
 
@@ -837,9 +1025,11 @@ def command_ab(arguments: argparse.Namespace) -> int:
     check_gate_options(arguments)
     if arguments.accepted_base is not None and arguments.accepted is None:
         raise InputError("--accepted-base needs --accepted (the head's acceptance file)")
+    runs = None if arguments.runs is None else read_runs(Path(arguments.runs))
     sides = {}
     for what, values in (("base", arguments.base), ("head", arguments.head)):
-        metrics = merged_metrics(results_paths(values, what), system, what)
+        paths = results_paths(values, what, allow_empty=runs is not None)
+        metrics = merged_metrics(paths, system, what)
         for metric in metrics.values():
             if len(metric.samples) < arguments.min_samples:
                 raise InputError(
@@ -848,20 +1038,31 @@ def command_ab(arguments: argparse.Namespace) -> int:
                 )
         sides[what] = metrics
     base, head = sides["base"], sides["head"]
-    # What the head accepts and the base did not: the change under test brings it.
-    known = {entry.key for entry in acceptances_for(arguments.accepted_base, system)}
-    new = {entry.metric for entry in acceptances_for(arguments.accepted, system) if entry.key not in known}
+    # What the head newly brings (the base's file lacks the entry): an intended slowdown passes;
+    # a new definition does not, since the head's benchmarks measure both builds.
+    known = {entry.key for entry in acceptances_for(arguments.accepted_base, system, kinds=False)}
+    new = [entry for entry in acceptances_for(arguments.accepted, system) if entry.key not in known]
+    accepted = {entry.metric for entry in new if entry.kind == ACCEPTED}
+    redefined = frozenset(entry.metric for entry in new if entry.kind == REDEFINED)
     comparisons = [
-        compare_ab(base.get(name), head.get(name), threshold=arguments.threshold, accepted=name in new)
+        compare_ab(base.get(name), head.get(name), threshold=arguments.threshold, accepted=name in accepted)
         for name in sorted(set(base) | set(head))
     ]
-    write_summary(arguments, ab_markdown(system, comparisons, threshold=arguments.threshold))
-    return 1 if any(comparison.failed for comparison in comparisons) else 0
+    write_summary(
+        arguments,
+        ab_markdown(system, comparisons, threshold=arguments.threshold, runs=runs, redefined=redefined),
+    )
+    head_failed = any(run.head_failed for run in runs or [])
+    return 1 if head_failed or any(comparison.failed for comparison in comparisons) else 0
 
 
 def command_check_accepted(arguments: argparse.Namespace) -> int:
     entries = read_accepted(Path(arguments.file))
-    print(f"{arguments.file}: {len(entries)} accepted change{'' if len(entries) == 1 else 's'}.")
+    redefined = sum(1 for entry in entries if entry.kind == REDEFINED)
+    print(
+        f"{arguments.file}: {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
+        f"({redefined} redefined, {len(entries) - redefined} accepted)."
+    )
     return 0
 
 
@@ -975,6 +1176,9 @@ def parser() -> argparse.ArgumentParser:
     ab.add_argument("--head", nargs="+", required=True, help="the head's results files or folders")
     ab.add_argument("--accepted", help="the head's acceptance file")
     ab.add_argument("--accepted-base", help="the base's acceptance file (its entries are not new)")
+    ab.add_argument(
+        "--runs", help="the A/B rounds' record (ab-rounds.sh's ab-runs.tsv): skipped and failed benchmarks"
+    )
     ab.add_argument("--summary", help="append the Markdown table to this file")
     ab.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
     ab.add_argument("--min-samples", type=int, default=DEFAULT_MIN_SAMPLES)
@@ -982,6 +1186,19 @@ def parser() -> argparse.ArgumentParser:
     check = commands.add_parser("check-accepted", help="check an acceptance file")
     check.add_argument("file", help="the acceptance file")
     return root
+
+
+def utf8_output() -> None:
+    """Writes standard output and error as UTF-8 on every system.
+
+    Python encodes them in the locale's code page when they are not a UTF-8
+    terminal (cp1252 on GitHub's Windows runners), which turned the summary's
+    "§9.2" into a byte the job's log could not show, and would fail on a
+    character the code page lacks.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
 
 
 def main(argv: list[str]) -> int:
@@ -1053,8 +1270,14 @@ def _history(path: Path, system: str, medians: list[dict[str, float]], unit: str
     return path
 
 
-def _accepted(path: Path, entries: list[dict]) -> Path:
-    write_json(path, {"format": ACCEPTED_FORMAT, "formatVersion": FORMAT_VERSION, "accepted": entries})
+def _accepted(path: Path, entries: list[dict], version: int = ACCEPTED_VERSION) -> Path:
+    write_json(path, {"format": ACCEPTED_FORMAT, "formatVersion": version, "accepted": entries})
+    return path
+
+
+def _runs(path: Path, lines: list[str]) -> Path:
+    """An A/B rounds' record with these lines (tab-separated fields) after its header."""
+    path.write_text("".join(f"{line}\n" for line in [f"{RUNS_FORMAT}\t{RUNS_VERSION}", *lines]), encoding="utf-8")
     return path
 
 
@@ -1238,11 +1461,11 @@ def self_test() -> int:
         accepted = _accepted(
             root / "accepted.json",
             [
-                {"metric": "m.time", "system": "linux", "commit": commit, "reason": "Intended: a test"},
-                {"metric": "m.time", "system": "windows", "commit": commit, "reason": "Other system"},
+                {"metric": "m.time", "system": "linux", "commit": commit, "kind": "accepted", "reason": "Intended: a test"},
+                {"metric": "m.time", "system": "windows", "commit": commit, "kind": "accepted", "reason": "Other system"},
             ],
         )
-        expect("an acceptance file is checked", ["check-accepted", str(accepted)], 0, "2 accepted changes")
+        expect("an acceptance file is checked", ["check-accepted", str(accepted)], 0, "2 entries (0 redefined, 2 accepted)")
         two = _history(root / "two.json", "linux", [{"m.time": 100.0, "m.other": 5.0}] * 5)
         both = _results(root / "both.json", "linux", [_metric("m.time", 150.0), _metric("m.other", 5.0)])
         restarted = root / "restarted.json"
@@ -1284,7 +1507,7 @@ def self_test() -> int:
             compare(
                 both, two, "--accepted",
                 str(_accepted(root / "windows-only.json", [
-                    {"metric": "m.time", "system": "windows", "commit": commit, "reason": "Windows only"},
+                    {"metric": "m.time", "system": "windows", "commit": commit, "kind": "accepted", "reason": "Windows only"},
                 ])),
             ),
             1,
@@ -1296,7 +1519,7 @@ def self_test() -> int:
             compare(
                 equal, five, "--accepted",
                 str(_accepted(root / "absent.json", [
-                    {"metric": "m.absent", "system": "linux", "commit": commit, "reason": "Later"},
+                    {"metric": "m.absent", "system": "linux", "commit": commit, "kind": "accepted", "reason": "Later"},
                 ])),
                 "--update-history", str(waiting), "--run-id", "201", "--commit", "abc",
             ),
@@ -1323,8 +1546,8 @@ def self_test() -> int:
             compare(
                 both, two, "--accepted",
                 str(_accepted(root / "two-entries.json", [
-                    {"metric": "m.time", "system": "linux", "commit": commit, "reason": "First"},
-                    {"metric": "m.time", "system": "linux", "commit": other, "reason": "Second"},
+                    {"metric": "m.time", "system": "linux", "commit": commit, "kind": "accepted", "reason": "First"},
+                    {"metric": "m.time", "system": "linux", "commit": other, "kind": "accepted", "reason": "Second"},
                 ])),
                 "--update-history", str(both_entries), "--run-id", "203", "--commit", "abc",
             ),
@@ -1341,12 +1564,12 @@ def self_test() -> int:
         write_json(old, old_value)
         expect("a version 1 history is read", compare(equal, old), 0, "100.0 ms (5)", "| ok |")
         bad_entries = [
-            ({"metric": "m.time", "system": "linux", "commit": "XYZ", "reason": "r"}, "commit must be"),
-            ({"metric": "m.time", "system": "linux", "commit": commit, "reason": "two\nlines"}, "one line"),
-            ({"metric": "m.time", "system": "linux", "commit": commit, "reason": " "}, "one line"),
-            ({"metric": "m.time", "system": "beos", "commit": commit, "reason": "r"}, "os must be"),
-            ({"metric": "M", "system": "linux", "commit": commit, "reason": "r"}, "not a metric name"),
-            ({"metric": "m.time", "system": "linux", "commit": commit, "reason": "r", "x": 1}, "unknown keys"),
+            ({"metric": "m.time", "system": "linux", "commit": "XYZ", "kind": "accepted", "reason": "r"}, "commit must be"),
+            ({"metric": "m.time", "system": "linux", "commit": commit, "kind": "accepted", "reason": "two\nlines"}, "one line"),
+            ({"metric": "m.time", "system": "linux", "commit": commit, "kind": "accepted", "reason": " "}, "one line"),
+            ({"metric": "m.time", "system": "beos", "commit": commit, "kind": "accepted", "reason": "r"}, "os must be"),
+            ({"metric": "M", "system": "linux", "commit": commit, "kind": "accepted", "reason": "r"}, "not a metric name"),
+            ({"metric": "m.time", "system": "linux", "commit": commit, "kind": "accepted", "reason": "r", "x": 1}, "unknown keys"),
         ]
         for index, (entry, message) in enumerate(bad_entries):
             expect(
@@ -1355,12 +1578,68 @@ def self_test() -> int:
                 2,
                 message,
             )
-        twice_entry = {"metric": "m.time", "system": "linux", "commit": commit, "reason": "r"}
+        twice_entry = {"metric": "m.time", "system": "linux", "commit": commit, "kind": "accepted", "reason": "r"}
         expect(
             "a repeated acceptance is refused",
             ["check-accepted", str(_accepted(root / "twice.json", [twice_entry, twice_entry]))],
             2,
             "repeats m.time on linux",
+        )
+
+        # --- The kinds of acceptance entries: every entry of a version 2 file has one. ---
+        kindless = {"metric": "m.time", "system": "linux", "commit": commit, "reason": "r"}
+        expect(
+            "an acceptance without a kind is refused",
+            ["check-accepted", str(_accepted(root / "kindless.json", [kindless]))],
+            2,
+            "is missing kind",
+        )
+        expect(
+            "an unknown kind is refused",
+            ["check-accepted", str(_accepted(root / "bad-kind.json", [{**kindless, "kind": "waived"}]))],
+            2,
+            "kind must be one of redefined, accepted",
+        )
+        version1 = _accepted(root / "version-1.json", [kindless], version=1)
+        expect(
+            "a version 1 acceptance file (no kinds) is refused where kinds count",
+            ["check-accepted", str(version1)],
+            2,
+            "whose entries have no kind",
+        )
+        expect(
+            "a version 1 acceptance file is refused for the nightly comparison",
+            compare(equal, five, "--accepted", str(version1)),
+            2,
+            "whose entries have no kind",
+        )
+        redefinition = _accepted(
+            root / "redefined.json",
+            [{"metric": "m.time", "system": "linux", "commit": commit, "kind": "redefined", "reason": "Measures more"}],
+        )
+        expect("a redefinition is checked", ["check-accepted", str(redefinition)], 0, "1 entry (1 redefined, 0 accepted)")
+        redefined_history = root / "redefined-history.json"
+        expect(
+            "history: a redefinition restarts the history like an acceptance",
+            compare(
+                both, two, "--accepted", str(redefinition), "--update-history", str(redefined_history),
+                "--run-id", "204", "--commit", "abc",
+            ),
+            0,
+            "+50.0%",
+            "redefined: the history restarts here",
+            f"Redefined `m.time` ({commit}): Measures more",
+            "No gated metric regressed.",
+        )
+        kept = read_history(redefined_history, "linux")
+        if [run.run for run in kept.runs if "m.time" in run.medians] != ["204"] or kept.applied != [("m.time", commit)]:
+            failures.append(f"redefinition: runs {[run.run for run in kept.runs]}, applied {kept.applied}")
+        expect(
+            "history: an applied redefinition is not applied again",
+            compare(_results(root / "after-redefined.json", "linux", [_metric("m.time", 200.0)]), redefined_history,
+                    "--accepted", str(redefinition)),
+            0,
+            "informational: fewer than 5 baselines",
         )
 
         # --- A/B: head against base, samples added up over alternating runs. ---
@@ -1401,7 +1680,7 @@ def self_test() -> int:
             "A/B: the head's new acceptance lets it pass",
             ab(base100, head111, "--accepted", str(accepted), "--accepted-base", str(root / "none.json")),
             0,
-            "accepted (accepted.json)",
+            "accepted: an intended slowdown (accepted.json)",
         )
         expect(
             "A/B: an acceptance the base already has does not",
@@ -1478,6 +1757,148 @@ def self_test() -> int:
         if "### A/B benchmarks (linux)" not in ab_summary.read_text(encoding="utf-8"):
             failures.append("the A/B summary file was not written")
 
+        # --- A/B and the kinds: only an intended slowdown waives a difference. ---
+        none = _accepted(root / "none-base.json", [])
+        expect(
+            "A/B: a new redefinition does not waive a regression",
+            ab(base100, head111, "--accepted", str(redefinition), "--accepted-base", str(none)),
+            1,
+            "**regression**",
+            "of the kind `redefined`",
+            "Regressed: `m.time`",
+        )
+        expect(
+            "A/B: a new redefinition and a passing metric",
+            ab(base100, ab_side("head105", halves("m.time", 105.0)), "--accepted", str(redefinition),
+               "--accepted-base", str(none)),
+            0,
+            "| ok |",
+        )
+        expect(
+            "A/B: the base's version 1 file (no kinds) is read, and its entries are not new",
+            ab(base100, head111, "--accepted", str(accepted), "--accepted-base", str(version1)),
+            1,
+            "**regression**",
+        )
+        expect(
+            "A/B: an intended slowdown that the base's version 1 file lacks is waived",
+            ab(base100, head111, "--accepted", str(accepted),
+               "--accepted-base", str(_accepted(root / "version-1-empty.json", [], version=1))),
+            0,
+            "accepted: an intended slowdown (accepted.json)",
+        )
+        expect(
+            "A/B: the head's file must give kinds",
+            ab(base100, head111, "--accepted", str(version1), "--accepted-base", str(none)),
+            2,
+            "whose entries have no kind",
+        )
+
+        # --- A/B with the rounds' record: skipped and failed benchmarks. ---
+        hook_note = "the app's end-to-end hook has no scrollCanvasBy, which the select benchmark needs"
+        head100 = ab_side("head100-runs", halves("m.time", 100.0))
+        expect(
+            "A/B runs: a skip and a failure on the base are reported, and pass",
+            ab(base100, head100, "--runs", str(_runs(root / "runs-base.tsv", [
+                "preview.bench\tcompared\t0\t0\t",
+                f"select.bench\tskipped\t0\t0\t{hook_note}",
+                "drag.bench\tfailed\t1\t0\t",
+            ]))),
+            0,
+            "| `m.time` | yes | 100.0 ms (10) | 100.0 ms (10) | +0.0% | ok |",
+            "Not compared:",
+            f"- `select.bench`: skipped, as the base build cannot run it: {hook_note}.",
+            "- `drag.bench`: failed on the base in round 1; the head ran it without failing. Not compared",
+            "No gated metric regressed.",
+        )
+        expect(
+            "A/B runs: a benchmark that failed on the head fails the comparison",
+            ab(base100, head100, "--runs", str(_runs(root / "runs-head.tsv", [
+                "preview.bench\tcompared\t0\t0\t",
+                "console.bench\tfailed\t0\t2\t",
+                "drag.bench\tfailed\t1\t1\t",
+            ]))),
+            1,
+            "- `console.bench`: **failed on the head** in round 2. Not compared",
+            "- `drag.bench`: failed on the base in round 1; **failed on the head** in round 1. Not compared",
+            "No gated metric regressed.",
+            "Failed on the head: `console.bench`, `drag.bench`.",
+        )
+        expect(
+            "A/B runs: a regression still fails beside the record",
+            ab(base100, head111, "--runs", str(_runs(root / "runs-ok.tsv", ["preview.bench\tcompared\t0\t0\t"]))),
+            1,
+            "Regressed: `m.time`",
+        )
+        empty_base = root / "ab" / "empty-base"
+        empty_head = root / "ab" / "empty-head"
+        empty_base.mkdir(parents=True)
+        empty_head.mkdir(parents=True)
+        all_skipped = _runs(root / "runs-skipped.tsv", [f"select.bench\tskipped\t0\t0\t{hook_note}"])
+        expect(
+            "A/B runs: nothing to compare when every benchmark was skipped passes",
+            ab(empty_base, empty_head, "--runs", str(all_skipped)),
+            0,
+            "No benchmark was compared.",
+            "skipped, as the base build cannot run it",
+        )
+        expect(
+            "A/B: without the record, a side without results is refused",
+            ab(empty_base, empty_head),
+            2,
+            "has no results files",
+        )
+        expect(
+            "A/B runs: a note is shown as plain text",
+            ab(empty_base, empty_head, "--runs", str(_runs(root / "runs-markdown.tsv", [
+                "select.bench\tskipped\t0\t0\tno <b>`x`</b> | *y*",
+            ]))),
+            0,
+            r"no &lt;b&gt;\`x\`&lt;/b&gt; \| \*y\*",
+        )
+        bad_runs = [
+            (["preview.bench\tcompared\t0\t0"], "not 5"),
+            (["Preview.bench\tcompared\t0\t0\t"], "not a benchmark name"),
+            (["preview\tcompared\t0\t0\t"], "not a benchmark name"),
+            (["preview.bench\tdone\t0\t0\t"], "the outcome must be one of"),
+            (["preview.bench\tfailed\t0\t0\t"], "names the round it failed in"),
+            (["preview.bench\tcompared\t1\t0\t"], "names the round it failed in"),
+            (["preview.bench\tskipped\t0\t0\t"], "says why"),
+            (["preview.bench\tcompared\t0\t0\tnote"], "says why"),
+            (["preview.bench\tfailed\t21\t0\t"], "from 0 to 20"),
+            (["preview.bench\tfailed\t-1\t0\t"], "from 0 to 20"),
+            (["preview.bench\tskipped\t0\t0\ttwo\x07bells"], "one line"),
+            (["preview.bench\tskipped\t0\t0\t" + "x" * 301], "one line"),
+            (["preview.bench\tcompared\t0\t0\t", "preview.bench\tcompared\t0\t0\t"], "names preview.bench again"),
+        ]
+        for index, (lines, message) in enumerate(bad_runs):
+            expect(
+                f"A/B runs: a malformed record ({message}) is refused",
+                ab(base100, head100, "--runs", str(_runs(root / f"bad-runs-{index}.tsv", lines))),
+                2,
+                message,
+            )
+        headless = root / "runs-headless.tsv"
+        headless.write_text("preview.bench\tcompared\t0\t0\t\n", encoding="utf-8")
+        expect("A/B runs: a record without its header is refused", ab(base100, head100, "--runs", str(headless)), 2,
+               "does not start with the line")
+        expect("A/B runs: a missing record is refused", ab(base100, head100, "--runs", str(root / "no-runs.tsv")), 2,
+               "cannot be read")
+
+        # --- The output is UTF-8 whatever the locale's code page (Windows runners: cp1252). ---
+        environment = {name: value for name, value in os.environ.items() if not name.startswith("PYTHON")}
+        environment["PYTHONIOENCODING"] = "cp1252"
+        utf8 = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), *ab(base100, head100)],
+            capture_output=True,
+            env=environment,
+            check=False,
+        )
+        if utf8.returncode != 0 or "§9.2".encode("utf-8") not in utf8.stdout:
+            failures.append(
+                f"UTF-8 output: exit status {utf8.returncode}, output {utf8.stdout[:400]!r} {utf8.stderr[:400]!r}"
+            )
+
     if failures:
         print("The bench-compare self-test failed:")
         for failure in failures:
@@ -1488,4 +1909,5 @@ def self_test() -> int:
 
 
 if __name__ == "__main__":
+    utf8_output()
     sys.exit(main(sys.argv[1:]))

@@ -25,6 +25,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { type App, launchApp } from '../support/app';
 import { NodeIds, print } from '../support/bdm';
 import { foldCodePanel, showCodePanel } from '../support/editor';
+import { requireHookMethods } from './capabilities';
 import { MAIN_ID, writeBenchProject } from './document';
 import {
   deleteBlock,
@@ -102,6 +103,7 @@ describe('webview benchmark: the live preview and edits at 1,000 blocks', () => 
       folders.push(folder);
       const file = writeBenchProject(folder, { blocks: 1_000, dragHandle: false });
       const app = await launchApp(context, { dialogs: { open: [file] }, recordLongTasks: false });
+      await requireHookMethods(context, app, 'preview');
       await openProjectFile(app, { blockId: MAIN_ID, code: 'value_0', timeout: OPEN_TIMEOUT_MS });
 
       // The preview pipeline's own task: folded, the C++ panel's rendering is not part of it.

@@ -29,6 +29,7 @@ import { clickTestId } from '../support/ui';
 import { waitFor } from '../support/wait';
 import { newEmptyProject, repeat } from '../specs/flows/lib/project';
 import { BUILD_TIMEOUT_MS, waitForToolchain } from '../specs/flows/lib/ui';
+import { requireHookMethods } from './capabilities';
 import { type SpanTimes, spanSummary, type TimedRun, timedRun } from './interaction';
 import { RUN_OUTPUT_SCRIPT, type RunOutput } from './page';
 import { benchSamples, writeMetric } from './results';
@@ -99,6 +100,7 @@ describe('webview benchmark: a program’s output in the console', () => {
     async (context) => {
       const samples = benchSamples();
       const app = await launchApp(context, { recordLongTasks: false });
+      await requireHookMethods(context, app, 'console');
       await waitForToolchain(app);
       const mainId = await newEmptyProject(app);
       const ids = new NodeIds('console');

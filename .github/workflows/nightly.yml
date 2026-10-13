@@ -14,9 +14,10 @@
 #   selecting blocks at 1,000 blocks, the guessing game's selections and edits, a program's
 #   output in the console, and dragging in a 5,000-block workspace. tools/bench-compare.py
 #   compares the medians with the baseline (the last 5 scheduled runs on this system, kept in the
-#   Actions cache) and fails at more than 10% worse; until 5 runs are kept it only reports. A
-#   slowdown recorded in apps/desktop/e2e/bench/accepted.json restarts that metric's history
-#   instead of failing. Pull requests are gated by the A/B job (bench-ab-pr.yml).
+#   Actions cache) and fails at more than 10% worse; until 5 runs are kept it only reports. An
+#   entry of apps/desktop/e2e/bench/accepted.json, a new definition of a metric or an intended
+#   slowdown, restarts that metric's history instead of failing. Pull requests are gated by the
+#   A/B job (bench-ab-pr.yml).
 # The full OSV scan of the default branch runs daily in osv-scanner.yml and is not repeated here.
 name: Nightly
 
@@ -900,8 +901,9 @@ jobs:
           restore-keys: bench-history-${{ matrix.system }}-
 
       # Fails at more than 10% worse on a gated metric once it has 5 baselines; otherwise only
-      # reports. A metric the acceptance file newly accepts does not fail, and its history
-      # restarts with this run. The history file gets this run only when nothing else regressed.
+      # reports. A metric the acceptance file newly lists (redefined or accepted) does not fail, and
+      # its history restarts with this run. The history file gets this run only when nothing else
+      # regressed.
       - name: Compare with the baseline
         if: ${{ !cancelled() }}
         shell: bash
