@@ -22,8 +22,9 @@ are dropped, and the history notes the entry as applied, so later runs gate
 against the new baselines once there are 5). An A/B run does not fail on a
 metric that the head's acceptance file accepts and the base's does not yet.
 The commit names the change whose performance is accepted (for an entry added
-with the change itself, the head commit its A/B run measured); together with
-the metric and the system it identifies the entry.
+with the change itself, the pull request's head commit, which its A/B run
+measured merged into the base); together with the metric and the system it
+identifies the entry.
 
 Inputs and outputs are JSON files with a format tag:
 

@@ -11,7 +11,11 @@
 #
 # Started by:
 # - the `bench-ab` label on a pull request (when it is added, and on every push to the pull
-#   request while it has the label): base and head are the pull request's;
+#   request while it has the label). The head is the pull request merged into its base branch
+#   (the merge commit GitHub makes for the event, github.sha) and the base is that commit's first
+#   parent, the base branch it was merged into: the two differ by the pull request's changes only,
+#   so what landed on the base branch after the pull request branched off counts for neither, and
+#   the head's acceptance file is the merged one;
 # - by hand, with the base and head refs, the benchmarks and the systems.
 name: Bench A/B
 
@@ -71,7 +75,8 @@ jobs:
       (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'bench-ab'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions: {}
+    permissions:
+      contents: read # read the pull request's merge commit and its parents
     outputs:
       base: ${{ steps.plan.outputs.base }}
       head: ${{ steps.plan.outputs.head }}
@@ -79,11 +84,22 @@ jobs:
       apps: ${{ steps.plan.outputs.apps }}
       systems: ${{ steps.plan.outputs.systems }}
     steps:
+      # The merge commit of a pull request event (the event's default ref) with its parents, for
+      # their IDs; one small file of its tree is enough.
+      - name: Check out the pull request's merge commit
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: merge
+          fetch-depth: 2
+          sparse-checkout: .node-version
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Check the inputs and plan the jobs
         id: plan
         env:
           EVENT: ${{ github.event_name }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           RUN_SHA: ${{ github.sha }}
@@ -94,8 +110,19 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT" = "pull_request" ]; then
-            base=$PR_BASE
-            head=$PR_HEAD
+            # The head is the pull request merged into its base branch, the base that branch: they
+            # differ by the pull request only (the header above).
+            if [ "$(git -C merge rev-parse HEAD)" != "$RUN_SHA" ]; then
+              echo "::error::The checkout is not the event's merge commit $RUN_SHA"
+              exit 1
+            fi
+            head=$RUN_SHA
+            base=$(git -C merge rev-parse --verify 'HEAD^1')
+            merged=$(git -C merge rev-parse --verify 'HEAD^2' 2> /dev/null || true)
+            if [ "$merged" != "$PR_HEAD" ]; then
+              echo "::error::The merge commit $RUN_SHA does not merge the pull request's head $PR_HEAD (it merges '$merged'); push again"
+              exit 1
+            fi
             metrics="preview select guessing"
             systems=both
           else
@@ -149,7 +176,11 @@ jobs:
             echo "### A/B plan"
             echo
             echo "- Base: \`$base\`"
-            echo "- Head: \`$head\`"
+            if [ "$EVENT" = "pull_request" ]; then
+              echo "- Head: \`$head\` (the pull request's \`$PR_HEAD\` merged into the base)"
+            else
+              echo "- Head: \`$head\`"
+            fi
             echo "- Benchmarks: \`${filters[*]}\`"
             echo "- Systems: $systems; $AB_ROUNDS rounds of $AB_SAMPLES samples per side"
           } >> "$GITHUB_STEP_SUMMARY"

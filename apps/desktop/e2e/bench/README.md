@@ -176,7 +176,7 @@ that costs time) records it in [`accepted.json`](accepted.json), one entry per m
   entry as applied, so it applies once. The metric is then reported until it has 5 new baselines.
 - An A/B run does not fail on a metric that the head's file accepts and the base's file does not:
   the change under test brings the entry. For an entry added together with the change, `commit` is
-  the head commit that the A/B run measured.
+  the pull request's head commit (the A/B run measures it merged into the base).
 - Entries stay as a record; one taken out of the file is also forgotten by the history. The
   history file (format version 2) lists the applied entries; version 1 files are still read.
 
@@ -186,11 +186,16 @@ The A/B job ([`bench-ab.yml`](../../../../.github/workflows/bench-ab.yml)) gates
 at once, also for metrics that have no history yet. It runs when the `bench-ab` label is added to a
 pull request (and on each push while it has the label), or by hand with a base and a head ref, the
 benchmarks (`preview`, `select`, `guessing`, `cold-start`, `drag`; by default the first three) and
-the systems (both, Linux or Windows). It builds the app under test from each ref, and then on one
-runner per system [`ab-rounds.sh`](ab-rounds.sh) runs the head's benchmarks against both builds in
-alternating runs (base, head, head, base: 2 rounds of 5 samples, 10 per side), and `bench-compare.py
-ab` compares the head's medians with the base's at 10%. The head's harness measures both builds, so
-a benchmark that needs a newer test hook can be compared only once the base has it.
+the systems (both, Linux or Windows). On a pull request the head is the pull request merged into
+its base branch (the merge commit GitHub makes for it) and the base is that branch, the merge
+commit's first parent: the two builds differ by the pull request's changes only, so commits that
+landed on the base branch after the pull request branched off count for neither side, and the
+head's `accepted.json` is the merged file. It builds the app under test from each ref, and then on
+one runner per system [`ab-rounds.sh`](ab-rounds.sh) runs the head's benchmarks against both builds
+in alternating runs (base, head, head, base: 2 rounds of 5 samples, 10 per side), and
+`bench-compare.py ab` compares the head's medians with the base's at 10%. The head's harness
+measures both builds, so a benchmark that needs a newer test hook can be compared only once the
+base has it.
 
 A change expected to alter a gated metric runs the A/B job on its pull request. W4-2, W5-1 and W3-11
 of the M2 polish wave merge only with a green A/B run attached, or once their metrics have at least

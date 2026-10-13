@@ -188,7 +188,8 @@ Details of each level as M2 sets them up:
     keeps, and the benchmarks report each span's time per edit or click
     beside their metrics; the E2E hook gives each span's latest duration.
   * A change expected to alter a gated metric runs the A/B benchmark job on
-    its pull request (`bench-ab.yml`): base and head are built and measured
+    its pull request (`bench-ab.yml`): the head (the pull request merged
+    into its base branch) and the base (that branch) are built and measured
     in alternating runs on one runner, at least 10 samples each, and the
     head's medians are compared with the base's at the same 10%. An intended
     slowdown is recorded in `apps/desktop/e2e/bench/accepted.json` with its
