@@ -7,9 +7,15 @@
  * Without a build of the compiler core these tests are skipped, unless B2C_REQUIRE_WASM is set
  * (as in CI), in which case a missing build fails them.
  */
-import { CoreError, type CoreWasm } from '@blocks2cpp/b2c-core-wasm';
+import {
+  type BdmDocument,
+  CoreError,
+  type CoreWasm,
+  type JsonValue,
+} from '@blocks2cpp/b2c-core-wasm';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { EditorHandle } from '../../app/editor-types';
 import { useAppStore } from '../../app/store';
 import { projectFixture } from '../../app/testing/fixtures';
 import { NEWER_FORMAT_CODE } from './errors';
@@ -80,6 +86,28 @@ async function openFile(text: string, handle = HANDLE_B, fileName = 'game.b2c'):
 /** Marks the open project as changed (as the live preview would after an edit). */
 function makeDirty(): void {
   useAppStore.getState().actions.updateProject({ dirty: true });
+}
+
+/** An editor that shows `currentDocument` and does nothing else. */
+function stubEditor(currentDocument: () => BdmDocument): EditorHandle {
+  return {
+    currentDocument,
+    loadDocument: () => undefined,
+    selectBlock: () => undefined,
+    updateProjectInfo: () => undefined,
+    undo: () => undefined,
+    redo: () => undefined,
+    workspace: undefined as never,
+  };
+}
+
+/** `doc` with tooling data nested `depth` levels deep, past the loader's limit (B2C-E0104). */
+function nestedTooDeeply(doc: BdmDocument, depth = 200): BdmDocument {
+  let value: JsonValue = 'deep';
+  for (let level = 0; level < depth; level++) {
+    value = [value];
+  }
+  return { ...doc, 'x-ext': { nested: value } };
 }
 
 /** `text` with one key written twice, which the loader refuses (B2C-E0105). */
@@ -637,16 +665,25 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       expect(harness.ipc.projectSave).not.toHaveBeenCalled();
     });
 
+    it('refuses to save a canvas that goes past a limit, naming it rather than a bug', async () => {
+      await openFile(HELLO_TEXT, HANDLE_A);
+      const deep = nestedTooDeeply(project().document);
+      harness.setEditor(stubEditor(() => deep));
+      const saving = harness.feature.lifecycle.save();
+      const alert = await closeAlert(harness.dialogs);
+      expect(await saving).toBe(false);
+      expect(alert.options.message).toBe(
+        'The project was not saved. Blocks are nested more deeply than a project allows (B2C-E0104). Undo the last change (Ctrl+Z), or move some of the innermost blocks into a function.',
+      );
+      expect(alert.options.message).not.toContain('bug');
+      expect(harness.ipc.projectSave).not.toHaveBeenCalled();
+    });
+
     it('saves what the editor shows', async () => {
       await openFile(HELLO_TEXT, HANDLE_A);
       const shown = structuredClone(project().document);
       shown.project.name = 'From the canvas';
-      harness.setEditor({
-        currentDocument: () => shown,
-        loadDocument: () => undefined,
-        selectBlock: () => undefined,
-        workspace: undefined as never,
-      });
+      harness.setEditor(stubEditor(() => shown));
       harness.ipc.projectSave.mockResolvedValueOnce({
         savedAt: '2026-10-05T10:42:00Z',
         hash: 'f'.repeat(64),
@@ -658,14 +695,11 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
     it('does not save when the editor cannot read its blocks', async () => {
       await openFile(HELLO_TEXT, HANDLE_A);
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
-      harness.setEditor({
-        currentDocument: () => {
+      harness.setEditor(
+        stubEditor(() => {
           throw new Error('broken canvas');
-        },
-        loadDocument: () => undefined,
-        selectBlock: () => undefined,
-        workspace: undefined as never,
-      });
+        }),
+      );
       const saving = harness.feature.lifecycle.save();
       const alert = await closeAlert(harness.dialogs);
       expect(await saving).toBe(false);

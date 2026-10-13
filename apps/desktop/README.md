@@ -49,7 +49,10 @@ project, build, run, toolchain, settings, trust and recovery services:
 - **Window**: the toolbar (the `≡` main menu, project name and `•`, Debug/Release, ► Run, ■ Stop,
   Build, Settings), the docks (resizable by pointer and keyboard, collapsible), the status bar, and
   the run gate (`runGate.ts`) that explains why Run and Build are held back. The main menu
-  (`layout/MainMenu.tsx`) lists only the project commands a feature has registered.
+  (`layout/MainMenu.tsx`) lists only the commands something has registered; its _Undo_ and
+  _Redo_ are enabled from the block editor's undo and redo stacks. The project name
+  (`layout/ProjectTitle.tsx`) is a button that renames the project in place and provides
+  `project.rename`; the editor applies the name (`EditorHandle.updateProjectInfo`).
 - **Window banners** (`banners.tsx`): features register banners with `registerBanner`; `App`
   shows them under the toolbar in a polite live region. The analysis feature
   (`src/features/analysis/`) adds one while the latest change could not be checked
@@ -60,7 +63,10 @@ project, build, run, toolchain, settings, trust and recovery services:
   (`dialogs.beforeModal()`), and when a full-window page replaces the editor
   (`blocklyPopupsPlugin`).
 - **Shortcuts** (`shortcuts.ts`): `F5` Run, `Shift+F5` Stop, `Ctrl+B` Build, `Ctrl+S` Save,
-  everywhere except in a dialog or inside an element marked `data-b2c-shortcuts="off"`. The
+  everywhere except in a dialog or inside an element marked `data-b2c-shortcuts="off"`; `Ctrl+Z`
+  and `Ctrl+Y` (or `Ctrl+Shift+Z`) undo and redo the block editor's changes (`edit.undo`,
+  `edit.redo`) while it is shown, except in text fields, Blockly's own areas (Blockly handles
+  them there) and the console while a program runs. The
   reload keys (`Ctrl+R`, `Ctrl+Shift+R`, `Ctrl+F5`) are cancelled everywhere, and the webview's
   own context menu (which offers _Reload_) appears only over editable text, the console and
   selected text.

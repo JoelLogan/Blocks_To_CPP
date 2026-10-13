@@ -1,13 +1,14 @@
 /**
  * The toolbar's main menu: it lists only registered commands (and the project items only with a
  * project), follows the WAI-ARIA menu button keyboard pattern, runs the chosen command and passes
- * axe-core.
+ * axe-core. *Undo* and *Redo* are enabled from the block editor's undo and redo stacks.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { expectNoAxeViolations } from '../../test/axe';
 import { type CommandId, type CommandRegistry, createCommandRegistry } from '../commands';
+import type { EditorHandle } from '../editor-types';
 import { resetAppStore, useAppStore } from '../store';
 import { projectFixture } from '../testing/fixtures';
 import { MainMenu } from './MainMenu';
@@ -31,13 +32,28 @@ function registerAll(ids: readonly CommandId[] = ALL): void {
   }
 }
 
-function renderMenu() {
+function renderMenu(editor: () => EditorHandle | null = () => null) {
   return render(
     <header>
-      <MainMenu registry={registry} />
+      <MainMenu registry={registry} editor={editor} />
       <button type="button">Elsewhere</button>
     </header>,
   );
+}
+
+/** An editor whose undo and redo stacks hold `undo` and `redo` events. */
+function editorWithHistory(undo: number, redo: number): EditorHandle {
+  return {
+    workspace: {
+      getUndoStack: () => Array.from({ length: undo }),
+      getRedoStack: () => Array.from({ length: redo }),
+    },
+  } as unknown as EditorHandle;
+}
+
+/** Whether the menu item `name` is disabled. */
+function isDisabled(name: string): boolean {
+  return screen.getByRole('menuitem', { name }).getAttribute('aria-disabled') === 'true';
 }
 
 function menuButton(): HTMLElement {
@@ -174,6 +190,98 @@ describe('the main menu', () => {
     await vi.waitFor(() => {
       expect(error).toHaveBeenCalled();
     });
+  });
+
+  it('lists Rename project…, Undo and Redo with a project once their commands exist', () => {
+    registerAll([...ALL, 'project.rename', 'edit.undo', 'edit.redo']);
+    renderMenu();
+    fireEvent.click(menuButton());
+    expect(itemNames()).toEqual(['New project…', 'Open…']);
+    fireEvent.click(menuButton());
+
+    act(() => {
+      useAppStore.getState().actions.setProject(projectFixture());
+    });
+    fireEvent.click(menuButton());
+    expect(itemNames()).toEqual([
+      'New project…',
+      'Open…',
+      'SaveCtrl+S',
+      'Save as…',
+      'Rename project…',
+      'UndoCtrl+Z',
+      'RedoCtrl+Y',
+      'Close project',
+    ]);
+    expect(screen.getAllByRole('separator')).toHaveLength(3);
+    expect(screen.getByRole('menuitem', { name: 'Undo' }).getAttribute('aria-keyshortcuts')).toBe(
+      'Control+Z',
+    );
+    expect(screen.getByRole('menuitem', { name: 'Redo' }).getAttribute('aria-keyshortcuts')).toBe(
+      'Control+Y Control+Shift+Z',
+    );
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename project…' }));
+    expect(ran).toEqual(['project.rename']);
+  });
+
+  it('enables Undo and Redo from the editor’s history while the editor is shown', () => {
+    registerAll(['project.open', 'edit.undo', 'edit.redo']);
+    let editor: EditorHandle | null = editorWithHistory(2, 0);
+    act(() => {
+      useAppStore.getState().actions.setProject(projectFixture());
+      useAppStore.getState().actions.setUi({ screen: 'editor' });
+    });
+    renderMenu(() => editor);
+
+    fireEvent.click(menuButton());
+    expect(isDisabled('Undo')).toBe(false);
+    expect(isDisabled('Redo')).toBe(true);
+    expect(isDisabled('Open…')).toBe(false);
+    // A disabled item is still reached with the arrow keys, but choosing it does nothing.
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'End' });
+    expect(document.activeElement?.textContent).toBe('RedoCtrl+Y');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Redo' }));
+    expect(screen.getByRole('menu')).toBeTruthy();
+    expect(ran).toEqual([]);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Undo' }));
+    expect(ran).toEqual(['edit.undo']);
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    // Read again each time the menu opens.
+    editor = editorWithHistory(0, 1);
+    fireEvent.click(menuButton());
+    expect(isDisabled('Undo')).toBe(true);
+    expect(isDisabled('Redo')).toBe(false);
+    fireEvent.click(menuButton());
+
+    // Not while another page is shown, nor without an editor.
+    act(() => {
+      useAppStore.getState().actions.setUi({ screen: 'settings' });
+    });
+    fireEvent.click(menuButton());
+    expect(isDisabled('Undo')).toBe(true);
+    expect(isDisabled('Redo')).toBe(true);
+    fireEvent.click(menuButton());
+    act(() => {
+      useAppStore.getState().actions.setUi({ screen: 'editor' });
+    });
+    editor = null;
+    fireEvent.click(menuButton());
+    expect(isDisabled('Undo')).toBe(true);
+    expect(isDisabled('Redo')).toBe(true);
+  });
+
+  it('has no accessibility problems with disabled items', async () => {
+    registerAll([...ALL, 'project.rename', 'edit.undo', 'edit.redo']);
+    act(() => {
+      useAppStore.getState().actions.setProject(projectFixture());
+      useAppStore.getState().actions.setUi({ screen: 'editor' });
+    });
+    const { container } = renderMenu(() => editorWithHistory(1, 0));
+    fireEvent.click(menuButton());
+    expect(isDisabled('Redo')).toBe(true);
+    await expectNoAxeViolations(container);
   });
 
   it('has no accessibility problems, closed or open', async () => {

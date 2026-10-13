@@ -22,7 +22,7 @@ export function createAnalysisNoticeFeature(options: AnalysisNoticeFeatureOption
   const banners = options.banners ?? appBanners;
   return function analysisNoticeFeature(ctx) {
     function Banner() {
-      return <AnalysisNoticeBanner store={ctx.store} />;
+      return <AnalysisNoticeBanner store={ctx.store} commands={ctx.commands} />;
     }
     return banners.registerBanner('analysisNotice', Banner, { order: ANALYSIS_BANNER_ORDER });
   };

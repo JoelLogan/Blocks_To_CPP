@@ -35,6 +35,9 @@ function fakeEditor(): EditorHandle & { readonly selectBlockMock: ReturnType<typ
       return project.document;
     },
     selectBlock: selectBlockMock,
+    updateProjectInfo: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
     workspace: {} as Blockly.WorkspaceSvg,
     selectBlockMock,
   };

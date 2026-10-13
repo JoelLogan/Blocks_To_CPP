@@ -58,6 +58,11 @@ export interface AnalysisState {
   preview: PreviewResult | null;
   /** A notice about the analysis, or `null`. */
   notice: AnalysisNotice | null;
+  /**
+   * The loader's problem codes (`B2C-E01xx`) for the last canvas that did not load: what a
+   * `syncFailed` notice is about. Only meaningful while `notice` is `syncFailed`.
+   */
+  syncCodes: readonly string[];
 }
 
 /** Where a build is. */
@@ -179,7 +184,7 @@ export interface AppData {
 
 /** The analysis slice with nothing analysed yet. */
 export function initialAnalysis(): AnalysisState {
-  return { seq: 0, preview: null, notice: null };
+  return { seq: 0, preview: null, notice: null, syncCodes: [] };
 }
 
 /** The build slice with no build yet. */

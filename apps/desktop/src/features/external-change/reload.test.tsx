@@ -76,6 +76,15 @@ describe.skipIf(core === null)('Reload with the real core', () => {
       selectBlock: (id, options) => {
         session.session.selectBlock(id, options);
       },
+      updateProjectInfo: (info) => {
+        session.session.updateProjectInfo(info);
+      },
+      undo: () => {
+        session.session.undo(false);
+      },
+      redo: () => {
+        session.session.undo(true);
+      },
       workspace: session.workspace as EditorHandle['workspace'],
     };
     harness.setEditor(editor);

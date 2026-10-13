@@ -131,6 +131,15 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
     selectBlock: (id, options) => {
       session.selectBlock(id, options);
     },
+    updateProjectInfo: (info) => {
+      session.updateProjectInfo(info);
+    },
+    undo: () => {
+      session.undo(false);
+    },
+    redo: () => {
+      session.undo(true);
+    },
     workspace,
   };
   setEditorHandle(handle);

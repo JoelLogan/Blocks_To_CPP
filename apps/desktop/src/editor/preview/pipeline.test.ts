@@ -313,6 +313,8 @@ describe('the preview pipeline', () => {
     const { analysis, project } = useAppStore.getState();
     expect(analysis.preview).toBe(good);
     expect(analysis.notice).toBe('syncFailed');
+    // With the loader's codes, for the banner.
+    expect(analysis.syncCodes).toEqual(['B2C-E0114']);
     expect(project?.canonicalText).toBe('saved');
     // The log names the codes only, never project text.
     expect(String(error.mock.calls[0]?.[0])).toContain('B2C-E0114');

@@ -3,11 +3,13 @@
  * the input modality the toolbar tracks for the pages' headings (§4.8). happy-dom lays nothing
  * out, so the ellipsis itself is checked through the style sheet (./styles.test.ts) and in the
  * real webviews (e2e/specs/flows/chrome.e2e.ts); here the marker must not be inside the element
- * that is cut off.
+ * that is cut off. Renaming itself is tested with ./ProjectTitle.test.tsx; here the toolbar shows
+ * the name as the button that renames, and stays accessible while it does.
  */
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { expectNoAxeViolations } from '../../test/axe';
 import { resetAppStore, useAppStore } from '../store';
 import { documentFixture, projectFixture } from '../testing/fixtures';
 import { HintProvider } from '../ui/Hint';
@@ -74,6 +76,28 @@ describe('the project name', () => {
     renderToolbar();
     const heading = screen.getByRole('heading', { level: 1 });
     expect(heading.querySelector('.project-name-text')?.textContent).toBe('Blocks2Cpp');
+  });
+});
+
+describe('renaming from the toolbar', () => {
+  it('turns the name into a field and back, with no accessibility problems', async () => {
+    const { container } = renderToolbar();
+    openProject('Guessing Game', true);
+    const button = screen.getByRole('button', { name: 'Guessing Game' });
+    expect(button.closest('h1')).toBe(screen.getByRole('heading', { level: 1 }));
+
+    fireEvent.click(button);
+    const field = screen.getByRole('textbox', { name: 'Project name' });
+    expect(document.activeElement).toBe(field);
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+    await expectNoAxeViolations(container);
+
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Guessing Game' }));
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+      'Guessing Game • (unsaved changes)',
+    );
+    await expectNoAxeViolations(container);
   });
 });
 

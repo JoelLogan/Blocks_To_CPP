@@ -249,7 +249,7 @@ export function analyse(core: CoreWasm, document: BdmDocument): void {
   const preview = core.preview(JSON.stringify(document), { indentWidth: 4 });
   useAppStore.setState({
     project: projectFixture({ document }),
-    analysis: { seq: 1, notice: null, preview },
+    analysis: { seq: 1, notice: null, syncCodes: [], preview },
   });
 }
 
@@ -317,6 +317,7 @@ export function storeAnalysis(document: BdmDocument, symbols: readonly SymbolInf
     analysis: {
       seq: 1,
       notice: null,
+      syncCodes: [],
       preview: {
         stage: 'generate',
         diagnostics: [],

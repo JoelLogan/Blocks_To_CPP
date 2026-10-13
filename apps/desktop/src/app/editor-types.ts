@@ -15,6 +15,12 @@ export interface SelectBlockOptions {
   center?: boolean;
 }
 
+/** The project's own data that the editor changes outside the canvas (05 §5.3). */
+export interface ProjectInfo {
+  /** The project's display name, already checked (04 §4.1: 1–100 characters on one line). */
+  name: string;
+}
+
 /** What the rest of the app may do with the block editor. */
 export interface EditorHandle {
   /**
@@ -26,6 +32,17 @@ export interface EditorHandle {
   currentDocument(): BdmDocument;
   /** Selects a block (or its collapsed ancestor) and optionally centres it. */
   selectBlock(id: string, opts?: SelectBlockOptions): void;
+  /**
+   * Changes the open project's data (its name) as an edit: the project has unsaved changes, and
+   * the live preview runs again, so the generated code's header comment follows. Blockly's undo
+   * history covers the canvas only, so this is not undone by Undo (04 §4.1). Nothing happens
+   * without a project or when nothing changes.
+   */
+  updateProjectInfo(info: ProjectInfo): void;
+  /** Undoes the last change on the canvas, as `Ctrl+Z` on the canvas does; not during a drag. */
+  undo(): void;
+  /** Redoes the last undone change on the canvas; not during a drag. */
+  redo(): void;
   /** The Blockly workspace itself. */
   workspace: Blockly.WorkspaceSvg;
 }

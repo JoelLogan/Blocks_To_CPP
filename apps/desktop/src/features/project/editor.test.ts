@@ -2,7 +2,9 @@
  * The project lifecycle with the real block editor (a rendered Blockly workspace with the editing
  * session and live preview) and the real compiler core: moving a block marks the project dirty
  * and tells the backend, zooming and scrolling do not, saving writes the view that is shown, and
- * an unchanged project saves byte for byte as it was read, its view included.
+ * an unchanged project saves byte for byte as it was read, its view included. Renaming the project
+ * through the editor is an unsaved change that the generated code follows and Undo leaves alone;
+ * the editor's Undo and Redo act on the canvas.
  *
  * As in the app, projects open while the editor is hidden (the start page is showing): the
  * workspace has no size until the editor is shown.
@@ -141,6 +143,16 @@ function dirty(): boolean {
   return useAppStore.getState().project?.dirty ?? false;
 }
 
+/** The generated C++ of the latest preview. */
+function generated(): string {
+  return (
+    useAppStore
+      .getState()
+      .analysis.preview?.files.map((file) => file.contents)
+      .join('') ?? ''
+  );
+}
+
 describe.skipIf(!CORE_BUILT)('the project in the block editor', () => {
   it('shows an opened project unchanged', async () => {
     await openHello();
@@ -217,5 +229,71 @@ describe.skipIf(!CORE_BUILT)('the project in the block editor', () => {
     workspace.setScale(1.5);
     await afterDebounce();
     expect(dirty()).toBe(false);
+  });
+
+  it('renames the project as an unsaved change that Undo leaves alone, and saves the name', async () => {
+    await openHello();
+    await afterDebounce();
+    expect(generated()).toContain('from project "Hello World"');
+
+    editor.handle.updateProjectInfo({ name: 'Space Invaders' });
+    expect(useAppStore.getState().project?.document.project.name).toBe('Space Invaders');
+    expect(dirty()).toBe(true);
+    await waitFor(() => {
+      expect(generated()).toContain('from project "Space Invaders"');
+    });
+    expect(dirty()).toBe(true);
+    await waitFor(() => {
+      expect(harness.ipc.projectSetDirty).toHaveBeenCalledWith({ handle: HANDLE_A, dirty: true });
+    });
+
+    // Blockly's history holds no rename: Undo has nothing to take back.
+    expect(workspace.getUndoStack()).toHaveLength(0);
+    editor.handle.undo();
+    await afterDebounce();
+    expect(useAppStore.getState().project?.document.project.name).toBe('Space Invaders');
+
+    // Saved as project.name; afterwards nothing is unsaved.
+    expect(await harness.feature.lifecycle.save()).toBe(true);
+    const sent = harness.ipc.projectSave.mock.calls[0]?.[0].document ?? '';
+    const loaded = core.load(new TextEncoder().encode(sent));
+    expect(loaded.ok && loaded.document.project.name).toBe('Space Invaders');
+    expect(dirty()).toBe(false);
+
+    // Renaming back to the saved name leaves nothing unsaved; the same name changes nothing.
+    editor.handle.updateProjectInfo({ name: 'Hello World' });
+    await waitFor(() => {
+      expect(generated()).toContain('from project "Hello World"');
+    });
+    expect(dirty()).toBe(true);
+    editor.handle.updateProjectInfo({ name: 'Space Invaders' });
+    await waitFor(() => {
+      expect(dirty()).toBe(false);
+    });
+    const seq = useAppStore.getState().analysis.seq;
+    editor.handle.updateProjectInfo({ name: 'Space Invaders' });
+    await afterDebounce();
+    expect(useAppStore.getState().analysis.seq).toBe(seq);
+  });
+
+  it('undoes and redoes the last change on the canvas', async () => {
+    await openHello();
+    const [block] = workspace.getTopBlocks(false);
+    const before = block?.getRelativeToSurfaceXY().x ?? 0;
+    block?.moveBy(48, 0);
+    await waitFor(() => {
+      expect(dirty()).toBe(true);
+    });
+
+    editor.handle.undo();
+    expect(block?.getRelativeToSurfaceXY().x).toBe(before);
+    await waitFor(() => {
+      expect(dirty()).toBe(false);
+    });
+    editor.handle.redo();
+    expect(block?.getRelativeToSurfaceXY().x).toBe(before + 48);
+    await waitFor(() => {
+      expect(dirty()).toBe(true);
+    });
   });
 });
