@@ -241,8 +241,8 @@ running app on both systems and ticks the last column.
   Ctrl+Shift+P, Ctrl+F, F2, F11, F12 or Shift+F12.
 - **Toolbox.** `catalog/toolbox.toml` has the nine categories Program,
   Variables, Math, Logic, Text, Control, Loops, Input / Output and Functions
-  with the 32 blocks of the M1 catalog; there is no _Libraries_ category, no
-  advanced-blocks switch and no search field.
+  with the 31 blocks of the core catalog (1.2.0); there is no _Libraries_
+  category, no advanced-blocks switch and no search field.
 - **Blockly's own menus.** The clipboard plugin replaces Blockly's copy,
   paste and _Duplicate_; the rest of Blockly 12.5.1's default context menus
   stay: on the canvas _Undo_, _Redo_, _Clean up Blocks_, _Collapse Blocks_,
@@ -258,7 +258,7 @@ running app on both systems and ticks the last column.
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
 | M3        | Typing in expression slots, _Expand into blocks_ / _Collapse to text_, Quick Insert (`Ctrl+Space`)                                                  | None: slots hold blocks and single values; no slot editor, no such menu items, no `Ctrl+Space`                                                       | [ ]                   |
 | M3        | The type picker popover                                                                                                                             | None: type fields are plain menus (`int`, `double`, `bool`, `char`, `string`, `auto`)                                                                | [ ]                   |
-| M3        | Collection, string, struct, enum, file, error, random and time blocks; globals, constants, math functions, conversions and organisation blocks      | None: the toolbox holds only the 32 M1 blocks                                                                                                        | [ ]                   |
+| M3        | Collection, string, struct, enum, file, error, random and time blocks; globals, constants, math functions, conversions and organisation blocks      | None: the toolbox holds only the core catalog's 31 blocks                                                                                            | [ ]                   |
 | M3        | Multi-module tabs and headers (adding, renaming, deleting modules)                                                                                  | None: a project with several modules gets a switcher without add, rename or delete                                                                   | [ ]                   |
 | M3        | _Export_ to CMake / Make (`project_export_dialog`)                                                                                                  | None: no menu item, and no such IPC command                                                                                                          | [ ]                   |
 | M3        | The friendly g++ message catalog; quick fixes; _Copy bug report_                                                                                    | None: g++ messages are shown as g++ wrote them; a suspected generator bug is labelled without a button                                               | [ ]                   |
