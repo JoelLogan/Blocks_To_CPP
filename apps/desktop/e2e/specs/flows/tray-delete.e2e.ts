@@ -15,7 +15,8 @@
  *   column's middle, and in the flyout's strip above the editor (over the toolbar) and below it
  *   (over the bottom dock), since the toolbox counts at any height, and on the flyout's right part
  *   once more after the flyout was made 80 px wider with the *Resize the toolbox* splitter (which
- *   moves its edge without a rebuild): while the pointer is there, the toolbox is marked as a place
+ *   moves its edge without a rebuild; in a small window the C++ panel is folded away first, to
+ *   give the canvas the room): while the pointer is there, the toolbox is marked as a place
  *   that deletes (`blocklyToolboxDelete`), the category column is tinted as the flyout is and its
  *   names stay readable (4.5:1), and the block is faded; the drop deletes it, and Ctrl+Z puts it
  *   back at the end of `main`'s body;
@@ -29,13 +30,20 @@
  * looks for in the flyout. The canvas is dragged once first: Blockly records the drop places at the
  * first gesture on the canvas, which would hide a stale record.
  */
+import { By } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
 import type { E2ePoint } from '../../../src/e2e/contract';
 import { type BlockNode, declareInt, moduleNodes, NodeIds, print } from '../../support/bdm';
 import { bringIntoView, panCanvas } from '../../support/canvas';
 import { drag, pressAndMove, releaseButton } from '../../support/drag';
-import { blockCorner, centerOn, currentDocument, grabPointOf } from '../../support/editor';
+import {
+  blockCorner,
+  centerOn,
+  currentDocument,
+  foldCodePanel,
+  grabPointOf,
+} from '../../support/editor';
 import { sleep, waitFor } from '../../support/wait';
 import { contrastRatio } from './lib/contrast';
 import { type FlowApp, startFlow } from './lib/launch';
@@ -254,9 +262,14 @@ const SPLITTER_SCRIPT = `
 
 /**
  * Makes the flyout `by` pixels wider with the *Resize the toolbox* splitter, by pointer, and waits
- * until it is. The flyout's edge moves without a rebuild of its contents.
+ * until it is. The flyout's edge moves without a rebuild of its contents. In a small window
+ * (800 × 560) the canvas beside the open C++ panel is already as narrow as the flyout lets it be
+ * (200 px), so the panel is folded away first to give the canvas the room.
  */
 async function widenFlyout(app: FlowApp, by: number): Promise<void> {
+  if ((await app.driver.findElements(By.css('aside.right-dock[data-collapsed="false"]'))).length) {
+    await foldCodePanel(app);
+  }
   const before = await layoutOf(app);
   const found: unknown = await app.driver.executeScript(SPLITTER_SCRIPT);
   if (!Array.isArray(found) || found.length !== 2 || !found.every((n) => typeof n === 'number')) {

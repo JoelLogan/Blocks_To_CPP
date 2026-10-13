@@ -9,7 +9,15 @@ import type { App } from './app';
 import { parseDocument, type ProjectDocument } from './bdm';
 import { drag, dropPoint } from './drag';
 import { bringIntoView } from './canvas';
-import { byTestId, clickTestId, errorCount, middleOf, openCategory, testIdText } from './ui';
+import {
+  byTestId,
+  clickTestId,
+  errorCount,
+  middleOf,
+  openCategory,
+  testIdText,
+  waitForFlyout,
+} from './ui';
 import { sleep, waitFor } from './wait';
 
 /** The open project as the canvas has it now. */
@@ -139,6 +147,59 @@ export function grabPointOf(app: App, blockId: string): Promise<E2ePoint> {
   });
 }
 
+/**
+ * Runs in the webview: the middle of the handle of the toolbox flyout's vertical scrollbar and how
+ * far the handle can still move down, in viewport pixels, or `null` when no flyout shows one (the
+ * trash can's flyout, hidden, has a scrollbar of no size).
+ */
+const FLYOUT_SCROLLBAR = `
+  for (const bar of document.querySelectorAll('.blocklyFlyoutScrollbar.blocklyScrollbarVertical')) {
+    const handle = bar.querySelector('.blocklyScrollbarHandle');
+    const track = bar.querySelector('.blocklyScrollbarBackground');
+    if (handle === null || track === null) {
+      continue;
+    }
+    const h = handle.getBoundingClientRect();
+    const t = track.getBoundingClientRect();
+    if (h.width > 0 && h.height > 0) {
+      return [h.left + h.width / 2, h.top + h.height / 2, Math.max(0, t.bottom - h.bottom)];
+    }
+  }
+  return null;
+`;
+
+/** How far one step of {@link flyoutGrabPoint} moves the flyout's scrollbar handle, in pixels. */
+const FLYOUT_SCROLL_STEP = 40;
+
+/** The most steps {@link flyoutGrabPoint} scrolls the flyout before it gives up. */
+const FLYOUT_SCROLL_STEPS = 20;
+
+/**
+ * The grab point of block `blockId` of the toolbox's flyout (its category open), once it is on
+ * screen. In a short window (800 × 560) a category's later blocks, such as the getters below
+ * Variables' generic blocks, lie below the flyout's visible part: the flyout is scrolled down with
+ * its scrollbar, a step at a time, until the block shows.
+ */
+export async function flyoutGrabPoint(app: App, blockId: string): Promise<E2ePoint> {
+  for (let step = 0; step < FLYOUT_SCROLL_STEPS; step += 1) {
+    const grab = await app.hook.grabPoint(blockId);
+    if (grab !== null) {
+      return grab;
+    }
+    const bar: unknown = await app.driver.executeScript(FLYOUT_SCROLLBAR);
+    if (!Array.isArray(bar) || bar.length !== 3 || !bar.every((n) => typeof n === 'number')) {
+      break;
+    }
+    const [x = 0, y = 0, room = 0] = bar.map(Number);
+    if (room < 1) {
+      break;
+    }
+    await drag(app.driver, { x, y }, { x, y: y + Math.min(FLYOUT_SCROLL_STEP, room) });
+    await waitForFlyout(app.driver);
+  }
+  return grabPointOf(app, blockId);
+}
+
 /** A connection's point on screen. */
 function connectionOf(app: App, blockId: string, connection: string) {
   return waitFor(() => app.hook.connectionPoint(blockId, connection), {
@@ -174,7 +235,7 @@ export async function dragFromToolbox(
     timeout: 10_000,
     message: `${entry.type} in the toolbox's ${entry.category} category`,
   });
-  const grab = await grabPointOf(app, blockId);
+  const grab = await flyoutGrabPoint(app, blockId);
   const own = await connectionOf(app, blockId, 'previous');
   const targetPoint = await connectionOf(app, targetId, target);
   await drag(app.driver, grab, dropPoint(grab, own, targetPoint));

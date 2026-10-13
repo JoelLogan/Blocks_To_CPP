@@ -10,7 +10,7 @@ import type { E2ePoint } from '../../../../src/e2e/contract';
 import type { App } from '../../../support/app';
 import { bringIntoView, visibleCanvas } from '../../../support/canvas';
 import { drag, dropPoint } from '../../../support/drag';
-import { centerOn, type ToolboxEntry } from '../../../support/editor';
+import { centerOn, flyoutGrabPoint, type ToolboxEntry } from '../../../support/editor';
 import { clickMiddle, openCategory, textContent } from '../../../support/ui';
 import { sleep, waitFor } from '../../../support/wait';
 import { answerDialog, waitForDialog } from './ui';
@@ -48,7 +48,7 @@ export async function dragValueFromToolbox(
     pointOf(() => app.hook.connectionPoint(targetId, input), `input ${input} of ${targetId}`),
   );
   const blockId = await flyoutBlock(app, entry);
-  const grab = await pointOf(() => app.hook.grabPoint(blockId), `${entry.type} to be on screen`);
+  const grab = await flyoutGrabPoint(app, blockId);
   const own = await pointOf(
     () => app.hook.connectionPoint(blockId, 'output'),
     `the output connection of ${entry.type}`,
@@ -129,7 +129,7 @@ export async function dropOnCanvas(app: App, entry: ToolboxEntry): Promise<void>
   if (found === null) {
     throw new Error('The visible canvas has no empty area to drop a block on');
   }
-  const grab = await pointOf(() => app.hook.grabPoint(blockId), `${entry.type} to be on screen`);
+  const grab = await flyoutGrabPoint(app, blockId);
   const [x, y] = found;
   await drag(app.driver, grab, { x, y });
   await sleep(400);
