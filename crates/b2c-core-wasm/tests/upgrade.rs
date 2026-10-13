@@ -5,7 +5,9 @@
 //!
 //! The shipped catalog has nothing to upgrade yet, so these tests use blocks
 //! that cannot be upgraded (version 0) and a payload from a newer catalog;
-//! `b2c-catalog`'s tests cover successful upgrades with test-only tables.
+//! `b2c-catalog`'s tests cover successful upgrades with test-only tables. A
+//! document upgraded with such a table checks that the scope query (06 §6.5)
+//! answers for the blocks an upgrade produced.
 
 #![allow(
     clippy::unwrap_used,
@@ -17,7 +19,7 @@
 
 mod common;
 
-use common::{codes, parse};
+use common::{codes, example, names, parse, preview};
 use serde_json::{Value, json};
 
 /// A project whose `main` holds `body`.
@@ -93,4 +95,68 @@ fn paste_upgrades_the_pasted_blocks() {
     // From this catalog, it is left to the preview (an unknown field).
     let pasted = paste(&payload("1.1.0", &extended), &document);
     assert_eq!(pasted["diagnostics"], json!([]));
+}
+
+/// `test.assign` v1, a retired test type, becomes `var.set` v1 as it is: it
+/// has the same field and input.
+fn assign_to_set(block: &mut b2c_model::Block) -> Result<(), String> {
+    if block.fields.contains_key("VAR") {
+        Ok(())
+    } else {
+        Err(String::from("the block has no VAR field"))
+    }
+}
+
+/// Retires `test.assign` in favour of `var.set`.
+const ASSIGN_RETIRED: b2c_catalog::BlockUpgrades<'static> = b2c_catalog::BlockUpgrades {
+    migrations: &[],
+    replacements: &[b2c_catalog::BlockReplacement {
+        from: "test.assign",
+        version: 1,
+        to: "var.set",
+        to_version: 1,
+        apply: assign_to_set,
+    }],
+    retired: &["test.assign"],
+};
+
+/// The scope query answers for a block an upgrade replaced, under the ID it
+/// kept: in `main`, what is visible there, and parked on the canvas, what is
+/// visible at the end of `main` (ADR-0015, 06 §6.5).
+#[test]
+fn the_scope_query_answers_for_upgraded_blocks() {
+    let mut game: Value = serde_json::from_str(&example("guessing_game")).unwrap();
+    let assign = |id: &str| {
+        json!({"id": id, "type": "test.assign", "v": 1,
+               "fields": {"VAR": {"ref": "s_guess"}},
+               "inputs": {"VALUE": {"expr": [{"num": "1"}]}}})
+    };
+    let blocks = game["modules"][0]["workspace"]["blocks"].as_array_mut().unwrap();
+    blocks[0]["statements"]["BODY"]
+        .as_array_mut()
+        .unwrap()
+        .push(assign("b_assigned"));
+    let mut parked = assign("b_parked");
+    parked["x"] = json!(600);
+    parked["y"] = json!(40);
+    blocks.push(parked);
+    let mut document = b2c_model::load(game.to_string().as_bytes()).unwrap();
+    let report =
+        b2c_catalog::upgrade_document_with(&mut document, b2c_catalog::core_catalog(), &ASSIGN_RETIRED);
+    assert_eq!((report.upgraded, report.diagnostics.len()), (2, 0));
+    let text = b2c_model::to_canonical_json(&document);
+    let result = preview(&text, 4);
+    // The parked block only warns.
+    assert_eq!(
+        codes(&result["diagnostics"]),
+        ["B2C-W0505"],
+        "{}",
+        result["diagnostics"]
+    );
+    let scope = |block: &str, input: Option<&str>| -> Value {
+        serde_json::from_str(&b2c_core_wasm::symbols_in_scope(block, input.map(str::to_owned))).unwrap()
+    };
+    assert_eq!(names(&scope("b_assigned", Some("VALUE"))), ["guess", "secret"]);
+    assert_eq!(names(&scope("b_assigned", None)), ["guess", "secret"]);
+    assert_eq!(names(&scope("b_parked", Some("VALUE"))), ["guess", "secret"]);
 }
