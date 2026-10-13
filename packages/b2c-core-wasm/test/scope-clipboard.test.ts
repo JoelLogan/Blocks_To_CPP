@@ -27,7 +27,8 @@ const required = (process.env['B2C_REQUIRE_WASM'] ?? '') !== '';
 
 const example = (name: string) => readFileSync(repo(`examples/${name}.b2c`), 'utf8');
 const codes = (diagnostics: Diagnostic[]) => diagnostics.map((d) => d.code);
-const names = (symbols: { name: string }[]) => symbols.map((s) => s.name);
+/** The names of the symbols in an answer (`null`, no answer, has none). */
+const names = (symbols: { name: string }[] | null) => (symbols ?? []).map((s) => s.name);
 const seed = (n: number) => n.toString(16).padStart(64, '0');
 
 /** A JSON tree as plain data, for the tests' own edits. */
@@ -188,9 +189,9 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
   });
 
   describe('symbolsInScope', () => {
-    it('answers nothing before a successful preview', () => {
+    it('has no answer before a successful preview', () => {
       core.preview('{', { indentWidth: 4 });
-      expect(core.symbolsInScope('b005', null)).toEqual([]);
+      expect(core.symbolsInScope('b005', null)).toBeNull();
     });
 
     it('lists guess and secret at the guessing game ask block, and nothing at b002', () => {
@@ -198,7 +199,7 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
       expect(names(core.symbolsInScope('b005', null))).toEqual(['guess', 'secret']);
       expect(core.symbolsInScope('b002', null)).toEqual([]);
       expect(names(core.symbolsInScope('b010', 'BODY'))).toEqual(['guess', 'secret']);
-      expect(core.symbolsInScope('b005', null)[0]).toEqual({
+      expect(core.symbolsInScope('b005', null)?.[0]).toEqual({
         id: 's_guess',
         name: 'guess',
         kind: 'variable',
@@ -207,7 +208,7 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
         module: 'mod_main',
         declBlock: 'b003',
       });
-      expect(core.symbolsInScope('nope', null)).toEqual([]);
+      expect(core.symbolsInScope('nope', null)).toBeNull();
     });
 
     it('sees loop counters, parameters and functions', () => {
@@ -215,8 +216,29 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
       expect(names(core.symbolsInScope('b003', null))).toEqual(['factorial', 'n']);
       expect(names(core.symbolsInScope('b007', null))).toEqual(['factorial']);
       expect(names(core.symbolsInScope('b007', 'BODY'))).toEqual(['factorial', 'i']);
-      const [factorial] = core.symbolsInScope('b007', null);
+      const [factorial] = core.symbolsInScope('b007', null) ?? [];
       expect(factorial).toMatchObject({ kind: 'function', returns: 'int', params: ['s_n'] });
+    });
+
+    it('answers parked blocks with the end of main, and blocks in a disabled loop like the loop', () => {
+      const tree = JSON.parse(example('guessing_game')) as Json;
+      const canvas = (tree as { modules: { workspace: { blocks: Json[] } }[] }).modules[0];
+      canvas?.workspace.blocks.push({
+        id: 'loose',
+        type: 'var.get',
+        v: 1,
+        x: 600,
+        y: 40,
+        fields: { VAR: { ref: 's_guess' } },
+      });
+      const loop = findBlock(tree, 'b010');
+      if (loop !== undefined) {
+        loop['disabled'] = true;
+      }
+      core.preview(JSON.stringify(tree), { indentWidth: 4 });
+      expect(names(core.symbolsInScope('loose', null))).toEqual(['guess', 'secret']);
+      expect(names(core.symbolsInScope('b005', null))).toEqual(['guess', 'secret']);
+      expect(names(core.symbolsInScope('b009', 'DO1'))).toEqual(['guess', 'secret']);
     });
   });
 
@@ -308,6 +330,20 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
       expect(outside.diagnostics[0]?.message).toContain('`guess`');
       const preview = core.preview(insert(other, start, pasted(outside)), { indentWidth: 4 });
       expect(codes(preview.diagnostics)).toContain('B2C-E0201');
+    });
+
+    it('re-binds a paste on the canvas with the parked scope, the end of main', () => {
+      const made = core.clipboardMake(example('guessing_game'), ['b009']);
+      if (!made.ok) {
+        throw new Error('the copy failed');
+      }
+      const canvas: PasteTarget = { module: 'mod_main', block: null, input: null };
+      const bound = core.pastePrepare(made.payload, otherDocument(), canvas, seed(3));
+      expect(bound.unresolved).toEqual([]);
+      const text = JSON.stringify(pasted(bound));
+      expect(text).toContain('t_guess');
+      expect(text).toContain('t_secret');
+      expect(text).not.toContain('s_guess');
     });
 
     it('gives fresh IDs on every duplicate (1,000 times, the document still loads)', () => {

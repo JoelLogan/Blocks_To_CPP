@@ -604,9 +604,10 @@ describe('the scope Variables and Loops list for a block left loose', () => {
   it('is the end of main, as for nothing selected', () => {
     const guess = symbolFixture('s_guess', 'guess');
     const counter = symbolFixture('s_i', 'i', { kind: 'loopVariable' });
-    const ctx = context({ scopes: { 'main/BODY': [guess, counter] } });
+    // The compiler core answers a parked block with the end of main (06 §6.5).
+    const ctx = context({ scopes: { 'main/BODY': [guess, counter], loose: [guess, counter] } });
     const loose = Blockly.serialization.blocks.append(
-      { type: 'io.print', extraState: { itemCount: 1 } },
+      { type: 'io.print', id: 'loose', extraState: { itemCount: 1 } },
       ctx.workspace,
     );
     const selected = { ...ctx, selected: () => loose };

@@ -23,7 +23,7 @@ export interface Glue {
   canonical(document_json: string): string;
   /** `b2c_core_wasm::preview`. */
   preview(document_json: string, options_json: string): string;
-  /** `b2c_core_wasm::symbols_in_scope`. */
+  /** `b2c_core_wasm::symbols_in_scope`: a JSON list, or `null` for no answer. */
   symbols_in_scope(block_id: string, input?: string | null): string;
   /** `b2c_core_wasm::conversion_table`. */
   conversion_table(): string;

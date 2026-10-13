@@ -18,11 +18,15 @@ use b2c_ir::Type;
 use common::{example, examples, names, parse, preview};
 use serde_json::{Value, json};
 
+/// The export's answer: a list, or `null` for no answer.
 fn scope(block: &str, input: Option<&str>) -> Value {
     let output = b2c_core_wasm::symbols_in_scope(block, input.map(str::to_owned));
     assert!(!output.contains('\n'), "not compact: {output}");
     let value: Value = serde_json::from_str(&output).unwrap();
-    assert!(value.is_array(), "not a list: {output}");
+    assert!(
+        value.is_array() || value.is_null(),
+        "not a list or null: {output}"
+    );
     value
 }
 
@@ -68,14 +72,81 @@ fn loop_counters_parameters_and_functions() {
 }
 
 #[test]
-fn unknown_blocks_and_ids_give_nothing() {
+fn unknown_blocks_and_ids_have_no_answer() {
     preview(&example("guessing_game"), 4);
     for block in ["nope", "", "b 005", "<script>", &"b".repeat(100)] {
-        assert_eq!(scope(block, None), json!([]), "{block:?}");
+        assert_eq!(scope(block, None), Value::Null, "{block:?}");
     }
     // An unknown input name answers at the block.
     assert_eq!(names(&scope("b005", Some("NOT_AN_INPUT"))), ["guess", "secret"]);
     assert_eq!(names(&scope("b005", Some(""))), ["guess", "secret"]);
+    // A block that sees nothing has an answer: the empty list.
+    assert_eq!(scope("b002", None), json!([]));
+}
+
+/// The guessing game with `edit` applied to its JSON.
+fn edited_game(edit: impl FnOnce(&mut Value)) -> String {
+    let mut document: Value = serde_json::from_str(&example("guessing_game")).unwrap();
+    edit(&mut document);
+    document.to_string()
+}
+
+/// A `print "text"` block with this ID.
+fn print_block(id: &str, text: &str) -> Value {
+    json!({"id": id, "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+           "fields": {"NEWLINE": true, "SEP": "none", "STREAM": "out"},
+           "inputs": {"ITEM0": {"expr": [{"str": text}]}}})
+}
+
+#[test]
+fn parked_blocks_answer_with_the_end_of_main() {
+    // 06 §6.5: a loose stack, a block in it and a block nested in that one,
+    // and a loose getter all see what is visible at the end of main's body.
+    let text = edited_game(|document| {
+        let mut head = print_block("loose_head", "parked");
+        head["x"] = json!(600);
+        head["y"] = json!(40);
+        let repeat = json!({"id": "loose_loop", "type": "control.forever", "v": 1,
+                            "statements": {"BODY": [print_block("loose_inner", "inside")]}});
+        head["stack"] = json!([repeat]);
+        let getter = json!({"id": "loose_get", "type": "var.get", "v": 1, "x": 600, "y": 400,
+                            "fields": {"VAR": {"ref": "s_guess"}}});
+        let blocks = document["modules"][0]["workspace"]["blocks"]
+            .as_array_mut()
+            .unwrap();
+        blocks.push(head);
+        blocks.push(getter);
+    });
+    let result = preview(&text, 4);
+    assert_ne!(result["stage"], "load", "{}", result["diagnostics"]);
+    for id in ["loose_head", "loose_loop", "loose_inner", "loose_get"] {
+        assert_eq!(names(&scope(id, None)), ["guess", "secret"], "{id}");
+    }
+    assert_eq!(names(&scope("loose_loop", Some("BODY"))), ["guess", "secret"]);
+    // The same answer as the analyser's.
+    let analysis = common::native_analysis(&text);
+    let session = {
+        let mut session = Session::new();
+        session.preview(&text, &PreviewOptions::default());
+        session
+    };
+    assert_eq!(
+        session.symbols_in_scope("loose_get", None),
+        Some(analysis.parked_scope(&b2c_ir::ModuleId::new("mod_main").unwrap()))
+    );
+}
+
+#[test]
+fn blocks_in_a_disabled_loop_answer_like_the_loop() {
+    // The loop (b010) and everything in it: what is visible at the loop.
+    let text = edited_game(|document| {
+        document["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"][3]["disabled"] = json!(true);
+    });
+    preview(&text, 4);
+    for id in ["b010", "b005", "b009", "b006", "b008"] {
+        assert_eq!(names(&scope(id, None)), ["guess", "secret"], "{id}");
+    }
+    assert_eq!(names(&scope("b009", Some("DO1"))), ["guess", "secret"]);
 }
 
 #[test]
@@ -83,7 +154,7 @@ fn the_query_answers_from_the_last_preview_only() {
     // A preview that does not load forgets the analysis.
     let failed = preview("{", 4);
     assert_eq!(failed["stage"], "load");
-    assert_eq!(scope("b005", None), json!([]));
+    assert_eq!(scope("b005", None), Value::Null);
 
     preview(&example("guessing_game"), 4);
     assert_eq!(names(&scope("b005", None)), ["guess", "secret"]);
@@ -96,18 +167,18 @@ fn the_query_answers_from_the_last_preview_only() {
     assert_eq!(scope("b005", None).as_array().unwrap().len(), 2);
     assert_eq!(names(&scope("b005", None)), ["factorial", "i"]);
     preview("[]", 4);
-    assert_eq!(scope("b005", None), json!([]));
+    assert_eq!(scope("b005", None), Value::Null);
 }
 
 #[test]
 fn a_session_without_a_preview_knows_nothing() {
     let session = Session::new();
     assert!(!session.has_preview());
-    assert!(session.symbols_in_scope("b005", None).is_empty());
+    assert_eq!(session.symbols_in_scope("b005", None), None);
     let mut session = session;
     session.preview(&example("guessing_game"), &PreviewOptions::default());
     assert!(session.has_preview());
-    assert_eq!(session.symbols_in_scope("b005", None).len(), 2);
+    assert_eq!(session.symbols_in_scope("b005", None).map(|s| s.len()), Some(2));
 }
 
 #[test]
@@ -125,7 +196,7 @@ fn every_example_answers_the_same_as_the_analyser() {
             for input in [None, Some("BODY"), Some("DO0"), Some("ELSE"), Some("VALUE")] {
                 assert_eq!(
                     session.symbols_in_scope(&id, input),
-                    analysis.symbols_in_scope(&block, input),
+                    analysis.scope_at(&block, input),
                     "{} {id} {input:?}",
                     example.name
                 );

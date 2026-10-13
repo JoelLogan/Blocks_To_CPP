@@ -114,17 +114,21 @@ impl Session {
     }
 
     /// The symbols visible at a block of the last previewed document
-    /// ([`Analysis::symbols_in_scope`]): with `input` `None` or a value
+    /// ([`Analysis::scope_at`], 06 §6.5): with `input` `None` or a value
     /// input, what is visible at the block; with a statement input, what is
-    /// visible at the start of that list. A disabled statement in a list the
-    /// analyser reaches answers for its position. Empty when there is no
-    /// preview, for a block the document does not have, and for a block the
-    /// analyser does not reach. Sorted by name, then ID.
-    pub fn symbols_in_scope(&self, block: &str, input: Option<&str>) -> Vec<SymbolInfo> {
-        let (Some(last), Ok(block)) = (&self.last, BlockId::new(block)) else {
-            return Vec::new();
-        };
-        last.analysis.symbols_in_scope(&block, input)
+    /// visible at the start of that list. A disabled block in a list or input
+    /// the analyser reaches answers for its position, a block nested in it
+    /// like it, and a parked block with the parked scope of its module.
+    /// Sorted by name, then ID.
+    ///
+    /// `None` when the kept analysis has no answer for the block: there is no
+    /// preview, the previewed document does not have the block (the editor
+    /// added it since), or it is nested too deeply. `Some` with an empty list
+    /// means that nothing is visible there.
+    pub fn symbols_in_scope(&self, block: &str, input: Option<&str>) -> Option<Vec<SymbolInfo>> {
+        let last = self.last.as_ref()?;
+        let block = BlockId::new(block).ok()?;
+        last.analysis.scope_at(&block, input)
     }
 
     /// The analysis of a loaded document, and the options to generate its
@@ -222,15 +226,15 @@ impl Session {
                     target.module
                 ))
             })?;
-        let target_block = match &target.block {
-            Some(id) => Some(scope::find_block(&module.workspace.blocks, id).ok_or_else(|| {
-                FacadeError::InvalidArguments(format!(
-                    "the paste target's block {id} is not in module {}",
-                    target.module
-                ))
-            })?),
-            None => None,
-        };
+        if let Some(id) = &target.block
+            && scope::find_block(&module.workspace.blocks, id).is_none()
+        {
+            return Err(FacadeError::InvalidArguments(format!(
+                "the paste target's block {id} is not in module {}",
+                target.module
+            ))
+            .into());
+        }
 
         let mut blocks = payload.blocks;
         // Fresh IDs must not be used in the document, and must not be one
@@ -247,7 +251,12 @@ impl Session {
             .map_err(|error| FacadeError::Internal(format!("no fresh IDs for the pasted blocks: {error}")))?;
 
         let (analysis, _) = self.analysis_for(&document);
-        let visible = scope::visible_at(&analysis, &target.module, target_block, target.input.as_deref());
+        let visible = scope::visible_at(
+            &analysis,
+            &target.module,
+            target.block.as_ref(),
+            target.input.as_deref(),
+        );
         let outside = b2c_model::outside_refs(&blocks);
         let binding = clipboard::rebind(&outside, &payload.refs, &visible);
         b2c_model::rewrite_refs(&mut blocks, &binding.rebound);

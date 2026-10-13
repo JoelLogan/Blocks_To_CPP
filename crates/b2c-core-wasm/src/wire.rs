@@ -112,8 +112,8 @@ pub(crate) fn preview(preview: &Preview) -> String {
     encode(preview)
 }
 
-/// `[SymbolInfo, …]`.
-pub(crate) fn symbols(symbols: &[SymbolInfo]) -> String {
+/// `[SymbolInfo, …]`, or `null` for no answer.
+pub(crate) fn symbols(symbols: Option<&[SymbolInfo]>) -> String {
     encode(&symbols)
 }
 

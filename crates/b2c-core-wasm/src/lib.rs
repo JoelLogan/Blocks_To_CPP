@@ -14,7 +14,7 @@
 //! | [`load`] | `{ok, document?, diagnostics}`: the loaded document (migrated, not resolved), in canonical key order |
 //! | [`canonical`] | `{ok, text?, hash?, diagnostics}`: the canonical file text (05 §5.2) and the content hash (05 §5.11) |
 //! | [`preview`] | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols}` |
-//! | [`symbols_in_scope`] | `[SymbolInfo, …]`: what a block may refer to, from the last preview's analysis (06 §6.5) |
+//! | [`symbols_in_scope`] | `[SymbolInfo, …]` or `null`: what a block may refer to, from the last preview's analysis (06 §6.5) |
 //! | [`conversion_table`] | `[{from, to, conversion}, …]`: the analyser's conversion rule for every pair of static types (06 §6.6) |
 //! | [`clipboard_make`] | `{ok, payload?, text?, diagnostics}`: the clipboard payload of copied blocks and their C++ (05 §5.12) |
 //! | [`paste_prepare`] | `{ok, blocks?, unresolved, diagnostics}`: a payload's blocks with fresh IDs and re-bound references |
@@ -152,24 +152,29 @@ pub fn preview(document_json: &str, options_json: &str) -> String {
 }
 
 /// The symbols a block may refer to, from the last preview's analysis: a
-/// JSON list of `SymbolInfo` (06 §6.5), sorted by name, then ID.
+/// JSON list of `SymbolInfo` (06 §6.5), sorted by name, then ID, or `null`
+/// when that analysis has no answer for the block.
 ///
 /// With `input` absent, or the name of a value input, it is what is visible
 /// at the block; with the name of one of the block's statement inputs, what
 /// is visible at the start of that list (including a loop's counter and a
-/// function's parameters). A disabled statement in a list the analyser
-/// reaches answers for its position, like an enabled block there. The list
-/// is empty (`[]`) when there has been no successful preview, and for a
-/// block the previewed document does not have or the analyser does not
-/// reach (inside a disabled block, loose, or nested too deeply). See
-/// [`b2c_lang::Analysis::symbols_in_scope`] for the exact rules.
+/// function's parameters). A disabled block in a list or input the analyser
+/// reaches answers for its position, like an enabled block there, and every
+/// block nested in it answers like it. A parked block (loose, in a loose
+/// stack, or nested in one) answers with the parked scope: what is visible
+/// at the end of its module's `main` body, or the module's functions alone
+/// without one. The answer is `null` when there has been no successful
+/// preview, and for a block the previewed document does not have (one added
+/// since) or that is nested too deeply; an empty list (`[]`) means that
+/// nothing is visible there. See [`b2c_lang::Analysis::symbols_in_scope`]
+/// for the exact rules.
 #[wasm_bindgen]
 #[allow(
     clippy::needless_pass_by_value,
     reason = "wasm-bindgen passes an optional string by value"
 )]
 pub fn symbols_in_scope(block_id: &str, input: Option<String>) -> String {
-    with_session(|session| wire::symbols(&session.symbols_in_scope(block_id, input.as_deref())))
+    with_session(|session| wire::symbols(session.symbols_in_scope(block_id, input.as_deref()).as_deref()))
 }
 
 /// The analyser's conversion rule ([`b2c_lang::conversion`]) for every
@@ -212,7 +217,8 @@ pub fn clipboard_make(document_json: &str, block_ids_json: &str) -> String {
 /// Returns `{"ok": true, "blocks": [...], "unresolved": [{"sym", "name"}],
 /// "diagnostics": [...]}`: the blocks to insert, in order, with fresh IDs
 /// (none used in the document) and references re-bound by qualified name
-/// and kind among the symbols visible at the target; references that find
+/// and kind among the symbols visible at the target (on the canvas, and in
+/// or after a parked block, the parked scope of 06 §6.5); references that find
 /// nothing are listed in `unresolved` with a `B2C-E0201` each. When no
 /// visible symbol has the recorded name, a reference whose original symbol
 /// is visible at the target with the same kind keeps it, even if it was

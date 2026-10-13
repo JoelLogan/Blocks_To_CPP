@@ -101,6 +101,12 @@ function parseList(operation: string, text: string): unknown[] {
   return value;
 }
 
+/** A JSON list response or `null`, or the `CoreError` of an error envelope. */
+function parseListOrNull(operation: string, text: string): unknown[] | null {
+  const value = parseJson(operation, text);
+  return value === null ? null : parseList(operation, text);
+}
+
 /**
  * Cuts text that is certainly over the size limit (its UTF-8 form is at least as long as its
  * UTF-16 length) to one code unit over it.
@@ -154,7 +160,8 @@ export function createCore(glue: GlueFunctions): CoreHandle {
     symbolsInScope: (blockId, input) => {
       const block = boundText(blockId);
       const name = input === null ? null : boundText(input);
-      return list('symbolsInScope', () => glue.symbols_in_scope(block, name)) as SymbolInfo[];
+      const text = call('symbolsInScope', () => glue.symbols_in_scope(block, name));
+      return parseListOrNull('symbolsInScope', text) as SymbolInfo[] | null;
     },
     conversionTable: () =>
       list('conversionTable', () => glue.conversion_table()) as ConversionRow[],

@@ -4,24 +4,46 @@
 //!
 //! The scope query answers from an index that the lowering records as it
 //! walks, from the same scope stack it resolves names with ([`Scopes`]), so a
-//! dropdown never offers a symbol that the analyser would reject at that
-//! point. For each lowered block (and each disabled statement in a lowered
-//! list), and for each statement list it lowers, the index keeps one node of
-//! the scope stack's [`Trail`]: the index grows with the number of blocks and
-//! declarations, never with their product.
+//! dropdown on an attached block never offers a symbol that is out of scope
+//! there. For each lowered block, and for each statement list it lowers, the
+//! index keeps one node of the scope stack's [`Trail`]: the index grows with
+//! the number of blocks and declarations, never with their product.
+//!
+//! Blocks the analyser does not lower answer too (06 §6.5), each with one
+//! position of the same trail:
+//!
+//! * a disabled block in a list or input that is lowered answers for its
+//!   position, like an enabled block there, and every block nested in it
+//!   answers like it ([`ScopeIndex::record_tree`], called by the lowering);
+//! * a *parked* block (a top-level statement, reporter or predicate, the
+//!   blocks stacked below a top-level block, and every block nested in them,
+//!   ADR-0012) answers with the parked scope of its module: what is visible
+//!   at the end of the module's `main` body, or the module's functions alone
+//!   when it has no `main` ([`ScopeIndex::record_unlowered`]);
+//! * a definition that is not lowered (a disabled one, or one too damaged to
+//!   lower), and every block in it, answers with the module's functions.
+//!
+//! Each of these walks is iterative and stops at [`MAX_BLOCK_DEPTH`], like the
+//! lowering, so a block nested too deeply anywhere gives no answer.
 //!
 //! [`Scopes`]: crate::scope::Scopes
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::diag::Part;
-use b2c_ir::ids::{BlockId, SymbolId};
-use b2c_ir::sast::{Expr, ItemKind, Program, Stmt};
+use b2c_ir::ids::{BlockId, ModuleId, SymbolId};
+use b2c_ir::sast::{Expr, ItemKind, Program, Stmt, SymbolKind};
 use b2c_ir::scope_info::SymbolInfo;
 use b2c_ir::types::Type;
+use b2c_model::{Block, Document, Input};
 
 use crate::Analysis;
+use crate::collect::MAX_BLOCK_DEPTH;
 use crate::scope::{NodeId, Trail};
+
+/// The top-level blocks that are definitions, which are never parked
+/// (ADR-0012): the lowering lowers them as items, or skips them as a whole.
+const DEFINITION_TYPES: [&str; 2] = ["program.main", "func.define"];
 
 /// What was visible at a recorded position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,15 +79,92 @@ pub(crate) struct ScopeIndex {
     /// The user's name of every symbol in the table, when it differs from the
     /// C++ name there (an invalid name gets a placeholder in the table).
     names: BTreeMap<SymbolId, String>,
+    /// What is visible at the end of the body of each module's `main` (the
+    /// first one lowered there), by module index.
+    main_ends: BTreeMap<usize, Point>,
 }
 
 impl ScopeIndex {
-    /// Records what is visible at a block that is lowered, or at a disabled
-    /// statement in a list that is lowered. A block that is lowered twice (a
-    /// damaged file reusing a block ID) keeps its first position.
+    /// Records what is visible at a block that is lowered, or at a block the
+    /// lowering skips that answers for a position (see the module docs). A
+    /// block recorded twice (a damaged file reusing a block ID) keeps its
+    /// first position.
     pub(crate) fn record_block(&mut self, block: &BlockId, point: Point) {
         let points = self.blocks.entry(block.clone()).or_default();
         points.at.get_or_insert(point);
+    }
+
+    /// Records what is visible at the end of a `main` body, the parked scope
+    /// of its module (the first `main` lowered in a module wins).
+    pub(crate) fn record_main_end(&mut self, end: Point) {
+        self.main_ends.entry(end.module).or_insert(end);
+    }
+
+    /// The parked scope of a module: what is visible at the end of its
+    /// `main` body, or, without one, its functions alone.
+    fn parked_point(&self, module: usize) -> Point {
+        self.main_ends
+            .get(&module)
+            .copied()
+            .unwrap_or(Point { node: None, module })
+    }
+
+    /// Records `point` for `root`, a block at nesting `level` (a top-level
+    /// definition is at level 0, a statement of its body at level 1, and each
+    /// statement list or value input one more), and for every block nested
+    /// in it: its statement lists and value inputs, not its `stack`. Blocks
+    /// deeper than [`MAX_BLOCK_DEPTH`] are left out, as the lowering leaves
+    /// them out. The walk is iterative, and returns how many blocks it
+    /// visited (each at most once).
+    pub(crate) fn record_tree(&mut self, root: &Block, point: Point, level: usize) -> usize {
+        let mut visited = 0;
+        let mut pending: Vec<(&Block, usize)> = vec![(root, level)];
+        while let Some((block, level)) = pending.pop() {
+            if level > MAX_BLOCK_DEPTH {
+                continue;
+            }
+            visited += 1;
+            self.record_block(&block.id, point);
+            pending.extend(
+                block
+                    .statements
+                    .values()
+                    .flatten()
+                    .map(|nested| (nested, level + 1)),
+            );
+            pending.extend(block.inputs.values().filter_map(|input| match input {
+                Input::Block(nested) => Some((&*nested.block, level + 1)),
+                Input::Expr(_) => None,
+            }));
+        }
+        visited
+    }
+
+    /// Records the blocks of a document that the lowering never reached as a
+    /// whole: each top-level block that is not a definition, with its
+    /// `stack`, and the blocks stacked below a definition, answer with the
+    /// parked scope of their module; a definition the lowering skipped
+    /// (disabled, or too damaged to lower) answers, with everything in it,
+    /// with the module's functions. Called once the lowering has recorded
+    /// every `main` end. Returns how many blocks it visited.
+    pub(crate) fn record_unlowered(&mut self, document: &Document) -> usize {
+        let mut visited = 0;
+        for (module, workspace) in document.modules.iter().map(|m| &m.workspace).enumerate() {
+            let parked = self.parked_point(module);
+            for top in &workspace.blocks {
+                if !DEFINITION_TYPES.contains(&top.block_type.as_str()) {
+                    // A parked head is placed like a statement of a body.
+                    visited += self.record_tree(top, parked, 1);
+                } else if self.blocks.get(&top.id).is_none_or(|points| points.at.is_none()) {
+                    // A definition the lowering skipped: its module's functions.
+                    visited += self.record_tree(top, Point { node: None, module }, 0);
+                }
+                for stacked in &top.stack {
+                    visited += self.record_tree(stacked, parked, 1);
+                }
+            }
+        }
+        visited
     }
 
     /// Records what is visible at the start of a statement list, or inside a
@@ -159,23 +258,83 @@ impl Analysis {
     ///   `ELSE`, …), the result is what is visible at the **start of that
     ///   list**, including the counter or parameters the block itself declares.
     ///
-    /// Exactly the symbols that the analyser accepts a reference to at that
-    /// point are listed: a symbol that a newer declaration with the same name
-    /// hides is left out, and so are declarations in disabled blocks,
-    /// functions of other modules and functions hidden by a local name.
+    /// For an attached block, exactly the symbols that the analyser accepts a
+    /// reference to at that point are listed: a symbol that a newer
+    /// declaration with the same name hides is left out, and so are
+    /// declarations in disabled blocks, functions of other modules and
+    /// functions hidden by a local name.
     ///
-    /// A disabled statement in a list the analyser reaches answers for its
-    /// position, like an enabled block there (its own dropdowns, and a paste
-    /// directly after it): a disabled declaration declares nothing, so the
-    /// same symbols are visible at it and after it. A block ID that the
-    /// document does not have, and a block the analyser does not reach
-    /// (inside a disabled block, not attached to `when program starts` or a
-    /// function, or nested too deeply), give an empty list.
+    /// Blocks the analyser does not lower answer too, with any `input`:
+    ///
+    /// * A disabled block in a statement list or value input the analyser
+    ///   reaches answers for its position, like an enabled block there (its
+    ///   own dropdowns, and a paste directly after it): a disabled
+    ///   declaration declares nothing, so the same symbols are visible at it
+    ///   and after it. Every block nested in it answers like it.
+    /// * A parked block (a top-level statement, reporter or predicate, a
+    ///   block in a parked stack, or one nested in them; ADR-0012) answers
+    ///   with the **parked scope** of its module ([`Self::parked_scope`]).
+    ///   Declarations inside parked blocks declare nothing.
+    /// * A definition the analyser skips (a disabled `when program starts`
+    ///   or function), and every block in it, answers with the module's
+    ///   functions.
+    ///
+    /// A block ID that the document does not have, and a block nested too
+    /// deeply, give an empty list ([`Self::scope_at`] tells them apart from a
+    /// block that sees nothing).
     ///
     /// The result is sorted by name (byte order), then by ID.
     pub fn symbols_in_scope(&self, block: &BlockId, input: Option<&str>) -> Vec<SymbolInfo> {
-        match self.index.point(block, input) {
-            Some(point) => self.infos(self.index.visible(point)),
+        self.scope_at(block, input).unwrap_or_default()
+    }
+
+    /// [`Self::symbols_in_scope`], or `None` when the analysis has no answer
+    /// for the block: the document does not have it (for the editor: it was
+    /// added after this analysis), or it is nested too deeply. `Some` with an
+    /// empty list means that nothing is visible there.
+    pub fn scope_at(&self, block: &BlockId, input: Option<&str>) -> Option<Vec<SymbolInfo>> {
+        let point = self.index.point(block, input)?;
+        Some(self.infos(self.index.visible(point)))
+    }
+
+    /// What is visible **directly after** a block in its statement list,
+    /// where a block inserted after it would be: what is visible at the
+    /// block, plus the variable the block creates if the analyser accepted
+    /// that declaration (it hides any other symbol with its name). A
+    /// disabled or parked `create` declares nothing, and a `for` loop's
+    /// counter is visible only inside the loop, so for those it is what is
+    /// visible at the block. `None` when the analysis has no answer for the
+    /// block ([`Self::scope_at`]). Sorted like [`Self::symbols_in_scope`].
+    pub fn scope_after(&self, block: &BlockId) -> Option<Vec<SymbolInfo>> {
+        let mut visible = self.scope_at(block, None)?;
+        let created = self
+            .program
+            .symbols
+            .symbols
+            .iter()
+            .find(|(_, symbol)| {
+                symbol.origin.block == *block && matches!(symbol.kind, SymbolKind::Variable { .. })
+            })
+            .map(|(id, _)| id);
+        if let Some(own) = created.and_then(|id| self.infos(vec![id]).pop()) {
+            visible.retain(|info| info.name != own.name);
+            visible.push(own);
+            visible.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+        }
+        Some(visible)
+    }
+
+    /// The **parked scope** of a module (06 §6.5): what a block placed on
+    /// its canvas sees. That is what is visible at the end of the module's
+    /// `when program starts` body (the first one there, if it has several),
+    /// or, when the module has none that the analyser lowers, the module's
+    /// functions alone. Every parked block of the module answers with it,
+    /// and a paste onto the canvas binds references with it. Empty for a
+    /// module the document does not have. Sorted like
+    /// [`Self::symbols_in_scope`].
+    pub fn parked_scope(&self, module: &ModuleId) -> Vec<SymbolInfo> {
+        match self.program.modules.iter().position(|m| m.id == *module) {
+            Some(index) => self.infos(self.index.visible(self.index.parked_point(index))),
             None => Vec::new(),
         }
     }
@@ -367,6 +526,72 @@ mod tests {
         let last = analysis.symbols_in_scope(&block(&format!("d{}", count - 1)), None);
         assert_eq!(last.len(), count - 1);
         assert!(analysis.index.names.is_empty(), "every name is valid");
+    }
+
+    #[test]
+    fn the_index_stays_linear_on_long_disabled_stacks() {
+        // 5,000 `create` blocks stacked below a disabled loose head (parked),
+        // and 5,000 in a disabled loop in `main`: one position each, the same
+        // two for all of them, nothing declared, and each block visited once.
+        let count = 5_000;
+        let creates = |prefix: &str| -> Vec<serde_json::Value> {
+            (0..count)
+                .map(|i| {
+                    serde_json::json!({"id": format!("{prefix}{i}"), "type": "var.declare", "v": 1,
+                        "fields": {"TYPE": "int", "NAME": {"sym": format!("{prefix}_s{i}"), "name": format!("v{i}")}}})
+                })
+                .collect()
+        };
+        let document: Document = serde_json::from_value(serde_json::json!({
+            "format": "blocks2cpp/project", "formatVersion": 1,
+            "generator": {"app": "0.1.0", "catalog": "1.0.0"},
+            "project": {"id": "p", "name": "T", "language": {"standard": "c++20"}},
+            "modules": [{"id": "m", "name": "main", "workspace": {"blocks": [
+                {"id": "main", "type": "program.main", "v": 1, "statements": {"BODY": [
+                    {"id": "kept", "type": "var.declare", "v": 1,
+                     "fields": {"TYPE": "int", "NAME": {"sym": "s_kept", "name": "kept"}}},
+                    {"id": "loop", "type": "control.forever", "v": 1, "disabled": true,
+                     "statements": {"BODY": creates("d")}}
+                ]}},
+                {"id": "head", "type": "io.print", "v": 1, "disabled": true, "x": 0, "y": 0,
+                 "stack": creates("p")}
+            ]}}]
+        }))
+        .expect("document");
+        let blocks = 2 * count + 4;
+        let analysis = crate::analyze(&document);
+        // `kept` declares one name, and hides it in its own starting value.
+        assert_eq!(analysis.index.trail.len(), 2);
+        assert_eq!(analysis.index.blocks.len(), blocks);
+        let points: BTreeSet<Option<NodeId>> = analysis
+            .index
+            .blocks
+            .values()
+            .filter_map(|points| points.at.map(|point| point.node))
+            .collect();
+        // `main` and `kept` see nothing; the loop, everything in it and the
+        // parked stack see `kept` (node 1, after the hiding node 0).
+        assert_eq!(points, BTreeSet::from([None, Some(1)]));
+        let kept = ["kept"];
+        for id in ["d0", "d4999", "p0", "p4999", "head"] {
+            let names: Vec<String> = analysis
+                .symbols_in_scope(&block(id), None)
+                .into_iter()
+                .map(|s| s.name)
+                .collect();
+            assert_eq!(names, kept, "{id}");
+        }
+        // Every walk visits each block once.
+        let mut index = ScopeIndex::default();
+        assert_eq!(index.record_unlowered(&document), blocks);
+        assert_eq!(index.blocks.len(), blocks);
+        let mut index = ScopeIndex::default();
+        let point = Point {
+            node: None,
+            module: 0,
+        };
+        let looped = &document.modules[0].workspace.blocks[0].statements["BODY"][1];
+        assert_eq!(index.record_tree(looped, point, 1), count + 1);
     }
 
     #[test]

@@ -602,11 +602,12 @@ includes Raw C++ – review before running."*
 * Until namespaces arrive (M3), a qualified name is the plain name for
   variables, parameters and loop variables, and `::name` for functions.
 * A paste target is the canvas, the start of a statement list or a value
-  input, or the position directly after a block; scope is evaluated there.
-  A disabled statement in a list the analyser reaches has the scope of its
-  position ([06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes));
-  a block the analyser does not reach (loose, or inside a disabled block)
-  has the canvas's scope.
+  input, or the position directly after a block; scope is evaluated there
+  ([06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes)). A paste
+  on the canvas, or into or directly after a parked block, has the parked
+  scope (06 §6.5). A disabled statement in a list the analyser reaches has
+  the scope of its position, and a block inside a disabled statement has
+  that statement's scope.
 * `paste_prepare` returns the blocks ready to insert at the target, in order.
   On a canvas a copied stack stays one block with `stack`; in or after a
   block, the stacked blocks follow their head as ordinary blocks and no

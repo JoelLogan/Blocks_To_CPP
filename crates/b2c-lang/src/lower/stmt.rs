@@ -13,8 +13,8 @@ use super::convert::{Subject, constant_int};
 use super::{ItemCtx, Lowerer, PendingKind, field};
 use crate::access;
 use crate::codes;
-use crate::collect::MAX_BLOCK_DEPTH;
 use crate::messages::{a_type, quoted};
+use crate::query::Point;
 use crate::scope::{COUNTER_LIST, ListKey};
 use crate::typing::is_integral;
 
@@ -26,26 +26,31 @@ impl Lowerer<'_> {
     /// for the scope query (spec §6.5): the editor asks there for the
     /// block's own dropdowns and for pastes directly after it. What is
     /// visible at it is also what is visible after it, because a disabled
-    /// declaration declares nothing. Blocks inside it are never reached.
+    /// declaration declares nothing. The blocks inside it are never lowered
+    /// and answer like it.
     pub(super) fn body(&mut self, owner: &Block, list: &str, joined: bool) -> sast::Block {
+        self.body_and_end(owner, list, joined).0
+    }
+
+    /// [`Self::body`], and what is visible at the end of the list.
+    pub(super) fn body_and_end(&mut self, owner: &Block, list: &str, joined: bool) -> (sast::Block, Point) {
         self.scopes.push(ListKey::new(&owner.id, list), joined);
         self.record_input(&owner.id, list);
         let mut stmts = Vec::new();
         for block in access::statements(owner, list) {
             if block.disabled {
-                // Only where an enabled block would be lowered (not nested
-                // too deeply), so the two never answer differently.
-                if self.depth < MAX_BLOCK_DEPTH {
-                    self.record_block(&block.id);
-                }
+                // Recorded only where an enabled block would be lowered (not
+                // nested too deeply), so the two never answer differently.
+                self.record_skipped(block);
                 continue;
             }
             if let Some(stmt) = self.statement(block) {
                 stmts.push(stmt);
             }
         }
+        let end = self.point();
         self.scopes.pop();
-        sast::Block { stmts }
+        (sast::Block { stmts }, end)
     }
 
     /// A loop body: like [`Self::body`], inside a loop.

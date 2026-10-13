@@ -547,10 +547,61 @@ fn the_target_decides_what_is_visible() {
         unresolved(&target("mod_main", Some("c1"), Some("NOT_A_LIST"))),
         json!([{"sym": "s_guess", "name": "guess"}])
     );
-    // On the canvas only functions are visible.
+    // On the canvas the pasted blocks are parked: they see the end of main.
+    assert_eq!(unresolved(&target("mod_main", None, None)), json!([]));
+}
+
+#[test]
+fn a_paste_on_the_canvas_or_in_a_parked_block_has_the_parked_scope() {
+    // 05 §5.12: a paste on the canvas, or into or directly after a parked
+    // block, binds references among what is visible at the end of main.
+    let game = example("guessing_game");
+    let (payload, _) = copy(&game, &["b009"]); // if guess < secret …
+    let mut value: Value = serde_json::from_str(&other_document()).unwrap();
+    let mut parked = json!({"id": "L1", "type": "control.forever", "v": 1, "x": 600, "y": 40,
+                            "statements": {"BODY": [
+                                {"id": "L2", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+                                 "fields": {"NEWLINE": true, "SEP": "none", "STREAM": "out"},
+                                 "inputs": {"ITEM0": {"expr": [{"str": "parked"}]}}}]}});
+    parked["stack"] = json!([{"id": "L3", "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+                              "fields": {"NEWLINE": true, "SEP": "none", "STREAM": "out"},
+                              "inputs": {"ITEM0": {"expr": [{"str": "below"}]}}}]);
+    value["modules"][0]["workspace"]["blocks"]
+        .as_array_mut()
+        .unwrap()
+        .push(parked);
+    let document = value.to_string();
+    let targets = [
+        (None, None),
+        (Some("L1"), Some("BODY")),
+        (Some("L2"), None),
+        (Some("L2"), Some("ITEM0")),
+        (Some("L3"), None),
+    ];
+    for (n, (block, input)) in targets.into_iter().enumerate() {
+        let pasted = paste_ok(
+            &payload,
+            &document,
+            &target("mod_main", block, input),
+            40 + n as u64,
+        );
+        assert_eq!(pasted["unresolved"], json!([]), "{block:?} {input:?}");
+        assert_eq!(pasted["diagnostics"], json!([]), "{block:?} {input:?}");
+        let text = pasted["blocks"].to_string();
+        assert!(
+            text.contains("t_guess") && text.contains("t_secret"),
+            "{block:?} {input:?}: {text}"
+        );
+        assert!(!text.contains("s_guess") && !text.contains("s_secret"), "{text}");
+    }
+
+    // Without main, the canvas sees the module's functions alone.
+    let mut value: Value = serde_json::from_str(&document).unwrap();
+    value["modules"][0]["workspace"]["blocks"][0]["disabled"] = json!(true);
+    let pasted = paste_ok(&payload, &value.to_string(), &target("mod_main", None, None), 50);
     assert_eq!(
-        unresolved(&target("mod_main", None, None)),
-        json!([{"sym": "s_guess", "name": "guess"}])
+        pasted["unresolved"],
+        json!([{"sym": "s_guess", "name": "guess"}, {"sym": "s_secret", "name": "secret"}])
     );
 }
 
@@ -596,20 +647,28 @@ fn a_paste_after_a_disabled_statement_sees_its_position() {
     assert!(text.contains("t_guess") && text.contains("t_secret"), "{text}");
     assert!(!text.contains("s_guess") && !text.contains("s_secret"), "{text}");
 
-    // A block inside a disabled block is still not reached: its place sees
-    // what the canvas sees (no functions here).
+    // A block inside a disabled statement has that statement's scope: after
+    // the ask in the disabled loop, guess and secret bind by name.
     let mut value: Value = serde_json::from_str(&renamed).unwrap();
     find_mut(&mut value, "b010").unwrap()["disabled"] = json!(true);
-    let pasted = paste_ok(
-        &payload,
-        &value.to_string(),
-        &target("mod_main", Some("b005"), None),
-        24,
-    );
-    assert_eq!(
-        pasted["unresolved"],
-        json!([{"sym": "s_guess", "name": "guess"}, {"sym": "s_secret", "name": "secret"}])
-    );
+    let inside_disabled = value.to_string();
+    for (n, (block, input)) in [("b005", None), ("b009", Some("DO1")), ("b006", Some("ITEM0"))]
+        .into_iter()
+        .enumerate()
+    {
+        let pasted = paste_ok(
+            &payload,
+            &inside_disabled,
+            &target("mod_main", Some(block), input),
+            24 + n as u64,
+        );
+        assert_eq!(pasted["unresolved"], json!([]), "{block} {input:?}");
+        let text = pasted["blocks"].to_string();
+        assert!(
+            text.contains("t_guess") && text.contains("t_secret"),
+            "{block}: {text}"
+        );
+    }
 }
 
 #[test]

@@ -126,7 +126,11 @@ impl Lowerer<'_> {
     fn input_value(&mut self, block: &Block, name: &str) -> InputValue {
         match access::input(block, name) {
             None => InputValue::Absent,
-            Some(Input::Block(nested)) if nested.block.disabled => InputValue::DisabledBlock,
+            Some(Input::Block(nested)) if nested.block.disabled => {
+                // It answers the scope query where an enabled block would be.
+                self.record_skipped(&nested.block);
+                InputValue::DisabledBlock
+            }
             Some(Input::Block(nested)) => InputValue::Value(self.value_block(&nested.block)),
             Some(Input::Expr(slot)) if slot.expr.is_empty() => InputValue::Absent,
             Some(Input::Expr(slot)) => InputValue::Value(self.slot(&block.id, name, slot)),

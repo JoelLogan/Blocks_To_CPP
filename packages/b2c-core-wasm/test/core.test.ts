@@ -188,10 +188,18 @@ describe('createCore', () => {
     expect(() => core.pastePrepare('', '', { module: 'm', block: null, input: null }, '')).toThrow(
       expect.objectContaining({ kind: 'protocol' }) as Error,
     );
-    for (const response of ['not json', '"text"', '7', 'null']) {
+    for (const response of ['not json', '"text"', '7', '{}']) {
       const { core: other } = createCore(fakeGlue({ symbols_in_scope: () => response }));
       expect(() => other.symbolsInScope('b', null)).toThrow(CoreError);
     }
+  });
+
+  it('gives null when the scope query has no answer for a block', () => {
+    const { core } = createCore(fakeGlue({ symbols_in_scope: () => 'null' }));
+    expect(core.symbolsInScope('new_block', null)).toBeNull();
+    // Nothing visible is an answer: the empty list.
+    const { core: empty } = createCore(fakeGlue());
+    expect(empty.symbolsInScope('b002', null)).toEqual([]);
   });
 
   it('keeps oversized input bounded', () => {

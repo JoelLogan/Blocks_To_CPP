@@ -4,7 +4,7 @@
 
 use b2c_ir::{BlockId, ModuleId, SymbolInfo, SymbolInfoKind, Type};
 use b2c_lang::{Analysis, Conversion, conversion};
-use b2c_model::{Block, FieldValue};
+use b2c_model::Block;
 use serde::Serialize;
 
 /// Every static type, in the order of the analyser's own tables (`b2c_ir::Type`
@@ -59,9 +59,9 @@ pub fn conversion_table() -> Vec<ConversionRow> {
         .collect()
 }
 
-/// The functions of one module: what is visible on its canvas, outside any
-/// block, sorted by name, then ID.
-pub(crate) fn module_functions(analysis: &Analysis, module: &ModuleId) -> Vec<SymbolInfo> {
+/// The functions of one module: what is visible everywhere in it, sorted by
+/// name, then ID.
+fn module_functions(analysis: &Analysis, module: &ModuleId) -> Vec<SymbolInfo> {
     analysis
         .symbol_infos()
         .into_iter()
@@ -69,63 +69,37 @@ pub(crate) fn module_functions(analysis: &Analysis, module: &ModuleId) -> Vec<Sy
         .collect()
 }
 
-/// The symbols visible where blocks are pasted, for re-binding references.
+/// The symbols visible where blocks are pasted, for re-binding references
+/// (05 §5.12), from the scope query (06 §6.5):
 ///
-/// * `block` `None`: the module's canvas, where only the module's functions
-///   are visible.
-/// * `block` with an `input`: what [`Analysis::symbols_in_scope`] gives
-///   there (the start of that statement list, or inside that value input).
+/// * `block` `None`: the module's canvas, where pasted blocks are parked:
+///   the parked scope ([`Analysis::parked_scope`], what is visible at the
+///   end of the module's `main` body, or its functions alone without one).
+/// * `block` with an `input`: what [`Analysis::scope_at`] gives there (the
+///   start of that statement list, or inside that value input).
 /// * `block` without an input: directly after the block in its statement
-///   list, which is what is visible at the block plus the variable the block
-///   itself creates, if it is a `var.declare` the analyser accepted (it
-///   hides any other symbol with its name).
+///   list ([`Analysis::scope_after`]): what is visible at the block plus the
+///   variable the block itself creates, if the analyser accepted it.
 ///
-/// A disabled statement in a statement list the analyser reaches has the
-/// scope of its position (the scope query answers for it, and a disabled
-/// `var.declare` creates nothing), so a paste after it, or into one of its
-/// value inputs, sees the variables declared before it. A block the analyser
-/// does not reach (inside a disabled block, loose on the canvas, or in a
-/// loose stack) has no scope of its own; its blocks see the module's
-/// functions, like the canvas. That is also what an empty scope query means:
-/// a reached block always sees the module's functions unless a visible local
-/// name hides them, so an empty answer only comes from an unreached block
-/// (or from a module with no functions, where the fallback adds nothing).
+/// So a paste into or after a parked block has the parked scope too, and a
+/// paste into or after a block inside a disabled statement has that
+/// statement's scope. A block the scope query has no answer for (one nested
+/// too deeply) sees the module's functions, which are visible everywhere in
+/// it.
 pub(crate) fn visible_at(
     analysis: &Analysis,
     module: &ModuleId,
-    block: Option<&Block>,
+    block: Option<&BlockId>,
     input: Option<&str>,
 ) -> Vec<SymbolInfo> {
     let Some(block) = block else {
-        return module_functions(analysis, module);
+        return analysis.parked_scope(module);
     };
-    let mut visible = analysis.symbols_in_scope(&block.id, input);
-    if visible.is_empty() {
-        visible = module_functions(analysis, module);
-    }
-    if input.is_none()
-        && let Some(own) = own_variable(analysis, block)
-    {
-        visible.retain(|info| info.name != own.name);
-        visible.push(own);
-        visible.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
-    }
-    visible
-}
-
-/// The variable a `var.declare` block creates, if the analyser accepted the
-/// declaration (it is in the program's symbol table).
-fn own_variable(analysis: &Analysis, block: &Block) -> Option<SymbolInfo> {
-    if block.block_type != "var.declare" {
-        return None;
-    }
-    let Some(FieldValue::Decl(decl)) = block.fields.get("NAME") else {
-        return None;
+    let answer = match input {
+        Some(input) => analysis.scope_at(block, Some(input)),
+        None => analysis.scope_after(block),
     };
-    analysis
-        .symbol_infos()
-        .into_iter()
-        .find(|info| info.id == decl.sym)
+    answer.unwrap_or_else(|| module_functions(analysis, module))
 }
 
 /// Finds a block by ID in one module's canvas (any depth, stacks included).

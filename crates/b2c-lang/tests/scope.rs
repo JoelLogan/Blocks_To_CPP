@@ -312,6 +312,7 @@ fn disabled_declarations_are_left_out() {
     let (after, inside_disabled) = (marker(), marker());
     let ids = [&after, &inside_disabled].map(id_of);
     let a = run_main(vec![
+        declare("int", "before", None),
         disabled(declare("int", "off", None)),
         disabled(if_then(
             boolean(true),
@@ -320,11 +321,11 @@ fn disabled_declarations_are_left_out() {
         declare("int", "on", None),
         after,
     ]);
-    assert_eq!(visible(&a, &ids[0], None), ["on"]);
+    assert_eq!(visible(&a, &ids[0], None), ["before", "on"]);
     assert_eq!(
         visible(&a, &ids[1], None),
-        NONE,
-        "a block inside a disabled block is not analysed"
+        ["before"],
+        "a block inside a disabled block answers like it, and `deeper` is not declared"
     );
 }
 
@@ -344,7 +345,7 @@ fn a_disabled_statement_answers_for_its_position() {
             if_then(boolean(true), vec![off_loop]),
         ]),
         func("helper", "void", &[], vec![]),
-        // A disabled statement in a loose block is not reached.
+        // A disabled statement in a loose block is parked like the block.
         forever(vec![inner_off]),
     ]);
     // Like an enabled block there: what is declared before it, and the
@@ -363,7 +364,11 @@ fn a_disabled_statement_answers_for_its_position() {
         ["first", "helper", "second"],
         "its own lists are never lowered, so they answer at the block"
     );
-    assert_eq!(visible(&a, &ids[3], None), NONE, "not in the program");
+    assert_eq!(
+        visible(&a, &ids[3], None),
+        ["first", "helper", "second"],
+        "the parked scope: the end of main"
+    );
     // Nothing a disabled block declares is in the program.
     assert!(a.symbol_infos().iter().all(|s| s.name != "off"));
 }
@@ -412,21 +417,252 @@ fn statement_inputs_answer_at_the_start_of_the_list() {
     assert_eq!(visible(&a, &while_id, Some("#params")), ["before"]);
 }
 
+/// A loose stack (05 §5.4): `head` on the canvas with `stacked` below it.
+fn loose(mut head: Value, stacked: Vec<Value>) -> Value {
+    head["x"] = json!(40);
+    head["y"] = json!(400);
+    if !stacked.is_empty() {
+        head["stack"] = Value::Array(stacked);
+    }
+    head
+}
+
 #[test]
-fn unknown_and_unattached_blocks_give_nothing() {
-    let loose_marker = marker();
-    let loose_id = id_of(&loose_marker);
+fn parked_blocks_answer_with_the_end_of_main() {
+    // 06 §6.5: a parked block (loose, in a parked stack, or nested in one)
+    // sees what is visible at the end of its module's `main` body.
+    let head = marker();
+    let parked_declare = declare("int", "parked", Some(num("1")));
+    let below = marker();
     let nested = marker();
-    let nested_id = id_of(&nested);
-    let loose_loop = forever(vec![nested]);
+    let parked_loop = for_range("k", num("0"), "to", num("3"), None, vec![nested.clone()]);
+    let in_value = get("x");
+    let off_head = disabled(marker());
+    let under_off = marker();
+    let reporter = json!({"id": "loose_value", "type": "var.get", "v": 1,
+                          "fields": {"VAR": {"ref": "sym_x"}}, "x": 0, "y": 0});
+    let ids = [
+        &head,
+        &parked_declare,
+        &below,
+        &nested,
+        &parked_loop,
+        &in_value,
+        &off_head,
+        &under_off,
+        &reporter,
+    ]
+    .map(id_of);
+    let a = run(vec![
+        main(vec![
+            declare("int", "x", None),
+            if_then(boolean(true), vec![declare("int", "inner", None)]),
+            declare("int", "y", None),
+        ]),
+        func("f", "void", &[], vec![]),
+        loose(
+            head,
+            vec![parked_declare, below, print(vec![in_value]), parked_loop],
+        ),
+        // A disabled head parks its stack all the same.
+        loose(off_head, vec![under_off]),
+        reporter,
+    ]);
+    let end = ["f", "x", "y"];
+    for id in &ids {
+        assert_eq!(visible(&a, id, None), end, "at {id}");
+    }
+    // Their inputs and statement lists answer the same: a declaration in a
+    // parked stack declares nothing, and neither does a parked loop's counter.
+    assert_eq!(visible(&a, &ids[4], Some("BODY")), end);
+    assert_eq!(visible(&a, &ids[1], Some("VALUE")), end);
+    assert_eq!(visible(&a, &ids[0], Some("NO_SUCH_INPUT")), end);
+    assert!(
+        a.symbol_infos()
+            .iter()
+            .all(|s| s.name != "parked" && s.name != "k"),
+        "parked blocks declare nothing"
+    );
+}
+
+#[test]
+fn without_main_parked_blocks_see_their_modules_functions() {
+    // With no `main`, with a disabled one, or with `main` in another module:
+    // the functions of the parked block's own module alone.
+    let mains = [
+        None,
+        Some(disabled(main(vec![declare("int", "x", None)]))),
+        Some(main(vec![declare("int", "x", None)])),
+    ];
+    for (case, main_block) in mains.into_iter().enumerate() {
+        let (here, there) = (marker(), marker());
+        let ids = [&here, &there].map(id_of);
+        let mut first = vec![
+            func("f", "void", &[], vec![]),
+            func("g", "int", &[("n", "int", "copy")], vec![ret(Some(num("1")))]),
+            loose(here, vec![]),
+        ];
+        let mut second = vec![func("h", "void", &[], vec![]), loose(there, vec![])];
+        match main_block {
+            Some(block) if case == 2 => second.push(block),
+            Some(block) => first.push(block),
+            None => {}
+        }
+        let a = analyze(&doc_modules(vec![("main", first), ("other", second)]));
+        let second_expected: &[&str] = if case == 2 { &["h", "x"] } else { &["h"] };
+        assert_eq!(visible(&a, &ids[0], None), ["f", "g"], "case {case}");
+        assert_eq!(visible(&a, &ids[1], None), second_expected, "case {case}");
+    }
+}
+
+#[test]
+fn parked_blocks_answer_down_to_the_depth_limit() {
+    // A parked tree is walked to the same depth as the program: nested as
+    // deeply as one that is attached, a parked block answers exactly when
+    // that one does.
+    let mut empty_or_not = BTreeSet::new();
+    for levels in 60..68 {
+        let (attached, parked) = (marker(), marker());
+        let ids = [&attached, &parked].map(id_of);
+        let mut in_main = forever(vec![attached]);
+        let mut on_canvas = forever(vec![parked]);
+        for _ in 1..levels {
+            in_main = forever(vec![in_main]);
+            on_canvas = forever(vec![on_canvas]);
+        }
+        let a = run(vec![
+            main(vec![declare("int", "x", None), in_main]),
+            loose(on_canvas, vec![]),
+        ]);
+        let found = visible(&a, &ids[0], None);
+        let expected: &[&str] = if found.is_empty() { &NONE } else { &["x"] };
+        assert_eq!(visible(&a, &ids[1], None), expected, "at {levels} levels");
+        empty_or_not.insert(found.is_empty());
+    }
+    assert_eq!(empty_or_not.len(), 2, "both sides of the limit are tested");
+}
+
+#[test]
+fn blocks_in_a_disabled_statement_answer_like_it() {
+    // 06 §6.5: a disabled `if` and disabled loops. Everything nested in them
+    // (conditions, statements, nested lists, and declarations, which declare
+    // nothing) answers like the disabled statement itself.
+    let in_cond = get("a");
+    let first = marker();
+    let hidden = declare("int", "hidden", None);
+    let after_hidden = marker();
+    let in_nested_loop = marker();
+    let nested_loop = for_range("i", num("0"), "to", num("3"), None, vec![in_nested_loop.clone()]);
+    let off_if = disabled(if_then(
+        compare("lt", in_cond.clone(), num("3")),
+        vec![
+            first.clone(),
+            hidden.clone(),
+            after_hidden.clone(),
+            nested_loop.clone(),
+        ],
+    ));
+    let in_times = get("a");
+    let in_body = marker();
+    let off_loop = disabled(repeat(in_times.clone(), vec![in_body.clone()]));
+    let in_counter_body = marker();
+    let off_for = disabled(for_range(
+        "j",
+        num("0"),
+        "to",
+        num("3"),
+        None,
+        vec![in_counter_body.clone()],
+    ));
+    let in_function = marker();
+    let off_in_function = disabled(forever(vec![in_function.clone()]));
+    let a = run(vec![
+        main(vec![
+            declare("int", "a", None),
+            off_if.clone(),
+            declare("int", "b", None),
+            off_loop.clone(),
+            off_for.clone(),
+        ]),
+        func(
+            "f",
+            "void",
+            &[("p", "int", "copy")],
+            vec![off_in_function.clone()],
+        ),
+    ]);
+    let like_if = ["a", "f"];
+    for block in [
+        &off_if,
+        &in_cond,
+        &first,
+        &hidden,
+        &after_hidden,
+        &nested_loop,
+        &in_nested_loop,
+    ] {
+        assert_eq!(visible(&a, &id_of(block), None), like_if, "{}", id_of(block));
+    }
+    for list in ["DO0", "ELSE"] {
+        assert_eq!(visible(&a, &id_of(&off_if), Some(list)), like_if, "{list}");
+    }
+    assert_eq!(
+        visible(&a, &id_of(&nested_loop), Some("BODY")),
+        like_if,
+        "a loop inside declares no counter"
+    );
+    let like_loop = ["a", "b", "f"];
+    for block in [&off_loop, &in_times, &in_body, &off_for, &in_counter_body] {
+        assert_eq!(visible(&a, &id_of(block), None), like_loop, "{}", id_of(block));
+    }
+    assert_eq!(visible(&a, &id_of(&off_for), Some("BODY")), like_loop);
+    for block in [&off_in_function, &in_function] {
+        assert_eq!(visible(&a, &id_of(block), None), ["f", "p"], "{}", id_of(block));
+    }
+    assert!(
+        a.symbol_infos()
+            .iter()
+            .all(|s| !["hidden", "i", "j"].contains(&s.name.as_str()))
+    );
+}
+
+#[test]
+fn a_definition_the_analyser_skips_answers_with_the_modules_functions() {
+    // A disabled function, and everything in it: what is visible everywhere
+    // in the module (its functions), not the parameters it would have.
+    let inside = marker();
+    let inside_id = id_of(&inside);
     let a = run(vec![
         main(vec![declare("int", "x", None)]),
         func("f", "void", &[], vec![]),
-        loose_marker,
-        loose_loop,
+        disabled(func(
+            "off",
+            "void",
+            &[("p", "int", "copy")],
+            vec![declare("int", "local", None), inside],
+        )),
     ]);
-    assert_eq!(visible(&a, &loose_id, None), NONE);
-    assert_eq!(visible(&a, &nested_id, None), NONE);
+    assert_eq!(visible(&a, "fn_off", None), ["f"]);
+    assert_eq!(visible(&a, "fn_off", Some("BODY")), ["f"]);
+    assert_eq!(visible(&a, &inside_id, None), ["f"]);
+
+    // A disabled `main`, and everything in it.
+    let in_main = marker();
+    let in_main_id = id_of(&in_main);
+    let a = run(vec![
+        disabled(main(vec![declare("int", "x", None), in_main])),
+        func("f", "void", &[], vec![]),
+    ]);
+    assert_eq!(visible(&a, "main", Some("BODY")), ["f"]);
+    assert_eq!(visible(&a, &in_main_id, None), ["f"]);
+}
+
+#[test]
+fn unknown_blocks_give_nothing() {
+    let a = run(vec![
+        main(vec![declare("int", "x", None)]),
+        func("f", "void", &[], vec![]),
+    ]);
     assert_eq!(visible(&a, "no_such_block", None), NONE);
     assert_eq!(visible(&a, "no_such_block", Some("BODY")), NONE);
     // A document with no module at all.
@@ -439,8 +675,192 @@ fn unknown_and_unattached_blocks_give_nothing() {
     .expect("document");
     let a = analyze(&empty);
     assert!(a.symbols_in_scope(&block("main"), None).is_empty());
+    assert_eq!(a.scope_at(&block("main"), None), None);
+    assert!(a.parked_scope(&ModuleId::new("m").unwrap()).is_empty());
     assert!(a.symbol_infos().is_empty());
     assert!(a.block_types().is_empty());
+}
+
+/// The names in an answer that may be missing.
+fn names_of(found: Option<Vec<SymbolInfo>>) -> Option<Vec<String>> {
+    found.map(|symbols| symbols.into_iter().map(|s| s.name).collect())
+}
+
+#[test]
+fn the_query_tells_an_unknown_block_from_one_that_sees_nothing() {
+    // `scope_at` is `None` only when the analysis has no answer for the
+    // block: the document does not have it, or it is nested too deeply.
+    let first = marker();
+    let first_id = id_of(&first);
+    let mut deep = marker();
+    let deep_id = id_of(&deep);
+    for _ in 0..70 {
+        deep = forever(vec![deep]);
+    }
+    let a = run_main(vec![first, deep]);
+    assert_eq!(names_of(a.scope_at(&block(&first_id), None)), Some(vec![]));
+    assert_eq!(names_of(a.scope_at(&block("main"), Some("BODY"))), Some(vec![]));
+    assert_eq!(a.scope_at(&block("no_such_block"), None), None);
+    assert_eq!(a.scope_at(&block(&deep_id), None), None);
+    assert_eq!(visible(&a, &deep_id, None), NONE);
+}
+
+#[test]
+fn after_a_block_its_own_variable_is_visible() {
+    // `scope_after` is where a block inserted after this one would be: a
+    // `create` the analyser accepted adds its variable, hiding an outer one
+    // with its name; a loop's counter, a disabled `create` and a parked one
+    // add nothing.
+    let outer = declare_as("int", "x", "s_outer", None);
+    let inner = declare_as("int", "x", "s_inner", None);
+    let counted = for_range("i", num("0"), "to", num("3"), None, vec![]);
+    let off = disabled(declare("int", "off", None));
+    let parked = declare("int", "parked", None);
+    let ids = [&inner, &counted, &off, &parked].map(id_of);
+    let a = run(vec![
+        main(vec![outer, if_then(boolean(true), vec![inner, counted, off])]),
+        loose(parked, vec![]),
+    ]);
+    let after = |id: &str| a.scope_after(&block(id)).expect("an answer");
+    let inner_after = after(&ids[0]);
+    assert_eq!(
+        inner_after.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+        ["s_inner"],
+        "the new x hides the outer one"
+    );
+    assert_eq!(names_of(Some(after(&ids[1]))), Some(vec![String::from("x")]));
+    assert_eq!(after(&ids[1]), a.symbols_in_scope(&block(&ids[1]), None));
+    assert_eq!(after(&ids[2]), a.symbols_in_scope(&block(&ids[2]), None));
+    assert_eq!(after(&ids[3]), a.parked_scope(&ModuleId::new("mod_0").unwrap()));
+    assert_eq!(a.scope_after(&block("no_such_block")), None);
+}
+
+#[test]
+fn a_disabled_value_answers_where_an_enabled_one_would() {
+    // A disabled reporter in an input the analyser reaches, and the blocks
+    // nested in it, answer for that input: inside a `create`'s starting
+    // value, without the variable being created.
+    let disabled_value = |mut input: Value| {
+        input["block"]["disabled"] = json!(true);
+        input
+    };
+    let in_print = disabled_value(arith("add", get("x"), num("1")));
+    let nested = in_print["block"]["inputs"]["A"].clone();
+    let in_start = disabled_value(get("x"));
+    let ids = [&in_print, &nested, &in_start].map(id_of);
+    let a = run_main(vec![
+        declare("int", "x", None),
+        print(vec![in_print]),
+        declare("int", "y", Some(in_start)),
+    ]);
+    assert_eq!(visible(&a, &ids[0], None), ["x"]);
+    assert_eq!(visible(&a, &ids[1], None), ["x"]);
+    assert_eq!(
+        visible(&a, &ids[2], None),
+        ["x"],
+        "not y in its own starting value"
+    );
+}
+
+#[test]
+fn every_module_has_its_parked_scope() {
+    let a = analyze(&doc_modules(vec![
+        (
+            "main",
+            vec![
+                main(vec![declare("int", "x", None)]),
+                func("f", "void", &[], vec![]),
+            ],
+        ),
+        ("other", vec![func("g", "void", &[], vec![])]),
+    ]));
+    let names = |module: &str| -> Vec<String> {
+        a.parked_scope(&ModuleId::new(module).unwrap())
+            .into_iter()
+            .map(|s| s.name)
+            .collect()
+    };
+    assert_eq!(names("mod_0"), ["f", "x"]);
+    assert_eq!(names("mod_1"), ["g"]);
+    assert_eq!(
+        names("mod_9"),
+        Vec::<String>::new(),
+        "a module the document does not have"
+    );
+}
+
+/// The block with this ID anywhere in a JSON tree, mutably.
+fn find_mut<'a>(value: &'a mut Value, id: &str) -> Option<&'a mut Value> {
+    if value.get("id").and_then(Value::as_str) == Some(id) && value.get("type").is_some() {
+        return Some(value);
+    }
+    match value {
+        Value::Object(map) => map.values_mut().find_map(|v| find_mut(v, id)),
+        Value::Array(items) => items.iter_mut().find_map(|v| find_mut(v, id)),
+        _ => None,
+    }
+}
+
+/// Every statement list of a JSON tree: its owner's ID, its name, and the
+/// IDs of its statements.
+fn statement_lists(value: &Value, out: &mut Vec<(String, String, Vec<String>)>) {
+    match value {
+        Value::Object(map) => {
+            if let (Some(Value::String(id)), Some(Value::Object(lists))) =
+                (map.get("id"), map.get("statements"))
+            {
+                for (name, list) in lists {
+                    let items = list.as_array().into_iter().flatten().map(id_of).collect();
+                    out.push((id.clone(), name.clone(), items));
+                }
+            }
+            map.values().for_each(|v| statement_lists(v, out));
+        }
+        Value::Array(items) => items.iter().for_each(|v| statement_lists(v, out)),
+        _ => {}
+    }
+}
+
+#[test]
+fn the_place_of_a_new_block_is_known_before_it_is_analysed() {
+    // What a block dropped or pasted into a statement list will see is known
+    // from the analysis before the block itself is analysed: at the start of
+    // the list it is the owner's answer for that list, after a statement it
+    // is that statement's `scope_after` (W4-2 re-targets a dropped preset
+    // with it). Checked by inserting a statement at every position of every
+    // list of every example and analysing again.
+    let mut checked = 0;
+    for path in project_files("examples") {
+        let name = file_name(&path);
+        let text = std::fs::read_to_string(&path).unwrap();
+        let original: Value = serde_json::from_str(&text).unwrap();
+        let before = analyze(&resolved(text.as_bytes(), &name));
+        let mut lists = Vec::new();
+        statement_lists(&original, &mut lists);
+        for (owner, list, items) in lists {
+            for at in 0..=items.len() {
+                let expected = match at.checked_sub(1).and_then(|i| items.get(i)) {
+                    None => before.scope_at(&block(&owner), Some(&list)),
+                    Some(previous) => before.scope_after(&block(previous)),
+                };
+                let mut edited = original.clone();
+                let mut inserted = marker();
+                inserted["id"] = json!("new_block");
+                find_mut(&mut edited, &owner).unwrap()["statements"][&list]
+                    .as_array_mut()
+                    .unwrap()
+                    .insert(at, inserted);
+                let after = analyze(&resolved(edited.to_string().as_bytes(), &name));
+                assert_eq!(
+                    after.scope_at(&block("new_block"), None),
+                    expected,
+                    "{name}: {owner} {list} at {at}"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 50, "only {checked} places");
 }
 
 #[test]
@@ -809,6 +1229,8 @@ struct GenFunction {
 struct GenProgram {
     main: Vec<Gen>,
     functions: Vec<GenFunction>,
+    /// A loose stack on the first module's canvas (parked); none when empty.
+    parked: Vec<Gen>,
 }
 
 fn gen_statement() -> impl Strategy<Value = Gen> {
@@ -851,36 +1273,49 @@ fn gen_program() -> impl Strategy<Value = GenProgram> {
     (
         prop::collection::vec(gen_statement(), 2..6),
         prop::collection::vec(function, 0..3),
+        prop::collection::vec(gen_statement(), 0..3),
     )
-        .prop_map(|(main, functions)| GenProgram { main, functions })
+        .prop_map(|(main, functions, parked)| GenProgram {
+            main,
+            functions,
+            parked,
+        })
 }
 
-/// Whether the analyser reaches a block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How the analyser treats a block, and so what the scope query answers
+/// there.
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Reach {
     /// It is analysed.
     Reached,
-    /// It is a disabled statement in a list that is analysed: not analysed
-    /// itself, but the scope query answers for its position.
-    DisabledHere,
-    /// Inside a disabled block (so never analysed, and never answered for).
-    Unreached,
+    /// It is a disabled statement (with this block ID) in a list that is
+    /// analysed: not analysed itself, but the scope query answers for its
+    /// position, as for an enabled block there.
+    DisabledHere(String),
+    /// It is inside the disabled block with this ID (a statement in a list
+    /// that is analysed, or a disabled function): it answers like that block.
+    Like(String),
+    /// It is parked (in a loose stack, or nested in one): it answers with
+    /// the parked scope.
+    Parked,
 }
 
 impl Reach {
     /// The reach of the blocks inside a block with this reach.
-    fn inside(self) -> Self {
+    fn inside(&self) -> Self {
         match self {
             Self::Reached => Self::Reached,
-            Self::DisabledHere | Self::Unreached => Self::Unreached,
+            Self::DisabledHere(id) | Self::Like(id) => Self::Like(id.clone()),
+            Self::Parked => Self::Parked,
         }
     }
 
-    /// The reach of a block marked disabled, given its reach otherwise.
-    fn disabled(self) -> Self {
+    /// The reach of the block `id` marked disabled, given its reach
+    /// otherwise.
+    fn disabled(&self, id: &str) -> Self {
         match self {
-            Self::Reached | Self::DisabledHere => Self::DisabledHere,
-            Self::Unreached => Self::Unreached,
+            Self::Reached | Self::DisabledHere(_) => Self::DisabledHere(id.to_owned()),
+            Self::Like(_) | Self::Parked => self.clone(),
         }
     }
 }
@@ -892,11 +1327,16 @@ struct Probe {
     /// The symbol ID it refers to in the rendered text, unique to it.
     placeholder: String,
     call: bool,
-    /// Whether the analyser reaches it.
+    /// How the analyser treats it.
     reach: Reach,
     /// The variable whose starting value it is in, if any.
     initialises: Option<String>,
 }
+
+/// The ID of the statement that ends `main`'s body in a rendered program: a
+/// `print 1` that declares nothing, so what is visible at it is the parked
+/// scope.
+const END_OF_MAIN: &str = "end_of_main";
 
 #[derive(Default)]
 struct Renderer {
@@ -904,6 +1344,10 @@ struct Renderer {
     variables: Vec<String>,
     functions: Vec<String>,
     probes: Vec<Probe>,
+    /// The disabled statements in lists that are analysed.
+    disabled_statements: Vec<String>,
+    /// The disabled functions, with their module's ID.
+    disabled_functions: Vec<(String, String)>,
 }
 
 impl Renderer {
@@ -912,8 +1356,15 @@ impl Renderer {
         format!("{prefix}{}", self.next)
     }
 
-    fn probe(&mut self, call: bool, reach: Reach, initialises: Option<String>) -> (String, String) {
-        let block = self.fresh(if call { "pc" } else { "pv" });
+    /// Records a probe with the block ID `block` (a fresh one when `None`).
+    fn probe(
+        &mut self,
+        block: Option<String>,
+        call: bool,
+        reach: Reach,
+        initialises: Option<String>,
+    ) -> (String, String) {
+        let block = block.unwrap_or_else(|| self.fresh(if call { "pc" } else { "pv" }));
         let placeholder = self.fresh("q");
         self.probes.push(Probe {
             block: block.clone(),
@@ -926,19 +1377,25 @@ impl Renderer {
     }
 
     /// A `var.get` probe inside a block with this reach.
-    fn var_probe(&mut self, reach: Reach, initialises: Option<String>) -> Value {
-        let (id, target) = self.probe(false, reach.inside(), initialises);
+    fn var_probe(&mut self, reach: &Reach, initialises: Option<String>) -> Value {
+        let (id, target) = self.probe(None, false, reach.inside(), initialises);
         json!({"block": {"id": id, "type": "var.get", "v": 1, "fields": {"VAR": {"ref": target}}}})
     }
 
     /// A statement list of a block with this reach.
-    fn list(&mut self, list: &[Gen], reach: Reach) -> Value {
-        Value::Array(list.iter().map(|g| self.statement(g, reach.inside())).collect())
+    fn list(&mut self, list: &[Gen], reach: &Reach) -> Vec<Value> {
+        let inner = reach.inside();
+        list.iter().map(|g| self.statement(g, &inner)).collect()
     }
 
     /// A statement with this reach (before its own `disabled` flag).
-    fn statement(&mut self, statement: &Gen, reach: Reach) -> Value {
+    fn statement(&mut self, statement: &Gen, reach: &Reach) -> Value {
         let id = self.fresh("k");
+        self.statement_as(id, statement, reach)
+    }
+
+    /// A statement with the block ID `id`.
+    fn statement_as(&mut self, id: String, statement: &Gen, reach: &Reach) -> Value {
         match statement {
             Gen::Declare { name, probe_value } => {
                 let symbol = self.fresh("s");
@@ -956,15 +1413,15 @@ impl Renderer {
                        "inputs": {"ITEM0": item}})
             }
             Gen::CallProbe => {
-                let (id, target) = self.probe(true, reach, None);
+                let (id, target) = self.probe(Some(id), true, reach.clone(), None);
                 json!({"id": id, "type": "func.call_stmt", "v": 1, "fields": {"FUNC": {"ref": target}},
                        "extra": {"argCount": 0}})
             }
             Gen::If { body, else_body } => {
                 let mut statements = serde_json::Map::new();
-                statements.insert(String::from("DO0"), self.list(body, reach));
+                statements.insert(String::from("DO0"), Value::Array(self.list(body, reach)));
                 if let Some(other) = else_body {
-                    statements.insert(String::from("ELSE"), self.list(other, reach));
+                    statements.insert(String::from("ELSE"), Value::Array(self.list(other, reach)));
                 }
                 json!({"id": id, "type": "control.if", "v": 1,
                        "extra": {"elseIfCount": 0, "hasElse": else_body.is_some()},
@@ -994,7 +1451,11 @@ impl Renderer {
                        "statements": {"BODY": body}})
             }
             Gen::Disabled(inner) => {
-                let mut block = self.statement(inner, reach.disabled());
+                let reach = reach.disabled(&id);
+                if reach == Reach::DisabledHere(id.clone()) && !self.disabled_statements.contains(&id) {
+                    self.disabled_statements.push(id.clone());
+                }
+                let mut block = self.statement_as(id, inner, &reach);
                 block["disabled"] = json!(true);
                 block
             }
@@ -1015,11 +1476,13 @@ impl Renderer {
             })
             .collect();
         let reach = if function.disabled {
-            Reach::Unreached
+            let module = if function.other_module { "mod_1" } else { "mod_0" };
+            self.disabled_functions.push((id.clone(), String::from(module)));
+            Reach::DisabledHere(id.clone())
         } else {
             Reach::Reached
         };
-        let body = self.list(&function.body, reach);
+        let body = self.list(&function.body, &reach);
         json!({"id": id, "type": "func.define", "v": 1, "disabled": function.disabled,
                "fields": {"NAME": {"sym": symbol, "name": NAMES[function.name]}, "RETURNS": "void"},
                "extra": {"params": params}, "statements": {"BODY": body}})
@@ -1028,12 +1491,26 @@ impl Renderer {
     /// The project text and the probes and candidates in it.
     fn render(program: &GenProgram) -> (String, Self) {
         let mut renderer = Self::default();
-        let body = renderer.list(&program.main, Reach::Reached);
+        let mut body = renderer.list(&program.main, &Reach::Reached);
+        body.push(
+            json!({"id": END_OF_MAIN, "type": "io.print", "v": 1, "extra": {"itemCount": 1},
+                         "inputs": {"ITEM0": {"expr": [{"num": "1"}]}}}),
+        );
         let mut modules = [
             vec![json!({"id": "main", "type": "program.main", "v": 1,
                                        "statements": {"BODY": body}})],
             Vec::new(),
         ];
+        let mut parked = renderer.list(&program.parked, &Reach::Parked).into_iter();
+        if let Some(mut head) = parked.next() {
+            head["x"] = json!(600);
+            head["y"] = json!(40);
+            let stack: Vec<Value> = parked.collect();
+            if !stack.is_empty() {
+                head["stack"] = Value::Array(stack);
+            }
+            modules[0].push(head);
+        }
         for function in &program.functions {
             let block = renderer.function(function);
             modules[usize::from(function.other_module)].push(block);
@@ -1088,19 +1565,47 @@ fn enable(text: &str, id: &str) -> String {
 }
 
 /// Points each probe at each candidate and compares the analyser's verdict
-/// with what the scope query offered there.
+/// with what the scope query offered there. Blocks the analyser does not
+/// lower are compared with the place they answer for.
 fn check_program(program: &GenProgram) -> Result<(), TestCaseError> {
     let (text, renderer) = Renderer::render(program);
     let base = analyse_text(&text);
+    // The parked scope is what is visible at the end of main's body.
+    let parked = base.symbols_in_scope(&block(END_OF_MAIN), None);
+    prop_assert_eq!(&parked, &base.parked_scope(&ModuleId::new("mod_0").unwrap()));
+    // A disabled statement answers like the same block enabled.
+    for id in &renderer.disabled_statements {
+        let enabled = analyse_text(&enable(&text, id));
+        prop_assert_eq!(
+            base.symbols_in_scope(&block(id), None),
+            enabled.symbols_in_scope(&block(id), None),
+            "{} answers like an enabled block",
+            id
+        );
+    }
+    // A disabled function answers with its module's functions.
+    for (id, module) in &renderer.disabled_functions {
+        let functions: Vec<SymbolInfo> = base
+            .symbol_infos()
+            .into_iter()
+            .filter(|s| matches!(s.kind, SymbolInfoKind::Function { .. }) && s.module.as_str() == module)
+            .collect();
+        prop_assert_eq!(base.symbols_in_scope(&block(id), None), functions, "{}", id);
+    }
     for probe in &renderer.probes {
         let here = base.symbols_in_scope(&block(&probe.block), None);
-        match probe.reach {
+        match &probe.reach {
             Reach::Reached => {}
-            Reach::Unreached => {
-                prop_assert!(here.is_empty(), "{} is in a disabled block", probe.block);
+            Reach::Parked => {
+                prop_assert_eq!(&here, &parked, "{} is parked", &probe.block);
                 continue;
             }
-            Reach::DisabledHere => {
+            Reach::Like(ancestor) => {
+                let there = base.symbols_in_scope(&block(ancestor), None);
+                prop_assert_eq!(&here, &there, "{} answers like {}", &probe.block, ancestor);
+                continue;
+            }
+            Reach::DisabledHere(_) => {
                 // The analyser does not check its reference, but the query
                 // answers as for the same block enabled (a call statement
                 // declares nothing, so enabling it changes nothing there).
@@ -1158,7 +1663,8 @@ proptest! {
 fn the_probe_harness_sees_hidden_names() {
     // A fixed program through the property test's harness: an outer `a`,
     // a loop counter `a` that hides it, a function `f` hidden by a parameter
-    // and a function in another module.
+    // and a function in another module; probes in disabled blocks, in a
+    // disabled function and in a parked stack.
     let program = GenProgram {
         main: vec![
             Gen::Declare {
@@ -1176,6 +1682,7 @@ fn the_probe_harness_sees_hidden_names() {
             },
             Gen::Disabled(Box::new(Gen::Probe)),
             Gen::Disabled(Box::new(Gen::CallProbe)),
+            Gen::Disabled(Box::new(Gen::While(vec![Gen::Probe, Gen::CallProbe]))),
         ],
         functions: vec![
             GenFunction {
@@ -1192,9 +1699,35 @@ fn the_probe_harness_sees_hidden_names() {
                 disabled: false,
                 other_module: true,
             },
+            GenFunction {
+                name: 0,
+                params: vec![0],
+                body: vec![Gen::Probe],
+                disabled: true,
+                other_module: false,
+            },
+        ],
+        parked: vec![
+            Gen::Probe,
+            Gen::Declare {
+                name: 1,
+                probe_value: true,
+            },
+            Gen::If {
+                body: vec![Gen::CallProbe],
+                else_body: None,
+            },
         ],
     };
     let (_, renderer) = Renderer::render(&program);
-    assert_eq!(renderer.probes.len(), 8);
+    assert_eq!(renderer.probes.len(), 14);
+    let reaches: BTreeSet<String> = renderer
+        .probes
+        .iter()
+        .map(|probe| format!("{:?}", probe.reach).chars().take(5).collect())
+        .collect();
+    assert_eq!(reaches.len(), 4, "every kind of reach is probed: {reaches:?}");
+    assert_eq!(renderer.disabled_statements.len(), 3);
+    assert_eq!(renderer.disabled_functions.len(), 1);
     check_program(&program).expect("the query matches the analyser");
 }

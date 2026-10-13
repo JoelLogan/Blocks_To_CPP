@@ -255,14 +255,15 @@ export function analyse(core: CoreWasm, document: BdmDocument): void {
 
 /**
  * Fake analysis symbols: `scopes` maps `blockId` (or `blockId/input`) to the symbols visible there,
- * `all` is every symbol of the program.
+ * and a block that is not in it has no answer (the analysis has not seen it); `all` is every symbol
+ * of the program.
  */
 export function fakeSymbols(
   scopes: Readonly<Record<string, readonly SymbolInfo[]>> = {},
   all: readonly SymbolInfo[] = [],
 ): SymbolSource {
   return {
-    symbolsAt: (blockId, input) => scopes[input === null ? blockId : `${blockId}/${input}`] ?? [],
+    symbolsAt: (blockId, input) => scopes[input === null ? blockId : `${blockId}/${input}`] ?? null,
     allSymbols: () => all,
   };
 }
@@ -290,7 +291,8 @@ export function symbolFixture(
 
 /**
  * A compiler core that answers only the scope query: `scopes` maps `blockId` (or `blockId/input`)
- * to the symbols visible there. Everything else throws.
+ * to the symbols visible there, and a block that is not in it has no answer (`null`, the analysis
+ * has not seen it). Everything else throws.
  */
 export function fakeCore(scopes: Readonly<Record<string, readonly SymbolInfo[]>>): CoreWasm {
   const unused = (): never => {
@@ -304,9 +306,10 @@ export function fakeCore(scopes: Readonly<Record<string, readonly SymbolInfo[]>>
     conversionTable: unused,
     clipboardMake: unused,
     pastePrepare: unused,
-    symbolsInScope: (blockId, input) => [
-      ...(scopes[input === null ? blockId : `${blockId}/${input}`] ?? []),
-    ],
+    symbolsInScope: (blockId, input) => {
+      const found = scopes[input === null ? blockId : `${blockId}/${input}`];
+      return found === undefined ? null : [...found];
+    },
   };
 }
 

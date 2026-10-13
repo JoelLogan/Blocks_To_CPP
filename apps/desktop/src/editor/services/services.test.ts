@@ -208,9 +208,10 @@ describe('the scope of a block’s menus', () => {
 
   /**
    * `main` (ID `main`) with `create guess` (`decl`) and `create secret` (`decl2`), a loose getter
-   * (`loose`), and a core that answers for main's blocks only.
+   * (`loose`), and a core that answers for main's blocks only, as before its analysis has seen the
+   * getter (plus `extra` answers).
    */
-  function canvas() {
+  function canvas(extra: Record<string, SymbolInfo[]> = {}) {
     const workspace = headlessWorkspace();
     Blockly.serialization.blocks.append(
       {
@@ -239,10 +240,15 @@ describe('the scope of a block’s menus', () => {
       { type: 'var.get', id: 'loose', fields: { VAR: { ref: 's_guess' } } },
       workspace,
     );
-    const scopes: Record<string, SymbolInfo[]> = { decl: [], decl2: [guess], 'main/BODY': [] };
+    const scopes: Record<string, SymbolInfo[]> = {
+      decl: [],
+      decl2: [guess],
+      'main/BODY': [],
+      ...extra,
+    };
     const symbolsInScope = vi.fn(
       (blockId: string, input: string | null) =>
-        scopes[input === null ? blockId : `${blockId}/${input}`] ?? [],
+        scopes[input === null ? blockId : `${blockId}/${input}`] ?? null,
     );
     const core = { symbolsInScope } as unknown as CoreWasm;
     const analysed: PreviewResult = { ...previewFixture(), symbols: [guess, secret] };
@@ -254,7 +260,20 @@ describe('the scope of a block’s menus', () => {
     return { workspace, loose, services, symbolsInScope };
   }
 
-  it('lists what is visible at the end of main for a loose block', () => {
+  it('lists the core’s answer for a parked block: the end of main', () => {
+    const { loose, services, symbolsInScope } = canvas({ loose: [guess, secret] });
+    installEditorServices({
+      symbols: services.symbols,
+      types: services.types,
+      dialogs: DEFAULT_EDITOR_SERVICES.dialogs,
+    });
+    const field = loose.getField('VAR') as B2cSymbolRefField;
+    expect(field.menuOptions().map(([label]) => label)).toEqual(['guess', 'secret']);
+    // The core's own answer: no walk to main.
+    expect(symbolsInScope.mock.calls).toEqual([['loose', null]]);
+  });
+
+  it('lists what is visible at the end of main for a loose block not analysed yet', () => {
     const { loose, services } = canvas();
     installEditorServices({
       symbols: services.symbols,
@@ -264,6 +283,12 @@ describe('the scope of a block’s menus', () => {
     expect(services.symbols.symbolsAt('loose', null)).toEqual([guess, secret]);
     const field = loose.getField('VAR') as B2cSymbolRefField;
     expect(field.menuOptions().map(([label]) => label)).toEqual(['guess', 'secret']);
+  });
+
+  it('keeps an empty answer of the core: nothing is visible there', () => {
+    const { services, symbolsInScope } = canvas({ loose: [] });
+    expect(services.symbols.symbolsAt('loose', null)).toEqual([]);
+    expect(symbolsInScope.mock.calls).toEqual([['loose', null]]);
   });
 
   it('asks the core as it is for a block that is not on the canvas', () => {
@@ -285,8 +310,11 @@ describe.skipIf(realCore === null)('the scope of a block’s menus with the comp
     getter.initModel();
     (getter.getField('VAR') as B2cSymbolRefField).setRef({ ref: 's_guess' });
     await session.session.flush();
-    // The analysis answers nothing for the loose getter; its menu still lists main's variables.
-    expect(core.symbolsInScope(getter.id, null)).toEqual([]);
+    // The core answers the parked getter itself with the end of main (06 §6.5).
+    expect(core.symbolsInScope(getter.id, null)?.map((symbol) => symbol.name)).toEqual([
+      'guess',
+      'secret',
+    ]);
     const field = getter.getField('VAR') as B2cSymbolRefField;
     expect(field.menuOptions().map(([label]) => label)).toEqual(['guess', 'secret']);
   });
