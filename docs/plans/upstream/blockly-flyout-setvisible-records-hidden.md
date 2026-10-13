@@ -87,7 +87,15 @@ all; it may want the same record when the flyout becomes displayed.
 
 ## Workaround we use
 
-The flyout subclass records the drag targets after every reflow (and whenever its `position()`
-moves or resizes it), and the editor's `Dragger` subclass calls
-`this.workspace.recordDragTargets()` in `onDragStart` before `super.onDragStart(e)`, so every drag
-checks the drop against the current rectangles.
+The flyout subclass marks the target workspace's drag targets stale after every reflow (and
+whenever its `position()` moves or resizes it) instead of recording them there. A stale record is
+made again once: in the next animation frame, after the renders `renderManagement` has queued by
+then, or, for a drag that starts before that frame, by the editor's `Dragger` subclass, which
+calls `this.workspace.recordDragTargets()` in `onDragStart` before `super.onDragStart(e)` only
+while the record is stale. So every drag checks the drop against the current rectangles.
+
+A first version recorded at once after every reflow and at every drag start. Each record reads
+`getBoundingClientRect()`, and right after `show` has built the flyout's new blocks that read makes
+the browser lay the whole page out synchronously, once more in every rebuild of a dynamic
+category; a benchmark that times an edit until the page settles (1,000 blocks, the toolbox rebuilt
+after each edit) became about 23% slower.

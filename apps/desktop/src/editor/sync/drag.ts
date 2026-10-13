@@ -31,14 +31,18 @@
  *
  * Blockly checks the pointer against the places of the delete areas that the canvas recorded
  * last, and Blockly 12.5.1 records the toolbox's flyout while it is not displayed each time it
- * shows new contents. So {@link B2cBlockDragger} has the canvas record them at every drag start
- * (and the toolbox's flyout records them after each of its layouts, `toolbox/continuous.ts`). The
- * record at the drag start goes once Blockly records after it displays the flyout (also still to
- * be reported: the report drafted in `docs/plans/upstream/`).
+ * shows new contents. So the toolbox's flyout marks that record stale after each of its layouts
+ * and whenever it moves (`toolbox/continuous.ts`), and a stale record is made again in the next
+ * animation frame or, by {@link B2cBlockDragger}, at the start of a drag that comes before that
+ * frame (`./dragTargets.ts`). A drag that starts once the record is current reads no place on the
+ * screen for it, so its start does not make the browser lay the page out. The record at the drag
+ * start goes once Blockly records after it displays the flyout (also still to be reported: the
+ * report drafted in `docs/plans/upstream/`).
  */
 import * as Blockly from 'blockly/core';
 
 import './drag.css';
+import { recordDragTargetsIfStale } from './dragTargets';
 
 /** Hears the block drags of one workspace. */
 export interface BlockDragListener {
@@ -151,16 +155,18 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
   }
 
   /**
-   * Starts the drag: gives a block the editor's drag strategy, tells the listener, and has the
-   * canvas record where its drag targets (the toolbox, its flyout, the trash can) are now.
-   * Blockly checks every move and the drop against the places recorded last. Blockly itself
-   * records them on a layout change but not after every change of the toolbox's flyout
-   * (Blockly 12.5.1's `Flyout.show` records them while the flyout is not displayed, when it ends
-   * at the window's left edge), and a stale record made a drop on the toolbox delete nothing, with
-   * no faded blocks and with connections still previewed over it (03 §3.3). The editor's flyout
-   * records after each of its layouts too; the record here also covers any other change that
-   * moved a drag target without one. It costs a few layout reads (`getBoundingClientRect`) per
-   * drag.
+   * Starts the drag: gives a block the editor's drag strategy, tells the listener, and, when the
+   * canvas's record of where its drag targets (the toolbox, its flyout, the trash can) are was
+   * marked stale and its animation frame has not come yet, has the canvas record them now
+   * (`./dragTargets.ts`). Blockly checks every move and the drop against the places recorded
+   * last. Blockly itself records them on a resize, a zoom and the first gesture after the page
+   * scrolled, but not after every change of the toolbox's flyout (Blockly 12.5.1's `Flyout.show`
+   * records them while the flyout is not displayed, when it ends at the window's left edge), and
+   * a stale record made a drop on the toolbox delete nothing, with no faded blocks and with
+   * connections still previewed over it (03 §3.3). The editor's flyout marks the record stale
+   * after each of its layouts and whenever it moves; a drag that starts with a current record
+   * reads nothing here, so it does not make the browser lay the page out
+   * (`getBoundingClientRect`) when the page has changed since its last layout.
    */
   override onDragStart(e: PointerEvent): void {
     if (this.draggable instanceof Blockly.BlockSvg) {
@@ -173,7 +179,7 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
         });
       }
     }
-    this.workspace.recordDragTargets();
+    recordDragTargetsIfStale(this.workspace);
     super.onDragStart(e);
   }
 

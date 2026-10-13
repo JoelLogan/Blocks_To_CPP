@@ -9,8 +9,10 @@
  *   200 px beside it;
  * - it tells the window's layout where it is and how wide it may be made, and takes the width
  *   the user chose from it;
- * - after every showing, and after every change of its width, the canvas knows where it is as a
- *   place where a drop deletes, at any height (03 §3.3 "Placing blocks").
+ * - after every showing, and after every change of its width or place, the canvas knows where it
+ *   is as a place where a drop deletes, at any height (03 §3.3 "Placing blocks"): from the next
+ *   animation frame on, or from the start of a drag that comes first, and a showing reads nothing
+ *   of the laid-out page for it (../sync/dragTargets.ts).
  */
 import { ContinuousFlyout } from '@blockly/continuous-toolbox';
 import { b2cLightTheme } from '@blocks2cpp/blockly-ext';
@@ -18,6 +20,7 @@ import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { type FlyoutLayout, listenToFlyoutLayout } from '../../app/layout/flyoutLayout';
+import { recordDragTargetsIfStale } from '../sync/dragTargets';
 import {
   B2cContinuousFlyout,
   B2cContinuousToolbox,
@@ -329,23 +332,52 @@ function setColumnWidth(workspace: Blockly.WorkspaceSvg, width: number): void {
 }
 
 /**
+ * How often the flyout's place on screen was read since the counts were last reset: `shown` while
+ * the flyout was displayed (in a browser, the first such read after a rebuild lays the page out
+ * with the flyout's new blocks at once), `hidden` while it was not.
+ */
+interface FlyoutReads {
+  shown: number;
+  hidden: number;
+}
+
+/**
  * Lays the flyout's SVG out on screen as a browser does, which happy-dom does not: its box is where
  * Blockly places it (its `transform`) and as wide as its `width`, and it is empty while the SVG is
  * not displayed. `Flyout.show` records the canvas's drag targets while that is so
- * (`setVisible(true)` records them before it displays the flyout again).
+ * (`setVisible(true)` records them before it displays the flyout again). Returns the count of the
+ * reads of that box.
  */
-function layOutFlyout(workspace: Blockly.WorkspaceSvg, height = 700): void {
+function layOutFlyout(workspace: Blockly.WorkspaceSvg, height = 700): FlyoutReads {
   const svg = workspace.getInjectionDiv().querySelector('.blocklyToolboxFlyout');
   if (!(svg instanceof SVGElement)) {
     throw new Error('the toolbox has no flyout SVG');
   }
+  const reads: FlyoutReads = { shown: 0, hidden: 0 };
   vi.spyOn(svg, 'getBoundingClientRect').mockImplementation(() => {
     if (svg.style.display === 'none') {
+      reads.hidden += 1;
       return new DOMRect(0, 0, 0, 0);
     }
+    reads.shown += 1;
     const left = Number(/translate\(\s*(-?[\d.]+)px/.exec(svg.style.transform)?.[1] ?? 'NaN');
     return new DOMRect(left, 0, Number(svg.getAttribute('width')), height);
   });
+  return reads;
+}
+
+/**
+ * Waits for the next animation frame and for what the editor does in it once Blockly has drawn
+ * the blocks it queued: the canvas records its stale drag targets then (../sync/dragTargets.ts).
+ */
+async function afterNextFrame(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      resolve();
+    });
+  });
+  await Blockly.renderManagement.finishQueuedRenders();
+  await Promise.resolve();
 }
 
 /**
@@ -360,17 +392,37 @@ function dropTargetAt(workspace: Blockly.WorkspaceSvg, x: number, y = 300): stri
   return target === null ? null : target === toolbox ? 'the toolbox' : target.id;
 }
 
-/** A shown editor canvas with the continuous toolbox, a category column {@link COLUMN} wide. */
-function laidOutWorkspace(): Blockly.WorkspaceSvg {
+/**
+ * A shown editor canvas with the continuous toolbox, a category column {@link COLUMN} wide, and
+ * the count of the reads of its flyout's place on screen.
+ */
+function laidOut(): { workspace: Blockly.WorkspaceSvg; reads: FlyoutReads } {
   const workspace = injectedWorkspace('continuous');
   setColumnWidth(workspace, COLUMN);
   resizeWorkspace(workspace, 1000);
-  layOutFlyout(workspace);
-  return workspace;
+  const reads = layOutFlyout(workspace);
+  return { workspace, reads };
+}
+
+/** A shown editor canvas with the continuous toolbox, a category column {@link COLUMN} wide. */
+function laidOutWorkspace(): Blockly.WorkspaceSvg {
+  return laidOut().workspace;
+}
+
+/**
+ * Expects drops left of `right` (screen pixels) to land on the toolbox, and drops right of it on
+ * nothing.
+ */
+function expectToolboxUpTo(workspace: Blockly.WorkspaceSvg, right: number): void {
+  // The toolbox stands for its flyout (the plugin's getClientRect), and comes first.
+  for (const x of [COLUMN / 2, COLUMN + 1, (COLUMN + right) / 2, right - 1]) {
+    expect(dropTargetAt(workspace, x), `x = ${String(x)}`).toBe('the toolbox');
+  }
+  expect(dropTargetAt(workspace, right + 1)).toBeNull();
 }
 
 describe('the flyout as a place where a drop deletes', () => {
-  it('is recorded where it is after a showing that keeps its width', () => {
+  it('is recorded where it is after a showing that keeps its width', async () => {
     const workspace = laidOutWorkspace();
     const flyout = continuousFlyout(workspace);
     const contents = workspaceContents(workspace);
@@ -378,37 +430,93 @@ describe('the flyout as a place where a drop deletes', () => {
     const width = flyout.getWidth();
     expect(width).toBeGreaterThan(0);
     expect(flyout.getX()).toBe(COLUMN);
+    await afterNextFrame();
 
     // A rebuild with the same contents (a dynamic category built again), twice.
     flyout.show(contents);
     flyout.show(contents);
     expect(flyout.getWidth()).toBe(width);
-
-    // The toolbox stands for its flyout (the plugin's getClientRect), and comes first.
-    const right = COLUMN + width;
-    for (const x of [COLUMN / 2, COLUMN + 1, COLUMN + width / 2, right - 1]) {
-      expect(dropTargetAt(workspace, x), `x = ${String(x)}`).toBe('the toolbox');
-    }
-    expect(dropTargetAt(workspace, right + 1)).toBeNull();
+    await afterNextFrame();
+    expectToolboxUpTo(workspace, COLUMN + width);
   });
 
-  it('is recorded again where it moves to, also with the same width', () => {
+  it('is recorded at the start of a drag that comes before the next frame', async () => {
     const workspace = laidOutWorkspace();
     const flyout = continuousFlyout(workspace);
+    const contents = workspaceContents(workspace);
+    flyout.show(contents);
+    await afterNextFrame();
+
+    flyout.show(contents);
+    // Blockly recorded the flyout while it was not displayed, as ending at the window's edge.
+    expect(dropTargetAt(workspace, COLUMN + 1)).toBeNull();
+    // What the editor's block dragger does when a drag starts.
+    expect(recordDragTargetsIfStale(workspace)).toBe(true);
+    expectToolboxUpTo(workspace, COLUMN + flyout.getWidth());
+    // The frame then has nothing left to record.
+    const record = vi.spyOn(workspace, 'recordDragTargets');
+    await afterNextFrame();
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('costs a rebuild no layout: the record waits for the next frame, once', async () => {
+    const { workspace, reads } = laidOut();
+    const flyout = continuousFlyout(workspace);
+    const contents = workspaceContents(workspace);
+    flyout.show(contents);
+    await afterNextFrame();
+    const record = vi.spyOn(workspace, 'recordDragTargets');
+    reads.shown = 0;
+    reads.hidden = 0;
+
+    // Two rebuilds in one task (a refresh after an edit shows the flyout once).
+    flyout.show(contents);
+    flyout.show(contents);
+    // Only Blockly's own records: each showing's hide() and setVisible(true), which read the
+    // flyout only while it is not displayed (hide() leaves it out).
+    expect(record).toHaveBeenCalledTimes(4);
+    expect(reads.shown).toBe(0);
+    expect(reads.hidden).toBe(4);
+
+    // One record in the next frame: the toolbox and the flyout each read the flyout once.
+    await afterNextFrame();
+    expect(record).toHaveBeenCalledTimes(5);
+    expect(reads.shown).toBe(2);
+    // A drag that starts now records nothing.
+    expect(recordDragTargetsIfStale(workspace)).toBe(false);
+    await afterNextFrame();
+    expect(record).toHaveBeenCalledTimes(5);
+  });
+
+  it('is recorded again where it moves to, also with the same width', async () => {
+    const { workspace, reads } = laidOut();
+    const flyout = continuousFlyout(workspace);
     flyout.show(workspaceContents(workspace));
+    await afterNextFrame();
     const width = flyout.getWidth();
     expect(dropTargetAt(workspace, COLUMN + width + 20)).toBeNull();
+    const record = vi.spyOn(workspace, 'recordDragTargets');
+    reads.shown = 0;
 
     // A wider category column: Blockly places the toolbox and its flyout again.
     setColumnWidth(workspace, COLUMN + 40);
     workspace.getToolbox()?.position();
     expect(flyout.getX()).toBe(COLUMN + 40);
     expect(flyout.getWidth()).toBe(width);
+    expect(record).not.toHaveBeenCalled();
+    expect(reads.shown).toBe(0);
+    await afterNextFrame();
+    expect(record).toHaveBeenCalledTimes(1);
     expect(dropTargetAt(workspace, COLUMN + width + 20)).toBe('the toolbox');
     expect(dropTargetAt(workspace, COLUMN + 40 + width + 1)).toBeNull();
+
+    // Placed again where it is: nothing to record.
+    workspace.getToolbox()?.position();
+    await afterNextFrame();
+    expect(record).toHaveBeenCalledTimes(1);
   });
 
-  it('reaches up and down without end, as Blockly makes it', () => {
+  it('reaches up and down without end, as Blockly makes it', async () => {
     // A drop with the pointer left of the flyout's right edge deletes at any height, also over
     // the toolbar above the editor or the bottom dock below it (03 §3.3 "Placing blocks").
     const workspace = laidOutWorkspace();
@@ -416,6 +524,7 @@ describe('the flyout as a place where a drop deletes', () => {
     const contents = workspaceContents(workspace);
     flyout.show(contents);
     flyout.show(contents);
+    await afterNextFrame();
     const right = COLUMN + flyout.getWidth();
     for (const y of [-500, -1, 701, 5000]) {
       for (const x of [COLUMN / 2, COLUMN + 1, right - 1]) {
@@ -531,13 +640,14 @@ describe('the width the user chooses (the Resize the toolbox splitter)', () => {
     expect(flyout.getWorkspace().scale).toBe(FLYOUT_SCALE);
   });
 
-  it('moves the place where a drop deletes with the flyout’s edge', () => {
+  it('moves the place where a drop deletes with the flyout’s edge', async () => {
     const announced = announcements();
     const workspace = laidOutWorkspace();
     const flyout = continuousFlyout(workspace);
     flyout.show(workspaceContents(workspace));
     for (const width of [480, 200]) {
       lastOf(announced).setWidth(width);
+      await afterNextFrame();
       expect(dropTargetAt(workspace, COLUMN + width - 1)).toBe('the toolbox');
       expect(dropTargetAt(workspace, COLUMN + width + 1)).toBeNull();
     }
