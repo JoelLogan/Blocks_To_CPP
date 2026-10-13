@@ -68,22 +68,23 @@ With the Guessing Game open, put the focus on the main menu button and press
 Tab repeatedly. Expected order:
 
 1. Main menu
-2. Debug / Release drop-down
-3. Run (F5), Stop (Shift+F5), Build (Ctrl+B), Settings
-4. The toolbox (its selected category)
-5. The toolbox's blocks (announced as **Blocks to add**)
-6. The block canvas (announced as **Block canvas**, followed by the first
+2. The project's name (a button, described as *Rename the project*)
+3. Debug / Release drop-down
+4. Run (F5), Stop (Shift+F5), Build (Ctrl+B), Settings
+5. The toolbox (its selected category)
+6. The toolbox's blocks (announced as **Blocks to add**)
+7. The block canvas (announced as **Block canvas**, followed by the first
    block, for example "block “main”")
-7. The canvas's zoom controls: *Zoom out*, *Zoom in*, *Reset zoom* (with
+8. The canvas's zoom controls: *Zoom out*, *Zoom in*, *Reset zoom* (with
    the zoom now) and *Show all blocks*
-8. *Resize the toolbox* (a separator, with its width in pixels; the arrow
+9. *Resize the toolbox* (a separator, with its width in pixels; the arrow
    keys, Home and End change the width of the toolbox's blocks)
-9. *Resize the C++ panel* (a separator), *Hide the C++ panel*
-10. The C++ panel: *File* drop-down, *Copy all*, the code
-11. *Resize the bottom panel*, the bottom tabs (Problems, Console, Build
+10. *Resize the C++ panel* (a separator), *Hide the C++ panel*
+11. The C++ panel: *File* drop-down, *Copy all*, the code
+12. *Resize the bottom panel*, the bottom tabs (Problems, Console, Build
     output: one stop, arrow keys switch tabs), *Hide the bottom panel*
-12. The open tab's contents
-13. The status bar's toolchain button
+13. The open tab's contents
+14. The status bar's toolchain button
 
 Shift+Tab goes the same way back. Check that:
 

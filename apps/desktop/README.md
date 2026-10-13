@@ -236,7 +236,10 @@ project, build, run, toolchain, settings, trust and recovery services:
   [§4.12](../../docs/spec/04-user-interface.md)): indent width, _Run on errors_, console
   scrollback, a link to the toolchain page and _Clear build cache_ (in-app confirmation, then the
   space freed and the builds kept). Every change is a partial `settings_update`, saved at once
-  and applied live through the store. Notices about `settings.json` are listed on the page, and a
+  and applied live through the store. The feature also remembers the editor's layout
+  (`layout.ts`): the shell hands each change of the toolbox's width or a dock's size or
+  visibility to it (`app/layout/rememberedLayout.ts`), and it writes them as `ui.layout` 500 ms
+  after the last one. Notices about `settings.json` are listed on the page, and a
   dismissible window banner points to them. Other features add sections with
   `registerSettingsSection`.
 - **Restricted Mode** (`src/features/trust/`,

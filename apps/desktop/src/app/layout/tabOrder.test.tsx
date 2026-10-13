@@ -1,8 +1,10 @@
 /**
  * The Tab order through the window with the real block editor (docs/spec/04-user-interface.md
  * §4.7, §4.8): toolbar, then Blockly's toolbox, the toolbox's blocks and the canvas (in that order,
- * which the keyboard plugin sets), the *Resize the toolbox* splitter, then the docks. Inside the
- * editor the arrow keys take over (src/editor/keyboard/); Tab always leaves it.
+ * which the keyboard plugin sets), the canvas's zoom controls (hidden here: happy-dom gives the
+ * canvas no size; src/editor/EditorWorkspace.test.tsx checks them), the *Resize the toolbox*
+ * splitter, then the docks. Inside the editor the arrow keys take over (src/editor/keyboard/); Tab
+ * always leaves it.
  */
 import { act, render, screen } from '@testing-library/react';
 import * as Blockly from 'blockly/core';

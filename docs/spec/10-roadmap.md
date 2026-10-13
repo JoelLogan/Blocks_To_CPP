@@ -113,8 +113,8 @@ readers, high contrast, the toolchain matrix) and updated documentation.
   format. External change detection for open projects (Reload or Keep mine).
 * Machine settings: a versioned, schema-checked `settings.json`
   (`settings_get`/`settings_update`) and a Settings page (code style, Run on
-  errors, console). Build cache eviction (size cap, 30-day pruning) and
-  *Clear build cache*.
+  errors, console). Remembered toolbox and dock sizes (`ui.layout`). Build
+  cache eviction (size cap, 30-day pruning) and *Clear build cache*.
 * The IDE init unit for IDE runs (UTF-8 console on Windows), never shown in
   the code view or exported. Linux cgroup v2 containment for builds and runs,
   with an RSS watchdog fallback and a "process group only" notice when it is
@@ -161,12 +161,14 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
 * A performance guard: the longest main-thread task of every E2E flow, A/B
   benchmark runs, and selection and edit metrics.
 * Layout (toolbox width, dock sizes, window fit), named canvas controls, the
-  console between runs, and renaming the project.
+  console between runs, and renaming the project (done 2026-10-13, with the
+  remembered sizes, visible Undo and Redo and the compiler search's folder
+  rules from the if-time set).
 * Parked blocks, the standard variable set, a Variables listing that does
   not depend on the selection, snapping, and the remaining documentation.
-* If time: remembered toolbox and dock sizes, block upgrades on load and one
-  *change* block for every update operator, Scratch-style wrapping, the
-  developer guide, and the other items the plan marks *M2 if time*.
+* If time: block upgrades on load and one *change* block for every update
+  operator, Scratch-style wrapping, the developer guide, and the other items
+  the plan marks *M2 if time*.
 
 **Exit:** both P0 defects are fixed; each of U1–U18 is fixed or moved to M3
 with the owner's agreement; items marked *M2 if time* move to M3 without

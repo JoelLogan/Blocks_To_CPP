@@ -23,8 +23,8 @@ use b2c_ipc::dto::{
     ToolchainSetupInfo, ToolchainSource, Trust, TrustResponse, TrustSource, TrustState, UiSettings,
 };
 use b2c_ipc::{BuildId, Handle, InvalidReason, IoKind, IpcError, RecentId, RunId, SnapshotId, ToolchainId};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 /// Serialises `value`, checks that it reads back unchanged, and returns its JSON.

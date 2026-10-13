@@ -267,6 +267,33 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   build, profiles clicks that change nothing, and checks whether GTK reports
   a primary monitor under Wayland. A release build is profiled unchanged
   through WebKitGTK's remote inspector.
+- The toolbox's block list can be resized with a splitter at its right edge
+  (pointer or keyboard). By default it is as wide as its blocks, at most
+  320 px, and it narrows to leave the canvas at least 200 px.
+- The toolbox's width, the panels' sizes and whether each panel is hidden are
+  remembered on this computer (`settings.json` `ui.layout`).
+- Canvas controls: _Zoom out_, _Zoom in_, _Reset zoom_ (back to 100 %; the
+  button shows the zoom now) and _Show all blocks_ (scrolls to the blocks
+  without changing the zoom) are named buttons at the canvas's top right,
+  reachable with Tab right after the canvas. `Ctrl+=`, `Ctrl+-` and `Ctrl+0`
+  zoom from the keyboard and announce the new zoom (04 §4.1, §4.7).
+- Rename the project by clicking its name in the top bar, or with ≡ _Rename
+  project…_. Enter or moving away keeps the name and Escape cancels. A name
+  has 1–100 characters on one line and is checked with the project-text
+  rules. Renaming is an unsaved change that the C++ header comment follows,
+  and it never renames the file (04 §4.1, D12).
+- _Undo_ and _Redo_ in the ≡ menu, greyed out when there is nothing to undo
+  or redo. `Ctrl+Z`, `Ctrl+Y` and `Ctrl+Shift+Z` now undo and redo the block
+  editor's changes also when the focus is outside the canvas (Problems,
+  toolbar, docks), but not in text fields, dialogs or a running program's
+  console.
+- The "Your latest change was not checked" banner has an _Undo last change_
+  button.
+- Screen readers can read the console: the rows on screen line by line, and
+  new output as it arrives (not during an output flood).
+- The toolchain page lists the compilers a search skipped and why (inside an
+  open project's folder, the build cache, the folder the app was started
+  from, or a network folder).
 
 ### Changed
 
@@ -324,7 +351,7 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `getrandom` 0.4, Vite 8.3.2, ESLint 10.12, typescript-eslint 8.71 and other
   patch releases, and the MSYS2 setup action 2.33.0.
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
-  until the page has finished what the edit started. It is accepted in
+  until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
 - Each edit does less work in the editor: call blocks are labelled from the
   preview's symbols instead of one scope query each, the preview stores an
@@ -336,6 +363,41 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - The security specification (08 §8.8) notes that WebKitGTK's remote Web
   Inspector (`WEBKIT_INSPECTOR_SERVER`, `WEBKIT_INSPECTOR_HTTP_SERVER`) can
   inspect release builds, and what it exposes while it is on.
+- The window fits the screen: Tauri's `preventOverflow`, plus a fallback
+  where the system names no primary monitor (Wayland) that fits the window
+  to the monitor it opens on and logs which monitor was used.
+- The C++ and bottom panels start at a share of the window (30 % of its
+  width, 280–480 px; 28 % of its height, 120–280 px), follow the window until
+  resized, and never take more than 65 % of it. The C++ panel is hidden when
+  the window is too small for it and shown again when it fits.
+- `Ctrl` + mouse wheel and a pinch now zoom the canvas around the pointer;
+  the plain wheel still scrolls. Blockly's own zoom buttons are gone,
+  including the reset that went back to 90 %.
+- When the canvas goes past a project limit (blocks nested too deeply,
+  `B2C-E0104`; over 32 MiB, `B2C-E0101`; over 100,000 blocks, `B2C-E0121`),
+  the banner and Save name the limit and how to get back within it, instead
+  of calling it a bug in Blocks2Cpp.
+- _Clear_ empties the console completely once the program has ended; while a
+  program runs, the line it waits at stays.
+- The console refits at most once a frame while a panel or the window is
+  resized, and rewraps long lines once the width has settled.
+- The current directory, and a project folder that is the home folder or a
+  root, are now excluded from compiler discovery as that folder only. This
+  applies to a rescan, the check before a build (`B2C-T1002`) and _Choose g++
+  manually…_. The desktop app now works in an empty owner-only folder,
+  `<cache>/cwd`; the CLI keeps the caller's folder.
+- The A/B benchmark job runs each benchmark on its own. A benchmark the base
+  build cannot run (its end-to-end hook lacks a method the benchmark calls)
+  is skipped with a notice, and a benchmark that fails is left out of the
+  comparison; the job summary lists both. Only a gated regression or a
+  benchmark that failed on the head fails the job. Before, the first failure
+  stopped every benchmark of the run.
+- `apps/desktop/e2e/bench/accepted.json` (format version 2) gives each entry
+  a kind: `redefined` restarts a metric's nightly history only; `accepted`,
+  an intended slowdown, also passes an A/B run. A redefinition no longer
+  waives an A/B difference, because both builds are measured with the head's
+  benchmarks. The two W2-1 entries for `webview.edit-1000.p95` are
+  redefinitions.
 
 ### Fixed
 
@@ -400,3 +462,23 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - _Copied_ (C++ panel, setup page, link dialog) disappears after 3 s and is
   announced on every copy; _Could not copy_ stays until the next attempt.
   The C++ panel's confirmation no longer moves the code.
+- A project opened from the start page, or a template, shows its blocks
+  centred and clear of the toolbox instead of against its edge.
+- A plain Save now updates the project's name in the recent-projects list and
+  moves it to the front. Before, only Save as did, so a renamed project kept
+  its old name on the start page.
+- A new run scrolls the console to its output when you had scrolled up to
+  read an earlier run; earlier output stays above the _New run_ line.
+- The mouse wheel scrolls the console while a program prints, also at
+  display scales such as 125 %, 150 % and 200 %.
+- Started from `/`, the app found no g++, and started from the home folder
+  (or with a project saved directly in it) it skipped `~/.local/bin`.
+- A compiler whose check timed out (for example on the first start after a
+  restore) was reported as a broken installation (`B2C-T1006`) and stayed
+  that way, even across Rescan. It is now checked once more with 30 s per
+  test, and the page says "Checking g++ again…" while that runs. If it still
+  times out, it is reported as `B2C-T1023`, with a hint to rescan, and
+  checked again the next time it is needed. Toolchain records saved by older
+  versions are checked again once.
+- `tools/bench-compare.py` writes UTF-8 on Windows too. Before, "§9.2" in the
+  A/B summary came out as a code-page byte in the job log.

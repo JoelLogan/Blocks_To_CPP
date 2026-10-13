@@ -231,12 +231,14 @@ running app on both systems and ticks the last column.
   has a file switcher, _Copy all_ and _Copy selection_; the bottom panel
   Problems, Console and Build output; the status bar the save state, the
   configuration, the C++ standard, Restricted Mode and the compiler.
-- **Keys.** The app's shortcuts are F5, Shift+F5, Ctrl+B and Ctrl+S (the
-  reload keys are cancelled), and the block editor's keys are those of
+- **Keys.** The app's shortcuts are F5, Shift+F5, Ctrl+B and Ctrl+S, and
+  Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z for the block editor's undo and redo
+  outside text fields, dialogs and a running console (the reload keys are
+  cancelled). The block editor's keys are those of
   `apps/desktop/src/editor/keyboard/help.ts`: arrows, Enter and Space, M, T,
-  Delete, Escape, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D, Ctrl+Z, Ctrl+Y and
-  Ctrl+Enter. Nothing handles Ctrl+Space, Ctrl+Shift+P, Ctrl+F, F2, F11, F12
-  or Shift+F12.
+  Delete, Escape, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D, Ctrl+Z, Ctrl+Y,
+  Ctrl+Enter, Ctrl+=, Ctrl+- and Ctrl+0. Nothing handles Ctrl+Space,
+  Ctrl+Shift+P, Ctrl+F, F2, F11, F12 or Shift+F12.
 - **Toolbox.** `catalog/toolbox.toml` has the nine categories Program,
   Variables, Math, Logic, Text, Control, Loops, Input / Output and Functions
   with the 32 blocks of the M1 catalog; there is no _Libraries_ category, no
