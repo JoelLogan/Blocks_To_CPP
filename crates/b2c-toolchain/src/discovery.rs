@@ -113,13 +113,17 @@ impl DiscoveryEnv {
 /// The user's home folder: `HOME` on Linux, `%USERPROFILE%` on Windows, or
 /// `None` when that is not set to an absolute path.
 pub fn home_folder() -> Option<PathBuf> {
-    let name = match Platform::host() {
+    home_folder_in(Platform::host(), |name| std::env::var_os(name))
+}
+
+/// [`home_folder`] on `platform`, reading the environment variable it names
+/// through `var`.
+fn home_folder_in(platform: Platform, var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    let name = match platform {
         Platform::Linux => "HOME",
         Platform::Windows => "USERPROFILE",
     };
-    std::env::var_os(name)
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
+    var(name).map(PathBuf::from).filter(|path| path.is_absolute())
 }
 
 /// What kind of folder discovery never searches (spec §7.2). The kind
@@ -622,15 +626,20 @@ fn accept(candidate: &Path, platform: Platform) -> Option<PathBuf> {
     }
 }
 
-#[cfg(unix)]
+/// Whether the file may be run: on Unix, an execute bit is set; elsewhere
+/// every file counts (Windows decides by the extension, checked by the
+/// caller).
 fn is_executable(metadata: &std::fs::Metadata) -> bool {
-    use std::os::unix::fs::PermissionsExt as _;
-    metadata.permissions().mode() & 0o111 != 0
-}
-
-#[cfg(not(unix))]
-fn is_executable(_metadata: &std::fs::Metadata) -> bool {
-    true
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        true
+    }
 }
 
 /// Windows: whether the path is on a network share (`\\server\share`).
@@ -845,6 +854,37 @@ mod tests {
             assert_eq!(names(&found.candidates, &root), ["usr/bin/g++"], "{excluded:?}");
             assert!(found.skipped.is_empty(), "{excluded:?}");
         }
+    }
+
+    /// The home folder comes from `HOME` on Linux and `%USERPROFILE%` on
+    /// Windows (never the other one), and only as an absolute path.
+    #[test]
+    fn the_home_folder_is_read_from_the_platform_s_variable() {
+        // Absolute on the host that runs the test (a Windows path is not
+        // absolute on Linux, and the reverse).
+        let absolute = |name: &str| std::env::temp_dir().join(name);
+        let (home, profile) = (absolute("home-ada"), absolute("profile-ada"));
+        let both = |name: &str| match name {
+            "HOME" => Some(home.clone().into_os_string()),
+            "USERPROFILE" => Some(profile.clone().into_os_string()),
+            _ => None,
+        };
+        assert_eq!(home_folder_in(Platform::Linux, both), Some(home.clone()));
+        assert_eq!(home_folder_in(Platform::Windows, both), Some(profile));
+
+        let relative = |_: &str| Some(OsString::from("ada"));
+        assert_eq!(home_folder_in(Platform::Linux, relative), None);
+        assert_eq!(home_folder_in(Platform::Windows, relative), None);
+        let unset = |_: &str| None;
+        assert_eq!(home_folder_in(Platform::Linux, unset), None);
+        assert_eq!(home_folder_in(Platform::Windows, unset), None);
+
+        // The process's own environment (set on CI runners and desktops).
+        let name = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let expected = std::env::var_os(name)
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute());
+        assert_eq!(home_folder(), expected);
     }
 
     /// Spec §7.2 (W3-10): started from the home folder, or with a project
