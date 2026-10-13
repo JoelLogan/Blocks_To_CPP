@@ -1,7 +1,8 @@
 /**
  * The block editor in the flow tests, beyond ../../../support/editor.ts: dragging a reporter from
  * the toolbox by its output connection onto a value input, dropping a block on an empty part of
- * the canvas, clicking a block with the pointer, and reading Blockly's dropdown menu.
+ * the canvas, clicking a block with the pointer, making a variable with the toolbox's *Make a
+ * variable*, and reading Blockly's dropdown menu.
  */
 import { By, Key, Origin, type WebDriver } from 'selenium-webdriver';
 
@@ -10,8 +11,9 @@ import type { App } from '../../../support/app';
 import { bringIntoView, visibleCanvas } from '../../../support/canvas';
 import { drag, dropPoint } from '../../../support/drag';
 import { centerOn, type ToolboxEntry } from '../../../support/editor';
-import { openCategory, textContent } from '../../../support/ui';
+import { clickMiddle, openCategory, textContent } from '../../../support/ui';
 import { sleep, waitFor } from '../../../support/wait';
+import { answerDialog, waitForDialog } from './ui';
 
 /** How long Blockly may take to show a block, a connection or a menu. */
 const EDITOR_TIMEOUT_MS = 10_000;
@@ -33,8 +35,7 @@ async function flyoutBlock(app: App, entry: ToolboxEntry): Promise<string> {
 /**
  * Drags a reporter or predicate from the toolbox so that its output connection lands on value
  * input `input` of block `targetId`, where Blockly connects it if the type rule allows (the
- * target is centred first; the toolbox follows the selection, so the flyout block is looked up
- * after that).
+ * target is centred first, then the category is opened and the flyout block looked up).
  */
 export async function dragValueFromToolbox(
   app: App,
@@ -132,6 +133,46 @@ export async function dropOnCanvas(app: App, entry: ToolboxEntry): Promise<void>
   const [x, y] = found;
   await drag(app.driver, grab, { x, y });
   await sleep(400);
+}
+
+/** The toolbox flyout's buttons (Blockly's `FlyoutButton`). */
+const FLYOUT_BUTTONS = '.blocklyToolboxFlyout .blocklyFlyoutButton';
+
+/** The text of the Variables category's button (src/editor/toolbox/contents.ts). */
+const MAKE_VARIABLE = 'Make a variable';
+
+/**
+ * Makes a variable as a person does (docs/spec/04-user-interface.md §4.2): clicks *Make a
+ * variable* in the Variables category, types `name` over the suggested one in the first dialog
+ * (Enter goes on), and clicks the button of `type` (`int`, `double`, `bool`, `char`, `string`) in
+ * the second. The declaration goes where *Make a variable* puts it: before the selected
+ * statement, or at the top of the selected function or of `main`.
+ */
+export async function makeVariable(app: App, name: string, type: string): Promise<void> {
+  await openCategory(app.driver, 'Variables');
+  const button = await waitFor(
+    async () => {
+      for (const candidate of await app.driver.findElements(By.css(FLYOUT_BUTTONS))) {
+        if ((await textContent(app.driver, candidate)) === MAKE_VARIABLE) {
+          return candidate;
+        }
+      }
+      return null;
+    },
+    { timeout: EDITOR_TIMEOUT_MS, message: `the button "${MAKE_VARIABLE}" in the toolbox` },
+  );
+  await clickMiddle(app.driver, button);
+  await waitForDialog(app.driver, /Name of the new variable/);
+  // The name field has the focus, with the suggested name in it.
+  await app.driver
+    .actions({ async: true })
+    .keyDown(Key.CONTROL)
+    .sendKeys('a')
+    .keyUp(Key.CONTROL)
+    .sendKeys(name, Key.ENTER)
+    .perform();
+  await waitForDialog(app.driver, /What kind of value/);
+  await answerDialog(app.driver, type);
 }
 
 /** Clicks a block with the pointer at its grab point (which selects it and gives it the focus). */
