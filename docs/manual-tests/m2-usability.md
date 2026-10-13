@@ -51,6 +51,37 @@ shortcut in M2
    documentation and no example projects open.
 5. A clock, the [task card](#the-task-card), the [hint list](#hints) and the
    [session record](#session-record) for notes.
+6. The [console check](#console-check-at-125-and-150-scaling) passed on the
+   session computer.
+
+## Console check at 125% and 150% scaling
+
+Participants read the guessing game's answers in the console, often on a
+laptop with its display scaled. Once per computer, before its first session,
+check the console at 125% and then at 150% display scaling (GNOME:
+_Settings → Displays → Scale_, with _Fractional Scaling_ on; KDE Plasma:
+_System Settings → Display Configuration → Scale_; Windows: _Settings →
+System → Display → Scale_), in a release build:
+
+1. Start a new _Empty project_, put a _forever_ block with a _print_ block
+   inside it into _when program starts_, and press ► Run.
+2. While the program prints, turn the mouse wheel up a few notches over the
+   console, then scroll up with two fingers on the touchpad.
+   - [ ] The view moves up at once, a few lines per notch, and stays where
+         it was put while the program goes on printing.
+   - [ ] The text does not jump by a few pixels or tear.
+   - [ ] Turning the wheel down to the end follows the output again.
+3. Press ■ Stop, scroll up a few notches, then press ⟲ Run again.
+   - [ ] The view jumps to the new run, below a dim _── New run ──_ line.
+4. Drag the bottom dock's splitter up and down, then the window's edge.
+   - [ ] The console's last row stays whole inside its box, and the panel
+         around the console never shows a scroll bar of its own.
+   - [ ] Long lines rewrap once you stop dragging, without flicker.
+5. Press ■ Stop, then _Clear_.
+   - [ ] The console is empty.
+
+Write the scale, the system (Wayland or X11 on Linux) and the result into
+the [sign-off](#sign-off) table, and file an issue for each failure.
 
 ## The task card
 
@@ -268,3 +299,5 @@ running app on both systems and ticks the last column.
 | --------------------------------------------- | -------------- | ---- | -------- | ------ | ------ |
 | Usability sessions (at least 3, both systems) |                |      |          |        |        |
 | Exclusion review at the milestone demo        |                |      |          |        |        |
+| Console check, Linux, 125% and 150%           |                |      |          |        |        |
+| Console check, Windows, 125% and 150%         |                |      |          |        |        |

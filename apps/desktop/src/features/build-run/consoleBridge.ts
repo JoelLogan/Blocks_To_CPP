@@ -22,6 +22,7 @@ const DETACHED_CONSOLE: ConsoleHandle = Object.freeze({
   writeSkipped: () => undefined,
   clear: () => undefined,
   reset: () => undefined,
+  scrollToBottom: () => undefined,
   size: () => DEFAULT_TERMINAL_SIZE,
   screen: () => emptyScreen(DEFAULT_TERMINAL_SIZE.cols, DEFAULT_TERMINAL_SIZE.rows),
   onData: () => () => undefined,
@@ -111,6 +112,14 @@ export class ConsoleBridge {
    */
   writeText(text: string): void {
     void this.console().write(new TextEncoder().encode(text));
+  }
+
+  /**
+   * Scrolls the attached console to the end of its output once it has processed what was written
+   * before (a run starts there). Nothing happens without a console.
+   */
+  scrollToBottom(): void {
+    this.console().scrollToBottom();
   }
 
   /** Whether program output has been written to the attached console since it was last cleared. */

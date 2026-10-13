@@ -16,7 +16,10 @@ import {
 import { LinkDialog } from './LinkDialog';
 import { safeLinkUrl } from './links';
 import { OutputScheduler } from './outputScheduler';
+import { Refitter } from './refit';
 import { type ConsoleScreen, emptyScreen, readScreen } from './screen';
+import { ScreenReaderSupport } from './screenReader';
+import { WheelScroller } from './wheel';
 
 export type { ConsoleHeader, ConsoleNotice, ConsoleState } from './header';
 export type { ConsoleScreen } from './screen';
@@ -52,7 +55,11 @@ export interface ConsoleHandle {
    * line was dropped), in order with the output already written.
    */
   writeSkipped(lines: number): void;
-  /** Clears the terminal (output already queued is written after the clear). */
+  /**
+   * Clears the terminal (output already queued is written after the clear): the screen and the
+   * scrollback are emptied, except that while a program runs the line with the cursor (such as a
+   * prompt waiting for input) stays.
+   */
   clear(): void;
   /**
    * Starts the terminal afresh for another project: output still queued is dropped, and the
@@ -60,6 +67,11 @@ export interface ConsoleHandle {
    * it has processed what it was already given.
    */
   reset(): void;
+  /**
+   * Scrolls the view to the end of the output once the terminal has processed what was written
+   * before (a new run starts there); the view then follows the output until the person scrolls up.
+   */
+  scrollToBottom(): void;
   /** The terminal's current size. */
   size(): TerminalSize;
   /**
@@ -131,22 +143,27 @@ function terminalTheme(element: Element): ITheme {
   };
 }
 
-/** Fits the terminal to its element, within the sizes `run_resize` accepts. */
-function fitTerminal(terminal: Terminal, fit: FitAddon): void {
+/**
+ * The size that fits the terminal to its element, within the sizes `run_resize` accepts, or `null`
+ * when the element cannot be measured (the console is hidden).
+ */
+function fittingSize(fit: FitAddon): TerminalSize | null {
   const proposed = fit.proposeDimensions();
   if (
     proposed === undefined ||
     !Number.isFinite(proposed.cols) ||
     !Number.isFinite(proposed.rows)
   ) {
-    return;
+    return null;
   }
-  const cols = Math.min(Math.max(Math.floor(proposed.cols), COLS_RANGE.min), COLS_RANGE.max);
-  const rows = Math.min(Math.max(Math.floor(proposed.rows), ROWS_RANGE.min), ROWS_RANGE.max);
-  if (cols !== terminal.cols || rows !== terminal.rows) {
-    terminal.resize(cols, rows);
-  }
+  return {
+    cols: Math.min(Math.max(Math.floor(proposed.cols), COLS_RANGE.min), COLS_RANGE.max),
+    rows: Math.min(Math.max(Math.floor(proposed.rows), ROWS_RANGE.min), ROWS_RANGE.max),
+  };
 }
+
+/** Erases the line with the cursor and returns the cursor to its start. */
+const ERASE_LINE = '\u001b[2K\r';
 
 /** Calls every listener; one that throws is reported without stopping the others or xterm. */
 function notify<T>(listeners: ReadonlySet<(value: T) => void>, value: T): void {
@@ -208,6 +225,10 @@ export function consoleKeyAction(
  * Tab and Shift+Tab move the focus as usual; while one runs they go to the program, and Ctrl+Tab
  * moves the focus to the header's first enabled button. The terminal's input announces that key
  * through `aria-describedby`.
+ *
+ * Screen readers read the output through xterm.js's screen reader mode (./screenReader.ts). The
+ * console scrolls the wheel itself (./wheel.ts) and fits the terminal to its box at most once a
+ * frame, with new columns only once the width has settled (./refit.ts).
  */
 export function ConsolePanel({
   header,
@@ -227,6 +248,8 @@ export function ConsolePanel({
   const [dataListeners] = useState(() => new Set<(data: string) => void>());
   const [resizeListeners] = useState(() => new Set<(size: TerminalSize) => void>());
   const [link, setLink] = useState<string | null>(null);
+  // Whether a program runs: typing goes to it, Tab is its key, and Clear keeps its prompt line.
+  const programRunning = useRef(false);
   // The terminal is created once; its link handler reads the newest callback from here.
   const beforeLinkDialog = useRef(onBeforeLinkDialog);
   useEffect(() => {
@@ -241,6 +264,8 @@ export function ConsolePanel({
     const term = new Terminal({
       allowProposedApi: false,
       cursorBlink: false,
+      // Program output for screen readers (04 §4.5); paused during floods by `screenReader`.
+      screenReaderMode: true,
       fontFamily:
         "ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', 'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace",
       fontSize: 13,
@@ -270,8 +295,13 @@ export function ConsolePanel({
     // Returning false makes xterm leave the event alone. Typing is enabled only while a program
     // runs (see `disableStdin` below).
     term.attachCustomKeyEventHandler((event) => {
-      switch (consoleKeyAction(event, term.options.disableStdin !== true)) {
+      switch (consoleKeyAction(event, programRunning.current)) {
         case 'terminal':
+          // In screen reader mode xterm leaves the keys it sends uncancelled, so that the
+          // browser updates its input element. Shift+Tab would then also move the focus.
+          if (event.key === 'Tab' && event.type === 'keydown') {
+            event.preventDefault();
+          }
           return true;
         case 'leave':
           event.preventDefault();
@@ -284,31 +314,78 @@ export function ConsolePanel({
     });
     term.open(element);
     term.textarea?.setAttribute('aria-describedby', keysNoteId);
-    fitTerminal(term, fit);
+    const screenElement = element.querySelector<HTMLElement>('.xterm-screen');
+    const wheel = new WheelScroller({
+      scrollsScrollback: () =>
+        term.buffer.active.type === 'normal' && term.modes.mouseTrackingMode === 'none',
+      rowHeight: () =>
+        screenElement === null ? 0 : screenElement.getBoundingClientRect().height / term.rows,
+      rows: () => term.rows,
+      scrollLines: (lines) => {
+        term.scrollLines(lines);
+      },
+    });
+    term.attachCustomWheelEventHandler(wheel.handle);
+    const refitter = new Refitter({
+      propose: () => fittingSize(fit),
+      current: () => ({ cols: term.cols, rows: term.rows }),
+      resize: ({ cols, rows }) => {
+        term.resize(cols, rows);
+      },
+    });
+    refitter.fitNow();
     const observer =
       typeof ResizeObserver === 'undefined'
         ? null
         : new ResizeObserver(() => {
-            fitTerminal(term, fit);
+            refitter.request();
           });
     observer?.observe(element);
+    const screenReader = new ScreenReaderSupport((on) => {
+      term.options.screenReaderMode = on;
+    });
+    let disposed = false;
 
     terminal.current = term;
     scheduler.attach({
       write: (data, done) => {
+        screenReader.beforeWrite(data.length);
         term.write(data, done);
       },
       clear: () => {
-        term.clear();
+        if (programRunning.current) {
+          // xterm keeps the line with the cursor: the prompt the program waits at.
+          term.clear();
+          screenReader.restart();
+        } else if (term.buffer.active.type === 'alternate') {
+          // A program left its full screen on: a reset leaves it and empties both screens.
+          term.reset();
+          screenReader.restart();
+        } else {
+          // Nothing runs: the line xterm keeps is erased as well, so nothing is left.
+          term.clear();
+          term.write(ERASE_LINE, () => {
+            if (!disposed) {
+              screenReader.restart();
+            }
+          });
+        }
       },
       reset: () => {
         term.reset();
+        screenReader.restart();
+      },
+      scrollToBottom: () => {
+        term.scrollToBottom();
       },
     });
     return () => {
+      disposed = true;
       scheduler.attach(null);
       terminal.current = null;
       observer?.disconnect();
+      refitter.dispose();
+      screenReader.dispose();
       typed.dispose();
       resized.dispose();
       clipboardWrites.dispose();
@@ -334,6 +411,7 @@ export function ConsolePanel({
 
   const running = header.state === 'running';
   useEffect(() => {
+    programRunning.current = running;
     if (terminal.current !== null) {
       // Typing only goes somewhere while a program runs.
       terminal.current.options.disableStdin = !running;
@@ -355,6 +433,9 @@ export function ConsolePanel({
       },
       reset: () => {
         scheduler.reset();
+      },
+      scrollToBottom: () => {
+        scheduler.scrollToBottom();
       },
       size: () => ({
         cols: terminal.current?.cols ?? DEFAULT_COLS,

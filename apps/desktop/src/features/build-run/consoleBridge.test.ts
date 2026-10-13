@@ -13,6 +13,7 @@ describe('ConsoleBridge', () => {
     expect(bridge.console().size()).toEqual(DEFAULT_TERMINAL_SIZE);
     bridge.console().writeSkipped(3);
     bridge.console().focus();
+    bridge.scrollToBottom();
     bridge.clear();
     expect(bridge.console().onData(() => undefined)).toBeTypeOf('function');
     expect(bridge.console().onResize(() => undefined)).toBeTypeOf('function');
@@ -40,6 +41,15 @@ describe('ConsoleBridge', () => {
     terminal.type('c');
     expect(onInput).toHaveBeenCalledTimes(1);
     expect(bridge.attached).toBe(false);
+  });
+
+  it('scrolls the attached console to the end, after what was written to it', () => {
+    const bridge = new ConsoleBridge();
+    const terminal = new FakeConsole();
+    bridge.attach(terminal);
+    bridge.writeText('separator');
+    bridge.scrollToBottom();
+    expect(terminal.scrolls).toEqual(['separator'.length]);
   });
 
   it('keeps the newest attachment when an older one detaches late', () => {

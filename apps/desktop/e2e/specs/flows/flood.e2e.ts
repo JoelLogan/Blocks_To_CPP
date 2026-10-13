@@ -9,13 +9,15 @@
  * itself (its pipe fills and the program waits), so nothing is dropped and the flood would take
  * many minutes: there the test checks the editor and Stop while the program prints. Whether an
  * endless flood falls behind depends on the machine, so that test does not ask for the marker.
+ * The console stops giving screen readers its output during a flood; on Linux the test checks
+ * that they find the rows on screen again once the flood has stopped.
  */
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { NodeIds, print } from '../../support/bdm';
-import { waitForConsoleState } from '../../support/console';
+import { accessibleConsoleText, waitForConsoleState } from '../../support/console';
 import { centerOn } from '../../support/editor';
 import { clickTestId, openCategory } from '../../support/ui';
 import { waitFor } from '../../support/wait';
@@ -158,6 +160,14 @@ describe('Output flood protection', () => {
     expect(end.tail).toContain(END);
     expect(end.tail.slice(end.tail.lastIndexOf(END))).not.toContain(LINE);
     await waitForConsoleState(app.driver, /Running/, UI_TIMEOUT_MS);
+
+    // Screen readers are not given the flood (04 §4.5); once it has stopped, they find the rows
+    // on screen again, the prompt the program waits at included.
+    await waitFor(async () => (await accessibleConsoleText(app.driver))?.includes('Done:'), {
+      timeout: UI_TIMEOUT_MS,
+      message: async () =>
+        `the prompt in the console's accessibility tree (it holds ${String(await accessibleConsoleText(app.driver))})`,
+    });
 
     await clickTestId(app.driver, 'console-stop');
     expect(await timeToState(app.driver, /^■?\s*Stopped$/, STOP_LIMIT_MS)).toBeLessThanOrEqual(

@@ -202,7 +202,10 @@ project, build, run, toolchain, settings, trust and recovery services:
   64 KiB, within the backend's 200 calls and 1 MiB a second (with retries on `rateLimited`); the
   fitted size goes to `run_resize`. The header shows the state, the exit text, the elapsed time
   and the notices _Running with IDE helpers_ and _Process group only_. A new run writes a dim
-  `── New run ──` separator after resetting the terminal's modes.
+  `── New run ──` separator after resetting the terminal's modes and scrolls the console to the
+  end; _Clear_ empties it, keeping only the prompt line of a running program. The console scrolls
+  the wheel by whole lines itself (`panels/console/wheel.ts`), refits at most once a frame
+  (`refit.ts`), and gives screen readers its output except during floods (`screenReader.ts`).
 - Every channel message is checked against the contract before use (`channel.ts`); user-facing
   error text comes from `messages.ts`, never from the backend.
 

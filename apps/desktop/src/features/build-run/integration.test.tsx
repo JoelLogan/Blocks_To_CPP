@@ -296,6 +296,63 @@ describe('the console between runs', () => {
     expect(shownLines()).toEqual([...first, SEPARATOR_LINE, 'second', SEPARATOR_LINE, 'third']);
   });
 
+  it('brings a new run into view when the person has scrolled up', async () => {
+    const env = showConsole();
+    const first = Array.from({ length: env.terminal.rows * 3 }, (_, i) => `first ${String(i)}`);
+    await finishProgram(await startProgram(env), [`${first.join('\r\n')}\r\n`]);
+    act(() => {
+      env.terminal.scrollLines(-10);
+    });
+    const before = consoleBridge.console().screen();
+    expect(before.viewportY).toBe(before.baseY - 10);
+
+    const second = await startProgram(env, 'run.again');
+    act(() => {
+      second.output('second run\r\n');
+    });
+    await eventually(() => {
+      expect(shownLines().at(-1)).toBe('second run');
+    });
+    const after = consoleBridge.console().screen();
+    expect(after.viewportY).toBe(after.baseY);
+    // Earlier output stays above, below a separator.
+    expect(shownLines().slice(-3)).toEqual([
+      `first ${String(first.length - 1)}`,
+      SEPARATOR_LINE,
+      'second run',
+    ]);
+  });
+
+  it('is empty after Clear when no program runs, and keeps the prompt while one runs', async () => {
+    const env = showConsole();
+    await finishProgram(await startProgram(env), [
+      'line 1\r\nline 2\r\nFinished without a newline',
+    ]);
+    fireEvent.click(screen.getByTestId('console-clear'));
+    await eventually(() => {
+      expect(
+        consoleBridge
+          .console()
+          .screen()
+          .lines.every((line) => line === ''),
+      ).toBe(true);
+    });
+
+    const program = await startProgram(env);
+    act(() => {
+      program.output('output\r\nYour guess: ');
+    });
+    await eventually(() => {
+      expect(shownLines()).toEqual(['output', 'Your guess: ']);
+    });
+    fireEvent.click(screen.getByTestId('console-clear'));
+    await tick();
+    // The prompt the program waits at stays, with the cursor after it.
+    const shown = consoleBridge.console().screen();
+    expect(shownLines()).toEqual(['Your guess: ']);
+    expect(shown.cursor).toEqual({ row: 0, column: 'Your guess: '.length });
+  });
+
   it('starts at the top without a separator after Clear', async () => {
     const env = showConsole();
     await finishProgram(await startProgram(env), ['old 1\r\nold 2\r\n']);

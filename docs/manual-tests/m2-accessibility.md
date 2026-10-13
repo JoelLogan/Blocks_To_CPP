@@ -175,8 +175,21 @@ Check that:
    - [ ] While it runs, typing goes to the program, Tab is sent to the
      program, and Ctrl+Tab leaves the console. The terminal's description
      says so.
+   - [ ] The program's output is read aloud as it arrives ("Guess a number
+     from 1 to 100!", then "Your guess:"), and a guess you type is not read
+     a second time when the program echoes it.
+   - [ ] With the screen reader's reading keys (NVDA: browse mode and the
+     arrow keys; Orca: browse mode or flat review), the console's rows are
+     read one by one, and moving up past the top row reads the earlier
+     output.
    - [ ] After it ends, Tab leaves the console as usual, and the exit state
      is announced in words ("Finished (exit code 0)").
+   - [ ] *Clear* (after the program has ended): the reading keys find
+     nothing of the earlier output.
+   - [ ] Change the program to print a line in a *repeat (100000) times*
+     loop and run it. The screen reader is not flooded and the app keeps
+     answering; a second or two after the output stops, the rows on screen
+     (the last lines) can be read again.
    - [ ] A notice ("Running with IDE helpers", "Process group only") opens
      with Enter and its explanation is read.
 3. Build output: build (Ctrl+B).

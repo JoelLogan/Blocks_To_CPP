@@ -1,3 +1,4 @@
+import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { createRef } from 'react';
@@ -16,6 +17,8 @@ import {
   consoleKeyAction,
 } from './ConsolePanel';
 import { LinkDialog } from './LinkDialog';
+import { COLUMN_SETTLE_MS } from './refit';
+import { FLOOD_QUIET_MS, FLOOD_WRITE_BYTES } from './screenReader';
 
 const IDLE: ConsoleHeader = { state: 'idle', exit: null, elapsedMs: 0, notices: [] };
 const RUNNING: ConsoleHeader = {
@@ -441,13 +444,62 @@ describe('ConsolePanel', () => {
     expect(screen.queryByTestId('console-elapsed')).toBeNull();
   });
 
-  it('clears the terminal and tells its owner', async () => {
+  it('clears the terminal and tells its owner; a running program keeps its prompt line', async () => {
     const { handle, terminal, props } = renderConsole();
-    await act(() => handle.write(encode('one\r\ntwo\r\nthree')));
+    await act(() => handle.write(encode('one\r\ntwo\r\nYour guess: ')));
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
     expect(props.onClear).toHaveBeenCalledTimes(1);
-    // xterm keeps the cursor's line and drops everything above it.
-    expect(lines(terminal).filter((line) => line !== '')).toEqual(['three']);
+    // The line with the cursor stays, and the cursor stays at its end.
+    await act(() => handle.write(encode('')));
+    expect(lines(terminal).filter((line) => line !== '')).toEqual(['Your guess: ']);
+    expect(terminal.buffer.active.cursorX).toBe('Your guess: '.length);
+  });
+
+  it('empties the terminal completely when no program runs', async () => {
+    const { handle, terminal } = renderConsole({ header: IDLE });
+    const many = Array.from({ length: terminal.rows + 5 }, (_, i) => `line ${String(i)}`);
+    await act(() => handle.write(encode(`${many.join('\r\n')}\r\nFinished without a newline`)));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    // Output written after Clear starts at the top-left corner of an empty terminal.
+    await act(() => handle.write(encode('next')));
+    expect(lines(terminal).filter((line) => line !== '')).toEqual(['next']);
+    expect(lines(terminal)[0]).toBe('next');
+    expect(terminal.buffer.active.baseY).toBe(0);
+  });
+
+  it('empties both screens when a program that ended left its full screen on', async () => {
+    const { handle, terminal } = renderConsole({ header: IDLE });
+    await act(() => handle.write(encode('kept below\r\n\u001b[?1049h\u001b[5;5Hfull screen')));
+    expect(terminal.buffer.active.type).toBe('alternate');
+    act(() => {
+      handle.clear();
+    });
+    expect(terminal.buffer.active.type).toBe('normal');
+    // The next run leaves the alternate screen: nothing of the earlier output comes back.
+    await act(() => handle.write(encode('\u001b7\u001b[?1049l\u001b[!pnew run')));
+    expect(lines(terminal).filter((line) => line !== '')).toEqual(['new run']);
+  });
+
+  it('scrolls to the end of the output when asked, in order with the output', async () => {
+    const { handle, terminal } = renderConsole();
+    const many = Array.from({ length: terminal.rows * 3 }, (_, i) => `line ${String(i)}`);
+    await act(() => handle.write(encode(many.join('\r\n'))));
+    act(() => {
+      terminal.scrollLines(-10);
+    });
+    const scrolledUp = handle.screen();
+    expect(scrolledUp.viewportY).toBe(scrolledUp.baseY - 10);
+
+    // Output alone does not move a view the person scrolled up.
+    await act(() => handle.write(encode('\r\nmore\r\n')));
+    expect(handle.screen().viewportY).toBeLessThan(handle.screen().baseY);
+
+    // A new run: its separator, then the view goes to the end and follows its output.
+    void handle.write(encode('\r\n── New run ──\r\n'));
+    handle.scrollToBottom();
+    await act(() => handle.write(encode('first line of the run\r\n'.repeat(5))));
+    const shown = handle.screen();
+    expect(shown.viewportY).toBe(shown.baseY);
   });
 
   it('resolves pending writes when it unmounts', async () => {
@@ -463,6 +515,172 @@ describe('ConsolePanel', () => {
     await expectNoAxeViolations(container);
   });
 });
+
+describe('ConsolePanel wheel, fitting and screen readers', () => {
+  /** Rows of 16 px: happy-dom lays nothing out, so the screen's height is given. */
+  function layOutRows(terminal: Terminal): void {
+    const screenElement = terminal.element?.querySelector('.xterm-screen');
+    if (!(screenElement instanceof HTMLElement)) {
+      throw new Error('the terminal has no screen');
+    }
+    vi.spyOn(screenElement, 'getBoundingClientRect').mockImplementation(
+      () => new DOMRect(0, 0, 640, terminal.rows * 16),
+    );
+  }
+
+  /**
+   * A wheel event on the terminal, as the pointer would send it. happy-dom's `WheelEvent` has no
+   * modifier keys (a browser's is a `MouseEvent`), so they are set on the event itself.
+   */
+  function wheelOn(terminal: Terminal, init: WheelEventInit): WheelEvent {
+    const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init });
+    for (const key of ['ctrlKey', 'altKey', 'shiftKey', 'metaKey'] as const) {
+      Object.defineProperty(event, key, { value: init[key] === true });
+    }
+    terminal.element?.dispatchEvent(event);
+    return event;
+  }
+
+  it('scrolls the scrollback by whole lines with the wheel, while output streams', async () => {
+    const { handle, terminal } = renderConsole();
+    layOutRows(terminal);
+    const many = Array.from({ length: 100 }, (_, i) => `line ${String(i)}`);
+    await act(() => handle.write(encode(many.join('\r\n'))));
+    const end = handle.screen().baseY;
+
+    // Two notches of 53 px up: 6.6 rows, so 6 now and the rest kept.
+    expect(wheelOn(terminal, { deltaY: -53 }).defaultPrevented).toBe(true);
+    wheelOn(terminal, { deltaY: -53 });
+    expect(handle.screen().viewportY).toBe(end - 6);
+
+    // The program goes on printing: the view stays where the person put it.
+    await act(() => handle.write(encode('\r\nmore'.repeat(20))));
+    expect(handle.screen().viewportY).toBe(end - 6);
+    // Ctrl + wheel is not scrolling (it is left to the browser and xterm.js).
+    expect(wheelOn(terminal, { deltaY: 53, ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(handle.screen().viewportY).toBe(end - 6);
+  });
+
+  it("leaves the wheel to a program's alternate screen, which gets arrow keys", async () => {
+    const { handle, terminal } = renderConsole();
+    layOutRows(terminal);
+    const typed = vi.fn();
+    handle.onData(typed);
+    await act(() => handle.write(encode('\u001b[?1049hfull screen')));
+    // Line mode, as xterm.js's own handler converts pixels with a row height it has not got here.
+    const event = wheelOn(terminal, { deltaY: 2, deltaMode: 1 });
+    expect(event.defaultPrevented).toBe(true);
+    expect(typed).toHaveBeenCalledWith('\u001b[B\u001b[B');
+  });
+
+  it('fits the terminal once per frame, with new columns once the width has settled', async () => {
+    vi.useFakeTimers();
+    let resized: () => void = () => undefined;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resized = callback;
+        }
+        observe(): void {
+          // The test calls `resized` itself.
+        }
+        disconnect(): void {
+          // Nothing to stop.
+        }
+      },
+    );
+    let fitting = { cols: 80, rows: 24 };
+    vi.spyOn(FitAddon.prototype, 'proposeDimensions').mockImplementation(() => fitting);
+    const { handle } = renderConsole();
+    const sizes = vi.fn();
+    handle.onResize(sizes);
+
+    // A splitter dragged: the box changes several times within a frame.
+    for (const rows of [26, 28, 30]) {
+      fitting = { cols: 100, rows };
+      resized();
+    }
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(16);
+    });
+    expect(sizes.mock.calls).toEqual([[{ cols: 80, rows: 30 }]]);
+    expect(handle.size()).toEqual({ cols: 80, rows: 30 });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(COLUMN_SETTLE_MS);
+    });
+    expect(handle.size()).toEqual({ cols: 100, rows: 30 });
+    expect(sizes).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives screen readers the rows on screen and announces new output', async () => {
+    const { handle, container, terminal } = renderConsole();
+    expect(terminal.options.screenReaderMode).toBe(true);
+    await act(() => handle.write(encode('Guess a number from 1 to 100!\r\nYour guess: ')));
+    await waitForAccessibility(container, (tree) => tree.textContent.includes('Your guess:'));
+    const tree = container.querySelector('.xterm-accessibility');
+    expect(tree?.querySelector('[role="list"]')?.textContent).toContain('Guess a number');
+    expect(tree?.querySelector('.live-region')?.textContent).toContain('Your guess:');
+    await expectNoAxeViolations(container);
+  });
+
+  it('pauses the screen reader output during a flood, then offers the rows on screen again', async () => {
+    vi.useFakeTimers();
+    const { handle, container } = renderConsole();
+    const flood = `${'flood line\r\n'.repeat(Math.ceil(FLOOD_WRITE_BYTES / 12))}last line`;
+    expect(flood.length).toBeGreaterThan(FLOOD_WRITE_BYTES);
+    const written = handle.write(encode(flood));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    await written;
+    expect(container.querySelector('.xterm-accessibility')).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FLOOD_QUIET_MS);
+    });
+    const tree = container.querySelector('.xterm-accessibility');
+    expect(tree?.querySelector('[role="list"]')?.textContent).toContain('last line');
+  });
+
+  it('builds the accessibility tree afresh when the terminal is cleared or reset', async () => {
+    const { handle, container } = renderConsole({ header: IDLE });
+    await act(() => handle.write(encode('old output\r\n')));
+    await waitForAccessibility(container, (tree) => tree.textContent.includes('old output'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    await waitForAccessibility(container, (tree) => !tree.textContent.includes('old output'));
+    await act(() => handle.write(encode('new output')));
+    await waitForAccessibility(container, (tree) => tree.textContent.includes('new output'));
+
+    act(() => {
+      handle.reset();
+    });
+    await waitForAccessibility(container, (tree) => !tree.textContent.includes('new output'));
+  });
+});
+
+/**
+ * Waits until the terminal's accessibility tree (its rows and live region) passes `check`:
+ * xterm.js updates it in timers.
+ */
+async function waitForAccessibility(
+  container: HTMLElement,
+  check: (tree: Element) => boolean,
+): Promise<void> {
+  for (let attempt = 0; attempt < 150; attempt++) {
+    const tree = container.querySelector('.xterm-accessibility');
+    if (tree !== null && check(tree)) {
+      return;
+    }
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  }
+  const tree = container.querySelector('.xterm-accessibility');
+  throw new Error(`The accessibility tree holds: ${tree?.textContent ?? '(no tree)'}`);
+}
 
 /** The terminal's input element, which has the keyboard focus while the console has it. */
 function terminalInput(container: HTMLElement): HTMLTextAreaElement {
@@ -509,7 +727,9 @@ describe('ConsolePanel keyboard (never a keyboard trap, WCAG 2.1.2)', () => {
   });
 
   it('sends Tab to a running program, and Ctrl+Tab moves the focus to the header', () => {
-    const { container, handle } = renderConsole({ header: RUNNING });
+    const { container, handle, terminal } = renderConsole({ header: RUNNING });
+    // In screen reader mode xterm.js leaves Shift+Tab uncancelled; the console cancels it.
+    expect(terminal.options.screenReaderMode).toBe(true);
     const typed = vi.fn();
     handle.onData(typed);
     const input = terminalInput(container);

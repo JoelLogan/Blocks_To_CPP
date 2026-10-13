@@ -42,6 +42,11 @@ export class FakeConsole implements ConsoleHandle {
   clears = 0;
   /** How often it was reset. */
   resets = 0;
+  /**
+   * What was written before each scroll to the end, in order: `text`'s length at that moment
+   * (there is no view to scroll).
+   */
+  readonly scrolls: number[] = [];
   /** How often it got the focus. */
   focuses = 0;
   /** Whether writes resolve at once. */
@@ -76,6 +81,11 @@ export class FakeConsole implements ConsoleHandle {
 
   clear(): void {
     this.clears += 1;
+  }
+
+  /** There is no terminal behind it: records where in `text` the view would scroll to the end. */
+  scrollToBottom(): void {
+    this.scrolls.push(this.text.length);
   }
 
   /** Like the real console: output not yet written is dropped (its writes resolve). */

@@ -488,7 +488,10 @@ The backend checks these itself and never relies on the UI:
 
 * **PTY:** our own PTY layer in `b2c-process` (ConPTY on Windows 10 1809+,
   `openpty` on Linux; [ADR-0008](../adr/0008-pty-and-containment-in-b2c-process.md))
-  with the size of the xterm.js viewport. *Pipe mode* is a fallback
+  with the size of the xterm.js viewport. When the console is resized the
+  program gets the new size (`run_resize`): new rows at once, new columns
+  once the console's width has stayed the same for 100 ms, as each change of
+  width reflows the whole scrollback. *Pipe mode* is a fallback
   (and the CLI default when not attached to a terminal). On Linux the program
   is a session leader with the PTY as its controlling terminal; on Windows it
   is created suspended, assigned to the Job Object, and only then resumed.

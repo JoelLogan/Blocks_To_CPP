@@ -3,7 +3,8 @@
  * one write every {@link MIN_WRITE_INTERVAL_MS} (under 60 a second), with everything that arrived
  * in between combined into that write, and at most one write in progress. Each `write` resolves
  * once the terminal has processed its bytes, which is when the console may acknowledge them to the
- * backend (`run_ack`).
+ * backend (`run_ack`). Scrolling to the end of the output joins the same queue
+ * ({@link OutputScheduler.scrollToBottom}), so it happens once the terminal has what came before.
  */
 
 /** The shortest time between two writes into the terminal: 17 ms, so under 60 writes a second. */
@@ -26,6 +27,8 @@ export interface TerminalSink {
    * cursor, the alternate screen and every mode a program set.
    */
   reset(): void;
+  /** Scrolls the view to the end of the output, wherever the person scrolled it. */
+  scrollToBottom(): void;
 }
 
 /** The clock and timers the scheduler uses; tests pass fake ones. */
@@ -46,6 +49,14 @@ const browserTimers: SchedulerTimers = {
 interface Pending {
   readonly data: Uint8Array;
   readonly resolve: () => void;
+  /** Whether the view scrolls to the end once these bytes are processed. */
+  scroll: boolean;
+}
+
+/** The write in progress: who waits for it, and whether the view scrolls to the end after it. */
+interface InFlight {
+  readonly resolvers: readonly (() => void)[];
+  scroll: boolean;
 }
 
 const encoder = new TextEncoder();
@@ -55,8 +66,8 @@ export class OutputScheduler {
   readonly #timers: SchedulerTimers;
   #sink: TerminalSink | null = null;
   #pending: Pending[] = [];
-  /** The resolvers of the write in progress, or `null` when none is. */
-  #inFlight: (() => void)[] | null = null;
+  /** The write in progress, or `null` when none is. */
+  #inFlight: InFlight | null = null;
   #timer: unknown = null;
   #lastWrite = Number.NEGATIVE_INFINITY;
   #clearRequested = false;
@@ -73,7 +84,10 @@ export class OutputScheduler {
   attach(sink: TerminalSink | null): void {
     if (sink === null) {
       this.#cancelTimer();
-      const waiting = [...(this.#inFlight ?? []), ...this.#pending.map((entry) => entry.resolve)];
+      const waiting = [
+        ...(this.#inFlight?.resolvers ?? []),
+        ...this.#pending.map((entry) => entry.resolve),
+      ];
       this.#sink = null;
       this.#pending = [];
       this.#inFlight = null;
@@ -94,7 +108,7 @@ export class OutputScheduler {
    */
   write(data: Uint8Array): Promise<void> {
     return new Promise((resolve) => {
-      this.#pending.push({ data, resolve });
+      this.#pending.push({ data, resolve, scroll: false });
       this.#schedule();
     });
   }
@@ -113,6 +127,23 @@ export class OutputScheduler {
       this.#sink.clear();
     } else {
       this.#clearRequested = true;
+    }
+  }
+
+  /**
+   * Scrolls the view to the end of the output once the terminal has processed everything queued
+   * before this call (and whatever is written with it), in order with the output: at once when
+   * nothing is queued or being written. The view then follows new output again until the person
+   * scrolls up. Without a terminal there is nothing to scroll.
+   */
+  scrollToBottom(): void {
+    const last = this.#pending.at(-1);
+    if (last !== undefined) {
+      last.scroll = true;
+    } else if (this.#inFlight !== null) {
+      this.#inFlight.scroll = true;
+    } else {
+      this.#sink?.scrollToBottom();
     }
   }
 
@@ -193,18 +224,24 @@ export class OutputScheduler {
     }
     const batch = this.#pending.splice(0, take);
     const data = concat(batch, size);
-    const resolvers = batch.map((entry) => entry.resolve);
-    this.#inFlight = resolvers;
+    const inFlight: InFlight = {
+      resolvers: batch.map((entry) => entry.resolve),
+      scroll: batch.some((entry) => entry.scroll),
+    };
+    this.#inFlight = inFlight;
     this.#lastWrite = this.#timers.now();
 
     let finished = false;
     const done = () => {
-      if (finished || this.#inFlight !== resolvers) {
+      if (finished || this.#inFlight !== inFlight) {
         return;
       }
       finished = true;
       this.#inFlight = null;
-      for (const resolve of resolvers) {
+      if (inFlight.scroll) {
+        sink.scrollToBottom();
+      }
+      for (const resolve of inFlight.resolvers) {
         resolve();
       }
       this.#schedule();

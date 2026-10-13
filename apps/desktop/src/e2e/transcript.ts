@@ -103,6 +103,9 @@ function tappedHandle(handle: ConsoleHandle, transcript: ConsoleTranscript): Con
     reset: () => {
       handle.reset();
     },
+    scrollToBottom: () => {
+      handle.scrollToBottom();
+    },
     size: () => handle.size(),
     screen: () => handle.screen(),
     onData: (callback: (data: string) => void) => handle.onData(callback),

@@ -9,19 +9,32 @@
  *   height is two pixels more than a whole number of rows, which a fit that ignores the padding
  *   gets wrong;
  * - with a notice open in the smallest bottom dock, the header scrolls by itself to Stop, Run
- *   again and Clear.
+ *   again and Clear;
+ * - a new run brings its output into view after the person scrolled up, and Clear empties the
+ *   console once the program has ended; screen readers find the output in the terminal's
+ *   accessibility tree;
+ * - the wheel scrolls the console back while a program prints, and the view stays there.
  */
 import { By, Key, type WebDriver } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
-import { NodeIds } from '../../support/bdm';
-import { showConsole, waitForConsoleState } from '../../support/console';
+import type { E2eConsoleScreen } from '../../../src/e2e/contract';
+import { NodeIds, print } from '../../support/bdm';
+import { accessibleConsoleText, showConsole, waitForConsoleState } from '../../support/console';
 import { drag } from '../../support/drag';
 import { clickTestId, middleOf } from '../../support/ui';
 import { waitFor } from '../../support/wait';
-import { waitForTranscript } from './lib/console';
+import { waitForConsoleText, waitForTranscript } from './lib/console';
 import { type FlowApp, startFlow } from './lib/launch';
-import { changeBy, declare, newEmptyProject, printValue, ref, repeat } from './lib/project';
+import {
+  changeBy,
+  declare,
+  forever,
+  newEmptyProject,
+  printValue,
+  ref,
+  repeat,
+} from './lib/project';
 import { BUILD_TIMEOUT_MS, UI_TIMEOUT_MS, waitForToolchain } from './lib/ui';
 
 /** How many lines the program prints: more than the console shows, so it scrolls. */
@@ -184,6 +197,47 @@ async function resizeBottomDock(driver: WebDriver, delta: number): Promise<void>
   await drag(driver, from, { x: from.x, y: from.y - delta });
 }
 
+/** What the console's terminal holds now. */
+function consoleScreen(app: FlowApp): Promise<E2eConsoleScreen> {
+  return app.hook.call('consoleScreen');
+}
+
+/** Waits until the console's view is scrolled up from the end of the output; returns the screen. */
+function waitForScrolledUp(app: FlowApp): Promise<E2eConsoleScreen> {
+  return waitFor(
+    async () => {
+      const screen = await consoleScreen(app);
+      return screen.viewportY < screen.baseY ? screen : null;
+    },
+    { timeout: UI_TIMEOUT_MS, message: 'the console to be scrolled up from the end' },
+  );
+}
+
+/**
+ * Turns the mouse wheel over the console's terminal `notches` times, by `deltaY` pixels each
+ * (negative: up). The wheel events are dispatched on the terminal's screen, where the pointer's
+ * would land, and reach the console's own wheel handler like the pointer's (this version of
+ * selenium-webdriver's types has no wheel actions).
+ */
+async function turnWheel(driver: WebDriver, deltaY: number, notches: number): Promise<void> {
+  await driver.executeScript(
+    `const screen = document.querySelector('[data-testid="console-terminal"] .xterm-screen');
+     const box = screen.getBoundingClientRect();
+     for (let notch = 0; notch < arguments[1]; notch++) {
+       screen.dispatchEvent(new WheelEvent('wheel', {
+         deltaY: arguments[0],
+         deltaMode: 0,
+         bubbles: true,
+         cancelable: true,
+         clientX: box.left + box.width / 2,
+         clientY: box.top + box.height / 2,
+       }));
+     }`,
+    deltaY,
+    notches,
+  );
+}
+
 describe('Console', () => {
   it('shows a second run below the first, after a New run line', async (context) => {
     const app = await counterProject(context);
@@ -282,5 +336,77 @@ describe('Console', () => {
     const after = await header(app.driver);
     expect(after.hits).toEqual(Object.fromEntries(BUTTONS.map((id) => [id, id])));
     expect(after.panelScrollHeight, 'the dock panel scrolls').toBe(after.panelClientHeight);
+  }, 240_000);
+
+  it('brings a new run into view after scrolling up, and Clear empties it once the program has ended', async (context) => {
+    const app = await counterProject(context);
+    await clickTestId(app.driver, 'toolbar-run');
+    await waitForRun(app, 1);
+    await showConsole(app.driver);
+
+    // Screen readers find the output among the rows on screen (updated at most once a second).
+    await waitFor(async () => (await accessibleConsoleText(app.driver))?.includes(String(LINES)), {
+      timeout: UI_TIMEOUT_MS,
+      message: async () =>
+        `the last line in the accessibility tree (it holds ${String(await accessibleConsoleText(app.driver))})`,
+    });
+
+    // Three notches up to read the first lines, then Run again.
+    await turnWheel(app.driver, -53, 3);
+    await waitForScrolledUp(app);
+    await clickTestId(app.driver, 'console-run-again');
+    await waitForRun(app, 2);
+    const second = await consoleScreen(app);
+    expect(second.viewportY, 'the new run is out of view').toBe(second.baseY);
+
+    // Nothing runs any more: Clear leaves nothing, not even the line with the cursor.
+    await clickTestId(app.driver, 'console-clear');
+    const cleared = await waitFor(
+      async () => {
+        const screen = await consoleScreen(app);
+        return screen.lines.every((line) => line.trim() === '') ? screen : null;
+      },
+      {
+        timeout: UI_TIMEOUT_MS,
+        message: async () =>
+          `an empty console (it shows ${JSON.stringify((await consoleScreen(app)).lines.filter((line) => line.trim() !== ''))})`,
+      },
+    );
+    expect(cleared.baseY).toBe(0);
+    expect(cleared.cursor).toEqual({ row: 0, column: 0 });
+  }, 240_000);
+
+  it('scrolls back with the wheel while a program prints, and stays there', async (context) => {
+    const app = await startFlow(context).launch();
+    await waitForToolchain(app);
+    const mainId = await newEmptyProject(app);
+    const ids = new NodeIds('wheel');
+    await app.hook.insertBlocks(mainId, 'BODY', [forever(ids, [print(ids, 'B2C wheel line')])]);
+    await clickTestId(app.driver, 'toolbar-run');
+    await waitForConsoleText(app.driver, ['B2C wheel line'], BUILD_TIMEOUT_MS);
+    await waitForConsoleState(app.driver, /Running/, UI_TIMEOUT_MS);
+
+    await turnWheel(app.driver, -53, 3);
+    await waitForScrolledUp(app);
+    // The program goes on printing; the view stays scrolled up (it keeps its text while the
+    // scrollback is not full, and moves up with it once it is).
+    for (let check = 0; check < 5; check++) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const screen = await consoleScreen(app);
+      expect(screen.viewportY, 'the view went back to the end').toBeLessThan(screen.baseY);
+    }
+
+    // A turn of the wheel down past the end (more than the whole scrollback) follows the output
+    // again.
+    await turnWheel(app.driver, 10_000_000, 1);
+    await waitFor(
+      async () => {
+        const screen = await consoleScreen(app);
+        return screen.viewportY === screen.baseY;
+      },
+      { timeout: UI_TIMEOUT_MS, message: 'the view back at the end of the output' },
+    );
+    await clickTestId(app.driver, 'console-stop');
+    await waitForConsoleState(app.driver, /^■?\s*Stopped$/, UI_TIMEOUT_MS);
   }, 240_000);
 });
