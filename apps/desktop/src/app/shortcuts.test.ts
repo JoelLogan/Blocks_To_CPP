@@ -14,6 +14,7 @@ import {
   isReloadKey,
   keepsNativeContextMenu,
   matchShortcut,
+  registerPendingEdit,
   SHORTCUTS_OFF_ATTRIBUTE,
 } from './shortcuts';
 import { resetAppStore, useAppStore } from './store';
@@ -200,6 +201,47 @@ describe('installShortcuts', () => {
     expect(ran).toEqual([]);
   });
 
+  it('finishes an edit in progress before Save, Build and Run, and does nothing when it cannot', () => {
+    const { ctx, ran } = setUp();
+    makeRunnable();
+    uninstall = installShortcuts(window, ctx);
+    let finishes = true;
+    const finish = vi.fn(() => {
+      ran.push('project.rename');
+      return finishes;
+    });
+    const remove = registerPendingEdit(finish);
+    try {
+      press({ key: 's', ctrlKey: true });
+      press({ key: 'b', ctrlKey: true });
+      press({ key: 'F5' });
+      expect(ran).toEqual([
+        'project.rename',
+        'project.save',
+        'project.rename',
+        'build.start',
+        'project.rename',
+        'run.start',
+      ]);
+
+      // It cannot be finished (a name that breaks a rule): the key does nothing else.
+      ran.length = 0;
+      finishes = false;
+      expect(press({ key: 's', ctrlKey: true }).defaultPrevented).toBe(true);
+      press({ key: 'F5' });
+      expect(ran).toEqual(['project.rename', 'project.rename']);
+      // Stop never waits for it.
+      ran.length = 0;
+      press({ key: 'F5', shiftKey: true });
+      expect(ran).toEqual(['run.stop']);
+    } finally {
+      remove();
+    }
+    ran.length = 0;
+    press({ key: 's', ctrlKey: true });
+    expect(ran).toEqual(['project.save']);
+  });
+
   it('stops listening when uninstalled', () => {
     const { ctx, ran } = setUp();
     installShortcuts(window, ctx)();
@@ -288,6 +330,26 @@ describe('Undo and Redo for the block editor', () => {
     }
     expect(ran).toEqual([]);
     expect(seen).toHaveBeenCalledOnce();
+  });
+
+  // The ≡ menu reads whether there is anything to undo as it opens: an undo behind it made its
+  // Undo and Redo items wrong.
+  it('do nothing in an open menu', () => {
+    const { ctx, ran } = setUp();
+    showEditor();
+    uninstall = installShortcuts(window, ctx);
+    const menu = attach(document.createElement('div'));
+    menu.setAttribute('role', 'menu');
+    const item = attach(document.createElement('div'), menu);
+    item.setAttribute('role', 'menuitem');
+    item.tabIndex = -1;
+    for (const [init] of undoKeys) {
+      expect(press(init, item).defaultPrevented).toBe(false);
+    }
+    expect(ran).toEqual([]);
+    // The other shortcuts still work there.
+    press({ key: 's', ctrlKey: true }, item);
+    expect(ran).toEqual(['project.save']);
   });
 
   it('undo from the console only while no program runs; a running program gets the key', () => {

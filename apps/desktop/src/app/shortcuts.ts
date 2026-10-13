@@ -15,7 +15,13 @@
  * the typing), the console while a program runs (the program gets `Ctrl+Z`), and Blockly's own
  * areas, where Blockly undoes itself (it listens on its injection div only, so everywhere else,
  * such as the Problems panel or the toolbar, the window does it). They act only while the block
- * editor is shown, so a key pressed on another page never changes blocks out of sight.
+ * editor is shown, so a key pressed on another page never changes blocks out of sight, and not in
+ * an open menu (the ≡ menu), which shows whether there is anything to undo as it opens.
+ *
+ * Save, Build and Run first finish an edit in progress that changes the project, such as the
+ * project's name being typed ({@link registerPendingEdit}): they act on what the person sees. When
+ * that edit cannot be finished (a name that breaks a rule), the shortcut does nothing and the edit
+ * says why.
  *
  * **The page never reloads.** A reload would start the frontend empty while the backend keeps the
  * open project, its unsaved changes and its running program, out of the window's reach. So the
@@ -50,6 +56,9 @@ export const SHORTCUTS_OFF_ATTRIBUTE = 'data-b2c-shortcuts';
 
 /** Elements inside which the shortcuts do nothing. */
 const BLOCKED_SCOPE = `[role="dialog"], [role="alertdialog"]`;
+
+/** An open menu (the ≡ menu): Undo and Redo do nothing there. */
+const MENU = '[role="menu"]';
 
 /** An open dialog anywhere in the window. */
 const OPEN_DIALOG = `[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]`;
@@ -195,7 +204,42 @@ function undoesBlocks(element: Element | null, ctx: ShellActionContext): boolean
   if (element.closest(TERMINAL) !== null) {
     return run.status !== 'starting' && run.status !== 'running';
   }
-  return element.closest(BLOCKLY_AREA) === null && element.closest(TEXT_FIELD) === null;
+  return (
+    element.closest(BLOCKLY_AREA) === null &&
+    element.closest(TEXT_FIELD) === null &&
+    element.closest(MENU) === null
+  );
+}
+
+/**
+ * Finishes an edit in progress before a shortcut acts on the project; returns whether it was
+ * finished (or there was nothing to finish). See {@link registerPendingEdit}.
+ */
+export type PendingEdit = () => boolean;
+
+/** The edits in progress, in the order they were registered. */
+const pendingEdits = new Set<PendingEdit>();
+
+/**
+ * Registers an edit in progress (such as the project's name being typed) that Save, Build and Run
+ * finish before they act, so that they act on what the person sees. `finish` applies the edit and
+ * returns true, or returns false when it cannot (it then says why), and the shortcut does nothing.
+ * Returns the function that removes it.
+ */
+export function registerPendingEdit(finish: PendingEdit): () => void {
+  pendingEdits.add(finish);
+  return () => {
+    pendingEdits.delete(finish);
+  };
+}
+
+/** Finishes every edit in progress; returns whether all of them were finished. */
+function finishPendingEdits(): boolean {
+  let finished = true;
+  for (const finish of [...pendingEdits]) {
+    finished = finish() && finished;
+  }
+  return finished;
 }
 
 /** Runs what a shortcut does. */
@@ -258,6 +302,9 @@ export function installShortcuts(target: Window, ctx: ShellActionContext): () =>
     event.preventDefault();
     event.stopPropagation();
     if (event.repeat || isInDialogScope(element)) {
+      return;
+    }
+    if (action !== 'stop' && !finishPendingEdits()) {
       return;
     }
     perform(action, ctx);

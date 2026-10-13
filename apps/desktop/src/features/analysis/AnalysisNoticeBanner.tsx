@@ -11,12 +11,17 @@
  *   names the limit and how to get back within it.
  * - `trapRecovered`: the compiler core stopped and was restarted. What is shown may be out of
  *   date until the next change; the person can dismiss the banner.
+ *
+ * When the banner goes away after its button was pressed with the focus on it (the undo let the
+ * canvas load, or the notice was dismissed), the focus, which was on the button, goes to the
+ * workspace region rather than the document's body (04 §4.8, ../../app/layout/focus.ts).
  */
-import { useId } from 'react';
+import { type MouseEvent, useEffect, useId, useRef } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 
 import { type CommandRegistry, commands as appCommands, triggerCommand } from '../../app/commands';
+import { focusWorkspaceIfLost } from '../../app/layout/focus';
 import type { AnalysisNotice, useAppStore } from '../../app/store';
 import { limitMessage, reachedLimit } from '../project/limits';
 import './analysis.css';
@@ -67,6 +72,19 @@ export function AnalysisNoticeBanner({
     })),
   );
   const titleId = useId();
+  /** Set when a button of the banner was pressed while it had the focus. */
+  const hadFocus = useRef(false);
+  // The banner went away under the focus: it goes to the workspace region, not the body.
+  useEffect(() => {
+    if (notice === null && hadFocus.current) {
+      hadFocus.current = false;
+      focusWorkspaceIfLost();
+    }
+  }, [notice]);
+  /** Remembers whether the button pressed has the focus, as it does when pressed from the keyboard. */
+  const noteFocus = (event: MouseEvent<HTMLButtonElement>): void => {
+    hadFocus.current = event.currentTarget.ownerDocument.activeElement === event.currentTarget;
+  };
   if (notice === null) {
     return null;
   }
@@ -93,7 +111,8 @@ export function AnalysisNoticeBanner({
             type="button"
             className="button"
             data-testid="analysis-undo"
-            onClick={() => {
+            onClick={(event) => {
+              noteFocus(event);
               triggerCommand('edit.undo', commands);
             }}
           >
@@ -103,7 +122,8 @@ export function AnalysisNoticeBanner({
           <button
             type="button"
             className="button"
-            onClick={() => {
+            onClick={(event) => {
+              noteFocus(event);
               const { analysis, actions } = store.getState();
               if (analysis.notice === 'trapRecovered') {
                 actions.setAnalysis({ notice: null });

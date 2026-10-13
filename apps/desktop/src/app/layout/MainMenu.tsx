@@ -219,7 +219,8 @@ export function MainMenu({
   };
 
   itemRefs.current = [];
-  // Read as the menu opens: nothing changes the editor's history while the menu has the focus.
+  // Read as the menu opens: nothing changes the editor's history while the menu has the focus (the
+  // window's Undo and Redo keys do nothing in a menu, ../shortcuts.ts).
   const context: MenuContext | null = open ? { editor: editor(), screen } : null;
   return (
     <div className="main-menu" ref={container}>

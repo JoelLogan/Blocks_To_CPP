@@ -2,8 +2,9 @@
  * Renaming the project and the window's Undo (docs/spec/04-user-interface.md §4.1, 05 §5.3, §5.9;
  * D12): the name in the top bar turns into a field, where Escape cancels and Enter keeps the name;
  * the new name is an unsaved change that the C++ header comment follows; a plain Ctrl+S writes it
- * as `project.name` into the same file; the start page's recent list shows the new name, and
- * opening the project from there shows it again. A block move is undone with Ctrl+Z pressed
+ * as `project.name` into the same file, also when pressed with the field still open (it keeps the
+ * name first); the start page's recent list shows the new name, and opening the project from there
+ * shows it again. A block move is undone with Ctrl+Z pressed
  * outside the canvas (on the Problems tab), and done again with Ctrl+Y.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -26,6 +27,9 @@ const TEMPLATE_NAME = 'My Project';
 /** The new name. */
 const NEW_NAME = 'Space Invaders';
 
+/** The name typed last and saved with Ctrl+S while the field is still open. */
+const FINAL_NAME = 'Space Invaders II';
+
 /** Waits until the top bar shows the unsaved-changes marker, or (with `false`) no marker. */
 async function waitForMarker(driver: WebDriver, shown: boolean): Promise<void> {
   await waitFor(async () => (await testIdText(driver, 'project-name')).includes('•') === shown, {
@@ -35,17 +39,17 @@ async function waitForMarker(driver: WebDriver, shown: boolean): Promise<void> {
 }
 
 /**
- * Replaces all the text of the focused field with `text`, then presses `last` (Enter or Escape),
- * as a person types: with key actions, which go to the focused element and leave its caret alone
- * (an element's own "send keys" may first move the caret to the end).
+ * Replaces all the text of the focused field with `text`, then presses `last` (Enter or Escape)
+ * when given, as a person types: with key actions, which go to the focused element and leave its
+ * caret alone (an element's own "send keys" may first move the caret to the end).
  */
-async function retype(driver: WebDriver, text: string, last: string): Promise<void> {
+async function retype(driver: WebDriver, text: string, last?: string): Promise<void> {
   await driver
     .actions({ async: true })
     .keyDown(Key.CONTROL)
     .sendKeys('a')
     .keyUp(Key.CONTROL)
-    .sendKeys(text, last)
+    .sendKeys(text, ...(last === undefined ? [] : [last]))
     .perform();
 }
 
@@ -108,6 +112,19 @@ describe('Renaming the project', () => {
     expect(savedName(file)).toBe(NEW_NAME);
     expect(existsSync(path.join(flow.folders.projects, `${NEW_NAME}.b2c`))).toBe(false);
 
+    // (4b) Ctrl+S with the field still open keeps the name first: the file gets the name shown,
+    // and nothing is left unsaved.
+    await clickTestId(driver, 'project-name-button');
+    await testId(driver, 'project-name-input');
+    const typed = fileStamp(file);
+    await retype(driver, FINAL_NAME);
+    await pressCtrl(driver, 's');
+    await waitForWrite(file, typed);
+    await waitForTestId(driver, 'project-name-input', false);
+    await waitForMarker(driver, false);
+    expect(savedName(file)).toBe(FINAL_NAME);
+    expect(await testIdText(driver, 'project-name-text')).toBe(FINAL_NAME);
+
     // (5) The recent list names the project by its new name; it opens from there.
     await chooseMenuItem(driver, 'Close project');
     await waitForTestId(driver, 'start-page', true);
@@ -115,18 +132,18 @@ describe('Renaming the project', () => {
       async () => {
         for (const item of await driver.findElements(By.css('[data-testid="recent-item"]'))) {
           const text = await textContent(driver, item);
-          if (text.includes(NEW_NAME) && text.includes('Arcade.b2c')) {
+          if (text.includes(FINAL_NAME) && text.includes('Arcade.b2c')) {
             return item;
           }
         }
         return null;
       },
-      { timeout: UI_TIMEOUT_MS, message: `a recent project named "${NEW_NAME}"` },
+      { timeout: UI_TIMEOUT_MS, message: `a recent project named "${FINAL_NAME}"` },
     );
     expect(await textContent(driver, entry)).not.toContain(TEMPLATE_NAME);
     await entry.findElement(By.css('.recent-open')).click();
     await waitForProject(app);
-    expect(await testIdText(driver, 'project-name-text')).toBe(NEW_NAME);
+    expect(await testIdText(driver, 'project-name-text')).toBe(FINAL_NAME);
     expect(await testIdText(driver, 'project-name')).not.toContain('•');
   }, 180_000);
 

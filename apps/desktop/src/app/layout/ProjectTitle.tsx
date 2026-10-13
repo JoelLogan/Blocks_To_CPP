@@ -4,10 +4,12 @@
  *
  * The name is a button. Pressing it (or choosing *Rename project…* in the ≡ menu, the command
  * `project.rename` this component provides while a project is open) turns it into a text field:
- * `Enter` or moving the focus away keeps the new name, `Escape` cancels. A name is trimmed and has
+ * `Enter` or moving the focus away keeps the new name, `Escape` cancels, and `Ctrl+S`, `Ctrl+B` and
+ * `F5` keep it before they save, build or run (../shortcuts.ts). A name is trimmed and has
  * 1–100 characters on one line; the compiler core's loader checks the rest of the project-text
- * rules (no bidirectional controls, 05 §5.6) through `canonical()`. `Enter` with a name that
- * breaks a rule keeps the field open and says why; moving the focus away keeps the old name.
+ * rules (no bidirectional controls, 05 §5.6) through `canonical()`. `Enter` (or one of those
+ * keys) with a name that breaks a rule keeps the field open and says why, and the key does nothing
+ * else; moving the focus away keeps the old name.
  * `Enter` and `Escape` return the focus to the name.
  *
  * Renaming goes through the editor (`EditorHandle.updateProjectInfo`): the project has unsaved
@@ -28,6 +30,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { type CommandRegistry, commands } from '../commands';
 import { getCore } from '../core';
 import { type EditorHandle, getEditorHandle } from '../editor-types';
+import { registerPendingEdit } from '../shortcuts';
 import { useAppStore } from '../store';
 import { Hint } from '../ui/Hint';
 import './ProjectTitle.css';
@@ -229,6 +232,22 @@ function ProjectName({
     target.updateProjectInfo({ name: checked.name });
     return true;
   };
+
+  // While the field is open, Save, Build and Run keep the name first, as Enter does, so they act on
+  // the name shown; a name that breaks a rule stops them and says why. (Re-registered at every
+  // render, so it applies the draft as it is now.)
+  useEffect(() => {
+    if (!editing) {
+      return undefined;
+    }
+    return registerPendingEdit(() => {
+      if (!apply()) {
+        return false;
+      }
+      finish(true);
+      return true;
+    });
+  });
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && !event.nativeEvent.isComposing) {

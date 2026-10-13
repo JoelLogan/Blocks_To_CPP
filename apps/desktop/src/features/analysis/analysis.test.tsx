@@ -118,6 +118,67 @@ describe('the analysis notice banner', () => {
     expect(useAppStore.getState().analysis.notice).toBe('syncFailed');
   });
 
+  // The banner went away under the focused button and left the focus on the document's body: a
+  // screen reader said nothing and the canvas keys did nothing until Tab.
+  it('gives the focus to the workspace when the undo or Dismiss makes it go away', () => {
+    const banners = install();
+    /** Whether the undo lets the canvas load again (the next preview then clears the notice). */
+    let loads = true;
+    commands.registerCommand('edit.undo', () => {
+      if (loads) {
+        useAppStore.getState().actions.setAnalysis({ notice: null });
+      }
+    });
+    render(
+      <>
+        <WindowBanners registry={banners} />
+        <main className="workspace" aria-label="Block workspace" tabIndex={-1} />
+      </>,
+    );
+    const workspace = screen.getByRole('main', { name: 'Block workspace' });
+    act(() => {
+      useAppStore.getState().actions.setProject(projectFixture());
+      useAppStore.getState().actions.setAnalysis({ notice: 'syncFailed' });
+    });
+    const undo = screen.getByRole('button', { name: 'Undo last change' });
+    undo.focus();
+    act(() => {
+      fireEvent.click(undo);
+    });
+    expect(screen.queryByTestId('analysis-notice-banner')).toBeNull();
+    expect(document.activeElement).toBe(workspace);
+
+    // Dismiss does the same.
+    act(() => {
+      useAppStore.getState().actions.setAnalysis({ notice: 'trapRecovered' });
+    });
+    const dismiss = screen.getByRole('button', { name: 'Dismiss' });
+    dismiss.focus();
+    act(() => {
+      fireEvent.click(dismiss);
+    });
+    expect(document.activeElement).toBe(workspace);
+
+    // The canvas still does not load: the focus stays on the button. Moved somewhere else before
+    // the notice clears, it stays there.
+    loads = false;
+    act(() => {
+      useAppStore.getState().actions.setAnalysis({ notice: 'syncFailed' });
+    });
+    const again = screen.getByRole('button', { name: 'Undo last change' });
+    again.focus();
+    fireEvent.click(again);
+    expect(document.activeElement).toBe(again);
+    const other = document.createElement('button');
+    document.body.append(other);
+    other.focus();
+    act(() => {
+      useAppStore.getState().actions.setAnalysis({ notice: null });
+    });
+    expect(document.activeElement).toBe(other);
+    other.remove();
+  });
+
   it('names a limit the canvas went past instead of calling it a bug', async () => {
     const banners = install();
     const { container } = render(<WindowBanners registry={banners} />);

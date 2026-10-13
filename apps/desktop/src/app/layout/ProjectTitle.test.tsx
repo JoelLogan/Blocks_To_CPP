@@ -1,9 +1,9 @@
 /**
  * Renaming the project in the top bar (docs/spec/04-user-interface.md §4.1, D12): the name is a
  * button that turns into a field; `Enter` or moving the focus away keeps a valid name, `Escape`
- * cancels; a refused name says why; the focus returns to the name; the ≡ menu's *Rename project…*
- * opens the same field; axe passes in each state. The compiler core's own check of the name runs
- * against the real core when it is built.
+ * cancels; Save, Build and Run keep it first; a refused name says why; the focus returns to the
+ * name; the ≡ menu's *Rename project…* opens the same field; axe passes in each state. The
+ * compiler core's own check of the name runs against the real core when it is built.
  */
 import type { CoreWasm } from '@blocks2cpp/b2c-core-wasm';
 import type { Handle } from '@blocks2cpp/ipc-types';
@@ -15,6 +15,8 @@ import { CORE_BUILT, HELLO_TEXT, realCore } from '../../features/project/testing
 import { expectNoAxeViolations } from '../../test/axe';
 import { type CommandRegistry, createCommandRegistry } from '../commands';
 import type { EditorHandle, ProjectInfo } from '../editor-types';
+import { createScreenRegistry } from '../screens';
+import { installShortcuts } from '../shortcuts';
 import { resetAppStore, useAppStore } from '../store';
 import { projectFixture } from '../testing/fixtures';
 import { HintProvider } from '../ui/Hint';
@@ -159,6 +161,45 @@ describe('the project name', () => {
     expect(renamed).toEqual(['Snake']);
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Elsewhere' }));
+  });
+
+  // The window's capture-phase shortcuts acted with the field still open: the file got the old
+  // name while the top bar showed the new one.
+  it('keeps a new name before Ctrl+S saves, so the file gets the name shown', async () => {
+    const user = userEvent.setup();
+    renderTitle();
+    openProject();
+    const saved: (string | null)[] = [];
+    registry.registerCommand('project.save', () => {
+      saved.push(shownName());
+    });
+    const uninstall = installShortcuts(window, {
+      store: useAppStore,
+      commands: registry,
+      screens: createScreenRegistry(),
+      editor: () => editor,
+    });
+    try {
+      await user.click(nameButton());
+      await user.clear(field());
+      await user.type(field(), 'Space Invaders');
+      fireEvent.keyDown(field(), { key: 's', code: 'KeyS', ctrlKey: true });
+      expect(renamed).toEqual(['Space Invaders']);
+      expect(saved).toEqual(['Space Invaders']);
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(document.activeElement).toBe(nameButton());
+
+      // A name that breaks a rule stops the key: the field stays open and says why.
+      await user.click(nameButton());
+      await user.clear(field());
+      await user.type(field(), `Bad${RLO}name`);
+      fireEvent.keyDown(field(), { key: 's', code: 'KeyS', ctrlKey: true });
+      expect(saved).toEqual(['Space Invaders']);
+      expect(field().getAttribute('aria-invalid')).toBe('true');
+      expect(screen.getByRole('alert').textContent).not.toBe('');
+    } finally {
+      uninstall();
+    }
   });
 
   it('cancels with Escape, which goes no further, and gives the focus back to the name', async () => {

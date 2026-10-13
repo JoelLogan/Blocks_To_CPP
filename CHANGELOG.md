@@ -280,17 +280,18 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   zoom from the keyboard, on the canvas and on the controls, and announce the
   new zoom (04 §4.1, §4.7).
 - Rename the project by clicking its name in the top bar, or with ≡ _Rename
-  project…_. Enter or moving away keeps the name and Escape cancels. A name
+  project…_. Enter or moving away keeps the name and Escape cancels; `Ctrl+S`,
+  `Ctrl+B` and `F5` keep it before they save, build or run. A name
   has 1–100 characters on one line and is checked with the project-text
   rules. Renaming is an unsaved change that the C++ header comment follows,
   and it never renames the file (04 §4.1, D12).
 - _Undo_ and _Redo_ in the ≡ menu, greyed out when there is nothing to undo
   or redo. `Ctrl+Z`, `Ctrl+Y` and `Ctrl+Shift+Z` now undo and redo the block
   editor's changes also when the focus is outside the canvas (Problems,
-  toolbar, docks), but not in text fields, dialogs or a running program's
-  console.
+  toolbar, docks), but not in text fields, dialogs, the ≡ menu or a running
+  program's console.
 - The "Your latest change was not checked" banner has an _Undo last change_
-  button.
+  button; when the undo lets the canvas load, the focus goes to the workspace.
 - Screen readers can read the console: the rows on screen line by line, and
   new output as it arrives, afresh for each run (not during an output flood).
 - The toolchain page lists the compilers a search skipped and why (inside an

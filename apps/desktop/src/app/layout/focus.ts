@@ -21,6 +21,21 @@ export function focusIsLost(doc: Document = document): boolean {
 }
 
 /**
+ * The editor's workspace region (the `main` landmark of ./EditorLayout.tsx), which takes the focus
+ * when what had it goes away and nothing nearer is left.
+ */
+export const WORKSPACE_REGION_SELECTOR = 'main.workspace';
+
+/**
+ * Moves a lost focus to the editor's workspace region ({@link WORKSPACE_REGION_SELECTOR}), as
+ * when a page closes: for a control that goes away once it is used, such as a window banner's
+ * button. Returns whether it moved the focus.
+ */
+export function focusWorkspaceIfLost(doc: Document = document): boolean {
+  return focusIfLost(doc.querySelector<HTMLElement>(WORKSPACE_REGION_SELECTOR), doc);
+}
+
+/**
  * Moves the focus to `target` (without scrolling) when it is lost; leaves a focus that is still
  * somewhere visible alone. The target can be an SVG element, such as a block of the canvas.
  * Returns whether it moved the focus.
