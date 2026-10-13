@@ -335,37 +335,33 @@ export function previewTask(result: Extract<EditResult, { kind: 'seen' }>): Page
 
 /** What {@link RUN_OUTPUT_SCRIPT} returns. */
 export interface RunOutput {
-  /** How many lines of the console's transcript are the line asked about. */
+  /** How many lines of the console's transcript have the text asked about. */
   readonly lines: number;
   /** Whether the transcript has a "… N lines skipped" marker (output dropped, 07 §7.6.5). */
   readonly skipped: boolean;
-  /** The transcript's last line that is not empty. */
-  readonly last: string;
+  /** The transcript's last 200 characters, without the white space at its end. */
+  readonly tail: string;
 }
 
 /**
- * Runs in the webview (`executeScript(RUN_OUTPUT_SCRIPT, hookName, line)`): a {@link RunOutput}
+ * Runs in the webview (`executeScript(RUN_OUTPUT_SCRIPT, hookName, text)`): a {@link RunOutput}
  * of the console's transcript (the hook's `consoleText()`), counted in the page so that only the
- * counts cross WebDriver.
+ * counts cross WebDriver. Lines are counted by what they contain, not compared whole: Windows'
+ * pseudoconsole may repaint a line with cursor moves, which the transcript leaves out.
  */
 export const RUN_OUTPUT_SCRIPT = `
-  const [hookName, line] = arguments;
+  const [hookName, needle] = arguments;
   const text = String(window[hookName].consoleText());
-  const rows = text.split('\\n');
   let lines = 0;
-  let last = '';
-  for (const row of rows) {
-    if (row === line) {
+  for (const row of text.split('\\n')) {
+    if (row.includes(needle)) {
       lines += 1;
-    }
-    if (row.trim() !== '') {
-      last = row;
     }
   }
   return {
     lines: lines,
     skipped: /… ([\\d,]+) lines? skipped|… output skipped/.test(text),
-    last: last.slice(0, 200),
+    tail: text.trimEnd().slice(-200),
   };
 `;
 

@@ -676,18 +676,26 @@ describe('RUN_OUTPUT_SCRIPT', () => {
       ['hook', line],
     );
 
-  it('counts the line, finds the last line and no skipped marker', () => {
-    const transcript = ['START', 'line', 'line', 'line x', 'line', 'END', '', ''].join('\n');
-    expect(outputOf(transcript, 'line')).toEqual({ lines: 3, skipped: false, last: 'END' });
+  it('counts the lines with the text, and gives the end without a skipped marker', () => {
+    const transcript = ['START', 'a line', 'a line', 'other', 'a lineEND', '', ''].join('\n');
+    expect(outputOf(transcript, 'a line')).toEqual({
+      lines: 3,
+      skipped: false,
+      tail: 'START\na line\na line\nother\na lineEND',
+    });
+    expect(outputOf('x'.repeat(500), 'a line')).toMatchObject({ tail: 'x'.repeat(200) });
   });
 
   it('notices the flood protection’s markers', () => {
-    expect(outputOf('START\nline\n… 1,204 lines skipped\nEND\n', 'line')).toEqual({
+    expect(outputOf('START\nB2C line\n… 1,204 lines skipped\nEND\n', 'B2C line')).toEqual({
       lines: 1,
       skipped: true,
-      last: 'END',
+      tail: 'START\nB2C line\n… 1,204 lines skipped\nEND',
     });
-    expect(outputOf('… output skipped\n', 'line')).toMatchObject({ skipped: true, lines: 0 });
+    expect(outputOf('… output skipped\n', 'B2C line')).toMatchObject({
+      skipped: true,
+      lines: 0,
+    });
   });
 });
 

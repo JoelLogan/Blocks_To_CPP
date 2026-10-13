@@ -56,11 +56,16 @@ async function runOutput(app: Awaited<ReturnType<typeof launchApp>>): Promise<Ru
     output === null ||
     typeof (output as RunOutput).lines !== 'number' ||
     typeof (output as RunOutput).skipped !== 'boolean' ||
-    typeof (output as RunOutput).last !== 'string'
+    typeof (output as RunOutput).tail !== 'string'
   ) {
     throw new Error('The console transcript could not be read');
   }
   return output as RunOutput;
+}
+
+/** Whether the console's transcript ends with the program's last line. */
+function endsWithLast(output: RunOutput): boolean {
+  return output.tail.slice(-2 * LAST.length).includes(LAST);
 }
 
 /**
@@ -70,10 +75,10 @@ async function runOutput(app: Awaited<ReturnType<typeof launchApp>>): Promise<Ru
  */
 async function checkOutput(app: Awaited<ReturnType<typeof launchApp>>): Promise<void> {
   const output = await runOutput(app);
-  if (output.lines === 0 || output.skipped || output.last !== LAST) {
+  if (output.lines === 0 || output.skipped || !endsWithLast(output)) {
     throw new Error(
       `The console holds ${String(output.lines)} of the lines` +
-        `${output.skipped ? ' and a skipped-lines marker' : ''}, and ends with "${output.last}"` +
+        `${output.skipped ? ' and a skipped-lines marker' : ''}, and ends with "${output.tail.slice(-80)}"` +
         ` (after the state "${await consoleState(app.driver)}")`,
     );
   }
@@ -107,7 +112,7 @@ describe('webview benchmark: a program’s output in the console', () => {
       // The first run builds the program: not counted.
       await clickTestId(app.driver, 'toolbar-run');
       await waitForConsoleState(app.driver, /Finished \(exit code 0\)/, BUILD_TIMEOUT_MS);
-      await waitFor(async () => (await runOutput(app)).last === LAST, {
+      await waitFor(async () => endsWithLast(await runOutput(app)), {
         timeout: 30_000,
         message: 'the last line of the first run in the console',
       });

@@ -28,7 +28,8 @@ Every timing of the webview benchmarks is taken inside the page with its own clo
 message the page posts to itself again and again) finds the page's long tasks: between two beats
 the page ran something else, a task or its rendering, and a gap of 4 ms or more counts. Each
 benchmark takes 10 samples, or `B2C_BENCH_SAMPLES` (the A/B runs take fewer per run and add them
-up).
+up). The selection benchmarks go round their list of blocks from target `B2C_BENCH_OFFSET` (0 by
+default; the A/B runs start each round where the round before stopped).
 
 While an edit or a click is timed, the page also observes the app's User Timing spans
 ([`src/lib/timing.ts`](../../src/lib/timing.ts): the preview pipeline `b2c:preview` and its phases,
