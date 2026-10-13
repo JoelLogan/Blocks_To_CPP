@@ -11,3 +11,4 @@ fix, the workaround is removed (ADR-0014).
 | ------ | ------- | ---------------- | ----- |
 | [Dropping a block on a delete area deletes the blocks below the insertion point](blockly-drop-on-delete-area-deletes-stack.md) | google/blockly | `apps/desktop/src/editor/sync/drag.ts` (W1-0a) | not yet |
 | [A chosen category is not selected after the scroll](continuous-toolbox-category-selection.md) (two defects) | google/blockly-samples, `@blockly/continuous-toolbox` | `apps/desktop/src/editor/toolbox/continuous.ts` (W1-7) | not yet |
+| [Flyout.setVisible records drag targets before updateDisplay](blockly-flyout-setvisible-records-hidden.md) | google/blockly | `apps/desktop/src/editor/sync/drag.ts` (`B2cBlockDragger.onDragStart`) and `apps/desktop/src/editor/toolbox/continuous.ts` (`B2cContinuousFlyout`) | not yet |

@@ -69,10 +69,12 @@ backed by the type system ([§3.5](#35-types)). Shapes stop structurally
 invalid programs, and types stop most semantic errors.
 
 **Placing blocks.** While a block is dragged, a grey preview shows the place
-it will connect to when it is dropped. A drop with the pointer over the
-toolbox or the trash can deletes only the dragged blocks and never connects
-them: while the pointer is there no place is previewed, and the dragged
-blocks are shown faded.
+it will connect to when it is dropped. A drop with the pointer anywhere over
+the toolbox (its categories and its open list of blocks alike) or over the
+trash can deletes only the dragged blocks and never connects them. The
+pointer decides, not how much of the dragged blocks lies over the toolbox.
+While the pointer is there no place is previewed, the dragged blocks are
+shown faded, and the whole toolbox is tinted.
 
 ## 3.4 Expression slots
 

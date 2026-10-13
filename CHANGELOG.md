@@ -225,16 +225,18 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `B2C-E0108`) and ADR-0014 (the allowed Blockly seams and patched
   dependencies), all accepted on 2026-10-10. ADR-0011 and ADR-0002 are
   partly superseded.
-- An A/B benchmark job (`.github/workflows/bench-ab.yml`). The `bench-ab`
-  label on a pull request (and each push while it has the label), or a manual
-  run, builds the base and the head and runs the chosen webview benchmarks
-  against both in alternating runs on one runner, 10 samples per side. A
-  gated metric more than 10% worse than the base fails
-  (`tools/bench-compare.py ab`). On a pull request the head is the pull
-  request merged into its base branch and the base is that branch, and every
-  benchmark but cold start runs; the selection benchmarks' rounds start where
-  the round before stopped, so both sides click the same targets as a nightly
-  run.
+- A/B benchmark jobs (`.github/workflows/bench-ab-run.yml`), started by
+  `bench-ab-pr.yml` for the `bench-ab` label on a pull request (and each push
+  while it has the label) and by `bench-ab.yml` for a manual run, which
+  measures the commit it is dispatched on against one of its ancestors (by
+  default where it branched off the default branch). They build the base and
+  the head and run the chosen webview benchmarks against both in alternating
+  runs on one runner, 10 samples per side. A gated metric more than 10% worse
+  than the base fails (`tools/bench-compare.py ab`). On a pull request the head
+  is the pull request merged into its base branch and the base is that branch,
+  and every benchmark but cold start runs; the selection benchmarks' rounds
+  start where the round before stopped, so both sides click the same targets
+  as a nightly run.
 - `apps/desktop/e2e/bench/accepted.json` records intended slowdowns. The
   nightly comparison restarts an accepted metric's history instead of
   failing, and an A/B run passes a metric that its head newly accepts. The
@@ -346,6 +348,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   previewed no longer deletes the blocks below that place. Only the dragged
   blocks are deleted, no place is previewed while the pointer is there, and
   the dragged blocks are shown faded (the toolbox is tinted).
+- A block dropped anywhere on the toolbox is deleted again. After the
+  toolbox's list of blocks was rebuilt (opening a project, selecting a block in
+  another scope, making a variable), a drop on the categories or the open list
+  deleted nothing, showed no faded blocks and still previewed places, until
+  the window or a dock was resized; only the trash can and the window's left
+  edge deleted. The pointer decides, and the whole toolbox, its categories
+  included, is tinted while a drop would delete.
 - A negative number typed into a block (`change by -1`) was rejected as "not
   a number" (`B2C-E0310`). A typed `-` or `+` is now a sign, and
   `-2147483648` is generated as `-2147483647 - 1`.
