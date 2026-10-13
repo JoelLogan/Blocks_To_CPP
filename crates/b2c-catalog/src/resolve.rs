@@ -1029,7 +1029,7 @@ mod tests {
             let document = b2c_model::load(&serde_json::to_vec(&value(catalog)).unwrap()).unwrap();
             parts(run(&document, crate::core_catalog()))
         };
-        let (completed, diagnostics) = resolve("1.2.0");
+        let (completed, diagnostics) = resolve("1.3.0");
         assert_eq!(
             codes_and_blocks(&diagnostics),
             [(codes::NEWER_BLOCK.to_owned(), "b1".to_owned())]
@@ -1045,7 +1045,7 @@ mod tests {
         assert!(!kept.inputs.contains_key("ITEM0"));
         assert!(!kept.fields.contains_key("STREAM"));
         // The same block from this catalog or an older one is wrong instead.
-        for catalog in ["1.1.0", "1.0.0", "1.2"] {
+        for catalog in [crate::CATALOG_VERSION, "1.1.0", "1.0.0", "1.3"] {
             let (_, diagnostics) = resolve(catalog);
             let found: Vec<&str> = diagnostics.iter().map(|d| d.code.0.as_str()).collect();
             assert_eq!(

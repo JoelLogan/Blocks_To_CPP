@@ -20,8 +20,8 @@ fn project_of(catalog: &str, body: Value) -> Value {
     project
 }
 
-/// A `change` block with an option a later catalog may add (`OP`, as the
-/// merged *change* block of catalog 1.2.0 has).
+/// A `change` block that uses its menu `OP`, which catalog 1.2.0 added when
+/// *change* took over the retired *update* block.
 fn change_with_op() -> Value {
     json!([
         {"id": "b_decl", "type": "var.declare", "v": 1,
@@ -31,10 +31,22 @@ fn change_with_op() -> Value {
     ])
 }
 
+/// The catalog as version 1.1.0 had it, as far as `change` goes: no menu
+/// `OP`, so it always adds.
+fn catalog_1_1() -> Catalog {
+    let mut catalog = b2c_catalog::core_catalog().clone();
+    catalog.version = String::from("1.1.0");
+    let change = catalog.blocks.get_mut("var.change").unwrap();
+    change.field.retain(|field| field.name != "OP");
+    change.label.friendly = String::from("change %VAR by %BY");
+    change.label.cpp = String::from("%VAR += %BY;");
+    catalog
+}
+
 #[test]
 fn a_file_from_a_newer_catalog_is_reported_as_made_by_it() {
-    let newer = project_of("1.2.0", change_with_op());
-    let (completed, diagnostics) = common::resolve(&newer);
+    let newer = common::load(&project_of("1.2.0", change_with_op()));
+    let (completed, diagnostics) = b2c_catalog::resolve(&newer, &catalog_1_1());
     let found: Vec<(&str, Option<&str>)> = diagnostics
         .iter()
         .map(|d| {
@@ -55,14 +67,23 @@ fn a_file_from_a_newer_catalog_is_reported_as_made_by_it() {
     assert_eq!(change.fields["OP"], FieldValue::Text("mul".into()));
     assert!(!change.inputs.contains_key("BY"));
 
-    // A file of this catalog (or an older one) with the same block has an
+    // A file of catalog 1.1.0 (or an older one) with the same block has an
     // unknown field.
-    for catalog in [b2c_catalog::CATALOG_VERSION, "1.0.0"] {
-        assert_eq!(
-            common::codes(&project_of(catalog, change_with_op())),
-            ["B2C-E0605"]
-        );
+    for catalog in ["1.1.0", "1.0.0"] {
+        let older = common::load(&project_of(catalog, change_with_op()));
+        let (_, diagnostics) = b2c_catalog::resolve(&older, &catalog_1_1());
+        let codes: Vec<&str> = diagnostics.iter().map(|d| d.code.0.as_str()).collect();
+        assert_eq!(codes, ["B2C-E0605"]);
     }
+
+    // This catalog knows the menu.
+    assert_eq!(
+        common::codes(&project_of(b2c_catalog::CATALOG_VERSION, change_with_op())),
+        Vec::<String>::new()
+    );
+    let (completed, _) = common::resolve(&project_of("1.2.0", change_with_op()));
+    let change = &completed.modules[0].workspace.blocks[0].statements["BODY"][1];
+    assert_eq!(change.fields["OP"], FieldValue::Text("mul".into()));
 }
 
 #[test]
@@ -70,7 +91,7 @@ fn a_newer_catalog_still_reports_what_is_wrong_in_known_names() {
     // A known field with a value that no catalog would write is wrong, not
     // newer.
     let body = json!([{"id": "b1", "type": "io.print", "v": 1, "fields": {"NEWLINE": "yes"}}]);
-    assert_eq!(common::codes(&project_of("1.2.0", body)), ["B2C-E0607"]);
+    assert_eq!(common::codes(&project_of("99.0.0", body)), ["B2C-E0607"]);
 }
 
 /// `raw.code` v1 → v2: the checkbox `WRAP` is now `BLOCK` (no text changes).

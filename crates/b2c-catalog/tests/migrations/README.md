@@ -20,8 +20,8 @@ the diff.
 | Case | What it covers |
 | ------ | ---------------- |
 | `retired_type` | The test-only retired type `test.say` (v0 and v1), replaced by `io.print`: its ID, position, comment, flags, nested blocks and loose stack are kept, and its own migration runs first |
+| `var_update` | The shipped replacement of the retired `var.update` v1 by `var.change` v1 (catalog 1.2.0): each of the five operators becomes the same option of *change*'s menu `OP`, `VALUE` becomes `BY` with the expression or block in it, an absent `OP` or `VALUE` stays absent, and the ID, position, comment, flags, nested blocks and loose stack of each block are kept |
 | `version_chain` | The test-only `test.counter`, saved at versions 1, 2 and 3 and upgraded through two migrations |
 
 A shipped migration or replacement adds its own case, named after the block
-type it upgrades (for example `var_update.b2c` for the replacement of
-`var.update`).
+type it upgrades (as `var_update.b2c` for the replacement of `var.update`).

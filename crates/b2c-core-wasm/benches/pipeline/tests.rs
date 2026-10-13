@@ -27,8 +27,8 @@ use crate::document::{
 /// (`apps/desktop/e2e/bench/document.test.ts`). When the shape of the
 /// document changes on purpose, change both generators and both copies of
 /// these digests.
-const DIGEST_1000: &str = "a1816065efc298a5ffb8647caeb57f9e32b9b40bfe724938c82572b18ffae64f";
-const DIGEST_5000_HANDLE: &str = "05900f8a729be4e3c46e1d16ec6d3ad7359b430a9e9df019241fe96afa7fb70d";
+const DIGEST_1000: &str = "9a37edeea0f4c1c800689342d0ac9a972b7cb0b5daea9477433503a539b4bea0";
+const DIGEST_5000_HANDLE: &str = "72d598721592222a3231a2c24e6e350336c78edb7d4c765d1cb8bf0d3d797c90";
 
 fn shape(blocks: usize, drag_handle: bool) -> Shape {
     Shape { blocks, drag_handle }

@@ -141,16 +141,16 @@ fn literals() {
 }
 
 #[test]
-fn set_change_update() {
+fn set_and_change_with_each_operator() {
     let a = run_main(vec![
         declare("int", "x", Some(num("0"))),
         set("x", num("3")),
         change("x", num("1")),
-        update("x", "add", num("2")),
-        update("x", "sub", num("2")),
-        update("x", "mul", num("2")),
-        update("x", "div", num("2")),
-        update("x", "mod", num("2")),
+        change_op("x", "add", num("2")),
+        change_op("x", "sub", num("2")),
+        change_op("x", "mul", num("2")),
+        change_op("x", "div", num("2")),
+        change_op("x", "mod", num("2")),
     ]);
     assert_clean(&a);
     let stmts = main_stmts(&a);
@@ -173,6 +173,34 @@ fn set_change_update() {
             CompoundOp::Mod
         ]
     );
+}
+
+/// `change`'s menu (catalog 1.2.0): a block saved without `OP` adds, and an
+/// operator that is not on the menu is reported at the field and adds.
+#[test]
+fn change_reads_its_menu() {
+    let a = run_main(vec![
+        declare("int", "x", Some(num("0"))),
+        change_op("x", "pow", num("2")),
+    ]);
+    let problem = only(&a, "B2C-E0430");
+    assert_eq!(
+        problem.message,
+        "`pow` is not one of the choices for this setting."
+    );
+    assert_eq!(
+        problem.primary.part,
+        Part::Field {
+            name: String::from("OP")
+        }
+    );
+    assert!(matches!(
+        &main_stmts(&a)[1].kind,
+        StmtKind::CompoundAssign {
+            op: CompoundOp::Add,
+            ..
+        }
+    ));
 }
 
 #[test]

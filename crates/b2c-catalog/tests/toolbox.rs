@@ -117,7 +117,7 @@ fn categories_follow_the_spec_order_with_names_and_icons() {
 #[test]
 fn every_catalog_block_is_reachable_exactly_as_planned() {
     let catalog_ids: BTreeSet<&str> = core_catalog().blocks.keys().map(String::as_str).collect();
-    assert_eq!(catalog_ids.len(), 32);
+    assert_eq!(catalog_ids.len(), 31);
     assert_eq!(toolbox().reachable_blocks(), catalog_ids);
     // Variable and call blocks come only through the dynamic categories.
     let static_ids: BTreeSet<&str> = toolbox()
@@ -126,16 +126,9 @@ fn every_catalog_block_is_reachable_exactly_as_planned() {
         .flat_map(|c| c.entries.iter().map(|e| e.block.as_str()))
         .collect();
     let dynamic: BTreeSet<&str> = catalog_ids.difference(&static_ids).copied().collect();
-    let expected: BTreeSet<&str> = [
-        "var.get",
-        "var.set",
-        "var.change",
-        "var.update",
-        "func.call",
-        "func.call_stmt",
-    ]
-    .into_iter()
-    .collect();
+    let expected: BTreeSet<&str> = ["var.get", "var.set", "var.change", "func.call", "func.call_stmt"]
+        .into_iter()
+        .collect();
     assert_eq!(dynamic, expected);
     // Every entry sits in its block's own category.
     for category in &toolbox().categories {
@@ -516,11 +509,11 @@ fn bad_entries_and_categories_are_rejected() {
     // Without its dynamic kind, the Variables category no longer reaches
     // the variable blocks.
     let messages = messages_after(|t| category(t, Category::Variables).dynamic = None);
-    assert_eq!(messages.len(), 4, "{messages:?}");
+    assert_eq!(messages.len(), 3, "{messages:?}");
     // An empty toolbox.
     let messages = messages_after(|t| t.categories.clear());
     assert_eq!(messages[0], "the toolbox has no categories");
-    assert_eq!(messages.len(), 33);
+    assert_eq!(messages.len(), 32);
 }
 
 #[test]
@@ -566,7 +559,7 @@ fn malformed_files_are_rejected_before_checking() {
     let ToolboxError::Invalid(problems) = &error else {
         panic!("{error:?}");
     };
-    assert_eq!(problems.len(), 33);
+    assert_eq!(problems.len(), 32);
     assert!(
         error
             .to_string()

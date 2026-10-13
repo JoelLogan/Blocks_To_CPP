@@ -595,6 +595,63 @@ fn old_blocks_are_upgraded_on_open_and_reload_and_saved_with_a_backup() {
     assert!(!plain.backend.has_dirty());
 }
 
+/// A file saved before catalog 1.2.0, whose *update* blocks are retired,
+/// opens with *change* blocks in their place (the shipped replacement,
+/// ADR-0015): no placeholder, no problem, the same C++, and unsaved
+/// changes until it is saved.
+#[test]
+fn update_blocks_open_as_change_blocks() {
+    let app = TestApp::new();
+    let original = serde_json::json!({
+        "format": "blocks2cpp/project", "formatVersion": 1,
+        "generator": {"app": "0.1.0", "catalog": "1.1.0"},
+        "project": {"id": "prj_old_update", "name": "Old update",
+                    "language": {"standard": "c++20"}},
+        "modules": [{"id": "mod_main", "name": "main", "workspace": {"blocks": [
+            {"id": "b_main", "type": "program.main", "v": 1, "x": 10, "y": 20,
+             "statements": {"BODY": [
+                {"id": "b_n", "type": "var.declare", "v": 1,
+                 "fields": {"NAME": {"sym": "s_n", "name": "n"}, "TYPE": "int", "CONST": false},
+                 "inputs": {"VALUE": {"expr": [{"num": "5"}]}}},
+                {"id": "b_twice", "type": "var.update", "v": 1, "comment": {"text": "kept"},
+                 "fields": {"VAR": {"ref": "s_n"}, "OP": "mul"},
+                 "inputs": {"VALUE": {"expr": [{"num": "2"}]}}},
+                {"id": "b_one", "type": "var.update", "v": 1,
+                 "fields": {"VAR": {"ref": "s_n"}, "OP": "add"},
+                 "inputs": {"VALUE": {"expr": [{"num": "1"}]}}}
+             ]}}
+        ]}}]
+    })
+    .to_string();
+    let path = app.write("old_update.b2c", original.as_bytes());
+    let opened = app.open(&path);
+    assert!(opened.blocks_upgraded);
+    assert!(app.backend.has_dirty());
+    assert!(!opened.document.contains("var.update"));
+    let document = b2c_model::load(opened.document.as_bytes()).unwrap();
+    let body = &document.modules[0].workspace.blocks[0].statements["BODY"];
+    let twice = &body[1];
+    assert_eq!(
+        (twice.id.as_str(), twice.block_type.as_str(), twice.v),
+        ("b_twice", "var.change", 1)
+    );
+    assert_eq!(twice.fields["OP"], b2c_model::FieldValue::Text("mul".into()));
+    assert!(twice.inputs.contains_key("BY"));
+    assert_eq!(twice.comment.as_ref().map(|c| c.text.as_str()), Some("kept"));
+    // The editor and the build find nothing to report, and the C++ is the
+    // one the update blocks gave.
+    let frontend = b2c_build::run_frontend(opened.document.as_bytes(), &FrontendOptions::default());
+    assert!(frontend.diagnostics.is_empty(), "{:#?}", frontend.diagnostics);
+    let generated = frontend.generated.unwrap();
+    let main = &generated
+        .files
+        .iter()
+        .find(|f| f.path == "main.cpp")
+        .unwrap()
+        .contents;
+    assert!(main.contains("n *= 2;\n") && main.contains("++n;\n"), "{main}");
+}
+
 #[test]
 fn an_upgraded_project_keeps_the_trust_of_its_file() {
     let app = TestApp::with_test_upgrades();

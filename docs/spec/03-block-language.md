@@ -262,12 +262,12 @@ The analyser implements a **gradual** type system that approximates C++:
   of the enclosing statement list, including nested blocks. Symbol dropdowns
   list **only** the symbols in scope at that block. Dragging a block out of
   scope marks its references as errors in place. The dropdowns of blocks that
-  change a variable (*set*, *change*, the update operators and *ask*) list
-  only what may be changed there: they leave out constants, a `for` loop's
-  counter inside its loop and read-only parameters, and *change* and the
-  update operators also leave out text and true/false variables. A reference
-  already chosen stays shown. Any other type mismatch is left to the
-  analyser. The editor gets these lists from the scope query of
+  change a variable (*set*, *change* and *ask*) list only what may be
+  changed there: they leave out constants, a `for` loop's counter inside its
+  loop and read-only parameters, and *change*, whatever its operator, also
+  leaves out text and true/false variables. A reference already chosen
+  stays shown. Any other type mismatch is left to the analyser. The editor
+  gets these lists from the scope query of
   [06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes).
   A parked block's dropdowns list what is visible at the end of `main`'s
   body (of the enabled *when program starts*, never a disabled one; the
@@ -328,14 +328,14 @@ the catalog itself ([§3.11](#311-the-catalog-and-library-packs)), from which
 the reference documentation in `docs/reference/blocks/` is **generated**.
 
 **In M2** the catalog has the blocks of `catalog/core/` only: *create* with a
-*constant* checkbox (no `constexpr`/`static`), *set*, *change*, the update
-operators `+= -= *= /= %=`, getters; numbers, arithmetic, comparison, *random
-integer*, *as int/double*; and/or/not, true/false, conditional value; text,
-character, *join*; *if/else if/else*; *repeat*, *repeat while/until*, *for*,
-*forever*, *leave loop*, *skip to next round*; *print*, *ask*; *define*
-(copy, editable and read-only parameters; a read-only number, character or
-true/false is passed by value), *return*, calls; *when program starts*,
-*stop program*.
+*constant* checkbox (no `constexpr`/`static`), *set*, *change* with the
+operators `+= -= *= /= %=` in its menu, getters; numbers, arithmetic,
+comparison, *random integer*, *as int/double*; and/or/not, true/false,
+conditional value; text, character, *join*; *if/else if/else*; *repeat*,
+*repeat while/until*, *for*, *forever*, *leave loop*, *skip to next round*;
+*print*, *ask*; *define* (copy, editable and read-only parameters; a
+read-only number, character or true/false is passed by value), *return*,
+calls; *when program starts*, *stop program*.
 
 ### 3.7.1 Program
 
@@ -354,8 +354,7 @@ A project has exactly one `main`; a second one is an analyser error.
 | `create [int ▾] variable [score] = (0) constant ☐` | `int score = 0;` (`const int` when ticked; the ⚙ popover with `constexpr` and `static` replaces the checkbox in M3 as a compatible change) |
 | `create [auto ▾] [a], [b] ⊕ from (pairValue)` | `auto [a, b] = pairValue;` (structured binding) |
 | `set [score ▾] to (expr)` | `score = expr;` |
-| `change [score ▾] by (1)` | `score += 1;` (and `++score;` when the value is the literal 1) |
-| `[score ▾] [*= ▾] (2)` | `score *= 2;` (all compound operators) |
+| `change [score ▾] [by ▾] (1)` | `score += 1;` (`++score;` for *by* the literal 1); the menu also gives *down by* (`-=`), *times* (`*=`), *divided by* (`/=`) and *mod* (`%=`), and, with *Show advanced blocks* (M3), the bitwise forms `&=`, `\|=`, `^=`, `<<=` and `>>=`. In C++ label mode every option shows its operator. For number and character variables |
 | `(score)` | `score` |
 | `global [constant ▾] [double] [kGravity] = (9.81)` *(top level)* | `constexpr double kGravity = 9.81;` |
 
@@ -725,8 +724,8 @@ help     = "A random whole number between the two values, including both."
   entry names an existing block, no block has two entries, no entry label
   equals a category name (the editor's tests check the same for its dynamic
   headings), every catalog block is reachable through an entry or a dynamic
-  category (`var.get`, `var.set`, `var.change` and `var.update` through
-  Variables; `func.call` and `func.call_stmt` through Functions), and every
+  category (`var.get`, `var.set` and `var.change` through Variables;
+  `func.call` and `func.call_stmt` through Functions), and every
   preset value fits its field, `extra` or input. It also checks each block's
   friendly label: every field and non-repeated value input appears in it,
   and a checkbox is next to the words naming it.
@@ -793,8 +792,9 @@ User-installed packs are **code** and are subject to workspace trust
 
 Block IDs are stable and never reused. **Compatible** changes (a field,
 `extra` key or input with a default; a dropdown option; label, help or
-colour text) keep `version` and raise `generator.catalog`'s minor version;
-the catalog is 1.1.0 since M2's labels name every field. A file that leaves
+colour text) keep `version` and raise `generator.catalog`'s minor version.
+The catalog is 1.1.0 since M2's labels name every field, and 1.2.0 since
+*change* (`var.change`) has its operator menu `OP`. A file that leaves
 the new key out loads with the default, and the editor keeps leaving it out
 while the block keeps that default; blocks a newer editor creates write it.
 When a document or clipboard payload names a `generator.catalog` newer than
@@ -812,6 +812,11 @@ replacements run when a document is loaded, before the editor or compiler
 see it ([05 §5.7](05-project-format.md#57-versioning-and-migration)), so the
 editor never shows an upgradable block as a placeholder. Each has a
 golden-file test.
+
+Retired so far: *update* (`var.update` v1, `[score ▾] [*= ▾] (2)`), which
+catalog 1.2.0 merged into *change*. Its replacement makes it the *change*
+block with the same operator chosen in the menu, its value as the amount
+(`VALUE` becomes `BY`), and the same C++.
 
 ## 3.12 C++ coverage matrix
 

@@ -61,7 +61,7 @@ fn the_exported_catalog_is_current() {
     // values leave broken parts out, so check them in full first.
     let toolbox_text = std::fs::read_to_string(common::repo_root().join("catalog/toolbox.toml")).unwrap();
     assert_eq!(&Toolbox::load(&toolbox_text, core_catalog()).unwrap(), toolbox());
-    assert_eq!(core_catalog().blocks.len(), 32);
+    assert_eq!(core_catalog().blocks.len(), 31);
 
     let text = export();
     let path = common::repo_root().join(PATH);
@@ -99,7 +99,7 @@ fn the_export_has_the_documented_shape() {
     let mut sorted = ids.clone();
     sorted.sort_unstable();
     assert_eq!(ids, sorted);
-    assert_eq!(ids.len(), 32);
+    assert_eq!(ids.len(), 31);
     // Spot checks of the serde shapes the generator reads.
     let random = object["blocks"]
         .as_array()

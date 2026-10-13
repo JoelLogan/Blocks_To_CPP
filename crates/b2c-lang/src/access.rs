@@ -171,7 +171,6 @@ pub(crate) fn is_statement_type(block_type: &str) -> bool {
         "var.declare"
             | "var.set"
             | "var.change"
-            | "var.update"
             | "control.if"
             | "control.while"
             | "control.repeat"

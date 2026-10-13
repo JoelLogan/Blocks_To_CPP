@@ -9,13 +9,12 @@ Toolbox icon: 𝑥. Back to [all categories](README.md).
 | Block | Friendly label | C++ form | Help | Fields | Inputs |
 | --- | --- | --- | --- | --- | --- |
 | `var.declare` (statement) | `create %TYPE variable %NAME = %VALUE constant %CONST` | `%TYPE %NAME = %VALUE;` | Creates a variable. It can be used by the blocks after it in the same place. | `TYPE`: a type, `int`, `double`, `bool`, `char`, `std::string` or `auto`, default `int`. `NAME`: the name of the new variable. `CONST`: on or off, default off. | `VALUE`: any value; optional. |
-| `var.change` (statement) | `change %VAR by %BY` | `%VAR += %BY;` | Adds to a variable. | `VAR`: the variable it uses. | `BY`: a number; default `1`. |
+| `var.change` (statement) | `change %VAR %OP %BY` | `%VAR %OP %BY;` | Adds to a variable (+=); choose down by (-=), times (\*=), divided by (/=) or mod (%=) in the menu to subtract, multiply, divide or keep the remainder instead. | `VAR`: the variable it uses. `OP`: one of by (`add`), down by (`sub`), times (`mul`), divided by (`div`) or `mod`, default `add`. | `BY`: a number; default `1`. |
 | `var.get` (reporter, gives the type of `VAR`) | `%VAR` | `%VAR` | The value of a variable. | `VAR`: the variable it uses. | — |
 | `var.set` (statement) | `set %VAR to %VALUE` | `%VAR = %VALUE;` | Gives a variable a new value. | `VAR`: the variable it uses. | `VALUE`: any value; required. |
-| `var.update` (statement) | `%VAR %OP %VALUE` | `%VAR %OP %VALUE;` | Updates a variable with an operator, such as multiplying it. | `VAR`: the variable it uses. `OP`: one of += (`add`), -= (`sub`), \*= (`mul`), /= (`div`) or %= (`mod`), default `add`. | `VALUE`: a number; default `1`. |
 
 ## In the toolbox
 
 1. `var.declare`, with `TYPE` set to `int` and the input `VALUE` set to `0`
 
-The editor also adds a getter for every variable in scope at the selected block, and the blocks that change a variable, preset to it: `var.change`, `var.get`, `var.set` and `var.update`.
+The editor also adds, each with a variable already chosen, a getter for each variable and the blocks that change one ([spec §4.2](../../spec/04-user-interface.md#42-toolbox)): `var.change`, `var.get` and `var.set`.

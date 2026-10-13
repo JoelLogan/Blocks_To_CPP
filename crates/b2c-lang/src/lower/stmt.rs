@@ -83,8 +83,9 @@ impl Lowerer<'_> {
         Some(match block.block_type.as_str() {
             "var.declare" => return self.declare(block),
             "var.set" => return self.set(block),
-            "var.change" => return self.compound(block, CompoundOp::Add, "BY"),
-            "var.update" => {
+            "var.change" => {
+                // *by*, *down by*, *times*, *divided by* and *mod*; a block
+                // saved before catalog 1.2.0 has no `OP` and adds.
                 let options = [
                     ("add", CompoundOp::Add),
                     ("sub", CompoundOp::Sub),
@@ -93,7 +94,7 @@ impl Lowerer<'_> {
                     ("mod", CompoundOp::Mod),
                 ];
                 let op = self.choice(block, "OP", CompoundOp::Add, &options);
-                return self.compound(block, op, "VALUE");
+                return self.compound(block, op, "BY");
             }
             "control.if" => self.if_else(block),
             "control.while" => self.while_loop(block),

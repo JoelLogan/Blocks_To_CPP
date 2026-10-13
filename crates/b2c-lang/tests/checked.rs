@@ -100,11 +100,11 @@ fn blocks_the_catalog_keeps_unchecked_are_not_reported_again() {
     pow["block"]["fields"]["OP"] = json!("pow");
     let mut tabs = with_id(print(vec![pow]), "p1");
     tabs["fields"] = json!({"SEP": "tabs"});
-    let mut times = with_id(change("x", num("2")), "c1");
-    times["fields"]["OP"] = json!("mul");
-    times.as_object_mut().unwrap().remove("inputs");
-    let mut newer = doc(vec![main(vec![declare("int", "x", Some(num("1"))), tabs, times])]);
-    newer.generator.catalog = String::from("1.2.0");
+    let mut power = with_id(change("x", num("2")), "c1");
+    power["fields"]["OP"] = json!("pow");
+    power.as_object_mut().unwrap().remove("inputs");
+    let mut newer = doc(vec![main(vec![declare("int", "x", Some(num("1"))), tabs, power])]);
+    newer.generator.catalog = String::from("99.0.0");
     assert_eq!(checked(&newer), ["B2C-E0602 p1", "B2C-E0602 m1", "B2C-E0602 c1"]);
 
     let mut old = with_id(print(vec![text("hi")]), "p1");

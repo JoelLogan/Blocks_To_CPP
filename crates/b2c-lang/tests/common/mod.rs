@@ -378,9 +378,12 @@ pub(crate) fn change(name: &str, by: Value) -> Value {
     json!({"id": id(), "type": "var.change", "v": 1, "fields": {"VAR": reference(name)}, "inputs": {"BY": by}})
 }
 
-pub(crate) fn update(name: &str, op: &str, value: Value) -> Value {
-    json!({"id": id(), "type": "var.update", "v": 1,
-           "fields": {"VAR": reference(name), "OP": op}, "inputs": {"VALUE": value}})
+/// `change` with a choice from its menu `OP` (`add` is *by*, `sub` *down by*,
+/// `mul` *times*, `div` *divided by*, `mod` *mod*): the update operators,
+/// which the retired `var.update` block had until catalog 1.2.0.
+pub(crate) fn change_op(name: &str, op: &str, by: Value) -> Value {
+    json!({"id": id(), "type": "var.change", "v": 1,
+           "fields": {"VAR": reference(name), "OP": op}, "inputs": {"BY": by}})
 }
 
 /// `if` with `else if` branches and an optional `else`.

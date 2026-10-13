@@ -475,6 +475,57 @@ fn migrate_in_place_keeps_a_backup_and_leaves_a_current_file_alone() {
     assert!(!backup.exists());
 }
 
+/// Every example is current: `migrate` prints it byte for byte as it is
+/// (`primes` has *change* blocks saved without the menu `OP` that catalog
+/// 1.2.0 added; they stay without it).
+#[test]
+fn migrate_leaves_every_example_as_it_is() {
+    let mut seen = 0;
+    for entry in std::fs::read_dir(repo_root().join("examples")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "b2c") {
+            continue;
+        }
+        let output = b2c(&["migrate", path.to_str().unwrap()]);
+        assert_eq!(output.status.code(), Some(0), "{}", path.display());
+        assert_eq!(
+            stdout(&output),
+            std::fs::read_to_string(&path).unwrap(),
+            "{}",
+            path.display()
+        );
+        seen += 1;
+    }
+    assert!(seen > 10, "too few examples were found");
+}
+
+/// A file saved before catalog 1.2.0 with *update* blocks: `migrate`
+/// writes them as *change* blocks (the golden file of the replacement),
+/// names catalog 1.2.0 in `generator`, and leaves nothing to upgrade.
+#[test]
+fn migrate_turns_update_blocks_into_change_blocks() {
+    let cases = repo_root().join("crates/b2c-catalog/tests/migrations");
+    let dir = tempfile::tempdir().unwrap();
+    let copy = dir.path().join("old.b2c");
+    std::fs::copy(cases.join("var_update.b2c"), &copy).unwrap();
+    let path = copy.to_str().unwrap();
+    let output = b2c(&["migrate", "--in-place", path]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let expected = std::fs::read_to_string(cases.join("var_update.upgraded.b2c"))
+        .unwrap()
+        .replacen("\"catalog\": \"1.1.0\"", "\"catalog\": \"1.2.0\"", 1);
+    assert_eq!(std::fs::read_to_string(&copy).unwrap(), expected);
+    let backup = dir.path().join("old.b2c.bak");
+    assert!(backup.exists());
+    // Current now: nothing more is written, and it checks with warnings only
+    // (its parked blocks).
+    std::fs::remove_file(&backup).unwrap();
+    assert_eq!(b2c(&["migrate", "--in-place", path]).status.code(), Some(0));
+    assert!(!backup.exists());
+    let output = b2c(&["check", path]);
+    assert_eq!(output.status.code(), Some(0), "{}", stdout(&output));
+}
+
 /// `hello_world` with its print block at version 0, which no catalog can
 /// upgrade.
 fn with_unupgradable_block(dir: &Path) -> (PathBuf, String) {

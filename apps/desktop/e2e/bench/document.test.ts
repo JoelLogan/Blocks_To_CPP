@@ -30,8 +30,8 @@ import { PREVIEW_DEBOUNCE_MS } from './page';
  * The digests the Rust generator gives (crates/b2c-core-wasm/benches/pipeline/tests.rs
  * `DIGEST_1000` and `DIGEST_5000_HANDLE`). Change both copies together with both generators.
  */
-const DIGEST_1000 = 'a1816065efc298a5ffb8647caeb57f9e32b9b40bfe724938c82572b18ffae64f';
-const DIGEST_5000_HANDLE = '05900f8a729be4e3c46e1d16ec6d3ad7359b430a9e9df019241fe96afa7fb70d';
+const DIGEST_1000 = '9a37edeea0f4c1c800689342d0ac9a972b7cb0b5daea9477433503a539b4bea0';
+const DIGEST_5000_HANDLE = '72d598721592222a3231a2c24e6e350336c78edb7d4c765d1cb8bf0d3d797c90';
 
 const folders: string[] = [];
 

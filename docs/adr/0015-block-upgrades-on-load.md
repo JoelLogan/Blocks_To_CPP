@@ -133,5 +133,7 @@ Three more questions came with it:
   reported as made by a newer catalog instead of with the advice to remove
   them. Saving the file in the older app keeps that newer catalog, so the
   report does not change after the save.
-* M2 ships the mechanism with empty tables. The first replacement,
-  `var.update` → `var.change`, raises the catalog to 1.2.0.
+* M2 ships the mechanism with its first replacement, `var.update` →
+  `var.change` (catalog 1.2.0): *change* gained the operator menu `OP`,
+  and each *update* block becomes the *change* block with the same
+  operator and its value as the amount, so the C++ does not change.

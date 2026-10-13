@@ -212,7 +212,7 @@ fn integer_division_into_decimal() {
     let mut body = vars();
     body.push(declare("double", "r", Some(convert("double", e("i / 2")))));
     body.push(set("d", e("7 / 2")));
-    body.push(update("d", "add", e("i / 3")));
+    body.push(change_op("d", "add", e("i / 3")));
     assert_codes(&run_main(body), &["B2C-W0510", "B2C-W0510", "B2C-W0510"]);
 }
 
@@ -297,18 +297,18 @@ fn const_counters_and_read_only_cannot_change() {
 }
 
 #[test]
-fn change_and_update_rules() {
+fn change_rules_for_each_operator() {
     let mut body = vars();
     body.extend([
         change("s", num("1")),
         change("b", num("1")),
         change("i", text("x")),
         change("i", num("1.5")),
-        update("d", "mod", num("2")),
-        update("i", "mod", num("2.0")),
+        change_op("d", "mod", num("2")),
+        change_op("i", "mod", num("2.0")),
         change("d", num("1")),
         change("c", num("1")),
-        update("i", "mul", boolean(true)),
+        change_op("i", "mul", boolean(true)),
     ]);
     assert_codes(
         &run_main(body),

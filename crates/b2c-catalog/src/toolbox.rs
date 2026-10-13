@@ -75,7 +75,8 @@ pub struct ToolboxCategory {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DynamicCategory {
-    /// A getter for every variable in scope, and setters preset to it.
+    /// A getter for each variable, and the blocks that change a variable
+    /// (*set* and *change*) with one already chosen (04 §4.2).
     Variables,
     /// Under *Your functions*: a call block for every function of the module
     /// shown.
@@ -86,7 +87,7 @@ impl DynamicCategory {
     /// The catalog blocks this kind adds (the only way to reach them).
     pub const fn blocks(self) -> &'static [&'static str] {
         match self {
-            Self::Variables => &["var.get", "var.set", "var.change", "var.update"],
+            Self::Variables => &["var.get", "var.set", "var.change"],
             Self::Functions => &["func.call", "func.call_stmt"],
         }
     }
@@ -591,7 +592,7 @@ mod tests {
         let reachable = toolbox.reachable_blocks();
         let all: BTreeSet<&str> = core().blocks.keys().map(String::as_str).collect();
         assert_eq!(reachable, all);
-        assert_eq!(reachable.len(), 32);
+        assert_eq!(reachable.len(), 31);
     }
 
     #[test]
@@ -648,7 +649,7 @@ block = "math.number"
         assert_eq!(problems[1].entry, None);
         // Then every block that cannot be reached (math.number's category
         // was left out, but the toolbox still names it).
-        assert_eq!(problems.len(), 2 + 32 - 2);
+        assert_eq!(problems.len(), 2 + 31 - 2);
 
         let (toolbox, problems) = build("[[category]]\nid = \"nope\"\n", core());
         assert_eq!(toolbox, Toolbox::default());

@@ -145,9 +145,9 @@ fn statement() -> impl Strategy<Value = Value> {
             |(ty, name, value, constant, dis)| block("var.declare", json!({"TYPE": ty, "NAME": name, "CONST": constant}),
                 maybe(value, "VALUE"), json!({}), dis)),
         2 => (reference(), value_input(), d()).prop_map(|(r, v, dis)| block("var.set", json!({"VAR": r}), json!({"VALUE": v}), json!({}), dis)),
-        1 => (reference(), value_input()).prop_map(|(r, v)| block("var.change", json!({"VAR": r}), json!({"BY": v}), json!({}), false)),
-        1 => (reference(), prop::sample::select(&["add", "sub", "mul", "div", "mod", "pow"][..]), value_input())
-            .prop_map(|(r, op, v)| block("var.update", json!({"VAR": r, "OP": op}), json!({"VALUE": v}), json!({}), false)),
+        2 => (reference(), prop::option::of(prop::sample::select(&["add", "sub", "mul", "div", "mod", "pow"][..])), value_input())
+            .prop_map(|(r, op, v)| block("var.change", op.map_or_else(|| json!({"VAR": r}), |op| json!({"VAR": r, "OP": op})),
+                json!({"BY": v}), json!({}), false)),
         2 => (prop::collection::vec(value_input(), 0..3), prop::sample::select(&["none", "space", "comma"][..]))
             .prop_map(|(items, sep)| { let n = items.len();
                 block("io.print", json!({"SEP": sep}), numbered("ITEM", items), json!({"itemCount": n}), false) }),
@@ -532,11 +532,11 @@ fn any_typed_expr() -> BoxedStrategy<Value> {
 }
 
 fn typed_stmt(depth: u32) -> BoxedStrategy<Value> {
-    use common::{ask, call_stmt, change, get, print, set, update};
+    use common::{ask, call_stmt, change, change_op, get, print, set};
     let leaf = prop_oneof![
         3 => any_type().prop_flat_map(|t| typed_expr(t, 2).prop_map(move |v| set(var_of(t), v))),
         1 => typed_expr(T::Int, 2).prop_map(|v| change("i", v)),
-        1 => typed_expr(T::Double, 1).prop_map(|v| update("d", "mul", v)),
+        1 => typed_expr(T::Double, 1).prop_map(|v| change_op("d", "mul", v)),
         2 => prop::collection::vec(any_typed_expr(), 1..4).prop_map(print),
         1 => any_type().prop_map(|t| ask(var_of(t), Some(common::text("? ")))),
         1 => typed_expr(T::Str, 1).prop_map(|v| call_stmt("show", vec![v])),

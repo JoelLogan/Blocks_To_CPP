@@ -43,7 +43,7 @@ fn the_core_catalog_loads_every_block_on_disk() {
     let embedded: BTreeSet<String> = catalog.blocks.keys().cloned().collect();
     // A TOML file added to catalog/core/ but not embedded fails here.
     assert_eq!(embedded, ids_on_disk());
-    assert_eq!(embedded.len(), 32);
+    assert_eq!(embedded.len(), 31);
     assert!(std::ptr::eq(catalog, core_catalog()), "the catalog is cached");
 }
 
