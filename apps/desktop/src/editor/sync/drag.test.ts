@@ -17,10 +17,11 @@
  *   category column and the flyout) is tinted, with the category names still readable.
  * - A drop on the canvas is settled in the drag's event group (`handleBlockDrops`): a *set*
  *   taken from the toolbox gets a variable visible where it lands, a getter keeps its variable,
- *   one Undo takes the drop back, and the drop runs one preview (04 §4.2).
+ *   one Undo takes the drop back, and the drop runs one preview (04 §4.2). A *set* whose variable
+ *   was chosen in the toolbox keeps it, with the start value of its type.
  */
 import type { BdmDocument, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
-import { b2cDarkTheme, b2cLightTheme } from '@blocks2cpp/blockly-ext';
+import { b2cDarkTheme, b2cLightTheme, readExprShadow } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -701,12 +702,21 @@ describe.skipIf(core === null)('a block dropped on the canvas', () => {
 
 /**
  * The guessing game with `define greet (times)` beside main: main declares `secret` and `guess`
- * (b002, b003), greet a parameter `times` and a `create int count` (b_count) in its body.
+ * (b002, b003) and then `create std::string word = ""` (b_word), greet a parameter `times` and a
+ * `create int count` (b_count) in its body.
  */
 function gameWithGreet(): string {
   const doc = JSON.parse(
     present(EXAMPLE_PROJECTS['guessing_game.b2c'], 'guessing game'),
   ) as BdmDocument;
+  const main = doc.modules[0]?.workspace.blocks.find((block) => block.type === 'program.main');
+  main?.statements?.['BODY']?.splice(2, 0, {
+    id: 'b_word',
+    type: 'var.declare',
+    v: 1,
+    fields: { TYPE: 'std::string', NAME: { sym: 's_word', name: 'word' }, CONST: false },
+    inputs: { VALUE: { expr: [{ str: '' }] } },
+  });
   doc.modules[0]?.workspace.blocks.push({
     id: 'greet',
     type: 'func.define',
@@ -896,6 +906,30 @@ describe.skipIf(core === null)('a block dragged from the toolbox', () => {
     await eventsDelivered();
     expect(svg.getBlockById(set.id)).toBeNull();
     expect(svg.getBlockById('b_count')?.getNextBlock()).toBeNull();
+  });
+
+  it('is a set whose variable was chosen in the toolbox, with that variable’s start value', async () => {
+    const { svg, flyout } = await withToolbox();
+    const preset = flyoutBlock(flyout, 'var.set');
+    expect(preset.getFieldValue('VAR')).toBe('s_guess');
+    // In the toolbox, word (a text) is chosen in the menu of set, preset to guess with 0.
+    preset.getField('VAR')?.setValue('s_word');
+    await eventsDelivered();
+    const set = await dragFromFlyout(
+      svg,
+      preset,
+      'previous',
+      present(svg.getBlockById('b_word')?.nextConnection, 'below create word'),
+    );
+    expect(set.getPreviousBlock()?.id).toBe('b_word');
+    expect(set.getFieldValue('VAR')).toBe('s_word');
+    expect(readExprShadow(present(set.getInputTargetBlock('VALUE'), 'value'))?.tokens).toEqual([
+      { str: '' },
+    ]);
+    await running?.session.flush();
+    // `word = ""`: no B2C-E0301 (text needed, a whole number given) holding Run back.
+    const diagnostics = useAppStore.getState().analysis.preview?.diagnostics ?? [];
+    expect(diagnostics.filter((diagnostic) => diagnostic.primary.block === set.id)).toEqual([]);
   });
 
   it('is a getter of greet’s times that keeps it in main, where it is B2C-E0203', async () => {

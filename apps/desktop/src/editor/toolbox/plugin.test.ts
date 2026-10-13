@@ -3,7 +3,9 @@ import {
   B2cSymbolDeclField,
   B2cSymbolRefField,
   DEFAULT_EDITOR_SERVICES,
+  readExprShadow,
   toolboxSymbolGroups,
+  type TokenJson,
 } from '@blocks2cpp/blockly-ext';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as Blockly from 'blockly/core';
@@ -400,6 +402,51 @@ describe('the toolbox plugin with the continuous toolbox', () => {
       detach();
     }
     expect(toolboxSymbolGroups()).toBeNull();
+  });
+
+  it('keeps the start values of its blocks in step with a type or a variable chosen there', async () => {
+    const workspace = attached('continuous');
+    await settle();
+    // A text variable in main beside guess.
+    const label = symbolFixture('s_label', 'label', { declBlock: 'decl', type: 'string' });
+    publishPreview([factorial, guess, label, n]);
+    await settle();
+    const valueOf = (block: Blockly.Block): readonly TokenJson[] | null => {
+      const shadow = block.getInputTargetBlock('VALUE');
+      return shadow === null ? null : (readExprShadow(shadow)?.tokens ?? null);
+    };
+    const inFlyout = (type: string): Blockly.BlockSvg => {
+      const block = flyoutBlocks(workspace).find((candidate) => candidate.type === type);
+      if (block === undefined) {
+        throw new Error(`no ${type} in the flyout`);
+      }
+      return block;
+    };
+    const flyout = workspace.getFlyout();
+    if (flyout === null) {
+      throw new Error('no flyout');
+    }
+
+    // set: preset to guess with 0; label chosen in its menu: "" (and the block taken out has it).
+    const set = inFlyout('var.set');
+    expect(set.getFieldValue('VAR')).toBe('s_guess');
+    expect(valueOf(set)).toEqual([{ num: '0' }]);
+    set.getField('VAR')?.setValue('s_label');
+    await settle();
+    expect(valueOf(set)).toEqual([{ str: '' }]);
+    Blockly.Events.setGroup(true);
+    try {
+      expect(valueOf(flyout.createBlock(set))).toEqual([{ str: '' }]);
+    } finally {
+      Blockly.Events.setGroup(false);
+    }
+
+    // create: int with 0; bool chosen as its type: true.
+    const create = inFlyout('var.declare');
+    expect(valueOf(create)).toEqual([{ num: '0' }]);
+    create.setFieldValue('bool', 'TYPE');
+    await settle();
+    expect(valueOf(create)).toEqual([{ kw: 'true' }]);
   });
 });
 

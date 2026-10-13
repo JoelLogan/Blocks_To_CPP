@@ -132,11 +132,11 @@
   *Variables* offers *Make a variable* (name and type), the `create` block,
   one `set`, and, when a number or character variable exists, one `change`,
   then a getter for each variable of the module, grouped by the function
-  that declares it (at most 50, then a note of how many more there are). It does not depend on the selection. A *set* or
-  *change* block dragged from the toolbox comes with a variable already
-  chosen; if that variable is not visible where the block is dropped, the
-  block takes the first fitting variable visible there, as part of the same
-  drop (one Undo removes it). A getter keeps its variable: if the variable is
+  that declares it (at most 50, then a note of how many more there are).
+  It does not depend on the selection. A *set* or *change* block dragged
+  from the toolbox comes with a variable already chosen; if that variable is
+  not visible where the block is dropped, the block takes the first fitting
+  variable visible there, as part of the same drop (one Undo removes it). A getter keeps its variable: if the variable is
   not visible where it is dropped, the block shows `B2C-E0203` and its menu
   offers the variables that are. A block still in the toolbox lists every
   variable of the module in its menu, grouped like the category.
@@ -163,7 +163,9 @@
   `0`; *ask* with `"Your answer: "`). A new variable's start value follows
   its type (`0`, `0.0`, `true`, `'a'`, `""`), and so does the value of *set*
   when another variable is chosen in it while the value is still a start
-  value; a call from *Your functions* comes with a default argument of each
+  value, in the toolbox as on the canvas (a *set* taken out after its
+  variable was chosen in the toolbox keeps that variable and its value); a
+  call from *Your functions* comes with a default argument of each
   parameter's type. A block whose forms differ only by a dropdown or ⊕ part
   appears once
   ([03 §3.1](03-block-language.md#31-design-philosophy-few-blocks-much-power)).

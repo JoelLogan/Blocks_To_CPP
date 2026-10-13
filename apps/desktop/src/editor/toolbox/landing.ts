@@ -80,7 +80,8 @@ function declarationName(block: Blockly.Block, field: string): string | null {
  * Takes note that `created` was just made on the canvas from `original`, a block of the toolbox's
  * flyout (the flyout calls this from `createBlock`): what of the toolbox item `original` was built
  * from it still has. A name or a variable the user changed in the flyout is the user's choice and
- * stays as it is.
+ * stays as it is (*set*'s value already followed a variable chosen there: the toolbox reshapes
+ * its flyout's start values too, ./reshape.ts).
  */
 export function noteCreatedFromToolbox(original: Blockly.Block, created: Blockly.Block): void {
   const info = ITEMS.get(original);

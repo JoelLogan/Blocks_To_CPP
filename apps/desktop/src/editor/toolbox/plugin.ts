@@ -3,7 +3,7 @@
  * on the workspace, registers the dynamic categories (Program, Variables, Functions with *Your
  * functions*) and *Make a variable*, settles the blocks dragged out of it where they land
  * (./landing.ts), gives the menus of blocks still in its flyout the module's variables, and keeps
- * start values in step with types (./reshape.ts).
+ * start values in step with types, on the canvas and in its flyout (./reshape.ts).
  *
  * The dynamic categories do not depend on the selection (decision D2 of the M2 polish plan). They
  * are rebuilt only when what they show changes ({@link dynamicContentsKey}: where the program
@@ -330,7 +330,13 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
   const stopDrops = handleBlockDrops(workspace, (block) => {
     settleDroppedBlock(workspace, block, symbols);
   });
-  const stopReshaping = installStartValueReshaping(workspace, (sym) => symbolType(symbols, sym));
+  const typeOf = (sym: string) => symbolType(symbols, sym);
+  const stopReshaping = installStartValueReshaping(workspace, typeOf);
+  // A type or a variable chosen in a block still in the flyout reshapes its start value there, so
+  // the block taken out (with the pointer or the keyboard, a copy of it) shows the right one.
+  const flyoutWorkspace = workspace.getFlyout()?.getWorkspace() ?? null;
+  const stopFlyoutReshaping =
+    flyoutWorkspace === null ? null : installStartValueReshaping(flyoutWorkspace, typeOf);
   const onEvent = (event: Blockly.Events.Abstract): void => {
     if (event instanceof Blockly.Events.Selected) {
       selection.noteSelected(event);
@@ -360,6 +366,7 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
     unsubscribe();
     workspace.removeChangeListener(onEvent);
     stopReshaping();
+    stopFlyoutReshaping?.();
     stopDrops();
     setToolboxSymbols(null);
     if (toolbox instanceof B2cContinuousToolbox) {

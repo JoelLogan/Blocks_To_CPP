@@ -12,6 +12,10 @@
  * A value the user typed, a block in the slot, `auto`, and a type the analysis does not know are
  * left alone. The new value is recorded as an event of its own ({@link StartValueChange}) in the
  * group of the change that caused it, so undo and redo restore both together.
+ *
+ * The same holds for a block still in the toolbox's flyout, whose type or variable the user chose
+ * there: the toolbox keeps its flyout's start values in step too (./plugin.ts), so the block taken
+ * out has the start value of the type it shows (`set word to ""`, not `set word to 0`).
  */
 import type { StaticType } from '@blocks2cpp/b2c-core-wasm';
 import {
@@ -181,9 +185,10 @@ function isFieldChange(
 }
 
 /**
- * Keeps start values in step with types on `workspace`: a `create` block's with its type, a *set*
- * block's with its variable's type, which `typeOf` gives for a symbol ID (from the latest
- * analysis; `null` when it does not know the symbol). Returns the function that stops it.
+ * Keeps start values in step with types on `workspace`, the canvas or the toolbox's flyout: a
+ * `create` block's with its type, a *set* block's with its variable's type, which `typeOf` gives
+ * for a symbol ID (from the latest analysis; `null` when it does not know the symbol). Returns
+ * the function that stops it.
  */
 export function installStartValueReshaping(
   workspace: Blockly.Workspace,
@@ -194,7 +199,7 @@ export function installStartValueReshaping(
       return;
     }
     const block = workspace.getBlockById(event.blockId);
-    if (block === null || block.isInFlyout) {
+    if (block === null) {
       return;
     }
     let change: StartValueChange | null = null;

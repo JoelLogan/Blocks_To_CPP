@@ -467,7 +467,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   during a drag, a field edit, an open menu or a category scroll, and it keeps
   the category in view and the selected category.
 - A block still in the toolbox lists every variable of the module in its
-  menu, grouped like the category.
+  menu, grouped like the category. Choosing another variable in the toolbox's
+  _set_, or another type in its _create_, changes the start value there as on
+  the canvas, so the block taken out reads `set word to ""`, not
+  `set word to 0` (which the analyser reported as `B2C-E0301`).
 - The _change_ block has a menu: _by_, _down by_, _times_, _divided by_ and
   _mod_ (`+=`, `-=`, `*=`, `/=`, `%=`), so the Variables category offers one
   block for all of them. The block catalog is now 1.2.0. A project saved with
