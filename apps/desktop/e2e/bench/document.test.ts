@@ -30,8 +30,8 @@ import { PREVIEW_DEBOUNCE_MS } from './page';
  * The digests the Rust generator gives (crates/b2c-core-wasm/benches/pipeline/tests.rs
  * `DIGEST_1000` and `DIGEST_5000_HANDLE`). Change both copies together with both generators.
  */
-const DIGEST_1000 = '9a37edeea0f4c1c800689342d0ac9a972b7cb0b5daea9477433503a539b4bea0';
-const DIGEST_5000_HANDLE = '72d598721592222a3231a2c24e6e350336c78edb7d4c765d1cb8bf0d3d797c90';
+const DIGEST_1000 = '7b3b8ab738fd7e1889d002a0bb0f73686c7451ba2b3c22d8c436fca217f6da4e';
+const DIGEST_5000_HANDLE = '86b15b3d6a7946838870b5a7e2f46b1557c88e367bb44c51398911479085bb98';
 
 const folders: string[] = [];
 
@@ -109,6 +109,20 @@ describe('generateDocument', () => {
     expect(
       at(main, 'statements', 'BODY', 2, 'inputs', 'ITEM1', 'block', 'inputs', 'A', 'block', 'id'),
     ).toBe('b8');
+  });
+
+  it('uses only blocks that every block catalog since 1.0.0 reads the same way', () => {
+    // An A/B run opens the head's document in the base's build too: a change with the operator
+    // menu of catalog 1.2.0 would be a placeholder there (README.md, "A/B runs").
+    const doc = generateDocument({ blocks: 1 + UNIT_BLOCKS, dragHandle: false });
+    const loop = at(doc, 'modules', 0, 'workspace', 'blocks', 0, 'statements', 'BODY', 1);
+    const back = at(loop, 'statements', 'BODY', 0, 'statements', 'ELSE', 0);
+    expect(at(back, 'type')).toBe('var.change');
+    expect(at(back, 'fields')).toEqual({ VAR: { ref: 's_value_0' } });
+    expect(at(back, 'inputs', 'BY')).toEqual({ expr: [{ op: '-' }, { num: '1' }] });
+    const text = JSON.stringify(generateDocument({ blocks: 5_000, dragHandle: true }));
+    expect(text).not.toContain('"OP":"sub"');
+    expect(text).not.toContain('var.update');
   });
 
   it('puts the drag handle beside main', () => {

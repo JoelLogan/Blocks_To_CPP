@@ -260,6 +260,12 @@ others:
   build lacks cannot run on the base (`scrollCanvasBy` came with the W2-1 core, so the selection
   benchmarks need a base from after it). The base's runs set `B2C_BENCH_SKIP_NOTE`, so such a
   benchmark is skipped there, with the reason, and not run on the head either.
+- The head's harness also generates the documents both builds open, so they use only blocks that
+  every block catalog since 1.0.0 reads the same way (the down-by step of each unit is a plain
+  _change_ by `-1`, not the _down by_ option catalog 1.2.0 added). A build that still shows a block
+  of the opened document as a placeholder (it cannot read it, so it would work on another program)
+  fails the benchmark when it opens the document (`openProjectFile` in [`project.ts`](project.ts)),
+  so the run ends "Not conclusive" for it instead of comparing two different programs.
 - A benchmark that fails is not started again; the head still runs it in the round where the base
   failed, so that a failure of the head's build is found too. Each run's artifacts go into
   `$B2C_E2E_ARTIFACTS/<side>/round-<n>/<benchmark>/`, and the job shows the logs of a failed run.

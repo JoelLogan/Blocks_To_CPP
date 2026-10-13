@@ -27,8 +27,8 @@ use crate::document::{
 /// (`apps/desktop/e2e/bench/document.test.ts`). When the shape of the
 /// document changes on purpose, change both generators and both copies of
 /// these digests.
-const DIGEST_1000: &str = "9a37edeea0f4c1c800689342d0ac9a972b7cb0b5daea9477433503a539b4bea0";
-const DIGEST_5000_HANDLE: &str = "72d598721592222a3231a2c24e6e350336c78edb7d4c765d1cb8bf0d3d797c90";
+const DIGEST_1000: &str = "7b3b8ab738fd7e1889d002a0bb0f73686c7451ba2b3c22d8c436fca217f6da4e";
+const DIGEST_5000_HANDLE: &str = "86b15b3d6a7946838870b5a7e2f46b1557c88e367bb44c51398911479085bb98";
 
 fn shape(blocks: usize, drag_handle: bool) -> Shape {
     Shape { blocks, drag_handle }
@@ -158,7 +158,7 @@ fn the_benchmark_documents_load_and_preview_without_errors() {
         assert_eq!(preview.placeholders, 0);
         let cpp = &preview.files.first().unwrap().contents;
         assert!(cpp.contains("value_0 += i_0;"), "{cpp:.2000}");
-        assert!(cpp.contains("value_0 -= 1;"), "{cpp:.2000}");
+        assert!(cpp.contains("value_0 += -1;"), "{cpp:.2000}");
         if drag_handle {
             assert!(cpp.contains("void dragMe()"), "{cpp:.2000}");
         }

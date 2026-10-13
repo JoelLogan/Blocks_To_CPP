@@ -3,6 +3,11 @@
  * the scripted open dialog (`launchApp(context, { dialogs: { open: [file] } })`) answers with the
  * file. The project opens in Restricted Mode (it is not trusted), which changes nothing the
  * benchmarks and the visual diff look at.
+ *
+ * A build that cannot read every block of the file shows the ones it cannot read as placeholders
+ * (03 §3.11), and works on another program than the file's: opening such a file fails (an A/B
+ * run's base older than the head's benchmark documents, README.md "A/B runs"), so its numbers are
+ * never compared with a build that read the whole file.
  */
 import { E2E_HOOK_NAME } from '../../src/e2e/contract';
 import type { App } from '../support/app';
@@ -19,6 +24,36 @@ export const CODE_HAS_SCRIPT = `
   const hook = window[hookName];
   return typeof hook === 'object' && hook !== null && hook.code().includes(text);
 `;
+
+/** The Blockly type of a placeholder block (`PLACEHOLDER_TYPE` of `@blocks2cpp/blockly-ext`). */
+export const PLACEHOLDER_BLOCK_TYPE = 'b2c.placeholder';
+
+/**
+ * Runs in the webview (`executeScript(PLACEHOLDERS_SCRIPT)`): how many placeholder blocks the
+ * editor shows. Blockly gives each block's SVG group its type as a class, in every build.
+ */
+export const PLACEHOLDERS_SCRIPT = `
+  return document.querySelectorAll('g[class~="${PLACEHOLDER_BLOCK_TYPE}"]').length;
+`;
+
+/** The project opened in the app is not the file's program: the app could not read every block. */
+export class UnreadBlocksError extends Error {
+  override readonly name = 'UnreadBlocksError';
+}
+
+/**
+ * Throws {@link UnreadBlocksError} when the opened project shows `placeholders` placeholder blocks.
+ */
+export function requireEveryBlockRead(placeholders: number): void {
+  if (placeholders > 0) {
+    throw new UnreadBlocksError(
+      `The opened project shows ${String(placeholders)} placeholder blocks: this build cannot ` +
+        'read every block of the file (its block catalog is older than the file needs), so it ' +
+        'would measure another program. An A/B run needs a base that reads the head’s ' +
+        'benchmark documents.',
+    );
+  }
+}
 
 /** What {@link openProjectFile} waits for. */
 export interface OpenedProject {
@@ -64,6 +99,8 @@ async function toStartPage(app: App): Promise<void> {
 /**
  * Clicks *Open* on the start page (the dialog script answers with the file), then waits until
  * `expected.blockId` is on the canvas and the preview's C++ contains `expected.code`.
+ *
+ * @throws UnreadBlocksError when the app shows a block of the file as a placeholder.
  */
 export async function openProjectFile(app: App, expected: OpenedProject): Promise<void> {
   const deadline = Date.now() + expected.timeout;
@@ -80,4 +117,6 @@ export async function openProjectFile(app: App, expected: OpenedProject): Promis
     interval: 250,
     message: `"${expected.code}" in the C++ of the opened project`,
   });
+  const placeholders: unknown = await app.driver.executeScript(PLACEHOLDERS_SCRIPT);
+  requireEveryBlockRead(typeof placeholders === 'number' ? placeholders : 0);
 }

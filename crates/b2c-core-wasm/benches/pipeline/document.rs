@@ -17,9 +17,13 @@
 //!   (minus the two blocks of the drag handle, when asked for).
 //! * Unit `u` is 8 blocks: `int value_u = u;`, then
 //!   `for (int i_u = 0; i_u < 10; ...)` holding an `if (i_u % 2 == 0)`
-//!   whose branches change `value_u` by `i_u` and subtract 1 from it, then
+//!   whose branches change `value_u` by `i_u` and by `-1`, then
 //!   `print "value u: ", value_u + 1` (a `math.arithmetic` with a
 //!   `var.get` in it).
+//! * Every block is one that every block catalog since 1.0.0 reads the
+//!   same way (the second change is a plain *change* by `-1`, not *change
+//!   … down by* 1, whose menu came with catalog 1.2.0): the webview A/B
+//!   runs open the head's documents in the base's build too.
 //! * A filler `f` is `print "filler f"`.
 //! * The drag handle (webview drag benchmark only) is a separate
 //!   `func.define dragMe` at x 800, y 40 holding one print: a top-level
@@ -129,12 +133,12 @@ fn unit(ids: &mut Ids, unit: usize) -> [Value; 3] {
         "fields": { "VAR": { "ref": value } },
         "inputs": { "BY": { "expr": [{ "ref": counter }] } },
     });
-    let down_by = json!({
+    let back = json!({
         "id": ids.next(),
         "type": "var.change",
         "v": 1,
-        "fields": { "OP": "sub", "VAR": { "ref": value } },
-        "inputs": { "BY": num(1) },
+        "fields": { "VAR": { "ref": value } },
+        "inputs": { "BY": { "expr": [{ "op": "-" }, { "num": "1" }] } },
     });
     let branch = json!({
         "id": if_id,
@@ -146,7 +150,7 @@ fn unit(ids: &mut Ids, unit: usize) -> [Value; 3] {
                 { "ref": counter }, { "op": "%" }, { "num": "2" }, { "op": "==" }, { "num": "0" },
             ] },
         },
-        "statements": { "DO0": [change], "ELSE": [down_by] },
+        "statements": { "DO0": [change], "ELSE": [back] },
     });
     let for_loop = json!({
         "id": loop_id,

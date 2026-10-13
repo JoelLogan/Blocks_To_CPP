@@ -13,8 +13,12 @@
  *   `units = (main − 1) / 8` and `fillers = (main − 1) % 8`, `main` being the requested block count
  *   (minus the two blocks of the drag handle, when asked for).
  * - Unit `u` is 8 blocks: `int value_u = u;`, then `for (int i_u = 0; i_u < 10; …)` holding an
- *   `if (i_u % 2 == 0)` whose branches change `value_u` by `i_u` and subtract 1 from it, then
+ *   `if (i_u % 2 == 0)` whose branches change `value_u` by `i_u` and by `-1`, then
  *   `print "value u: ", value_u + 1` (a `math.arithmetic` with a `var.get` in it).
+ *
+ * Every block is one that every block catalog since 1.0.0 reads the same way (the second change is
+ * a plain *change* by `-1`, not *change … down by* 1, whose menu came with catalog 1.2.0): the A/B
+ * runs open the head's documents in the base's build too (README.md, "A/B runs").
  * - A filler `f` is `print "filler f"`.
  * - The drag handle is a separate `func.define dragMe` at x 800, y 40 holding one print: a
  *   top-level block the drag benchmark moves back and forth without changing the program.
@@ -110,12 +114,12 @@ function unit(ids: Ids, u: number): Json[] {
     fields: { VAR: { ref: value } },
     inputs: { BY: { expr: [{ ref: counter }] } },
   };
-  const downBy: Json = {
+  const back: Json = {
     id: ids.next(),
     type: 'var.change',
     v: 1,
-    fields: { OP: 'sub', VAR: { ref: value } },
-    inputs: { BY: num(1) },
+    fields: { VAR: { ref: value } },
+    inputs: { BY: { expr: [{ op: '-' }, { num: '1' }] } },
   };
   const branch: Json = {
     id: ifId,
@@ -127,7 +131,7 @@ function unit(ids: Ids, u: number): Json[] {
         expr: [{ ref: counter }, { op: '%' }, { num: '2' }, { op: '==' }, { num: '0' }],
       },
     },
-    statements: { DO0: [change], ELSE: [downBy] },
+    statements: { DO0: [change], ELSE: [back] },
   };
   const counted: Json = {
     id: loopId,
