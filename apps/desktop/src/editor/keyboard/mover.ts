@@ -7,7 +7,9 @@
  * The block does not travel while the places are tried: the place is highlighted and announced,
  * and only `Enter` changes the canvas, in one Blockly event group, so one `Ctrl+Z` undoes the move.
  * A block added from the toolbox is dropped (or removed on Escape) in the group it was created in,
- * so the whole add is one undo step, as a pointer drag from the toolbox is. The places are the ones
+ * so the whole add is one undo step, as a pointer drag from the toolbox is; where it is put down it
+ * is settled as a dropped one is (a free default name, a variable visible there: 04 §4.2,
+ * `settleBlockDrop` in ../sync/drag.ts), in that group too. The places are the ones
  * a pointer drag could connect to (./targets.ts), and connecting is Blockly's own (with the
  * type-aware connection checker), so the editing session sees the move like any other change. A
  * pointer press, the focus leaving the canvas, or the block or the project going away ends the
@@ -15,6 +17,7 @@
  */
 import * as Blockly from 'blockly/core';
 
+import { settleBlockDrop } from '../sync/drag';
 import { blockOfNode, isGone } from './keepFocus';
 import { describeBlock, describeTarget, type SymbolNames } from './labels';
 import {
@@ -176,11 +179,14 @@ export class KeyboardMover {
     const only = targets.length === 1 ? targets[0] : undefined;
     if (only !== undefined && isCurrentPlace(block, only)) {
       // A hat or a definition: it stands alone on the canvas.
-      this.deps.announce(
-        options.inserted === true
-          ? `Added “${name}” loose on the canvas.`
-          : `“${name}” has nowhere else to go.`,
-      );
+      if (options.inserted === true) {
+        this.settle(block, options.group ?? '');
+        this.deps.announce(
+          `Added “${describeBlock(block, this.deps.names())}” loose on the canvas.`,
+        );
+      } else {
+        this.deps.announce(`“${name}” has nowhere else to go.`);
+      }
       return false;
     }
     const preferred = options.near === undefined ? -1 : nearestPlace(targets, options.near);
@@ -247,7 +253,12 @@ export class KeyboardMover {
     const where = describeTarget(target, names);
     if (isCurrentPlace(block, target)) {
       this.end();
-      this.deps.announce(inserted ? `Added “${name}” ${where}.` : `“${name}” stays where it was.`);
+      if (inserted) {
+        this.settle(block, group ?? '');
+        this.deps.announce(`Added “${describeBlock(block, this.deps.names())}” ${where}.`);
+      } else {
+        this.deps.announce(`“${name}” stays where it was.`);
+      }
       Blockly.getFocusManager().focusNode(block);
       return true;
     }
@@ -257,8 +268,12 @@ export class KeyboardMover {
     }
     this.end();
     if (this.place(block, target, group)) {
+      if (inserted) {
+        this.settle(block, group ?? '');
+      }
       Blockly.getFocusManager().focusNode(block);
-      this.deps.announce(`${inserted ? 'Added' : 'Moved'} “${name}” ${where}.`);
+      const placed = inserted ? describeBlock(block, this.deps.names()) : name;
+      this.deps.announce(`${inserted ? 'Added' : 'Moved'} “${placed}” ${where}.`);
     } else {
       this.deps.announce(`“${name}” could not be moved.`);
     }
@@ -403,6 +418,15 @@ export class KeyboardMover {
     } catch (error: unknown) {
       console.warn('The keyboard focus could not be moved off the block', error);
     }
+  }
+
+  /**
+   * Settles `block`, added from the toolbox and now put down, in `group` (the add's event group;
+   * empty for one of its own): it gets a free default name, or a variable visible where it is, as
+   * a block dropped with the pointer does (../sync/drag.ts `settleBlockDrop`, 04 §4.2).
+   */
+  private settle(block: Blockly.BlockSvg, group: string): void {
+    settleBlockDrop(this.deps.workspace, block, group);
   }
 
   /**

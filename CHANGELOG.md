@@ -455,10 +455,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   one _change_ block while a number or character variable exists, and a getter
   for every variable of the module, grouped by the function that declares it
   (at most 50).
-- A block taken from the toolbox gets a free default name where it is
-  dropped. A _set_ or _change_ block whose variable is not visible there takes
-  the first fitting variable that is, as part of the same drop (one Undo
-  removes it). A getter keeps its variable and shows `B2C-E0203` when that
+- A block taken from the toolbox, with the pointer or the keyboard, gets a
+  free default name where it is put. A _set_ or _change_ block whose variable
+  is not visible there takes the first fitting variable that is, as part of
+  the same drop (one Undo removes it). A getter keeps its variable and shows `B2C-E0203` when that
   variable is out of scope.
 - The Program category offers _when program starts_ only while the project
   has none, and otherwise says where the program starts.

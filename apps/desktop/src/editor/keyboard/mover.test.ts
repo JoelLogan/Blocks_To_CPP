@@ -6,6 +6,7 @@
 import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createToolboxPlugin } from '../toolbox/plugin';
 import { MOVING_CLASS } from './mover';
 import { MOVE_KEYS_HINT } from './plugin';
 import { eventsDelivered, focused, type KeyboardEditor, keyboardEditor, press } from './testing';
@@ -25,6 +26,14 @@ afterEach(() => {
 
 function focus(node: Blockly.IFocusableNode): void {
   Blockly.getFocusManager().focusNode(node);
+}
+
+/** `value`, which the test expects to be there. */
+function present<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) {
+    throw new Error('missing');
+  }
+  return value;
 }
 
 /** The IDs of a statement list, top to bottom. */
@@ -297,7 +306,7 @@ describe('adding a block from the toolbox', () => {
   function reachFlyoutBlock(type: string): void {
     press('t');
     press('ArrowRight');
-    for (let step = 0; step < 80; step++) {
+    for (let step = 0; step < 300; step++) {
       const node = focused();
       if (node instanceof Blockly.BlockSvg && node.type === type) {
         return;
@@ -440,6 +449,64 @@ describe('adding a block from the toolbox', () => {
     expect(keyboard.mover.active).toBe(false);
     expect(workspace.getTopBlocks(false).length).toBe(tops + 1);
     expect(keyboard.announcer.last).toMatch(/^Added “when program starts” loose on the canvas\.$/);
+  });
+
+  /** The name a declaration block declares. */
+  function declaredName(block: Blockly.Block | null | undefined, field: string): unknown {
+    return block?.getField(field)?.getValue();
+  }
+
+  it('gives an added create block the first free name where it is put, in its undo step', async () => {
+    editor = keyboardEditor({ plugins: [createToolboxPlugin()] });
+    const { block, keyboard, workspace } = editor;
+    focus(block('print'));
+    await eventsDelivered();
+    workspace.clearUndo();
+
+    reachFlyoutBlock('var.declare');
+    press('Enter');
+    press('Enter');
+    const first = block('print').getNextBlock();
+    expect(first?.type).toBe('var.declare');
+    expect(declaredName(first, 'NAME')).toBe('value');
+    expect(keyboard.announcer.last).toMatch(/^Added “create int variable value[^”]*” after/);
+    await eventsDelivered();
+
+    // The toolbox still offers `value`: put after the first one, it becomes value2.
+    focus(present(first));
+    reachFlyoutBlock('var.declare');
+    press('Enter');
+    press('Enter');
+    const second = first?.getNextBlock();
+    expect(second?.type).toBe('var.declare');
+    expect(declaredName(second, 'NAME')).toBe('value2');
+    expect(keyboard.announcer.last).toMatch(/^Added “create int variable value2[^”]*” after/);
+    await eventsDelivered();
+
+    // One Ctrl+Z takes the second add, its name included, away.
+    workspace.undo(false);
+    await eventsDelivered();
+    expect(first?.getNextBlock()).toBeNull();
+    expect(declaredName(first, 'NAME')).toBe('value');
+    expect(workspace.getAllBlocks(false).some((each) => each.id === second?.id)).toBe(false);
+  });
+
+  it('gives an added definition a free name on the canvas', () => {
+    editor = keyboardEditor({ plugins: [createToolboxPlugin()] });
+    const { block, keyboard, workspace } = editor;
+    const definitions = () =>
+      workspace
+        .getTopBlocks(true)
+        .filter((top) => top.type === 'func.define')
+        .map((top) => declaredName(top, 'NAME'));
+    for (const name of ['myFunction', 'myFunction2']) {
+      focus(block('print'));
+      reachFlyoutBlock('func.define');
+      press('Enter');
+      expect(keyboard.mover.active).toBe(false);
+      expect(keyboard.announcer.last).toContain(name);
+    }
+    expect(definitions().sort()).toEqual(['factorial', 'myFunction', 'myFunction2']);
   });
 
   it('presses a toolbox button with Enter', () => {

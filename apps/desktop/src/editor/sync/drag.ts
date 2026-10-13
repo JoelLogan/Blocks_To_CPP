@@ -42,7 +42,8 @@
  * A block dropped on the canvas is settled by the workspace's {@link BlockDropHandler}
  * ({@link handleBlockDrops}) inside the drag's Blockly event group: the toolbox gives a block
  * taken from it a free name, or a variable the drop point can see (04 §4.2, `toolbox/landing.ts`),
- * and one Undo takes back the drop and all of that.
+ * and one Undo takes back the drop and all of that. A block the keyboard adds from the toolbox is
+ * settled the same way when it is put down ({@link settleBlockDrop}, `keyboard/mover.ts`).
  */
 import * as Blockly from 'blockly/core';
 
@@ -106,6 +107,33 @@ function tell(run: () => void): void {
     run();
   } catch (error: unknown) {
     console.error('A block drag listener failed', error);
+  }
+}
+
+/**
+ * Has the {@link BlockDropHandler} of `workspace` settle `block`, just put down on it, in Blockly
+ * event group `group` (the group of the gesture or keyboard add that put it there; a group of its
+ * own when `group` is empty), which it opens again and closes. Nothing happens for a block that is
+ * gone. A pointer drag calls it when its drop ends ({@link B2cBlockDragger}); the keyboard calls
+ * it when it puts down a block added from the toolbox (`keyboard/mover.ts`), so a block gets its
+ * free name, or a variable visible there, however it was added.
+ */
+export function settleBlockDrop(
+  workspace: Blockly.WorkspaceSvg,
+  block: Blockly.BlockSvg,
+  group: string,
+): void {
+  const handler = DROP_HANDLERS.get(workspace);
+  if (handler === undefined || block.isDeadOrDying()) {
+    return;
+  }
+  Blockly.Events.setGroup(group === '' ? true : group);
+  try {
+    tell(() => {
+      handler(block);
+    });
+  } finally {
+    Blockly.Events.setGroup(false);
   }
 }
 
@@ -249,18 +277,8 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
    * (the drag's), unless the drop deleted it.
    */
   private settleDrop(group: string): void {
-    const handler = DROP_HANDLERS.get(this.workspace);
-    const block = this.draggable instanceof Blockly.BlockSvg ? this.draggable : null;
-    if (handler === undefined || block === null || block.isDeadOrDying()) {
-      return;
-    }
-    Blockly.Events.setGroup(group === '' ? true : group);
-    try {
-      tell(() => {
-        handler(block);
-      });
-    } finally {
-      Blockly.Events.setGroup(false);
+    if (this.draggable instanceof Blockly.BlockSvg) {
+      settleBlockDrop(this.workspace, this.draggable, group);
     }
   }
 }
