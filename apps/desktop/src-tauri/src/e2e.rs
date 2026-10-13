@@ -377,8 +377,8 @@ mod tests {
         assert_eq!(dialogs.open_project(), Some(game));
         assert_eq!(dialogs.open_project(), None);
         assert_eq!(dialogs.open_project(), None);
-        assert_eq!(dialogs.save_project_as("x.b2c"), Some(absolute("copy.b2c")));
-        assert_eq!(dialogs.save_project_as("x.b2c"), None);
+        assert_eq!(dialogs.save_project_as("x.b2c", None), Some(absolute("copy.b2c")));
+        assert_eq!(dialogs.save_project_as("x.b2c", Some(&absolute("."))), None);
         assert_eq!(dialogs.pick_compiler(), None);
         assert_eq!(dialogs.confirm_trust(&prompt()), TrustChoice::TrustFolder);
         assert_eq!(dialogs.confirm_trust(&prompt()), TrustChoice::TrustProject);

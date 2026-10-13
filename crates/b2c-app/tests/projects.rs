@@ -339,7 +339,9 @@ fn save_as_writes_only_the_new_file_and_rebinds() {
     );
     assert_eq!(app.dialogs.suggestions(), ["old.b2c"]);
     // It starts in the project's own folder, never in the current directory.
-    let folder = std::fs::canonicalize(old.parent().unwrap()).unwrap();
+    // The backend binds projects under b2c-store's canonical form (no `\\?\`
+    // prefix on Windows), so the folder is compared in that form.
+    let folder = b2c_store::project_file::canonical_path(old.parent().unwrap()).unwrap();
     assert_eq!(app.dialogs.save_folders(), [Some(folder)]);
 
     let new = app.projects().join("new.b2c");
