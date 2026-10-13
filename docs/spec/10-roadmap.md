@@ -37,10 +37,14 @@
 > panel shown about 1.4 s at p95, and the preview task about 100 ms at p95;
 > on the guessing game a selection about 140 ms (the toolbox's rebuild about
 > 120 ms) and an edit about 33 ms; a program's 200,000 lines take about
-> 0.8 s to show in the console. M2 is done once the polish wave is finished
-> and these are recorded on a polish build: the threat-model review, the
-> first green weekly run, the toolchain matrix (at least the Debian cell, or a
-> recorded deferral), committed visual baselines, the usability sessions with
+> 0.8 s to show in the console. Since the Variables category no longer
+> follows the selection (2026-10-13), a click rebuilds no toolbox: a
+> selection on the guessing game takes about 20 ms; at 1,000 blocks half of
+> the clicks take 70–220 ms, and the others stay at 1–2 s, the click's own
+> work. M2 is done once the polish wave is finished and these are recorded
+> on a polish build: the threat-model review, the first green weekly run, the
+> toolchain matrix (at least the Debian cell, or a recorded deferral),
+> committed visual baselines, the usability sessions with
 > at least three first-time users ([protocol](../manual-tests/m2-usability.md)),
 > the NVDA and Orca pass ([checklist](../manual-tests/m2-accessibility.md)),
 > and the review at the milestone demo that nothing of M3–M6 has an entry
@@ -171,8 +175,8 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
   offers *when program starts* only while there is none done 2026-10-13).
 * If time: block upgrades on load and one *change* block for every update
   operator, Scratch-style wrapping, the developer guide, and the other items
-  the plan marks *M2 if time* (block upgrades on load done 2026-10-13,
-  [ADR-0015](../adr/0015-block-upgrades-on-load.md)).
+  the plan marks *M2 if time* (block upgrades on load and the one *change*
+  block done 2026-10-13, [ADR-0015](../adr/0015-block-upgrades-on-load.md)).
 
 **Exit:** both P0 defects are fixed; each of U1–U18 is fixed or moved to M3
 with the owner's agreement; items marked *M2 if time* move to M3 without
