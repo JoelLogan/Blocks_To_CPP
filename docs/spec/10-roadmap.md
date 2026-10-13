@@ -165,10 +165,13 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
   remembered sizes, visible Undo and Redo and the compiler search's folder
   rules from the if-time set).
 * Parked blocks, the standard variable set, a Variables listing that does
-  not depend on the selection, snapping, and the remaining documentation.
+  not depend on the selection, snapping, and the remaining documentation
+  (parked blocks, their scope and the command line's parity with the editor
+  done 2026-10-13).
 * If time: block upgrades on load and one *change* block for every update
   operator, Scratch-style wrapping, the developer guide, and the other items
-  the plan marks *M2 if time*.
+  the plan marks *M2 if time* (block upgrades on load done 2026-10-13,
+  [ADR-0015](../adr/0015-block-upgrades-on-load.md)).
 
 **Exit:** both P0 defects are fixed; each of U1–U18 is fixed or moved to M3
 with the owner's agreement; items marked *M2 if time* move to M3 without

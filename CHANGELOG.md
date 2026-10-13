@@ -298,6 +298,20 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   open project's folder, the build cache, the folder the app was started
   from, or a network folder).
 
+- Blocks of an older version or of a retired type are upgraded when a
+  project, a recovery snapshot or pasted blocks are loaded. The project then
+  has unsaved changes, and saving keeps the file as it was as `.b2c.bak`
+  (ADR-0015).
+- `b2c migrate` applies block upgrades; `--in-place` keeps the original as
+  `.b2c.bak`, and nothing is written when a block cannot be upgraded
+  (`B2C-E0603`).
+- Blocks left loose on the canvas are parked (ADR-0012). They are kept and
+  shown with a ⚠ `B2C-W0505` warning ("This block isn't attached to 'when
+  program starts' or a function, so it doesn't run."), are never generated,
+  no longer disable ▶ Run, and no longer make `b2c check` fail. A loose block
+  you disable gives no warning. `B2C-E0604` now covers only placements the
+  editor cannot produce.
+
 ### Changed
 
 - The specification gains goal N12 (interaction latency, met in M5); N4 is
@@ -407,6 +421,27 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   benchmarks. The two W2-1 entries for `webview.edit-1000.p95` are
   redefinitions.
 
+- A project or clipboard payload from a newer block catalog reports unknown
+  fields, inputs, settings and options as `B2C-E0602` (made by a newer
+  version) and keeps the block unchanged. Before, they were `B2C-E0605`.
+- The IPC responses of `project_open`, `project_open_recent`,
+  `project_reload` and `recovery_restore` gain `blocksUpgraded`.
+- Unknown or damaged blocks stay errors wherever they are, including blocks
+  left on the canvas (a Raw C++ block, a block from a missing pack, a newer
+  block version).
+- `b2c check` and builds run the analyser even when the block catalog
+  reports errors, so the command line lists the same problems as the app's
+  Problems panel. `b2c check` exits with 0 when there are only warnings.
+- Catalog messages name blocks by their label (This "print" block …)
+  instead of their catalog ID ("io.print"), and Problems' block paths and
+  the canvas's keyboard announcements name the program block _when program
+  starts_ instead of _main_.
+- The compiler core's `symbols_in_scope` export and `CoreWasm.symbolsInScope`
+  answer `null` (was `[]`) for a block the last analysis has no position for;
+  new `Analysis::scope_at`, `scope_after` and `parked_scope`. The editor's
+  scope resolver keeps its fallback only for blocks the latest analysis has
+  not seen; an empty answer is final, and a block's menus ask the core once.
+
 ### Fixed
 
 - The Variables category follows a block selected with an ordinary click.
@@ -492,3 +527,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   once, without a note that the compiler changed.
 - `tools/bench-compare.py` writes UTF-8 on Windows too. Before, "§9.2" in the
   A/B summary came out as a code-page byte in the job log.
+- The scope query answers parked blocks (loose, in a loose stack, or nested
+  in one) with what is visible at the end of `main`'s body (the module's
+  functions without `main`), and blocks inside a disabled statement like that
+  statement, so a loose block's variable menu lists `main`'s variables
+  straight from the analysis.
+- Pasting on the canvas, or into or directly after a parked block, binds
+  references to the variables visible at the end of `main`; pasting into or
+  after a block inside a disabled statement binds them as at that statement.
