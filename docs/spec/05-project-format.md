@@ -144,7 +144,7 @@ escaped by the emitter), which become `-D` arguments built by the backend.
 | Key | Meaning |
 | ----- | --------- |
 | `id` | Unique within the project. `[A-Za-z0-9_]{1,32}`, generated as a random 96-bit base62 string with a type prefix. |
-| `type`, `v` | Catalog block ID and version. Unknown type → load error naming the missing pack. Older `v` → migration. |
+| `type`, `v` | Catalog block ID and version. Unknown type → the block is kept and reported as `B2C-E0601` (naming the missing pack); newer `v` → `E0602`; an older `v` or a retired type → upgraded on load (§5.7). |
 | `x`, `y` | Present only on top-level blocks (integers, clamped to ±10⁷). |
 | `collapsed`, `disabled` | Written only when `true`. `disabled` means the user disabled the block (Blockly's *manually disabled* reason); Blockly's other reasons for disabling a block are never saved. |
 | `stack` | Only on a top-level *statement* block: the statement blocks attached below it on the canvas, in order (see *Loose blocks* below). |
@@ -267,8 +267,26 @@ Further rules:
   SemVer precedence) is `B2C-E0108` (*made with a newer version of
   Blocks2Cpp*); otherwise it is `B2C-E0110`. Neither message names a version
   taken from the file, which could claim any.
-* Block-level migrations (`v` per block) follow the same pattern
-  ([03 §3.11.3](03-block-language.md#3113-block-versioning)).
+* **Block upgrades**
+  ([03 §3.11.3](03-block-language.md#3113-block-versioning),
+  [ADR-0015](../adr/0015-block-upgrades-on-load.md)). When a project,
+  recovery snapshot or clipboard payload is loaded, `b2c-catalog` upgrades in
+  memory every block with an older `v` and every block of a retired type,
+  before the editor or compiler sees it. Block upgrades run after the
+  document has passed §5.6 and before trust is evaluated. A migration or
+  replacement never adds blocks, nesting or tokens and never changes a
+  block's ID. It never changes the security summary or the security hash
+  ([08 §8.3.1](08-security.md#831-how-trust-is-decided)): the text fields of
+  `raw.*` blocks, libraries, packs and defines are carried over unchanged; a
+  change that must alter them bumps the hash's version tag (`b2c-trust-v2`)
+  and asks for trust again. The upgraded document is checked against §5.6
+  again, and a violation leaves that block unchanged with `B2C-E0603`. The
+  project is marked changed; the upgraded form is written only on explicit
+  save, keeping the `.b2c.bak`.
+* `b2c migrate` applies format migrations and block upgrades and writes the
+  result (`--in-place` keeps `.b2c.bak`). `b2c fmt` only re-serialises and
+  never upgrades blocks. `b2c check`, `generate` and `build` upgrade in
+  memory only.
 
 ## 5.8 What is deliberately **not** stored in a project
 

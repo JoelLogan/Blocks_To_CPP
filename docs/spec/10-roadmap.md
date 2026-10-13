@@ -304,8 +304,11 @@ features (assignment templates, CLI grading reports) · Flatpak · C++ modules
 once GCC support matures · a toolbox block-size setting (small, medium,
 large) · a deprecation period for block types after 1.0 (badge and automatic
 replacement; before 1.0 an exact replacement retires a type at once, owner's
-decision of 2026-10-10) · evaluate and adopt Tauri 3 once it is stable and
-has had a point release with no open security advisories. Tauri is confined
+decision of 2026-10-10,
+[03 §3.11.3](03-block-language.md#3113-block-versioning),
+[ADR-0015](../adr/0015-block-upgrades-on-load.md)) · evaluate and adopt
+Tauri 3 once it is stable and has had a point release with no open security
+advisories. Tauri is confined
 to the desktop adapter (`apps/desktop/src-tauri`) and the frontend's IPC
 transport (`apps/desktop/src/lib/ipc.ts`), so the work is mainly
 re-verifying the security configuration of

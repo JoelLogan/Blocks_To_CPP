@@ -1,8 +1,12 @@
 //! The resolve stage (spec §6.3): checks every block of a document against
 //! its catalog definition and completes the document with catalog defaults.
 //!
-//! Blocks saved with an older version of their definition are upgraded with
-//! the block migrations ([`crate::migrate`]) before they are checked.
+//! The document's blocks are upgraded first ([`crate::upgrade`]): blocks saved
+//! with an older version of their definition and blocks of a retired type.
+//! A block that could not be upgraded is `B2C-E0603` at its place. In a
+//! document from a newer catalog (`generator.catalog`), a block with a field,
+//! input, `extra` setting or option its definition does not have is
+//! `B2C-E0602` and is kept as it is (spec §3.11.3, ADR-0015).
 //!
 //! Defaults filled in: absent fields with a default, absent `count`/`flag`
 //! extras with a default, and absent value inputs with default tokens (the
@@ -18,16 +22,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use b2c_ir::{Diagnostic, Location, ModuleId, Part, SymbolId};
+use b2c_ir::{BlockId, Diagnostic, Location, ModuleId, Part, SymbolId};
 use b2c_model::{Block, Document, ExprInput, FieldValue, Input};
 use serde_json::Value;
 
 use crate::Catalog;
 use crate::codes::{self, Diags};
 use crate::definitions::{self, PARAM_MODES, count_default, default_tokens, repeat_index};
-use crate::migrate::{self, BLOCK_MIGRATIONS, BlockMigration, MigrationError};
 use crate::schema::{BlockDef, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, Shape};
 use crate::stack;
+use crate::upgrade::{self, BlockUpgrades};
 
 /// Where a block sits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,21 +57,23 @@ enum Resolved {
     Invalid,
 }
 
-/// Runs the resolve stage with the shipped block migrations.
+/// Runs the resolve stage with the shipped block upgrades.
 pub(crate) fn run(document: &Document, catalog: &Catalog) -> (Document, Vec<Diagnostic>) {
-    run_with(document, catalog, BLOCK_MIGRATIONS)
+    run_with(document, catalog, &BlockUpgrades::SHIPPED)
 }
 
-/// Runs the resolve stage with the given block migrations.
+/// Runs the resolve stage with the given block upgrades.
 fn run_with(
     document: &Document,
     catalog: &Catalog,
-    migrations: &[BlockMigration],
+    upgrades: &BlockUpgrades<'_>,
 ) -> (Document, Vec<Diagnostic>) {
     let mut completed = document.clone();
     let mut resolver = Resolver {
         catalog,
-        migrations,
+        upgrades,
+        failed_upgrades: BTreeMap::new(),
+        newer_catalog: b2c_model::is_newer_version(&document.generator.catalog, &catalog.version),
         broken: broken_definitions(catalog),
         reported_broken: BTreeSet::new(),
         module: None,
@@ -83,6 +89,12 @@ fn run_with(
             );
         }
         return (completed, resolver.diags.finish());
+    }
+    for failure in upgrade::document(&mut completed, catalog, upgrades).failed {
+        resolver
+            .failed_upgrades
+            .entry(failure.block)
+            .or_insert(failure.message);
     }
     for module in &mut completed.modules {
         resolver.module = Some(module.id.clone());
@@ -108,7 +120,11 @@ fn broken_definitions(catalog: &Catalog) -> BTreeMap<String, String> {
 
 struct Resolver<'c> {
     catalog: &'c Catalog,
-    migrations: &'c [BlockMigration],
+    upgrades: &'c BlockUpgrades<'c>,
+    /// Why each block the upgrade could not upgrade stayed as it was.
+    failed_upgrades: BTreeMap<BlockId, String>,
+    /// Whether the document names a newer catalog than this one.
+    newer_catalog: bool,
     broken: BTreeMap<String, String>,
     reported_broken: BTreeSet<String>,
     module: Option<ModuleId>,
@@ -136,11 +152,17 @@ impl Resolver<'_> {
         let location = Location::block(self.module.clone(), block.id.clone());
         let catalog = self.catalog;
         let Some(def) = catalog.blocks.get(&block.block_type) else {
-            self.diags.error(
-                codes::UNKNOWN_BLOCK,
-                location,
-                unknown_block_message(&block.block_type),
-            );
+            if self.upgrades.is_retired(&block.block_type) {
+                // A retired type whose replacement failed.
+                let message = self.upgrade_failure(block);
+                self.diags.error(codes::OLD_BLOCK, location, message);
+            } else {
+                self.diags.error(
+                    codes::UNKNOWN_BLOCK,
+                    location,
+                    unknown_block_message(&block.block_type),
+                );
+            }
             self.children(block);
             return;
         };
@@ -167,29 +189,32 @@ impl Resolver<'_> {
             return;
         }
         if block.v < def.version {
-            let saved = block.v;
-            if let Err(error) = migrate::upgrade(block, def.version, self.migrations) {
-                let message = match error {
-                    MigrationError::NoPath { .. } => format!(
-                        "This block is version {saved} of {}, which this version of Blocks2Cpp cannot upgrade to version {}.",
-                        quote(&def.id),
-                        def.version
-                    ),
-                    MigrationError::Failed { from, reason } => format!(
-                        "This block is version {saved} of {}, and upgrading it from version {from} failed: {reason}.",
-                        quote(&def.id)
-                    ),
-                };
-                self.diags.error(codes::OLD_BLOCK, location, message);
-                self.children(block);
-                return;
-            }
+            // The document was upgraded first, so this block could not be.
+            let message = self.upgrade_failure(block);
+            self.diags.error(codes::OLD_BLOCK, location, message);
+            self.children(block);
+            return;
+        }
+        if self.newer_catalog
+            && let Some(message) = upgrade::newer_catalog_problem(def, block)
+        {
+            self.diags.error(codes::NEWER_BLOCK, location, message);
+            self.children(block);
+            return;
         }
         self.check_place(def, position, &location);
         let extras = self.extras(def, block, &location);
         self.fields(def, block, &location);
         self.inputs(def, block, &extras, &location);
         self.statements(def, block, &extras, &location);
+    }
+
+    /// Why the upgrade left `block` as it was.
+    fn upgrade_failure(&self, block: &Block) -> String {
+        self.failed_upgrades
+            .get(&block.id)
+            .cloned()
+            .unwrap_or_else(|| upgrade::cannot_upgrade(block))
     }
 
     /// Checks the children of a block whose own definition is unusable.
@@ -738,7 +763,7 @@ fn is_unsafe_to_show(c: char) -> bool {
 
 /// Quotes untrusted text for a message: invisible and control characters as
 /// `\u{XXXX}`, cut after 40 characters.
-fn quote(text: &str) -> String {
+pub(crate) fn quote(text: &str) -> String {
     let mut out = String::from("\"");
     for (index, c) in text.chars().enumerate() {
         if index == 40 {
@@ -803,29 +828,36 @@ mod tests {
         b2c_model::load(&serde_json::to_vec(&value).unwrap()).unwrap()
     }
 
-    const CHAIN: &[BlockMigration] = &[BlockMigration {
-        block: "io.print",
-        from: 1,
-        apply: rename_separator,
-    }];
+    const CHAIN: BlockUpgrades<'static> = BlockUpgrades {
+        migrations: &[crate::BlockMigration {
+            block: "io.print",
+            from: 1,
+            apply: rename_separator,
+        }],
+        replacements: &[],
+        retired: &[],
+    };
 
     #[test]
     fn older_blocks_are_upgraded_before_they_are_checked() {
         let catalog = catalog_v2();
-        let (completed, diagnostics) = run_with(&document("space"), &catalog, CHAIN);
+        let (completed, diagnostics) = run_with(&document("space"), &catalog, &CHAIN);
         assert_eq!(diagnostics, []);
         let print = &completed.modules[0].workspace.blocks[0].statements["BODY"][0];
         assert_eq!(print.v, 2);
         assert_eq!(print.fields["SEP"], FieldValue::Text("spaces".into()));
         // The upgraded block is complete, and resolving it again is a no-op.
         assert_eq!(print.fields["STREAM"], FieldValue::Text("out".into()));
-        assert_eq!(run_with(&completed, &catalog, CHAIN), (completed.clone(), vec![]));
+        assert_eq!(
+            run_with(&completed, &catalog, &CHAIN),
+            (completed.clone(), vec![])
+        );
     }
 
     #[test]
     fn blocks_that_cannot_be_upgraded_are_reported() {
         let catalog = catalog_v2();
-        let (completed, diagnostics) = run_with(&document("bad"), &catalog, CHAIN);
+        let (completed, diagnostics) = run_with(&document("bad"), &catalog, &CHAIN);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].code.0, codes::OLD_BLOCK);
         assert_eq!(
@@ -835,11 +867,129 @@ mod tests {
         let print = &completed.modules[0].workspace.blocks[0].statements["BODY"][0];
         assert_eq!(print.v, 1, "a failed upgrade leaves the block as it was");
 
-        let (_, diagnostics) = run_with(&document("space"), &catalog, &[]);
+        let none = BlockUpgrades {
+            migrations: &[],
+            ..CHAIN
+        };
+        let (_, diagnostics) = run_with(&document("space"), &catalog, &none);
         assert_eq!(
             diagnostics[0].message,
             "This block is version 1 of \"io.print\", which this version of Blocks2Cpp cannot upgrade to version 2."
         );
+    }
+
+    /// `test.say` v1 → `io.print` v1, which needs a `WHAT` input.
+    fn say_to_print(block: &mut Block) -> Result<(), String> {
+        let what = block.inputs.remove("WHAT").ok_or("the block has no WHAT input")?;
+        block.inputs.insert(String::from("ITEM0"), what);
+        Ok(())
+    }
+
+    const RETIRING: BlockUpgrades<'static> = BlockUpgrades {
+        migrations: &[],
+        replacements: &[crate::BlockReplacement {
+            from: "test.say",
+            version: 1,
+            to: "io.print",
+            to_version: 1,
+            apply: say_to_print,
+        }],
+        retired: &["test.say"],
+    };
+
+    #[test]
+    fn retired_blocks_are_replaced_or_reported_as_old() {
+        let value = serde_json::json!({
+            "format": "blocks2cpp/project", "formatVersion": 1,
+            "generator": {"app": "0.1.0", "catalog": "1.0.0"},
+            "project": {"id": "p", "name": "P", "language": {"standard": "c++20"}},
+            "modules": [{"id": "m", "name": "main", "workspace": {"blocks": [{
+                "id": "b_main", "type": "program.main", "v": 1,
+                "statements": {"BODY": [
+                    {"id": "b1", "type": "test.say", "v": 1, "inputs": {"WHAT": {"expr": [{"str": "hi"}]}}},
+                    {"id": "b2", "type": "test.say", "v": 1, "statements": {"X": [print("b3")]}}
+                ]}
+            }]}}]
+        });
+        let document = b2c_model::load(&serde_json::to_vec(&value).unwrap()).unwrap();
+        let (completed, diagnostics) = run_with(&document, crate::core_catalog(), &RETIRING);
+        let body = &completed.modules[0].workspace.blocks[0].statements["BODY"];
+        assert_eq!(body[0].block_type, "io.print");
+        assert!(body[0].inputs.contains_key("ITEM0"));
+        // The one that cannot be replaced is old (E0603), not unknown
+        // (E0601), and the block inside it is still checked.
+        assert_eq!(body[1].block_type, "test.say");
+        assert!(body[1].statements["X"][0].inputs.contains_key("ITEM0"));
+        assert_eq!(
+            codes_and_blocks(&diagnostics),
+            [(codes::OLD_BLOCK.to_owned(), "b2".to_owned())]
+        );
+        assert_eq!(
+            diagnostics[0].message,
+            "This block is version 1 of \"test.say\", a kind of block that is now \"io.print\", and replacing it failed: the block has no WHAT input."
+        );
+        // Without the replacement, the type is simply unknown.
+        let (_, diagnostics) = run(&document, crate::core_catalog());
+        assert_eq!(diagnostics.len(), 2);
+        assert!(diagnostics.iter().all(|d| d.code.0 == codes::UNKNOWN_BLOCK));
+    }
+
+    #[test]
+    fn a_block_the_upgrade_did_not_see_is_reported_as_old() {
+        // The resolver alone, without the upgrade before it.
+        let old = serde_json::json!({"id": "b1", "type": "io.print", "v": 0});
+        let (_, _, diagnostics) = resolve_stack(old, vec![]);
+        assert_eq!(diagnostics[0].code.0, codes::OLD_BLOCK);
+        assert_eq!(
+            diagnostics[0].message,
+            "This block is version 0 of \"io.print\", which this version of Blocks2Cpp cannot upgrade."
+        );
+    }
+
+    #[test]
+    fn a_newer_catalog_makes_unknown_names_newer_blocks() {
+        let print = serde_json::json!({"id": "b1", "type": "io.print", "v": 1,
+            "fields": {"SEP": "tabs", "VOLUME": "3"}, "extra": {"style": 1}});
+        let value = |catalog: &str| {
+            serde_json::json!({
+                "format": "blocks2cpp/project", "formatVersion": 1,
+                "generator": {"app": "0.1.0", "catalog": catalog},
+                "project": {"id": "p", "name": "P", "language": {"standard": "c++20"}},
+                "modules": [{"id": "m", "name": "main", "workspace": {"blocks": [{
+                    "id": "b_main", "type": "program.main", "v": 1,
+                    "statements": {"BODY": [print.clone()]}
+                }]}}]
+            })
+        };
+        let resolve = |catalog: &str| {
+            let document = b2c_model::load(&serde_json::to_vec(&value(catalog)).unwrap()).unwrap();
+            run(&document, crate::core_catalog())
+        };
+        let (completed, diagnostics) = resolve("1.2.0");
+        assert_eq!(
+            codes_and_blocks(&diagnostics),
+            [(codes::NEWER_BLOCK.to_owned(), "b1".to_owned())]
+        );
+        // The first thing it does not know, in field order.
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("it has the choice \"tabs\" in its field \"SEP\"")
+        );
+        // Kept as it is: no defaults filled in.
+        let kept = &completed.modules[0].workspace.blocks[0].statements["BODY"][0];
+        assert!(!kept.inputs.contains_key("ITEM0"));
+        assert!(!kept.fields.contains_key("STREAM"));
+        // The same block from this catalog or an older one is wrong instead.
+        for catalog in ["1.1.0", "1.0.0", "1.2"] {
+            let (_, diagnostics) = resolve(catalog);
+            let found: Vec<&str> = diagnostics.iter().map(|d| d.code.0.as_str()).collect();
+            assert_eq!(
+                found,
+                [codes::UNKNOWN_EXTRA, codes::UNKNOWN_FIELD, codes::BAD_FIELD],
+                "{catalog}"
+            );
+        }
     }
 
     /// A block from its JSON form (tests only; files go through the loader).
@@ -853,7 +1003,9 @@ mod tests {
         let catalog = crate::core_catalog();
         let mut resolver = Resolver {
             catalog,
-            migrations: BLOCK_MIGRATIONS,
+            upgrades: &BlockUpgrades::SHIPPED,
+            failed_upgrades: BTreeMap::new(),
+            newer_catalog: false,
             broken: broken_definitions(catalog),
             reported_broken: BTreeSet::new(),
             module: ModuleId::new("m").ok(),

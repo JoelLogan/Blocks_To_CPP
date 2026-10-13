@@ -304,6 +304,84 @@ fn migrate_prints_the_canonical_document() {
 }
 
 #[test]
+fn migrate_in_place_keeps_a_backup_and_leaves_a_current_file_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let copy = dir.path().join("copy.b2c");
+    let original = std::fs::read_to_string(example("hello_world")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&original).unwrap();
+    let compact = serde_json::to_string(&value).unwrap();
+    std::fs::write(&copy, &compact).unwrap();
+    // A path relative to the current folder, as people type it.
+    let output = Command::new(env!("CARGO_BIN_EXE_b2c"))
+        .args(["migrate", "--in-place", "copy.b2c"])
+        .current_dir(dir.path())
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(std::fs::read_to_string(&copy).unwrap(), original);
+    let backup = dir.path().join("copy.b2c.bak");
+    assert_eq!(std::fs::read_to_string(&backup).unwrap(), compact);
+    // Already current: nothing is written, and the backup stays.
+    std::fs::remove_file(&backup).unwrap();
+    let output = b2c(&["migrate", "--in-place", copy.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(!backup.exists());
+}
+
+/// `hello_world` with its print block at version 0, which no catalog can
+/// upgrade.
+fn with_unupgradable_block(dir: &Path) -> (PathBuf, String) {
+    let original = std::fs::read_to_string(example("hello_world")).unwrap();
+    let old = original.replacen(
+        "\"type\": \"io.print\",\n                  \"v\": 1",
+        "\"type\": \"io.print\",\n                  \"v\": 0",
+        1,
+    );
+    assert_ne!(old, original, "hello_world has no print block at that place");
+    let path = dir.join("old.b2c");
+    std::fs::write(&path, &old).unwrap();
+    (path, old)
+}
+
+#[test]
+fn migrate_writes_nothing_when_a_block_cannot_be_upgraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let (path, old) = with_unupgradable_block(dir.path());
+    for args in [&["migrate", "--in-place"][..], &["migrate"]] {
+        let mut args = args.to_vec();
+        args.push(path.to_str().unwrap());
+        let output = b2c(&args);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(stderr(&output).contains("B2C-E0603"), "{}", stderr(&output));
+        assert!(
+            stderr(&output).contains("has blocks that cannot be upgraded; nothing was written"),
+            "{}",
+            stderr(&output)
+        );
+        assert_eq!(stdout(&output), "");
+    }
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), old);
+    assert!(!dir.path().join("old.b2c.bak").exists());
+}
+
+#[test]
+fn fmt_never_upgrades_blocks_and_check_reports_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let (path, old) = with_unupgradable_block(dir.path());
+    let output = b2c(&["fmt", "--check", path.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(0), "{}", stdout(&output));
+    assert_eq!(b2c(&["fmt", path.to_str().unwrap()]).status.code(), Some(0));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), old);
+    // check upgrades in memory, so the block that cannot be upgraded is a
+    // problem there, and the file is not touched.
+    let output = b2c(&["check", path.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).contains("B2C-E0603"), "{}", stdout(&output));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), old);
+}
+
+#[test]
 fn run_prints_output_and_returns_the_exit_code() {
     if !have_gxx() {
         return;

@@ -1,11 +1,13 @@
 //! App versions: which Blocks2Cpp saved a file, compared with this one by
 //! SemVer 2.0.0 precedence (<https://semver.org/#spec-item-11>).
 //!
-//! Only one rule uses it (ADR-0013): a key this version does not know, in a
-//! file whose `generator.app` is a newer version than this app, is a key that
-//! newer version added, so it is reported as `B2C-E0108` ("made with a newer
-//! version of Blocks2Cpp") instead of `B2C-E0110` ("unknown key"). The
-//! version text comes from the file, so it is only compared, never shown.
+//! The loader uses it for one rule (ADR-0013): a key this version does not
+//! know, in a file whose `generator.app` is a newer version than this app, is
+//! a key that newer version added, so it is reported as `B2C-E0108` ("made
+//! with a newer version of Blocks2Cpp") instead of `B2C-E0110` ("unknown
+//! key"). The block catalog compares `generator.catalog` with its own version
+//! the same way (ADR-0015), through [`crate::is_newer_version`]. The version
+//! text comes from the file, so it is only compared, never shown.
 
 use std::cmp::Ordering;
 
@@ -24,8 +26,20 @@ struct Version<'a> {
 }
 
 /// Whether `text` is a SemVer version newer than `this` (both SemVer 2.0.0
-/// text). Text that is not a SemVer version is never newer.
-pub(crate) fn is_newer(text: &str, this: &str) -> bool {
+/// text), by SemVer precedence: build metadata does not count, and a
+/// pre-release is older than its release. Text that is not a SemVer version
+/// is never newer, and nothing is newer than text that is not one.
+///
+/// ```
+/// use b2c_model::is_newer_version;
+///
+/// assert!(is_newer_version("1.2.0", "1.1.0"));
+/// assert!(is_newer_version("1.10.0", "1.9.0"));
+/// assert!(!is_newer_version("1.1.0", "1.1.0"));
+/// assert!(!is_newer_version("1.2.0-beta", "1.2.0"));
+/// assert!(!is_newer_version("9.0", "1.1.0"));
+/// ```
+pub fn is_newer(text: &str, this: &str) -> bool {
     match (Version::parse(text), Version::parse(this)) {
         (Some(version), Some(this)) => version.cmp(&this) == Ordering::Greater,
         _ => false,

@@ -225,6 +225,37 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       expect(project().dirty).toBe(false);
     });
 
+    it('opens a file whose blocks were upgraded with unsaved changes, and says so', async () => {
+      harness.ipc.projectOpenDialog.mockResolvedValueOnce({
+        status: 'ok',
+        ...opened(HELLO_TEXT, { blocksUpgraded: true, fileName: 'old.b2c' }),
+      });
+      const opening = harness.feature.lifecycle.open();
+      const alert = await closeAlert(harness.dialogs);
+      expect(await opening).toBe(true);
+      expect(alert.options.title).toBe('Blocks were upgraded');
+      expect(alert.options.message).toBe(
+        'Some blocks in “old.b2c” were made by an older version of Blocks2Cpp and have been upgraded, so the project now has unsaved changes. When you save it, the file as it was is kept as “old.b2c.bak”.',
+      );
+      // The file still holds the old blocks: nothing shown counts as saved.
+      expect(project().savedCanonicalText).toBeNull();
+      expect(project().dirty).toBe(true);
+      await vi.waitFor(() => {
+        expect(harness.ipc.projectSetDirty).toHaveBeenCalledWith({ handle: HANDLE_B, dirty: true });
+      });
+    });
+
+    it('opens a recent project whose blocks were upgraded with unsaved changes', async () => {
+      harness.ipc.projectOpenRecent.mockResolvedValueOnce(
+        opened(HELLO_TEXT, { blocksUpgraded: true }),
+      );
+      const opening = harness.feature.lifecycle.openRecent(recentEntry(1));
+      const alert = await closeAlert(harness.dialogs);
+      expect(await opening).toBe(true);
+      expect(alert.options.message).toContain('“game.b2c.bak”');
+      expect(project().dirty).toBe(true);
+    });
+
     it('shows E0108 for a project made with a newer version, and opens nothing', async () => {
       harness.ipc.projectOpenDialog.mockRejectedValueOnce(
         ipcFailure({ code: 'newerFormat', needs: '0.3.0' }),

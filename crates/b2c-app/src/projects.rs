@@ -12,10 +12,15 @@
 //! **Opening** (dialog, recent, reload): the path is canonicalised, at most
 //! 32 MiB + 1 bytes are read, the bytes are loaded with the strict loader
 //! (`b2c_model::load`: a newer format gives `newerFormat`, an older one is
-//! migrated in memory), the trust verdict is computed from the security hash
-//! and the Mark of the Web, the SHA-256 of the bytes becomes the baseline for
-//! external-change detection, the file is watched and the recent list
-//! updated. Opening never builds or runs anything.
+//! migrated in memory), the blocks are upgraded in memory
+//! (`docs/spec/05-project-format.md` §5.7, ADR-0015: after the limits of
+//! §5.6, before trust; an upgrade never changes the security hash), the
+//! trust verdict is computed from the security hash and the Mark of the Web,
+//! the SHA-256 of the bytes becomes the baseline for external-change
+//! detection, the file is watched and the recent list updated. A project
+//! whose blocks were upgraded starts with unsaved changes (`blocksUpgraded`),
+//! and saving it keeps the file as it was as `<name>.b2c.bak`. Opening never
+//! builds or runs anything.
 //!
 //! **Saving** writes only to the handle's file, after checking that the file
 //! on disk still has the baseline hash (`changedOnDisk` otherwise; it is then
@@ -78,8 +83,8 @@ pub(crate) struct ProjectEntry {
     /// Whether the file has the Mark of the Web.
     pub(crate) mark_of_the_web: bool,
     /// Whether it has unsaved changes: what `project_set_dirty` last
-    /// reported (open, new and reload make it `false`, a restore `true`;
-    /// saving leaves it alone).
+    /// reported (new makes it `false`, open and reload `false` unless a block
+    /// was upgraded, a restore `true`; saving leaves it alone).
     pub(crate) dirty: bool,
     /// When `trust_grant` was last called for it (rate limit).
     pub(crate) last_trust_grant: Option<Instant>,
@@ -197,12 +202,15 @@ impl ProjectTable {
 pub(crate) struct LoadedFile {
     /// Its canonical path.
     pub(crate) path: PathBuf,
-    /// The loaded (and, if it was older, migrated) document.
+    /// The loaded document: migrated if its format was older, with its
+    /// blocks upgraded.
     pub(crate) document: Document,
     /// The SHA-256 of its bytes.
     pub(crate) baseline: [u8; 32],
     /// The `formatVersion` it had, when it was migrated.
     pub(crate) migrated_from: Option<u32>,
+    /// Whether a block was upgraded in memory.
+    pub(crate) blocks_upgraded: bool,
     /// Its trust verdict.
     pub(crate) trust: HandleTrust,
     /// Whether it has the Mark of the Web.
@@ -259,7 +267,7 @@ fn canonical_bytes(document: &Document) -> Result<Vec<u8>, IpcError> {
 // command method has the same shape whether or not it keeps the request.
 #[allow(clippy::needless_pass_by_value)]
 impl Backend {
-    /// Reads, loads and evaluates the project file at `path`.
+    /// Reads, loads, upgrades and evaluates the project file at `path`.
     ///
     /// # Errors
     /// [`IpcError::NotFound`] for a missing file, [`IpcError::PayloadTooLarge`]
@@ -274,19 +282,39 @@ impl Backend {
             _ => store_error("find a project file", &error),
         })?;
         let bytes = read_project(&canonical).map_err(|error| project_read_error(&canonical, &error))?;
-        let document = load_bytes(&bytes)?;
+        let mut document = load_bytes(&bytes)?;
+        let blocks_upgraded = self.upgrade_blocks(&mut document);
         let migrated_from = migrated_from(&bytes);
         let mark_of_the_web = b2c_store::mark_of_the_web(&canonical);
+        // Trust is evaluated on the upgraded document, whose security hash
+        // is the file's (08 §8.3.1).
         let trust = HandleTrust::from_verdict(self.trust.evaluate(&identity(&document, &canonical)));
-        tracing::debug!(path = %canonical.display(), trust = ?trust, "project file loaded");
+        tracing::debug!(path = %canonical.display(), trust = ?trust, blocks_upgraded, "project file loaded");
         Ok(LoadedFile {
             baseline: sha256(&bytes),
             path: canonical,
             document,
             migrated_from,
+            blocks_upgraded,
             trust,
             mark_of_the_web,
         })
+    }
+
+    /// Upgrades the blocks of a loaded document in memory
+    /// (`docs/spec/05-project-format.md` §5.7) and says whether any block was
+    /// upgraded. A block that cannot be upgraded stays as it was; the
+    /// editor's preview reports it (`B2C-E0603`).
+    pub(crate) fn upgrade_blocks(&self, document: &mut Document) -> bool {
+        let report =
+            b2c_build::upgrade_document_with(document, b2c_build::core_catalog(), &self.block_upgrades);
+        if !report.diagnostics.is_empty() {
+            tracing::debug!(
+                count = report.diagnostics.len(),
+                "blocks that could not be upgraded were left as they were"
+            );
+        }
+        report.changed()
     }
 
     /// Opens the file at `path` as a new handle (dialog and recent list).
@@ -304,7 +332,8 @@ impl Backend {
             created_here: false,
             trust: loaded.trust,
             mark_of_the_web: loaded.mark_of_the_web,
-            dirty: false,
+            // Upgraded blocks are a change the file does not have yet.
+            dirty: loaded.blocks_upgraded,
             last_trust_grant: None,
         };
         let project_name = entry.latest_document.project.name.clone();
@@ -317,6 +346,7 @@ impl Backend {
             trust,
             file_name: file_name(&loaded.path),
             migrated_from: loaded.migrated_from,
+            blocks_upgraded: loaded.blocks_upgraded,
         })
     }
 
@@ -396,7 +426,7 @@ impl Backend {
     /// outside the app), with the full open flow, trust re-check included.
     /// The project's unsaved changes are discarded, and so is their recovery
     /// snapshot (a crash afterwards must not offer them again); the project
-    /// has no unsaved changes then.
+    /// has no unsaved changes then, unless a block of the file was upgraded.
     ///
     /// # Errors
     /// [`IpcError::UnknownHandle`], [`IpcError::NoPath`] for a project that was
@@ -415,7 +445,7 @@ impl Backend {
         entry.trust = loaded.trust;
         entry.created_here = false;
         entry.mark_of_the_web = loaded.mark_of_the_web;
-        entry.dirty = false;
+        entry.dirty = loaded.blocks_upgraded;
         // Under the project's lock, as `recovery_save` writes it: an autosave
         // of the discarded changes comes wholly before this, or after it (it
         // then holds changes made after the reload).
@@ -429,6 +459,7 @@ impl Backend {
             document: text,
             trust,
             migrated_from: loaded.migrated_from,
+            blocks_upgraded: loaded.blocks_upgraded,
         })
     }
 
@@ -637,7 +668,8 @@ impl Backend {
     /// so closing the window asks first and shutdown keeps the project's
     /// recovery snapshot. The flag is only what this command last reported
     /// (`docs/spec/02-architecture.md` §2.6): opening, creating, reloading
-    /// and restoring set it, saving never changes it.
+    /// and restoring set it (open and reload start clean unless
+    /// `blocksUpgraded` is true), saving never changes it.
     ///
     /// # Errors
     /// [`IpcError::UnknownHandle`].

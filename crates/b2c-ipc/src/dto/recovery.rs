@@ -55,12 +55,16 @@ id_request!(
 pub struct RecoveryRestoreResponse {
     /// The restored project's handle.
     pub handle: Handle,
-    /// The project as BDM JSON text.
+    /// The project as BDM JSON text, with its blocks upgraded.
     pub document: String,
     /// Its trust state.
     pub trust: Trust,
     /// The file's name, when the project had been saved; `null` otherwise.
     pub file_name: Option<String>,
+    /// True when a block of the snapshot was upgraded in memory
+    /// (`docs/spec/05-project-format.md` §5.7). A restored project has
+    /// unsaved changes either way.
+    pub blocks_upgraded: bool,
 }
 
 id_request!(

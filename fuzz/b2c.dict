@@ -100,3 +100,8 @@
 "\"loopVariable\""
 "\"function\""
 "\"geo::area\""
+# Block upgrades (spec 05 §5.7), for the resolve target's fuzz-only table.
+"\"fuzz.old\""
+"\"WHAT\""
+"\"FAIL\""
+"\"raw.code\""

@@ -28,8 +28,9 @@ export interface CoreVersion {
 }
 
 /**
- * The result of `CoreWasm.load()`: the loaded document (migrated to the current format, not
- * resolved against the catalog, keys in canonical order), or the loader's `B2C-E01xx` problems.
+ * The result of `CoreWasm.load()`: the loaded document (migrated to the current format, with its
+ * blocks upgraded (05 §5.7), not resolved against the catalog, keys in canonical order) and a
+ * `B2C-E0603` for each block that could not be upgraded, or the loader's `B2C-E01xx` problems.
  * Every number in the document is one JavaScript holds exactly (05 §5.6), so
  * `canonical(JSON.stringify(document))` gives the same text and hash as `canonical()` of the file.
  */

@@ -36,6 +36,7 @@ const RELOADED: ProjectReloadResponse = {
   document: '{"reloaded":true}',
   trust: TRUSTED,
   migratedFrom: null,
+  blocksUpgraded: false,
 };
 
 function open(overrides: Parameters<typeof projectFixture>[0] = {}): void {
@@ -166,6 +167,7 @@ describe('Reload', () => {
       document: '{"outside":true}',
       trust: CHANGED_OUTSIDE,
       migratedFrom: 0,
+      blocksUpgraded: false,
     });
     changedOnDisk();
     await answerChoice(harness.dialogs, 'reload');
@@ -185,6 +187,20 @@ describe('Reload', () => {
     expect(project?.trust).toEqual(CHANGED_OUTSIDE);
     expect(project?.dirty).toBe(false);
     expect(harness.dialogs.store.getState().queue).toHaveLength(0);
+  });
+
+  it('reloads a file whose blocks were upgraded with unsaved changes, and says so', async () => {
+    harness.ipc.projectReload.mockResolvedValue({ ...RELOADED, blocksUpgraded: true });
+    changedOnDisk();
+    await answerChoice(harness.dialogs, 'reload');
+    const alert = await closeAlert(harness.dialogs);
+    expect(alert.options.title).toBe('Blocks were upgraded');
+    expect(alert.options.message).toContain('“game.b2c.bak”');
+    // The file still holds the old blocks: nothing shown counts as saved.
+    expect(openInEditor).toHaveBeenCalledWith(
+      harness.ctx,
+      expect.objectContaining({ documentText: RELOADED.document, savedText: null }),
+    );
   });
 
   it('asks again without Reload when the file turns out to be gone', async () => {

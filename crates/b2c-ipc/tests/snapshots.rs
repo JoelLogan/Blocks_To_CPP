@@ -363,6 +363,7 @@ fn responses() {
         trust: restricted(),
         file_name: "guess.b2c".into(),
         migrated_from: None,
+        blocks_upgraded: false,
     };
     let values = [
         (
@@ -395,6 +396,7 @@ fn responses() {
             "ProjectOpened",
             round_trip(&ProjectOpened {
                 migrated_from: Some(1),
+                blocks_upgraded: true,
                 ..opened
             }),
         ),
@@ -404,6 +406,7 @@ fn responses() {
                 document: document.clone(),
                 trust: trusted(),
                 migrated_from: None,
+                blocks_upgraded: true,
             }),
         ),
         (
@@ -455,6 +458,7 @@ fn responses() {
                 document: document.clone(),
                 trust: trusted(),
                 file_name: None,
+                blocks_upgraded: false,
             }),
         ),
         (

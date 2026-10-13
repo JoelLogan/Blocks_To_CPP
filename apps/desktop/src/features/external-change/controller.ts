@@ -31,6 +31,7 @@ import {
   type OpenDocumentResult,
 } from '../../editor/load';
 import type { ProjectQueue } from '../project/link';
+import { blocksUpgradedAlert } from '../project/upgraded';
 import { errorCode, ipcErrorOf, problemLines, shownName } from '../recovery/text';
 import { describeReloadError, type ExternalChangeChoice, externalChangeQuestion } from './messages';
 
@@ -297,8 +298,8 @@ export class ExternalChangeController {
         trust: response.trust,
         fileName: now.fileName,
         migratedFrom: response.migratedFrom,
-        // The file's own text: no unsaved changes.
-        savedText: response.document,
+        // The file's own text: no unsaved changes, unless its blocks were upgraded (05 §5.7).
+        savedText: response.blocksUpgraded ? null : response.document,
       });
     } catch (error: unknown) {
       console.error('The compiler core could not show a reloaded project', error);
@@ -326,7 +327,10 @@ export class ExternalChangeController {
         },
       };
     }
-    return { outcome: 'reloaded', alert: null };
+    return {
+      outcome: 'reloaded',
+      alert: response.blocksUpgraded ? blocksUpgradedAlert(now.fileName) : null,
+    };
   }
 
   /**

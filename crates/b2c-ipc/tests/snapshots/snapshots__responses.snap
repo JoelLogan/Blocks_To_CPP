@@ -28,6 +28,7 @@ expression: render(&values)
 }
 --- ProjectOpenDialogResponse
 {
+  "blocksUpgraded": false,
   "document": "{\"format\":\"blocks2cpp/project\"}",
   "fileName": "guess.b2c",
   "handle": "ph_0123456789abcdef0123456789abcdef",
@@ -42,6 +43,7 @@ expression: render(&values)
 }
 --- ProjectOpened
 {
+  "blocksUpgraded": true,
   "document": "{\"format\":\"blocks2cpp/project\"}",
   "fileName": "guess.b2c",
   "handle": "ph_0123456789abcdef0123456789abcdef",
@@ -55,6 +57,7 @@ expression: render(&values)
 }
 --- ProjectReloadResponse
 {
+  "blocksUpgraded": true,
   "document": "{\"format\":\"blocks2cpp/project\"}",
   "migratedFrom": null,
   "trust": {
@@ -105,6 +108,7 @@ expression: render(&values)
 }
 --- RecoveryRestoreResponse
 {
+  "blocksUpgraded": false,
   "document": "{\"format\":\"blocks2cpp/project\"}",
   "fileName": null,
   "handle": "ph_0123456789abcdef0123456789abcdef",

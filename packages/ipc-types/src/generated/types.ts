@@ -638,7 +638,7 @@ export type ProjectOpened = {
 handle: Handle,
 /**
  * The project as BDM JSON text (migrated to the current format when it was
- * older).
+ * older, with its blocks upgraded).
  */
 document: string,
 /**
@@ -653,7 +653,13 @@ fileName: string,
  * The format version the file had, when it was migrated in memory; `null`
  * when it is current.
  */
-migratedFrom: number | null, };
+migratedFrom: number | null,
+/**
+ * True when a block was upgraded in memory
+ * (`docs/spec/05-project-format.md` §5.7): the project starts with
+ * unsaved changes, and saving keeps the file as it was as `.b2c.bak`.
+ */
+blocksUpgraded: boolean, };
 
 /**
  * The request of `project_reload`: read the project's file again, after it
@@ -670,7 +676,7 @@ handle: Handle, };
  */
 export type ProjectReloadResponse = {
 /**
- * The project as BDM JSON text.
+ * The project as BDM JSON text, with its blocks upgraded.
  */
 document: string,
 /**
@@ -680,7 +686,12 @@ trust: Trust,
 /**
  * The format version the file had, when it was migrated in memory.
  */
-migratedFrom: number | null, };
+migratedFrom: number | null,
+/**
+ * True when a block was upgraded in memory (05 §5.7): the project
+ * starts with unsaved changes.
+ */
+blocksUpgraded: boolean, };
 
 /**
  * The request of `project_save_as_dialog`: ask for a new file with a native
@@ -844,7 +855,7 @@ export type RecoveryRestoreResponse = {
  */
 handle: Handle,
 /**
- * The project as BDM JSON text.
+ * The project as BDM JSON text, with its blocks upgraded.
  */
 document: string,
 /**
@@ -854,7 +865,13 @@ trust: Trust,
 /**
  * The file's name, when the project had been saved; `null` otherwise.
  */
-fileName: string | null, };
+fileName: string | null,
+/**
+ * True when a block of the snapshot was upgraded in memory
+ * (`docs/spec/05-project-format.md` §5.7). A restored project has
+ * unsaved changes either way.
+ */
+blocksUpgraded: boolean, };
 
 /**
  * The request of `recovery_save`: store a recovery snapshot of the project's

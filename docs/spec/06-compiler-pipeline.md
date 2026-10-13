@@ -20,6 +20,10 @@ The types passed between stages (the SAST, symbols, typed text leaves,
 diagnostics and source maps) live in `b2c-ir`, so each stage depends only on
 the contract it consumes, not on the crate that produced it.
 
+Block upgrades ([05 §5.7](05-project-format.md#57-versioning-and-migration))
+are the first step of stage ②, and the app also runs them when it loads a
+document for the editor.
+
 Every stage is a **pure, deterministic function**: no I/O, no clock, no
 randomness, and no global mutable state. The same code runs natively in the
 backend and CLI, and as WebAssembly in the editor. A stage that finds errors
@@ -76,8 +80,13 @@ every example at indent widths 2 and 4.
 
 ## 6.3 Stage ② Resolve catalog
 
+* Block upgrades ([05 §5.7](05-project-format.md#57-versioning-and-migration))
+  are the first step of stage ②, and the app also runs them when it loads a
+  document for the editor: blocks of an older version and of a retired type
+  are upgraded, and a block that cannot be upgraded stays as it was and is
+  `B2C-E0603`.
 * Each block's `type@v` is looked up in the catalog (core + std pack + project
-  packs). Older versions are migrated. Unknown types produce a placeholder
+  packs). Unknown types produce a placeholder
   "missing block" (shown greyed out with a *Missing pack: X* badge, and
   preserved on save) plus diagnostic `B2C-E0601`.
 * Fields are validated against their kinds: dropdown values must be one of the

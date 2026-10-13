@@ -43,6 +43,7 @@ function restored(overrides: Partial<RecoveryRestoreResponse> = {}): RecoveryRes
     document: '{"restored":true}',
     trust: TRUSTED,
     fileName: 'game.b2c',
+    blocksUpgraded: false,
     ...overrides,
   };
 }

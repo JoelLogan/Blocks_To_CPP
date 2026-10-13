@@ -16,7 +16,7 @@ use b2c_build::cache::{self, EvictionPolicy};
 use b2c_build::toolchains::{
     DiscoveryScope, PROBE_TEMP_DIR, Prober, RealProber, STORE_FILE, ToolchainRegistry,
 };
-use b2c_build::{BuildSessions, RunSessions};
+use b2c_build::{BlockUpgrades, BuildSessions, RunSessions};
 use b2c_ipc::dto::{AppEvent, AppInfo, Empty, OpenHelpLinkRequest, Platform};
 use b2c_ipc::{EventSink, IPC_VERSION, IoKind, IpcError};
 use b2c_store::trust::TRUST_FILE;
@@ -124,6 +124,9 @@ pub struct Backend {
     pub(crate) watchers: Watchers,
     /// This instance's recovery snapshots.
     pub(crate) recovery: RecoveryState,
+    /// The tables the blocks of opened, reloaded and restored projects are
+    /// upgraded with (`docs/spec/05-project-format.md` §5.7).
+    pub(crate) block_upgrades: BlockUpgrades<'static>,
     pub(crate) shut_down: AtomicBool,
 }
 
@@ -172,6 +175,22 @@ impl Backend {
         config: BackendConfig,
         dialogs: Arc<dyn Dialogs>,
         services: Services,
+    ) -> Result<Arc<Self>, StartError> {
+        Self::start_with_block_upgrades(config, dialogs, services, BlockUpgrades::SHIPPED)
+    }
+
+    /// [`Backend::start_with`], upgrading the blocks of opened, reloaded and
+    /// restored projects (`docs/spec/05-project-format.md` §5.7) with
+    /// `block_upgrades` instead of the shipped tables: for tests, which need a
+    /// block to upgrade before the catalog has one.
+    ///
+    /// # Errors
+    /// As [`Backend::start_with`].
+    pub fn start_with_block_upgrades(
+        config: BackendConfig,
+        dialogs: Arc<dyn Dialogs>,
+        services: Services,
+        block_upgrades: BlockUpgrades<'static>,
     ) -> Result<Arc<Self>, StartError> {
         let BackendConfig {
             dirs,
@@ -232,6 +251,7 @@ impl Backend {
             runs: RunSessions::new(),
             projects: ProjectTable::default(),
             events,
+            block_upgrades,
             shut_down: AtomicBool::new(false),
         });
         backend.install_build_hook();

@@ -77,7 +77,11 @@ pub struct Pasted {
     /// The references that found nothing to bind to; they still refer to
     /// their original symbols.
     pub unresolved: Vec<Unresolved>,
-    /// One `B2C-E0201` per unresolved reference, naming the original.
+    /// What upgrading the blocks reported (05 §5.7): a `B2C-E0603` for each
+    /// block that could not be upgraded, and, for a payload from a newer
+    /// catalog, a `B2C-E0602` for each block with something this catalog
+    /// does not know; then one `B2C-E0201` per unresolved reference, naming
+    /// the original.
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -181,7 +185,9 @@ impl Session {
     /// Prepares a clipboard payload for pasting into a document.
     ///
     /// The payload is validated with [`b2c_model::load_clipboard`] (the
-    /// same parser, limits and codes as a project file). Its blocks get
+    /// same parser, limits and codes as a project file), and its blocks are
+    /// upgraded like those of a loaded project
+    /// (`b2c_catalog::upgrade_clipboard`, 05 §5.7). Its blocks get
     /// fresh block IDs and fresh IDs for the symbols they declare
     /// ([`b2c_model::remap_ids`] with [`b2c_model::SeededIds`] from `seed`),
     /// none of them used in the document. References to other symbols are
@@ -245,14 +251,27 @@ impl Session {
         taken.extend(payload.refs.keys().map(|sym| sym.as_str().to_owned()));
         b2c_model::remap_ids(&mut blocks, &taken, &mut b2c_model::SeededIds::new(seed))
             .map_err(|error| FacadeError::Internal(format!("no fresh IDs for the pasted blocks: {error}")))?;
+        // Upgraded after the new IDs, so its diagnostics name the pasted blocks.
+        let mut copied = b2c_model::Clipboard {
+            catalog: payload.catalog.clone(),
+            blocks,
+            refs: std::collections::BTreeMap::new(),
+        };
+        let upgrade = b2c_catalog::upgrade_clipboard(&mut copied, b2c_catalog::core_catalog());
+        let mut blocks = copied.blocks;
 
         let (analysis, _) = self.analysis_for(&document);
         let visible = scope::visible_at(&analysis, &target.module, target_block, target.input.as_deref());
         let outside = b2c_model::outside_refs(&blocks);
         let binding = clipboard::rebind(&outside, &payload.refs, &visible);
         b2c_model::rewrite_refs(&mut blocks, &binding.rebound);
-        let diagnostics =
-            clipboard::unresolved_diagnostics(&blocks, &binding.unresolved, &payload.refs, &target.module);
+        let mut diagnostics = upgrade.diagnostics;
+        diagnostics.extend(clipboard::unresolved_diagnostics(
+            &blocks,
+            &binding.unresolved,
+            &payload.refs,
+            &target.module,
+        ));
         if target.block.is_some() {
             // Inside or after a block: no block can keep a loose stack there.
             blocks = clipboard::unstack(blocks);

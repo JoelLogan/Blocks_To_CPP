@@ -95,6 +95,7 @@ export function opened(document: string, overrides: Partial<ProjectOpened> = {})
     trust: TRUSTED,
     fileName: 'game.b2c',
     migratedFrom: null,
+    blocksUpgraded: false,
     ...overrides,
   };
 }
