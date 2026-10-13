@@ -47,16 +47,27 @@ at once; the discovery itself goes on and updates the list.
      CVE-2024-24576 "BatBadBut").
 3. **Linux**
    * `PATH` entries (absolute only): `g++`, then `g++-16` … `g++-11`.
+     Linux (M3): `g++`, then every `g++-N` with N ≥ 11, newest first.
    * `/usr/bin`, `/usr/local/bin`, `/opt/rh/gcc-toolset-*/root/usr/bin`,
      `/home/linuxbrew/.linuxbrew/bin`.
 
-**Never searched:** the project's folder, the process's current directory,
-the build cache, removable or network (UNC) paths (a UNC toolchain can be
-added manually, with a warning). This prevents *binary planting*, where a
-project folder ships its own `g++.exe`. A rescan excludes the folders of all
-open projects, the cache root and the current directory. At build time, a
-selected or discovered toolchain whose canonical path lies inside the open
-project's canonical folder is refused with `B2C-T1002`.
+**Never searched:** the open projects' folders, each as a tree, except that
+a project folder which is the user's home folder or a file-system or drive
+root is excluded as that folder only; the build cache; the process's current
+directory (that folder only); removable or network (UNC) paths (a UNC
+toolchain can be added manually, with a warning); and relative `PATH`
+entries. This prevents *binary planting*, where a project folder ships its
+own `g++.exe`. "That folder only" means the files directly in it, not its
+subfolders, so that starting the app from `/`, or saving a project directly
+in the home folder, never hides `/usr/bin` or `~/.local/bin`. At startup the
+app makes an empty owner-only folder (`<cache>/cwd/`) its current directory;
+the CLI keeps the caller's. The same folder rule applies to a rescan, to the
+build-time check (`B2C-T1002`: a selected or discovered toolchain whose
+canonical path lies in the open project's canonical folder is refused) and
+to *Choose g++ manually…*. A compiler a search skips is listed with its
+reason: inside an open project's folder, inside the build cache, in the
+current directory, or on a network folder. Its file is looked at, but it is
+never run; folders on a network share are not looked into at all.
 
 **Adding a compiler manually** (*Choose g++ manually…*,
 `toolchain_add_dialog`): the user picks the file in a native dialog. The
@@ -66,10 +77,10 @@ last, which is usually the folder a project was just opened from. On
 Windows only a file named exactly `g++.exe` is accepted (`.bat`, `.cmd` and
 anything else give `B2C-T1002`); a network path is accepted with the warning
 `B2C-T1020`. The file is canonicalised; a file whose canonical path lies
-inside an open project's folder or the build cache is refused with
-`B2C-T1002` before it is probed, because probing runs it (the current
-directory is not refused here: a compiler chosen by its full path does not
-depend on it, and the app often starts in the user's home folder). Otherwise
+inside an open project's folder (with the folder rule above) or the build
+cache is refused with `B2C-T1002` before it is probed, because probing runs
+it (the current directory is not refused here: a compiler chosen by its full
+path does not depend on it). Otherwise
 the file is probed and stored with the source *manual*, even when it fails
 health checks (it is then listed as not usable, with its problems). Only a
 file that is refused, or that cannot be probed at all, is not added: the
@@ -96,6 +107,14 @@ runs in a private temporary directory (inside the owner-only
 [05 §5.9](05-project-format.md#59-machine-local-data)), which the app and the
 CLI share.
 
+A compiler whose probe timed out is probed once more with a 30 s timeout
+before it is reported unusable (security software can delay the first start
+of a new program); the setup page says so while that runs ("Checking g++
+again…"). A probe in which any invocation timed out reports `B2C-T1023`
+(it timed out; check it again with *Rescan*) instead of "did not run" or
+"broken", is not usable, and is not reused: the compiler is probed again the
+next time it is needed.
+
 | Probe | Method | Used for |
 | ------- | -------- | ---------- |
 | Version | `g++ -dumpfullversion` (fallback `-dumpversion`) | Minimum-version check, feature defaults |
@@ -116,7 +135,10 @@ displayPath, source, usable, selected, capabilities, problems }`.
 sanitizers and SARIF diagnostics are available; `problems` holds the probe's
 diagnostics. `flavor` is a display name derived from the location (*MSYS2
 UCRT64*, *WinLibs*, *System*, …) or `null`, and `source` is `path`,
-`wellKnown` or `manual`.
+`wellKnown` or `manual`. With the list come the compilers the last discovery
+skipped, each as `{ displayPath, reason }` with `reason` one of
+`projectFolder`, `buildCache`, `currentFolder` and `networkFolder`, and
+`rechecking`, which is `true` while a second probe after a timeout runs.
 
 ## 7.4 From build options to `argv`
 

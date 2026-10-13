@@ -13,7 +13,7 @@ import type {
   ToolchainOutcome,
 } from './controller';
 import { RESCAN_LABEL, SetupGuide } from './SetupGuide';
-import { ProblemList, ToolchainList } from './ToolchainList';
+import { ProblemList, SkippedList, ToolchainList } from './ToolchainList';
 import { displayText, toolchainName } from './reasons';
 import './toolchain.css';
 
@@ -28,11 +28,16 @@ export function pageTitle(needsSetup: boolean): string {
   return needsSetup ? 'Set up a C++ compiler' : 'C++ compiler';
 }
 
+/** What the page says while a compiler whose check timed out is checked once more (07 §7.3). */
+export const RECHECKING_TEXT = 'Checking g++ again…';
+
 /**
  * The toolchain page (docs/spec/04-user-interface.md §4.6). In M2 the setup page and the
  * toolchain list are one page: while no compiler can build, it explains what a compiler is and how
  * to install g++ on this platform; it always offers *Rescan* and *Choose g++ manually…* and lists
- * every compiler found, with *Select as default*.
+ * every compiler found, with *Select as default*, and the compilers a search skipped because of
+ * where they are (07 §7.2). While a compiler whose check timed out is checked once more, it says
+ * so (07 §7.3).
  */
 export function ToolchainPage({ controller }: { controller: ToolchainController }) {
   const { list, discovering, setupInfo, usable, current, hasProject, appPlatform } = useAppStore(
@@ -46,7 +51,7 @@ export function ToolchainPage({ controller }: { controller: ToolchainController 
       appPlatform: state.appInfo?.platform ?? null,
     })),
   );
-  const { busy, selecting, outcome } = useStore(controller.page);
+  const { busy, selecting, outcome, skipped, rechecking } = useStore(controller.page);
   const platform: Platform | null = setupInfo?.platform ?? appPlatform;
   // The steps stay while the person's own rescan runs, so the page does not jump under them.
   const showGuide = !usable && (!discovering || busy === 'rescan');
@@ -62,7 +67,14 @@ export function ToolchainPage({ controller }: { controller: ToolchainController 
       }}
     >
       <div data-testid="toolchain-status">
-        {discovering ? (
+        {rechecking ? (
+          <Notice tone="info">
+            <p>
+              {RECHECKING_TEXT} The first check of a compiler did not finish in time, so it is
+              checked once more and given up to 30 seconds.
+            </p>
+          </Notice>
+        ) : discovering ? (
           <Notice tone="info">
             <p>Looking for g++ on this computer… The list below updates when the search ends.</p>
           </Notice>
@@ -113,7 +125,11 @@ export function ToolchainPage({ controller }: { controller: ToolchainController 
             }}
           >
             {busy === 'rescan' ? (
-              'Looking for g++…'
+              rechecking ? (
+                RECHECKING_TEXT
+              ) : (
+                'Looking for g++…'
+              )
             ) : showGuide ? (
               <>
                 I installed it<span aria-hidden="true"> →</span>
@@ -149,6 +165,15 @@ export function ToolchainPage({ controller }: { controller: ToolchainController 
           }}
         />
       </PageSection>
+
+      {skipped.length > 0 && (
+        <PageSection title="Compilers that were skipped" testId="toolchain-skipped-section">
+          <p>
+            These programs look like g++, but Blocks2Cpp never runs them because of where they are.
+          </p>
+          <SkippedList skipped={skipped} />
+        </PageSection>
+      )}
     </FeaturePage>
   );
 }

@@ -321,8 +321,8 @@ separately.
 | `trust_get` | `{ handle }` | `{ trust }` | |
 | `trust_grant` | `{ handle }` | `{ trust }` | Shows the **native** trust dialog from the backend, so the webview cannot silently grant trust. Returns the unchanged trust when the user stays in Restricted Mode or cancels. |
 | `trust_revoke` | `{ handle }` | `{ trust }` | Removes the project's own record; trust that comes from a folder remains and is reported. |
-| `toolchain_list` | `{}` | `{ toolchains, discovering }` | Cached results; `discovering` is `true` while background discovery runs. |
-| `toolchain_rescan` | `{}` | `{ toolchains, discovering }` | Discovers and probes again. |
+| `toolchain_list` | `{}` | `{ toolchains, discovering, skipped?, rechecking? }` | Cached results; `discovering` is `true` while background discovery runs. `skipped` lists the compilers the last discovery skipped because of where they are, as `{ displayPath, reason }`; `rechecking` is `true` while a compiler whose probe timed out is probed once more ([07 §7.2–§7.3](07-toolchain-build-run.md#72-discovery)). Both are left out when empty or `false`. |
+| `toolchain_rescan` | `{}` | `{ toolchains, discovering, skipped?, rechecking? }` | Discovers and probes again. |
 | `toolchain_add_dialog` | `{}` | cancelled, or `{ toolchain }` | The user picks a `g++` executable in a native dialog. A file that is not an acceptable g++ (`B2C-T1002`, also for a file inside an open project's folder or the build cache, refused before it is run) or cannot be probed gives `toolchainRejected`; a probed compiler is added even when it is not usable (`usable: false`, with its problems). |
 | `toolchain_select` | `{ toolchainId }` | `{}` | The only way to change the selected toolchain in the settings. |
 | `toolchain_setup_info` | `{}` | `{ platform, noUsableToolchain, distro }` | `platform` is `windows` or `linux`; `distro` is `{ id, idLike }` from `os-release`, or `null` ([04 §4.6](04-user-interface.md#46-toolchain-setup-experience)). |
@@ -355,7 +355,8 @@ permission, so the webview cannot call `listen()`.
 
 * **App events** (`app_subscribe`), tagged by `kind`:
   `projectChangedOnDisk { handle, deleted }`,
-  `toolchainsUpdated { toolchains, discovering }`,
+  `toolchainsUpdated { toolchains, discovering, skipped?, rechecking? }` (also
+  sent when a second probe after a timeout starts and ends),
   `settingsNotice { notices }` and `closeRequested`. `toolchain_list` also
   returns `discovering`, so an event sent before the subscription is not
   missed.

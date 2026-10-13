@@ -1,10 +1,10 @@
 /**
  * Why a compiler was rejected or needs attention, in a few plain words per toolchain code
- * (docs/reference/diagnostics/toolchain.md, docs/spec/07-toolchain-build-run.md §7.2–§7.3). The
- * backend's diagnostic message says what exactly happened; the summary says what kind of problem
- * it is and what to do.
+ * (docs/reference/diagnostics/toolchain.md, docs/spec/07-toolchain-build-run.md §7.2–§7.3), and
+ * why a search skipped a compiler. The backend's diagnostic message says what exactly happened;
+ * the summary says what kind of problem it is and what to do.
  */
-import type { Diagnostic, Toolchain } from '@blocks2cpp/ipc-types';
+import type { Diagnostic, SkipReason, Toolchain } from '@blocks2cpp/ipc-types';
 
 import { visibleInvisibles } from '../../panels/shared/invisibles';
 
@@ -54,7 +54,31 @@ export const REASONS: Readonly<Record<string, ReasonSummary>> = {
     title: 'The compiler is on a network folder',
     fix: 'Install the compiler on a local disk: builds are slower, and anyone who can change that folder can change what runs on this computer.',
   },
+  'B2C-T1023': {
+    title: 'Checking the compiler took too long',
+    fix: 'Press Rescan to check it again. The computer may have been busy, or security software may have been checking the compiler the first time it ran.',
+  },
 };
+
+/** Why a search skipped a compiler (07 §7.2), as a sentence. */
+export const SKIP_REASONS: Readonly<Record<SkipReason, string>> = {
+  projectFolder:
+    "It is inside an open project's folder, and a project must never bring its own compiler.",
+  buildCache: "It is inside Blocks2Cpp's build cache.",
+  currentFolder: 'It is in the folder Blocks2Cpp was started from, which is never searched.',
+  networkFolder:
+    'It is on a network folder. If you trust that folder, choose it with Choose g++ manually….',
+};
+
+/** What to say for a skip reason this version does not know. */
+export const GENERIC_SKIP_REASON = 'It is in a folder that is never searched.';
+
+/** Why a compiler was skipped, as a sentence; a reason this version does not know is generic. */
+export function skipReasonText(reason: string): string {
+  return Object.hasOwn(SKIP_REASONS, reason)
+    ? SKIP_REASONS[reason as SkipReason]
+    : GENERIC_SKIP_REASON;
+}
 
 /** The most problems listed for one toolchain; the rest are counted. */
 export const MAX_LISTED_PROBLEMS = 10;

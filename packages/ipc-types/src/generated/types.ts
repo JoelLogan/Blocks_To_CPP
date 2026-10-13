@@ -22,7 +22,17 @@ toolchains: Array<Toolchain>,
 /**
  * Whether discovery is still running.
  */
-discovering: boolean, } | { "kind": "settingsNotice",
+discovering: boolean,
+/**
+ * The compilers the last discovery skipped because of where they are;
+ * omitted when there are none.
+ */
+skipped?: Array<SkippedToolchain>,
+/**
+ * Whether a compiler whose check timed out is being checked once
+ * more; omitted when false.
+ */
+rechecking?: boolean, } | { "kind": "settingsNotice",
 /**
  * What happened to which keys.
  */
@@ -1111,6 +1121,26 @@ settings: Settings, };
 export type Severity = "info" | "warning" | "error";
 
 /**
+ * Why discovery skipped a compiler it found
+ * (`docs/spec/07-toolchain-build-run.md` §7.2).
+ */
+export type SkipReason = "projectFolder" | "buildCache" | "currentFolder" | "networkFolder";
+
+/**
+ * A compiler discovery found but skipped because of where it is; it is never
+ * run.
+ */
+export type SkippedToolchain = {
+/**
+ * Where it is, for display only: the path it was found as.
+ */
+displayPath: string,
+/**
+ * Why it was skipped.
+ */
+reason: SkipReason, };
+
+/**
  * A recovery snapshot.
  */
 export type SnapshotId = `sn_${string}`;
@@ -1322,7 +1352,17 @@ toolchains: Array<Toolchain>,
  * Whether background discovery is still running; a `toolchainsUpdated` app
  * event follows when it finishes.
  */
-discovering: boolean, };
+discovering: boolean,
+/**
+ * The compilers the last discovery skipped because of where they are, in
+ * discovery order; omitted when there are none.
+ */
+skipped?: Array<SkippedToolchain>,
+/**
+ * Whether a compiler whose check timed out is being checked once more,
+ * with a longer timeout; omitted when false.
+ */
+rechecking?: boolean, };
 
 /**
  * The request of `toolchain_select`: make a toolchain the default.

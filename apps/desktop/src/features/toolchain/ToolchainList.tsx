@@ -1,11 +1,12 @@
 import type {
   CppStandard,
   Diagnostic,
+  SkippedToolchain,
   Toolchain,
   ToolchainId,
   ToolchainSource,
 } from '@blocks2cpp/ipc-types';
-import { displayText, problemViews, toolchainName } from './reasons';
+import { displayText, problemViews, skipReasonText, toolchainName } from './reasons';
 
 /** The most toolchains listed; discovery finds a handful, so this only bounds a broken answer. */
 export const MAX_LISTED_TOOLCHAINS = 100;
@@ -185,6 +186,29 @@ function ToolchainItem({
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * The compilers a search skipped because of where they are (docs/spec/07-toolchain-build-run.md
+ * §7.2): each one's location and why it is never used. They were never run.
+ */
+export function SkippedList({ skipped }: { skipped: readonly SkippedToolchain[] }) {
+  return (
+    <ul className="toolchain-skipped" data-testid="toolchain-skipped">
+      {skipped.map((entry, index) => (
+        <li
+          key={`${entry.displayPath}-${String(index)}`}
+          className="toolchain-skipped-item"
+          data-testid="toolchain-skipped-row"
+        >
+          <span className="feature-path" dir="ltr">
+            <bdi>{displayText(entry.displayPath, MAX_PATH_LENGTH)}</bdi>
+          </span>
+          <p>{skipReasonText(entry.reason)}</p>
+        </li>
+      ))}
+    </ul>
   );
 }
 

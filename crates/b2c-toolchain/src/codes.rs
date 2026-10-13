@@ -51,6 +51,8 @@ pub const NETWORK_PATH: &str = "B2C-T1020";
 pub const LEAKS_UNAVAILABLE: &str = "B2C-T1021";
 /// The selected toolchain is missing or unusable, so another one is used.
 pub const SELECTED_UNAVAILABLE: &str = "B2C-T1022";
+/// Checking the compiler took too long, so whether it works is not known.
+pub const PROBE_TIMED_OUT: &str = "B2C-T1023";
 
 /// An error about the toolchain.
 pub(crate) fn error(code: &str, message: impl Into<String>) -> Diagnostic {
@@ -113,6 +115,38 @@ pub fn inside_project(path: &std::path::Path) -> Diagnostic {
         BAD_TOOLCHAIN_PATH,
         format!(
             "The compiler {} is inside the project's folder, so it is not used: a project must never bring its own compiler.",
+            path.display()
+        ),
+    )
+}
+
+/// The diagnostic for a compiler whose check did not finish within
+/// `timeout` (`B2C-T1023`, error): whether it works is not known, so it is
+/// not used, and it is checked again the next time it is needed (spec §7.3).
+/// It replaces the "broken" or "did not run" verdicts that a check cut short
+/// would otherwise give.
+///
+/// ```
+/// use std::time::Duration;
+///
+/// let diagnostic = b2c_toolchain::codes::probe_timed_out("/usr/bin/g++".as_ref(), Duration::from_secs(30));
+/// assert_eq!(diagnostic.code.0, "B2C-T1023");
+/// assert!(diagnostic.message.contains("30 seconds"));
+/// ```
+pub fn probe_timed_out(path: &std::path::Path, timeout: std::time::Duration) -> Diagnostic {
+    let limit = if timeout.subsec_millis() == 0 {
+        let seconds = timeout.as_secs();
+        format!("{seconds} second{}", if seconds == 1 { "" } else { "s" })
+    } else {
+        format!("{} ms", timeout.as_millis())
+    };
+    error(
+        PROBE_TIMED_OUT,
+        format!(
+            "Checking the compiler {} timed out: a test did not finish within {limit}, so it is not known \
+             whether this compiler works. The computer may have been busy, or security software may have \
+             been checking the compiler. Check it again with Rescan in the toolchain list (or `b2c \
+             toolchains`).",
             path.display()
         ),
     )
@@ -198,6 +232,7 @@ mod tests {
             NETWORK_PATH,
             LEAKS_UNAVAILABLE,
             SELECTED_UNAVAILABLE,
+            PROBE_TIMED_OUT,
         ];
         let mut sorted = codes.to_vec();
         sorted.sort_unstable();
@@ -218,6 +253,31 @@ mod tests {
             Severity::Info
         );
         assert_eq!(warning(CYGWIN, "x").severity, Severity::Warning);
+        let timed_out = probe_timed_out(
+            std::path::Path::new("/usr/bin/g++"),
+            std::time::Duration::from_secs(10),
+        );
+        assert_eq!(timed_out.severity, Severity::Error);
+        assert_eq!(timed_out.code.0, PROBE_TIMED_OUT);
+        assert!(
+            timed_out.message.contains("/usr/bin/g++"),
+            "{}",
+            timed_out.message
+        );
+        assert!(
+            timed_out.message.contains("within 10 seconds"),
+            "{}",
+            timed_out.message
+        );
+        assert!(timed_out.message.contains("Rescan"), "{}", timed_out.message);
+        assert!(!timed_out.message.contains("broken"), "{}", timed_out.message);
+        let short = probe_timed_out(
+            std::path::Path::new("/g++"),
+            std::time::Duration::from_millis(300),
+        );
+        assert!(short.message.contains("within 300 ms"), "{}", short.message);
+        let one = probe_timed_out(std::path::Path::new("/g++"), std::time::Duration::from_secs(1));
+        assert!(one.message.contains("within 1 second,"), "{}", one.message);
         let refused = inside_project(std::path::Path::new("/home/ada/game/g++"));
         assert_eq!(refused.severity, Severity::Error);
         assert_eq!(refused.code.0, BAD_TOOLCHAIN_PATH);

@@ -141,6 +141,25 @@
   font-weight: 700;
 }
 
+.toolchain-skipped {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toolchain-skipped-item {
+  padding: 6px 0;
+}
+
+.toolchain-skipped-item + .toolchain-skipped-item {
+  border-top: 1px solid var(--b2c-border);
+}
+
+.toolchain-skipped-item p {
+  margin: 2px 0 0;
+  color: var(--b2c-text-muted);
+}
+
 .toolchain-problem-code {
   color: var(--b2c-text-muted);
   font-family: ui-monospace, 'Cascadia Mono', 'DejaVu Sans Mono', Consolas, monospace;

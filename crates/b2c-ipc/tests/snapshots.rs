@@ -17,9 +17,9 @@ use b2c_ipc::dto::{
     ProjectOpened, ProjectReloadResponse, ProjectSaveAsDialogResponse, ProjectSaveResponse, ProjectSavedAs,
     RecentEntry, RecentListResponse, RecoveryListResponse, RecoveryRestoreResponse, RestrictedReason,
     RunEvent, RunMode, RunSettings, RunStartResponse, SanitizerKind, SanitizerReport, SanitizerTool,
-    Settings, SettingsGetResponse, SettingsNotice, SettingsUpdateResponse, SnapshotInfo, Toolchain,
-    ToolchainAddDialogResponse, ToolchainCapabilities, ToolchainListResponse, ToolchainSettings,
-    ToolchainSetupInfo, ToolchainSource, Trust, TrustResponse, TrustSource, TrustState,
+    Settings, SettingsGetResponse, SettingsNotice, SettingsUpdateResponse, SkipReason, SkippedToolchain,
+    SnapshotInfo, Toolchain, ToolchainAddDialogResponse, ToolchainCapabilities, ToolchainListResponse,
+    ToolchainSettings, ToolchainSetupInfo, ToolchainSource, Trust, TrustResponse, TrustSource, TrustState,
 };
 use b2c_ipc::{BuildId, Handle, InvalidReason, IoKind, IpcError, RecentId, RunId, SnapshotId, ToolchainId};
 use serde::Serialize;
@@ -248,6 +248,8 @@ fn events() {
         AppEvent::ToolchainsUpdated {
             toolchains: vec![probed_toolchain()],
             discovering: false,
+            skipped: Vec::new(),
+            rechecking: false,
         },
         AppEvent::SettingsNotice {
             notices: vec![SettingsNotice {
@@ -456,6 +458,20 @@ fn responses() {
             round_trip(&ToolchainListResponse {
                 toolchains: vec![probed_toolchain()],
                 discovering: true,
+                skipped: Vec::new(),
+                rechecking: false,
+            }),
+        ),
+        (
+            "ToolchainListResponse",
+            round_trip(&ToolchainListResponse {
+                toolchains: vec![unusable_toolchain()],
+                discovering: true,
+                skipped: vec![SkippedToolchain {
+                    display_path: "/home/ada/game/bin/g++".into(),
+                    reason: SkipReason::ProjectFolder,
+                }],
+                rechecking: true,
             }),
         ),
         (

@@ -8,15 +8,21 @@
 //! at once, while discovery runs in the background and ends with a
 //! `toolchainsUpdated` app event. Discovery never searches the build cache,
 //! the process's current directory or the open projects' folders
-//! ([`Backend::excluded_folders`]).
+//! ([`Backend::excluded_folders`]), with the folder rules of
+//! [`b2c_toolchain::discovery::Exclusions`]. A compiler whose probe timed out
+//! is probed once more; `toolchainsUpdated` is also sent when that starts and
+//! when it ends, so the setup page can say "Checking g++ again…"
+//! ([`Backend::watch_toolchain_rechecks`]).
 
-use std::path::PathBuf;
+use std::sync::{Arc, Weak};
 
 use b2c_ipc::IpcError;
 use b2c_ipc::dto::{
     AppEvent, Empty, ToolchainAddDialogResponse, ToolchainListResponse, ToolchainSelectRequest,
     ToolchainSetupInfo,
 };
+
+use b2c_toolchain::discovery::ExcludedFolder;
 
 use crate::backend::{Backend, command_span};
 use crate::errors::store_error;
@@ -26,22 +32,42 @@ use crate::errors::store_error;
 #[allow(clippy::needless_pass_by_value)]
 impl Backend {
     /// The folders discovery never searches (`docs/spec/07-toolchain-build-run.md`
-    /// §7.2): the build cache, the process's current directory and the folders
-    /// of the open projects.
-    pub fn excluded_folders(&self) -> Vec<PathBuf> {
-        let mut excluded = vec![self.cache_root().to_path_buf()];
-        excluded.extend(self.cwd.clone());
-        excluded.extend(self.projects.folders());
+    /// §7.2): the build cache, the process's current directory (that folder
+    /// only) and the folders of the open projects (each with its tree, except
+    /// a project folder that is the home folder or a root).
+    pub fn excluded_folders(&self) -> Vec<ExcludedFolder> {
+        let mut excluded = vec![ExcludedFolder::cache(self.cache_root())];
+        excluded.extend(self.cwd.clone().map(ExcludedFolder::current_dir));
+        excluded.extend(self.projects.folders().into_iter().map(ExcludedFolder::project));
         excluded
+    }
+
+    /// Sends `toolchainsUpdated` whenever a compiler whose probe timed out
+    /// starts or ends being probed once more, so the setup page can say so
+    /// while it runs (07 §7.3). Called once when the backend starts.
+    pub(crate) fn watch_toolchain_rechecks(self: &Arc<Self>) {
+        let weak: Weak<Self> = Arc::downgrade(self);
+        self.toolchains.on_progress(move || {
+            if let Some(backend) = weak.upgrade() {
+                backend.send_toolchains_updated();
+            }
+        });
     }
 
     /// Sends `toolchainsUpdated` with the current list.
     pub(crate) fn send_toolchains_updated(&self) {
         let list = self.toolchains.list(self.selected_toolchain().as_ref());
-        tracing::debug!(toolchains = list.toolchains.len(), "toolchain list updated");
+        tracing::debug!(
+            toolchains = list.toolchains.len(),
+            skipped = list.skipped.len(),
+            rechecking = list.rechecking,
+            "toolchain list updated"
+        );
         self.events.send(AppEvent::ToolchainsUpdated {
             toolchains: list.toolchains,
             discovering: list.discovering,
+            skipped: list.skipped,
+            rechecking: list.rechecking,
         });
     }
 
@@ -70,14 +96,13 @@ impl Backend {
 
     /// The folders a compiler picked by hand may not lie in, because it would
     /// be run (probed) at once: the open projects' folders, where a
-    /// downloaded project could ship its own "g++" (08 §8.5), and the build
-    /// cache. The current directory is not among them, unlike for discovery:
-    /// a desktop app often starts in the user's home folder, where compilers
-    /// the user installed (Scoop, a GCC built by hand) live, and a compiler
-    /// chosen by its full path does not depend on the current directory.
-    fn manual_compiler_excluded(&self) -> Vec<PathBuf> {
-        let mut excluded = vec![self.cache_root().to_path_buf()];
-        excluded.extend(self.projects.folders());
+    /// downloaded project could ship its own "g++" (08 §8.5), with the same
+    /// folder rules as discovery, and the build cache. The current directory
+    /// is not among them, unlike for discovery: a compiler chosen by its full
+    /// path does not depend on the current directory.
+    fn manual_compiler_excluded(&self) -> Vec<ExcludedFolder> {
+        let mut excluded = vec![ExcludedFolder::cache(self.cache_root())];
+        excluded.extend(self.projects.folders().into_iter().map(ExcludedFolder::project));
         excluded
     }
 

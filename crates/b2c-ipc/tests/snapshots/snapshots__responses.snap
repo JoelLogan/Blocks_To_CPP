@@ -151,6 +151,50 @@ expression: render(&values)
     }
   ]
 }
+--- ToolchainListResponse
+{
+  "discovering": true,
+  "rechecking": true,
+  "skipped": [
+    {
+      "displayPath": "/home/ada/game/bin/g++",
+      "reason": "projectFolder"
+    }
+  ],
+  "toolchains": [
+    {
+      "capabilities": {
+        "sanitizers": false,
+        "sarif": false,
+        "standards": [
+          "c++17"
+        ],
+        "stdFormat": false
+      },
+      "displayPath": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+      "flavor": "MSYS2 UCRT64",
+      "id": "tc_fedcba9876543210",
+      "problems": [
+        {
+          "code": "B2C-T1004",
+          "message": "This compiler is too old: Blocks2Cpp needs GCC 11 or later.",
+          "primary": {
+            "part": {
+              "kind": "whole"
+            }
+          },
+          "severity": "error",
+          "source": "toolchain"
+        }
+      ],
+      "selected": false,
+      "source": "wellKnown",
+      "target": "x86_64-w64-mingw32",
+      "usable": false,
+      "version": "9.4.0"
+    }
+  ]
+}
 --- ToolchainAddDialogResponse
 {
   "status": "cancelled"

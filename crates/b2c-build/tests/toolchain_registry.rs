@@ -2,15 +2,16 @@
 //! temporary folders and a fake prober that never runs them: opening without
 //! probing, rescans, manual compilers, the choice for a build with its
 //! fallbacks and refusals, re-probing changed compilers, the
-//! `toolchains.json` file, exclusions, background discovery and the epoch
-//! that keeps stale scans out.
+//! `toolchains.json` file, exclusions and their folder rules, the skipped
+//! compilers, a second probe after a timeout, background discovery and the
+//! epoch that keeps stale scans out.
 
 // Test code: helpers outside `#[test]`s fail the test by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -20,14 +21,14 @@ use b2c_build::toolchains::{
     toolchain_dto,
 };
 use b2c_ipc::ToolchainId;
-use b2c_ipc::dto::{CppStandard, Platform as IpcPlatform, ToolchainSource};
+use b2c_ipc::dto::{CppStandard, Platform as IpcPlatform, SkipReason, SkippedToolchain, ToolchainSource};
 use b2c_ir::{DiagSource, Diagnostic, Location, Severity};
 use b2c_process::CancelToken;
-use b2c_toolchain::discovery::explicit_candidate;
+use b2c_toolchain::discovery::{ExcludedFolder, explicit_candidate};
 use b2c_toolchain::fingerprint::Fingerprint;
 use b2c_toolchain::probe::{
-    Capabilities, CompilerKind, DiagnosticsFormat, PROBE_FORMAT, PROBE_TIMEOUT, ProbeError, ProbeOptions,
-    Standards, Toolchain,
+    Capabilities, CompilerKind, DiagnosticsFormat, PROBE_FORMAT, PROBE_RETRY_TIMEOUT, PROBE_TIMEOUT,
+    ProbeError, ProbeOptions, Standards, Toolchain,
 };
 use b2c_toolchain::target::{GccVersion, Platform, Target};
 
@@ -39,6 +40,7 @@ const BAD_PATH: &str = "B2C-T1002";
 const NOT_RUNNABLE: &str = "B2C-T1003";
 const CHANGED: &str = "B2C-T1009";
 const SELECTED_UNAVAILABLE: &str = "B2C-T1022";
+const TIMED_OUT: &str = "B2C-T1023";
 
 /// A usable GCC 13 record for the compiler at `fingerprint`.
 fn gcc(fingerprint: Fingerprint) -> Toolchain {
@@ -69,9 +71,12 @@ fn gcc(fingerprint: Fingerprint) -> Toolchain {
 
 /// A prober that never runs anything. The compiler file's text decides the
 /// answer: `broken` gives an unusable compiler, `unprobeable` a probe
-/// failure, anything else a usable GCC 13. It counts calls, remembers the
-/// options and the most probes that ran at once, and can hold its first
-/// call until released.
+/// failure, `slow` a probe that times out unless its timeout is at least
+/// [`PROBE_RETRY_TIMEOUT`] (a compiler that needs between 10 and 30 seconds),
+/// `stuck` one that always times out until [`FakeProber::unstuck`] is set,
+/// anything else a usable GCC 13. It counts calls, remembers the options and
+/// the most probes that ran at once, and can hold its first call until
+/// released.
 #[derive(Default)]
 struct FakeProber {
     calls: AtomicUsize,
@@ -80,6 +85,8 @@ struct FakeProber {
     delay: Option<Duration>,
     options: Mutex<Vec<ProbeOptions>>,
     gate: Option<Gate>,
+    /// Once set, `stuck` compilers answer in time.
+    unstuck: AtomicBool,
 }
 
 /// Holds the first probe until [`Gate::open`].
@@ -151,14 +158,15 @@ impl Prober for FakeProber {
         if let Some(delay) = self.delay {
             std::thread::sleep(delay);
         }
-        let result = answer(path);
+        let result = answer(path, options, self.unstuck.load(Ordering::SeqCst));
         self.running.fetch_sub(1, Ordering::SeqCst);
         result
     }
 }
 
-/// What [`FakeProber`] says about the compiler at `path`.
-fn answer(path: &Path) -> Result<Toolchain, ProbeError> {
+/// What [`FakeProber`] says about the compiler at `path` when probed with
+/// `options`; `stuck` compilers answer in time once `unstuck`.
+fn answer(path: &Path, options: &ProbeOptions, unstuck: bool) -> Result<Toolchain, ProbeError> {
     let fingerprint = Fingerprint::compute(path).map_err(|source| ProbeError::Unreadable {
         path: path.to_path_buf(),
         source,
@@ -168,6 +176,14 @@ fn answer(path: &Path) -> Result<Toolchain, ProbeError> {
         return Err(ProbeError::TempDir(std::io::Error::other("no space left")));
     }
     let mut toolchain = gcc(fingerprint);
+    if (text.contains("stuck") && !unstuck)
+        || (text.contains("slow") && options.timeout < PROBE_RETRY_TIMEOUT)
+    {
+        toolchain
+            .problems
+            .push(b2c_toolchain::codes::probe_timed_out(path, options.timeout));
+        return Ok(toolchain);
+    }
     if text.contains("broken") {
         toolchain.problems.push(Diagnostic::error(
             "B2C-T1006",
@@ -462,7 +478,10 @@ fn compilers_in_excluded_folders_are_never_added_or_run() {
     let registry = root.registry(&[], &prober);
     let project = root.join("Downloads/game");
     let planted = install(&project.join("tools"), "gcc");
-    let excluded = [root.join("cache"), project.clone()];
+    let excluded = [
+        ExcludedFolder::cache(root.join("cache")),
+        ExcludedFolder::project(&project),
+    ];
     let refused = registry.add_explicit(&planted, &excluded).unwrap_err();
     assert_eq!(codes(&refused), [BAD_PATH]);
     assert_eq!(refused[0].severity, Severity::Error);
@@ -592,9 +611,17 @@ fn compilers_inside_the_project_folder_are_refused() {
     let (toolchain, _) = ready(registry.choose(Some(&planted_id), Some(&root.join("tools"))));
     assert_eq!(toolchain.path(), planted);
 
-    // A rescan that excludes the project does not even list it.
-    registry.rescan(std::slice::from_ref(&project), None);
+    // A rescan that excludes the project does not even list it as a
+    // compiler, only as skipped.
+    let listed = registry.rescan(&[ExcludedFolder::project(&project)], None);
     assert_eq!(listed_paths(&registry), [shown(&outside)]);
+    assert_eq!(
+        listed.skipped,
+        [SkippedToolchain {
+            display_path: shown(&planted),
+            reason: SkipReason::ProjectFolder,
+        }]
+    );
 }
 
 #[test]
@@ -709,16 +736,18 @@ fn excluded_folders_and_the_cache_root_are_never_searched() {
     let prober = FakeProber::new();
     let registry = root.registry(&[in_project, in_cache, tools], &prober);
     // The open project is excluded by the caller; the cache root, which
-    // holds the probes' folder, always is.
-    registry.rescan(std::slice::from_ref(&project), None);
+    // holds the probes' folder, always is. Both are listed as skipped.
+    let listed = registry.rescan(&[ExcludedFolder::project(&project)], None);
     assert_eq!(listed_paths(&registry), [shown(&outside)]);
     assert_eq!(prober.calls(), 1);
+    let reasons: Vec<SkipReason> = listed.skipped.iter().map(|skipped| skipped.reason).collect();
+    assert_eq!(reasons, [SkipReason::ProjectFolder, SkipReason::BuildCache]);
     // Through a link, too: exclusions compare canonical paths.
     #[cfg(unix)]
     {
         let link = root.join("link-to-game");
         std::os::unix::fs::symlink(&project, &link).unwrap();
-        registry.rescan(&[link], None);
+        registry.rescan(&[ExcludedFolder::project(link)], None);
         assert_eq!(listed_paths(&registry), [shown(&outside)]);
     }
 }
@@ -797,6 +826,10 @@ fn the_current_directory_is_never_searched() {
     fs::create_dir_all(&elsewhere).unwrap();
     assert_eq!(found_from(&elsewhere, &planted, &root.join("one")), 1);
     assert_eq!(found_from(&planted, &planted, &root.join("two")), 0);
+    // 07 §7.2 (W3-10): the current directory is excluded as that folder
+    // only, so starting from a folder above a compiler (`/`, the home
+    // folder above `~/.local/bin`) does not hide it.
+    assert_eq!(found_from(&root.path, &planted, &root.join("three")), 1);
 }
 
 #[test]
@@ -1065,4 +1098,203 @@ fn ids_are_stable_across_registries() {
         .rescan(&[], None);
     assert_eq!(first.toolchains[0].id, second.toolchains[0].id);
     assert_eq!(first.toolchains[0].id, ToolchainId::for_driver(&gxx));
+}
+
+/// 07 §7.2 (W3-10): a project saved directly in the home folder no longer
+/// hides the compilers installed below it (`~/.local/bin`). The home folder
+/// is excluded as that folder only, by a rescan, by the check before a build
+/// and for a compiler picked by hand; what a rescan skips is listed with the
+/// reason, and is never run.
+#[test]
+fn a_project_in_the_home_folder_excludes_that_folder_only() {
+    let root = Root::new();
+    let home = root.join("home");
+    let local = install(&root.join("home/.local/bin"), "gcc");
+    let planted = install(&home, "gcc");
+    let prober = FakeProber::new();
+    let search = [root.join("home/.local/bin"), home.clone()];
+    let registry = root.registry(&search, &prober).with_home(Some(home.clone()));
+    let in_home = [ExcludedFolder::project(&home)];
+
+    let listed = registry.rescan(&in_home, None);
+    assert_eq!(listed_paths(&registry), [shown(&local)]);
+    assert_eq!(
+        listed.skipped,
+        [SkippedToolchain {
+            display_path: shown(&planted),
+            reason: SkipReason::ProjectFolder,
+        }]
+    );
+    assert_eq!(prober.calls(), 1, "the skipped compiler is never run");
+
+    // The check before a build of the project in the home folder.
+    let (toolchain, notes) = ready(registry.choose(None, Some(&home)));
+    assert_eq!(toolchain.path(), local);
+    assert!(notes.is_empty(), "{notes:?}");
+
+    // Choose g++ manually…
+    assert!(registry.add_explicit(&local, &in_home).is_ok());
+    let refused = registry.add_explicit(&planted, &in_home).unwrap_err();
+    assert_eq!(codes(&refused), [BAD_PATH]);
+    assert_eq!(prober.calls(), 2);
+
+    // A folder not known as the home folder is excluded with its whole tree.
+    let elsewhere = Root::new();
+    let strict = elsewhere.registry(&search, &prober).with_home(None);
+    let listed = strict.rescan(&in_home, None);
+    assert!(listed.toolchains.is_empty());
+    assert_eq!(listed.skipped.len(), 2);
+}
+
+/// 07 §7.3 (W3-12): a compiler whose probe timed out is probed once more
+/// with the 30 s timeout; when that finishes, the compiler is usable, and it
+/// is not probed again while it is unchanged.
+#[test]
+fn a_probe_that_timed_out_is_run_once_more_and_can_succeed() {
+    let root = Root::new();
+    let bin = root.join("bin");
+    install(&bin, "slow");
+    let prober = FakeProber::new();
+    let registry = root.registry(std::slice::from_ref(&bin), &prober);
+    let listed = registry.rescan(&[], None);
+    let timeouts: Vec<Duration> = prober
+        .options
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|options| options.timeout)
+        .collect();
+    assert_eq!(timeouts, [PROBE_TIMEOUT, PROBE_RETRY_TIMEOUT]);
+    let toolchain = &listed.toolchains[0];
+    assert!(toolchain.usable, "{:?}", toolchain.problems);
+    assert!(toolchain.problems.is_empty());
+    assert!(!listed.rechecking);
+    registry.rescan(&[], None);
+    ready(registry.choose(None, None));
+    assert_eq!(prober.calls(), 2);
+}
+
+/// 07 §7.3 (W3-12): a compiler whose probe always times out gets exactly one
+/// more probe each time it is checked. It is reported as timed out (not as
+/// broken), and since that says nothing about it, it is probed again the
+/// next time it is needed, by a build or a rescan, without a "changed"
+/// note.
+#[test]
+fn a_probe_that_always_times_out_is_retried_exactly_once() {
+    let root = Root::new();
+    let bin = root.join("bin");
+    let gxx = install(&bin, "stuck");
+    let prober = FakeProber::new();
+    let registry = root.registry(std::slice::from_ref(&bin), &prober);
+    let listed = registry.rescan(&[], None);
+    assert_eq!(prober.calls(), 2);
+    let toolchain = &listed.toolchains[0];
+    assert!(!toolchain.usable);
+    assert_eq!(codes_of(&toolchain.problems), [TIMED_OUT]);
+    assert!(
+        toolchain.problems[0].message.contains("within 30 seconds"),
+        "{}",
+        toolchain.problems[0].message
+    );
+
+    let diagnostics = unavailable(registry.choose(None, None));
+    assert_eq!(codes(&diagnostics), [NO_TOOLCHAIN, TIMED_OUT]);
+    assert_eq!(prober.calls(), 4);
+    registry.rescan(&[], None);
+    assert_eq!(prober.calls(), 6);
+
+    // A compiler picked by hand gets one more probe too.
+    let other = Root::new();
+    let picked = install(&other.join("opt/bin"), "stuck");
+    let manual = other.registry(&[], &prober).add_explicit(&picked, &[]).unwrap();
+    assert!(!manual.usable);
+    assert_eq!(codes_of(&manual.problems), [TIMED_OUT]);
+    assert_eq!(prober.calls(), 8);
+
+    // Once it answers in time, it is usable; it did not change, so there is
+    // no "changed" note.
+    prober.unstuck.store(true, Ordering::SeqCst);
+    let id = ToolchainId::for_driver(&gxx);
+    let (toolchain, notes) = ready(registry.choose(Some(&id), None));
+    assert_eq!(toolchain.path(), gxx);
+    assert!(notes.is_empty(), "{notes:?}");
+    assert_eq!(prober.calls(), 9);
+    assert!(registry.list(Some(&id)).toolchains[0].usable);
+}
+
+/// While the second probe runs, the list says `rechecking` and the progress
+/// listener is told when it starts and when it ends.
+#[test]
+fn the_list_says_rechecking_while_the_second_probe_runs() {
+    let root = Root::new();
+    let bin = root.join("bin");
+    install(&bin, "stuck");
+    let prober = FakeProber::new();
+    let registry = Arc::new(root.registry(std::slice::from_ref(&bin), &prober));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let weak = Arc::downgrade(&registry);
+    let record = Arc::clone(&seen);
+    registry.on_progress(move || {
+        if let Some(registry) = weak.upgrade() {
+            let listed = registry.list(None);
+            record
+                .lock()
+                .unwrap()
+                .push((listed.rechecking, listed.discovering));
+        }
+    });
+    let listed = registry.rescan(&[], None);
+    assert_eq!(*seen.lock().unwrap(), [(true, true), (false, true)]);
+    assert!(!listed.rechecking);
+    assert!(!registry.list(None).rechecking);
+    // A compiler that answers in time is never rechecked.
+    let quick = Root::new();
+    let quick_bin = quick.join("bin");
+    install(&quick_bin, "gcc");
+    let quiet = quick.registry(std::slice::from_ref(&quick_bin), &prober);
+    quiet.on_progress(|| panic!("nothing was rechecked"));
+    quiet.rescan(&[], None);
+}
+
+fn codes_of(problems: &[b2c_ipc::diag::Diagnostic]) -> Vec<&str> {
+    problems.iter().map(|problem| problem.code.as_str()).collect()
+}
+
+/// 07 §7.3 (W3-12): a record cached before a timed-out probe was reported as
+/// such (probe format 1) may call a compiler that only timed out a broken
+/// installation (`B2C-T1006`). Such a record is probed again once, even
+/// though the compiler did not change.
+#[test]
+fn records_from_before_the_timeout_rule_are_probed_again() {
+    let root = Root::new();
+    let bin = root.join("bin");
+    install(&bin, "gcc");
+    let prober = FakeProber::new();
+    root.registry(std::slice::from_ref(&bin), &prober)
+        .rescan(&[], None);
+    assert_eq!(prober.calls(), 1);
+
+    // What an older version saved after its probe timed out.
+    let mut json: serde_json::Value = serde_json::from_slice(&fs::read(root.store()).unwrap()).unwrap();
+    let probe = &mut json["toolchains"][0]["probe"];
+    probe["format"] = serde_json::json!(1);
+    probe["problems"] = serde_json::json!([{
+        "code": "B2C-T1006",
+        "severity": "error",
+        "message": "/usr/bin/g++ could not build and run a tiny test program, so the installation is probably broken or incomplete. Reinstall the compiler.",
+        "primary": {"module": null, "block": null, "part": {"kind": "whole"}},
+        "related": [],
+        "source": "toolchain",
+        "raw": null
+    }]);
+    fs::write(root.store(), serde_json::to_vec(&json).unwrap()).unwrap();
+    let reopened = root.registry(std::slice::from_ref(&bin), &prober);
+    assert!(
+        !reopened.list(None).toolchains[0].usable,
+        "the old record is read"
+    );
+
+    let listed = reopened.rescan(&[], None);
+    assert_eq!(prober.calls(), 2);
+    assert!(listed.toolchains[0].usable, "{:?}", listed.toolchains[0].problems);
 }

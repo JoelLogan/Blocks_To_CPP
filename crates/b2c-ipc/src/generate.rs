@@ -175,6 +175,7 @@ pub fn type_decls() -> Vec<TypeDecl> {
         TrustRevokeRequest, TrustResponse,
         // Toolchains.
         Toolchain, ToolchainSource, ToolchainCapabilities, CppStandard, ToolchainListResponse,
+        SkippedToolchain, SkipReason,
         ToolchainAddDialogResponse, ToolchainSelectRequest, ToolchainSetupInfo, Distro,
         // Builds.
         BuildConfig, BuildStartRequest, BuildStartResponse, BuildCancelRequest,
