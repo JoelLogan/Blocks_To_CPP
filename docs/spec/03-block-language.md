@@ -261,7 +261,11 @@ The analyser implements a **gradual** type system that approximates C++:
 * **Scope follows C++.** A variable is visible from its declaration to the end
   of the enclosing statement list, including nested blocks. Symbol dropdowns
   list **only** the symbols in scope at that block. Dragging a block out of
-  scope marks its references as errors in place. The dropdowns of blocks that
+  scope marks its references as errors in place; a *set* or *change* just
+  taken from the toolbox is the exception: if its variable is not visible
+  where it is dropped, it takes the first fitting variable visible there, in
+  the same Undo step (a getter keeps its variable and shows `B2C-E0203`;
+  [04 §4.2](04-user-interface.md#42-toolbox)). The dropdowns of blocks that
   change a variable (*set*, *change* and *ask*) list only what may be
   changed there: they leave out constants, a `for` loop's counter inside its
   loop and read-only parameters, and *change*, whatever its operator, also
@@ -275,7 +279,11 @@ The analyser implements a **gradual** type system that approximates C++:
   disabled statement lists what is visible at that statement. A block the
   analysis has not seen yet (just dropped or pasted) lists what its place
   gives it: what the statement before it, or the list or input around it,
-  sees, or, on the canvas, the end of `main`'s body.
+  sees, or, on the canvas, the end of `main`'s body. A block still in the
+  toolbox has no place in the program: its dropdowns list every variable
+  (or function) of the module shown that it may take, grouped by the
+  function that declares it, like the Variables category
+  ([04 §4.2](04-user-interface.md#42-toolbox)).
 * **Unlike Scratch, there are no implicit globals.** *Make a variable* in the
   Variables category asks for a name and a type (`int` by default) and
   inserts a declaration before the selected statement (or at the top of the
