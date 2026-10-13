@@ -390,7 +390,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   root, are now excluded from compiler discovery as that folder only. This
   applies to a rescan, the check before a build (`B2C-T1002`) and _Choose g++
   manually…_. The desktop app now works in an empty owner-only folder,
-  `<cache>/cwd`; the CLI keeps the caller's folder.
+  `<cache>/cwd`; the CLI keeps the caller's folder. The project dialogs start
+  in the project's own folder, or in the documents or home folder, never in
+  the app's working folder.
 - The A/B benchmark job runs each benchmark on its own. A benchmark the base
   build cannot run (its end-to-end hook lacks a method the benchmark calls)
   is skipped with a notice, and a benchmark that fails is left out of the

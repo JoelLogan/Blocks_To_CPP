@@ -202,9 +202,11 @@ enum LaunchError {
 /// the caller's current directory.
 ///
 /// The folder is created owner-only, never through a link
-/// ([`b2c_store::ensure_private_dir`]). Nothing ever writes to it; a folder
-/// that is not empty is used anyway, with a warning, since nothing in it is
-/// run or read.
+/// ([`b2c_store::ensure_private_dir`]). Nothing ever writes to it: in
+/// particular the project dialogs never start there
+/// (`project_start_folder` in `dialogs.rs`), as GTK's save dialog would when given
+/// no folder. A folder that is not empty is used anyway, with a warning,
+/// since nothing in it is run or read.
 ///
 /// # Errors
 /// When the folder cannot be created as a private folder (for example

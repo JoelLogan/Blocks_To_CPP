@@ -534,14 +534,21 @@ impl Backend {
         let _span = command_span("project_save_as_dialog");
         let document = b2c_ipc::parse_document(&request.document)?;
         let bytes = canonical_bytes(&document)?;
-        let suggested = {
+        let (suggested, folder) = {
             let entry_ref = self.projects.get(&request.handle)?;
             let entry = lock(&entry_ref);
-            suggested_file_name(entry.path.as_deref(), &document.project.name)
+            (
+                suggested_file_name(entry.path.as_deref(), &document.project.name),
+                entry
+                    .path
+                    .as_deref()
+                    .and_then(Path::parent)
+                    .map(Path::to_path_buf),
+            )
         };
         let picked = {
             let _dialog = self.dialog_gate.enter()?;
-            self.dialogs.save_project_as(&suggested)
+            self.dialogs.save_project_as(&suggested, folder.as_deref())
         };
         let Some(picked) = picked else {
             return Ok(ProjectSaveAsDialogResponse::Cancelled);

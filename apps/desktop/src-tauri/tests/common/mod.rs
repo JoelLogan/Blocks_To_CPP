@@ -63,7 +63,7 @@ impl Dialogs for NoDialogs {
     fn open_project(&self) -> Option<PathBuf> {
         None
     }
-    fn save_project_as(&self, _suggested_file_name: &str) -> Option<PathBuf> {
+    fn save_project_as(&self, _suggested_file_name: &str, _folder: Option<&Path>) -> Option<PathBuf> {
         None
     }
     fn pick_compiler(&self) -> Option<PathBuf> {

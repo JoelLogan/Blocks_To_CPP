@@ -338,6 +338,9 @@ fn save_as_writes_only_the_new_file_and_rebinds() {
         ProjectSaveAsDialogResponse::Cancelled
     );
     assert_eq!(app.dialogs.suggestions(), ["old.b2c"]);
+    // It starts in the project's own folder, never in the current directory.
+    let folder = std::fs::canonicalize(old.parent().unwrap()).unwrap();
+    assert_eq!(app.dialogs.save_folders(), [Some(folder)]);
 
     let new = app.projects().join("new.b2c");
     app.dialogs.will_save_as(&new);
@@ -410,6 +413,8 @@ fn the_first_save_of_a_new_project_goes_through_save_as() {
         .unwrap();
     assert!(matches!(response, ProjectSaveAsDialogResponse::Ok(_)));
     assert_eq!(app.dialogs.suggestions(), ["Hello World.b2c"]);
+    // A project without a file has no folder: the dialog picks one.
+    assert_eq!(app.dialogs.save_folders(), [None]);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), created.document);
     // Trust is recorded for the file.
     let trust = app

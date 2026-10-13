@@ -30,14 +30,19 @@ use crate::limits::{MAX_DIALOG_LIBRARIES, MAX_DIALOG_TEXT_CHARS, MAX_SUGGESTED_S
 /// [`TrustChoice::StayRestricted`]).
 pub trait Dialogs: Send + Sync {
     /// "Open project": a `*.b2c` file to open. The path need not be canonical;
-    /// the backend canonicalises it.
+    /// the backend canonicalises it. The dialog never starts in the process's
+    /// current directory (the desktop app's is an empty folder inside its
+    /// cache).
     fn open_project(&self) -> Option<PathBuf>;
 
     /// "Save project as", starting with `suggested_file_name` (for example
-    /// `Guessing Game.b2c`). Returns the file to write, with its extension (an
-    /// implementation adds `.b2c` when the user typed none). It may not exist
-    /// yet; when it does, the dialog has asked whether to replace it.
-    fn save_project_as(&self, suggested_file_name: &str) -> Option<PathBuf>;
+    /// `Guessing Game.b2c`) in `folder`, the folder of the project's file
+    /// when it has one, and otherwise in the user's documents or home folder,
+    /// never in the process's current directory. Returns the file to write,
+    /// with its extension (an implementation adds `.b2c` when the user typed
+    /// none). It may not exist yet; when it does, the dialog has asked
+    /// whether to replace it.
+    fn save_project_as(&self, suggested_file_name: &str, folder: Option<&Path>) -> Option<PathBuf>;
 
     /// "Choose g++ manually…": the compiler executable to add.
     fn pick_compiler(&self) -> Option<PathBuf>;

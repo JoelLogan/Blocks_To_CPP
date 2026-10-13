@@ -12,7 +12,9 @@
 //! dialogs and Task Dialogs.
 //!
 //! *Choose g++* starts in a system folder with no file chosen, never in the
-//! folder used last (usually the open project's own).
+//! folder used last (usually the open project's own). The project dialogs
+//! start in the project's own folder, or in the user's documents or home
+//! folder ([`project_start_folder`]), never in the app's current directory.
 //!
 //! Every method blocks the calling command thread (never the main thread)
 //! until the user answers: the plugin shows the dialog on the main thread and
@@ -69,6 +71,20 @@ impl<R: Runtime> NativeDialogs<R> {
         dialog
     }
 
+    /// Where a project dialog starts ([`project_start_folder`]): `own`, the
+    /// project's folder, or the user's documents or home folder. On Windows
+    /// only `own`: without a folder the common dialog starts in the one it
+    /// used last, never in the current directory.
+    fn project_folder(&self, own: Option<&Path>) -> Option<PathBuf> {
+        let fallbacks = if cfg!(windows) {
+            Vec::new()
+        } else {
+            let paths = self.app.path();
+            vec![paths.document_dir().ok(), paths.home_dir().ok()]
+        };
+        project_start_folder(own, fallbacks)
+    }
+
     /// A file dialog titled `title`, in front of the editor window.
     fn file_dialog(&self, title: &str) -> Option<FileDialogBuilder<R>> {
         let builder = self.plugin()?.file().set_title(title);
@@ -105,18 +121,24 @@ impl<R: Runtime> NativeDialogs<R> {
 
 impl<R: Runtime> Dialogs for NativeDialogs<R> {
     fn open_project(&self) -> Option<PathBuf> {
-        let builder = self
+        let mut builder = self
             .file_dialog("Open project")?
             .add_filter(PROJECT_FILTER, &[PROJECT_EXTENSION]);
+        if let Some(folder) = self.project_folder(None) {
+            builder = builder.set_directory(folder);
+        }
         let picked = wait(|reply| builder.pick_file(move |path| send(&reply, path))).flatten()?;
         local_path(picked)
     }
 
-    fn save_project_as(&self, suggested_file_name: &str) -> Option<PathBuf> {
-        let builder = self
+    fn save_project_as(&self, suggested_file_name: &str, folder: Option<&Path>) -> Option<PathBuf> {
+        let mut builder = self
             .file_dialog("Save project as")?
             .set_file_name(suggested_file_name)
             .add_filter(PROJECT_FILTER, &[PROJECT_EXTENSION]);
+        if let Some(folder) = self.project_folder(folder) {
+            builder = builder.set_directory(folder);
+        }
         let picked = wait(|reply| builder.save_file(move |path| send(&reply, path))).flatten()?;
         let (path, added) = with_project_extension(local_path(picked)?);
         // The dialog asked about replacing the name the user typed; when we
@@ -261,6 +283,25 @@ pub(crate) fn with_project_extension(picked: PathBuf) -> (PathBuf, bool) {
     name.push(".");
     name.push(PROJECT_EXTENSION);
     (PathBuf::from(name), true)
+}
+
+/// Where a project dialog (*Open project*, *Save project as*) starts: the
+/// first of `own` (the project's folder) and `fallbacks` (the user's
+/// documents and home folders) that is an existing folder given as an
+/// absolute path, or `None` to let the system decide.
+///
+/// Never the process's current directory, where GTK 3 starts a save dialog
+/// that is given no folder: the desktop app's is an empty folder inside its
+/// cache (`<cache>/cwd`, [`crate::enter_working_folder`]), and a project
+/// saved there with a press of Enter would be lost with the cache.
+pub(crate) fn project_start_folder(
+    own: Option<&Path>,
+    fallbacks: impl IntoIterator<Item = Option<PathBuf>>,
+) -> Option<PathBuf> {
+    own.map(Path::to_path_buf)
+        .into_iter()
+        .chain(fallbacks.into_iter().flatten())
+        .find(|folder| folder.is_absolute() && folder.is_dir())
 }
 
 /// Where the *Choose g++* dialog starts: on Windows the system drive's root
@@ -410,6 +451,45 @@ mod tests {
         );
         let (path, added) = with_project_extension(PathBuf::from("/"));
         assert_eq!((path.as_path(), added), (Path::new("/"), false));
+    }
+
+    /// The project dialogs start in the project's folder, else the
+    /// documents folder, else the home folder; never in the current
+    /// directory (GTK's choice for a save dialog given no folder, which is
+    /// the app's working folder inside its cache).
+    #[test]
+    fn project_dialogs_start_in_a_known_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let [own, documents, home] = ["game", "Documents", "home"].map(|name| {
+            let folder = dir.path().join(name);
+            std::fs::create_dir(&folder).unwrap();
+            folder
+        });
+        let gone = dir.path().join("gone");
+        let fallbacks = || [Some(documents.clone()), Some(home.clone())];
+
+        assert_eq!(project_start_folder(Some(&own), fallbacks()), Some(own.clone()));
+        assert_eq!(project_start_folder(None, fallbacks()), Some(documents.clone()));
+        // A folder that no longer exists, or a relative one, is skipped.
+        assert_eq!(
+            project_start_folder(Some(&gone), fallbacks()),
+            Some(documents.clone())
+        );
+        assert_eq!(
+            project_start_folder(Some(Path::new("game")), fallbacks()),
+            Some(documents.clone())
+        );
+        assert_eq!(
+            project_start_folder(None, [None, Some(home.clone())]),
+            Some(home.clone())
+        );
+        assert_eq!(
+            project_start_folder(None, [Some(gone), Some(home.clone())]),
+            Some(home)
+        );
+        // Nothing known: the system decides (never the current directory).
+        assert_eq!(project_start_folder(None, [None, None]), None);
+        assert_eq!(project_start_folder(None, []), None);
     }
 
     #[test]

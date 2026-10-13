@@ -201,6 +201,7 @@ pub struct FakeDialogs {
     trust: Mutex<VecDeque<TrustChoice>>,
     prompts: Mutex<Vec<TrustPrompt>>,
     suggestions: Mutex<Vec<String>>,
+    save_folders: Mutex<Vec<Option<PathBuf>>>,
     calls: AtomicUsize,
     hold: Mutex<bool>,
     inside: AtomicUsize,
@@ -243,6 +244,11 @@ impl FakeDialogs {
         self.suggestions.lock().unwrap().clone()
     }
 
+    /// The folders the save dialog was asked to start in so far.
+    pub fn save_folders(&self) -> Vec<Option<PathBuf>> {
+        self.save_folders.lock().unwrap().clone()
+    }
+
     /// How many dialogs were shown.
     pub fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
@@ -283,12 +289,16 @@ impl Dialogs for FakeDialogs {
         self.open.lock().unwrap().pop_front().flatten()
     }
 
-    fn save_project_as(&self, suggested_file_name: &str) -> Option<PathBuf> {
+    fn save_project_as(&self, suggested_file_name: &str, folder: Option<&Path>) -> Option<PathBuf> {
         self.shown();
         self.suggestions
             .lock()
             .unwrap()
             .push(suggested_file_name.to_owned());
+        self.save_folders
+            .lock()
+            .unwrap()
+            .push(folder.map(Path::to_path_buf));
         self.save_as.lock().unwrap().pop_front().flatten()
     }
 

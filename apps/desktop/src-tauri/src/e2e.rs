@@ -308,7 +308,7 @@ impl Dialogs for ScriptedDialogs {
         lock(&self.open).pop_front().flatten()
     }
 
-    fn save_project_as(&self, _suggested_file_name: &str) -> Option<PathBuf> {
+    fn save_project_as(&self, _suggested_file_name: &str, _folder: Option<&Path>) -> Option<PathBuf> {
         lock(&self.save_as).pop_front().flatten()
     }
 
