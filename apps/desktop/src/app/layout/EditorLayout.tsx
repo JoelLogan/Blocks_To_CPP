@@ -1,3 +1,4 @@
+import type { LayoutPatch, LayoutSettings } from '@blocks2cpp/ipc-types';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
   type ReactNode,
@@ -18,6 +19,7 @@ import { problemCount } from '../store/selectors';
 import { ChevronIcon } from '../ui/icons';
 import { type FlyoutLayout, listenToFlyoutLayout } from './flyoutLayout';
 import { focusIfLost } from './focus';
+import { rememberLayout } from './rememberedLayout';
 import {
   BOTTOM_DOCK,
   clampSize,
@@ -67,7 +69,11 @@ function isBottomTab(value: string): value is BottomTab {
  * Blockly's toolbox on its left) in the centre, the C++ dock on the right and the dock with the
  * console, Problems and the build output at the bottom. Both docks can be resized (by pointer or
  * keyboard) and collapsed, and so can the toolbox's flyout be resized, with the *Resize the
- * toolbox* splitter at its right edge; the sizes last for the session.
+ * toolbox* splitter at its right edge.
+ *
+ * The sizes the user gives the toolbox and the docks, and whether each dock is hidden, are
+ * remembered on this computer (05 §5.9 `ui.layout`, through ./rememberedLayout.ts): they are taken
+ * from the settings once, when the settings are first in the store, and each change is handed on.
  *
  * The docks start at a share of the window and follow it until the user resizes them; each is
  * kept within the limits of ./sizes.ts as the window changes, and the C++ dock is hidden when even
@@ -100,8 +106,18 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
   const [rightChosen, setRightChosen] = useState<number | null>(null);
   const [bottomChosen, setBottomChosen] = useState<number | null>(null);
   const [toolbox, setToolbox] = useState<ToolboxEdge | null>(null);
+  /** The width the user gave the toolbox's flyout, or `null` while it keeps its default width. */
+  const [toolboxChosen, setToolboxChosen] = useState<number | null>(null);
+  /** The flyout and the width it was last given, so that each flyout is given a width once. */
+  const toolboxGiven = useRef<{ flyout: FlyoutLayout['setWidth']; width: number } | null>(null);
   /** Whether the C++ dock was hidden because it did not fit (and the user has not touched it). */
   const rightHiddenToFit = useRef(false);
+  /**
+   * Whether each dock is hidden as last remembered (`settings.json`, or the change last handed on),
+   * or `null` before the remembered layout was taken from the settings: until then nothing is
+   * handed on, so the defaults never replace what was remembered.
+   */
+  const rememberedHidden = useRef<{ right: boolean; bottom: boolean } | null>(null);
 
   // Measured before the first paint, and before the editor's own effects lay the canvas out.
   useLayoutEffect(() => {
@@ -146,6 +162,104 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
       });
     });
   }, []);
+
+  // The layout the user left (05 §5.9): taken from the settings once, before the first paint when
+  // the start of the window read them already, or else when they arrive.
+  useLayoutEffect(() => {
+    const restore = (layout: LayoutSettings): void => {
+      if (layout.toolboxWidth !== undefined) {
+        setToolboxChosen(layout.toolboxWidth);
+      }
+      if (layout.rightDockWidth !== undefined) {
+        setRightChosen(layout.rightDockWidth);
+      }
+      if (layout.bottomDockHeight !== undefined) {
+        setBottomChosen(layout.bottomDockHeight);
+      }
+      // Absent means shown, as on the first start.
+      const hidden = {
+        right: layout.rightCollapsed ?? false,
+        bottom: layout.bottomCollapsed ?? false,
+      };
+      rememberedHidden.current = hidden;
+      const { ui, actions } = useAppStore.getState();
+      const patch: { rightCollapsed?: boolean; bottomCollapsed?: boolean } = {};
+      if (hidden.bottom !== ui.bottomCollapsed) {
+        patch.bottomCollapsed = hidden.bottom;
+      }
+      if (hidden.right) {
+        // Hidden by the user: it stays hidden when the window grows.
+        rightHiddenToFit.current = false;
+        if (!ui.rightCollapsed) {
+          patch.rightCollapsed = true;
+        }
+      } else if (ui.rightCollapsed && !rightHiddenToFit.current) {
+        // Shown, unless the window is too small for it now.
+        patch.rightCollapsed = false;
+      }
+      if (patch.rightCollapsed !== undefined || patch.bottomCollapsed !== undefined) {
+        actions.setUi(patch);
+      }
+    };
+    const now = useAppStore.getState().settings.value;
+    if (now !== null) {
+      restore(now.ui.layout);
+      return;
+    }
+    let restored = false;
+    const unsubscribe = useAppStore.subscribe((state) => {
+      const settings = state.settings.value;
+      if (restored || settings === null) {
+        return;
+      }
+      restored = true;
+      unsubscribe();
+      restore(settings.ui.layout);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Hands on each change of whether a dock is hidden, whoever made it (a dock's button or
+  // splitter, or a command that shows the console), except the C++ dock's hiding while it does not
+  // fit: what the user chose stays remembered.
+  useEffect(
+    () =>
+      useAppStore.subscribe((state) => {
+        const remembered = rememberedHidden.current;
+        if (remembered === null) {
+          return;
+        }
+        const change: LayoutPatch = {};
+        if (state.ui.bottomCollapsed !== remembered.bottom) {
+          remembered.bottom = state.ui.bottomCollapsed;
+          change.bottomCollapsed = remembered.bottom;
+        }
+        if (!rightHiddenToFit.current && state.ui.rightCollapsed !== remembered.right) {
+          remembered.right = state.ui.rightCollapsed;
+          change.rightCollapsed = remembered.right;
+        }
+        if (change.bottomCollapsed !== undefined || change.rightCollapsed !== undefined) {
+          rememberLayout(change);
+        }
+      }),
+    [],
+  );
+
+  // Gives the toolbox's flyout the width the user chose: a remembered one once the flyout is there,
+  // and again to a new flyout. Without a choice, the flyout keeps its default width.
+  const toolboxSetWidth = toolbox?.layout.setWidth;
+  useEffect(() => {
+    const given = toolboxGiven.current;
+    if (
+      toolboxSetWidth === undefined ||
+      toolboxChosen === null ||
+      (given?.flyout === toolboxSetWidth && given.width === toolboxChosen)
+    ) {
+      return;
+    }
+    toolboxGiven.current = { flyout: toolboxSetWidth, width: toolboxChosen };
+    toolboxSetWidth(toolboxChosen);
+  }, [toolboxSetWidth, toolboxChosen]);
 
   const { rightCollapsed, bottomCollapsed } = useAppStore(
     useShallow((state) => ({
@@ -250,7 +364,10 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
             min={toolbox.layout.min}
             max={toolbox.layout.max}
             onChange={(width) => {
+              toolboxGiven.current = { flyout: toolbox.layout.setWidth, width };
               toolbox.layout.setWidth(width);
+              setToolboxChosen(width);
+              rememberLayout({ toolboxWidth: Math.round(width) });
             }}
             label="Resize the toolbox"
             className="splitter-toolbox"
@@ -265,7 +382,10 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
           value={rightWidth}
           min={RIGHT_DOCK.min}
           max={rightLimit}
-          onChange={setRightChosen}
+          onChange={(width) => {
+            setRightChosen(width);
+            rememberLayout({ rightDockWidth: width });
+          }}
           onCollapse={() => {
             collapseFromSplitter({ rightCollapsed: true }, rightToggle);
           }}
@@ -309,7 +429,10 @@ export function EditorLayout({ workspace, hidden }: { workspace: ReactNode; hidd
           value={bottomHeight}
           min={BOTTOM_DOCK.min}
           max={bottomLimit}
-          onChange={setBottomChosen}
+          onChange={(height) => {
+            setBottomChosen(height);
+            rememberLayout({ bottomDockHeight: height });
+          }}
           onCollapse={() => {
             collapseFromSplitter({ bottomCollapsed: true }, bottomToggle);
           }}

@@ -321,6 +321,10 @@ M4).
 | `toolchain.selectedId` | `null` or a toolchain ID (`tc_` + 16 hex digits) | `null` |
 | `newProject.standard` | `c++17`, `c++20`, `c++23` or `c++26` | `c++20` |
 | `buildCache.maxBytes` | 256 MiB to 1 TiB | 2 GiB |
+| `ui.layout.toolboxWidth` | 160–1,200 (CSS pixels) | absent |
+| `ui.layout.rightDockWidth` | 200–960 | absent |
+| `ui.layout.bottomDockHeight` | 96–720 | absent |
+| `ui.layout.rightCollapsed`, `ui.layout.bottomCollapsed` | `true` or `false` | absent |
 
 * A missing file means the defaults. A file that is not valid JSON means the
   defaults with a notice; the file is rewritten at the next change. A single
@@ -332,9 +336,19 @@ M4).
 * `settings_get` returns the full settings with defaults filled in, plus the
   notices (`{ key, reason }`, with `reason` one of `invalidValue`,
   `corruptFile`, `newerVersion`). `settings_update` accepts only `codeStyle`,
-  `run` and `console`, each partial, and rejects any other key. Only
-  `toolchain_select` changes `toolchain.selectedId`. Updates are serialised
-  and return the full new settings.
+  `run`, `console` and `ui`, each partial (`ui` takes a partial `layout`),
+  and rejects any other key. Only `toolchain_select` changes
+  `toolchain.selectedId`. Updates are serialised and return the full new
+  settings.
+* `ui.layout` is the editor's layout as the user last left it
+  ([04 §4.1](04-user-interface.md#41-main-window-layout)): the width of the
+  toolbox's flyout, the docks' sizes and whether each dock is hidden. A key
+  is absent until the user first changes it, and while it is absent the
+  first-start rule of 04 §4.1 applies. The app writes the changes together
+  half a second after the last one, so a splitter drag writes the file once.
+  Each value is validated on its own like the others; a `ui` or `ui.layout`
+  that is not an object is reset as a whole, with a notice naming it, and
+  unknown keys inside them are kept.
 * The keys of later milestones, `lints` (M5) and the extra flags and
   `envPassthrough` (M4, [10 §10.1](10-roadmap.md#101-milestones)), are kept
   verbatim when present until then.

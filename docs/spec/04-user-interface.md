@@ -69,8 +69,11 @@
   the docks are resizable by pointer and keyboard, and the docks are
   collapsible. When less than 200 px of canvas would remain, the flyout
   narrows first, then the C++ dock, which is hidden when even its narrowest
-  width does not fit and shown again when it fits. Swapping, splitting and
-  remembering docks, Focus mode and Presentation mode come in M5.
+  width does not fit and shown again when it fits. The flyout's width, the
+  docks' sizes and whether each dock is hidden are remembered on this
+  computer ([05 §5.9](05-project-format.md#59-machine-local-data)); a dock
+  hidden only because it did not fit is remembered as shown. Swapping and
+  splitting docks, Focus mode and Presentation mode come in M5.
 * A canvas opens with the view it was saved with; one saved without a view
   (a template) shows its blocks in the middle of the canvas, or their
   top-left corner when they do not fit, clear of the toolbox.
@@ -514,5 +517,5 @@ greyed-out menu items, buttons or shortcuts that lead nowhere.
 | --- | --- |
 | M3 | Typing in expression slots, *Expand* / *Collapse* and Quick Insert (`Ctrl+Space`); the type picker popover; collection, string, struct, enum, file, error, random and time blocks; multi-module tabs and headers (adding, renaming and deleting modules); *Export* (`project_export_dialog`); the friendly g++ message catalog; globals, constants, math functions, conversions and organisation blocks; Textbook style; the Friendly / C++ label switch and *Show advanced blocks*; toolbox search; the project settings dialog (standard, options, configurations, defines); run options (arguments, working directory, stdin file, external terminal); quick fixes and *Copy bug report*; feature gating in the UI |
 | M4 | Classes, lambdas, memory, templates and concurrency blocks; library packs and the *Libraries* category; Raw C++ blocks and the *Contains Raw C++ (n)* indicator; the extra-flags and environment pass-through settings |
-| M5 | Outline, frames, search, rename (`F2`), go to definition (`F12`), find references (`Shift+F12`), snippets, minimap, tidy-up beyond *Clean up blocks*, collapse to signatures, back/forward and bookmarks; the debugger, breakpoints, trace glow and runtime errors on blocks (§4.11); localisation; the command palette and remappable shortcuts; Focus and Presentation modes; swapping, splitting and remembering docks; High Contrast themes and the checked colour-blind-safe palette; lint levels (*Change level…*, lint lists); build and run settings (timeouts, cache size, link mode, caps); the example gallery and the full template set; *Export diagnostics bundle* |
+| M5 | Outline, frames, search, rename (`F2`), go to definition (`F12`), find references (`Shift+F12`), snippets, minimap, tidy-up beyond *Clean up blocks*, collapse to signatures, back/forward and bookmarks; the debugger, breakpoints, trace glow and runtime errors on blocks (§4.11); localisation; the command palette and remappable shortcuts; Focus and Presentation modes; swapping and splitting docks; High Contrast themes and the checked colour-blind-safe palette; lint levels (*Change level…*, lint lists); build and run settings (timeouts, cache size, link mode, caps); the example gallery and the full template set; *Export diagnostics bundle* |
 | M6 | The updater and the first-run update question, sandboxed runs, installers |

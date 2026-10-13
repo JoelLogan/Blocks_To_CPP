@@ -1,6 +1,8 @@
 import { type BannerRegistry, banners as appBanners } from '../../app/banners';
 import type { Feature } from '../../app/features';
+import { registerLayoutSaver } from '../../app/layout/rememberedLayout';
 import { SettingsController } from './controller';
+import { LayoutWriter } from './layout';
 import { type SettingsSectionRegistry, settingsSections } from './sections';
 import { SettingsNoticesBanner, SettingsPage } from './SettingsPage';
 
@@ -24,6 +26,9 @@ export const SETTINGS_BANNER_ORDER = 100;
  *
  * When `settings.json` had problems at start-up, a window banner says so until the person opens
  * the page or dismisses it; the page lists the notices.
+ *
+ * It also remembers the editor's layout (05 §5.9 `ui.layout`): the changes the layout hands on are
+ * written together half a second after the last one (./layout.ts), and once more at uninstall.
  */
 export function createSettingsFeature(options: SettingsFeatureOptions = {}): Feature {
   const banners = options.banners ?? appBanners;
@@ -43,8 +48,12 @@ export function createSettingsFeature(options: SettingsFeatureOptions = {}): Fea
         />
       );
     }
+    const layoutWriter = new LayoutWriter((layout) => {
+      void controller.saveLayout(layout);
+    });
     const removers = [
       ctx.screens.registerScreen('settings', SettingsScreen),
+      registerLayoutSaver(layoutWriter.change),
       banners.registerBanner('settingsNotices', SettingsBanner, { order: SETTINGS_BANNER_ORDER }),
     ];
     if (ctx.store.getState().settings.value === null) {
@@ -52,10 +61,11 @@ export function createSettingsFeature(options: SettingsFeatureOptions = {}): Fea
       void controller.refresh();
     }
     return () => {
-      controller.dispose();
       for (const remove of removers.reverse()) {
         remove();
       }
+      layoutWriter.flush();
+      controller.dispose();
     };
   };
 }

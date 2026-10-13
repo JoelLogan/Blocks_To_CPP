@@ -1,9 +1,9 @@
 //! Machine-local settings: `settings_get` and `settings_update`.
 //!
 //! `settings_update` takes a strict partial patch of the keys the settings page
-//! edits (code style, run behaviour, console). The other keys are changed only by
-//! their own commands (`toolchain_select`) or not over IPC at all, so a patch that
-//! names them is rejected.
+//! edits (code style, run behaviour, console) and of the editor's layout (`ui`).
+//! The other keys are changed only by their own commands (`toolchain_select`) or
+//! not over IPC at all, so a patch that names them is rejected.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -11,7 +11,7 @@ use crate::commands::IpcRequest;
 use crate::dto::CppStandard;
 use crate::error::{InvalidReason, IpcError};
 use crate::ids::ToolchainId;
-use crate::limits::SCROLLBACK_LINES;
+use crate::limits::{BOTTOM_DOCK_HEIGHT, RIGHT_DOCK_WIDTH, SCROLLBACK_LINES, TOOLBOX_WIDTH};
 use crate::macros::string_enum;
 use crate::schema::{FieldSchema, FieldSpec, ObjectSchema};
 
@@ -141,6 +141,47 @@ pub struct BuildCacheSettings {
     pub max_bytes: u64,
 }
 
+/// The layout of the editor (`docs/spec/04-user-interface.md` §4.1), as the
+/// user last left it. An absent value was never set: the first-start size
+/// applies.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutSettings {
+    /// The width of the toolbox's flyout, within
+    /// [`TOOLBOX_WIDTH`](crate::limits::TOOLBOX_WIDTH).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub toolbox_width: Option<u32>,
+    /// The width of the C++ dock, within
+    /// [`RIGHT_DOCK_WIDTH`](crate::limits::RIGHT_DOCK_WIDTH).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub right_dock_width: Option<u32>,
+    /// The height of the bottom dock, within
+    /// [`BOTTOM_DOCK_HEIGHT`](crate::limits::BOTTOM_DOCK_HEIGHT).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub bottom_dock_height: Option<u32>,
+    /// Whether the C++ dock is hidden.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub right_collapsed: Option<bool>,
+    /// Whether the bottom dock is hidden.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub bottom_collapsed: Option<bool>,
+}
+
+/// The window's own state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct UiSettings {
+    /// The layout of the editor.
+    pub layout: LayoutSettings,
+}
+
 /// The machine-local settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -160,6 +201,8 @@ pub struct Settings {
     pub new_project: NewProjectSettings,
     /// The build cache.
     pub build_cache: BuildCacheSettings,
+    /// The window's own state.
+    pub ui: UiSettings,
 }
 
 /// A problem found when the settings were read.
@@ -226,6 +269,44 @@ pub struct ConsolePatch {
     pub scrollback_lines: Option<u32>,
 }
 
+/// A change to [`LayoutSettings`]: each value given replaces the stored one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LayoutPatch {
+    /// The new width of the toolbox's flyout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub toolbox_width: Option<u32>,
+    /// The new width of the C++ dock.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub right_dock_width: Option<u32>,
+    /// The new height of the bottom dock.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub bottom_dock_height: Option<u32>,
+    /// Whether the C++ dock is now hidden.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub right_collapsed: Option<bool>,
+    /// Whether the bottom dock is now hidden.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub bottom_collapsed: Option<bool>,
+}
+
+/// A change to [`UiSettings`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct UiPatch {
+    /// Layout changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub layout: Option<LayoutPatch>,
+}
+
 /// The request of `settings_update`: the keys to change. Absent keys stay as they
 /// are; `null` is not accepted.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,6 +325,10 @@ pub struct SettingsPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub console: Option<ConsolePatch>,
+    /// Changes to the window's own state (the editor's layout).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub ui: Option<UiPatch>,
 }
 
 // `i64::from` cannot be called in a constant; u32 always fits in i64.
@@ -275,6 +360,30 @@ static CONSOLE_PATCH: ObjectSchema = ObjectSchema {
     fields: &[FieldSpec::optional("scrollbackLines", SCROLLBACK)],
 };
 
+/// A whole number of pixels in `range`, as a schema.
+// `i64::from` cannot be called in a constant; u32 always fits in i64.
+#[allow(clippy::cast_lossless)]
+const fn pixels(range: &std::ops::RangeInclusive<u32>) -> FieldSchema {
+    FieldSchema::Int {
+        min: *range.start() as i64,
+        max: *range.end() as i64,
+    }
+}
+
+static LAYOUT_PATCH: ObjectSchema = ObjectSchema {
+    fields: &[
+        FieldSpec::optional("toolboxWidth", pixels(&TOOLBOX_WIDTH)),
+        FieldSpec::optional("rightDockWidth", pixels(&RIGHT_DOCK_WIDTH)),
+        FieldSpec::optional("bottomDockHeight", pixels(&BOTTOM_DOCK_HEIGHT)),
+        FieldSpec::optional("rightCollapsed", FieldSchema::Bool),
+        FieldSpec::optional("bottomCollapsed", FieldSchema::Bool),
+    ],
+};
+
+static UI_PATCH: ObjectSchema = ObjectSchema {
+    fields: &[FieldSpec::optional("layout", FieldSchema::Object(&LAYOUT_PATCH))],
+};
+
 impl IpcRequest for SettingsPatch {
     const COMMAND: &'static str = "settings_update";
 
@@ -284,6 +393,7 @@ impl IpcRequest for SettingsPatch {
                 FieldSpec::optional("codeStyle", FieldSchema::Object(&CODE_STYLE_PATCH)),
                 FieldSpec::optional("run", FieldSchema::Object(&RUN_SETTINGS_PATCH)),
                 FieldSpec::optional("console", FieldSchema::Object(&CONSOLE_PATCH)),
+                FieldSpec::optional("ui", FieldSchema::Object(&UI_PATCH)),
             ],
         };
         &SCHEMA
@@ -300,6 +410,15 @@ impl IpcRequest for SettingsPatch {
             console: Some(ConsolePatch {
                 scrollback_lines: Some(20_000),
             }),
+            ui: Some(UiPatch {
+                layout: Some(LayoutPatch {
+                    toolbox_width: Some(360),
+                    right_dock_width: Some(420),
+                    bottom_dock_height: Some(240),
+                    right_collapsed: Some(false),
+                    bottom_collapsed: Some(true),
+                }),
+            }),
         }
     }
 
@@ -311,6 +430,24 @@ impl IpcRequest for SettingsPatch {
                 InvalidReason::OutOfRange,
                 Some("console.scrollbackLines"),
             ));
+        }
+        let layout = self.ui.and_then(|ui| ui.layout).unwrap_or_default();
+        for (value, range, key) in [
+            (layout.toolbox_width, &TOOLBOX_WIDTH, "ui.layout.toolboxWidth"),
+            (
+                layout.right_dock_width,
+                &RIGHT_DOCK_WIDTH,
+                "ui.layout.rightDockWidth",
+            ),
+            (
+                layout.bottom_dock_height,
+                &BOTTOM_DOCK_HEIGHT,
+                "ui.layout.bottomDockHeight",
+            ),
+        ] {
+            if value.is_some_and(|pixels| !range.contains(&pixels)) {
+                return Err(IpcError::invalid(InvalidReason::OutOfRange, Some(key)));
+            }
         }
         Ok(())
     }
@@ -346,5 +483,50 @@ mod tests {
         );
         SettingsPatch::default().validate().unwrap();
         assert_eq!(serde_json::to_string(&SettingsPatch::default()).unwrap(), "{}");
+    }
+
+    #[test]
+    fn layout_sizes_are_rechecked() {
+        let with = |layout: LayoutPatch| SettingsPatch {
+            ui: Some(UiPatch { layout: Some(layout) }),
+            ..SettingsPatch::default()
+        };
+        for (layout, key) in [
+            (
+                LayoutPatch {
+                    toolbox_width: Some(159),
+                    ..LayoutPatch::default()
+                },
+                "ui.layout.toolboxWidth",
+            ),
+            (
+                LayoutPatch {
+                    right_dock_width: Some(961),
+                    ..LayoutPatch::default()
+                },
+                "ui.layout.rightDockWidth",
+            ),
+            (
+                LayoutPatch {
+                    bottom_dock_height: Some(95),
+                    ..LayoutPatch::default()
+                },
+                "ui.layout.bottomDockHeight",
+            ),
+        ] {
+            assert_eq!(
+                with(layout).validate().unwrap_err(),
+                IpcError::invalid(InvalidReason::OutOfRange, Some(key))
+            );
+        }
+        with(LayoutPatch {
+            toolbox_width: Some(1200),
+            right_dock_width: Some(200),
+            bottom_dock_height: Some(720),
+            right_collapsed: Some(true),
+            bottom_collapsed: Some(false),
+        })
+        .validate()
+        .unwrap();
     }
 }

@@ -11,12 +11,17 @@
  *   the block against the flyout's edge;
  * - the *Resize the toolbox* splitter is at the flyout's right edge, and it is what the pointer
  *   hits there. Dragging it widens the flyout and the blocks stay clear of it; End makes the
- *   flyout as wide as leaves the canvas 200 px.
+ *   flyout as wide as leaves the canvas 200 px;
+ * - the toolbox's width, the docks' sizes and whether each dock is hidden are written to
+ *   settings.json (`ui.layout`, 05 §5.9) and are as they were left after a restart.
  *
  * Where the screen is smaller than the size asked for (the Windows runner's is 1024 × 768), the
  * app keeps the window on the screen; the checks follow the window's real size.
  */
-import { Key } from 'selenium-webdriver';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { By, Key } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
 import { RIGHT_DOCK, startSize } from '../../../src/app/layout/sizes';
@@ -34,6 +39,9 @@ const CANVAS_MIN = 200;
 
 /** How far right of the flyout's edge the first view puts the blocks at least, in CSS pixels. */
 const FIRST_VIEW_GAP = 8;
+
+/** The accessible name of the toolbox's splitter. */
+const TOOLBOX_SPLITTER = 'Resize the toolbox';
 
 /** Where things are in the editor, from {@link LAYOUT_SCRIPT} (viewport pixels). */
 interface EditorLayoutFacts {
@@ -98,6 +106,36 @@ const LAYOUT_SCRIPT = `
 /** The editor's layout now. */
 function layoutOf(app: FlowApp, mainId: string): Promise<EditorLayoutFacts> {
   return app.driver.executeScript<EditorLayoutFacts>(LAYOUT_SCRIPT, mainId);
+}
+
+/** Gives the keyboard focus to the splitter named `label` (a press on one does not take it). */
+async function focusSeparator(app: FlowApp, label: string): Promise<void> {
+  await app.driver.executeScript(
+    `document.querySelector('[role="separator"][aria-label="' + arguments[0] + '"]').focus();`,
+    label,
+  );
+}
+
+/** Waits until the splitter named `label` is on the page. */
+async function waitForSeparator(app: FlowApp, label: string): Promise<void> {
+  await waitFor(
+    async () =>
+      (await app.driver.findElements(By.css(`[role="separator"][aria-label="${label}"]`))).length >
+      0,
+    { timeout: UI_TIMEOUT_MS, message: `the ${label} splitter` },
+  );
+}
+
+/** `ui.layout` in settings.json, or `null` while it is not there (or not readable). */
+function savedLayout(file: string): Record<string, unknown> | null {
+  try {
+    const settings = JSON.parse(readFileSync(file, 'utf8')) as {
+      ui?: { layout?: Record<string, unknown> };
+    };
+    return settings.ui?.layout ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Launches the app at `size` and creates an Empty project; returns the main block's ID. */
@@ -183,9 +221,7 @@ describe('The editor’s layout', () => {
 
     // By keyboard: End makes it as wide as leaves the canvas 200 px. (A press on the splitter
     // does not take the focus, as on the docks' splitters: Tab does.)
-    await app.driver.executeScript(
-      `document.querySelector('[role="separator"][aria-label="Resize the toolbox"]').focus();`,
-    );
+    await focusSeparator(app, TOOLBOX_SPLITTER);
     await pressKey(app.driver, Key.END);
     const widest = await waitFor(
       async () => {
@@ -199,4 +235,58 @@ describe('The editor’s layout', () => {
       JSON.stringify(widest),
     ).toBeLessThan(1.5);
   }, 180_000);
+
+  it('keeps the toolbox’s width and the docks after a restart', async (context) => {
+    const size = { width: 1280, height: 800 };
+    const flow = startFlow(context);
+    const settingsFile = path.join(flow.folders.profile, 'config', 'settings.json');
+
+    // (1) The toolbox and the C++ dock at their narrowest (Home), and the bottom dock hidden.
+    const first = await flow.launch({ windowSize: size });
+    await newEmptyProject(first);
+    await waitForTestId(first.driver, 'workspace', true);
+    await waitForFlyout(first.driver);
+    await waitForSeparator(first, TOOLBOX_SPLITTER);
+    for (const label of [TOOLBOX_SPLITTER, 'Resize the C++ panel']) {
+      await focusSeparator(first, label);
+      await pressKey(first.driver, Key.HOME);
+    }
+    await first.driver.findElement(By.css('[data-testid="bottom-dock-toggle"]')).click();
+
+    // (2) Written to settings.json once the changes stopped for half a second.
+    const remembered = { toolboxWidth: 160, rightDockWidth: 200, bottomCollapsed: true };
+    await waitFor(
+      () => {
+        const layout = savedLayout(settingsFile);
+        return (
+          layout !== null &&
+          Object.entries(remembered).every(([key, value]) => layout[key] === value)
+        );
+      },
+      {
+        timeout: UI_TIMEOUT_MS,
+        message: () => `settings.json's ui.layout (${JSON.stringify(savedLayout(settingsFile))})`,
+      },
+    );
+    await first.quit();
+
+    // (3) After a restart, the layout is as it was left.
+    const second = await flow.launch({ windowSize: size });
+    const mainId = await newEmptyProject(second);
+    await waitForTestId(second.driver, 'workspace', true);
+    await waitForFlyout(second.driver);
+    const layout = await waitFor(
+      async () => {
+        const now = await layoutOf(second, mainId);
+        return now.splitter?.value === remembered.toolboxWidth ? now : null;
+      },
+      { timeout: UI_TIMEOUT_MS, message: 'the toolbox at its remembered width' },
+    );
+    const facts = JSON.stringify(layout);
+    expect(Math.abs(layout.flyout.width - remembered.toolboxWidth), facts).toBeLessThan(1);
+    expect(layout.codePanel.shown, facts).toBe(true);
+    expect(Math.abs(layout.codePanel.width - remembered.rightDockWidth), facts).toBeLessThan(1);
+    const bottom = await second.driver.findElement(By.css('section.bottom-dock'));
+    expect(await bottom.getAttribute('data-collapsed')).toBe('true');
+  }, 240_000);
 });

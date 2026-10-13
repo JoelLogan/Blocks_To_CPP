@@ -4,20 +4,21 @@
 //!
 //! `settings.json` is kept by [`b2c_store::SettingsStore`]; this module maps
 //! its storage types to the IPC types and back. `settings_update` changes only
-//! the code style, Run on errors and the console: its request type rejects
-//! every other key when it is decoded, and the selected toolchain changes only
-//! through `toolchain_select`.
+//! the code style, Run on errors, the console and the editor's layout
+//! (`ui.layout`): its request type rejects every other key when it is decoded,
+//! and the selected toolchain changes only through `toolchain_select`.
 
 use b2c_ipc::dto::{
     BuildCacheSettings, CodeStyle, ConsoleSettings, CppStandard as DtoStandard, IndentWidth,
-    NewProjectSettings, NoticeReason as DtoReason, OnErrors as DtoOnErrors, RunSettings,
-    Settings as DtoSettings, SettingsGetResponse, SettingsNotice as DtoNotice, SettingsPatch as DtoPatch,
-    SettingsUpdateResponse, ToolchainSettings,
+    LayoutSettings as DtoLayout, NewProjectSettings, NoticeReason as DtoReason, OnErrors as DtoOnErrors,
+    RunSettings, Settings as DtoSettings, SettingsGetResponse, SettingsNotice as DtoNotice,
+    SettingsPatch as DtoPatch, SettingsUpdateResponse, ToolchainSettings, UiSettings as DtoUi,
 };
 use b2c_ipc::{IpcError, ToolchainId};
 use b2c_ir::sast::CppStandard;
 use b2c_store::settings::{
-    CodeStylePatch, ConsolePatch, RunPatch, SETTINGS_FORMAT_VERSION, Settings, SettingsNotice, SettingsPatch,
+    CodeStylePatch, ConsolePatch, LayoutPatch, RunPatch, SETTINGS_FORMAT_VERSION, Settings, SettingsNotice,
+    SettingsPatch, UiPatch,
 };
 use b2c_store::{NoticeReason, OnErrors};
 
@@ -63,6 +64,15 @@ pub(crate) fn settings_to_dto(settings: &Settings) -> DtoSettings {
         build_cache: BuildCacheSettings {
             max_bytes: settings.build_cache.max_bytes,
         },
+        ui: DtoUi {
+            layout: DtoLayout {
+                toolbox_width: settings.ui.layout.toolbox_width,
+                right_dock_width: settings.ui.layout.right_dock_width,
+                bottom_dock_height: settings.ui.layout.bottom_dock_height,
+                right_collapsed: settings.ui.layout.right_collapsed,
+                bottom_collapsed: settings.ui.layout.bottom_collapsed,
+            },
+        },
     }
 }
 
@@ -96,6 +106,15 @@ pub(crate) fn patch_from_dto(patch: &DtoPatch) -> SettingsPatch {
         console: patch.console.map(|console| ConsolePatch {
             scrollback_lines: console.scrollback_lines,
         }),
+        ui: patch.ui.map(|ui| UiPatch {
+            layout: ui.layout.map(|layout| LayoutPatch {
+                toolbox_width: layout.toolbox_width,
+                right_dock_width: layout.right_dock_width,
+                bottom_dock_height: layout.bottom_dock_height,
+                right_collapsed: layout.right_collapsed,
+                bottom_collapsed: layout.bottom_collapsed,
+            }),
+        }),
     }
 }
 
@@ -117,8 +136,8 @@ impl Backend {
     }
 
     /// `settings_update`: applies a strict partial update of the code style,
-    /// Run on errors and the console, saves it atomically and returns the new
-    /// settings. A rejected update changes nothing.
+    /// Run on errors, the console and the editor's layout, saves it atomically
+    /// and returns the new settings. A rejected update changes nothing.
     ///
     /// # Errors
     /// [`IpcError::InvalidRequest`] for a value out of range (also checked
@@ -153,7 +172,11 @@ impl Backend {
 
 #[cfg(test)]
 mod tests {
-    use b2c_ipc::dto::{CodeStylePatch as DtoStyle, ConsolePatch as DtoConsole, RunSettingsPatch};
+    use b2c_ipc::dto::{
+        CodeStylePatch as DtoStyle, ConsolePatch as DtoConsole, LayoutPatch as DtoLayoutPatch,
+        RunSettingsPatch, UiPatch as DtoUiPatch,
+    };
+    use b2c_store::settings::LayoutSettings;
 
     use super::*;
 
@@ -170,8 +193,63 @@ mod tests {
                 "console": {"scrollbackLines": 10000},
                 "toolchain": {"selectedId": null},
                 "newProject": {"standard": "c++20"},
-                "buildCache": {"maxBytes": 2_147_483_648_u64}
+                "buildCache": {"maxBytes": 2_147_483_648_u64},
+                "ui": {"layout": {}}
             })
+        );
+    }
+
+    #[test]
+    fn the_layout_maps_both_ways() {
+        let mut settings = Settings::default();
+        settings.ui.layout = LayoutSettings {
+            toolbox_width: Some(360),
+            right_dock_width: Some(420),
+            bottom_dock_height: Some(240),
+            right_collapsed: Some(true),
+            bottom_collapsed: None,
+        };
+        assert_eq!(
+            serde_json::to_value(settings_to_dto(&settings).ui).unwrap(),
+            serde_json::json!({"layout": {
+                "toolboxWidth": 360,
+                "rightDockWidth": 420,
+                "bottomDockHeight": 240,
+                "rightCollapsed": true
+            }})
+        );
+        let patch = patch_from_dto(&DtoPatch {
+            ui: Some(DtoUiPatch {
+                layout: Some(DtoLayoutPatch {
+                    toolbox_width: Some(200),
+                    right_dock_width: Some(300),
+                    bottom_dock_height: Some(100),
+                    right_collapsed: Some(false),
+                    bottom_collapsed: Some(true),
+                }),
+            }),
+            ..DtoPatch::default()
+        });
+        let layout = patch.ui.and_then(|ui| ui.layout).unwrap();
+        assert_eq!(
+            (
+                layout.toolbox_width,
+                layout.right_dock_width,
+                layout.bottom_dock_height,
+                layout.right_collapsed,
+                layout.bottom_collapsed
+            ),
+            (Some(200), Some(300), Some(100), Some(false), Some(true))
+        );
+        // The store and the contract allow the same sizes.
+        assert_eq!(b2c_store::settings::TOOLBOX_WIDTH, b2c_ipc::limits::TOOLBOX_WIDTH);
+        assert_eq!(
+            b2c_store::settings::RIGHT_DOCK_WIDTH,
+            b2c_ipc::limits::RIGHT_DOCK_WIDTH
+        );
+        assert_eq!(
+            b2c_store::settings::BOTTOM_DOCK_HEIGHT,
+            b2c_ipc::limits::BOTTOM_DOCK_HEIGHT
         );
     }
 
@@ -239,6 +317,7 @@ mod tests {
             console: Some(DtoConsole {
                 scrollback_lines: Some(5000),
             }),
+            ui: None,
         });
         assert_eq!(patch.code_style.and_then(|s| s.indent_width), Some(2));
         assert_eq!(patch.run.and_then(|r| r.on_errors), Some(OnErrors::ShowProblems));

@@ -250,6 +250,23 @@ const B2C_IPC_ALLOWLIST = Object.freeze({
           }),
           optional: true,
         }),
+        ui: Object.freeze({
+          type: 'object',
+          fields: Object.freeze({
+            layout: Object.freeze({
+              type: 'object',
+              fields: Object.freeze({
+                toolboxWidth: Object.freeze({ type: 'int', min: 160, max: 1200, optional: true }),
+                rightDockWidth: Object.freeze({ type: 'int', min: 200, max: 960, optional: true }),
+                bottomDockHeight: Object.freeze({ type: 'int', min: 96, max: 720, optional: true }),
+                rightCollapsed: Object.freeze({ type: 'bool', optional: true }),
+                bottomCollapsed: Object.freeze({ type: 'bool', optional: true }),
+              }),
+              optional: true,
+            }),
+          }),
+          optional: true,
+        }),
       }),
     }),
   }),

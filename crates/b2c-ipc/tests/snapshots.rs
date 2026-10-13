@@ -13,13 +13,14 @@ use b2c_ipc::dto::BuildCacheSettings;
 use b2c_ipc::dto::{
     AppEvent, AppInfo, BuildCacheClearResponse, BuildEvent, BuildOutcome, BuildStage, BuildStartResponse,
     CodeStyle, ConsoleSettings, Containment, CppStandard, Crash, Distro, Empty, ExitStatus, IndentWidth,
-    NewProjectSettings, NoticeReason, OnErrors, Platform, ProjectNewResponse, ProjectOpenDialogResponse,
-    ProjectOpened, ProjectReloadResponse, ProjectSaveAsDialogResponse, ProjectSaveResponse, ProjectSavedAs,
-    RecentEntry, RecentListResponse, RecoveryListResponse, RecoveryRestoreResponse, RestrictedReason,
-    RunEvent, RunMode, RunSettings, RunStartResponse, SanitizerKind, SanitizerReport, SanitizerTool,
-    Settings, SettingsGetResponse, SettingsNotice, SettingsUpdateResponse, SnapshotInfo, Toolchain,
-    ToolchainAddDialogResponse, ToolchainCapabilities, ToolchainListResponse, ToolchainSettings,
-    ToolchainSetupInfo, ToolchainSource, Trust, TrustResponse, TrustSource, TrustState,
+    LayoutSettings, NewProjectSettings, NoticeReason, OnErrors, Platform, ProjectNewResponse,
+    ProjectOpenDialogResponse, ProjectOpened, ProjectReloadResponse, ProjectSaveAsDialogResponse,
+    ProjectSaveResponse, ProjectSavedAs, RecentEntry, RecentListResponse, RecoveryListResponse,
+    RecoveryRestoreResponse, RestrictedReason, RunEvent, RunMode, RunSettings, RunStartResponse,
+    SanitizerKind, SanitizerReport, SanitizerTool, Settings, SettingsGetResponse, SettingsNotice,
+    SettingsUpdateResponse, SnapshotInfo, Toolchain, ToolchainAddDialogResponse, ToolchainCapabilities,
+    ToolchainListResponse, ToolchainSettings, ToolchainSetupInfo, ToolchainSource, Trust, TrustResponse,
+    TrustSource, TrustState, UiSettings,
 };
 use b2c_ipc::{BuildId, Handle, InvalidReason, IoKind, IpcError, RecentId, RunId, SnapshotId, ToolchainId};
 use serde::Serialize;
@@ -169,6 +170,13 @@ fn settings() -> Settings {
         },
         build_cache: BuildCacheSettings {
             max_bytes: 2 * 1024 * 1024 * 1024,
+        },
+        ui: UiSettings {
+            layout: LayoutSettings {
+                toolbox_width: Some(360),
+                right_collapsed: Some(true),
+                ..LayoutSettings::default()
+            },
         },
     }
 }

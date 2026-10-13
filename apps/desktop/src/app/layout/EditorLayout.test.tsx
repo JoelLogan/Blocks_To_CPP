@@ -2,17 +2,22 @@
  * The editor's layout (docs/spec/04-user-interface.md §4.1): the keyboard focus when a splitter
  * collapses its dock; the docks' sizes as a share of the window, kept within their limits (the
  * same limits are the splitters' `aria-valuemax`) and leaving the canvas 200 px; the C++ dock
- * hidden while it does not fit; and the *Resize the toolbox* splitter at the flyout's edge.
+ * hidden while it does not fit; the *Resize the toolbox* splitter at the flyout's edge; and the
+ * layout remembered between sessions (05 §5.9 `ui.layout`): taken from the settings once, and each
+ * change the user makes handed on.
  */
+import type { LayoutPatch, LayoutSettings } from '@blocks2cpp/ipc-types';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { flyoutWidth } from '../../editor/toolbox/continuous';
 import { expectNoAxeViolations } from '../../test/axe';
 import { resetAppStore, useAppStore } from '../store';
+import { settingsFixture } from '../testing/fixtures';
 import { HintProvider } from '../ui/Hint';
 import { EditorLayout } from './EditorLayout';
 import { announceFlyoutLayout, type FlyoutLayout } from './flyoutLayout';
+import { registerLayoutSaver } from './rememberedLayout';
 import { SPLITTER_SIZE } from './sizes';
 import { BIG_STEP, STEP } from './Splitter';
 
@@ -112,9 +117,10 @@ function valueOf(element: HTMLElement, attribute: 'now' | 'min' | 'max'): number
 function fakeFlyout(room: () => number) {
   let chosen: number | null = null;
   const canvas = screen.getByTestId('canvas');
+  // Called from the layout's handlers and effects, which React already runs inside `act`.
   const setWidth = vi.fn((width: number | null) => {
     chosen = width;
-    announce();
+    announceFlyoutLayout(canvas, layout());
   });
   const layout = (): FlyoutLayout => ({
     left: COLUMN,
@@ -349,5 +355,123 @@ describe('the Resize the toolbox splitter', () => {
     const { container } = renderLayout();
     fakeFlyout(() => 794);
     await expectNoAxeViolations(container);
+  });
+});
+
+/** Puts settings with the remembered `layout` into the store, as the start of the window does. */
+function readSettings(layout: LayoutSettings): void {
+  act(() => {
+    useAppStore.getState().actions.setSettings({
+      value: settingsFixture({ ui: { layout } }),
+      notices: [],
+    });
+  });
+}
+
+describe('the remembered layout', () => {
+  /** The saver the settings feature would register; removed after each test. */
+  let saved: Mock<(change: LayoutPatch) => void>;
+  let unregister: () => void;
+
+  beforeEach(() => {
+    saved = vi.fn();
+    unregister = registerLayoutSaver(saved);
+  });
+
+  afterEach(() => {
+    unregister();
+  });
+
+  it('is taken from the settings before the first paint, and not handed back', () => {
+    readSettings({
+      toolboxWidth: 250,
+      rightDockWidth: 420,
+      bottomDockHeight: 150,
+      bottomCollapsed: true,
+    });
+    setWindowSize(1280, 800);
+    renderLayout();
+    layOut(1280, 800);
+    const flyout = fakeFlyout(() => 794);
+
+    expect(valueOf(separator('Resize the C++ panel'), 'now')).toBe(420);
+    expect(flyout.setWidth).toHaveBeenCalledTimes(1);
+    expect(flyout.setWidth).toHaveBeenCalledWith(250);
+    expect(valueOf(separator('Resize the toolbox'), 'now')).toBe(250);
+    expect(useAppStore.getState().ui).toMatchObject({
+      rightCollapsed: false,
+      bottomCollapsed: true,
+    });
+    expect(screen.queryByRole('separator', { name: 'Resize the bottom panel' })).toBeNull();
+    // A remembered size no longer follows the window.
+    layOut(1366, 768);
+    expect(valueOf(separator('Resize the C++ panel'), 'now')).toBe(420);
+    expect(saved).not.toHaveBeenCalled();
+
+    // Shown again: the remembered height, and the change is handed on.
+    fireEvent.click(screen.getByRole('button', { name: 'Show the bottom panel' }));
+    expect(valueOf(separator('Resize the bottom panel'), 'now')).toBe(150);
+    expect(saved.mock.calls).toEqual([[{ bottomCollapsed: false }]]);
+  });
+
+  it('is taken from the settings when they arrive after the layout, and only once', () => {
+    setWindowSize(1024, 700);
+    renderLayout();
+    layOut(1024, 700);
+    const flyout = fakeFlyout(() => 517);
+    expect(valueOf(separator('Resize the C++ panel'), 'now')).toBe(307);
+    // Before the settings were read, nothing is handed on: the defaults would replace them.
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the bottom panel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show the bottom panel' }));
+    expect(saved).not.toHaveBeenCalled();
+
+    readSettings({ toolboxWidth: 200, rightDockWidth: 300, rightCollapsed: true });
+    expect(useAppStore.getState().ui.rightCollapsed).toBe(true);
+    expect(flyout.setWidth).toHaveBeenLastCalledWith(200);
+    fireEvent.click(screen.getByRole('button', { name: 'Show the C++ panel' }));
+    expect(valueOf(separator('Resize the C++ panel'), 'now')).toBe(300);
+    expect(saved.mock.calls).toEqual([[{ rightCollapsed: false }]]);
+
+    // Later answers (such as the one to a saved change) change nothing.
+    readSettings({ rightDockWidth: 500, rightCollapsed: true });
+    expect(valueOf(separator('Resize the C++ panel'), 'now')).toBe(300);
+    expect(useAppStore.getState().ui.rightCollapsed).toBe(false);
+  });
+
+  it('hands on each change the user makes, but not the C++ dock hidden to fit', () => {
+    readSettings({});
+    setWindowSize(1024, 700);
+    renderLayout();
+    layOut(1024, 700);
+    fakeFlyout(() => 794);
+
+    fireEvent.keyDown(separator('Resize the C++ panel'), { key: 'ArrowLeft' });
+    fireEvent.keyDown(separator('Resize the bottom panel'), { key: 'End' });
+    fireEvent.keyDown(separator('Resize the toolbox'), { key: 'ArrowRight' });
+    expect(saved.mock.calls).toEqual([
+      [{ rightDockWidth: 307 + STEP }],
+      [{ bottomDockHeight: 413 }],
+      [{ toolboxWidth: 320 + STEP }],
+    ]);
+    saved.mockClear();
+
+    // Hidden because the window is too small, and shown again: not the user's choice.
+    layOut(640, 560);
+    expect(useAppStore.getState().ui.rightCollapsed).toBe(true);
+    layOut(1024, 700);
+    expect(useAppStore.getState().ui.rightCollapsed).toBe(false);
+    expect(saved).not.toHaveBeenCalled();
+
+    // Hidden by the user, and the bottom dock shown by a command (as Run does).
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the C++ panel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the bottom panel' }));
+    act(() => {
+      useAppStore.getState().actions.setUi({ bottomTab: 'console', bottomCollapsed: false });
+    });
+    expect(saved.mock.calls).toEqual([
+      [{ rightCollapsed: true }],
+      [{ bottomCollapsed: true }],
+      [{ bottomCollapsed: false }],
+    ]);
   });
 });
