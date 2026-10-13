@@ -41,16 +41,22 @@
   *Redo* (`Ctrl+Y`) and *Close project*; the items about the open project
   appear only while one is open. *Undo* and *Redo* are for the block editor
   while it is shown, and work wherever the focus is except in text fields,
-  dialogs and a running program's console (`Ctrl+Shift+Z` also redoes); in
-  the menu they are greyed out while there is nothing to undo or redo.
+  dialogs, the open menu and a running program's console (`Ctrl+Shift+Z`
+  also redoes); in the menu they are greyed out while there is nothing to
+  undo or redo. *Open…* starts in the documents folder (or the home folder),
+  and *Save as…* in the project's own folder (for a project without a file,
+  as *Open…* does); neither ever starts in the app's working folder
+  ([07 §7.2](07-toolchain-build-run.md#72-discovery)).
 * The top bar shows the project name, followed by `•` while there are unsaved
   changes; a name too long for the bar is cut off with `…` before the `•`,
   which stays in view. Clicking the name (or *Rename project…*) edits it in
-  place: Enter or moving the focus away keeps it, Escape cancels. A name has
-  1–100 characters on one line, without control or bidirectional-override
-  characters, and spaces at either end are removed. Enter on a name that
-  breaks these rules says why and keeps the field open; moving the focus away
-  then keeps the old name. Renaming is an unsaved change, is saved as
+  place: Enter or moving the focus away keeps it, Escape cancels, and
+  `Ctrl+S`, `Ctrl+B` and `F5` keep it before they save, build or run. A name
+  has 1–100 characters on one line, without control or bidirectional-override
+  characters, and spaces at either end are removed. Enter (or one of those
+  keys) on a name that breaks these rules says why and keeps the field open,
+  and the key does nothing else; moving the focus away then keeps the old
+  name. Renaming is an unsaved change, is saved as
   `project.name` and never renames the file; *Save as…* suggests the name as
   the file name while the project has no file yet. Undo does not undo a
   rename: rename the project again instead. The window title does not change:
@@ -74,9 +80,10 @@
   the centre; it shows the zoom now) and *Show all blocks*, which scrolls to
   the blocks without changing the zoom: it centres them where they fit, and
   otherwise shows their top-left corner. `Ctrl` + wheel or a pinch zooms
-  around the pointer; `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom from the keyboard.
-  The controls are named buttons at the top right of the canvas, never over
-  the toolbox, and reachable with Tab after the canvas.
+  around the pointer; `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom from the keyboard,
+  on the canvas and on the controls. The controls are named buttons at the
+  top right of the canvas, never over the toolbox, and reachable with Tab
+  after the canvas.
 * On first start the window opens at 1280 × 800, made smaller when the
   screen's work area is smaller (where the system names no primary monitor
   and knows no work area, as under Wayland, the app fits it to the monitor it

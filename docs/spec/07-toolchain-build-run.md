@@ -60,14 +60,15 @@ entries. This prevents *binary planting*, where a project folder ships its
 own `g++.exe`. "That folder only" means the files directly in it, not its
 subfolders, so that starting the app from `/`, or saving a project directly
 in the home folder, never hides `/usr/bin` or `~/.local/bin`. At startup the
-app makes an empty owner-only folder (`<cache>/cwd/`) its current directory;
-the CLI keeps the caller's. The same folder rule applies to a rescan, to the
-build-time check (`B2C-T1002`: a selected or discovered toolchain whose
-canonical path lies in the open project's canonical folder is refused) and
-to *Choose g++ manually…*. A compiler a search skips is listed with its
-reason: inside an open project's folder, inside the build cache, in the
-current directory, or on a network folder. Its file is looked at, but it is
-never run; folders on a network share are not looked into at all.
+app makes an empty owner-only folder (`<cache>/cwd/`) its current directory,
+where no dialog of the app starts; the CLI keeps the caller's. The same
+folder rule applies to a rescan, to the build-time check (`B2C-T1002`: a
+selected or discovered toolchain whose canonical path lies in the open
+project's canonical folder is refused) and to *Choose g++ manually…*. A
+compiler a search skips is listed with its reason: inside an open project's
+folder, inside the build cache, in the current directory, or on a network
+folder. Its file is looked at, but it is never run; folders on a network
+share are not looked into at all.
 
 **Adding a compiler manually** (*Choose g++ manually…*,
 `toolchain_add_dialog`): the user picks the file in a native dialog. The
