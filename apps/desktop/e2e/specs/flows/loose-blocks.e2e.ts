@@ -3,7 +3,8 @@
  * webview: a block dropped on an empty part of the canvas stays selected and is parked (ADR-0012),
  * and the core answers its scope with what is visible at the end of `main` (06 §6.5), so
  *
- * - the Variables category still lists the variables of `main` (its getters), and
+ * - the Variables category still lists the variables of `main` (its getters; it lists every
+ *   variable of the module whatever is selected), and
  * - the variable menu of a loose *set* lists `main`'s variables, `secret` and `guess`.
  */
 import { describe, expect, it } from 'vitest';
@@ -70,9 +71,8 @@ describe('Loose blocks', () => {
     expect(await listsGetter(app, SECRET)).toBe(true);
     expect(await listsGetter(app, GUESS)).toBe(true);
 
-    // A set dropped loose: its variable menu lists main's variables. The category lists each
-    // variable's blocks in name order, and only the first variable's (guess) are sure to be in
-    // view without scrolling the flyout.
+    // A set dropped loose: its variable menu lists main's variables. The category has one set,
+    // preset to main's first variable by name (guess), which a loose block can see.
     await dropOnCanvas(app, { category: 'Variables', type: 'var.set', fields: { VAR: GUESS } });
     const set = await looseBlock(app, 'var.set');
     await sleep(SETTLE_MS);

@@ -1,55 +1,48 @@
 /**
- * The Variables category follows a selection made with the mouse (docs/spec/04-user-interface.md
- * §4.2), in the real webview. Blockly selects a block when the button is pressed and refreshes no
- * toolbox until it is released, so the rebuild a click asks for comes while the button is held. A
- * person's click holds it for a moment: the toolbox must still list the new block's scope once
- * the button is up. The blocks of the guessing game (examples/guessing_game.b2c) are clicked with
- * the button held for 100 ms, each scrolled into view first through the test hook, which keeps
- * the selection (centring a block through the hook would select it, and so rebuild the toolbox).
+ * The toolbox does not follow the selection (docs/spec/04-user-interface.md §4.2, decision D2 of
+ * the M2 polish plan), in the real webview: the Variables category lists every variable of the
+ * module, whatever block is selected, and selecting a block never shows the flyout again (which
+ * would replace its blocks, so a getter in it would get a new ID). Blockly selects a block when
+ * the button is pressed, and a person's click holds the button for a moment, so the blocks of the
+ * guessing game (examples/guessing_game.b2c) are clicked with the button held for 100 ms, each
+ * scrolled into view first through the test hook, which keeps the selection. A new variable does
+ * show the flyout again, with its getter.
  */
 import { Button, Origin } from 'selenium-webdriver';
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
+import { declareInt, NodeIds } from '../../support/bdm';
 import { scrollIntoView } from '../../support/canvas';
 import { blockCorner, foldCodePanel, grabPointOf } from '../../support/editor';
-import { waitFor } from '../../support/wait';
+import { sleep, waitFor } from '../../support/wait';
 import { isSelected, waitForSelected } from './lib/editor';
 import { type FlowApp, startFlow } from './lib/launch';
 import { copyExample, openFromStartPage } from './lib/project';
 import { UI_TIMEOUT_MS } from './lib/ui';
 
-/** The symbols of the guessing game's variables. */
-const SECRET = 's_secret';
+/** The symbols of the guessing game's variables, in name order. */
 const GUESS = 's_guess';
+const SECRET = 's_secret';
+
+/** The guessing game's `when program starts` block. */
+const MAIN = 'b011';
 
 /** How long a click holds the button down: about what a person's click does. */
 const HOLD_MS = 100;
 
-/** Which of the guessing game's variables the toolbox lists getters of, in name order. */
-async function listedGetters(app: FlowApp): Promise<string[]> {
-  const listed: string[] = [];
-  for (const sym of [GUESS, SECRET]) {
-    if ((await app.hook.flyoutBlockId('var.get', { VAR: sym })) !== null) {
-      listed.push(sym);
-    }
-  }
-  return listed;
-}
+/**
+ * Long enough for the toolbox to show its flyout again if it were to: its rebuild waits 100 ms
+ * after the last change that asks for one.
+ */
+const SETTLE_MS = 1_000;
 
-/** Waits until the toolbox lists getters of exactly `expected` (in name order). */
-async function waitForListing(app: FlowApp, expected: readonly string[], after: string) {
-  let last: string[] = [];
-  await waitFor(
-    async () => {
-      last = await listedGetters(app);
-      return last.join(',') === expected.join(',');
-    },
-    {
-      timeout: UI_TIMEOUT_MS,
-      message: () =>
-        `getters of [${expected.join(', ')}] in the toolbox after ${after} (it lists [${last.join(', ')}])`,
-    },
-  );
+/** The flyout block IDs of the getters of `syms` (`null` for a getter the toolbox does not list). */
+async function getterIds(app: FlowApp, syms: readonly string[]): Promise<(string | null)[]> {
+  const ids: (string | null)[] = [];
+  for (const sym of syms) {
+    ids.push(await app.hook.flyoutBlockId('var.get', { VAR: sym }));
+  }
+  return ids;
 }
 
 /**
@@ -73,24 +66,42 @@ async function heldClick(app: FlowApp, blockId: string): Promise<void> {
 }
 
 describe('Selecting blocks with the mouse', () => {
-  it('rebuilds the Variables category after a click that holds the button', async (context) => {
+  it('leaves the toolbox as it is: Variables lists every variable of the module', async (context) => {
     const flow = startFlow(context);
     const example = copyExample('guessing_game', flow.folders.projects);
     const app = await flow.launch({ dialogs: { open: [example] } });
     await openFromStartPage(app);
     await foldCodePanel(app);
-    // The Too low! print, inside the loop: both variables are visible.
-    await app.hook.selectBlock('b006');
-    await waitForListing(app, [GUESS, SECRET], 'selecting b006 through the hook');
+    await waitFor(async () => (await getterIds(app, [GUESS, SECRET])).every((id) => id !== null), {
+      timeout: UI_TIMEOUT_MS,
+      message: 'getters of guess and secret in the toolbox',
+    });
+    // Let the toolbox's rebuilds after the project opened run, then take the flyout's blocks.
+    await sleep(SETTLE_MS);
+    const shown = await getterIds(app, [GUESS, SECRET]);
+    expect(shown.every((id) => id !== null)).toBe(true);
 
-    // random 1 to 100, in the first declaration: nothing is declared yet.
-    await heldClick(app, 'b001');
-    await waitForListing(app, [], 'a held click on b001');
-    // create secret: secret is visible after it.
-    await heldClick(app, 'b002');
-    await waitForListing(app, [SECRET], 'a held click on b002');
-    // The Correct! print: both again.
-    await heldClick(app, 'b008');
-    await waitForListing(app, [GUESS, SECRET], 'a held click on b008');
+    // random 1 to 100, in the first declaration (nothing is declared yet there); create secret;
+    // the Correct! print inside the loop. The same getters, in the same flyout, after each.
+    for (const blockId of ['b001', 'b002', 'b008']) {
+      await heldClick(app, blockId);
+      await sleep(SETTLE_MS);
+      expect(await getterIds(app, [GUESS, SECRET]), `after a held click on ${blockId}`).toEqual(
+        shown,
+      );
+    }
+
+    // A new variable is listed: the flyout is shown again, with new blocks.
+    await app.hook.insertBlocks(MAIN, 'BODY', [
+      declareInt(new NodeIds('select'), 's_e2e_tries', 'tries', 0),
+    ]);
+    const after = await waitFor(
+      async () => {
+        const ids = await getterIds(app, [GUESS, SECRET, 's_e2e_tries']);
+        return ids.every((id) => id !== null) ? ids : null;
+      },
+      { timeout: UI_TIMEOUT_MS, message: 'the getter of the new variable in the toolbox' },
+    );
+    expect(after.slice(0, 2)).not.toEqual(shown);
   }, 120_000);
 });

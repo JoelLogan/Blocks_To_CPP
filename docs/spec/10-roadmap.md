@@ -166,8 +166,9 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
   rules from the if-time set).
 * Parked blocks, the standard variable set, a Variables listing that does
   not depend on the selection, snapping, and the remaining documentation
-  (parked blocks, their scope and the command line's parity with the editor
-  done 2026-10-13).
+  (parked blocks, their scope, the command line's parity with the editor,
+  the standard variable set with its listing, and the Program category that
+  offers *when program starts* only while there is none done 2026-10-13).
 * If time: block upgrades on load and one *change* block for every update
   operator, Scratch-style wrapping, the developer guide, and the other items
   the plan marks *M2 if time* (block upgrades on load done 2026-10-13,

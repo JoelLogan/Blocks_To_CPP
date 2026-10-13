@@ -6,6 +6,8 @@ import {
   getEditorServices,
   resetEditorServices,
   setEditorServices,
+  setToolboxSymbols,
+  toolboxSymbolGroups,
 } from '../src';
 import { checkerTypeOracle } from '../src/checker/oracle';
 import { configureMutators, mutatorHooks } from '../src/mutators/hooks';
@@ -84,5 +86,31 @@ describe('editor services', () => {
     });
     expect(symbolsAt('b1', null)).toEqual([]);
     expect(nameOf('s_x')).toBeNull();
+  });
+});
+
+describe('the toolbox’s symbols for blocks in its flyout', () => {
+  it('are none until the toolbox sets them, and none again once it is gone', () => {
+    expect(toolboxSymbolGroups()).toBeNull();
+    const groups = [[symbol('s_a', 'a')], [symbol('s_b', 'b')]];
+    setToolboxSymbols(() => groups);
+    expect(toolboxSymbolGroups()).toEqual(groups);
+    // The symbol services are separate: resetting them leaves the toolbox's source alone.
+    resetEditorServices();
+    expect(toolboxSymbolGroups()).toEqual(groups);
+    setToolboxSymbols(null);
+    expect(toolboxSymbolGroups()).toBeNull();
+  });
+
+  it('are empty when the source throws or answers nonsense', () => {
+    setToolboxSymbols(() => {
+      throw new Error('not ready');
+    });
+    expect(toolboxSymbolGroups()).toEqual([]);
+    setToolboxSymbols(() => 'nonsense' as never);
+    expect(toolboxSymbolGroups()).toEqual([]);
+    setToolboxSymbols(() => [[symbol('s_a', 'a')], 7 as never]);
+    expect(toolboxSymbolGroups()).toEqual([[symbol('s_a', 'a')]]);
+    setToolboxSymbols(null);
   });
 });

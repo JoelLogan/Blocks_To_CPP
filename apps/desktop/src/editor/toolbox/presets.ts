@@ -43,6 +43,12 @@ export interface BlockPreset {
    * created from the item declares a new symbol with that name.
    */
   readonly declare?: Readonly<Record<string, string>>;
+  /**
+   * The reference field (`symbol_ref`) of a generic block (*set*, *change*) whose variable the
+   * toolbox chose, not the user: a block dragged out with it unchanged may be given another
+   * variable where it is dropped (./landing.ts).
+   */
+  readonly retarget?: string;
 }
 
 /** A block in a toolbox flyout (kind {@link B2C_BLOCK_KIND}). */
@@ -56,6 +62,8 @@ export interface B2cBlockInfo extends Blockly.utils.toolbox.BlockInfo {
   argLabels?: readonly string[];
   /** The names the block's declaration fields declare, by field name (see `BlockPreset.declare`). */
   declares?: Readonly<Record<string, string>>;
+  /** The reference field the toolbox chose a variable for (see `BlockPreset.retarget`). */
+  retarget?: string;
 }
 
 /** A preset block could not be described: an unknown block type (a catalog/toolbox mismatch). */
@@ -214,6 +222,16 @@ export function presetBlock(
   }
   if (argLabels !== undefined && argLabels.length > 0) {
     info.argLabels = argLabels;
+  }
+  if (preset.retarget !== undefined) {
+    if (
+      !def.fields.some(
+        (candidate) => candidate.name === preset.retarget && candidate.kind === 'symbol_ref',
+      )
+    ) {
+      throw new PresetError(`The block ${def.id} has no reference field ${preset.retarget}.`);
+    }
+    info.retarget = preset.retarget;
   }
   return info;
 }

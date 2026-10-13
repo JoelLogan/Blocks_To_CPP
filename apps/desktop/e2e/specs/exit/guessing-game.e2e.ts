@@ -1,9 +1,11 @@
 /**
  * The M2 exit criterion (docs/spec/10-roadmap.md §10.1, 09 §9.2): a first-time user builds and runs
  * the guessing game of 03 §3.13.1 from the Empty template. The test starts the app with a fresh
- * profile, assembles the game (real drags for the program, a variable, a print and the loop; the
- * test hook for the rest), checks the live analysis and the C++, presses F5, plays the game by
- * binary search until *Correct!*, then runs it again and stops it.
+ * profile, assembles the game (with the pointer and the keyboard: the program moved, `secret` made
+ * with *Make a variable*, `guess` dragged from the Variables category and renamed, a print, the
+ * loop, its comparison and the two getters from the Variables category; the test hook for the
+ * rest), checks the live analysis and the C++, presses F5, plays the game by binary search until
+ * *Correct!*, then runs it again and stops it.
  *
  * A second test checks that a program printing more than 8 KiB at once reaches the console: such
  * batches travel through Tauri's channel fetch, which the isolation hook must let through.
@@ -17,9 +19,9 @@ import { describe, expect, it } from 'vitest';
 import { type App, launchApp } from '../../support/app';
 import {
   ask,
+  type BlockNode,
   compare,
   declaredSymbol,
-  declareInt,
   ifElseIfElse,
   moduleNodes,
   NodeIds,
@@ -60,14 +62,12 @@ import {
 } from '../../support/guessing';
 import { chooseOption, clickTestId, pressKey, testIdText, typeIntoField } from '../../support/ui';
 import { waitFor } from '../../support/wait';
+import { dragValueFromToolbox, makeVariable } from '../flows/lib/editor';
 
 /** The suggested waits of the exit flow: start-up, a build (the compile timeout), an answer. */
 const TOOLCHAIN_TIMEOUT_MS = 30_000;
 const BUILD_TIMEOUT_MS = 120_000;
 const ANSWER_TIMEOUT_MS = 10_000;
-
-/** The symbol the inserted `guess` declaration declares (a valid project ID, 05 §5.4). */
-const GUESS_SYM = 'sym_e2e_guess';
 
 const GOLDEN = path.join(REPOSITORY_ROOT, 'tests', 'golden', 'guessing_game');
 
@@ -102,6 +102,12 @@ async function newEmptyProject(app: App): Promise<string> {
 /** The blocks of `main`'s body, from the canvas. */
 async function mainBody(app: App) {
   return statementsOf(onlyTopBlock(await currentDocument(app), 'program.main'), 'BODY');
+}
+
+/** The block in value input `input` of `node`, or `null`. */
+function nested(node: BlockNode | null | undefined, input: string): BlockNode | null {
+  const value = node?.inputs?.[input];
+  return value !== undefined && 'block' in value ? value.block : null;
 }
 
 /** `value`, or a failure naming `what` when it is missing. */
@@ -153,22 +159,37 @@ describe('M2 exit criterion: the guessing game', () => {
     const moved = onlyTopBlock(await currentDocument(app), 'program.main');
     expect([moved.x, moved.y]).not.toEqual([before.x, before.y]);
 
-    // …then `create int variable` from the toolbox into main's body, renamed to `secret`.
-    const variable = { category: 'Variables', type: 'var.declare', fields: { TYPE: 'int' } };
-    await dragFromToolbox(app, variable, mainId, 'BODY');
-    const secretDecl = required((await mainBody(app))[0], 'the dropped variable');
-    expect(secretDecl.type).toBe('var.declare');
-    await typeIntoField(driver, await fieldOf(app, secretDecl.id, 'NAME'), 'secret');
-    const secret = required(
-      declaredSymbol(required((await mainBody(app))[0], 'the variable'), 'NAME'),
-      'the declared symbol',
+    // …then *Make a variable* (name and type in the app's dialogs): with `main` selected (by its
+    // drag), `create int secret = 0` goes at the top of its body.
+    await makeVariable(app, 'secret', 'int');
+    const secretDecl = await waitFor(
+      async () => {
+        const first = (await mainBody(app))[0];
+        return first?.type === 'var.declare' && declaredSymbol(first, 'NAME')?.name === 'secret'
+          ? first
+          : null;
+      },
+      { timeout: 10_000, message: 'create int secret at the top of main' },
     );
-    expect(secret.name).toBe('secret');
+    expect(secretDecl.fields?.['TYPE']).toBe('int');
+    const secret = required(declaredSymbol(secretDecl, 'NAME'), 'the declared symbol');
     await hook.insertBlocks(secretDecl.id, 'VALUE', [randomInt(ids, 1, 100)]);
 
-    // `int guess = 0;` through the hook.
-    const guessDecl = declareInt(ids, GUESS_SYM, 'guess', 0);
-    await hook.insertBlocks(mainId, 'BODY', [guessDecl]);
+    // `create` from the Variables category below it: it lands with a free default name, renamed
+    // to `guess`.
+    const variable = { category: 'Variables', type: 'var.declare', fields: { TYPE: 'int' } };
+    await dragFromToolbox(app, variable, secretDecl.id, 'next');
+    const guessDecl = required((await mainBody(app))[1], 'the dropped variable');
+    expect(guessDecl.type).toBe('var.declare');
+    expect(declaredSymbol(guessDecl, 'NAME')?.name).toBe('value');
+    await typeIntoField(driver, await fieldOf(app, guessDecl.id, 'NAME'), 'guess');
+    const guess = await waitFor(
+      async () => {
+        const found = declaredSymbol(required((await mainBody(app))[1], 'guess'), 'NAME');
+        return found?.name === 'guess' ? found : null;
+      },
+      { timeout: 10_000, message: 'the variable renamed to guess' },
+    );
 
     // A print from the toolbox below it, its text typed into the slot.
     await dragFromToolbox(
@@ -196,17 +217,47 @@ describe('M2 exit criterion: the guessing game', () => {
       { timeout: 10_000, message: 'the loop set to until in its menu' },
     );
 
-    // The rest through the hook: until guess == secret; ask (no variable yet); if / else if / else.
-    await hook.insertBlocks(loop.id, 'COND', [
-      compare(ids, 'eq', varGet(ids, GUESS_SYM), varGet(ids, secret.sym)),
-    ]);
+    // Its condition: a comparison from Math, made `=` in its menu, with the getters of guess and
+    // secret from the Variables category, which lists every variable of main whatever is selected.
+    await dragValueFromToolbox(app, { category: 'Math', type: 'math.compare' }, loop.id, 'COND');
+    const comparison = await waitFor(async () => nested((await mainBody(app))[3], 'COND'), {
+      timeout: 10_000,
+      message: 'the comparison in the loop',
+    });
+    expect(comparison.type).toBe('math.compare');
+    await chooseOption(driver, await fieldOf(app, comparison.id, 'OP'), '=');
+    for (const [input, variable] of [
+      ['A', guess],
+      ['B', secret],
+    ] as const) {
+      await dragValueFromToolbox(
+        app,
+        { category: 'Variables', type: 'var.get', fields: { VAR: variable.sym } },
+        comparison.id,
+        input,
+      );
+    }
+    await waitFor(
+      async () => {
+        const node = nested((await mainBody(app))[3], 'COND');
+        const refOf = (input: string) => nested(node, input)?.fields?.['VAR'];
+        return node?.fields?.['OP'] === 'eq' &&
+          JSON.stringify(refOf('A')) === JSON.stringify({ ref: guess.sym }) &&
+          JSON.stringify(refOf('B')) === JSON.stringify({ ref: secret.sym })
+          ? node
+          : null;
+      },
+      { timeout: 10_000, message: 'until guess = secret' },
+    );
+
+    // The rest through the hook: ask (no variable yet); if / else if / else.
     const askBlock = ask(ids, PROMPT, null);
     await hook.insertBlocks(loop.id, 'BODY', [
       askBlock,
       ifElseIfElse(ids, {
-        cond0: compare(ids, 'lt', varGet(ids, GUESS_SYM), varGet(ids, secret.sym)),
+        cond0: compare(ids, 'lt', varGet(ids, guess.sym), varGet(ids, secret.sym)),
         do0: [print(ids, 'Too low!')],
-        cond1: compare(ids, 'gt', varGet(ids, GUESS_SYM), varGet(ids, secret.sym)),
+        cond1: compare(ids, 'gt', varGet(ids, guess.sym), varGet(ids, secret.sym)),
         do1: [print(ids, 'Too high!')],
         otherwise: [print(ids, 'Correct!')],
       }),

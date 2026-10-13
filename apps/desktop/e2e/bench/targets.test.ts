@@ -1,9 +1,7 @@
 /**
  * The blocks the selection benchmarks click (targets.ts): they exist in their documents, are of
  * the kinds the benchmarks name, and every click (also from the last block back to the first)
- * moves to a block that sees other variables, so the toolbox's listing changes each time. What
- * each target says the toolbox lists is what the block sees, and tells its listing from the one
- * of the target before (so a click after which the toolbox was not rebuilt is caught).
+ * moves to a block that sees other variables.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -13,17 +11,14 @@ import { describe, expect, it } from 'vitest';
 import { type BlockNode, parseDocument } from '../support/bdm';
 import { REPOSITORY_ROOT } from '../support/env';
 import { generateDocument } from './document';
-import { listingMismatch } from './interaction';
 import {
   type ClickTarget,
-  counterSymbol,
   GUESSING_MAIN_ID,
   GUESSING_TARGETS,
   SCOPES,
   selectionTargets,
   targetAt,
   unitBlockId,
-  valueSymbol,
 } from './targets';
 
 /** The symbol a symbol field declares (`{ sym, name }`), or `null`. */
@@ -45,10 +40,9 @@ function holdsValue(block: BlockNode, id: string): boolean {
 }
 
 /**
- * The symbols of the variables the toolbox lists for a selected block, as the editor's listing
- * point puts it (src/editor/toolbox/scope.ts): just after a selected statement (its own variable
- * included), at a selected value block (what its statement sees); a loop's counter only inside the
- * loop.
+ * The symbols of the variables a block sees, as the editor's scope query puts it
+ * (src/editor/toolbox/scope.ts): just after a statement (its own variable included), at a value
+ * block what its statement sees; a loop's counter only inside the loop.
  */
 function visibleAt(
   list: readonly BlockNode[],
@@ -115,19 +109,6 @@ function steps(targets: readonly ClickTarget[]): [ClickTarget, ClickTarget][] {
   return targets.map((target, index) => [target, targetAt(targets, index + 1)]);
 }
 
-/** What the toolbox lists for each target, which must be what its block sees. */
-function checkListings(body: readonly BlockNode[], targets: readonly ClickTarget[]): void {
-  for (const target of targets) {
-    const visible = new Set(visibleAt(body, target.id, []) ?? []);
-    expect(listingMismatch(target, visible), target.id).toBeNull();
-  }
-  for (const [from, to] of steps(targets)) {
-    // The listing for the block before, kept by a toolbox that was not rebuilt, is caught.
-    const before = new Set(visibleAt(body, from.id, []) ?? []);
-    expect(listingMismatch(to, before), `${from.id} to ${to.id}`).not.toBeNull();
-  }
-}
-
 describe('selectionTargets', () => {
   const body = mainBody(
     JSON.stringify(generateDocument({ blocks: 1_000, dragHandle: false })),
@@ -162,20 +143,6 @@ describe('selectionTargets', () => {
     }
   });
 
-  it('says what the toolbox lists for each, which tells it from the click before', () => {
-    expect(targets[0]).toEqual({
-      id: unitBlockId(0, 'change'),
-      lists: [valueSymbol(0), counterSymbol(0)],
-      omits: [valueSymbol(1)],
-    });
-    expect(targets.at(-1)).toEqual({
-      id: unitBlockId(123, 'sum'),
-      lists: [valueSymbol(123)],
-      omits: [counterSymbol(123)],
-    });
-    checkListings(body, targets);
-  });
-
   it('needs a document of at least 8 units', () => {
     expect(() => selectionTargets(8 * 7 + 1)).toThrow('fewer than 8 units');
     expect(selectionTargets(8 * 8 + 1)).toHaveLength(SCOPES);
@@ -203,10 +170,6 @@ describe('GUESSING_TARGETS', () => {
         visibleAt(body, to.id, []),
       );
     }
-  });
-
-  it('say what the toolbox lists for each, which tells it from the click before', () => {
-    checkListings(body, GUESSING_TARGETS);
   });
 });
 

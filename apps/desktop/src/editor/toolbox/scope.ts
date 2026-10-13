@@ -1,16 +1,18 @@
 /**
- * Where the toolbox and the block menus look up symbols, and where the toolbox inserts
- * (docs/spec/03-block-language.md §3.6, 04 §4.2):
+ * Where the block menus look up symbols, where a block dropped from the toolbox looks them up, and
+ * where *Make a variable* inserts (docs/spec/03-block-language.md §3.6, 04 §4.2):
  *
- * - the *listing point*, whose symbols the Variables category lists: just after the selected
- *   statement, at a selected value block, or, with nothing selected (or a function or `main`
- *   selected), at the end of that body (`main`'s by default);
- * - the *scope anchor*: the listing point (or a block's own menu position) resolved so that a
- *   block the latest analysis has not seen yet still lists what it would see
- *   ({@link resolveScopeAnchor}, {@link resolveBlockScope}, {@link resolveConnectionScope});
+ * - the *scope at a block*, which its own menus list ({@link resolveBlockScope},
+ *   {@link symbolsAtBlock}), and the *scope at the connection* a block is attached by, which a
+ *   block just dropped sees there before the next analysis has seen it
+ *   ({@link resolveConnectionScope}, {@link symbolsAtConnection}); both are resolved so that a
+ *   block the latest analysis has not seen yet sees what its place gives it;
  * - the *insertion point* of *Make a variable*: before the selected statement, at the top of the
  *   selected function, or at the top of `main` (created when there is none);
- * - the names a new declaration must not take there.
+ * - the names a new declaration must not take where it is inserted or dropped.
+ *
+ * The Variables category does not depend on any of these: it lists every variable of the module
+ * (./contents.ts).
  *
  * Symbols come from the latest analysis through a {@link SymbolSource} (the compiler core's scope
  * query, 06 §6.5), never from Blockly's variable model. The core answers for every block it has
@@ -23,6 +25,8 @@
 import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import { B2cSymbolDeclField, isPlaceholder } from '@blocks2cpp/blockly-ext';
 import type * as Blockly from 'blockly/core';
+
+import type { DefaultNameKind } from './names';
 
 /** The block that starts the program. */
 export const MAIN_TYPE = 'program.main';
@@ -50,8 +54,8 @@ export interface SymbolSource {
   allSymbols(): readonly SymbolInfo[];
 }
 
-/** Where the symbols the Variables category lists are looked up. */
-export type ListingPoint =
+/** A position in the program whose visible symbols are looked up. */
+export type ScopePoint =
   /** At a block, or at the start of one of its statement inputs. */
   | { readonly kind: 'at'; readonly blockId: string; readonly input: string | null }
   /** Just after a statement: what is visible at it, plus the variable it declares. */
@@ -118,48 +122,16 @@ function lastReachedStatement(container: Blockly.Block, input: string): Blockly.
   return last;
 }
 
-/** The listing point at the end of a container's body. */
-function endOfBody(container: Blockly.Block): ListingPoint {
+/** The position at the end of a container's body. */
+function endOfBody(container: Blockly.Block): ScopePoint {
   const last = lastReachedStatement(container, BODY_INPUT);
   return last === null
     ? { kind: 'at', blockId: container.id, input: BODY_INPUT }
     : { kind: 'after', blockId: last.id };
 }
 
-/**
- * The listing point a selected block asks for: just after a statement (so a selected `create x`
- * lists `x`), at a value block (what its statement sees there), or at the end of the body of
- * `main` or a function.
- */
-function selectionPoint(block: Blockly.Block): ListingPoint {
-  if (isContainer(block)) {
-    return endOfBody(block);
-  }
-  return block.outputConnection === null
-    ? { kind: 'after', blockId: block.id }
-    : { kind: 'at', blockId: block.id, input: null };
-}
-
-/**
- * The listing point for a selection, as the block structure gives it (not yet resolved against the
- * analysis, see {@link resolveScopeAnchor}): just after the selected statement, at the selected
- * value block, or the end of the body of a selected `main` or function, or (nothing selected) the
- * end of `main`'s body. `null` when nothing is selected and there is no `main`.
- */
-export function listingPoint(
-  workspace: Blockly.Workspace,
-  selected: Blockly.Block | null,
-): ListingPoint | null {
-  const block = projectBlock(selected);
-  if (block === null) {
-    const main = findMain(workspace);
-    return main === null ? null : endOfBody(main);
-  }
-  return selectionPoint(block);
-}
-
 /** Sorts symbols the way the scope query does: by name, then ID. */
-function bySymbolOrder(a: SymbolInfo, b: SymbolInfo): number {
+export function bySymbolOrder(a: SymbolInfo, b: SymbolInfo): number {
   if (a.name !== b.name) {
     return a.name < b.name ? -1 : 1;
   }
@@ -167,13 +139,13 @@ function bySymbolOrder(a: SymbolInfo, b: SymbolInfo): number {
 }
 
 /**
- * The latest analysis's answer at a listing point, sorted by name, then ID, or `null` when it has
- * none (it has not seen the block). Just after a statement, that is what is visible at it plus
- * the variable it declares, which hides any other symbol with its name (06 §6.5,
+ * The latest analysis's answer at a position, sorted by name, then ID, or `null` when it has none
+ * (it has not seen the block). Just after a statement, that is what is visible at it plus the
+ * variable it declares, which hides any other symbol with its name (06 §6.5,
  * `Analysis::scope_after`): a variable is visible from its declaration on, a loop's counter only
  * inside the loop, and a disabled or parked declaration declares nothing.
  */
-function answerAt(point: ListingPoint, source: SymbolSource): readonly SymbolInfo[] | null {
+function answerAt(point: ScopePoint, source: SymbolSource): readonly SymbolInfo[] | null {
   if (point.kind === 'at') {
     return source.symbolsAt(point.blockId, point.input);
   }
@@ -193,17 +165,6 @@ function answerAt(point: ListingPoint, source: SymbolSource): readonly SymbolInf
   }
   const hidden = new Set(declared.map((symbol) => symbol.name));
   return [...visible.filter((symbol) => !hidden.has(symbol.name)), ...declared].sort(bySymbolOrder);
-}
-
-/**
- * The symbols visible at a listing point, sorted by name, then ID: the latest analysis's answer
- * there, and nothing when it has none (resolve the point first, {@link resolveScopeAnchor}).
- */
-export function symbolsAtPoint(
-  point: ListingPoint | null,
-  source: SymbolSource,
-): readonly SymbolInfo[] {
-  return point === null ? [] : (answerAt(point, source) ?? []);
 }
 
 /** The statement a block belongs to: the block itself, or the statement holding its value input. */
@@ -236,7 +197,7 @@ function canvasDeclaresSymbols(workspace: Blockly.Workspace, source: SymbolSourc
 /** One step of the walk to a position around or before a block (see {@link resolve}). */
 interface ScopeStep {
   /** Where to ask next. */
-  readonly point: ListingPoint;
+  readonly point: ScopePoint;
   /** The block the walk goes on from. */
   readonly block: Blockly.Block;
 }
@@ -266,7 +227,7 @@ function scopeAround(block: Blockly.Block): ScopeStep | null {
 
 /** A resolved position and the symbols visible there, as the latest analysis answers. */
 interface Resolved {
-  readonly point: ListingPoint;
+  readonly point: ScopePoint;
   readonly symbols: readonly SymbolInfo[];
 }
 
@@ -281,11 +242,7 @@ interface Resolved {
  * The walk takes at most {@link MAX_LIST_LENGTH} steps, and none when the analysis knows no symbol
  * of this canvas. Without any answer, `point` stands, and nothing is visible there.
  */
-function resolve(
-  workspace: Blockly.Workspace,
-  point: ListingPoint,
-  source: SymbolSource,
-): Resolved {
+function resolve(workspace: Blockly.Workspace, point: ScopePoint, source: SymbolSource): Resolved {
   const answer = answerAt(point, source);
   if (answer !== null) {
     return { point, symbols: answer };
@@ -321,11 +278,10 @@ function firstDefinition(workspace: Blockly.Workspace): Blockly.Block | null {
 }
 
 /**
- * The end of `main`'s body ({@link findMain}), resolved like any other point: what the Variables
- * category lists with nothing selected, and the parked scope that a block on the canvas sees
- * (06 §6.5). In a module without `main`, the module's functions only (as the scope query answers
- * at a function definition, and from the program's symbols when it has not seen that definition
- * yet). `null` when the module has neither.
+ * The end of `main`'s body ({@link findMain}), resolved like any other point: the parked scope that
+ * a block on the canvas sees (06 §6.5). In a module without `main`, the module's functions only (as
+ * the scope query answers at a function definition, and from the program's symbols when it has not
+ * seen that definition yet). `null` when the module has neither.
  */
 function programEnd(workspace: Blockly.Workspace, source: SymbolSource): Resolved | null {
   const main = findMain(workspace);
@@ -336,7 +292,7 @@ function programEnd(workspace: Blockly.Workspace, source: SymbolSource): Resolve
   if (definition === null) {
     return null;
   }
-  const point: ListingPoint = { kind: 'at', blockId: definition.id, input: null };
+  const point: ScopePoint = { kind: 'at', blockId: definition.id, input: null };
   return { point, symbols: answerAt(point, source) ?? canvasFunctions(workspace, source) };
 }
 
@@ -348,48 +304,25 @@ function canvasFunctions(workspace: Blockly.Workspace, source: SymbolSource): Sy
 }
 
 /**
- * The scope anchor of the toolbox: where the Variables and Loops categories look up the symbols
- * they list for a selection (04 §4.2).
- *
- * - With nothing selected, it is the end of `main`'s body; without `main`, the module's functions.
- * - Otherwise it is the {@link listingPoint} of the selection: just after a selected statement, at
- *   a selected value block, or at the end of the body of a selected `main` or function. The core
- *   answers there for every block it has analysed: a parked block (loose, or in a loose stack)
- *   lists the end of `main`'s body, and a block inside a disabled statement what that statement
- *   sees. For a block the latest analysis has not seen yet, it is the nearest analysed position
- *   around or before it ({@link resolve}).
- */
-export function resolveScopeAnchor(
-  workspace: Blockly.Workspace,
-  selected: Blockly.Block | null,
-  source: SymbolSource,
-): ListingPoint | null {
-  const block = projectBlock(selected);
-  if (block === null) {
-    return programEnd(workspace, source)?.point ?? null;
-  }
-  return resolve(workspace, selectionPoint(block), source).point;
-}
-
-/**
- * The scope anchor of a block's own menus (03 §3.6): the position whose answer is what the block
- * sees at itself, or (`input`) at the start of one of its statement lists or inside one of its
- * value inputs. The core answers there for every block it has analysed (parked blocks and blocks
- * inside disabled statements included); a block it has not seen yet sees what its place gives it,
- * as for {@link resolveScopeAnchor}.
+ * The position whose answer a block's own menus list (03 §3.6): what the block sees at itself, or
+ * (`input`) at the start of one of its statement lists or inside one of its value inputs. The core
+ * answers there for every block it has analysed (parked blocks and blocks inside disabled
+ * statements included); a block it has not seen yet sees what its place gives it: what the
+ * statement before it, or the list or input around it, sees, or, at the top of a stack on the
+ * canvas, the parked scope.
  */
 export function resolveBlockScope(
   workspace: Blockly.Workspace,
   block: Blockly.Block,
   input: string | null,
   source: SymbolSource,
-): ListingPoint | null {
+): ScopePoint | null {
   return resolve(workspace, { kind: 'at', blockId: block.id, input }, source).point;
 }
 
 /**
- * The symbols a block's own menus offer: what is visible at its {@link resolveBlockScope} anchor,
- * asking the scope query once when the latest analysis has seen the block.
+ * The symbols a block's own menus offer: what is visible at its {@link resolveBlockScope}
+ * position, asking the scope query once when the latest analysis has seen the block.
  */
 export function symbolsAtBlock(
   workspace: Blockly.Workspace,
@@ -412,14 +345,15 @@ export function resolveConnectionScope(
   workspace: Blockly.Workspace,
   block: Blockly.Block,
   source: SymbolSource,
-): ListingPoint | null {
+): ScopePoint | null {
   return connectionScope(workspace, block, source)?.point ?? null;
 }
 
 /**
  * What a block sees at its {@link resolveConnectionScope} position: what is visible at a block
- * just dropped or pasted into place, before the next analysis has seen it there (W4-2 re-targets
- * a dropped *set* or *change* preset with it, 04 §4.2). Nothing for a `main` or a function.
+ * just dropped or pasted into place, before the next analysis has seen it there (a dropped *set*
+ * or *change* from the toolbox is re-targeted with it, and a dropped declaration named, 04 §4.2).
+ * Nothing for a `main` or a function.
  */
 export function symbolsAtConnection(
   workspace: Blockly.Workspace,
@@ -487,12 +421,18 @@ export function declaredName(block: Blockly.Block): string | null {
   return null;
 }
 
-/** The names the `var.declare` blocks of a statement list declare, from `first` on. */
-function namesDeclaredFrom(first: Blockly.Block | null): Set<string> {
+/**
+ * The names the `var.declare` blocks of a statement list declare, from `first` on, leaving out
+ * `except` (a declaration whose own name is being chosen).
+ */
+function namesDeclaredFrom(
+  first: Blockly.Block | null,
+  except: Blockly.Block | null = null,
+): Set<string> {
   const names = new Set<string>();
   let current = first;
   for (let steps = 0; current !== null && steps < MAX_LIST_LENGTH; steps += 1) {
-    if (current.type === DECLARE_TYPE) {
+    if (current.type === DECLARE_TYPE && current !== except) {
       const name = declaredName(current);
       if (name !== null) {
         names.add(name);
@@ -538,49 +478,39 @@ export function takenNamesAtInsertion(point: InsertionPoint, source: SymbolSourc
 }
 
 /**
- * The names a new variable from the toolbox should not take at a listing point: everything visible
- * there, and the variables declared in the same statement list.
+ * The names a declaration of `kind` on `block`, just dropped where it is, should not take there
+ * (its own name aside):
+ *
+ * - a variable: what is visible at the block's connection ({@link symbolsAtConnection}) and the
+ *   variables the other `create` blocks of its statement list declare (a second declaration in
+ *   one scope is an error);
+ * - a loop counter: what is visible at the block's connection;
+ * - a function: every other function, analysed or on the canvas (function names are unique,
+ *   `B2C-E0211`).
  */
-export function takenVariableNames(
+export function takenNamesAtDrop(
   workspace: Blockly.Workspace,
-  point: ListingPoint | null,
+  block: Blockly.Block,
+  kind: DefaultNameKind,
   source: SymbolSource,
 ): Set<string> {
-  const names = addNames(new Set(), symbolsAtPoint(point, source));
-  if (point === null) {
-    return names;
-  }
-  const block = workspace.getBlockById(point.blockId);
-  if (block === null) {
-    return names;
-  }
-  const first =
-    point.kind === 'at' && point.input !== null
-      ? block.getInputTargetBlock(point.input)
-      : firstOfList(enclosingStatement(block));
-  for (const name of namesDeclaredFrom(first)) {
-    names.add(name);
-  }
-  return names;
-}
-
-/** The names a new loop counter should not take at a listing point: everything visible there. */
-export function takenLoopNames(point: ListingPoint | null, source: SymbolSource): Set<string> {
-  return addNames(new Set(), symbolsAtPoint(point, source));
-}
-
-/** The names a new function should not take: every function, analysed or on the canvas. */
-export function takenFunctionNames(
-  workspace: Blockly.Workspace,
-  source: SymbolSource,
-): Set<string> {
-  const names = addNames(new Set(), functionSymbols(source));
-  for (const block of workspace.getTopBlocks(false)) {
-    if (block.type === FUNCTION_TYPE) {
-      const name = declaredName(block);
+  if (kind === 'function') {
+    const names = addNames(
+      new Set(),
+      functionSymbols(source).filter((symbol) => symbol.declBlock !== block.id),
+    );
+    for (const top of workspace.getTopBlocks(false)) {
+      const name = top !== block && top.type === FUNCTION_TYPE ? declaredName(top) : null;
       if (name !== null) {
         names.add(name);
       }
+    }
+    return names;
+  }
+  const names = addNames(new Set(), symbolsAtConnection(workspace, block, source));
+  if (kind === 'variable') {
+    for (const name of namesDeclaredFrom(firstOfList(block), block)) {
+      names.add(name);
     }
   }
   return names;

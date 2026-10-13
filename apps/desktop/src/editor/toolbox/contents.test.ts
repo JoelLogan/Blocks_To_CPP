@@ -1,29 +1,34 @@
 import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
-import { BLOCK_DEFS, GENERATED_ID_PATTERN, TOOLBOX } from '@blocks2cpp/blockly-ext';
+import { BLOCK_DEFS, GENERATED_ID_PATTERN, TOOLBOX, catalogBlock } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   B2C_CATEGORY_KIND,
   CATEGORY_KEY,
-  LOOPS_CATEGORY,
   MAKE_VARIABLE_BUTTON,
   MAKE_VARIABLE_TEXT,
   MAX_LISTED_FUNCTIONS,
-  MAX_LISTED_VARIABLES,
+  MAX_LISTED_GETTERS,
   MY_BLOCKS_CATEGORY,
   NO_FUNCTIONS_HINT,
+  PROGRAM_CATEGORY,
+  PROGRAM_HERE_NOTE,
   VARIABLES_CATEGORY,
   YOUR_FUNCTIONS_HEADING,
   categoryOfDefinition,
   displayName,
+  dynamicContentsKey,
   functionsContents,
   initialToolboxDefinition,
-  loopsContents,
   moduleHeading,
+  moreVariablesNote,
   newVariableBlock,
+  programContents,
   staticCategoryContents,
   toolboxDefinition,
+  toolboxSymbolGroups,
+  variableGroups,
   variablesContents,
   type ContentsContext,
   type ModuleInfo,
@@ -36,9 +41,9 @@ import {
   presetBlock,
   type B2cBlockInfo,
 } from './presets';
-import type { SymbolSource } from './scope';
 import {
   disposeTestWorkspaces,
+  fakeSymbols,
   headlessWorkspace,
   setUpToolboxBlocks,
   symbolFixture,
@@ -66,6 +71,12 @@ function labelsOf(items: readonly Item[]): string[] {
   return items.flatMap((item) => (item.kind === 'label' && 'text' in item ? [item.text] : []));
 }
 
+/** The symbol a block item's VAR field is preset to, or `null`. */
+function varOf(block: B2cBlockInfo | undefined): string | null {
+  const value = block?.fields?.['VAR'] as { ref?: string } | undefined;
+  return value?.ref ?? null;
+}
+
 /** The shadow of an input of a toolbox block: its type, tokens and absent flag. */
 function shadowOf(block: B2cBlockInfo | undefined, input: string) {
   const shadow = block?.inputs?.[input]?.shadow;
@@ -80,35 +91,75 @@ function shadowOf(block: B2cBlockInfo | undefined, input: string) {
       };
 }
 
+/** The `create` blocks a container holds in its body, by block ID (for {@link context}). */
+type Declarations = Readonly<Record<string, readonly string[]>>;
+
+/** The Blockly state of a body holding `create` blocks with the given IDs. */
+function bodyOf(ids: readonly string[] | undefined): Blockly.serialization.blocks.State['inputs'] {
+  let next: Blockly.serialization.blocks.State | null = null;
+  for (const id of [...(ids ?? [])].reverse()) {
+    next = { type: 'var.declare', id, ...(next === null ? {} : { next: { block: next } }) };
+  }
+  return next === null ? undefined : { BODY: { block: next } };
+}
+
 /**
- * A context with a headless canvas holding `main` (ID `main`), and fake symbols; the canvas shows
- * the module `active` (`mod_main` unless given).
+ * A context with a headless canvas: `main` (ID `main`) unless `main` is false, a `define` for each
+ * ID of `functions`, and in each container's body `create` blocks with the IDs `declarations` gives
+ * (so that a symbol whose `declBlock` is one of them belongs to that container). The canvas shows
+ * the module `active` (`mod_main` unless given); the program starts where `programModule` says
+ * (the module shown when the canvas has `main`, by default).
  */
 function context(
   options: {
-    scopes?: Record<string, readonly SymbolInfo[]>;
     all?: readonly SymbolInfo[];
     modules?: readonly ModuleInfo[];
     active?: string;
     main?: boolean;
+    functions?: readonly string[];
+    declarations?: Declarations;
+    programModule?: string | null;
   } = {},
 ): ContentsContext & { workspace: Blockly.Workspace } {
   const workspace = headlessWorkspace();
+  const declarations = options.declarations ?? {};
   if (options.main !== false) {
-    Blockly.serialization.blocks.append({ type: 'program.main', id: 'main' }, workspace);
+    const inputs = bodyOf(declarations['main']);
+    Blockly.serialization.blocks.append(
+      { type: 'program.main', id: 'main', ...(inputs === undefined ? {} : { inputs }) },
+      workspace,
+    );
   }
-  const symbols: SymbolSource = {
-    symbolsAt: (blockId, input) =>
-      options.scopes?.[input === null ? blockId : `${blockId}/${input}`] ?? [],
-    allSymbols: () => options.all ?? [],
-  };
+  for (const id of options.functions ?? []) {
+    const inputs = bodyOf(declarations[id]);
+    Blockly.serialization.blocks.append(
+      { type: 'func.define', id, ...(inputs === undefined ? {} : { inputs }) },
+      workspace,
+    );
+  }
+  const active = options.active ?? 'mod_main';
   return {
     workspace,
-    symbols,
-    selected: () => null,
+    symbols: fakeSymbols({}, options.all ?? []),
     modules: () => options.modules ?? [{ id: 'mod_main', name: 'main' }],
-    activeModuleId: () => options.active ?? 'mod_main',
+    activeModuleId: () => active,
+    programModuleId: () =>
+      options.programModule !== undefined
+        ? options.programModule
+        : options.main === false
+          ? null
+          : active,
   };
+}
+
+/** A variable declared by `create` block `declBlock`. */
+function variable(
+  id: string,
+  name: string,
+  declBlock: string,
+  overrides: Partial<Record<string, unknown>> = {},
+): SymbolInfo {
+  return symbolFixture(id, name, { declBlock, ...overrides });
 }
 
 describe('the toolbox definition', () => {
@@ -139,13 +190,13 @@ describe('the toolbox definition', () => {
     }
   });
 
-  it('builds Variables, Loops and Functions when they are shown', () => {
+  it('builds Program, Variables and Functions when they are shown; Loops is static', () => {
     const custom = toolboxDefinition().contents.flatMap((item) =>
       'custom' in item ? [[categoryOfDefinition(item), item.custom]] : [],
     );
     expect(custom).toEqual([
+      ['program', PROGRAM_CATEGORY],
       ['variables', VARIABLES_CATEGORY],
-      ['loops', LOOPS_CATEGORY],
       ['functions', MY_BLOCKS_CATEGORY],
     ]);
   });
@@ -231,32 +282,63 @@ describe('static categories', () => {
     expect(shadowOf(ask, 'PROMPT')).toMatchObject({ value: 'Your answer: ', absent: false });
   });
 
+  it('name a new counted loop i, whatever is in scope: it is named where it lands', () => {
+    const loop = blocksOf(staticCategoryContents('loops')).find(
+      (block) => block.type === 'control.for_range',
+    );
+    expect(loop?.declares).toEqual({ VAR: 'i' });
+  });
+
   it('refuse a block the catalog does not have', () => {
     expect(() => presetBlock('no.such_block')).toThrow(PresetError);
   });
 });
 
 describe('the Variables category', () => {
-  const guess = symbolFixture('s_guess', 'guess');
-  const secret = symbolFixture('s_secret', 'secret', { isConst: true });
-  const counter = symbolFixture('s_i', 'i', { kind: 'loopVariable' });
-  const stop = symbolFixture('s_stop', 'stop', { kind: 'function', params: [], returns: 'void' });
+  /**
+   * In main: `guess`, the constant `answer` and the text `apple` (both sorted before `guess`); in
+   * greet: a parameter and a variable.
+   */
+  const guess = variable('s_guess', 'guess', 'd_guess');
+  const secret = variable('s_secret', 'answer', 'd_secret', { isConst: true });
+  const label = variable('s_label', 'apple', 'd_label', { type: 'string' });
+  const n = symbolFixture('s_n', 'n', { kind: 'parameter', mode: 'copy', declBlock: 'fn_greet' });
+  const count = variable('s_count', 'count', 'd_count', { type: 'double' });
+  const greet = symbolFixture('s_greet', 'greet', {
+    kind: 'function',
+    params: ['s_n'],
+    returns: 'void',
+    type: 'void',
+    declBlock: 'fn_greet',
+  });
+  const game = {
+    functions: ['fn_greet'],
+    declarations: { main: ['d_secret', 'd_guess', 'd_label'], fn_greet: ['d_count'] },
+  };
 
-  it('offers Make a variable and a create block with a free name and a fresh symbol', () => {
-    const items = variablesContents(
-      context({ scopes: { 'main/BODY': [symbolFixture('s_v', 'value')] } }),
-    );
+  it('offers Make a variable, the create block named value, and one set', () => {
+    const items = variablesContents(context());
     expect(items[0]).toEqual({
       kind: 'button',
       text: 'Make a variable',
       callbackkey: MAKE_VARIABLE_BUTTON,
     });
-    const [create] = blocksOf(items);
+    const [create, set, ...rest] = blocksOf(items);
     expect(create?.type).toBe('var.declare');
-    expect(create?.declares).toEqual({ NAME: 'value2' });
+    // The flyout shows the first default name: a free one is chosen where the block lands.
+    expect(create?.declares).toEqual({ NAME: 'value' });
     expect(create?.fields?.['NAME']).toBeUndefined();
     expect(create?.fields?.['TYPE']).toBe('int');
     expect(shadowOf(create, 'VALUE')).toMatchObject({ value: '0', absent: false });
+    // No variable yet: set has none, and no start value, and the drop may choose one.
+    expect(set?.type).toBe('var.set');
+    expect(varOf(set)).toBeNull();
+    expect(set?.inputs).toBeUndefined();
+    expect(set?.retarget).toBe('VAR');
+    expect(rest).toEqual([]);
+    // The name stays value when value exists: it does not depend on what is in scope.
+    const named = variablesContents(context({ all: [variable('s_v', 'value', 'd_v')] }));
+    expect(blocksOf(named)[0]?.declares).toEqual({ NAME: 'value' });
   });
 
   it('declares a new symbol for every block created from the create item', () => {
@@ -272,57 +354,69 @@ describe('the Variables category', () => {
     expect(second.sym).not.toBe(first.sym);
   });
 
-  it('builds equal items for the same project, so an unchanged toolbox is not redrawn', () => {
-    const ctx = context({ scopes: { 'main/BODY': [guess, secret] } });
-    expect(JSON.stringify(variablesContents(ctx))).toBe(JSON.stringify(variablesContents(ctx)));
-    expect(JSON.stringify(loopsContents(ctx))).toBe(JSON.stringify(loopsContents(ctx)));
-    expect(JSON.stringify(functionsContents(ctx))).toBe(JSON.stringify(functionsContents(ctx)));
-  });
-
-  it('lists a getter, set, change and update for each number variable in scope', () => {
-    const items = variablesContents(context({ scopes: { 'main/BODY': [guess, stop] } }));
-    const listed = blocksOf(items).slice(1);
-    expect(listed.map((block) => [block.type, block.fields?.['VAR'] as unknown])).toEqual([
-      ['var.get', { ref: 's_guess' }],
-      ['var.set', { ref: 's_guess' }],
-      ['var.change', { ref: 's_guess' }],
-      ['var.update', { ref: 's_guess' }],
+  it('has one set and one change, preset to main’s first fitting variable by name', () => {
+    const items = variablesContents(
+      context({ ...game, all: [guess, secret, label, n, count, greet] }),
+    );
+    const generic = blocksOf(items).filter((block) =>
+      ['var.set', 'var.change', 'var.update'].includes(block.type),
+    );
+    // answer comes first by name but is a constant; apple may be set. change takes the first
+    // number of main (apple is text), not count, which greet declares. The update operators are
+    // in change's menu: the catalog has no separate update block (W4-5).
+    expect(catalogBlock('var.update')).toBeUndefined();
+    expect(generic.map((block) => [block.type, varOf(block), block.retarget])).toEqual([
+      ['var.set', 's_label', 'VAR'],
+      ['var.change', 's_guess', 'VAR'],
     ]);
-    // set starts at a value of the variable's type; change and update keep the catalog default.
-    expect(shadowOf(listed[1], 'VALUE')).toMatchObject({ value: '0', absent: false });
-    expect(shadowOf(listed[2], 'BY')).toMatchObject({ value: '1', absent: true });
+    // set starts at the start value of its variable's type; change keeps the catalog default.
+    expect(shadowOf(generic[0], 'VALUE')).toMatchObject({ type: 'b2c.expr.str', value: '' });
+    expect(shadowOf(generic[1], 'BY')).toMatchObject({ value: '1', absent: true });
   });
 
-  it('presets a block to a variable only when its menu would offer it (03 §3.6)', () => {
-    const listed = (symbol: SymbolInfo) =>
-      typesOf(variablesContents(context({ scopes: { 'main/BODY': [symbol] } }))).slice(1);
-    const all = ['var.get', 'var.set', 'var.change', 'var.update'];
-    // Constants, loop counters and read-only parameters cannot be changed.
-    expect(listed(secret)).toEqual(['var.get']);
-    expect(listed(counter)).toEqual(['var.get']);
-    const readOnly = symbolFixture('s_ro', 'ro', { kind: 'parameter', mode: 'read_only' });
-    expect(listed(readOnly)).toEqual(['var.get']);
-    // Text and true/false can be set, but not changed by or updated with a number.
-    for (const type of ['string', 'bool']) {
-      expect(listed(symbolFixture('s_t', 't', { type })), type).toEqual(['var.get', 'var.set']);
+  it('shows change only while a whole-number, decimal or character variable exists', () => {
+    const generic = (all: readonly SymbolInfo[]) =>
+      typesOf(variablesContents(context({ ...game, all }))).filter((type) =>
+        ['var.set', 'var.change', 'var.update'].includes(type),
+      );
+    const only = ['var.set'];
+    const all = ['var.set', 'var.change'];
+    // Text, true/false, a constant, a loop counter, a read-only parameter, an unknown type.
+    expect(generic([label])).toEqual(only);
+    expect(generic([variable('s_b', 'b', 'd_guess', { type: 'bool' })])).toEqual(only);
+    expect(generic([secret])).toEqual(only);
+    expect(generic([variable('s_i', 'i', 'd_guess', { kind: 'loopVariable' })])).toEqual(only);
+    const readOnly = symbolFixture('s_ro', 'ro', {
+      kind: 'parameter',
+      mode: 'read_only',
+      declBlock: 'fn_greet',
+    });
+    expect(generic([readOnly])).toEqual(only);
+    expect(generic([variable('s_e', 'e', 'd_guess', { type: 'error' })])).toEqual(only);
+    for (const type of ['int', 'double', 'char']) {
+      expect(generic([variable('s_x', 'x', 'd_guess', { type })]), type).toEqual(all);
     }
-    const editable = symbolFixture('s_e', 'e', { kind: 'parameter', mode: 'editable' });
-    expect(listed(editable)).toEqual(all);
-    for (const type of ['double', 'char', 'error']) {
-      expect(listed(symbolFixture('s_n', 'n', { type })), type).toEqual(all);
-    }
+    // A number variable of greet's is enough; the presets then name it.
+    const items = variablesContents(context({ ...game, all: [label, count] }));
+    expect(
+      blocksOf(items)
+        .filter((block) => block.type !== 'var.get' && block.type !== 'var.declare')
+        .map((block) => [block.type, varOf(block)]),
+    ).toEqual([
+      ['var.set', 's_label'],
+      ['var.change', 's_count'],
+    ]);
   });
 
-  it('gives set a start value of the variable type', () => {
+  it('gives set the start value of its variable’s type', () => {
     const typed = (type: string) =>
       shadowOf(
         blocksOf(
-          variablesContents(
-            context({ scopes: { 'main/BODY': [symbolFixture('s_x', 'x', { type })] } }),
-          ),
+          variablesContents(context({ ...game, all: [variable('s_x', 'x', 'd_guess', { type })] })),
         ).find((block) => block.type === 'var.set'),
         'VALUE',
       );
+    expect(typed('int')).toMatchObject({ type: 'b2c.expr.num', value: '0' });
     expect(typed('double')).toMatchObject({ type: 'b2c.expr.num', value: '0.0' });
     expect(typed('bool')).toMatchObject({ type: 'b2c.expr.kw', value: 'true' });
     expect(typed('char')).toMatchObject({ type: 'b2c.expr.chr', value: 'a' });
@@ -330,35 +424,151 @@ describe('the Variables category', () => {
     expect(typed('error')).toBeUndefined();
   });
 
-  it('lists at most MAX_LISTED_VARIABLES variables', () => {
-    const many = Array.from({ length: MAX_LISTED_VARIABLES + 5 }, (_, index) =>
-      symbolFixture(`s_${String(index)}`, `v${String(index)}`),
+  it('lists a getter per variable of the module, grouped by declaring function and by name', () => {
+    const zeta = variable('s_zeta', 'zeta', 'd_zeta');
+    const alpha = variable('s_alpha', 'alpha', 'd_alpha');
+    const counter = variable('s_i', 'i', 'd_alpha', { kind: 'loopVariable' });
+    const w = symbolFixture('s_w', 'w', { kind: 'parameter', mode: 'copy', declBlock: 'fn_area' });
+    const other = variable('s_other', 'other', 'd_other', { module: 'mod_other' });
+    const area = symbolFixture('s_area', 'area', {
+      kind: 'function',
+      params: ['s_w'],
+      returns: 'int',
+      declBlock: 'fn_area',
+    });
+    const items = variablesContents(
+      context({
+        functions: ['fn_greet', 'fn_area'],
+        declarations: { main: ['d_zeta', 'd_alpha'], fn_greet: ['d_count'] },
+        all: [zeta, n, count, alpha, counter, w, other, area, greet],
+      }),
     );
-    const items = variablesContents(context({ scopes: { 'main/BODY': many } }));
-    expect(typesOf(items).filter((type) => type === 'var.get')).toHaveLength(MAX_LISTED_VARIABLES);
+    expect(labelsOf(items)).toEqual(['In when program starts', 'In area', 'In greet']);
+    // The getters follow their group's heading.
+    const order = items.flatMap((item) =>
+      item.kind === 'label' && 'text' in item
+        ? [item.text]
+        : item.kind === B2C_BLOCK_KIND && (item as B2cBlockInfo).type === 'var.get'
+          ? [varOf(item as B2cBlockInfo)]
+          : [],
+    );
+    expect(order).toEqual([
+      'In when program starts',
+      's_alpha',
+      's_i',
+      's_zeta',
+      'In area',
+      's_w',
+      'In greet',
+      's_count',
+      's_n',
+    ]);
   });
 
-  it('lists nothing in scope when there is no main and nothing is selected', () => {
-    const items = variablesContents(context({ main: false, scopes: { 'main/BODY': [guess] } }));
-    expect(typesOf(items)).toEqual(['var.declare']);
+  it('puts variables declared outside main and the functions last, without a heading', () => {
+    const items = variablesContents(
+      context({
+        declarations: { main: ['d_guess'] },
+        all: [guess, variable('s_lost', 'lost', 'gone')],
+      }),
+    );
+    expect(labelsOf(items)).toEqual(['In when program starts']);
+    expect(
+      blocksOf(items)
+        .filter((block) => block.type === 'var.get')
+        .map(varOf),
+    ).toEqual(['s_guess', 's_lost']);
+  });
+
+  it(`lists at most ${String(MAX_LISTED_GETTERS)} getters, then says how many more`, () => {
+    const ids = Array.from({ length: MAX_LISTED_GETTERS + 10 }, (_, index) => `d_${String(index)}`);
+    const many = ids.map((id, index) => variable(`s_${String(index)}`, `v${String(index)}`, id));
+    const items = variablesContents(context({ declarations: { main: ids }, all: many }));
+    expect(typesOf(items).filter((type) => type === 'var.get')).toHaveLength(MAX_LISTED_GETTERS);
+    expect(labelsOf(items).at(-1)).toBe(moreVariablesNote(10));
+    expect(moreVariablesNote(10)).toBe('…and 10 more');
+    // Exactly the cap: no note.
+    const exact = variablesContents(
+      context({
+        declarations: { main: ids },
+        all: many.slice(0, MAX_LISTED_GETTERS),
+      }),
+    );
+    expect(labelsOf(exact)).toEqual(['In when program starts']);
+  });
+
+  it('builds equal items for an equal project, so an unchanged toolbox is not redrawn', () => {
+    const ctx = context({ ...game, all: [guess, secret, label, n, count, greet] });
+    expect(JSON.stringify(variablesContents(ctx))).toBe(JSON.stringify(variablesContents(ctx)));
+    expect(JSON.stringify(programContents(ctx))).toBe(JSON.stringify(programContents(ctx)));
+    expect(JSON.stringify(functionsContents(ctx))).toBe(JSON.stringify(functionsContents(ctx)));
+    // The order in which the analysis lists the symbols does not matter.
+    const reordered = context({ ...game, all: [greet, count, n, label, secret, guess] });
+    expect(JSON.stringify(variablesContents(reordered))).toBe(
+      JSON.stringify(variablesContents(ctx)),
+    );
   });
 });
 
-describe('the Loops category', () => {
-  it('names a new counted loop i, or the next free name', () => {
-    const loopName = (scope: readonly SymbolInfo[]) =>
-      blocksOf(loopsContents(context({ scopes: { 'main/BODY': scope } }))).find(
-        (block) => block.type === 'control.for_range',
-      )?.declares?.['VAR'];
-    expect(loopName([])).toBe('i');
-    expect(loopName([symbolFixture('s_i', 'i', { kind: 'loopVariable' })])).toBe('j');
-    expect(loopName(['i', 'j', 'k'].map((name) => symbolFixture(`s_${name}`, name)))).toBe('i2');
+describe('the variable groups and the menus of blocks in the flyout', () => {
+  it('group the module’s variables like the category, then list its functions', () => {
+    const ctx = context({
+      functions: ['fn_greet'],
+      declarations: { main: ['d_b', 'd_a'] },
+      all: [
+        variable('s_b', 'b', 'd_b'),
+        variable('s_a', 'a', 'd_a'),
+        symbolFixture('s_n', 'n', { kind: 'parameter', mode: 'copy', declBlock: 'fn_greet' }),
+        symbolFixture('s_greet', 'greet', {
+          kind: 'function',
+          params: ['s_n'],
+          returns: 'void',
+          declBlock: 'fn_greet',
+        }),
+      ],
+    });
+    expect(
+      variableGroups(ctx.workspace, ctx.symbols, 'mod_main').map((group) => [
+        group.owner.kind,
+        group.symbols.map((symbol) => symbol.id),
+      ]),
+    ).toEqual([
+      ['main', ['s_a', 's_b']],
+      ['function', ['s_n']],
+    ]);
+    expect(toolboxSymbolGroups(ctx).map((group) => group.map((symbol) => symbol.id))).toEqual([
+      ['s_a', 's_b'],
+      ['s_n'],
+      ['s_greet'],
+    ]);
+  });
+});
+
+describe('the Program category', () => {
+  it('offers when program starts while the project has none', () => {
+    const items = programContents(context({ main: false }));
+    expect(typesOf(items)).toEqual(['program.main', 'program.exit']);
+    expect(labelsOf(items)).toEqual([]);
   });
 
-  it('keeps every catalog entry of Loops', () => {
-    expect(typesOf(loopsContents(context()))).toEqual(
-      TOOLBOX.find((category) => category.id === 'loops')?.entries.map((entry) => entry.block),
+  it('says where the program starts once the project has it, and still offers stop program', () => {
+    const here = programContents(context());
+    expect(typesOf(here)).toEqual(['program.exit']);
+    expect(labelsOf(here)).toEqual([...PROGRAM_HERE_NOTE]);
+    expect(PROGRAM_HERE_NOTE).toEqual(['Your program starts at', '“when program starts”.']);
+
+    const elsewhere = programContents(
+      context({
+        main: false,
+        programModule: 'mod_game',
+        modules: [
+          { id: 'mod_main', name: 'helpers' },
+          { id: 'mod_game', name: 'game' },
+        ],
+      }),
     );
+    expect(typesOf(elsewhere)).toEqual(['program.exit']);
+    expect(labelsOf(elsewhere)).toEqual(['Your program starts in', 'the module “game”.']);
   });
 });
 
@@ -383,7 +593,7 @@ describe('the Functions category and Your functions', () => {
     module: 'mod_extra',
   });
 
-  it('names a new function myFunction, or the next free name', () => {
+  it('names a new function myFunction: a free name is chosen where it lands', () => {
     const defineName = (all: readonly SymbolInfo[]) =>
       blocksOf(functionsContents(context({ all })))[0]?.declares?.['NAME'];
     expect(defineName([])).toBe('myFunction');
@@ -391,7 +601,7 @@ describe('the Functions category and Your functions', () => {
       defineName([
         symbolFixture('s_f', 'myFunction', { kind: 'function', params: [], returns: 'void' }),
       ]),
-    ).toBe('myFunction2');
+    ).toBe('myFunction');
   });
 
   it('shows a hint under Your functions while the module has no functions', () => {
@@ -503,31 +713,93 @@ describe('the Functions category and Your functions', () => {
   });
 });
 
+describe('the key of what the dynamic categories show', () => {
+  const guess = variable('s_guess', 'guess', 'd_guess');
+  const base = { declarations: { main: ['d_guess', 'd_other'] }, functions: ['fn_greet'] };
+  const keyOf = (options: Parameters<typeof context>[0]) => dynamicContentsKey(context(options));
+
+  it('is equal for an equal project, and changes with what the categories show', () => {
+    const key = keyOf({ ...base, all: [guess] });
+    expect(keyOf({ ...base, all: [guess] })).toBe(key);
+    const changed = [
+      // A new variable, a renamed one, another type, a constant, another declaring function.
+      keyOf({ ...base, all: [guess, variable('s_other', 'other', 'd_other')] }),
+      keyOf({ ...base, all: [{ ...guess, name: 'tries' }] }),
+      keyOf({ ...base, all: [{ ...guess, type: 'double' }] }),
+      keyOf({ ...base, all: [variable('s_guess', 'guess', 'd_guess', { isConst: true })] }),
+      keyOf({ ...base, all: [{ ...guess, declBlock: 'fn_greet' }] }),
+      // A function, the program's start, the modules.
+      keyOf({
+        ...base,
+        all: [guess, symbolFixture('s_f', 'f', { kind: 'function', params: [], returns: 'void' })],
+      }),
+      keyOf({ ...base, main: false, all: [guess] }),
+      keyOf({
+        ...base,
+        all: [guess],
+        modules: [
+          { id: 'mod_main', name: 'main' },
+          { id: 'mod_b', name: 'b' },
+        ],
+      }),
+    ];
+    for (const [index, other] of changed.entries()) {
+      expect(other, String(index)).not.toBe(key);
+    }
+  });
+});
+
 describe('headings and labels', () => {
   /** Every label and button text the flyout shows, static and dynamic, in a varied project. */
   function shownTexts(names: readonly string[]): string[] {
-    const variables = names.map((name, index) => symbolFixture(`s_v${String(index)}`, name));
-    const functions = names.map((name, index) =>
-      symbolFixture(`s_f${String(index)}`, name, { kind: 'function', params: [], returns: 'void' }),
+    const functions = names.map((_, index) => `fn_${String(index)}`);
+    const declared = names.map((_, index) => `d_${String(index)}`);
+    const variables = names.map((name, index) =>
+      variable(`s_v${String(index)}`, name, declared[index] ?? ''),
+    );
+    const definitions = names.map((name, index) =>
+      symbolFixture(`s_f${String(index)}`, name, {
+        kind: 'function',
+        params: [],
+        returns: 'void',
+        declBlock: functions[index],
+      }),
+    );
+    const params = names.map((name, index) =>
+      symbolFixture(`s_p${String(index)}`, name, {
+        kind: 'parameter',
+        mode: 'copy',
+        declBlock: functions[index],
+      }),
     );
     const texts: string[] = [];
     for (const modules of [
       [{ id: 'mod_main', name: 'main' }],
       names.map((name, index) => ({ id: index === 0 ? 'mod_main' : `mod_${String(index)}`, name })),
     ]) {
-      const ctx = context({ scopes: { 'main/BODY': variables }, all: functions, modules });
-      for (const items of [
-        ...TOOLBOX.map((category) => staticCategoryContents(category.id)),
-        variablesContents(ctx),
-        loopsContents(ctx),
-        functionsContents(ctx),
-        functionsContents(context({ modules })),
-      ]) {
-        texts.push(
-          ...items.flatMap((item) =>
-            (item.kind === 'label' || item.kind === 'button') && 'text' in item ? [item.text] : [],
-          ),
-        );
+      for (const programModule of [null, 'mod_main', 'mod_1']) {
+        const ctx = context({
+          functions,
+          declarations: { main: declared },
+          all: [...variables, ...definitions, ...params],
+          modules,
+          programModule,
+        });
+        for (const items of [
+          ...TOOLBOX.map((category) => staticCategoryContents(category.id)),
+          programContents(ctx),
+          variablesContents(ctx),
+          functionsContents(ctx),
+          functionsContents(context({ modules })),
+        ]) {
+          texts.push(
+            ...items.flatMap((item) =>
+              (item.kind === 'label' || item.kind === 'button') && 'text' in item
+                ? [item.text]
+                : [],
+            ),
+          );
+        }
       }
     }
     return texts;
@@ -538,11 +810,13 @@ describe('headings and labels', () => {
     // Projects whose own names are category names, too.
     const texts = shownTexts([...categoryNames, 'main']);
     expect(texts).toContain(YOUR_FUNCTIONS_HEADING);
-    for (const line of NO_FUNCTIONS_HINT) {
+    for (const line of [...NO_FUNCTIONS_HINT, ...PROGRAM_HERE_NOTE]) {
       expect(texts).toContain(line);
     }
     expect(texts).toContain(MAKE_VARIABLE_TEXT);
     expect(texts).toContain('Module: Program');
+    expect(texts).toContain('In Program');
+    expect(texts).toContain('In when program starts');
     for (const text of texts) {
       expect(categoryNames, text).not.toContain(text);
     }
@@ -550,19 +824,34 @@ describe('headings and labels', () => {
 });
 
 describe('coverage of the catalog', () => {
-  it('reaches all 32 catalog blocks through the static and dynamic categories', () => {
-    const variable = symbolFixture('s_v', 'v');
+  it('reaches every catalog block through one entry (getters and calls: one per symbol)', () => {
+    const variables = [variable('s_v', 'v', 'd_v'), variable('s_w', 'w', 'd_w')];
     const value = symbolFixture('s_f', 'f', { kind: 'function', params: [], returns: 'int' });
     const action = symbolFixture('s_g', 'g', { kind: 'function', params: [], returns: 'void' });
-    const ctx = context({ scopes: { 'main/BODY': [variable] }, all: [value, action] });
-    const reached = new Set([
-      ...TOOLBOX.flatMap((category) => typesOf(staticCategoryContents(category.id))),
+    // Without main, so that Program offers it.
+    const ctx = context({
+      main: false,
+      functions: ['fn'],
+      declarations: { fn: ['d_v', 'd_w'] },
+      all: [...variables, value, action],
+    });
+    const reached = [
+      ...TOOLBOX.flatMap((category) =>
+        category.id === 'program' || category.id === 'variables' || category.id === 'functions'
+          ? []
+          : typesOf(staticCategoryContents(category.id)),
+      ),
+      ...typesOf(programContents(ctx)),
       ...typesOf(variablesContents(ctx)),
-      ...typesOf(loopsContents(ctx)),
       ...typesOf(functionsContents(ctx)),
-    ]);
+    ];
     expect(BLOCK_DEFS).toHaveLength(32);
-    expect([...reached].sort()).toEqual(BLOCK_DEFS.map((def) => def.id).sort());
+    expect([...new Set(reached)].sort()).toEqual(BLOCK_DEFS.map((def) => def.id).sort());
+    const count = (type: string) => reached.filter((reachedType) => reachedType === type).length;
+    for (const def of BLOCK_DEFS) {
+      const expected = def.id === 'var.get' ? variables.length : 1;
+      expect(count(def.id), def.id).toBe(expected);
+    }
   });
 });
 
@@ -572,9 +861,24 @@ describe('newVariableBlock', () => {
     expect(block.type).toBe('var.declare');
     expect(block.declares).toEqual({ NAME: 'score' });
     expect(block.fields?.['TYPE']).toBe('int');
+    expect(shadowOf(block, 'VALUE')).toMatchObject({ value: '0', absent: false });
     const state = blockState(block);
     expect(state.fields?.['NAME']).toMatchObject({ name: 'score' });
     expect((state.fields?.['NAME'] as { sym: string }).sym).toMatch(GENERATED_ID_PATTERN.sym);
+  });
+
+  it('has the type asked for, with that type’s start value', () => {
+    const cases: [string, string, string][] = [
+      ['double', 'b2c.expr.num', '0.0'],
+      ['bool', 'b2c.expr.kw', 'true'],
+      ['char', 'b2c.expr.chr', 'a'],
+      ['std::string', 'b2c.expr.str', ''],
+    ];
+    for (const [type, shadow, value] of cases) {
+      const block = newVariableBlock('x', type);
+      expect(block.fields?.['TYPE'], type).toBe(type);
+      expect(shadowOf(block, 'VALUE'), type).toMatchObject({ type: shadow, value, absent: false });
+    }
   });
 });
 
@@ -582,6 +886,11 @@ describe('presets', () => {
   it('refuse a declaration on a field that does not declare', () => {
     expect(() => presetBlock('var.declare', { declare: { TYPE: 'x' } })).toThrow(PresetError);
     expect(() => presetBlock('var.declare', { declare: { NOPE: 'x' } })).toThrow(PresetError);
+  });
+
+  it('refuse a re-targeted field that is not a reference', () => {
+    expect(() => presetBlock('var.set', { retarget: 'VALUE' })).toThrow(PresetError);
+    expect(presetBlock('var.set', { retarget: 'VAR' }).retarget).toBe('VAR');
   });
 
   it('keep only fields the block has, and counts and flags from the catalog defaults', () => {
@@ -597,28 +906,5 @@ describe('presets', () => {
     expect(declares('variables', 'var.declare')).toEqual({ NAME: 'value' });
     expect(declares('loops', 'control.for_range')).toEqual({ VAR: 'i' });
     expect(declares('functions', 'func.define')).toEqual({ NAME: 'myFunction' });
-  });
-});
-
-describe('the scope Variables and Loops list for a block left loose', () => {
-  it('is the end of main, as for nothing selected', () => {
-    const guess = symbolFixture('s_guess', 'guess');
-    const counter = symbolFixture('s_i', 'i', { kind: 'loopVariable' });
-    // The compiler core answers a parked block with the end of main (06 §6.5).
-    const ctx = context({ scopes: { 'main/BODY': [guess, counter], loose: [guess, counter] } });
-    const loose = Blockly.serialization.blocks.append(
-      { type: 'io.print', id: 'loose', extraState: { itemCount: 1 } },
-      ctx.workspace,
-    );
-    const selected = { ...ctx, selected: () => loose };
-    expect(
-      blocksOf(variablesContents(selected))
-        .filter((block) => block.type === 'var.get')
-        .map((block) => block.fields?.['VAR'] as unknown),
-    ).toEqual([{ ref: 's_guess' }, { ref: 's_i' }]);
-    expect(
-      blocksOf(loopsContents(selected)).find((block) => block.type === 'control.for_range')
-        ?.declares?.['VAR'],
-    ).toBe('j');
   });
 });

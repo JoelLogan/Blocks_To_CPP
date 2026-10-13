@@ -125,17 +125,33 @@
   default as wide as its widest block, up to 320 px), is opaque, and cuts off
   a block wider than itself (which can still be dragged out). When less than
   200 px of canvas would remain beside it, the flyout narrows, down to
-  160 px.
-* **Dynamic categories.** *Variables* lists the symbols in scope at the
-  current selection; for a block selected with a click it does so once the
-  button is released, however long it was held. *Functions* lists *define*
-  and *return*, then, under *Your functions*, a call block for each
-  function of the module shown, or a short hint when there is none; module
-  headings appear only when the project has more than one module. A call
-  block of a known function has as many arguments as the function has
-  parameters: it shows no ⊖/⊕ while they match, and only the one that
-  brings it back in line when the definition changes. *Libraries* lists
-  installed packs.
+  160 px. Rebuilding a dynamic category never moves what the flyout shows:
+  the category in view stays in view.
+* **Dynamic categories.** *Program* offers *when program starts* only while
+  the project has none; otherwise it says where the program starts.
+  *Variables* offers *Make a variable* (name and type), the `create` block,
+  one `set`, and, when a number or character variable exists, one `change`,
+  then a getter for each variable of the module, grouped by the function
+  that declares it (at most 50, then a note of how many more there are). It does not depend on the selection. A *set* or
+  *change* block dragged from the toolbox comes with a variable already
+  chosen; if that variable is not visible where the block is dropped, the
+  block takes the first fitting variable visible there, as part of the same
+  drop (one Undo removes it). A getter keeps its variable: if the variable is
+  not visible where it is dropped, the block shows `B2C-E0203` and its menu
+  offers the variables that are. A block still in the toolbox lists every
+  variable of the module in its menu, grouped like the category.
+  *Functions* lists *define* and *return*, then, under *Your functions*, a
+  call block for each function of the module shown, or a short hint when
+  there is none; module headings appear only when the project has more than
+  one module. A call block of a known function has as many arguments as the
+  function has parameters: it shows no ⊖/⊕ while they match, and only the
+  one that brings it back in line when the definition changes. *Libraries*
+  lists installed packs.
+* **Rebuilds.** The flyout is rebuilt only when what the dynamic categories
+  show changes (the module's variables and functions, whether the project
+  has *when program starts*, the modules), never while a block is dragged, a
+  field is edited, a menu is open or a category scroll runs; the selected
+  category stays selected.
 * **Beginner / Advanced.** Advanced categories and rarely used blocks are
   hidden until *Show advanced blocks* is enabled (per project, defaulting to
   the user preference).
@@ -145,28 +161,24 @@
   `catalog/toolbox.toml` ([03 §3.11.1](03-block-language.md#3111-catalog-format)).
   Entries can carry **presets** that fill in values (a new `int` starting at
   `0`; *ask* with `"Your answer: "`). A new variable's start value follows
-  its type (`0`, `0.0`, `true`, `'a'`, `""`), and a call from *Your
-  functions* comes with a default argument of each parameter's type. A block
-  whose forms differ only by a dropdown or ⊕ part appears once
+  its type (`0`, `0.0`, `true`, `'a'`, `""`), and so does the value of *set*
+  when another variable is chosen in it while the value is still a start
+  value; a call from *Your functions* comes with a default argument of each
+  parameter's type. A block whose forms differ only by a dropdown or ⊕ part
+  appears once
   ([03 §3.1](03-block-language.md#31-design-philosophy-few-blocks-much-power)).
 
 **In M2:** the toolbox shows Program, Variables, Math, Logic, Text, Control,
-Loops, Input / Output and Functions (with *Your functions*). *Variables*
-offers *Make a variable* and lists the variables in scope just after the
-selected statement (for a selected value block, at its statement), each with a
-getter and the blocks whose menu may choose it there
-([03 §3.6](03-block-language.md#36-symbols-and-scoping)): *set*, and *change*
-and the update block for a number or a character. With nothing selected, or
-with a block selected that is not inside *when program starts* or a function,
-it lists those visible at the end of `main`; a block inside a disabled
-statement, or one the analysis has not seen yet, lists the scope of the
-nearest analysed statement around or before it. The list never empties while
-the next analysis runs. *Loops* gives its counted loop the first counter name
-that is free there, and *Your functions* follows the functions as they are
-defined (default names in
-[03 §3.6](03-block-language.md#36-symbols-and-scoping)). The
-continuous flyout is `@blockly/continuous-toolbox` 7.0.9, the Blockly team's
-plugin and its last release for Blockly 12: it passes the dependency policy
+Loops, Input / Output and Functions (with *Your functions*). The `create`
+block, the counted loop and *define* get the first default name that is free
+where they are dropped, and *Your functions* follows the functions as they
+are defined (default names in
+[03 §3.6](03-block-language.md#36-symbols-and-scoping)). *Make a variable*
+offers `int`, `double`, `bool`, `char` and `string`. The menus of *set*
+and *change* on the canvas list what is visible where the block is
+([03 §3.6](03-block-language.md#36-symbols-and-scoping)). The continuous
+flyout is `@blockly/continuous-toolbox` 7.0.9, the Blockly team's plugin and
+its last release for Blockly 12: it passes the dependency policy
 ([08 §8.9](08-security.md#89-supply-chain)) and shows the dynamic categories
 in the same scrolling flyout, so M2 needs no fallback to Blockly's category
 toolbox. *Libraries* comes with library packs (M4), *Show advanced blocks* and

@@ -1,8 +1,9 @@
 /**
  * The shipped app runs with Tauri's `freezePrototype: true` (docs/spec/08-security.md §8.8). This
- * file freezes `Object.prototype` and then loads and runs the toolbox: `@blockly/continuous-toolbox`,
- * our categories, the dynamic Variables, Loops and Functions categories and *Make a variable*. A
- * library that assigns to an inherited property (`obj.toString = …`) breaks here.
+ * file freezes `Object.prototype` and then loads and runs the toolbox:
+ * `@blockly/continuous-toolbox`, our categories, the dynamic Program, Variables and Functions
+ * categories and *Make a variable*. A library that assigns to an inherited property
+ * (`obj.toString = …`) breaks here.
  *
  * Blockly itself is imported before the freeze: under Node its package entry sets up jsdom, whose
  * dependencies assign to inherited properties at load time; the webviews load Blockly's browser
@@ -39,7 +40,11 @@ describe('with a frozen Object.prototype', () => {
     testing.storeAnalysis(document, [guess, factorial]);
     const created: string[] = [];
     const detach = createToolboxPlugin({
-      dialogs: { prompt: () => Promise.resolve('score'), alert: () => Promise.resolve() },
+      dialogs: {
+        prompt: () => Promise.resolve('score'),
+        alert: () => Promise.resolve(),
+        choose: (options) => Promise.resolve(options.choices[0]?.id ?? options.cancel),
+      },
       onMakeVariable: (result) => created.push(result.status),
     }).attach(testing.editorContext(workspace, testing.fakeCore({ print: [factorial, guess] })));
     try {

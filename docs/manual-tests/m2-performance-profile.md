@@ -336,7 +336,7 @@ For each interaction in the table:
 | ID | Interaction | How |
 | --- | --- | --- |
 | I0 | Nothing (baseline) | Leave the app alone for the ten seconds. |
-| I1 | Select across scopes | Click *create int variable secret* (nothing is declared before it) and the *ask* block inside *repeat until* (both variables are visible there), alternately. Each click changes the variables the Variables category lists. |
+| I1 | Select across scopes | Click *create int variable secret* (nothing is declared before it) and the *ask* block inside *repeat until* (both variables are visible there), alternately. The toolbox does not follow the selection, so it is not rebuilt. |
 | I2 | Click the selected block | Click the block that is already selected. This changes nothing. |
 | I3 | Click the empty canvas | Click the empty canvas once before you start the watcher (this deselects). Then click the empty canvas three times. This changes nothing. |
 | I4 | Select within one scope | Click the *print* block after the two *create variable* blocks and the *repeat until* block, alternately (the same variables are visible at both). |

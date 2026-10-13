@@ -5,13 +5,19 @@ import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { DialogHost } from '../../app/dialogs/DialogHost';
-import { createDialogQueue, type DialogService } from '../../app/dialogs/service';
+import {
+  createDialogQueue,
+  type ChoiceOptions,
+  type DialogService,
+} from '../../app/dialogs/service';
 import { expectNoAxeViolations } from '../../test/axe';
 import {
   MAKE_VARIABLE_QUESTION,
   MAKE_VARIABLE_TITLE,
+  VARIABLE_TYPES,
   insertDeclaration,
   makeVariable,
+  typeQuestion,
   type MakeVariableContext,
 } from './makeVariable';
 import type { SymbolSource } from './scope';
@@ -49,12 +55,27 @@ function canvas(document: BdmDocument = guessDocument()): Blockly.Workspace {
   return workspace;
 }
 
-/** Dialogs that answer the prompt with `answer` and record what they were asked. */
-function answering(answer: string | null) {
+/**
+ * Dialogs that answer the name with `answer` and the type with `type` (`int` by default), and
+ * record what they were asked.
+ */
+function answering(answer: string | null, type = 'int') {
   return {
     prompt: vi.fn<DialogService['prompt']>(() => Promise.resolve(answer)),
     alert: vi.fn<DialogService['alert']>(() => Promise.resolve()),
+    choose: chooser((options) => options.choices.find((choice) => choice.id === type)?.id),
   };
+}
+
+/**
+ * A spy for {@link DialogService.choose} answering with the ID `pick` returns, or the cancel
+ * choice. (A spy's call signature is not generic, so it is cast to the service's.)
+ */
+function chooser(pick: (options: ChoiceOptions<string>) => string | undefined) {
+  const spy = vi.fn((options: ChoiceOptions<string>) =>
+    Promise.resolve(pick(options) ?? options.cancel),
+  );
+  return spy as typeof spy & DialogService['choose'];
 }
 
 /** The context of *Make a variable* on `workspace`, with nothing selected by default. */
@@ -201,6 +222,7 @@ describe('Make a variable: where the declaration goes', () => {
         return Promise.resolve('score');
       }),
       alert: vi.fn<DialogService['alert']>(() => Promise.resolve()),
+      choose: answering('score').choose,
     };
     const block = await created(
       makeVariable(context(workspace, { dialogs, selected: () => selected })),
@@ -260,13 +282,70 @@ describe('Make a variable: the name and the new symbol', () => {
     expect(shadow?.getFieldValue('VALUE')).toBe('0');
   });
 
-  it('changes nothing when cancelled', async () => {
+  it('changes nothing when cancelled, at the name or at the type', async () => {
     const workspace = canvas();
     const before = workspace.getAllBlocks(false).length;
     expect(await makeVariable(context(workspace, { dialogs: answering(null) }))).toEqual({
       status: 'cancelled',
     });
+    const atType = answering('score', 'cancel');
+    expect(await makeVariable(context(workspace, { dialogs: atType }))).toEqual({
+      status: 'cancelled',
+    });
+    expect(atType.choose).toHaveBeenCalledTimes(1);
     expect(workspace.getAllBlocks(false)).toHaveLength(before);
+  });
+});
+
+describe('Make a variable: the type', () => {
+  it('asks for it after the name, offering int (the default), double, bool, char and string', async () => {
+    const workspace = canvas();
+    const dialogs = answering('score');
+    await created(makeVariable(context(workspace, { dialogs })));
+    const options = dialogs.choose.mock.calls[0]?.[0];
+    expect(options?.title).toBe(MAKE_VARIABLE_TITLE);
+    expect(options?.message).toBe(typeQuestion('score'));
+    expect(typeQuestion('score')).toBe(
+      'What kind of value does “score” hold? int: a whole number, double: a decimal number, ' +
+        'bool: true or false, char: one character, string: text.',
+    );
+    expect(options?.choices.map((choice) => [choice.id, choice.label, choice.primary])).toEqual([
+      ['int', 'int', true],
+      ['double', 'double', undefined],
+      ['bool', 'bool', undefined],
+      ['char', 'char', undefined],
+      ['std::string', 'string', undefined],
+      ['cancel', 'Cancel', undefined],
+    ]);
+    expect(options?.cancel).toBe('cancel');
+    expect(VARIABLE_TYPES.map(({ type }) => type)).toEqual([
+      'int',
+      'double',
+      'bool',
+      'char',
+      'std::string',
+    ]);
+    // The name dialog leads on to it.
+    expect(dialogs.prompt.mock.calls[0]?.[0]).toMatchObject({ okLabel: 'Next' });
+  });
+
+  it('creates the variable with the chosen type and that type’s start value', async () => {
+    const cases: [string, string, string][] = [
+      ['double', 'b2c.expr.num', '0.0'],
+      ['bool', 'b2c.expr.kw', 'true'],
+      ['char', 'b2c.expr.chr', 'a'],
+      ['std::string', 'b2c.expr.str', ''],
+    ];
+    for (const [type, shadowType, value] of cases) {
+      const workspace = canvas();
+      const block = await created(
+        makeVariable(context(workspace, { dialogs: answering('score', type) })),
+      );
+      expect(block.getFieldValue('TYPE'), type).toBe(type);
+      const shadow = block.getInputTargetBlock('VALUE');
+      expect(shadow?.type, type).toBe(shadowType);
+      expect(shadow?.getFieldValue('VALUE'), type).toBe(value);
+    }
   });
 
   it('refuses a name that breaks the rules, even if the dialog let it through', async () => {
@@ -302,6 +381,7 @@ describe('Make a variable: the name and the new symbol', () => {
         return Promise.resolve('score');
       }),
       alert: vi.fn<DialogService['alert']>(() => Promise.resolve()),
+      choose: answering('score').choose,
     };
     expect(await makeVariable(context(workspace, { dialogs }))).toEqual({
       status: 'refused',
@@ -380,8 +460,23 @@ describe('the Make a variable dialog', () => {
     await expectNoAxeViolations(dialog);
 
     fireEvent.change(input, { target: { value: 'score' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+      await Promise.resolve();
+    });
+
+    // The type, int by default (focused, so Enter takes it).
+    const types = await screen.findByRole('dialog', { name: MAKE_VARIABLE_TITLE });
+    expect(types.textContent).toContain(typeQuestion('score'));
+    const int = screen.getByRole('button', { name: 'int' });
+    expect(document.activeElement).toBe(int);
+    await expectNoAxeViolations(types);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'double' }));
+      await Promise.resolve();
+    });
     const block = await created(result);
     expect(declOf(block)?.name).toBe('score');
+    expect(block.getFieldValue('TYPE')).toBe('double');
   });
 });

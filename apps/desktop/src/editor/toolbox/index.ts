@@ -1,8 +1,10 @@
 /**
  * The block editor's toolbox (docs/spec/04-user-interface.md §4.2, 03 §3.6–3.7): the catalog's
- * categories with presets and editable defaults, the dynamic Variables category (with *Make a
- * variable*), Loops (a free counter name) and Functions (with *Your functions*), in the continuous
- * toolbox or Blockly's category toolbox.
+ * categories with presets and editable defaults, the dynamic Program category (*when program
+ * starts* only while the project has none), Variables (the standard set with *Make a variable*, and
+ * a getter for each variable of the module) and Functions (with *Your functions*), in the
+ * continuous toolbox or Blockly's category toolbox. A block dragged out of it is settled where it
+ * lands: a free name, or a variable visible there.
  *
  * - `toolboxPlugin` is the editor plugin (append it to `EDITOR_PLUGINS`).
  * - `toolboxInjectOptions()` gives the starting toolbox and the continuous toolbox's classes for
@@ -11,15 +13,15 @@
  */
 export {
   B2C_CATEGORY_KIND,
-  LOOPS_CATEGORY,
   MAKE_VARIABLE_BUTTON,
   MAX_LISTED_FUNCTIONS,
-  MAX_LISTED_VARIABLES,
+  MAX_LISTED_GETTERS,
   MY_BLOCKS_CATEGORY,
+  PROGRAM_CATEGORY,
   VARIABLES_CATEGORY,
   functionsContents,
   initialToolboxDefinition,
-  loopsContents,
+  programContents,
   staticCategoryContents,
   toolboxDefinition,
   variablesContents,
@@ -36,6 +38,7 @@ export {
 } from './continuous';
 export { variableNameProblem } from './identifiers';
 export { B2cBlockInflater } from './inflater';
+export { settleDroppedBlock } from './landing';
 export { makeVariable, type MakeVariableContext, type MakeVariableResult } from './makeVariable';
 export { candidateName, firstFreeName, type DefaultNameKind } from './names';
 export {
@@ -62,6 +65,7 @@ export {
   START_VALUE_EVENT,
   StartValueChange,
   installStartValueReshaping,
+  reshapeSetValue,
   reshapeStartValue,
 } from './reshape';
 export { SelectionTracker, canvasFocus, selectedBlock, type CanvasFocus } from './selection';

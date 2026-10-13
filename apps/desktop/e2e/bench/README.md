@@ -15,7 +15,7 @@ base's on one runner ([A/B runs](#ab-runs)).
 | `webview.cold-start`                              | From the WebDriver session request (which starts the app) to the readiness marker: the start page shown, Blockly's workspace injected and the toolbox rendered; 10 starts with fresh profiles, after one warm-up start               | yes   | N2: < 2 s     |
 | `webview.preview-1000.p95`                        | The preview pipeline's task in the app at 1,000 blocks, C++ panel folded: reading the canvas, `canonical()` and `preview()` in WebAssembly, storing the result; p95 of 10 edits per sample, 10 samples                               | yes   | N4: < 50 ms   |
 | `webview.edit-1000.p95`                           | From an edit until the page has finished what it started (Blockly's re-rendering of the edited stack, the preview, the C++ panel's update), with the C++ panel shown, less the pipeline's 50 ms debounce; p95 of 10 edits per sample | yes   | N12           |
-| `webview.select-1000.max-task`                    | The longest main-thread task after a click that selects a block at 1,000 blocks, in 8 scopes in turn (the toolbox lists what each sees); one click per sample, 10 samples after a warm-up click                                      | yes   | N12           |
+| `webview.select-1000.max-task`                    | The longest main-thread task after a click that selects a block at 1,000 blocks, in 8 scopes in turn; one click per sample, 10 samples after a warm-up click                                                                         | yes   | N12           |
 | `webview.guessing-game.select.max-task`           | The guessing game (40 blocks, C++ panel shown): the longest task after a click that selects a block in another scope; one click per sample                                                                                           | no    | N12: ≤ 50 ms  |
 | `webview.guessing-game.edit.max-task`             | The guessing game: the longest task after a print is added to `main`, until the page has finished what it started; one edit per sample                                                                                               | no    | N12: ≤ 50 ms  |
 | `webview.console-200000.run`                      | From a click on ► Run until the console says _Finished_, for a built program that prints 200,000 lines (the console cleared before); the median of 3 runs per sample                                                                 | yes   |               |
@@ -61,18 +61,15 @@ The spans are not metrics; an app built before they existed shows none.
 - **Selecting** ([`select.bench.e2e.ts`](select.bench.e2e.ts), the guessing game's in
   [`guessing.bench.e2e.ts`](guessing.bench.e2e.ts)): the blocks of [`targets.ts`](targets.ts) are
   clicked in turn with real pointer input, the button held for 50 ms as a person's click holds it,
-  each in another scope than the one before, so every click changes the selection and what the
-  toolbox lists. Before each click, outside the timing, the canvas is scrolled through the test
-  hook (`scrollCanvasBy`, which keeps the selection, unlike a drag of the background) until the
-  block is well inside the visible canvas, and the page is left to settle (10 frames in a row
-  within 50 ms). The page times its tasks from the press until it has run no long task for 300 ms
-  ([`interaction.ts`](interaction.ts) `timedClick`); the longest task that ended after the press
-  is the sample, the toolbox's rebuild of its flyout for the new scope included (it runs 100 ms
-  after the release). The block must not be selected before and must be selected after, and once
-  the page has settled the toolbox must show the getters `targets.ts` names for the block and not
-  those it names as left out, which tell its listing from the one before: a click after which the
-  toolbox was not rebuilt fails the run rather than give a fast sample. At 1,000 blocks the C++
-  panel is folded, as in the drag benchmark, to leave the canvas room on a small window.
+  each in another scope than the one before, so every click changes the selection (the toolbox
+  does not follow it: it lists every variable of the module). Before each click, outside the
+  timing, the canvas is scrolled through the test hook (`scrollCanvasBy`, which keeps the
+  selection, unlike a drag of the background) until the block is well inside the visible canvas,
+  and the page is left to settle (10 frames in a row within 50 ms). The page times its tasks from
+  the press until it has run no long task for 300 ms ([`interaction.ts`](interaction.ts)
+  `timedClick`); the longest task that ended after the press is the sample. The block must not be
+  selected before and must be selected after. At 1,000 blocks the C++ panel is folded, as in the
+  drag benchmark, to leave the canvas room on a small window.
 - **Guessing game edits** ([`guessing.bench.e2e.ts`](guessing.bench.e2e.ts)): as the second phase
   of the preview benchmark, in the example `examples/guessing_game.b2c`; the sample is the longest
   task from the insertion (which is part of it) until the page has settled.
@@ -276,8 +273,8 @@ warning): the run says nothing about their metrics.
 
 A change expected to alter a gated metric runs the A/B job on its pull request. W4-2, W5-1 and W3-11
 of the M2 polish wave merge only with a green A/B run attached whose table compares their metric,
-or once their metrics have at least 5 nightly baselines: the toolbox's listing (W4-2) is measured by
-`select-1000.max-task`, the snap radius (W5-1) by `drag-5000.frame-p95`, and the console's
+or once their metrics have at least 5 nightly baselines: the toolbox that no longer follows the
+selection (W4-2) is measured by `select-1000.max-task`, the snap radius (W5-1) by `drag-5000.frame-p95`, and the console's
 screen-reader output (W3-11) by `console-200000.run`, all part of a pull request's run. A run that
 is not conclusive for the benchmark of one of them (the base build cannot run it, or it failed on
 the base) does not count. Locally, with two builds of the app:

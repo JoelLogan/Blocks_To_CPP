@@ -1,7 +1,6 @@
 /**
  * The benchmarks' interaction drivers (interaction.ts): what an edit and a click measure, from
- * what the page scripts call back with, that failures fail the benchmark with a reason, and that
- * a click after which the toolbox lists the wrong scope is caught.
+ * what the page scripts call back with, and that failures fail the benchmark with a reason.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -12,7 +11,6 @@ import {
   clickMeasurement,
   editMeasurement,
   INTERACTION_TIMEOUT_MS,
-  listingMismatch,
   runMeasurement,
   spanSummary,
   spanTimes,
@@ -192,25 +190,5 @@ describe('spanSummary', () => {
     expect(spanSummary([many]).split(', ')).toHaveLength(SUMMARY_SPANS);
     expect(spanSummary([{}, {}])).toMatch(/^no User Timing spans/);
     expect(spanSummary([])).toMatch(/^no User Timing spans/);
-  });
-});
-
-describe('listingMismatch', () => {
-  const target = { id: 'b6', lists: ['s_secret', 's_guess'], omits: ['s_other'] };
-
-  it('accepts the target’s listing, whatever else the toolbox shows', () => {
-    expect(listingMismatch(target, new Set(['s_secret', 's_guess']))).toBeNull();
-    expect(listingMismatch({ id: 'b1', lists: [], omits: [] }, new Set())).toBeNull();
-  });
-
-  it('names the getters missing and those shown that should not be', () => {
-    expect(listingMismatch(target, new Set(['s_secret', 's_other']))).toBe(
-      'After the click on block b6 the toolbox shows no getter of s_guess and a getter of ' +
-        's_other: it was not rebuilt for the new selection while the click was timed',
-    );
-    expect(listingMismatch(target, new Set())).toMatch(/no getter of s_secret, s_guess:/);
-    expect(listingMismatch(target, new Set(['s_secret', 's_guess', 's_other']))).toMatch(
-      /shows a getter of s_other:/,
-    );
   });
 });

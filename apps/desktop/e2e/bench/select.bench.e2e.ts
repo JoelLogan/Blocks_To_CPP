@@ -2,15 +2,14 @@
  * Webview benchmark: selecting blocks at 1,000 blocks (docs/spec/01-overview.md §1.4 N12, 09
  * §9.2: "selecting blocks in 8 scopes at 1,000 blocks"). The generated 1,000-block document
  * (bench/document.ts) is opened, and blocks in 8 scopes (bench/targets.ts `selectionTargets`) are
- * clicked in turn with real pointer input, so every click changes the selection and the variables
- * the toolbox lists. Before each click, outside the timing, the canvas is scrolled through the
- * test hook until the block is well inside the visible canvas (which keeps the selection) and the
- * page is left to settle. The page then times its tasks from the press until it has run no long
- * task for 300 ms (bench/page.ts `TASKS_START_SCRIPT`), which includes the rebuild of the toolbox's
- * flyout for the new scope (checked after each click); the longest task after the press is one
- * sample of `webview.select-1000.max-task` (gated). The C++ panel is folded, as in the drag
- * benchmark, to leave the canvas room on a small window. A first click warms up and is not
- * counted. The clicks start at target `B2C_BENCH_OFFSET` (results.ts `benchOffset`), so that the
+ * clicked in turn with real pointer input, so every click changes the selection (the toolbox
+ * does not depend on it, 04 §4.2). Before each click, outside the timing, the canvas is scrolled
+ * through the test hook until the block is well inside the visible canvas (which keeps the
+ * selection) and the page is left to settle. The page then times its tasks from the press until
+ * it has run no long task for 300 ms (bench/page.ts `TASKS_START_SCRIPT`); the longest task after
+ * the press is one sample of `webview.select-1000.max-task` (gated). The C++ panel is folded, as
+ * in the drag benchmark, to leave the canvas room on a small window. A first click warms up and
+ * is not counted. The clicks start at target `B2C_BENCH_OFFSET` (results.ts `benchOffset`), so that the
  * A/B job's rounds of fewer samples click all 8 scopes between them, as a nightly run does.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -36,8 +35,9 @@ const BLOCKS = 1_000;
 const OPEN_TIMEOUT_MS = 120_000;
 
 /**
- * How long the whole benchmark may take: at 1,000 blocks a click that changes the scope rebuilds
- * the toolbox's flyout, which took seconds on a slow machine (2026-10).
+ * How long the whole benchmark may take: at 1,000 blocks a click took seconds on a slow machine
+ * while it rebuilt the toolbox's flyout (2026-10, before the toolbox stopped following the
+ * selection).
  */
 const TEST_TIMEOUT_MS = 1_800_000;
 

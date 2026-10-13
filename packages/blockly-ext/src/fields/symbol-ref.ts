@@ -3,12 +3,16 @@
  * (docs/spec/03-block-language.md §3.6, 06 §6.5). Its project value is `{"ref": "sym_…"}`.
  *
  * - The options are computed when the menu opens, from the scope query at the block
- *   ({@link SymbolProvider.symbolsAt}), filtered by the field's `kinds`.
+ *   ({@link SymbolProvider.symbolsAt}), filtered by the field's `kinds`. A block still in the
+ *   toolbox's flyout is in no place of the program: it lists every symbol of the module shown, in
+ *   the groups the toolbox gives ({@link toolboxSymbolGroups}), with a separator between groups.
  * - The field always shows the current name of the symbol it refers to
  *   ({@link SymbolProvider.nameOf}), so a rename shows at once; a reference whose declaration is
  *   gone shows `missing (sym_…)`. The analyser's diagnostic (B2C-E0201–E0204) explains it.
  * - A reference that is out of scope, or no longer of the field's kinds, stays selected and shown
- *   (first in its menu); it is never changed or dropped by the editor.
+ *   (first in its menu); this field never changes or drops it. (The editor's toolbox gives a
+ *   *set* or *change* block just dragged from it another variable when the one it came with is
+ *   not visible where it was dropped, docs/spec/04-user-interface.md §4.2.)
  *
  * Blockly's own value (`getValue()`) is the symbol ID, or null when nothing is chosen;
  * {@link B2cSymbolRefField.getRef} gives the project value.
@@ -16,7 +20,7 @@
 import * as Blockly from 'blockly/core';
 
 import { isProjectId } from '../ids';
-import { nameOf, symbolsAt, type SymbolInfo } from '../services';
+import { nameOf, symbolsAt, toolboxSymbolGroups, type SymbolInfo } from '../services';
 import { visibleInvisibles } from '../text';
 import { isSymbolRefValue, type SymbolRefValue } from './values';
 
@@ -136,28 +140,48 @@ export class B2cSymbolRefField extends Blockly.FieldDropdown {
     return { blockId: block.id, input: null };
   }
 
-  /** The menu: the matching symbols in scope, the current reference first when it is not one of them. */
-  menuOptions(): Blockly.MenuOption[] {
+  /**
+   * The symbols the menu lists, in groups shown one after the other: for a block in the toolbox's
+   * flyout, the toolbox's groups when it gives them; otherwise one group, what is in scope at the
+   * {@link scopeAnchor}.
+   */
+  private symbolGroups(): readonly (readonly SymbolInfo[])[] {
+    const groups = this.getSourceBlock()?.isInFlyout === true ? toolboxSymbolGroups() : null;
+    if (groups !== null) {
+      return groups;
+    }
     const anchor = this.scopeAnchor();
-    const symbols =
-      anchor === null
-        ? []
-        : symbolsAt(anchor.blockId, anchor.input).filter((symbol) =>
-            symbolMatchesKinds(symbol, this.kinds),
-          );
+    return anchor === null ? [] : [symbolsAt(anchor.blockId, anchor.input)];
+  }
+
+  /**
+   * The menu: the matching symbols in scope (for a block in the toolbox's flyout, the module's,
+   * with a separator between groups), the current reference first when it is not one of them.
+   */
+  menuOptions(): Blockly.MenuOption[] {
     const options: Blockly.MenuOption[] = [];
     const seenNames = new Map<string, number>();
     const current = this.getValue();
     let currentListed = false;
-    for (const symbol of symbols) {
-      if (!isProjectId(symbol.id) || typeof symbol.name !== 'string') {
-        continue;
+    for (const group of this.symbolGroups()) {
+      const before = options.length;
+      for (const symbol of group) {
+        if (
+          !isProjectId(symbol.id) ||
+          typeof symbol.name !== 'string' ||
+          !symbolMatchesKinds(symbol, this.kinds)
+        ) {
+          continue;
+        }
+        if (before > 0 && options.length === before) {
+          options.push(Blockly.FieldDropdown.SEPARATOR);
+        }
+        const label = visibleInvisibles(symbol.name, { lineBreaks: true });
+        const count = (seenNames.get(label) ?? 0) + 1;
+        seenNames.set(label, count);
+        options.push([count === 1 ? label : `${label} (${String(count)})`, symbol.id]);
+        currentListed ||= symbol.id === current;
       }
-      const label = visibleInvisibles(symbol.name, { lineBreaks: true });
-      const count = (seenNames.get(label) ?? 0) + 1;
-      seenNames.set(label, count);
-      options.push([count === 1 ? label : `${label} (${String(count)})`, symbol.id]);
-      currentListed ||= symbol.id === current;
     }
     if (current !== null && !currentListed) {
       options.unshift([this.labelFor(current), current]);

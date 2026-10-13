@@ -323,8 +323,8 @@ describe('Dropping a block on the toolbox', () => {
     // The tint of a toolbox drop; the drops over the toolbox come first.
     let tint: number | null = null;
     for (const [index, drop] of DROPS.entries()) {
-      // A new variable and a print after it, at the end of main. The print is selected (centring
-      // it), so the Variables category lists the variable: the flyout is built again.
+      // A new variable and a print after it, at the end of main. The Variables category lists
+      // the new variable: the flyout is built again. The print is centred (and selected).
       const sym = `s_tray_${String(index)}`;
       const block = print(ids, `drop ${String(index)}`);
       await app.hook.insertBlocks(mainId, 'BODY', [
