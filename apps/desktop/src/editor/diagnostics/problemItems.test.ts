@@ -75,13 +75,15 @@ function pathIn(doc: BdmDocument, blockId: string, catalog: PathCatalog | null =
 }
 
 describe('block paths', () => {
-  it('read main › repeat until › if for the guessing game’s if block', () => {
+  it('read when program starts › repeat until › if for the guessing game’s if block', () => {
     const doc = guessingGame();
-    expect(pathIn(doc, 'b009')).toBe('main › repeat until › if');
-    expect(pathIn(doc, 'b005')).toBe('main › repeat until › ask');
-    expect(pathIn(doc, 'b008')).toBe('main › repeat until › if › print');
-    expect(pathIn(doc, 'b001')).toBe('main › create int variable › random integer from');
-    expect(pathIn(doc, 'b011')).toBe('main');
+    expect(pathIn(doc, 'b009')).toBe('when program starts › repeat until › if');
+    expect(pathIn(doc, 'b005')).toBe('when program starts › repeat until › ask');
+    expect(pathIn(doc, 'b008')).toBe('when program starts › repeat until › if › print');
+    expect(pathIn(doc, 'b001')).toBe(
+      'when program starts › create int variable › random integer from',
+    );
+    expect(pathIn(doc, 'b011')).toBe('when program starts');
     expect(pathIn(doc, 'b999')).toBe('');
   });
 
@@ -92,7 +94,7 @@ describe('block paths', () => {
     if (loop?.fields !== undefined) {
       loop.fields['MODE'] = 'while';
     }
-    expect(pathIn(doc, 'b009')).toBe('main › repeat while › if');
+    expect(pathIn(doc, 'b009')).toBe('when program starts › repeat while › if');
   });
 
   it('name blocks whose label starts with a placeholder by the whole label', () => {
@@ -156,11 +158,13 @@ describe('block paths', () => {
         },
       },
     ]);
-    expect(pathIn(doc, 'd1')).toBe('main › create string variable');
-    expect(pathIn(doc, 'c1')).toBe('main › create string variable › … < …');
-    expect(pathIn(doc, 'g1')).toBe('main › create string variable › … < … › score');
-    expect(pathIn(doc, 'g2')).toBe('main › create string variable › … < … › missing');
-    expect(pathIn(doc, 't1')).toBe('main › print › "Hi⟨U+000A⟩there"');
+    expect(pathIn(doc, 'd1')).toBe('when program starts › create string variable');
+    expect(pathIn(doc, 'c1')).toBe('when program starts › create string variable › … < …');
+    expect(pathIn(doc, 'g1')).toBe('when program starts › create string variable › … < … › score');
+    expect(pathIn(doc, 'g2')).toBe(
+      'when program starts › create string variable › … < … › missing',
+    );
+    expect(pathIn(doc, 't1')).toBe('when program starts › print › "Hi⟨U+000A⟩there"');
   });
 
   it('name a function definition by its name, and its parameters in references', () => {
@@ -192,7 +196,7 @@ describe('block paths', () => {
 
   it('name blocks by their type without a catalog, or when the catalog lacks the type', () => {
     const doc = guessingGame();
-    expect(pathIn(doc, 'b009', null)).toBe('main › control.while › control.if');
+    expect(pathIn(doc, 'b009', null)).toBe('when program starts › control.while › control.if');
     const index = indexDocument(doc);
     expect(blockLabel({ id: 'x', type: 'pack.thing', v: 1 }, index.names, CATALOG)).toBe(
       'pack.thing',
@@ -203,10 +207,12 @@ describe('block paths', () => {
     const doc = guessingGame();
     const calls: (PathCatalog | null)[] = [];
     const unsubscribe = subscribePathCatalog(() => calls.push(pathCatalog()));
-    expect(blockPath(indexDocument(doc), 'b009')).toBe('main › control.while › control.if');
+    expect(blockPath(indexDocument(doc), 'b009')).toBe(
+      'when program starts › control.while › control.if',
+    );
     providePathCatalog(CATALOG);
     providePathCatalog(CATALOG);
-    expect(blockPath(indexDocument(doc), 'b009')).toBe('main › repeat until › if');
+    expect(blockPath(indexDocument(doc), 'b009')).toBe('when program starts › repeat until › if');
     unsubscribe();
     providePathCatalog(null);
     expect(calls).toEqual([CATALOG]);
@@ -244,7 +250,7 @@ describe('block paths', () => {
     const levels = pathIn(doc, 'leaf').split(PATH_SEPARATOR);
     expect(levels).toHaveLength(MAX_PATH_LEVELS);
     expect(levels).toEqual([
-      'main',
+      'when program starts',
       'forever',
       '…',
       'forever',
@@ -310,9 +316,9 @@ describe('buildProblemItems', () => {
       ]),
     ).toEqual([
       // The panel's order: severity, then module, block path, message and code.
-      ['error', 'build', 'main', 'main › repeat until › ask', false],
-      ['error', 'live', 'main', 'main › repeat until › if', false],
-      ['warning', 'live', 'main', 'main › repeat until › if › print', false],
+      ['error', 'build', 'main', 'when program starts › repeat until › ask', false],
+      ['error', 'live', 'main', 'when program starts › repeat until › if', false],
+      ['warning', 'live', 'main', 'when program starts › repeat until › if › print', false],
       ['info', 'live', 'main', '', false],
     ]);
   });

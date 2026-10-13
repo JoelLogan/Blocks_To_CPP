@@ -72,7 +72,7 @@ function problem(
     origin,
     stale,
     modulePath: 'main',
-    blockPath: 'main › if',
+    blockPath: 'when program starts › if',
   };
 }
 

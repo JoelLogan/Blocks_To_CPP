@@ -15,7 +15,7 @@ export interface ProblemItem {
   stale: boolean;
   /** The module's display name, for example `main`. */
   modulePath: string;
-  /** The block path, for example `main › repeat until › if`; empty without a block. */
+  /** The block path, for example `when program starts › repeat until › if`; empty without a block. */
   blockPath: string;
 }
 

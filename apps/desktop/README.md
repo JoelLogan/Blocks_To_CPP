@@ -155,7 +155,7 @@ project, build, run, toolchain, settings, trust and recovery services:
   on a problem selects the block (or the collapsed block around it) and scrolls to it or centres
   it.
 - **Dock panels** (`src/app/panels.tsx`): the C++ tab and Problems are connected to the store.
-  They load no Blockly: Problems' block paths (`main › repeat until › if`) use the block catalog
+  They load no Blockly: Problems' block paths (`when program starts › repeat until › if`) use the block catalog
   the diagnostics plugin provides (`diagnostics/catalog.ts`).
 
 ### Projects (milestone M2)

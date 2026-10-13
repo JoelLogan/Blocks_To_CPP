@@ -261,8 +261,8 @@ describe('the Problems tab', () => {
 
     const texts = rows().map((row) => row.textContent);
     expect(texts).toHaveLength(2);
-    expect(texts[0]).toContain('main › repeat until › ask');
-    expect(texts[1]).toContain('main › repeat until › if');
+    expect(texts[0]).toContain('when program starts › repeat until › ask');
+    expect(texts[1]).toContain('when program starts › repeat until › if');
     expect(texts.join('')).not.toContain('from the last build');
   });
 
@@ -275,11 +275,11 @@ describe('the Problems tab', () => {
   it('names blocks with the catalog once the editor provides it', () => {
     openGuessingGame([liveError('b009')]);
     render(<ConnectedProblemsPanel />);
-    expect(rows()[0]?.textContent).toContain('main › control.while › control.if');
+    expect(rows()[0]?.textContent).toContain('when program starts › control.while › control.if');
     act(() => {
       providePathCatalog(BLOCKLY_EXT_PATH_CATALOG);
     });
-    expect(rows()[0]?.textContent).toContain('main › repeat until › if');
+    expect(rows()[0]?.textContent).toContain('when program starts › repeat until › if');
   });
 
   it('selects and centres the block of an activated row, or the collapsed block around it', () => {

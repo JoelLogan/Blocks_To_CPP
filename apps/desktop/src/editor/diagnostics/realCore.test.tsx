@@ -117,7 +117,7 @@ describe.skipIf(!built && !required)('with the real compiler core', () => {
     const row = within(grid)
       .getAllByRole('row')
       .find((candidate) => candidate.textContent.includes('B2C-E0201'));
-    expect(row?.textContent).toContain('main › repeat until › ask');
+    expect(row?.textContent).toContain('when program starts › repeat until › ask');
     detach();
   });
 

@@ -16,7 +16,12 @@ function item(
     origin?: 'live' | 'build';
   } = {},
 ): ProblemItem {
-  const { stale = false, blockPath = 'main › if', origin = 'live', ...diagnostic } = extra;
+  const {
+    stale = false,
+    blockPath = 'when program starts › if',
+    origin = 'live',
+    ...diagnostic
+  } = extra;
   return {
     key,
     diagnostic: {
@@ -44,7 +49,7 @@ const ITEMS: ProblemItem[] = [
     raw: "main.cpp:5:3: error: expected ';' before '}' token",
     origin: 'build',
     stale: true,
-    blockPath: 'main › repeat until',
+    blockPath: 'when program starts › repeat until',
   }),
 ];
 
@@ -99,7 +104,7 @@ describe('ProblemsPanel', () => {
       '✖ Error',
       'Alpha is not declared.',
       'main',
-      'main › if',
+      'when program starts › if',
       'B2C-E0201',
       '',
     ]);

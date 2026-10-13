@@ -51,7 +51,7 @@ function modulePath(doc: BdmDocument, index: DocumentIndex, diagnostic: Diagnost
  * - A build diagnostic whose block is no longer in `doc` is dropped (the block was deleted).
  * - Build diagnostics are `stale` (dimmed, "from the last build") when `stale` is true.
  * - Module: the diagnostic's module, or the module its block is in; empty without either.
- * - Block path: `main › repeat until › if` (see ./blockPath.ts); empty without a block.
+ * - Block path: `when program starts › repeat until › if` (see ./blockPath.ts); empty without a block.
  * - Keys are stable while the diagnostics stay the same, and unique.
  *
  * `catalog` names the blocks of the paths; it defaults to the one the editor provided

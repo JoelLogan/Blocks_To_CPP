@@ -58,8 +58,8 @@ describe('sortProblems', () => {
   });
 
   it('sorts by code, module and block path', () => {
-    const a = item('a', 'error', { modulePath: 'zeta', blockPath: 'main › a' });
-    const b = item('b', 'error', { modulePath: 'alpha', blockPath: 'main › b' });
+    const a = item('a', 'error', { modulePath: 'zeta', blockPath: 'when program starts › a' });
+    const b = item('b', 'error', { modulePath: 'alpha', blockPath: 'when program starts › b' });
     b.diagnostic = { ...b.diagnostic, code: 'B2C-E0101' };
     expect(sortProblems([a, b], { column: 'code', direction: 'ascending' })[0]).toBe(b);
     expect(sortProblems([a, b], { column: 'module', direction: 'ascending' })[0]).toBe(b);

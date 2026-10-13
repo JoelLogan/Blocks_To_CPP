@@ -1,9 +1,9 @@
 /**
  * Block paths for the Problems panel (docs/spec/04-user-interface.md §4.4, M2 decision "Block paths
  * in Problems"): each level from the top-level block down to the diagnostic's block, named by a
- * short label: `main` for the program block, the function's name for a definition, and for other
- * blocks the friendly label up to its first placeholder with the current dropdown text filled in
- * (`main › repeat until › if`).
+ * short label: the program block's label (`when program starts`), the function's name for a
+ * definition, and for other blocks the friendly label up to its first placeholder with the current
+ * dropdown text filled in (`when program starts › repeat until › if`).
  *
  * A label that would be empty because the block's friendly label starts with a placeholder
  * (`%A %OP %B`, `%VAR`) is the whole label instead, with names, values and dropdown text filled in
@@ -25,6 +25,9 @@ export const PATH_SEPARATOR = ' › ';
 
 /** The longest label of one level, in code points. */
 export const MAX_LABEL_CHARS = 40;
+
+/** The block path's label of the program block (04 §4.4). */
+export const PROGRAM_LABEL = 'when program starts';
 
 /** The most levels a path shows; deeper paths keep the first two and the last five. */
 export const MAX_PATH_LEVELS = 8;
@@ -296,7 +299,7 @@ function labelFilled(
 }
 
 /**
- * The short label of one block for a block path: `main`, a function's name, or the friendly label
+ * The short label of one block for a block path: `when program starts`, a function's name, or the friendly label
  * up to its first placeholder with dropdown text filled in (`repeat until`). Without a catalog
  * (`catalog` defaults to the one the editor provided), or for a type the catalog does not have, it
  * is the block's type.
@@ -307,7 +310,8 @@ export function blockLabel(
   catalog: PathCatalog | null = pathCatalog(),
 ): string {
   if (block.type === 'program.main') {
-    return 'main';
+    // The program block's label; `main()` with C++ labels (M3).
+    return PROGRAM_LABEL;
   }
   if (block.type === 'func.define') {
     const declared = declaration(block.fields?.['NAME']);
@@ -323,9 +327,9 @@ export function blockLabel(
 }
 
 /**
- * The path of a block, from its top-level block down to it (`main › repeat until › if`), or an
- * empty string when the document has no such block. Long paths keep their first and last levels
- * around an `…`. `catalog` defaults to the one the editor provided.
+ * The path of a block, from its top-level block down to it (`when program starts › repeat until ›
+ * if`), or an empty string when the document has no such block. Long paths keep their first and
+ * last levels around an `…`. `catalog` defaults to the one the editor provided.
  */
 export function blockPath(
   index: DocumentIndex,

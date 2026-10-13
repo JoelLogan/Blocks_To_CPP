@@ -45,6 +45,6 @@ describe('the dock panels', () => {
     render(<div>{panels.problems}</div>);
     const grid = screen.getByRole('grid', { name: 'Problems' });
     const [, row] = within(grid).getAllByRole('row');
-    expect(row?.textContent).toContain('main › io.print');
+    expect(row?.textContent).toContain('when program starts › io.print');
   });
 });

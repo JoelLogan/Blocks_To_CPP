@@ -1,7 +1,7 @@
 /**
  * Blocks left loose on the canvas (docs/spec/03-block-language.md §3.6, 04 §4.2), in the real
- * webview: a block dropped on an empty part of the canvas stays selected, and the analysis has no
- * scope for it, yet
+ * webview: a block dropped on an empty part of the canvas stays selected and is parked (ADR-0012),
+ * and the core answers its scope with what is visible at the end of `main` (06 §6.5), so
  *
  * - the Variables category still lists the variables of `main` (its getters), and
  * - the variable menu of a loose *set* lists `main`'s variables, `secret` and `guess`.

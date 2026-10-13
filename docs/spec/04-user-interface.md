@@ -203,7 +203,7 @@ toolbox search in M3.
 | ------- | ------ |
 | On the block | A badge (✖ error, ⚠ warning, ℹ info) at the block's top-right corner. The block outline is tinted. Hovering shows the friendly message. |
 | On an expression slot | Squiggly underline under the offending token |
-| Problems panel | A sortable list: severity, message, module, block path ("main › repeat until › if"). Clicking selects the block. |
+| Problems panel | A sortable list: severity, message, module, block path ("when program starts › repeat until › if"). Clicking selects the block. |
 | Code panel | Gutter marker and underline |
 | Toolbar | ▶ Run is disabled with a tooltip ("2 errors – click to see the first") when analyser errors exist (configurable) |
 
@@ -251,10 +251,11 @@ their blocks and in Problems after the project changes, dimmed and marked
 build's `projectHash`. A diagnostic is dropped when the block it points to is
 deleted, and all of them are replaced by the next build.
 
-**Block paths** in Problems name each level by a short label: `main` for the
-program block, the function's name for a function definition, and for other
-blocks the friendly label up to its first placeholder, with the current
-dropdown text filled in (*main › repeat until › if*).
+**Block paths** in Problems name each level by a short label: the program
+block's label (*when program starts*; `main()` with C++ labels, M3), the
+function's name for a function definition, and for other blocks the friendly
+label up to its first placeholder, with the current dropdown text filled in
+(*when program starts › repeat until › if*).
 
 **In M2:** *Learn more* opens the published diagnostics reference through
 `open_help_link`; links to each code's entry and the bundled offline pages
