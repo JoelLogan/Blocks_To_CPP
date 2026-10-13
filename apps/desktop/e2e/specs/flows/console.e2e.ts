@@ -218,6 +218,12 @@ function consoleScreen(app: FlowApp): Promise<E2eConsoleScreen> {
   return app.hook.call('consoleScreen');
 }
 
+/** Where the console's view is, for a failure message. */
+async function describeView(app: FlowApp): Promise<string> {
+  const screen = await consoleScreen(app);
+  return `${screen.buffer} buffer, view at row ${String(screen.viewportY)} of ${String(screen.baseY)}`;
+}
+
 /** Waits until the console's view is scrolled up from the end of the output; returns the screen. */
 function waitForScrolledUp(app: FlowApp): Promise<E2eConsoleScreen> {
   return waitFor(
@@ -225,7 +231,29 @@ function waitForScrolledUp(app: FlowApp): Promise<E2eConsoleScreen> {
       const screen = await consoleScreen(app);
       return screen.viewportY < screen.baseY ? screen : null;
     },
-    { timeout: UI_TIMEOUT_MS, message: 'the console to be scrolled up from the end' },
+    {
+      timeout: UI_TIMEOUT_MS,
+      message: async () =>
+        `the console to be scrolled up from the end (${await describeView(app)})`,
+    },
+  );
+}
+
+/**
+ * Waits until the console holds at least `rows` rows of scrollback above the screen, so that a
+ * turn of the wheel up has something to scroll to.
+ */
+function waitForScrollback(app: FlowApp, rows: number): Promise<E2eConsoleScreen> {
+  return waitFor(
+    async () => {
+      const screen = await consoleScreen(app);
+      return screen.baseY >= rows ? screen : null;
+    },
+    {
+      timeout: UI_TIMEOUT_MS,
+      message: async () =>
+        `${String(rows)} rows of scrollback in the console (${await describeView(app)})`,
+    },
   );
 }
 
@@ -404,6 +432,9 @@ describe('Console', () => {
     await clickTestId(app.driver, 'toolbar-run');
     await waitForConsoleText(app.driver, ['B2C wheel line'], BUILD_TIMEOUT_MS);
     await waitForConsoleState(app.driver, /Running/, UI_TIMEOUT_MS);
+    // The first lines can reach the console before a screenful has: with no scrollback yet, the
+    // wheel has nothing to scroll to and the view stays at the end, following the output.
+    await waitForScrollback(app, 30);
 
     await turnWheel(app.driver, -53, 3);
     await waitForScrolledUp(app);
