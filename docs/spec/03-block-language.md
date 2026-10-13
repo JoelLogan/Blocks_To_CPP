@@ -693,13 +693,15 @@ help     = "A random whole number between the two values, including both."
   `logic.operation`, `func.define`, `func.call`, `func.call_stmt`) get ⊕/⊖
   mutators from `blockly-ext`, keyed by block ID; their text still comes from
   the catalog label.
-* **Messages.** Messages and block paths use a block's short name: its
-  friendly label up to the first field or input (*print*, *repeat*, *when
-  program starts*). A message about a block whose label starts with a field
-  or input says *this block*. Messages never show a block's catalog ID,
-  except for an unknown block type (`E0601`) and a broken catalog definition
-  (`E0620`, a bug report). An optional `short` key for a shorter name is
-  left for the localisation work of M5.
+* **Messages.** Catalog messages use a block's short name: its friendly
+  label up to the first field or input (*print*, *repeat*, *when program
+  starts*). A message about a block whose label starts with a field or input
+  says *this block*. Messages never show a block's catalog ID, except for an
+  unknown block type (`E0601`) and a broken catalog definition (`E0620`, a
+  bug report). Block paths in Problems name blocks differently, with the
+  current dropdown text filled in and a function's name for its definition
+  ([04 §4.4](04-user-interface.md#44-diagnostics-ux)). An optional `short`
+  key for a shorter name is left for the localisation work of M5.
 * **Output types.** `output` is required for `reporter` and `predicate`
   shapes and forbidden for the others. Its values are `any`, `bool`, `int`,
   `double`, `number`, `char`, `string`, `symbol` and `field:<NAME>`.
