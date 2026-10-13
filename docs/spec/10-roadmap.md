@@ -30,14 +30,16 @@
 > Linux under xvfb without a GPU, 2026-10-10): selecting 1.2 s, an edit at
 > the end of `main` 0.85 s, dragging a 1,000-block stack 14 s in all; a
 > toolbox rebuild 0.13–0.17 s at 40 blocks. They are to be measured again in
-> a release build. The polish wave's benchmarks (2026-10-12, debug backend,
+> a release build. The polish wave's benchmarks (2026-10-13, debug backend,
 > the end-to-end frontend build, after the preview churn was reduced) give
-> the longest task after a click at 1,000 blocks about 1.0 s, an edit until
-> the page settles with the C++ panel shown about 1.4 s at p95, and the
-> preview task about 100 ms at p95; on the guessing game a selection 15 ms
-> and an edit about 37 ms. M2 is done once the polish wave is finished and
-> these are recorded on a polish build: the threat-model review, the first
-> green weekly run, the toolchain matrix (at least the Debian cell, or a
+> the longest task after a click at 1,000 blocks about 1.2 s (the toolbox's
+> rebuild about 0.55 s of it), an edit until the page settles with the C++
+> panel shown about 1.4 s at p95, and the preview task about 100 ms at p95;
+> on the guessing game a selection about 140 ms (the toolbox's rebuild about
+> 120 ms) and an edit about 33 ms; a program's 200,000 lines take about
+> 0.8 s to show in the console. M2 is done once the polish wave is finished
+> and these are recorded on a polish build: the threat-model review, the
+> first green weekly run, the toolchain matrix (at least the Debian cell, or a
 > recorded deferral), committed visual baselines, the usability sessions with
 > at least three first-time users ([protocol](../manual-tests/m2-usability.md)),
 > the NVDA and Orca pass ([checklist](../manual-tests/m2-accessibility.md)),
@@ -315,7 +317,7 @@ drop glib 0.18 and its tracked advisory (`osv-scanner.toml`).
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| Blockly performance in WebKitGTK on large workspaces | Medium | Medium | The first readings, taken locally on Linux under a virtual display without a GPU, are above N3 and N4: the preview task at 1,000 blocks about 120 ms at p95 (the native pipeline alone about 19 ms), and dragging at 5,000 blocks about 50 ms per frame at p95. CI's readings for dragging at 5,000 blocks (p95) are 40 ms on Linux and 914 ms on Windows. In the app (2026-10-10, debug backend, Linux without a GPU): selecting 1.2 s, an edit at the end of `main` 0.85 s, dragging a 1,000-block stack 14 s in all; a toolbox rebuild 0.13–0.17 s at 40 blocks. Benchmarked on 2026-10-12 (debug backend, end-to-end frontend build, after the preview churn was reduced): the longest task after a click at 1,000 blocks about 1.0 s, an edit until the page settles with the C++ panel shown about 1.4 s at p95, the preview task about 100 ms at p95 (120 ms before P-2). Mitigation: gated benchmarks with A/B runs ([09 §9.2](09-quality-and-delivery.md#92-testing-strategy)); a patched and upstreamed render management and a linear `getDescendants` (M3, if the measurement justifies the patch under [ADR-0014](../adr/0014-extending-blockly.md)); the preview in a Web Worker ([02 §2.6](02-architecture.md#26-process-model-and-concurrency), M3); per-function views (M5). Also per-module canvases and collapse/virtualisation. Fallback: recommend splitting modules. |
+| Blockly performance in WebKitGTK on large workspaces | Medium | Medium | The first readings, taken locally on Linux under a virtual display without a GPU, are above N3 and N4: the preview task at 1,000 blocks about 120 ms at p95 (the native pipeline alone about 19 ms), and dragging at 5,000 blocks about 50 ms per frame at p95. CI's readings for dragging at 5,000 blocks (p95) are 40 ms on Linux and 914 ms on Windows. In the app (2026-10-10, debug backend, Linux without a GPU): selecting 1.2 s, an edit at the end of `main` 0.85 s, dragging a 1,000-block stack 14 s in all; a toolbox rebuild 0.13–0.17 s at 40 blocks. Benchmarked on 2026-10-12/13 (debug backend, end-to-end frontend build, after the preview churn was reduced): the longest task after a click at 1,000 blocks about 1.2 s (the toolbox's rebuild about 0.55 s of it), an edit until the page settles with the C++ panel shown about 1.4 s at p95, the preview task about 100 ms at p95 (120 ms before P-2). Mitigation: gated benchmarks with A/B runs ([09 §9.2](09-quality-and-delivery.md#92-testing-strategy)); a patched and upstreamed render management and a linear `getDescendants` (M3, if the measurement justifies the patch under [ADR-0014](../adr/0014-extending-blockly.md)); the preview in a Web Worker ([02 §2.6](02-architecture.md#26-process-model-and-concurrency), M3); per-function views (M5). Also per-module canvases and collapse/virtualisation. Fallback: recommend splitting modules. |
 | Rendering differences between WebView2 and WebKitGTK | Medium | Low | E2E on both, a visual-diff test of the core canvas, avoid cutting-edge CSS |
 | Type-checker false positives frustrate users | Medium | High | Gradual typing; only report certain errors; defer to g++; a differential test oracle |
 | Windows toolchain variety (broken PATHs, mixed runtimes) | High | Medium | Strong probing, health checks, clear guided setup, a wide manual test matrix |

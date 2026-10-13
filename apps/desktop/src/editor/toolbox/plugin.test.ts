@@ -6,10 +6,10 @@ import { createElement } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setCore } from '../../app/core';
-import { latestTimings, resetTimings } from '../../lib/timing';
 import { DialogHost, createDialogQueue, type DialogService } from '../../app/dialogs';
 import { resetAppStore, useAppStore } from '../../app/store';
 import { documentFixture } from '../../app/testing/fixtures';
+import { latestTimings, resetTimings } from '../../lib/timing';
 import { createSymbolServices, installEditorServices, servicesSessionHooks } from '../services';
 import { ICON_CLASS, CATEGORY_CLASS } from './category';
 import { B2cContinuousToolbox, CONTINUOUS_REFRESH_DELAY_MS } from './continuous';
