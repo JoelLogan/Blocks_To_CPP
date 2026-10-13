@@ -205,5 +205,14 @@ export function editorHandle(
       onSelect(id, opts);
       workspace.getBlockById(id)?.select();
     },
+    updateProjectInfo: () => {
+      throw new Error('not in this test');
+    },
+    undo: () => {
+      throw new Error('not in this test');
+    },
+    redo: () => {
+      throw new Error('not in this test');
+    },
   };
 }

@@ -2,7 +2,8 @@
 //! `docs/spec/08-security.md` §8.8 and §8.12 T5, T8): every request is
 //! decoded as the desktop adapter decodes it (`b2c_ipc::decode`) and then
 //! handled by the backend. Malformed requests are rejected with the right
-//! code and change nothing; forged opaque IDs give typed errors.
+//! code and change nothing; forged opaque IDs give typed errors; a plain
+//! save of a renamed project renames its recent-list entry.
 
 // Test code: helpers fail the test by panicking.
 #![allow(
@@ -27,7 +28,7 @@ use b2c_ipc::sink::testing::RecordingSink;
 use b2c_ipc::{
     BuildId, Handle, InvalidReason, IpcError, RecentId, RunId, ToolchainId, decode, encode_base64,
 };
-use common::{TestApp, example_text, run_sinks};
+use common::{TestApp, edit, example_text, run_sinks};
 use serde_json::json;
 
 /// A JSON request with a real handle in it.
@@ -432,4 +433,51 @@ fn new_projects_need_a_known_template() {
         })
         .unwrap();
     assert!(first.handle.as_str().starts_with("ph_"));
+}
+
+#[test]
+fn a_plain_save_renames_the_recent_entry() {
+    // docs/spec/05-project-format.md §5.9: an entry's `projectName` follows
+    // the project, also when it was renamed and is saved with a plain Save.
+    let app = TestApp::new();
+    let path = app.write("hello.b2c", example_text("hello_world").as_bytes());
+    let other = app.write("other.b2c", example_text("countdown").as_bytes());
+    let opened = app.open(&path);
+    app.open(&other);
+    let before = app.backend.recent_list().unwrap().entries;
+    assert_eq!(before[1].project_name, "Hello World");
+
+    // The save comes in as the desktop adapter decodes it.
+    let renamed = edit(&opened.document, |project| {
+        project["project"]["name"] = json!("Space Invaders");
+    });
+    let request: ProjectSaveRequest =
+        decode(with_handle(&opened.handle, json!({ "document": renamed }))).unwrap();
+    app.backend.project_save(request).unwrap();
+
+    let after = app.backend.recent_list().unwrap().entries;
+    assert_eq!(after.len(), 2);
+    // The same entry under its new name, now the most recent; the file keeps
+    // its name.
+    assert_eq!(after[0].recent_id, before[1].recent_id);
+    assert_eq!(after[0].project_name, "Space Invaders");
+    assert_eq!(after[0].display_path, path.display().to_string());
+    assert_eq!(after[1].recent_id, before[0].recent_id);
+    assert!(path.exists());
+
+    // A save that is refused leaves the list as it was.
+    std::fs::write(&path, example_text("hello_world")).unwrap();
+    let again = edit(&renamed, |project| {
+        project["project"]["name"] = json!("Not saved");
+    });
+    assert_eq!(
+        app.backend
+            .project_save(ProjectSaveRequest {
+                handle: opened.handle,
+                document: again,
+            })
+            .unwrap_err(),
+        IpcError::ChangedOnDisk
+    );
+    assert_eq!(app.backend.recent_list().unwrap().entries, after);
 }

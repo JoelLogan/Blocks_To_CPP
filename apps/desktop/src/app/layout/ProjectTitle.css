@@ -1,0 +1,81 @@
+/*
+ * The project's name in the top bar and its rename field (ProjectTitle.tsx), on the toolbar's dark
+ * background (app.css). The heading and the cut-off name keep app.css's `.project-name` and
+ * `.project-name-text`.
+ */
+
+/* The name looks like the heading's text until the pointer or the focus is on it. */
+.project-name-button {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 0;
+  min-height: 28px;
+  margin: 0 0 0 -6px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: start;
+  cursor: text;
+}
+
+.project-name-button:hover {
+  border-color: rgb(255 255 255 / 45%);
+  background-color: var(--b2c-toolbar-hover);
+}
+
+/* Holds the field and, below it, why a name was refused. */
+.project-name-editor {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 40em;
+}
+
+.project-name-input {
+  flex: 1 1 auto;
+  min-width: 8em;
+  min-height: 28px;
+  padding: 0 6px;
+  margin-left: -6px;
+  /* At least 3:1 on the toolbar, like the toolbar's buttons (WCAG 1.4.11). */
+  border: 1px solid rgb(255 255 255 / 45%);
+  border-radius: 6px;
+  background: var(--b2c-toolbar-bg);
+  color: var(--b2c-toolbar-text);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.project-name-input[aria-invalid='true'] {
+  border-color: var(--b2c-toolbar-focus);
+}
+
+/*
+ * Why the name was refused: a pop-up under the field, in the app's colours like the main menu's
+ * list, at the chrome's pop-up level of app.css's stacking scale.
+ */
+.project-name-error {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: -6px;
+  z-index: 50;
+  max-width: 360px;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--b2c-border);
+  border-radius: 6px;
+  background: var(--b2c-surface-raised);
+  color: var(--b2c-text);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 25%);
+}

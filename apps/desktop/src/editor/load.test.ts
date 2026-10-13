@@ -41,6 +41,9 @@ function fakeEditor(): { editor: EditorHandle; loadDocument: Mock<EditorHandle['
       loadDocument,
       currentDocument: vi.fn<EditorHandle['currentDocument']>(),
       selectBlock: vi.fn<EditorHandle['selectBlock']>(),
+      updateProjectInfo: vi.fn<EditorHandle['updateProjectInfo']>(),
+      undo: vi.fn<EditorHandle['undo']>(),
+      redo: vi.fn<EditorHandle['redo']>(),
       workspace: {} as never,
     },
   };

@@ -199,12 +199,14 @@ describe('the Tab order of the window', () => {
     act(openRunnableProject);
 
     const reached: string[] = [];
-    for (let step = 0; step < 17; step++) {
+    for (let step = 0; step < 18; step++) {
       await user.tab();
       reached.push(focusedName());
     }
     expect(reached).toEqual([
       'button: Main menu',
+      // The project's name, which renames the project.
+      'button: Guessing Game',
       'select: DebugRelease',
       'button: Run',
       'button: Stop',

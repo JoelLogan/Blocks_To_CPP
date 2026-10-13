@@ -37,12 +37,24 @@
 **In M2** (see §4.13 for everything that comes later):
 
 * The `≡` main menu at the left of the top bar has *New project…*, *Open…*,
-  *Save* (`Ctrl+S`), *Save as…* and *Close project*; the items about the open
-  project appear only while one is open.
+  *Save* (`Ctrl+S`), *Save as…*, *Rename project…*, *Undo* (`Ctrl+Z`),
+  *Redo* (`Ctrl+Y`) and *Close project*; the items about the open project
+  appear only while one is open. *Undo* and *Redo* are for the block editor
+  while it is shown, and work wherever the focus is except in text fields,
+  dialogs and a running program's console (`Ctrl+Shift+Z` also redoes); in
+  the menu they are greyed out while there is nothing to undo or redo.
 * The top bar shows the project name, followed by `•` while there are unsaved
   changes; a name too long for the bar is cut off with `…` before the `•`,
-  which stays in view. The window title does not change: the webview has no
-  window permission
+  which stays in view. Clicking the name (or *Rename project…*) edits it in
+  place: Enter or moving the focus away keeps it, Escape cancels. A name has
+  1–100 characters on one line, without control or bidirectional-override
+  characters, and spaces at either end are removed. Enter on a name that
+  breaks these rules says why and keeps the field open; moving the focus away
+  then keeps the old name. Renaming is an unsaved change, is saved as
+  `project.name` and never renames the file; *Save as…* suggests the name as
+  the file name while the project has no file yet. Undo does not undo a
+  rename: rename the project again instead. The window title does not change:
+  the webview has no window permission
   ([08 §8.8](08-security.md#88-webview-and-ipc-hardening)).
 * The **Debug / Release** dropdown in the toolbar lasts for the session,
   starts at *Debug* and is never saved in the project. The project settings
@@ -214,8 +226,13 @@ slots in M3, and *Change level…* with lint levels in M5.
 problem, such as blocks nested too deeply) does not go unnoticed: a banner
 says that the latest change was not checked, the code, Problems and Run keep
 showing the last version that could be, and Build and Run refuse with a dialog
-that names the problem until the change is undone. When the compiler core was
-restarted after a crash, a dismissible banner says so.
+that names the problem until the change is undone; the banner's *Undo last
+change* undoes it. When the canvas went past a limit that editing can reach
+(blocks nested too deeply, `B2C-E0104`; a project file over 32 MiB,
+`B2C-E0101`; more than 100,000 blocks, `B2C-E0121`), the banner and a refused
+Save name the limit and how to get back within it; any other such problem is
+reported as a bug. When the compiler core was restarted after a crash, a
+dismissible banner says so.
 
 ## 4.5 Console (integrated terminal)
 
@@ -330,7 +347,9 @@ there, `Escape` cancels), `T` opens the toolbox, whose categories and blocks
 are reached with the arrow keys (adding a block from it is one undo step),
 and copy, paste, duplicate, delete, undo and the block menu (`Ctrl+Enter`)
 act on the keyboard focus. The
-shortcuts `F5`, `Shift+F5`, `Ctrl+B` and `Ctrl+S` work; the command palette,
+shortcuts `F5`, `Shift+F5`, `Ctrl+B` and `Ctrl+S` work, and `Ctrl+Z` and
+`Ctrl+Y` undo and redo the block editor's changes also while the focus is
+outside the canvas (§4.1); the command palette,
 remapping, Find, Go to definition, Find references and Rename come in M5, and
 Quick Insert in M3. Full screen-reader announcements for the workspace and
 the accessibility audit are M5 work. Copy, cut, paste and duplicate

@@ -72,7 +72,9 @@ function focusDockPanel(panel: string): void {
  *
  * - `problems.focusFirstError` opens the Problems tab, selects the block of the first error (live
  *   errors first, then build errors) and moves the focus to the Problems panel;
- * - `settings.open` shows the Settings page, once a feature provides it.
+ * - `settings.open` shows the Settings page, once a feature provides it;
+ * - `edit.undo` and `edit.redo` undo and redo the block editor's last change (the ≡ menu, the
+ *   window's `Ctrl+Z` and `Ctrl+Y`, and the sync-failure banner's *Undo last change*).
  *
  * Returns the function that removes them.
  */
@@ -97,6 +99,12 @@ export function installShellCommands(ctx: ShellActionContext): () => void {
       if (ctx.screens.screen('settings') !== null) {
         ctx.store.getState().actions.setUi({ screen: 'settings' });
       }
+    }),
+    ctx.commands.registerCommand('edit.undo', () => {
+      ctx.editor()?.undo();
+    }),
+    ctx.commands.registerCommand('edit.redo', () => {
+      ctx.editor()?.redo();
     }),
   ];
   return () => {

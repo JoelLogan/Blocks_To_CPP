@@ -1,7 +1,8 @@
 /**
- * The window's keyboard shortcuts in M2 (docs/spec/04-user-interface.md §4.7): `F5` Run,
- * `Shift+F5` Stop, `Ctrl+B` Build and `Ctrl+S` Save. The workspace's own shortcuts (copy, paste,
- * delete, undo) belong to the editor.
+ * The window's keyboard shortcuts in M2 (docs/spec/04-user-interface.md §4.1, §4.7): `F5` Run,
+ * `Shift+F5` Stop, `Ctrl+B` Build, `Ctrl+S` Save, and `Ctrl+Z` Undo and `Ctrl+Y` (or
+ * `Ctrl+Shift+Z`) Redo for the block editor. The workspace's other shortcuts (copy, paste,
+ * delete) belong to the editor.
  *
  * The listener runs in the capture phase, before the focused element sees the key, so the
  * shortcuts work wherever the focus is, including the console, whose terminal would otherwise send
@@ -9,6 +10,12 @@
  *
  * - an open dialog owns the keyboard: the keys do nothing (but `F5` still cannot reload the page);
  * - an element marked `data-b2c-shortcuts="off"` (and everything inside it) gets the keys itself.
+ *
+ * Undo and Redo leave more places alone, which keep the keys' own meaning: text fields (undoing
+ * the typing), the console while a program runs (the program gets `Ctrl+Z`), and Blockly's own
+ * areas, where Blockly undoes itself (it listens on its injection div only, so everywhere else,
+ * such as the Problems panel or the toolbar, the window does it). They act only while the block
+ * editor is shown, so a key pressed on another page never changes blocks out of sight.
  *
  * **The page never reloads.** A reload would start the frontend empty while the backend keeps the
  * open project, its unsaved changes and its running program, out of the window's reach. So the
@@ -23,14 +30,19 @@ import { activateGated, type ShellActionContext } from './actions';
 import { triggerCommand } from './commands';
 
 /** What a shortcut does. */
-export type ShortcutAction = 'run' | 'stop' | 'build' | 'save';
+export type ShortcutAction = 'run' | 'stop' | 'build' | 'save' | 'undo' | 'redo';
 
-/** How each shortcut is written for people (`label`) and for `aria-keyshortcuts` (`aria`). */
+/**
+ * How each shortcut is written for people (`label`) and for `aria-keyshortcuts` (`aria`, where a
+ * space separates alternatives).
+ */
 export const SHORTCUTS: Readonly<Record<ShortcutAction, { label: string; aria: string }>> = {
   run: { label: 'F5', aria: 'F5' },
   stop: { label: 'Shift+F5', aria: 'Shift+F5' },
   build: { label: 'Ctrl+B', aria: 'Control+B' },
   save: { label: 'Ctrl+S', aria: 'Control+S' },
+  undo: { label: 'Ctrl+Z', aria: 'Control+Z' },
+  redo: { label: 'Ctrl+Y', aria: 'Control+Y Control+Shift+Z' },
 };
 
 /** The attribute that hands the shortcut keys to an element and everything inside it. */
@@ -59,17 +71,25 @@ export function matchShortcut(event: KeyboardEvent): ShortcutAction | null {
   if (event.key === 'F5' && !event.ctrlKey) {
     return event.shiftKey ? 'stop' : 'run';
   }
-  if (event.ctrlKey && !event.shiftKey) {
-    switch (letterOf(event)) {
-      case 'b':
-        return 'build';
-      case 's':
-        return 'save';
-      default:
-        return null;
-    }
+  if (!event.ctrlKey) {
+    return null;
   }
-  return null;
+  const letter = letterOf(event);
+  if (event.shiftKey) {
+    return letter === 'z' ? 'redo' : null;
+  }
+  switch (letter) {
+    case 'b':
+      return 'build';
+    case 's':
+      return 'save';
+    case 'z':
+      return 'undo';
+    case 'y':
+      return 'redo';
+    default:
+      return null;
+  }
 }
 
 /**
@@ -142,6 +162,42 @@ function isInDialogScope(element: Element | null): boolean {
   return element?.closest(BLOCKED_SCOPE) != null || document.querySelector(OPEN_DIALOG) !== null;
 }
 
+/**
+ * Text being edited, where `Ctrl+Z` and `Ctrl+Y` undo the typing. Read-only text (the code
+ * panel) does not count. The console's terminal, whose input is a text area, is decided
+ * separately.
+ */
+const TEXT_FIELD =
+  'input:not([readonly]), textarea:not([readonly]), [contenteditable]:not([contenteditable="false"]):not([aria-readonly="true"])';
+
+/**
+ * Blockly's own areas: the injection div (canvas, toolbox and flyout), where Blockly binds its
+ * shortcuts, and the pop-ups it attaches to the page (field editors and drop-down menus).
+ */
+const BLOCKLY_AREA = '.injectionDiv, .blocklyWidgetDiv, .blocklyDropDownDiv';
+
+/** The console's terminal (xterm.js). */
+const TERMINAL = '.xterm';
+
+/**
+ * Whether the window undoes or redoes the blocks for a key pressed at `element` (see the module
+ * comment): only while the block editor shows a project, and never where the key means something
+ * else or Blockly handles it itself. In the console it does so only while no program runs.
+ */
+function undoesBlocks(element: Element | null, ctx: ShellActionContext): boolean {
+  const { project, ui, run } = ctx.store.getState();
+  if (project === null || ui.screen !== 'editor' || isInDialogScope(element)) {
+    return false;
+  }
+  if (element === null) {
+    return true;
+  }
+  if (element.closest(TERMINAL) !== null) {
+    return run.status !== 'starting' && run.status !== 'running';
+  }
+  return element.closest(BLOCKLY_AREA) === null && element.closest(TEXT_FIELD) === null;
+}
+
 /** Runs what a shortcut does. */
 function perform(action: ShortcutAction, ctx: ShellActionContext): void {
   switch (action) {
@@ -156,6 +212,12 @@ function perform(action: ShortcutAction, ctx: ShellActionContext): void {
       break;
     case 'save':
       triggerCommand('project.save', ctx.commands);
+      break;
+    case 'undo':
+      triggerCommand('edit.undo', ctx.commands);
+      break;
+    case 'redo':
+      triggerCommand('edit.redo', ctx.commands);
       break;
   }
 }
@@ -180,6 +242,16 @@ export function installShortcuts(target: Window, ctx: ShellActionContext): () =>
     }
     const element = targetElement(event);
     if (isOptedOut(element)) {
+      return;
+    }
+    if (action === 'undo' || action === 'redo') {
+      // Elsewhere the key keeps its own meaning, so it is neither cancelled nor stopped. A held
+      // key undoes step by step, as on the canvas.
+      if (undoesBlocks(element, ctx)) {
+        event.preventDefault();
+        event.stopPropagation();
+        perform(action, ctx);
+      }
       return;
     }
     // The webview's own meaning of these keys (save the page, bookmarks) never applies.

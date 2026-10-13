@@ -12,10 +12,13 @@
  *   clears Blockly's undo history (each module has its own canvas).
  * - The viewport is captured only for saving ({@link EditorSession.currentDocument}).
  * - While a block is dragged, saving writes the canvas as it was just before the drag (./drag.ts).
+ * - Renaming the project changes the document outside the canvas and previews it again
+ *   ({@link EditorSession.updateProjectInfo}); Undo and Redo act on the canvas only.
  */
 import type { BdmBlock, BdmDocument, BdmViewport, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
 import * as Blockly from 'blockly/core';
 
+import type { ProjectInfo } from '../../app/editor-types';
 import type { ProjectState, useAppStore } from '../../app/store';
 import { visibleHolder } from '../highlight/reveal';
 import type { CoreHost } from '../preview/coreHost';
@@ -251,6 +254,44 @@ export class EditorSession {
   /** Reads the canvas and previews now, instead of after the debounce delay. */
   flush(): Promise<void> {
     return this.pipeline.runNow();
+  }
+
+  /**
+   * Gives the open project the name `info.name` (already checked by the caller): the project's
+   * document takes it at once and has unsaved changes, and the preview runs now. The canvas reads
+   * back onto that document, so the run commits the canvas with the new name and works out
+   * `dirty` exactly (renaming back to the saved name leaves nothing unsaved). While the canvas
+   * does not load (`syncFailed`) the name still counts as unsaved, so it is never lost silently.
+   *
+   * Blockly's undo history covers the canvas only: the rename is not undone by Undo. An unchanged
+   * name, or no open project, changes nothing.
+   */
+  updateProjectInfo(info: ProjectInfo): void {
+    const project = this.store.getState().project;
+    if (this.disposed || project === null || project.document.project.name === info.name) {
+      return;
+    }
+    const document: BdmDocument = {
+      ...project.document,
+      project: { ...project.document.project, name: info.name },
+    };
+    this.store.getState().actions.updateProject({ document, dirty: true });
+    void this.pipeline.runNow();
+  }
+
+  /**
+   * Undoes (or, with `redo`, redoes) the last change on the canvas, as Blockly's own `Ctrl+Z` and
+   * `Ctrl+Y` do: its drop-downs and field editors close first, and nothing happens during a drag.
+   */
+  undo(redo: boolean): void {
+    const workspace = this.workspace;
+    if (this.disposed || isDragging(workspace)) {
+      return;
+    }
+    if (workspace instanceof Blockly.WorkspaceSvg) {
+      workspace.hideChaff();
+    }
+    workspace.undo(redo);
   }
 
   /**

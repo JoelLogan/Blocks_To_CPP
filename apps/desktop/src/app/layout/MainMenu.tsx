@@ -1,9 +1,11 @@
 /**
  * The toolbar's main menu, `≡` (docs/spec/04-user-interface.md §4.1, §4.10): *New project…*,
- * *Open…*, *Save*, *Save as…* and *Close project*. Like the rest of the toolbar it only runs
- * commands: an item is listed only while a feature has registered its command, and the items
- * about the open project only while one is open, so the menu never offers something that does
- * nothing (§4.13). Without any item the button is not shown.
+ * *Open…*, *Save*, *Save as…*, *Rename project…*, *Undo*, *Redo* and *Close project*. Like the
+ * rest of the toolbar it only runs commands: an item is listed only while a feature has registered
+ * its command, and the items about the open project only while one is open, so the menu never
+ * offers something that does nothing (§4.13). Without any item the button is not shown. *Undo* and
+ * *Redo* are listed with a project but disabled (`aria-disabled`, still focusable) while the block
+ * editor is not shown or has nothing to undo or redo.
  *
  * Keyboard (the WAI-ARIA menu button pattern): `Enter`, `Space` or `↓` opens the menu on its
  * first item and `↑` on its last; `↑`/`↓` move with wrap-around, `Home`/`End` jump, `Escape`
@@ -19,9 +21,16 @@ import {
 } from 'react';
 
 import { type CommandId, type CommandRegistry, commands, triggerCommand } from '../commands';
+import { type EditorHandle, getEditorHandle } from '../editor-types';
 import { SHORTCUTS } from '../shortcuts';
-import { useAppStore } from '../store';
+import { type ScreenId, useAppStore } from '../store';
 import './MainMenu.css';
+
+/** What decides whether an item can be chosen now. */
+interface MenuContext {
+  readonly editor: EditorHandle | null;
+  readonly screen: ScreenId;
+}
 
 /** One item of the menu. */
 interface MenuItem {
@@ -33,6 +42,19 @@ interface MenuItem {
   readonly needsProject: boolean;
   /** Items of different groups are separated by a line. */
   readonly group: number;
+  /** Whether it can be chosen now (when listed); always, without this. */
+  readonly enabled?: (ctx: MenuContext) => boolean;
+}
+
+/**
+ * Whether the block editor is shown and has a change to undo (or, with `redo`, to redo): what
+ * Blockly's undo and redo stacks hold.
+ */
+function hasHistory(redo: boolean): (ctx: MenuContext) => boolean {
+  return ({ editor, screen }) =>
+    screen === 'editor' &&
+    editor !== null &&
+    (redo ? editor.workspace.getRedoStack() : editor.workspace.getUndoStack()).length > 0;
 }
 
 /** Every item, in menu order. */
@@ -47,7 +69,24 @@ export const MAIN_MENU_ITEMS: readonly MenuItem[] = [
     group: 1,
   },
   { command: 'project.saveAs', label: 'Save as…', needsProject: true, group: 1 },
-  { command: 'project.close', label: 'Close project', needsProject: true, group: 2 },
+  { command: 'project.rename', label: 'Rename project…', needsProject: true, group: 1 },
+  {
+    command: 'edit.undo',
+    label: 'Undo',
+    shortcut: SHORTCUTS.undo,
+    needsProject: true,
+    group: 2,
+    enabled: hasHistory(false),
+  },
+  {
+    command: 'edit.redo',
+    label: 'Redo',
+    shortcut: SHORTCUTS.redo,
+    needsProject: true,
+    group: 2,
+    enabled: hasHistory(true),
+  },
+  { command: 'project.close', label: 'Close project', needsProject: true, group: 3 },
 ];
 
 /** The registered commands among the menu's, as one string (a stable external-store snapshot). */
@@ -57,10 +96,20 @@ function registeredKey(registry: CommandRegistry): string {
     .join(' ');
 }
 
-/** The main menu; `registry` is the app's command registry unless a test passes its own. */
-export function MainMenu({ registry = commands }: { registry?: CommandRegistry }) {
+/**
+ * The main menu. `registry` is the app's command registry and `editor` the app's block editor
+ * unless a test passes its own.
+ */
+export function MainMenu({
+  registry = commands,
+  editor = getEditorHandle,
+}: {
+  registry?: CommandRegistry;
+  editor?: () => EditorHandle | null;
+}) {
   const registered = useSyncExternalStore(registry.subscribe, () => registeredKey(registry));
   const hasProject = useAppStore((state) => state.project !== null);
+  const screen = useAppStore((state) => state.ui.screen);
   const [open, setOpen] = useState(false);
   /** The item to focus once the menu has rendered: `first`, `last`, or none. */
   const [focusOnOpen, setFocusOnOpen] = useState<'first' | 'last'>('first');
@@ -170,6 +219,8 @@ export function MainMenu({ registry = commands }: { registry?: CommandRegistry }
   };
 
   itemRefs.current = [];
+  // Read as the menu opens: nothing changes the editor's history while the menu has the focus.
+  const context: MenuContext | null = open ? { editor: editor(), screen } : null;
   return (
     <div className="main-menu" ref={container}>
       <button
@@ -202,34 +253,47 @@ export function MainMenu({ registry = commands }: { registry?: CommandRegistry }
           tabIndex={-1}
           onKeyDown={onMenuKeyDown}
         >
-          {items.map((item, index) => (
-            <MenuEntry
-              key={item.command}
-              item={item}
-              separated={index > 0 && items[index - 1]?.group !== item.group}
-              itemRef={(element) => {
-                itemRefs.current[index] = element;
-              }}
-              onChoose={() => {
-                close(true);
-                triggerCommand(item.command, registry);
-              }}
-            />
-          ))}
+          {items.map((item, index) => {
+            const disabled =
+              context !== null && item.enabled !== undefined && !item.enabled(context);
+            return (
+              <MenuEntry
+                key={item.command}
+                item={item}
+                disabled={disabled}
+                separated={index > 0 && items[index - 1]?.group !== item.group}
+                itemRef={(element) => {
+                  itemRefs.current[index] = element;
+                }}
+                onChoose={() => {
+                  if (disabled) {
+                    return;
+                  }
+                  close(true);
+                  triggerCommand(item.command, registry);
+                }}
+              />
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-/** One item, with a separator line above it when it starts a new group. */
+/**
+ * One item, with a separator line above it when it starts a new group. A disabled item stays in
+ * the arrow keys' path (WAI-ARIA menus), but choosing it does nothing.
+ */
 function MenuEntry({
   item,
+  disabled,
   separated,
   itemRef,
   onChoose,
 }: {
   item: MenuItem;
+  disabled: boolean;
   separated: boolean;
   itemRef: (element: HTMLButtonElement | null) => void;
   onChoose: () => void;
@@ -243,6 +307,7 @@ function MenuEntry({
         role="menuitem"
         tabIndex={-1}
         className="main-menu-item"
+        aria-disabled={disabled || undefined}
         aria-keyshortcuts={item.shortcut?.aria}
         onClick={onChoose}
       >

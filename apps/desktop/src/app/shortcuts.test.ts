@@ -1,4 +1,8 @@
-/** The window's shortcuts and what the shell's buttons do (actions.ts). */
+/**
+ * The window's shortcuts and what the shell's buttons do (actions.ts), including Undo and Redo for
+ * the block editor wherever the focus is, except in text fields, dialogs, Blockly's own areas and
+ * the console while a program runs.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { activateGated, installShellCommands, type ShellActionContext } from './actions';
@@ -39,12 +43,27 @@ function setUp() {
     'build.start',
     'project.save',
     'problems.focusFirstError',
+    'edit.undo',
+    'edit.redo',
   ] as const) {
     commands.registerCommand(id, () => {
       ran.push(id);
     });
   }
   return { ctx, commands, screens, editor, ran };
+}
+
+/** A project shown in the block editor. */
+function showEditor(): void {
+  const { actions } = useAppStore.getState();
+  actions.setProject(projectFixture());
+  actions.setUi({ screen: 'editor' });
+}
+
+/** Appends `element` to `parent` (the page's body by default) and returns it. */
+function attach<T extends Element>(element: T, parent: Element = document.body): T {
+  parent.append(element);
+  return element;
 }
 
 /** A state in which Run is available. */
@@ -86,6 +105,18 @@ describe('matchShortcut', () => {
     expect(key({ key: 'и', code: 'KeyB', ctrlKey: true })).toBe('build');
     expect(key({ key: 'ы', code: 'KeyS', ctrlKey: true })).toBe('save');
     expect(key({ key: 'ы', code: 'Digit1', ctrlKey: true })).toBeNull();
+  });
+
+  it('knows Undo and Redo, also on a non-Latin keyboard layout', () => {
+    expect(key({ key: 'z', ctrlKey: true })).toBe('undo');
+    expect(key({ key: 'y', ctrlKey: true })).toBe('redo');
+    expect(key({ key: 'Z', ctrlKey: true, shiftKey: true })).toBe('redo');
+    expect(key({ key: 'я', code: 'KeyZ', ctrlKey: true })).toBe('undo');
+    expect(key({ key: 'н', code: 'KeyY', ctrlKey: true })).toBe('redo');
+    expect(key({ key: 'Y', ctrlKey: true, shiftKey: true })).toBeNull();
+    expect(key({ key: 'z', ctrlKey: true, altKey: true })).toBeNull();
+    expect(key({ key: 'z', metaKey: true })).toBeNull();
+    expect(key({ key: 'z' })).toBeNull();
   });
 
   it('ignores other combinations, including AltGr (Ctrl+Alt)', () => {
@@ -174,6 +205,142 @@ describe('installShortcuts', () => {
     installShortcuts(window, ctx)();
 
     press({ key: 's', ctrlKey: true });
+    expect(ran).toEqual([]);
+  });
+});
+
+describe('Undo and Redo for the block editor', () => {
+  const undoKeys: [KeyboardEventInit, CommandId][] = [
+    [{ key: 'z', ctrlKey: true }, 'edit.undo'],
+    [{ key: 'y', ctrlKey: true }, 'edit.redo'],
+    [{ key: 'Z', ctrlKey: true, shiftKey: true }, 'edit.redo'],
+  ];
+
+  it('undo and redo with the focus on the Problems panel, the toolbar or nothing', () => {
+    const { ctx, ran } = setUp();
+    showEditor();
+    uninstall = installShortcuts(window, ctx);
+    const grid = attach(document.createElement('div'));
+    grid.setAttribute('role', 'grid');
+    const cell = attach(document.createElement('div'), grid);
+    cell.setAttribute('role', 'gridcell');
+    cell.tabIndex = 0;
+    const button = attach(document.createElement('button'));
+    // The read-only code panel (CodeMirror marks its text read-only).
+    const code = attach(document.createElement('div'));
+    code.contentEditable = 'true';
+    code.setAttribute('aria-readonly', 'true');
+
+    for (const target of [cell, button, code, document.body]) {
+      for (const [init, command] of undoKeys) {
+        ran.length = 0;
+        const event = press(init, target);
+        expect(ran, `${command} at ${target.tagName}`).toEqual([command]);
+        expect(event.defaultPrevented).toBe(true);
+      }
+    }
+  });
+
+  it('undo step by step while the key is held', () => {
+    const { ctx, ran } = setUp();
+    showEditor();
+    uninstall = installShortcuts(window, ctx);
+    press({ key: 'z', ctrlKey: true });
+    press({ key: 'z', ctrlKey: true, repeat: true });
+    expect(ran).toEqual(['edit.undo', 'edit.undo']);
+  });
+
+  it('leave the keys to text fields, which undo the typing', () => {
+    const { ctx, ran } = setUp();
+    showEditor();
+    uninstall = installShortcuts(window, ctx);
+    const input = attach(document.createElement('input'));
+    const area = attach(document.createElement('textarea'));
+    const editable = attach(document.createElement('div'));
+    editable.contentEditable = 'true';
+    const inside = attach(document.createElement('span'), editable);
+
+    for (const target of [input, area, inside]) {
+      for (const [init] of undoKeys) {
+        expect(press(init, target).defaultPrevented).toBe(false);
+      }
+    }
+    expect(ran).toEqual([]);
+  });
+
+  it('leave the keys to Blockly on the canvas, in the toolbox and in its pop-ups', () => {
+    const { ctx, ran } = setUp();
+    showEditor();
+    uninstall = installShortcuts(window, ctx);
+    const injection = attach(document.createElement('div'));
+    injection.className = 'injectionDiv';
+    const canvas = attach(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), injection);
+    const widget = attach(document.createElement('div'));
+    widget.className = 'blocklyWidgetDiv';
+    const menu = attach(document.createElement('div'));
+    menu.className = 'blocklyDropDownDiv';
+    const option = attach(document.createElement('div'), menu);
+    const seen = vi.fn();
+    canvas.addEventListener('keydown', seen);
+
+    for (const target of [canvas, widget, option]) {
+      expect(press({ key: 'z', ctrlKey: true }, target).defaultPrevented).toBe(false);
+    }
+    expect(ran).toEqual([]);
+    expect(seen).toHaveBeenCalledOnce();
+  });
+
+  it('undo from the console only while no program runs; a running program gets the key', () => {
+    const { ctx, ran } = setUp();
+    showEditor();
+    uninstall = installShortcuts(window, ctx);
+    const terminal = attach(document.createElement('div'));
+    terminal.className = 'xterm';
+    const input = attach(document.createElement('textarea'), terminal);
+    const seenByTerminal = vi.fn();
+    input.addEventListener('keydown', seenByTerminal);
+
+    expect(press({ key: 'z', ctrlKey: true }, input).defaultPrevented).toBe(true);
+    expect(ran).toEqual(['edit.undo']);
+    expect(seenByTerminal).not.toHaveBeenCalled();
+
+    for (const status of ['starting', 'running'] as const) {
+      useAppStore.getState().actions.setRun({ status });
+      expect(press({ key: 'z', ctrlKey: true }, input).defaultPrevented).toBe(false);
+    }
+    expect(ran).toEqual(['edit.undo']);
+    expect(seenByTerminal).toHaveBeenCalledTimes(2);
+
+    useAppStore.getState().actions.setRun({ status: 'exited' });
+    press({ key: 'y', ctrlKey: true }, input);
+    expect(ran).toEqual(['edit.undo', 'edit.redo']);
+  });
+
+  it('do nothing in a dialog, an opted-out element, another page or without a project', () => {
+    const { ctx, ran } = setUp();
+    uninstall = installShortcuts(window, ctx);
+    const button = attach(document.createElement('button'));
+
+    // No project.
+    expect(press({ key: 'z', ctrlKey: true }, button).defaultPrevented).toBe(false);
+    // Another page than the block editor.
+    useAppStore.getState().actions.setProject(projectFixture());
+    useAppStore.getState().actions.setUi({ screen: 'settings' });
+    expect(press({ key: 'z', ctrlKey: true }, button).defaultPrevented).toBe(false);
+
+    showEditor();
+    const scope = attach(document.createElement('div'));
+    scope.setAttribute(SHORTCUTS_OFF_ATTRIBUTE, 'off');
+    const inner = attach(document.createElement('button'), scope);
+    expect(press({ key: 'z', ctrlKey: true }, inner).defaultPrevented).toBe(false);
+
+    const dialog = attach(document.createElement('div'));
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('data-state', 'open');
+    const inDialog = attach(document.createElement('button'), dialog);
+    for (const target of [inDialog, button]) {
+      expect(press({ key: 'z', ctrlKey: true }, target).defaultPrevented).toBe(false);
+    }
     expect(ran).toEqual([]);
   });
 });
@@ -412,6 +579,29 @@ describe("the shell's default commands", () => {
     screens.registerScreen('settings', () => null);
     await commands.runCommand('settings.open');
     expect(useAppStore.getState().ui.screen).toBe('settings');
+  });
+
+  it('edit.undo and edit.redo undo and redo the block editor’s last change', async () => {
+    const commands = createCommandRegistry();
+    const editor = { undo: vi.fn(), redo: vi.fn() };
+    let shown: EditorHandle | null = editor as unknown as EditorHandle;
+    uninstall = installShellCommands({
+      store: useAppStore,
+      commands,
+      screens: createScreenRegistry(),
+      editor: () => shown,
+    });
+
+    await commands.runCommand('edit.undo');
+    await commands.runCommand('edit.redo');
+    await commands.runCommand('edit.undo');
+    expect(editor.undo).toHaveBeenCalledTimes(2);
+    expect(editor.redo).toHaveBeenCalledTimes(1);
+
+    // Without an editor there is nothing to undo.
+    shown = null;
+    await commands.runCommand('edit.undo');
+    expect(editor.undo).toHaveBeenCalledTimes(2);
   });
 
   it('can be overridden by a feature and removed again', async () => {

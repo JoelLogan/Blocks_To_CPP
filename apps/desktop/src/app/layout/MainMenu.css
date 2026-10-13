@@ -60,6 +60,16 @@
   background: var(--b2c-surface);
 }
 
+/* Undo or Redo with nothing to undo or redo: still reached with the arrow keys, but muted. */
+.main-menu-item[aria-disabled='true'] {
+  color: var(--b2c-text-muted);
+  cursor: default;
+}
+
+.main-menu-item[aria-disabled='true']:hover {
+  background: transparent;
+}
+
 /* More specific than the toolbar's own focus colour, which is meant for its dark background. */
 .main-menu-list .main-menu-item:focus-visible {
   outline: 2px solid var(--b2c-focus);

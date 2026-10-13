@@ -16,8 +16,8 @@
  * instance is replaced, the run is tried once more on the new one, and the analysis gets the
  * notice `trapRecovered`. When the document read from the canvas does not load (blocks nested
  * deeper than a project may be, B2C-E0104, or a bug in the sync), nothing is committed: the
- * project and the last good preview stay, and the analysis gets the notice `syncFailed` until the
- * canvas loads again. The window shows both notices in a banner (src/features/analysis), and Build
+ * project and the last good preview stay, and the analysis gets the notice `syncFailed` (with the
+ * loader's codes) until the canvas loads again. The window shows both notices in a banner (src/features/analysis), and Build
  * and Run refuse such a canvas instead of building the older document (src/features/build-run).
  */
 import {
@@ -177,7 +177,11 @@ export class PreviewPipeline {
       }
       if (!canonical.ok) {
         console.error(`The editor's document did not load (${codesOf(canonical)}).`);
-        this.setNotice('syncFailed');
+        // With the codes, so the banner can say which limit the canvas went past.
+        this.options.store.getState().actions.setAnalysis({
+          notice: 'syncFailed',
+          syncCodes: canonical.diagnostics.map((diagnostic) => diagnostic.code),
+        });
         return;
       }
       const loaded = canonical;

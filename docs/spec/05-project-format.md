@@ -75,6 +75,12 @@ A project is a **single JSON file** with the extension `.b2c`.
 `description` is written only when it is not empty, and
 `language.gnuExtensions` only when it is `true`.
 
+`project.name` is the display name shown in the top bar, the recent list,
+recovery offers, the trust dialog and the generated header comment. It is
+independent of the file's name; renaming
+([04 §4.1](04-user-interface.md#41-main-window-layout)) is an ordinary edit
+that changes the content hash.
+
 `options.usingNamespaceStd` (*Textbook style*: `using namespace std;` in
 every generated `.cpp`, [06 §6.14](06-compiler-pipeline.md#614-standard-names-and-using-namespace))
 comes in M3; a file that sets it has `formatVersion` 2 or higher (§5.7). It
@@ -395,8 +401,10 @@ recorded, so such a project cannot be trusted.
 **`recent.json`** (read limit 1 MiB): `{ format: "blocks2cpp/recent",
 formatVersion: 1, entries: [{ id, path, projectName, lastOpenedAt }] }`,
 newest first and at most 10. `id` is the `recentId` the UI uses
-(`rc_` + 32 hex digits); an entry keeps its ID when it moves to the front. The
-UI gets the name, a display form of the path and the time, never a path it
+(`rc_` + 32 hex digits); an entry keeps its ID when it moves to the front. An
+entry's `projectName` follows the project: it is updated whenever the project
+is opened, saved or saved as, and the entry moves to the front then. The UI
+gets the name, a display form of the path and the time, never a path it
 could send back ([02 §2.5](02-architecture.md#25-ipc-surface)).
 
 ## 5.10 Saving and recovery

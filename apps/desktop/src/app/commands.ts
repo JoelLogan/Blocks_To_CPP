@@ -16,6 +16,7 @@ export type CommandId =
   | 'project.save'
   | 'project.saveAs'
   | 'project.close'
+  | 'project.rename'
   | 'build.start'
   | 'run.start'
   | 'run.stop'
@@ -24,7 +25,9 @@ export type CommandId =
   | 'problems.focusFirstError'
   | 'edit.copy'
   | 'edit.cut'
-  | 'edit.paste';
+  | 'edit.paste'
+  | 'edit.undo'
+  | 'edit.redo';
 
 /** What a command does. It may be asynchronous; it reports its own errors to the user. */
 export type CommandHandler = () => void | Promise<void>;

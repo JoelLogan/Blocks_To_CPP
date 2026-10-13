@@ -439,7 +439,9 @@ impl Backend {
     /// version kept as `<name>.b2c.bak`. The new bytes' hash becomes the
     /// baseline, the recovery snapshot is deleted, and for a trusted project
     /// the trust record follows the new content (the first save of a project
-    /// created here records it).
+    /// created here records it). The recent list's entry moves to the front
+    /// and takes the saved `project.name`, so a project renamed in the app
+    /// is listed under its new name (§5.9).
     ///
     /// The unsaved-changes flag is left as `project_set_dirty` last reported
     /// it (`docs/spec/02-architecture.md` §2.6): the editor may have changed
@@ -472,10 +474,12 @@ impl Backend {
         let hash = sha256(&bytes);
         let saved_at = rfc3339_utc(SystemTime::now());
         self.record_trust_after_save(&mut entry, &document, &path);
+        let project_name = document.project.name.clone();
         entry.set_latest(document, bytes.len());
         entry.baseline_sha256 = Some(hash);
         drop(entry);
         self.watch_open(&request.handle, &path, hash);
+        self.touch_recent(&path, &project_name);
         self.discard_snapshot_of(&request.handle);
         Ok(ProjectSaveResponse {
             saved_at,

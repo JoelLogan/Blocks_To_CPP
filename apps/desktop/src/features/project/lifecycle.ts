@@ -11,7 +11,9 @@
  *   (`EditorHandle.currentDocument`), `generator` naming this app and catalog, serialised by the
  *   core's canonical writer (an unchanged project saves byte for byte the same, F5). A project
  *   without a file is saved with *Save as…*; a file that changed on disk is never overwritten: the
- *   external-change feature takes over through the `project:changedOnDisk` event.
+ *   external-change feature takes over through the `project:changedOnDisk` event. A canvas that
+ *   goes past a limit of the format (too deep, too large: ./limits.ts) is not saved, and the
+ *   message says which limit and how to undo it; any other document the loader refuses is a bug.
  * - **Closing the window** with unsaved changes: the backend sends `closeRequested`; the user
  *   chooses *Save*, *Don't save* or *Cancel*, then `app_quit` ends the app.
  *
@@ -50,6 +52,7 @@ import {
   type LoadProblems,
   loadProblems,
 } from './errors';
+import { limitMessage, reachedLimit } from './limits';
 import type { ProjectQueue } from './link';
 import { type LifecycleOperation, type ProjectModel, shownRecentEntries } from './model';
 import { MAX_SHOWN_PATH_CHARS, shownName, shownText } from './text';
@@ -725,16 +728,20 @@ export class ProjectLifecycle implements ProjectQueue {
       );
     }
     if (!canonical.ok) {
-      const codes = canonical.diagnostics.map((diagnostic) => diagnostic.code).join(', ');
-      console.error(`The editor's document does not load (${codes}); this is a bug`);
+      const codes = canonical.diagnostics.map((diagnostic) => diagnostic.code);
+      const limit = reachedLimit(codes);
+      if (limit !== null) {
+        // The person went past a limit of the project format, which they can undo.
+        console.warn(`The project goes past a limit (${codes.join(', ')}); it was not saved`);
+        return this.refuseSave(`The project was not saved. ${limitMessage(limit)}`);
+      }
+      console.error(`The editor's document does not load (${codes.join(', ')}); this is a bug`);
       return this.refuseSave(
-        `The project was not saved, because the editor made a document Blocks2Cpp cannot read back. This is a bug in Blocks2Cpp. (Problems: ${shownText(codes, 200)})`,
+        `The project was not saved, because the editor made a document Blocks2Cpp cannot read back. This is a bug in Blocks2Cpp. (Problems: ${shownText(codes.join(', '), 200)})`,
       );
     }
     if (new TextEncoder().encode(canonical.text).length > MAX_DOCUMENT_BYTES) {
-      return this.refuseSave(
-        `The project was not saved: a project file can be at most ${String(MAX_DOCUMENT_BYTES / (1024 * 1024))} MiB.`,
-      );
+      return this.refuseSave(`The project was not saved. ${limitMessage('size')}`);
     }
     return { doc, text: canonical.text, hash: canonical.hash, base: project.canonicalText };
   }
