@@ -6,14 +6,20 @@
  *   the drag, never the canvas in flux (the dragged block detached, drag previews standing in for
  *   values or heading stacks).
  * - A drop on a delete area (03 §3.3 "Placing blocks"): it deletes only the dragged blocks and
- *   never connects them, even when a place was previewed just before. happy-dom lays nothing out,
- *   so a delete area here is a component with a fixed screen rectangle, as the toolbox's flyout
- *   and the trash can are in the app; the end-to-end drop on the real toolbox comes with W5-3.
+ *   never connects them, even when a place was previewed just before, and the area counts where
+ *   it is when the drag starts, even if it moved since the canvas last recorded it. happy-dom
+ *   lays nothing out, so a delete area here is a component with a screen rectangle of its own, as
+ *   the toolbox's flyout and the trash can are in the app; the end-to-end drops on the real
+ *   toolbox are e2e/specs/flows/tray-delete.e2e.ts.
+ * - The feedback: the dragged blocks are faded, and the whole toolbox (the category column and
+ *   the flyout) is tinted, with the category names still readable.
  */
 import type { BdmDocument } from '@blocks2cpp/b2c-core-wasm';
+import { b2cDarkTheme, b2cLightTheme } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import appCss from '../../app/app.css?raw';
 import { contrastOf, declarationsOf, parseRules, themeTokens } from '../../app/layout/cssAudit';
 import { useAppStore } from '../../app/store';
 import { editorInjectOptions } from '../EditorWorkspace';
@@ -186,7 +192,11 @@ function eventsDelivered(): Promise<void> {
 /** A delete area left of `edge` (screen pixels), standing in for the toolbox's flyout. */
 class EdgeDeleteArea extends Blockly.DeleteArea {
   override id = 'test.deleteArea';
-  private readonly edge: number;
+  /**
+   * The area's right edge. A test may move it without the canvas recording its drag targets
+   * again, as a layout change moves the flyout's.
+   */
+  edge: number;
 
   constructor(edge: number) {
     super();
@@ -210,15 +220,17 @@ class EdgeDragTarget extends Blockly.DragTarget {
 /** Where a press on a block starts in the drop tests. */
 const PRESS = { x: 100, y: 100 } as const;
 
-/** Adds a delete area left of `edge`, as the toolbox's flyout is one. */
-function addDeleteArea(svg: Blockly.WorkspaceSvg, edge: number): void {
+/** Adds a delete area left of `edge`, as the toolbox's flyout is one, and records it there. */
+function addDeleteArea(svg: Blockly.WorkspaceSvg, edge: number): EdgeDeleteArea {
   const { Capability } = Blockly.ComponentManager;
+  const area = new EdgeDeleteArea(edge);
   svg.getComponentManager().addComponent({
-    component: new EdgeDeleteArea(edge),
+    component: area,
     weight: 1,
     capabilities: [Capability.DELETE_AREA, Capability.DRAG_TARGET],
   });
   svg.recordDragTargets();
+  return area;
 }
 
 /**
@@ -289,6 +301,7 @@ function previewShown(svg: Blockly.WorkspaceSvg): boolean {
 /** The rules of ./drag.css that show a drop on a delete area. */
 const FADED = '.blocklyDragging.blocklyDraggingDelete';
 const TINTED = '.blocklyToolboxDelete ~ .blocklyFlyout > .blocklyFlyoutBackground';
+const COLUMN_TINTED = '.blocklyToolbox.blocklyToolboxDelete';
 
 /** Whether `block` is drawn faded, as a block a drop will delete. */
 function fadedForDelete(block: Blockly.BlockSvg): boolean {
@@ -397,6 +410,40 @@ describe.skipIf(core === null)('a drop on a delete area', () => {
     expect(mainList(svg)).toEqual(MAIN);
   });
 
+  it('finds the area where it is when the drag starts, not where it was recorded', async () => {
+    const { svg, dragged } = await withLooseBlock();
+    const id = dragged.id;
+    // A click first: Blockly's first gesture on a canvas records its drag targets itself.
+    press(dragged);
+    release(PRESS);
+    const near = pointerNear(svg, dragged, 'b003');
+    const over = { x: near.x - 6, y: near.y };
+    // Recorded with its edge far left of the pointer's way, then moved without a new record: the
+    // toolbox's flyout after a rebuild of its contents, which Blockly records while the flyout is
+    // not displayed (its edge then at the window's left edge).
+    const area = addDeleteArea(svg, over.x - 100);
+    area.edge = near.x - 2;
+    await eventsDelivered();
+
+    press(dragged);
+    moveTo(near);
+    expect(previewShown(svg)).toBe(true);
+    moveTo(over);
+    expect(fadedForDelete(dragged)).toBe(true);
+    expect(previewShown(svg)).toBe(false);
+    release(over);
+
+    expect(svg.getBlockById(id)).toBeNull();
+    expect(mainList(svg)).toEqual(MAIN);
+    await eventsDelivered();
+
+    svg.undo(false);
+    const back = present(svg.getBlockById(id), 'the dragged block');
+    expect(back.getParent()).toBeNull();
+    expect(back.getInputTargetBlock('ITEM0')?.isShadow()).toBe(true);
+    expect(mainList(svg)).toEqual(MAIN);
+  });
+
   it('still connects a block dropped over the canvas', async () => {
     const { svg, dragged } = await withLooseBlock();
     const near = pointerNear(svg, dragged, 'b003');
@@ -456,6 +503,8 @@ describe.skipIf(core === null)('a drop on a delete area', () => {
 describe('the delete-area feedback', () => {
   const rules = parseRules(dragCss);
   const tokens = themeTokens(rules);
+  /** The tokens of the page (its text colour) and of ./drag.css. */
+  const pageTokens = themeTokens([...parseRules(appCss), ...rules]);
 
   it('fades the dragged blocks', () => {
     const opacity = Number(declarationsOf(rules, FADED).get('opacity'));
@@ -477,7 +526,28 @@ describe('the delete-area feedback', () => {
     },
   );
 
-  it('finds the editor’s flyout while a block over the toolbox would be deleted', () => {
+  it('tints the category column as it tints the flyout', () => {
+    expect(declarationsOf(rules, COLUMN_TINTED).get('background-color')).toBe(
+      'var(--b2c-flyout-delete)',
+    );
+    // Important, to outweigh the background the dark theme sets inline.
+    expect(b2cDarkTheme.getComponentStyle('toolboxBackgroundColour')).not.toBeNull();
+    expect(dragCss).toContain('background-color: var(--b2c-flyout-delete) !important;');
+  });
+
+  it.each([
+    ['light', b2cLightTheme],
+    ['dark', b2cDarkTheme],
+  ] as const)('keeps the category names readable on the tint in the %s theme', (theme, blockly) => {
+    // The theme's toolbox foreground, or (the light theme sets none) the page's text, which the
+    // names inherit. A selected category's name is white on the category's own colour.
+    const name = blockly.getComponentStyle('toolboxForegroundColour') ?? 'var(--b2c-text)';
+    expect(contrastOf(pageTokens[theme], name, 'var(--b2c-flyout-delete)')).toBeGreaterThanOrEqual(
+      4.5,
+    );
+  });
+
+  it('marks the editor’s category column and flyout while a block over them would be deleted', () => {
     const workspace = renderedWorkspace(editorInjectOptions(Blockly.Themes.Zelos));
     const toolbox = present(workspace.getToolbox(), 'toolbox');
     if (!(toolbox instanceof Blockly.Toolbox)) {
@@ -489,12 +559,15 @@ describe('the delete-area feedback', () => {
     ) as Blockly.BlockSvg;
     const injection = workspace.getInjectionDiv();
     expect(injection.querySelector(TINTED)).toBeNull();
+    expect(injection.querySelector(COLUMN_TINTED)).toBeNull();
 
     // What Blockly's dragger does while a block is dragged over the toolbox.
     expect(toolbox.wouldDelete(block)).toBe(true);
     toolbox.onDragEnter(block);
     expect(injection.querySelector(TINTED)).not.toBeNull();
+    expect(injection.querySelector(COLUMN_TINTED)).not.toBeNull();
     toolbox.onDragExit(block);
     expect(injection.querySelector(TINTED)).toBeNull();
+    expect(injection.querySelector(COLUMN_TINTED)).toBeNull();
   });
 });

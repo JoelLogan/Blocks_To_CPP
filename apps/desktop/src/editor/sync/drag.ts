@@ -10,18 +10,26 @@
  * dragger ({@link B2cBlockDragger}, the `blockDragger` plugin at inject time): it reports a drag
  * before Blockly's dragger starts it, and its end.
  *
- * A drop with the pointer over a delete area (the toolbox's flyout or the trash can) deletes the
- * dragged blocks and never connects them. Blockly 12 decides "delete" from the pointer-up event
- * but applies the connection its last pointer move previewed, then deletes the dragged stack's
- * first block together with everything that connection put below it. Blockly's gesture also ends
- * a drag without a last move (a fast flick, a touch, an automated drop), so the preview can be one
- * the pointer has already left. The editor's {@link B2cBlockDragStrategy} looks for no connection
- * while the pointer is over a delete area, and {@link B2cBlockDragger} makes one last move to the
- * drop point before a deleting drop, so nothing is connected when the dragged blocks are deleted.
- * Both use only public and protected members of Blockly's documented classes (ADR-0014), checked
- * against Blockly 12.5.1. They go once Blockly fixes the defect. It is still to be reported
- * upstream: the owner files the report drafted in `docs/plans/upstream/` and records its link
- * here.
+ * A drop with the pointer over a delete area (anywhere over the toolbox, its category column and
+ * its always-open flyout alike, or over the trash can) deletes the dragged blocks and never
+ * connects them; it is the pointer that counts, not how much of the blocks lies over the area.
+ * Blockly 12 decides "delete" from the pointer-up event but applies the connection its last
+ * pointer move previewed, then deletes the dragged stack's first block together with everything
+ * that connection put below it. Blockly's gesture also ends a drag without a last move (a fast
+ * flick, a touch, an automated drop), so the preview can be one the pointer has already left. The
+ * editor's {@link B2cBlockDragStrategy} looks for no connection while the pointer is over a delete
+ * area, and {@link B2cBlockDragger} makes one last move to the drop point before a deleting drop,
+ * so nothing is connected when the dragged blocks are deleted. Both use only public and protected
+ * members of Blockly's documented classes (ADR-0014), checked against Blockly 12.5.1. They go once
+ * Blockly fixes the defect. It is still to be reported upstream: the owner files the report
+ * drafted in `docs/plans/upstream/` and records its link here.
+ *
+ * Blockly checks the pointer against the places of the delete areas that the canvas recorded
+ * last, and Blockly 12.5.1 records the toolbox's flyout while it is not displayed each time it
+ * shows new contents. So {@link B2cBlockDragger} has the canvas record them at every drag start
+ * (and the toolbox's flyout records them after each of its layouts, `toolbox/continuous.ts`). The
+ * record at the drag start goes once Blockly records after it displays the flyout (also still to
+ * be reported: the report drafted in `docs/plans/upstream/`).
  */
 import * as Blockly from 'blockly/core';
 
@@ -137,6 +145,18 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
     super(dragRoot(draggable), workspace);
   }
 
+  /**
+   * Starts the drag: gives a block the editor's drag strategy, tells the listener, and has the
+   * canvas record where its drag targets (the toolbox, its flyout, the trash can) are now.
+   * Blockly checks every move and the drop against the places recorded last. Blockly itself
+   * records them on a layout change but not after every change of the toolbox's flyout
+   * (Blockly 12.5.1's `Flyout.show` records them while the flyout is not displayed, when it ends
+   * at the window's left edge), and a stale record made a drop on the toolbox delete nothing, with
+   * no faded blocks and with connections still previewed over it (03 §3.3). The editor's flyout
+   * records after each of its layouts too; the record here also covers any other change that
+   * moved a drag target without one. It costs a few layout reads (`getBoundingClientRect`) per
+   * drag.
+   */
   override onDragStart(e: PointerEvent): void {
     if (this.draggable instanceof Blockly.BlockSvg) {
       const block = this.draggable;
@@ -148,6 +168,7 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
         });
       }
     }
+    this.workspace.recordDragTargets();
     super.onDragStart(e);
   }
 

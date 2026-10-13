@@ -22,7 +22,9 @@
  *   selected at every zoom level (04 §4.2);
  * - the flyout draws its blocks at one scale whatever the canvas zoom, and is at most
  *   {@link FLYOUT_WIDTH}.preferred wide, narrower when the canvas would otherwise have less than
- *   {@link FLYOUT_WIDTH}.canvas beside it; a wider block is cut off at its edge (04 §4.2).
+ *   {@link FLYOUT_WIDTH}.canvas beside it; a wider block is cut off at its edge (04 §4.2);
+ * - the canvas records where the flyout is as a place where a drop deletes after every layout of
+ *   the flyout, and whenever the flyout moves or changes size (03 §3.3 "Placing blocks").
  */
 import {
   ContinuousFlyout,
@@ -188,7 +190,8 @@ export function flyoutWidth(natural: number, room: number): number {
 
 /**
  * The continuous flyout, without block recycling, without its scroll animation on request, landing
- * on a chosen category at every zoom level, and with a fixed block scale and a limited width.
+ * on a chosen category at every zoom level, with a fixed block scale and a limited width, and
+ * recorded as a drop target wherever it is.
  */
 export class B2cContinuousFlyout extends ContinuousFlyout {
   /** The width the flyout's contents need, in pixels, as of the last reflow. */
@@ -200,6 +203,9 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
    */
   private appliedWidth = 0;
 
+  /** Where the flyout was last placed: its x and y, width and height, in pixels. */
+  private placement: readonly number[] = [];
+
   /** The flyout draws its blocks at {@link FLYOUT_SCALE}, whatever the canvas zoom. */
   override getFlyoutScale(): number {
     return FLYOUT_SCALE;
@@ -207,13 +213,19 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
 
   /**
    * Lays the flyout out for its contents: Blockly 12.5.1's `VerticalFlyout.reflowInternal_`
-   * re-implemented rather than wrapped (ADR-0014), with three changes:
+   * re-implemented rather than wrapped (ADR-0014), with four changes:
    *
    * - the scale is {@link getFlyoutScale} (`VerticalFlyout.layout_` set it to the canvas's);
    * - the width is {@link flyoutWidth} of the contents' natural width, not the natural width;
    * - the flyout is placed again and the canvas resized only when the width changes. Blockly's
    *   version compares with `width_`, which `Flyout.show` has just set to 0, so it did that work
-   *   on every showing, that is on every rebuild of a dynamic category.
+   *   on every showing, that is on every rebuild of a dynamic category;
+   * - the canvas records its drag targets after every layout, whatever the width. `Flyout.show`
+   *   records them only while the flyout is not displayed (its `setVisible(true)` records before
+   *   it displays the flyout again), when the flyout, and the toolbox that stands for it, end at
+   *   the window's left edge. Blockly's version recorded again because it placed the flyout every
+   *   time; without a record here, a drop on the flyout or the category column deleted nothing
+   *   after a rebuild until the layout changed (03 §3.3 "Placing blocks").
    *
    * The editor's canvas is left to right and has scrollbars, so Blockly's right alignment for
    * right-to-left workspaces and its translation for a workspace without scrollbars are left out.
@@ -229,21 +241,43 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
       (widest + this.MARGIN * 1.5 + this.tabWidth_) * workspace.scale +
       Blockly.Scrollbar.scrollbarThickness;
     if (this.fitWidth()) {
-      super.position();
-      this.resizeTarget();
+      this.place();
+      this.targetWorkspace.resizeContents();
     }
+    this.targetWorkspace.recordDragTargets();
   }
 
   /**
    * Places the flyout beside the toolbox. Blockly does this whenever the workspace is resized (the
-   * window, or a dock beside the canvas), so the width is fitted to the room left first.
+   * window, or a dock beside the canvas), so the width is fitted to the room left first. A new
+   * width resizes the canvas; a new width or place makes the canvas record its drag targets, so
+   * that a drop counts where the flyout now is.
    */
   override position(): void {
-    const changed = this.fitWidth();
-    super.position();
-    if (changed) {
-      this.resizeTarget();
+    const resized = this.fitWidth();
+    const moved = this.place();
+    if (resized) {
+      this.targetWorkspace.resizeContents();
     }
+    if (resized || moved) {
+      this.targetWorkspace.recordDragTargets();
+    }
+  }
+
+  /**
+   * Places the flyout (Blockly's `VerticalFlyout.position`); returns whether it moved or changed
+   * size since it was last placed. Blockly leaves a flyout where it is while it or the canvas is
+   * hidden.
+   */
+  private place(): boolean {
+    super.position();
+    if (!this.isVisible() || !this.targetWorkspace.isVisible()) {
+      return false;
+    }
+    const placement = [this.getX(), this.getY(), this.getWidth(), this.getHeight()];
+    const changed = placement.some((value, index) => value !== this.placement[index]);
+    this.placement = placement;
+    return changed;
   }
 
   /**
@@ -260,12 +294,6 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
     }
     this.appliedWidth = width;
     return true;
-  }
-
-  /** The canvas leaves room for the flyout's new width, and drops are checked against it. */
-  private resizeTarget(): void {
-    this.targetWorkspace.resizeContents();
-    this.targetWorkspace.recordDragTargets();
   }
 
   /**

@@ -20,8 +20,8 @@ function whole(point: E2ePoint): { x: number; y: number } {
   return { x: Math.round(point.x), y: Math.round(point.y) };
 }
 
-/** Drags with the left button from `from` to `to` (viewport coordinates). */
-export async function drag(driver: WebDriver, from: E2ePoint, to: E2ePoint): Promise<void> {
+/** The actions that press the left button at `from` and move to `to` in {@link STEPS} moves. */
+function pressAndMoveActions(driver: WebDriver, from: E2ePoint, to: E2ePoint) {
   const start = whole(from);
   const end = whole(to);
   let actions = driver
@@ -37,7 +37,25 @@ export async function drag(driver: WebDriver, from: E2ePoint, to: E2ePoint): Pro
       duration: STEP_MS,
     });
   }
-  await actions.pause(PAUSE_MS).release(Button.LEFT).perform();
+  return actions.pause(PAUSE_MS);
+}
+
+/** Drags with the left button from `from` to `to` (viewport coordinates). */
+export async function drag(driver: WebDriver, from: E2ePoint, to: E2ePoint): Promise<void> {
+  await pressAndMoveActions(driver, from, to).release(Button.LEFT).perform();
+}
+
+/**
+ * The first half of {@link drag}: presses at `from` and moves to `to`, keeping the button down,
+ * so that a test can look at the page during the drag. {@link releaseButton} drops.
+ */
+export async function pressAndMove(driver: WebDriver, from: E2ePoint, to: E2ePoint): Promise<void> {
+  await pressAndMoveActions(driver, from, to).perform();
+}
+
+/** Releases the left button where the pointer is (after {@link pressAndMove}). */
+export async function releaseButton(driver: WebDriver): Promise<void> {
+  await driver.actions({ async: true }).release(Button.LEFT).perform();
 }
 
 /** Where to release a block grabbed at `grab` so that its connection at `own` lands on `target`. */

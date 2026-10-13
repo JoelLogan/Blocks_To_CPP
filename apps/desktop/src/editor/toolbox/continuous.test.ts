@@ -5,7 +5,9 @@
  *   category's heading, so that the plugin's own selection by scroll position
  *   (`@blockly/continuous-toolbox` 7.0.9) picks that category again;
  * - it draws its blocks at one scale whatever the canvas zoom, and is at most 320 px wide,
- *   narrower when the canvas would have less than 200 px beside it.
+ *   narrower when the canvas would have less than 200 px beside it;
+ * - after every showing, the canvas knows where it is as a place where a drop deletes
+ *   (03 §3.3 "Placing blocks").
  */
 import { ContinuousFlyout } from '@blockly/continuous-toolbox';
 import * as Blockly from 'blockly/core';
@@ -284,5 +286,95 @@ describe('the flyout scale and width', () => {
     flyout.reflow();
     expect(flyout.getWidth()).not.toBe(width);
     expect(resize).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** The category column's width in the tests below, in pixels. */
+const COLUMN = 100;
+
+/** Gives the category column a width (happy-dom has no layout); Blockly reads it when it places it. */
+function setColumnWidth(workspace: Blockly.WorkspaceSvg, width: number): void {
+  const column = workspace.getInjectionDiv().querySelector('.blocklyToolbox');
+  if (!(column instanceof HTMLElement)) {
+    throw new Error('the toolbox has no category column');
+  }
+  Object.defineProperty(column, 'offsetWidth', { configurable: true, get: () => width });
+}
+
+/**
+ * Lays the flyout's SVG out on screen as a browser does, which happy-dom does not: its box is where
+ * Blockly places it (its `transform`) and as wide as its `width`, and it is empty while the SVG is
+ * not displayed. `Flyout.show` records the canvas's drag targets while that is so
+ * (`setVisible(true)` records them before it displays the flyout again).
+ */
+function layOutFlyout(workspace: Blockly.WorkspaceSvg, height = 700): void {
+  const svg = workspace.getInjectionDiv().querySelector('.blocklyToolboxFlyout');
+  if (!(svg instanceof SVGElement)) {
+    throw new Error('the toolbox has no flyout SVG');
+  }
+  vi.spyOn(svg, 'getBoundingClientRect').mockImplementation(() => {
+    if (svg.style.display === 'none') {
+      return new DOMRect(0, 0, 0, 0);
+    }
+    const left = Number(/translate\(\s*(-?[\d.]+)px/.exec(svg.style.transform)?.[1] ?? 'NaN');
+    return new DOMRect(left, 0, Number(svg.getAttribute('width')), height);
+  });
+}
+
+/** What a drop at `x` (screen pixels) would land on: the toolbox, another target, or nothing. */
+function dropTargetAt(workspace: Blockly.WorkspaceSvg, x: number): string | null {
+  const target = workspace.getDragTarget(
+    new PointerEvent('pointermove', { clientX: x, clientY: 300 }),
+  );
+  const toolbox: unknown = workspace.getToolbox();
+  return target === null ? null : target === toolbox ? 'the toolbox' : target.id;
+}
+
+/** A shown editor canvas with the continuous toolbox, a category column {@link COLUMN} wide. */
+function laidOutWorkspace(): Blockly.WorkspaceSvg {
+  const workspace = injectedWorkspace('continuous');
+  setColumnWidth(workspace, COLUMN);
+  resizeWorkspace(workspace, 1000);
+  layOutFlyout(workspace);
+  return workspace;
+}
+
+describe('the flyout as a place where a drop deletes', () => {
+  it('is recorded where it is after a showing that keeps its width', () => {
+    const workspace = laidOutWorkspace();
+    const flyout = continuousFlyout(workspace);
+    const contents = workspaceContents(workspace);
+    flyout.show(contents);
+    const width = flyout.getWidth();
+    expect(width).toBeGreaterThan(0);
+    expect(flyout.getX()).toBe(COLUMN);
+
+    // A rebuild with the same contents (a dynamic category built again), twice.
+    flyout.show(contents);
+    flyout.show(contents);
+    expect(flyout.getWidth()).toBe(width);
+
+    // The toolbox stands for its flyout (the plugin's getClientRect), and comes first.
+    const right = COLUMN + width;
+    for (const x of [COLUMN / 2, COLUMN + 1, COLUMN + width / 2, right - 1]) {
+      expect(dropTargetAt(workspace, x), `x = ${String(x)}`).toBe('the toolbox');
+    }
+    expect(dropTargetAt(workspace, right + 1)).toBeNull();
+  });
+
+  it('is recorded again where it moves to, also with the same width', () => {
+    const workspace = laidOutWorkspace();
+    const flyout = continuousFlyout(workspace);
+    flyout.show(workspaceContents(workspace));
+    const width = flyout.getWidth();
+    expect(dropTargetAt(workspace, COLUMN + width + 20)).toBeNull();
+
+    // A wider category column: Blockly places the toolbox and its flyout again.
+    setColumnWidth(workspace, COLUMN + 40);
+    workspace.getToolbox()?.position();
+    expect(flyout.getX()).toBe(COLUMN + 40);
+    expect(flyout.getWidth()).toBe(width);
+    expect(dropTargetAt(workspace, COLUMN + width + 20)).toBe('the toolbox');
+    expect(dropTargetAt(workspace, COLUMN + 40 + width + 1)).toBeNull();
   });
 });

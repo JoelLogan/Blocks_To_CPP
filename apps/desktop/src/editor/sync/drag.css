@@ -1,9 +1,11 @@
 /*
  * A drop on a delete area (docs/spec/03-block-language.md §3.3 "Placing blocks"): while the
- * pointer is over the toolbox's flyout or the trash can, the dragged blocks are shown faded and
- * the flyout is tinted, because a drop there deletes them (src/editor/sync/drag.ts). Blockly marks
- * the dragged stack with `blocklyDraggingDelete` and the toolbox with `blocklyToolboxDelete`; the
- * flyout is the toolbox's next sibling but one in the injection div.
+ * pointer is over the toolbox (its category column or its flyout) or the trash can, the dragged
+ * blocks are shown faded and the whole toolbox is tinted, because a drop there deletes them
+ * (src/editor/sync/drag.ts). Blockly marks the dragged stack with `blocklyDraggingDelete` and the
+ * toolbox's category column with `blocklyToolboxDelete`; the flyout is the column's next sibling
+ * but one in the injection div. The category names keep a contrast of at least 4.5:1 on the tint
+ * in both themes (drag.test.ts).
  */
 :root {
   --b2c-flyout-delete: #f6dcd9;
@@ -22,4 +24,9 @@
 /* The theme sets the flyout's fill as an inline style, which only an important rule outweighs. */
 .blocklyToolboxDelete ~ .blocklyFlyout > .blocklyFlyoutBackground {
   fill: var(--b2c-flyout-delete) !important;
+}
+
+/* The dark theme sets the column's background as an inline style, as it does the flyout's fill. */
+.blocklyToolbox.blocklyToolboxDelete {
+  background-color: var(--b2c-flyout-delete) !important;
 }
