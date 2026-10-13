@@ -513,6 +513,29 @@ describe('Run', () => {
     expect(terminal.text).toBe(`${MODE_RESET}working…${SEPARATOR}again`);
   });
 
+  it('scrolls the console to the end as each run starts, right after its prelude', async () => {
+    await run('run.start');
+    await finishBuild(0);
+    expect(terminal.scrolls).toEqual([]);
+    // A program that prints nothing at first: its start alone brings the console's end into view.
+    backend.runs[0]?.send(STARTED);
+    await settle();
+    expect(terminal.scrolls).toEqual([MODE_RESET.length]);
+    backend.runs[0]?.output('first run');
+    backend.runs[0]?.send(exitEvent(1));
+    await settle();
+    expect(terminal.scrolls).toEqual([MODE_RESET.length]);
+
+    // The next run: output first, before its `started` event.
+    await run('run.again');
+    backend.runs[1]?.output('second run');
+    backend.runs[1]?.send(STARTED);
+    await settle();
+    const separated = `${MODE_RESET}first run${SEPARATOR}`;
+    expect(terminal.text).toBe(`${separated}second run`);
+    expect(terminal.scrolls).toEqual([MODE_RESET.length, separated.length]);
+  });
+
   it("resets the terminal's modes after Clear too, without a separator", async () => {
     await run('run.start');
     await finishBuild(0);

@@ -79,6 +79,10 @@ class FakeSink implements TerminalSink {
     this.events.push('reset');
   }
 
+  scrollToBottom(): void {
+    this.events.push('scroll');
+  }
+
   /** Finishes the oldest unfinished write. */
   finish(): void {
     this.#done.shift()?.();
@@ -215,6 +219,50 @@ describe('OutputScheduler', () => {
     expect(sink.events.filter((event) => event === 'reset')).toHaveLength(2);
   });
 
+  it('scrolls to the end in order with the output: after what was queued before it', () => {
+    const timers = new FakeTimers();
+    const sink = new FakeSink(timers, true);
+    const scheduler = new OutputScheduler(timers);
+    scheduler.attach(sink);
+
+    // Nothing queued or being written: at once.
+    scheduler.scrollToBottom();
+    expect(sink.events).toEqual(['scroll']);
+
+    // Behind the write in progress: once the terminal has processed it.
+    void scheduler.write(bytes('old run'));
+    timers.advance(1);
+    scheduler.scrollToBottom();
+    expect(sink.events).toEqual(['scroll', 'write:old run']);
+    sink.finish();
+    expect(sink.events).toEqual(['scroll', 'write:old run', 'scroll']);
+
+    // Behind queued output (a run's separator): after the write that takes it, and only once.
+    void scheduler.write(bytes('separator'));
+    scheduler.scrollToBottom();
+    scheduler.scrollToBottom();
+    void scheduler.write(bytes('first output'));
+    timers.advance(MIN_WRITE_INTERVAL_MS);
+    expect(sink.events.slice(3)).toEqual(['write:separatorfirst output']);
+    sink.finish();
+    expect(sink.events.slice(3)).toEqual(['write:separatorfirst output', 'scroll']);
+    timers.advance(MIN_WRITE_INTERVAL_MS);
+    expect(sink.events.slice(3)).toEqual(['write:separatorfirst output', 'scroll']);
+  });
+
+  it('forgets a scroll with the output a reset drops, and scrolls nothing without a terminal', () => {
+    const timers = new FakeTimers();
+    const sink = new FakeSink(timers);
+    const scheduler = new OutputScheduler(timers);
+    scheduler.scrollToBottom();
+    void scheduler.write(bytes('dropped'));
+    scheduler.scrollToBottom();
+    scheduler.reset();
+    scheduler.attach(sink);
+    timers.advance(MIN_WRITE_INTERVAL_MS);
+    expect(sink.events).toEqual(['reset']);
+  });
+
   it('keeps output until a terminal is attached', () => {
     const timers = new FakeTimers();
     const scheduler = new OutputScheduler(timers);
@@ -254,6 +302,7 @@ describe('OutputScheduler', () => {
       },
       clear: () => undefined,
       reset: () => undefined,
+      scrollToBottom: () => undefined,
     });
     const written = scheduler.write(bytes('x'));
     timers.advance(1);

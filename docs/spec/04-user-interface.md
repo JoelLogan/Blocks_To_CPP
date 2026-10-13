@@ -257,11 +257,27 @@ restarted after a crash, a dismissible banner says so.
   writes over it. Every run starts with the terminal's modes reset (the
   alternate screen left, colours, cursor visibility, scroll region) without
   moving the cursor, below a dim *── New run ──* line when there is output
-  since the last Clear. On Windows, whose pseudoconsole clears the screen
-  and paints each new program from the top-left corner, the console first
-  scrolls everything it shows, that line included, into the scrollback.
-* The console scrolls by itself, never the panel around it. The terminal is
-  fitted to whole rows and columns inside its padding.
+  since the last Clear, and the view scrolls to the end. On Windows, whose
+  pseudoconsole clears the screen and paints each new program from the
+  top-left corner, the console first scrolls everything it shows, that line
+  included, into the scrollback.
+* **Clear** empties the screen and the scrollback; while a program runs, the
+  line with the cursor (such as a prompt waiting for input) stays.
+* The console scrolls by itself, never the panel around it, at any display
+  scale and while a program writes; output arriving while the user has
+  scrolled up does not move the view (a new run does). The mouse wheel
+  scrolls the scrollback by whole lines; on a program's full screen it sends
+  arrow keys, and a program that asks for mouse events gets it. The terminal
+  is fitted to whole rows and columns inside its padding; while the console
+  is resized, rows follow at once and columns once the width has settled
+  ([07 §7.6.2](07-toolchain-build-run.md#762-spawning)).
+* Program output is available to screen readers: the rows on screen are read
+  line by line, moving past the first or last row scrolls through the
+  scrollback, and new output is announced in batches, at most once a second.
+  Output that pours in faster than anyone can listen to (more than 16 KiB
+  given to the terminal at once) is not announced; a second after such a
+  flood the rows on screen are offered again. Clear and opening another
+  project start the screen reader's view afresh.
 
 ## 4.6 Toolchain setup experience
 

@@ -52,6 +52,21 @@ export async function visibleConsoleText(driver: WebDriver): Promise<string> {
     .join('\n');
 }
 
+/**
+ * What screen readers find in the terminal: the text of its accessibility tree (the rows on
+ * screen, non-breaking spaces as spaces), or `null` while it has none (the console pauses it
+ * during an output flood).
+ */
+export async function accessibleConsoleText(driver: WebDriver): Promise<string | null> {
+  const text: unknown = await driver.executeScript(`
+    const tree = document.querySelector(
+      '[data-testid="console-terminal"] .xterm-accessibility-tree',
+    );
+    return tree === null ? null : tree.textContent;
+  `);
+  return typeof text === 'string' ? text.replace(/\u00a0/g, ' ') : null;
+}
+
 /** Shows the Console tab of the bottom dock. */
 export async function showConsole(driver: WebDriver): Promise<void> {
   await clickTestId(driver, 'dock-tab-console');

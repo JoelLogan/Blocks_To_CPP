@@ -59,8 +59,8 @@ export interface RunSessionOptions {
   readonly clock: Clock;
   readonly hooks: RunSessionHooks;
   /**
-   * Text written to the console before the run's first output (a separator between runs), or
-   * `null`.
+   * Text written to the console before the run's first output (the terminal's mode reset and a
+   * separator between runs), or `null`. With it, the console's view scrolls to the end.
    */
   readonly prelude?: string | null;
 }
@@ -217,11 +217,17 @@ export class RunSession {
     this.#finish();
   }
 
+  /**
+   * The run's start in the console, once, before its first output, `skipped` marker or `started`:
+   * the prelude, then the view scrolls to the end (04 §4.5), in order with the output, so a person
+   * who scrolled up to read an earlier run sees the new one.
+   */
   #writePrelude(): void {
     if (this.#prelude !== null) {
       const prelude = this.#prelude;
       this.#prelude = null;
       this.#bridge.writeText(prelude);
+      this.#bridge.scrollToBottom();
     }
   }
 

@@ -68,6 +68,7 @@ function fakeConsole() {
     writeSkipped,
     clear,
     reset,
+    scrollToBottom: vi.fn(),
     size: () => ({ cols: 80, rows: 24 }),
     screen: () => emptyScreen(80, 24),
     onData: () => () => undefined,
