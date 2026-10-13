@@ -197,6 +197,22 @@ async function resizeBottomDock(driver: WebDriver, delta: number): Promise<void>
   await drag(driver, from, { x: from.x, y: from.y - delta });
 }
 
+/**
+ * How much taller the bottom dock can grow in this window, in pixels: its splitter's
+ * `aria-valuemax` (65 % of the editor area, 04 §4.1) less its `aria-valuenow`.
+ */
+async function bottomDockRoom(driver: WebDriver): Promise<number> {
+  const splitter = await driver.findElement(
+    By.css('[role="separator"][aria-label="Resize the bottom panel"]'),
+  );
+  const max = Number(await splitter.getAttribute('aria-valuemax'));
+  const now = Number(await splitter.getAttribute('aria-valuenow'));
+  if (!Number.isFinite(max) || !Number.isFinite(now)) {
+    throw new Error("The bottom panel's splitter has no value range");
+  }
+  return max - now;
+}
+
 /** What the console's terminal holds now. */
 function consoleScreen(app: FlowApp): Promise<E2eConsoleScreen> {
   return app.hook.call('consoleScreen');
@@ -276,8 +292,11 @@ describe('Console', () => {
     await waitForRun(app, 1);
     await showConsole(app.driver);
 
-    for (const rows of [3, 7, 15]) {
+    for (const wanted of [3, 7, 15]) {
       const before = await geometry(app.driver);
+      // In a small window (800 × 560) the dock cannot grow to 15 rows: the tallest host it allows.
+      const tallest = before.hostHeight + (await bottomDockRoom(app.driver));
+      const rows = Math.min(wanted, Math.floor((tallest - 2) / before.cellHeight));
       // Two pixels more than whole rows: a fit that ignored the 4 px padding would take one row
       // too many, and the screen would stick out of the host by two pixels.
       const target = Math.ceil(rows * before.cellHeight) + 2;

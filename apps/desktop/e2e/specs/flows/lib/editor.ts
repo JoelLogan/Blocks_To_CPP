@@ -90,10 +90,11 @@ const EMPTY_AREA = `
   return null;
 `;
 
-/** Drags a block from the toolbox to an empty part of the visible canvas (not onto a block). */
-export async function dropOnCanvas(app: App, entry: ToolboxEntry): Promise<void> {
-  const blockId = await flyoutBlock(app, entry);
-  const grab = await pointOf(() => app.hook.grabPoint(blockId), `${entry.type} to be on screen`);
+/** How often {@link dropOnCanvas} scrolls the canvas to find an empty area before it gives up. */
+const EMPTY_AREA_SCROLLS = 10;
+
+/** A point of an empty area of the visible canvas (see {@link EMPTY_AREA}), or `null`. */
+async function emptyArea(app: App): Promise<[number, number] | null> {
   const rect = await visibleCanvas(app.driver);
   const found: unknown = await app.driver.executeScript(
     EMPTY_AREA,
@@ -104,10 +105,31 @@ export async function dropOnCanvas(app: App, entry: ToolboxEntry): Promise<void>
     160,
     80,
   );
-  if (!Array.isArray(found) || found.length !== 2 || !found.every((n) => typeof n === 'number')) {
+  return Array.isArray(found) && found.length === 2 && found.every((n) => typeof n === 'number')
+    ? (found as [number, number])
+    : null;
+}
+
+/**
+ * Drags a block from the toolbox to an empty part of the visible canvas (not onto a block). In a
+ * small window (800 × 560) the blocks may cover the whole visible canvas; the canvas is then
+ * scrolled up a view at a time (as dragging its background does; Blockly lets it go on until
+ * about half a view of empty canvas shows below the blocks) until an empty area shows.
+ */
+export async function dropOnCanvas(app: App, entry: ToolboxEntry): Promise<void> {
+  const blockId = await flyoutBlock(app, entry);
+  let found = await emptyArea(app);
+  for (let scroll = 0; found === null && scroll < EMPTY_AREA_SCROLLS; scroll++) {
+    const rect = await visibleCanvas(app.driver);
+    await app.hook.scrollCanvasBy(0, -Math.max(40, Math.round(rect.bottom - rect.top - 40)));
+    await sleep(100);
+    found = await emptyArea(app);
+  }
+  if (found === null) {
     throw new Error('The visible canvas has no empty area to drop a block on');
   }
-  const [x, y] = found as [number, number];
+  const grab = await pointOf(() => app.hook.grabPoint(blockId), `${entry.type} to be on screen`);
+  const [x, y] = found;
   await drag(app.driver, grab, { x, y });
   await sleep(400);
 }
