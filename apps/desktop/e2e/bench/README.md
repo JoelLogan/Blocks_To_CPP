@@ -5,9 +5,8 @@ and their regression gate. M2 measures and gates regressions; meeting the absolu
 and N12 of [01 §1.4](../../../../docs/spec/01-overview.md) is M5's exit, and absolute budgets on
 small programs are only reported until M3. The nightly `bench` job of
 [`nightly.yml`](../../../../.github/workflows/nightly.yml) runs them on Ubuntu (under `xvfb`) and
-Windows and compares them with the baseline; the A/B job of
-[`bench-ab.yml`](../../../../.github/workflows/bench-ab.yml) compares a pull request's build with
-its base's on one runner.
+Windows and compares them with the baseline; the A/B job compares a pull request's build with its
+base's on one runner ([A/B runs](#ab-runs)).
 
 | Metric                                            | What is measured                                                                                                                                                                                                                     | Gated | Target        |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | ------------- |
@@ -203,23 +202,38 @@ that costs time) records it in [`accepted.json`](accepted.json), one entry per m
 
 ### A/B runs
 
-The A/B job ([`bench-ab.yml`](../../../../.github/workflows/bench-ab.yml)) gates a pull request
-at once, also for metrics that have no history yet. It runs when the `bench-ab` label is added to a
-pull request (and on each push while it has the label), or by hand with a base and a head ref, the
-benchmarks (`preview`, `select`, `guessing`, `console`, `cold-start`, `drag`; by default, and on a
-pull request, all but `cold-start`) and
-the systems (both, Linux or Windows). On a pull request the head is the pull request merged into
-its base branch (the merge commit GitHub makes for it) and the base is that branch, the merge
-commit's first parent: the two builds differ by the pull request's changes only, so commits that
-landed on the base branch after the pull request branched off count for neither side, and the
-head's `accepted.json` is the merged file. It builds the app under test from each ref, and then on
-one runner per system [`ab-rounds.sh`](ab-rounds.sh) runs the head's benchmarks against both builds
-in alternating runs (base, head, head, base: 2 rounds of 5 samples, 10 per side), and
-`bench-compare.py ab` compares the head's medians with the base's at 10%. Each round starts the
-selection benchmarks where the round before stopped (`B2C_BENCH_OFFSET`, the same for both builds),
-so each side clicks the same 10 targets as a nightly run, all 8 scopes of `select-1000` among them.
-The head's harness measures both builds, so a benchmark that needs a newer test hook can be
-compared only once the base has it.
+The A/B job gates a pull request at once, also for metrics that have no history yet. Its jobs are
+those of [`bench-ab-run.yml`](../../../../.github/workflows/bench-ab-run.yml), and two workflows
+start them:
+
+- [`bench-ab-pr.yml`](../../../../.github/workflows/bench-ab-pr.yml), when the `bench-ab` label is
+  added to a pull request (and on each push while it has the label). The head is the pull request
+  merged into its base branch (the merge commit GitHub makes for it) and the base is that branch,
+  the merge commit's first parent: the two builds differ by the pull request's changes only, so
+  commits that landed on the base branch after the pull request branched off count for neither
+  side, and the head's `accepted.json` is the merged file. It runs every benchmark but
+  `cold-start`, on both systems.
+- [`bench-ab.yml`](../../../../.github/workflows/bench-ab.yml), by hand on the branch or tag to
+  measure (_Use workflow from_). The head is the commit the run is for; no input changes it. The
+  base must be one of the head's ancestors: by default where the head branched off the default
+  branch (their merge base; on the default branch itself that is the head), or the branch, tag or
+  commit that the `base` input names. Any other base fails the run before anything is built. It
+  takes the benchmarks (`preview`, `select`, `guessing`, `console`, `cold-start`, `drag`; by
+  default all but `cold-start`) and the systems (both, Linux or Windows).
+
+The split is the trust boundary (CodeQL's `actions/cache-poisoning`): the jobs build and run the
+code of both commits. A pull request's code runs only in a `pull_request` run, which has a
+read-only token and the pull request's own cache scope. A manual run can write to the cache scope
+of the branch it runs on, the default branch's included, from which other runs restore, so it
+builds only commits of the repository's own history. No A/B job saves to the Actions cache.
+
+The jobs build the app under test from each commit, and then on one runner per system
+[`ab-rounds.sh`](ab-rounds.sh) runs the head's benchmarks against both builds in alternating runs
+(base, head, head, base: 2 rounds of 5 samples, 10 per side), and `bench-compare.py ab` compares
+the head's medians with the base's at 10%. Each round starts the selection benchmarks where the
+round before stopped (`B2C_BENCH_OFFSET`, the same for both builds), so each side clicks the same
+10 targets as a nightly run, all 8 scopes of `select-1000` among them. The head's harness measures
+both builds, so a benchmark that needs a newer test hook can be compared only once the base has it.
 
 A change expected to alter a gated metric runs the A/B job on its pull request. W4-2, W5-1 and W3-11
 of the M2 polish wave merge only with a green A/B run attached, or once their metrics have at least

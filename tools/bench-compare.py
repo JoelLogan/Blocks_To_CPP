@@ -8,11 +8,11 @@ The benchmark gate of docs/spec/09-quality-and-delivery.md §9.2, in two ways:
   last 5 runs kept in the history of the same system (the scheduled nightly
   runs on the default branch). A gated metric more than 10% worse fails the
   run. Until a metric has 5 baselines, its comparison is only reported.
-* ab (the A/B job, .github/workflows/bench-ab.yml): the same metrics measured
-  on one runner for a base and a head build, in alternating runs whose samples
-  are added up per side (at least 10 each). Head's median is compared with
-  base's at the same threshold, so a pull request is gated at once, also for
-  metrics that have no history yet.
+* ab (the A/B job, .github/workflows/bench-ab-run.yml): the same metrics
+  measured on one runner for a base and a head build, in alternating runs
+  whose samples are added up per side (at least 10 each). Head's median is
+  compared with base's at the same threshold, so a pull request is gated at
+  once, also for metrics that have no history yet.
 
 An intended slowdown is recorded in the acceptance file
 (apps/desktop/e2e/bench/accepted.json): an entry {metric, system, commit,

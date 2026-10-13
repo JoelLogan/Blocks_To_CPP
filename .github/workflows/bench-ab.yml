@@ -1,37 +1,28 @@
-# The A/B benchmark job (docs/spec/09-quality-and-delivery.md §9.2, apps/desktop/e2e/bench/README.md
-# "A/B runs"): the regression gate at pull request time. It builds the app under test (as
-# nightly.yml's e2e-app job does) from a base and a head commit, then on one runner per system runs
-# the chosen webview benchmarks of the head's checkout against both builds, in alternating runs
-# (apps/desktop/e2e/bench/ab-rounds.sh: base, head, head, base, ...; 10 samples per side), and
-# compares the medians at the 10% threshold (tools/bench-compare.py ab). A gated metric more than
-# 10% worse fails, unless the head's apps/desktop/e2e/bench/accepted.json accepts it and the
-# base's does not. A change expected to alter a gated metric runs it; W4-2, W5-1 and W3-11 of the
-# M2 polish wave merge only with a green run attached (or once their metrics have 5 nightly
-# baselines). A pull request's run takes every benchmark but cold start, so it covers the metric
-# of each: the toolbox's listing (select, W4-2), dragging (drag, W5-1) and the console's output
-# (console, W3-11).
+# The A/B benchmarks by hand (docs/spec/09-quality-and-delivery.md §9.2,
+# apps/desktop/e2e/bench/README.md "A/B runs"). The jobs are bench-ab-run.yml's; this workflow
+# starts them and checks the base. A pull request's A/B run is bench-ab-pr.yml.
 #
-# Started by:
-# - the `bench-ab` label on a pull request (when it is added, and on every push to the pull
-#   request while it has the label). The head is the pull request merged into its base branch
-#   (the merge commit GitHub makes for the event, github.sha) and the base is that commit's first
-#   parent, the base branch it was merged into: the two differ by the pull request's changes only,
-#   so what landed on the base branch after the pull request branched off counts for neither, and
-#   the head's acceptance file is the merged one;
-# - by hand, with the base and head refs, the benchmarks and the systems.
+# Run it on the branch or tag to measure ("Use workflow from"): the head is the commit the run is
+# for (github.sha), and no input changes it. The base is one of the head's ancestors: by default
+# the commit where the head branched off the default branch (their merge base; on the default
+# branch itself that is the head, which measures the build against itself), or the branch, tag or
+# commit that the `base` input names, which must be in the head's history. Anything else fails
+# the base job before anything is built.
+#
+# Why: a manual run can write to the cache scope of the branch it runs on, the default branch's
+# included, from which other runs restore. Code that runs in it could take the run's cache token
+# and plant entries for them, so it builds and runs only commits of the repository's own history,
+# which only people with write access put there. A pull request's code runs only in
+# bench-ab-pr.yml, whose pull_request runs have the pull request's own cache scope.
 name: Bench A/B
 
 on:
-  pull_request:
-    types: [labeled, synchronize, reopened]
   workflow_dispatch:
     inputs:
       base:
-        description: The base (a branch, tag or commit); empty for the default branch
-        type: string
-        default: ""
-      head:
-        description: The head (a branch, tag or commit); empty for the commit this run is for
+        description: >-
+          The base, an ancestor of the commit this run is for: a branch, tag or commit; empty for
+          where that commit branched off the default branch
         type: string
         default: ""
       metrics:
@@ -50,400 +41,95 @@ on:
 
 permissions: {}
 
-# A newer push or bench-ab label event replaces a run that has not finished for the same pull
-# request. Adding another label starts no run, so it gets a group of its own and cancels nothing.
+# A newer manual run on the same branch or tag replaces one that has not finished.
 concurrency:
-  group: bench-ab-${{ github.event.pull_request.number || github.ref }}-${{ (github.event.action == 'labeled' && github.event.label.name != 'bench-ab') && github.run_id || 'ab' }}
+  group: bench-ab-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  CARGO_TERM_COLOR: always
-  # As in nightly.yml: the wasm-bindgen CLI of Cargo.lock, and tauri-driver, pinned.
-  WASM_BINDGEN_VERSION: 0.2.129
-  TAURI_DRIVER_VERSION: 2.1.0
-  # Runs per side and samples per run: 2 rounds of 5 give each side 10 samples.
-  AB_ROUNDS: "2"
-  AB_SAMPLES: "5"
-
 jobs:
-  # What to build and run, from the event. The inputs reach the script only as environment
-  # variables, and are checked there.
-  plan:
-    name: Plan the A/B run
-    # A label event starts it only for the bench-ab label; other events need the label on the
-    # pull request.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.action == 'labeled' && github.event.label.name == 'bench-ab') ||
-      (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'bench-ab'))
+  base:
+    name: Check the base
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      contents: read # read the pull request's merge commit and its parents
+      contents: read # read the repository's history
     outputs:
-      base: ${{ steps.plan.outputs.base }}
-      head: ${{ steps.plan.outputs.head }}
-      filters: ${{ steps.plan.outputs.filters }}
-      apps: ${{ steps.plan.outputs.apps }}
-      systems: ${{ steps.plan.outputs.systems }}
+      base: ${{ steps.base.outputs.base }}
     steps:
-      # The merge commit of a pull request event (the event's default ref) with its parents, for
-      # their IDs; one small file of its tree is enough.
-      - name: Check out the pull request's merge commit
-        if: github.event_name == 'pull_request'
+      # The dispatched commit with every branch and tag of the repository and their history (no
+      # pull request refs), for resolving the base and checking it; one small file of the tree is
+      # enough.
+      - name: Check out the dispatched commit with the repository's history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: merge
-          fetch-depth: 2
+          path: history
+          fetch-depth: 0
           sparse-checkout: .node-version
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
-      - name: Check the inputs and plan the jobs
-        id: plan
+      - name: Resolve the base and check that it is an ancestor of the dispatched commit
+        id: base
+        working-directory: history
         env:
-          EVENT: ${{ github.event_name }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           RUN_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           INPUT_BASE: ${{ inputs.base }}
-          INPUT_HEAD: ${{ inputs.head }}
-          INPUT_METRICS: ${{ inputs.metrics }}
-          INPUT_SYSTEMS: ${{ inputs.systems }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = "pull_request" ]; then
-            # The head is the pull request merged into its base branch, the base that branch: they
-            # differ by the pull request only (the header above).
-            if [ "$(git -C merge rev-parse HEAD)" != "$RUN_SHA" ]; then
-              echo "::error::The checkout is not the event's merge commit $RUN_SHA"
-              exit 1
-            fi
-            head=$RUN_SHA
-            base=$(git -C merge rev-parse --verify 'HEAD^1')
-            merged=$(git -C merge rev-parse --verify 'HEAD^2' 2> /dev/null || true)
-            if [ "$merged" != "$PR_HEAD" ]; then
-              echo "::error::The merge commit $RUN_SHA does not merge the pull request's head $PR_HEAD (it merges '$merged'); push again"
-              exit 1
-            fi
-            metrics="preview select guessing console drag"
-            systems=both
-          else
-            base=${INPUT_BASE:-$DEFAULT_BRANCH}
-            head=${INPUT_HEAD:-$RUN_SHA}
-            metrics=$INPUT_METRICS
-            systems=$INPUT_SYSTEMS
-          fi
-          for ref in "$base" "$head"; do
-            if ! [[ "$ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]] || [[ "$ref" == *..* ]]; then
-              echo "::error::'$ref' is not a branch, tag or commit name"
-              exit 1
-            fi
-          done
-          filters=()
-          for metric in ${metrics//,/ }; do
-            case "$metric" in
-              preview | select | guessing | console | cold-start | drag) filters+=("$metric.bench") ;;
-              *)
-                echo "::error::Unknown benchmark '$metric' (preview, select, guessing, console, cold-start, drag)"
-                exit 1
-                ;;
-            esac
-          done
-          if [ "${#filters[@]}" -eq 0 ]; then
-            echo "::error::No benchmark was chosen"
+          if [ "$(git rev-parse HEAD)" != "$RUN_SHA" ]; then
+            echo "::error::The checkout is not the dispatched commit $RUN_SHA"
             exit 1
           fi
-          linux='{"os":"ubuntu-24.04","system":"linux","app":"blocks2cpp-desktop","python":"python3"}'
-          windows='{"os":"windows-2025","system":"windows","app":"blocks2cpp-desktop.exe","python":"python"}'
-          case "$systems" in
-            both) chosen=("$linux" "$windows") ;;
-            linux) chosen=("$linux") ;;
-            windows) chosen=("$windows") ;;
-            *) echo "::error::Unknown systems '$systems'"; exit 1 ;;
-          esac
-          apps=()
-          for system in "${chosen[@]}"; do
-            for side in base head; do
-              apps+=("$(jq --compact-output --arg side "$side" '. + {side: $side}' <<< "$system")")
-            done
-          done
-          {
-            echo "base=$base"
-            echo "head=$head"
-            echo "filters=${filters[*]}"
-            echo "systems=$(printf '%s\n' "${chosen[@]}" | jq --compact-output --slurp .)"
-            echo "apps=$(printf '%s\n' "${apps[@]}" | jq --compact-output --slurp .)"
-          } >> "$GITHUB_OUTPUT"
-          {
-            echo "### A/B plan"
-            echo
-            echo "- Base: \`$base\`"
-            if [ "$EVENT" = "pull_request" ]; then
-              echo "- Head: \`$head\` (the pull request's \`$PR_HEAD\` merged into the base)"
-            else
-              echo "- Head: \`$head\`"
+          if [ -z "$INPUT_BASE" ]; then
+            if ! base=$(git merge-base "refs/remotes/origin/$DEFAULT_BRANCH" HEAD); then
+              echo "::error::The dispatched commit has no common history with $DEFAULT_BRANCH; name a base"
+              exit 1
             fi
-            echo "- Benchmarks: \`${filters[*]}\`"
-            echo "- Systems: $systems; $AB_ROUNDS rounds of $AB_SAMPLES samples per side"
+            named="where it branched off $DEFAULT_BRANCH"
+          else
+            if ! [[ "$INPUT_BASE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]] || [[ "$INPUT_BASE" == *..* ]]; then
+              echo "::error::The base is not a branch, tag or commit name (letters, digits, '.', '_', '/' and '-')"
+              exit 1
+            fi
+            # A branch, then a tag, then a commit ID (which may be abbreviated).
+            base=""
+            for name in "refs/remotes/origin/$INPUT_BASE" "refs/tags/$INPUT_BASE"; do
+              if base=$(git rev-parse --verify --quiet "$name^{commit}"); then
+                break
+              fi
+            done
+            if [ -z "$base" ] && [[ "$INPUT_BASE" =~ ^[0-9a-f]{7,40}$ ]]; then
+              base=$(git rev-parse --verify --quiet "$INPUT_BASE^{commit}") || base=""
+            fi
+            if [ -z "$base" ]; then
+              echo "::error::'$INPUT_BASE' is no branch, tag or commit of this repository"
+              exit 1
+            fi
+            named="$INPUT_BASE"
+          fi
+          if ! git merge-base --is-ancestor "$base" HEAD; then
+            echo "::error::The base $named ($base) is not an ancestor of the dispatched commit $RUN_SHA; a manual run builds only that commit and one of its ancestors"
+            exit 1
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          {
+            echo "### A/B commits"
+            echo
+            echo "- Base: \`$base\` ($named)"
+            echo "- Head: \`$RUN_SHA\` (the dispatched commit, on \`$GITHUB_REF_NAME\`)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # The app under test of each side (a debug build with the e2e-hooks feature and the e2e
-  # frontend embedded), as nightly.yml's e2e-app job builds it, from that side's own checkout.
-  app:
-    name: App (${{ matrix.side }}, ${{ matrix.os }})
-    needs: plan
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+  ab:
+    name: A/B
+    needs: base
     permissions:
       contents: read # check out the repository
-    strategy:
-      fail-fast: true
-      matrix:
-        include: ${{ fromJSON(needs.plan.outputs.apps) }}
-    steps:
-      - name: Check out the ${{ matrix.side }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ matrix.side == 'base' && needs.plan.outputs.base || needs.plan.outputs.head }}
-          persist-credentials: false
-
-      - name: Install the webview libraries (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            build-essential pkg-config libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev libgtk-3-dev librsvg2-dev
-
-      - name: Set up pnpm (version from package.json)
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-
-      - name: Install the pinned Rust toolchain
-        run: rustup toolchain install
-
-      - name: Install dependencies under the supply-chain policy
-        run: pnpm install --frozen-lockfile
-
-      - name: Restore wasm-bindgen-cli from the cache
-        id: wasm-bindgen-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/wasm-bindgen*
-            ~/.cargo/bin/wasm2es6js*
-          key: wasm-bindgen-cli-${{ env.WASM_BINDGEN_VERSION }}-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-
-      - name: Install wasm-bindgen-cli
-        if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
-
-      - name: Build the WebAssembly core (without wasm-opt)
-        shell: bash
-        env:
-          B2C_SKIP_WASM_OPT: "1"
-        run: pnpm --filter @blocks2cpp/b2c-core-wasm run build
-
-      - name: Build the app for the end-to-end tests
-        shell: bash
-        run: >-
-          pnpm --filter @blocks2cpp/desktop tauri build --debug --no-bundle
-          --features e2e-hooks
-          --config '{"build":{"beforeBuildCommand":"pnpm build:e2e"}}'
-
-      - name: Check that the end-to-end build has its hooks
-        shell: bash
-        run: |
-          exe=target/debug/blocks2cpp-desktop
-          if [ "$RUNNER_OS" = "Windows" ]; then exe="$exe.exe"; fi
-          grep --binary-files=text --quiet --fixed-strings B2C_E2E_DIALOGS "$exe"
-          grep --recursive --quiet --fixed-strings __B2C_E2E__ apps/desktop/dist
-
-      - name: Upload the app under test
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ab-app-${{ matrix.side }}-${{ matrix.os }}
-          path: |
-            target/debug/blocks2cpp-desktop
-            target/debug/blocks2cpp-desktop.exe
-          if-no-files-found: error
-          retention-days: 3
-
-  # The benchmarks of the head's checkout against both builds, alternating, on one runner.
-  bench:
-    name: A/B benchmarks (${{ matrix.os }})
-    needs: [plan, app]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 180
-    permissions:
-      contents: read # check out the repository
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.plan.outputs.systems) }}
-    env:
-      B2C_E2E_ARTIFACTS: ${{ github.workspace }}/e2e-artifacts
-      AB_OUT: ${{ github.workspace }}/ab-results
-      BASE_APP: ${{ github.workspace }}/ab-app/base/${{ matrix.app }}
-      HEAD_APP: ${{ github.workspace }}/ab-app/head/${{ matrix.app }}
-      BENCH_SYSTEM: ${{ matrix.system }}
-      PYTHON: ${{ matrix.python }}
-      FILTERS: ${{ needs.plan.outputs.filters }}
-    steps:
-      - name: Check out the head (the benchmarks and the comparison)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.plan.outputs.head }}
-          persist-credentials: false
-
-      # Only the base's acceptance file: what the head newly accepts is what it adds to it.
-      - name: Check out the base's acceptance file
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.plan.outputs.base }}
-          path: ab-base
-          sparse-checkout: apps/desktop/e2e/bench/accepted.json
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-
-      - name: Install the webview libraries, WebKitWebDriver and xvfb (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            build-essential pkg-config libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev libgtk-3-dev librsvg2-dev xvfb webkit2gtk-driver
-
-      - name: Set up pnpm (version from package.json)
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-
-      - name: Install dependencies under the supply-chain policy
-        run: pnpm install --frozen-lockfile
-
-      # The app finds a compiler as on a user's machine, so it opens on its start page.
-      - name: Install g++ (MSYS2 UCRT64)
-        if: runner.os == 'Windows'
-        id: msys2
-        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
-        with:
-          msystem: UCRT64
-          update: false
-          install: mingw-w64-ucrt-x86_64-gcc
-
-      - name: Put g++ on PATH and name its folder for the app
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
-        run: |
-          $bin = Join-Path $env:MSYS2_LOCATION 'ucrt64\bin'
-          Add-Content -Path $env:GITHUB_PATH -Value $bin
-          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_TOOLCHAIN_DIRS=$bin"
-
-      - name: Install the pinned Rust toolchain
-        run: rustup toolchain install
-
-      - name: Check the benchmark comparison script
-        shell: bash
-        run: |
-          "$PYTHON" --version
-          "$PYTHON" tools/bench-compare.py --self-test
-
-      - name: Restore tauri-driver from the cache
-        id: tauri-driver-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/tauri-driver
-            ~/.cargo/bin/tauri-driver.exe
-          key: tauri-driver-${{ env.TAURI_DRIVER_VERSION }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
-
-      - name: Install tauri-driver
-        if: steps.tauri-driver-cache.outputs.cache-hit != 'true'
-        shell: bash
-        env:
-          # A third-party tool: its warnings are not ours to deny.
-          RUSTFLAGS: ""
-        run: cargo install tauri-driver --version "$TAURI_DRIVER_VERSION" --locked
-
-      - name: Download the base's app
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ab-app-base-${{ matrix.os }}
-          path: ab-app/base
-
-      - name: Download the head's app
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ab-app-head-${{ matrix.os }}
-          path: ab-app/head
-
-      # Artifacts do not keep file modes.
-      - name: Make the apps executable (Linux)
-        if: runner.os == 'Linux'
-        run: chmod +x "$BASE_APP" "$HEAD_APP"
-
-      - name: Fetch msedgedriver for the installed WebView2 (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./apps/desktop/e2e/scripts/msedgedriver.ps1 -OutDir (Join-Path $env:RUNNER_TEMP 'msedgedriver')
-
-      - name: Run the benchmarks against both builds, alternating
-        shell: bash
-        env:
-          # Linux: a virtual display, which has no GPU (docs/spec/02-architecture.md §2.8).
-          AB_XVFB: ${{ runner.os == 'Linux' && '1' || '0' }}
-          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
-        run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            export B2C_E2E_TOOLCHAIN_DIRS=/usr/bin
-          fi
-          read -r -a filters <<< "$FILTERS"
-          apps/desktop/e2e/bench/ab-rounds.sh "$BASE_APP" "$HEAD_APP" "$AB_OUT" "${filters[@]}"
-
-      - name: Compare the head with the base
-        shell: bash
-        run: |
-          arguments=(--accepted apps/desktop/e2e/bench/accepted.json)
-          if [ -f ab-base/apps/desktop/e2e/bench/accepted.json ]; then
-            arguments+=(--accepted-base ab-base/apps/desktop/e2e/bench/accepted.json)
-          fi
-          "$PYTHON" tools/bench-compare.py ab --os "$BENCH_SYSTEM" \
-            --base "$AB_OUT/base" --head "$AB_OUT/head" "${arguments[@]}" \
-            --summary "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload the A/B results
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ab-results-${{ matrix.system }}
-          path: ab-results
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Show the benchmark logs (on failure)
-        if: failure()
-        shell: bash
-        run: apps/desktop/e2e/scripts/show-logs.sh "$B2C_E2E_ARTIFACTS"
-
-      - name: Upload screenshots and logs
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ab-artifacts-${{ matrix.system }}
-          path: e2e-artifacts
-          if-no-files-found: ignore
-          retention-days: 14
+    # The called workflow comes from this run's commit. Not `$/...` (zizmor's self-repository):
+    # actionlint 1.7.12 rejects it, and CodeQL 2.27.2 does not follow it, so its analysis of the
+    # called jobs would no longer see this workflow's trigger.
+    uses: ./.github/workflows/bench-ab-run.yml # zizmor: ignore[self-repository]
+    with:
+      base: ${{ needs.base.outputs.base }}
+      metrics: ${{ inputs.metrics }}
+      systems: ${{ inputs.systems }}

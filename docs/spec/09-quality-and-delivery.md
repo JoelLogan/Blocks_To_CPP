@@ -190,10 +190,12 @@ Details of each level as M2 sets them up:
     keeps, and the benchmarks report each span's time per edit or click
     beside their metrics; the E2E hook gives each span's latest duration.
   * A change expected to alter a gated metric runs the A/B benchmark job on
-    its pull request (`bench-ab.yml`): the head (the pull request merged
+    its pull request (`bench-ab-pr.yml`): the head (the pull request merged
     into its base branch) and the base (that branch) are built and measured
     in alternating runs on one runner, at least 10 samples each, and the
-    head's medians are compared with the base's at the same 10%. An intended
+    head's medians are compared with the base's at the same 10%. By hand
+    (`bench-ab.yml`), the job measures the commit it runs on against one of
+    that commit's ancestors, and nothing else (§9.3). An intended
     slowdown is recorded in `apps/desktop/e2e/bench/accepted.json` with its
     reason, which restarts that metric's baseline: the first nightly run
     that sees the entry does not fail on it and starts the metric's history
@@ -225,7 +227,9 @@ GitHub Actions workflows. All actions are SHA-pinned and least-privilege
 | `workflow-audit.yml` | PR and push touching `.github/`; weekly and manual (adding online audits) | zizmor (auditor persona) |
 | `pages.yml` | PR and push touching `docs/`, `site/`, `LICENSE`, `SECURITY.md`, the Node/pnpm config or the workflow itself; manual | Build the specification website (fails on broken links or anchors, unpublished docs and raw HTML); deploy to GitHub Pages from the default branch |
 | `nightly.yml` | Daily, manual | `fuzz` (30 minutes per target, one job per target, with a kept corpus) · `links` (lychee over all Markdown) · `e2e-app` (the app under test, built once per OS for the jobs below) · `e2e` (both OSes, every flow and the visual diff) · `e2e-security` (both OSes, [08 §8.13](08-security.md#813-continuous-security-process)) · `bench` (both OSes, with the 10% gate and the acceptance file) |
-| `bench-ab.yml` | The `bench-ab` label on a PR (and each push while it has the label); manual (base and head refs, benchmarks, systems) | `plan` (checks the inputs; on a PR the head is its merge commit and the base that commit's first parent) · `app` (the app under test from the base and from the head, per OS) · `bench` (ubuntu, windows: the head's benchmarks against both builds in alternating runs on one runner, 10 samples each, compared at 10% with the head's acceptance file; §9.2) |
+| `bench-ab-pr.yml` | The `bench-ab` label on a PR (and each push while it has the label) | `base` (the PR's merge commit is the head, its first parent the base) · `ab` (`bench-ab-run.yml`, every benchmark but cold start, both OSes) |
+| `bench-ab.yml` | Manual (base, benchmarks, systems) | `base` (the dispatched commit is the head; checks that the base is one of its ancestors, by default its merge base with the default branch) · `ab` (`bench-ab-run.yml`) |
+| `bench-ab-run.yml` | Called by the two above | `plan` (checks the inputs) · `app` (the app under test from the base and from the head, per OS) · `bench` (ubuntu, windows: the head's benchmarks against both builds in alternating runs on one runner, 10 samples each, compared at 10% with the head's acceptance file; §9.2) |
 | `weekly.yml` | Weekly, manual | `mutants` (`cargo-mutants`) · `dependency-health` (report) · `geiger` (`cargo-geiger`, report only) · `fuzz-cmin` (corpus minimisation) |
 | `release.yml` | Signed tag `v*` | Build and bundle (Windows MSI/NSIS, Linux AppImage/deb/rpm), sign, SBOMs, provenance attestations, draft GitHub Release. Runs in the protected `release` environment. |
 
@@ -240,6 +244,16 @@ Notes on the jobs:
 * The full OSV scan of the default branch runs daily in `osv-scanner.yml`, and
   OpenSSF Scorecard weekly in `scorecard.yml`; the nightly and weekly
   workflows do not repeat them.
+* A pull request's code runs only in `pull_request` runs, which GitHub gives
+  a read-only token and the pull request's own cache scope. A run that can
+  write to the Actions cache of the default branch, from which other runs
+  restore (push, schedule, manual), never checks out a pull request: code
+  running there could take the run's cache token and plant entries (CodeQL
+  `actions/cache-poisoning`). The A/B job is therefore two workflows that
+  call `bench-ab-run.yml`: `bench-ab-pr.yml` for a pull request, and
+  `bench-ab.yml` by hand, which builds only the dispatched commit and one
+  of its ancestors. Its head is always the calling run's own commit, and
+  none of its jobs saves to the cache.
 * `test-cgroup` enables lingering for the runner's user, exports
   `XDG_RUNTIME_DIR` and sets `B2C_REQUIRE_CGROUP=1`, so the cgroup tests of
   `b2c-process` and `b2c-build` fail instead of skipping. Every other job
@@ -273,9 +287,10 @@ in M2. The Windows runs of the breadth flows and the nightly suites pass,
 like the Linux ones (scheduled runs since 2026-10-07,
 [10 §10.1](10-roadmap.md#101-milestones)). The nightly benchmark gate
 only reports a metric until five scheduled runs per system have kept it;
-the A/B job (`bench-ab.yml`) and the long-task recorder came with the M2
-polish wave, and the A/B job gates a labelled pull request at once. The
-visual diff only warns until a person commits its baselines.
+the A/B job (`bench-ab-pr.yml`, `bench-ab.yml` and `bench-ab-run.yml`) and
+the long-task recorder came with the M2 polish wave, and the A/B job gates a
+labelled pull request at once. The visual diff only warns until a person
+commits its baselines.
 
 ## 9.4 Documentation
 

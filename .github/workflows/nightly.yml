@@ -16,7 +16,7 @@
 #   compares the medians with the baseline (the last 5 scheduled runs on this system, kept in the
 #   Actions cache) and fails at more than 10% worse; until 5 runs are kept it only reports. A
 #   slowdown recorded in apps/desktop/e2e/bench/accepted.json restarts that metric's history
-#   instead of failing. Pull requests are gated by the A/B job (bench-ab.yml).
+#   instead of failing. Pull requests are gated by the A/B job (bench-ab-pr.yml).
 # The full OSV scan of the default branch runs daily in osv-scanner.yml and is not repeated here.
 name: Nightly
 
