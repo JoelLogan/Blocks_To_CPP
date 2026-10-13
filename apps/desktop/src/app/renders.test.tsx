@@ -2,9 +2,11 @@
  * How much of the window renders again per preview run (docs/plans/m2-polish-plan.md P-2), counted
  * with React's Profiler: hidden panels (Problems behind the Console tab, the C++ tab in a collapsed
  * dock) do nothing until they are shown and then catch up once, and the status bar, the module
- * switcher and the Restricted Mode banner render only when what they show changes.
+ * switcher and the Restricted Mode banner render only when what they show changes. A hidden panel
+ * does not carry what it held of one project into the next.
  */
 import type { BdmDocument, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
+import { EditorView } from '@codemirror/view';
 import { act, render, screen } from '@testing-library/react';
 import { Profiler, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -210,5 +212,94 @@ describe('render counts per preview run', () => {
     });
     expect(counts.banner).toBe(1);
     expect(screen.getByTestId('restricted-banner')).toBeDefined();
+  });
+});
+
+/** The code view in the C++ tab. */
+function codeView(): EditorView {
+  const editor = screen.getByTestId('code-panel').querySelector('.cm-editor');
+  const view = editor instanceof HTMLElement ? EditorView.findFromDOM(editor) : null;
+  if (view === null) {
+    throw new Error('The C++ tab shows no code view');
+  }
+  return view;
+}
+
+/** The C++ tab's *Copy selection* button. */
+function copySelection(): HTMLButtonElement {
+  return screen.getByRole<HTMLButtonElement>('button', { name: 'Copy selection' });
+}
+
+/** A project other than the fixture's (another handle), with its own code. */
+function openOtherProject(): void {
+  const { actions } = useAppStore.getState();
+  actions.setProject(projectFixture({ handle: `ph_${'b'.repeat(32)}`, fileName: 'other.b2c' }));
+  actions.setAnalysis({
+    preview: {
+      ...previewFixture([]),
+      files: [{ path: 'main.cpp', kind: 'source', contents: '// the other project\n'.repeat(50) }],
+    },
+  });
+}
+
+describe('a project change while a panel is hidden', () => {
+  it('gives the C++ tab a new code view, without the old project’s selection', () => {
+    act(() => {
+      useAppStore.getState().actions.setUi({ rightCollapsed: false });
+    });
+    renderCounted();
+    edit(1);
+    const panel = screen.getByTestId('code-panel');
+    act(() => {
+      codeView().dispatch({ selection: { anchor: 0, head: 8 } });
+    });
+    expect(copySelection().disabled).toBe(false);
+    act(() => {
+      useAppStore.getState().actions.setUi({ rightCollapsed: true });
+    });
+
+    act(() => {
+      openOtherProject();
+    });
+    act(() => {
+      useAppStore.getState().actions.setUi({ rightCollapsed: false });
+    });
+    expect(screen.getByTestId('code-panel')).not.toBe(panel);
+    expect(codeView().state.doc.toString()).toContain('// the other project');
+    expect(codeView().state.selection.main.empty).toBe(true);
+    expect(copySelection().disabled).toBe(true);
+  });
+
+  it('gives the Problems tab new rows when the project is closed and another opened', () => {
+    act(() => {
+      useAppStore.getState().actions.setUi({ bottomTab: 'problems' });
+    });
+    renderCounted();
+    const panel = screen.getByTestId('problems-panel');
+    act(() => {
+      useAppStore.getState().actions.setUi({ bottomTab: 'console' });
+    });
+
+    act(() => {
+      useAppStore.getState().actions.setProject(null);
+    });
+    act(() => {
+      openOtherProject();
+    });
+    act(() => {
+      useAppStore.getState().actions.setUi({ bottomTab: 'problems' });
+    });
+    expect(screen.getByTestId('problems-panel')).not.toBe(panel);
+  });
+
+  it('still keeps what it held while the same project is edited', () => {
+    const counts = renderCounted();
+    reset(counts);
+    act(() => {
+      useAppStore.getState().actions.updateProject({ dirty: false, fileName: 'saved.b2c' });
+    });
+    edit(1);
+    expect(counts.code).toBe(0);
+    expect(counts.problems).toBe(0);
   });
 });

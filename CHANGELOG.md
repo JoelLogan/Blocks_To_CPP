@@ -318,7 +318,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   preview's symbols instead of one scope query each, the preview stores an
   edit in two store updates, autosave no longer compares the saved text on
   every update, and the Problems list and the C++ panel stay idle while
-  hidden and catch up when shown.
+  hidden and catch up when shown. A hidden panel still starts afresh when
+  another project is opened or the project is closed, so the C++ view keeps
+  no selection or scroll position of the previous project.
 - The security specification (08 §8.8) notes that WebKitGTK's remote Web
   Inspector (`WEBKIT_INSPECTOR_SERVER`, `WEBKIT_INSPECTOR_HTTP_SERVER`) can
   inspect release builds, and what it exposes while it is on.
