@@ -47,8 +47,10 @@ pub const PROBE_RETRY_TIMEOUT: Duration = Duration::from_secs(30);
 /// The oldest supported GCC major version (spec §7.1).
 pub const MIN_GCC_MAJOR: u32 = 11;
 /// Version of the [`Toolchain`] record; cached records with another version
-/// must be probed again.
-pub const PROBE_FORMAT: u32 = 1;
+/// must be probed again. Version 2 reports a probe that timed out as
+/// `B2C-T1023`: a version 1 record may call a compiler whose probe timed out
+/// a broken installation (`B2C-T1006`), so it is probed again once.
+pub const PROBE_FORMAT: u32 = 2;
 
 /// Most output kept from one probe invocation.
 const PROBE_OUTPUT_CAP: usize = 256 * 1024;

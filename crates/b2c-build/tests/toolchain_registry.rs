@@ -1259,3 +1259,42 @@ fn the_list_says_rechecking_while_the_second_probe_runs() {
 fn codes_of(problems: &[b2c_ipc::diag::Diagnostic]) -> Vec<&str> {
     problems.iter().map(|problem| problem.code.as_str()).collect()
 }
+
+/// 07 §7.3 (W3-12): a record cached before a timed-out probe was reported as
+/// such (probe format 1) may call a compiler that only timed out a broken
+/// installation (`B2C-T1006`). Such a record is probed again once, even
+/// though the compiler did not change.
+#[test]
+fn records_from_before_the_timeout_rule_are_probed_again() {
+    let root = Root::new();
+    let bin = root.join("bin");
+    install(&bin, "gcc");
+    let prober = FakeProber::new();
+    root.registry(std::slice::from_ref(&bin), &prober)
+        .rescan(&[], None);
+    assert_eq!(prober.calls(), 1);
+
+    // What an older version saved after its probe timed out.
+    let mut json: serde_json::Value = serde_json::from_slice(&fs::read(root.store()).unwrap()).unwrap();
+    let probe = &mut json["toolchains"][0]["probe"];
+    probe["format"] = serde_json::json!(1);
+    probe["problems"] = serde_json::json!([{
+        "code": "B2C-T1006",
+        "severity": "error",
+        "message": "/usr/bin/g++ could not build and run a tiny test program, so the installation is probably broken or incomplete. Reinstall the compiler.",
+        "primary": {"module": null, "block": null, "part": {"kind": "whole"}},
+        "related": [],
+        "source": "toolchain",
+        "raw": null
+    }]);
+    fs::write(root.store(), serde_json::to_vec(&json).unwrap()).unwrap();
+    let reopened = root.registry(std::slice::from_ref(&bin), &prober);
+    assert!(
+        !reopened.list(None).toolchains[0].usable,
+        "the old record is read"
+    );
+
+    let listed = reopened.rescan(&[], None);
+    assert_eq!(prober.calls(), 2);
+    assert!(listed.toolchains[0].usable, "{:?}", listed.toolchains[0].problems);
+}
