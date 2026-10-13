@@ -21,7 +21,7 @@ import {
 import { expectNoAxeViolations } from '../../test/axe';
 import { editorInjectOptions } from '../EditorWorkspace';
 import { disposeWorkspaces, renderedWorkspace, setViewSize } from '../sync/testing';
-import { CanvasControls, SHOW_ALL_ANNOUNCEMENTS, ZOOM_KEYS } from './CanvasControls';
+import { CanvasControls, SHOW_ALL_ANNOUNCEMENTS, ZOOM_KEYS, zoomKeyOf } from './CanvasControls';
 import controlsCss from './CanvasControls.css?raw';
 import { CONTROLS_COMPONENT_ID } from './placement';
 
@@ -156,6 +156,65 @@ describe('the canvas controls', () => {
     workspace.clear();
     fireEvent.click(screen.getByRole('button', { name: 'Show all blocks' }));
     expect(announced()).toBe(SHOW_ALL_ANNOUNCEMENTS.empty);
+  });
+
+  // Blockly hears its zoom keys only inside its injection `div`, which the controls are beside: the
+  // keys that the hints and `aria-keyshortcuts` name did nothing while a control had the focus.
+  it('zoom with the keys they name while one of them has the focus', () => {
+    const workspace = editorCanvas();
+    renderControls(workspace);
+    const zoomIn = screen.getByRole('button', { name: 'Zoom in' });
+    zoomIn.focus();
+    expect(fireEvent.keyDown(zoomIn, { key: '=', code: 'Equal', ctrlKey: true })).toBe(false);
+    expect(workspace.scale).toBeCloseTo(1.08, 10);
+    expect(announced()).toBe('Zoom 108%');
+    expect(document.activeElement).toBe(zoomIn);
+
+    // Two steps out, as the buttons go: 108 % → 90 % → 75 %.
+    const zoomOut = screen.getByRole('button', { name: 'Zoom out' });
+    fireEvent.keyDown(zoomOut, { key: '-', code: 'Minus', ctrlKey: true });
+    fireEvent.keyDown(zoomOut, { key: '-', code: 'NumpadSubtract', ctrlKey: true });
+    expect(workspace.scale).toBeCloseTo(0.75, 10);
+    expect(announced()).toBe('Zoom 75%');
+    fireEvent.keyDown(screen.getByTestId('canvas-zoom-reset'), {
+      key: '0',
+      code: 'Digit0',
+      ctrlKey: true,
+    });
+    expect(workspace.scale).toBe(1);
+    expect(announced()).toBe('Zoom 100%');
+    // On the other controls too, and with Shift (`Ctrl++`).
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Show all blocks' }), {
+      key: '+',
+      code: 'Equal',
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    expect(workspace.scale).toBeCloseTo(1.2, 10);
+    expect(screen.getByTestId('canvas-zoom-reset').textContent).toBe('120%');
+
+    // Without Ctrl, or with Alt, a key does nothing here.
+    expect(fireEvent.keyDown(zoomIn, { key: '=', code: 'Equal' })).toBe(true);
+    expect(
+      fireEvent.keyDown(zoomIn, { key: '=', code: 'Equal', ctrlKey: true, altKey: true }),
+    ).toBe(true);
+    expect(workspace.scale).toBeCloseTo(1.2, 10);
+  });
+
+  it('know the zoom keys of the canvas', () => {
+    const key = (init: Partial<KeyboardEventInit>) =>
+      zoomKeyOf({ key: '', code: '', ctrlKey: true, altKey: false, metaKey: false, ...init });
+    expect(key({ key: '=' })).toBe('in');
+    expect(key({ key: '+' })).toBe('in');
+    expect(key({ key: '+', code: 'NumpadAdd' })).toBe('in');
+    expect(key({ key: '-' })).toBe('out');
+    expect(key({ key: '-', code: 'NumpadSubtract' })).toBe('out');
+    expect(key({ key: '0' })).toBe('reset');
+    expect(key({ key: 'Insert', code: 'Numpad0' })).toBe('reset');
+    expect(key({ key: '1' })).toBeNull();
+    expect(key({ key: '=', ctrlKey: false })).toBeNull();
+    expect(key({ key: '=', metaKey: true })).toBeNull();
+    expect(key({ key: '0', altKey: true })).toBeNull();
   });
 
   it('show the zoom however it changed (Ctrl + wheel, a pinch, a saved view)', async () => {

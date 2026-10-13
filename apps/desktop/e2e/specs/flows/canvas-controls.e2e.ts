@@ -9,7 +9,8 @@
  *   as it was;
  *   *Reset zoom* goes to 100 % (not the 90 % a new canvas starts at);
  * - with a block of the canvas focused, `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom, and the editor's
- *   live region says the new zoom; Tab from the canvas reaches *Zoom out* next.
+ *   live region says the new zoom; Tab from the canvas reaches *Zoom out* next, where the keys
+ *   the controls name (`aria-keyshortcuts`) zoom as well, and the controls' live region says so.
  *
  * The zoom is read from the canvas's own transform (`scale(…)` of its block layer), not from the
  * controls, so the test checks what is drawn.
@@ -122,10 +123,11 @@ function waitForScale(driver: WebDriver, expected: number): Promise<number> {
 }
 
 /** The text of the editor's polite live region (the keyboard announcer), trimmed. */
-async function announced(app: FlowApp): Promise<string> {
+async function announced(app: FlowApp, region = 'keyboard-announcer'): Promise<string> {
   const text = await app.driver.executeScript<string>(
-    `const status = document.querySelector('[data-testid="keyboard-announcer"] [role="status"]');
+    `const status = document.querySelector('[data-testid="' + arguments[0] + '"] [role="status"]');
      return status === null ? '' : status.textContent;`,
+    region,
   );
   return text.replace(/\u00a0/g, ' ').trim();
 }
@@ -237,5 +239,19 @@ describe('Canvas controls', () => {
         )) === 'canvas-zoom-out',
       { timeout: UI_TIMEOUT_MS, message: 'the focus on Zoom out after Tab from the canvas' },
     );
+
+    // The keys the controls name work on them too (Blockly hears them only on the canvas).
+    await pressCtrl(driver, '=');
+    await waitForScale(driver, STEP);
+    await waitFor(async () => (await announced(app, 'canvas-controls')) === 'Zoom 120%', {
+      timeout: UI_TIMEOUT_MS,
+      message: async () =>
+        `"Zoom 120%" announced by the controls (they say "${await announced(app, 'canvas-controls')}")`,
+    });
+    expect(
+      await driver.executeScript<string | null>(
+        'return document.activeElement && document.activeElement.dataset.testid || null;',
+      ),
+    ).toBe('canvas-zoom-out');
   }, 180_000);
 });

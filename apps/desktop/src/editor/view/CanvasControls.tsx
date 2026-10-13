@@ -7,12 +7,15 @@
  *
  * The editor renders them into the workspace's container right after Blockly's injection `div`,
  * so they come right after the canvas in the Tab order, and Blockly's pixel coordinates are theirs
- * (./placement.ts keeps them in place). Each button has a hint with its key; what a button did is
- * announced in a polite live region. Pressing one with the pointer leaves the keyboard focus where
- * it was (on the canvas, typically), as Blockly's own controls did.
+ * (./placement.ts keeps them in place). Each button has a hint with its key, and the zoom keys
+ * work on the controls too (Blockly hears them only inside its injection `div`, which the controls
+ * are beside); what a button or key did is announced in a polite live region. Pressing one with
+ * the pointer leaves the keyboard focus where it was (on the canvas, typically), as Blockly's own
+ * controls did.
  */
 import * as Blockly from 'blockly/core';
 import {
+  type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
   useEffect,
@@ -34,6 +37,31 @@ export const ZOOM_KEYS = {
   reset: { label: 'Ctrl+0', aria: 'Control+0' },
 } as const;
 
+/** A zoom key's action: one step in or out, or back to 100 %. */
+export type ZoomKey = 'in' | 'out' | 'reset';
+
+/**
+ * The zoom key `event` presses, if any: the keys of the canvas (../keyboard/shortcuts.ts), `Ctrl`
+ * with `=` or `+` (main or numeric keypad), `-` and `0`, without `Alt` or `Meta`.
+ */
+export function zoomKeyOf(
+  event: Pick<globalThis.KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'altKey' | 'metaKey'>,
+): ZoomKey | null {
+  if (!event.ctrlKey || event.altKey || event.metaKey) {
+    return null;
+  }
+  if (event.key === '=' || event.key === '+' || event.code === 'NumpadAdd') {
+    return 'in';
+  }
+  if (event.key === '-' || event.code === 'NumpadSubtract') {
+    return 'out';
+  }
+  if (event.key === '0' || event.code === 'Numpad0') {
+    return 'reset';
+  }
+  return null;
+}
+
 /** What *Show all blocks* announces: it scrolled, or there was nothing to scroll to. */
 export const SHOW_ALL_ANNOUNCEMENTS = {
   shown: 'Scrolled to the blocks',
@@ -52,6 +80,7 @@ function Control({
   hint,
   keys,
   onPress,
+  onKeyDown,
   children,
 }: {
   testId: string;
@@ -59,6 +88,7 @@ function Control({
   hint: string;
   keys?: string;
   onPress: () => void;
+  onKeyDown: (event: KeyboardEvent) => void;
   children: ReactNode;
 }) {
   const descriptionId = useId();
@@ -74,6 +104,7 @@ function Control({
           aria-keyshortcuts={keys}
           onMouseDown={keepFocus}
           onClick={onPress}
+          onKeyDown={onKeyDown}
         >
           {children}
         </button>
@@ -125,6 +156,15 @@ export function CanvasControls({ workspace }: { workspace: Blockly.WorkspaceSvg 
     setScale(now);
     announce(zoomAnnouncement(now));
   };
+  // The zoom keys the hints and `aria-keyshortcuts` name, also while a control has the focus.
+  const onKeyDown = (event: KeyboardEvent): void => {
+    const key = zoomKeyOf(event);
+    if (key === null) {
+      return;
+    }
+    event.preventDefault();
+    zoomed(key === 'reset' ? resetZoom(workspace) : zoomStep(workspace, key));
+  };
   const percent = zoomPercent(scale);
 
   return (
@@ -138,6 +178,7 @@ export function CanvasControls({ workspace }: { workspace: Blockly.WorkspaceSvg 
       >
         <Control
           testId="canvas-zoom-out"
+          onKeyDown={onKeyDown}
           name="Zoom out"
           hint={`Zoom out (${ZOOM_KEYS.out.label})`}
           keys={ZOOM_KEYS.out.aria}
@@ -149,6 +190,7 @@ export function CanvasControls({ workspace }: { workspace: Blockly.WorkspaceSvg 
         </Control>
         <Control
           testId="canvas-zoom-in"
+          onKeyDown={onKeyDown}
           name="Zoom in"
           hint={`Zoom in (${ZOOM_KEYS.in.label})`}
           keys={ZOOM_KEYS.in.aria}
@@ -160,6 +202,7 @@ export function CanvasControls({ workspace }: { workspace: Blockly.WorkspaceSvg 
         </Control>
         <Control
           testId="canvas-zoom-reset"
+          onKeyDown={onKeyDown}
           name={`Reset zoom (now ${percent})`}
           hint={`Reset the zoom to 100% (${ZOOM_KEYS.reset.label})`}
           keys={ZOOM_KEYS.reset.aria}
@@ -171,6 +214,7 @@ export function CanvasControls({ workspace }: { workspace: Blockly.WorkspaceSvg 
         </Control>
         <Control
           testId="canvas-show-all"
+          onKeyDown={onKeyDown}
           name="Show all blocks"
           hint="Show all blocks: scroll to them, keeping the zoom"
           onPress={() => {

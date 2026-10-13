@@ -276,7 +276,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   button shows the zoom now) and _Show all blocks_ (scrolls to the blocks
   without changing the zoom) are named buttons at the canvas's top right,
   reachable with Tab right after the canvas. `Ctrl+=`, `Ctrl+-` and `Ctrl+0`
-  zoom from the keyboard and announce the new zoom (04 §4.1, §4.7).
+  zoom from the keyboard, on the canvas and on the controls, and announce the
+  new zoom (04 §4.1, §4.7).
 - Rename the project by clicking its name in the top bar, or with ≡ _Rename
   project…_. Enter or moving away keeps the name and Escape cancels. A name
   has 1–100 characters on one line and is checked with the project-text
