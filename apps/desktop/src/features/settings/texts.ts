@@ -27,6 +27,13 @@ const KEY_LABELS: Readonly<Record<string, string>> = {
   'newProject.standard': 'New projects: C++ standard',
   buildCache: 'Build cache',
   'buildCache.maxBytes': 'Build cache: largest size',
+  ui: "The window's layout",
+  'ui.layout': "The window's layout",
+  'ui.layout.toolboxWidth': "Layout: the toolbox's width",
+  'ui.layout.rightDockWidth': "Layout: the C++ panel's width",
+  'ui.layout.bottomDockHeight': "Layout: the bottom panel's height",
+  'ui.layout.rightCollapsed': 'Layout: whether the C++ panel is hidden',
+  'ui.layout.bottomCollapsed': 'Layout: whether the bottom panel is hidden',
 };
 
 /** The longest unknown key shown as it is. */

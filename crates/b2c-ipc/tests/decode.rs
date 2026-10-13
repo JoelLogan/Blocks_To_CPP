@@ -82,6 +82,60 @@ fn unknown_fields_are_rejected_at_every_level() {
         decode::<SettingsPatch>(json!({"codeStyle": null})).unwrap_err(),
         invalid(InvalidReason::Malformed, "codeStyle")
     );
+    // The editor's layout: only its five keys, whole pixels within range and booleans.
+    for (patch, path) in [
+        (json!({"ui": {"theme": "dark"}}), "ui.theme"),
+        (
+            json!({"ui": {"layout": {"splitDocks": true}}}),
+            "ui.layout.splitDocks",
+        ),
+    ] {
+        assert_eq!(
+            decode::<SettingsPatch>(patch).unwrap_err(),
+            invalid(InvalidReason::UnknownField, path)
+        );
+    }
+    for (layout, path) in [
+        (json!({"toolboxWidth": 159}), "ui.layout.toolboxWidth"),
+        (json!({"toolboxWidth": 1201}), "ui.layout.toolboxWidth"),
+        (json!({"rightDockWidth": 199}), "ui.layout.rightDockWidth"),
+        (json!({"rightDockWidth": 961}), "ui.layout.rightDockWidth"),
+        (json!({"bottomDockHeight": 95}), "ui.layout.bottomDockHeight"),
+        (json!({"bottomDockHeight": 721}), "ui.layout.bottomDockHeight"),
+    ] {
+        assert_eq!(
+            decode::<SettingsPatch>(json!({"ui": {"layout": layout}})).unwrap_err(),
+            invalid(InvalidReason::OutOfRange, path),
+            "{layout}"
+        );
+    }
+    for (layout, path) in [
+        (json!({"toolboxWidth": "320"}), "ui.layout.toolboxWidth"),
+        (json!({"toolboxWidth": 320.5}), "ui.layout.toolboxWidth"),
+        (json!({"rightCollapsed": 1}), "ui.layout.rightCollapsed"),
+        (json!({"bottomCollapsed": null}), "ui.layout.bottomCollapsed"),
+    ] {
+        assert!(
+            matches!(
+                decode::<SettingsPatch>(json!({"ui": {"layout": layout}})),
+                Err(IpcError::InvalidRequest { field: Some(ref field), .. }) if field == path
+            ),
+            "{layout}"
+        );
+    }
+    assert_eq!(
+        decode::<SettingsPatch>(json!({"ui": {"layout": null}})).unwrap_err(),
+        invalid(InvalidReason::Malformed, "ui.layout")
+    );
+    let patch = decode::<SettingsPatch>(json!({"ui": {"layout": {
+        "toolboxWidth": 160, "rightDockWidth": 960, "bottomDockHeight": 96,
+        "rightCollapsed": true, "bottomCollapsed": false
+    }}}))
+    .unwrap();
+    assert_eq!(
+        patch.ui.and_then(|ui| ui.layout).and_then(|l| l.toolbox_width),
+        Some(160)
+    );
 }
 
 #[test]

@@ -291,6 +291,12 @@ expression: render(&values)
     },
     "toolchain": {
       "selectedId": "tc_0123456789abcdef"
+    },
+    "ui": {
+      "layout": {
+        "rightCollapsed": true,
+        "toolboxWidth": 360
+      }
     }
   }
 }
@@ -315,6 +321,12 @@ expression: render(&values)
     },
     "toolchain": {
       "selectedId": "tc_0123456789abcdef"
+    },
+    "ui": {
+      "layout": {
+        "rightCollapsed": true,
+        "toolboxWidth": 360
+      }
     }
   }
 }

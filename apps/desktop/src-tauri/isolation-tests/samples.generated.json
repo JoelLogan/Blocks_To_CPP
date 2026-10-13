@@ -150,6 +150,15 @@
       },
       "run": {
         "onErrors": "showProblems"
+      },
+      "ui": {
+        "layout": {
+          "bottomCollapsed": true,
+          "bottomDockHeight": 240,
+          "rightCollapsed": false,
+          "rightDockWidth": 420,
+          "toolboxWidth": 360
+        }
       }
     }
   },

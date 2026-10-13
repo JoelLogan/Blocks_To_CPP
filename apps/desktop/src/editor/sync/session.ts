@@ -96,6 +96,38 @@ function hasViewSize(workspace: Blockly.WorkspaceSvg): boolean {
   return view.width > 0 && view.height > 0;
 }
 
+/**
+ * How far inside the view's edge {@link showFirstView} puts blocks that do not fit, in workspace
+ * units.
+ */
+export const FIRST_VIEW_MARGIN = 24;
+
+/**
+ * Shows a module that has no saved view (a template, or a file written without one): along each
+ * axis its blocks are centred in the view when they fit with {@link FIRST_VIEW_MARGIN} to spare,
+ * and otherwise start that margin inside the view. The canvas view starts right of the toolbox's
+ * flyout, so the blocks are clear of it (04 §4.1).
+ *
+ * Without this, the view is wherever Blockly left it. A module built while the editor has no size
+ * (the start page opens projects while the editor is hidden) gets the blocks' top-left corner on
+ * the view's top-left corner: Blockly pads the scrollable area by half the view's size, which is
+ * then 0, so its only scroll position puts the blocks at the edge, against the flyout.
+ */
+function showFirstView(workspace: Blockly.WorkspaceSvg): void {
+  if (workspace.getTopBlocks(false).length === 0) {
+    return;
+  }
+  const blocks = workspace.getBlocksBoundingBox();
+  const view = workspace.getMetricsManager().getViewMetrics(true);
+  const start = (from: number, to: number, room: number): number =>
+    to - from + 2 * FIRST_VIEW_MARGIN <= room
+      ? (from + to) / 2 - room / 2
+      : from - FIRST_VIEW_MARGIN;
+  const left = start(blocks.left, blocks.right, view.width);
+  const top = start(blocks.top, blocks.bottom, view.height);
+  workspace.scroll(-left * workspace.scale, -top * workspace.scale);
+}
+
 /** Whether a rendered workspace is in the middle of a drag (its blocks are in flux). */
 function isDragging(workspace: Blockly.Workspace): boolean {
   return workspace instanceof Blockly.WorkspaceSvg && workspace.isDragging();
@@ -457,12 +489,14 @@ export class EditorSession {
   }
 
   /**
-   * Shows `view`'s saved viewport and takes its baseline, once the workspace has a size: at once,
-   * and again after Blockly's first render of the canvas, which sizes the content and moves the
-   * scroll position (that is not the user scrolling). A workspace without a size (the editor is
-   * hidden while a project opens from the start page) cannot show a view; {@link resize} settles
-   * it once the editor is shown. A block a selection centred on in the meantime is centred on
-   * again after each settle; the baseline is taken before that, so the jump counts as a move.
+   * Shows `view`'s saved viewport, or for a module without one its first view
+   * ({@link showFirstView}), and takes its baseline, once the workspace has a size: at once, and
+   * again after Blockly's first render of the canvas, which sizes the content and moves the scroll
+   * position (that is not the user scrolling). A workspace without a size (the editor is hidden
+   * while a project opens from the start page) cannot show a view; {@link resize} settles it once
+   * the editor is shown, with the toolbox's flyout already fitted to the room it has. A block a
+   * selection centred on in the meantime is centred on again after each settle; the baseline is
+   * taken before that, so the jump counts as a move.
    */
   private settleView(view: ShownView): void {
     const workspace = this.workspace;
@@ -470,7 +504,9 @@ export class EditorSession {
       return;
     }
     const settle = (): void => {
-      if (view.saved !== undefined) {
+      if (view.saved === undefined) {
+        showFirstView(workspace);
+      } else {
         restoreViewport(workspace, view.saved);
       }
       view.baseline = viewStateOf(workspace);

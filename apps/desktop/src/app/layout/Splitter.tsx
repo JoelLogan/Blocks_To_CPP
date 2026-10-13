@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type PointerEvent, useRef } from 'react';
+import { type CSSProperties, type KeyboardEvent, type PointerEvent, useRef } from 'react';
 
 /** How far one arrow-key press moves a splitter, in CSS pixels (with Shift: {@link BIG_STEP}). */
 export const STEP = 16;
@@ -6,10 +6,16 @@ export const BIG_STEP = 64;
 
 export interface SplitterProps {
   /**
-   * `vertical`: a bar between two columns that changes the width of the panel after it.
-   * `horizontal`: a bar between two rows that changes the height of the panel below it.
+   * `vertical`: a bar between two columns that changes the width of a panel beside it.
+   * `horizontal`: a bar between two rows that changes the height of a panel above or below it.
    */
   orientation: 'vertical' | 'horizontal';
+  /**
+   * Which side of the bar the panel it resizes is on: `after` (right of a vertical bar, below a
+   * horizontal one; the default) or `before` (left, or above). Moving the bar away from the panel
+   * makes it larger.
+   */
+  side?: 'before' | 'after';
   /** The panel's current size in CSS pixels. */
   value: number;
   min: number;
@@ -19,12 +25,17 @@ export interface SplitterProps {
   /**
    * Called on Enter: collapses the panel (the window-splitter pattern of WAI-ARIA). If that removes
    * the splitter, the caller moves the keyboard focus to the control that restores the panel.
+   * Without it, Enter does nothing (a panel that cannot be collapsed).
    */
-  onCollapse: () => void;
+  onCollapse?: () => void;
   /** The accessible name, such as "Resize the C++ panel". */
   label: string;
-  /** The ID of the panel it resizes. */
-  controls: string;
+  /** The ID of the panel it resizes, when it has one. */
+  controls?: string;
+  /** More classes, after `splitter splitter-<orientation>`. */
+  className?: string;
+  /** Inline style, such as the position of a bar laid over its panel's edge. */
+  style?: CSSProperties;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -32,12 +43,13 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * A bar that resizes the panel after it, by pointer and by keyboard (WAI-ARIA window splitter):
+ * A bar that resizes the panel beside it, by pointer and by keyboard (WAI-ARIA window splitter):
  * arrow keys move it by {@link STEP} pixels (Shift: {@link BIG_STEP}), Home and End go to the
- * smallest and largest size, and Enter collapses the panel.
+ * smallest and largest size, and Enter collapses the panel when it can be collapsed.
  */
 export function Splitter({
   orientation,
+  side = 'after',
   value,
   min,
   max,
@@ -45,23 +57,27 @@ export function Splitter({
   onCollapse,
   label,
   controls,
+  className,
+  style,
 }: SplitterProps) {
   /** Where a pointer drag started: the pointer position and the size then. */
   const drag = useRef<{ start: number; size: number } | null>(null);
   const vertical = orientation === 'vertical';
+  /** +1 when moving the bar right or down makes the panel larger (it is before the bar). */
+  const direction = side === 'before' ? 1 : -1;
 
   const onKeyDown = (event: KeyboardEvent) => {
     const step = event.shiftKey ? BIG_STEP : STEP;
-    // The panel is after the bar: moving the bar towards it (right or down) makes it smaller.
-    const grow = vertical ? 'ArrowLeft' : 'ArrowUp';
-    const shrink = vertical ? 'ArrowRight' : 'ArrowDown';
+    // Right or down moves the bar towards a panel after it, and away from one before it.
+    const forward = vertical ? 'ArrowRight' : 'ArrowDown';
+    const backward = vertical ? 'ArrowLeft' : 'ArrowUp';
     let next: number;
     switch (event.key) {
-      case grow:
-        next = value + step;
+      case forward:
+        next = value + direction * step;
         break;
-      case shrink:
-        next = value - step;
+      case backward:
+        next = value - direction * step;
         break;
       case 'Home':
         next = min;
@@ -70,6 +86,9 @@ export function Splitter({
         next = max;
         break;
       case 'Enter':
+        if (onCollapse === undefined) {
+          return;
+        }
         event.preventDefault();
         onCollapse();
         return;
@@ -89,7 +108,8 @@ export function Splitter({
     <div
       role="separator"
       tabIndex={0}
-      className={`splitter splitter-${orientation}`}
+      className={`splitter splitter-${orientation}${className === undefined ? '' : ` ${className}`}`}
+      style={style}
       aria-orientation={orientation}
       aria-label={label}
       aria-controls={controls}
@@ -110,7 +130,7 @@ export function Splitter({
         if (current === null) {
           return;
         }
-        onChange(clamp(current.size - (position(event) - current.start), min, max));
+        onChange(clamp(current.size + direction * (position(event) - current.start), min, max));
       }}
       onPointerUp={(event) => {
         drag.current = null;

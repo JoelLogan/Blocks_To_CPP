@@ -23,7 +23,7 @@ import {
   writeArtifact,
 } from './artifacts';
 import { TauriDriver } from './driver';
-import { appEnvironment, harnessSettings, type HarnessSettings } from './env';
+import { appEnvironment, harnessSettings, type HarnessSettings, type WindowSize } from './env';
 import { HookClient } from './hook';
 import { finishLongTaskRecorder, startLongTaskRecorder } from './longtasks';
 import { sleep, waitFor, withTimeout } from './wait';
@@ -74,6 +74,12 @@ export interface LaunchOptions {
    * off: they time the page's tasks themselves, and nothing else may run in the page meanwhile.
    */
   readonly recordLongTasks?: boolean;
+  /**
+   * The window's size in CSS pixels (the app's `B2C_E2E_WINDOW_SIZE`), so the layout is the same
+   * on every system; the app still keeps the window on the screen. Without it the app opens at its
+   * own size.
+   */
+  readonly windowSize?: WindowSize;
 }
 
 /** The app under test. */
@@ -271,7 +277,11 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
     driverProcess = await TauriDriver.start({
       command: settings.tauriDriver,
       nativeDriver: settings.nativeDriver,
-      env: appEnvironment(settings, { root: profile, dialogs }),
+      env: appEnvironment(settings, {
+        root: profile,
+        dialogs,
+        ...(options.windowSize === undefined ? {} : { windowSize: options.windowSize }),
+      }),
       logFile: path.join(root, TAURI_DRIVER_LOG),
       marker: `B2C_E2E_ROOT=${profile}`,
     });

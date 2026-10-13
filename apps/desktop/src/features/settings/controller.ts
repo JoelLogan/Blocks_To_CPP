@@ -6,9 +6,10 @@
  * Reads and updates run one after the other, in the order they were asked for, so an answer
  * never overwrites a newer one. Every answer goes into the app's store; the rest of the app
  * follows it from there (an indent change makes the live preview run again, the Run on errors
- * mode changes the run gate, the scrollback changes the console).
+ * mode changes the run gate, the scrollback changes the console). The editor's layout is
+ * remembered through the same queue ({@link SettingsController.saveLayout}).
  */
-import type { BuildCacheClearResponse, SettingsPatch } from '@blocks2cpp/ipc-types';
+import type { BuildCacheClearResponse, LayoutPatch, SettingsPatch } from '@blocks2cpp/ipc-types';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 
 import type { FeatureContext } from '../../app/features';
@@ -107,6 +108,26 @@ export class SettingsController {
         return false;
       } finally {
         this.page.setState((state) => ({ saving: Math.max(0, state.saving - 1) }));
+      }
+    });
+  }
+
+  /**
+   * Remembers the editor's layout (`settings_update` with a partial `ui.layout`, 05 §5.9), queued
+   * with the other updates. Resolves `false` when it could not be saved; that is only logged, since
+   * the layout in the window stays as it is and the person did not change it on the Settings page.
+   */
+  saveLayout(layout: LayoutPatch): Promise<boolean> {
+    return this.enqueue(async () => {
+      try {
+        const response = await this.ctx.ipc.settingsUpdate({ ui: { layout } });
+        if (!this.isDisposed()) {
+          this.ctx.store.getState().actions.setSettings({ value: response.settings });
+        }
+        return true;
+      } catch (error: unknown) {
+        console.error('The layout could not be remembered', failureCode(error));
+        return false;
       }
     });
   }

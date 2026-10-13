@@ -188,6 +188,7 @@ pub fn type_decls() -> Vec<TypeDecl> {
         Settings, CodeStyle, IndentWidth, RunSettings, OnErrors, ConsoleSettings, ToolchainSettings,
         NewProjectSettings, BuildCacheSettings, SettingsNotice, NoticeReason, SettingsGetResponse,
         SettingsUpdateResponse, SettingsPatch, CodeStylePatch, RunSettingsPatch, ConsolePatch,
+        UiSettings, LayoutSettings, UiPatch, LayoutPatch,
         OpenHelpLinkRequest,
     ];
     decls.sort_by(|a, b| a.name.cmp(&b.name));

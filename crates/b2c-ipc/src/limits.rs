@@ -53,6 +53,18 @@ pub const OUTPUT_UNACKED_MAX: usize = 4_194_304;
 /// The console scrollback sizes the settings allow, in lines.
 pub const SCROLLBACK_LINES: RangeInclusive<u32> = 1_000..=100_000;
 
+/// The widths of the toolbox's flyout the settings allow, in CSS pixels
+/// (`ui.layout.toolboxWidth`).
+pub const TOOLBOX_WIDTH: RangeInclusive<u32> = 160..=1200;
+
+/// The widths of the C++ dock the settings allow, in CSS pixels
+/// (`ui.layout.rightDockWidth`).
+pub const RIGHT_DOCK_WIDTH: RangeInclusive<u32> = 200..=960;
+
+/// The heights of the bottom dock the settings allow, in CSS pixels
+/// (`ui.layout.bottomDockHeight`).
+pub const BOTTOM_DOCK_HEIGHT: RangeInclusive<u32> = 96..=720;
+
 /// The largest integer JavaScript represents exactly (`Number.MAX_SAFE_INTEGER`):
 /// the upper bound of every counter the webview sends back, such as `run_ack.seq`.
 pub const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
@@ -71,6 +83,12 @@ mod tests {
         assert_eq!(
             (*SCROLLBACK_LINES.start(), *SCROLLBACK_LINES.end()),
             (1_000, 100_000)
+        );
+        assert_eq!((*TOOLBOX_WIDTH.start(), *TOOLBOX_WIDTH.end()), (160, 1200));
+        assert_eq!((*RIGHT_DOCK_WIDTH.start(), *RIGHT_DOCK_WIDTH.end()), (200, 960));
+        assert_eq!(
+            (*BOTTOM_DOCK_HEIGHT.start(), *BOTTOM_DOCK_HEIGHT.end()),
+            (96, 720)
         );
     }
 }

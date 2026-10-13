@@ -10,7 +10,8 @@
 //!   "console": { "scrollbackLines": 10000 },
 //!   "toolchain": { "selectedId": null },
 //!   "newProject": { "standard": "c++20" },
-//!   "buildCache": { "maxBytes": 2147483648 }
+//!   "buildCache": { "maxBytes": 2147483648 },
+//!   "ui": { "layout": { "toolboxWidth": 360, "rightCollapsed": true } }
 //! }
 //! ```
 //!
@@ -26,9 +27,15 @@
 //!   a newer one wrote. A newer `formatVersion` is read the same way (its
 //!   known keys), gives a [`NoticeReason::NewerVersion`] notice, and is kept
 //!   on save.
-//! * Only [`SettingsPatch`] (code style, Run on errors, console) changes
-//!   settings from the UI; its JSON form rejects unknown keys. The selected
-//!   toolchain changes only through [`SettingsStore::set_selected_toolchain`].
+//! * `ui.layout` holds the sizes of the editor's toolbox and docks, and
+//!   whether each dock is hidden (04 §4.1). Each of its keys is optional: an
+//!   absent key means the app's first-start size, and `ui` is written only
+//!   once it holds something, so a file without it stays byte for byte as
+//!   it was. Each key is validated on its own like any other value.
+//! * Only [`SettingsPatch`] (code style, Run on errors, console, the
+//!   layout) changes settings from the UI; its JSON form rejects unknown
+//!   keys. The selected toolchain changes only through
+//!   [`SettingsStore::set_selected_toolchain`].
 //! * Every change is validated first, then written atomically (with the
 //!   current file on disk as the base, so concurrent app instances do not
 //!   undo each other's changes), and only then applied in memory. A mutex
@@ -69,6 +76,12 @@ pub const INDENT_WIDTHS: [u8; 2] = [2, 4];
 pub const SCROLLBACK_LINES: RangeInclusive<u32> = 1_000..=100_000;
 /// The allowed build cache size limit, in bytes (256 MiB to 1 TiB).
 pub const BUILD_CACHE_BYTES: RangeInclusive<u64> = 268_435_456..=1_099_511_627_776;
+/// The allowed width of the toolbox's flyout, in CSS pixels (`ui.layout.toolboxWidth`).
+pub const TOOLBOX_WIDTH: RangeInclusive<u32> = 160..=1200;
+/// The allowed width of the C++ dock, in CSS pixels (`ui.layout.rightDockWidth`).
+pub const RIGHT_DOCK_WIDTH: RangeInclusive<u32> = 200..=960;
+/// The allowed height of the bottom dock, in CSS pixels (`ui.layout.bottomDockHeight`).
+pub const BOTTOM_DOCK_HEIGHT: RangeInclusive<u32> = 96..=720;
 
 /// All machine settings, with defaults filled in.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -85,6 +98,8 @@ pub struct Settings {
     pub new_project: NewProjectSettings,
     /// The build cache.
     pub build_cache: BuildCacheSettings,
+    /// The window's own state, such as the layout of the editor.
+    pub ui: UiSettings,
 }
 
 /// How generated code is laid out (M2: indentation only).
@@ -166,9 +181,33 @@ impl Default for BuildCacheSettings {
     }
 }
 
-/// A partial update from the Settings page. Its JSON form
-/// (`{"codeStyle": {"indentWidth": 2}}`) rejects unknown keys at every
-/// level, so only code style, Run on errors and the console can change.
+/// The window's own state (`ui`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct UiSettings {
+    /// The layout of the editor (`ui.layout`).
+    pub layout: LayoutSettings,
+}
+
+/// The layout of the editor (04 §4.1), as the user last left it. A value
+/// that is `None` was never set: the app's first-start size applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LayoutSettings {
+    /// The width of the toolbox's flyout, within [`TOOLBOX_WIDTH`].
+    pub toolbox_width: Option<u32>,
+    /// The width of the C++ dock, within [`RIGHT_DOCK_WIDTH`].
+    pub right_dock_width: Option<u32>,
+    /// The height of the bottom dock, within [`BOTTOM_DOCK_HEIGHT`].
+    pub bottom_dock_height: Option<u32>,
+    /// Whether the C++ dock is hidden.
+    pub right_collapsed: Option<bool>,
+    /// Whether the bottom dock is hidden.
+    pub bottom_collapsed: Option<bool>,
+}
+
+/// A partial update from the Settings page and the editor's layout. Its
+/// JSON form (`{"codeStyle": {"indentWidth": 2}}`) rejects unknown keys at
+/// every level, so only code style, Run on errors, the console and the
+/// layout can change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsPatch {
@@ -181,6 +220,9 @@ pub struct SettingsPatch {
     /// Console setting changes.
     #[serde(default)]
     pub console: Option<ConsolePatch>,
+    /// Changes to the window's own state.
+    #[serde(default)]
+    pub ui: Option<UiPatch>,
 }
 
 /// Code style changes.
@@ -208,6 +250,36 @@ pub struct ConsolePatch {
     /// A new scrollback length (1,000 to 100,000 lines).
     #[serde(default)]
     pub scrollback_lines: Option<u32>,
+}
+
+/// Changes to the window's own state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UiPatch {
+    /// Layout changes.
+    #[serde(default)]
+    pub layout: Option<LayoutPatch>,
+}
+
+/// Layout changes: each value given replaces the stored one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LayoutPatch {
+    /// A new width of the toolbox's flyout, within [`TOOLBOX_WIDTH`].
+    #[serde(default)]
+    pub toolbox_width: Option<u32>,
+    /// A new width of the C++ dock, within [`RIGHT_DOCK_WIDTH`].
+    #[serde(default)]
+    pub right_dock_width: Option<u32>,
+    /// A new height of the bottom dock, within [`BOTTOM_DOCK_HEIGHT`].
+    #[serde(default)]
+    pub bottom_dock_height: Option<u32>,
+    /// Whether the C++ dock is hidden.
+    #[serde(default)]
+    pub right_collapsed: Option<bool>,
+    /// Whether the bottom dock is hidden.
+    #[serde(default)]
+    pub bottom_collapsed: Option<bool>,
 }
 
 /// Something the user should be told about the settings file.
@@ -275,7 +347,21 @@ enum Unusable {
 struct Extras {
     top: BTreeMap<String, Value>,
     sections: BTreeMap<&'static str, BTreeMap<String, Value>>,
+    /// Unknown keys in `ui.layout` (those of `ui` itself are in `sections`).
+    layout: BTreeMap<String, Value>,
 }
+
+/// The `ui` section.
+const UI: &str = "ui";
+
+/// The keys of `ui.layout`, in file order.
+const LAYOUT_KEYS: [&str; 5] = [
+    "toolboxWidth",
+    "rightDockWidth",
+    "bottomDockHeight",
+    "rightCollapsed",
+    "bottomCollapsed",
+];
 
 /// The known sections, in file order, with their known keys in file order.
 const SECTIONS: [(&str, &[&str]); 6] = [
@@ -342,6 +428,29 @@ impl SettingsStore {
                 "the console scrollback must be 1,000 to 100,000 lines",
             ));
         }
+        let layout = patch.ui.and_then(|ui| ui.layout).unwrap_or_default();
+        if !layout
+            .toolbox_width
+            .is_none_or(|width| TOOLBOX_WIDTH.contains(&width))
+        {
+            return Err(StoreError::Invalid(
+                "the toolbox must be 160 to 1,200 pixels wide",
+            ));
+        }
+        if !layout
+            .right_dock_width
+            .is_none_or(|width| RIGHT_DOCK_WIDTH.contains(&width))
+        {
+            return Err(StoreError::Invalid("the C++ dock must be 200 to 960 pixels wide"));
+        }
+        if !layout
+            .bottom_dock_height
+            .is_none_or(|height| BOTTOM_DOCK_HEIGHT.contains(&height))
+        {
+            return Err(StoreError::Invalid(
+                "the bottom dock must be 96 to 720 pixels high",
+            ));
+        }
         self.change(|settings| {
             if let Some(width) = patch.code_style.and_then(|style| style.indent_width) {
                 settings.code_style.indent_width = width;
@@ -352,6 +461,12 @@ impl SettingsStore {
             if let Some(lines) = patch.console.and_then(|console| console.scrollback_lines) {
                 settings.console.scrollback_lines = lines;
             }
+            let stored = &mut settings.ui.layout;
+            stored.toolbox_width = layout.toolbox_width.or(stored.toolbox_width);
+            stored.right_dock_width = layout.right_dock_width.or(stored.right_dock_width);
+            stored.bottom_dock_height = layout.bottom_dock_height.or(stored.bottom_dock_height);
+            stored.right_collapsed = layout.right_collapsed.or(stored.right_collapsed);
+            stored.bottom_collapsed = layout.bottom_collapsed.or(stored.bottom_collapsed);
         })
     }
 
@@ -463,8 +578,63 @@ fn load(path: &Path) -> Result<(State, Vec<SettingsNotice>), Unusable> {
                 .insert(section, object.into_iter().collect());
         }
     }
+    if let Some(ui) = root.remove(UI) {
+        load_ui(&mut state, ui, &mut notices);
+    }
     state.extras.top = root.into_iter().collect();
     Ok((state, notices))
+}
+
+/// Reads the `ui` section: each `ui.layout` value on its own, as [`load`]
+/// reads the other sections, and unknown keys kept.
+fn load_ui(state: &mut State, ui: Value, notices: &mut Vec<SettingsNotice>) {
+    let invalid = |key: String| SettingsNotice {
+        key,
+        reason: NoticeReason::InvalidValue,
+    };
+    let Value::Object(mut ui) = ui else {
+        notices.push(invalid(UI.to_owned()));
+        return;
+    };
+    match ui.remove("layout") {
+        None => {}
+        Some(Value::Object(mut layout)) => {
+            for key in LAYOUT_KEYS {
+                if let Some(value) = layout.remove(key)
+                    && !apply_layout(&mut state.settings.ui.layout, key, &value)
+                {
+                    notices.push(invalid(format!("ui.layout.{key}")));
+                }
+            }
+            state.extras.layout = layout.into_iter().collect();
+        }
+        Some(_) => notices.push(invalid("ui.layout".to_owned())),
+    }
+    if !ui.is_empty() {
+        state.extras.sections.insert(UI, ui.into_iter().collect());
+    }
+}
+
+/// Sets one `ui.layout` value if it is valid; whether it was.
+fn apply_layout(layout: &mut LayoutSettings, key: &str, value: &Value) -> bool {
+    let within = |range: &RangeInclusive<u32>| {
+        value
+            .as_u64()
+            .and_then(|number| u32::try_from(number).ok())
+            .filter(|number| range.contains(number))
+    };
+    let set = |slot: &mut Option<u32>, range: &RangeInclusive<u32>| {
+        within(range).map(|number| *slot = Some(number)).is_some()
+    };
+    let flag = |slot: &mut Option<bool>| value.as_bool().map(|on| *slot = Some(on)).is_some();
+    match key {
+        "toolboxWidth" => set(&mut layout.toolbox_width, &TOOLBOX_WIDTH),
+        "rightDockWidth" => set(&mut layout.right_dock_width, &RIGHT_DOCK_WIDTH),
+        "bottomDockHeight" => set(&mut layout.bottom_dock_height, &BOTTOM_DOCK_HEIGHT),
+        "rightCollapsed" => flag(&mut layout.right_collapsed),
+        "bottomCollapsed" => flag(&mut layout.bottom_collapsed),
+        _ => false,
+    }
 }
 
 /// Sets one known value if it is valid; whether it was.
@@ -540,6 +710,9 @@ fn to_json(state: &State) -> Result<Vec<u8>, StoreError> {
         }
         top.push((section, Entry::Object(entries)));
     }
+    if let Some(ui) = ui_entry(state) {
+        top.push((UI, ui));
+    }
     top.extend(
         state
             .extras
@@ -550,6 +723,43 @@ fn to_json(state: &State) -> Result<Vec<u8>, StoreError> {
     let mut bytes = serde_json::to_vec_pretty(&Entry::Object(top)).map_err(unserialisable)?;
     bytes.push(b'\n');
     Ok(bytes)
+}
+
+/// The `ui` section to write, or `None` while it holds nothing (no layout
+/// value set and no unknown key kept).
+fn ui_entry(state: &State) -> Option<Entry<'_>> {
+    let layout = &state.settings.ui.layout;
+    let values: [Option<Value>; 5] = [
+        layout.toolbox_width.map(Value::from),
+        layout.right_dock_width.map(Value::from),
+        layout.bottom_dock_height.map(Value::from),
+        layout.right_collapsed.map(Value::from),
+        layout.bottom_collapsed.map(Value::from),
+    ];
+    let mut layout_entries: Vec<(&str, Entry<'_>)> = LAYOUT_KEYS
+        .into_iter()
+        .zip(values)
+        .filter_map(|(key, value)| value.map(|value| (key, Entry::Plain(value))))
+        .collect();
+    layout_entries.extend(
+        state
+            .extras
+            .layout
+            .iter()
+            .map(|(key, value)| (key.as_str(), Entry::Kept(value))),
+    );
+    let mut entries: Vec<(&str, Entry<'_>)> = Vec::new();
+    if !layout_entries.is_empty() {
+        entries.push(("layout", Entry::Object(layout_entries)));
+    }
+    if let Some(extra) = state.extras.sections.get(UI) {
+        entries.extend(
+            extra
+                .iter()
+                .map(|(key, value)| (key.as_str(), Entry::Kept(value))),
+        );
+    }
+    (!entries.is_empty()).then_some(Entry::Object(entries))
 }
 
 /// A value to write, with object keys in a fixed order (`serde_json`'s own
@@ -940,6 +1150,171 @@ mod tests {
                 0o600
             );
         }
+    }
+
+    fn layout_patch(json: &str) -> SettingsPatch {
+        serde_json::from_str(&format!(r#"{{"ui": {{"layout": {json}}}}}"#)).unwrap()
+    }
+
+    #[test]
+    fn the_layout_is_written_only_once_set_and_then_read_back() {
+        let (dir, store, _) = store_with(None);
+        store.update(&SettingsPatch::default()).unwrap();
+        let file_path = dir.path().join(SETTINGS_FILE);
+        // Nothing set: no `ui` section, the first-start sizes apply.
+        assert_eq!(fs::read_to_string(&file_path).unwrap(), DEFAULT_FILE);
+        assert_eq!(store.get().ui, UiSettings::default());
+
+        let settings = store
+            .update(&layout_patch(
+                r#"{"rightDockWidth": 420, "bottomCollapsed": true}"#,
+            ))
+            .unwrap();
+        assert_eq!(settings.ui.layout.right_dock_width, Some(420));
+        assert_eq!(settings.ui.layout.bottom_collapsed, Some(true));
+        assert_eq!(settings.ui.layout.toolbox_width, None);
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            DEFAULT_FILE.replace(
+                "  }\n}\n",
+                "  },\n  \"ui\": {\n    \"layout\": {\n      \"rightDockWidth\": 420,\n      \"bottomCollapsed\": true\n    }\n  }\n}\n"
+            )
+        );
+
+        // A later change keeps what it does not name.
+        let settings = store
+            .update(&layout_patch(
+                r#"{"toolboxWidth": 160, "bottomDockHeight": 720, "rightCollapsed": false, "bottomCollapsed": false}"#,
+            ))
+            .unwrap();
+        let expected = LayoutSettings {
+            toolbox_width: Some(160),
+            right_dock_width: Some(420),
+            bottom_dock_height: Some(720),
+            right_collapsed: Some(false),
+            bottom_collapsed: Some(false),
+        };
+        assert_eq!(settings.ui.layout, expected);
+        let (reloaded, notices) = SettingsStore::open(dir.path());
+        assert!(notices.is_empty());
+        assert_eq!(reloaded.get().ui.layout, expected);
+        // And the file stays byte for byte through a load and a save.
+        let before = fs::read_to_string(&file_path).unwrap();
+        reloaded.update(&SettingsPatch::default()).unwrap();
+        assert_eq!(fs::read_to_string(&file_path).unwrap(), before);
+    }
+
+    #[test]
+    fn an_invalid_layout_value_is_reset_on_its_own_and_unknown_keys_are_kept() {
+        let file = DEFAULT_FILE.replace(
+            "  }\n}\n",
+            r#"  },
+  "ui": {
+    "layout": {
+      "toolboxWidth": 100,
+      "rightDockWidth": 300,
+      "bottomDockHeight": "tall",
+      "rightCollapsed": "yes",
+      "bottomCollapsed": true,
+      "splitDocks": true
+    },
+    "theme": "dark"
+  }
+}
+"#,
+        );
+        let (dir, store, notices) = store_with(Some(file.as_bytes()));
+        assert_eq!(
+            notices,
+            [
+                notice("ui.layout.toolboxWidth", NoticeReason::InvalidValue),
+                notice("ui.layout.bottomDockHeight", NoticeReason::InvalidValue),
+                notice("ui.layout.rightCollapsed", NoticeReason::InvalidValue),
+            ]
+        );
+        assert_eq!(
+            store.get().ui.layout,
+            LayoutSettings {
+                right_dock_width: Some(300),
+                bottom_collapsed: Some(true),
+                ..LayoutSettings::default()
+            }
+        );
+        // The reset values are dropped on the next save; the unknown keys stay.
+        store.update(&SettingsPatch::default()).unwrap();
+        let saved = fs::read_to_string(dir.path().join(SETTINGS_FILE)).unwrap();
+        assert!(saved.ends_with(
+            r#"  "ui": {
+    "layout": {
+      "rightDockWidth": 300,
+      "bottomCollapsed": true,
+      "splitDocks": true
+    },
+    "theme": "dark"
+  }
+}
+"#
+        ));
+
+        // Every range edge and kind of value.
+        for (layout, key) in [
+            (r#"{"toolboxWidth": 159}"#, "ui.layout.toolboxWidth"),
+            (r#"{"toolboxWidth": 1201}"#, "ui.layout.toolboxWidth"),
+            (r#"{"toolboxWidth": 320.5}"#, "ui.layout.toolboxWidth"),
+            (r#"{"rightDockWidth": 199}"#, "ui.layout.rightDockWidth"),
+            (r#"{"rightDockWidth": 961}"#, "ui.layout.rightDockWidth"),
+            (r#"{"bottomDockHeight": 95}"#, "ui.layout.bottomDockHeight"),
+            (r#"{"bottomDockHeight": 721}"#, "ui.layout.bottomDockHeight"),
+            (r#"{"bottomDockHeight": -1}"#, "ui.layout.bottomDockHeight"),
+            (r#"{"rightCollapsed": 1}"#, "ui.layout.rightCollapsed"),
+            (r#"{"bottomCollapsed": null}"#, "ui.layout.bottomCollapsed"),
+            ("[]", "ui.layout"),
+        ] {
+            let file = DEFAULT_FILE.replace(
+                "  }\n}\n",
+                &format!("  }},\n  \"ui\": {{\"layout\": {layout}}}\n}}\n"),
+            );
+            let (_dir, store, notices) = store_with(Some(file.as_bytes()));
+            assert_eq!(notices, [notice(key, NoticeReason::InvalidValue)], "{layout}");
+            assert_eq!(store.get(), Settings::default(), "{layout}");
+        }
+        let file = DEFAULT_FILE.replace("  }\n}\n", "  },\n  \"ui\": 7\n}\n");
+        let (_dir, _store, notices) = store_with(Some(file.as_bytes()));
+        assert_eq!(notices, [notice("ui", NoticeReason::InvalidValue)]);
+        // The edges themselves are valid.
+        let file = DEFAULT_FILE.replace(
+            "  }\n}\n",
+            "  },\n  \"ui\": {\"layout\": {\"toolboxWidth\": 1200, \"rightDockWidth\": 200, \"bottomDockHeight\": 96}}\n}\n",
+        );
+        let (_dir, store, notices) = store_with(Some(file.as_bytes()));
+        assert!(notices.is_empty());
+        assert_eq!(store.get().ui.layout.toolbox_width, Some(1200));
+    }
+
+    #[test]
+    fn invalid_layout_updates_change_nothing() {
+        let (dir, store, _) = store_with(None);
+        for json in [
+            r#"{"toolboxWidth": 159}"#,
+            r#"{"toolboxWidth": 1201}"#,
+            r#"{"rightDockWidth": 961}"#,
+            r#"{"bottomDockHeight": 95}"#,
+        ] {
+            assert!(
+                matches!(store.update(&layout_patch(json)), Err(StoreError::Invalid(_))),
+                "{json}"
+            );
+        }
+        for json in [
+            r#"{"ui": {"layout": {"dockSplit": true}}}"#,
+            r#"{"ui": {"theme": "dark"}}"#,
+            r#"{"ui": {"layout": {"rightCollapsed": "yes"}}}"#,
+            r#"{"ui": {"layout": {"toolboxWidth": -1}}}"#,
+        ] {
+            assert!(serde_json::from_str::<SettingsPatch>(json).is_err(), "{json}");
+        }
+        assert!(!dir.path().join(SETTINGS_FILE).exists());
+        assert_eq!(store.get(), Settings::default());
     }
 
     #[test]

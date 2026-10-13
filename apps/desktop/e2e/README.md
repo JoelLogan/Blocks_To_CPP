@@ -88,6 +88,7 @@ and that it reports exactly that version, and sets `B2C_E2E_NATIVE_DRIVER`.
 | `B2C_E2E_TAURI_DRIVER`      | `tauri-driver`                                                                                                                             | the one on `PATH`                                                                  |
 | `B2C_E2E_NATIVE_DRIVER`     | `tauri-driver --native-driver` (absolute)                                                                                                  | none: `tauri-driver` looks on `PATH`                                               |
 | `B2C_E2E_TOOLCHAIN_DIRS`    | Where the app looks for g++ (the app's own variable)                                                                                       | `/usr/bin` on Linux; required elsewhere                                            |
+| `B2C_E2E_WINDOW_SIZE`       | The app window's size, `WIDTHxHEIGHT` in CSS pixels, for every launch (the app's own variable; a test's `windowSize` launch option wins)   | none: the app's own size (1280 × 800, smaller on a smaller screen)                 |
 | `B2C_E2E_ARTIFACTS`         | Screenshots, logs and the Trusted Types report (absolute)                                                                                  | `blocks2cpp-e2e-artifacts` in the system's temporary folder                        |
 | `B2C_E2E_NATIVE_DRIVER_LOG` | A log the native driver appends to for the whole run (absolute); a failed test keeps the part written while it ran, as `native-driver.log` | none                                                                               |
 
@@ -128,7 +129,10 @@ they overlap. The hook's `timings()` gives the latest duration of each span.
 ## Writing a test
 
 `launchApp(context)` ([`support/app.ts`](support/app.ts)) starts the app for a test and closes it
-when the test ends. The helpers:
+when the test ends. Its option `windowSize` (also `launch({ windowSize })` of the flows' launcher)
+sets the window's size through the app's `B2C_E2E_WINDOW_SIZE` (end-to-end builds only), so a test
+lays the editor out alike on every system; WebDriver's `setRect` may not resize WebView2's web view.
+The app still keeps the window on the screen. The helpers:
 
 - [`support/ui.ts`](support/ui.ts): elements by `data-testid`, text also in hidden tabs, toolbox
   categories (`openCategory` returns once the flyout's scroll animation has ended, however many

@@ -398,6 +398,61 @@ diagnostics: Array<Diagnostic>, } | { "code": "io",
 kind: IoKind, } | { "code": "internal" };
 
 /**
+ * A change to `LayoutSettings`: each value given replaces the stored one.
+ */
+export type LayoutPatch = {
+/**
+ * The new width of the toolbox's flyout.
+ */
+toolboxWidth?: number,
+/**
+ * The new width of the C++ dock.
+ */
+rightDockWidth?: number,
+/**
+ * The new height of the bottom dock.
+ */
+bottomDockHeight?: number,
+/**
+ * Whether the C++ dock is now hidden.
+ */
+rightCollapsed?: boolean,
+/**
+ * Whether the bottom dock is now hidden.
+ */
+bottomCollapsed?: boolean, };
+
+/**
+ * The layout of the editor (`docs/spec/04-user-interface.md` §4.1), as the
+ * user last left it. An absent value was never set: the first-start size
+ * applies.
+ */
+export type LayoutSettings = {
+/**
+ * The width of the toolbox's flyout, within
+ * `TOOLBOX_WIDTH`.
+ */
+toolboxWidth?: number,
+/**
+ * The width of the C++ dock, within
+ * `RIGHT_DOCK_WIDTH`.
+ */
+rightDockWidth?: number,
+/**
+ * The height of the bottom dock, within
+ * `BOTTOM_DOCK_HEIGHT`.
+ */
+bottomDockHeight?: number,
+/**
+ * Whether the C++ dock is hidden.
+ */
+rightCollapsed?: boolean,
+/**
+ * Whether the bottom dock is hidden.
+ */
+bottomCollapsed?: boolean, };
+
+/**
  * A documentation page the app may open in the OS browser.
  */
 export type LinkId = "msys2Install" | "winlibs" | "diagnosticsReference";
@@ -1060,7 +1115,11 @@ newProject: NewProjectSettings,
 /**
  * The build cache.
  */
-buildCache: BuildCacheSettings, };
+buildCache: BuildCacheSettings,
+/**
+ * The window's own state.
+ */
+ui: UiSettings, };
 
 /**
  * The response of `settings_get`.
@@ -1104,7 +1163,11 @@ run?: RunSettingsPatch,
 /**
  * Console changes.
  */
-console?: ConsolePatch, };
+console?: ConsolePatch,
+/**
+ * Changes to the window's own state (the editor's layout).
+ */
+ui?: UiPatch, };
 
 /**
  * The response of `settings_update`.
@@ -1476,3 +1539,21 @@ export type TrustSource = "createdHere" | "project" | "folder";
  * Whether a project may be built and run.
  */
 export type TrustState = "trusted" | "restricted";
+
+/**
+ * A change to `UiSettings`.
+ */
+export type UiPatch = {
+/**
+ * Layout changes.
+ */
+layout?: LayoutPatch, };
+
+/**
+ * The window's own state.
+ */
+export type UiSettings = {
+/**
+ * The layout of the editor.
+ */
+layout: LayoutSettings, };

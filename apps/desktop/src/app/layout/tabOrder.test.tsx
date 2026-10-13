@@ -1,8 +1,8 @@
 /**
  * The Tab order through the window with the real block editor (docs/spec/04-user-interface.md
  * §4.7, §4.8): toolbar, then Blockly's toolbox, the toolbox's blocks and the canvas (in that order,
- * which the keyboard plugin sets), then the docks. Inside the editor the arrow keys take over
- * (src/editor/keyboard/); Tab always leaves it.
+ * which the keyboard plugin sets), the *Resize the toolbox* splitter, then the docks. Inside the
+ * editor the arrow keys take over (src/editor/keyboard/); Tab always leaves it.
  */
 import { act, render, screen } from '@testing-library/react';
 import * as Blockly from 'blockly/core';
@@ -118,7 +118,7 @@ describe('the Tab order with the block editor', () => {
     screen.getByRole('button', { name: /^Build/ }).focus();
 
     const reached: string[] = [];
-    for (let step = 0; step < 5; step++) {
+    for (let step = 0; step < 6; step++) {
       tab();
       reached.push(where());
     }
@@ -126,12 +126,17 @@ describe('the Tab order with the block editor', () => {
       'toolbox',
       'toolbox blocks',
       'canvas',
+      // After the canvas (and its own controls), not between the toolbox's blocks and the canvas:
+      // Blockly hears every key pressed inside its injection div first.
+      'separator: Resize the toolbox',
       'separator: Resize the C++ panel',
       'button: Hide the C++ panel',
     ]);
 
     // And back.
     tab(true);
+    tab(true);
+    expect(where()).toBe('separator: Resize the toolbox');
     tab(true);
     expect(where()).toBe('canvas');
     tab(true);
@@ -165,7 +170,7 @@ describe('the Tab order with the block editor', () => {
     press('ArrowDown', 40);
     expect(status?.textContent).toMatch(/^block “create int variable guess”/);
     tab();
-    expect(where()).toBe('separator: Resize the C++ panel');
+    expect(where()).toBe('separator: Resize the toolbox');
     await expectNoAxeViolations(container);
     // axe goes through the whole window and Blockly's SVG: slow when the suite runs in parallel.
   }, 60_000);

@@ -335,7 +335,7 @@ separately.
 | `run_stop` | `{ runId }` | `{}` | Kills the whole process tree. |
 | `run_ack` | `{ runId, seq }` | `{}` | Flow control for the output channel (§2.5.3). |
 | `settings_get` | `{}` | `{ settings, notices }` | The full settings with defaults filled in ([05 §5.9](05-project-format.md#59-machine-local-data)). |
-| `settings_update` | `{ codeStyle?, run?, console? }` | `{ settings }` | A strict partial update. Any other key, including `toolchain`, `newProject` and `buildCache`, is rejected. |
+| `settings_update` | `{ codeStyle?, run?, console?, ui? }`; `ui` takes a partial `layout` ([05 §5.9](05-project-format.md#59-machine-local-data)) | `{ settings }` | A strict partial update. Any other key, including `toolchain`, `newProject` and `buildCache`, is rejected. |
 | `open_help_link` | `{ linkId }` | `{}` | `msys2Install`, `winlibs` or `diagnosticsReference`, each mapped to a fixed `https` URL. No arbitrary URLs ([08 §8.8](08-security.md#88-webview-and-ipc-hardening)). |
 
 **Not in M2:** `project_export_dialog { handle, document, options }` (export

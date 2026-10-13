@@ -250,6 +250,51 @@ describe('request fields', () => {
       assert.equal(accepts('settings_update', { request }), false, JSON.stringify(request));
     }
   });
+
+  test('settings_update takes the layout only as five sizes and flags within range', () => {
+    const layout = (fields) => ({ request: { ui: { layout: fields } } });
+    assert.ok(accepts('settings_update', { request: { ui: {} } }));
+    assert.ok(accepts('settings_update', layout({})));
+    assert.ok(
+      accepts(
+        'settings_update',
+        layout({
+          toolboxWidth: 160,
+          rightDockWidth: 960,
+          bottomDockHeight: 96,
+          rightCollapsed: true,
+          bottomCollapsed: false,
+        }),
+      ),
+    );
+    assert.ok(accepts('settings_update', layout({ toolboxWidth: 1200, rightDockWidth: 200 })));
+    for (const request of [
+      // Out of range.
+      { ui: { layout: { toolboxWidth: 159 } } },
+      { ui: { layout: { toolboxWidth: 1201 } } },
+      { ui: { layout: { rightDockWidth: 199 } } },
+      { ui: { layout: { rightDockWidth: 961 } } },
+      { ui: { layout: { bottomDockHeight: 95 } } },
+      { ui: { layout: { bottomDockHeight: 721 } } },
+      // Extra keys.
+      { ui: { theme: 'dark' } },
+      { ui: { layout: { splitDocks: true } } },
+      { ui: { layout: {}, extra: 1 } },
+      // Wrong types.
+      { ui: null },
+      { ui: [] },
+      { ui: { layout: null } },
+      { ui: { layout: 'wide' } },
+      { ui: { layout: { toolboxWidth: '320' } } },
+      { ui: { layout: { toolboxWidth: 320.5 } } },
+      { ui: { layout: { toolboxWidth: Number.NaN } } },
+      { ui: { layout: { rightCollapsed: 1 } } },
+      { ui: { layout: { bottomCollapsed: 'false' } } },
+      { ui: { layout: { rightCollapsed: null } } },
+    ]) {
+      assert.equal(accepts('settings_update', { request }), false, JSON.stringify(request));
+    }
+  });
 });
 
 describe('prototype pollution', () => {

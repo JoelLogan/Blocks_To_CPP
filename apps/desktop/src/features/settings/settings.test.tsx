@@ -7,6 +7,7 @@ import { IpcCallError } from '@blocks2cpp/ipc-types';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { rememberLayout } from '../../app/layout/rememberedLayout';
 import { runGate } from '../../app/runGate';
 import { resetAppStore, useAppStore } from '../../app/store';
 import {
@@ -19,6 +20,7 @@ import {
 import { expectNoAxeViolations } from '../../test/axe';
 import { CLEAR_CACHE_CONFIRMATION, settingsFailureText } from './controller';
 import { createSettingsFeature } from './feature';
+import { LAYOUT_WRITE_DELAY_MS } from './layout';
 import {
   createSettingsSectionRegistry,
   registerSettingsSection,
@@ -384,6 +386,75 @@ describe('the Settings page', () => {
   });
 });
 
+describe('remembering the layout', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('writes the changes together, half a second after the last one', async () => {
+    const page = install();
+    const layout = { rightDockWidth: 300, toolboxWidth: 200 };
+    page.ipc.settingsUpdate.mockResolvedValue(updated(settingsFixture({ ui: { layout } })));
+
+    rememberLayout({ rightDockWidth: 290 });
+    vi.advanceTimersByTime(LAYOUT_WRITE_DELAY_MS - 100);
+    rememberLayout({ rightDockWidth: 300 });
+    rememberLayout({ toolboxWidth: 200 });
+    vi.advanceTimersByTime(LAYOUT_WRITE_DELAY_MS - 1);
+    expect(page.ipc.settingsUpdate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(page.ipc.settingsUpdate.mock.calls).toEqual([[{ ui: { layout } }]]);
+    expect(useAppStore.getState().settings.value?.ui.layout).toEqual(layout);
+  });
+
+  it('only logs a layout that could not be saved: the page shows no error for it', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const page = install();
+    page.ipc.settingsUpdate.mockRejectedValue(
+      new IpcCallError('settings_update', { code: 'io', kind: 'permissionDenied' }),
+    );
+    rememberLayout({ bottomCollapsed: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LAYOUT_WRITE_DELAY_MS);
+    });
+    expect(page.ipc.settingsUpdate).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('The layout could not be remembered', 'io');
+    expect(useAppStore.getState().settings.value?.ui.layout).toEqual({});
+
+    renderScreen(page, 'settings');
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(screen.queryByText(settingsFailureText('update', 'io'))).toBeNull();
+  });
+
+  it('writes what is left at once when uninstalled, and then takes no more changes', async () => {
+    const page = install();
+    page.ipc.settingsUpdate.mockResolvedValue(updated(settingsFixture()));
+    rememberLayout({ bottomDockHeight: 150 });
+    uninstall?.();
+    uninstall = null;
+    // The write is queued behind the updates before it: no timer.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(page.ipc.settingsUpdate.mock.calls).toEqual([
+      [{ ui: { layout: { bottomDockHeight: 150 } } }],
+    ]);
+
+    rememberLayout({ bottomDockHeight: 200 });
+    vi.advanceTimersByTime(LAYOUT_WRITE_DELAY_MS * 2);
+    expect(page.ipc.settingsUpdate).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('the settings notices banner', () => {
   it('appears for notices, opens the page and can be dismissed', async () => {
     const created = install();
@@ -482,6 +553,10 @@ describe('texts', () => {
   it('names settings keys and explains notices', () => {
     expect(settingLabel('toolchain.selectedId')).toBe('Toolchain: the default compiler');
     expect(settingLabel('run')).toBe('Run on errors');
+    expect(settingLabel('ui.layout.rightDockWidth')).toBe("Layout: the C++ panel's width");
+    expect(noticeText({ key: 'ui.layout', reason: 'invalidValue' })).toBe(
+      "The window's layout had a value that is not allowed and was reset to its default.",
+    );
     expect(settingLabel('lints.‮evil')).toBe('The setting “lints.⟨U+202E⟩evil”');
     expect(settingLabel('x'.repeat(100))).toHaveLength('The setting “”'.length + 64);
     expect(settingLabel('__proto__')).toBe('The setting “__proto__”');

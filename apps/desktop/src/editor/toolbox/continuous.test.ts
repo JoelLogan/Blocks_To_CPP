@@ -4,15 +4,20 @@
  * - it lands on a chosen category at every zoom level: the scroll goes half a unit past the
  *   category's heading, so that the plugin's own selection by scroll position
  *   (`@blockly/continuous-toolbox` 7.0.9) picks that category again;
- * - it draws its blocks at one scale whatever the canvas zoom, and is at most 320 px wide,
- *   narrower when the canvas would have less than 200 px beside it;
- * - after every showing, the canvas knows where it is as a place where a drop deletes, at any
- *   height (03 §3.3 "Placing blocks").
+ * - it draws its blocks at one scale whatever the canvas zoom, and is at most 320 px wide unless
+ *   the user chose another width (160 px and up), narrower when the canvas would have less than
+ *   200 px beside it;
+ * - it tells the window's layout where it is and how wide it may be made, and takes the width
+ *   the user chose from it;
+ * - after every showing, and after every change of its width, the canvas knows where it is as a
+ *   place where a drop deletes, at any height (03 §3.3 "Placing blocks").
  */
 import { ContinuousFlyout } from '@blockly/continuous-toolbox';
+import { b2cLightTheme } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { type FlyoutLayout, listenToFlyoutLayout } from '../../app/layout/flyoutLayout';
 import {
   B2cContinuousFlyout,
   B2cContinuousToolbox,
@@ -20,7 +25,9 @@ import {
   FLYOUT_SCALE,
   FLYOUT_WIDTH,
   flyoutWidth,
+  flyoutWidthLimit,
 } from './continuous';
+import { toolboxInjectOptions } from './register';
 import { disposeTestWorkspaces, injectedWorkspace, setUpToolboxBlocks } from './testing';
 
 beforeAll(() => {
@@ -204,7 +211,27 @@ describe('the flyout width rule', () => {
     for (const [natural, room, width] of cases) {
       expect(flyoutWidth(natural, room), `${String(natural)} in ${String(room)}`).toBe(width);
     }
-    expect(FLYOUT_WIDTH).toEqual({ preferred: 320, min: 160, canvas: 200 });
+    expect(FLYOUT_WIDTH).toEqual({ preferred: 320, min: 160, max: 1200, canvas: 200 });
+  });
+
+  it('takes the width the user chose, from 160 px up to what leaves the canvas 200 px', () => {
+    // [chosen width, room for the flyout and the canvas, width]
+    const cases: [number, number, number][] = [
+      [500, 794, 500], // wider than the default and than its blocks
+      [200, 794, 200], // narrower than its blocks: they are cut off
+      [700, 794, 594], // 200 px of canvas left
+      [100, 794, 160], // no narrower than 160 px
+      [500, 314, 160], // the smallest window with the C++ panel shown
+      [2000, 3000, 1200], // no wider than 1200 px
+    ];
+    for (const [chosen, room, width] of cases) {
+      expect(flyoutWidth(600, room, chosen), `${String(chosen)} in ${String(room)}`).toBe(width);
+      // Whatever the contents need.
+      expect(flyoutWidth(0, room, chosen)).toBe(width);
+    }
+    expect(flyoutWidthLimit(794)).toBe(594);
+    expect(flyoutWidthLimit(314)).toBe(160);
+    expect(flyoutWidthLimit(5000)).toBe(1200);
   });
 });
 
@@ -398,5 +425,141 @@ describe('the flyout as a place where a drop deletes', () => {
       }
       expect(dropTargetAt(workspace, right + 1, y), `y = ${String(y)}`).toBeNull();
     }
+  });
+});
+
+/** Stops the listeners of {@link announcements}. */
+const stopListening: (() => void)[] = [];
+
+afterEach(() => {
+  for (const stop of stopListening.splice(0)) {
+    stop();
+  }
+});
+
+/** Everything a flyout on the page announces to the layout around it, from now on. */
+function announcements(): FlyoutLayout[] {
+  const announced: FlyoutLayout[] = [];
+  stopListening.push(
+    listenToFlyoutLayout(document.body, (layout, from) => {
+      expect(from.classList.contains('injectionDiv')).toBe(true);
+      announced.push(layout);
+    }),
+  );
+  return announced;
+}
+
+/** The layout the flyout announced last. */
+function lastOf(announced: readonly FlyoutLayout[]): FlyoutLayout {
+  const last = announced.at(-1);
+  if (last === undefined) {
+    throw new Error('nothing was announced');
+  }
+  return last;
+}
+
+describe('the width the user chooses (the Resize the toolbox splitter)', () => {
+  it('is offered to the layout with the flyout’s place and how wide it may be made', () => {
+    const announced = announcements();
+    const workspace = laidOutWorkspace();
+    const flyout = continuousFlyout(workspace);
+    const contents = workspaceContents(workspace);
+    flyout.show(contents);
+    const layout = lastOf(announced);
+    expect(layout).toMatchObject({ left: COLUMN, width: flyout.getWidth(), min: 160 });
+    // 1000 px less the category column, less 200 px of canvas.
+    expect(layout.max).toBe(1000 - COLUMN - 200);
+
+    // Nothing changed: the layout hears nothing (a rebuild of a dynamic category).
+    const count = announced.length;
+    flyout.show(contents);
+    flyout.show(contents);
+    expect(announced).toHaveLength(count);
+
+    // A smaller window: the flyout may be made less wide.
+    resizeWorkspace(workspace, 700);
+    expect(lastOf(announced).max).toBe(700 - COLUMN - 200);
+
+    // Only the toolbox's flyout: the trash can's own (the same class, never shown) is not heard of.
+    expect(workspace.trashcan?.flyout).toBeInstanceOf(B2cContinuousFlyout);
+    expect(new Set(announced.map((layout) => layout.setWidth)).size).toBe(1);
+  });
+
+  it('is taken, kept within 160 px and what leaves the canvas 200 px, and kept as the window changes', () => {
+    const announced = announcements();
+    const workspace = laidOutWorkspace();
+    const flyout = continuousFlyout(workspace);
+    widestItem(flyout, 900);
+    flyout.reflow();
+    expect(flyout.getWidth()).toBe(320);
+
+    lastOf(announced).setWidth(500);
+    expect(flyout.getWidth()).toBe(500);
+    expect(lastOf(announced).width).toBe(500);
+    expect(workspace.getMetricsManager().getAbsoluteMetrics().left).toBe(COLUMN + 500);
+
+    // A narrower window narrows it; a wider one gives it back the width the user chose.
+    resizeWorkspace(workspace, COLUMN + 450);
+    expect(flyout.getWidth()).toBe(250);
+    resizeWorkspace(workspace, 1000);
+    expect(flyout.getWidth()).toBe(500);
+
+    lastOf(announced).setWidth(50);
+    expect(flyout.getWidth()).toBe(160);
+    lastOf(announced).setWidth(5000);
+    expect(flyout.getWidth()).toBe(1000 - COLUMN - 200);
+    // Back to the default: as wide as its blocks, at most 320 px.
+    lastOf(announced).setWidth(null);
+    expect(flyout.getWidth()).toBe(320);
+  });
+
+  it('is kept when the blocks are shown again and when the canvas zooms', () => {
+    const announced = announcements();
+    const workspace = laidOutWorkspace();
+    const flyout = continuousFlyout(workspace);
+    const contents = workspaceContents(workspace);
+    flyout.show(contents);
+    lastOf(announced).setWidth(400);
+    const resize = vi.spyOn(workspace, 'resizeContents');
+    flyout.show(contents);
+    expect(flyout.getWidth()).toBe(400);
+    workspace.setScale(2);
+    expect(flyout.getWidth()).toBe(400);
+    // Choosing the width it has already resizes nothing.
+    lastOf(announced).setWidth(400);
+    expect(resize).not.toHaveBeenCalled();
+    expect(flyout.getWorkspace().scale).toBe(FLYOUT_SCALE);
+  });
+
+  it('moves the place where a drop deletes with the flyout’s edge', () => {
+    const announced = announcements();
+    const workspace = laidOutWorkspace();
+    const flyout = continuousFlyout(workspace);
+    flyout.show(workspaceContents(workspace));
+    for (const width of [480, 200]) {
+      lastOf(announced).setWidth(width);
+      expect(dropTargetAt(workspace, COLUMN + width - 1)).toBe('the toolbox');
+      expect(dropTargetAt(workspace, COLUMN + width + 1)).toBeNull();
+    }
+  });
+
+  it('tells the layout when the flyout is gone', () => {
+    const announced = announcements();
+    // A workspace of the test's own, which it disposes itself.
+    const host = document.createElement('div');
+    document.body.append(host);
+    const options = toolboxInjectOptions();
+    const workspace = Blockly.inject(host, {
+      renderer: 'zelos',
+      theme: b2cLightTheme,
+      sounds: false,
+      toolbox: options.toolbox,
+      plugins: { ...options.plugins },
+    });
+    resizeWorkspace(workspace, 1000);
+    continuousFlyout(workspace).show(workspaceContents(workspace));
+    expect(lastOf(announced).width).toBeGreaterThan(0);
+    workspace.dispose();
+    expect(lastOf(announced).width).toBe(0);
   });
 });

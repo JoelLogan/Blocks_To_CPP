@@ -77,8 +77,25 @@
   around the pointer; `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom from the keyboard.
   The controls are named buttons at the top right of the canvas, never over
   the toolbox, and reachable with Tab after the canvas.
-* Docks are resizable and collapsible. Swapping, splitting and remembering
-  them, Focus mode and Presentation mode come in M5.
+* On first start the window opens at 1280 × 800, made smaller when the
+  screen's work area is smaller (where the system names no primary monitor,
+  as under Wayland, the app fits it to the monitor it opens on). The C++ dock
+  starts at 30 % of the window's width (280–480 px) and the bottom dock at
+  28 % of its height (120–280 px); each follows the window's size until it
+  is resized. Each dock takes at most 65 % of the window, and the C++ dock
+  never leaves the canvas less than 200 px beside the toolbox's flyout at its
+  narrowest; resizing the window keeps these limits. The toolbox's flyout and
+  the docks are resizable by pointer and keyboard, and the docks are
+  collapsible. When less than 200 px of canvas would remain, the flyout
+  narrows first, then the C++ dock, which is hidden when even its narrowest
+  width does not fit and shown again when it fits. The flyout's width, the
+  docks' sizes and whether each dock is hidden are remembered on this
+  computer ([05 §5.9](05-project-format.md#59-machine-local-data)); a dock
+  hidden only because it did not fit is remembered as shown. Swapping and
+  splitting docks, Focus mode and Presentation mode come in M5.
+* A canvas opens with the view it was saved with; one saved without a view
+  (a template) shows its blocks in the middle of the canvas, or their
+  top-left corner when they do not fit, clear of the toolbox.
 * The status bar says *Saved* (with the time after a save in this session)
   or *Unsaved* while there are unsaved changes or the project has no file
   yet.
@@ -94,10 +111,12 @@
   show current names. Choosing a category scrolls the flyout to it, and that
   category stays selected at every zoom level; scrolling by hand selects the
   category at the top. The flyout shows its blocks at one size whatever the
-  canvas zoom (three quarters of their size at 100 %), is as wide as its
-  widest block up to 320 px, is opaque, and cuts off a block wider than
-  itself (which can still be dragged out). When less than 200 px of canvas
-  would remain beside it, the flyout narrows, down to 160 px.
+  canvas zoom (three quarters of their size at 100 %), is as wide as the user
+  drags its edge with the *Resize the toolbox* splitter (from 160 px; by
+  default as wide as its widest block, up to 320 px), is opaque, and cuts off
+  a block wider than itself (which can still be dragged out). When less than
+  200 px of canvas would remain beside it, the flyout narrows, down to
+  160 px.
 * **Dynamic categories.** *Variables* lists the symbols in scope at the
   current selection; for a block selected with a click it does so once the
   button is released, however long it was held. *Functions* lists *define*
@@ -402,13 +421,14 @@ console and selected text.
   primitives.
 * **In M2** every panel and dialog is checked with axe-core in the component
   tests and reachable by keyboard, and the Tab order runs toolbar, toolbox,
-  the toolbox's blocks, canvas, the canvas's zoom controls, then the docks.
-  The canvas and the toolbox's blocks have names and describe their keys; a
-  polite live region announces the block or place the keyboard reaches;
-  Blockly's own animations, and the toolbox's scroll to a category, follow the
-  reduced-motion setting; focus returns where it was when a dialog closes, the
-  block canvas included; and it stays in the editor when the focused block is
-  deleted or the toolbox's blocks are rebuilt.
+  the toolbox's blocks, canvas, the canvas's zoom controls, the *Resize the
+  toolbox* separator, then the docks. The canvas and the toolbox's blocks
+  have names and describe their keys; a polite live region announces the
+  block or place the keyboard reaches; Blockly's own animations, and the
+  toolbox's scroll to a category, follow the reduced-motion setting; focus
+  returns where it was when a dialog closes, the block canvas included; and
+  it stays in the editor when the focused block is deleted or the toolbox's
+  blocks are rebuilt.
   The manual screen-reader pass (NVDA, Orca) follows
   [the M2 accessibility checklist](../manual-tests/m2-accessibility.md). The
   High Contrast themes, the checked colour-blind-safe palette, UI scaling,
@@ -541,5 +561,5 @@ greyed-out menu items, buttons or shortcuts that lead nowhere.
 | --- | --- |
 | M3 | Typing in expression slots, *Expand* / *Collapse* and Quick Insert (`Ctrl+Space`); the type picker popover; collection, string, struct, enum, file, error, random and time blocks; multi-module tabs and headers (adding, renaming and deleting modules); *Export* (`project_export_dialog`); the friendly g++ message catalog; globals, constants, math functions, conversions and organisation blocks; Textbook style; the Friendly / C++ label switch and *Show advanced blocks*; toolbox search; the project settings dialog (standard, options, configurations, defines); run options (arguments, working directory, stdin file, external terminal); quick fixes and *Copy bug report*; feature gating in the UI |
 | M4 | Classes, lambdas, memory, templates and concurrency blocks; library packs and the *Libraries* category; Raw C++ blocks and the *Contains Raw C++ (n)* indicator; the extra-flags and environment pass-through settings |
-| M5 | Outline, frames, search, rename (`F2`), go to definition (`F12`), find references (`Shift+F12`), snippets, minimap, tidy-up beyond *Clean up blocks*, collapse to signatures, back/forward and bookmarks; the debugger, breakpoints, trace glow and runtime errors on blocks (§4.11); localisation; the command palette and remappable shortcuts; Focus and Presentation modes; swapping, splitting and remembering docks; High Contrast themes and the checked colour-blind-safe palette; lint levels (*Change level…*, lint lists); build and run settings (timeouts, cache size, link mode, caps); the example gallery and the full template set; *Export diagnostics bundle* |
+| M5 | Outline, frames, search, rename (`F2`), go to definition (`F12`), find references (`Shift+F12`), snippets, minimap, tidy-up beyond *Clean up blocks*, collapse to signatures, back/forward and bookmarks; the debugger, breakpoints, trace glow and runtime errors on blocks (§4.11); localisation; the command palette and remappable shortcuts; Focus and Presentation modes; swapping and splitting docks; High Contrast themes and the checked colour-blind-safe palette; lint levels (*Change level…*, lint lists); build and run settings (timeouts, cache size, link mode, caps); the example gallery and the full template set; *Export diagnostics bundle* |
 | M6 | The updater and the first-run update question, sandboxed runs, installers |
