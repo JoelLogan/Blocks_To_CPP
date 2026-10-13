@@ -40,7 +40,7 @@ describe('blockReference', () => {
     const page = files.get('variables.md') ?? '';
     expect(page).toContain('| Block | Friendly label |');
     expect(page).toContain(
-      '## In the toolbox\n\nThe editor also adds a getter for every variable in scope at the selected block, and the blocks that change a variable, preset to it: nothing.\n',
+      '## In the toolbox\n\nThe editor also adds, each with a variable already chosen, a getter for each variable and the blocks that change one ([spec §4.2](../../spec/04-user-interface.md#42-toolbox)): nothing.\n',
     );
   });
 });

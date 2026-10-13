@@ -6,12 +6,12 @@ Every block of the Blocks2Cpp core catalog, by toolbox category. The editor and 
 compiler both use the catalog, and this reference is generated from it, so the three
 always agree ([spec §3.11.1](../../spec/03-block-language.md#3111-catalog-format)).
 
-Catalog version: 1.1.0.
+Catalog version: 1.2.0.
 
 | Category | Icon | Blocks |
 | --- | --- | --- |
 | [Program](program.md) | ▶ | 2 |
-| [Variables](variables.md) | 𝑥 | 5 |
+| [Variables](variables.md) | 𝑥 | 4 |
 | [Math](math.md) | ∑ | 5 |
 | [Logic](logic.md) | ◇ | 4 |
 | [Text](text.md) | “ ” | 3 |

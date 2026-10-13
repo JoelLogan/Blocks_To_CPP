@@ -145,7 +145,7 @@ export interface ToolboxCategoryJson {
 }
 
 /** The catalog version (semver of catalog/). */
-export const CATALOG_VERSION = '1.1.0';
+export const CATALOG_VERSION = '1.2.0';
 
 /** Every block definition of the catalog, sorted by ID. */
 export const BLOCK_DEFS: readonly BlockDefJson[] = [
@@ -829,12 +829,27 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     version: 1,
     category: 'variables',
     shape: 'statement',
-    label: { friendly: 'change %VAR by %BY', cpp: '%VAR += %BY;' },
-    labelParts: [{ text: 'change' }, { arg: 'VAR' }, { text: 'by' }, { arg: 'BY' }],
+    label: { friendly: 'change %VAR %OP %BY', cpp: '%VAR %OP %BY;' },
+    labelParts: [{ text: 'change' }, { arg: 'VAR' }, { arg: 'OP' }, { arg: 'BY' }],
     statementsNotInLabel: [],
-    help: 'Adds to a variable.',
+    help: 'Adds to a variable (+=); choose down by (-=), times (*=), divided by (/=) or mod (%=) in the menu to subtract, multiply, divide or keep the remainder instead.',
     output: null,
-    fields: [{ name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null }],
+    fields: [
+      { name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null },
+      {
+        name: 'OP',
+        kind: 'dropdown',
+        options: [
+          ['by', 'add'],
+          ['down by', 'sub'],
+          ['times', 'mul'],
+          ['divided by', 'div'],
+          ['mod', 'mod'],
+        ],
+        types: [],
+        default: 'add',
+      },
+    ],
     inputs: [
       { name: 'BY', check: 'number', optional: false, repeat: null, default: [{ num: '1' }] },
     ],
@@ -905,38 +920,6 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     output: null,
     fields: [{ name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null }],
     inputs: [{ name: 'VALUE', check: 'any', optional: false, repeat: null, default: [] }],
-    statements: [],
-    extra: [],
-  },
-  {
-    id: 'var.update',
-    version: 1,
-    category: 'variables',
-    shape: 'statement',
-    label: { friendly: '%VAR %OP %VALUE', cpp: '%VAR %OP %VALUE;' },
-    labelParts: [{ arg: 'VAR' }, { arg: 'OP' }, { arg: 'VALUE' }],
-    statementsNotInLabel: [],
-    help: 'Updates a variable with an operator, such as multiplying it.',
-    output: null,
-    fields: [
-      { name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null },
-      {
-        name: 'OP',
-        kind: 'dropdown',
-        options: [
-          ['+=', 'add'],
-          ['-=', 'sub'],
-          ['*=', 'mul'],
-          ['/=', 'div'],
-          ['%=', 'mod'],
-        ],
-        types: [],
-        default: 'add',
-      },
-    ],
-    inputs: [
-      { name: 'VALUE', check: 'number', optional: false, repeat: null, default: [{ num: '1' }] },
-    ],
     statements: [],
     extra: [],
   },

@@ -1,5 +1,5 @@
 {
-  "catalogVersion": "1.1.0",
+  "catalogVersion": "1.2.0",
   "blocks": [
     {
       "id": "control.break",
@@ -1207,12 +1207,12 @@
       "shape": "statement",
       "output": null,
       "label": {
-        "friendly": "change %VAR by %BY",
-        "cpp": "%VAR += %BY;"
+        "friendly": "change %VAR %OP %BY",
+        "cpp": "%VAR %OP %BY;"
       },
       "lowering": "builtin",
       "headers": [],
-      "help": "Adds to a variable.",
+      "help": "Adds to a variable (+=); choose down by (-=), times (*=), divided by (/=) or mod (%=) in the menu to subtract, multiply, divide or keep the remainder instead.",
       "field": [
         {
           "name": "VAR",
@@ -1220,6 +1220,34 @@
           "options": [],
           "types": [],
           "default": null
+        },
+        {
+          "name": "OP",
+          "kind": "dropdown",
+          "options": [
+            [
+              "by",
+              "add"
+            ],
+            [
+              "down by",
+              "sub"
+            ],
+            [
+              "times",
+              "mul"
+            ],
+            [
+              "divided by",
+              "div"
+            ],
+            [
+              "mod",
+              "mod"
+            ]
+          ],
+          "types": [],
+          "default": "add"
         }
       ],
       "input": [
@@ -1348,72 +1376,6 @@
           "optional": false,
           "repeat": null,
           "default": []
-        }
-      ],
-      "statement": [],
-      "extra": []
-    },
-    {
-      "id": "var.update",
-      "version": 1,
-      "category": "variables",
-      "shape": "statement",
-      "output": null,
-      "label": {
-        "friendly": "%VAR %OP %VALUE",
-        "cpp": "%VAR %OP %VALUE;"
-      },
-      "lowering": "builtin",
-      "headers": [],
-      "help": "Updates a variable with an operator, such as multiplying it.",
-      "field": [
-        {
-          "name": "VAR",
-          "kind": "symbol_ref",
-          "options": [],
-          "types": [],
-          "default": null
-        },
-        {
-          "name": "OP",
-          "kind": "dropdown",
-          "options": [
-            [
-              "+=",
-              "add"
-            ],
-            [
-              "-=",
-              "sub"
-            ],
-            [
-              "*=",
-              "mul"
-            ],
-            [
-              "/=",
-              "div"
-            ],
-            [
-              "%=",
-              "mod"
-            ]
-          ],
-          "types": [],
-          "default": "add"
-        }
-      ],
-      "input": [
-        {
-          "name": "VALUE",
-          "check": "number",
-          "optional": false,
-          "repeat": null,
-          "default": [
-            {
-              "num": "1"
-            }
-          ]
         }
       ],
       "statement": [],

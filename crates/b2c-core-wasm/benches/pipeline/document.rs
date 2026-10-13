@@ -129,12 +129,12 @@ fn unit(ids: &mut Ids, unit: usize) -> [Value; 3] {
         "fields": { "VAR": { "ref": value } },
         "inputs": { "BY": { "expr": [{ "ref": counter }] } },
     });
-    let update = json!({
+    let down_by = json!({
         "id": ids.next(),
-        "type": "var.update",
+        "type": "var.change",
         "v": 1,
         "fields": { "OP": "sub", "VAR": { "ref": value } },
-        "inputs": { "VALUE": num(1) },
+        "inputs": { "BY": num(1) },
     });
     let branch = json!({
         "id": if_id,
@@ -146,7 +146,7 @@ fn unit(ids: &mut Ids, unit: usize) -> [Value; 3] {
                 { "ref": counter }, { "op": "%" }, { "num": "2" }, { "op": "==" }, { "num": "0" },
             ] },
         },
-        "statements": { "DO0": [change], "ELSE": [update] },
+        "statements": { "DO0": [change], "ELSE": [down_by] },
     });
     let for_loop = json!({
         "id": loop_id,

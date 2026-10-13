@@ -135,12 +135,12 @@ describe('selectionTargets', () => {
   );
   const targets = selectionTargets(1_000);
 
-  it('names 8 blocks of different kinds in units spread over the document', () => {
+  it('names 8 blocks in units spread over the document, the two changes in the loop', () => {
     expect(targets).toHaveLength(SCOPES);
     expect(targets.map(({ id }) => typeOf(body, id))).toEqual([
       'var.change',
       'io.print',
-      'var.update',
+      'var.change',
       'control.for_range',
       'control.if',
       'var.get',

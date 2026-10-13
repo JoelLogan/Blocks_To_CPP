@@ -80,13 +80,67 @@ pub struct BlockReplacement {
 
 /// The replacements shipped with this catalog: one for each retired type.
 /// Each one has a golden-file test in `crates/b2c-catalog/tests/migrations/`.
-pub const BLOCK_REPLACEMENTS: &[BlockReplacement] = &[];
+///
+/// * `var.update` v1 → `var.change` v1 (catalog 1.2.0, M2 polish W4-5):
+///   *change* took over the update operators as its menu `OP`
+///   (`update_to_change`).
+pub const BLOCK_REPLACEMENTS: &[BlockReplacement] = &[BlockReplacement {
+    from: "var.update",
+    version: 1,
+    to: "var.change",
+    to_version: 1,
+    apply: update_to_change,
+}];
 
 /// The block types that no longer exist. A retired ID is never used for a
 /// new block type again (a test checks that the catalog defines none of
 /// them). Before 1.0 each one has an exact replacement in
 /// [`BLOCK_REPLACEMENTS`].
-pub const RETIRED_BLOCKS: &[&str] = &[];
+pub const RETIRED_BLOCKS: &[&str] = &["var.update"];
+
+/// Each operator of `var.update` v1 (its field `OP`: `+=`, `-=`, `*=`, `/=`
+/// and `%=`) with the option of `var.change` v1's field `OP` that does the
+/// same (*by*, *down by*, *times*, *divided by* and *mod*).
+const UPDATE_OPS: [(&str, &str); 5] = [
+    ("add", "add"),
+    ("sub", "sub"),
+    ("mul", "mul"),
+    ("div", "div"),
+    ("mod", "mod"),
+];
+
+/// Replaces an *update* block (`var.update` v1, `[score ▾] [*= ▾] (2)`) with
+/// the *change* block that does the same (`var.change` v1,
+/// `change [score ▾] [times ▾] (2)`): its value input `VALUE` becomes `BY`,
+/// with the expression or block in it, and its operator becomes the same
+/// option of *change*'s menu. The variable is kept, and so is anything else
+/// a damaged file has, for the catalog to report. Both blocks lower to the
+/// same compound assignment, so the generated C++ does not change.
+///
+/// An absent `OP` or `VALUE` stays absent: both blocks have the same
+/// defaults (`add`, and the number 1). It fails, and the block is kept as it
+/// was (`B2C-E0603`), when the operator is not one of `var.update`'s or the
+/// block already has an input `BY`.
+fn update_to_change(block: &mut Block) -> Result<(), String> {
+    if block.inputs.contains_key("BY") {
+        return Err(String::from("it already has an input \"BY\""));
+    }
+    match block.fields.get_mut("OP") {
+        None => {}
+        Some(FieldValue::Text(op)) => {
+            let (_, option) = UPDATE_OPS
+                .iter()
+                .find(|(update, _)| update == op)
+                .ok_or_else(|| format!("its operator {} is not one of +=, -=, *=, /= and %=", quote(op)))?;
+            *op = String::from(*option);
+        }
+        Some(_) => return Err(String::from("its operator is not a choice from its menu")),
+    }
+    if let Some(value) = block.inputs.remove("VALUE") {
+        block.inputs.insert(String::from("BY"), value);
+    }
+    Ok(())
+}
 
 /// The tables a block upgrade runs with: [`BlockUpgrades::SHIPPED`], or
 /// others in tests.
@@ -1539,7 +1593,7 @@ mod tests {
             json!({"id": "p1", "type": "io.print", "v": 1, "fields": {"LOUDNESS": "11"}}),
             json!({"id": "p2", "type": "io.print", "v": 1}),
         ];
-        let mut payload = clipboard_of("1.2.0", &newer);
+        let mut payload = clipboard_of("1.3.0", &newer);
         let report = clipboard(&mut payload, crate::core_catalog(), &BlockUpgrades::SHIPPED);
         assert_eq!(report.upgraded, 0);
         let found: Vec<(&str, Option<&str>)> = report
@@ -1549,7 +1603,7 @@ mod tests {
             .collect();
         assert_eq!(found, [(codes::NEWER_BLOCK, Some("p1"))]);
         // From this catalog or an older one, it is left to resolve (E0605).
-        for catalog in ["1.1.0", "1.0.0", "not a version"] {
+        for catalog in [crate::CATALOG_VERSION, "1.1.0", "1.0.0", "not a version"] {
             let mut payload = clipboard_of(catalog, &newer);
             assert_eq!(
                 clipboard(&mut payload, crate::core_catalog(), &BlockUpgrades::SHIPPED),
@@ -1667,6 +1721,96 @@ mod tests {
         let unknown =
             newer_catalog_problem(change, &inputs(json!({"BY": {"expr": []}, "STEP": {"expr": []}})));
         assert!(unknown.unwrap().contains("it has the input \"STEP\","));
+    }
+
+    /// An *update* block of catalog 1.1.0 with operator `op` and value
+    /// `value`; `null` leaves the key out.
+    fn update(id: &str, op: Value, value: Value) -> Value {
+        let mut update = json!({"id": id, "type": "var.update", "v": 1,
+            "fields": {"VAR": {"ref": "s_n"}}, "inputs": {}});
+        if !op.is_null() {
+            update["fields"]["OP"] = op;
+        }
+        if !value.is_null() {
+            update["inputs"]["VALUE"] = value;
+        }
+        update
+    }
+
+    #[test]
+    fn update_blocks_become_change_blocks() {
+        let ops = ["add", "sub", "mul", "div", "mod"];
+        let mut blocks: Vec<Block> = ops
+            .iter()
+            .map(|op| block(update(op, json!(op), json!({"expr": [{"num": "2"}]}))))
+            .collect();
+        let sum = json!({"id": "sum", "type": "math.arithmetic", "v": 1, "fields": {"OP": "add"},
+            "inputs": {"A": {"expr": [{"num": "1"}]}, "B": {"expr": [{"num": "2"}]}}});
+        let mut nested = update("nested", json!("mul"), json!({"block": sum}));
+        nested["disabled"] = json!(true);
+        nested["comment"] = json!({"text": "twice"});
+        nested["stack"] = json!([update("below", json!("sub"), Value::Null)]);
+        blocks.push(block(nested));
+        blocks.push(block(update("defaults", Value::Null, Value::Null)));
+        let outcome = walk(&mut blocks, crate::core_catalog(), &BlockUpgrades::SHIPPED);
+        assert!(outcome.failed.is_empty(), "{:?}", outcome.failed);
+        assert_eq!(outcome.upgraded.len(), 8);
+
+        for (change, op) in blocks.iter().zip(ops) {
+            let expected = block(json!({"id": op, "type": "var.change", "v": 1,
+                "fields": {"VAR": {"ref": "s_n"}, "OP": op},
+                "inputs": {"BY": {"expr": [{"num": "2"}]}}}));
+            assert_eq!(*change, expected);
+        }
+        let nested = &blocks[5];
+        assert_eq!(
+            (nested.id.as_str(), nested.block_type.as_str()),
+            ("nested", "var.change")
+        );
+        assert!(nested.disabled);
+        assert_eq!(nested.comment.as_ref().map(|c| c.text.as_str()), Some("twice"));
+        let Input::Block(sum) = &nested.inputs["BY"] else {
+            panic!("the value's block moves to BY")
+        };
+        assert_eq!(sum.block.id.as_str(), "sum");
+        assert!(!nested.inputs.contains_key("VALUE"));
+        assert_eq!(nested.stack[0].block_type, "var.change");
+        assert_eq!(nested.stack[0].fields["OP"], FieldValue::Text("sub".into()));
+        // A block that left the defaults out still leaves them out.
+        let defaults = &blocks[6];
+        assert_eq!(defaults.block_type, "var.change");
+        assert!(!defaults.fields.contains_key("OP"));
+        assert!(defaults.inputs.is_empty());
+        // Every result is a valid `change` block of this catalog.
+        let catalog = crate::core_catalog();
+        let def = &catalog.blocks["var.change"];
+        for change in &blocks {
+            assert_eq!(newer_catalog_problem(def, change), None);
+        }
+    }
+
+    #[test]
+    fn update_blocks_that_cannot_be_changed_are_kept() {
+        let mut by = update("by", json!("add"), json!({"expr": [{"num": "1"}]}));
+        by["inputs"]["BY"] = json!({"expr": [{"num": "2"}]});
+        let mut blocks = vec![
+            block(update("pow", json!("pow"), json!({"expr": [{"num": "2"}]}))),
+            block(update("ref", json!({"ref": "s_n"}), Value::Null)),
+            block(by),
+        ];
+        let before = blocks.clone();
+        let outcome = walk(&mut blocks, crate::core_catalog(), &BlockUpgrades::SHIPPED);
+        assert!(outcome.upgraded.is_empty());
+        assert_eq!(blocks, before);
+        let start = "This block is version 1 of a retired kind of block, which is now the \"change\" block, and replacing it failed:";
+        assert_eq!(
+            messages(&outcome),
+            [
+                format!("{start} its operator \"pow\" is not one of +=, -=, *=, /= and %=."),
+                format!("{start} its operator is not a choice from its menu."),
+                format!("{start} it already has an input \"BY\"."),
+            ]
+        );
     }
 
     /// The problems of a set of upgrade tables (03 §3.11.3, ADR-0015).

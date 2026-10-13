@@ -79,7 +79,12 @@ pub use upgrade::{BLOCK_REPLACEMENTS, BlockReplacement, BlockUpgrades, RETIRED_B
 ///
 /// 1.1.0: the labels name every field and the help texts mention ⊕/⊖ and the
 /// loop menu (M2 polish W1-8, W1-17). Files from 1.0.0 load unchanged.
-pub const CATALOG_VERSION: &str = "1.1.0";
+///
+/// 1.2.0: *change* (`var.change`) has the menu `OP` (*by*, *down by*,
+/// *times*, *divided by*, *mod*; default *by*), and *update* (`var.update`)
+/// is retired: it is replaced by *change* on load (M2 polish W4-5,
+/// ADR-0015). A file that leaves `OP` out loads as before.
+pub const CATALOG_VERSION: &str = "1.2.0";
 
 /// A loaded, validated catalog.
 #[derive(Debug, Clone, PartialEq)]
@@ -213,19 +218,29 @@ pub fn resolve_report(document: &Document, catalog: &Catalog) -> ResolveReport {
 /// [`resolve`] reports them (`B2C-E0601`, `B2C-E0602`).
 ///
 /// ```
+/// // Catalog 1.1.0 still had the *update* block, which 1.2.0 retired.
 /// let bytes = br#"{
 ///   "format": "blocks2cpp/project", "formatVersion": 1,
 ///   "generator": {"app": "0.1.0", "catalog": "1.1.0"},
 ///   "project": {"id": "prj_demo", "name": "Demo", "language": {"standard": "c++20"}},
 ///   "modules": [{"id": "mod_main", "name": "main", "workspace": {"blocks": [
-///     {"id": "b_main", "type": "program.main", "v": 1}
+///     {"id": "b_main", "type": "program.main", "v": 1, "statements": {"BODY": [
+///       {"id": "b_twice", "type": "var.update", "v": 1, "fields": {"OP": "mul"},
+///        "inputs": {"VALUE": {"expr": [{"num": "2"}]}}}
+///     ]}}
 ///   ]}}]
 /// }"#;
 /// let mut document = b2c_model::load(bytes).expect("a valid project");
 /// let report = b2c_catalog::upgrade_document(&mut document, b2c_catalog::core_catalog());
-/// // Every block of this project is current.
-/// assert!(!report.changed());
+/// assert_eq!(report.upgraded, 1);
 /// assert!(report.diagnostics.is_empty());
+/// // It is a *change* block now, with the same ID; its value is the amount.
+/// let block = &document.modules[0].workspace.blocks[0].statements["BODY"][0];
+/// assert_eq!((block.id.as_str(), block.block_type.as_str()), ("b_twice", "var.change"));
+/// assert!(block.inputs.contains_key("BY"));
+/// // Upgrading again changes nothing.
+/// let again = b2c_catalog::upgrade_document(&mut document, b2c_catalog::core_catalog());
+/// assert!(!again.changed());
 /// ```
 pub fn upgrade_document(document: &mut Document, catalog: &Catalog) -> UpgradeReport {
     upgrade::document_report(document, catalog, &BlockUpgrades::SHIPPED)

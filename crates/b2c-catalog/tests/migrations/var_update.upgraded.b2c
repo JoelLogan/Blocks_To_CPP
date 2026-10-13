@@ -1,0 +1,292 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.1.0"
+  },
+  "project": {
+    "id": "prj_var_update",
+    "name": "Update blocks",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_score",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_score",
+                      "name": "score"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "10"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b_add",
+                  "type": "var.change",
+                  "v": 1,
+                  "comment": {
+                    "text": "One more point",
+                    "pinned": true
+                  },
+                  "fields": {
+                    "OP": "add",
+                    "VAR": {
+                      "ref": "s_score"
+                    }
+                  },
+                  "inputs": {
+                    "BY": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b_sub",
+                  "type": "var.change",
+                  "v": 1,
+                  "disabled": true,
+                  "fields": {
+                    "OP": "sub",
+                    "VAR": {
+                      "ref": "s_score"
+                    }
+                  },
+                  "inputs": {
+                    "BY": {
+                      "expr": [
+                        {
+                          "num": "2"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b_loop",
+                  "type": "control.repeat",
+                  "v": 1,
+                  "collapsed": true,
+                  "inputs": {
+                    "TIMES": {
+                      "expr": [
+                        {
+                          "num": "3"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b_mul",
+                        "type": "var.change",
+                        "v": 1,
+                        "collapsed": true,
+                        "fields": {
+                          "OP": "mul",
+                          "VAR": {
+                            "ref": "s_score"
+                          }
+                        },
+                        "inputs": {
+                          "BY": {
+                            "block": {
+                              "id": "b_sum",
+                              "type": "math.arithmetic",
+                              "v": 1,
+                              "fields": {
+                                "OP": "add"
+                              },
+                              "inputs": {
+                                "A": {
+                                  "block": {
+                                    "id": "b_one",
+                                    "type": "math.number",
+                                    "v": 1,
+                                    "fields": {
+                                      "VALUE": "1"
+                                    }
+                                  }
+                                },
+                                "B": {
+                                  "expr": [
+                                    {
+                                      "num": "1"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b_div",
+                  "type": "var.change",
+                  "v": 1,
+                  "fields": {
+                    "OP": "div",
+                    "VAR": {
+                      "ref": "s_score"
+                    }
+                  },
+                  "inputs": {
+                    "BY": {
+                      "expr": [
+                        {
+                          "num": "3"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b_mod",
+                  "type": "var.change",
+                  "v": 1,
+                  "fields": {
+                    "OP": "mod",
+                    "VAR": {
+                      "ref": "s_score"
+                    }
+                  },
+                  "inputs": {
+                    "BY": {
+                      "expr": [
+                        {
+                          "num": "7"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b_defaults",
+                  "type": "var.change",
+                  "v": 1,
+                  "fields": {
+                    "VAR": {
+                      "ref": "s_score"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b_parked",
+            "type": "var.change",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "comment": {
+              "text": "Parked"
+            },
+            "fields": {
+              "OP": "sub"
+            },
+            "inputs": {
+              "BY": {
+                "expr": [
+                  {
+                    "num": "5"
+                  }
+                ]
+              }
+            },
+            "stack": [
+              {
+                "id": "b_print",
+                "type": "io.print",
+                "v": 1
+              },
+              {
+                "id": "b_stacked",
+                "type": "var.change",
+                "v": 1,
+                "fields": {
+                  "OP": "mul"
+                },
+                "inputs": {
+                  "BY": {
+                    "expr": [
+                      {
+                        "num": "2"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

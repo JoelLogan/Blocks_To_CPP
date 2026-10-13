@@ -110,12 +110,12 @@ function unit(ids: Ids, u: number): Json[] {
     fields: { VAR: { ref: value } },
     inputs: { BY: { expr: [{ ref: counter }] } },
   };
-  const update: Json = {
+  const downBy: Json = {
     id: ids.next(),
-    type: 'var.update',
+    type: 'var.change',
     v: 1,
     fields: { OP: 'sub', VAR: { ref: value } },
-    inputs: { VALUE: num(1) },
+    inputs: { BY: num(1) },
   };
   const branch: Json = {
     id: ifId,
@@ -127,7 +127,7 @@ function unit(ids: Ids, u: number): Json[] {
         expr: [{ ref: counter }, { op: '%' }, { num: '2' }, { op: '==' }, { num: '0' }],
       },
     },
-    statements: { DO0: [change], ELSE: [update] },
+    statements: { DO0: [change], ELSE: [downBy] },
   };
   const counted: Json = {
     id: loopId,

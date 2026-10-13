@@ -47,9 +47,9 @@ fn say_to_print(block: &mut b2c_model::Block) -> Result<(), String> {
     Ok(())
 }
 
-/// The shipped block upgrade tables with the test-only replacement of
-/// `test.say` (the shipped tables are empty in M2: `var.update` is the first
-/// type to be retired).
+/// The shipped block migrations with only the test-only replacement of
+/// `test.say` (the shipped replacement of `var.update` is tested with
+/// [`BlockUpgrades::SHIPPED`]).
 pub const TEST_UPGRADES: BlockUpgrades<'static> = BlockUpgrades {
     migrations: BlockUpgrades::SHIPPED.migrations,
     replacements: &[BlockReplacement {

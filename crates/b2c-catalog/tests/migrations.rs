@@ -8,12 +8,13 @@
 //! the result loads, keeps the security hash and summary, upgrading it again
 //! changes nothing, and the catalog has no old or unknown block left in it.
 //!
-//! The tables are the shipped ones joined with test-only entries, so the
-//! mechanism is covered before the first real replacement ships: the retired
-//! type `test.say` (replaced by `io.print`, with an older version of its
-//! own) and `test.counter`, a copy of `var.change` at version 3 that exists
-//! only in this test's catalog. A shipped migration or replacement gets its
-//! own case here, upgraded with the same tables.
+//! The tables are the shipped ones (the replacement of `var.update` by
+//! `var.change`, case `var_update`) joined with test-only entries, so that
+//! parts of the mechanism the shipped tables do not use are covered too: the
+//! retired type `test.say` (replaced by `io.print`, with an older version of
+//! its own) and `test.counter`, a copy of `var.change` at version 3 that
+//! exists only in this test's catalog. A shipped migration or replacement
+//! gets its own case here, upgraded with the same tables.
 
 #![allow(
     clippy::unwrap_used,

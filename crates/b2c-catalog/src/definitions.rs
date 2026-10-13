@@ -663,7 +663,7 @@ mod tests {
     fn the_core_catalog_is_valid_and_complete() {
         let (catalog, problems) = build(&CORE_FILES);
         assert_eq!(problems, []);
-        assert_eq!(catalog.blocks.len(), 32);
+        assert_eq!(catalog.blocks.len(), 31);
         assert_eq!(catalog.version, CATALOG_VERSION);
     }
 

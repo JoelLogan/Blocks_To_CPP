@@ -12,6 +12,7 @@ import {
   B2cTypeField,
   DEFAULT_EDITOR_SERVICES,
   FIELD_TYPE,
+  catalogBlock,
   createCatalogField,
   readB2cField,
   setEditorServices,
@@ -440,10 +441,9 @@ describe('symbol references', () => {
     const assignable = ['n', 'x', 'c', 'unknown', 'name', 'won', 'copy', 'edit'];
     expect(listed('var.set')).toEqual(assignable);
     expect(listed('io.ask')).toEqual(assignable);
-    // change and the update operators also leave out text and true/false variables.
+    // change (with each of its operators) also leaves out text and true/false variables.
     const numeric = ['n', 'x', 'c', 'unknown', 'copy'];
     expect(listed('var.change')).toEqual(numeric);
-    expect(listed('var.update')).toEqual(numeric);
   });
 
   it('keep a chosen reference shown and first when it is not of the field’s kinds', () => {
@@ -617,6 +617,21 @@ describe('dropdown fields', () => {
 
   it('refuse an empty option list', () => {
     expect(() => new B2cDropdownField([])).toThrow(TypeError);
+  });
+
+  it('give change its operators in friendly words, adding by default (catalog 1.2.0)', () => {
+    const workspace = headlessWorkspace();
+    const field = workspace.newBlock('var.change').getField('OP') as B2cDropdownField;
+    expect(field.getValue()).toBe('add');
+    expect(field.getText()).toBe('by');
+    expect(field.getOptions(false)).toEqual([
+      ['by', 'add'],
+      ['down by', 'sub'],
+      ['times', 'mul'],
+      ['divided by', 'div'],
+      ['mod', 'mod'],
+    ]);
+    expect(catalogBlock('var.update')).toBeUndefined();
   });
 });
 

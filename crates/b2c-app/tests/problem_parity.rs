@@ -243,7 +243,7 @@ fn catalog_cases() -> Vec<Case> {
         (
             "newer dropdown options",
             hello_world_with(|project| {
-                project["generator"]["catalog"] = "1.2.0".into();
+                project["generator"]["catalog"] = "99.0.0".into();
                 let print = project.pointer_mut(PRINT).unwrap();
                 print["fields"]["SEP"] = "tabs".into();
                 print["inputs"]["ITEM0"] = serde_json::json!({"block": {
@@ -257,11 +257,11 @@ fn catalog_cases() -> Vec<Case> {
         (
             "a newer field, with an input left to its default",
             hello_world_with(|project| {
-                project["generator"]["catalog"] = "1.2.0".into();
+                project["generator"]["catalog"] = "99.0.0".into();
                 attach(project, create_guess());
                 let change = serde_json::json!({
                     "id": "b_change", "type": "var.change", "v": 1,
-                    "fields": {"VAR": {"ref": "sym_guess"}, "OP": "mul"}
+                    "fields": {"VAR": {"ref": "sym_guess"}, "ROUNDING": "up"}
                 });
                 attach(project, change);
             }),

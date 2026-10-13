@@ -588,7 +588,7 @@ that was upgraded is reported (*upgrading the old blocks would …*).
 >
 > This "print" block is version 1, and upgrading it from version 1 failed: the separator is unknown.
 >
-> This block is version 1 of a retired kind of block, which is now the "change" block, and replacing it failed: the block has no VALUE input.
+> This block is version 1 of a retired kind of block, which is now the "change" block, and replacing it failed: its operator "pow" is not one of +=, -=, \*=, /= and %=.
 >
 > This block is version 2 of a retired kind of block, and this version of Blocks2Cpp cannot upgrade it.
 >

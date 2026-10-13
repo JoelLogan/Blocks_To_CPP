@@ -3,11 +3,11 @@
 //! report the blocks they could not upgrade (`B2C-E0603`) and, for a payload
 //! from a newer catalog, the blocks that catalog extended (`B2C-E0602`).
 //!
-//! The shipped catalog has nothing to upgrade yet, so these tests use blocks
-//! that cannot be upgraded (version 0) and a payload from a newer catalog;
-//! `b2c-catalog`'s tests cover successful upgrades with test-only tables. A
-//! document upgraded with such a table checks that the scope query (06 §6.5)
-//! answers for the blocks an upgrade produced.
+//! The shipped tables retire *update* (`var.update`), which `load` and
+//! `paste_prepare` turn into *change* (`var.change`); the other tests use
+//! blocks that cannot be upgraded (version 0) and a payload from a newer
+//! catalog. A document upgraded with a test-only table checks that the scope
+//! query (06 §6.5) answers for the blocks an upgrade produced.
 
 #![allow(
     clippy::unwrap_used,
@@ -19,7 +19,7 @@
 
 mod common;
 
-use common::{codes, example, names, parse, preview};
+use common::{codes, example, file, names, parse, preview};
 use serde_json::{Value, json};
 
 /// A project whose `main` holds `body`.
@@ -89,12 +89,72 @@ fn paste_upgrades_the_pasted_blocks() {
     // From a newer catalog, a field this one does not know is reported as
     // made by it, and the block is kept as it is.
     let extended = json!([{"id": "c1", "type": "io.print", "v": 1, "fields": {"VOLUME": "11"}}]);
-    let pasted = paste(&payload("1.2.0", &extended), &document);
+    let pasted = paste(&payload("99.0.0", &extended), &document);
     assert_eq!(codes(&pasted["diagnostics"]), ["B2C-E0602"]);
     assert_eq!(pasted["blocks"][0]["fields"]["VOLUME"], "11");
     // From this catalog, it is left to the preview (an unknown field).
-    let pasted = paste(&payload("1.1.0", &extended), &document);
+    let pasted = paste(&payload("1.2.0", &extended), &document);
     assert_eq!(pasted["diagnostics"], json!([]));
+}
+
+/// An *update* block of catalog 1.1.0, `[n ▾] [op ▾] (2)`.
+fn update(id: &str, op: &str) -> Value {
+    json!({"id": id, "type": "var.update", "v": 1,
+           "fields": {"VAR": {"ref": "s_n"}, "OP": op},
+           "inputs": {"VALUE": {"expr": [{"num": "2"}]}}})
+}
+
+/// A file saved before catalog 1.2.0 opens with its *update* blocks as
+/// *change* blocks, with the same IDs and the same C++: the editor shows no
+/// placeholder and the preview no problem (ADR-0015, M2 polish W4-5).
+#[test]
+fn load_turns_update_blocks_into_change_blocks() {
+    let declare = json!({"id": "b_n", "type": "var.declare", "v": 1,
+        "fields": {"NAME": {"sym": "s_n", "name": "n"}, "TYPE": "int", "CONST": false},
+        "inputs": {"VALUE": {"expr": [{"num": "10"}]}}});
+    let body = json!([
+        declare,
+        update("b_times", "mul"),
+        update("b_minus", "sub"),
+        update("b_mod", "mod")
+    ]);
+    let loaded = parse(&b2c_core_wasm::load(project(&body).as_bytes()));
+    assert_eq!(loaded["ok"], true, "{loaded}");
+    assert_eq!(loaded["diagnostics"], json!([]));
+    let blocks = &loaded["document"]["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"];
+    for (index, id, op) in [(1, "b_times", "mul"), (2, "b_minus", "sub"), (3, "b_mod", "mod")] {
+        let change = &blocks[index];
+        assert_eq!(change["id"], id);
+        assert_eq!(change["type"], "var.change");
+        assert_eq!(change["v"], 1);
+        assert_eq!(change["fields"]["OP"], op);
+        assert_eq!(change["inputs"]["BY"], json!({"expr": [{"num": "2"}]}));
+    }
+    let result = preview(&loaded["document"].to_string(), 4);
+    assert_eq!(result["diagnostics"], json!([]), "{result}");
+    let code = file(&result, "main.cpp").unwrap();
+    assert!(
+        code.contains("n *= 2;") && code.contains("n -= 2;") && code.contains("n %= 2;"),
+        "{code}"
+    );
+}
+
+/// A clipboard payload of catalog 1.1.0 is pasted with its *update* block as
+/// a *change* block (one without a variable chosen, so that nothing needs
+/// re-binding).
+#[test]
+fn paste_turns_update_blocks_into_change_blocks() {
+    let document = project(&json!([]));
+    let mut unchosen = update("c1", "div");
+    unchosen["fields"].as_object_mut().unwrap().remove("VAR");
+    let pasted = paste(&payload("1.1.0", &json!([unchosen])), &document);
+    assert_eq!(pasted["ok"], true, "{pasted}");
+    assert_eq!(pasted["diagnostics"], json!([]));
+    let block = &pasted["blocks"][0];
+    assert_eq!(block["type"], "var.change");
+    assert_eq!(block["fields"]["OP"], "div");
+    assert_eq!(block["inputs"]["BY"], json!({"expr": [{"num": "2"}]}));
+    assert!(block["inputs"].get("VALUE").is_none());
 }
 
 /// `test.assign` v1, a retired test type, becomes `var.set` v1 as it is: it

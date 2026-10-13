@@ -3,13 +3,13 @@
 //! summary, gives a document that loads, and is idempotent; and resolving
 //! its own output must change nothing more.
 //!
-//! The shipped upgrade tables are empty until the first block type is
-//! retired, so the upgrade also runs with a fuzz-only table: the retired type
-//! `fuzz.old` at version 1 is replaced by `io.print`, its `WHAT` input
-//! becoming `ITEM0` (and the replacement fails when the block has a `FAIL`
-//! field), and `io.print` blocks of version 0 are moved to version 1. That
-//! exercises the walk, the stand-ins for nested blocks and every check of
-//! the result.
+//! The shipped upgrade tables hold one replacement (`var.update` by
+//! `var.change`) and no migration, so the upgrade also runs with a fuzz-only
+//! table: the retired type `fuzz.old` at version 1 is replaced by
+//! `io.print`, its `WHAT` input becoming `ITEM0` (and the replacement fails
+//! when the block has a `FAIL` field), and `io.print` blocks of version 0
+//! are moved to version 1. That exercises the walk, the stand-ins for nested
+//! blocks and every check of the result.
 
 #![no_main]
 

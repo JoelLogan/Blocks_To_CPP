@@ -135,9 +135,8 @@ describe('registerB2cBlocks', () => {
     expect(kindsOf('var.get', 'VAR')).toBe('variables');
     expect(kindsOf('var.set', 'VAR')).toBe('assignable');
     expect(kindsOf('io.ask', 'VAR')).toBe('assignable');
-    // change and the update operators count: text and true/false variables cannot take part.
+    // change counts with its operators: text and true/false variables cannot take part.
     expect(kindsOf('var.change', 'VAR')).toBe('numeric');
-    expect(kindsOf('var.update', 'VAR')).toBe('numeric');
     expect(kindsOf('func.call', 'FUNC')).toBe('functions');
     const char = workspace.newBlock('text.char').getField('VALUE');
     expect(char instanceof B2cTextField && char.singleChar).toBe(true);

@@ -118,7 +118,7 @@ function categoryPage(category: ToolboxCategoryJson, blocks: readonly BlockDefJs
     }
     toolbox.push(
       category.dynamic === 'variables'
-        ? `The editor also adds a getter for every variable in scope at the selected block, and the blocks that change a variable, preset to it: ${list(added, 'and')}.`
+        ? `The editor also adds, each with a variable already chosen, a getter for each variable and the blocks that change one ([spec §4.2](../../spec/04-user-interface.md#42-toolbox)): ${list(added, 'and')}.`
         : `Under *Your functions*, the editor also adds a call block for every function of the module shown: ${list(added, 'and')}.`,
     );
   }

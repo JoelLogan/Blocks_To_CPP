@@ -96,18 +96,24 @@ describe('block builders', () => {
         value: { expr: [{ num: '1' }] },
         isConst: true,
       }),
-      forever(ids, [changeBy(ids, 'sym_n', { expr: [{ num: '1' }] })]),
+      forever(ids, [
+        changeBy(ids, 'sym_n', { expr: [{ num: '1' }] }),
+        changeBy(ids, 'sym_n', { expr: [{ num: '2' }] }, 'mul'),
+      ]),
       repeat(ids, { expr: [{ num: '10' }] }, [print(ids, 'x')]),
       printValue(ids, block(arithmetic(ids, 'div', { expr: [{ num: '100' }] }, ref('sym_n')))),
     ];
     const nodes = allNodes(roots);
-    expect(nodes).toHaveLength(8);
+    expect(nodes).toHaveLength(9);
     for (const node of nodes) {
       checkAgainstCatalog(node);
     }
     expect(new Set(nodes.map((node) => node.id)).size).toBe(nodes.length);
     expect(roots[1]?.fields?.['CONST']).toBe(true);
     expect(roots[0]?.fields?.['CONST']).toBe(false);
+    // A change block writes its operator only when one is chosen.
+    const changes = nodes.filter((node) => node.type === 'var.change');
+    expect(changes.map((node) => node.fields?.['OP'])).toEqual([undefined, 'mul']);
   });
 });
 

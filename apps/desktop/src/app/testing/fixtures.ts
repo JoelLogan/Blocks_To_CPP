@@ -37,7 +37,7 @@ export function appInfoFixture(overrides: Partial<AppInfo> = {}): AppInfo {
     appVersion: '0.1.0',
     ipcVersion: IPC_VERSION,
     platform: 'linux',
-    catalogVersion: '1.1.0',
+    catalogVersion: '1.2.0',
     ...overrides,
   };
 }
@@ -120,7 +120,7 @@ export function documentFixture(name = 'Guessing Game'): BdmDocument {
   return {
     format: 'blocks2cpp/project',
     formatVersion: 1,
-    generator: { app: '0.1.0', catalog: '1.1.0' },
+    generator: { app: '0.1.0', catalog: '1.2.0' },
     project: {
       id: 'prj_fixture',
       name,

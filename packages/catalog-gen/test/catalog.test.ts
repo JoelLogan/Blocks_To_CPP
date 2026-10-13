@@ -15,7 +15,7 @@ import { ROOT, repoPath } from './fixture.ts';
 
 /** The blocks the editor's dynamic categories add (b2c_catalog::DynamicCategory::blocks). */
 const DYNAMIC_BLOCKS = {
-  variables: ['var.get', 'var.set', 'var.change', 'var.update'],
+  variables: ['var.get', 'var.set', 'var.change'],
   functions: ['func.call', 'func.call_stmt'],
 } as const;
 
@@ -33,7 +33,7 @@ describe('the generated outputs', () => {
     const defined = generated.BLOCK_DEFS.map((block) => block.id);
     expect(new Set(defined).size).toBe(defined.length);
     expect(defined).toEqual(ids);
-    expect(ids).toHaveLength(32);
+    expect(ids).toHaveLength(31);
   });
 
   it('hold exactly the generator model, with mutually compatible types', async () => {

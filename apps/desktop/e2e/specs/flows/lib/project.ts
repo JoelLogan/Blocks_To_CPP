@@ -133,13 +133,19 @@ export function repeat(ids: NodeIds, times: ExprInput, body: readonly BlockNode[
   };
 }
 
-/** `var.change`: `change VAR by BY`. */
-export function changeBy(ids: NodeIds, sym: string, by: ExprInput): BlockNode {
+/** The choices of `var.change`'s menu `OP` (catalog 1.2.0): by, down by, times, divided by, mod. */
+export type ChangeOp = 'add' | 'sub' | 'mul' | 'div' | 'mod';
+
+/**
+ * `var.change`: `change VAR by BY`, or with `op` another choice of its menu. Without `op` the block
+ * leaves `OP` out and adds, as files saved before catalog 1.2.0 have it.
+ */
+export function changeBy(ids: NodeIds, sym: string, by: ExprInput, op?: ChangeOp): BlockNode {
   return {
     id: ids.next(),
     type: 'var.change',
     v: 1,
-    fields: { VAR: { ref: sym } },
+    fields: op === undefined ? { VAR: { ref: sym } } : { OP: op, VAR: { ref: sym } },
     inputs: { BY: by },
   };
 }
