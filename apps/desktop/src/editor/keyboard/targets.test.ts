@@ -48,7 +48,7 @@ describe('the places of a statement', () => {
     const targets = dropTargets(print);
 
     expect(summary(targets)).toEqual([
-      'at the top of “main”',
+      'at the top of “when program starts”',
       'after “create int variable guess”',
       'at the top of “factorial”',
       'loose on the canvas',
@@ -190,7 +190,7 @@ describe('the places', () => {
   it('stop at the limit, keeping the canvas', () => {
     const { block } = open();
     const places = dropTargets(block('print'), 1);
-    expect(summary(places)).toEqual(['at the top of “main”', 'loose on the canvas']);
+    expect(summary(places)).toEqual(['at the top of “when program starts”', 'loose on the canvas']);
   });
 
   it('are checked again before a drop', () => {

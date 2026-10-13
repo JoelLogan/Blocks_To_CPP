@@ -30,7 +30,7 @@ function newBlock(workspace: Blockly.WorkspaceSvg, type: string): Blockly.BlockS
 describe('block names', () => {
   it('use the block-path label, with a declared name', () => {
     const { block } = open();
-    expect(describeBlock(block('main'))).toBe('main');
+    expect(describeBlock(block('main'))).toBe('when program starts');
     expect(describeBlock(block('fn'))).toBe('factorial');
     expect(describeBlock(block('decl'))).toBe('create int variable guess');
     expect(describeBlock(block('print'))).toBe('print');

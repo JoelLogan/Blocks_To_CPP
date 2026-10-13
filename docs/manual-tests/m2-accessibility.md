@@ -74,7 +74,7 @@ Tab repeatedly. Expected order:
 5. The toolbox (its selected category)
 6. The toolbox's blocks (announced as **Blocks to add**)
 7. The block canvas (announced as **Block canvas**, followed by the first
-   block, for example "block “main”")
+   block, for example "block “when program starts”")
 8. The canvas's zoom controls: *Zoom out*, *Zoom in*, *Reset zoom* (with
    the zoom now) and *Show all blocks*
 9. *Resize the toolbox* (a separator, with its width in pixels; the arrow

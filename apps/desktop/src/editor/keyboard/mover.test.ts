@@ -64,7 +64,7 @@ describe('M moves a block', () => {
     press('m');
 
     press('ArrowUp');
-    expect(keyboard.announcer.last).toBe('at the top of “main”, 1 of 4.');
+    expect(keyboard.announcer.last).toBe('at the top of “when program starts”, 1 of 4.');
     const target = keyboard.mover.target;
     expect(target?.kind).toBe('statements');
     if (target?.kind === 'statements') {
@@ -74,7 +74,7 @@ describe('M moves a block', () => {
     press('Enter');
     expect(statements(block('main'), 'BODY')).toEqual(['print', 'decl']);
     expect(focused()).toBe(print);
-    expect(keyboard.announcer.last).toBe('Moved “print” at the top of “main”.');
+    expect(keyboard.announcer.last).toBe('Moved “print” at the top of “when program starts”.');
     if (target?.kind === 'statements') {
       expect(target.connection.isHighlighted()).toBe(false);
     }
@@ -118,11 +118,11 @@ describe('M moves a block', () => {
     press('ArrowDown');
     press('ArrowDown');
     press('ArrowDown');
-    expect(keyboard.announcer.last).toBe('at the top of “main”, 1 of 4.');
+    expect(keyboard.announcer.last).toBe('at the top of “when program starts”, 1 of 4.');
     press('ArrowLeft');
     expect(keyboard.announcer.last).toBe('loose on the canvas, 4 of 4.');
     press('Home');
-    expect(keyboard.announcer.last).toBe('at the top of “main”, 1 of 4.');
+    expect(keyboard.announcer.last).toBe('at the top of “when program starts”, 1 of 4.');
     press('ArrowRight');
     expect(keyboard.announcer.last).toBe(
       'Where it is now: after “create int variable guess”, 2 of 4.',
@@ -187,7 +187,7 @@ describe('M moves a block', () => {
     focus(block('main'));
     press('m');
     expect(keyboard.mover.active).toBe(false);
-    expect(keyboard.announcer.last).toBe('“main” has nowhere else to go.');
+    expect(keyboard.announcer.last).toBe('“when program starts” has nowhere else to go.');
 
     workspace.setIsReadOnly(true);
     try {
@@ -439,7 +439,7 @@ describe('adding a block from the toolbox', () => {
     press('Enter');
     expect(keyboard.mover.active).toBe(false);
     expect(workspace.getTopBlocks(false).length).toBe(tops + 1);
-    expect(keyboard.announcer.last).toMatch(/^Added “main” loose on the canvas\.$/);
+    expect(keyboard.announcer.last).toMatch(/^Added “when program starts” loose on the canvas\.$/);
   });
 
   it('presses a toolbox button with Enter', () => {

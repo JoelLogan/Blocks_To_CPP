@@ -159,7 +159,7 @@ describe('the keyboard plugin', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
     focusCanvas(workspace);
     expect(Blockly.keyboardNavigationController.getIsActive()).toBe(true);
-    expect(keyboard.announcer.last).toBe('block “main”');
+    expect(keyboard.announcer.last).toBe('block “when program starts”');
   });
 
   it('does not after a pointer press', () => {

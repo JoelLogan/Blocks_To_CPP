@@ -161,13 +161,13 @@ describe('the Tab order with the block editor', () => {
     // focus on the canvas itself (src/editor/keyboard/plugin.test.ts has the browser's case).
     const node = Blockly.getFocusManager().getFocusedNode();
     expect(status?.textContent).toMatch(
-      node instanceof Blockly.BlockSvg ? /^block “main”/ : /^the canvas/,
+      node instanceof Blockly.BlockSvg ? /^block “when program starts”/ : /^the canvas/,
     );
 
     // The arrow keys move inside the canvas; Tab still leaves it.
     if (!(node instanceof Blockly.BlockSvg)) {
       press('ArrowDown', 40);
-      expect(status?.textContent).toMatch(/^block “main”/);
+      expect(status?.textContent).toMatch(/^block “when program starts”/);
     }
     press('ArrowDown', 40);
     expect(status?.textContent).toMatch(/^block “create int variable guess”/);
