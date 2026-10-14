@@ -433,6 +433,95 @@ describe('the preview pipeline', () => {
     pipeline.dispose();
   });
 
+  it('is idle once a run has committed what it read, until another read is asked for', async () => {
+    openProject();
+    const service = manualService();
+    let loads = true;
+    const stub = stubCore();
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(
+        stubCore({
+          canonical: (json) =>
+            loads
+              ? stub.canonical(json)
+              : { ok: false, diagnostics: [diagnosticFixture({ code: 'B2C-E0104' })] },
+        }),
+      ),
+      read: readDocument,
+      service,
+    });
+    // Nothing read yet.
+    expect(pipeline.isIdle()).toBe(false);
+
+    // A run that has started but not read the canvas yet (the core starts first).
+    const first = pipeline.runNow();
+    expect(pipeline.isIdle()).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    // Committed: idle, although its analysis still runs.
+    expect(service.calls).toHaveLength(1);
+    expect(pipeline.isIdle()).toBe(true);
+    service.calls[0]?.resolve(previewFixture());
+    await first;
+    expect(pipeline.isIdle()).toBe(true);
+
+    // An edit waits for its run.
+    pipeline.schedule();
+    expect(pipeline.isIdle()).toBe(false);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(pipeline.isIdle()).toBe(true);
+    service.calls[1]?.resolve(previewFixture());
+
+    // A new document is shown: what was committed is no longer the canvas.
+    pipeline.invalidate();
+    expect(pipeline.isIdle()).toBe(false);
+    const second = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    service.calls[2]?.resolve(previewFixture());
+    await second;
+    expect(pipeline.isIdle()).toBe(true);
+
+    // A canvas that does not load keeps the older document: not idle.
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    loads = false;
+    await pipeline.runNow();
+    expect(useAppStore.getState().analysis.notice).toBe('syncFailed');
+    expect(pipeline.isIdle()).toBe(false);
+    loads = true;
+    const third = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    service.calls[3]?.resolve(previewFixture());
+    await third;
+    expect(pipeline.isIdle()).toBe(true);
+    pipeline.dispose();
+  });
+
+  it('is not idle while the canvas cannot be read and the read is put off', async () => {
+    openProject();
+    let reads = 0;
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      // What the session does during a drag: no document now, a run later.
+      read: () => {
+        reads += 1;
+        if (reads === 2) {
+          pipeline.schedule();
+          return null;
+        }
+        return readDocument();
+      },
+    });
+    await pipeline.runNow();
+    expect(pipeline.isIdle()).toBe(true);
+    await pipeline.runNow();
+    expect(pipeline.isIdle()).toBe(false);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(reads).toBe(3);
+    expect(pipeline.isIdle()).toBe(true);
+    pipeline.dispose();
+  });
+
   it('stops after dispose, and invalidate drops runs in flight', async () => {
     openProject();
     const service = manualService();

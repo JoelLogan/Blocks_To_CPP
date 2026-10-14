@@ -4,11 +4,17 @@
  *
  * While a block is dragged the canvas is in flux: Blockly has detached the block from where it
  * was, and an insertion marker (the drag preview) may stand in a statement list or head a loose
- * stack. The session therefore reads the canvas once just before a drag starts, and saving during
- * the drag writes that (see `EditorSession.currentDocument`). Blockly announces a drag only through
- * events, which it delivers after the block has moved, so the editor gives Blockly its own block
- * dragger ({@link B2cBlockDragger}, the `blockDragger` plugin at inject time): it reports a drag
- * before Blockly's dragger starts it, and its end.
+ * stack. The session therefore keeps the canvas as it was just before a drag starts (the project's
+ * document when the preview pipeline has nothing left to read, else a read of the canvas), and
+ * saving during the drag writes that (see `EditorSession.currentDocument`). Blockly announces a
+ * drag only through events, which it delivers after the block has moved, so the editor gives
+ * Blockly its own block dragger ({@link B2cBlockDragger}, the `blockDragger` plugin at inject
+ * time): it reports a drag before Blockly's dragger starts it, and its end.
+ *
+ * A dragged block snaps to a place within about 44 screen pixels of its connection at every zoom
+ * (03 §3.3), where Blockly snaps from 28 canvas units at any zoom: {@link B2cBlockDragStrategy}
+ * sets the radius ({@link snapRadius}), keeps a place previewed for a statement until another is
+ * clearly nearer, and gives a value the nearest slot.
  *
  * A drop with the pointer over a delete area (anywhere over the toolbox, its category column and
  * its always-open flyout alike, or over the trash can) deletes the dragged blocks and never
@@ -152,38 +158,127 @@ export function isOverDeleteArea(workspace: Blockly.WorkspaceSvg, e: PointerEven
 }
 
 /**
- * Blockly's block drag strategy, except that it looks for no place to connect (and so previews
- * none) while the pointer is over a delete area: a drop there deletes the dragged blocks and
- * never connects them. {@link B2cBlockDragger} gives it to every block it drags.
+ * How near a dragged block's connection must come to a place, in screen pixels, for the block to
+ * snap there (03 §3.3): the same reach at every zoom, within {@link MIN_SNAP_RADIUS} and
+ * {@link MAX_SNAP_RADIUS} canvas units.
+ */
+export const SNAP_SCREEN_PIXELS = 44;
+
+/**
+ * The smallest snap radius, in canvas units: zoomed in, where 44 pixels are fewer canvas units, a
+ * place stays about as easy to reach on the canvas as at the start zoom (49 units at 90 %), and
+ * never less than with Blockly's own 28.
+ */
+export const MIN_SNAP_RADIUS = 48;
+
+/**
+ * The largest snap radius, in canvas units: zoomed far out, a block does not jump to a place that
+ * is far away on the canvas.
+ */
+export const MAX_SNAP_RADIUS = 96;
+
+/**
+ * How much nearer, in canvas units, another place must be than the place previewed for the preview
+ * to move there while a statement is dragged (Blockly's `currentConnectionPreference`, 8 by
+ * default). With the larger snap radius more places of a statement list are in reach, and the grey
+ * preview (an insertion marker, which makes the list lay itself out again) would otherwise jump
+ * between two places almost as near at every small move. The places of a list lie at least a
+ * block's height (48 units) apart.
+ */
+export const PREVIEW_PREFERENCE = 20;
+
+/**
+ * The same preference while a value (a block with an output) is dragged: none, the nearest slot
+ * wins. A block's first slot lies only 8 units right of the slot that holds the block (Zelos), so
+ * with Blockly's 8, and all the more with 20, a value that came within reach of the outer slot
+ * first (dragged in from the left, from the toolbox) stayed on it and replaced the block there
+ * instead of going into its first slot. Zelos previews a slot by highlighting it, without an
+ * insertion marker, so a change of the slot previewed costs nothing.
+ */
+export const VALUE_PREVIEW_PREFERENCE = 0;
+
+/**
+ * The snap radius, in canvas units, on a canvas at zoom `scale`: {@link SNAP_SCREEN_PIXELS} on
+ * screen, kept between {@link MIN_SNAP_RADIUS} and {@link MAX_SNAP_RADIUS}. Blockly's 28 units
+ * are about 25 pixels at the editor's start zoom of 90 % and 14 at 50 %, too small a target for a
+ * block dropped by eye.
+ */
+export function snapRadius(scale: number): number {
+  return Math.min(
+    MAX_SNAP_RADIUS,
+    Math.max(MIN_SNAP_RADIUS, Math.round(SNAP_SCREEN_PIXELS / scale)),
+  );
+}
+
+/**
+ * Blockly's block drag strategy, except that:
+ *
+ * - it looks for no place to connect (and so previews none) while the pointer is over a delete
+ *   area: a drop there deletes the dragged blocks and never connects them;
+ * - it snaps from {@link SNAP_SCREEN_PIXELS} on screen at every zoom ({@link snapRadius}), where
+ *   Blockly snaps from 28 canvas units whatever the zoom;
+ * - while a statement is dragged, a previewed place keeps the preview until another is
+ *   {@link PREVIEW_PREFERENCE} units nearer; for a dragged value the nearest slot wins
+ *   ({@link VALUE_PREVIEW_PREFERENCE}).
+ *
+ * Bumping, which moves a loose block away from a connection it is not connected to, keeps
+ * Blockly's 28 units (`Blockly.config.snapRadius` is not changed): a larger bump would push loose
+ * blocks further away. {@link B2cBlockDragger} gives the strategy to every block it drags.
  */
 export class B2cBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
-  /** The canvas the block is dragged on, whose delete areas count. */
+  /** The canvas the block is dragged on, whose delete areas and zoom count. */
   private readonly canvas: Blockly.WorkspaceSvg;
 
   /** Whether the pointer of the latest move was over a delete area. */
   private overDeleteArea = false;
 
+  /**
+   * How much nearer another place must be for the preview to move there: a dragged value (a block
+   * with an output) has its own.
+   */
+  private readonly preference: number;
+
   constructor(block: Blockly.BlockSvg) {
     super(block);
     this.canvas = block.workspace;
+    // `BlockSvg` types its output as always there; a statement has none (`Block`'s type says so).
+    const dragged: Blockly.Block = block;
+    this.preference =
+      dragged.outputConnection === null ? PREVIEW_PREFERENCE : VALUE_PREVIEW_PREFERENCE;
   }
 
   /**
    * Moves the block to `newLoc` and updates the preview. `e` is the pointer event of the move;
    * a move without one (a programmatic drag) is never over a delete area.
+   *
+   * Blockly reads the preference for the place already previewed from its global configuration,
+   * in a private method that only this move calls (`BlockDragStrategy.currCandidateIsBetter`,
+   * Blockly 12.5.1). So while the move runs, the configuration holds this drag's preference
+   * ({@link PREVIEW_PREFERENCE} or {@link VALUE_PREVIEW_PREFERENCE}), and it gets its own value
+   * back in a `finally`, however the move ends: nothing outside a move of this strategy (another
+   * drag, the keyboard's moves, an Escape that cancels the gesture, its disposal) ever sees the
+   * changed value.
    */
   override drag(newLoc: Blockly.utils.Coordinate, e?: PointerEvent): void {
     this.overDeleteArea = e !== undefined && isOverDeleteArea(this.canvas, e);
-    super.drag(newLoc);
+    const config = Blockly.config;
+    const preference = config.currentConnectionPreference;
+    config.currentConnectionPreference = this.preference;
+    try {
+      super.drag(newLoc);
+    } finally {
+      config.currentConnectionPreference = preference;
+    }
   }
 
   /**
-   * How far away a connection may be to be previewed: Blockly's radius, or none at all over a
-   * delete area. The radius is -1 rather than 0, because a search with radius 0 still finds a
-   * connection exactly where the dragged one is.
+   * How far away a connection may be to be previewed: {@link snapRadius} at the canvas's zoom, or
+   * none at all over a delete area. The radius is -1 rather than 0, because a search with radius 0
+   * still finds a connection exactly where the dragged one is. Blockly asks with a place previewed
+   * or not alike (its `connectingSnapRadius` and `snapRadius` are both 28).
    */
   protected override getSearchRadius(): number {
-    return this.overDeleteArea ? -1 : super.getSearchRadius();
+    return this.overDeleteArea ? -1 : snapRadius(this.canvas.scale);
   }
 }
 

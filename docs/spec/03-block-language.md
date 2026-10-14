@@ -68,17 +68,25 @@ Connection compatibility is enforced by a custom Blockly `ConnectionChecker`
 backed by the type system ([§3.5](#35-types)). Shapes stop structurally
 invalid programs, and types stop most semantic errors.
 
-**Placing blocks.** While a block is dragged, a grey preview shows the place
-it will connect to when it is dropped. A drop with the pointer anywhere over
-the toolbox (its categories and its open list of blocks alike) or over the
-trash can deletes only the dragged blocks and never connects them. The
-toolbox counts at any height: a drop with the pointer left of its right edge
-deletes, also above or below the editor (over the toolbar or the bottom
-dock). The pointer decides, not how much of the dragged blocks lies over the
-toolbox. While a drop would delete, no place is previewed and the dragged
-blocks are shown faded. While the pointer is left of the toolbox's right
-edge, the whole toolbox is tinted as well; over the trash can, the toolbox is
-not tinted and the trash can opens its lid instead.
+**Placing blocks.** A dragged block snaps to the nearest place that accepts it
+when its connection is within about 44 screen pixels of that place, and never
+less than 48 or more than 96 canvas units away, so a place is as easy to hit
+at every zoom. A grey preview shows where it will go. While a statement is
+dragged, the preview stays on its place until another place is 20 canvas units
+nearer, so it does not jump between two places of a list that are almost as
+near; a dragged value always goes to the nearest slot, since a block's first
+slot lies only 8 units from the slot that holds the block. A loose block
+dropped so that it only looks connected is still moved aside by Blockly's
+usual 28 units. A drop with the pointer anywhere over the toolbox (its
+categories and its open list of blocks alike) or over the trash can deletes
+only the dragged blocks and never connects them. The toolbox counts at any
+height: a drop with the pointer left of its right edge deletes, also above or
+below the editor (over the toolbar or the bottom dock). The pointer decides,
+not how much of the dragged blocks lies over the toolbox. While a drop would
+delete, no place is previewed and the dragged blocks are shown faded. While
+the pointer is left of the toolbox's right edge, the whole toolbox is tinted
+as well; over the trash can, the toolbox is not tinted and the trash can opens
+its lid instead.
 
 **Parked blocks.** As in Scratch, a statement or value block, or a stack of
 them, can be left anywhere on the canvas. Only statements attached to *when
