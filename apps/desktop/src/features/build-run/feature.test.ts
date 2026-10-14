@@ -119,7 +119,7 @@ describe('Build', () => {
     expect(backend.builds).toHaveLength(1);
     expect(backend.builds[0]?.request).toEqual({
       handle: projectFixture().handle,
-      document: '{"doc":1}',
+      document: JSON.stringify(documentFixture()),
       config: 'release',
     });
     expect(state().build.status).toBe('building');
@@ -215,10 +215,13 @@ describe('Build', () => {
     await run('build.start');
     expect(backend.builds).toHaveLength(1);
 
-    state().actions.updateProject({ canonicalText: '{"doc":2}', contentHash: OTHER_HASH });
+    state().actions.updateProject({
+      document: documentFixture('Changed'),
+      contentHash: OTHER_HASH,
+    });
     await run('build.start');
     expect(backend.builds).toHaveLength(2);
-    expect(backend.builds[1]?.request.document).toBe('{"doc":2}');
+    expect(backend.builds[1]?.request.document).toBe(JSON.stringify(documentFixture('Changed')));
 
     // The backend cancels the first: its end changes nothing any more.
     await finishBuild(0, 'cancelled', null);
@@ -234,6 +237,7 @@ describe('Build', () => {
       ok: true,
       text: '{"fresh":true}',
       hash: OTHER_HASH,
+      textHash: 'f'.repeat(64),
       diagnostics: [],
     }));
     const editor = { currentDocument: () => documentFixture() } as unknown as EditorHandle;
@@ -262,7 +266,7 @@ describe('Build', () => {
       core: () => ({ canonical }) as unknown as CoreWasm,
     });
     // The store still holds the last version that loaded; it must not be built instead.
-    state().actions.updateProject({ canonicalText: '{"doc":3}', contentHash: OTHER_HASH });
+    state().actions.updateProject({ document: documentFixture('Older'), contentHash: OTHER_HASH });
 
     await run('build.start');
     await run('run.start');

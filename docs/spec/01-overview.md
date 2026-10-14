@@ -87,7 +87,7 @@ It is meant to be:
 | N1 | Platforms | Windows 10 (1809+) and Windows 11 x64; Linux x64 (glibc 2.35+, e.g. Ubuntu 22.04+, Fedora 39+, Debian 12+). arm64 Linux is best-effort. macOS is out of scope for 1.0 but is not precluded by the architecture. |
 | N2 | Cold start | < 2 s to an interactive editor on a mid-range laptop |
 | N3 | Editor responsiveness | ≥ 30 fps dragging in a 5,000-block workspace |
-| N4 | Live preview latency | < 50 ms (p95) for the compiler core's update (load, analysis and generation; `preview()` until a single `update()` export replaces it) of a 1,000-block module, measured in the webview |
+| N4 | Live preview latency | < 50 ms (p95) for the compiler core's `update()` (load, analysis and generation) of a 1,000-block module, measured in the webview |
 | N5 | Memory | < 400 MB resident for a typical (≤ 2,000 blocks) project |
 | N6 | Installer size | < 30 MB (no bundled browser engine, no bundled compiler) |
 | N7 | Accessibility | Full keyboard operation, screen-reader labels, high-contrast theme, colour-blind-safe category palette (WCAG 2.2 AA for app chrome) |

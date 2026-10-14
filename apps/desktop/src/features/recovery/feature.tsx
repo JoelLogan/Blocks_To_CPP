@@ -95,6 +95,7 @@ export function installRecoveryFeature(
   const autosave = startAutosave({
     store: ctx.store,
     ipc: ctx.ipc,
+    core: () => ctx.core(),
     window: options.window === undefined ? defaultWindow() : options.window,
     ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),
     isPaused: () => project?.isSaving() ?? false,

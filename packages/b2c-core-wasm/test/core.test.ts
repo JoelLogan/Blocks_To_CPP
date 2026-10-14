@@ -13,7 +13,7 @@ function fakeGlue(overrides: Partial<GlueFunctions> = {}): GlueFunctions {
     version: vi.fn(() => VERSION),
     load: vi.fn(() => '{"ok":false,"diagnostics":[]}'),
     canonical: vi.fn(() => '{"ok":false,"diagnostics":[]}'),
-    preview: vi.fn(() => '{"stage":"load","diagnostics":[],"files":[]}'),
+    update: vi.fn(() => '{"stage":"load","diagnostics":[],"files":[]}'),
     symbols_in_scope: vi.fn(() => '[]'),
     conversion_table: vi.fn(() => '[{"from":"int","to":"double","conversion":"widening"}]'),
     clipboard_make: vi.fn(() => '{"ok":true,"payload":"{}","diagnostics":[]}'),
@@ -40,14 +40,14 @@ describe('createCore', () => {
     const glue = fakeGlue();
     const { core } = createCore(glue);
     const options = { indentWidth: 2, tabs: true, __proto__: { polluted: true } } as const;
-    core.preview('{}', options);
-    expect(glue.preview).toHaveBeenCalledWith('{}', '{"indentWidth":2}');
+    core.update('{}', options);
+    expect(glue.update).toHaveBeenCalledWith('{}', '{"indentWidth":2}');
   });
 
   it('turns error envelopes into CoreError', () => {
     const handle = createCore(
       fakeGlue({
-        preview: () => '{"error":{"kind":"invalidOptions","message":"expected 2 or 4"}}',
+        update: () => '{"error":{"kind":"invalidOptions","message":"expected 2 or 4"}}',
         canonical: () => '{"error":{"kind":"encode","message":"boom"}}',
         load: () => '{"error":{"kind":"somethingNew","message":7}}',
       }),
@@ -61,9 +61,9 @@ describe('createCore', () => {
       }
       throw new Error('expected a CoreError');
     };
-    const invalid = refused(() => core.preview('{}', { indentWidth: 4 }));
+    const invalid = refused(() => core.update('{}', { indentWidth: 4 }));
     expect(invalid).toBeInstanceOf(CoreError);
-    expect(invalid).toMatchObject({ kind: 'invalidOptions', message: 'preview: expected 2 or 4' });
+    expect(invalid).toMatchObject({ kind: 'invalidOptions', message: 'update: expected 2 or 4' });
     expect(refused(() => core.canonical('{}'))).toMatchObject({ kind: 'encode' });
     expect(refused(() => core.load(new Uint8Array()))).toMatchObject({
       kind: 'protocol',
@@ -111,9 +111,9 @@ describe('createCore', () => {
     expect(handle.trapped).toBe(true);
     // No later call reaches the instance again.
     expect(() => handle.core.version()).toThrow(CoreTrap);
-    expect(() => handle.core.preview('{}', { indentWidth: 4 })).toThrow(/initCore/);
+    expect(() => handle.core.update('{}', { indentWidth: 4 })).toThrow(/initCore/);
     expect(glue.version).not.toHaveBeenCalled();
-    expect(glue.preview).not.toHaveBeenCalled();
+    expect(glue.update).not.toHaveBeenCalled();
     expect(load).toHaveBeenCalledTimes(1);
   });
 
@@ -212,9 +212,9 @@ describe('createCore', () => {
 
     const text = 'x'.repeat(MAX_DOCUMENT_BYTES + 100);
     core.canonical(text);
-    core.preview(text, { indentWidth: 4 });
+    core.update(text, { indentWidth: 4 });
     expect(vi.mocked(glue.canonical).mock.calls[0]?.[0].length).toBe(MAX_DOCUMENT_BYTES + 1);
-    expect(vi.mocked(glue.preview).mock.calls[0]?.[0].length).toBe(MAX_DOCUMENT_BYTES + 1);
+    expect(vi.mocked(glue.update).mock.calls[0]?.[0].length).toBe(MAX_DOCUMENT_BYTES + 1);
 
     core.pastePrepare(text, text, { module: 'm', block: null, input: null }, text);
     const [payload, document, , seed] = vi.mocked(glue.paste_prepare).mock.calls[0] ?? [];

@@ -29,15 +29,22 @@ export interface ProjectState {
   fileName: string | null;
   /** The document as the editor currently has it (loaded by the compiler core). */
   document: BdmDocument;
-  /** The canonical text of {@link document}: what a save would write. */
-  canonicalText: string;
-  /** The content hash of {@link canonicalText} (64 lower-case hex digits, 05 §5.11). */
+  /**
+   * The SHA-256 of the canonical text of {@link document}, what a save would write (64 lower-case
+   * hex digits; the compiler core's `textHash`). The text itself is made only when it is needed
+   * (to save, build or write a recovery snapshot: `core.canonical()`), never per edit (06 §6.13).
+   */
+  textHash: string;
+  /** The content hash of {@link document} (64 lower-case hex digits, 05 §5.11). */
   contentHash: string;
-  /** The canonical text of the last save or load, or `null` when it was never saved. */
-  savedCanonicalText: string | null;
+  /**
+   * The {@link textHash} of the text last saved or loaded from the file, or `null` when it was
+   * never saved (or the file's text is not what the editor shows, 05 §5.7).
+   */
+  savedTextHash: string | null;
   /** When it was last saved (RFC 3339 UTC), or `null`. */
   savedAt: string | null;
-  /** Whether there are unsaved changes (`canonicalText !== savedCanonicalText`). */
+  /** Whether there are unsaved changes (`textHash !== savedTextHash`). */
   dirty: boolean;
   /** The trust state (08 §8.3); Restricted Mode disables Build and Run. */
   trust: Trust;

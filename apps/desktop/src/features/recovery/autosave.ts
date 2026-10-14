@@ -5,8 +5,11 @@
  * in its own recovery folder, never next to the project, and deletes it on a clean save or close;
  * after a crash the start page offers it for restore.
  *
+ * - **The canonical text, made when it is written.** The preview pipeline keeps only the hash of
+ *   the project's canonical text (06 §6.13), so a snapshot asks the compiler core for the text of
+ *   the project's document (`canonical()`) when it is due, not per edit.
  * - **Only while dirty.** The timer runs only while `project.dirty` is set, and a snapshot of text
- *   that is already in the latest snapshot is not written again.
+ *   that is already in the latest snapshot (the same text hash) is not written again.
  * - **One call at a time.** A snapshot asked for while one is being written follows it, with the
  *   text as it is then, so the backend never receives them out of order.
  * - **Never across a save or a reload.** The backend deletes the snapshot when the project is
@@ -18,7 +21,7 @@
  *   run of the same failure, never with project content) and retried at the next tick; the user
  *   is not interrupted every 30 seconds.
  */
-import { MAX_DOCUMENT_BYTES } from '@blocks2cpp/b2c-core-wasm';
+import { type BdmDocument, type CoreWasm, MAX_DOCUMENT_BYTES } from '@blocks2cpp/b2c-core-wasm';
 import type { Handle, IpcClient } from '@blocks2cpp/ipc-types';
 
 import type { ProjectState, useAppStore } from '../../app/store';
@@ -32,10 +35,15 @@ export type BlurSource = Pick<Window, 'addEventListener' | 'removeEventListener'
 
 /** What autosave needs. */
 export interface AutosaveDeps {
-  /** The app's state; the open project's `canonicalText` is what a snapshot holds. */
+  /** The app's state; the canonical text of the open project's `document` is what a snapshot holds. */
   readonly store: typeof useAppStore;
   /** The backend (only `recovery_save` is used). */
   readonly ipc: Pick<IpcClient, 'recoverySave'>;
+  /**
+   * The running compiler core, which writes the document as canonical text (`canonical()`), or
+   * `null` while none runs: then no snapshot is written until the next tick or blur.
+   */
+  readonly core: () => Pick<CoreWasm, 'canonical'> | null;
   /** The window whose `blur` writes a snapshot, or `null` for none. */
   readonly window: BlurSource | null;
   /** The time between snapshots, in milliseconds ({@link AUTOSAVE_INTERVAL_MS} by default). */
@@ -64,10 +72,19 @@ export interface Autosave {
   stop(): void;
 }
 
-/** The text of the latest snapshot the backend accepted, and its project. */
+/** The latest snapshot the backend accepted: its project, document and the hash of its text. */
 interface Written {
   readonly handle: Handle;
+  /** The document it was written from (the store replaces the object whenever it changes). */
+  readonly document: BdmDocument;
+  /** The SHA-256 of its canonical text (the core's `textHash`). */
+  readonly textHash: string;
+}
+
+/** A project's document as canonical text, to write as a snapshot, with the text's hash. */
+interface SnapshotText {
   readonly text: string;
+  readonly textHash: string;
 }
 
 /**
@@ -86,11 +103,11 @@ export function exceedsDocumentLimit(text: string): boolean {
 
 /**
  * Whether two project states are the same save of the same project: the same handle, saved at the
- * same time with the same text. A change of any of them (a save, which deletes the snapshot, or
- * another project) means the latest snapshot no longer counts as written.
+ * same time with the same text (the same hash). A change of any of them (a save, which deletes the
+ * snapshot, or another project) means the latest snapshot no longer counts as written.
  *
- * It compares the fields themselves, which the store keeps as the same strings while they do not
- * change, so the check costs nothing per store update even for a large project.
+ * It compares three short fields, so the check costs nothing per store update even for a large
+ * project.
  */
 function sameSave(a: ProjectState | null, b: ProjectState | null): boolean {
   if (a === b) {
@@ -101,7 +118,7 @@ function sameSave(a: ProjectState | null, b: ProjectState | null): boolean {
     b !== null &&
     a.handle === b.handle &&
     a.savedAt === b.savedAt &&
-    a.savedCanonicalText === b.savedCanonicalText
+    a.savedTextHash === b.savedTextHash
   );
 }
 
@@ -148,19 +165,62 @@ export function startAutosave(deps: AutosaveDeps): Autosave {
     }, intervalMs);
   }
 
-  async function write(handle: Handle, text: string): Promise<void> {
+  /** Logs a failure by its code, once per run of the same failure. */
+  function failed(code: string, message: string): void {
+    if (code !== lastFailure) {
+      console.warn(message, code);
+    }
+    lastFailure = code;
+  }
+
+  async function write(
+    handle: Handle,
+    document: BdmDocument,
+    snapshot: SnapshotText,
+  ): Promise<void> {
     try {
-      await deps.ipc.recoverySave({ handle, document: text });
-      written = { handle, text };
+      await deps.ipc.recoverySave({ handle, document: snapshot.text });
+      written = { handle, document, textHash: snapshot.textHash };
       lastFailure = null;
     } catch (error: unknown) {
       const code = errorCode(error);
       // `unknownHandle`: the project was closed meanwhile, and its snapshot with it.
-      if (ipcErrorOf(error)?.code !== 'unknownHandle' && code !== lastFailure) {
-        console.warn('Autosave could not write a recovery snapshot', code);
+      if (ipcErrorOf(error)?.code === 'unknownHandle') {
+        lastFailure = code;
+      } else {
+        failed(code, 'Autosave could not write a recovery snapshot');
       }
-      lastFailure = code;
     }
+  }
+
+  /**
+   * The canonical text of `document` from the compiler core, or `null` (logged by code) when no
+   * core runs or it cannot write the document.
+   */
+  function canonicalText(document: BdmDocument): SnapshotText | null {
+    const core = deps.core();
+    if (core === null) {
+      failed('noCore', 'Autosave has no compiler core to write the snapshot with');
+      return null;
+    }
+    try {
+      const result = core.canonical(JSON.stringify(document));
+      if (result.ok) {
+        return { text: result.text, textHash: result.textHash };
+      }
+      // The store only holds documents the loader accepted: a bug.
+      failed(
+        result.diagnostics.map((diagnostic) => diagnostic.code).join(', '),
+        'Autosave could not write the project as a snapshot',
+      );
+    } catch (error: unknown) {
+      // The core stopped (`CoreTrap`) or failed: logged by the error's name, never its text.
+      failed(
+        error instanceof Error ? error.name : typeof error,
+        'Autosave could not write the project as a snapshot',
+      );
+    }
+    return null;
   }
 
   function snapshotNow(): Promise<void> {
@@ -179,18 +239,24 @@ export function startAutosave(deps: AutosaveDeps): Autosave {
     if (project?.dirty !== true || deps.isPaused?.() === true) {
       return Promise.resolve();
     }
-    const text = project.canonicalText;
-    if (written?.handle === project.handle && written.text === text) {
+    const latest = written?.handle === project.handle ? written : null;
+    if (latest?.document === project.document) {
       return Promise.resolve();
     }
-    if (exceedsDocumentLimit(text)) {
-      if (lastFailure !== 'tooLarge') {
-        console.warn('Autosave skipped a project larger than a project file may be');
-      }
-      lastFailure = 'tooLarge';
+    const snapshot = canonicalText(project.document);
+    if (snapshot === null) {
       return Promise.resolve();
     }
-    const current: Promise<void> = write(project.handle, text).finally(() => {
+    if (latest?.textHash === snapshot.textHash) {
+      // Another document object with the same text: nothing new to write.
+      written = { ...latest, document: project.document };
+      return Promise.resolve();
+    }
+    if (exceedsDocumentLimit(snapshot.text)) {
+      failed('tooLarge', 'Autosave skipped a project larger than a project file may be');
+      return Promise.resolve();
+    }
+    const current: Promise<void> = write(project.handle, project.document, snapshot).finally(() => {
       writing = null;
     });
     writing = current;

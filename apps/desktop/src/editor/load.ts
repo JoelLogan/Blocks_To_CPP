@@ -66,9 +66,9 @@ async function withCore<T>(
  * Loads `documentText` with the compiler core, makes it the open project in the store, shows it in
  * the editor (with an empty undo history) and switches to the editor screen.
  *
- * Its canonical text becomes the project's; it has unsaved changes when that differs from the
- * canonical form of `savedText`. Reopening the project that is open (same handle) keeps the shown
- * module and the time of the last save.
+ * The hashes of its canonical text become the project's; it has unsaved changes when that text
+ * differs from the canonical form of `savedText` (compared by their hashes). Reopening the project
+ * that is open (same handle) keeps the shown module and the time of the last save.
  *
  * @throws CoreError (`init`) when the compiler core cannot be started, and `CoreTrap` when it
  *   stops twice in a row. A document the loader refuses is not an error: the result carries its
@@ -89,20 +89,20 @@ export async function openDocumentInEditor(
     if (!canonical.ok) {
       return { ok: false as const, diagnostics: canonical.diagnostics };
     }
-    let savedCanonicalText: string | null = null;
+    let savedTextHash: string | null = null;
     if (args.savedText === args.documentText) {
-      savedCanonicalText = canonical.text;
+      savedTextHash = canonical.textHash;
     } else if (args.savedText !== null) {
       const saved = core.canonical(bounded(args.savedText));
-      savedCanonicalText = saved.ok ? saved.text : null;
+      savedTextHash = saved.ok ? saved.textHash : null;
     }
-    return { ok: true as const, document: loaded.document, canonical, savedCanonicalText };
+    return { ok: true as const, document: loaded.document, canonical, savedTextHash };
   });
   if (!outcome.ok) {
     return outcome;
   }
 
-  const { document, canonical, savedCanonicalText } = outcome;
+  const { document, canonical, savedTextHash } = outcome;
   const { project: previous, actions } = ctx.store.getState();
   const sameProject = previous?.handle === args.handle;
   const keptModule =
@@ -113,11 +113,11 @@ export async function openDocumentInEditor(
     handle: args.handle,
     fileName: args.fileName,
     document,
-    canonicalText: canonical.text,
+    textHash: canonical.textHash,
     contentHash: canonical.hash,
-    savedCanonicalText,
+    savedTextHash,
     savedAt: sameProject ? previous.savedAt : null,
-    dirty: canonical.text !== savedCanonicalText,
+    dirty: canonical.textHash !== savedTextHash,
     trust: args.trust,
     activeModuleId: keptModule ?? document.modules[0]?.id ?? '',
     migratedFrom: args.migratedFrom,

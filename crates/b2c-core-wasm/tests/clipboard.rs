@@ -22,7 +22,7 @@ use std::path::PathBuf;
 
 use b2c_core_wasm::{PreviewOptions, Session};
 use b2c_model::IdSource as _;
-use common::{codes, example, examples, file, is_unsafe_to_show, names, parse, preview, repo_root};
+use common::{codes, example, examples, file, is_unsafe_to_show, names, parse, repo_root, update};
 use proptest::prelude::*;
 use proptest::sample::Index;
 use serde_json::{Value, json};
@@ -198,7 +198,7 @@ fn errors(result: &Value) -> Vec<String> {
 #[test]
 fn a_copy_holds_the_blocks_their_outside_references_and_their_code() {
     let game = example("guessing_game");
-    preview(&game, 4);
+    update(&game, 4);
     let (payload, text) = copy(&game, &["b009"]);
     let clipboard = b2c_model::load_clipboard(payload.as_bytes()).unwrap();
     assert_eq!(
@@ -227,7 +227,7 @@ fn a_copy_holds_the_blocks_their_outside_references_and_their_code() {
     assert!(text.ends_with("}\n"), "{text}");
     assert!(text.contains("\n    std::cout << \"Too low!\""), "{text}");
     assert!(!text.starts_with(' '));
-    let main = file(&preview(&game, 4), "main.cpp").unwrap().to_owned();
+    let main = file(&update(&game, 4), "main.cpp").unwrap().to_owned();
     for line in text.lines() {
         assert!(main.contains(line.trim()), "{line}");
     }
@@ -241,7 +241,7 @@ fn a_copied_value_block_is_its_expression_and_a_function_its_definition() {
     assert_eq!(text.lines().count(), 1, "{text}");
     assert!(text.contains("100"), "{text}");
     assert!(
-        file(&preview(&game, 4), "main.cpp")
+        file(&update(&game, 4), "main.cpp")
             .unwrap()
             .contains(text.trim_end())
     );
@@ -371,7 +371,7 @@ fn the_code_comes_from_the_last_preview_or_is_generated() {
     let four = session.clipboard_make(&game, &ids).unwrap().text.unwrap();
     assert!(four.contains("\n    std::cout"), "{four}");
     // After a preview at width 2, from that preview.
-    session.preview(
+    session.update(
         &game,
         &PreviewOptions {
             indent_width: b2c_core_wasm::IndentWidth::Two,
@@ -445,7 +445,7 @@ fn copy_refuses_bad_arguments_and_reports_bad_documents() {
 #[test]
 fn a_paste_next_to_the_original_keeps_its_references() {
     let game = example("guessing_game");
-    preview(&game, 4);
+    update(&game, 4);
     let (payload, _) = copy(&game, &["b009"]);
     let pasted = paste_ok(&payload, &game, &target("mod_main", Some("b005"), None), 1);
     assert_eq!(pasted["unresolved"], json!([]));
@@ -465,7 +465,7 @@ fn a_paste_next_to_the_original_keeps_its_references() {
     assert!(text.contains("s_guess") && text.contains("s_secret"));
 
     let after = insert(&game, 0, Some("b005"), None, blocks);
-    let result = preview(&after, 4);
+    let result = update(&after, 4);
     assert_eq!(result["stage"], "generate", "{:?}", errors(&result));
     assert_eq!(result["buildable"], true);
     assert_eq!(file(&result, "main.cpp").unwrap().matches("Too low!").count(), 2);
@@ -482,7 +482,7 @@ fn a_paste_into_another_document_binds_references_by_name() {
     let text = pasted["blocks"].to_string();
     assert!(text.contains("t_guess") && text.contains("t_secret"), "{text}");
     assert!(!text.contains("s_guess") && !text.contains("s_secret"), "{text}");
-    let result = preview(&insert(&other, 0, Some("c2"), None, &pasted["blocks"]), 4);
+    let result = update(&insert(&other, 0, Some("c2"), None, &pasted["blocks"]), 4);
     assert_eq!(result["buildable"], true, "{:?}", errors(&result));
 
     // At the start of main's list nothing is declared yet: both stay
@@ -521,7 +521,7 @@ fn a_paste_into_another_document_binds_references_by_name() {
         json!({"kind": "tokens", "input": "COND0", "start": 2, "end": 3})
     );
     // The analyser agrees once the blocks are in place.
-    let result = preview(
+    let result = update(
         &insert(&other, 0, Some("b002"), Some("BODY"), &pasted["blocks"]),
         4,
     );
@@ -618,11 +618,11 @@ fn a_paste_after_a_disabled_statement_sees_its_position() {
 
     // In the same document: the references keep their symbols, with no
     // diagnostic, and the analyser agrees once the blocks are in place.
-    preview(&disabled, 4);
+    update(&disabled, 4);
     let pasted = paste_ok(&payload, &disabled, &after, 21);
     assert_eq!(pasted["unresolved"], json!([]));
     assert_eq!(pasted["diagnostics"], json!([]));
-    let result = preview(&insert(&disabled, 0, Some("b004"), None, &pasted["blocks"]), 4);
+    let result = update(&insert(&disabled, 0, Some("b004"), None, &pasted["blocks"]), 4);
     assert_eq!(result["buildable"], true, "{:?}", errors(&result));
     // Into one of its value inputs, the same.
     let inside = paste_ok(
@@ -633,7 +633,7 @@ fn a_paste_after_a_disabled_statement_sees_its_position() {
     );
     assert_eq!(inside["unresolved"], json!([]));
     // Its own dropdowns are filled: what is declared before it.
-    preview(&disabled, 4);
+    update(&disabled, 4);
     let here: Value = serde_json::from_str(&b2c_core_wasm::symbols_in_scope("b004", None)).unwrap();
     assert_eq!(names(&here), ["guess", "secret"]);
 
@@ -685,7 +685,7 @@ fn a_renamed_original_is_kept_where_it_is_visible() {
     assert_eq!(pasted["unresolved"], json!([]));
     assert_eq!(pasted["diagnostics"], json!([]));
     assert!(pasted["blocks"].to_string().contains("s_guess"));
-    let result = preview(&insert(&tries, 0, Some("b005"), None, &pasted["blocks"]), 4);
+    let result = update(&insert(&tries, 0, Some("b005"), None, &pasted["blocks"]), 4);
     assert_eq!(result["buildable"], true, "{:?}", errors(&result));
     assert!(
         file(&result, "main.cpp")
@@ -745,7 +745,7 @@ fn a_pasted_stack_is_unstacked_inside_a_statement_list() {
     let (payload, _) = copy(&document, &["L1"]);
     // The loose stack is parked, a warning (B2C-W0505, ADR-0012); neither it
     // nor the pastes add an error.
-    let before = errors(&preview(&document, 4));
+    let before = errors(&update(&document, 4));
     assert!(before.is_empty(), "{before:?}");
 
     for (block, input) in [(Some("b011"), Some("BODY")), (Some("b004"), None)] {
@@ -761,7 +761,7 @@ fn a_pasted_stack_is_unstacked_inside_a_statement_list() {
         let after = insert(&document, 0, block, input, &pasted["blocks"]);
         let loaded = parse(&b2c_core_wasm::load(after.as_bytes()));
         assert_eq!(loaded["ok"], true, "{}", loaded["diagnostics"]);
-        let result = preview(&after, 4);
+        let result = update(&after, 4);
         assert_eq!(errors(&result), before);
         let main = file(&result, "main.cpp").unwrap();
         let (one, two, three) = (
@@ -901,7 +901,7 @@ fn repeated_duplicates_keep_the_document_loadable() {
     }
     let loaded = parse(&b2c_core_wasm::load(document.as_bytes()));
     assert_eq!(loaded["ok"], true, "{}", loaded["diagnostics"]);
-    let result = preview(&document, 4);
+    let result = update(&document, 4);
     assert_eq!(result["buildable"], true, "{:?}", errors(&result));
     assert_eq!(
         file(&result, "main.cpp").unwrap().matches("Your guess: ").count(),

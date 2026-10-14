@@ -15,7 +15,7 @@ mod common;
 
 use b2c_core_wasm::{PreviewOptions, Session};
 use b2c_ir::Type;
-use common::{example, examples, names, parse, preview};
+use common::{example, examples, names, parse, update};
 use serde_json::{Value, json};
 
 /// The export's answer: a list, or `null` for no answer.
@@ -32,7 +32,7 @@ fn scope(block: &str, input: Option<&str>) -> Value {
 
 #[test]
 fn the_guessing_game_ask_block_sees_guess_and_secret() {
-    preview(&example("guessing_game"), 4);
+    update(&example("guessing_game"), 4);
     assert_eq!(names(&scope("b005", None)), ["guess", "secret"]);
     // At `create secret` nothing is declared yet (and the name being
     // created is not visible in its own starting value).
@@ -54,7 +54,7 @@ fn the_guessing_game_ask_block_sees_guess_and_secret() {
 
 #[test]
 fn loop_counters_parameters_and_functions() {
-    preview(&example("factorial"), 4);
+    update(&example("factorial"), 4);
     // Inside the function: its parameter and every function of the module.
     assert_eq!(names(&scope("b003", None)), ["factorial", "n"]);
     assert_eq!(names(&scope("b004", Some("BODY"))), ["factorial", "n"]);
@@ -73,7 +73,7 @@ fn loop_counters_parameters_and_functions() {
 
 #[test]
 fn unknown_blocks_and_ids_have_no_answer() {
-    preview(&example("guessing_game"), 4);
+    update(&example("guessing_game"), 4);
     for block in ["nope", "", "b 005", "<script>", &"b".repeat(100)] {
         assert_eq!(scope(block, None), Value::Null, "{block:?}");
     }
@@ -117,7 +117,7 @@ fn parked_blocks_answer_with_the_end_of_main() {
         blocks.push(head);
         blocks.push(getter);
     });
-    let result = preview(&text, 4);
+    let result = update(&text, 4);
     assert_ne!(result["stage"], "load", "{}", result["diagnostics"]);
     for id in ["loose_head", "loose_loop", "loose_inner", "loose_get"] {
         assert_eq!(names(&scope(id, None)), ["guess", "secret"], "{id}");
@@ -127,7 +127,7 @@ fn parked_blocks_answer_with_the_end_of_main() {
     let analysis = common::native_analysis(&text);
     let session = {
         let mut session = Session::new();
-        session.preview(&text, &PreviewOptions::default());
+        session.update(&text, &PreviewOptions::default());
         session
     };
     assert_eq!(
@@ -142,7 +142,7 @@ fn blocks_in_a_disabled_loop_answer_like_the_loop() {
     let text = edited_game(|document| {
         document["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"][3]["disabled"] = json!(true);
     });
-    preview(&text, 4);
+    update(&text, 4);
     for id in ["b010", "b005", "b009", "b006", "b008"] {
         assert_eq!(names(&scope(id, None)), ["guess", "secret"], "{id}");
     }
@@ -150,24 +150,28 @@ fn blocks_in_a_disabled_loop_answer_like_the_loop() {
 }
 
 #[test]
-fn the_query_answers_from_the_last_preview_only() {
-    // A preview that does not load forgets the analysis.
-    let failed = preview("{", 4);
+fn the_query_answers_from_the_last_document_that_loaded() {
+    // Nothing has loaded yet: no answer.
+    let failed = update("{", 4);
     assert_eq!(failed["stage"], "load");
     assert_eq!(scope("b005", None), Value::Null);
 
-    preview(&example("guessing_game"), 4);
+    update(&example("guessing_game"), 4);
     assert_eq!(names(&scope("b005", None)), ["guess", "secret"]);
     // Invalid options run no preview and keep the analysis.
-    let refused = parse(&b2c_core_wasm::preview("{", "{}"));
+    let refused = parse(&b2c_core_wasm::update("{", "{}"));
     assert_eq!(refused["error"]["kind"], "invalidOptions");
     assert_eq!(names(&scope("b005", None)), ["guess", "secret"]);
     // Another document replaces it.
-    preview(&example("factorial"), 2);
+    update(&example("factorial"), 2);
     assert_eq!(scope("b005", None).as_array().unwrap().len(), 2);
     assert_eq!(names(&scope("b005", None)), ["factorial", "i"]);
-    preview("[]", 4);
-    assert_eq!(scope("b005", None), Value::Null);
+    // A document that does not load keeps it: the editor still shows the
+    // last document that loaded, and its menus ask about that one.
+    let failed = update("[]", 4);
+    assert_eq!(failed["stage"], "load");
+    assert_eq!(failed["textHash"], Value::Null);
+    assert_eq!(names(&scope("b005", None)), ["factorial", "i"]);
 }
 
 #[test]
@@ -176,7 +180,7 @@ fn a_session_without_a_preview_knows_nothing() {
     assert!(!session.has_preview());
     assert_eq!(session.symbols_in_scope("b005", None), None);
     let mut session = session;
-    session.preview(&example("guessing_game"), &PreviewOptions::default());
+    session.update(&example("guessing_game"), &PreviewOptions::default());
     assert!(session.has_preview());
     assert_eq!(session.symbols_in_scope("b005", None).map(|s| s.len()), Some(2));
 }
@@ -185,7 +189,7 @@ fn a_session_without_a_preview_knows_nothing() {
 fn every_example_answers_the_same_as_the_analyser() {
     for example in examples() {
         let mut session = Session::new();
-        session.preview(&example.text, &PreviewOptions::default());
+        session.update(&example.text, &PreviewOptions::default());
         let analysis = common::native_analysis(&example.text);
         let document: Value = serde_json::from_str(&example.text).unwrap();
         let mut ids = Vec::new();
@@ -223,10 +227,10 @@ fn collect_ids(value: &Value, out: &mut Vec<String>) {
 
 #[test]
 fn block_types_of_the_examples() {
-    let result = preview(&example("guessing_game"), 4);
+    let result = update(&example("guessing_game"), 4);
     // `random 1 to 100` is the only value block.
     assert_eq!(result["blockTypes"], json!({"b001": "int"}));
-    let factorial = preview(&example("factorial"), 4);
+    let factorial = update(&example("factorial"), 4);
     assert_eq!(factorial["blockTypes"], json!({"b005": "int"}));
     assert_eq!(
         names(&factorial["symbols"]),
@@ -249,7 +253,7 @@ fn block_types_follow_the_values() {
     print["inputs"]["ITEM2"] = json!({"block": {"id": "t_rand", "type": "math.random_int", "v": 1,
         "inputs": {"LOW": {"expr": [{"num": "1"}]}, "HIGH": {"expr": [{"num": "6"}]}}}});
     let text = serde_json::to_string(&document).unwrap();
-    let result = preview(&text, 4);
+    let result = update(&text, 4);
     assert_eq!(result["stage"], "generate", "{}", result["diagnostics"]);
     assert_eq!(
         result["blockTypes"],

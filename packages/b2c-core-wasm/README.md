@@ -16,9 +16,9 @@ const core = await initCore();
 const loaded = core.load(bytes); // untrusted bytes: every limit of 05 §5.6
 if (loaded.ok) {
   const json = JSON.stringify(loaded.document);
-  const preview = core.preview(json, { indentWidth: 4 });
-  const saved = core.canonical(json); // { text, hash }
-  const visible = core.symbolsInScope('b005', null); // from that preview's analysis
+  const update = core.update(json, { indentWidth: 4 }); // the preview, with textHash
+  const visible = core.symbolsInScope('b005', null); // from that update's analysis
+  const saved = core.canonical(json); // { text, hash, textHash }: only to save or build
 }
 ```
 
@@ -26,9 +26,9 @@ if (loaded.ok) {
 | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `version()`                                         | `{app, catalog, formatVersion, sourceMapVersion}`                                                                                                                                                   |
 | `load(bytes)`                                       | `{ok: true, document, diagnostics}` (migrated, blocks upgraded (05 §5.7), not resolved, canonical key order; a `B2C-E0603` for each block that could not be upgraded) or `{ok: false, diagnostics}` |
-| `canonical(documentJson)`                           | `{ok: true, text, hash, diagnostics: []}`: what a save writes (05 §5.2) and the content hash (05 §5.11)                                                                                             |
-| `preview(documentJson, { indentWidth })`            | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols}`                                                                                                 |
-| `symbolsInScope(blockId, input)`                    | `SymbolInfo[]` or `null`: what a block may refer to (06 §6.5), from the **last preview's** analysis                                                                                                 |
+| `canonical(documentJson)`                           | `{ok: true, text, hash, textHash, diagnostics: []}`: what a save writes (05 §5.2), the content hash (05 §5.11) and the SHA-256 of the text                                                          |
+| `update(documentJson, { indentWidth })`             | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols, textHash}`: the preview and the hash of the canonical text, from one load                        |
+| `symbolsInScope(blockId, input)`                    | `SymbolInfo[]` or `null`: what a block may refer to (06 §6.5), from the **last update's** analysis                                                                                                  |
 | `conversionTable()`                                 | `[{from, to, conversion}]` for all 49 pairs of static types: the analyser's rule (06 §6.6)                                                                                                          |
 | `clipboardMake(documentJson, blockIds)`             | `{ok: true, payload, text?, diagnostics: []}`: the clipboard payload (05 §5.12) and the blocks' C++                                                                                                 |
 | `pastePrepare(text, documentJson, target, seedHex)` | `{ok: true, blocks, unresolved, diagnostics}`: a payload's blocks ready to insert at `target`                                                                                                       |
@@ -49,19 +49,31 @@ if (loaded.ok) {
   checker and the output types of `var.get` and `func.call` use), and `symbols` every symbol of
   the program, sorted by name.
 
+### One load per edit
+
+The editor calls `update()` alone after each edit (06 §6.13): it loads and hashes the document
+once and returns the preview with `textHash`, the SHA-256 of the document's canonical text. Unlike
+the content hash (`contentHash`, which leaves out block positions and the other layout-only keys
+of 05 §5.11), `textHash` changes exactly when the file a save would write changes, so the editor
+decides whether there are unsaved changes by comparing it with the saved text's `textHash` (from
+`canonical()`). It asks `canonical()` for the text itself only when it needs the text: to save,
+to build, and to write a recovery snapshot. A document that does not load gives `stage: 'load'`
+with the loader's problems, and `null` for both hashes.
+
 ### Scope query
 
-`preview()` keeps the analysis of the document it previewed, and `symbolsInScope()` answers from
-it without running the pipeline again. **Call it only after your own preview has finished**, so the
+`update()` keeps the analysis of the document it previewed, and `symbolsInScope()` answers from it
+without running the pipeline again. **Call it only after your own update has finished**, so the
 answer is about the document on screen. With `input` null (or a value input) it lists what is
 visible at the block; with one of the block's statement inputs (`BODY`, `DO0`, `ELSE`, …), what is
 visible at the start of that list, including a loop's counter and a function's parameters. Every
 block of the previewed document answers: a disabled block in a list or input the analyser reaches
 answers for its position, a block nested in it like it, and a parked block (loose, in a loose
 stack, or nested in one) with the parked scope, what is visible at the end of its module's `main`
-body. It answers `null` (no answer) before a successful preview (a preview whose document does not
-load forgets the analysis), for a block that document does not have, and for one nested too
-deeply; `[]` means that nothing is visible there.
+body. It answers `null` (no answer) before an update has loaded a document, for a block that
+document does not have, and for one nested too deeply; `[]` means that nothing is visible there.
+An update whose document does not load keeps the analysis of the last one that did, which is
+what the editor still shows.
 `conversionTable()` lets the connection checker refuse exactly the connections the analyser would
 report (`invalid`).
 
@@ -174,7 +186,8 @@ cargo test --locked -p b2c-core-wasm                     # the same functions, n
 ```
 
 The Vitest suite under Node runs every example (load, canonical save byte for byte, preview equal
-to `tests/golden/<name>/main.cpp`), the malicious-project suite
+to `tests/golden/<name>/main.cpp`, `update()`'s hashes equal to `canonical()`'s), the
+malicious-project suite
 (`tests/security/projects/README.md`, Loader column), and the scope query, block types,
 conversion table and clipboard (including the malicious-clipboard suite,
 `tests/security/clipboard/README.md`) through the built module. Without a build

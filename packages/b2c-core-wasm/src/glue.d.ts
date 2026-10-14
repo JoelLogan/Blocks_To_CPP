@@ -21,8 +21,8 @@ export interface Glue {
   load(bytes: Uint8Array): string;
   /** `b2c_core_wasm::canonical`. */
   canonical(document_json: string): string;
-  /** `b2c_core_wasm::preview`. */
-  preview(document_json: string, options_json: string): string;
+  /** `b2c_core_wasm::update`. */
+  update(document_json: string, options_json: string): string;
   /** `b2c_core_wasm::symbols_in_scope`: a JSON list, or `null` for no answer. */
   symbols_in_scope(block_id: string, input?: string | null): string;
   /** `b2c_core_wasm::conversion_table`. */

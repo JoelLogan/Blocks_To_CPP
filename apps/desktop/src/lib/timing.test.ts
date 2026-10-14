@@ -51,7 +51,7 @@ describe('User Timing spans', () => {
     vi.spyOn(performance, 'measure').mockImplementation(() => {
       throw new TypeError('no User Timing Level 3');
     });
-    timed('b2c:preview:analyse', () => undefined);
-    expect(latestTimings()['b2c:preview:analyse']).toBeGreaterThanOrEqual(0);
+    timed('b2c:preview:update', () => undefined);
+    expect(latestTimings()['b2c:preview:update']).toBeGreaterThanOrEqual(0);
   });
 });

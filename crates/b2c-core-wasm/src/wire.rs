@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use crate::clipboard::Unresolved;
 use crate::error::{FacadeError, Failure};
-use crate::facade::{Canonical, Loaded, Preview, VersionInfo};
+use crate::facade::{Canonical, Loaded, Update, VersionInfo};
 use crate::scope::ConversionRow;
 use crate::session::{ClipboardMade, Pasted};
 
@@ -92,14 +92,16 @@ pub(crate) fn load(result: &Result<Loaded, LoadError>) -> String {
     }
 }
 
-/// `{"ok": true, "text": "…", "hash": "…", "diagnostics": []}`, or the
-/// failure.
+/// `{"ok": true, "text": "…", "hash": "…", "textHash": "…",
+/// "diagnostics": []}`, or the failure.
 pub(crate) fn canonical(result: &Result<Canonical, LoadError>) -> String {
     #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct Success<'a> {
         ok: bool,
         text: &'a str,
         hash: &'a str,
+        text_hash: &'a str,
         diagnostics: [Diagnostic; 0],
     }
     match result {
@@ -107,14 +109,16 @@ pub(crate) fn canonical(result: &Result<Canonical, LoadError>) -> String {
             ok: true,
             text: &canonical.text,
             hash: &canonical.hash,
+            text_hash: &canonical.text_hash,
             diagnostics: [],
         }),
         Err(problem) => failure(problem),
     }
 }
 
-pub(crate) fn preview(preview: &Preview) -> String {
-    encode(preview)
+/// The preview's fields followed by `textHash`.
+pub(crate) fn update(update: &Update) -> String {
+    encode(update)
 }
 
 /// `[SymbolInfo, …]`, or `null` for no answer.

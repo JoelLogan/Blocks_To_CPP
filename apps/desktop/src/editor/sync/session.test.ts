@@ -2,7 +2,13 @@
  * The editing session with a stand-in core: what changes start the pipeline, the dirty state,
  * switching modules, closing the project, selecting blocks and capturing the viewport for saving.
  */
-import type { BdmBlock, BdmDocument, CanonicalResult, CoreWasm } from '@blocks2cpp/b2c-core-wasm';
+import type {
+  BdmBlock,
+  BdmDocument,
+  CanonicalResult,
+  CoreWasm,
+  UpdateResult,
+} from '@blocks2cpp/b2c-core-wasm';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,9 +39,11 @@ function stubCore(): CoreWasm {
       ok: true,
       text: json,
       hash: 'c'.repeat(64),
+      textHash: json,
       diagnostics: [],
     }),
-    preview: () => previewFixture(),
+    // The JSON text stands in for the hash of the canonical text: equal exactly when it is.
+    update: (json: string): UpdateResult => ({ ...previewFixture(), textHash: json }),
     symbolsInScope: () => [],
     conversionTable: unused,
     clipboardMake: unused,
@@ -89,8 +97,8 @@ function start(
   useAppStore.getState().actions.setProject(
     projectFixture({
       document: doc,
-      canonicalText: JSON.stringify(doc),
-      savedCanonicalText: JSON.stringify(doc),
+      textHash: JSON.stringify(doc),
+      savedTextHash: JSON.stringify(doc),
       activeModuleId: 'mod_main',
     }),
   );

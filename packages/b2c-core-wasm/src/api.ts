@@ -41,11 +41,16 @@ export type LoadResult =
   | { ok: false; diagnostics: Diagnostic[] };
 
 /**
- * The result of `CoreWasm.canonical()`: the canonical file text (what a save writes, 05 §5.2) and
- * the content hash (64 lower-case hex digits, 05 §5.11), or the loader's problems.
+ * The result of `CoreWasm.canonical()`: the canonical file text (what a save writes, 05 §5.2), the
+ * content hash (64 lower-case hex digits, 05 §5.11) and `textHash`, the SHA-256 of the text's
+ * UTF-8 bytes (64 lower-case hex digits), or the loader's problems.
+ *
+ * Unlike the content hash, `textHash` covers the layout too (block positions, notes, viewports):
+ * two documents have the same `textHash` exactly when a save writes the same file for both. It is
+ * the `textHash` that `update()` reports for the same document.
  */
 export type CanonicalResult =
-  | { ok: true; text: string; hash: string; diagnostics: Diagnostic[] }
+  | { ok: true; text: string; hash: string; textHash: string; diagnostics: Diagnostic[] }
   | { ok: false; diagnostics: Diagnostic[] };
 
 /** The machine's code style for generated C++ (indent width 2 or 4 in milestone M2). */
@@ -85,6 +90,16 @@ export interface PreviewResult {
   blockTypes: Record<string, StaticType>;
   /** Every symbol of the program, sorted by name, then ID; empty when loading failed. */
   symbols: SymbolInfo[];
+}
+
+/**
+ * The result of `CoreWasm.update()`: the preview, with `textHash`, the hash of the document's
+ * canonical text (the `textHash` that `canonical()` reports for it; `null`, like `contentHash`,
+ * only when loading failed). A failed load is `stage: 'load'` with the loader's problems as
+ * `diagnostics`.
+ */
+export interface UpdateResult extends PreviewResult {
+  textHash: string | null;
 }
 
 /**
@@ -181,17 +196,24 @@ export interface CoreWasm {
   version(): CoreVersion;
   /** Loads untrusted project bytes with every limit and rule of 05 §5.6. */
   load(bytes: Uint8Array): LoadResult;
-  /** Loads a document given as JSON text and serialises it canonically. */
+  /**
+   * Loads a document given as JSON text and serialises it canonically: the text a save, a build or
+   * a recovery snapshot sends, with its hashes.
+   */
   canonical(documentJson: string): CanonicalResult;
   /**
-   * Runs the whole front half of the pipeline for the live preview, and keeps the analysis for
-   * `symbolsInScope` (a document that does not load clears it).
+   * What the editor runs after each edit (06 §6.13): loads the document **once** and returns its
+   * preview (the whole front half of the pipeline) with the hash of its canonical text, so the
+   * editor can tell whether there are unsaved changes without asking for the text. Keeps the
+   * analysis for `symbolsInScope` and the clipboard; a document that does not load keeps the
+   * analysis of the last one that did.
    */
-  preview(documentJson: string, options: PreviewOptions): PreviewResult;
+  update(documentJson: string, options: PreviewOptions): UpdateResult;
   /**
-   * The symbols a block may refer to, from the analysis of the **last preview** (06 §6.5), sorted
-   * by name, then ID. `input` null (or a value input) gives what is visible at the block; the
-   * name of one of its statement inputs gives what is visible at the start of that list.
+   * The symbols a block may refer to, from the analysis of the **last update** whose document
+   * loaded (06 §6.5), sorted by name, then ID. `input` null (or a value input) gives what is
+   * visible at the block; the name of one of its statement inputs gives what is visible at the
+   * start of that list.
    *
    * Every block of the previewed document answers: a disabled block in a list or input the
    * analyser reaches answers for its position, like an enabled block there, and every block
@@ -199,10 +221,10 @@ export interface CoreWasm {
    * the parked scope, what is visible at the end of its module's `main` body (the module's
    * functions alone without one).
    *
-   * `null` when that analysis has **no answer** for the block: before a successful preview, for a
-   * block the previewed document does not have (one added since), and for one nested too deeply.
-   * An empty list means that nothing is visible there. Call it only after your own preview has
-   * finished, so the answer is about the document you show.
+   * `null` when that analysis has **no answer** for the block: before an update has loaded a
+   * document, for a block the previewed document does not have (one added since), and for one
+   * nested too deeply. An empty list means that nothing is visible there. Call it only after your
+   * own update has finished, so the answer is about the document you show.
    */
   symbolsInScope(blockId: string, input: string | null): SymbolInfo[] | null;
   /** The analyser's conversion rule for every pair of static types (49 rows). */

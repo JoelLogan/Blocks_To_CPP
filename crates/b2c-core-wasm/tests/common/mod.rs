@@ -48,12 +48,43 @@ pub(crate) fn parse(output: &str) -> Value {
     value
 }
 
-/// `preview` with the given indent width.
-pub(crate) fn preview(document: &str, indent_width: u8) -> Value {
-    parse(&b2c_core_wasm::preview(
+/// `update` with the given indent width: the preview, with `textHash`.
+pub(crate) fn update(document: &str, indent_width: u8) -> Value {
+    parse(&b2c_core_wasm::update(
         document,
         &format!(r#"{{"indentWidth":{indent_width}}}"#),
     ))
+}
+
+/// Checks an `update` result against what the editor got from two loads
+/// before `update` existed: its fields other than `textHash` are exactly
+/// the native preview of the same text ([`b2c_core_wasm::preview_document`]),
+/// and its hashes are those of `canonical` (`textHash` the SHA-256 of the
+/// canonical text), or both `null` when the text does not load.
+pub(crate) fn assert_update_matches(text: &str, indent_width: u8, result: &Value, what: &str) {
+    let options =
+        b2c_core_wasm::PreviewOptions::from_json(&format!(r#"{{"indentWidth":{indent_width}}}"#)).unwrap();
+    let mut fields = result.as_object().unwrap().clone();
+    let text_hash = fields
+        .remove("textHash")
+        .unwrap_or_else(|| panic!("{what}: no textHash"));
+    let native = serde_json::to_value(b2c_core_wasm::preview_document(text, &options)).unwrap();
+    assert!(Value::Object(fields) == native, "{what}: the preview differs");
+    let canonical = parse(&b2c_core_wasm::canonical(text));
+    if canonical["ok"] == true {
+        let saved = canonical["text"].as_str().unwrap();
+        assert_eq!(text_hash, canonical["textHash"], "{what}");
+        assert_eq!(
+            text_hash,
+            b2c_model::hex(&<sha2::Sha256 as sha2::Digest>::digest(saved.as_bytes())),
+            "{what}"
+        );
+        assert_eq!(result["contentHash"], canonical["hash"], "{what}");
+    } else {
+        assert_eq!(text_hash, Value::Null, "{what}");
+        assert_eq!(result["contentHash"], Value::Null, "{what}");
+        assert_eq!(result["diagnostics"], canonical["diagnostics"], "{what}");
+    }
 }
 
 /// The codes of a list of diagnostics, in order.

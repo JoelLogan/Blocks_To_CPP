@@ -12,7 +12,7 @@ import type { EditorHandle } from '../app/editor-types';
 import type { FeatureContext } from '../app/features';
 import { resetAppStore, useAppStore } from '../app/store';
 import { openDocumentInEditor, type OpenDocumentArgs } from './load';
-import { canonicalText, EXAMPLE_PROJECTS, loadText, present, testCore } from './sync/testing';
+import { canonicalOf, EXAMPLE_PROJECTS, loadText, present, testCore } from './sync/testing';
 
 const core = await testCore();
 
@@ -81,9 +81,10 @@ describe.skipIf(core === null)('opening a document', () => {
     const { project, ui } = useAppStore.getState();
     const expected = loadText(core, args().documentText);
     expect(project?.document).toEqual(expected);
-    expect(project?.canonicalText).toBe(canonicalText(core, expected));
+    expect(project?.textHash).toBe(canonicalOf(core, expected).textHash);
+    expect(project?.textHash).toMatch(/^[0-9a-f]{64}$/);
     expect(project?.contentHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(project?.savedCanonicalText).toBe(project?.canonicalText);
+    expect(project?.savedTextHash).toBe(project?.textHash);
     expect(project?.dirty).toBe(false);
     expect(project?.activeModuleId).toBe('mod_main');
     expect(project?.trust).toEqual(TRUSTED);
@@ -95,7 +96,7 @@ describe.skipIf(core === null)('opening a document', () => {
   it('marks a project that was never saved as changed', async () => {
     await openDocumentInEditor(context(core), args({ savedText: null, fileName: null }));
     const project = useAppStore.getState().project;
-    expect(project?.savedCanonicalText).toBeNull();
+    expect(project?.savedTextHash).toBeNull();
     expect(project?.dirty).toBe(true);
   });
 
@@ -111,7 +112,7 @@ describe.skipIf(core === null)('opening a document', () => {
     expect(useAppStore.getState().project?.dirty).toBe(true);
 
     await openDocumentInEditor(context(core), args({ savedText: 'not a project' }));
-    expect(useAppStore.getState().project?.savedCanonicalText).toBeNull();
+    expect(useAppStore.getState().project?.savedTextHash).toBeNull();
   });
 
   it("returns the loader's problems and leaves the editor alone", async () => {

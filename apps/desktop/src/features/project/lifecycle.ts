@@ -84,7 +84,12 @@ interface PreparedSave {
   readonly text: string;
   /** Its content hash. */
   readonly hash: string;
-  /** The project's live canonical text when the save started, to notice edits made meanwhile. */
+  /** The hash of {@link text}: the saved text's, which `dirty` compares with from now on. */
+  readonly textHash: string;
+  /**
+   * The project's {@link ProjectState.textHash} when the save started, to notice edits made
+   * meanwhile.
+   */
   readonly base: string;
 }
 
@@ -754,7 +759,13 @@ export class ProjectLifecycle implements ProjectQueue {
     if (new TextEncoder().encode(canonical.text).length > MAX_DOCUMENT_BYTES) {
       return this.refuseSave(`The project was not saved. ${limitMessage('size')}`);
     }
-    return { doc, text: canonical.text, hash: canonical.hash, base: project.canonicalText };
+    return {
+      doc,
+      text: canonical.text,
+      hash: canonical.hash,
+      textHash: canonical.textHash,
+      base: project.textHash,
+    };
   }
 
   /** Shows why a save cannot start; resolves `null`. */
@@ -789,13 +800,13 @@ export class ProjectLifecycle implements ProjectQueue {
       return;
     }
     const named = fileName === null ? {} : { fileName };
-    if (project.canonicalText === prepared.base) {
+    if (project.textHash === prepared.base) {
       actions.updateProject({
         ...named,
         document: prepared.doc,
-        canonicalText: prepared.text,
+        textHash: prepared.textHash,
         contentHash: prepared.hash,
-        savedCanonicalText: prepared.text,
+        savedTextHash: prepared.textHash,
         savedAt,
         dirty: false,
         migratedFrom: null,
@@ -814,12 +825,12 @@ export class ProjectLifecycle implements ProjectQueue {
       document,
       ...(canonical?.ok === true
         ? {
-            canonicalText: canonical.text,
+            textHash: canonical.textHash,
             contentHash: canonical.hash,
-            dirty: canonical.text !== prepared.text,
+            dirty: canonical.textHash !== prepared.textHash,
           }
         : { dirty: true }),
-      savedCanonicalText: prepared.text,
+      savedTextHash: prepared.textHash,
       savedAt,
       migratedFrom: null,
     });

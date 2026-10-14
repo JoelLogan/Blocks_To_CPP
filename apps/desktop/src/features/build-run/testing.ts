@@ -278,7 +278,7 @@ export function featureContext(
 /** Opens a trusted project with no errors, a usable g++ and the default settings. */
 export function openRunnableProject(): void {
   const { actions } = useAppStore.getState();
-  actions.setProject(projectFixture({ canonicalText: '{"doc":1}', contentHash: 'a'.repeat(64) }));
+  actions.setProject(projectFixture({ contentHash: 'a'.repeat(64) }));
   actions.setToolchains({ list: [toolchainFixture()], discovering: false });
   actions.setSettings({ value: settingsFixture() });
   actions.setAnalysis({ preview: previewFixture([]) });

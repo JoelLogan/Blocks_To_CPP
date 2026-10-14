@@ -19,7 +19,7 @@
 
 mod common;
 
-use common::{codes, example, file, names, parse, preview};
+use common::{codes, example, file, names, parse, update};
 use serde_json::{Value, json};
 
 /// A project whose `main` holds `body`.
@@ -98,7 +98,7 @@ fn paste_upgrades_the_pasted_blocks() {
 }
 
 /// An *update* block of catalog 1.1.0, `[n ▾] [op ▾] (2)`.
-fn update(id: &str, op: &str) -> Value {
+fn update_block(id: &str, op: &str) -> Value {
     json!({"id": id, "type": "var.update", "v": 1,
            "fields": {"VAR": {"ref": "s_n"}, "OP": op},
            "inputs": {"VALUE": {"expr": [{"num": "2"}]}}})
@@ -114,9 +114,9 @@ fn load_turns_update_blocks_into_change_blocks() {
         "inputs": {"VALUE": {"expr": [{"num": "10"}]}}});
     let body = json!([
         declare,
-        update("b_times", "mul"),
-        update("b_minus", "sub"),
-        update("b_mod", "mod")
+        update_block("b_times", "mul"),
+        update_block("b_minus", "sub"),
+        update_block("b_mod", "mod")
     ]);
     let loaded = parse(&b2c_core_wasm::load(project(&body).as_bytes()));
     assert_eq!(loaded["ok"], true, "{loaded}");
@@ -130,7 +130,7 @@ fn load_turns_update_blocks_into_change_blocks() {
         assert_eq!(change["fields"]["OP"], op);
         assert_eq!(change["inputs"]["BY"], json!({"expr": [{"num": "2"}]}));
     }
-    let result = preview(&loaded["document"].to_string(), 4);
+    let result = update(&loaded["document"].to_string(), 4);
     assert_eq!(result["diagnostics"], json!([]), "{result}");
     let code = file(&result, "main.cpp").unwrap();
     assert!(
@@ -145,7 +145,7 @@ fn load_turns_update_blocks_into_change_blocks() {
 #[test]
 fn paste_turns_update_blocks_into_change_blocks() {
     let document = project(&json!([]));
-    let mut unchosen = update("c1", "div");
+    let mut unchosen = update_block("c1", "div");
     unchosen["fields"].as_object_mut().unwrap().remove("VAR");
     let pasted = paste(&payload("1.1.0", &json!([unchosen])), &document);
     assert_eq!(pasted["ok"], true, "{pasted}");
@@ -205,7 +205,7 @@ fn the_scope_query_answers_for_upgraded_blocks() {
         b2c_catalog::upgrade_document_with(&mut document, b2c_catalog::core_catalog(), &ASSIGN_RETIRED);
     assert_eq!((report.upgraded, report.diagnostics.len()), (2, 0));
     let text = b2c_model::to_canonical_json(&document);
-    let result = preview(&text, 4);
+    let result = update(&text, 4);
     // The parked block only warns.
     assert_eq!(
         codes(&result["diagnostics"]),

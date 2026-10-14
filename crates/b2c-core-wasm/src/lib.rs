@@ -12,9 +12,9 @@
 //! |--------|---------|
 //! | [`version`] | `{app, catalog, formatVersion, sourceMapVersion}` |
 //! | [`load`] | `{ok, document?, diagnostics}`: the loaded document (migrated, blocks upgraded, not resolved), in canonical key order |
-//! | [`canonical`] | `{ok, text?, hash?, diagnostics}`: the canonical file text (05 §5.2) and the content hash (05 §5.11) |
-//! | [`preview`] | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols}` |
-//! | [`symbols_in_scope`] | `[SymbolInfo, …]` or `null`: what a block may refer to, from the last preview's analysis (06 §6.5) |
+//! | [`canonical`] | `{ok, text?, hash?, textHash?, diagnostics}`: the canonical file text (05 §5.2), the content hash (05 §5.11) and the hash of the text |
+//! | [`update`] | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols, textHash}`: the preview and the hash of the canonical text, from one load |
+//! | [`symbols_in_scope`] | `[SymbolInfo, …]` or `null`: what a block may refer to, from the last update's analysis (06 §6.5) |
 //! | [`conversion_table`] | `[{from, to, conversion}, …]`: the analyser's conversion rule for every pair of static types (06 §6.6) |
 //! | [`clipboard_make`] | `{ok, payload?, text?, diagnostics}`: the clipboard payload of copied blocks and their C++ (05 §5.12) |
 //! | [`paste_prepare`] | `{ok, blocks?, unresolved, diagnostics}`: a payload's blocks with fresh IDs and re-bound references |
@@ -28,13 +28,21 @@
 //!
 //! # State
 //!
-//! [`preview`] keeps the analysis of the document it previewed, and
+//! [`update`] keeps the analysis of the document it previewed, and
 //! [`symbols_in_scope`] answers from it, so opening a dropdown never re-runs
-//! the pipeline. The editor asks only after its own preview has finished, so
+//! the pipeline. The editor asks only after its own update has finished, so
 //! the answer is about the document it shows. The clipboard exports use the
 //! kept analysis when it belongs to the document they are given, and
 //! analyse that document otherwise. Each WebAssembly instance has one such
 //! [`Session`]; a fresh instance starts without one.
+//!
+//! # One load per edit
+//!
+//! After each edit the editor calls [`update`] alone: the document is loaded
+//! and hashed once, and the editor decides whether there are unsaved changes
+//! by comparing `textHash` with the saved text's. It asks [`canonical`] for
+//! the text itself only to save, build or write a recovery snapshot
+//! (06 §6.13).
 //!
 //! # Rules
 //!
@@ -72,8 +80,9 @@ pub use args::PasteTarget;
 pub use clipboard::{NOT_DECLARED, Unresolved};
 pub use error::{FacadeError, Failure};
 pub use facade::{
-    APP_VERSION, Canonical, GENERATOR_INCOMPLETE, Loaded, Preview, SOURCE_MAP_VERSION, Stage, VersionInfo,
-    canonical_document, load_document, preview_document, version_info,
+    APP_VERSION, Canonical, GENERATOR_INCOMPLETE, Loaded, Preview, SOURCE_MAP_VERSION, Stage, Update,
+    VersionInfo, canonical_document, load_document, preview_document, text_hash, update_document,
+    version_info,
 };
 pub use options::{IndentWidth, MAX_OPTIONS_BYTES, PreviewOptions};
 pub use scope::{ConversionRow, STATIC_TYPES};
@@ -124,38 +133,51 @@ pub fn load(bytes: &[u8]) -> String {
     wire::load(&load_document(bytes))
 }
 
-/// Loads a document (as JSON text) and returns its canonical serialisation
-/// and content hash: `{"ok": true, "text": "…", "hash": "<64 hex digits>",
+/// Loads a document (as JSON text) and returns its canonical serialisation,
+/// its content hash and the hash of the text: `{"ok": true, "text": "…",
+/// "hash": "<64 hex digits>", "textHash": "<64 hex digits>",
 /// "diagnostics": []}`, or `{"ok": false, "diagnostics": [...]}`.
 ///
-/// The text is what a save writes (05 §5.2) and the hash is the dirty-check
-/// and build identity (05 §5.11).
+/// The text is what a save writes (05 §5.2), the hash the build identity
+/// (05 §5.11), and `textHash` the SHA-256 of the text, which the editor's
+/// unsaved-changes flag compares ([`text_hash`]).
 #[wasm_bindgen]
 pub fn canonical(document_json: &str) -> String {
     wire::canonical(&canonical_document(document_json))
 }
 
-/// Runs the whole front half of the pipeline (stages ①–⑦) for the live
-/// preview, with the options `{"indentWidth": 2 | 4}`, and keeps the
-/// analysis for [`symbols_in_scope`] and the clipboard exports.
+/// What the editor runs after each edit: loads the document once and runs
+/// the whole front half of the pipeline (stages ①–⑦) for the live preview,
+/// with the options `{"indentWidth": 2 | 4}`, and keeps the analysis for
+/// [`symbols_in_scope`] and the clipboard exports.
+///
+/// Returns the preview, `{"stage", "diagnostics", "files", "sourceMap",
+/// "buildable", "placeholders", "contentHash", "blockTypes", "symbols"}`,
+/// with `"textHash"`: the hash of the document's canonical text, the same as
+/// [`canonical`] reports, so the editor knows whether there are unsaved
+/// changes without the text itself (`null`, like `contentHash`, when the
+/// document does not load).
 ///
 /// Unlike a build, the preview carries on through catalog and analyser
 /// errors, so the editor always shows as much C++ as it can; see
 /// [`preview_document`] for the exact rules. `symbols` lists every symbol of
 /// the program and `blockTypes` the static type of each value block. A
-/// document that does not load clears the kept analysis. Invalid options
-/// give `{"error": {"kind": "invalidOptions", …}}` and change nothing.
+/// document that does not load gives stage `load` with the loader's
+/// diagnostics and keeps the analysis of the last one that did. Invalid
+/// options give `{"error": {"kind": "invalidOptions", …}}` and change
+/// nothing.
 #[wasm_bindgen]
-pub fn preview(document_json: &str, options_json: &str) -> String {
+pub fn update(document_json: &str, options_json: &str) -> String {
     match PreviewOptions::from_json(options_json) {
-        Ok(options) => with_session(|session| wire::preview(&session.preview(document_json, &options))),
+        Ok(options) => with_session(|session| wire::update(&session.update(document_json, &options))),
         Err(error) => wire::error(&error),
     }
 }
 
-/// The symbols a block may refer to, from the last preview's analysis: a
-/// JSON list of `SymbolInfo` (06 §6.5), sorted by name, then ID, or `null`
-/// when that analysis has no answer for the block.
+/// The symbols a block may refer to, from the analysis of the last
+/// [`update`] whose document loaded: a JSON list of `SymbolInfo` (06 §6.5),
+/// sorted by name, then ID, or `null` when that analysis has no answer for
+/// the block.
 ///
 /// With `input` absent, or the name of a value input, it is what is visible
 /// at the block; with the name of one of the block's statement inputs, what
@@ -165,8 +187,8 @@ pub fn preview(document_json: &str, options_json: &str) -> String {
 /// block nested in it answers like it. A parked block (loose, in a loose
 /// stack, or nested in one) answers with the parked scope: what is visible
 /// at the end of its module's `main` body, or the module's functions alone
-/// without one. The answer is `null` when there has been no successful
-/// preview, and for a block the previewed document does not have (one added
+/// without one. The answer is `null` when no update has loaded a document
+/// yet, and for a block the previewed document does not have (one added
 /// since) or that is nested too deeply; an empty list (`[]`) means that
 /// nothing is visible there. See [`b2c_lang::Analysis::symbols_in_scope`]
 /// for the exact rules.

@@ -116,7 +116,7 @@ export function liveCore(host: CoreHost): CoreWasm {
     version: () => running().version(),
     load: (bytes) => running().load(bytes),
     canonical: (documentJson) => running().canonical(documentJson),
-    preview: (documentJson, options) => running().preview(documentJson, options),
+    update: (documentJson, options) => running().update(documentJson, options),
     symbolsInScope: (blockId, input) => running().symbolsInScope(blockId, input),
     conversionTable: () => running().conversionTable(),
     clipboardMake: (documentJson, blockIds) => running().clipboardMake(documentJson, blockIds),

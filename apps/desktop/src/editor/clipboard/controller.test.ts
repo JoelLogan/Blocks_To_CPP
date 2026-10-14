@@ -63,6 +63,7 @@ function scriptedCore() {
     ok: true,
     text: '{}',
     hash: '0'.repeat(64),
+    textHash: '1'.repeat(64),
     diagnostics: [],
   }));
   const unused = () => {
@@ -71,7 +72,7 @@ function scriptedCore() {
   const core: CoreWasm = {
     version: unused,
     load: unused,
-    preview: unused,
+    update: unused,
     symbolsInScope: unused,
     conversionTable: unused,
     clipboardMake,
@@ -582,7 +583,13 @@ describe('a paste whose project file would be larger than 32 MiB', () => {
   /** A paste on the canvas for which the core's canonical text of the document is `text`. */
   function pasteWithCanonical(text: string) {
     const scripted = scriptedCore();
-    scripted.canonical.mockReturnValue({ ok: true, text, hash: '0'.repeat(64), diagnostics: [] });
+    scripted.canonical.mockReturnValue({
+      ok: true,
+      text,
+      hash: '0'.repeat(64),
+      textHash: '1'.repeat(64),
+      diagnostics: [],
+    });
     notices = [];
     return controller({ core: () => scripted.core }).paste('PAYLOAD', ON_CANVAS);
   }

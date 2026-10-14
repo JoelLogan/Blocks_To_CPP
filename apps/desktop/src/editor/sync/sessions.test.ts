@@ -23,6 +23,7 @@ import { useAppStore } from '../../app/store';
 import { loadModule } from './bdmToWorkspace';
 import { forEachNode, treeDecls } from './bdmTree';
 import {
+  canonicalOf,
   canonicalText,
   disposeWorkspaces,
   EXAMPLE_PROJECTS,
@@ -350,7 +351,7 @@ describe.skipIf(core === null)('scripted editing sessions', () => {
       }
 
       // The derived document is what the store holds, and it survives a reload byte for byte.
-      expect(useAppStore.getState().project?.canonicalText).toBe(canonicalText(core, doc));
+      expect(useAppStore.getState().project?.textHash).toBe(canonicalOf(core, doc).textHash);
       const reloaded = headlessWorkspace();
       loadModule(reloaded, doc, 'mod_main');
       expect(canonicalText(core, readModule(reloaded, doc, 'mod_main'))).toBe(

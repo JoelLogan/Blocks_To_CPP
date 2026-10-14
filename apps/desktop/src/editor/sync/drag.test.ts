@@ -20,7 +20,7 @@
  *   one Undo takes the drop back, and the drop runs one preview (04 §4.2). A *set* whose variable
  *   was chosen in the toolbox keeps it, with the start value of its type.
  */
-import type { BdmDocument, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
+import type { BdmDocument, UpdateResult } from '@blocks2cpp/b2c-core-wasm';
 import { b2cDarkTheme, b2cLightTheme, readExprShadow } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -746,9 +746,9 @@ function countingPreviews(): PreviewService & { readonly runs: () => number } {
   let runs = 0;
   return {
     runs: () => runs,
-    preview(json, options): Promise<PreviewResult> {
+    update(json, options): Promise<UpdateResult> {
       runs += 1;
-      return Promise.resolve(wasm.preview(json, options));
+      return Promise.resolve(wasm.update(json, options));
     },
   };
 }

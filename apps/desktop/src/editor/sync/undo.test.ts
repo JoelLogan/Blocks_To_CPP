@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { useAppStore } from '../../app/store';
 import { documentFixture } from '../../app/testing/fixtures';
 import {
-  canonicalText,
+  canonicalOf,
   disposeWorkspaces,
   EXAMPLE_PROJECTS,
   loadText,
@@ -78,9 +78,9 @@ function dirty(): boolean | undefined {
   return useAppStore.getState().project?.dirty;
 }
 
-/** The canonical text of the document the canvas was last read into. */
-function liveText(): string | undefined {
-  return useAppStore.getState().project?.canonicalText;
+/** The hash of the canonical text of the document the canvas was last read into. */
+function liveTextHash(): string | undefined {
+  return useAppStore.getState().project?.textHash;
 }
 
 describe.skipIf(core === null)('undo', () => {
@@ -145,7 +145,7 @@ describe.skipIf(core === null)('undo', () => {
       },
     ];
     const doc = loadText(wasm, JSON.stringify(sparse));
-    const saved = canonicalText(wasm, doc);
+    const saved = canonicalOf(wasm, doc).textHash;
     running = startSession(wasm, doc, { workspace: renderedWorkspace() });
     const { workspace } = running;
     await settle(running);
@@ -161,7 +161,7 @@ describe.skipIf(core === null)('undo', () => {
     workspace.undo(false);
     await settle(running);
     expect(dirty()).toBe(false);
-    expect(liveText()).toBe(saved);
+    expect(liveTextHash()).toBe(saved);
 
     // Redo and undo again: the block keeps its file's shape every time it comes back.
     workspace.undo(true);
@@ -169,6 +169,6 @@ describe.skipIf(core === null)('undo', () => {
     workspace.undo(false);
     await settle(running);
     expect(dirty()).toBe(false);
-    expect(liveText()).toBe(saved);
+    expect(liveTextHash()).toBe(saved);
   });
 });

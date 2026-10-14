@@ -189,13 +189,22 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
   });
 
   describe('symbolsInScope', () => {
-    it('has no answer before a successful preview', () => {
-      core.preview('{', { indentWidth: 4 });
+    it('has no answer before an update has loaded a document', () => {
+      core.update('{', { indentWidth: 4 });
       expect(core.symbolsInScope('b005', null)).toBeNull();
     });
 
+    it('keeps answering about the last document that loaded when one does not load', () => {
+      core.update(example('guessing_game'), { indentWidth: 4 });
+      const failed = core.update('[]', { indentWidth: 4 });
+      expect(failed.stage).toBe('load');
+      expect(failed.textHash).toBeNull();
+      // The editor still shows the guessing game, and its menus ask about it.
+      expect(names(core.symbolsInScope('b005', null))).toEqual(['guess', 'secret']);
+    });
+
     it('lists guess and secret at the guessing game ask block, and nothing at b002', () => {
-      core.preview(example('guessing_game'), { indentWidth: 4 });
+      core.update(example('guessing_game'), { indentWidth: 4 });
       expect(names(core.symbolsInScope('b005', null))).toEqual(['guess', 'secret']);
       expect(core.symbolsInScope('b002', null)).toEqual([]);
       expect(names(core.symbolsInScope('b010', 'BODY'))).toEqual(['guess', 'secret']);
@@ -212,7 +221,7 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
     });
 
     it('sees loop counters, parameters and functions', () => {
-      core.preview(example('factorial'), { indentWidth: 4 });
+      core.update(example('factorial'), { indentWidth: 4 });
       expect(names(core.symbolsInScope('b003', null))).toEqual(['factorial', 'n']);
       expect(names(core.symbolsInScope('b007', null))).toEqual(['factorial']);
       expect(names(core.symbolsInScope('b007', 'BODY'))).toEqual(['factorial', 'i']);
@@ -235,7 +244,7 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
       if (loop !== undefined) {
         loop['disabled'] = true;
       }
-      core.preview(JSON.stringify(tree), { indentWidth: 4 });
+      core.update(JSON.stringify(tree), { indentWidth: 4 });
       expect(names(core.symbolsInScope('loose', null))).toEqual(['guess', 'secret']);
       expect(names(core.symbolsInScope('b005', null))).toEqual(['guess', 'secret']);
       expect(names(core.symbolsInScope('b009', 'DO1'))).toEqual(['guess', 'secret']);
@@ -244,10 +253,10 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
 
   describe('preview', () => {
     it('fills symbols and block types', () => {
-      const game = core.preview(example('guessing_game'), { indentWidth: 4 });
+      const game = core.update(example('guessing_game'), { indentWidth: 4 });
       expect(game.blockTypes).toEqual({ b001: 'int' });
       expect(names(game.symbols)).toEqual(['guess', 'secret']);
-      const factorial = core.preview(example('factorial'), { indentWidth: 4 });
+      const factorial = core.update(example('factorial'), { indentWidth: 4 });
       expect(factorial.blockTypes).toEqual({ b005: 'int' });
       expect(names(factorial.symbols)).toEqual(['factorial', 'i', 'n']);
     });
@@ -269,7 +278,7 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
   describe('clipboard', () => {
     it('copies blocks with their outside references and their C++', () => {
       const game = example('guessing_game');
-      core.preview(game, { indentWidth: 4 });
+      core.update(game, { indentWidth: 4 });
       const made = core.clipboardMake(game, ['b009']);
       if (!made.ok) {
         throw new Error('the copy failed');
@@ -299,7 +308,7 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
       for (const id of blockIds(blocks)) {
         expect(before.has(id)).toBe(false);
       }
-      const preview = core.preview(insert(game, target, blocks), { indentWidth: 4 });
+      const preview = core.update(insert(game, target, blocks), { indentWidth: 4 });
       expect(preview.buildable).toBe(true);
       expect(preview.files[0]?.contents.split('Too low!')).toHaveLength(3);
     });
@@ -316,7 +325,7 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
       const text = JSON.stringify(pasted(bound));
       expect(text).toContain('t_guess');
       expect(text).not.toContain('s_guess');
-      expect(core.preview(insert(other, after, pasted(bound)), { indentWidth: 4 }).buildable).toBe(
+      expect(core.update(insert(other, after, pasted(bound)), { indentWidth: 4 }).buildable).toBe(
         true,
       );
 
@@ -328,7 +337,7 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
       ]);
       expect(codes(outside.diagnostics)).toEqual(['B2C-E0201', 'B2C-E0201']);
       expect(outside.diagnostics[0]?.message).toContain('`guess`');
-      const preview = core.preview(insert(other, start, pasted(outside)), { indentWidth: 4 });
+      const preview = core.update(insert(other, start, pasted(outside)), { indentWidth: 4 });
       expect(codes(preview.diagnostics)).toContain('B2C-E0201');
     });
 
@@ -364,7 +373,7 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
       }
       const loaded = core.load(new TextEncoder().encode(document));
       expect(loaded.ok).toBe(true);
-      expect(core.preview(document, { indentWidth: 4 }).buildable).toBe(true);
+      expect(core.update(document, { indentWidth: 4 }).buildable).toBe(true);
     });
 
     it.each(clipboardCases())('gives $file its expected loader outcome', ({ file, loader }) => {

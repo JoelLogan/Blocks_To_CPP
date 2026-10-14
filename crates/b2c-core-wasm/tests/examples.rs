@@ -19,7 +19,8 @@
 mod common;
 
 use common::{
-    codes, examples, file, has_errors, native_analysis, native_generation, parse, preview, repo_root,
+    assert_update_matches, codes, examples, file, has_errors, native_analysis, native_generation, parse,
+    repo_root, update,
 };
 use serde_json::Value;
 
@@ -47,7 +48,7 @@ fn preview_main_cpp_equals_the_golden_file() {
         let Ok(expected) = std::fs::read_to_string(&golden) else {
             continue;
         };
-        let result = preview(&example.text, 4);
+        let result = update(&example.text, 4);
         assert_eq!(result["stage"], "generate", "{}", example.name);
         assert!(
             !has_errors(&result["diagnostics"]),
@@ -73,7 +74,7 @@ fn preview_main_cpp_equals_the_golden_file() {
 fn preview_files_and_source_map_equal_the_native_pipeline() {
     for example in examples() {
         for indent_width in [2, 4] {
-            let result = preview(&example.text, indent_width);
+            let result = update(&example.text, indent_width);
             let native = native_generation(&example.text, indent_width);
             assert_eq!(
                 result["files"],
@@ -96,7 +97,7 @@ fn preview_files_and_source_map_equal_the_native_pipeline() {
 fn preview_reports_the_content_hash_symbols_and_block_types() {
     let mut typed = 0;
     for example in examples() {
-        let result = preview(&example.text, 4);
+        let result = update(&example.text, 4);
         let canonical = parse(&b2c_core_wasm::canonical(&example.text));
         assert_eq!(result["contentHash"], canonical["hash"], "{}", example.name);
         let analysis = native_analysis(&example.text);
@@ -115,6 +116,24 @@ fn preview_reports_the_content_hash_symbols_and_block_types() {
         typed += result["blockTypes"].as_object().unwrap().len();
     }
     assert!(typed > 0, "no example has a typed value block");
+}
+
+#[test]
+fn update_is_the_preview_and_the_hashes_of_every_example() {
+    for example in examples() {
+        for indent_width in [2, 4] {
+            let result = update(&example.text, indent_width);
+            assert_update_matches(&example.text, indent_width, &result, &example.name);
+        }
+        // The text hash is the file's own: an example is saved canonically.
+        let result = update(&example.text, 4);
+        assert_eq!(
+            result["textHash"],
+            b2c_model::hex(&<sha2::Sha256 as sha2::Digest>::digest(example.text.as_bytes())),
+            "{}",
+            example.name
+        );
+    }
 }
 
 #[test]
@@ -210,11 +229,11 @@ fn shuffled(text: &str, rotate: usize) -> String {
 fn top_level_block_order_does_not_change_the_preview() {
     let mut reordered = 0;
     for example in examples() {
-        let expected = b2c_core_wasm::preview(&example.text, r#"{"indentWidth":4}"#);
+        let expected = b2c_core_wasm::update(&example.text, r#"{"indentWidth":4}"#);
         for rotate in 0..3 {
             let text = shuffled(&example.text, rotate);
             let blocks_moved = text != example.text;
-            let output = b2c_core_wasm::preview(&text, r#"{"indentWidth":4}"#);
+            let output = b2c_core_wasm::update(&text, r#"{"indentWidth":4}"#);
             assert!(
                 output == expected,
                 "{} (rotation {rotate}): the preview changed",
@@ -250,7 +269,7 @@ fn dangling_reference() -> String {
 
 #[test]
 fn a_dangling_reference_still_previews_best_effort_cpp() {
-    let result = preview(&dangling_reference(), 4);
+    let result = update(&dangling_reference(), 4);
     assert_eq!(result["stage"], "analyze");
     let found = codes(&result["diagnostics"]);
     assert!(found.contains(&String::from("B2C-E0201")), "{found:?}");
@@ -273,7 +292,7 @@ fn a_catalog_error_still_previews_best_effort_cpp() {
         .as_array_mut()
         .unwrap();
     body.push(serde_json::json!({ "id": "b_unknown", "type": "pack.missing_block", "v": 1 }));
-    let result = preview(&serde_json::to_string(&value).unwrap(), 4);
+    let result = update(&serde_json::to_string(&value).unwrap(), 4);
     assert_eq!(result["stage"], "resolve");
     let found = codes(&result["diagnostics"]);
     assert!(found.contains(&String::from("B2C-E0601")), "{found:?}");
@@ -285,7 +304,7 @@ fn a_catalog_error_still_previews_best_effort_cpp() {
 
 #[test]
 fn a_load_failure_gives_no_files() {
-    let result = preview("{\"format\": \"blocks2cpp/project\"", 4);
+    let result = update("{\"format\": \"blocks2cpp/project\"", 4);
     assert_eq!(result["stage"], "load");
     assert_eq!(result["files"], Value::Array(Vec::new()));
     assert_eq!(result["sourceMap"], Value::Null);
@@ -304,7 +323,7 @@ fn invalid_preview_options_give_an_error_envelope() {
         r#"{"indentWidth":3}"#,
         r#"{"indentWidth":4,"tabs":true}"#,
     ] {
-        let result = parse(&b2c_core_wasm::preview(&text, options));
+        let result = parse(&b2c_core_wasm::update(&text, options));
         assert_eq!(result["error"]["kind"], "invalidOptions", "{options:?}");
         assert!(
             result["error"]["message"]

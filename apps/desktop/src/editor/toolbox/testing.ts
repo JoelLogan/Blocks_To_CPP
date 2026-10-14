@@ -244,9 +244,9 @@ export function loadDocument(core: CoreWasm, text: string): BdmDocument {
   return loaded.document;
 }
 
-/** Runs the preview (and so the analysis the scope query answers from) and stores it. */
+/** Runs the update (and so the analysis the scope query answers from) and stores its preview. */
 export function analyse(core: CoreWasm, document: BdmDocument): void {
-  const preview = core.preview(JSON.stringify(document), { indentWidth: 4 });
+  const preview = core.update(JSON.stringify(document), { indentWidth: 4 });
   useAppStore.setState({
     project: projectFixture({ document }),
     analysis: { seq: 1, notice: null, syncCodes: [], preview },
@@ -302,7 +302,7 @@ export function fakeCore(scopes: Readonly<Record<string, readonly SymbolInfo[]>>
     version: unused,
     load: unused,
     canonical: unused,
-    preview: unused,
+    update: unused,
     conversionTable: unused,
     clipboardMake: unused,
     pastePrepare: unused,

@@ -57,7 +57,7 @@ function edit(n: number, doc: BdmDocument = twoModules()): void {
   act(() => {
     const { actions } = useAppStore.getState();
     actions.updateProjectAndAnalysis(
-      { document: doc, canonicalText: `{"edit":${String(n)}}`, contentHash: String(n).repeat(64) },
+      { document: doc, textHash: String(n).repeat(64), contentHash: String(n).repeat(64) },
       { seq: n },
     );
     actions.setAnalysis({ preview: previewOf(n) });

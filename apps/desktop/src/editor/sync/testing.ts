@@ -2,7 +2,13 @@
  * Test helpers for the editor: the real compiler core, the example and security projects, headless
  * workspaces and loading text into a document. Only tests import this module.
  */
-import { type BdmDocument, CoreError, type CoreWasm, initCore } from '@blocks2cpp/b2c-core-wasm';
+import {
+  type BdmDocument,
+  type CanonicalResult,
+  CoreError,
+  type CoreWasm,
+  initCore,
+} from '@blocks2cpp/b2c-core-wasm';
 import { DEFAULT_EDITOR_SERVICES } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
@@ -107,15 +113,23 @@ export function loadText(wasm: CoreWasm, text: string): BdmDocument {
   return loaded.document;
 }
 
-/** The canonical text of a document; throws when it does not load. */
-export function canonicalText(wasm: CoreWasm, doc: BdmDocument): string {
+/** The canonical text of a document, with its hashes; throws when it does not load. */
+export function canonicalOf(
+  wasm: CoreWasm,
+  doc: BdmDocument,
+): Extract<CanonicalResult, { ok: true }> {
   const canonical = wasm.canonical(JSON.stringify(doc));
   if (!canonical.ok) {
     throw new Error(
       `The document did not load: ${canonical.diagnostics.map((d) => `${d.code} ${d.message}`).join('; ')}`,
     );
   }
-  return canonical.text;
+  return canonical;
+}
+
+/** The canonical text of a document; throws when it does not load. */
+export function canonicalText(wasm: CoreWasm, doc: BdmDocument): string {
+  return canonicalOf(wasm, doc).text;
 }
 
 const workspaces: Blockly.Workspace[] = [];
@@ -216,12 +230,13 @@ export function startSession(
     getCore,
     setCore,
   });
-  const text = canonicalText(core, doc);
+  const saved = canonicalOf(core, doc);
   useAppStore.getState().actions.setProject(
     projectFixture({
       document: doc,
-      canonicalText: text,
-      savedCanonicalText: text,
+      textHash: saved.textHash,
+      contentHash: saved.hash,
+      savedTextHash: saved.textHash,
       activeModuleId: doc.modules[0]?.id ?? '',
     }),
   );
