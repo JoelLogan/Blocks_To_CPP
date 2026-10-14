@@ -296,6 +296,7 @@ describe('the initial toolbox and the inject options', () => {
     expect(options.move).toMatchObject({ wheel: true });
     expect(options.plugins).toEqual({
       connectionChecker: 'b2c_checker',
+      connectionPreviewer: 'b2c_previewer',
       blockDragger: B2cBlockDragger,
       toolbox: 'b2c_continuous_toolbox',
       flyoutsVerticalToolbox: 'b2c_continuous_flyout',

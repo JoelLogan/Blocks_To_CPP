@@ -79,6 +79,16 @@ toolbox. While a drop would delete, no place is previewed and the dragged
 blocks are shown faded. While the pointer is left of the toolbox's right
 edge, the whole toolbox is tinted as well; over the trash can, the toolbox is
 not tinted and the trash can opens its lid instead.
+An empty C-block (its first mouth holds nothing) dropped with its top on a
+statement takes the statement's place and wraps that statement and everything
+below it in the same list, as in Scratch: the first statement of a list or
+one in the middle. Dropped with its mouth at the top of a loose stack, it
+wraps the stack. An empty C-block is never inserted between two statements;
+at the end of a list, with nothing below to wrap, it is added there. The
+preview shows the C-block around the statements it will wrap. Hats and
+definitions never take statements out of a list. Wrapping is a pointer
+gesture: a block moved with the keyboard is inserted, and the keyboard
+equivalent of wrapping comes in M5.
 
 **Parked blocks.** As in Scratch, a statement or value block, or a stack of
 them, can be left anywhere on the canvas. Only statements attached to *when
