@@ -1,9 +1,9 @@
 //! The state the exports keep between calls: the analysis behind the last
-//! preview.
+//! update.
 //!
 //! The editor runs [`Session::update`] after every edit (debounced) and then
 //! asks about the same document many times: the symbols for a dropdown, the
-//! code of the blocks being copied. A [`Session`] keeps the last preview's
+//! code of the blocks being copied. A [`Session`] keeps the last update's
 //! analysis, so those answers never re-run the pipeline. The WebAssembly
 //! exports use one session per instance (a thread-local in `lib.rs`); native
 //! callers and tests create their own.
@@ -32,7 +32,7 @@ use crate::facade::{self, Preview, Update};
 use crate::options::PreviewOptions;
 use crate::scope;
 
-/// What a session keeps from the last preview.
+/// What a session keeps from the last update whose document loaded.
 #[derive(Debug, Clone)]
 struct LastPreview {
     /// The content hash of the previewed document.
@@ -44,7 +44,7 @@ struct LastPreview {
 }
 
 /// One editor's compiler core: the preview and the questions that are
-/// answered from the last preview's analysis.
+/// answered from the last update's analysis.
 #[derive(Debug, Clone, Default)]
 pub struct Session {
     last: Option<LastPreview>,

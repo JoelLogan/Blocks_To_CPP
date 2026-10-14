@@ -1,6 +1,6 @@
 //! The editor's round trip (05 §5.6): `load()` hands the document to
 //! JavaScript, which keeps it as `JSON.parse` values and sends it back with
-//! `JSON.stringify` for `canonical()`, `preview()`, saves and builds. Every
+//! `JSON.stringify` for `canonical()`, `update()`, saves and builds. Every
 //! document that loads must come back as the same canonical text and hash,
 //! so a project is never dirty just for being opened and a save never
 //! changes a define (and with it the program and the security hash).

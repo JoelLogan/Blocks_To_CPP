@@ -41,7 +41,7 @@
 //! statement in a list the analyser reaches has the scope of its position,
 //! like an enabled block there. Only a block nested too deeply has no
 //! answer; its place sees the module's functions, which are visible
-//! everywhere in it. The analysis is the one kept from the last preview when
+//! everywhere in it. The analysis is the one kept from the last update when
 //! it belongs to the same document (same content hash), otherwise a new one.
 //!
 //! # How references are bound
