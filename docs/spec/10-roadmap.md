@@ -200,14 +200,17 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
   done 2026-10-15).
 * Close-out (2026-10-15): the README and CONTRIBUTING rewritten, the
   housekeeping fixes, the `app_quit` follow-up of the nightly IPC-abuse
-  test, a memory cap for the weekly mutation job (its first green run is
-  still to come), the threat-model review recorded and the toolchain matrix
-  protocol written. The owner's part remains: the Debian toolchain cell, the
-  visual baselines from the CI runners, the profile on the owner's machine,
-  the usability sessions, the NVDA and Orca pass and the demo review. The
-  GitHub A/B of 2026-10-15 still flags an edit at 1,000 blocks as slower
-  than before the standard variable set (about +24 % on Linux and +29 % on
-  Windows), which is open.
+  test, a memory cap for the weekly mutation job (its first green run
+  followed, 2026-10-15), the threat-model review recorded and the toolchain
+  matrix protocol written. The owner's part remains: the Debian toolchain
+  cell, the visual baselines from the CI runners, the profile on the owner's
+  machine, the usability sessions, the NVDA and Orca pass and the demo
+  review. A GitHub A/B of 2026-10-15 flagged an edit at 1,000 blocks as
+  slower than before the standard variable set (about +24 % on Linux and
+  +29 % on Windows); it was the noise of a p95 taken over 10 edits, not a
+  regression: later A/B runs measured the same code faster, and the
+  per-edit medians are equal or faster
+  ([record](../plans/m2-polish-plan.md#w4--block-set-variables-and-parked-blocks)).
 
 **Exit:** both P0 defects are fixed; each of U1–U18 is fixed or moved to M3
 with the owner's agreement; items marked *M2 if time* move to M3 without
