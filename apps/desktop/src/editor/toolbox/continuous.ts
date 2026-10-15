@@ -79,6 +79,8 @@ function dynamicCategoryKey(item: Blockly.utils.toolbox.FlyoutItemInfo): string 
  *   the flyout scrolls to a chosen category (04 §4.2), and then shows the flyout again where it
  *   was: the category at the top of the view stays there, as far into it as before, and the
  *   selected category stays selected;
+ * - drawing new categories (a new toolbox definition) keeps the selected category selected, in its
+ *   new row, so that the first category is selected at startup whatever the timing;
  * - a dynamic category that cannot be built is left out instead of failing the whole flyout;
  * - showing the flyout again disposes every item in it, so a keyboard focus that was on one goes
  *   to the same item in the new contents instead of being lost (the keyboard plugin's
@@ -240,11 +242,28 @@ export class B2cContinuousToolbox extends ContinuousToolbox {
     );
   }
 
-  /** Draws new categories; the next refresh then shows the flyout again whatever it held. */
+  /**
+   * Draws new categories; the next refresh then shows the flyout again whatever it held. The
+   * category that was selected stays selected, in its new row (04 §4.2); when drawing them moves
+   * the flyout, its scroll event then selects the category at the top, as a scroll by hand does.
+   * Blockly 12.5.1's `Toolbox.render` disposes the old rows but keeps the old selected row as the
+   * selection: the new rows were all drawn unselected, the flyout's next showing selected none by
+   * its scroll position since the toolbox still counted one as selected, and whether the first
+   * category came out selected at startup depended on whether the flyout's scroll event came
+   * before that showing.
+   */
   override render(toolboxDef: Blockly.utils.toolbox.ToolboxInfo): void {
+    const selected = this.getSelectedItem();
+    const name = selected instanceof Blockly.ToolboxCategory ? selected.getName() : null;
     super.render(toolboxDef);
     this.shownContents = null;
     this.builtKey = null;
+    this.keptAt = null;
+    this.selectedItem_ = null;
+    const again = name === null ? null : this.getCategoryByName(name);
+    if (again !== null) {
+      this.selectItem_(null, again);
+    }
   }
 
   override dispose(): void {

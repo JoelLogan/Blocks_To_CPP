@@ -757,3 +757,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   tool's name and a Node.js minimum written in lower case (`engines.node`);
   `tools/check-moved-text.py` reports a missing input file instead of
   crashing, and the dropped list of the desktop README's split is committed.
+- The toolbox's first category (_Program_) is selected when the editor
+  opens, every time. Drawing the toolbox's categories again kept the old
+  selected row as the selection, so the new rows were drawn unselected and,
+  depending on timing, no category was highlighted until the flyout was
+  scrolled or a category chosen.
