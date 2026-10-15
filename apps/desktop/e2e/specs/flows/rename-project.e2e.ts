@@ -72,10 +72,16 @@ describe('Renaming the project', () => {
     const app = await flow.launch({ dialogs: { saveAs: [file] } });
     const { driver } = app;
 
-    // (1) A new project, saved once: Save as chooses the file's name.
+    // (1) A new project, saved once: Save as chooses the file's name. A new template project has
+    // no unsaved changes, so the marker says nothing about the save; the status bar's "Saved"
+    // shows that the Save as has answered, before (4) saves again right after an edit.
     await newEmptyProject(app);
     await pressCtrl(driver, 's');
     await waitForWrite(file, null);
+    await waitFor(async () => (await testIdText(driver, 'status-save')).startsWith('Saved'), {
+      timeout: UI_TIMEOUT_MS,
+      message: 'the status bar to say the project is saved',
+    });
     await waitForMarker(driver, false);
     expect(savedName(file)).toBe(TEMPLATE_NAME);
 
