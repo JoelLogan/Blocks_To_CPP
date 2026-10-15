@@ -1225,6 +1225,13 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
 - **Change:** patch Blockly's render management and make `getDescendants` linear, in a local branch, under ADR-0014. Open an upstream issue.
 - **Exit criterion:** a measured result recorded for D6/D15: the render count when appending to a 500-statement chain, and the `edit-1000` time with and without the patch. The patch itself is M3-2.
 - Effort S.
+- *Status (2026-10-15):* done, as a measurement only: nothing in the app or its dependencies changed. The patch is [`upstream/blockly-render-management.patch`](upstream/blockly-render-management.patch) (against Blockly 12.5.1's `core/render_management.ts` and `core/block.ts`); as measured, the same change in the npm package's `blockly_compressed.js` is [`upstream/blockly-render-management.bundle.patch`](upstream/blockly-render-management.bundle.patch), applied to a local install only. The upstream issue is drafted in [`upstream/blockly-render-management.md`](upstream/blockly-render-management.md) and not filed (F-8).
+  - **The patch.** `queueBlock` walks up iteratively and marks for drawing only the queued block, its parent, and each block further up that the walk reaches through one of its inputs or that has an output connection; a block reached through its next connection is only walked through, because a block's shape does not depend on the blocks below it. `renderBlock` still walks every dirty block but draws only the marked ones; `doRenders` updates component locations from each drawn block down; `getDescendants` walks with a stack of its own, in the same order.
+  - **Render count** (Vitest with happy-dom, Zelos, the app's blocks; a print appended to 500 prints in *when program starts*): 503 → 4 blocks drawn (the new print and its shadow, the print above it, and `main`, whose mouth grew); deleting it again 501 → 3. Component locations (1,003 blocks) and connection moves (2,005) are unchanged, because `main` is drawn and its whole subtree is updated.
+  - **Correctness.** A property test of 40 random edits each with Zelos and Geras (append, insert after a statement, insert into a mouth, delete with healing, move into another mouth, collapse and expand): after each edit's render, every block's place, size and outline, every connection's place and the connection databases equal what `workspace.render()` gives. `getDescendants` keeps the recursive order.
+  - **`getDescendants`** on a headless chain: 1,000 statements 4.0 → 0.21 ms, 5,000 188 → 0.36 ms, 10,000 681 → 0.90 ms, 20,000 a stack overflow → 1.55 ms. Blockly's `dispose` still recurses and overflows from 5,000 statements in the same test. At the benchmarks' sizes the gain is small: on a rendered 150-statement chain (301 blocks) a call takes 0.15–0.16 ms either way.
+  - **A/B in the app** (local, Linux under xvfb, debug backend, E2E builds of bee5c0a without and with the bundle patch, 2 rounds of 5 samples in alternating runs, 10 per side): `edit-1000.p95` 1,627.5 → 1,071 ms (−34.2 %); `select-1000.max-task` 924.5 → 991.5 ms (+7.2 %, within noise: each target costs about the same on both sides, 48–156 ms for the three inside a loop (two changes and an `if`), 0.7–1.9 s for the five in `main`'s body or in a print); `preview-1000.p95` 115.5 → 110 ms (−4.8 %); guessing game `edit` 35 → 35.5 ms, `select` 17 → 17 ms.
+  - **Where the time goes** (diagnostic builds with timing probes in Blockly's render pass and in `Gesture.setTargetBlock`; 8 edits and 16 clicks per build, medians). An edit at the end of `main` draws 382 → 4 blocks and its drawing takes 439.5 → 20 ms (a deletion 442.5 → 3 ms); `resizeContents` stays at about 210 ms (216 → 204), `bumpNeighbours` at 30–40 ms and component locations at 11–13 ms; the page's longest task falls from 1,110.5 to 729.5 ms. A click draws nothing: its cost is `BlockSvg.bringToFront`, 0.3–0.9 s for four of the eight targets (a print and a loop in `main`'s body, a getter in a print, a declaration), each re-appending one to three SVG groups, and a statement's group holds every block below it in its stack; under 35 ms for the others. `focusNode` adds 21–181 ms, growing along the stack. Both are the same with and without the patch.
 
 ### W7 — M2 close-out
 
@@ -1908,6 +1915,15 @@ The structured decisions list has the full options and recommendations. They are
 
 **Recommendation.** (a): keep Zelos. Accept ADR-0014, because the drop-delete fix, the flyout width and wrapping need protected seams. Run the render-management patch as a spike (P-3) and land it in M3 only if the measured gain justifies it and the patch review passes.
 
+**Follow-up (P-3, 2026-10-15).** The spike's measurements justify the patch (P-3's status has them all). Appending to a 500-statement chain draws 4 blocks instead of 503. An edit at the end of the 1,000-block program spends 20 ms drawing instead of 440 ms, and in a local A/B `edit-1000.p95` fell from 1,627.5 to 1,071 ms (−34 %); no other metric moved beyond noise. M3-2 therefore lands it under ADR-0014's rules:
+
+- the bundle patch ([`upstream/blockly-render-management.bundle.patch`](upstream/blockly-render-management.bundle.patch)) as a pnpm `patchedDependencies` entry for `blockly@12.5.1`; `blockly.mjs` and the Node entry both load `blockly_compressed.js`, so the one file covers the app and the tests;
+- the upstream issue filed from [`upstream/blockly-render-management.md`](upstream/blockly-render-management.md), with the source patch beside it, and linked from the patch entry;
+- the spike's two tests committed with it: the render count, which fails without the patch (503 blocks drawn against at most 4), and the placement property test with Zelos and Geras;
+- if M3-3 moves to Blockly 13 first, the patch is made again against 13's `render_management.ts` and measured again.
+
+Zelos stays: the patch changes no block's shape.
+
 ### D7. How should the documentation be laid out (U18)?
 
 **Options.**
@@ -1979,6 +1995,13 @@ Clean up Blocks: keep it in M2 (it only stacks top-level blocks, and positions a
 (1) Move the preview to a Web Worker in M3 (ADR-0016; the spec's own trigger has fired: about 120 ms against the 50 ms target), or wait for M5. (2) Upgrade to Blockly 13, continuous-toolbox 13 and xterm.js 6.1: a spike now and adoption in M3, or stay on Blockly 12 until 1.0. (3) Budgets: gate the small-program budgets (no task over 50 ms, select within 50 ms) in M2, or report them in M2 and gate only regressions (through an A/B job and an acceptance file), with absolute budgets gated from M3.
 
 **Recommendation.** (1) Worker in M3, after the single update() export (P-1). The worker's CSP behaviour must be verified on both webviews first. (2) Spike, then adopt in M3. Use xterm 6.1 once a stable release exists (6.0.0 cannot load under the app's frozen prototype); keep the wheel workaround on 5.5 until then. (3) Report absolute budgets in M2 and gate regressions only. Gate absolute small-program budgets from M3, set from a measured baseline once the toolbox refreshes per section. Guessed 50 ms budgets would fail from day one: toolbox rebuilds measure 130-194 ms.
+
+**Follow-up (P-3, 2026-10-15).** The render patch alone does not bring 1,000 blocks near N12 (P-3's status has the readings):
+
+- **Edits.** With the patch, an edit's longest task is still about 0.73 s (from 1.11 s) and `edit-1000.p95` about 1.07 s (from 1.63 s). In Blockly's render pass, `resizeContents` takes about 0.2 s whether 4 or 382 blocks were drawn. About 0.45 s of the task lies outside the render pass: the insertion itself and the webview's style, layout and paint of the canvas, not measured apart.
+- **Clicks.** A click draws nothing, so the patch leaves `select-1000.max-task` (about 1 s) as it is. The cost is `BlockSvg.bringToFront`, called by `Gesture.setTargetBlock`: it re-appends the clicked statement's SVG group, which nests every block below it in its stack (0.3–0.9 s for half of the targets), and `focusNode` grows along the stack (21–181 ms). Neither is render management, and the Worker does not touch them.
+
+The recommendation stands. In M3 the Worker (M3-1) takes the preview's 110 ms off the main thread and the render patch (M3-2) about 0.4 s of drawing per edit; the click and `resizeContents` need a spike of their own, with an upstream report and, under ADR-0014, a patch only on the same evidence. Absolute budgets stay report-only in M2.
 
 ### D16. How is the remaining M2 work structured, sized and sequenced?
 
