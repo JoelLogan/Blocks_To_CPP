@@ -109,6 +109,8 @@ git status --short                           # the three lines above must change
 pnpm exec markdownlint-cli2                  # every Markdown file
 node site/build.mjs --check-repo-markdown    # links and heading anchors in all Markdown
 pnpm --filter @blocks2cpp/site test          # the anchor check's own tests
+python3 tools/check-build-docs.py            # BUILDING.md's pinned versions, written nowhere else
+python3 tools/check-build-docs.py --self-test
 pnpm run site:build                          # the specification website
 lychee --config lychee.toml './**/*.md'      # external links
 ```
@@ -144,6 +146,7 @@ then the visual diff. The security tests, benchmarks and fuzzing run nightly.
 
 ```sh
 tools/dependency-health.sh --self-test       # the weekly dependency report's script
+python3 tools/memory-capped-runner.py --self-test   # the weekly mutation job's test runner
 zizmor --persona auditor --offline .github/workflows   # workflow security audit
 actionlint                                   # workflow syntax and expressions (not run by CI)
 ```

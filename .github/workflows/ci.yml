@@ -55,6 +55,11 @@ jobs:
       - name: Dependency health report script (self-test)
         run: tools/dependency-health.sh --self-test
 
+      # The weekly mutation job's memory-capped test runner (weekly.yml), so a broken
+      # runner is found before a weekly run counts every mutant's tests as failing.
+      - name: Memory-capped test runner (self-test)
+        run: python3 tools/memory-capped-runner.py --self-test
+
       # The fuzz targets live in their own workspace (fuzz/); make sure they
       # still build with the pinned stable toolchain.
       - name: Check the fuzz targets
