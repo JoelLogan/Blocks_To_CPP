@@ -11,7 +11,9 @@
  * - One module is shown at a time; switching keeps the left module's changes in the document and
  *   clears Blockly's undo history (each module has its own canvas). A switch asked for during a
  *   block drag (a problem in another module selected, another module chosen) waits until the
- *   drag has ended: the canvas is in flux until then.
+ *   drag has ended: the canvas is in flux until then. While the shown canvas does not load
+ *   (`syncFailed`), the editor stays on it: the project's document only ever holds documents the
+ *   loader accepts, and the undo history that takes the change back is kept.
  * - The viewport is captured only for saving ({@link EditorSession.currentDocument}).
  * - While a block is dragged, saving writes the canvas as it was just before the drag (./drag.ts).
  * - Renaming the project changes the document outside the canvas and previews it again
@@ -174,6 +176,7 @@ interface WaitingSwitch {
 export class EditorSession {
   readonly workspace: Blockly.Workspace;
   private readonly store: typeof useAppStore;
+  private readonly host: CoreHost;
   private readonly hooks: SessionHooks;
   private readonly pipeline: PreviewPipeline;
   private readonly index = new DeclIndex();
@@ -195,6 +198,7 @@ export class EditorSession {
   constructor(options: EditorSessionOptions) {
     this.workspace = options.workspace;
     this.store = options.store;
+    this.host = options.host;
     this.hooks = options.hooks ?? {};
     this.guard = new DuplicateGuard(this.workspace, this.index, (syms) => {
       this.hooks.onRenamed?.(syms);
@@ -393,6 +397,11 @@ export class EditorSession {
    * During a block drag the switch waits until the drag has ended: the canvas is in flux (a drag
    * preview may stand in a list, or hold the statements a wrap would take in its mouth), and
    * Blockly cannot clear a canvas whose block it is dragging. The last switch asked for wins.
+   *
+   * A shown module whose canvas does not load (its read is refused by the compiler core's loader,
+   * `syncFailed`) is not left: the project's document would get a document that no save, build
+   * or recovery snapshot can write, and clearing the undo history would take away the Undo that
+   * gets back to the last version that loads (04 §4.4). The store goes back to the shown module.
    */
   switchModule(moduleId: string): void {
     const project = this.store.getState().project;
@@ -418,6 +427,13 @@ export class EditorSession {
       doc = readModule(this.workspace, project.document, this.shown);
     } catch (error: unknown) {
       console.error('The shown module could not be read; staying on it', error);
+      return;
+    }
+    if (!this.loads(doc)) {
+      console.warn('The shown module does not load; staying on it until the change is undone');
+      if (project.activeModuleId !== this.shown) {
+        actions.updateProject({ activeModuleId: this.shown });
+      }
       return;
     }
     this.leftViews.set(this.shown, this.shownViewport(doc, this.shown));
@@ -504,6 +520,24 @@ export class EditorSession {
       blocks = committed.workspace.blocks;
     }
     this.preDrag = { moduleId: this.shown, blocks };
+  }
+
+  /**
+   * Whether `doc`, read from the canvas, loads: the running compiler core's loader accepts it
+   * (`canonical()`, which the core answers synchronously). Without a running core, or when the
+   * core fails, nothing is known, and it counts as loading (the pipeline restarts the core).
+   */
+  private loads(doc: BdmDocument): boolean {
+    const core = this.host.current();
+    if (core === null) {
+      return true;
+    }
+    try {
+      return core.canonical(JSON.stringify(doc)).ok;
+    } catch (error: unknown) {
+      console.error('The compiler core could not check the shown module', error);
+      return true;
+    }
   }
 
   /**

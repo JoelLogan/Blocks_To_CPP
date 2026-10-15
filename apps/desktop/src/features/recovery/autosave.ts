@@ -208,7 +208,8 @@ export function startAutosave(deps: AutosaveDeps): Autosave {
       if (result.ok) {
         return { text: result.text, textHash: result.textHash };
       }
-      // The store only holds documents the loader accepted: a bug.
+      // The store only holds documents the loader accepted (the pipeline commits only those, and
+      // the editor stays on a module whose canvas does not load): a bug.
       failed(
         result.diagnostics.map((diagnostic) => diagnostic.code).join(', '),
         'Autosave could not write the project as a snapshot',

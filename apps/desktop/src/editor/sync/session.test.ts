@@ -14,7 +14,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getCore, setCore } from '../../app/core';
 import { resetAppStore, useAppStore } from '../../app/store';
-import { documentFixture, previewFixture, projectFixture } from '../../app/testing/fixtures';
+import {
+  diagnosticFixture,
+  documentFixture,
+  previewFixture,
+  projectFixture,
+} from '../../app/testing/fixtures';
 import { createCoreHost } from '../preview/coreHost';
 import { SyncError } from './errors';
 import { EditorSession, FIRST_VIEW_MARGIN, type SessionHooks } from './session';
@@ -27,7 +32,21 @@ import {
 } from './testing';
 import { viewStateOf } from './viewport';
 
-/** A stand-in core: the canonical text is the JSON itself; previews are empty. */
+/** The block whose document the stand-in core's loader refuses, as one nested too deeply. */
+const TOO_DEEP = 'too_deep';
+
+/** The loader's refusal of a document with {@link TOO_DEEP}. */
+const TOO_DEEP_PROBLEM = diagnosticFixture({ code: 'B2C-E0104', source: 'loader' });
+
+/** Whether the stand-in core's loader refuses a document's JSON. */
+function refused(json: string): boolean {
+  return json.includes(`"${TOO_DEEP}"`);
+}
+
+/**
+ * A stand-in core: the canonical text is the JSON itself; previews are empty. Its loader refuses a
+ * document with the block {@link TOO_DEEP}.
+ */
 function stubCore(): CoreWasm {
   const unused = (): never => {
     throw new Error('unused');
@@ -35,15 +54,22 @@ function stubCore(): CoreWasm {
   return {
     version: unused,
     load: unused,
-    canonical: (json: string): CanonicalResult => ({
-      ok: true,
-      text: json,
-      hash: 'c'.repeat(64),
-      textHash: json,
-      diagnostics: [],
-    }),
+    canonical: (json: string): CanonicalResult =>
+      refused(json)
+        ? { ok: false, diagnostics: [TOO_DEEP_PROBLEM] }
+        : { ok: true, text: json, hash: 'c'.repeat(64), textHash: json, diagnostics: [] },
     // The JSON text stands in for the hash of the canonical text: equal exactly when it is.
-    update: (json: string): UpdateResult => ({ ...previewFixture(), textHash: json }),
+    update: (json: string): UpdateResult =>
+      refused(json)
+        ? {
+            ...previewFixture(),
+            stage: 'load',
+            diagnostics: [TOO_DEEP_PROBLEM],
+            buildable: false,
+            contentHash: null,
+            textHash: null,
+          }
+        : { ...previewFixture(), textHash: json },
     symbolsInScope: () => [],
     conversionTable: unused,
     clipboardMake: unused,
@@ -496,6 +522,38 @@ describe('the editing session', () => {
     expect(blocks.left - view.left).toBeCloseTo(FIRST_VIEW_MARGIN, 6);
     expect(blocks.top - view.top).toBeCloseTo(FIRST_VIEW_MARGIN, 6);
     expect(isShown(workspace, 'a')).toBe(true);
+  });
+
+  it('stays on a module whose canvas does not load, keeping the Undo that takes it back', async () => {
+    const session = start(twoModules());
+    await vi.advanceTimersByTimeAsync(0);
+    // An edit that loads (E1), then one the loader refuses (blocks nested too deeply).
+    session.workspace.newBlock('control.forever', 'e1');
+    await vi.advanceTimersByTimeAsync(100);
+    const committed = present(useAppStore.getState().project, 'project').document;
+    expect(JSON.stringify(committed)).toContain('"e1"');
+    session.workspace.newBlock('control.forever', TOO_DEEP);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useAppStore.getState().analysis.notice).toBe('syncFailed');
+
+    // The switcher, and a problem in the other module: the editor stays where the change can be
+    // undone, and the project keeps the last document that loads (what autosave writes).
+    useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_util' });
+    session.selectBlock('b', { center: true });
+    expect(session.shownModuleId()).toBe('mod_main');
+    expect(useAppStore.getState().project?.activeModuleId).toBe('mod_main');
+    const project = present(useAppStore.getState().project, 'project');
+    expect(project.document).toBe(committed);
+    expect(getCore()?.canonical(JSON.stringify(project.document)).ok).toBe(true);
+    expect(session.workspace.getUndoStack().length).toBeGreaterThan(0);
+
+    // Undone, the canvas loads again, and the switch goes ahead.
+    session.undo(false);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useAppStore.getState().analysis.notice).toBeNull();
+    useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_util' });
+    expect(session.shownModuleId()).toBe('mod_util');
+    expect(JSON.stringify(useAppStore.getState().project?.document)).toContain('"e1"');
   });
 
   it('keeps reading until a drag has ended', async () => {

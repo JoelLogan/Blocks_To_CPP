@@ -283,7 +283,10 @@ problem, such as blocks nested too deeply) does not go unnoticed: a banner
 says that the latest change was not checked, the code, Problems and Run keep
 showing the last version that could be, and Build and Run refuse with a dialog
 that names the problem until the change is undone; the banner's *Undo last
-change* undoes it. When the canvas went past a limit that editing can reach
+change* undoes it. Until then the editor also stays on that module: choosing
+another module, or a problem in another one, does not switch, because a switch
+would clear the undo history and keep a module that no save, build or recovery
+snapshot can write. When the canvas went past a limit that editing can reach
 (blocks nested too deeply, `B2C-E0104`; a project file over 32 MiB,
 `B2C-E0101`; more than 100,000 blocks, `B2C-E0121`), the banner and a refused
 Save name the limit and how to get back within it; any other such problem is
