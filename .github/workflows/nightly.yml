@@ -7,7 +7,8 @@
 #   that touch Markdown.
 # - e2e-app: the desktop app under test (a debug build with the e2e-hooks feature and the e2e
 #   frontend, as desktop.yml's e2e job builds it), built once per system for the three jobs below;
-# - e2e: every end-to-end flow and the visual diff of the block canvas, on Linux and Windows;
+# - e2e: every end-to-end flow and the visual diff of the block canvas and the chrome (light, and
+#   dark on Linux), on Linux and Windows;
 # - e2e-security: the E2E security tests (docs/spec/08-security.md §8.13 "Nightly"), both systems;
 # - bench: the benchmarks (docs/spec/09-quality-and-delivery.md §9.2): criterion on the native
 #   pipeline and, through the E2E harness, cold start, the preview and edits at 1,000 blocks,
@@ -397,7 +398,7 @@ jobs:
           retention-days: 3
 
   # Every end-to-end flow (apps/desktop/e2e/specs, except the security tests, which have their own
-  # job) and the visual diff of the block canvas, on both systems.
+  # job) and the visual diff of the block canvas and the chrome, on both systems.
   e2e:
     name: E2E (${{ matrix.os }})
     needs: e2e-app

@@ -3,8 +3,8 @@
 # with the coverage gate (docs/spec/09-quality-and-delivery.md §9.2, §9.3) and the isolation
 # hook's tests; then lint, test and build the Tauri app on Linux and Windows, check that it
 # starts and that its release build has no end-to-end hooks; and run the end-to-end tests, the
-# M2 exit flow among them, and the visual diff of the block canvas in the real app on both
-# systems (docs/adr/0009). The E2E security tests and the benchmarks run nightly (nightly.yml).
+# M2 exit flow among them, and the visual diff of the block canvas and the chrome in the real
+# app on both systems (docs/adr/0009). The E2E security tests and the benchmarks run nightly (nightly.yml).
 # The app is not a default member of the Cargo workspace, so ci.yml's root `cargo` commands
 # skip it; this workflow covers it. Installers (MSI, NSIS, AppImage, deb, rpm) are built by
 # the release workflow once there is one (M6), so this one builds the executable only.
@@ -64,9 +64,9 @@ on:
     inputs:
       visual-baselines:
         description: >-
-          Make new visual-diff baselines: the e2e job only writes the canvas screenshots
-          (artifact visual-candidates-<os>) for a person to review and commit to
-          apps/desktop/e2e/visual/baselines/, and does not compare them.
+          Make new visual-diff baselines: the e2e job only writes the screenshots of the
+          canvas and the chrome (artifact visual-candidates-<os>) for a person to review and
+          commit to apps/desktop/e2e/visual/baselines/, and does not compare them.
         type: boolean
         default: false
 
@@ -244,8 +244,9 @@ jobs:
         run: pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/vitest.e2e.config.ts --project support
 
       # The logic of the benchmarks and the visual diff (statistics, page scripts, the generated
-      # benchmark document and its parity with the native one, the screenshot comparison); the
-      # benchmarks run nightly (nightly.yml, bench) and the visual diff in the e2e job.
+      # benchmark document and its parity with the native one, the screenshot comparison, the
+      # chrome scenes, their cut-outs and masks); the benchmarks run nightly (nightly.yml, bench)
+      # and the visual diff in the e2e job.
       - name: Run the benchmarks' and the visual diff's own tests
         run: |
           pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/bench/vitest.bench.config.ts --project bench-unit
@@ -670,9 +671,11 @@ jobs:
           B2C_LOG: debug
         run: pnpm --filter @blocks2cpp/desktop run e2e --exclude 'specs/security/**'
 
-      # The visual diff of the block canvas (docs/spec/09-quality-and-delivery.md §9.2,
-      # apps/desktop/e2e/visual): after the other tests, whatever they found, so a failure there
-      # still shows how the canvas looks. Its screenshots are uploaded below as candidates.
+      # The visual diff of the block canvas and the chrome (docs/spec/09-quality-and-delivery.md
+      # §9.2, apps/desktop/e2e/visual): after the other tests, whatever they found, so a failure
+      # there still shows how the app looks. Its screenshots are uploaded below as candidates. On
+      # Linux it launches the app once per theme and sets GTK_THEME for each launch itself (light,
+      # then dark), so one step takes both; on Windows it takes the light theme only.
       - name: Run the visual diff (Linux)
         if: ${{ !cancelled() && runner.os == 'Linux' && steps.app-build.outcome == 'success' }}
         env:

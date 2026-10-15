@@ -517,6 +517,93 @@ describe('the flyout shown again with new contents', () => {
   });
 });
 
+/** The names of the category rows drawn selected. */
+function selectedRows(workspace: Blockly.WorkspaceSvg): string[] {
+  return [
+    ...workspace
+      .getInjectionDiv()
+      .querySelectorAll(
+        '.blocklyToolboxCategory.blocklyToolboxSelected .blocklyToolboxCategoryLabel',
+      ),
+  ].map((label) => label.textContent);
+}
+
+/** Checks that the toolbox selects category `name`, one of its rows now, drawn selected. */
+function expectSelected(workspace: Blockly.WorkspaceSvg, name: string): void {
+  const toolbox = continuousToolbox(workspace);
+  const selected = toolbox.getSelectedItem();
+  expect(selected?.getName()).toBe(name);
+  expect(toolbox.getToolboxItems()).toContain(selected);
+  expect(selectedRows(workspace)).toEqual([name]);
+}
+
+/**
+ * Runs the plugin's own selection by scroll position, as the flyout's scroll event does
+ * (`@blockly/continuous-toolbox` 7.0.9; private there).
+ */
+function scrollEvent(workspace: Blockly.WorkspaceSvg): void {
+  const flyout = continuousToolbox(workspace).getFlyout();
+  const select = (flyout as unknown as Record<string, unknown>)['selectCategoryByScrollPosition'];
+  if (typeof select !== 'function') {
+    throw new Error('the plugin no longer selects categories by scroll position this way');
+  }
+  (select as (this: unknown, scroll: number) => void).call(flyout, -flyout.getWorkspace().scrollY);
+}
+
+describe('the selected category when new categories are drawn', () => {
+  it('is the first one once the toolbox is attached, whether or not the flyout scrolled first', async () => {
+    for (const scrolledFirst of [false, true]) {
+      const workspace = attached('continuous');
+      workspace.setCachedParentSvgSize(1000, 500);
+      workspace.resize();
+      // The categories were drawn again: the first row is selected at once.
+      expectSelected(workspace, 'Program');
+      if (scrolledFirst) {
+        // The flyout's scroll event before its delayed showing.
+        scrollEvent(workspace);
+      }
+      await settle();
+      await frames();
+      scrollEvent(workspace);
+      expectSelected(workspace, 'Program');
+      for (const detach of detachers.splice(0)) {
+        detach();
+      }
+      disposeTestWorkspaces();
+    }
+  });
+
+  it('keeps the category that was selected, in its new row, until the flyout scrolls', async () => {
+    const workspace = attached('continuous');
+    workspace.setCachedParentSvgSize(1000, 500);
+    workspace.resize();
+    await settle();
+    const toolbox = continuousToolbox(workspace);
+    const flyout = toolbox.getFlyout();
+    if (!(flyout instanceof B2cContinuousFlyout)) {
+      throw new Error('not the continuous flyout');
+    }
+    toolbox.setSelectedItem(category(workspace, 'Functions'));
+    // The animated scroll to Functions.
+    await frames();
+    await frames();
+    expectSelected(workspace, 'Functions');
+    expect(flyoutScroll(flyout)).toBeGreaterThan(0);
+    const definition = workspace.options.languageTree;
+    if (definition === null) {
+      throw new Error('no toolbox definition');
+    }
+    workspace.updateToolbox(definition);
+    expectSelected(workspace, 'Functions');
+    // Blockly took the flyout back to its top: its scroll event selects the first category, as
+    // a scroll by hand does.
+    await settle();
+    await frames();
+    expect(flyoutScroll(flyout)).toBe(0);
+    expectSelected(workspace, 'Program');
+  });
+});
+
 /**
  * Presses the pointer on the canvas as far as Blockly's state goes: a gesture is in progress, as
  * from Blockly's handling of a `pointerdown` until the release.

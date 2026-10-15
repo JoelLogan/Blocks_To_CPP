@@ -27,10 +27,11 @@ machine's folders are scripted, through the app's `e2e-hooks` feature.
   at 1,000 blocks, selecting blocks at 1,000 blocks, the guessing game's selections and edits,
   dragging in a 5,000-block workspace; nightly, with the 10% gate, and in the A/B job on labelled
   pull requests) and
-  [`visual/`](visual/README.md) (the canvas screenshot against per-system baselines). The PR job
-  runs `pnpm --filter @blocks2cpp/desktop run e2e --exclude 'specs/security/**'` and then the visual
-  diff; `support/global.ts` clears the Trusted Types report, `visual/global.ts` only rewrites its
-  summary.
+  [`visual/`](visual/README.md) (the canvas screenshot and the chrome's scenes, light and, on
+  Linux, dark, against per-system baselines). The PR job runs
+  `pnpm --filter @blocks2cpp/desktop run e2e --exclude 'specs/security/**'` and then the visual
+  diff; `support/global.ts` clears the Trusted Types and long-task reports, `visual/global.ts`
+  only rewrites their summaries.
 
 ## Running them locally (Linux)
 

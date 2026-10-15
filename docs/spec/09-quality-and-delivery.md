@@ -86,6 +86,7 @@
 | **Frontend components** | Vitest + Testing Library + axe-core | Panels, dialogs, custom Blockly fields. Automated accessibility checks. |
 | **Desktop E2E** | selenium-webdriver + Vitest + `tauri-driver` (Windows + Linux) | Create project, Quick Insert, build, run with input, stop; open an untrusted project → Restricted Mode; trust flow; save/reload; crash recovery |
 | **Visual diff** | WebDriver screenshots + pixelmatch | The canvas with a known project on both systems |
+| **Chrome visual diff** | WebDriver screenshots + pixelmatch | In the smallest window (800×560): the whole window, the open main menu over the editor, the toolbar's Debug/Release drop-down closed and hovered, the toolbox after each category, the console after two runs (scrolled up, and at the bottom panel's tallest); light on both systems, dark on Linux (Windows dark with the Appearance setting, M3) |
 | **Security regression** | Custom harness | `tests/security/projects/*.b2c` with asserted outcomes ([08 §8.12](08-security.md#812-threat-summary)) |
 | **Performance** | `criterion` + scripted workspace benchmarks | Codegen p95 at 1k blocks, edits and selections at 1k blocks, drag frame time at 5k blocks, cold start; the longest main-thread task of every E2E flow (reported). More than 10% regression fails CI on the nightly benchmark job and on a pull request's A/B job. |
 | **Manual** | Per milestone | Screen readers (NVDA on Windows, Orca on Linux), high-contrast themes, real-world toolchain matrix (WinLibs, TDM, Scoop, Strawberry, distro GCCs), and sessions with first-time users where an exit criterion needs them; protocols and results in [`docs/manual-tests/`](../manual-tests/README.md) |
@@ -162,17 +163,25 @@ Details of each level as M2 sets them up:
   tested in M2. *Without reading docs* is checked by a manual usability
   session with first-time users on both systems before M2 is declared done
   ([the protocol](../manual-tests/m2-usability.md)).
-* **Visual diff.** The guessing game in a 1000×700 window at zoom 1.0, light
-  theme, caret hidden, with the C++ and bottom panels folded, compared with
-  pixelmatch (threshold 0.1); more than 0.5% of differing pixels fails. A
-  native driver that cannot resize the window leaves the app at its own size
-  with a warning, and the baseline's size check still applies. Each system
-  has its own baseline in `apps/desktop/e2e/visual/baselines/{linux,windows}/`.
-  The E2E job uploads its screenshots as candidates on every run (a manual
-  run with the `visual-baselines` input only writes candidates); a person
-  reviews them and commits the baselines. Until a system's baseline is
-  committed, its visual diff passes with a warning. It runs in the pull
-  request E2E job and nightly.
+* **Visual diff.** The guessing game in a 1000×700 window (set through the
+  app's window-size seam) at zoom 1.0, light theme, caret hidden, with the
+  C++ and bottom panels folded and the *Program* category chosen, compared
+  with pixelmatch (threshold 0.1); more than 0.5% of differing pixels fails,
+  and so does a screenshot of another size than its baseline. The chrome's
+  scenes (the table's row) are taken in one launch per theme, light and, on
+  Linux, dark (`GTK_THEME=Adwaita:dark`), each cut out of a screenshot of
+  the window and compared the same way. The whole-window scenes have the
+  *Program* category chosen. Before each one the pointer is parked (or rests
+  on the drop-down it hovers), nothing has the focus, the caret and
+  WebKitGTK's overlay scroll bars are hidden, the fonts have loaded, no
+  animation runs, and two screenshots in a row must be the same; the status
+  bar's toolchain, the console's elapsed time and the app version in the C++
+  panel's first line are masked. Each system has its own baselines in
+  `apps/desktop/e2e/visual/baselines/{linux,windows}/`. The E2E job uploads
+  its screenshots as candidates on every run (a manual run with the
+  `visual-baselines` input only writes candidates); a person reviews them
+  and commits the baselines. Until a screenshot's baseline is committed, it
+  passes with a warning. It runs in the pull request E2E job and nightly.
 * **Benchmarks.** `criterion` measures the native pipeline (load, resolve,
   analyse, generate, and the whole preview) on a generated 1,000-block
   module. Through the E2E harness, the webview benchmarks measure cold start

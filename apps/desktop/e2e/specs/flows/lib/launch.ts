@@ -76,8 +76,16 @@ const TRUSTED_TYPES_TIMEOUT_MS = 10_000;
 /** How long the clean-up after a test may take in all (Vitest's hook timeout). */
 const FINISH_TIMEOUT_MS = 120_000;
 
-/** The variables a test may set for the app; the harness sets the rest itself. */
-const ENVIRONMENT_OVERRIDES: ReadonlySet<string> = new Set(['B2C_E2E_TOOLCHAIN_DIRS', 'B2C_LOG']);
+/**
+ * The variables a test may set for the app; the harness sets the rest itself. `GTK_THEME` is how
+ * the visual diff takes its dark scenes on Linux (WebKitGTK follows it for
+ * `prefers-color-scheme`; ../../../visual/scenes.ts).
+ */
+const ENVIRONMENT_OVERRIDES: ReadonlySet<string> = new Set([
+  'B2C_E2E_TOOLCHAIN_DIRS',
+  'B2C_LOG',
+  'GTK_THEME',
+]);
 
 /** Options of {@link FlowSession.launch}. */
 export interface FlowLaunchOptions {
@@ -85,7 +93,7 @@ export interface FlowLaunchOptions {
   readonly dialogs?: DialogScript;
   /**
    * Variables of the app's environment that differ from the harness's: only
-   * `B2C_E2E_TOOLCHAIN_DIRS` and `B2C_LOG`.
+   * `B2C_E2E_TOOLCHAIN_DIRS`, `B2C_LOG` and `GTK_THEME`.
    */
   readonly env?: Readonly<Record<string, string>>;
   /**

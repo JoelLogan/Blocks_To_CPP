@@ -4,10 +4,17 @@ import { describe, expect, it } from 'vitest';
 import { checkedOverrides, portOf } from './launch';
 
 describe('checkedOverrides', () => {
-  it('lets a test set the toolchain folders and the log level', () => {
-    expect(checkedOverrides({ B2C_E2E_TOOLCHAIN_DIRS: '/tmp/x', B2C_LOG: 'debug' })).toEqual({
+  it('lets a test set the toolchain folders, the log level and the GTK theme', () => {
+    expect(
+      checkedOverrides({
+        B2C_E2E_TOOLCHAIN_DIRS: '/tmp/x',
+        B2C_LOG: 'debug',
+        GTK_THEME: 'Adwaita:dark',
+      }),
+    ).toEqual({
       B2C_E2E_TOOLCHAIN_DIRS: '/tmp/x',
       B2C_LOG: 'debug',
+      GTK_THEME: 'Adwaita:dark',
     });
     expect(checkedOverrides({})).toEqual({});
   });
