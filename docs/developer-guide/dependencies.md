@@ -156,9 +156,12 @@ build needs.
   `windows-sys` 0.60 on Windows.
 - Cargo has no minimum release age, so `Cargo.lock` holds Tauri's own crates and the crates it
   brought in at their newest versions that were at least 7 days old. Keep it that way when
-  updating them, with `cargo update -p <crate> --precise <version>`. On 2026-10-12 that was
+  updating them, with `cargo update -p <crate> --precise <version>`. On 2026-10-15 that was still
   `tauri` 2.12.1 with `tauri-build`, `tauri-codegen` and `tauri-macros` 2.7.1 and `tauri-plugin-fs`
   2.6.0: `tauri` 2.12.2 and 2.12.3, the 2.7.2 releases and `tauri-plugin-fs` 2.7.0 came out on
-  2026-10-09 and 2026-10-10. A `--precise` update can also move unrelated crates between the
+  2026-10-09 and 2026-10-10, and `tauri` 2.12.4 on 2026-10-14. Other crates are updated the same
+  way: `toml` 1.1.7 came with `toml_parser` 1.1.4, because `toml_parser` 1.1.5 (and `toml` 1.1.8)
+  came out on 2026-10-09. A `--precise` update can also move unrelated crates between the
   `windows-sys` (or `syn`) versions already in the lockfile, so read the `Cargo.lock` diff and keep
-  only the intended changes.
+  only the intended changes. `fuzz/Cargo.lock` gets the same versions, since `cargo check --locked`
+  of the fuzz targets fails once the workspace asks for a newer one.
