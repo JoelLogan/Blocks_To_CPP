@@ -78,9 +78,10 @@ testing.
 
 **Rust** (`ci.yml` and the app job of `desktop.yml`). Both workflows build
 with `RUSTFLAGS='-D warnings'`, so a compiler warning fails CI even where no
-Clippy line looks: in the fuzz targets, the wasm32 check and the tests. The
-first line sets it for your shell; changing `RUSTFLAGS` rebuilds everything,
-so you may prefer a `CARGO_TARGET_DIR` of its own for these checks.
+Clippy line looks: in the fuzz targets, and in code that only the wasm32
+check compiles. The first line sets it for your shell; changing `RUSTFLAGS`
+rebuilds everything, so you may prefer a `CARGO_TARGET_DIR` of its own for
+these checks.
 
 ```sh
 export RUSTFLAGS='-D warnings'               # as in CI
