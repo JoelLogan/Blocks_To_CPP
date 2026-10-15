@@ -2,10 +2,10 @@
  * Visual diff of the block canvas (docs/spec/09-quality-and-delivery.md §9.2, 10 §10.2 risk 2): the
  * Zelos renderer and the Blocks2Cpp theme as WebKitGTK and WebView2 draw them. The guessing game
  * (visual/fixture.ts) is opened in a 1000×700 window (the app's window-size seam) at zoom 1.0 in
- * the light theme, with nothing focused and the text caret hidden; a WebDriver screenshot of the
- * workspace element is compared with this system's baseline
- * (visual/baselines/<system>/canvas-guessing-game.png) by pixelmatch, and more than 0.5% of
- * differing pixels fails. The screenshot is always written as a candidate (visual/baselines.ts
+ * the light theme, with the Program category chosen in the toolbox, nothing focused and the text
+ * caret hidden; a WebDriver screenshot of the workspace element is compared with this system's
+ * baseline (visual/baselines/<system>/canvas-guessing-game.png) by pixelmatch, and more than 0.5%
+ * of differing pixels fails. The screenshot is always written as a candidate (visual/baselines.ts
  * `checkShot`), so a missing or outdated baseline can be committed from the CI artifact; a test
  * that stops before the screenshot records it as not taken. The chrome's scenes are
  * chrome.visual.e2e.ts.
@@ -28,6 +28,8 @@ import {
   blurAll,
   hideOverlayScrollbars,
   parkPointer,
+  selectCategory,
+  SHOWN_CATEGORY,
   viewportSize,
   waitUntilStill,
   warn,
@@ -81,6 +83,8 @@ describe('visual diff: the block canvas', () => {
         timeout: 60_000,
       });
       await foldDocks(app);
+      // The toolbox's selected category is part of the screenshot.
+      await selectCategory(app.driver, SHOWN_CATEGORY);
       // The pointer rests in the window's bottom-left corner (the status bar), hovering nothing.
       await parkPointer(app.driver);
       await hideOverlayScrollbars(app.driver);

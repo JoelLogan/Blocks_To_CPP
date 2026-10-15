@@ -165,16 +165,17 @@ Details of each level as M2 sets them up:
   ([the protocol](../manual-tests/m2-usability.md)).
 * **Visual diff.** The guessing game in a 1000×700 window (set through the
   app's window-size seam) at zoom 1.0, light theme, caret hidden, with the
-  C++ and bottom panels folded, compared with pixelmatch (threshold 0.1);
-  more than 0.5% of differing pixels fails, and so does a screenshot of
-  another size than its baseline. The chrome's scenes (the table's row) are
-  taken in one launch per theme, light and, on Linux, dark
-  (`GTK_THEME=Adwaita:dark`), each cut out of a screenshot of the window and
-  compared the same way. Before each one the pointer is parked (or rests on
-  the drop-down it hovers), nothing has the focus, the caret and WebKitGTK's
-  overlay scroll bars are hidden, the fonts have loaded, no animation runs,
-  and two screenshots in a row must be the same; the status bar's
-  toolchain, the console's elapsed time and the app version in the C++
+  C++ and bottom panels folded and the *Program* category chosen, compared
+  with pixelmatch (threshold 0.1); more than 0.5% of differing pixels fails,
+  and so does a screenshot of another size than its baseline. The chrome's
+  scenes (the table's row) are taken in one launch per theme, light and, on
+  Linux, dark (`GTK_THEME=Adwaita:dark`), each cut out of a screenshot of
+  the window and compared the same way. The whole-window scenes have the
+  *Program* category chosen. Before each one the pointer is parked (or rests
+  on the drop-down it hovers), nothing has the focus, the caret and
+  WebKitGTK's overlay scroll bars are hidden, the fonts have loaded, no
+  animation runs, and two screenshots in a row must be the same; the status
+  bar's toolchain, the console's elapsed time and the app version in the C++
   panel's first line are masked. Each system has its own baselines in
   `apps/desktop/e2e/visual/baselines/{linux,windows}/`. The E2E job uploads
   its screenshots as candidates on every run (a manual run with the

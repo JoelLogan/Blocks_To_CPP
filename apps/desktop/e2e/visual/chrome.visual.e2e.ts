@@ -4,14 +4,15 @@
  * system's baseline like the block canvas (baselines.ts `checkShot`). One launch of the app per
  * theme: light on both systems, and dark on Linux (`GTK_THEME=Adwaita:dark`).
  *
- * In each launch: a new project from the Empty template with a program that prints three lines;
- * the whole window; the toolbar with its Debug/Release drop-down, then with the pointer on it; the
- * ≡ main menu open over the editor; the toolbox after a click on each category; two runs of the
- * program, the console scrolled up a fixed number of lines, and the console with the bottom panel
- * at its tallest. Before each screenshot the pointer is parked (or rests on what the scene
- * hovers), nothing has the focus, no caret shows, the page has its fonts and has come to rest
- * (settle.ts), and two screenshots in a row are the same (capture.ts). The status bar's toolchain,
- * the console's elapsed time and the C++ panel's first line (the app's version) are masked.
+ * In each launch: a new project from the Empty template with a program that prints three lines; the
+ * Program category chosen in the toolbox; the whole window; the toolbar with its Debug/Release
+ * drop-down, then with the pointer on it; the ≡ main menu open over the editor; the toolbox after a
+ * click on each category; two runs of the program, the console scrolled up a fixed number of lines,
+ * and the console with the bottom panel at its tallest. Before each screenshot the pointer is
+ * parked (or rests on what the scene hovers), nothing has the focus, no caret shows, the page has
+ * its fonts and has come to rest (settle.ts), and two screenshots in a row are the same
+ * (capture.ts). The status bar's toolchain, the console's elapsed time and the C++ panel's first
+ * line (the app's version) are masked.
  *
  * A scene that fails does not stop the others (scene-run.ts): every scene is listed in the summary,
  * the ones the test never reached as not taken, and the test fails at the end with all the
@@ -45,7 +46,14 @@ import {
   TOOLBOX_CATEGORIES,
   toolboxSceneId,
 } from './scenes';
-import { blurAll, hideOverlayScrollbars, parkPointer, waitUntilStill } from './settle';
+import {
+  blurAll,
+  hideOverlayScrollbars,
+  parkPointer,
+  selectCategory,
+  SHOWN_CATEGORY,
+  waitUntilStill,
+} from './settle';
 
 /** How long one theme's launch and scenes may take (two builds and runs among them). */
 const THEME_TIMEOUT_MS = 420_000;
@@ -228,6 +236,8 @@ describe('visual diff: the chrome', () => {
             message: 'the program in the C++ panel',
           });
 
+          // Which category the toolbox shows selected is part of every whole-window scene.
+          await selectCategory(driver, SHOWN_CATEGORY);
           await scenes.take('window-smallest');
           await scenes.take('toolbar-select');
           await scenes.take('toolbar-select-hover');

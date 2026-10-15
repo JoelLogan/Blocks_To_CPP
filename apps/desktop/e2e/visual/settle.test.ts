@@ -1,7 +1,7 @@
 /**
- * Bringing the page to rest (settle.ts): the page scripts that wait for the fonts and animations
- * and hide overlay scroll bars, run here against a fake page; and the page's own time limits,
- * which must answer before WebDriver's script timeout does.
+ * Bringing the page to rest (settle.ts): the page scripts that wait for the fonts and animations,
+ * hide overlay scroll bars and read the toolbox's selected category, run here against a fake page;
+ * and the page's own time limits, which must answer before WebDriver's script timeout does.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -15,6 +15,8 @@ import {
   QUIET_FRAME_MS,
   QUIET_FRAMES,
   SCROLLBARS_KEY,
+  SELECTED_CATEGORIES_SCRIPT,
+  selectedCategories,
   STILL_FALLBACK_MS,
   STILL_TIMEOUT_MS,
 } from './settle';
@@ -223,5 +225,45 @@ describe('FONTS_SCRIPT', () => {
     expect(await fontsResult(loop, null)).toBe(false);
     expect(loop.now).toBeGreaterThanOrEqual(STILL_TIMEOUT_MS);
     expect(loop.now).toBeLessThan(SCRIPT_TIMEOUT_MS);
+  });
+});
+
+describe('SELECTED_CATEGORIES_SCRIPT', () => {
+  /** A page whose toolbox draws the rows `names` selected (a row without a label: its text). */
+  function selectedPage(names: (string | { text: string })[]) {
+    const rows = names.map((name) =>
+      typeof name === 'string'
+        ? { textContent: `▶ ${name}`, querySelector: () => ({ textContent: ` ${name} ` }) }
+        : { textContent: name.text, querySelector: () => null },
+    );
+    let asked = '';
+    const document = {
+      querySelectorAll: (selector: string) => {
+        asked = selector;
+        return rows;
+      },
+    };
+    return { page: { document, Array, String }, asked: () => asked };
+  }
+
+  it('reads the names of the rows drawn selected', () => {
+    const { page, asked } = selectedPage(['Program']);
+    expect(selectedCategories(runScript(SELECTED_CATEGORIES_SCRIPT, page, []))).toEqual([
+      'Program',
+    ]);
+    expect(asked()).toBe('.blocklyToolboxCategory.blocklyToolboxSelected');
+  });
+
+  it('reads none, several, and a row without a label', () => {
+    expect(runScript(SELECTED_CATEGORIES_SCRIPT, selectedPage([]).page, [])).toEqual([]);
+    expect(
+      runScript(SELECTED_CATEGORIES_SCRIPT, selectedPage(['Math', { text: ' Loops ' }]).page, []),
+    ).toEqual(['Math', 'Loops']);
+  });
+
+  it('takes nothing but names from the page’s answer', () => {
+    expect(selectedCategories(['Program', 3, null])).toEqual(['Program']);
+    expect(selectedCategories('Program')).toEqual([]);
+    expect(selectedCategories(null)).toEqual([]);
   });
 });

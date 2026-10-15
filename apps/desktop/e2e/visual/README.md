@@ -15,8 +15,8 @@ and takes a WebDriver screenshot of the workspace element (the toolbox, its flyo
 
 - the window is 1000×700, set through the app's window-size seam (`B2C_E2E_WINDOW_SIZE`); on a
   screen too small for it the app keeps the window on the screen, and a warning says so;
-- the C++ panel and the bottom panel are folded away, the pointer rests on the status bar, nothing
-  has focus and the text caret is hidden;
+- the C++ panel and the bottom panel are folded away, the _Program_ category is chosen in the
+  toolbox, the pointer rests on the status bar, nothing has focus and the text caret is hidden;
 - the light theme (the test fails when the system prefers dark);
 - the page has loaded its fonts, runs no animation and has drawn 20 frames in a row on time.
 
@@ -48,6 +48,10 @@ applications fails the light scenes instead of making wrong candidates.
 What makes a scene the same from run to run:
 
 - **Window and fonts:** the fixed window size; the page's fonts have loaded.
+- **Toolbox:** before the whole-window scenes (and the canvas screenshot) the _Program_ category is
+  chosen with a click, and must then be the only row drawn selected; each toolbox scene clicks its
+  own category. Which row is highlighted is part of the picture, and is never left to what came
+  before.
 - **At rest:** no Web Animation (CSS animation or transition) runs, the page has drawn 20 frames
   in a row on time ([`settle.ts`](settle.ts)), and two screenshots 150 ms apart give the same
   pixels ([`capture.ts`](capture.ts)); a scene that still changes after six fails as not taken,
