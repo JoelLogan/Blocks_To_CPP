@@ -3,13 +3,16 @@
 //!
 //! The feature is off by default and cannot be compiled without debug
 //! assertions, so it never reaches a release build. With it, the app reads
-//! three environment variables, each optional:
+//! four environment variables, each optional:
 //!
 //! * [`ROOT_ENV`] (`B2C_E2E_ROOT`): every machine-local folder goes under this
 //!   absolute path, so each test starts from a fresh profile: the app's own
 //!   ([`b2c_store::Dirs::under_root`]) and the web view's data
 //!   ([`E2eOptions::webview_data_dir`]), which Tauri otherwise keeps in the
 //!   app's local data folder for every launch.
+//! * [`WEBVIEW_DATA_ENV`] (`B2C_E2E_WEBVIEW_DATA`): the web view's data folder
+//!   (absolute) instead of the one under the test root, for a harness that
+//!   wants it shared by several launches or kept apart for each.
 //! * [`DIALOGS_ENV`] (`B2C_E2E_DIALOGS`): the path of a JSON [`DialogScript`]
 //!   that answers the open, save-as, pick-compiler and trust dialogs in
 //!   order, and cancels once a list is exhausted.
@@ -46,6 +49,10 @@ pub const DIALOGS_ENV: &str = "B2C_E2E_DIALOGS";
 
 /// The variable listing the folders toolchain discovery searches.
 pub const TOOLCHAIN_DIRS_ENV: &str = "B2C_E2E_TOOLCHAIN_DIRS";
+
+/// The variable naming the web view's data folder
+/// ([`E2eOptions::webview_data_dir`]).
+pub const WEBVIEW_DATA_ENV: &str = "B2C_E2E_WEBVIEW_DATA";
 
 /// The web view's data folder under the test root
 /// ([`E2eOptions::webview_data_dir`]).
@@ -233,6 +240,8 @@ pub struct E2eOptions {
     pub dialogs: Option<DialogScript>,
     /// The only folders toolchain discovery searches ([`TOOLCHAIN_DIRS_ENV`]).
     pub toolchain_dirs: Option<Vec<PathBuf>>,
+    /// The web view's data folder ([`WEBVIEW_DATA_ENV`]).
+    pub webview_data: Option<PathBuf>,
 }
 
 impl E2eOptions {
@@ -245,25 +254,32 @@ impl E2eOptions {
     }
 
     /// Where the web view keeps its data (`WebView2`'s user data folder,
-    /// `WebKitGTK`'s data and cache folders): `<root>/webview` with a test
-    /// root, so no launch sees what another left there or meets its browser
-    /// processes still running, and none touches the user's own; `None`
-    /// without one, which keeps Tauri's default, the app's local data folder
-    /// that every launch shares. On Windows each launch under `msedgedriver`
-    /// also has browser arguments of its own (its debugging port, see
-    /// [`webview2_browser_args`]), and web views with different browser
-    /// arguments must not share a data folder.
+    /// `WebKitGTK`'s data and cache folders): [`WEBVIEW_DATA_ENV`]'s folder,
+    /// else `<root>/webview` with a test root, else `None`, which keeps
+    /// Tauri's default, the app's local data folder that every launch and the
+    /// user's own app share.
+    ///
+    /// With a folder of its own, no test sees what another left there or
+    /// meets its browser processes still running. On Windows those can
+    /// outlive an app that has just exited, and a new web view on the same
+    /// folder may join that browser instead of starting its own with the
+    /// remote debugging `msedgedriver` asks for, while the folder's
+    /// `DevToolsActivePort` file may still name the old browser's port. The
+    /// launches of one test share `<root>/webview` unless the harness gives
+    /// each its own through [`WEBVIEW_DATA_ENV`], as the flow tests do.
     pub fn webview_data_dir(&self) -> Option<PathBuf> {
-        self.root.as_deref().map(|root| root.join(WEBVIEW_DATA_FOLDER))
+        self.webview_data
+            .clone()
+            .or_else(|| self.root.as_deref().map(|root| root.join(WEBVIEW_DATA_FOLDER)))
     }
 
     /// The settings from the variables `lookup` returns (tests pass their own
     /// instead of changing the process's environment).
     ///
     /// # Errors
-    /// [`E2eError::NotAbsolute`] for a relative root, script path or
-    /// toolchain folder; [`E2eError::TooManyToolchainDirs`]; the script's own
-    /// errors.
+    /// [`E2eError::NotAbsolute`] for a relative root, script path, toolchain
+    /// folder or web view folder; [`E2eError::TooManyToolchainDirs`]; the
+    /// script's own errors.
     pub fn from_lookup(lookup: &dyn Fn(&str) -> Option<OsString>) -> Result<Self, E2eError> {
         let root = lookup(ROOT_ENV).map(PathBuf::from);
         if root.as_deref().is_some_and(|root| !root.is_absolute()) {
@@ -289,10 +305,18 @@ impl E2eOptions {
             }
             None => None,
         };
+        let webview_data = lookup(WEBVIEW_DATA_ENV).map(PathBuf::from);
+        if webview_data
+            .as_deref()
+            .is_some_and(|folder| !folder.is_absolute())
+        {
+            return Err(E2eError::NotAbsolute(WEBVIEW_DATA_ENV));
+        }
         Ok(Self {
             root,
             dialogs,
             toolchain_dirs,
+            webview_data,
         })
     }
 }
@@ -445,6 +469,11 @@ mod tests {
         );
         let options = E2eOptions::from_lookup(&|name| variables.get(name).cloned()).unwrap();
         assert_eq!(options.root.as_deref(), Some(root.path()));
+        assert_eq!(options.webview_data, None);
+        assert_eq!(
+            options.webview_data_dir(),
+            Some(root.path().join(WEBVIEW_DATA_FOLDER))
+        );
         assert_eq!(options.dialogs.unwrap().trust, [ScriptedTrust::TrustProject]);
         assert_eq!(options.toolchain_dirs, Some(vec![first, second]));
 
@@ -484,6 +513,26 @@ mod tests {
     }
 
     #[test]
+    fn a_web_view_folder_given_by_its_variable_replaces_the_one_under_the_root() {
+        let root = absolute("e2e-root");
+        let shared = absolute("e2e-webview");
+        let options = E2eOptions::from_lookup(&|name| match name {
+            ROOT_ENV => Some(root.clone().into_os_string()),
+            WEBVIEW_DATA_ENV => Some(shared.clone().into_os_string()),
+            _ => None,
+        })
+        .unwrap();
+        assert_eq!(options.webview_data_dir(), Some(shared.clone()));
+        // Also without a test root.
+        let alone = E2eOptions::from_lookup(&|name| {
+            (name == WEBVIEW_DATA_ENV).then(|| shared.clone().into_os_string())
+        })
+        .unwrap();
+        assert_eq!(alone.root, None);
+        assert_eq!(alone.webview_data_dir(), Some(shared));
+    }
+
+    #[test]
     fn relative_or_unreadable_settings_are_refused() {
         let relative = |wanted: &'static str| {
             move |name: &str| (name == wanted).then(|| OsString::from("relative/path"))
@@ -499,6 +548,10 @@ mod tests {
         assert!(matches!(
             E2eOptions::from_lookup(&relative(TOOLCHAIN_DIRS_ENV)),
             Err(E2eError::NotAbsolute(TOOLCHAIN_DIRS_ENV))
+        ));
+        assert!(matches!(
+            E2eOptions::from_lookup(&relative(WEBVIEW_DATA_ENV)),
+            Err(E2eError::NotAbsolute(WEBVIEW_DATA_ENV))
         ));
         let missing = absolute("no-such-dialog-script.json");
         assert!(matches!(

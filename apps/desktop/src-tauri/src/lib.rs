@@ -259,8 +259,8 @@ struct Launch {
     cwd: Option<PathBuf>,
     #[cfg(feature = "e2e-hooks")]
     dialog_script: Option<e2e::DialogScript>,
-    /// The web view's data folder under the test root
-    /// ([`e2e::E2eOptions::webview_data_dir`]); `None` keeps Tauri's.
+    /// The web view's data folder ([`e2e::E2eOptions::webview_data_dir`]);
+    /// `None` keeps Tauri's.
     #[cfg(feature = "e2e-hooks")]
     webview_data: Option<PathBuf>,
 }

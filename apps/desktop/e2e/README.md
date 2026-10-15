@@ -93,13 +93,15 @@ and that it reports exactly that version, and sets `B2C_E2E_NATIVE_DRIVER`.
 | `B2C_E2E_NATIVE_DRIVER_LOG` | A log the native driver appends to for the whole run (absolute); a failed test keeps the part written while it ran, as `native-driver.log`                                                                                | none                                                                               |
 | `B2C_E2E_WRAP_SWEEP`        | Any value turns `placement-wrap`'s zoom test into a measurement: drops on a 20-unit grid over ±60 units at zooms 0.5, 0.9 and 1.5, written to `wrap-sweep.json` in the test's artifact folder (about 13 minutes on Linux) | none: the test drops exactly and 10 units off                                      |
 
-Each test gets its own temporary profile (`B2C_E2E_ROOT`: the app's folders and the web view's
-data, in `webview/`), a dialog script (`B2C_E2E_DIALOGS`; by default every native dialog is
-cancelled) and its own `tauri-driver` on free ports. A failed test
-leaves a screenshot, the page, the console transcript, the project and the app's and the driver's
-logs in a folder named after it. When no session starts (a missing or mismatched native driver),
-the test fails as soon as `tauri-driver` exits, and its message quotes the driver's output and names
-the saved copy of its log there.
+Each test gets its own temporary profile (`B2C_E2E_ROOT`: the app's folders and the web view's data,
+in `webview/`), a dialog script (`B2C_E2E_DIALOGS`; by default every native dialog is cancelled) and
+its own `tauri-driver` on free ports. A flow test keeps its profile for all its launches but gives
+each launch a web view data folder of its own (`B2C_E2E_WEBVIEW_DATA`), so a launch never meets the
+browser processes of the app before it, and checks that the app used it. A failed test leaves a
+screenshot, the page, the console transcript, the project and the app's and the driver's logs in a
+folder named after it. When no session starts (a missing or mismatched native driver), the test
+fails as soon as `tauri-driver` exits, and its message quotes the driver's output and names the
+saved copy of its log there.
 
 When a test ends, the WebDriver session is ended (which closes the app) with a time limit, then
 `tauri-driver` is stopped. On Linux `tauri-driver` does not close the app itself, so whatever the test

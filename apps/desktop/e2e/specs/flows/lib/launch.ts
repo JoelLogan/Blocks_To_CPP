@@ -6,7 +6,9 @@
  * It is ../../../support/app.ts's `launchApp` with a profile that outlives one launch: a
  * {@link FlowSession} owns the test's temporary folder (the profile `B2C_E2E_ROOT`, the dialog
  * scripts, the drivers' logs and the test's project files) and starts the app as often as the test
- * asks, one at a time, each with its own `tauri-driver`, dialog script and environment. When the
+ * asks, one at a time, each with its own `tauri-driver`, dialog script and environment, and its own
+ * web view data folder (`B2C_E2E_WEBVIEW_DATA`): a launch right after the previous app ended,
+ * killed or not, never meets that app's browser processes still running on the folder. When the
  * test finishes, a failed test's artifacts are saved as `launchApp` saves them, the Trusted Types
  * counts of the last app are reported, the app is closed and the folder removed. Each launch runs
  * the long-task recorder from its readiness until it ends (quit, killed or its window closed).
@@ -435,10 +437,12 @@ export class FlowSession {
     const launch = this.#launches;
     const dialogs = path.join(this.folders.root, `dialogs-${String(launch)}.json`);
     writeFileSync(dialogs, JSON.stringify(options.dialogs ?? {}));
+    const webviewData = path.join(this.folders.root, `webview-${String(launch)}`);
     const env = {
       ...appEnvironment(settings, {
         root: this.folders.profile,
         dialogs,
+        webviewData,
         ...(options.windowSize === undefined ? {} : { windowSize: options.windowSize }),
       }),
       ...checkedOverrides(options.env ?? {}),
@@ -479,6 +483,12 @@ export class FlowSession {
     const app = new Launch(session, driverProcess, this.folders, launch, this.#test);
     this.#current = app;
     await waitUntilReady(app);
+    // Tauri makes the folder before the web view, so a missing one means the app did not use it.
+    if (!existsSync(webviewData)) {
+      throw new Error(
+        `The app keeps its web view's data elsewhere, not in ${webviewData} (B2C_E2E_WEBVIEW_DATA): is it an end-to-end build of this version?`,
+      );
+    }
     await app.recordLongTasks();
     return app;
   }

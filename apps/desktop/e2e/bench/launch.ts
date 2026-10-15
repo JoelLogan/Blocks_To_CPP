@@ -4,7 +4,8 @@
  * until the readiness marker holds in the page ({@link READY_SCRIPT}: start page, injected
  * workspace, rendered toolbox). Each launch gets a fresh profile, its own `tauri-driver` and its
  * own clean-up, like `launchApp` (support/app.ts), which cannot be used here: it starts timing too
- * late and keeps every app it starts until the test ends.
+ * late and keeps every app it starts until the test ends. The web view's data folder is the
+ * caller's, so that the starts of one measurement can share it as a person's starts share theirs.
  *
  * Right after the session starts, the window may not show the app's page yet, and it may replace
  * its document while the readiness script waits in it (WebView2's msedgedriver then reports a
@@ -274,7 +275,7 @@ function sessionWindow(session: WebDriver): StartingWindow {
 }
 
 /** Removes a folder; on Windows a process that just exited may still hold a file for a moment. */
-async function removeFolder(folder: string): Promise<void> {
+export async function removeFolder(folder: string): Promise<void> {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
       rmSync(folder, { recursive: true, force: true });
@@ -287,12 +288,14 @@ async function removeFolder(folder: string): Promise<void> {
 }
 
 /**
- * Starts the app once with a fresh profile, times the start and closes it again. On failure the
- * driver's and the app's logs are kept in the artifacts folder under `label`.
+ * Starts the app once with a fresh profile and `webviewData` as the web view's data folder
+ * (`B2C_E2E_WEBVIEW_DATA`), times the start and closes it again. On failure the driver's and the
+ * app's logs are kept in the artifacts folder under `label`.
  */
 export async function measureColdStart(
   settings: HarnessSettings,
   label: string,
+  webviewData: string,
 ): Promise<TimedStart> {
   const root = mkdtempSync(path.join(tmpdir(), 'b2c-bench-'));
   const profile = path.join(root, 'profile');
@@ -305,7 +308,7 @@ export async function measureColdStart(
     driver = await TauriDriver.start({
       command: settings.tauriDriver,
       nativeDriver: settings.nativeDriver,
-      env: appEnvironment(settings, { root: profile, dialogs }),
+      env: appEnvironment(settings, { root: profile, dialogs, webviewData }),
       logFile: path.join(root, 'tauri-driver.log'),
       marker: `B2C_E2E_ROOT=${profile}`,
     });
