@@ -77,7 +77,7 @@ describe('waitUntilReady', () => {
     const error = await failure(waitUntilReady(nightly17(), 30_000));
     expect(error).toBeInstanceOf(WaitTimeoutError);
     expect((error as Error).message).toBe(
-      'Timed out after 30.0 s waiting for the window to start: the page loaded and window.__B2C_E2E__ answered after 34.5 s, but ready() stayed false (the backend or the features did not start)',
+      'Timed out after 30.0 s waiting for the window to start: the page loaded too late, window.__B2C_E2E__ first answered after 34.5 s (a call into the page waits for a navigation in progress)',
     );
   });
 

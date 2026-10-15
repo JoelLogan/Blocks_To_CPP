@@ -105,8 +105,9 @@ export interface App {
 /**
  * Waits up to `timeout` for the window to start and the hook to answer. When it does not, the
  * message says how far the start got: the hook never answered (the page did not load, or it is not
- * the end-to-end build; with the last error), or it answered, and when, but the app never became
- * ready.
+ * the end-to-end build; with the last error), it first answered only after `timeout` (the page
+ * loaded too late: a call into the page waits for a navigation in progress), or it answered in
+ * time, and when, but the app never became ready.
  */
 export async function waitUntilReady(app: App, timeout = READY_TIMEOUT_MS): Promise<void> {
   const start = Date.now();
@@ -121,10 +122,15 @@ export async function waitUntilReady(app: App, timeout = READY_TIMEOUT_MS): Prom
     {
       timeout,
       interval: 250,
-      message: () =>
-        answeredAfter === null
-          ? 'the window to start: window.__B2C_E2E__ never answered (the page did not load, or this is not the end-to-end build)'
-          : `the window to start: the page loaded and window.__B2C_E2E__ answered after ${(answeredAfter / 1000).toFixed(1)} s, but ready() stayed false (the backend or the features did not start)`,
+      message: () => {
+        if (answeredAfter === null) {
+          return 'the window to start: window.__B2C_E2E__ never answered (the page did not load, or this is not the end-to-end build)';
+        }
+        const after = `${(answeredAfter / 1000).toFixed(1)} s`;
+        return answeredAfter >= timeout
+          ? `the window to start: the page loaded too late, window.__B2C_E2E__ first answered after ${after} (a call into the page waits for a navigation in progress)`
+          : `the window to start: the page loaded and window.__B2C_E2E__ answered after ${after}, but ready() stayed false (the backend or the features did not start)`;
+      },
     },
   );
 }
