@@ -98,5 +98,10 @@ because small connection targets made blocks hard to place (U8).
   subclasses and any patch can be removed again.
 * The render-management patch (P-3) is measured first as a spike, and lands
   (in M3) only if the measured gain justifies it and its review passes.
-* The developer guide (`docs/developer-guide/`) carries the list of seams.
-  Its first entries are the classes named in the Context.
+* The developer guide carries the list of seams
+  ([Blockly seams](../developer-guide/desktop-architecture.md#blockly-seams-adr-0014)).
+  Its first entries were the classes named in the Context; the polish wave
+  added the drag strategy's preview preference and the connection previewer
+  of wrapping (W5), and the list also names the workarounds of upstream
+  defects, such as the drop on a delete area and the render queue that keeps
+  disposed blocks, with their reports.

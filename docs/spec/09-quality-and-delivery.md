@@ -330,8 +330,10 @@ the code it describes.
 | API docs | rustdoc / TSDoc | Contributors | Built in CI; `missing_docs` warnings |
 | CLI reference | `docs/reference/cli.md` | Users, CI authors | Generated from `clap` definitions |
 | `BUILDING.md` | Repo root | Everyone who builds from source (all users until M6), contributors | The one place with prerequisites, install commands and build and run steps per system, kept apart from design notes; its Debian and Windows packages and build commands are the ones CI uses |
-| Desktop app README | `apps/desktop/README.md` | Contributors | The dependency table (version, release date, licence, why) and the *Adding an IPC command* steps; updated in the PR that adds a dependency or a command |
-| `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md` | Repo root | Everyone | Keep a Changelog format |
+| Developer guide | `docs/developer-guide/` | Contributors | Architecture, security settings, dependency table, testing, recipes. The dependency table (version, release date, licence, why), the *Adding an IPC command* recipe and the list of Blockly seams ([ADR-0014](../adr/0014-extending-blockly.md)) are updated in the PR that adds a dependency, a command or a seam |
+| Desktop app README | `apps/desktop/README.md` | Contributors | What the app is, its code map and links; no build steps or design notes |
+| `CONTRIBUTING.md` | Repo root | Contributors | Set-up (a link to `BUILDING.md`), the rules for a change, the one list of the checks CI runs, and where things are documented; updated with the CI workflows |
+| `README.md`, `SECURITY.md`, `CHANGELOG.md` | Repo root | Everyone | The README separates what works today from the goals for 1.0 and carries no commands; `CHANGELOG.md` follows the Keep a Changelog format |
 
 The app ships the user guide and references **offline**. *Help* opens bundled
 pages, and every diagnostic links to its reference entry.
@@ -344,8 +346,10 @@ pages, and every diagnostic links to its reference entry.
   tracked Markdown file. rustdoc is built with warnings as errors.
 * Build steps are written once: other documents link to `BUILDING.md`.
   Pinned tool versions appear only there and in their source of truth (such
-  as `Cargo.lock`). Until the desktop app's README is cut to a code map, it
-  and the WebAssembly core's README still repeat a summary of them.
+  as `Cargo.lock`). The WebAssembly core's README still repeats a summary of
+  them.
+* The checks CI runs are listed together in `CONTRIBUTING.md`; other
+  documents link to that list rather than repeat it.
 * **In M2** there is no *Help* menu: *Learn more* in Problems opens the
   published diagnostics reference, and the setup page opens the MSYS2 and
   WinLibs sites, in the system browser through fixed links

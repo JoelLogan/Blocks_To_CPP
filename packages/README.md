@@ -72,7 +72,7 @@ A package lives in `packages/<name>/`, which `pnpm-workspace.yaml` already inclu
 - Every new dependency must install under the policy in `pnpm-workspace.yaml`: published at least
   7 days ago, no weaker publishing provenance than earlier versions (`trustPolicy: no-downgrade`),
   no git or tarball sub-dependencies, and no install scripts. It also needs a row in the dependency
-  table of [`apps/desktop/README.md`](../apps/desktop/README.md#dependencies) covering purpose,
+  table of [the developer guide](../docs/developer-guide/dependencies.md) covering purpose,
   maintenance, licence, size and transitive count.
 
 ### tsconfig.json

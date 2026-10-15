@@ -7,6 +7,40 @@ Blocks2Cpp is a Scratch-style, drag-and-drop programming environment for
 standard C++. That C++ is compiled with the **g++ already on your system** and
 run in a built-in terminal.
 
+> **Status:** the desktop editor, milestone M2 of the [roadmap](docs/spec/10-roadmap.md#101-milestones),
+> works on Windows and Linux and is being polished before its usability tests.
+> There are no installers yet (M6), so you [build it from source](BUILDING.md).
+
+## What works today (M2)
+
+- 🧩 **Blocks from a toolbox:** colourful, snap-together blocks for variables,
+  maths and logic, text, control and loops, input and output, and your own
+  functions. Blocks left loose on the canvas are kept, and do not run.
+- 🔍 **See the C++:** a live view shows the C++ of your blocks as you build,
+  and highlights the code of the block you select, and the block of the code
+  you click.
+- 🧭 **Problems on the right block:** the analyser's messages, in plain
+  language, and g++'s own messages are shown on the blocks they are about and
+  listed under Problems.
+- ▶️ **Build and run** with your g++ (11 or newer) in the built-in console,
+  with Stop and the program's exit explained. The app helps you install g++
+  when it finds none.
+- 💾 **Projects** in a readable file format, with autosave and recovery after
+  a crash, and a warning when the file changes outside the app.
+- 🔒 **Secure by default:** projects from elsewhere open in Restricted Mode
+  until you trust them, compiler flags never come from project files, and
+  block text can't inject code.
+- ⌨️ **Keyboard:** the canvas and the toolbox can be used without a mouse,
+  and announce what the keyboard reaches to screen readers.
+- 🛠 **A command-line tool** (`b2c`) that checks, translates, builds and runs
+  projects without the app.
+
+The [M2 editor's scope](docs/spec/04-user-interface.md#413-what-the-m2-editor-includes)
+lists what later milestones add, such as typing expressions into slots and
+exporting a project.
+
+## Goals for 1.0
+
 - 🧩 **Scratch-like blocks:** colourful, snap-together, no syntax errors.
 - ⚡ **Few blocks, much power:** type expressions straight into slots
   (`price * qty + tax`), use `⊕` to add more parts, and pick types from a
@@ -21,18 +55,12 @@ run in a built-in terminal.
 - 🔒 **Secure by default:** projects from elsewhere open in Restricted Mode,
   compiler flags never come from project files, and block text can't inject
   code.
+- 📦 **Signed installers** for Windows and Linux, and updates only when you
+  agree to them.
 
-> **Project status:** the desktop block editor works on Windows and Linux:
-> build a program from blocks, watch its C++ appear, and build and run it
-> with your g++ in the built-in console (milestone M2 of the
-> [roadmap](docs/spec/10-roadmap.md#101-milestones), in progress: its
-> automated checks pass, and the manual usability and screen-reader checks
-> are still to be done). The compiler also works from the command line (M1).
-> There are no installers yet (M6), so the app is built from source. The list
-> above is the goal for 1.0;
-> [what the M2 editor leaves to later milestones](docs/spec/04-user-interface.md#413-what-the-m2-editor-includes)
-> includes typing expressions into slots and exporting a project. The full
-> technical specification is in [`docs/spec/`](docs/spec/README.md).
+The [roadmap](docs/spec/10-roadmap.md#101-milestones) says which milestone
+brings what, and the full technical specification is in
+[`docs/spec/`](docs/spec/README.md).
 
 ## Get Blocks2Cpp
 
@@ -60,8 +88,10 @@ the command-line tool.
 | [Command-line tool](docs/reference/cli.md)                          | `b2c check`, `generate`, `build`, `run`, `toolchains`, `migrate` and `fmt`                                                        |
 | [Block reference](docs/reference/blocks/README.md)                  | Every block, the C++ it becomes and its options                                                                                   |
 | [Diagnostics reference](docs/reference/diagnostics/README.md)       | Every message Blocks2Cpp can show, with examples and fixes                                                                        |
-| [Desktop app](apps/desktop/README.md)                               | How the editor is built, its security settings and its dependencies                                                               |
-| [Manual tests](docs/manual-tests/README.md)                         | The milestone checks done by hand: screen readers and usability                                                                   |
+| [Contributing](CONTRIBUTING.md)                                     | How to set up, the rules for a change, the checks CI runs, and where things are documented                                        |
+| [Developer guide](docs/developer-guide/README.md)                   | How the desktop app is built inside: architecture, security settings, dependencies, testing and recipes                           |
+| [Desktop app](apps/desktop/README.md)                               | What the app is and where its code is                                                                                             |
+| [Manual tests](docs/manual-tests/README.md)                         | The milestone checks done by hand: screen readers, usability, performance and the toolchain matrix                                |
 | [Security policy](SECURITY.md)                                      | How to report vulnerabilities                                                                                                     |
 
 ## Technology

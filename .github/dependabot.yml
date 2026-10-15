@@ -101,7 +101,8 @@ updates:
           - version-update:semver-major
       # Node.js's types follow the Node.js major the project runs on (.node-version, 22), not the
       # newest Node.js release. They are on 24 because @types/node 22 depends on undici-types 6.21,
-      # which trustPolicy rejects (apps/desktop/README.md); a newer major waits for the runtime.
+      # which trustPolicy rejects (docs/developer-guide/dependencies.md); a newer major waits for
+      # the runtime.
       - dependency-name: "@types/node"
         update-types:
           - version-update:semver-major

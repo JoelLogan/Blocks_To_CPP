@@ -122,6 +122,8 @@ Blocks_To_CPP/
 │   ├── spec/                       # this specification
 │   ├── adr/                        # architecture decision records
 │   ├── user-guide/                 # end-user documentation (built into a static site)
+│   ├── developer-guide/            # contributors: architecture, security settings, dependencies,
+│   │                               #   testing, recipes
 │   ├── manual-tests/               # manual test protocols (screen readers, usability)
 │   ├── security/                   # review checklists (custom Blockly fields and tooltips)
 │   └── reference/                  # block reference (generated), diagnostics reference, CLI

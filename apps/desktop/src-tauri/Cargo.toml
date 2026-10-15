@@ -33,7 +33,7 @@ required-features = ["e2e-hooks"]
 e2e-hooks = []
 
 # Every dependency needs a justification (docs/spec/08-security.md §8.9); see
-# apps/desktop/README.md. Keep `tauri` on the same minor version as the
+# docs/developer-guide/dependencies.md. Keep `tauri` on the same minor version as the
 # `@tauri-apps/api` and `@tauri-apps/cli` packages in ../package.json.
 [build-dependencies]
 # `isolation` must match the isolation pattern in tauri.conf.json (tauri-build checks it).

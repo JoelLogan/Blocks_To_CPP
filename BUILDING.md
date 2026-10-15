@@ -240,9 +240,10 @@ release build. For a quicker build that still behaves like the release, use
 `pnpm --filter @blocks2cpp/desktop tauri build --debug --no-bundle`, which
 writes `target/debug/blocks2cpp-desktop`.
 
-The checks, tests and code layout are described in the
-[desktop app's README](apps/desktop/README.md) and in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+The checks are listed in [CONTRIBUTING.md](CONTRIBUTING.md#checks); the code
+layout, the tests and how the app is built inside are described in the
+[desktop app's README](apps/desktop/README.md) and the
+[developer guide](docs/developer-guide/README.md).
 
 ## The command-line tool
 
