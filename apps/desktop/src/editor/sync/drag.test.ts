@@ -4,7 +4,12 @@
  *
  * - Saving while a block is dragged (02 §2.4.1): the document is the canvas as it was just before
  *   the drag, never the canvas in flux (the dragged block detached, drag previews standing in for
- *   values or heading stacks).
+ *   values or heading stacks). The drag's start reads the canvas only when the preview pipeline
+ *   has something left to read; otherwise the project's document is that canvas.
+ * - Snapping (03 §3.3 "Placing blocks"): a block snaps from about 44 screen pixels at every zoom
+ *   (48 to 96 canvas units); for a dragged statement a previewed place keeps the preview until
+ *   another is 20 units nearer, a dragged value takes the nearest slot (also the first slot of a
+ *   block in a slot); Blockly's own configuration (which bumping uses) is never left changed.
  * - A drop on a delete area (03 §3.3 "Placing blocks"): it deletes only the dragged blocks and
  *   never connects them, even when a place was previewed just before, and the area counts where
  *   it is when the drag starts, even if it moved since the canvas last recorded it: a drag that
@@ -23,7 +28,7 @@
 import type { BdmDocument, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
 import { b2cDarkTheme, b2cLightTheme, readExprShadow } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import appCss from '../../app/app.css?raw';
 import { contrastOf, declarationsOf, parseRules, themeTokens } from '../../app/layout/cssAudit';
@@ -31,9 +36,21 @@ import { useAppStore } from '../../app/store';
 import { editorInjectOptions } from '../EditorWorkspace';
 import type { PreviewService } from '../preview/service';
 import { createToolboxPlugin, toolboxInjectOptions } from '../toolbox';
-import { B2cBlockDragger, B2cBlockDragStrategy, handleBlockDrops, isOverDeleteArea } from './drag';
+import {
+  B2cBlockDragger,
+  B2cBlockDragStrategy,
+  handleBlockDrops,
+  isOverDeleteArea,
+  listenToBlockDrags,
+  MAX_SNAP_RADIUS,
+  MIN_SNAP_RADIUS,
+  PREVIEW_PREFERENCE,
+  snapRadius,
+  VALUE_PREVIEW_PREFERENCE,
+} from './drag';
 import dragCss from './drag.css?raw';
 import { markDragTargetsStale } from './dragTargets';
+import { MAX_ZOOM, MIN_ZOOM } from './limits';
 import {
   canonicalText,
   disposeWorkspaces,
@@ -48,6 +65,12 @@ import {
 } from './testing';
 import { allBlocks } from './traverse';
 import { readTopBlocks } from './workspaceToBdm';
+
+// The session's reads of the whole canvas, counted (a drag's start makes one only when needed).
+vi.mock('./workspaceToBdm', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./workspaceToBdm')>();
+  return { ...actual, readTopBlocks: vi.fn(actual.readTopBlocks) };
+});
 
 const core = await testCore();
 
@@ -110,6 +133,8 @@ function topIds(doc: BdmDocument): string[] {
 }
 
 describe.skipIf(core === null)('saving during a drag', () => {
+  withoutSmil();
+
   it('writes the canvas as it was before the drag, until the block is dropped', async () => {
     const { workspace, session } = await guessingGame();
     const svg = workspace as Blockly.WorkspaceSvg;
@@ -139,10 +164,58 @@ describe.skipIf(core === null)('saving during a drag', () => {
     expect(topIds(session.currentDocument())).toEqual(['b011', 'b004']);
   });
 
-  it('leaves out a block the drag takes from the toolbox', async () => {
+  it('takes the project’s document for the canvas before the drag when nothing waits to be read', async () => {
     const { workspace, session } = await guessingGame();
     const svg = workspace as Blockly.WorkspaceSvg;
+    await eventsDelivered();
+    expect(session.syncPending).toBe(false);
     const before = text(session.currentDocument());
+    const reads = vi.mocked(readTopBlocks);
+    reads.mockClear();
+
+    startDrag(present(svg.getBlockById('b004'), 'b004'));
+    expect(svg.isDragging()).toBe(true);
+    // No read of the whole canvas, which grows with the canvas, at the drag's start.
+    expect(reads).not.toHaveBeenCalled();
+    expect(text(session.currentDocument())).toBe(before);
+    drop();
+  });
+
+  it('reads the canvas at the drag’s start when an edit waits for its preview', async () => {
+    const { workspace, session } = await guessingGame();
+    const svg = workspace as Blockly.WorkspaceSvg;
+    const committed = useAppStore.getState().project?.canonicalText;
+    // An edit Blockly has announced; its preview waits for the pipeline's debounce.
+    present(svg.getBlockById('b004'), 'b004').setFieldValue(false, 'NEWLINE');
+    await eventsDelivered();
+    expect(session.syncPending).toBe(true);
+    const edited = text(session.currentDocument());
+    expect(edited).not.toBe(committed);
+    const reads = vi.mocked(readTopBlocks);
+    reads.mockClear();
+
+    startDrag(present(svg.getBlockById('b010'), 'b010'));
+    expect(svg.isDragging()).toBe(true);
+    expect(reads).toHaveBeenCalledTimes(1);
+    // A save during the drag writes the canvas before it, with the edit.
+    expect(text(session.currentDocument())).toBe(edited);
+    drop();
+  });
+
+  it.each([
+    ['nothing waits to be read', false],
+    ['an edit waits for its preview', true],
+  ])('leaves out a block the drag takes from the toolbox when %s', async (_, edit) => {
+    const { workspace, session } = await guessingGame();
+    const svg = workspace as Blockly.WorkspaceSvg;
+    if (edit) {
+      present(svg.getBlockById('b004'), 'b004').setFieldValue(false, 'NEWLINE');
+      await eventsDelivered();
+      expect(session.syncPending).toBe(true);
+    }
+    const before = text(session.currentDocument());
+    const reads = vi.mocked(readTopBlocks);
+    reads.mockClear();
 
     // What the flyout does when a drag starts on one of its blocks: a new block on the canvas.
     const created = Blockly.serialization.blocks.append(
@@ -151,12 +224,42 @@ describe.skipIf(core === null)('saving during a drag', () => {
     ) as Blockly.BlockSvg;
     startDrag(created);
     expect(svg.isDragging()).toBe(true);
+    expect(reads).toHaveBeenCalledTimes(edit ? 1 : 0);
     expect(text(session.currentDocument())).toBe(before);
 
     drop();
     await session.flush();
     expect(topIds(session.currentDocument())).toContain(created.id);
     expect(useAppStore.getState().project?.dirty).toBe(true);
+  });
+
+  it('leaves a change Blockly has not announced out of a save during the drag, which leaves it unsaved', async () => {
+    const { workspace, session } = await guessingGame();
+    const svg = workspace as Blockly.WorkspaceSvg;
+    await eventsDelivered();
+    const committed = present(useAppStore.getState().project, 'project').canonicalText;
+    // Changed just before the drag starts, in the same frame: Blockly announces it after the next.
+    present(svg.getBlockById('b004'), 'b004').setFieldValue(false, 'NEWLINE');
+    const dragged = present(svg.getBlockById('b010'), 'b010');
+    startDrag(dragged);
+    const during = text(session.currentDocument());
+    expect(during).toBe(committed);
+    // Saved during the drag.
+    useAppStore.getState().actions.updateProject({ savedCanonicalText: during, dirty: false });
+    // Dropped where it was taken from: the drag itself changes nothing.
+    document.dispatchEvent(
+      new PointerEvent('pointermove', { ...POINTER, clientX: 100, clientY: 100 }),
+    );
+    document.dispatchEvent(
+      new PointerEvent('pointerup', { ...POINTER, clientX: 100, clientY: 100 }),
+    );
+    expect(mainList(svg)).toEqual(['b002', 'b003', 'b004', 'b010']);
+
+    await eventsDelivered();
+    await session.flush();
+    const project = present(useAppStore.getState().project, 'project');
+    expect(project.canonicalText).not.toBe(during);
+    expect(project.dirty).toBe(true);
   });
 
   it('reads the loose stack under a drag preview that heads it', async () => {
@@ -558,12 +661,365 @@ describe.skipIf(core === null)('a drop on a delete area', () => {
     probe.drag(at, new PointerEvent('pointermove', { clientX: near.x - 6, clientY: near.y }));
     expect(probe.radius()).toBe(-1);
     probe.drag(at, new PointerEvent('pointermove', { clientX: near.x + 6, clientY: near.y }));
-    expect(probe.radius()).toBeGreaterThan(0);
+    expect(probe.radius()).toBe(snapRadius(0.9));
     probe.drag(at, new PointerEvent('pointermove', { clientX: near.x - 6, clientY: near.y }));
     // A move without a pointer event (a programmatic drag) is never over a delete area.
     probe.drag(at);
-    expect(probe.radius()).toBeGreaterThan(0);
+    expect(probe.radius()).toBe(snapRadius(0.9));
     probe.endDrag();
+  });
+});
+
+/**
+ * Blockly ripples a connection it makes with an SVG animation; happy-dom has no SMIL, so in the
+ * tests of the `describe` that calls this, the animation's `beginElement` is a no-op.
+ */
+function withoutSmil(): void {
+  const svgElement = SVGElement.prototype as SVGElement & { beginElement?: () => void };
+  const hadBeginElement = typeof svgElement.beginElement === 'function';
+
+  beforeEach(() => {
+    if (!hadBeginElement) {
+      svgElement.beginElement = () => undefined;
+    }
+  });
+
+  afterEach(() => {
+    if (!hadBeginElement) {
+      delete svgElement.beginElement;
+    }
+  });
+}
+
+/** Blockly's own snapping configuration, which the editor never changes outside a move. */
+const BLOCKLY_SNAPPING = {
+  snapRadius: 28,
+  connectingSnapRadius: 28,
+  currentConnectionPreference: 8,
+} as const;
+
+/** Blockly's snapping configuration now. */
+function snapping(): Record<keyof typeof BLOCKLY_SNAPPING, number> {
+  const { snapRadius: radius, connectingSnapRadius, currentConnectionPreference } = Blockly.config;
+  return { snapRadius: radius, connectingSnapRadius, currentConnectionPreference };
+}
+
+/** The canvas of the snapping test running, so that a failed test's drag can be ended. */
+let snappingCanvas: Blockly.WorkspaceSvg | null = null;
+
+/**
+ * A shown canvas at zoom `scale` with the editor's block dragger and the editor's zoom range, and
+ * no session: snapping needs neither the compiler core nor a project.
+ */
+function canvasAt(scale: number): Blockly.WorkspaceSvg {
+  const svg = renderedWorkspace({
+    plugins: { blockDragger: B2cBlockDragger },
+    move: { scrollbars: true, drag: true },
+    zoom: { minScale: MIN_ZOOM, maxScale: MAX_ZOOM },
+  });
+  snappingCanvas = svg;
+  setViewSize(svg, 1000, 700);
+  Blockly.svgResize(svg);
+  svg.setScale(scale);
+  expect(svg.scale).toBe(scale);
+  return svg;
+}
+
+/** Adds a loose block of `type` at `x`, `y` (canvas units). */
+function looseBlock(
+  svg: Blockly.WorkspaceSvg,
+  type: string,
+  x: number,
+  y: number,
+): Blockly.BlockSvg {
+  return Blockly.serialization.blocks.append({ type, x, y }, svg) as Blockly.BlockSvg;
+}
+
+/** The connection of `block`'s statement input `BODY`: the mouth that holds its statements. */
+function mouthOf(block: Blockly.BlockSvg): Blockly.RenderedConnection {
+  const connection = block.getInput('BODY')?.connection;
+  if (!(connection instanceof Blockly.RenderedConnection)) {
+    throw new Error(`${block.type} has no BODY`);
+  }
+  return connection;
+}
+
+/**
+ * The pointer position (from a press at {@link PRESS}) that brings `block`'s top connection to
+ * `dx`, `dy` canvas units from `target`.
+ */
+function pointerAt(
+  svg: Blockly.WorkspaceSvg,
+  block: Blockly.BlockSvg,
+  target: Blockly.RenderedConnection,
+  dx: number,
+  dy: number,
+): { x: number; y: number } {
+  const local = present(block.previousConnection, 'previous');
+  return {
+    x: PRESS.x + (target.x + dx - local.x) * svg.scale,
+    y: PRESS.y + (target.y + dy - local.y) * svg.scale,
+  };
+}
+
+/**
+ * Drags `block` with the pointer until its top connection is `dx`, `dy` canvas units from
+ * `target`, drops it there, and waits until Blockly has finished the drop (its connection's
+ * ripple comes after the next render).
+ */
+async function dropNear(
+  svg: Blockly.WorkspaceSvg,
+  block: Blockly.BlockSvg,
+  target: Blockly.RenderedConnection,
+  dx: number,
+  dy: number,
+): Promise<void> {
+  const at = pointerAt(svg, block, target, dx, dy);
+  press(block);
+  moveTo(at);
+  release(at);
+  await placed();
+}
+
+/**
+ * A loose empty *forever* and a loose *leave loop* to drop into its mouth, on a canvas at zoom
+ * `scale`.
+ */
+async function emptyMouth(scale: number): Promise<{
+  svg: Blockly.WorkspaceSvg;
+  loop: Blockly.BlockSvg;
+  dragged: Blockly.BlockSvg;
+}> {
+  const svg = canvasAt(scale);
+  const loop = looseBlock(svg, 'control.forever', 200, 200);
+  const dragged = looseBlock(svg, 'control.break', 700, 600);
+  await placed();
+  return { svg, loop, dragged };
+}
+
+describe('snapping (03 §3.3 "Placing blocks")', () => {
+  withoutSmil();
+
+  afterEach(() => {
+    snappingCanvas?.cancelCurrentGesture();
+    snappingCanvas = null;
+  });
+
+  it.each([
+    [0.9, 49],
+    [0.5, 88],
+    [1, MIN_SNAP_RADIUS],
+    [1.5, MIN_SNAP_RADIUS],
+    [MAX_ZOOM, MIN_SNAP_RADIUS],
+    [0.3, MAX_SNAP_RADIUS],
+    [MIN_ZOOM, MAX_SNAP_RADIUS],
+  ])('reaches 44 screen pixels at zoom %f: %i canvas units', (scale, radius) => {
+    expect(snapRadius(scale)).toBe(radius);
+  });
+
+  it.each([0.9, 0.5, 1.5])(
+    'drops a block 40 right of and 20 below an empty mouth into it at zoom %f',
+    async (scale) => {
+      const { svg, loop, dragged } = await emptyMouth(scale);
+      await dropNear(svg, dragged, mouthOf(loop), 40, 20);
+
+      expect(loop.getInputTargetBlock('BODY')).toBe(dragged);
+      expect(snapping()).toEqual(BLOCKLY_SNAPPING);
+    },
+  );
+
+  it.each([
+    [0.9, 120],
+    [0.5, 120],
+    // Zoomed far out, 44 pixels are more than 96 units: the radius stops there.
+    [0.25, 100],
+  ])('leaves a block dropped at zoom %f, %i units away, loose', async (scale, distance) => {
+    const { svg, loop, dragged } = await emptyMouth(scale);
+    await dropNear(svg, dragged, mouthOf(loop), distance, 0);
+
+    expect(loop.getInputTargetBlock('BODY')).toBeNull();
+    expect(dragged.getParent()).toBeNull();
+    expect(previewShown(svg)).toBe(false);
+  });
+
+  it('keeps the preview on its place until another is 20 units nearer', async () => {
+    // Two programs one above the other: their mouths are the only places a statement can go.
+    const svg = canvasAt(0.5);
+    const upper = looseBlock(svg, 'program.main', 200, 100);
+    await placed();
+    const lower = looseBlock(svg, 'program.main', 200, 116 + upper.getHeightWidth().height);
+    const dragged = looseBlock(svg, 'control.break', 700, 600);
+    await placed();
+    const [a, b] = [mouthOf(upper), mouthOf(lower)];
+    expect(b.x).toBe(a.x);
+    // A point 14 units nearer the lower mouth than the upper one, both within the radius.
+    const fromUpper = (b.y - a.y + 14) / 2;
+    expect(fromUpper).toBeLessThan(snapRadius(0.5));
+
+    press(dragged);
+    moveTo(pointerAt(svg, dragged, a, 0, 4));
+    expect(previewShown(svg)).toBe(true);
+    const between = pointerAt(svg, dragged, a, 0, fromUpper);
+    moveTo(between);
+    release(between);
+    await placed();
+
+    // Blockly's preference of 8 units would have moved it to the lower program.
+    expect(upper.getInputTargetBlock('BODY')).toBe(dragged);
+    expect(lower.getInputTargetBlock('BODY')).toBeNull();
+  });
+
+  it('drops a value into the first slot of a block that sits in a slot, approached from the left', async () => {
+    // As `repeat until guess = secret` is built: the comparison's first slot lies a few units right
+    // of the loop's slot that holds the comparison, which a value dragged from the toolbox passes
+    // first.
+    const svg = canvasAt(0.9);
+    const loop = Blockly.serialization.blocks.append(
+      {
+        type: 'control.while',
+        x: 300,
+        y: 200,
+        inputs: { COND: { block: { type: 'math.compare' } } },
+      },
+      svg,
+    ) as Blockly.BlockSvg;
+    const dragged = looseBlock(svg, 'math.compare', 100, 500);
+    await placed();
+    const comparison = present(loop.getInputTargetBlock('COND'), 'the comparison');
+    const outer = present(loop.getInput('COND')?.connection, 'COND');
+    const slot = present(comparison.getInput('A')?.connection, 'A');
+    // Blockly's preference for the place previewed (8) is no less than the slots lie apart.
+    expect(Math.hypot(slot.x - outer.x, slot.y - outer.y)).toBeLessThanOrEqual(
+      BLOCKLY_SNAPPING.currentConnectionPreference,
+    );
+    const own = present(dragged.outputConnection, 'output');
+    const at = (dx: number): { x: number; y: number } => ({
+      x: PRESS.x + (slot.x + dx - own.x) * svg.scale,
+      y: PRESS.y + (slot.y - own.y) * svg.scale,
+    });
+    const seen = new Set<number>();
+    const checker = svg.connectionChecker;
+    const canConnect = checker.canConnect.bind(checker);
+    const spy = vi.spyOn(checker, 'canConnect').mockImplementation((a, b, dragging, distance) => {
+      if (dragging) {
+        seen.add(Blockly.config.currentConnectionPreference);
+      }
+      return canConnect(a, b, dragging, distance);
+    });
+
+    press(dragged);
+    // In from the left: the outer slot comes within reach first.
+    for (const dx of [-120, -80, -50, -30, -15, -5, -1]) {
+      moveTo(at(dx));
+    }
+    release(at(-1));
+    await placed();
+    spy.mockRestore();
+
+    expect(comparison.getInputTargetBlock('A')).toBe(dragged);
+    expect(loop.getInputTargetBlock('COND')).toBe(comparison);
+    expect([...seen]).toEqual([VALUE_PREVIEW_PREFERENCE]);
+    expect(snapping()).toEqual(BLOCKLY_SNAPPING);
+  });
+
+  it('prefers the place previewed by 20 units only while a move runs', async () => {
+    const { svg, loop, dragged } = await emptyMouth(0.9);
+    const near = pointerAt(svg, dragged, mouthOf(loop), 10, 10);
+    // The preference the drag's search for a place sees (the connection made at the drop is
+    // checked again, outside any move).
+    const seen = new Set<number>();
+    const checker = svg.connectionChecker;
+    const canConnect = checker.canConnect.bind(checker);
+    const spy = vi.spyOn(checker, 'canConnect').mockImplementation((a, b, dragging, distance) => {
+      if (dragging) {
+        seen.add(Blockly.config.currentConnectionPreference);
+      }
+      return canConnect(a, b, dragging, distance);
+    });
+
+    press(dragged);
+    moveTo(near);
+    expect(previewShown(svg)).toBe(true);
+    // Between moves, and so for everything else (bumping, pasting, the keyboard), Blockly's own.
+    expect(snapping()).toEqual(BLOCKLY_SNAPPING);
+    moveTo({ x: near.x + 2, y: near.y });
+    release({ x: near.x + 2, y: near.y });
+    await placed();
+    spy.mockRestore();
+
+    expect([...seen]).toEqual([PREVIEW_PREFERENCE]);
+    expect(loop.getInputTargetBlock('BODY')).toBe(dragged);
+    expect(snapping()).toEqual(BLOCKLY_SNAPPING);
+  });
+
+  it('gives Blockly its configuration back after a cancelled drag', async () => {
+    const { svg, loop, dragged } = await emptyMouth(0.9);
+    press(dragged);
+    moveTo(pointerAt(svg, dragged, mouthOf(loop), 10, 10));
+    expect(previewShown(svg)).toBe(true);
+
+    // What Escape and the gesture's disposal do.
+    svg.cancelCurrentGesture();
+    await placed();
+
+    expect(svg.isDragging()).toBe(false);
+    expect(snapping()).toEqual(BLOCKLY_SNAPPING);
+  });
+
+  it('gives Blockly its configuration back when a move fails, and with failing listeners', async () => {
+    const { svg, loop, dragged } = await emptyMouth(0.9);
+    const near = pointerAt(svg, dragged, mouthOf(loop), 10, 10);
+    const stopListening = listenToBlockDrags(svg, {
+      onDragStart: () => {
+        throw new Error('a failing drag listener');
+      },
+      onDragEnd: () => {
+        throw new Error('a failing drag listener');
+      },
+    });
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    // A move that fails: the page reports the error, as a browser does for a failing listener.
+    const reported: unknown[] = [];
+    const report = (event: ErrorEvent): void => {
+      reported.push(event.error);
+      event.preventDefault();
+    };
+    window.addEventListener('error', report);
+    let checks = 0;
+    const spy = vi.spyOn(svg.connectionChecker, 'canConnect').mockImplementation(() => {
+      checks += 1;
+      throw new Error('a failing connection check');
+    });
+    let listenerFailures: number;
+    try {
+      press(dragged);
+      try {
+        moveTo(near);
+      } catch (error: unknown) {
+        reported.push(error);
+      }
+      expect(checks).toBeGreaterThan(0);
+      expect(snapping()).toEqual(BLOCKLY_SNAPPING);
+      spy.mockRestore();
+      moveTo({ x: near.x + 2, y: near.y });
+      release({ x: near.x + 2, y: near.y });
+      await placed();
+      listenerFailures = logged.mock.calls.filter(
+        ([message]) => message === 'A block drag listener failed',
+      ).length;
+    } finally {
+      spy.mockRestore();
+      window.removeEventListener('error', report);
+      stopListening();
+      logged.mockRestore();
+    }
+
+    expect(reported).not.toEqual([]);
+    // The start's and the end's, each only logged.
+    expect(listenerFailures).toBe(2);
+    expect(svg.isDragging()).toBe(false);
+    expect(dragged.isDeadOrDying()).toBe(false);
+    expect(snapping()).toEqual(BLOCKLY_SNAPPING);
   });
 });
 
@@ -854,26 +1310,12 @@ async function dragFromFlyout(
 }
 
 describe.skipIf(core === null)('a block dragged from the toolbox', () => {
-  /**
-   * Blockly ripples a connection it makes with an SVG animation; happy-dom has no SMIL, so the
-   * animation's `beginElement` is a no-op here.
-   */
-  const svgElement = SVGElement.prototype as SVGElement & { beginElement?: () => void };
-  const hadBeginElement = typeof svgElement.beginElement === 'function';
-
-  beforeEach(() => {
-    if (!hadBeginElement) {
-      svgElement.beginElement = () => undefined;
-    }
-  });
+  withoutSmil();
 
   afterEach(() => {
     const workspace = running?.workspace;
     if (workspace instanceof Blockly.WorkspaceSvg) {
       workspace.cancelCurrentGesture();
-    }
-    if (!hadBeginElement) {
-      delete svgElement.beginElement;
     }
   });
 

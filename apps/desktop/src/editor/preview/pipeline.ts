@@ -73,6 +73,8 @@ export class PreviewPipeline {
   private readonly debounceMs: number;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private latest = 0;
+  /** The sequence number of the run whose read of the canvas was committed last; -1 before any. */
+  private committed = -1;
   private disposed = false;
   private readonly unsubscribe: () => void;
 
@@ -92,6 +94,18 @@ export class PreviewPipeline {
   /** Whether a debounced run is waiting. */
   get pending(): boolean {
     return this.timer !== null;
+  }
+
+  /**
+   * Whether the pipeline has nothing left to read: no run waits or has yet to read the canvas, and
+   * the latest run's read loaded and is the project's document. Nothing has asked for another read
+   * since then (an edit of the canvas, a new document, a rename), so the project's document holds
+   * what reading the canvas would give now, except for a change Blockly has made but not announced
+   * yet: Blockly delivers its events after the next animation frame, and only then is a run
+   * scheduled. A canvas that does not load (`syncFailed`) is never idle.
+   */
+  isIdle(): boolean {
+    return this.timer === null && this.committed === this.latest;
   }
 
   /** Runs after the debounce delay; another call before then restarts the delay. */
@@ -257,6 +271,7 @@ export class PreviewPipeline {
       },
       analysis.notice === 'syncFailed' ? { seq, notice: null } : { seq },
     );
+    this.committed = seq;
     this.options.onCommitted?.(doc);
   }
 
