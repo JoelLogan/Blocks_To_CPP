@@ -21,7 +21,7 @@ import path from 'node:path';
 
 import { Builder, Capabilities, error as webdriverError, type WebDriver } from 'selenium-webdriver';
 
-import { QUIT_TIMEOUT_MS } from '../support/app';
+import { PAGE_LOAD_TIMEOUT_MS, QUIT_TIMEOUT_MS } from '../support/app';
 import { artifactDir, copyFiles } from '../support/artifacts';
 import { TauriDriver } from '../support/driver';
 import { appEnvironment, type HarnessSettings } from '../support/env';
@@ -318,9 +318,11 @@ export async function measureColdStart(
     const launched = Date.now();
     session = await new Builder().usingServer(driver.url).withCapabilities(capabilities).build();
     // The readiness script's own timeout (what is left of COLD_START_TIMEOUT_MS) ends it first.
-    await session
-      .manage()
-      .setTimeouts({ script: COLD_START_TIMEOUT_MS + 10_000, implicit: 0, pageLoad: 60_000 });
+    await session.manage().setTimeouts({
+      script: COLD_START_TIMEOUT_MS + 10_000,
+      implicit: 0,
+      pageLoad: PAGE_LOAD_TIMEOUT_MS,
+    });
     const start = await timeReadiness(sessionWindow(session), launched, {
       now: () => Date.now(),
       sleep,

@@ -440,6 +440,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   waives an A/B difference, because both builds are measured with the head's
   benchmarks. The two W2-1 entries for `webview.edit-1000.p95` are
   redefinitions.
+- End-to-end harness: the window gets 60 s to start, as long as a page load
+  may take, and a timeout says how far the start got (the page never loaded,
+  it loaded too late, or the app never became ready). End-to-end builds keep
+  the web view's data under the test's `B2C_E2E_ROOT`, or in the folder
+  `B2C_E2E_WEBVIEW_DATA` names, instead of the app's local data folder that
+  every launch shared: each launch of a flow test gets a folder of its own,
+  and the cold-start benchmark's starts share one, as a person's do.
 
 - A project or clipboard payload from a newer block catalog reports unknown
   fields, inputs, settings and options as `B2C-E0602` (made by a newer
