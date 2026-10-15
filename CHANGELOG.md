@@ -360,6 +360,19 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `__proto__` keys, extra keys and other payloads to all 11 commands that
   take no arguments. The security specs' README records the 2026-10-06
   Windows `app_quit` incident and its likely cause.
+- A visual diff of the window's chrome (the M2 polish plan's W7-1), beside
+  the block canvas's: in the smallest window (800×560), the whole window, the
+  toolbar's Debug/Release drop-down closed and hovered, the ≡ menu open over
+  the editor, the toolbox after a click on each category, and the console
+  after two runs (scrolled up 4 lines, and with the bottom panel at its
+  tallest). Light on both systems and dark on Linux (`GTK_THEME=Adwaita:dark`),
+  one launch per theme. Each scene waits for fonts, animations and two
+  identical screenshots in a row, parks the pointer, hides the caret and
+  WebKitGTK's overlay scroll bars, and masks the toolchain, the elapsed time
+  and the app version in the C++ header. Every scene is listed in the
+  summary; the candidates start without baselines until they are committed
+  from CI (W7-2). The canvas screenshot now sets its window through the
+  window-size seam.
 
 ### Changed
 
