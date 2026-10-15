@@ -25,8 +25,8 @@
 > commit `0709960`). The nightly of 2026-10-14 (commit `bee5c0a`) failed
 > three jobs: the two Windows E2E failures led to fixes in the app (a save
 > asked for while another was finishing was dropped) and in the harness
-> (neither yet run on Windows), and the Linux benchmark flags came from a
-> slower runner, not the code
+> (both since passed on Windows, nightly of 2026-10-15 at `3f6f608`), and
+> the Linux benchmark flags came from a slower runner, not the code
 > ([record](../plans/m2-polish-plan.md#w7--m2-close-out)). The first
 > measurements on CI's runners, which have no GPU, are a cold start of 1.2 s
 > (Linux) and 2.8 s (Windows), and a p95 frame time while dragging in a

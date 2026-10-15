@@ -554,18 +554,31 @@ jobs:
 
       # The Trusted Types trial (docs/spec/08-security.md §8.8), the longest main-thread tasks
       # (report-only, docs/spec/09-quality-and-delivery.md §9.2) and the visual diff, as in
-      # desktop.yml.
+      # desktop.yml: to the job summary and to the log.
       - name: Write the Trusted Types, long-task and visual diff summaries
         if: ${{ !cancelled() }}
         shell: bash
         run: |
           for summary in trusted-types.md long-tasks.md visual/visual-diff.md; do
             if [ -f "$B2C_E2E_ARTIFACTS/$summary" ]; then
-              cat "$B2C_E2E_ARTIFACTS/$summary" >> "$GITHUB_STEP_SUMMARY"
+              tee -a "$GITHUB_STEP_SUMMARY" < "$B2C_E2E_ARTIFACTS/$summary"
             else
-              echo "No $summary was written." >> "$GITHUB_STEP_SUMMARY"
+              echo "No $summary was written." | tee -a "$GITHUB_STEP_SUMMARY"
             fi
           done
+
+      # The Trusted Types trial's per-test report, kept for the milestone's threat-model review
+      # (docs/security/threat-model-reviews.md, TM-M2-4).
+      - name: Upload the Trusted Types report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-trusted-types-${{ matrix.os }}
+          path: |
+            e2e-artifacts/trusted-types.jsonl
+            e2e-artifacts/trusted-types.md
+          if-no-files-found: ignore
+          retention-days: 90
 
       - name: Upload the visual diff candidates
         if: ${{ !cancelled() }}
@@ -725,11 +738,24 @@ jobs:
         run: |
           for summary in trusted-types.md long-tasks.md; do
             if [ -f "$B2C_E2E_ARTIFACTS/$summary" ]; then
-              cat "$B2C_E2E_ARTIFACTS/$summary" >> "$GITHUB_STEP_SUMMARY"
+              tee -a "$GITHUB_STEP_SUMMARY" < "$B2C_E2E_ARTIFACTS/$summary"
             else
-              echo "No $summary was written." >> "$GITHUB_STEP_SUMMARY"
+              echo "No $summary was written." | tee -a "$GITHUB_STEP_SUMMARY"
             fi
           done
+
+      # The Trusted Types trial's per-test report, kept for the milestone's threat-model review
+      # (docs/security/threat-model-reviews.md, TM-M2-4).
+      - name: Upload the Trusted Types report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-security-trusted-types-${{ matrix.os }}
+          path: |
+            e2e-artifacts/trusted-types.jsonl
+            e2e-artifacts/trusted-types.md
+          if-no-files-found: ignore
+          retention-days: 90
 
       - name: Upload screenshots and logs
         if: failure()

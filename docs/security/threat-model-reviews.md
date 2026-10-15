@@ -60,6 +60,7 @@ Checks run for this review, at `d4dfafb` unless the fix below is named:
 | `cargo test -p b2c-store`, with the fix of TM-M2-1 | all pass |
 | Desktop workflow at `d4dfafb`: end-to-end tests on Linux and Windows | green |
 | Nightly at `bee5c0a` (2026-10-14): E2E security tests | Linux green; Windows did not start (see TM-M2-5) |
+| Nightly at `3f6f608` (2026-10-15, run 38787205549, dispatched by hand): E2E security tests | Linux and Windows green; Windows 31 passed in 7 files (TM-M2-5 closed) |
 | Weekly `cargo-geiger` report (runs at `205ab1d` and `9e9bd35`) | no report: the job counted every crate as failed (TM-M2-3) |
 | `cargo geiger` 0.13.0, run locally as the weekly job runs it, for `b2c-process` and `b2c-app` | reports written, exit status 1 (TM-M2-3); numbers below |
 
@@ -291,7 +292,10 @@ directives, and whether the policy was active, to their job summaries.
 
 No numbers are recorded here (TM-M2-4). The summaries exist only as GitHub
 Actions job summaries, which this review could not read, and they expire with
-the run. The report left by the last local Linux run on the review machine
+the run; the job logs of the nightly at `3f6f608` do not hold the table
+either, since the step wrote it to the summary only. Since then the E2E jobs
+print it to the log too and keep `trusted-types.jsonl` and
+`trusted-types.md` as an artifact for 90 days. The report left by the last local Linux run on the review machine
 (WebKitGTK, which may ignore the header) has no test rows. The Windows E2E
 job at `d4dfafb`, the one that measures WebView2, passed, and the trial never
 fails a test. The trial stays report-only; the enforcement criterion of the
@@ -412,14 +416,28 @@ anywhere durable.** Open.
   Windows E2E job of the polish build into this entry; and have the E2E jobs
   upload `trusted-types.jsonl` as an artifact (or append it to the nightly's
   kept history) so later milestones can cite it.
+- *Progress (2026-10-15):* the Windows logs of the nightly at `3f6f608` (run
+  38787205549) hold no table: the summary step wrote only to the job summary.
+  The E2E jobs of `desktop.yml` and `nightly.yml` now print the table to the
+  log as well, which can be read from here, and upload `trusted-types.jsonl`
+  and `trusted-types.md` as the artifacts `trusted-types-<os>`,
+  `nightly-trusted-types-<os>` and `nightly-security-trusted-types-<os>`,
+  kept for 90 days. The table itself is still to be copied in.
 
 **TM-M2-5 (informational): the nightly Windows E2E security job did not
-run its checks at `bee5c0a`.** Open, tracked with the nightly failures.
+run its checks at `bee5c0a`.** Closed (2026-10-15).
 
 - The app did not become ready within 30 s (`window.__B2C_E2E__.ready()`), so
   none of the Windows security cases ran that night; Linux passed. The
   Windows E2E of the Desktop workflow at `d4dfafb` passed. The M2 close needs
   a green Windows run of the security specs on the polish build.
+- *Fix:* the ready wait is 60 s, the page-load timeout, and each E2E launch
+  keeps the web view's data under its own test root (`B2C_E2E_ROOT`, or
+  `B2C_E2E_WEBVIEW_DATA` for a flow's later launches) instead of sharing the
+  app's local data folder (merged at `828c72f`; the record is in the polish
+  plan's W7 section).
+- *Closed by:* the nightly dispatched at `3f6f608` (run 38787205549): E2E
+  security (windows-2025) passed, 31 tests in 7 files, and so did Linux.
 
 **TM-M2-6 (informational): npm licences have no automated gate.** Open,
 proposed for M3.
@@ -498,7 +516,7 @@ clipboard payload or a web page can exploit.
 
 - The Web Worker preview (ADR-0016): the worker's CSP on both webviews, no
   IPC in the worker, and the scope index.
-- The first weekly `cargo-geiger` report after TM-M2-3's fix, the results
-  of TM-M2-4, and the Windows security run of TM-M2-5.
+- The first weekly `cargo-geiger` report after TM-M2-3's fix, and the
+  results of TM-M2-4.
 - Before M4: R-3, and pasting Raw C++ blocks into a trusted project, which
   the in-app edit rule of §8.3 would then trust on the next save.

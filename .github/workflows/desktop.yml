@@ -736,7 +736,8 @@ jobs:
           Get-Content (Join-Path $probe 'profile\state\logs\blocks2cpp.log') -Tail 30 -ErrorAction SilentlyContinue
 
       # The Trusted Types trial (docs/spec/08-security.md §8.8): violations per test, reported,
-      # never failing. Meaningful on WebView2; WebKitGTK may ignore the report-only header.
+      # never failing. Meaningful on WebView2; WebKitGTK may ignore the report-only header. The
+      # table goes to the log too, which can be read where job summaries cannot.
       - name: Write the Trusted Types summary
         if: ${{ !cancelled() }}
         shell: bash
@@ -744,10 +745,23 @@ jobs:
           SUMMARY: ${{ runner.temp }}/e2e-artifacts/trusted-types.md
         run: |
           if [ -f "$SUMMARY" ]; then
-            cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+            tee -a "$GITHUB_STEP_SUMMARY" < "$SUMMARY"
           else
-            echo "No Trusted Types report was written." >> "$GITHUB_STEP_SUMMARY"
+            echo "No Trusted Types report was written." | tee -a "$GITHUB_STEP_SUMMARY"
           fi
+
+      # The trial's per-test report, kept for the milestone's threat-model review
+      # (docs/security/threat-model-reviews.md, TM-M2-4).
+      - name: Upload the Trusted Types report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trusted-types-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/e2e-artifacts/trusted-types.jsonl
+            ${{ runner.temp }}/e2e-artifacts/trusted-types.md
+          if-no-files-found: ignore
+          retention-days: 90
 
       # Every flow's longest main-thread task (docs/spec/09-quality-and-delivery.md §9.2): reported,
       # never failing (N12 is met in M5).
