@@ -135,7 +135,7 @@ program that hangs on this system never makes the compiler unusable.
 | Library features | `-fsyntax-only` snippets: `<format>`, `<print>`, `<stacktrace>`, `std::ranges`, `std::jthread`, `contains`, designated initialisers | Feature gating and fallbacks ([06 §6.10](06-compiler-pipeline.md#610-includes-and-support-helpers)) |
 | Diagnostics format | Accepts `-fdiagnostics-add-output=sarif:…`? else `-fdiagnostics-format=sarif-file`? else `json`? else plain text | §7.5.3 ladder |
 | Sanitizers | Link (and run) probe with `-fsanitize=address,undefined`; and with `-fsanitize=undefined -fsanitize-undefined-trap-on-error` | Debug configuration ([§7.4.3](#743-sanitizers-and-hardening)) |
-| Hardening | `-fhardened`, `-D_FORTIFY_SOURCE=3`, `-fstack-protector-strong`, `-fstack-clash-protection`, `-fcf-protection` accepted and link OK; `-fhardened` with `-O2` and without any diagnostic | Release hardening |
+| Hardening | `-D_FORTIFY_SOURCE=3`, `-fstack-protector-strong`, `-fstack-clash-protection`, `-fcf-protection` accepted and link OK; `-fhardened` links with `-O2` and prints no diagnostic | Release hardening |
 | Static link | `-static` link of the probe (Windows) | Standalone `.exe` default |
 | Debugger (M5) | `gdb` alongside g++ (same `bin`), `gdb --version` ≥ 10 | Debugger availability |
 
