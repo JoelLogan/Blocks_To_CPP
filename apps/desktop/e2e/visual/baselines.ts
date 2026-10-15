@@ -167,6 +167,27 @@ export interface ShotCheck {
 }
 
 /**
+ * Takes screenshot `name` with `take` and checks it ({@link checkShot}). When `take` fails (the
+ * test stopped before the screenshot), the screenshot is recorded as not taken, so that the summary
+ * still lists it, and `take`'s error is thrown.
+ */
+export async function takeAndCheckShot(
+  settings: VisualSettings,
+  name: string,
+  take: () => Promise<Buffer>,
+): Promise<ShotCheck> {
+  let screenshot: Buffer;
+  try {
+    screenshot = await take();
+  } catch (error: unknown) {
+    const reason = error instanceof Error ? error.message : String(error);
+    recordOutcome(settings, name, { kind: 'notTaken', reason });
+    throw error;
+  }
+  return checkShot(settings, name, screenshot);
+}
+
+/**
  * Compares screenshot `name` (a PNG) with this system's baseline, writes it (and the diff image)
  * as a candidate and appends its line to the summary. An update run compares nothing, and a
  * missing baseline passes with a warning; a screenshot of another size than its baseline, or with

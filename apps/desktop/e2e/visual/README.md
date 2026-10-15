@@ -80,7 +80,7 @@ here saying why.
 
 A scene that fails does not stop the others ([`scene-run.ts`](scene-run.ts)): the test fails at
 the end with all the failures, and the summary lists every scene, the ones the test never reached
-as not taken.
+as not taken. The canvas screenshot is recorded as not taken, too, when its test stops before it.
 
 ## Comparing
 

@@ -13,6 +13,7 @@ import {
   recordOutcome,
   shotName,
   summaryLine,
+  takeAndCheckShot,
   VISUAL_SUMMARY,
   visualSettings,
   writeCandidate,
@@ -222,5 +223,40 @@ describe('checkShot', () => {
     expect(summary(settings)).toContain(
       '| chrome-menu-open | linux | — | — | **fail**: The screenshot',
     );
+  });
+});
+
+describe('takeAndCheckShot', () => {
+  function settings() {
+    return { os: 'linux', baselines: tempFolder(), out: tempFolder(), update: false } as const;
+  }
+
+  function summary(folder: { out: string }): string {
+    return readFileSync(path.join(folder.out, VISUAL_SUMMARY), 'utf8');
+  }
+
+  it('checks the screenshot taken', async () => {
+    const folder = settings();
+    const check = await takeAndCheckShot(folder, 'canvas-guessing-game', () =>
+      Promise.resolve(png(10, 10)),
+    );
+    expect(check.outcome).toEqual({ kind: 'noBaseline', size: '10×10' });
+    expect(existsSync(check.candidate)).toBe(true);
+    expect(summary(folder)).toContain('| canvas-guessing-game | linux | 10×10 |');
+  });
+
+  it('records a screenshot the test stopped before as not taken, and throws on', async () => {
+    const folder = settings();
+    const stop = new Error('The page fonts did not load within 20 s');
+    await expect(
+      takeAndCheckShot(folder, 'canvas-guessing-game', () => Promise.reject(stop)),
+    ).rejects.toBe(stop);
+    const lines = summary(folder)
+      .split('\n')
+      .filter((line) => line.startsWith('| canvas-guessing-game '));
+    expect(lines).toEqual([
+      '| canvas-guessing-game | linux | — | — | **fail**: not taken: The page fonts did not load within 20 s |',
+    ]);
+    expect(existsSync(path.join(folder.out, 'linux', 'canvas-guessing-game.png'))).toBe(false);
   });
 });

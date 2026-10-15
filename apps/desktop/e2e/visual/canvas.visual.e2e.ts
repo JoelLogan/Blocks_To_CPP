@@ -6,8 +6,9 @@
  * workspace element is compared with this system's baseline
  * (visual/baselines/<system>/canvas-guessing-game.png) by pixelmatch, and more than 0.5% of
  * differing pixels fails. The screenshot is always written as a candidate (visual/baselines.ts
- * `checkShot`), so a missing or outdated baseline can be committed from the CI artifact. The
- * chrome's scenes are chrome.visual.e2e.ts.
+ * `checkShot`), so a missing or outdated baseline can be committed from the CI artifact; a test
+ * that stops before the screenshot records it as not taken. The chrome's scenes are
+ * chrome.visual.e2e.ts.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -21,7 +22,7 @@ import { foldCodePanel } from '../support/editor';
 import { byTestId, clickTestId } from '../support/ui';
 import { waitFor } from '../support/wait';
 import { openProjectFile } from '../bench/project';
-import { checkShot, visualSettings } from './baselines';
+import { takeAndCheckShot, visualSettings } from './baselines';
 import { GUESSING_GAME_MAIN, writeFixture } from './fixture';
 import {
   blurAll,
@@ -60,32 +61,36 @@ async function foldDocks(app: App): Promise<void> {
 describe('visual diff: the block canvas', () => {
   it('draws the guessing game as this system’s baseline does', async (context) => {
     const settings = visualSettings();
-    const folder = mkdtempSync(path.join(tmpdir(), 'b2c-visual-'));
-    folders.push(folder);
-    // The window-size seam: WebDriver's setRect may not resize WebView2's web view.
-    const app = await launchApp(context, {
-      dialogs: { open: [writeFixture(folder)] },
-      windowSize: WINDOW,
+    const check = await takeAndCheckShot(settings, SHOT, async () => {
+      const folder = mkdtempSync(path.join(tmpdir(), 'b2c-visual-'));
+      folders.push(folder);
+      // The window-size seam: WebDriver's setRect may not resize WebView2's web view.
+      const app = await launchApp(context, {
+        dialogs: { open: [writeFixture(folder)] },
+        windowSize: WINDOW,
+      });
+      const viewport = await viewportSize(app.driver);
+      if (viewport.width !== WINDOW.width || viewport.height !== WINDOW.height) {
+        warn(
+          `The window is ${String(viewport.width)}×${String(viewport.height)}, not ${String(WINDOW.width)}×${String(WINDOW.height)} (a smaller screen)`,
+        );
+      }
+      await openProjectFile(app, {
+        blockId: GUESSING_GAME_MAIN,
+        code: 'Too low!',
+        timeout: 60_000,
+      });
+      await foldDocks(app);
+      // The pointer rests in the window's bottom-left corner (the status bar), hovering nothing.
+      await parkPointer(app.driver);
+      await hideOverlayScrollbars(app.driver);
+      if (await blurAll(app.driver)) {
+        throw new Error('The visual diff needs the light theme, but the system prefers dark');
+      }
+      await waitUntilStill(app.driver);
+      const workspace = await app.driver.findElement(byTestId('workspace'));
+      return Buffer.from(await workspace.takeScreenshot(), 'base64');
     });
-    const viewport = await viewportSize(app.driver);
-    if (viewport.width !== WINDOW.width || viewport.height !== WINDOW.height) {
-      warn(
-        `The window is ${String(viewport.width)}×${String(viewport.height)}, not ${String(WINDOW.width)}×${String(WINDOW.height)} (a smaller screen)`,
-      );
-    }
-    await openProjectFile(app, { blockId: GUESSING_GAME_MAIN, code: 'Too low!', timeout: 60_000 });
-    await foldDocks(app);
-    // The pointer rests in the window's bottom-left corner (the status bar), hovering nothing.
-    await parkPointer(app.driver);
-    await hideOverlayScrollbars(app.driver);
-    if (await blurAll(app.driver)) {
-      throw new Error('The visual diff needs the light theme, but the system prefers dark');
-    }
-    await waitUntilStill(app.driver);
-
-    const workspace = await app.driver.findElement(byTestId('workspace'));
-    const screenshot = Buffer.from(await workspace.takeScreenshot(), 'base64');
-    const check = checkShot(settings, SHOT, screenshot);
     if (check.warning !== null) {
       warn(check.warning);
     }
