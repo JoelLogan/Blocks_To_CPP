@@ -39,7 +39,11 @@ The spans are not metrics; an app built before they existed shows none. The prev
 `b2c:preview:read`, `b2c:preview:update` (the core's single `update()`), `b2c:preview:commit` and
 `b2c:preview:publish`; an app built before the single `update()` export shows
 `b2c:preview:canonical` and `b2c:preview:analyse` instead of `b2c:preview:update`, so in an A/B run
-against such a base, compare their sum with it.
+against such a base, compare their sum with it. The preview benchmark also prints, for the edits
+with the C++ panel shown, the medians of when the edit's C++ was in the editor's state, when the
+page settled and the longest task (`per edit, C++ panel shown (median): C++ in the state after …
+ms, settled after … ms, longest task … ms`), so a slower edit shows whether its time went before
+the C++ appeared or after it, which the spans alone do not.
 
 - **Cold start** ([`launch.ts`](launch.ts)): the time starts just before the session request and
   ends at the page clock's time (its time origin plus `performance.now()`) when the readiness marker

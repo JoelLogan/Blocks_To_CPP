@@ -10,11 +10,13 @@ import { describe, expect, it } from 'vitest';
 import {
   clickMeasurement,
   editMeasurement,
+  editSummary,
   INTERACTION_TIMEOUT_MS,
   runMeasurement,
   spanSummary,
   spanTimes,
   SUMMARY_SPANS,
+  type TimedEdit,
 } from './interaction';
 import { PREVIEW_DEBOUNCE_MS } from './page';
 
@@ -170,6 +172,27 @@ describe('runMeasurement', () => {
       'Not a regular expression',
     );
     expect(() => runMeasurement('settled')).toThrow('unexpected');
+  });
+});
+
+describe('editSummary', () => {
+  const edit = (editMs: number, settledMs: number, longestMs: number): TimedEdit => ({
+    id: 'b',
+    previewMs: null,
+    editMs,
+    settledMs,
+    longestMs,
+    spans: {},
+  });
+
+  it('gives the medians of the C++ shown, the settle point and the longest task', () => {
+    expect(
+      editSummary([edit(400, 900, 300), edit(500, 1_000, 350.25), edit(600, 1_400, 410)]),
+    ).toBe('C++ in the state after 500 ms, settled after 1000 ms, longest task 350.3 ms');
+  });
+
+  it('says when there were no edits', () => {
+    expect(editSummary([])).toBe('no edits');
   });
 });
 
