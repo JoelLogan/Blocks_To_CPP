@@ -5,18 +5,26 @@
  * - baselines, committed, one set per system: `apps/desktop/e2e/visual/baselines/<linux|windows>/`;
  * - candidates (this run's screenshots, and a diff image when there is a baseline):
  *   `<artifacts>/visual/<system>/`, which the CI job uploads for a person to review and commit;
- * - a Markdown summary of every comparison: `<artifacts>/visual/visual-diff.md`.
+ * - a Markdown summary of every screenshot: `<artifacts>/visual/visual-diff.md`.
  *
  * `B2C_VISUAL_UPDATE=1` (the manually started baseline job) only writes candidates and never
  * fails on a difference; a missing baseline is reported and does not fail either, so the first runs
- * on each system make the candidates to commit.
+ * on each system make the candidates to commit. {@link checkShot} does all of it for one
+ * screenshot; the block canvas and every chrome scene go through it.
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { harnessSettings } from '../support/env';
 import { benchOs, type BenchOs } from '../bench/results';
-import { MAX_DIFF_RATIO, PIXEL_THRESHOLD, type VisualResult } from './compare';
+import {
+  compareScreenshots,
+  MAX_DIFF_RATIO,
+  PIXEL_THRESHOLD,
+  pngSize,
+  VisualCompareError,
+  type VisualResult,
+} from './compare';
 
 /** The committed baselines. */
 export const BASELINES_DIR = path.join(import.meta.dirname, 'baselines');
@@ -93,7 +101,15 @@ export type VisualOutcome =
   | { readonly kind: 'compared'; readonly result: VisualResult }
   | { readonly kind: 'noBaseline'; readonly size: string }
   | { readonly kind: 'sizeMismatch'; readonly message: string }
-  | { readonly kind: 'updated'; readonly size: string };
+  | { readonly kind: 'updated'; readonly size: string }
+  /** The screenshot was never taken: the test failed first, or the scene could not be made. */
+  | { readonly kind: 'notTaken'; readonly reason: string };
+
+/** Text for one cell of a Markdown table: one line, no `|`, at most 300 characters. */
+function cell(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').replace(/\|/g, '/').trim();
+  return flat.length > 300 ? `${flat.slice(0, 299)}…` : flat;
+}
 
 /** One line of the summary table. */
 export function summaryLine(os: BenchOs, name: string, outcome: VisualOutcome): string {
@@ -107,9 +123,11 @@ export function summaryLine(os: BenchOs, name: string, outcome: VisualOutcome): 
     case 'noBaseline':
       return `| ${name} | ${os} | ${outcome.size} | — | no baseline yet: commit the candidate |`;
     case 'sizeMismatch':
-      return `| ${name} | ${os} | — | — | **fail**: ${outcome.message.replace(/\|/g, '/')} |`;
+      return `| ${name} | ${os} | — | — | **fail**: ${cell(outcome.message)} |`;
     case 'updated':
       return `| ${name} | ${os} | ${outcome.size} | — | candidate written (update run) |`;
+    case 'notTaken':
+      return `| ${name} | ${os} | — | — | **fail**: not taken: ${cell(outcome.reason)} |`;
   }
 }
 
@@ -123,7 +141,7 @@ export function recordOutcome(
   const file = path.join(settings.out, VISUAL_SUMMARY);
   if (!existsSync(file)) {
     const head = [
-      '### Visual diff of the block canvas (docs/spec/09-quality-and-delivery.md §9.2)',
+      '### Visual diff of the block canvas and the chrome (docs/spec/09-quality-and-delivery.md §9.2)',
       '',
       `pixelmatch threshold ${String(PIXEL_THRESHOLD)}; more than ${String(MAX_DIFF_RATIO * 100)}% of differing pixels fails. ` +
         'Candidates are in the `visual-candidates-*` artifact; baselines in `apps/desktop/e2e/visual/baselines/`.',
@@ -135,4 +153,64 @@ export function recordOutcome(
     writeFileSync(file, head);
   }
   appendFileSync(file, `${summaryLine(settings.os, name, outcome)}\n`);
+}
+
+/** What {@link checkShot} found for one screenshot. */
+export interface ShotCheck {
+  readonly outcome: VisualOutcome;
+  /** The candidate written for it. */
+  readonly candidate: string;
+  /** Why the screenshot fails, or `null` when it passes. */
+  readonly failure: string | null;
+  /** A warning to show when it passes without a comparison (no baseline yet), or `null`. */
+  readonly warning: string | null;
+}
+
+/**
+ * Compares screenshot `name` (a PNG) with this system's baseline, writes it (and the diff image)
+ * as a candidate and appends its line to the summary. An update run compares nothing, and a
+ * missing baseline passes with a warning; a screenshot of another size than its baseline, or with
+ * more than {@link MAX_DIFF_RATIO} of its pixels differing, fails.
+ */
+export function checkShot(settings: VisualSettings, name: string, screenshot: Buffer): ShotCheck {
+  let outcome: VisualOutcome;
+  if (settings.update) {
+    outcome = { kind: 'updated', size: pngSize(screenshot) };
+  } else {
+    const baseline = readBaseline(settings, name);
+    if (baseline === null) {
+      outcome = { kind: 'noBaseline', size: pngSize(screenshot) };
+    } else {
+      try {
+        outcome = { kind: 'compared', result: compareScreenshots(baseline, screenshot) };
+      } catch (error: unknown) {
+        if (!(error instanceof VisualCompareError)) {
+          throw error;
+        }
+        outcome = { kind: 'sizeMismatch', message: error.message };
+      }
+    }
+  }
+  const candidate = writeCandidate(
+    settings,
+    name,
+    screenshot,
+    outcome.kind === 'compared' ? outcome.result.diffPng : null,
+  );
+  recordOutcome(settings, name, outcome);
+  let failure: string | null = null;
+  let warning: string | null = null;
+  if (outcome.kind === 'noBaseline') {
+    // Not a failure: the first run on a system makes the baseline to review and commit.
+    warning = `No ${settings.os} baseline for ${name} yet; the candidate is ${candidate}`;
+  } else if (outcome.kind === 'sizeMismatch') {
+    failure = `${outcome.message}. The candidate is ${candidate}`;
+  } else if (outcome.kind === 'compared' && !outcome.result.passed) {
+    const { result } = outcome;
+    failure =
+      `${String(result.diffPixels)} pixels of ${name} differ from the ${settings.os} baseline ` +
+      `(${(result.ratio * 100).toFixed(3)}%, more than ${String(MAX_DIFF_RATIO * 100)}%); ` +
+      `see ${candidate} and its .diff.png`;
+  }
+  return { outcome, candidate, failure, warning };
 }
