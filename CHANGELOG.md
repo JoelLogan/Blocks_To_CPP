@@ -412,6 +412,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `@tauri-apps/api` and `@tauri-apps/cli`) with the dialog plugin 2.8.1,
   `getrandom` 0.4, Vite 8.3.2, ESLint 10.12, typescript-eslint 8.71 and other
   patch releases, and the MSYS2 setup action 2.33.0.
+- Dependencies updated on 2026-10-15, again to releases at least 7 days old:
+  `toml` 1.1.7, CodeMirror's view 6.43.14 and language 6.13.1, Radix's dialog
+  1.2, tabs 1.1.22 and tooltip 1.3, Vite 8.3.4, axe-core 4.14 and other patch
+  releases, and the Node.js setup, artifact and CodeQL actions. Tauri 2.12.2
+  and later, `toml_parser` 1.1.5, `selenium-webdriver` 4.51 and `@tauri-apps`
+  2.12.2 and later were too new; `pixelmatch` 8 changes what the visual diff's
+  threshold measures and moves on its own.
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
