@@ -133,6 +133,33 @@ export const PROGRAM_LINES: readonly string[] = [
  */
 export const CONSOLE_SCROLL_LINES = 4;
 
+/** Where the console's view is (the app's `consoleScreen` hook), in rows of its output. */
+export interface ConsoleView {
+  /** The first row the view shows. */
+  readonly viewportY: number;
+  /** The first row of the last screen: the view's row when it is at the end. */
+  readonly baseY: number;
+  /** How many rows the view shows. */
+  readonly rows: number;
+}
+
+/**
+ * Why the console's view cannot be scrolled up `lines` lines from the end of its output, or `null`
+ * when it can: the view must be at the end, with at least `lines` rows above it. Whether two runs
+ * leave enough rows above depends on how many the bottom panel shows at its first height, so the
+ * test checks this before it scrolls, and fails with this reason when the layout changed.
+ */
+export function consoleScrollProblem(view: ConsoleView, lines: number): string | null {
+  const shown = `${String(view.rows)} rows shown`;
+  if (view.viewportY !== view.baseY) {
+    return `its view is at row ${String(view.viewportY)}, not at the end (row ${String(view.baseY)}; ${shown})`;
+  }
+  if (view.baseY < lines) {
+    return `only ${String(view.baseY)} rows are above its view (${shown})`;
+  }
+  return null;
+}
+
 /** The scene of a toolbox category. */
 export function toolboxSceneId(category: ToolboxCategory): string {
   return `toolbox-${category.id}`;

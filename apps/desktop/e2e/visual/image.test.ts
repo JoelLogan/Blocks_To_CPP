@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { VisualCompareError } from './compare';
 import {
+  changedArea,
   cropPng,
   isBox,
   MASK_COLOUR,
@@ -219,5 +220,34 @@ describe('samePixels', () => {
         maskPng(gradient(8, 8), [{ left: 7, top: 7, right: 8, bottom: 8 }]),
       ),
     ).toBe(false);
+  });
+});
+
+describe('changedArea', () => {
+  it('is the smallest rectangle around every pixel that differs', () => {
+    const before = gradient(20, 10);
+    const after = maskPng(before, [
+      { left: 3, top: 2, right: 5, bottom: 4 },
+      { left: 9, top: 6, right: 10, bottom: 7 },
+    ]);
+    expect(changedArea(before, after)).toEqual({ left: 3, top: 2, right: 10, bottom: 7 });
+    expect(changedArea(after, before)).toEqual({ left: 3, top: 2, right: 10, bottom: 7 });
+  });
+
+  it('counts a change of one channel, the transparency too', () => {
+    const before = gradient(6, 6);
+    const image = PNG.sync.read(before);
+    image.data[(4 * 6 + 5) * 4 + 3] = 254;
+    expect(changedArea(before, PNG.sync.write(image))).toEqual({
+      left: 5,
+      top: 4,
+      right: 6,
+      bottom: 5,
+    });
+  });
+
+  it('is null for the same pixels, and for images of different sizes', () => {
+    expect(changedArea(gradient(8, 8), gradient(8, 8))).toBeNull();
+    expect(changedArea(gradient(8, 8), gradient(8, 9))).toBeNull();
   });
 });

@@ -75,8 +75,9 @@ blank lines (04 §4.5), so there the second run's output starts at the top of th
 turns out not to come to rest on WebView2, it gets `systems: ['linux']` in `scenes.ts` and a line
 here saying why.
 
-A scene that fails does not stop the others: the test fails at the end with all the failures, and
-the summary lists every scene, the ones the test never reached as not taken.
+A scene that fails does not stop the others ([`scene-run.ts`](scene-run.ts)): the test fails at
+the end with all the failures, and the summary lists every scene, the ones the test never reached
+as not taken.
 
 ## Comparing
 
@@ -115,8 +116,10 @@ WEBKIT_DISABLE_DMABUF_RENDERER=1 xvfb-run -a \
 
 It takes about a minute: three launches (the canvas, the light chrome, the dark chrome), each
 chrome launch building and running its program twice. A local screenshot is only comparable with
-a baseline made on the same machine. The comparison, the masks and cut-outs, the scene list, the
-page scripts, the fixture and the summary are tested without the app:
+a baseline made on the same machine. The comparison, the masks and cut-outs, the screenshots
+taken until two are the same, the scene list and its bookkeeping (every scene in the summary once,
+whatever stopped the test), the page scripts, the fixture and the summary are tested without the
+app:
 
 ```sh
 pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/visual/vitest.visual.config.ts --project visual-unit

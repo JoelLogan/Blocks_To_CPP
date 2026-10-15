@@ -13,8 +13,9 @@
  * (settle.ts), and two screenshots in a row are the same (capture.ts). The status bar's toolchain,
  * the console's elapsed time and the C++ panel's first line (the app's version) are masked.
  *
- * A scene that fails does not stop the others: every scene is listed in the summary, the ones the
- * test never reached as not taken, and the test fails at the end with all the failures.
+ * A scene that fails does not stop the others (scene-run.ts): every scene is listed in the summary,
+ * the ones the test never reached as not taken, and the test fails at the end with all the
+ * failures.
  */
 import { By, Key, type WebDriver } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
@@ -28,30 +29,22 @@ import { waitForTranscript } from '../specs/flows/lib/console';
 import { type FlowApp, startFlow } from '../specs/flows/lib/launch';
 import { newEmptyProject } from '../specs/flows/lib/project';
 import { BUILD_TIMEOUT_MS, UI_TIMEOUT_MS, waitForToolchain } from '../specs/flows/lib/ui';
+import { visualSettings, type VisualSettings } from './baselines';
+import { captureScene, fixMaskWidths } from './capture';
+import { SceneRun } from './scene-run';
 import {
-  checkShot,
-  recordOutcome,
-  visualSettings,
-  type VisualSettings,
-  writeCandidate,
-} from './baselines';
-import { captureScene, fixMaskWidths, UnstableSceneError } from './capture';
-import { compareScreenshots } from './compare';
-import {
-  CHROME_SCENES,
+  type ChromeScene,
   CHROME_WINDOW,
-  chromeScene,
-  chromeShotName,
+  consoleScrollProblem,
   CONSOLE_SCROLL_LINES,
   GTK_THEMES,
   PROGRAM_LINES,
-  sceneRunsOn,
   type Theme,
   themesOf,
   TOOLBOX_CATEGORIES,
   toolboxSceneId,
 } from './scenes';
-import { blurAll, hideOverlayScrollbars, parkPointer, waitUntilStill, warn } from './settle';
+import { blurAll, hideOverlayScrollbars, parkPointer, waitUntilStill } from './settle';
 
 /** How long one theme's launch and scenes may take (two builds and runs among them). */
 const THEME_TIMEOUT_MS = 420_000;
@@ -59,102 +52,36 @@ const THEME_TIMEOUT_MS = 420_000;
 /** The bottom panel's splitter. */
 const BOTTOM_SPLITTER = '[role="separator"][aria-label="Resize the bottom panel"]';
 
-/** The scenes of one launch: takes them, and records what each came to. */
-class SceneRun {
-  readonly #settings: VisualSettings;
-  readonly #theme: Theme;
-  readonly #driver: () => WebDriver;
-  /** The screenshot names recorded in the summary so far. */
-  readonly #recorded = new Set<string>();
-  /** Why scenes failed, one line each. */
-  readonly failures: string[] = [];
-
-  constructor(settings: VisualSettings, theme: Theme, driver: () => WebDriver) {
-    this.#settings = settings;
-    this.#theme = theme;
-    this.#driver = driver;
+/**
+ * Takes scene `scene`'s image in `theme`: the pointer parked (or resting on what the scene hovers),
+ * the masks' widths fixed, overlay scroll bars hidden, nothing focused, the page's theme checked,
+ * the page at rest, and the scene cut out of two identical screenshots in a row and masked.
+ */
+async function shootScene(
+  driver: WebDriver,
+  scene: ChromeScene,
+  theme: Theme,
+  settings: VisualSettings,
+): Promise<Buffer> {
+  if (scene.hover === undefined) {
+    await parkPointer(driver);
+  } else {
+    await driver
+      .actions({ async: true })
+      .move({ origin: await driver.findElement(By.css(scene.hover)) })
+      .perform();
   }
-
-  /**
-   * Takes scene `id` and compares it. A failure is noted (and recorded in the summary) and does
-   * not stop the test.
-   */
-  async take(id: string): Promise<void> {
-    const scene = chromeScene(id);
-    if (!sceneRunsOn(scene, this.#settings.os)) {
-      return;
-    }
-    const name = chromeShotName(scene, this.#theme);
-    const driver = this.#driver();
-    let image: Buffer;
-    try {
-      if (scene.hover === undefined) {
-        await parkPointer(driver);
-      } else {
-        await driver
-          .actions({ async: true })
-          .move({ origin: await driver.findElement(By.css(scene.hover)) })
-          .perform();
-      }
-      await fixMaskWidths(driver, scene.masks);
-      await hideOverlayScrollbars(driver);
-      const dark = await blurAll(driver);
-      if (dark !== (this.#theme === 'dark')) {
-        throw new Error(
-          `The ${this.#theme} scenes need the page to prefer ${this.#theme === 'dark' ? 'the dark' : 'the light'} theme, but it does not` +
-            (this.#settings.os === 'linux' ? ` (GTK_THEME=${GTK_THEMES[this.#theme]})` : ''),
-        );
-      }
-      await waitUntilStill(driver);
-      image = await captureScene(driver, scene.area, scene.masks);
-    } catch (error: unknown) {
-      if (error instanceof UnstableSceneError && error.changed !== null) {
-        // What moved: the last image, and the pixels that differ from the one before in red.
-        writeCandidate(
-          this.#settings,
-          name,
-          error.last,
-          compareScreenshots(error.previous, error.last).diffPng,
-        );
-      }
-      this.notTaken(name, error);
-      return;
-    }
-    const check = checkShot(this.#settings, name, image);
-    this.#recorded.add(name);
-    if (check.warning !== null) {
-      warn(check.warning);
-    }
-    if (check.failure !== null) {
-      this.failures.push(check.failure);
-    }
+  await fixMaskWidths(driver, scene.masks);
+  await hideOverlayScrollbars(driver);
+  const dark = await blurAll(driver);
+  if (dark !== (theme === 'dark')) {
+    throw new Error(
+      `The ${theme} scenes need the page to prefer ${theme === 'dark' ? 'the dark' : 'the light'} theme, but it does not` +
+        (settings.os === 'linux' ? ` (GTK_THEME=${GTK_THEMES[theme]})` : ''),
+    );
   }
-
-  /** Records `name` as not taken, because of `error`. */
-  notTaken(name: string, error: unknown): void {
-    const reason = error instanceof Error ? error.message : String(error);
-    recordOutcome(this.#settings, name, { kind: 'notTaken', reason });
-    this.#recorded.add(name);
-    this.failures.push(`${name} was not taken: ${reason}`);
-  }
-
-  /** Records every scene of this system not recorded yet as not taken, because of `error`. */
-  notReached(error: unknown): void {
-    const reason = `the test stopped before it: ${error instanceof Error ? error.message : String(error)}`;
-    for (const scene of CHROME_SCENES) {
-      const name = chromeShotName(scene, this.#theme);
-      if (sceneRunsOn(scene, this.#settings.os) && !this.#recorded.has(name)) {
-        this.notTaken(name, new Error(reason));
-      }
-    }
-  }
-
-  /** The scenes of this system that were never recorded (the test's own check). */
-  missing(): string[] {
-    return CHROME_SCENES.filter((scene) => sceneRunsOn(scene, this.#settings.os))
-      .map((scene) => chromeShotName(scene, this.#theme))
-      .filter((name) => !this.#recorded.has(name));
-  }
+  await waitUntilStill(driver);
+  return captureScene(driver, scene.area, scene.masks);
 }
 
 /** The program: one `io.print` per line of {@link PROGRAM_LINES}. */
@@ -204,12 +131,9 @@ async function closeMainMenu(driver: WebDriver): Promise<void> {
  * checks that the view moved that far from the end.
  */
 async function scrollConsoleUp(app: FlowApp, lines: number): Promise<void> {
-  const before = await app.hook.call('consoleScreen');
-  if (before.viewportY !== before.baseY || before.baseY < lines) {
-    throw new Error(
-      `The console cannot scroll up ${String(lines)} lines from its end: its view is at row ` +
-        `${String(before.viewportY)} of ${String(before.baseY)} (${String(before.rows)} rows shown)`,
-    );
+  const problem = consoleScrollProblem(await app.hook.call('consoleScreen'), lines);
+  if (problem !== null) {
+    throw new Error(`The console cannot scroll up ${String(lines)} lines from its end: ${problem}`);
   }
   await app.driver.executeScript(
     `const screen = document.querySelector('[data-testid="console-terminal"] .xterm-screen');
@@ -284,11 +208,11 @@ describe('visual diff: the chrome', () => {
       `draws the chrome in the ${theme} theme as this system’s baselines do`,
       async (context) => {
         let app: FlowApp | null = null;
-        const scenes = new SceneRun(settings, theme, () => {
+        const scenes = new SceneRun(settings, theme, (scene) => {
           if (app === null) {
             throw new Error('The app has not started');
           }
-          return app.driver;
+          return shootScene(app.driver, scene, theme, settings);
         });
         try {
           const started = await launch(context, settings, theme);

@@ -13,6 +13,7 @@ import {
   chromeShotName,
   chromeShotNames,
   CODE_HEADER_MASK,
+  consoleScrollProblem,
   CONSOLE_SCROLL_LINES,
   ELAPSED_MASK,
   GTK_THEMES,
@@ -149,15 +150,25 @@ describe('the window and the program', () => {
     expect(CHROME_WINDOW).toEqual({ width: window?.minWidth, height: window?.minHeight });
   });
 
-  it('scroll the console less than two runs leave above five rows', () => {
-    // Two runs: each run's lines, an empty line and New run between them, the cursor's line.
-    const lines = PROGRAM_LINES.length * 2 + 3;
-    const mostRows = 5;
-    expect(lines - mostRows).toBeGreaterThanOrEqual(CONSOLE_SCROLL_LINES);
-    expect(CONSOLE_SCROLL_LINES).toBeGreaterThan(0);
-    // Each line is plain text that prints the same every time.
+  it('print plain text that is the same every time', () => {
     for (const line of PROGRAM_LINES) {
       expect(line).toMatch(/^[A-Za-z ]+$/);
     }
+    expect(CONSOLE_SCROLL_LINES).toBeGreaterThan(0);
+  });
+
+  it('scroll the console only from the end, with enough rows above the view', () => {
+    // At the end, 4 rows above a view of 5 (two runs: 9 rows of output).
+    expect(consoleScrollProblem({ viewportY: 4, baseY: 4, rows: 5 }, CONSOLE_SCROLL_LINES)).toBe(
+      null,
+    );
+    // The panel shows 6 rows: only 3 are above it.
+    expect(consoleScrollProblem({ viewportY: 3, baseY: 3, rows: 6 }, CONSOLE_SCROLL_LINES)).toBe(
+      'only 3 rows are above its view (6 rows shown)',
+    );
+    // Scrolled away from the end already.
+    expect(consoleScrollProblem({ viewportY: 1, baseY: 4, rows: 5 }, CONSOLE_SCROLL_LINES)).toBe(
+      'its view is at row 1, not at the end (row 4; 5 rows shown)',
+    );
   });
 });

@@ -1,11 +1,22 @@
 /**
- * Measuring a chrome scene in the page (capture.ts): the page scripts run here against a fake
- * page, and the parsing of what they return.
+ * Measuring and taking a chrome scene (capture.ts): the page scripts run here against a fake page,
+ * the parsing of what they return, and the screenshots taken until two in a row are the same,
+ * against a fake driver.
  */
+import { PNG } from 'pngjs';
+import type { WebDriver } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
 import { runScript } from '../support/fake-page';
-import { FIX_WIDTHS_SCRIPT, LAYOUT_SCRIPT, parseLayout } from './capture';
+import {
+  CAPTURE_ATTEMPTS,
+  captureScene,
+  FIX_WIDTHS_SCRIPT,
+  LAYOUT_SCRIPT,
+  parseLayout,
+  UnstableSceneError,
+} from './capture';
+import { samePixels } from './image';
 import { TOOLCHAIN_MASK, WINDOW_AREA } from './scenes';
 
 /** A fake element: a box, and the inline style properties set on it. */
@@ -122,5 +133,64 @@ describe('LAYOUT_SCRIPT and parseLayout', () => {
         WINDOW_AREA,
       ).masks,
     ).toEqual([{ left: 0, top: 0, width: 1, height: 1 }]);
+  });
+});
+
+/** A 4×3 PNG of one grey, with pixel (x, 0) black when `dot` is x. */
+function frame(dot: number | null = null): Buffer {
+  const image = new PNG({ width: 4, height: 3 });
+  image.data.fill(200);
+  for (let index = 3; index < image.data.length; index += 4) {
+    image.data[index] = 255;
+  }
+  if (dot !== null) {
+    image.data.fill(0, dot * 4, dot * 4 + 3);
+  }
+  return PNG.sync.write(image);
+}
+
+/** A driver whose page is 4×3 and whose screenshots are `frames`, one per call (the last again). */
+function fakeDriver(frames: Buffer[]): WebDriver & { shots: () => number } {
+  let shots = 0;
+  const driver = {
+    executeScript: () =>
+      Promise.resolve({ viewport: [4, 3], areaBoxes: null, masks: [] as unknown[] }),
+    takeScreenshot: () => {
+      const shot = frames[Math.min(shots, frames.length - 1)];
+      shots += 1;
+      return Promise.resolve(shot?.toString('base64') ?? '');
+    },
+    shots: () => shots,
+  };
+  return driver as unknown as WebDriver & { shots: () => number };
+}
+
+describe('captureScene', () => {
+  it('takes screenshots until two in a row are the same, and gives that image', async () => {
+    const driver = fakeDriver([frame(0), frame(1), frame(2), frame(2)]);
+    const image = await captureScene(driver, WINDOW_AREA, []);
+    expect(samePixels(image, frame(2))).toBe(true);
+    expect(driver.shots()).toBe(4);
+  });
+
+  it('is done with two screenshots of a page at rest', async () => {
+    const driver = fakeDriver([frame()]);
+    expect(samePixels(await captureScene(driver, WINDOW_AREA, []), frame())).toBe(true);
+    expect(driver.shots()).toBe(2);
+  });
+
+  it('gives up on a scene that keeps changing, with its last two images and what moved', async () => {
+    const frames = Array.from({ length: CAPTURE_ATTEMPTS }, (_, index) => frame(index % 2));
+    const driver = fakeDriver(frames);
+    const error: unknown = await captureScene(driver, WINDOW_AREA, []).catch(
+      (thrown: unknown) => thrown,
+    );
+    expect(error).toBeInstanceOf(UnstableSceneError);
+    const unstable = error as UnstableSceneError;
+    expect(driver.shots()).toBe(CAPTURE_ATTEMPTS);
+    expect(samePixels(unstable.last, frames.at(-1) ?? Buffer.alloc(0))).toBe(true);
+    expect(samePixels(unstable.previous, frames.at(-2) ?? Buffer.alloc(0))).toBe(true);
+    expect(unstable.changed).toEqual({ left: 0, top: 0, right: 2, bottom: 1 });
+    expect(unstable.message).toContain('pixels changed within (0,0)–(2,1) of the scene');
   });
 });
