@@ -335,6 +335,31 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   unchanged: their cost is `BlockSvg.bringToFront`. The patch and two
   upstream report drafts are in `docs/plans/upstream/`; the app still ships
   Blockly unchanged, and the patch is M3-2.
+- A developer guide (`docs/developer-guide/`) for contributors: the desktop
+  app's architecture with the list of Blockly seams (ADR-0014), its security
+  settings, the dependency table, testing and recipes. The desktop app's
+  README is now a short code map, and its test IDs are listed in the
+  end-to-end README.
+- A manual test protocol for the toolchain matrix
+  (`docs/manual-tests/m2-toolchains.md`): the owner's Debian g++ cell for M2,
+  and the other compilers of 07 §7.1 to run or defer to M3.
+- `tools/check-moved-text.py`, which checks that text moved out of a split
+  document was moved, not lost (`--self-test`).
+- Building the app with an out-of-date WebAssembly core now stops with the
+  command that fixes it (`pnpm wasm:build`); `pnpm app:build` builds the core
+  and then the app. The dev server warns about an out-of-date core, and a
+  development build will not start when its core has another block catalog
+  than the backend.
+- The M2 threat-model review is recorded in
+  `docs/security/threat-model-reviews.md`, one entry per milestone (08
+  §8.13), with its findings and accepted residuals.
+- Tests: the nightly IPC-abuse test checks the backend's debug log for
+  `app_quit` after the malformed messages, and mutates objects nested in a
+  request (`settings_update`'s `ui.layout`, for example) as well as its top
+  level. The isolation-hook tests send `constructor`, `prototype` and
+  `__proto__` keys, extra keys and other payloads to all 11 commands that
+  take no arguments. The security specs' README records the 2026-10-06
+  Windows `app_quit` incident and its likely cause.
 
 ### Changed
 
@@ -522,6 +547,25 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   block still counts as a change.
 - The User Timing spans `b2c:preview:canonical` and `b2c:preview:analyse` are
   replaced by `b2c:preview:update`.
+- The README says what works today (M2) apart from the goals for 1.0, with a
+  short status note. CONTRIBUTING sets up through `BUILDING.md`, lists every
+  check CI runs in one place, names the 14 crates and says where things are
+  documented. `BUILDING.md` builds with `pnpm app:build` and has the tools of
+  the end-to-end tests.
+- CI checks that the tool versions and Debian packages in `BUILDING.md` match
+  the repository's pins (`Cargo.lock`, `rust-toolchain.toml`, `package.json`,
+  `.node-version`, the workflows), and that no other document repeats them.
+  The declared minimum Node.js is now 22.14 (`package.json` engines), as
+  `BUILDING.md` already required.
+- New project files get the permissions any new file of the user gets (the
+  umask applies, usually `0644`) instead of `0600`; a saved project keeps its
+  permissions, and machine-local files and recovery snapshots stay
+  owner-only (decision Q13; 05 §5.10, 08 §8.6).
+- Problems' _Learn more_ is marked ↗, and its tooltip and accessible
+  description say it opens the diagnostics reference in your web browser.
+- The status bar's compiler has its full path in its tooltip and accessible
+  name, with hidden or reordering characters shown as placeholders (08
+  §8.5).
 
 ### Removed
 
@@ -649,3 +693,21 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 
 - The compiler core keeps answering scope queries for the document on screen
   after an edit whose document fails to load.
+- The C++ tab shows the code of the module on the canvas and follows the
+  module switcher; a file you pick in the tab stays until you show another
+  module.
+- After a module switch, a reload or closing the project, the C++ tab no
+  longer highlights the code of a block that is gone or no longer selected.
+- Build output follows each new build from its start again, even after you
+  scrolled up in the last one.
+- Run is no longer stuck at "starting" when the backend answers without a
+  valid run ID; the console header goes back and a dialog says the program
+  could not start.
+- The weekly mutation job no longer runs its runners out of memory. Each test
+  process runs under a 2 GiB resident-memory cap
+  (`tools/memory-capped-runner.py`, the job's cargo target runner), so a
+  mutant that makes a loop endless and allocating is caught within seconds.
+  A mutant's tests now time out after 1.5 times the unmutated tests' time
+  instead of 5 times.
+- The weekly `cargo-geiger` job keeps each crate's report: cargo-geiger exits
+  with 1 whenever it warns, and the job dropped every report as a failure.

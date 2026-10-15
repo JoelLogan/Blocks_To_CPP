@@ -4,7 +4,7 @@
 
 ## 10.1 Milestones
 
-> **Implementation status (2026-10-11).** **M2** is in progress. Its
+> **Implementation status (2026-10-15).** **M2** is in progress. Its
 > automated exit criteria are met, but the owner's first trial (Debian,
 > 2026-10) found 18 issues, so an [M2 polish wave](#m2-polish-part-of-m2)
 > runs inside M2 before the usability sessions: their participants must be
@@ -45,8 +45,12 @@
 > against the build before it), the preview task at 1,000 blocks takes about
 > 92 ms at p95 (113 ms before) and an edit until the page settles about
 > 1.45 s (1.58 s). M2 is done once the polish wave is finished and these are
-> recorded on a polish build: the threat-model review, the first green weekly
-> run, the toolchain matrix (at least the Debian cell, or a recorded deferral),
+> recorded on a polish build: the threat-model review (recorded at `d4dfafb`
+> on 2026-10-15, [record](../security/threat-model-reviews.md), with two of
+> its findings to close: the Trusted Types results and a green Windows
+> security run), the first green weekly
+> run, the toolchain matrix (at least the Debian cell, or a recorded deferral;
+> its [protocol](../manual-tests/m2-toolchains.md) is written),
 > committed visual baselines, the usability sessions with
 > at least three first-time users ([protocol](../manual-tests/m2-usability.md)),
 > the NVDA and Orca pass ([checklist](../manual-tests/m2-accessibility.md)),
@@ -185,7 +189,19 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
   the plan marks *M2 if time* (block upgrades on load and the one *change*
   block done 2026-10-13, [ADR-0015](../adr/0015-block-upgrades-on-load.md);
   Scratch-style wrapping done 2026-10-14, its rule pending the owner's
-  approval: the plan's D13 follow-up).
+  approval: the plan's D13 follow-up; the developer guide, the docs
+  consistency check and the guard against an out-of-date WebAssembly core
+  done 2026-10-15).
+* Close-out (2026-10-15): the README and CONTRIBUTING rewritten, the
+  housekeeping fixes, the `app_quit` follow-up of the nightly IPC-abuse
+  test, a memory cap for the weekly mutation job (its first green run is
+  still to come), the threat-model review recorded and the toolchain matrix
+  protocol written. The owner's part remains: the Debian toolchain cell, the
+  visual baselines from the CI runners, the profile on the owner's machine,
+  the usability sessions, the NVDA and Orca pass and the demo review. The
+  GitHub A/B of 2026-10-15 still flags an edit at 1,000 blocks as slower
+  than before the standard variable set (about +24 % on Linux and +29 % on
+  Windows), which is open.
 
 **Exit:** both P0 defects are fixed; each of U1–U18 is fixed or moved to M3
 with the owner's agreement; items marked *M2 if time* move to M3 without
