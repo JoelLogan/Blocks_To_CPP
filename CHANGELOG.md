@@ -711,3 +711,6 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   instead of 5 times.
 - The weekly `cargo-geiger` job keeps each crate's report: cargo-geiger exits
   with 1 whenever it warns, and the job dropped every report as a failure.
+- The end-to-end harness gives `tauri-driver` and the native driver two
+  different ports: it could hand out the same free port twice, and the test
+  then failed before the app started.
