@@ -27,7 +27,7 @@ command runs from where the previous one left off.
 | Node.js                    | 22, from 22.14 on                                       | building the editor                                            |
 | pnpm                       | 11.27.1, from `package.json`, through Corepack          | the editor's packages                                          |
 | wasm-bindgen CLI           | 0.2.129, the `wasm-bindgen` version in `Cargo.lock`     | the editor's compiler core (WebAssembly)                       |
-| binaryen's `wasm-opt`      | 108 or later (optional)                                 | making the WebAssembly core smaller                            |
+| binaryen's `wasm-opt`      | 105 or later (optional)                                 | making the WebAssembly core smaller                            |
 | tauri-driver (E2E tests)   | 2.1.0, `TAURI_DRIVER_VERSION` in the CI workflows       | the end-to-end tests (contributors only)                       |
 | g++ (only to run programs) | 11 or later                                             | building the programs you make; not needed to build the app    |
 
@@ -39,7 +39,12 @@ themselves, and the WebAssembly core's build stops, naming the
 version. Nothing checks the others: pnpm only warns about an older Node.js,
 and tauri-driver must be installed again by hand, with the command under
 [End-to-end tests](#end-to-end-tests), when the workflows'
-`TAURI_DRIVER_VERSION` changes. binaryen and g++ are minimums.
+`TAURI_DRIVER_VERSION` changes. binaryen and g++ are minimums; the core has
+been built and tested with Ubuntu 22.04's binaryen and with CI's release.
+
+Rust's build folder, `target/`, takes about 2 GB for the app. The checks in
+[`CONTRIBUTING.md`](CONTRIBUTING.md#checks) build many more configurations:
+keep about 20 GB free for them.
 
 ## Linux: Debian and Ubuntu
 
@@ -285,7 +290,7 @@ libraries or the WebAssembly tools: on Debian and Ubuntu, step 1 can be
 cargo build --release -p b2c-cli
 ./target/release/b2c run examples/hello_world.b2c        # build and run
 ./target/release/b2c run examples/guessing_game.b2c      # an interactive program
-./target/release/b2c generate examples/fizzbuzz.b2c --out generated   # see the C++
+./target/release/b2c generate examples/fizzbuzz.b2c --out target/fizzbuzz   # see the C++
 ./target/release/b2c check examples/primes.b2c           # check without building
 ./target/release/b2c toolchains                          # the compilers found
 ```

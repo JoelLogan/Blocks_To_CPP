@@ -19,6 +19,10 @@ The checks below also need:
 - Python 3 for the small tools in `tools/`;
 - for the end-to-end tests, the drivers and the virtual display listed in
   [`apps/desktop/e2e/README.md`](apps/desktop/e2e/README.md#running-them-locally-linux);
+- for the coverage gates,
+  [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) at the version
+  `ci.yml` pins (`CARGO_LLVM_COV_VERSION`), and Rust's `llvm-tools`
+  (`rustup component add llvm-tools`);
 - optionally, to run locally what CI runs on dependencies and workflows:
   [cargo-deny](https://github.com/EmbarkStudios/cargo-deny),
   [lychee](https://github.com/lycheeverse/lychee),
@@ -81,10 +85,14 @@ with `RUSTFLAGS='-D warnings'`, so a compiler warning fails CI even where no
 Clippy line looks: in the fuzz targets, and in code that only the wasm32
 check compiles. The first line sets it for your shell; changing `RUSTFLAGS`
 rebuilds everything, so you may prefer a `CARGO_TARGET_DIR` of its own for
-these checks.
+these checks (they need about 20 GB of disk). CI also sets `B2C_REQUIRE_GXX`,
+the second line: without it, the tests that need g++ pass by skipping when
+there is none. `cargo deny` downloads the RustSec advisory database first;
+`cargo deny --offline …` uses the copy from its last run.
 
 ```sh
 export RUSTFLAGS='-D warnings'               # as in CI
+export B2C_REQUIRE_GXX=1                     # as in CI: fail, not skip, without g++
 cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 rustup target add x86_64-pc-windows-gnu      # once, for the next line
@@ -92,7 +100,7 @@ cargo clippy --locked --all-targets --target x86_64-pc-windows-gnu -- -D warning
 cargo clippy --locked -p blocks2cpp-desktop --all-targets -- -D warnings
 cargo clippy --locked -p blocks2cpp-desktop --all-targets --features e2e-hooks -- -D warnings
 cargo test --locked                          # unit, property and g++-backed tests
-cargo test --locked -p blocks2cpp-desktop    # B2C_REQUIRE_GXX=1: fail without g++
+cargo test --locked -p blocks2cpp-desktop
 cargo test --locked -p blocks2cpp-desktop --features e2e-hooks
 cargo check --locked --manifest-path fuzz/Cargo.toml
 cargo check --locked --target wasm32-unknown-unknown -p b2c-ir -p b2c-model -p b2c-catalog -p b2c-lang -p b2c-codegen -p b2c-core-wasm
