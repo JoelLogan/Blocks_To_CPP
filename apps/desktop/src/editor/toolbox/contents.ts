@@ -286,13 +286,50 @@ export interface VariableGroup {
 const MAIN_OWNER: VariableOwner = Object.freeze({ kind: 'main' });
 const OTHER_OWNER: VariableOwner = Object.freeze({ kind: 'other' });
 
-/** The function that declares `symbol`, from where its declaring block is on the canvas. */
+/**
+ * Finds the top block of the blocks it is given, for one listing. It remembers the top block of
+ * every block it passes on the way up, so that it follows each parent link at most once however
+ * many variables a stack declares. A statement's parent is the statement before it, so the k-th
+ * declaration of `main` is k links below it: asking each declaration for its root block
+ * (`getRootBlock`) followed about n²/2 links for n variables each time the contents key was
+ * computed ({@link dynamicContentsKey}, three times per edit): 46,000 links and 0.5 ms at the
+ * 1,000-block benchmark, 1.2 million links and about 9 ms at 5,000 blocks.
+ */
+function rootFinder(): (block: Blockly.Block) => Blockly.Block {
+  const roots = new Map<Blockly.Block, Blockly.Block>();
+  return (block) => {
+    const passed: Blockly.Block[] = [];
+    let current = block;
+    let root = roots.get(current);
+    while (root === undefined) {
+      passed.push(current);
+      const parent = current.getParent();
+      if (parent === null) {
+        root = current;
+      } else {
+        current = parent;
+        root = roots.get(current);
+      }
+    }
+    for (const below of passed) {
+      roots.set(below, root);
+    }
+    return root;
+  };
+}
+
+/**
+ * The function that declares `symbol`, from where its declaring block is on the canvas; `rootOf`
+ * finds a block's top block ({@link rootFinder}).
+ */
 function ownerOf(
   workspace: Blockly.Workspace,
   symbol: SymbolInfo,
   functionNames: ReadonlyMap<string, string>,
+  rootOf: (block: Blockly.Block) => Blockly.Block,
 ): VariableOwner {
-  const root = workspace.getBlockById(symbol.declBlock)?.getRootBlock() ?? null;
+  const declaration = workspace.getBlockById(symbol.declBlock);
+  const root = declaration === null ? null : rootOf(declaration);
   if (root?.type === MAIN_TYPE) {
     return MAIN_OWNER;
   }
@@ -324,7 +361,9 @@ function byOwnerOrder(a: VariableGroup, b: VariableGroup): number {
 /**
  * Every variable of module `moduleId` the latest analysis knows (variables, parameters and loop
  * counters), grouped by the function that declares it: `main` first, then the functions by name,
- * then anything else; each group sorted by name, then ID. Empty groups are left out.
+ * then anything else; each group sorted by name, then ID. Empty groups are left out. It follows
+ * each parent link of the canvas at most once ({@link rootFinder}), so it takes time linear in the
+ * program's length: the toolbox's contents key computes it after every edit.
  */
 export function variableGroups(
   workspace: Blockly.Workspace,
@@ -336,11 +375,12 @@ export function variableGroups(
     all.filter((symbol) => symbol.kind === 'function').map((fn) => [fn.declBlock, fn.name]),
   );
   const groups = new Map<string, { owner: VariableOwner; symbols: SymbolInfo[] }>();
+  const rootOf = rootFinder();
   for (const symbol of all) {
     if (symbol.module !== moduleId || !symbolMatchesKinds(symbol, 'variables')) {
       continue;
     }
-    const owner = ownerOf(workspace, symbol, functionNames);
+    const owner = ownerOf(workspace, symbol, functionNames, rootOf);
     const key = owner.kind === 'function' ? `function:${owner.blockId}` : owner.kind;
     const group = groups.get(key) ?? { owner, symbols: [] };
     group.symbols.push(symbol);
@@ -595,6 +635,11 @@ function symbolKey(symbol: SymbolInfo): unknown[] {
  * modules, where the program starts, the module's variables (with their kinds, types and the
  * functions declaring them) and its functions (with their parameters and results). Equal keys give
  * equal contents, so the toolbox rebuilds its flyout only when the key changes (04 §4.2).
+ *
+ * The toolbox computes it whenever a block is added, deleted or changed, and twice in the
+ * preview's task (when the edit is stored and when its analysis is), so it must stay linear in the
+ * program's length: the owners of the variables are found with one walk up the canvas
+ * ({@link variableGroups}).
  */
 export function dynamicContentsKey(context: ContentsContext): string {
   const active = context.activeModuleId();
