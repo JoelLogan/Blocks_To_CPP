@@ -152,6 +152,34 @@ function context(
   };
 }
 
+/**
+ * Counts the parent links followed on `workspace` from now on, and returns how to read the count.
+ * Blockly's `getParent()` and `getRootBlock()` both read a block's protected `parentBlock_`, so
+ * each block's is replaced by an accessor that counts its reads.
+ */
+function countParentLinks(workspace: Blockly.Workspace): () => number {
+  let reads = 0;
+  for (const block of workspace.getAllBlocks(false)) {
+    const own = Object.getOwnPropertyDescriptor(block, 'parentBlock_');
+    if (own === undefined || !('value' in own)) {
+      throw new Error('Blockly no longer keeps a block’s parent in parentBlock_');
+    }
+    let parent: unknown = own.value;
+    Object.defineProperty(block, 'parentBlock_', {
+      configurable: true,
+      enumerable: own.enumerable ?? true,
+      get() {
+        reads += 1;
+        return parent;
+      },
+      set(value: unknown) {
+        parent = value;
+      },
+    });
+  }
+  return () => reads;
+}
+
 /** A variable declared by `create` block `declBlock`. */
 function variable(
   id: string,
@@ -746,6 +774,29 @@ describe('the key of what the dynamic categories show', () => {
     for (const [index, other] of changed.entries()) {
       expect(other, String(index)).not.toBe(key);
     }
+  });
+
+  it('follows each parent link of the canvas at most once, however far down main declares', () => {
+    // A statement's parent is the statement before it: the k-th `create` in main is k links
+    // below main. Asking each declaration for its root block followed about n²/2 links for n
+    // variables (1.2 million, 11 ms per key, at the 5,000-block benchmark).
+    const count = 200;
+    const ids = Array.from({ length: count }, (_, index) => `d_${String(index)}`);
+    const ctx = context({
+      declarations: { main: ids },
+      all: ids.map((id, index) => variable(`s_${String(index)}`, `v${String(index)}`, id)),
+    });
+    const links = countParentLinks(ctx.workspace);
+    const key = dynamicContentsKey(ctx);
+    expect(links()).toBeLessThanOrEqual(ctx.workspace.getAllBlocks(false).length);
+    // Still every variable, in main's group.
+    expect(
+      variableGroups(ctx.workspace, ctx.symbols, 'mod_main').map((group) => [
+        group.owner.kind,
+        group.symbols.length,
+      ]),
+    ).toEqual([['main', count]]);
+    expect(dynamicContentsKey(ctx)).toBe(key);
   });
 });
 
