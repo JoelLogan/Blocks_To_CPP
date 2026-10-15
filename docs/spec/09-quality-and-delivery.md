@@ -305,11 +305,15 @@ Notes on the jobs:
   `package.json`'s `engines` and `packageManager`, `.node-version` and the
   workflows' pinned tool versions) and its Debian `apt` packages against the
   `app` job of `desktop.yml`, and fails when any other Markdown file states
-  one of these versions or installs those packages. Dated records
-  (`CHANGELOG.md`, `docs/plans/`, `docs/adr/`) are exempt, and a dependency
-  table's row of a pinned tool is checked against its source instead. Its
-  `--self-test` breaks each rule, and bumps wasm-bindgen in a scratch copy of
-  the repository.
+  one of these versions or installs those packages. A statement is a tool's
+  name followed by a version in the same sentence (Node.js in any letter
+  case, `engines.node` included, but not `@types/node`; binaryen's release
+  right after its name or after the word version or release), or the exact
+  wasm-bindgen, Rust or pnpm pin anywhere. Dated records (`CHANGELOG.md`,
+  `docs/plans/`, `docs/adr/`) are exempt, and a dependency table's row of a
+  pinned tool is checked against its source instead. Its `--self-test`
+  breaks each rule, and bumps wasm-bindgen in a scratch copy of the
+  repository.
 * (M3) A weekly `build-docs` job runs `BUILDING.md`'s Debian steps word for
   word in Debian 12 and 13 containers, up to a release build that starts
   under xvfb.

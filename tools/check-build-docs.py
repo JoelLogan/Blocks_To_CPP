@@ -23,8 +23,10 @@ truth. This check fails when:
   the packages that the `app` job of .github/workflows/desktop.yml installs
   (apart from APT_ONLY_IN_BUILDING and APT_ONLY_IN_CI), or another workflow
   installs the webview libraries without all of them;
-* any other Markdown file the repository has states one of these versions, or
-  an apt install of BUILDING.md's specific packages. Exceptions: dated records
+* any other Markdown file the repository has states one of these versions (a
+  tool's name followed by its version in the same sentence, as STATEMENTS
+  matches it, or the exact wasm-bindgen, Rust or pnpm pin anywhere), or an
+  apt install of BUILDING.md's specific packages. Exceptions: dated records
   (RECORDS), dependency-table rows whose version is checked against its source
   instead (DEPENDENCY_ROWS), and the statements listed in ALLOWED.
 
@@ -127,13 +129,21 @@ STATEMENTS: list[tuple[str, str, re.Pattern[str]]] = [
     ("wasm-bindgen", "version", _after(r"wasm-bindgen(?:-cli)?\b", _XYZ)),
     ("tauri-driver", "version", _after(r"tauri-driver\b", _XYZ)),
     ("rust", "version", _after(r"\b(?:Rust|rustc)\b(?![\w-])", r"1\.\d+(?:\.\d+)?")),
-    ("node", "minimum", _after(r"\bNode(?:\.js)?\b(?![\w-])", _XY)),
+    # Node.js in any letter case (`node >=22.14`, `engines.node`), but not as part of a
+    # package's name or path (`@types/node`, `node_modules`, `node-v22`).
+    ("node", "minimum", _after(r"(?<![/@\w-])(?i:node(?:\.js)?)\b(?![\w-])", _XY)),
     ("pnpm", "version", _after(r"\bpnpm\b(?![\w-])", _XY)),
+    # binaryen's release: after the word version or release (`binaryen release 133`), or
+    # right after the name (`binaryen 133`, "`wasm-opt` is 133"); a number further away is
+    # something else (`binaryen (step 1 on Linux)`).
     (
         "binaryen",
         "version",
         re.compile(
-            r"\b(?:binaryen|wasm-opt)\b" + _GAP % 60 + r"\b(?:version|release)[ _]?(\d+)" + _END
+            r"\b(?:binaryen|wasm-opt)\b(?:"
+            + _GAP % 60
+            + r"\b(?:version|release)[ _]?|`?(?:'s)?[ \t]+(?:is[ \t]+)?`?)(\d+)"
+            + _END
         ),
     ),
 ]
@@ -719,6 +729,11 @@ On Debian, step 1 can be `sudo apt install build-essential git curl`.
     "docs/security/reviews.md": (
         "# Reviews\n\n`pnpm licenses list` found MIT (419), Apache-2.0 (21) and\nMPL-2.0 (4).\n"
     ),
+    # Node's type package and a binaryen without a number are not versions of them.
+    "docs/developer-guide/testing.md": (
+        "# Testing\n\n`@types/node` 24.19.0 needs `undici-types@6.21.0`; install\n"
+        "binaryen (step 1 on Linux).\n"
+    ),
 }
 
 
@@ -913,6 +928,26 @@ SELF_TEST_CASES = [
             "# Guide\n\nThe `binaryen` package of Ubuntu 24.04, version 108, works.\n",
         ),
         ["docs/guide.md:3: states binaryen 108"],
+    ),
+    (
+        "another document with binaryen's release right after its name",
+        _add("docs/guide.md", "# Guide\n\nCI pins binaryen 133.\n"),
+        ["docs/guide.md:3: states binaryen 133"],
+    ),
+    (
+        "another document with wasm-opt's release after 'is'",
+        _add("docs/guide.md", "# Guide\n\nThe pinned `wasm-opt` is 133.\n"),
+        ["docs/guide.md:3: states binaryen 133"],
+    ),
+    (
+        "another document with a lower-case node minimum",
+        _add("docs/guide.md", "# Guide\n\nIt needs node >=22.14.\n"),
+        ["docs/guide.md:3: states Node.js 22.14"],
+    ),
+    (
+        "another document with the root's engines.node",
+        _add("docs/guide.md", "# Guide\n\nThe root `engines.node` is `>=22.14`.\n"),
+        ["docs/guide.md:3: states Node.js 22.14"],
     ),
     (
         "another document repeating the apt list",
