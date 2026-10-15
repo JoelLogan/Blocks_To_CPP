@@ -874,11 +874,10 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       ];
       const edited = rename('Typed again');
       later.push(harness.ctx.commands.runCommand('project.save'));
-      // Until it starts, every request is that one save.
-      expect(harness.feature.lifecycle.save()).toBe(harness.feature.lifecycle.save());
+      const asked = [harness.feature.lifecycle.save(), harness.feature.lifecycle.save()];
       expect(harness.feature.lifecycle.isSaving()).toBe(true);
       writing.answer(SAVED);
-      await Promise.all([first, ...later]);
+      await Promise.all([first, ...later, ...asked]);
 
       expect(harness.ipc.projectSave).toHaveBeenCalledTimes(2);
       expect(harness.ipc.projectSave).toHaveBeenLastCalledWith({
@@ -886,6 +885,96 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
         document: edited,
       });
       expect(project().dirty).toBe(false);
+      expect(harness.feature.model.getState().busy).toBeNull();
+      // Until it started, every request was that one save.
+      expect(asked[0]).toBe(asked[1]);
+    });
+
+    it('asks for a file once when the first Save as is cancelled', async () => {
+      harness.ipc.projectNew.mockResolvedValueOnce({
+        handle: HANDLE_A,
+        document: EMPTY_TEXT,
+        trust: CREATED_HERE,
+      });
+      expect(await harness.feature.lifecycle.newProject('empty')).toBe(true);
+      const choosing = held<{ status: 'cancelled' }>();
+      harness.ipc.projectSaveAsDialog
+        .mockReturnValueOnce(choosing.promise)
+        .mockResolvedValue({ status: 'cancelled' });
+      const first = harness.ctx.commands.runCommand('project.save');
+      await vi.waitFor(() => {
+        expect(harness.ipc.projectSaveAsDialog).toHaveBeenCalledTimes(1);
+      });
+
+      // Pressed again before the dialog took the keyboard.
+      const second = harness.ctx.commands.runCommand('project.save');
+      choosing.answer({ status: 'cancelled' });
+      await first;
+      await second;
+
+      expect(harness.ipc.projectSaveAsDialog).toHaveBeenCalledTimes(1);
+      expect(harness.ipc.projectSave).not.toHaveBeenCalled();
+      expect(project().fileName).toBeNull();
+      expect(harness.feature.model.getState().busy).toBeNull();
+    });
+
+    it('reports a failed save once', async () => {
+      await openFile(HELLO_TEXT, HANDLE_A);
+      makeDirty();
+      let fail: (error: unknown) => void = () => undefined;
+      harness.ipc.projectSave
+        .mockReturnValueOnce(
+          new Promise<typeof SAVED>((_, reject) => {
+            fail = reject;
+          }),
+        )
+        .mockRejectedValue(ipcFailure({ code: 'busy' }));
+      const first = harness.ctx.commands.runCommand('project.save');
+      await vi.waitFor(() => {
+        expect(harness.ipc.projectSave).toHaveBeenCalledTimes(1);
+      });
+
+      const second = harness.ctx.commands.runCommand('project.save');
+      fail(ipcFailure({ code: 'busy' }));
+      await closeAlert(harness.dialogs);
+      await first;
+      // A second failed save would wait for its own alert to be closed.
+      await vi.waitFor(() => {
+        expect(harness.dialogs.store.getState().queue).toHaveLength(0);
+        expect(harness.feature.model.getState().busy).toBeNull();
+      });
+      await second;
+
+      expect(harness.ipc.projectSave).toHaveBeenCalledTimes(1);
+      expect(project().dirty).toBe(true);
+      expect(harness.feature.model.getState().busy).toBeNull();
+    });
+
+    it('saves only the project it was asked for', async () => {
+      await openFile(HELLO_TEXT, HANDLE_A);
+      makeDirty();
+      const writing = held<typeof SAVED>();
+      harness.ipc.projectSave.mockReturnValueOnce(writing.promise).mockResolvedValue(SAVED);
+      const first = harness.ctx.commands.runCommand('project.save');
+      await vi.waitFor(() => {
+        expect(harness.ipc.projectSave).toHaveBeenCalledTimes(1);
+      });
+
+      harness.ipc.projectOpenDialog.mockResolvedValueOnce({
+        status: 'ok',
+        ...opened(HELLO_TEXT, { handle: HANDLE_B, fileName: 'other.b2c' }),
+      });
+      const opening = harness.ctx.commands.runCommand('project.open');
+      // Asked for A, which the Open queued before it replaces.
+      const second = harness.ctx.commands.runCommand('project.save');
+      writing.answer(SAVED);
+      await Promise.all([first, opening, second]);
+
+      expect(project().handle).toBe(HANDLE_B);
+      expect(harness.ipc.projectSave).toHaveBeenCalledTimes(1);
+      expect(harness.ipc.projectSave).toHaveBeenCalledWith(
+        expect.objectContaining({ handle: HANDLE_A }),
+      );
       expect(harness.feature.model.getState().busy).toBeNull();
     });
 

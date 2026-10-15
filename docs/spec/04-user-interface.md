@@ -498,8 +498,10 @@ console and selected text.
   crash, the start page offers to restore it.
 * **Save.** Explicit `Ctrl+S`; the top bar shows `•` after the project name
   when there are unsaved changes (§4.1); closing with unsaved changes prompts.
-  A save asked for while another is still running is never dropped: it runs
-  after that one and writes what the editor shows then.
+  A save asked for while another is still running is not dropped: once that
+  one has saved, it runs and writes what the editor shows then. After a
+  cancelled *Save as…* or a failed save it does nothing more (it was the same
+  request), and it never saves a project opened after it was asked for.
 * **Untrusted project.** The open flow shows the Restricted Mode banner
   ([08 §8.3](08-security.md#83-workspace-trust-and-restricted-mode)).
 * **Export.** *File → Export as C++ project…* writes `src/`,
