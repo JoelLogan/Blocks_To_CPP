@@ -66,8 +66,10 @@
   starts at *Debug* and is never saved in the project. The project settings
   dialog comes in M3.
 * A project with several modules gets a simple module switcher, one canvas per
-  module, without adding, renaming or deleting modules (M3). Frames and notes
-  are not drawn yet, and are kept unchanged on save.
+  module, without adding, renaming or deleting modules (M3). A switch asked
+  for while a block is dragged (a problem in another module chosen, or another
+  module) is made once the block is dropped. Frames and notes are not drawn
+  yet, and are kept unchanged on save.
 * A block's menu offers Cut, Copy, Paste, Duplicate, Add comment,
   Collapse/Expand, Disable/Enable and Delete; the canvas menu offers Undo,
   Redo, Paste, *Clean up blocks* (lines the top-level blocks up in a column),

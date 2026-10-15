@@ -16,6 +16,9 @@
  * - whatever the pointer previewed on its way, a drag Blockly reverts leaves the document byte for
  *   byte as it was (a property test), and an empty C-block taken out of a list and sent back over
  *   its old place goes back in place, wrapping nothing;
+ * - while a wrap is previewed, a read of the canvas has the statements where they stand (also a
+ *   loose stack in the mouth of Blockly's own preview), and a module switch asked for meanwhile
+ *   waits until the drop, losing nothing;
  * - a counted loop taken from the toolbox that wraps statements names its counter after what they
  *   declare too: wrapping `create i` or a `for i` loop, it counts with `j` (03 §3.6).
  *
@@ -48,6 +51,7 @@ import {
   type TestSession,
 } from './testing';
 import { allBlocks } from './traverse';
+import { readTopBlocks } from './workspaceToBdm';
 
 const core = await testCore();
 
@@ -119,11 +123,18 @@ function eventsDelivered(): Promise<void> {
   });
 }
 
+/** The guessing game. */
+function guessingGame(): string {
+  return present(EXAMPLE_PROJECTS['guessing_game.b2c'], 'guessing game');
+}
+
 /**
- * The guessing game on a shown editor canvas with the editor's dragger, checker and previewer, at
- * the editor's start zoom (0.9), and a loose empty `if` (`C`) right of `main`.
+ * The guessing game (or `text`) on a shown editor canvas with the editor's dragger, checker and
+ * previewer, at the editor's start zoom (0.9), and a loose empty `if` (`C`) right of `main`.
  */
-async function withLooseIf(): Promise<{ svg: Blockly.WorkspaceSvg; dragged: Blockly.BlockSvg }> {
+async function withLooseIf(
+  text = guessingGame(),
+): Promise<{ svg: Blockly.WorkspaceSvg; dragged: Blockly.BlockSvg }> {
   const wasm = present(core, 'core');
   const svg = renderedWorkspace({
     plugins: {
@@ -135,7 +146,7 @@ async function withLooseIf(): Promise<{ svg: Blockly.WorkspaceSvg; dragged: Bloc
   });
   setViewSize(svg, 1000, 700);
   Blockly.svgResize(svg);
-  const doc = loadText(wasm, present(EXAMPLE_PROJECTS['guessing_game.b2c'], 'guessing game'));
+  const doc = loadText(wasm, text);
   running = startSession(wasm, doc, { workspace: svg });
   await running.session.flush();
   svg.setScale(0.9);
@@ -442,6 +453,128 @@ describe.skipIf(core === null)('an empty C-block dropped on a statement', () => 
     await release({ x: near.x - 6, y: near.y });
     expect(dragged.isDeadOrDying()).toBe(true);
     expect(mainText(svg)).toBe(MAIN_TEXT);
+  });
+});
+
+/** The node a canvas read gives block `id` at the top of the canvas (`main`, or a loose stack). */
+function topNode(svg: Blockly.WorkspaceSvg, id: string): string {
+  const node = present(
+    readTopBlocks(svg).find((top) => top.id === id),
+    `${id} read at the top`,
+  );
+  // Where a loose stack is drawn moves a little while a preview holds it; what it holds does not.
+  return JSON.stringify({ ...node, x: undefined, y: undefined });
+}
+
+/** The guessing game with a second module, `mod_b`, whose function `helper` is block `hb`. */
+function twoModules(): string {
+  const doc = JSON.parse(guessingGame()) as BdmDocument;
+  doc.modules.push({
+    id: 'mod_b',
+    name: 'helpers',
+    workspace: {
+      blocks: [
+        {
+          id: 'hb',
+          type: 'func.define',
+          v: 1,
+          x: 40,
+          y: 40,
+          fields: { NAME: { sym: 's_h', name: 'helper' }, RETURNS: 'void' },
+        },
+      ],
+    },
+  });
+  return JSON.stringify(doc);
+}
+
+describe.skipIf(core === null)('the canvas while a wrap is previewed', () => {
+  it.each([
+    ['below b003', (svg: Blockly.WorkspaceSvg) => below(svg, 'b003')],
+    [
+      'at main’s top',
+      (svg: Blockly.WorkspaceSvg) =>
+        present(svg.getBlockById('b011')?.getInput('BODY')?.connection, 'BODY'),
+    ],
+  ])('reads the statements the preview holds %s where they stand', async (_, place) => {
+    const { svg, dragged } = await withLooseIf();
+    const before = topNode(svg, 'b011');
+    press(dragged);
+    await moveTo(pointerAt(svg, dragged, place(svg), 3, 3));
+    expect(mainText(svg)).toContain('M{');
+    expect(topNode(svg, 'b011')).toBe(before);
+    await release(AWAY);
+  });
+
+  it('reads a loose stack Blockly’s preview holds in the C-block’s mouth as a stack', async () => {
+    const { svg, dragged } = await withLooseIf();
+    Blockly.serialization.blocks.append(
+      {
+        type: 'io.print',
+        id: 's1',
+        x: 300,
+        y: 600,
+        next: { block: { type: 'io.print', id: 's2' } },
+      },
+      svg,
+    );
+    await placed();
+    const before = topNode(svg, 's1');
+    const stack = present(svg.getBlockById('s1'), 's1');
+    const mouth = present(firstMouth(dragged), 'mouth');
+    const top = present(stack.previousConnection, 'stack top');
+    press(dragged);
+    await moveTo({
+      x: PRESS.x + (top.x - mouth.x + 2) * svg.scale,
+      y: PRESS.y + (top.y - mouth.y + 2) * svg.scale,
+    });
+    expect(stack.getParent()?.isInsertionMarker()).toBe(true);
+    expect(topNode(svg, 's1')).toBe(before);
+    await release(AWAY);
+  });
+
+  it.each([
+    [
+      'a problem in another module is selected',
+      () => {
+        present(running, 'session').session.selectBlock('hb', { center: true });
+      },
+    ],
+    [
+      'another module is chosen',
+      () => {
+        useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_b' });
+      },
+    ],
+  ])('switches modules once the drop is done when %s, losing nothing', async (_, ask) => {
+    const { svg, dragged } = await withLooseIf(twoModules());
+    const session = present(running, 'session').session;
+    const at = pointerAt(svg, dragged, below(svg, 'b003'), 4, 4);
+    press(dragged);
+    await moveTo(at);
+    ask();
+    // Nothing changes during the drag: the canvas, its preview and the project's document stay.
+    expect(session.shownModuleId()).toBe('mod_main');
+    expect(mainText(svg)).toBe('b002 b003 M{b004 b010{b005 b009{b006}}}');
+    const stored = present(useAppStore.getState().project, 'project').document;
+    expect(mainNode(stored).statements?.['BODY']?.map((node) => node.id)).toEqual([
+      'b002',
+      'b003',
+      'b004',
+      'b010',
+    ]);
+
+    await release(at);
+    await placed();
+    expect(session.shownModuleId()).toBe('mod_b');
+    expect(svg.getBlockById('hb')).not.toBeNull();
+    await session.flush();
+    const body = mainNode(session.currentDocument()).statements?.['BODY'] ?? [];
+    expect(body.map((node) => node.id)).toEqual(['b002', 'b003', 'C']);
+    expect(body[2]?.statements?.['DO0']?.map((node) => node.id)).toEqual(['b004', 'b010']);
+    expect(body[2]?.statements?.['DO0']?.[1]?.statements?.['BODY']?.map((node) => node.id)).toEqual(
+      ['b005', 'b009'],
+    );
   });
 });
 

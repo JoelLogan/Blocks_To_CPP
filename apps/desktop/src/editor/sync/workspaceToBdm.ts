@@ -20,7 +20,7 @@ import type {
   BdmViewport,
   InputValue,
 } from '@blocks2cpp/b2c-core-wasm';
-import { readExprShadow } from '@blocks2cpp/blockly-ext';
+import { firstMouth, readExprShadow } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
 import { readComment, readDisabled, readExtra, readFields } from './blockState';
@@ -54,12 +54,33 @@ function isProjectBlock(block: Blockly.Block): boolean {
   return placeholderNode(block) !== null || blockDefOf(block.type) !== null;
 }
 
-/** The project blocks of a `next` chain starting at `first`, in order. */
+/**
+ * The first of the statements a drag preview's insertion marker holds in its first mouth, or
+ * `null`. A wrap preview (`@blocks2cpp/blockly-ext`'s previewer, 03 §3.3) puts the statements it
+ * would wrap there, and so does Blockly's own preview of a C-block's mouth at the top of a loose
+ * stack; Blockly's other previews hang what follows below the marker instead. Either way, the
+ * statements are where they were before the drag, as far as the project is concerned.
+ */
+function heldByMarker(marker: Blockly.Block): Blockly.Block | null {
+  return firstMouth(marker)?.targetBlock() ?? null;
+}
+
+/**
+ * The project blocks of a `next` chain starting at `first`, in order. An insertion marker (a drag
+ * preview) is not one, but the statements it holds in its mouth are, in its place
+ * ({@link heldByMarker}).
+ */
 function chainFrom(first: Blockly.Block | null): Blockly.Block[] {
   const members: Blockly.Block[] = [];
   for (let block = first; block !== null; block = block.getNextBlock()) {
     if (isProjectBlock(block)) {
       members.push(block);
+    } else if (block.isInsertionMarker()) {
+      for (let held = heldByMarker(block); held !== null; held = held.getNextBlock()) {
+        if (isProjectBlock(held)) {
+          members.push(held);
+        }
+      }
     }
   }
   return members;
@@ -255,9 +276,10 @@ export function readBlockTrees(blocks: readonly Blockly.Block[], top: boolean): 
 
 /**
  * The project blocks on the canvas, read into BDM nodes (top-level blocks with `x`, `y`). An
- * insertion marker at the top (a drag previewing a statement attached above a loose stack) is not
- * part of the project, but the stack chained under it is: its first block is read as top-level
- * (the preview leaves the stack where it was).
+ * insertion marker at the top (a drag previewing a statement attached above a loose stack, or a
+ * C-block's mouth at the stack's top) is not part of the project, but the stack chained under it
+ * or held in its mouth ({@link heldByMarker}) is: its first block is read as top-level (the
+ * preview leaves the stack where it was).
  */
 export function readTopBlocks(workspace: Blockly.Workspace): BdmBlock[] {
   const tops: Blockly.Block[] = [];
@@ -265,9 +287,13 @@ export function readTopBlocks(workspace: Blockly.Workspace): BdmBlock[] {
     if (block.isShadow()) {
       continue;
     }
-    const top = block.isInsertionMarker() ? block.getNextBlock() : block;
-    if (top !== null) {
-      tops.push(top);
+    const stacks = block.isInsertionMarker()
+      ? [heldByMarker(block), block.getNextBlock()]
+      : [block];
+    for (const top of stacks) {
+      if (top !== null) {
+        tops.push(top);
+      }
     }
   }
   return readBlockTrees(tops, true);

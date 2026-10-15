@@ -9,7 +9,9 @@
  *   (./workspaceToBdm.ts) and updates the project and the analysis.
  * - Created blocks get fresh symbol IDs where they would clash (./duplicates.ts).
  * - One module is shown at a time; switching keeps the left module's changes in the document and
- *   clears Blockly's undo history (each module has its own canvas).
+ *   clears Blockly's undo history (each module has its own canvas). A switch asked for during a
+ *   block drag (a problem in another module selected, another module chosen) waits until the
+ *   drag has ended: the canvas is in flux until then.
  * - The viewport is captured only for saving ({@link EditorSession.currentDocument}).
  * - While a block is dragged, saving writes the canvas as it was just before the drag (./drag.ts).
  * - Renaming the project changes the document outside the canvas and previews it again
@@ -161,6 +163,13 @@ function moduleOfBlock(doc: BdmDocument, id: string): string | null {
   return null;
 }
 
+/** A module switch asked for during a block drag, done once the drag has ended. */
+interface WaitingSwitch {
+  readonly moduleId: string;
+  /** The block to select once the module is shown, when a selection asked for the switch. */
+  readonly select: { readonly id: string; readonly options: SelectOptions } | null;
+}
+
 /** An editing session; see the module comment. */
 export class EditorSession {
   readonly workspace: Blockly.Workspace;
@@ -178,6 +187,8 @@ export class EditorSession {
   /** The shown module's blocks just before the block drag in progress, or `null`. */
   private preDrag: { readonly moduleId: string; readonly blocks: readonly BdmBlock[] } | null =
     null;
+  /** The module switch asked for during the block drag in progress, or `null`. */
+  private waitingSwitch: WaitingSwitch | null = null;
   private readonly stopDragListening: () => void;
   private disposed = false;
 
@@ -206,6 +217,10 @@ export class EditorSession {
             },
             onDragEnd: () => {
               this.preDrag = null;
+              if (this.waitingSwitch !== null) {
+                // Blockly's gesture ends the drag after its dragger has finished the drop.
+                queueMicrotask(this.switchAfterDrag);
+              }
             },
           })
         : () => undefined;
@@ -329,7 +344,9 @@ export class EditorSession {
   /**
    * Selects a block, or the outermost collapsed block it is nested in, switching to its module
    * first. A collapsed statement before it in the same list does not hide it, so it is not taken
-   * instead. A block kept inside a placeholder selects the placeholder.
+   * instead. A block kept inside a placeholder selects the placeholder. A block of another module
+   * asked for during a block drag is selected once the drag has ended (see
+   * {@link switchModule}).
    */
   selectBlock(id: string, options: SelectOptions = {}): void {
     let block = this.workspace.getBlockById(id);
@@ -337,6 +354,10 @@ export class EditorSession {
       const project = this.store.getState().project;
       const moduleId = project === null ? null : moduleOfBlock(project.document, id);
       if (moduleId !== null && moduleId !== this.shown) {
+        if (isDragging(this.workspace)) {
+          this.waitingSwitch = { moduleId, select: { id, options } };
+          return;
+        }
         this.switchModule(moduleId);
         block = this.workspace.getBlockById(id);
       }
@@ -368,10 +389,21 @@ export class EditorSession {
   /**
    * Shows module `moduleId`. The shown module's changes stay in the document, and Blockly's undo
    * history is cleared. An unknown module ID is ignored.
+   *
+   * During a block drag the switch waits until the drag has ended: the canvas is in flux (a drag
+   * preview may stand in a list, or hold the statements a wrap would take in its mouth), and
+   * Blockly cannot clear a canvas whose block it is dragging. The last switch asked for wins.
    */
   switchModule(moduleId: string): void {
     const project = this.store.getState().project;
-    if (project === null || this.shown === null || moduleId === this.shown) {
+    if (project === null || this.shown === null) {
+      return;
+    }
+    if (isDragging(this.workspace)) {
+      this.waitingSwitch = { moduleId, select: null };
+      return;
+    }
+    if (moduleId === this.shown) {
       return;
     }
     const { actions } = this.store.getState();
@@ -428,6 +460,7 @@ export class EditorSession {
     }
     this.disposed = true;
     this.preDrag = null;
+    this.waitingSwitch = null;
     this.stopDragListening();
     this.workspace.removeChangeListener(this.onEvent);
     this.unsubscribe();
@@ -473,9 +506,28 @@ export class EditorSession {
     this.preDrag = { moduleId: this.shown, blocks };
   }
 
+  /**
+   * Does the module switch asked for during the block drag that has just ended (see
+   * {@link switchModule}), unless another drag has started since (its end does it), the session
+   * was disposed, or another document was shown in the meantime.
+   */
+  private readonly switchAfterDrag = (): void => {
+    const waiting = this.waitingSwitch;
+    if (waiting === null || this.disposed || isDragging(this.workspace)) {
+      return;
+    }
+    this.waitingSwitch = null;
+    if (waiting.select === null) {
+      this.switchModule(waiting.moduleId);
+    } else {
+      this.selectBlock(waiting.select.id, waiting.select.options);
+    }
+  };
+
   /** Builds module `moduleId` of `doc` on the canvas and restores its view. */
   private show(doc: BdmDocument, moduleId: string, clearUndo: boolean): void {
     this.preDrag = null;
+    this.waitingSwitch = null;
     loadModule(this.workspace, doc, moduleId);
     this.shown = moduleId;
     if (clearUndo) {
@@ -499,6 +551,7 @@ export class EditorSession {
   private clearCanvas(): void {
     this.pipeline.invalidate();
     this.preDrag = null;
+    this.waitingSwitch = null;
     clearWorkspace(this.workspace);
     this.workspace.clearUndo();
     this.shown = null;
