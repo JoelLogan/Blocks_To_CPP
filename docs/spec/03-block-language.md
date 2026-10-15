@@ -315,7 +315,10 @@ The analyser implements a **gradual** type system that approximates C++:
   ([04 §4.2](04-user-interface.md#42-toolbox)).
 * **Default names** are the first free name in scope where the block is
   dropped: `value`, `value2`, `value3`, … for a new variable; `i`, `j`, `k`
-  for a counted loop; and `myFunction` for a new function.
+  for a counted loop; and `myFunction` for a new function. A counted loop
+  that wraps statements when it is dropped ([§3.3](#33-block-shapes)) also
+  leaves out the names they declare, nested ones included: wrapped around
+  `create i` or a `for i` loop, it counts with `j`.
 * **Identifiers are validated** ([08 §8.4.1](08-security.md#841-identifiers)):
   ASCII `[A-Za-z][A-Za-z0-9_]{0,63}`, not a keyword, not reserved, and not a
   standard macro name. Duplicate names in one scope are errors with a rename

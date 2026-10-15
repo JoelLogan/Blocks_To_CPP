@@ -26,6 +26,7 @@ import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import { B2cSymbolDeclField, isPlaceholder } from '@blocks2cpp/blockly-ext';
 import type * as Blockly from 'blockly/core';
 
+import { descendantsOf } from '../sync/traverse';
 import type { DefaultNameKind } from './names';
 
 /** The block that starts the program. */
@@ -38,6 +39,10 @@ export const DECLARE_TYPE = 'var.declare';
 export const BODY_INPUT = 'BODY';
 /** The name field of a declaration block. */
 export const NAME_FIELD = 'NAME';
+/** The counted loop, whose counter is a declaration. */
+const COUNTED_LOOP_TYPE = 'control.for_range';
+/** The counter field of a counted loop. */
+const COUNTER_FIELD = 'VAR';
 
 /** The most statements walked along one list (a project holds at most 100,000 blocks, 05 §5.6). */
 const MAX_LIST_LENGTH = 100_000;
@@ -443,6 +448,27 @@ function namesDeclaredFrom(
   return names;
 }
 
+/**
+ * The names the local declarations nested anywhere in a statement list declare, from `first` on:
+ * its `create` blocks' variables and its counted loops' counters, in nested lists too.
+ */
+function localNamesInside(first: Blockly.Block | null): Set<string> {
+  const names = new Set<string>();
+  for (const block of first === null ? [] : descendantsOf(first)) {
+    const field =
+      block.type === DECLARE_TYPE
+        ? block.getField(NAME_FIELD)
+        : block.type === COUNTED_LOOP_TYPE
+          ? block.getField(COUNTER_FIELD)
+          : null;
+    const name = field instanceof B2cSymbolDeclField ? (field.getDecl()?.name ?? null) : null;
+    if (name !== null) {
+      names.add(name);
+    }
+  }
+  return names;
+}
+
 /** Adds every symbol's name to a set. */
 function addNames(names: Set<string>, symbols: readonly SymbolInfo[]): Set<string> {
   for (const symbol of symbols) {
@@ -484,7 +510,11 @@ export function takenNamesAtInsertion(point: InsertionPoint, source: SymbolSourc
  * - a variable: what is visible at the block's connection ({@link symbolsAtConnection}) and the
  *   variables the other `create` blocks of its statement list declare (a second declaration in
  *   one scope is an error);
- * - a loop counter: what is visible at the block's connection;
+ * - a loop counter: what is visible at the block's connection and what the statements already in
+ *   its body declare, nested ones included: a toolbox loop dropped on a statement wraps it and
+ *   what follows (03 §3.3), and its body shares the counter's scope (a `create` there with the
+ *   counter's name is `B2C-E0210`), while a counter or variable deeper in would hide it
+ *   (`B2C-W0501`);
  * - a function: every other function, analysed or on the canvas (function names are unique,
  *   `B2C-E0211`).
  */
@@ -508,10 +538,12 @@ export function takenNamesAtDrop(
     return names;
   }
   const names = addNames(new Set(), symbolsAtConnection(workspace, block, source));
-  if (kind === 'variable') {
-    for (const name of namesDeclaredFrom(firstOfList(block), block)) {
-      names.add(name);
-    }
+  const inScope =
+    kind === 'variable'
+      ? namesDeclaredFrom(firstOfList(block), block)
+      : localNamesInside(block.getInputTargetBlock(BODY_INPUT));
+  for (const name of inScope) {
+    names.add(name);
   }
   return names;
 }

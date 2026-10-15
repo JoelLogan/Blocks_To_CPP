@@ -15,7 +15,9 @@
  * - a block moved with the keyboard is inserted, not wrapped;
  * - whatever the pointer previewed on its way, a drag Blockly reverts leaves the document byte for
  *   byte as it was (a property test), and an empty C-block taken out of a list and sent back over
- *   its old place goes back in place, wrapping nothing.
+ *   its old place goes back in place, wrapping nothing;
+ * - a counted loop taken from the toolbox that wraps statements names its counter after what they
+ *   declare too: wrapping `create i` or a `for i` loop, it counts with `j` (03 §3.6).
  *
  * The editor injects the checker and previewer these drags use. These are the cases of the plan's
  * W5-2 for the editor's drag tests; they sit beside drag.test.ts
@@ -27,8 +29,10 @@ import { B2C_CHECKER_NAME, B2C_PREVIEWER_NAME, firstMouth } from '@blocks2cpp/bl
 import * as Blockly from 'blockly/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
+import { useAppStore } from '../../app/store';
 import { editorInjectOptions } from '../EditorWorkspace';
 import { dropTargets } from '../keyboard/targets';
+import { createToolboxPlugin, toolboxInjectOptions } from '../toolbox';
 import { B2cBlockDragger, handleBlockDrops } from './drag';
 import {
   canonicalText,
@@ -590,3 +594,181 @@ describe.skipIf(core === null)('a drag Blockly reverts', () => {
     expect(documentText()).toBe(before);
   });
 });
+
+/**
+ * `text` on a shown editor canvas with the editor's dragger, checker and previewer and the toolbox
+ * (its plugin attached to the session's core and store), the toolbox's flyout built.
+ */
+async function withToolbox(
+  text: string,
+): Promise<{ svg: Blockly.WorkspaceSvg; flyout: Blockly.IFlyout }> {
+  const wasm = present(core, 'core');
+  const toolbox = toolboxInjectOptions();
+  const svg = renderedWorkspace({
+    toolbox: toolbox.toolbox,
+    plugins: {
+      ...toolbox.plugins,
+      blockDragger: B2cBlockDragger,
+      connectionChecker: B2C_CHECKER_NAME,
+      connectionPreviewer: B2C_PREVIEWER_NAME,
+    },
+    move: { scrollbars: true, drag: true },
+  });
+  setViewSize(svg, 1600, 900);
+  Blockly.svgResize(svg);
+  const session = startSession(wasm, loadText(wasm, text), { workspace: svg });
+  const detach = createToolboxPlugin().attach({
+    workspace: svg,
+    store: useAppStore,
+    core: () => wasm,
+    selectBlock: () => undefined,
+    activeModuleId: () => useAppStore.getState().project?.activeModuleId ?? '',
+  });
+  running = {
+    ...session,
+    dispose() {
+      detach();
+      session.dispose();
+    },
+  };
+  await session.session.flush();
+  await Blockly.renderManagement.finishQueuedRenders();
+  // The toolbox rebuilds its flyout after the analysis.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  await placed();
+  await eventsDelivered();
+  svg.clearUndo();
+  return { svg, flyout: present(svg.getFlyout(), 'flyout') };
+}
+
+/**
+ * Drags the toolbox's counted loop out of the flyout with the pointer and drops it with its top 4
+ * units right of and below connection `target`. Returns the loop created on the canvas.
+ */
+async function dropToolboxLoop(
+  svg: Blockly.WorkspaceSvg,
+  flyout: Blockly.IFlyout,
+  target: Blockly.Connection,
+): Promise<Blockly.BlockSvg> {
+  const original = present(
+    flyout
+      .getWorkspace()
+      .getTopBlocks(true)
+      .find((block) => block.type === 'control.for_range'),
+    'the counted loop in the flyout',
+  );
+  const before = new Set(svg.getAllBlocks(false).map((block) => block.id));
+  original.pathObject.svgPath.dispatchEvent(
+    new PointerEvent('pointerdown', { ...POINTER, clientX: PRESS.x, clientY: PRESS.y }),
+  );
+  // Past the drag radius: Blockly creates the loop on the canvas and drags it.
+  const started = { x: PRESS.x + 40, y: PRESS.y };
+  await moveTo(started);
+  const created = present(
+    svg
+      .getAllBlocks(false)
+      .find((block) => !before.has(block.id) && block.type === 'control.for_range'),
+    'the loop taken from the toolbox',
+  );
+  const own = present(created.previousConnection, 'previous');
+  const goal = {
+    x: started.x + (target.x - own.x + 4) * svg.scale,
+    y: started.y + (target.y - own.y + 4) * svg.scale,
+  };
+  await moveTo(goal);
+  expect(previewShown(svg)).toBe(true);
+  await release(goal);
+  await placed();
+  await present(running, 'session').session.flush();
+  return created;
+}
+
+/** The diagnostic codes of the latest analysis, with the block each is on. */
+function diagnosticsNow(): string[] {
+  return (useAppStore.getState().analysis.preview?.diagnostics ?? []).map(
+    (diagnostic) => `${diagnostic.code} ${diagnostic.primary.block ?? ''}`,
+  );
+}
+
+/** Sum to Ten (`main` b005: `create total` b001, the loop `for i` b003, `print total` b004). */
+function sumToTen(): string {
+  return present(EXAMPLE_PROJECTS['sum_to_ten.b2c'], 'sum to ten');
+}
+
+/** Sum to Ten with `main`'s body replaced by `create int i = 0` (b_i) and `print i` (b_p). */
+function createAndPrintI(): string {
+  const doc = JSON.parse(sumToTen()) as BdmDocument;
+  const main = mainNode(doc) as { statements?: Record<string, unknown[]> };
+  main.statements = {
+    BODY: [
+      {
+        id: 'b_i',
+        type: 'var.declare',
+        v: 1,
+        fields: { TYPE: 'int', NAME: { sym: 's_ix', name: 'i' }, CONST: false },
+        inputs: { VALUE: { expr: [{ num: '0' }] } },
+      },
+      {
+        id: 'b_p',
+        type: 'io.print',
+        v: 1,
+        extra: { itemCount: 1 },
+        fields: { NEWLINE: true, SEP: 'none', STREAM: 'out' },
+        inputs: { ITEM0: { expr: [{ ref: 's_ix' }] } },
+      },
+    ],
+  };
+  return JSON.stringify(doc);
+}
+
+describe.skipIf(core === null)(
+  'a counted loop taken from the toolbox that wraps statements',
+  () => {
+    afterEach(() => {
+      const workspace = running?.workspace;
+      if (workspace instanceof Blockly.WorkspaceSvg) {
+        workspace.cancelCurrentGesture();
+      }
+    });
+
+    it('counts with j around `create i`, which shares its body’s scope, in one Undo step', async () => {
+      const { svg, flyout } = await withToolbox(createAndPrintI());
+      expect(diagnosticsNow()).toEqual([]);
+      const main = present(svg.getBlockById('b005'), 'main');
+      const loop = await dropToolboxLoop(
+        svg,
+        flyout,
+        present(main.getInput('BODY')?.connection, 'main’s body'),
+      );
+
+      expect(listText(main.getInputTargetBlock('BODY'))).toBe(`${loop.id}{b_i b_p}`);
+      // Not i: `create i` in its body would be B2C-E0210 (a second i in one scope).
+      expect(loop.getField('VAR')?.getText()).toBe('j');
+      expect(diagnosticsNow()).toEqual([]);
+
+      await eventsDelivered();
+      svg.undo(false);
+      await eventsDelivered();
+      expect(svg.getBlockById(loop.id)).toBeNull();
+      expect(listText(main.getInputTargetBlock('BODY'))).toBe('b_i b_p');
+    });
+
+    it('counts with j around a `for i` loop, whose counter would otherwise hide its own', async () => {
+      const { svg, flyout } = await withToolbox(sumToTen());
+      expect(diagnosticsNow()).toEqual([]);
+      const main = present(svg.getBlockById('b005'), 'main');
+      const loop = await dropToolboxLoop(svg, flyout, below(svg, 'b001'));
+
+      expect(listText(main.getInputTargetBlock('BODY'))).toBe(`b001 ${loop.id}{b003{b002} b004}`);
+      // Not i: the inner `for i` would hide it (B2C-W0501).
+      expect(loop.getField('VAR')?.getText()).toBe('j');
+      expect(diagnosticsNow()).toEqual([]);
+
+      await eventsDelivered();
+      svg.undo(false);
+      await eventsDelivered();
+      expect(svg.getBlockById(loop.id)).toBeNull();
+      expect(listText(main.getInputTargetBlock('BODY'))).toBe('b001 b003{b002} b004');
+    });
+  },
+);
