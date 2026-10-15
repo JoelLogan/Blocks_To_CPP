@@ -16,6 +16,11 @@
 //! symbol and the static type of each value block. The analysis itself is
 //! kept by a [`crate::Session`] for the scope query and the clipboard;
 //! [`preview_document`] keeps nothing.
+//!
+//! [`update_document`] is what the editor runs after each edit (06 §6.13):
+//! the preview and the hash of the document's canonical text, from one load,
+//! so the editor needs the text itself only when it saves, builds or writes
+//! a recovery snapshot ([`canonical_document`]).
 
 use std::collections::BTreeMap;
 
@@ -25,6 +30,7 @@ use b2c_ir::{BlockId, DiagSource, Diagnostic, Location, SymbolInfo, Type, has_er
 use b2c_lang::Analysis;
 use b2c_model::{Document, LoadError};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use crate::options::PreviewOptions;
 
@@ -95,13 +101,25 @@ pub fn load_document(bytes: &[u8]) -> Result<Loaded, LoadError> {
     })
 }
 
-/// A document's canonical serialisation and content hash.
+/// A document's canonical serialisation, its content hash and the hash of
+/// the text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Canonical {
     /// The canonical file text (05 §5.2), exactly what a save writes.
     pub text: String,
     /// The content hash (05 §5.11) as 64 lower-case hex digits.
     pub hash: String,
+    /// The [`text_hash`] of [`Canonical::text`]. Unlike the content hash it
+    /// covers the layout too: two documents have the same text hash exactly
+    /// when a save writes the same file for both, which is what the editor's
+    /// unsaved-changes flag compares.
+    pub text_hash: String,
+}
+
+/// The SHA-256 of a canonical file text (its UTF-8 bytes) as 64 lower-case
+/// hex digits: the `text_hash` of [`Canonical`] and [`Update`].
+pub fn text_hash(canonical_text: &str) -> String {
+    b2c_model::hex(&Sha256::digest(canonical_text.as_bytes()))
 }
 
 /// Loads a document given as JSON text and serialises it canonically.
@@ -110,9 +128,11 @@ pub struct Canonical {
 /// The loader's problems when the text is not a valid project.
 pub fn canonical_document(document_json: &str) -> Result<Canonical, LoadError> {
     let document = b2c_model::load(document_json.as_bytes())?;
+    let text = b2c_model::to_canonical_json(&document);
     Ok(Canonical {
-        text: b2c_model::to_canonical_json(&document),
         hash: b2c_model::hex(&b2c_model::content_hash(&document)),
+        text_hash: text_hash(&text),
+        text,
     })
 }
 
@@ -165,6 +185,22 @@ pub struct Preview {
     pub symbols: Vec<SymbolInfo>,
 }
 
+/// What the editor needs after an edit (06 §6.13): the preview and the
+/// hash of the document's canonical text, from one load of the document.
+///
+/// It serialises as the fields of [`Preview`] followed by `textHash`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Update {
+    /// The preview, exactly as [`preview_document`] makes it.
+    #[serde(flatten)]
+    pub preview: Preview,
+    /// The [`text_hash`] of the loaded document's canonical text (what
+    /// [`canonical_document`] reports as `text_hash`); absent only when
+    /// loading failed.
+    pub text_hash: Option<String>,
+}
+
 impl Preview {
     pub(crate) fn load_failed(diagnostics: Vec<Diagnostic>) -> Self {
         Self {
@@ -201,6 +237,26 @@ pub fn preview_document(document_json: &str, options: &PreviewOptions) -> Previe
     match run_pipeline(document_json.as_bytes(), *options) {
         Ok(run) => run.preview,
         Err(error) => Preview::load_failed(error.diagnostics),
+    }
+}
+
+/// Loads the document once and returns its preview (exactly
+/// [`preview_document`]'s) with the hash of its canonical text (the
+/// `text_hash` of [`canonical_document`]): what the editor runs after each
+/// edit, instead of loading the document once for each.
+///
+/// A document that does not load gives the [`Preview`] of a failed load
+/// (stage `load`, the loader's diagnostics) and no text hash. Never panics.
+pub fn update_document(document_json: &str, options: &PreviewOptions) -> Update {
+    match run_update(document_json.as_bytes(), *options) {
+        Ok((run, text_hash)) => Update {
+            preview: run.preview,
+            text_hash: Some(text_hash),
+        },
+        Err(error) => Update {
+            preview: Preview::load_failed(error.diagnostics),
+            text_hash: None,
+        },
     }
 }
 
@@ -245,9 +301,25 @@ pub(crate) fn analyse(loaded: &Document) -> (Document, Vec<Diagnostic>, Analysis
 /// The loader's problems when the bytes are not a valid project.
 pub(crate) fn run_pipeline(bytes: &[u8], options: PreviewOptions) -> Result<PipelineRun, LoadError> {
     let loaded = b2c_model::load(bytes)?;
-    let content_hash = b2c_model::content_hash(&loaded);
+    Ok(run_loaded(&loaded, options))
+}
 
-    let (document, mut diagnostics, mut analysis) = analyse(&loaded);
+/// [`run_pipeline`] and the [`text_hash`] of the loaded document, from one
+/// load (see [`update_document`]).
+///
+/// # Errors
+/// The loader's problems when the bytes are not a valid project.
+pub(crate) fn run_update(bytes: &[u8], options: PreviewOptions) -> Result<(PipelineRun, String), LoadError> {
+    let loaded = b2c_model::load(bytes)?;
+    let text_hash = text_hash(&b2c_model::to_canonical_json(&loaded));
+    Ok((run_loaded(&loaded, options), text_hash))
+}
+
+/// Stages ② to ⑦ on a loaded document, with its content hash.
+fn run_loaded(loaded: &Document, options: PreviewOptions) -> PipelineRun {
+    let content_hash = b2c_model::content_hash(loaded);
+
+    let (document, mut diagnostics, mut analysis) = analyse(loaded);
     let mut first_failure = has_errors(&diagnostics).then_some(Stage::Resolve);
     diagnostics.append(&mut analysis.diagnostics);
     if first_failure.is_none() && has_errors(&diagnostics) {
@@ -280,12 +352,12 @@ pub(crate) fn run_pipeline(bytes: &[u8], options: PreviewOptions) -> Result<Pipe
         block_types: analysis.block_types(),
         symbols: analysis.symbol_infos(),
     };
-    Ok(PipelineRun {
+    PipelineRun {
         preview,
         analysis,
         content_hash,
         codegen_options,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -361,5 +433,42 @@ mod tests {
         assert!(two_text.contains("\n  std::cout"), "{two_text}");
         assert!(!two_text.contains("\n    std::cout"), "{two_text}");
         assert_eq!(four.content_hash, two.content_hash);
+    }
+
+    #[test]
+    fn update_is_the_preview_with_the_hash_of_the_canonical_text() {
+        let update = update_document(HELLO, &PreviewOptions::default());
+        assert_eq!(
+            update.preview,
+            preview_document(HELLO, &PreviewOptions::default())
+        );
+        let canonical = canonical_document(HELLO).unwrap();
+        let expected = b2c_model::hex(&Sha256::digest(HELLO.as_bytes()));
+        assert_eq!(canonical.text_hash, expected);
+        assert_eq!(text_hash(&canonical.text), expected);
+        assert_eq!(update.text_hash, Some(expected));
+        assert_eq!(update.preview.content_hash, Some(canonical.hash));
+    }
+
+    #[test]
+    fn the_text_hash_covers_the_layout_and_the_content_hash_does_not() {
+        let moved = HELLO.replacen("\"x\": ", "\"x\": 1", 1);
+        assert_ne!(moved, HELLO, "hello_world has no block position to move");
+        let before = update_document(HELLO, &PreviewOptions::default());
+        let after = update_document(&moved, &PreviewOptions::default());
+        assert_eq!(before.preview.content_hash, after.preview.content_hash);
+        assert_ne!(before.text_hash, after.text_hash);
+        assert_eq!(
+            after.text_hash,
+            Some(canonical_document(&moved).unwrap().text_hash)
+        );
+    }
+
+    #[test]
+    fn update_of_a_document_that_does_not_load_has_no_text_hash() {
+        let update = update_document("{", &PreviewOptions::default());
+        assert_eq!(update.preview, preview_document("{", &PreviewOptions::default()));
+        assert_eq!(update.preview.stage, Stage::Load);
+        assert!(update.text_hash.is_none());
     }
 }

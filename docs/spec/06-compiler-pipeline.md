@@ -580,6 +580,17 @@ severity: `W0510` set to `error` is still `W0510`.
 * **Size budget:** at most 2,000,000 bytes after `wasm-opt -Oz`, checked in
   CI; the gzip size is reported only.
 * Modules over 2,000 blocks run analysis in a Web Worker.
+* **In M2** each debounced change runs one `update()` in WebAssembly: the
+  document is loaded and hashed once, and the preview and hash are
+  returned; the canonical text is produced on demand (save, build, autosave,
+  recovery), and the dirty flag compares hashes. The hash the dirty flag
+  compares is the SHA-256 of the canonical text, not the content hash of
+  [05 §5.11](05-project-format.md#511-content-hash), so moving a block, which
+  changes only the layout, is still an unsaved change. A document that does
+  not load keeps the analysis of the last one that did, which the editor
+  still shows. N4 covers the compiler core; what the user waits for also
+  includes Blockly's rendering, which N12 bounds and the edit benchmark
+  measures.
 * **In M2** the analysis runs on the main thread, for the whole module on
   each debounced change, behind an asynchronous API. The per-block cache and
   the Web Worker come in M5, or earlier if the 1,000-block benchmark in the

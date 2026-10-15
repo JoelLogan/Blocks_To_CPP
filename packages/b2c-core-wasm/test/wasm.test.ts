@@ -3,6 +3,7 @@
 // Without a build these tests are skipped, unless B2C_REQUIRE_WASM is set (as in CI), in which
 // case a missing build fails them.
 
+import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -37,6 +38,17 @@ const exampleNames = readdirSync(examplesDir)
 
 const exampleText = (name: string) => readFileSync(`${examplesDir}/${name}.b2c`, 'utf8');
 const codes = (diagnostics: Diagnostic[]) => diagnostics.map((d) => d.code);
+/** The SHA-256 of a text's UTF-8 bytes, as 64 lower-case hex digits. */
+const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
+
+/** The bytes as text (a byte order mark kept), or `null` when they are not UTF-8. */
+function utf8(bytes: Uint8Array): string | null {
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
 
 interface SecurityCase {
   file: string;
@@ -106,7 +118,7 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
 
   it.each(exampleNames)('previews %s exactly as the build generates it', (name) => {
     const golden = readFileSync(repo(`tests/golden/${name}/main.cpp`), 'utf8');
-    const preview = core.preview(exampleText(name), { indentWidth: 4 });
+    const preview = core.update(exampleText(name), { indentWidth: 4 });
     expect(preview.stage).toBe('generate');
     expect(preview.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
     expect(preview.buildable).toBe(true);
@@ -120,6 +132,9 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     );
     const saved = core.canonical(exampleText(name));
     expect(saved.ok && preview.contentHash === saved.hash).toBe(true);
+    // One load gives both hashes: the text hash is canonical()'s, the SHA-256 of the file text.
+    expect(saved.ok && preview.textHash === saved.textHash).toBe(true);
+    expect(preview.textHash).toBe(sha256(exampleText(name)));
     // Scope data of the program (the exact values are checked natively and in
     // scope-clipboard.test.ts): static types, and symbols sorted by name.
     const types = ['void', 'bool', 'char', 'int', 'double', 'string', 'error'];
@@ -134,7 +149,7 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
   });
 
   it('indents with two spaces when asked', () => {
-    const preview = core.preview(exampleText('hello_world'), { indentWidth: 2 });
+    const preview = core.update(exampleText('hello_world'), { indentWidth: 2 });
     expect(preview.files[0]?.contents).toContain('\n  std::cout');
   });
 
@@ -147,7 +162,7 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
       throw new Error('hello_world has changed shape');
     }
     print.inputs = { ITEM0: { expr: [{ ref: 'sym_gone' }] } };
-    const preview = core.preview(JSON.stringify(document), { indentWidth: 4 });
+    const preview = core.update(JSON.stringify(document), { indentWidth: 4 });
     expect(preview.stage).toBe('analyze');
     expect(codes(preview.diagnostics)).toContain('B2C-E0201');
     expect(preview.buildable).toBe(false);
@@ -168,16 +183,31 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
       if (saved.ok && direct.ok) {
         expect(saved.text === direct.text).toBe(true);
         expect(saved.hash).toBe(direct.hash);
+        expect(saved.textHash).toBe(direct.textHash);
+        expect(saved.textHash).toBe(sha256(saved.text));
       }
-      const preview = core.preview(JSON.stringify(loaded.document), { indentWidth: 4 });
+      const preview = core.update(JSON.stringify(loaded.document), { indentWidth: 4 });
       expect(preview.stage).not.toBe('load');
       expect(preview.files.length).toBeGreaterThan(0);
+      expect(saved.ok && preview.textHash === saved.textHash).toBe(true);
+      expect(saved.ok && preview.contentHash === saved.hash).toBe(true);
     } else {
       expect(loaded.ok).toBe(false);
       expect([...new Set(codes(loaded.diagnostics))].sort()).toEqual([...loader].sort());
       for (const diagnostic of loaded.diagnostics) {
         expect(diagnostic.severity).toBe('error');
         expect(diagnostic.source).toBe('loader');
+      }
+      // Text the loader refuses has neither hash, and the loader's problems (the string exports
+      // see the same text only when the file is UTF-8: a JavaScript string cannot hold invalid
+      // UTF-8).
+      const text = utf8(bytes);
+      if (text !== null) {
+        const update = core.update(text, { indentWidth: 4 });
+        expect(update.stage).toBe('load');
+        expect(update.textHash).toBeNull();
+        expect(update.contentHash).toBeNull();
+        expect(update.diagnostics).toEqual(loaded.diagnostics);
       }
     }
   });
@@ -282,14 +312,14 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     for (const result of [
       core.canonical(text),
       core.load(new TextEncoder().encode(text)),
-      core.preview(text, { indentWidth: 4 }),
+      core.update(text, { indentWidth: 4 }),
     ]) {
       expect(codes(result.diagnostics)).toEqual(['B2C-E0101']);
     }
   });
 
   it('refuses invalid preview options with CoreError', () => {
-    expect(() => core.preview('{}', { indentWidth: 3 } as unknown as { indentWidth: 4 })).toThrow(
+    expect(() => core.update('{}', { indentWidth: 3 } as unknown as { indentWidth: 4 })).toThrow(
       CoreError,
     );
     // The instance keeps working.
@@ -302,7 +332,7 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
       expect(loaded.ok).toBe(false);
       expect(loaded.diagnostics.length).toBeGreaterThan(0);
       expect(core.canonical(text).ok).toBe(false);
-      const preview = core.preview(text, { indentWidth: 2 });
+      const preview = core.update(text, { indentWidth: 2 });
       expect(preview.stage).toBe('load');
       expect(preview.files).toEqual([]);
       expect(preview.sourceMap).toBeNull();
@@ -313,7 +343,7 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     const other = await initCoreFromBytes(new Uint8Array(readFileSync(builtModule)));
     expect(other).not.toBe(core);
     const text = exampleText('guessing_game');
-    expect(other.preview(text, { indentWidth: 4 })).toEqual(core.preview(text, { indentWidth: 4 }));
+    expect(other.update(text, { indentWidth: 4 })).toEqual(core.update(text, { indentWidth: 4 }));
   });
 
   it('starts a fresh working instance after resetCore', async () => {

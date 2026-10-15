@@ -9,8 +9,7 @@
  *
  * - with the C++ panel folded, `webview.preview-1000.p95` (gated): the preview pipeline's own
  *   task, found as the long task after which the edit is in the C++: reading the canvas,
- *   `canonical()` and `preview()` in WebAssembly, and storing the result (N4's update, as the
- *   editor runs it);
+ *   `update()` in WebAssembly (N4's update, as the editor runs it), and storing the result;
  * - with the C++ panel shown, as the editor starts, `webview.edit-1000.p95` (gated): from the
  *   edit until the page has finished what it started (Blockly's re-rendering of the edited stack,
  *   the preview, the C++ panel's update; the page has then run no long task for 300 ms), less the
@@ -131,7 +130,7 @@ describe('webview benchmark: the live preview and edits at 1,000 blocks', () => 
         unit: 'ms',
         better: 'lower',
         gate: true,
-        description: `Preview pipeline task (canvas, canonical, preview, store) at 1,000 blocks; ${per}`,
+        description: `Preview pipeline task (canvas, update, store) at 1,000 blocks; ${per}`,
         samples: preview.samples,
       });
       writeMetric({

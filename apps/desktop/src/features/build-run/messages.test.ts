@@ -66,9 +66,12 @@ describe('documentToBuild', () => {
     ).toBeNull();
   });
 
-  it('uses the store without the editor or the core', () => {
-    useAppStore.getState().actions.setProject(projectFixture({ canonicalText: '{"x":1}' }));
-    const stored = { kind: 'document', document: { text: '{"x":1}', hash: 'a'.repeat(64) } };
+  it('sends the store’s document as its JSON text when no core can write it', () => {
+    useAppStore.getState().actions.setProject(projectFixture());
+    const stored = {
+      kind: 'document',
+      document: { text: JSON.stringify(projectFixture().document), hash: 'a'.repeat(64) },
+    };
     expect(documentToBuild({ store: useAppStore, editor: () => null, core: () => null })).toEqual(
       stored,
     );
@@ -77,8 +80,26 @@ describe('documentToBuild', () => {
     );
   });
 
+  it('writes the store’s document as canonical text through the core without the editor', () => {
+    const named = documentFixture('Stored');
+    useAppStore.getState().actions.setProject(projectFixture({ document: named }));
+    const canonical = vi.fn(() => ({
+      ok: true,
+      text: '{"canonical":true}',
+      hash: 'c'.repeat(64),
+      textHash: 'd'.repeat(64),
+      diagnostics: [],
+    }));
+    const core = { canonical } as unknown as CoreWasm;
+    expect(documentToBuild({ store: useAppStore, editor: () => null, core: () => core })).toEqual({
+      kind: 'document',
+      document: { text: '{"canonical":true}', hash: 'c'.repeat(64) },
+    });
+    expect(canonical).toHaveBeenCalledWith(JSON.stringify(named));
+  });
+
   it('reads the canvas now, through the core', () => {
-    useAppStore.getState().actions.setProject(projectFixture({ canonicalText: '{"x":1}' }));
+    useAppStore.getState().actions.setProject(projectFixture());
     const core = {
       canonical: () => ({ ok: true, text: '{"x":3}', hash: 'c'.repeat(64), document: {} }),
     } as unknown as CoreWasm;
@@ -90,9 +111,9 @@ describe('documentToBuild', () => {
     );
   });
 
-  it('does not fall back to the stored text when the loader refuses the canvas', () => {
+  it('does not fall back to the stored document when the loader refuses the canvas', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    useAppStore.getState().actions.setProject(projectFixture({ canonicalText: '{"x":1}' }));
+    useAppStore.getState().actions.setProject(projectFixture());
     const diagnostics = [
       {
         code: 'B2C-E0104',
@@ -119,7 +140,7 @@ describe('documentToBuild', () => {
 
   it('falls back to the store when reading the canvas throws, logging no project text', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    useAppStore.getState().actions.setProject(projectFixture({ canonicalText: '{"x":2}' }));
+    useAppStore.getState().actions.setProject(projectFixture());
     const core = {
       canonical: () => {
         throw new TypeError('trap with "secret" text');
@@ -128,9 +149,10 @@ describe('documentToBuild', () => {
     expect(documentToBuild({ store: useAppStore, editor: () => editor, core: () => core })).toEqual(
       {
         kind: 'document',
-        document: { text: '{"x":2}', hash: 'a'.repeat(64) },
+        document: { text: JSON.stringify(projectFixture().document), hash: 'a'.repeat(64) },
       },
     );
     expect(warn).toHaveBeenCalledWith(expect.any(String), { name: 'TypeError' });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('secret');
   });
 });

@@ -93,10 +93,12 @@ project, build, run, toolchain, settings, trust and recovery services:
   types, values a field would change, inputs the mutator state lacks, misplaced shapes, newer
   versions) become placeholders that keep their data verbatim, so saving an unchanged project is
   byte-identical. Blockly's own serialisation and variable model are never persisted.
-- **Preview** (`preview/`): 50 ms after the last change the session reads the canvas, runs the
-  core's `canonical()` (project text, hash, dirty) and `preview()` (analysis, C++); stale results
-  are dropped; a WASM trap replaces the core and sets the notice `trapRecovered`; a document that
-  does not load keeps the last preview and sets `syncFailed`.
+- **Preview** (`preview/`): 50 ms after the last change the session reads the canvas and runs the
+  core's `update()` once (one load: the analysis, C++, the content hash and the hash of the
+  canonical text, which `dirty` compares with the saved text's); the text itself is made only to
+  save, build or autosave; stale results are dropped; a WASM trap replaces the core and sets the
+  notice `trapRecovered`; a document that does not load keeps the last preview and sets
+  `syncFailed`.
 - **Duplicates** (`sync/duplicates.ts`): blocks Blockly creates (duplicate, paste, toolbox drags,
   redo) get fresh symbol IDs where theirs are already declared, so B2C-E0114/E0115 cannot occur.
 - **Opening** (`load.ts`): `openDocumentInEditor` loads backend text through the core's loader
@@ -196,7 +198,8 @@ project, build, run, toolchain, settings, trust and recovery services:
 ([§4.5](../../docs/spec/04-user-interface.md), [02 §2.4.2–§2.4.3](../../docs/spec/02-architecture.md)):
 
 - **Build** (`build.start`, `Ctrl+B`) sends `build_start` with the project's canonical BDM text
-  (read from the canvas through the core's `canonical()` at that moment, else the store's text)
+  (read from the canvas through the core's `canonical()` at that moment, else the store's
+  document)
   and the session's Debug/Release choice. Its channel fills `store.build` (progress, diagnostics,
   one `finished`) and the Build output tab: progress, toolchain notes (`B2C-T1011`–`T1013`), the
   compiler's own text and how the build ended. A `C:` error from blocks that are not Raw C++ is
@@ -254,9 +257,9 @@ project, build, run, toolchain, settings, trust and recovery services:
 ### Recovery and outside changes (milestone M2)
 
 - **Autosave** (`src/features/recovery/autosave.ts`): while the open project has unsaved
-  changes, its canonical text goes to the backend as a recovery snapshot (`recovery_save`) every
-  30 s and when the window loses focus; never twice the same text, one call at a time, failures
-  logged by code only. The backend keeps snapshots in its recovery folder, never next to the
+  changes, its canonical text (made by the core's `canonical()` when a snapshot is due) goes to
+  the backend as a recovery snapshot (`recovery_save`) every 30 s and when the window loses focus;
+  never twice the same text, one call at a time, failures logged by code only. The backend keeps snapshots in its recovery folder, never next to the
   project, and deletes them on a clean save or close.
 - **Restore or discard** (`RecoveryOffer.tsx`, a start page section): at start-up the snapshots
   of instances that are no longer running (`recovery_list`) are listed with _Restore_ and

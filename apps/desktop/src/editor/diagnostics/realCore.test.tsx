@@ -79,7 +79,7 @@ function danglingReference(): BdmDocument {
 }
 
 function previewOf(doc: BdmDocument): PreviewResult {
-  return core.preview(JSON.stringify(doc), { indentWidth: 4 });
+  return core.update(JSON.stringify(doc), { indentWidth: 4 });
 }
 
 /** Opens `doc` with `preview` in the store and builds its canvas. */

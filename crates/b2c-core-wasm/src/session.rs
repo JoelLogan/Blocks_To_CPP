@@ -1,19 +1,21 @@
 //! The state the exports keep between calls: the analysis behind the last
-//! preview.
+//! update.
 //!
-//! The editor previews after every edit (debounced) and then asks about the
-//! same document many times: the symbols for a dropdown, the code of the
-//! blocks being copied. A [`Session`] keeps the last preview's analysis, so
-//! those answers never re-run the pipeline. The WebAssembly exports use one
-//! session per instance (a thread-local in `lib.rs`); native callers and
-//! tests create their own.
+//! The editor runs [`Session::update`] after every edit (debounced) and then
+//! asks about the same document many times: the symbols for a dropdown, the
+//! code of the blocks being copied. A [`Session`] keeps the last update's
+//! analysis, so those answers never re-run the pipeline. The WebAssembly
+//! exports use one session per instance (a thread-local in `lib.rs`); native
+//! callers and tests create their own.
 //!
-//! What is kept is the analysis of the last **successful** load: a preview
-//! whose document did not load forgets it, so the scope query has no answer
-//! (`None`, `null` from the export) until the next good preview. The clipboard functions are given the
-//! document they work on; they use the kept analysis only when that
-//! document has the same content hash (05 §5.11) as the previewed one, and
-//! otherwise analyse it themselves, so they are always right about the
+//! What is kept is the analysis of the last document that **loaded**: an
+//! update whose document does not load keeps it, just as the editor keeps
+//! showing the last good preview then (06 §6.13), so the scope query answers
+//! about the document on screen; before the first good update it has no
+//! answer (`None`, `null` from the export). The clipboard functions are
+//! given the document they work on; they use the kept analysis only when
+//! that document has the same content hash (05 §5.11) as the previewed one,
+//! and otherwise analyse it themselves, so they are always right about the
 //! document they were given.
 
 use std::borrow::Cow;
@@ -26,11 +28,11 @@ use b2c_model::{Block, Document};
 use crate::args::PasteTarget;
 use crate::clipboard::{self, Unresolved};
 use crate::error::{FacadeError, Failure};
-use crate::facade::{self, Preview};
+use crate::facade::{self, Preview, Update};
 use crate::options::PreviewOptions;
 use crate::scope;
 
-/// What a session keeps from the last preview.
+/// What a session keeps from the last update whose document loaded.
 #[derive(Debug, Clone)]
 struct LastPreview {
     /// The content hash of the previewed document.
@@ -42,7 +44,7 @@ struct LastPreview {
 }
 
 /// One editor's compiler core: the preview and the questions that are
-/// answered from the last preview's analysis.
+/// answered from the last update's analysis.
 #[derive(Debug, Clone, Default)]
 pub struct Session {
     last: Option<LastPreview>,
@@ -91,24 +93,32 @@ impl Session {
         Self::default()
     }
 
-    /// Runs the preview ([`facade::preview_document`]) and keeps its analysis
-    /// for the other questions. A document that does not load clears what
-    /// was kept.
-    pub fn preview(&mut self, document_json: &str, options: &PreviewOptions) -> Preview {
+    /// Loads the document once and returns its preview and the hash of its
+    /// canonical text ([`facade::update_document`]), and keeps its analysis
+    /// for the other questions.
+    ///
+    /// A document that does not load gives the loader's problems and changes
+    /// nothing that was kept: the scope query and the clipboard go on
+    /// answering about the last document that loaded, which is the one the
+    /// editor still shows.
+    pub fn update(&mut self, document_json: &str, options: &PreviewOptions) -> Update {
         self.options = *options;
-        match facade::run_pipeline(document_json.as_bytes(), *options) {
-            Ok(run) => {
+        match facade::run_update(document_json.as_bytes(), *options) {
+            Ok((run, text_hash)) => {
                 self.last = Some(LastPreview {
                     content_hash: run.content_hash,
                     analysis: run.analysis,
                     codegen_options: run.codegen_options,
                 });
-                run.preview
+                Update {
+                    preview: run.preview,
+                    text_hash: Some(text_hash),
+                }
             }
-            Err(error) => {
-                self.last = None;
-                Preview::load_failed(error.diagnostics)
-            }
+            Err(error) => Update {
+                preview: Preview::load_failed(error.diagnostics),
+                text_hash: None,
+            },
         }
     }
 

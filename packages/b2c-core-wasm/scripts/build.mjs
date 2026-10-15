@@ -47,8 +47,8 @@ const EXPECTED_EXPORTS = [
   'export function conversion_table(): string;',
   'export function load(bytes: Uint8Array): string;',
   'export function paste_prepare(clipboard_text: string, document_json: string, target_json: string, seed_hex: string): string;',
-  'export function preview(document_json: string, options_json: string): string;',
   'export function symbols_in_scope(block_id: string, input?: string | null): string;',
+  'export function update(document_json: string, options_json: string): string;',
   'export function version(): string;',
 ];
 const EXPORTED_FUNCTIONS = [
@@ -57,8 +57,8 @@ const EXPORTED_FUNCTIONS = [
   'conversion_table',
   'load',
   'paste_prepare',
-  'preview',
   'symbols_in_scope',
+  'update',
   'version',
 ];
 

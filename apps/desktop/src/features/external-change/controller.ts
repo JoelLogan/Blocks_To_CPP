@@ -345,7 +345,7 @@ export class ExternalChangeController {
     }
     this.ctx.store
       .getState()
-      .actions.updateProject({ trust: response.trust, savedCanonicalText: null, dirty: true });
+      .actions.updateProject({ trust: response.trust, savedTextHash: null, dirty: true });
     try {
       await this.ctx.ipc.projectSetDirty({ handle, dirty: true });
     } catch (error: unknown) {

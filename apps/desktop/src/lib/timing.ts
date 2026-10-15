@@ -8,9 +8,10 @@
  * - `b2c:preview`: one run of the preview pipeline, from reading the canvas to storing the
  *   preview and relabelling the canvas. Its phases are spans too:
  *   - `b2c:preview:read`: reading the document from the canvas and serialising it;
- *   - `b2c:preview:canonical`: the compiler core's `canonical()`;
+ *   - `b2c:preview:update`: the compiler core's `update()`, which loads, hashes, analyses and
+ *     generates once (before it existed, `b2c:preview:canonical` and `b2c:preview:analyse` timed
+ *     the core's `canonical()` and `preview()`, each of which loaded the document);
  *   - `b2c:preview:commit`: storing the edit, with what the store's subscribers do at once;
- *   - `b2c:preview:analyse`: the compiler core's `preview()`;
  *   - `b2c:preview:publish`: storing the preview and relabelling the canvas, with what the
  *     store's subscribers do at once.
  * - `b2c:toolbox-refresh`: rebuilding the continuous toolbox's flyout (src/editor/toolbox/
@@ -33,9 +34,8 @@
 export const TIMING_SPANS = [
   'b2c:preview',
   'b2c:preview:read',
-  'b2c:preview:canonical',
+  'b2c:preview:update',
   'b2c:preview:commit',
-  'b2c:preview:analyse',
   'b2c:preview:publish',
   'b2c:toolbox-refresh',
   'b2c:select',

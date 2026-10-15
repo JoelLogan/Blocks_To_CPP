@@ -16,7 +16,7 @@ function namedCore(name: string): CoreWasm {
     version: answer('version'),
     load: answer('load'),
     canonical: answer('canonical'),
-    preview: answer('preview'),
+    update: answer('update'),
     symbolsInScope: answer('symbolsInScope'),
     conversionTable: answer('conversionTable'),
     clipboardMake: answer('clipboardMake'),
@@ -93,7 +93,7 @@ describe('the live core', () => {
       live.version(),
       live.load(bytes),
       live.canonical('{}'),
-      live.preview('{}', { indentWidth: 2 }),
+      live.update('{}', { indentWidth: 2 }),
       live.symbolsInScope('b1', null),
       live.conversionTable(),
       live.clipboardMake('{}', ['b1']),
@@ -103,7 +103,7 @@ describe('the live core', () => {
       'version',
       'load',
       'canonical',
-      'preview',
+      'update',
       'symbolsInScope',
       'conversionTable',
       'clipboardMake',
@@ -115,7 +115,7 @@ describe('the live core', () => {
 });
 
 describe('the main-thread preview service', () => {
-  it('starts the core if needed and previews with it', async () => {
+  it('starts the core if needed and updates with it', async () => {
     const core = namedCore('previewer');
     const host = createCoreHost({
       initCore: () => Promise.resolve(core),
@@ -123,10 +123,10 @@ describe('the main-thread preview service', () => {
       getCore,
       setCore,
     });
-    const result = (await mainThreadPreviewService(host).preview('{"a":1}', {
+    const result = (await mainThreadPreviewService(host).update('{"a":1}', {
       indentWidth: 4,
     })) as unknown as { method: string; args: unknown[] };
-    expect(result.method).toBe('preview');
+    expect(result.method).toBe('update');
     expect(result.args).toEqual(['{"a":1}', { indentWidth: 4 }]);
   });
 });

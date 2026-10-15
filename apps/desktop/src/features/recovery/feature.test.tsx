@@ -3,13 +3,14 @@
  * the start page through `registerStartPageSection`, runs autosave against the window's `blur`,
  * and takes all of that away again when uninstalled.
  */
+import type { CanonicalResult, CoreWasm } from '@blocks2cpp/b2c-core-wasm';
 import { act, render, screen } from '@testing-library/react';
 import type { ComponentType } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { installAll } from '../../app/features';
+import { type FeatureContext, installAll } from '../../app/features';
 import { useAppStore } from '../../app/store';
-import { projectFixture } from '../../app/testing/fixtures';
+import { documentFixture, projectFixture } from '../../app/testing/fixtures';
 import { AUTOSAVE_INTERVAL_MS } from './autosave';
 import {
   createRecoveryFeature,
@@ -30,6 +31,23 @@ interface Section {
 let harness: Harness;
 let sections: Section[];
 let register: RegisterStartPageSection;
+
+/**
+ * The harness's feature context with a stand-in compiler core whose canonical text of a document
+ * is its JSON text: what autosave writes snapshots with.
+ */
+function withTextCore(): FeatureContext {
+  const core = {
+    canonical: (json: string): CanonicalResult => ({
+      ok: true,
+      text: json,
+      hash: 'a'.repeat(64),
+      textHash: json,
+      diagnostics: [],
+    }),
+  } as unknown as CoreWasm;
+  return { ...harness.ctx, core: () => core };
+}
 
 beforeEach(() => {
   harness = createHarness();
@@ -74,7 +92,7 @@ describe('the recovery feature', () => {
 
   it('writes a snapshot when the window loses focus, until it is uninstalled', async () => {
     const target = new EventTarget();
-    const feature = installRecoveryFeature(harness.ctx, {
+    const feature = installRecoveryFeature(withTextCore(), {
       project: projectQueue(harness),
       registerStartPageSection: register,
       window: target,
@@ -82,18 +100,18 @@ describe('the recovery feature', () => {
     useAppStore
       .getState()
       .actions.setProject(
-        projectFixture({ handle: HANDLE_A, dirty: true, canonicalText: '{"a":1}' }),
+        projectFixture({ handle: HANDLE_A, dirty: true, document: documentFixture('A 1') }),
       );
     target.dispatchEvent(new Event('blur'));
     await vi.waitFor(() => {
       expect(harness.ipc.recoverySave).toHaveBeenCalledWith({
         handle: HANDLE_A,
-        document: '{"a":1}',
+        document: JSON.stringify(documentFixture('A 1')),
       });
     });
 
     feature.uninstall();
-    useAppStore.getState().actions.updateProject({ canonicalText: '{"a":2}' });
+    useAppStore.getState().actions.updateProject({ document: documentFixture('A 2') });
     target.dispatchEvent(new Event('blur'));
     await act(() => Promise.resolve());
     expect(harness.ipc.recoverySave).toHaveBeenCalledTimes(1);
@@ -101,7 +119,7 @@ describe('the recovery feature', () => {
 
   it('autosaves with the interval it is given', async () => {
     vi.useFakeTimers();
-    const feature = installRecoveryFeature(harness.ctx, {
+    const feature = installRecoveryFeature(withTextCore(), {
       project: projectQueue(harness),
       registerStartPageSection: register,
       window: null,
@@ -170,7 +188,7 @@ describe('the recovery feature', () => {
           };
         }),
     );
-    const feature = installRecoveryFeature(harness.ctx, { window: null, project });
+    const feature = installRecoveryFeature(withTextCore(), { window: null, project });
     useAppStore.getState().actions.setProject(projectFixture({ handle: HANDLE_A, dirty: true }));
     expect(barriers).toHaveLength(1);
 
@@ -188,7 +206,7 @@ describe('the recovery feature', () => {
 
     // While the save runs, no snapshot starts.
     saving = true;
-    useAppStore.getState().actions.updateProject({ canonicalText: '{"edited":true}' });
+    useAppStore.getState().actions.updateProject({ document: documentFixture('Edited') });
     await feature.autosave.snapshotNow();
     expect(harness.ipc.recoverySave).toHaveBeenCalledTimes(1);
 

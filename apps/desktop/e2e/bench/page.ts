@@ -164,7 +164,7 @@ export type EditResult =
       readonly seen: number;
       /**
        * The long task that ended just before {@link seen}: the preview pipeline's run (reading the
-       * canvas, `canonical()` and `preview()` in WebAssembly, storing the result). `null` when no
+       * canvas, `update()` in WebAssembly, storing the result). `null` when no
        * task of at least the given length ran then.
        */
       readonly task: PageTask | null;

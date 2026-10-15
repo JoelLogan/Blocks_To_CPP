@@ -46,6 +46,18 @@ import {
 let core: CoreWasm;
 let harness: Harness;
 
+/**
+ * The hash of the hello-world file's text, which is saved canonically: the `textHash` of what the
+ * editor shows when it opens the file, and of what a save writes.
+ */
+function helloHash(): string {
+  const canonical = core.canonical(HELLO_TEXT);
+  if (!canonical.ok || canonical.text !== HELLO_TEXT) {
+    throw new Error('hello world is not saved canonically');
+  }
+  return canonical.textHash;
+}
+
 beforeAll(async () => {
   if (CORE_BUILT) {
     core = await realCore();
@@ -205,8 +217,8 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       const shown = project();
       expect(shown.handle).toBe(HANDLE_B);
       expect(shown.fileName).toBe('hello.b2c');
-      expect(shown.canonicalText).toBe(HELLO_TEXT);
-      expect(shown.savedCanonicalText).toBe(HELLO_TEXT);
+      expect(shown.textHash).toBe(helloHash());
+      expect(shown.savedTextHash).toBe(helloHash());
       expect(shown.dirty).toBe(false);
       expect(harness.ipc.projectClose).toHaveBeenCalledExactlyOnceWith({ handle: HANDLE_A });
       expect(useAppStore.getState().ui.screen).toBe('editor');
@@ -238,7 +250,7 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
         'Some blocks in “old.b2c” were made by an older version of Blocks2Cpp and have been upgraded, so the project now has unsaved changes. When you save it, the file as it was is kept as “old.b2c.bak”.',
       );
       // The file still holds the old blocks: nothing shown counts as saved.
-      expect(project().savedCanonicalText).toBeNull();
+      expect(project().savedTextHash).toBeNull();
       expect(project().dirty).toBe(true);
       await vi.waitFor(() => {
         expect(harness.ipc.projectSetDirty).toHaveBeenCalledWith({ handle: HANDLE_B, dirty: true });
@@ -477,7 +489,7 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
         expect(request).toEqual({ handle: HANDLE_A, document: HELLO_TEXT });
       }
       const saved = project();
-      expect(saved.savedCanonicalText).toBe(HELLO_TEXT);
+      expect(saved.savedTextHash).toBe(helloHash());
       expect(saved.savedAt).toBe('2026-10-05T10:42:00Z');
       expect(saved.dirty).toBe(false);
     });
@@ -493,7 +505,7 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       const sent = harness.ipc.projectSave.mock.calls[0]?.[0].document ?? '';
       expect(sent).toBe(HELLO_TEXT);
       expect(project().document.generator).toEqual({ app: '0.1.0', catalog: '1.2.0' });
-      expect(project().savedCanonicalText).toBe(HELLO_TEXT);
+      expect(project().savedTextHash).toBe(helloHash());
     });
 
     it('keeps a newer catalog the file names, so its newer blocks stay made by a newer version', async () => {
@@ -520,7 +532,7 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       expect(sent).toContain('"VOLUME": "3"');
       expect(project().document.generator).toEqual({ app: '0.1.0', catalog: '99.0.0' });
       // The preview of what the project now holds still says "made by a newer version".
-      const preview = core.preview(JSON.stringify(project().document), { indentWidth: 4 });
+      const preview = core.update(JSON.stringify(project().document), { indentWidth: 4 });
       const codes = preview.diagnostics.map((diagnostic) => diagnostic.code);
       expect(codes).toContain('B2C-E0602');
       expect(codes).not.toContain('B2C-E0605');
@@ -633,7 +645,7 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       }
       useAppStore.getState().actions.updateProject({
         document: edited,
-        canonicalText: canonical.text,
+        textHash: canonical.textHash,
         contentHash: canonical.hash,
         dirty: true,
       });
@@ -641,7 +653,7 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
 
       expect(await saving).toBe(true);
       const after = project();
-      expect(after.savedCanonicalText).toBe(HELLO_TEXT);
+      expect(after.savedTextHash).toBe(helloHash());
       expect(after.document.project.name).toBe('Edited meanwhile');
       expect(after.dirty).toBe(true);
       expect(after.savedAt).toBe('2026-10-05T10:42:00Z');
@@ -664,9 +676,9 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
         }
         useAppStore.getState().actions.updateProject({
           document: edited,
-          canonicalText: canonical.text,
+          textHash: canonical.textHash,
           contentHash: canonical.hash,
-          dirty: canonical.text !== project().savedCanonicalText,
+          dirty: canonical.textHash !== project().savedTextHash,
         });
       };
       editName('First edit');

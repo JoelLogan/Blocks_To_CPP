@@ -169,11 +169,10 @@ Details of each level as M2 sets them up:
   analyse, generate, and the whole preview) on a generated 1,000-block
   module. Through the E2E harness, the webview benchmarks measure cold start
   to the editor's readiness marker, the p95 of the preview pipeline's task at
-  1,000 blocks (reading the canvas, the compiler core's update in
-  WebAssembly, `canonical()` and `preview()` until a single `update()`
-  export replaces them, and storing the result, found by an in-page
-  heartbeat) and the p95 frame time while dragging in a 5,000-block
-  workspace (one sample is a drag away and back). The edit benchmark
+  1,000 blocks (reading the canvas, `update()` in WebAssembly and storing
+  the result, found by an in-page heartbeat) and the p95 frame time while
+  dragging in a 5,000-block workspace (one sample is a drag away and
+  back). The edit benchmark
   includes Blockly's rendering with the C++ panel open (from an edit until
   the page has finished what it started); selecting blocks in 8 scopes at
   1,000 blocks measures the longest task after a click; a program's output

@@ -12,7 +12,7 @@ import { StatusBar } from '../../app/layout/StatusBar';
 import { useAppStore } from '../../app/store';
 import { HintProvider } from '../../app/ui/Hint';
 import {
-  canonicalText,
+  canonicalOf,
   disposeWorkspaces,
   EXAMPLE_PROJECTS,
   loadText,
@@ -119,7 +119,7 @@ describe.skipIf(core === null)('Reload with the real core', () => {
     const project = present(useAppStore.getState().project, 'the project');
     expect(project.handle).toBe(handle);
     expect(project.document).toEqual(expected);
-    expect(project.canonicalText).toBe(canonicalText(wasm, expected));
+    expect(project.textHash).toBe(canonicalOf(wasm, expected).textHash);
     expect(project.dirty).toBe(false);
     expect(session.workspace.getBlockById('b011')).not.toBeNull();
     expect(session.workspace.getBlockById('b002')?.getCommentText() ?? null).toBeNull();

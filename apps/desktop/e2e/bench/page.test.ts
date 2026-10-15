@@ -290,7 +290,7 @@ describe('EDIT_SCRIPT', () => {
     // one still pending when the marker shows.
     loop.post(() => {
       observers.deliver([
-        { name: 'b2c:preview:analyse', startTime: 360, duration: 40, type: 'measure' },
+        { name: 'b2c:preview:update', startTime: 360, duration: 40, type: 'measure' },
       ]);
       observers.hold([{ name: 'b2c:preview', startTime: 351, duration: 90, type: 'measure' }]);
       observers.deliver([{ name: 'other', startTime: 360, duration: 1, type: 'measure' }]);
@@ -299,7 +299,7 @@ describe('EDIT_SCRIPT', () => {
       PerformanceObserver: observers.constructorFor(),
     });
     expect(result?.kind === 'seen' ? result.spans : null).toEqual([
-      { name: 'b2c:preview:analyse', start: 360, ms: 40 },
+      { name: 'b2c:preview:update', start: 360, ms: 40 },
       { name: 'b2c:preview', start: 351, ms: 90 },
     ]);
     expect(observers.observed).toEqual([['measure']]);

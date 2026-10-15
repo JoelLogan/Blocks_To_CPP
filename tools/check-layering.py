@@ -68,7 +68,7 @@ PURE_CRATES = {
     "b2c-catalog": {"serde", "serde_json", "thiserror", "toml"},
     "b2c-lang": {"serde", "serde_json", "thiserror"},
     "b2c-codegen": {"serde", "thiserror"},
-    "b2c-core-wasm": {"serde", "serde_json", "thiserror", "wasm-bindgen"},
+    "b2c-core-wasm": {"serde", "serde_json", "sha2", "thiserror", "wasm-bindgen"},
 }
 
 

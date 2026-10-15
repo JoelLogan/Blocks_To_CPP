@@ -16,7 +16,7 @@ mod common;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use common::{codes, examples, is_unsafe_to_show, parse, preview, repo_root};
+use common::{assert_update_matches, codes, examples, is_unsafe_to_show, parse, repo_root, update};
 use proptest::prelude::*;
 use proptest::sample::Index;
 use serde_json::{Value, json};
@@ -74,8 +74,9 @@ fn the_malicious_project_suite_through_every_export() {
         let bytes = std::fs::read(suite_dir().join(&case.file)).unwrap();
         let text = String::from_utf8_lossy(&bytes);
         let loaded = parse(&b2c_core_wasm::load(&bytes));
-        let result = preview(&text, 4);
+        let result = update(&text, 4);
         let canonical = parse(&b2c_core_wasm::canonical(&text));
+        assert_update_matches(&text, 4, &result, &case.file);
 
         for diagnostic in result["diagnostics"].as_array().unwrap() {
             assert_text_is_safe(&case.file, "a message", diagnostic["message"].as_str().unwrap());
@@ -151,7 +152,7 @@ fn the_malicious_project_suite_through_scope_and_clipboard() {
         let Ok(text) = String::from_utf8(bytes) else {
             continue;
         };
-        preview(&text, 4);
+        update(&text, 4);
         let made = parse(&b2c_core_wasm::clipboard_make(&text, "[]"));
         if let Some(expected) = &case.loader {
             // Nothing is kept from a document that does not load: no answer.
@@ -218,7 +219,7 @@ fn oversized_input_is_refused_before_parsing() {
     for diagnostics in [
         parse(&b2c_core_wasm::load(text.as_bytes()))["diagnostics"].clone(),
         parse(&b2c_core_wasm::canonical(&text))["diagnostics"].clone(),
-        preview(&text, 2)["diagnostics"].clone(),
+        update(&text, 2)["diagnostics"].clone(),
     ] {
         assert_eq!(codes(&diagnostics), ["B2C-E0101"]);
     }
@@ -233,7 +234,7 @@ fn deep_nesting_is_refused_without_exhausting_the_stack() {
             assert_eq!(loaded["ok"], false);
             assert_eq!(codes(&loaded["diagnostics"]), ["B2C-E0104"], "depth {depth}");
             assert_eq!(parse(&b2c_core_wasm::canonical(&text))["ok"], false);
-            assert_eq!(preview(&text, 4)["stage"], "load");
+            assert_eq!(update(&text, 4)["stage"], "load");
         }
     }
 }
@@ -252,7 +253,8 @@ fn check_all_exports(bytes: &[u8]) -> Result<(), TestCaseError> {
     let loaded = parse(&b2c_core_wasm::load(bytes));
     let text = String::from_utf8_lossy(bytes);
     let canonical = parse(&b2c_core_wasm::canonical(&text));
-    let result = preview(&text, 2);
+    let result = update(&text, 2);
+    assert_update_matches(&text, 2, &result, "generated input");
     let ok = loaded["ok"].as_bool().unwrap();
     prop_assert_eq!(ok, loaded.get("document").is_some());
     if ok {
@@ -401,7 +403,7 @@ proptest! {
         let text = serde_json::to_string(&value).unwrap();
         check_all_exports(text.as_bytes())?;
         for indent in [2, 4] {
-            let result = preview(&text, indent);
+            let result = update(&text, indent);
             for generated in result["files"].as_array().unwrap() {
                 let contents = generated["contents"].as_str().unwrap();
                 prop_assert!(contents.ends_with('\n'));
@@ -443,7 +445,7 @@ proptest! {
         }
         let text = serde_json::to_string(&value).unwrap();
         check_all_exports(text.as_bytes())?;
-        let result = preview(&text, 4);
+        let result = update(&text, 4);
         prop_assert_ne!(&result["stage"], &json!("load"), "{}", result["diagnostics"]);
         prop_assert!(!result["files"].as_array().unwrap().is_empty());
         let found = codes(&result["diagnostics"]);
@@ -454,7 +456,7 @@ proptest! {
 
     #[test]
     fn preview_options_never_panic(options in "\\PC{0,64}") {
-        let output = b2c_core_wasm::preview("{}", &options);
+        let output = b2c_core_wasm::update("{}", &options);
         let result = parse(&output);
         if result.get("error").is_some() {
             prop_assert_eq!(&result["error"]["kind"], &json!("invalidOptions"));

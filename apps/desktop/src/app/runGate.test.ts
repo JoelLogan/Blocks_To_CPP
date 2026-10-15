@@ -138,7 +138,7 @@ describe.skipIf(core === null)('runGate with the compiler core', () => {
       x: 400,
       y: 40,
     });
-    const preview = core?.preview(JSON.stringify(doc), { indentWidth: 4 });
+    const preview = core?.update(JSON.stringify(doc), { indentWidth: 4 });
     expect(preview?.diagnostics.map((d) => [d.code, d.severity])).toEqual([
       ['B2C-W0505', 'warning'],
     ]);

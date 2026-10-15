@@ -7,8 +7,10 @@
  * const core = await initCore();
  * const loaded = core.load(bytes);
  * if (loaded.ok) {
- *   const preview = core.preview(JSON.stringify(loaded.document), { indentWidth: 4 });
- *   const visible = core.symbolsInScope('b005', null); // from that preview's analysis
+ *   const json = JSON.stringify(loaded.document);
+ *   const update = core.update(json, { indentWidth: 4 }); // the preview and update.textHash
+ *   const visible = core.symbolsInScope('b005', null); // from that update's analysis
+ *   const saved = core.canonical(json); // the text itself, only to save or build
  * }
  * ```
  *
@@ -31,6 +33,7 @@ export type {
   PreviewStage,
   StaticConversion,
   UnresolvedRef,
+  UpdateResult,
 } from './api';
 export type {
   BdmBlock,

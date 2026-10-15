@@ -72,8 +72,8 @@ beforeEach(() => {
   harness = createHarness();
   openInEditor = vi.fn((_ctx, args) => {
     useAppStore.getState().actions.updateProject({
-      canonicalText: args.documentText,
-      savedCanonicalText: args.documentText,
+      textHash: `hash of ${args.documentText}`,
+      savedTextHash: `hash of ${args.documentText}`,
       dirty: false,
       trust: args.trust,
     });
@@ -339,7 +339,7 @@ describe('Reload', () => {
       expect(openInEditor).toHaveBeenCalled();
     });
     expect(harness.ipc.projectReload).toHaveBeenCalledWith({ handle: HANDLE_A });
-    expect(useAppStore.getState().project?.canonicalText).toBe('{"reloaded":true}');
+    expect(useAppStore.getState().project?.textHash).toBe('hash of {"reloaded":true}');
   });
 
   it('explains a failed reload only once the reload has left the queue', async () => {
@@ -439,7 +439,7 @@ describe('Reload', () => {
     // The backend now enforces the reloaded file's trust, and the blocks differ from the file.
     expect(project?.trust).toEqual(CHANGED_OUTSIDE);
     expect(project?.dirty).toBe(true);
-    expect(project?.savedCanonicalText).toBeNull();
+    expect(project?.savedTextHash).toBeNull();
     expect(harness.ipc.projectSetDirty).toHaveBeenCalledWith({ handle: HANDLE_A, dirty: true });
     await settled();
 

@@ -91,9 +91,9 @@ function edit(name: string): void {
   }
   useAppStore.getState().actions.updateProject({
     document: changed,
-    canonicalText: canonical.text,
+    textHash: canonical.textHash,
     contentHash: canonical.hash,
-    dirty: canonical.text !== project.savedCanonicalText,
+    dirty: canonical.textHash !== project.savedTextHash,
   });
 }
 

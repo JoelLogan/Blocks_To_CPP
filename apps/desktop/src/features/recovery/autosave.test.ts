@@ -1,14 +1,14 @@
 /**
- * Autosave with fake timers and a fake backend: a recovery snapshot every 30 s only while the
- * project has unsaved changes, one when the window loses focus, one call at a time, and quiet
- * failures.
+ * Autosave with fake timers, a fake backend and a stand-in compiler core: a recovery snapshot every
+ * 30 s only while the project has unsaved changes, one when the window loses focus, one call at a
+ * time, the document's canonical text made only when a snapshot is due, and quiet failures.
  */
-import { MAX_DOCUMENT_BYTES } from '@blocks2cpp/b2c-core-wasm';
+import { type CanonicalResult, MAX_DOCUMENT_BYTES } from '@blocks2cpp/b2c-core-wasm';
 import type { IpcClient } from '@blocks2cpp/ipc-types';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { resetAppStore, useAppStore } from '../../app/store';
-import { projectFixture } from '../../app/testing/fixtures';
+import { documentFixture, projectFixture } from '../../app/testing/fixtures';
 import {
   AUTOSAVE_INTERVAL_MS,
   type Autosave,
@@ -18,15 +18,26 @@ import {
 import { HANDLE_A, HANDLE_B, ipcFailure } from './testing';
 
 type RecoverySave = Mock<IpcClient['recoverySave']>;
+type Canonical = Mock<(json: string) => CanonicalResult>;
 
 let recoverySave: RecoverySave;
+/** The stand-in core's `canonical()`: the text and its hash are made from the JSON it is given. */
+let canonical: Canonical;
+/** Whether a core is running. */
+let coreRunning: boolean;
 let autosave: Autosave | null = null;
 const blurTarget = new EventTarget();
+
+/** The canonical text the stand-in core writes for the document named `name`. */
+function textOf(name: string): string {
+  return `canonical ${JSON.stringify(documentFixture(name))}`;
+}
 
 function start(intervalMs?: number, isPaused?: () => boolean): Autosave {
   autosave = startAutosave({
     store: useAppStore,
     ipc: { recoverySave },
+    core: () => (coreRunning ? { canonical } : null),
     window: blurTarget,
     ...(intervalMs === undefined ? {} : { intervalMs }),
     ...(isPaused === undefined ? {} : { isPaused }),
@@ -38,13 +49,13 @@ function open(overrides: Parameters<typeof projectFixture>[0] = {}): void {
   useAppStore
     .getState()
     .actions.setProject(
-      projectFixture({ handle: HANDLE_A, canonicalText: '{"v":0}', ...overrides }),
+      projectFixture({ handle: HANDLE_A, document: documentFixture('Draft 0'), ...overrides }),
     );
 }
 
-/** An edit: new canonical text, unsaved. */
-function edit(text: string): void {
-  useAppStore.getState().actions.updateProject({ canonicalText: text, dirty: true });
+/** An edit: the document named `name`, unsaved (a new document object, as the pipeline makes). */
+function edit(name: string): void {
+  useAppStore.getState().actions.updateProject({ document: documentFixture(name), dirty: true });
 }
 
 function blur(): void {
@@ -55,6 +66,11 @@ beforeEach(() => {
   vi.useFakeTimers();
   resetAppStore();
   recoverySave = vi.fn<IpcClient['recoverySave']>(() => Promise.resolve({}));
+  canonical = vi.fn((json: string): CanonicalResult => {
+    const text = `canonical ${json}`;
+    return { ok: true, text, hash: 'a'.repeat(64), textHash: `hash of ${text}`, diagnostics: [] };
+  });
+  coreRunning = true;
 });
 
 afterEach(() => {
@@ -70,58 +86,97 @@ describe('autosave every 30 seconds', () => {
     await vi.advanceTimersByTimeAsync(3 * AUTOSAVE_INTERVAL_MS);
     expect(recoverySave).not.toHaveBeenCalled();
 
-    edit('{"v":1}');
+    edit('Draft 1');
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS - 1);
     expect(recoverySave).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(recoverySave).toHaveBeenCalledTimes(1);
-    expect(recoverySave).toHaveBeenLastCalledWith({ handle: HANDLE_A, document: '{"v":1}' });
+    expect(recoverySave).toHaveBeenLastCalledWith({
+      handle: HANDLE_A,
+      document: textOf('Draft 1'),
+    });
 
-    edit('{"v":2}');
+    edit('Draft 2');
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
     expect(recoverySave).toHaveBeenCalledTimes(2);
-    expect(recoverySave).toHaveBeenLastCalledWith({ handle: HANDLE_A, document: '{"v":2}' });
+    expect(recoverySave).toHaveBeenLastCalledWith({
+      handle: HANDLE_A,
+      document: textOf('Draft 2'),
+    });
 
     // Saved: no unsaved changes, so the timer stops.
     useAppStore.getState().actions.updateProject({
       dirty: false,
-      savedCanonicalText: '{"v":2}',
+      savedTextHash: 'saved 2',
       savedAt: '2026-10-05T11:00:00Z',
     });
     await vi.advanceTimersByTimeAsync(5 * AUTOSAVE_INTERVAL_MS);
     expect(recoverySave).toHaveBeenCalledTimes(2);
   });
 
+  it('sends the canonical text the core writes for the project’s document, made when it is due', async () => {
+    open();
+    start();
+    edit('Draft 1');
+    edit('Draft 2');
+    // Edits alone ask the core for nothing.
+    expect(canonical).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
+    expect(canonical).toHaveBeenCalledExactlyOnceWith(JSON.stringify(documentFixture('Draft 2')));
+    expect(recoverySave).toHaveBeenCalledExactlyOnceWith({
+      handle: HANDLE_A,
+      document: textOf('Draft 2'),
+    });
+
+    // The same document again: neither the core nor the backend is asked.
+    blur();
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
+    expect(canonical).toHaveBeenCalledTimes(1);
+    expect(recoverySave).toHaveBeenCalledTimes(1);
+
+    // A new document object with the same text: the core is asked, the backend is not.
+    edit('Draft 2');
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
+    expect(canonical).toHaveBeenCalledTimes(2);
+    expect(recoverySave).toHaveBeenCalledTimes(1);
+  });
+
   it('does not write the same text twice, but writes it again after a save', async () => {
-    open({ dirty: true, canonicalText: '{"v":1}' });
+    open({ dirty: true, document: documentFixture('Draft 1') });
     start();
     await vi.advanceTimersByTimeAsync(3 * AUTOSAVE_INTERVAL_MS);
     expect(recoverySave).toHaveBeenCalledTimes(1);
 
     // A save deletes the backend's snapshot; edits made during it keep the project dirty.
     useAppStore.getState().actions.updateProject({
-      savedCanonicalText: '{"v":0}',
+      savedTextHash: 'saved 0',
       savedAt: '2026-10-05T11:00:00Z',
     });
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
     expect(recoverySave).toHaveBeenCalledTimes(2);
-    expect(recoverySave).toHaveBeenLastCalledWith({ handle: HANDLE_A, document: '{"v":1}' });
+    expect(recoverySave).toHaveBeenLastCalledWith({
+      handle: HANDLE_A,
+      document: textOf('Draft 1'),
+    });
   });
 
   it('starts again for another project, with its own handle', async () => {
-    open({ dirty: true, canonicalText: '{"a":1}' });
+    open({ dirty: true, document: documentFixture('Project A') });
     start();
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS / 2);
     useAppStore
       .getState()
       .actions.setProject(
-        projectFixture({ handle: HANDLE_B, dirty: true, canonicalText: '{"b":1}' }),
+        projectFixture({ handle: HANDLE_B, dirty: true, document: documentFixture('Project B') }),
       );
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS / 2);
     expect(recoverySave).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS / 2);
     expect(recoverySave).toHaveBeenCalledTimes(1);
-    expect(recoverySave).toHaveBeenLastCalledWith({ handle: HANDLE_B, document: '{"b":1}' });
+    expect(recoverySave).toHaveBeenLastCalledWith({
+      handle: HANDLE_B,
+      document: textOf('Project B'),
+    });
 
     // No project: nothing more.
     useAppStore.getState().actions.setProject(null);
@@ -147,19 +202,19 @@ describe('autosave every 30 seconds', () => {
 });
 
 describe('autosave on store updates', () => {
-  it('reads none of the project’s texts when another part of the state changes', () => {
-    open({ dirty: true, canonicalText: '{"v":1}', savedCanonicalText: '{"v":0}' });
+  it('reads none of the project’s hashes when another part of the state changes', () => {
+    open({ dirty: true, document: documentFixture('Draft 1'), savedTextHash: 'saved 0' });
     const project = useAppStore.getState().project;
     if (project === null) {
       throw new Error('no project');
     }
-    // The saved text as a getter that counts its reads (an edit replaces the project object).
+    // The saved hash as a getter that counts its reads (an edit replaces the project object).
     let reads = 0;
-    const counted = Object.defineProperty({ ...project }, 'savedCanonicalText', {
+    const counted = Object.defineProperty({ ...project }, 'savedTextHash', {
       enumerable: true,
       get: () => {
         reads += 1;
-        return '{"v":0}';
+        return 'saved 0';
       },
     });
     useAppStore.setState({ project: counted });
@@ -170,10 +225,11 @@ describe('autosave on store updates', () => {
       setAnalysis({ seq: index });
     }
     expect(reads).toBe(0);
+    expect(canonical).not.toHaveBeenCalled();
   });
 
   it('writes the text again after a save that changed only the time, or only the saved text', async () => {
-    open({ dirty: true, canonicalText: '{"v":1}', savedAt: '2026-10-05T10:00:00Z' });
+    open({ dirty: true, document: documentFixture('Draft 1'), savedAt: '2026-10-05T10:00:00Z' });
     start();
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
     expect(recoverySave).toHaveBeenCalledTimes(1);
@@ -182,11 +238,11 @@ describe('autosave on store updates', () => {
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
     expect(recoverySave).toHaveBeenCalledTimes(2);
 
-    useAppStore.getState().actions.updateProject({ savedCanonicalText: '{"v":0}' });
+    useAppStore.getState().actions.updateProject({ savedTextHash: 'saved 0' });
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
     expect(recoverySave).toHaveBeenCalledTimes(3);
 
-    // An edit that leaves the save alone is written once, as before.
+    // An update that leaves the save alone is written once, as before.
     useAppStore.getState().actions.updateProject({ contentHash: 'c'.repeat(64) });
     await vi.advanceTimersByTimeAsync(2 * AUTOSAVE_INTERVAL_MS);
     expect(recoverySave).toHaveBeenCalledTimes(3);
@@ -201,11 +257,14 @@ describe('autosave when the window loses focus', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(recoverySave).not.toHaveBeenCalled();
 
-    edit('{"v":1}');
+    edit('Draft 1');
     blur();
     await vi.advanceTimersByTimeAsync(0);
     expect(recoverySave).toHaveBeenCalledTimes(1);
-    expect(recoverySave).toHaveBeenLastCalledWith({ handle: HANDLE_A, document: '{"v":1}' });
+    expect(recoverySave).toHaveBeenLastCalledWith({
+      handle: HANDLE_A,
+      document: textOf('Draft 1'),
+    });
 
     // Nothing new since: the timer's tick has nothing to write.
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
@@ -224,11 +283,11 @@ describe('autosave when the window loses focus', () => {
     );
     open();
     const running = start();
-    edit('{"v":1}');
+    edit('Draft 1');
     blur();
-    edit('{"v":2}');
+    edit('Draft 2');
     blur();
-    edit('{"v":3}');
+    edit('Draft 3');
     const queued = running.snapshotNow();
     await vi.advanceTimersByTimeAsync(0);
     expect(recoverySave).toHaveBeenCalledTimes(1);
@@ -236,7 +295,10 @@ describe('autosave when the window loses focus', () => {
     finish();
     await queued;
     expect(recoverySave).toHaveBeenCalledTimes(2);
-    expect(recoverySave).toHaveBeenLastCalledWith({ handle: HANDLE_A, document: '{"v":3}' });
+    expect(recoverySave).toHaveBeenLastCalledWith({
+      handle: HANDLE_A,
+      document: textOf('Draft 3'),
+    });
   });
 });
 
@@ -245,16 +307,20 @@ describe('autosave around a save', () => {
     let saving = true;
     open();
     const running = start(undefined, () => saving);
-    edit('{"v":1}');
+    edit('Draft 1');
     blur();
     await running.snapshotNow();
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
     expect(recoverySave).not.toHaveBeenCalled();
+    expect(canonical).not.toHaveBeenCalled();
 
     // The save failed or was cancelled: the changes are still unsaved, and the next tick writes them.
     saving = false;
     await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
-    expect(recoverySave).toHaveBeenCalledExactlyOnceWith({ handle: HANDLE_A, document: '{"v":1}' });
+    expect(recoverySave).toHaveBeenCalledExactlyOnceWith({
+      handle: HANDLE_A,
+      document: textOf('Draft 1'),
+    });
   });
 
   it('is idle once the snapshot being written, and the one that followed it, are done', async () => {
@@ -271,9 +337,9 @@ describe('autosave around a save', () => {
     const running = start();
     await expect(running.idle()).resolves.toBeUndefined();
 
-    edit('{"v":1}');
+    edit('Draft 1');
     blur();
-    edit('{"v":2}');
+    edit('Draft 2');
     blur();
     let idle = false;
     const waiting = running.idle().then(() => {
@@ -282,7 +348,7 @@ describe('autosave around a save', () => {
     await vi.advanceTimersByTimeAsync(0);
     finishers.shift()?.();
     await vi.advanceTimersByTimeAsync(0);
-    // The queued snapshot of {"v":2} is being written now.
+    // The queued snapshot of Draft 2 is being written now.
     expect(recoverySave).toHaveBeenCalledTimes(2);
     expect(idle).toBe(false);
     finishers.shift()?.();
@@ -310,7 +376,7 @@ describe('autosave failures', () => {
     expect(recoverySave).toHaveBeenCalledTimes(4);
     // Log messages never carry the project's content.
     for (const argument of warn.mock.calls.flat()) {
-      expect(String(argument)).not.toContain('"v"');
+      expect(String(argument)).not.toContain('Draft');
     }
   });
 
@@ -326,11 +392,50 @@ describe('autosave failures', () => {
 
   it('does not send a document larger than a project may be', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    open({ dirty: true, canonicalText: 'x'.repeat(MAX_DOCUMENT_BYTES + 1) });
+    const text = 'x'.repeat(MAX_DOCUMENT_BYTES + 1);
+    canonical.mockReturnValue({
+      ok: true,
+      text,
+      hash: 'a'.repeat(64),
+      textHash: 'huge',
+      diagnostics: [],
+    });
+    open({ dirty: true });
     start();
     await vi.advanceTimersByTimeAsync(2 * AUTOSAVE_INTERVAL_MS);
     expect(recoverySave).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes nothing while no core runs or the core fails, says so once, and catches up', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    coreRunning = false;
+    open({ dirty: true, document: documentFixture('Draft 1') });
+    start();
+    await vi.advanceTimersByTimeAsync(2 * AUTOSAVE_INTERVAL_MS);
+    expect(recoverySave).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      'Autosave has no compiler core to write the snapshot with',
+      'noCore',
+    );
+
+    // A core that stops (a trap): logged by its kind, never with the project's content.
+    coreRunning = true;
+    canonical.mockImplementationOnce(() => {
+      throw new TypeError('trap in Draft 1');
+    });
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
+    expect(recoverySave).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(2);
+    for (const argument of warn.mock.calls.flat()) {
+      expect(String(argument)).not.toContain('Draft');
+    }
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_INTERVAL_MS);
+    expect(recoverySave).toHaveBeenCalledExactlyOnceWith({
+      handle: HANDLE_A,
+      document: textOf('Draft 1'),
+    });
   });
 });
 

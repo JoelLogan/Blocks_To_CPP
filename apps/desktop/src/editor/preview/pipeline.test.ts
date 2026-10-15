@@ -1,7 +1,8 @@
 /**
  * The live preview pipeline with stand-in cores (docs/spec/06-compiler-pipeline.md §6.13): the
- * debounce, discarding results that newer runs overtook, the dirty state, trap recovery and the
- * notice when the editor's document does not load.
+ * debounce, one `update()` per run, discarding results that newer runs overtook, the dirty state
+ * from the hash of the canonical text, trap recovery, keeping an edit the preview could not
+ * handle, and the notice when the editor's document does not load.
  */
 import {
   type BdmDocument,
@@ -9,8 +10,9 @@ import {
   CoreError,
   CoreTrap,
   type CoreWasm,
+  type Diagnostic,
   type PreviewOptions,
-  type PreviewResult,
+  type UpdateResult,
 } from '@blocks2cpp/b2c-core-wasm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,7 +29,39 @@ import { type CoreHost, createCoreHost } from './coreHost';
 import { PreviewPipeline } from './pipeline';
 import type { PreviewService } from './service';
 
-/** A stand-in core: `canonical` returns the JSON text itself, `preview` a fixture. */
+/** The content hash the stand-in cores report. */
+const CONTENT_HASH = 'b'.repeat(64);
+
+/**
+ * What the stand-in cores report as the hash of a document's canonical text: the JSON text
+ * itself, which is equal for two documents exactly when the real hash is.
+ */
+function textHashOf(json: string): string {
+  return `hash of ${json}`;
+}
+
+/** An update of a document that loaded, with `diagnostics`. */
+function updateFixture(json: string, diagnostics: Diagnostic[] = []): UpdateResult {
+  return { ...previewFixture(diagnostics), contentHash: CONTENT_HASH, textHash: textHashOf(json) };
+}
+
+/** An update of a document that did not load, with the loader's `diagnostics`. */
+function notLoaded(diagnostics: Diagnostic[]): UpdateResult {
+  return {
+    stage: 'load',
+    diagnostics,
+    files: [],
+    sourceMap: null,
+    buildable: false,
+    placeholders: 0,
+    contentHash: null,
+    blockTypes: {},
+    symbols: [],
+    textHash: null,
+  };
+}
+
+/** A stand-in core: `update` previews a fixture, `canonical` writes the JSON text itself. */
 function stubCore(overrides: Partial<CoreWasm> = {}): CoreWasm {
   const unused = (): never => {
     throw new Error('not used by these tests');
@@ -38,16 +72,25 @@ function stubCore(overrides: Partial<CoreWasm> = {}): CoreWasm {
     canonical: (json: string): CanonicalResult => ({
       ok: true,
       text: json,
-      hash: 'b'.repeat(64),
+      hash: CONTENT_HASH,
+      textHash: textHashOf(json),
       diagnostics: [],
     }),
-    preview: (): PreviewResult => previewFixture(),
+    update: (json: string): UpdateResult => updateFixture(json),
     symbolsInScope: () => [],
     conversionTable: unused,
     clipboardMake: unused,
     pastePrepare: unused,
     ...overrides,
   };
+}
+
+/** A core whose instance has stopped: every call traps, as a real one does after a trap. */
+function trappedCore(): CoreWasm {
+  const trap = (): never => {
+    throw new CoreTrap('unreachable');
+  };
+  return stubCore({ update: trap, canonical: trap });
 }
 
 /** A host over a list of cores: each `restart` moves to the next one. */
@@ -76,16 +119,16 @@ function hostOf(...cores: CoreWasm[]): CoreHost & { restarts: number } {
 
 /** A preview service whose answers the test releases by hand, in any order. */
 function manualService(): PreviewService & {
-  calls: { json: string; options: PreviewOptions; resolve: (result: PreviewResult) => void }[];
+  calls: { json: string; options: PreviewOptions; resolve: (result: UpdateResult) => void }[];
 } {
   const calls: {
     json: string;
     options: PreviewOptions;
-    resolve: (result: PreviewResult) => void;
+    resolve: (result: UpdateResult) => void;
   }[] = [];
   return {
     calls,
-    preview: (json, options) =>
+    update: (json, options) =>
       new Promise((resolve) => {
         calls.push({ json, options, resolve });
       }),
@@ -98,11 +141,12 @@ function readDocument(): BdmDocument {
   return documentFixture(`Edit ${String(docVersion)}`);
 }
 
+/** The project, saved as the document of edit 0, but holding an older text. */
 function openProject(): void {
   useAppStore.getState().actions.setProject(
     projectFixture({
-      canonicalText: 'saved',
-      savedCanonicalText: JSON.stringify(readDocument()),
+      textHash: 'older',
+      savedTextHash: textHashOf(JSON.stringify(readDocument())),
     }),
   );
 }
@@ -121,10 +165,10 @@ describe('the preview pipeline', () => {
   it('waits for changes to settle for 50 ms, then runs once', async () => {
     openProject();
     const stub = stubCore();
-    const canonical = vi.fn((json: string) => stub.canonical(json));
+    const update = vi.fn((json: string, options: PreviewOptions) => stub.update(json, options));
     const pipeline = new PreviewPipeline({
       store: useAppStore,
-      host: hostOf(stubCore({ canonical })),
+      host: hostOf(stubCore({ update })),
       read: readDocument,
     });
     pipeline.schedule();
@@ -134,14 +178,40 @@ describe('the preview pipeline', () => {
     pipeline.schedule();
     expect(pipeline.pending).toBe(true);
     await vi.advanceTimersByTimeAsync(49);
-    expect(canonical).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    expect(canonical).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledTimes(1);
     expect(useAppStore.getState().analysis.preview).not.toBeNull();
     pipeline.dispose();
   });
 
-  it('makes the read document the project, dirty only when it differs from the saved text', async () => {
+  it('calls the core once per run: update(), never canonical() or anything else', async () => {
+    openProject();
+    const calls: string[] = [];
+    const stub = stubCore();
+    const spied = Object.fromEntries(
+      Object.entries(stub).map(([name, method]) => [
+        name,
+        (...args: unknown[]) => {
+          calls.push(name);
+          return (method as (...a: unknown[]) => unknown)(...args);
+        },
+      ]),
+    ) as unknown as CoreWasm;
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(spied),
+      read: readDocument,
+    });
+    await pipeline.runNow();
+    docVersion = 1;
+    await pipeline.runNow();
+    expect(calls).toEqual(['update', 'update']);
+    expect(useAppStore.getState().project?.document.project.name).toBe('Edit 1');
+    pipeline.dispose();
+  });
+
+  it('makes the read document the project, with its hashes, dirty only when its text hash differs from the saved one', async () => {
     openProject();
     const pipeline = new PreviewPipeline({
       store: useAppStore,
@@ -151,15 +221,21 @@ describe('the preview pipeline', () => {
     await pipeline.runNow();
     let project = useAppStore.getState().project;
     expect(project?.document.project.name).toBe('Edit 0');
-    expect(project?.canonicalText).toBe(JSON.stringify(readDocument()));
-    expect(project?.contentHash).toBe('b'.repeat(64));
+    expect(project?.textHash).toBe(textHashOf(JSON.stringify(readDocument())));
+    expect(project?.contentHash).toBe(CONTENT_HASH);
     expect(project?.dirty).toBe(false);
 
     docVersion = 1;
     await pipeline.runNow();
     project = useAppStore.getState().project;
     expect(project?.document.project.name).toBe('Edit 1');
+    // The content hash is the same here (the stand-in reports one), the text hash is not.
+    expect(project?.contentHash).toBe(CONTENT_HASH);
     expect(project?.dirty).toBe(true);
+
+    docVersion = 0;
+    await pipeline.runNow();
+    expect(useAppStore.getState().project?.dirty).toBe(false);
     pipeline.dispose();
   });
 
@@ -181,14 +257,19 @@ describe('the preview pipeline', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(service.calls).toHaveLength(2);
 
-    const newer = previewFixture([diagnosticFixture({ code: 'B2C-E0203' })]);
+    const newer = updateFixture(service.calls[1]?.json ?? '', [
+      diagnosticFixture({ code: 'B2C-E0203' }),
+    ]);
     service.calls[1]?.resolve(newer);
     await second;
-    service.calls[0]?.resolve(previewFixture([diagnosticFixture({ code: 'B2C-E0201' })]));
+    service.calls[0]?.resolve(
+      updateFixture(service.calls[0].json, [diagnosticFixture({ code: 'B2C-E0201' })]),
+    );
     await first;
 
     expect(useAppStore.getState().analysis.preview).toBe(newer);
     expect(useAppStore.getState().analysis.seq).toBe(2);
+    expect(useAppStore.getState().project?.document.project.name).toBe('Edit 1');
     expect(onPreviewed).toHaveBeenCalledTimes(1);
     pipeline.dispose();
   });
@@ -207,9 +288,10 @@ describe('the preview pipeline', () => {
     useAppStore
       .getState()
       .actions.setProject(projectFixture({ handle: 'ph_ffffffffffffffffffffffffffffffff' }));
-    service.calls[0]?.resolve(previewFixture([diagnosticFixture()]));
+    service.calls[0]?.resolve(updateFixture(service.calls[0].json, [diagnosticFixture()]));
     await run;
     expect(useAppStore.getState().analysis.preview).toBeNull();
+    expect(useAppStore.getState().project?.document.project.name).toBe('Guessing Game');
     pipeline.dispose();
   });
 
@@ -237,61 +319,54 @@ describe('the preview pipeline', () => {
 
   it('replaces a trapped core, runs again on the new one, and says so', async () => {
     openProject();
-    const trapping = stubCore({
-      preview: () => {
-        throw new CoreTrap('preview: unreachable');
-      },
-    });
     const healthy = stubCore();
-    const host = hostOf(trapping, healthy);
+    const host = hostOf(trappedCore(), healthy);
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const pipeline = new PreviewPipeline({ store: useAppStore, host, read: readDocument });
     await pipeline.runNow();
 
     expect(host.restarts).toBe(1);
     expect(host.current()).toBe(healthy);
-    const { analysis } = useAppStore.getState();
+    const { analysis, project } = useAppStore.getState();
     expect(analysis.preview).not.toBeNull();
     expect(analysis.notice).toBe('trapRecovered');
+    expect(project?.textHash).toBe(textHashOf(JSON.stringify(readDocument())));
     expect(error).toHaveBeenCalled();
     pipeline.dispose();
   });
 
-  it('recovers from a trap in the canonical step too', async () => {
-    openProject();
-    const trapping = stubCore({
-      canonical: () => {
-        throw new CoreTrap('canonical: unreachable');
-      },
-    });
-    const host = hostOf(trapping, stubCore());
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const pipeline = new PreviewPipeline({ store: useAppStore, host, read: readDocument });
-    await pipeline.runNow();
-    expect(host.restarts).toBe(1);
-    expect(useAppStore.getState().project?.canonicalText).toBe(JSON.stringify(readDocument()));
-    expect(useAppStore.getState().analysis.notice).toBe('trapRecovered');
-    pipeline.dispose();
-  });
-
-  it('keeps the last good preview when the new core traps as well', async () => {
+  it('keeps the last good preview, but still the edit, when the new core traps as well', async () => {
     openProject();
     const good = previewFixture([diagnosticFixture()]);
     useAppStore.getState().actions.setAnalysis({ preview: good });
-    const trapping = stubCore({
-      preview: () => {
-        throw new CoreTrap('preview: unreachable');
-      },
-    });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const pipeline = new PreviewPipeline({
-      store: useAppStore,
-      host: hostOf(trapping, trapping),
-      read: readDocument,
-    });
+    // The update traps on the first and the second instance; the third one writes the document.
+    const host = hostOf(trappedCore(), trappedCore(), stubCore());
+    const pipeline = new PreviewPipeline({ store: useAppStore, host, read: readDocument });
+    docVersion = 1;
     await pipeline.runNow();
-    expect(useAppStore.getState().analysis.preview).toBe(good);
-    expect(useAppStore.getState().analysis.notice).toBe('trapRecovered');
+    const { analysis, project } = useAppStore.getState();
+    expect(analysis.preview).toBe(good);
+    expect(analysis.notice).toBe('trapRecovered');
+    expect(host.restarts).toBe(2);
+    // The edit is the project's, and counts as unsaved (autosave keeps it, closing asks).
+    expect(project?.document.project.name).toBe('Edit 1');
+    expect(project?.textHash).toBe(textHashOf(JSON.stringify(readDocument())));
+    expect(project?.dirty).toBe(true);
+    pipeline.dispose();
+  });
+
+  it('keeps the project as it was when not even canonical() works on a new core', async () => {
+    openProject();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const host = hostOf(trappedCore(), trappedCore(), trappedCore());
+    const pipeline = new PreviewPipeline({ store: useAppStore, host, read: readDocument });
+    docVersion = 1;
+    await pipeline.runNow();
+    const { analysis, project } = useAppStore.getState();
+    expect(analysis.notice).toBe('trapRecovered');
+    expect(project?.document.project.name).toBe('Guessing Game');
+    expect(project?.textHash).toBe('older');
     pipeline.dispose();
   });
 
@@ -303,9 +378,7 @@ describe('the preview pipeline', () => {
     const pipeline = new PreviewPipeline({
       store: useAppStore,
       host: hostOf(
-        stubCore({
-          canonical: () => ({ ok: false, diagnostics: [diagnosticFixture({ code: 'B2C-E0114' })] }),
-        }),
+        stubCore({ update: () => notLoaded([diagnosticFixture({ code: 'B2C-E0114' })]) }),
       ),
       read: readDocument,
     });
@@ -315,7 +388,7 @@ describe('the preview pipeline', () => {
     expect(analysis.notice).toBe('syncFailed');
     // With the loader's codes, for the banner.
     expect(analysis.syncCodes).toEqual(['B2C-E0114']);
-    expect(project?.canonicalText).toBe('saved');
+    expect(project?.textHash).toBe('older');
     // The log names the codes only, never project text.
     expect(String(error.mock.calls[0]?.[0])).toContain('B2C-E0114');
     pipeline.dispose();
@@ -334,18 +407,24 @@ describe('the preview pipeline', () => {
     pipeline.dispose();
   });
 
-  it('clears the sync notice as soon as the canvas loads again, even if the preview fails', async () => {
+  it('keeps the edit and clears the sync notice when the canvas loads again, even if the preview fails', async () => {
     openProject();
     useAppStore.getState().actions.setAnalysis({ notice: 'syncFailed' });
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const pipeline = new PreviewPipeline({
       store: useAppStore,
       host: hostOf(stubCore()),
       read: readDocument,
-      service: { preview: () => Promise.reject(new Error('the preview failed')) },
+      service: { update: () => Promise.reject(new Error('the preview failed')) },
     });
+    docVersion = 1;
     await pipeline.runNow();
-    expect(useAppStore.getState().analysis.notice).toBeNull();
+    const { analysis, project } = useAppStore.getState();
+    expect(analysis.notice).toBeNull();
+    expect(analysis.preview).toBeNull();
+    expect(project?.document.project.name).toBe('Edit 1');
+    expect(project?.dirty).toBe(true);
+    expect(error).toHaveBeenCalledWith('The live preview failed', expect.any(Error));
     pipeline.dispose();
   });
 
@@ -393,9 +472,8 @@ describe('the preview pipeline', () => {
     for (const span of [
       'b2c:preview',
       'b2c:preview:read',
-      'b2c:preview:canonical',
+      'b2c:preview:update',
       'b2c:preview:commit',
-      'b2c:preview:analyse',
       'b2c:preview:publish',
     ] as const) {
       expect(timings[span], span).toBeGreaterThanOrEqual(0);
@@ -407,12 +485,13 @@ describe('the preview pipeline', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const failing = new PreviewPipeline({
       store: useAppStore,
-      host: hostOf(stubCore({ canonical: () => ({ ok: false, diagnostics: [] }) })),
+      host: hostOf(stubCore({ update: () => notLoaded([]) })),
       read: readDocument,
     });
     await failing.runNow();
     expect(latestTimings()['b2c:preview']).toBeNull();
-    expect(latestTimings()['b2c:preview:canonical']).not.toBeNull();
+    expect(latestTimings()['b2c:preview:update']).not.toBeNull();
+    expect(latestTimings()['b2c:preview:commit']).toBeNull();
     failing.dispose();
   });
 
@@ -436,21 +515,19 @@ describe('the preview pipeline', () => {
   it('is idle once a run has committed what it read, until another read is asked for', async () => {
     openProject();
     const service = manualService();
-    let loads = true;
-    const stub = stubCore();
     const pipeline = new PreviewPipeline({
       store: useAppStore,
-      host: hostOf(
-        stubCore({
-          canonical: (json) =>
-            loads
-              ? stub.canonical(json)
-              : { ok: false, diagnostics: [diagnosticFixture({ code: 'B2C-E0104' })] },
-        }),
-      ),
+      host: hostOf(stubCore()),
       read: readDocument,
       service,
     });
+    const answer = (index: number, result?: UpdateResult): void => {
+      const call = service.calls[index];
+      if (call === undefined) {
+        throw new Error(`no update call ${String(index)}`);
+      }
+      call.resolve(result ?? updateFixture(call.json));
+    };
     // Nothing read yet.
     expect(pipeline.isIdle()).toBe(false);
 
@@ -458,39 +535,43 @@ describe('the preview pipeline', () => {
     const first = pipeline.runNow();
     expect(pipeline.isIdle()).toBe(false);
     await vi.advanceTimersByTimeAsync(0);
-    // Committed: idle, although its analysis still runs.
+    // Read, but the update has not answered: the project does not hold the read document yet.
     expect(service.calls).toHaveLength(1);
-    expect(pipeline.isIdle()).toBe(true);
-    service.calls[0]?.resolve(previewFixture());
+    expect(pipeline.isIdle()).toBe(false);
+    answer(0);
     await first;
     expect(pipeline.isIdle()).toBe(true);
 
-    // An edit waits for its run.
+    // An edit waits for its run, then for its update.
     pipeline.schedule();
     expect(pipeline.isIdle()).toBe(false);
     await vi.advanceTimersByTimeAsync(50);
+    expect(service.calls).toHaveLength(2);
+    expect(pipeline.isIdle()).toBe(false);
+    answer(1);
+    await vi.advanceTimersByTimeAsync(0);
     expect(pipeline.isIdle()).toBe(true);
-    service.calls[1]?.resolve(previewFixture());
 
     // A new document is shown: what was committed is no longer the canvas.
     pipeline.invalidate();
     expect(pipeline.isIdle()).toBe(false);
     const second = pipeline.runNow();
     await vi.advanceTimersByTimeAsync(0);
-    service.calls[2]?.resolve(previewFixture());
+    answer(2);
     await second;
     expect(pipeline.isIdle()).toBe(true);
 
     // A canvas that does not load keeps the older document: not idle.
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    loads = false;
-    await pipeline.runNow();
+    const failing = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    answer(3, notLoaded([diagnosticFixture({ code: 'B2C-E0104' })]));
+    await failing;
     expect(useAppStore.getState().analysis.notice).toBe('syncFailed');
     expect(pipeline.isIdle()).toBe(false);
-    loads = true;
     const third = pipeline.runNow();
     await vi.advanceTimersByTimeAsync(0);
-    service.calls[3]?.resolve(previewFixture());
+    answer(4);
     await third;
     expect(pipeline.isIdle()).toBe(true);
     pipeline.dispose();
@@ -534,9 +615,10 @@ describe('the preview pipeline', () => {
     const run = pipeline.runNow();
     await vi.advanceTimersByTimeAsync(0);
     pipeline.invalidate();
-    service.calls[0]?.resolve(previewFixture([diagnosticFixture()]));
+    service.calls[0]?.resolve(updateFixture(service.calls[0].json, [diagnosticFixture()]));
     await run;
     expect(useAppStore.getState().analysis.preview).toBeNull();
+    expect(useAppStore.getState().project?.textHash).toBe('older');
 
     pipeline.schedule();
     pipeline.dispose();

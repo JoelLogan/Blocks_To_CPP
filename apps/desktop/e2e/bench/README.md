@@ -13,7 +13,7 @@ base's on one runner ([A/B runs](#ab-runs)).
 | `native.pipeline.preview`                         | criterion: load, resolve, analyse and generate the 1,000-block document natively, as the editor's WebAssembly core runs them                                                                                                         | yes   | N4            |
 | `native.pipeline.{load,resolve,analyze,generate}` | criterion: each stage on its own                                                                                                                                                                                                     | no    |               |
 | `webview.cold-start`                              | From the WebDriver session request (which starts the app) to the readiness marker: the start page shown, Blockly's workspace injected and the toolbox rendered; 10 starts with fresh profiles, after one warm-up start               | yes   | N2: < 2 s     |
-| `webview.preview-1000.p95`                        | The preview pipeline's task in the app at 1,000 blocks, C++ panel folded: reading the canvas, `canonical()` and `preview()` in WebAssembly, storing the result; p95 of 10 edits per sample, 10 samples                               | yes   | N4: < 50 ms   |
+| `webview.preview-1000.p95`                        | The preview pipeline's task in the app at 1,000 blocks, C++ panel folded: reading the canvas, `update()` in WebAssembly (one load of the document), storing the result; p95 of 10 edits per sample, 10 samples                       | yes   | N4: < 50 ms   |
 | `webview.edit-1000.p95`                           | From an edit until the page has finished what it started (Blockly's re-rendering of the edited stack, the preview, the C++ panel's update), with the C++ panel shown, less the pipeline's 50 ms debounce; p95 of 10 edits per sample | yes   | N12           |
 | `webview.select-1000.max-task`                    | The longest main-thread task after a click that selects a block at 1,000 blocks, in 8 scopes in turn; one click per sample, 10 samples after a warm-up click                                                                         | yes   | N12           |
 | `webview.guessing-game.select.max-task`           | The guessing game (40 blocks, C++ panel shown): the longest task after a click that selects a block in another scope; one click per sample                                                                                           | no    | N12: ≤ 50 ms  |
@@ -35,7 +35,11 @@ While an edit or a click is timed, the page also observes the app's User Timing 
 `b2c:toolbox-refresh`, `b2c:select` and `b2c:code-panel`). The preview, selection and
 guessing-game benchmarks print the median time of each span per interaction under their summary
 line, which says where the time went (`spans per click (median): b2c:toolbox-refresh … ms, …`).
-The spans are not metrics; an app built before they existed shows none.
+The spans are not metrics; an app built before they existed shows none. The preview's phases are
+`b2c:preview:read`, `b2c:preview:update` (the core's single `update()`), `b2c:preview:commit` and
+`b2c:preview:publish`; an app built before the single `update()` export shows
+`b2c:preview:canonical` and `b2c:preview:analyse` instead of `b2c:preview:update`, so in an A/B run
+against such a base, compare their sum with it.
 
 - **Cold start** ([`launch.ts`](launch.ts)): the time starts just before the session request and
   ends at the page clock's time (its time origin plus `performance.now()`) when the readiness marker

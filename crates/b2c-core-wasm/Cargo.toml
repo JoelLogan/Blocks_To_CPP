@@ -23,6 +23,11 @@ b2c-lang.workspace = true
 b2c-codegen.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# The hash of a document's canonical text (`update`, `canonical`), and the
+# benchmark document's parity digest with the TypeScript generator of the
+# webview benchmarks (benches/pipeline/document.rs). Already in the module
+# through b2c-model, which hashes with it.
+sha2.workspace = true
 thiserror.workspace = true
 wasm-bindgen.workspace = true
 
@@ -37,9 +42,6 @@ proptest.workspace = true
 # with this feature serde_json parses floats with correct rounding, as the
 # loader and JavaScript do. Tests only: the WebAssembly build does not get it.
 serde_json = { workspace = true, features = ["float_roundtrip"] }
-# The benchmark document's parity digest with the TypeScript generator of the webview
-# benchmarks (benches/pipeline/document.rs); already a dependency of b2c-model.
-sha2.workspace = true
 
 # The native pipeline benchmark: `cargo bench -p b2c-core-wasm --bench pipeline`.
 [[bench]]

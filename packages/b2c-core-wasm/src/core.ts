@@ -16,7 +16,7 @@ import type {
   LoadResult,
   PastePrepareResult,
   PreviewOptions,
-  PreviewResult,
+  UpdateResult,
 } from './api';
 import { CoreError, type CoreErrorKind, CoreTrap } from './errors';
 
@@ -151,11 +151,11 @@ export function createCore(glue: GlueFunctions): CoreHandle {
       const bounded = boundText(documentJson);
       return object('canonical', () => glue.canonical(bounded)) as CanonicalResult;
     },
-    preview: (documentJson, options: PreviewOptions) => {
+    update: (documentJson, options: PreviewOptions) => {
       const bounded = boundText(documentJson);
       // Only the known key crosses, whatever else the object carries.
       const optionsJson = JSON.stringify({ indentWidth: options.indentWidth });
-      return object('preview', () => glue.preview(bounded, optionsJson)) as PreviewResult;
+      return object('update', () => glue.update(bounded, optionsJson)) as UpdateResult;
     },
     symbolsInScope: (blockId, input) => {
       const block = boundText(blockId);

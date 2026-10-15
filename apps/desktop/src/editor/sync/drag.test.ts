@@ -25,7 +25,7 @@
  *   one Undo takes the drop back, and the drop runs one preview (04 §4.2). A *set* whose variable
  *   was chosen in the toolbox keeps it, with the start value of its type.
  */
-import type { BdmDocument, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
+import type { BdmDocument, UpdateResult } from '@blocks2cpp/b2c-core-wasm';
 import { b2cDarkTheme, b2cLightTheme, readExprShadow } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -52,6 +52,7 @@ import dragCss from './drag.css?raw';
 import { markDragTargetsStale } from './dragTargets';
 import { MAX_ZOOM, MIN_ZOOM } from './limits';
 import {
+  canonicalOf,
   canonicalText,
   disposeWorkspaces,
   EXAMPLE_PROJECTS,
@@ -128,6 +129,11 @@ function text(doc: BdmDocument): string {
   return canonicalText(present(core, 'core'), doc);
 }
 
+/** The hash of a document's canonical text, which the project compares to tell unsaved changes. */
+function textHash(doc: BdmDocument): string {
+  return canonicalOf(present(core, 'core'), doc).textHash;
+}
+
 function topIds(doc: BdmDocument): string[] {
   return doc.modules[0]?.workspace.blocks.map((block) => block.id) ?? [];
 }
@@ -184,13 +190,13 @@ describe.skipIf(core === null)('saving during a drag', () => {
   it('reads the canvas at the drag’s start when an edit waits for its preview', async () => {
     const { workspace, session } = await guessingGame();
     const svg = workspace as Blockly.WorkspaceSvg;
-    const committed = useAppStore.getState().project?.canonicalText;
+    const committed = useAppStore.getState().project?.textHash;
     // An edit Blockly has announced; its preview waits for the pipeline's debounce.
     present(svg.getBlockById('b004'), 'b004').setFieldValue(false, 'NEWLINE');
     await eventsDelivered();
     expect(session.syncPending).toBe(true);
     const edited = text(session.currentDocument());
-    expect(edited).not.toBe(committed);
+    expect(textHash(session.currentDocument())).not.toBe(committed);
     const reads = vi.mocked(readTopBlocks);
     reads.mockClear();
 
@@ -237,15 +243,15 @@ describe.skipIf(core === null)('saving during a drag', () => {
     const { workspace, session } = await guessingGame();
     const svg = workspace as Blockly.WorkspaceSvg;
     await eventsDelivered();
-    const committed = present(useAppStore.getState().project, 'project').canonicalText;
+    const committed = present(useAppStore.getState().project, 'project').textHash;
     // Changed just before the drag starts, in the same frame: Blockly announces it after the next.
     present(svg.getBlockById('b004'), 'b004').setFieldValue(false, 'NEWLINE');
     const dragged = present(svg.getBlockById('b010'), 'b010');
     startDrag(dragged);
-    const during = text(session.currentDocument());
+    const during = textHash(session.currentDocument());
     expect(during).toBe(committed);
     // Saved during the drag.
-    useAppStore.getState().actions.updateProject({ savedCanonicalText: during, dirty: false });
+    useAppStore.getState().actions.updateProject({ savedTextHash: during, dirty: false });
     // Dropped where it was taken from: the drag itself changes nothing.
     document.dispatchEvent(
       new PointerEvent('pointermove', { ...POINTER, clientX: 100, clientY: 100 }),
@@ -258,7 +264,7 @@ describe.skipIf(core === null)('saving during a drag', () => {
     await eventsDelivered();
     await session.flush();
     const project = present(useAppStore.getState().project, 'project');
-    expect(project.canonicalText).not.toBe(during);
+    expect(project.textHash).not.toBe(during);
     expect(project.dirty).toBe(true);
   });
 
@@ -1202,9 +1208,9 @@ function countingPreviews(): PreviewService & { readonly runs: () => number } {
   let runs = 0;
   return {
     runs: () => runs,
-    preview(json, options): Promise<PreviewResult> {
+    update(json, options): Promise<UpdateResult> {
       runs += 1;
-      return Promise.resolve(wasm.preview(json, options));
+      return Promise.resolve(wasm.update(json, options));
     },
   };
 }
