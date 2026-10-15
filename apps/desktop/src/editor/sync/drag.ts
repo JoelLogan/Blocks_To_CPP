@@ -229,6 +229,29 @@ export function snapRadius(scale: number): number {
 }
 
 /**
+ * How far a dragged block reaches for a place, and how firmly it keeps the place it previews:
+ * what {@link B2cBlockDragStrategy} uses instead of Blockly's global configuration.
+ */
+export interface SnapReach {
+  /** The search radius, in canvas units, on a canvas at zoom `scale`. */
+  readonly radius: (scale: number) => number;
+  /** How much nearer another place must be for the preview to move there, for a statement. */
+  readonly statementPreference: number;
+  /** The same for a value (a block with an output). */
+  readonly valuePreference: number;
+}
+
+/**
+ * The editor's reach (03 §3.3): {@link snapRadius}, {@link PREVIEW_PREFERENCE} and
+ * {@link VALUE_PREVIEW_PREFERENCE}.
+ */
+export const EDITOR_REACH: SnapReach = Object.freeze({
+  radius: snapRadius,
+  statementPreference: PREVIEW_PREFERENCE,
+  valuePreference: VALUE_PREVIEW_PREFERENCE,
+});
+
+/**
  * Blockly's block drag strategy, except that:
  *
  * - it looks for no place to connect (and so previews none) while the pointer is over a delete
@@ -241,7 +264,8 @@ export function snapRadius(scale: number): number {
  *
  * Bumping, which moves a loose block away from a connection it is not connected to, keeps
  * Blockly's 28 units (`Blockly.config.snapRadius` is not changed): a larger bump would push loose
- * blocks further away. {@link B2cBlockDragger} gives the strategy to every block it drags.
+ * blocks further away. {@link B2cBlockDragger} gives the strategy to every block it drags, with
+ * the editor's reach ({@link EDITOR_REACH}); the wrap sweep (./wrapSweep.test.ts) measures others.
  */
 export class B2cBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
   /** The canvas the block is dragged on, whose delete areas and zoom count. */
@@ -250,19 +274,23 @@ export class B2cBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
   /** Whether the pointer of the latest move was over a delete area. */
   private overDeleteArea = false;
 
+  /** The search radius at a zoom. */
+  private readonly radiusAt: (scale: number) => number;
+
   /**
    * How much nearer another place must be for the preview to move there: a dragged value (a block
    * with an output) has its own.
    */
   private readonly preference: number;
 
-  constructor(block: Blockly.BlockSvg) {
+  constructor(block: Blockly.BlockSvg, reach: SnapReach = EDITOR_REACH) {
     super(block);
     this.canvas = block.workspace;
+    this.radiusAt = reach.radius;
     // `BlockSvg` types its output as always there; a statement has none (`Block`'s type says so).
     const dragged: Blockly.Block = block;
     this.preference =
-      dragged.outputConnection === null ? PREVIEW_PREFERENCE : VALUE_PREVIEW_PREFERENCE;
+      dragged.outputConnection === null ? reach.statementPreference : reach.valuePreference;
   }
 
   /**
@@ -272,7 +300,8 @@ export class B2cBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
    * Blockly reads the preference for the place already previewed from its global configuration,
    * in a private method that only this move calls (`BlockDragStrategy.currCandidateIsBetter`,
    * Blockly 12.5.1). So while the move runs, the configuration holds this drag's preference
-   * ({@link PREVIEW_PREFERENCE} or {@link VALUE_PREVIEW_PREFERENCE}), and it gets its own value
+   * (with the editor's reach, {@link PREVIEW_PREFERENCE} or {@link VALUE_PREVIEW_PREFERENCE}), and
+   * it gets its own value
    * back in a `finally`, however the move ends: nothing outside a move of this strategy (another
    * drag, the keyboard's moves, an Escape that cancels the gesture, its disposal) ever sees the
    * changed value.
@@ -290,13 +319,14 @@ export class B2cBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
   }
 
   /**
-   * How far away a connection may be to be previewed: {@link snapRadius} at the canvas's zoom, or
-   * none at all over a delete area. The radius is -1 rather than 0, because a search with radius 0
-   * still finds a connection exactly where the dragged one is. Blockly asks with a place previewed
-   * or not alike (its `connectingSnapRadius` and `snapRadius` are both 28).
+   * How far away a connection may be to be previewed: the reach's radius at the canvas's zoom
+   * ({@link snapRadius} for the editor), or none at all over a delete area. The radius is -1
+   * rather than 0, because a search with radius 0 still finds a connection exactly where the
+   * dragged one is. Blockly asks with a place previewed or not alike (its `connectingSnapRadius`
+   * and `snapRadius` are both 28).
    */
   protected override getSearchRadius(): number {
-    return this.overDeleteArea ? -1 : snapRadius(this.canvas.scale);
+    return this.overDeleteArea ? -1 : this.radiusAt(this.canvas.scale);
   }
 }
 
@@ -342,7 +372,7 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
   override onDragStart(e: PointerEvent): void {
     if (this.draggable instanceof Blockly.BlockSvg) {
       const block = this.draggable;
-      block.setDragStrategy(new B2cBlockDragStrategy(block));
+      block.setDragStrategy(this.dragStrategyFor(block));
       const listener = LISTENERS.get(this.workspace);
       if (listener !== undefined) {
         tell(() => {
@@ -391,6 +421,14 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
         });
       }
     }
+  }
+
+  /**
+   * The strategy `block` is dragged with: a {@link B2cBlockDragStrategy} with the editor's reach.
+   * The wrap sweep's draggers (./wrapSweep.test.ts) give it another reach to measure.
+   */
+  protected dragStrategyFor(block: Blockly.BlockSvg): Blockly.IDragStrategy {
+    return new B2cBlockDragStrategy(block);
   }
 
   /**

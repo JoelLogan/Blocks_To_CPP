@@ -24,11 +24,13 @@
  * constants, so the geometry is the real one apart from text widths; drops with real pointer
  * input in the webviews are e2e/specs/flows/placement-wrap.e2e.ts.
  *
- * Every run checks the editor's rule on a 20-unit grid with Blockly's search radius: no mismatch,
- * no place flicker, no insert/wrap swap, never an insertion. With `B2C_WRAP_SWEEP=1` it measures
- * a 5-unit grid instead, with both Blockly's radius (28 units, a preference of 8 for the place
- * already previewed) and the zoom-aware radius of W5-1 (44 screen pixels, 48 to 96 units, a
- * preference of 20), and prints the table recorded in the plan's W5-2 status, for these rules:
+ * Every run checks the editor's rule on a 20-unit grid with both radii below: no mismatch, no
+ * place flicker, no insert/wrap swap, never an insertion, and drops out of reach as the radius
+ * says (so the radius measured is the one the drag uses). With `B2C_WRAP_SWEEP=1` it measures a
+ * 5-unit grid instead, with Blockly's radius (28 units, a preference of 8 for the place already
+ * previewed) and the editor's zoom-aware radius of W5-1 (44 screen pixels, 48 to 96 units, a
+ * preference of 20, `EDITOR_REACH` in ./drag.ts), and prints the table recorded in the plan's W5-2
+ * status, for these rules:
  *
  * - **top**, the editor's: the C-block's previous connection against the connection above the
  *   statement (blockly-ext's `wrapPlace`);
@@ -37,12 +39,18 @@
  * - **either**, D13 (b) without a tie-break: that mouth pair, and Blockly's insertion;
  * - **print**, the baseline: a *print* dragged instead of the *if*, which Blockly inserts.
  *
+ * The radius reaches the drag through the strategy the dragger gives each block
+ * (`B2cBlockDragger.dragStrategyFor`, which the sweep's draggers override), since the editor's
+ * strategy does not read Blockly's configuration; that configuration keeps Blockly's values, so
+ * bumping is the same in every row.
+ *
  * A rule takes a few minutes per zoom; run each rule and zoom in a process of its own, for
- * example:
+ * example (Vitest shows the table only with `--disableConsoleIntercept`):
  *
  * ```sh
  * B2C_WRAP_SWEEP=mouth B2C_WRAP_SWEEP_ZOOMS=0.9 \
- *   pnpm --filter @blocks2cpp/desktop exec vitest run src/editor/sync/wrapSweep.test.ts -t measures
+ *   pnpm --filter @blocks2cpp/desktop exec vitest run src/editor/sync/wrapSweep.test.ts \
+ *   -t measures --disableConsoleIntercept
  * ```
  *
  * (on Windows, set the variables with `$env:B2C_WRAP_SWEEP = 'mouth'` and so on in PowerShell).
@@ -59,7 +67,7 @@ import {
 import * as Blockly from 'blockly/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { B2cBlockDragger } from './drag';
+import { B2cBlockDragger, B2cBlockDragStrategy, EDITOR_REACH, type SnapReach } from './drag';
 import { disposeWorkspaces, present, renderedWorkspace, setViewSize } from './testing';
 
 const PREVIOUS_STATEMENT: number = Blockly.ConnectionType.PREVIOUS_STATEMENT;
@@ -162,16 +170,21 @@ class MouthDragger extends B2cBlockDragger {
 interface Rule {
   readonly name: 'top' | 'mouth' | 'either' | 'print';
   readonly dragged: 'control.if' | 'io.print';
-  readonly plugins: NonNullable<Blockly.BlocklyOptions['plugins']>;
+  readonly plugins: {
+    readonly connectionChecker: typeof B2cConnectionChecker;
+    readonly connectionPreviewer: typeof B2cConnectionPreviewer;
+    /** The dragger, which drags with the radius measured ({@link reaching}). */
+    readonly blockDragger: typeof B2cBlockDragger;
+  };
 }
 
-const EDITOR_PLUGINS = {
+const EDITOR_PLUGINS: Rule['plugins'] = {
   connectionChecker: B2cConnectionChecker,
   connectionPreviewer: B2cConnectionPreviewer,
   blockDragger: B2cBlockDragger,
 };
 
-const MOUTH_PLUGINS = {
+const MOUTH_PLUGINS: Rule['plugins'] = {
   connectionChecker: MouthChecker,
   connectionPreviewer: MouthPreviewer,
   blockDragger: MouthDragger,
@@ -190,20 +203,31 @@ const RULES: readonly Rule[] = [
   { name: 'print', dragged: 'io.print', plugins: EDITOR_PLUGINS },
 ];
 
-/** Blockly's search radius and preference for the place already previewed (canvas units). */
+/** A search radius and preference for the place already previewed (canvas units) to measure. */
 interface Radius {
   readonly name: string;
-  /** The radius at a zoom. */
-  readonly at: (scale: number) => number;
-  readonly preference: number;
+  readonly reach: SnapReach;
 }
 
-const BLOCKLY_RADIUS: Radius = { name: 'Blockly (28, 8)', at: () => 28, preference: 8 };
-const ZOOM_AWARE_RADIUS: Radius = {
-  name: 'W5-1 (44 px, 48–96, 20)',
-  at: (scale) => Math.min(96, Math.max(48, Math.round(44 / scale))),
-  preference: 20,
+/** Blockly's own: 28 units at every zoom, and a preference of 8. */
+const BLOCKLY_RADIUS: Radius = {
+  name: 'Blockly (28, 8)',
+  reach: { radius: () => 28, statementPreference: 8, valuePreference: 8 },
 };
+
+/** The editor's (W5-1). */
+const ZOOM_AWARE_RADIUS: Radius = { name: 'W5-1 (44 px, 48–96, 20)', reach: EDITOR_REACH };
+
+const RADII = [BLOCKLY_RADIUS, ZOOM_AWARE_RADIUS] as const;
+
+/** `Dragger`, dragging every block with the editor's strategy at `radius`'s reach. */
+function reaching(Dragger: typeof B2cBlockDragger, radius: Radius): typeof B2cBlockDragger {
+  return class extends Dragger {
+    protected override dragStrategyFor(block: Blockly.BlockSvg): Blockly.IDragStrategy {
+      return new B2cBlockDragStrategy(block, radius.reach);
+    }
+  };
+}
 
 const ZOOMS = [0.5, 0.9, 1.5] as const;
 
@@ -229,9 +253,13 @@ const DRAGGED = 'C';
 /** Where the dragged block rests between drops (canvas units). */
 const REST = { x: 900, y: 700 } as const;
 
-/** The canvas of a sweep: `main` with the five prints, and the dragged block far away. */
-function sweepCanvas(rule: Rule, scale: number): Blockly.WorkspaceSvg {
-  const svg = renderedWorkspace({ plugins: rule.plugins, move: { scrollbars: true, drag: true } });
+/**
+ * The canvas of a sweep, dragging with `radius`: `main` with the five prints, and the dragged
+ * block far away.
+ */
+function sweepCanvas(rule: Rule, radius: Radius, scale: number): Blockly.WorkspaceSvg {
+  const plugins = { ...rule.plugins, blockDragger: reaching(rule.plugins.blockDragger, radius) };
+  const svg = renderedWorkspace({ plugins, move: { scrollbars: true, drag: true } });
   setViewSize(svg, 1600, 1200);
   Blockly.svgResize(svg);
   svg.setScale(scale);
@@ -406,15 +434,7 @@ interface Sweep {
 
 /** Sweeps the grid of `step` units over ±60 at `scale` with `rule` and `radius`. */
 async function sweep(rule: Rule, radius: Radius, scale: number, step: number): Promise<Sweep> {
-  const saved = {
-    snap: Blockly.config.snapRadius,
-    connecting: Blockly.config.connectingSnapRadius,
-    preference: Blockly.config.currentConnectionPreference,
-  };
-  Blockly.config.snapRadius = radius.at(scale);
-  Blockly.config.connectingSnapRadius = radius.at(scale);
-  Blockly.config.currentConnectionPreference = radius.preference;
-  const svg = sweepCanvas(rule, scale);
+  const svg = sweepCanvas(rule, radius, scale);
   // Blockly tracks the connections of blocks it has just loaded a millisecond later.
   await new Promise((resolve) => setTimeout(resolve, 5));
   const counts = {
@@ -455,9 +475,6 @@ async function sweep(rule: Rule, radius: Radius, scale: number, step: number): P
   } finally {
     svg.cancelCurrentGesture();
     disposeWorkspaces();
-    Blockly.config.snapRadius = saved.snap;
-    Blockly.config.connectingSnapRadius = saved.connecting;
-    Blockly.config.currentConnectionPreference = saved.preference;
   }
   return { ...counts, results };
 }
@@ -539,10 +556,10 @@ const MEASURED_ZOOMS: readonly number[] = ((): readonly number[] => {
 })();
 
 describe('wrapping an empty C-block’s top onto a statement', () => {
-  it.each(ZOOMS)(
-    'is predictable at zoom %s: no mismatch, no place flicker, no insert/wrap swap',
-    async (scale) => {
-      const result = await sweep(TOP, BLOCKLY_RADIUS, scale, 20);
+  it.each(RADII.flatMap((radius) => ZOOMS.map((scale) => [radius.name, scale, radius] as const)))(
+    'is predictable with the radius %s at zoom %s: no mismatch, no place flicker, no insert/wrap swap',
+    async (_, scale, radius) => {
+      const result = await sweep(TOP, radius, scale, 20);
       expect(result.points).toBe(49);
       expect(result.mismatches).toBe(0);
       expect(result.placeFlickers).toBe(0);
@@ -553,6 +570,14 @@ describe('wrapping an empty C-block’s top onto a statement', () => {
       }
       // Its top at the gap wraps the third print and everything below it.
       expect(result.results['p1 p2 C{p3 p4 p5}']).toBeGreaterThan(0);
+      // The radius measured is the drag's: Blockly's 28 units leave the grid's far points out of
+      // reach at every zoom, and W5-1's 88 units at zoom 0.5 none.
+      const outOfReach = result.results[UNCHANGED] ?? 0;
+      if (radius === BLOCKLY_RADIUS) {
+        expect(outOfReach).toBeGreaterThan(0);
+      } else if (scale === 0.5) {
+        expect(outOfReach).toBe(0);
+      }
     },
     60_000,
   );
@@ -565,7 +590,7 @@ describe('wrapping an empty C-block’s top onto a statement', () => {
         '|---|---|---|---|---|---|---|---|---|---|',
       ];
       for (const rule of MEASURED) {
-        for (const radius of [BLOCKLY_RADIUS, ZOOM_AWARE_RADIUS]) {
+        for (const radius of RADII) {
           for (const scale of MEASURED_ZOOMS) {
             const r = await sweep(rule, radius, scale, 5);
             const cells = [
