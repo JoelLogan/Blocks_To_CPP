@@ -32,9 +32,14 @@ command runs from where the previous one left off.
 | g++ (only to run programs) | 11 or later                                             | building the programs you make; not needed to build the app    |
 
 The pinned versions come from the repository (`rust-toolchain.toml`,
-`package.json`, `Cargo.lock`, the CI workflows): the commands below install
-exactly those, and the build stops with the command to run when one of them
-does not match.
+`package.json`, `Cargo.lock`, the CI workflows), and the commands below
+install exactly those. rustup and Corepack use the pinned Rust and pnpm by
+themselves, and the WebAssembly core's build stops, naming the
+`cargo install` command to run, when the wasm-bindgen CLI has another
+version. Nothing checks the others: pnpm only warns about an older Node.js,
+and tauri-driver must be installed again by hand, with the command under
+[End-to-end tests](#end-to-end-tests), when the workflows'
+`TAURI_DRIVER_VERSION` changes. binaryen and g++ are minimums.
 
 ## Linux: Debian and Ubuntu
 
@@ -233,6 +238,10 @@ pnpm wasm:build
 pnpm desktop:dev
 ```
 
+On Windows, set `$env:B2C_SKIP_WASM_OPT = '1'` first in each new PowerShell
+window, as in step 5: Windows has no `wasm-opt`, and without the variable
+`pnpm wasm:build` stops and leaves no core at all.
+
 The development server warns when the WebAssembly core is older than its
 source, and the window does not start when the core's block catalog differs
 from the backend's; run `pnpm wasm:build` again in either case.
@@ -310,12 +319,14 @@ step 5.
 ### The WebAssembly core does not build
 
 - **"The WebAssembly core of the editor has not been built"**: the app or
-  the development server was started before the core was built. Run
-  `pnpm wasm:build`, then build again.
+  the development server was started before the core was built, or a failed
+  `pnpm wasm:build` removed it. Run `pnpm wasm:build` (on Windows with
+  `$env:B2C_SKIP_WASM_OPT = '1'` set, as in step 5), then build again.
 - **"The WebAssembly core in packages/b2c-core-wasm/pkg/ is out of date"**:
   the compiler's source changed since the core was built (after a pull, for
   example), so the app would show C++ from the old compiler. Run
-  `pnpm wasm:build`, or `pnpm app:build` for the core and the app.
+  `pnpm wasm:build`, or `pnpm app:build` for the core and the app (on
+  Windows with `$env:B2C_SKIP_WASM_OPT = '1'` set, as in step 5).
 - **wasm-bindgen is missing or has another version**: the build names the
   exact `cargo install wasm-bindgen-cli --version … --locked` command; the
   version must equal the one in `Cargo.lock`. cargo puts the program in
