@@ -184,7 +184,8 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
   operator, Scratch-style wrapping, the developer guide, and the other items
   the plan marks *M2 if time* (block upgrades on load and the one *change*
   block done 2026-10-13, [ADR-0015](../adr/0015-block-upgrades-on-load.md);
-  Scratch-style wrapping done 2026-10-14).
+  Scratch-style wrapping done 2026-10-14, its rule pending the owner's
+  approval: the plan's D13 follow-up).
 
 **Exit:** both P0 defects are fixed; each of U1–U18 is fixed or moved to M3
 with the owner's agreement; items marked *M2 if time* move to M3 without
