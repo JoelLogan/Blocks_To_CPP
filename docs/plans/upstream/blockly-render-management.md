@@ -154,12 +154,13 @@ C-block (as a program's main stack is), that C-block is drawn again (its mouth c
 whole subtree is updated. Updating only the children whose place changed would need
 `BlockSvg`'s private location methods, so the patch leaves it.
 
-We checked the patch with a property test (in our editor's Vitest suite, not committed): 40 random
-edits each with Zelos and with Geras (append, insert after a statement, insert into a C-block's
-mouth, delete with healing, move a statement into another mouth, collapse and expand); after each
-edit's render, every block's place, size and outline, every connection's place and every entry of
-the connection databases equals what `workspace.render()` (which redraws everything) then gives. The
-order of `getDescendants` equals the recursive one for ordered and unordered walks.
+We checked the patch with a property test (kept with this report in
+[`p3-spike/renderSpike.test.ts`](p3-spike/renderSpike.test.ts), not part of our editor's suite): 40
+random edits each with Zelos and with Geras (append, insert after a statement, insert into a
+C-block's mouth, delete with healing, move a statement into another mouth, collapse and expand);
+after each edit's render, every block's place, size and outline, every connection's place and every
+entry of the connection databases equals what `workspace.render()` (which redraws everything) then
+gives. The order of `getDescendants` equals the recursive one for ordered and unordered walks.
 
 ## Workaround we use
 
