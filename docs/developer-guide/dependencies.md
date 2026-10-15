@@ -161,9 +161,11 @@ build needs.
   at build time), `tray-icon`, and `dbus` (unused, and it would need libdbus to build).
 - **`rfd` 0.16.0**, not 0.17: `tauri-plugin-dialog` 2.8.1 still requires `rfd` 0.16 (so do 2.8.2
   and 2.8.3, the newest on 2026-10-15), and the Windows trust dialog uses the plugin's copy, so
-  `rfd` moves when the plugin does. On Windows it
-  brings `windows-sys` 0.60.2, which `notify` uses too. `lazy_static` stays on 1.5.0: 1.5.1 was
-  less than 7 days old when it was added.
+  `rfd` moves when the plugin does. On Windows it brings `windows-sys` 0.60.2, which `notify` uses
+  too.
+- **`lazy_static` 1.5.0** (through `tracing-subscriber`'s `sharded-slab`): 1.5.1 was less than 7
+  days old when it was added. It is old enough now (2026-10-01), but it changes no code and, being
+  a transitive crate, is in no Dependabot pull request, so it waits for a later Cargo update.
 - **`notify` 8.2.0**, the newest stable release (9.0 is still a release candidate). Without
   default features it brings `inotify`, `inotify-sys`, `mio`, `walkdir`, `notify-types`,
   `bitflags` and `log` on Linux (most already in the lockfile through Tauri), and `walkdir` and
