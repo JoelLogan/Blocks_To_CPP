@@ -207,7 +207,8 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
   visual diff (light on both systems, dark on Linux). The owner's part remains: the Debian toolchain
   cell, the visual baselines from the CI runners, the profile on the owner's
   machine, the usability sessions, the NVDA and Orca pass and the demo
-  review. A GitHub A/B of 2026-10-15 flagged an edit at 1,000 blocks as
+  review; [next steps](../plans/next-steps.md) lists them in order, with a
+  draft plan for M3. A GitHub A/B of 2026-10-15 flagged an edit at 1,000 blocks as
   slower than before the standard variable set (about +24 % on Linux and
   +29 % on Windows); it was the noise of a p95 taken over 10 edits, not a
   regression: later A/B runs measured the same code faster, and the
