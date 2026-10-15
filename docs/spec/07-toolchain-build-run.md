@@ -135,7 +135,7 @@ program that hangs on this system never makes the compiler unusable.
 | Library features | `-fsyntax-only` snippets: `<format>`, `<print>`, `<stacktrace>`, `std::ranges`, `std::jthread`, `contains`, designated initialisers | Feature gating and fallbacks ([06 §6.10](06-compiler-pipeline.md#610-includes-and-support-helpers)) |
 | Diagnostics format | Accepts `-fdiagnostics-add-output=sarif:…`? else `-fdiagnostics-format=sarif-file`? else `json`? else plain text | §7.5.3 ladder |
 | Sanitizers | Link (and run) probe with `-fsanitize=address,undefined`; and with `-fsanitize=undefined -fsanitize-undefined-trap-on-error` | Debug configuration ([§7.4.3](#743-sanitizers-and-hardening)) |
-| Hardening | `-fhardened`, `-D_FORTIFY_SOURCE=3`, `-fstack-protector-strong`, `-fstack-clash-protection`, `-fcf-protection` accepted and link OK | Release hardening |
+| Hardening | `-fhardened`, `-D_FORTIFY_SOURCE=3`, `-fstack-protector-strong`, `-fstack-clash-protection`, `-fcf-protection` accepted and link OK; `-fhardened` with `-O2` and without any diagnostic | Release hardening |
 | Static link | `-static` link of the probe (Windows) | Standalone `.exe` default |
 | Debugger (M5) | `gdb` alongside g++ (same `bin`), `gdb --version` ≥ 10 | Debugger availability |
 
@@ -186,7 +186,7 @@ settings. Commands are built as `Vec<OsString>` and passed to the OS directly,
 | --------------- | ------- | --------------------- |
 | **Debug** | `-O0 -g -fno-omit-frame-pointer -D_GLIBCXX_ASSERTIONS`, plus `-fsanitize=address,undefined -fno-sanitize-recover=undefined` when probed OK | `-O0 -g -fno-omit-frame-pointer -D_GLIBCXX_ASSERTIONS`, plus `-fsanitize=undefined -fsanitize-undefined-trap-on-error` when probed OK (ASan is not available for MinGW GCC; the UI says so) |
 | **Release** | `-O2 -DNDEBUG` | `-O2 -DNDEBUG` |
-| **Hardening** (default on) | `-fhardened` on GCC 14+ for optimised builds without AddressSanitizer (it includes `_FORTIFY_SOURCE` and `_GLIBCXX_ASSERTIONS`, which debug builds handle themselves); otherwise `-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3` (2 on GCC < 12) `-D_GLIBCXX_ASSERTIONS -fstack-protector-strong -fstack-clash-protection -fcf-protection -fPIE -pie -Wl,-z,relro,-z,now -Wl,-z,noexecstack` (each probe-gated) | `-fstack-protector-strong` (probe-gated) and `-Wl,--dynamicbase,--nxcompat,--high-entropy-va` (defaults in modern binutils, stated explicitly) |
+| **Hardening** (default on) | `-fhardened` on GCC 14+ for optimised builds without AddressSanitizer (it includes `_FORTIFY_SOURCE` and `_GLIBCXX_ASSERTIONS`, which debug builds handle themselves), where the probe's optimised build with it printed nothing (Ubuntu's GCC defines `_FORTIFY_SOURCE` itself, so `-fhardened` warns there, `-Whardened`); otherwise `-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3` (2 on GCC < 12) `-D_GLIBCXX_ASSERTIONS -fstack-protector-strong -fstack-clash-protection -fcf-protection -fPIE -pie -Wl,-z,relro,-z,now -Wl,-z,noexecstack` (each probe-gated) | `-fstack-protector-strong` (probe-gated) and `-Wl,--dynamicbase,--nxcompat,--high-entropy-va` (defaults in modern binutils, stated explicitly) |
 | **Link** | dynamic (standard); `-pthread` when concurrency is used | `-static` by default so `.exe` files run anywhere (setting: *dynamic*); `-pthread` when concurrency is used |
 
 Sanitizer and hardening choices that a toolchain cannot satisfy are dropped,

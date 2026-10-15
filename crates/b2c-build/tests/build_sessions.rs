@@ -909,6 +909,49 @@ fn the_init_unit_compiles_without_warnings() {
     }
 }
 
+/// Every g++ of a Linux system, the one on `PATH` and each side-by-side
+/// `/usr/bin/g++-N` (07 §7.2), builds a program in debug and release
+/// without a warning. Ubuntu's GCC 14 warned in every Release build
+/// (`-Whardened`: its driver defines `_FORTIFY_SOURCE`, so `-fhardened`
+/// cannot), which the default g++ of CI's Ubuntu, GCC 13, never showed.
+#[cfg(target_os = "linux")]
+#[test]
+fn every_gcc_found_builds_without_warnings() {
+    let Some(default) = real_toolchain() else {
+        return;
+    };
+    let mut toolchains = vec![default.clone()];
+    for major in b2c_toolchain::probe::MIN_GCC_MAJOR..=16 {
+        let Ok(path) = Path::new(&format!("/usr/bin/g++-{major}")).canonicalize() else {
+            continue;
+        };
+        if toolchains.iter().any(|known| known.path() == path) {
+            continue;
+        }
+        let probed =
+            b2c_toolchain::probe::probe(&path, &b2c_toolchain::probe::ProbeOptions::default()).unwrap();
+        if probed.is_usable() {
+            toolchains.push(probed);
+        }
+    }
+    let cache = tempfile::tempdir().unwrap();
+    let sessions = BuildSessions::new(cache.path().to_path_buf());
+    for toolchain in toolchains {
+        for configuration in [Configuration::Debug, Configuration::Release] {
+            let label = format!("{} {configuration:?}", toolchain.path().display());
+            let mut job = job("ph_every_gcc", example("hello_world"), ready(toolchain.clone()));
+            job.configuration = configuration;
+            let (_, events) = run(&sessions, job);
+            let found = diagnostics(&events);
+            assert_eq!(outcome(&events).0, BuildOutcome::Built, "{label}: {found:#?}");
+            assert!(
+                found.iter().all(|d| d.severity == b2c_ipc::diag::Severity::Info),
+                "{label}: {found:#?}"
+            );
+        }
+    }
+}
+
 /// A module whose name Windows reserves for a device is refused on every
 /// system, before anything is written (the loader refuses the name; the
 /// build folder refuses such file names again, see `build_dir`).

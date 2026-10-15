@@ -590,6 +590,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 
 ### Fixed
 
+- Every Release build with Ubuntu's GCC 14 or newer showed a warning
+  (`-Whardened`: `_FORTIFY_SOURCE` is not enabled by `-fhardened`), since
+  Ubuntu's compiler defines `_FORTIFY_SOURCE` itself. The compiler check now
+  counts `-fhardened` as available only when an optimised build with it says
+  nothing; elsewhere Release builds use the separate hardening options, as
+  with GCC 13. Remembered compilers are checked again once.
 - A save asked for while the previous save was still finishing was dropped
   without a word: after the first _Save as…_ of a new project, on a slow
   disk, an edit saved at once with Ctrl+S or ≡ _Save_ stayed unsaved. Such a

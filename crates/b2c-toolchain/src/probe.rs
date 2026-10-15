@@ -54,8 +54,11 @@ pub const MIN_GCC_MAJOR: u32 = 11;
 /// Version of the [`Toolchain`] record; cached records with another version
 /// must be probed again. Version 2 reports a probe that timed out as
 /// `B2C-T1023`: a version 1 record may call a compiler whose probe timed out
-/// a broken installation (`B2C-T1006`), so it is probed again once.
-pub const PROBE_FORMAT: u32 = 2;
+/// a broken installation (`B2C-T1006`), so it is probed again once. Version 3
+/// counts `-fhardened` as supported only when an optimised build with it
+/// prints no diagnostic: a version 2 record says yes for Ubuntu's GCC 14,
+/// whose Release builds then all warned (`-Whardened`).
+pub const PROBE_FORMAT: u32 = 3;
 
 /// Most output kept from one probe invocation.
 const PROBE_OUTPUT_CAP: usize = 256 * 1024;
@@ -645,7 +648,16 @@ impl<'a> Prober<'a> {
             if version.major >= 14 {
                 jobs_list.push((
                     Check::Fhardened,
-                    Box::new(|| Answer::Bool(self.optional().links("fhardened", HELLO, &["-fhardened"]))),
+                    // As a Release build uses it: optimised, and only where it
+                    // says nothing. A driver that defines _FORTIFY_SOURCE
+                    // itself (Ubuntu's) makes -fhardened warn (-Whardened).
+                    Box::new(|| {
+                        Answer::Bool(self.optional().links_silently(
+                            "fhardened",
+                            HELLO,
+                            &["-O2", "-fhardened"],
+                        ))
+                    }),
                 ));
             }
         } else {
@@ -758,6 +770,19 @@ impl<'a> Prober<'a> {
 
     fn links(&self, name: &str, text: &str, flags: &[&str]) -> bool {
         self.link(name, text, flags).is_some()
+    }
+
+    /// Whether `text` compiles and links with `flags` without a warning or
+    /// any other diagnostic.
+    fn links_silently(&self, name: &str, text: &str, flags: &[&str]) -> bool {
+        let Some(file) = self.source(name, text) else {
+            return false;
+        };
+        let output = format!("{name}{}", self.exe_suffix);
+        let mut args: Vec<&str> = flags.to_vec();
+        args.extend([file.as_str(), "-o", output.as_str()]);
+        let result = self.gxx(&args);
+        Self::succeeded(&result) && matches!(&result, Ok(captured) if captured.stderr.is_empty())
     }
 
     /// Runs a probe program; `extra_env` is added to the probe environment.
@@ -1302,6 +1327,74 @@ exit 0
         assert!(!toolchain.capabilities.sanitizers.leak_detection);
         assert!(toolchain.capabilities.sanitizers.undefined);
         assert!(toolchain.capabilities.sanitizers.undefined_trap);
+    }
+
+    /// A fake GCC 14 on Linux that passes every check. With `-fhardened` it
+    /// warns as GCC 14 does without optimisation, and, when `predefines` is
+    /// set, also with it, as Ubuntu's GCC does: Ubuntu's driver defines
+    /// `_FORTIFY_SOURCE` itself.
+    #[cfg(unix)]
+    fn fhardened_gxx(predefines: bool) -> String {
+        format!(
+            r#"#!/bin/sh
+case "$1" in
+  -dumpfullversion|-dumpversion) echo 14.2.0; exit 0 ;;
+  -dumpmachine) echo x86_64-linux-gnu; exit 0 ;;
+  --version) echo 'g++ (GCC) 14.2.0'; exit 0 ;;
+  -print-prog-name=cc1plus) echo "$0"; exit 0 ;;
+esac
+output=''
+hardened=''
+optimised=''
+previous=''
+for argument in "$@"; do
+  case "$argument" in
+    -fhardened) hardened=yes ;;
+    -O1|-O2|-O3|-Os|-Og) optimised=yes ;;
+  esac
+  if [ "$previous" = '-o' ]; then output="$argument"; fi
+  previous="$argument"
+done
+if [ -n "$hardened" ]; then
+  if [ -z "$optimised" ]; then
+    echo "cc1plus: warning: '_FORTIFY_SOURCE' is not enabled by '-fhardened' because optimizations are turned off [-Whardened]" >&2
+  elif [ -n "{predefines}" ]; then
+    echo "cc1plus: warning: '_FORTIFY_SOURCE' is not enabled by '-fhardened' because it was specified in '-D' or '-U' [-Whardened]" >&2
+  fi
+fi
+if [ -n "$output" ]; then
+  printf '#!/bin/sh\necho b2c-probe-ok\n' > "$output"
+  chmod +x "$output"
+fi
+exit 0
+"#,
+            predefines = if predefines { "yes" } else { "" }
+        )
+    }
+
+    /// Spec §7.4.3: `-fhardened` is used only where it builds an optimised
+    /// program without a warning. On Ubuntu's GCC 14 every Release build
+    /// warned (`-Whardened`), since its driver defines `_FORTIFY_SOURCE`;
+    /// such a compiler gets the separate hardening flags instead.
+    #[cfg(unix)]
+    #[test]
+    fn fhardened_is_used_only_where_an_optimised_build_does_not_warn() {
+        for (predefines, expected) in [(false, true), (true, false)] {
+            let dir = tempfile::tempdir().unwrap();
+            let fake = dir.path().join("g++");
+            std::fs::write(&fake, fhardened_gxx(predefines)).unwrap();
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            let toolchain = probe(&fake, &ProbeOptions::default()).unwrap();
+            assert!(toolchain.is_usable(), "{:?}", toolchain.problems);
+            assert_eq!(
+                toolchain.capabilities.hardening.fhardened, expected,
+                "a compiler that defines _FORTIFY_SOURCE itself: {predefines}"
+            );
+            assert!(toolchain.capabilities.hardening.fortify_source);
+        }
     }
 
     #[test]
