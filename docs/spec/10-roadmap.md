@@ -22,7 +22,12 @@
 > diff of the canvas runs there too, but compares nothing until its baselines
 > are committed. The first scheduled nightly run, with the E2E security
 > tests, the benchmarks and the fuzzing, passed on both systems (2026-10-07,
-> commit `0709960`). The first measurements on CI's runners, which have no
+> commit `0709960`). The nightly of 2026-10-14 (commit `bee5c0a`) failed
+> three jobs: the two Windows E2E failures led to fixes in the app (a save
+> asked for while another was finishing was dropped) and in the harness, and
+> the Linux benchmark flags came from a slower runner, not the code
+> ([record](../plans/m2-polish-plan.md#w7--m2-close-out)). The first
+> measurements on CI's runners, which have no
 > GPU, are a cold start of 1.2 s (Linux) and 2.8 s (Windows), and a p95 frame
 > time while dragging in a 5,000-block workspace of 40 ms (Linux) and 914 ms
 > (Windows): meeting the targets N2–N4 and N12 is M5's exit, M2 gates
