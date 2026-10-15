@@ -4,7 +4,8 @@
  * and tells the backend, zooming and scrolling do not, saving writes the view that is shown, and
  * an unchanged project saves byte for byte as it was read, its view included. Renaming the project
  * through the editor is an unsaved change that the generated code follows and Undo leaves alone;
- * the editor's Undo and Redo act on the canvas.
+ * the editor's Undo and Redo act on the canvas. An edit made just before a save and undone while
+ * the save runs leaves the project unsaved, with the undone document the canvas shows.
  *
  * As in the app, projects open while the editor is hidden (the start page is showing): the
  * workspace has no size until the editor is shown.
@@ -28,7 +29,7 @@ import {
 import { createCoreHost } from '../../editor/preview/coreHost';
 import { registerEditorBlocks } from '../../editor/services';
 import { withoutEvents } from '../../editor/sync/bdmToWorkspace';
-import { setViewSize } from '../../editor/sync/testing';
+import { present, setViewSize } from '../../editor/sync/testing';
 import { clearWorkspace } from '../../editor/sync/traverse';
 import { viewStateOf } from '../../editor/sync/viewport';
 import {
@@ -274,6 +275,54 @@ describe.skipIf(!CORE_BUILT)('the project in the block editor', () => {
     editor.handle.updateProjectInfo({ name: 'Space Invaders' });
     await afterDebounce();
     expect(useAppStore.getState().analysis.seq).toBe(seq);
+  });
+
+  it('keeps an edit undone while a save of it runs unsaved, as the canvas shows it', async () => {
+    await openHello();
+    await afterDebounce();
+    const savedText = useAppStore.getState().project?.textHash;
+    let answer: (response: { savedAt: string; hash: string }) => void = () => undefined;
+    harness.ipc.projectSave.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+
+    // A move (X), saved at once: the save writes the canvas, ahead of the project's document.
+    const [block] = workspace.getTopBlocks(false);
+    const before = block?.getRelativeToSurfaceXY().x ?? 0;
+    block?.moveBy(48, 0);
+    const saving = harness.feature.lifecycle.save();
+    await waitFor(() => {
+      expect(harness.ipc.projectSave).toHaveBeenCalled();
+    });
+    const sent = harness.ipc.projectSave.mock.calls[0]?.[0].document ?? '';
+    const written = core.load(new TextEncoder().encode(sent));
+    expect(written.ok && written.document.modules[0]?.workspace.blocks[0]?.x).toBe(before + 48);
+    await waitFor(() => {
+      expect(dirty()).toBe(true);
+    });
+
+    // Undone while the save runs: the project's text is the one before the move again.
+    editor.handle.undo();
+    await waitFor(() => {
+      expect(dirty()).toBe(false);
+    });
+    expect(useAppStore.getState().project?.textHash).toBe(savedText);
+
+    // The file now holds X, the canvas the undone document: that is unsaved.
+    answer({ savedAt: '2026-10-05T10:42:00Z', hash: 'f'.repeat(64) });
+    expect(await saving).toBe(true);
+    const project = present(useAppStore.getState().project, 'project');
+    expect(project.document.modules[0]?.workspace.blocks[0]?.x).toBe(before);
+    expect(project.dirty).toBe(true);
+    await waitFor(() => {
+      expect(harness.ipc.projectSetDirty).toHaveBeenLastCalledWith({
+        handle: HANDLE_A,
+        dirty: true,
+      });
+    });
   });
 
   it('undoes and redoes the last change on the canvas', async () => {

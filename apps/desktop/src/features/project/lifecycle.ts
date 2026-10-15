@@ -87,10 +87,11 @@ interface PreparedSave {
   /** The hash of {@link text}: the saved text's, which `dirty` compares with from now on. */
   readonly textHash: string;
   /**
-   * The project's {@link ProjectState.textHash} when the save started, to notice edits made
-   * meanwhile.
+   * The project's document when the save started (the store replaces the object whenever it
+   * changes), to notice edits made meanwhile: an edit and its undo that the preview pipeline
+   * commits while the save runs leave the text's hash as it was, but not the document.
    */
-  readonly base: string;
+  readonly base: BdmDocument;
 }
 
 /** A project's name for dialogs. */
@@ -764,7 +765,7 @@ export class ProjectLifecycle implements ProjectQueue {
       text: canonical.text,
       hash: canonical.hash,
       textHash: canonical.textHash,
-      base: project.textHash,
+      base: project.document,
     };
   }
 
@@ -784,10 +785,12 @@ export class ProjectLifecycle implements ProjectQueue {
   }
 
   /**
-   * Makes a written document the project's saved state. When the project did not change while it
-   * was being saved, the written document becomes the project's; otherwise the newer edits stay
-   * and only the saved layout (`generator`, viewports) is taken over, so they still count as
-   * unsaved.
+   * Makes a written document the project's saved state. When the project's document is still the
+   * one it had when the save started, the written document becomes the project's; otherwise the
+   * newer edits stay and only the saved layout (`generator`, viewports) is taken over, and
+   * whether they are unsaved is worked out from the text: an edit committed and undone while the
+   * save ran leaves the project with the undone document, which differs from the one written
+   * (the canvas read when the save started, which can be ahead of the project's document).
    */
   private adoptSaved(
     handle: Handle,
@@ -800,7 +803,7 @@ export class ProjectLifecycle implements ProjectQueue {
       return;
     }
     const named = fileName === null ? {} : { fileName };
-    if (project.textHash === prepared.base) {
+    if (project.document === prepared.base) {
       actions.updateProject({
         ...named,
         document: prepared.doc,
