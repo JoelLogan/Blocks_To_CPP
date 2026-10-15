@@ -10,9 +10,14 @@
  *   was) and Ctrl+Y wraps again;
  * - an *if* dropped on the top of a loop's body wraps the loop's statements (a nested mouth);
  * - at the zooms 0.5, 0.9 and 1.5 (projects saved with that zoom), an empty *if* taken from the
- *   toolbox, dropped with its top at the gap above the third of `main`'s five prints, exactly and
- *   10 canvas units off in each direction, wraps the third print and everything below it, the
- *   preview before the release showed what the drop did, and Ctrl+Z puts everything back.
+ *   toolbox, brought in from the right at the height of the gap above the third of `main`'s five
+ *   prints and dropped with its top there, exactly and 10 canvas units off in each direction,
+ *   wraps the third print and everything below it, the preview before the release showed what
+ *   the drop did, and Ctrl+Z puts everything back. It comes from the right because a preview
+ *   stays on a place the pointer passed while that place is in reach and no other place is 20
+ *   units nearer (03 §3.3), and a statement preview moves the statements below it down: coming
+ *   down the list from above, the *if* keeps wrapping the second print at the gap below it (the
+ *   sweep counts such drops as swaps).
  *
  * With `B2C_E2E_WRAP_SWEEP=1` the last test instead drops the *if* on a 20-unit grid over ±60
  * units around the gap, each point twice (the pointer coming from above and from below), and
@@ -385,7 +390,8 @@ describe('Wrapping statements in an empty C-block', () => {
       const results: Record<string, number> = {};
       for (const [dx, dy] of offsets) {
         const outcomes = new Set<string>();
-        for (const from of sweep ? [-1, 1] : [-1]) {
+        // The pointer comes from above (-1) or below (1) in the sweep, from the right (0) else.
+        for (const from of sweep ? [-1, 1] : [0]) {
           // The gap well inside the canvas, and an if of the toolbox's Control category taken out
           // to its right (Blockly makes the new block at the canvas's zoom).
           const gap = await scrollIntoView(app.driver, app.hook, () =>
@@ -426,7 +432,8 @@ describe('Wrapping statements in an empty C-block', () => {
           await releaseButton(app.driver);
           await sleep(DROP_SETTLE_MS);
           const result = resultOf(await currentDocument(app), ifId);
-          const facts = `zoom ${String(scale)}, ${String(dx)}, ${String(dy)} units off, from ${from < 0 ? 'above' : 'below'}: preview "${arrival}" on arrival, "${preview}" settled, drop "${result}"`;
+          const side = from < 0 ? 'above' : from > 0 ? 'below' : 'the right';
+          const facts = `zoom ${String(scale)}, ${String(dx)}, ${String(dy)} units off, from ${side}: preview "${arrival}" on arrival, "${preview}" settled, drop "${result}"`;
           tally.drops += 1;
           tally.lags += arrival === preview ? 0 : 1;
           tally.mismatches += preview === result ? 0 : 1;

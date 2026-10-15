@@ -146,9 +146,9 @@ Details of each level as M2 sets them up:
   (into a C-block off its connection at two zoom levels, a drop on the
   toolbox while a place is previewed, also without a last move, a drop on
   the trash can undone with `Ctrl+Z`, *Show all blocks* keeping the zoom,
-  and wrapping statements of `main` once wrapping lands), and a build and a
-  run with input. Both run in the pull request E2E job on both systems; the
-  security tests of
+  and an empty *if* wrapping statements of `main`, undone and redone, at
+  three zoom levels), and a build and a run with input. Both run in the
+  pull request E2E job on both systems; the security tests of
   [08 §8.13](08-security.md#813-continuous-security-process) run nightly.
   Typing in expression slots and Quick Insert are M3 features and are not
   tested in M2. *Without reading docs* is checked by a manual usability
