@@ -33,7 +33,13 @@ import {
   outcomeOf,
 } from './lib/ipc';
 import { injectionProblems, type PageState, shownText } from './lib/page';
-import { parseSuiteTable, readSuite, SuiteTableError, tableCells } from './lib/projects';
+import {
+  commandSpans,
+  parseSuiteTable,
+  readSuite,
+  SuiteTableError,
+  tableCells,
+} from './lib/projects';
 
 describe('compiler names', () => {
   it('match the programs of a C++ build, with target prefixes, versions and .exe', () => {
@@ -96,6 +102,44 @@ describe('compiler names', () => {
       { program: 'g++.exe', pid: 4120 },
       { program: 'cc1plus.exe', pid: 4121 },
     ]);
+  });
+});
+
+describe('the app log', () => {
+  /** A log line as `src-tauri/src/logging.rs` writes it, inside `spans`. */
+  const line = (spans: unknown[], message = 'something happened') =>
+    JSON.stringify({
+      timestamp: '2026-10-15T10:00:00.000Z',
+      level: 'INFO',
+      target: 'b2c_app::backend',
+      spans,
+      fields: {},
+      message,
+    });
+  const command = (name: string) => ({ name: 'command', fields: { name } });
+
+  it('names the commands whose spans are open on some line, each once', () => {
+    const log = [
+      line([]),
+      line([command('trust_get')]),
+      // app_quit shuts the backend down inside its own span (b2c_app::Backend::app_quit).
+      line([command('app_quit'), command('shutdown')], 'backend shut down'),
+      line([command('trust_get')]),
+      '',
+    ].join('\n');
+    expect(commandSpans(log)).toEqual(['app_quit', 'shutdown', 'trust_get']);
+  });
+
+  it('ignores other spans, odd shapes and lines that are not JSON objects', () => {
+    const log = [
+      line([{ name: 'build', fields: { name: 'app_quit' } }]),
+      line([{ name: 'command', fields: { name: 7 } }, { name: 'command' }, 'command', null]),
+      JSON.stringify({ spans: 'command' }),
+      JSON.stringify([command('app_quit')]),
+      '{"spans":[{"name":"command","fields":{"name":"app_q',
+      'not json',
+    ].join('\n');
+    expect(commandSpans(log)).toEqual([]);
   });
 });
 

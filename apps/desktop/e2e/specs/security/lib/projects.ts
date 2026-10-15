@@ -191,3 +191,39 @@ export function trustStore(profile: string): string {
 export function appLog(profile: string): string {
   return path.join(profile, 'state', 'logs', 'blocks2cpp.log');
 }
+
+/** Whether a value is a plain object (a JSON object). */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The backend commands that ran and logged something while they ran, read from the app's log
+ * text: every command opens a debug span `command` whose field `name` is the command
+ * (`b2c_app::backend::command_span`), and each JSON line of the log lists the spans open when it
+ * was written (`src-tauri/src/logging.rs`). Sorted, each name once. Blank lines and lines that are
+ * not JSON objects are skipped.
+ */
+export function commandSpans(logText: string): string[] {
+  const names = new Set<string>();
+  for (const line of logText.split('\n')) {
+    if (line.trim() === '') {
+      continue;
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const spans = isRecord(value) ? value['spans'] : undefined;
+    for (const span of Array.isArray(spans) ? (spans as unknown[]) : []) {
+      const fields = isRecord(span) && span['name'] === 'command' ? span['fields'] : undefined;
+      const name = isRecord(fields) ? fields['name'] : undefined;
+      if (typeof name === 'string') {
+        names.add(name);
+      }
+    }
+  }
+  return [...names].sort();
+}

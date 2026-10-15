@@ -76,6 +76,7 @@ function loadFrame() {
     `({
        hook: window.__TAURI_ISOLATION_HOOK__,
        makeMessage: b2cTestMessage,
+       allowlist: B2C_IPC_ALLOWLIST,
        globals: { allowlist: typeof B2C_IPC_ALLOWLIST, validator: typeof b2cValidateIpcMessage },
      })`,
     realm,
@@ -220,5 +221,77 @@ describe('the hook', () => {
     assertBlocked(message('<img src=x onerror=alert(1)>', {}), '(not shown)');
     assertBlocked(message('a'.repeat(65), {}), '(not shown)');
     assertBlocked(message('app_info\nfake log line', {}), '(not shown)');
+  });
+});
+
+// The Windows nightly once saw `app_quit` run during the malformed-message cases
+// (e2e/specs/security/README.md, "The app_quit incident"). Every command without arguments is one
+// valid message, `{}`, away from running, so each must refuse every other payload.
+describe('commands that take no arguments', () => {
+  // Read from the generated allowlist, so a new command without arguments is covered at once.
+  const argumentFree = Object.keys(frame.allowlist)
+    .filter((cmd) => Object.keys(frame.allowlist[cmd]).length === 0)
+    .sort();
+
+  test('are the commands whose valid sample is empty, app_quit among them', () => {
+    assert.ok(argumentFree.includes('app_quit'));
+    assert.deepEqual(
+      argumentFree,
+      Object.keys(samples)
+        .filter((cmd) => Object.keys(samples[cmd]).length === 0)
+        .sort(),
+    );
+  });
+
+  test('pass with an empty payload', () => {
+    for (const cmd of argumentFree) {
+      const msg = message(cmd, {});
+      assert.equal(frame.hook(msg), msg, cmd);
+    }
+  });
+
+  test('block a constructor, prototype or __proto__ key, an extra key and any other payload', () => {
+    // JSON.parse makes each key an own property, `__proto__` included, as structured cloning
+    // into the frame does.
+    const payloads = [
+      JSON.parse('{"constructor":{"prototype":{"b2cPolluted":true}}}'),
+      JSON.parse('{"constructor":{}}'),
+      JSON.parse('{"constructor":null}'),
+      JSON.parse('{"prototype":{"b2cPolluted":true}}'),
+      JSON.parse('{"prototype":1}'),
+      JSON.parse('{"__proto__":{"b2cPolluted":true}}'),
+      JSON.parse('{"__proto__":{}}'),
+      { b2cExtra: 1 },
+      { request: {} },
+      { onEvent: '__CHANNEL__:1' },
+      undefined,
+      null,
+      [],
+      '{}',
+      0,
+    ];
+    for (const cmd of argumentFree) {
+      for (const payload of payloads) {
+        assert.throws(
+          () => frame.hook(message(cmd, payload)),
+          (error) => error.message.endsWith(`(command: ${cmd})`),
+          `${cmd} with ${JSON.stringify(payload)}`,
+        );
+      }
+    }
+  });
+
+  test('block options, with or without those keys', () => {
+    for (const cmd of argumentFree) {
+      for (const options of [
+        {},
+        JSON.parse('{"constructor":1}'),
+        JSON.parse('{"prototype":1}'),
+        JSON.parse('{"__proto__":1}'),
+        { headers: { 'Tauri-Channel-Id': '1' } },
+      ]) {
+        assertBlocked(message(cmd, {}, options), cmd);
+      }
+    }
   });
 });

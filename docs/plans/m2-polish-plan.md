@@ -1339,6 +1339,7 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
   - Assert that the debug log has no `app_quit` span after the mutation batch.
   - `isolation-tests` cases for `{constructor}`, `{prototype}` and extra keys on every command that takes no arguments.
 - Effort S.
+- *Status (2026-10-15):* done. The incident, what is known and the likely cause are in `apps/desktop/e2e/specs/security/README.md` ("The `app_quit` incident"). Test 4 of `ipc-abuse.e2e.ts` reads the backend's debug log after the malformed messages and fails on an `app_quit` command span or on the command's name anywhere in the log; a throwaway run that did send a valid `app_quit` showed its span, so the check is not empty. `isolation-tests/index.test.js` ("commands that take no arguments") sends `constructor`, `prototype` and `__proto__` keys, extra keys and payloads of other types, and options, to each of the 11 commands without arguments, read from the generated allowlist. No gap: the hook already refused every one of them, so the allowlist is unchanged.
 
 **H-1 Housekeeping PR (if time).** One small PR for the P3 items:
 
