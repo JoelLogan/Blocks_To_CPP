@@ -441,10 +441,11 @@ export class EditorSession {
    * When the preview pipeline is idle ({@link PreviewPipeline.isIdle}), the project's document
    * already holds them: it is the canvas as the pipeline last read it, and nothing has changed
    * since. Reading the whole canvas instead grows with the canvas (about 10 ms at 1,000 blocks in
-   * a debug build), and it delayed every drag's start. Otherwise (an edit waits for its preview,
-   * or the canvas did not load) the canvas is read now; a block the project's document does not
-   * have yet and that sits on its own is one the drag takes out of the toolbox, which is not part
-   * of the canvas before the drag. The project's document never has that block.
+   * a debug build), and it delayed every drag's start. Otherwise (an edit waits for its preview or
+   * its `update()` still runs, or the canvas did not load) the canvas is read now; a block the
+   * project's document does not have yet and that sits on its own is one the drag takes out of the
+   * toolbox, which is not part of the canvas before the drag. The project's document never has
+   * that block.
    *
    * A change Blockly has made but not yet announced (it delivers its events after the next
    * animation frame, so a drag that starts before then is heard of first) is not in the project's
