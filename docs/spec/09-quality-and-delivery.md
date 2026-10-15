@@ -119,7 +119,15 @@ Details of each level as M2 sets them up:
   upgrades on load, 05 §5.7), `b2c-build/src/build_dir.rs` and
   `check_program` in `b2c-process/src/command.rs`, excluding the generated
   `reserved_names.rs`. Any missed mutant fails the job; timeouts and unviable
-  mutants are reported only.
+  mutants are reported only. Each test process runs under a 2 GiB cap on its
+  resident memory (`tools/memory-capped-runner.py`, the job's cargo target
+  runner), so a mutant that makes a loop endless and allocating fails its
+  tests within seconds and counts as caught, instead of exhausting the
+  runner. The cap does not reach the compilers and programs the tests start,
+  and it is not an address-space limit: one would be inherited by them, and
+  AddressSanitizer programs cannot start under it. A mutant's tests time out
+  after 1.5 times the unmutated tests' time, which bounds what a loop that
+  does not allocate costs.
 * **Desktop E2E** ([ADR-0009](../adr/0009-e2e-tooling-and-test-seams.md)):
   selenium-webdriver drives `tauri-driver` (installed with `cargo install
   --locked` at a pinned version), with Vitest as the runner; WebdriverIO
