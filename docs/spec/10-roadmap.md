@@ -112,9 +112,9 @@ readers, high contrast, the toolchain matrix) and updated documentation.
   set with scope- and type-filtered menus), and symbol dropdowns filtered by
   scope. Parked (loose) blocks: kept, warned, never run
   ([ADR-0012](../adr/0012-parked-blocks.md)). A type-aware connection
-  checker, Scratch-style snapping and wrapping (wrapping moves to M3 if the
-  polish wave cannot fit it). Copy and paste through the validated clipboard
-  format. External change detection for open projects (Reload or Keep mine).
+  checker, Scratch-style snapping and wrapping. Copy and paste through the
+  validated clipboard format. External change detection for open projects
+  (Reload or Keep mine).
 * Machine settings: a versioned, schema-checked `settings.json`
   (`settings_get`/`settings_update`) and a Settings page (code style, Run on
   errors, console). Remembered toolbox and dock sizes (`ui.layout`). Build
@@ -176,7 +176,8 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
 * If time: block upgrades on load and one *change* block for every update
   operator, Scratch-style wrapping, the developer guide, and the other items
   the plan marks *M2 if time* (block upgrades on load and the one *change*
-  block done 2026-10-13, [ADR-0015](../adr/0015-block-upgrades-on-load.md)).
+  block done 2026-10-13, [ADR-0015](../adr/0015-block-upgrades-on-load.md);
+  Scratch-style wrapping done 2026-10-14).
 
 **Exit:** both P0 defects are fixed; each of U1–U18 is fixed or moved to M3
 with the owner's agreement; items marked *M2 if time* move to M3 without

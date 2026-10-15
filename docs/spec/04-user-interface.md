@@ -414,11 +414,15 @@ drag blocks past the editing session and write HTML with `innerHTML`). The
 arrow keys move between blocks and their fields and inputs, `Enter` edits a
 field, `M` picks a block up so the arrow keys choose where it goes (the
 places a pointer drag could drop it, type rule included; `Enter` puts it
-there, `Escape` cancels), `T` opens the toolbox, whose categories and blocks
-are reached with the arrow keys (adding a block from it is one undo step;
-`↓`/`↑` also stop on its buttons, such as *Make a variable*, its headings and
-its notes, and a getter is announced with the group it is listed in),
-and copy, paste, duplicate, delete, undo and the block menu (`Ctrl+Enter`)
+there, `Escape` cancels; an empty C-block goes between two statements
+where a pointer drag would wrap them, since wrapping
+([03 §3.3](03-block-language.md#33-block-shapes)) comes to the keyboard
+with the non-drag alternatives in M5), `T` opens the toolbox, whose
+categories and blocks are reached with the arrow keys (adding a block from
+it is one undo step; `↓`/`↑` also stop on its buttons, such as *Make a
+variable*, its headings and its notes, and a getter is announced with the
+group it is listed in), and copy, paste, duplicate, delete, undo and the
+block menu (`Ctrl+Enter`)
 act on the keyboard focus. `Ctrl+=` / `Ctrl+-` zoom the canvas around its
 centre and `Ctrl+0` resets the zoom to 100 %, and the new zoom is announced;
 `Ctrl` + wheel and a pinch zoom around the pointer, and the plain wheel

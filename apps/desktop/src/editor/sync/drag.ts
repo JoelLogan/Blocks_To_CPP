@@ -51,6 +51,7 @@
  * and one Undo takes back the drop and all of that. A block the keyboard adds from the toolbox is
  * settled the same way when it is put down ({@link settleBlockDrop}, `keyboard/mover.ts`).
  */
+import { completeWrap, previewedWrap, type WrapPlace } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
 import './drag.css';
@@ -138,6 +139,23 @@ export function settleBlockDrop(
     tell(() => {
       handler(block);
     });
+  } finally {
+    Blockly.Events.setGroup(false);
+  }
+}
+
+/**
+ * Finishes a drop that wraps statements in an empty C-block (03 §3.3, `completeWrap`) in Blockly
+ * event group `group` (the drag's; a group of its own when `group` is empty), which it opens
+ * again and closes. A failure is logged and leaves Blockly's drop as it is: the C-block in the
+ * statements' place with the statements below it.
+ */
+function finishWrap(wrap: WrapPlace, group: string): void {
+  Blockly.Events.setGroup(group === '' ? true : group);
+  try {
+    completeWrap(wrap);
+  } catch (error: unknown) {
+    console.error('A wrap could not be finished', error);
   } finally {
     Blockly.Events.setGroup(false);
   }
@@ -341,11 +359,15 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
    * the dragged blocks, the block is first moved to the drop point, so the strategy drops any
    * preview the last move left behind and nothing is connected before the delete.
    *
-   * A block dropped on the canvas is then settled by the workspace's {@link BlockDropHandler}
-   * (`handleBlockDrops`) in the drag's Blockly event group, which Blockly's dragger closes: the
-   * group is taken before Blockly ends the drag, opened again for the handler, and closed after
-   * it. A block taken from the toolbox was created in the same group (Blockly's gesture starts it
-   * first), so one Undo removes the block, its move and what the handler changed.
+   * A drop that wraps statements in an empty C-block (03 §3.3, the wrap its preview shows:
+   * `previewedWrap`, read before Blockly ends the drag and hides the preview) is finished after
+   * Blockly's drop: Blockly connects the C-block in the statements' place and hangs them below it,
+   * and `completeWrap` moves them into its first mouth. A block dropped on the canvas is then
+   * settled by the workspace's {@link BlockDropHandler} (`handleBlockDrops`). Both happen in the
+   * drag's Blockly event group, which Blockly's dragger closes: the group is taken before Blockly
+   * ends the drag, opened again for them, and closed after. A block taken from the toolbox was
+   * created in the same group (Blockly's gesture starts it first), so one Undo removes the block,
+   * its move, the wrap and what the handler changed.
    */
   override onDragEnd(e: PointerEvent, totalDelta?: Blockly.utils.Coordinate): void {
     const group = Blockly.Events.getGroup();
@@ -355,7 +377,11 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
       if (totalDelta !== undefined && root !== null && this.wouldDeleteDraggable(e, root)) {
         this.onDrag(e, totalDelta);
       }
+      const wrap = root !== null && !this.shouldReturnToStart(e, root) ? previewedWrap(root) : null;
       super.onDragEnd(e);
+      if (wrap !== null) {
+        finishWrap(wrap, group);
+      }
       this.settleDrop(group);
     } finally {
       const listener = LISTENERS.get(this.workspace);

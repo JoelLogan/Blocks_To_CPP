@@ -6,7 +6,12 @@
  * It publishes the {@link EditorHandle} features use, and attaches the editor plugins
  * (`EDITOR_PLUGINS`: the toolbox, the diagnostics, the clipboard, the keyboard navigation).
  */
-import { B2C_CHECKER_NAME, b2cDarkTheme, b2cLightTheme } from '@blocks2cpp/blockly-ext';
+import {
+  B2C_CHECKER_NAME,
+  B2C_PREVIEWER_NAME,
+  b2cDarkTheme,
+  b2cLightTheme,
+} from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -63,10 +68,12 @@ export function editorInjectOptions(theme: Blockly.Theme): Blockly.BlocklyOption
     maxTrashcanContents: 0,
     // The starting toolbox and the continuous toolbox's classes, which Blockly picks only at
     // inject time; the toolbox plugin then fills in presets, Variables and Your functions. The block
-    // dragger tells the editing session when a drag starts, before Blockly moves anything.
+    // dragger tells the editing session when a drag starts, before Blockly moves anything. The
+    // connection previewer also previews an empty C-block wrapping statements (03 §3.3).
     toolbox: toolbox.toolbox,
     plugins: {
       connectionChecker: B2C_CHECKER_NAME,
+      connectionPreviewer: B2C_PREVIEWER_NAME,
       blockDragger: B2cBlockDragger,
       ...toolbox.plugins,
     },

@@ -3,7 +3,7 @@
  *
  * It keeps all of Blockly's own checks (safety: no self or cross-workspace connections, matching
  * connection kinds, shadows; drag: distance, insertion markers, occupied connections; and the
- * `check` arrays) and adds two kinds of rule:
+ * `check` arrays) and adds three kinds of rule:
  *
  * * **Structure**, always: a hat or definition never goes inside anything; a statement never goes
  *   into a value input; a reporter or predicate never goes into a statement list.
@@ -12,6 +12,9 @@
  *   connect. Connections the program makes (loading a project, undo and redo) never apply the type
  *   rule: Blockly throws when a saved connection is refused, and a project may legitimately hold a
  *   type error that the analyser reports.
+ * * **Wrapping**, while the user drags an empty statement C-block with the pointer: dropped on a
+ *   statement of a list, it takes the statement's place and wraps it and the statements below it
+ *   (./wrap.ts), where Blockly would insert it.
  *
  * Register it with `registerB2cConnectionChecker()` (done when this module loads) and inject with
  * `plugins: { connectionChecker: 'b2c_checker' }`.
@@ -24,6 +27,7 @@ import { conversionAllowed } from './conversion';
 import { checkerTypeOracle } from './oracle';
 import { staticOutputType } from './output-type';
 import type { OutputTypeOracle, StaticType } from './types';
+import { wrapPlace } from './wrap';
 
 /** Connection kinds as plain numbers (`Connection.type` is a number). */
 const INPUT_VALUE: number = Blockly.ConnectionType.INPUT_VALUE;
@@ -91,9 +95,34 @@ function typeAllows(
 
 /**
  * Blockly's connection checker plus the structural rules and, while dragging, the type rule of
- * 03 §3.5.3.
+ * 03 §3.5.3 and the wrapping of statements in a C-block (03 §3.3, ./wrap.ts).
  */
 export class B2cConnectionChecker extends Blockly.ConnectionChecker {
+  /**
+   * Blockly's drag checks, except for a wrap ({@link wrapPlace}): an empty statement C-block
+   * dragged with the pointer may take the place of a statement in a list, which then goes into its
+   * first mouth with the statements below it. Blockly would insert the C-block there instead (or
+   * refuse a C-block with no next connection); a wrap is allowed within `distance` when the
+   * statements can go into the mouth. An empty C-block is so never inserted between two
+   * statements by the pointer.
+   */
+  override doDragChecks(
+    a: Blockly.RenderedConnection,
+    b: Blockly.RenderedConnection,
+    distance: number,
+  ): boolean {
+    const wrap = wrapPlace(a, b);
+    if (wrap === null) {
+      return super.doDragChecks(a, b, distance);
+    }
+    const statements = wrap.wrapped.previousConnection;
+    return (
+      a.distanceFrom(b) <= distance &&
+      statements !== null &&
+      this.canConnect(wrap.mouth, statements, false)
+    );
+  }
+
   override canConnectWithReason(
     a: Blockly.Connection | null,
     b: Blockly.Connection | null,
