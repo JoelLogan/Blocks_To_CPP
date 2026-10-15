@@ -147,6 +147,11 @@ fn block_ids(value: &Value, out: &mut Vec<String>) {
 #[test]
 fn the_malicious_project_suite_through_scope_and_clipboard() {
     let seed = "5a".repeat(32);
+    // A block of the last document that loaded, with the scope query's answer for it after that
+    // case, or `None` before any has loaded.
+    let mut kept: Option<(String, String)> = None;
+    // How many refused documents were checked against a kept answer that lists symbols.
+    let mut checked = 0;
     for case in cases() {
         let bytes = std::fs::read(suite_dir().join(&case.file)).unwrap();
         let Ok(text) = String::from_utf8(bytes) else {
@@ -155,13 +160,18 @@ fn the_malicious_project_suite_through_scope_and_clipboard() {
         update(&text, 4);
         let made = parse(&b2c_core_wasm::clipboard_make(&text, "[]"));
         if let Some(expected) = &case.loader {
-            // Nothing is kept from a document that does not load: no answer.
+            // A document that does not load keeps the analysis of the last one that did (06
+            // §6.13): the answer stays what it was, and before any loaded there is none.
+            let (probe, answer) = kept
+                .as_ref()
+                .map_or(("b001", "null"), |(id, answer)| (id.as_str(), answer.as_str()));
             assert_eq!(
-                b2c_core_wasm::symbols_in_scope("b001", None),
-                "null",
+                b2c_core_wasm::symbols_in_scope(probe, None),
+                answer,
                 "{}",
                 case.file
             );
+            checked += usize::from(answer.starts_with('['));
             assert_eq!(made["ok"], false, "{}", case.file);
             let found: BTreeSet<String> = codes(&made["diagnostics"]).into_iter().collect();
             assert_eq!(&found, expected, "{}", case.file);
@@ -208,7 +218,13 @@ fn the_malicious_project_suite_through_scope_and_clipboard() {
             "{}: {output:.300}",
             case.file
         );
+        kept = ids
+            .iter()
+            .map(|id| (id.clone(), b2c_core_wasm::symbols_in_scope(id, None)))
+            .find(|(_, answer)| answer.starts_with('['))
+            .or(kept);
     }
+    assert!(checked > 0, "no refused document followed one that loaded");
 }
 
 #[test]
