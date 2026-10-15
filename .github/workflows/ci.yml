@@ -637,6 +637,17 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm --filter @blocks2cpp/site test
 
+      # BUILDING.md's pinned versions and apt packages against their sources
+      # (Cargo.lock, rust-toolchain.toml, package.json, .node-version and the
+      # workflows), and no other Markdown file repeating them
+      # (docs/spec/09-quality-and-delivery.md §9.4); then the checker's own
+      # test against repositories that break each rule.
+      - name: Pinned versions in BUILDING.md, written nowhere else
+        if: ${{ !cancelled() }}
+        run: |
+          python3 tools/check-build-docs.py
+          python3 tools/check-build-docs.py --self-test
+
       # catalog/ is exported by b2c-catalog as packages/catalog-gen/catalog.json,
       # from which catalog-gen generates the Blockly definitions and the block
       # reference (docs/spec/09-quality-and-delivery.md §9.4).

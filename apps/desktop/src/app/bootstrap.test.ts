@@ -1,7 +1,7 @@
 import { IPC_VERSION, IpcCallError } from '@blocks2cpp/ipc-types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type AppRuntime, createAppRuntime } from './bootstrap';
+import { type AppRuntime, type AppRuntimeOptions, createAppRuntime } from './bootstrap';
 import { createCommandRegistry } from './commands';
 import { setCore } from './core';
 import { createDialogQueue } from './dialogs';
@@ -21,7 +21,9 @@ import {
 let runtime: AppRuntime | null = null;
 
 /** A runtime over a fake backend, with spies for what it installs. */
-function setUp(options: { withoutBackend?: boolean } = {}) {
+function setUp(
+  options: Partial<Pick<AppRuntimeOptions, 'withoutBackend' | 'coreCatalogVersion'>> = {},
+) {
   const ipc = createFakeIpc();
   const commands = createCommandRegistry();
   const uninstallFeatures = vi.fn();
@@ -146,6 +148,68 @@ describe('starting the window', () => {
     const other = setUp();
     other.ipc.appInfo.mockResolvedValue(null as unknown as ReturnType<typeof appInfoFixture>);
     await expect(other.runtime.start()).resolves.toMatchObject({ backend: null });
+  });
+
+  it("stops when the compiler core has another catalog version than the backend's", async () => {
+    const coreCatalogVersion = vi.fn(() => Promise.resolve('1.1.0'));
+    const { runtime, ipc, installFeatures } = setUp({ coreCatalogVersion });
+
+    await expect(runtime.start()).resolves.toEqual({
+      kind: 'coreMismatch',
+      core: '1.1.0',
+      backend: appInfoFixture().catalogVersion,
+    });
+    expect(runtime.getPhase()).toMatchObject({ kind: 'coreMismatch' });
+    expect(coreCatalogVersion).toHaveBeenCalledTimes(1);
+    // Like an IPC mismatch: no subscription (the backend's close requests stay its own), no state.
+    expect(ipc.appSubscribe).not.toHaveBeenCalled();
+    expect(installFeatures).not.toHaveBeenCalled();
+    expect(useAppStore.getState().appInfo).toBeNull();
+  });
+
+  it('names no backend catalog when app_info has none', async () => {
+    const { runtime, ipc } = setUp({ coreCatalogVersion: () => Promise.resolve('1.2.0') });
+    ipc.appInfo.mockResolvedValue({
+      ...appInfoFixture(),
+      catalogVersion: 12,
+    } as unknown as ReturnType<typeof appInfoFixture>);
+
+    await expect(runtime.start()).resolves.toEqual({
+      kind: 'coreMismatch',
+      core: '1.2.0',
+      backend: null,
+    });
+  });
+
+  it("starts when the compiler core has the backend's catalog version", async () => {
+    const coreCatalogVersion = vi.fn(() => Promise.resolve(appInfoFixture().catalogVersion));
+    const { runtime, ipc, installFeatures } = setUp({ coreCatalogVersion });
+
+    await expect(runtime.start()).resolves.toEqual({ kind: 'ready' });
+    expect(coreCatalogVersion).toHaveBeenCalledTimes(1);
+    expect(ipc.appSubscribe).toHaveBeenCalledTimes(1);
+    expect(installFeatures).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts when the compiler core cannot start: the editor reports that itself', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const failure = new Error('no module');
+    const { runtime } = setUp({ coreCatalogVersion: () => Promise.reject(failure) });
+
+    await expect(runtime.start()).resolves.toEqual({ kind: 'ready' });
+    expect(consoleError).toHaveBeenCalledWith(
+      'Could not start the compiler core to compare its catalog version',
+      failure,
+    );
+  });
+
+  it('does not ask for the core when the IPC versions already differ', async () => {
+    const coreCatalogVersion = vi.fn(() => Promise.resolve('1.1.0'));
+    const { runtime, ipc } = setUp({ coreCatalogVersion });
+    ipc.appInfo.mockResolvedValue(appInfoFixture({ ipcVersion: IPC_VERSION + 1 }));
+
+    await expect(runtime.start()).resolves.toMatchObject({ kind: 'versionMismatch' });
+    expect(coreCatalogVersion).not.toHaveBeenCalled();
   });
 
   it('fails with the error code when the backend does not answer', async () => {

@@ -147,26 +147,25 @@ so type checking works without a build.
 
 ## Build
 
-[`BUILDING.md`](../../BUILDING.md) sets these tools up on each system and builds the core as part of
-the app ([troubleshooting](../../BUILDING.md#the-webassembly-core-does-not-build)). In short, it
-needs the pinned Rust toolchain (with `wasm32-unknown-unknown`), the wasm-bindgen CLI of the
-version pinned in `Cargo.lock` (0.2.129) and binaryen's `wasm-opt` (the `binaryen` package of
-Ubuntu 24.04, version 108, is new enough; CI uses release 133):
+The build needs the pinned Rust toolchain (with `wasm32-unknown-unknown`), the wasm-bindgen CLI
+of the version pinned in `Cargo.lock` and, optionally, binaryen's `wasm-opt`.
+[`BUILDING.md`](../../BUILDING.md) names their versions and sets them up on each system
+([troubleshooting](../../BUILDING.md#the-webassembly-core-does-not-build)). From the repository
+root:
 
 ```sh
-cargo install wasm-bindgen-cli --version 0.2.129 --locked   # into ~/.cargo/bin, which must be on PATH
-sudo apt install binaryen                                    # Debian and Ubuntu; or B2C_SKIP_WASM_OPT=1
-pnpm --filter @blocks2cpp/b2c-core-wasm build
+pnpm wasm:build     # pnpm --filter @blocks2cpp/b2c-core-wasm build; B2C_SKIP_WASM_OPT=1 without wasm-opt
+pnpm app:build      # the core, then the release build of the app
 ```
 
 [`scripts/build.mjs`](scripts/build.mjs) first checks both tools and names every one that is
 missing or unsuitable, with how to get it. It then runs `cargo build --profile wasm-release
 --target wasm32-unknown-unknown -p b2c-core-wasm`, `wasm-bindgen --target web`, `wasm-opt -Oz` and
-writes `pkg/` (not committed): `glue.js`, `pkg-bytes.js`, `b2c_core_wasm_bg.wasm` and
-`sizes.json`. It stops when the CLI version differs from `Cargo.lock`, when the crate's exports
-differ from `src/glue.d.ts` (change `EXPECTED_EXPORTS` in the script with them), or when the
-module is over the **size budget of 2,000,000 bytes after `wasm-opt -Oz`** (the gzip size is
-reported only).
+writes `pkg/` (not committed): `glue.js`, `pkg-bytes.js`, `b2c_core_wasm_bg.wasm`, `sizes.json`
+and, last, `build-info.json`. It stops when the CLI version differs from `Cargo.lock`, when the
+crate's exports differ from `src/glue.d.ts` (change `EXPECTED_EXPORTS` in the script with them),
+or when the module is over the **size budget of 2,000,000 bytes after `wasm-opt -Oz`** (the gzip
+size is reported only).
 
 | Variable            | Effect                                                                                 |
 | ------------------- | -------------------------------------------------------------------------------------- |
@@ -174,6 +173,22 @@ reported only).
 | `WASM_OPT`          | binaryen's `wasm-opt` (default: `wasm-opt` on `PATH`)                                  |
 | `B2C_SKIP_WASM_OPT` | `1` skips `wasm-opt` for local builds; the budget is checked on the unoptimised module |
 | `CARGO`             | The cargo to run                                                                       |
+
+### An out-of-date core stops the app's build
+
+`pkg/` is not rebuilt by itself after a `git pull`, and an app built with an old core shows C++
+from the old compiler. So `pkg/build-info.json` records a SHA-256 of the core's inputs, taken
+before cargo reads them ([`scripts/build-info.mjs`](scripts/build-info.mjs) lists them): the root
+`Cargo.toml`, the `Cargo.lock` entries of `b2c-core-wasm` and everything it depends on,
+`rust-toolchain.toml`, `catalog/`, the `Cargo.toml` and `src/` of each crate compiled into the
+core (`b2c-core-wasm`, `b2c-ir`, `b2c-model`, `b2c-catalog`, `b2c-lang`, `b2c-codegen`) and the two
+build scripts. The desktop app's Vite plugin
+([`apps/desktop/vite/wasmCore.ts`](../../apps/desktop/vite/wasmCore.ts)) computes it again: a
+production build of the editor (`tauri build`, `pnpm --filter @blocks2cpp/desktop build`, also the
+E2E build) stops when the core is missing, older than its inputs (naming the ones that changed) or
+has no `build-info.json`; the dev server and Vitest only warn. A development build of the app also
+compares the core's catalog version with the backend's when it starts, and shows a blocking error
+when they differ ([spec 02 §2.5.7](../../docs/spec/02-architecture.md#257-versioning)).
 
 ## Checks
 
@@ -185,6 +200,8 @@ pnpm --filter @blocks2cpp/b2c-core-wasm test            # or test:coverage
 cargo test --locked -p b2c-core-wasm                     # the same functions, natively
 ```
 
+`test/build-info.test.ts` checks the fingerprint: stable, changed by every input group and by
+nothing else, and an input list that names every crate and `include_str!` file the core compiles.
 The Vitest suite under Node runs every example (load, canonical save byte for byte, preview equal
 to `tests/golden/<name>/main.cpp`, `update()`'s hashes equal to `canonical()`'s), the
 malicious-project suite

@@ -469,10 +469,18 @@ panic crosses the IPC boundary: the adapters catch panics and return
 `b2c_ipc::IPC_VERSION` is an integer (1 in M2), and the generator writes the
 same constant into `packages/ipc-types`. `app_info` returns it together with
 the app version, the platform and the catalog version, and the frontend shows
-a blocking error screen when the two differ. The frontend and the backend
-ship together, so a mismatch means a broken build, not a combination to
-support. The package version equals the app version. A breaking change to a
-request, response, event or error bumps `IPC_VERSION`, and breaking changes
+a blocking error screen when the two differ. A development build (the Vite dev
+server, which serves the WebAssembly core as it is) also compares the core's
+catalog version with the backend's (`app_info.catalogVersion`) at start-up,
+before it subscribes to the backend's events; a mismatch is the same blocking
+start-up error as an IPC version mismatch (a core that cannot start is not
+one: the editor reports that when it needs the core). A production build
+cannot embed a core older than its source
+([06 §6.13](06-compiler-pipeline.md#613-performance-in-the-editor)), so it
+starts the core with the editor, off the start-up path. The frontend and the
+backend ship together, so a mismatch means a broken build, not a combination
+to support. The package version equals the app version. A breaking change to
+a request, response, event or error bumps `IPC_VERSION`, and breaking changes
 happen only in major releases, which means any `0.x` release until 1.0
 ([09 §9.5](09-quality-and-delivery.md#95-versioning)).
 

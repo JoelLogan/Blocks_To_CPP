@@ -11,7 +11,8 @@ export default mergeConfig(
       // A fast DOM without layout, so tests run headless in Node.js. Anything that needs real
       // layout or rendering (colour contrast, drag and drop, canvas pixels) is tested end to end.
       environment: 'happy-dom',
-      include: ['src/**/*.test.{ts,tsx}'],
+      // The app's tests, and the build plugins' (vite/, in Node: `@vitest-environment node`).
+      include: ['src/**/*.test.{ts,tsx}', 'vite/**/*.test.ts'],
       setupFiles: ['./src/test/setup.ts'],
       // Style sheets stay empty in tests, except when a test reads one as text (`?raw`): the
       // accessibility checks read the colour tokens and control sizes from them

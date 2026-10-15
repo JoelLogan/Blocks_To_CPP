@@ -1,3 +1,4 @@
+import { initCore } from '@blocks2cpp/b2c-core-wasm';
 import { isTauri } from '@tauri-apps/api/core';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -36,6 +37,13 @@ const runtime = createAppRuntime({
   installFeatures,
   installBlocklyDialogs,
   window,
+  // The dev server serves the WebAssembly core as it is (vite/wasmCore.ts only warns), so a
+  // development build checks at start-up that the core has the backend's block catalog
+  // (docs/spec/02-architecture.md §2.5.7); the editor then reuses the started core. A production
+  // build cannot embed an out-of-date core, so it keeps the core off the start-up path.
+  ...(import.meta.env.DEV
+    ? { coreCatalogVersion: async () => (await initCore()).version().catalog }
+    : {}),
   // Only the Vite dev server opened in a browser has no backend; the desktop app always has one.
   withoutBackend: import.meta.env.DEV && !isTauri(),
 });

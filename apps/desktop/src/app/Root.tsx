@@ -22,6 +22,7 @@ export function Root({ runtime }: { runtime: AppRuntime }) {
       content = <App />;
       break;
     case 'versionMismatch':
+    case 'coreMismatch':
     case 'failed':
       content = <StartupErrorScreen phase={phase} />;
       break;

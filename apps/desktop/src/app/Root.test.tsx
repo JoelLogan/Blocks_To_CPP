@@ -2,7 +2,12 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { expectNoAxeViolations } from '../test/axe';
-import { type AppRuntime, type BootPhase, createAppRuntime } from './bootstrap';
+import {
+  type AppRuntime,
+  type AppRuntimeOptions,
+  type BootPhase,
+  createAppRuntime,
+} from './bootstrap';
 import { createCommandRegistry } from './commands';
 import { createDialogQueue } from './dialogs';
 import { Root } from './Root';
@@ -14,9 +19,10 @@ vi.mock('./App', () => ({ App: () => <p>the main window</p> }));
 
 let runtime: AppRuntime | null = null;
 
-function makeRuntime() {
+function makeRuntime(options: Pick<AppRuntimeOptions, 'coreCatalogVersion'> = {}) {
   const ipc = createFakeIpc();
   runtime = createAppRuntime({
+    ...options,
     ipc,
     store: useAppStore,
     commands: createCommandRegistry(),
@@ -71,6 +77,32 @@ describe('Root', () => {
     );
     expect(screen.queryByText('the main window')).toBeNull();
     await expectNoAxeViolations(container);
+  });
+
+  it("shows a blocking error screen when the compiler core has another catalog than the backend's", async () => {
+    const { runtime } = makeRuntime({ coreCatalogVersion: () => Promise.resolve('1.1.0') });
+    const { container } = render(<Root runtime={runtime} />);
+
+    await act(async () => {
+      await runtime.start();
+    });
+
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('✖ Blocks2Cpp cannot start');
+    expect(screen.getByRole('alert').textContent).toContain(
+      'build its WebAssembly core again and then the app',
+    );
+    expect(screen.getByTestId('startup-details').textContent).toBe(
+      "Technical details: the window's compiler core has block catalog 1.1.0, the program behind it has block catalog 1.2.0.",
+    );
+    expect(screen.queryByText('the main window')).toBeNull();
+    await expectNoAxeViolations(container);
+  });
+
+  it('says when the backend did not name its catalog', () => {
+    render(<Root runtime={fixedRuntime({ kind: 'coreMismatch', core: '1.1.0', backend: null })} />);
+    expect(screen.getByTestId('startup-details').textContent).toBe(
+      "Technical details: the window's compiler core has block catalog 1.1.0, the program behind it did not say which block catalog it has.",
+    );
   });
 
   it('says when the backend did not name its version', () => {

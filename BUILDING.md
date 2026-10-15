@@ -28,6 +28,7 @@ command runs from where the previous one left off.
 | pnpm                       | 11.27.1, from `package.json`, through Corepack          | the editor's packages                                          |
 | wasm-bindgen CLI           | 0.2.129, the `wasm-bindgen` version in `Cargo.lock`     | the editor's compiler core (WebAssembly)                       |
 | binaryen's `wasm-opt`      | 108 or later (optional)                                 | making the WebAssembly core smaller                            |
+| tauri-driver (E2E tests)   | 2.1.0, `TAURI_DRIVER_VERSION` in the CI workflows       | the end-to-end tests (contributors only)                       |
 | g++ (only to run programs) | 11 or later                                             | building the programs you make; not needed to build the app    |
 
 The pinned versions come from the repository (`rust-toolchain.toml`,

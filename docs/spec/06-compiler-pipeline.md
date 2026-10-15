@@ -579,6 +579,14 @@ severity: `W0510` set to `error` is still `W0510`.
   `data:` URL. After a WebAssembly trap the module is instantiated afresh.
 * **Size budget:** at most 2,000,000 bytes after `wasm-opt -Oz`, checked in
   CI; the gzip size is reported only.
+* **Freshness:** the core is built from source, not committed, so its build
+  records a SHA-256 of its inputs in `pkg/build-info.json` (the crates
+  compiled into it and their `Cargo.lock` entries, the workspace manifest,
+  the catalog, the toolchain file and the build scripts). A production build
+  of the editor fails when the core is missing, has no build info, or its
+  inputs changed since, naming what changed; the dev server warns, and a
+  development build compares the core's catalog version with the backend's
+  at start-up ([02 §2.5.7](02-architecture.md#257-versioning)).
 * Modules over 2,000 blocks run analysis in a Web Worker.
 * **In M2** each debounced change runs one `update()` in WebAssembly: the
   document is loaded and hashed once, and the preview and hash are
