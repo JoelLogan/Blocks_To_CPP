@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use b2c_ipc::IpcError;
+use b2c_store::project_file::is_device_name;
 
 use crate::limits::{MAX_DIALOG_LIBRARIES, MAX_DIALOG_TEXT_CHARS, MAX_SUGGESTED_STEM_CHARS};
 
@@ -177,7 +178,9 @@ pub fn display_text(text: &str, max_chars: usize) -> String {
 /// The file name the save dialog suggests: the current file's name when the
 /// project has one, otherwise the project's name made into a safe file name
 /// (letters, digits, spaces, `-`, `_` and `.`; at most
-/// [`MAX_SUGGESTED_STEM_CHARS`] characters) with `.b2c`, or `project.b2c`.
+/// [`MAX_SUGGESTED_STEM_CHARS`] characters) with `.b2c`, or `project.b2c`
+/// when nothing is left or the name is a Windows device name
+/// ([`is_device_name`]: `CON`, `COM1`, `LPT²`, …).
 pub fn suggested_file_name(current: Option<&Path>, project_name: &str) -> String {
     if let Some(name) = current.and_then(Path::file_name).and_then(|name| name.to_str()) {
         let safe = display_text(name, MAX_DIALOG_TEXT_CHARS);
@@ -199,23 +202,6 @@ pub fn suggested_file_name(current: Option<&Path>, project_name: &str) -> String
         stem = String::from("project");
     }
     format!("{stem}.b2c")
-}
-
-/// Whether `stem` is a Windows device name (`CON`, `NUL`, `COM1`, …), which
-/// cannot be a file name there.
-fn is_device_name(stem: &str) -> bool {
-    let upper = stem
-        .split('.')
-        .next()
-        .unwrap_or(stem)
-        .trim_end()
-        .to_ascii_uppercase();
-    matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || ["COM", "LPT"].iter().any(|prefix| {
-            upper
-                .strip_prefix(prefix)
-                .is_some_and(|n| n.len() == 1 && n.bytes().all(|b| b.is_ascii_digit()))
-        })
 }
 
 /// The library list of a [`TrustPrompt`]: the first [`MAX_DIALOG_LIBRARIES`]
@@ -361,6 +347,14 @@ mod tests {
         assert_eq!(suggested_file_name(None, "CON"), "project.b2c");
         assert_eq!(suggested_file_name(None, "com1"), "project.b2c");
         assert_eq!(suggested_file_name(None, "com10"), "com10.b2c");
+        // Windows also reserves COM and LPT with a superscript digit.
+        assert_eq!(suggested_file_name(None, "COM\u{b9}"), "project.b2c");
+        assert_eq!(suggested_file_name(None, "lpt\u{b2}"), "project.b2c");
+        assert_eq!(suggested_file_name(None, "Com\u{b3}.v2"), "project.b2c");
+        assert_eq!(
+            suggested_file_name(None, "com\u{b9}\u{b2}"),
+            "com\u{b9}\u{b2}.b2c"
+        );
         assert_eq!(suggested_file_name(None, "x\u{202E}y"), "xy.b2c");
         let long = "a".repeat(200);
         assert_eq!(
@@ -402,6 +396,7 @@ mod tests {
             prop_assert!(stem.chars().count() <= MAX_SUGGESTED_STEM_CHARS);
             prop_assert!(stem.chars().all(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.')));
             prop_assert!(!stem.starts_with('.') && !stem.ends_with('.'));
+            prop_assert!(!is_device_name(stem));
         }
     }
 }

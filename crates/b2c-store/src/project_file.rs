@@ -118,14 +118,19 @@ fn plain_component_ok(component: &str) -> bool {
     {
         return false;
     }
-    // Device names stay devices with any extension: `nul.txt`, `COM1.b2c`.
-    let stem = component
-        .split('.')
-        .next()
-        .unwrap_or(component)
-        .trim_end_matches(' ');
+    !is_device_name(component)
+}
+
+/// Whether Windows reserves the file name `name` for a device, so that a
+/// file of that name, in any folder, opens the device instead: the part
+/// before the first `.`, without trailing spaces, is `CON`, `PRN`, `AUX`,
+/// `NUL`, `CONIN$`, `CONOUT$`, or `COM` or `LPT` followed by one of `0`–`9`,
+/// `¹`, `²` and `³`, in any letter case. Device names stay devices with any
+/// extension: `nul.txt`, `COM1.b2c`, `lpt².b2c`.
+pub fn is_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).trim_end_matches(' ');
     let upper = stem.to_ascii_uppercase();
-    let device = matches!(
+    matches!(
         upper.as_str(),
         "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
     ) || ["COM", "LPT"].iter().any(|prefix| {
@@ -135,8 +140,7 @@ fn plain_component_ok(component: &str) -> bool {
                 "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "\u{b9}" | "\u{b2}" | "\u{b3}"
             )
         })
-    });
-    !device
+    })
 }
 
 #[cfg(test)]
@@ -240,5 +244,42 @@ mod tests {
         assert_eq!(simplify_verbatim(&long), None);
         // Names that only look like devices are fine.
         assert!(simplify_verbatim(r"\\?\C:\x\console\com10\lpt.txt\nul1").is_some());
+    }
+
+    #[test]
+    fn device_names() {
+        for name in [
+            "CON",
+            "prn",
+            "Aux",
+            "nul.txt",
+            "NUL .b2c",
+            "conin$",
+            "CONOUT$",
+            "com0",
+            "COM9.b2c",
+            "lpt5",
+            "COM\u{b9}",
+            "lpt\u{b2}.b2c",
+            "Com\u{b3}",
+        ] {
+            assert!(is_device_name(name), "{name}");
+        }
+        for name in [
+            "",
+            "co",
+            "console",
+            "nul1",
+            "com",
+            "com10",
+            "lpt.txt",
+            "com\u{b9}\u{b2}",
+            "com\u{b4}",
+            "lpt\u{2074}",
+            "xcon",
+            " con",
+        ] {
+            assert!(!is_device_name(name), "{name}");
+        }
     }
 }

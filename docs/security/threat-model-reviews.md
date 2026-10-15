@@ -179,7 +179,9 @@ the project's folder is passed. *Choose g++* starts in `/usr/bin` or the
 system drive's root with no file chosen, and the backend refuses a compiler
 in an open project's folder or the cache before running it. The suggested
 file name of *Save as* is made from the project name with only letters,
-digits, space, `-`, `_` and `.`, trimmed, never a device name.
+digits, space, `-`, `_` and `.`, trimmed, never a Windows device name
+(`b2c_store::project_file::is_device_name`, the rule the project file's
+path checks use, which includes `COM¹`–`COM³` and `LPT¹`–`LPT³`; TM-M2-8).
 
 ### Block upgrades on load
 
@@ -441,6 +443,22 @@ request's top level.** Fixed when the review was merged.
   type), so `settings_update`'s `codeStyle`, `run`, `console`, `ui` and
   `ui.layout` and `run_start`'s `runOptions` are covered end to end; a case
   in `helpers.e2e.ts` checks the nested cases (it failed before the fix).
+
+**TM-M2-8 (low): the suggested name of *Save as* could be a device name.**
+Fixed at the M2 close review.
+
+- *What:* the suggested name keeps every character Rust counts as
+  alphanumeric, which includes the superscript digits `¹`, `²` and `³`, but
+  `b2c-app`'s own device-name check accepted only an ASCII digit after `COM`
+  and `LPT`. A project with no file yet, named `COM¹`, got `COM¹.b2c`, a name
+  Windows reserves for a device; saving it failed instead of offering a
+  usable default. Nothing reached a device: the save path refuses anything
+  that is not a regular file.
+- *Fix:* `b2c-app` uses `b2c_store::project_file::is_device_name`, the rule
+  the project file's path checks already had (with `¹`, `²`, `³`, `CONIN$`
+  and `CONOUT$`), so the two checks cannot drift apart; `suggested_names`
+  checks `COM¹`, `lpt²` and `Com³.v2` (it failed before the fix), and the
+  property test checks that no suggested name is a device name.
 
 No finding of this review is a vulnerability that a project file, a
 clipboard payload or a web page can exploit.
