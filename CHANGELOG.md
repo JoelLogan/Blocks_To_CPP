@@ -319,7 +319,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - Scratch-style wrapping: an empty C-block dragged onto a statement takes its
   place and wraps that statement and everything below it in the list. The
   grey preview shows the C-block around them, and one Undo takes the drop
-  back. A block moved with the keyboard is still inserted (03 §3.3).
+  back. A block moved with the keyboard is still inserted (03 §3.3). A
+  counted loop from the toolbox that wraps statements counts with a name they
+  do not declare (`j` around `create i` or a `for i` loop).
 - End-to-end flows `placement` (drops off target into a C-block at 90 % and
   52 % zoom; drops on the toolbox's flyout, after moving over it and in one
   go with the jump, and on the trash can while a place is previewed, each
@@ -509,10 +511,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   up to date; it reuses the project's document (about 10 ms saved per drag
   start at 1,000 blocks).
 - Each edit loads and analyses the document once in the WebAssembly core
-  (`update()`), and the canonical text is made only to save, build, autosave
-  or check an external change. At 1,000 blocks the preview task's p95 falls
-  from 113 to 92 ms in the app's benchmark (a local A/B), with about 35 ms
-  less core work per edit.
+  (`update()`), and the canonical text is made only when a save, build,
+  autosave, open or paste needs it. At 1,000 blocks the preview task's p95
+  falls from 113 to 92 ms in the app's benchmark (a local A/B), with about
+  17 ms less core work per edit (`canonical` and `analyse` took 58–62 ms,
+  `update` takes 42–44 ms; 36 ms less in the package's Vitest measurement).
 - The core's `preview()` export is now `update()`, which also returns
   `textHash` (SHA-256 of the canonical text); `canonical()` returns
   `textHash` too. Unsaved changes are detected by that hash, so moving a
@@ -529,6 +532,18 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 
 ### Fixed
 
+- Choosing another module, or a problem in another module (also the first
+  error that F5 or Ctrl+B selects), while a block is dragged no longer
+  switches modules in the middle of the drag, which lost the dragged block
+  and could lose the statements a drag preview held; the switch is made once
+  the block is dropped.
+- While the canvas cannot be read back as a project (the "Your latest change
+  was not checked" banner), the editor stays on its module. Switching cleared
+  the undo history the banner's _Undo last change_ needs, and kept the module
+  in a form that no save, build or recovery snapshot could write.
+- A save during which an edit was made and undone no longer marks the undone
+  document as saved: the project stays unsaved, since the file holds the
+  edit.
 - Dropping a block on the toolbox or the trash can while a place was
   previewed no longer deletes the blocks below that place. Only the dragged
   blocks are deleted, no place is previewed while the pointer is there, and
