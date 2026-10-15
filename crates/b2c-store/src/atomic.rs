@@ -7,10 +7,13 @@
 //!
 //! 1. a temporary file is created **in the same folder** with a random name,
 //!    exclusively (`O_EXCL`, so an existing file or link is never opened)
-//!    and owner-only (`0600` on Unix), by the `tempfile` crate;
+//!    and owner-only (`0600` on Unix), by the `tempfile` crate; only a new
+//!    project file is created instead with the bits any new file of the
+//!    user gets (`0666` less the umask, 05 §5.10);
 //! 2. the bytes are written and flushed, the file gets its final permission
 //!    bits on Unix (`0600`, or for a project the bits of the file it
-//!    replaces), and it is `fsync`ed;
+//!    replaces; a new project keeps the bits it was created with), and it is
+//!    `fsync`ed;
 //! 3. the temporary file is renamed over the target by
 //!    [`b2c_process::os::atomic_replace`]: `MoveFileExW(REPLACE_EXISTING |
 //!    WRITE_THROUGH)` on Windows, `rename(2)` and a directory `fsync` on Unix.
@@ -23,7 +26,7 @@
 //! version is opened without blocking and checked through its handle, so a
 //! FIFO swapped in at the target is refused instead of hanging the save.
 
-use std::fs::{self, File, Metadata, Permissions};
+use std::fs::{self, File, Metadata};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
@@ -47,9 +50,23 @@ pub enum Backup {
 pub(crate) enum ModePolicy {
     /// Always `0600` ([`write_atomic`]).
     OwnerOnly,
-    /// The bits of the file it replaces; `0600` for a new file
-    /// ([`write_atomic_keeping_mode`]).
+    /// The bits of the file it replaces; for a new file, the bits any new
+    /// file of the user gets ([`write_atomic_keeping_mode`]).
     KeepExisting,
+}
+
+/// How the temporary file of one write gets its permission bits on Unix.
+/// Elsewhere it keeps the defaults: on Windows, the ACL inherited from its
+/// folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileMode {
+    /// Exactly these bits (`0o600`, or a replaced file's), set on the
+    /// complete file before the rename.
+    Exactly(u32),
+    /// The bits any new file of the user gets: the file is created with
+    /// `0666` and the system takes the umask off (`0644` under the usual
+    /// umask `022`), and nothing changes them afterwards.
+    UserDefault,
 }
 
 /// The backup of `target` that [`Backup::KeepPrevious`] writes: the same
@@ -94,8 +111,10 @@ pub fn write_atomic(target: &Path, bytes: &[u8], backup: Backup) -> Result<(), S
 
 /// [`write_atomic`] for the user's own files (project files and their
 /// `.bak`): on Unix a replaced file keeps its permission bits, so a project
-/// the user made group-readable stays so; a new file is `0600`. Never use it
-/// for machine-local files, which must always be `0600`.
+/// the user made group-readable stays so, and a new file gets the bits any
+/// new file of the user gets, `0666` less the umask (05 §5.10, 08 §8.6;
+/// usually `0644`). Never use it for machine-local files, which must always
+/// be `0600`.
 ///
 /// # Errors
 /// As [`write_atomic`].
@@ -120,8 +139,8 @@ pub(crate) fn write_atomic_with_hook(
     if let (Backup::KeepPrevious, Some(metadata)) = (backup, &existing) {
         copy_to_backup(target, metadata, &backup_path(target)?, dir, policy)?;
     }
-    let permissions = file_permissions(policy, existing.as_ref());
-    let temp = write_temp(dir, target, permissions, &mut |file| file.write_all(bytes))?;
+    let mode = file_mode(policy, existing.as_ref());
+    let temp = write_temp(dir, target, mode, &mut |file| file.write_all(bytes))?;
     before_rename(&temp).map_err(|source| StoreError::io("write the file", target, source))?;
     replace(temp, target)
 }
@@ -148,26 +167,30 @@ fn inspect_target(target: &Path) -> Result<Option<Metadata>, StoreError> {
     }
 }
 
-/// The permissions of a file written under `policy` that replaces the file
-/// described by `existing` (`None` for a new file): on Unix `0600`, or the
-/// replaced file's permission bits under [`ModePolicy::KeepExisting`];
-/// elsewhere `None`, so the temporary file keeps its defaults (on Windows,
-/// the ACL inherited from its folder).
-#[allow(clippy::unnecessary_wraps)] // `None` on Windows
-fn file_permissions(policy: ModePolicy, existing: Option<&Metadata>) -> Option<Permissions> {
+/// The mode of a file written under `policy` that replaces the file
+/// described by `existing` (`None` for a new file): `0600`, or under
+/// [`ModePolicy::KeepExisting`] the replaced file's permission bits, and for
+/// a new file the user's default ([`FileMode::UserDefault`]).
+fn file_mode(policy: ModePolicy, existing: Option<&Metadata>) -> FileMode {
+    match (policy, existing) {
+        (ModePolicy::OwnerOnly, _) => FileMode::Exactly(0o600),
+        (ModePolicy::KeepExisting, Some(metadata)) => FileMode::Exactly(permission_bits(metadata)),
+        (ModePolicy::KeepExisting, None) => FileMode::UserDefault,
+    }
+}
+
+/// The permission bits of the file `metadata` describes. Only Unix has
+/// them; elsewhere this is `0o600`, which nothing applies there.
+fn permission_bits(metadata: &Metadata) -> u32 {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
-        let mode = match (policy, existing) {
-            (ModePolicy::KeepExisting, Some(metadata)) => metadata.permissions().mode() & 0o777,
-            _ => 0o600,
-        };
-        Some(Permissions::from_mode(mode))
+        metadata.permissions().mode() & 0o777
     }
     #[cfg(not(unix))]
     {
-        let _ = (policy, existing);
-        None
+        let _ = metadata;
+        0o600
     }
 }
 
@@ -199,36 +222,46 @@ fn copy_to_backup(
     if !opened.is_file() || !same_file(metadata, &opened) {
         return Err(StoreError::link(target));
     }
-    let temp = write_temp(
-        dir,
-        backup,
-        file_permissions(policy, Some(metadata)),
-        &mut |file| io::copy(&mut source, file).map(|_| ()),
-    )?;
+    let temp = write_temp(dir, backup, file_mode(policy, Some(metadata)), &mut |file| {
+        io::copy(&mut source, file).map(|_| ())
+    })?;
     replace(temp, backup)
 }
 
-/// Creates a temporary file in `dir`, fills it with `write_contents`, sets
-/// `permissions`, flushes and syncs it, and closes it. The file is removed
-/// again when the returned path is dropped.
+/// Creates a temporary file in `dir` (on Unix with the bits `mode` asks
+/// for), fills it with `write_contents`, flushes it, sets its bits, syncs it
+/// and closes it. The file is removed again when the returned path is
+/// dropped.
 fn write_temp(
     dir: &Path,
     target: &Path,
-    permissions: Option<Permissions>,
+    mode: FileMode,
     write_contents: &mut dyn FnMut(&mut File) -> io::Result<()>,
 ) -> Result<tempfile::TempPath, StoreError> {
-    let temp = tempfile::Builder::new()
-        .prefix(".b2c-")
-        .suffix(".tmp")
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(".b2c-").suffix(".tmp");
+    #[cfg(unix)]
+    if mode == FileMode::UserDefault {
+        use std::os::unix::fs::PermissionsExt as _;
+        // Created (exclusively) with `0666`, which the system narrows by the
+        // umask, as for any new file of the user. Otherwise `tempfile`
+        // creates it `0600`.
+        builder.permissions(fs::Permissions::from_mode(0o666));
+    }
+    let temp = builder
         .tempfile_in(dir)
         .map_err(|source| StoreError::io("create a temporary file", target, without_path(&source)))?;
     let (mut file, path) = temp.into_parts();
-    let write = |file: &mut File| -> io::Result<()> {
+    let mut write = |file: &mut File| -> io::Result<()> {
         write_contents(file)?;
         file.flush()?;
-        if let Some(permissions) = permissions {
-            file.set_permissions(permissions)?;
+        #[cfg(unix)]
+        if let FileMode::Exactly(bits) = mode {
+            use std::os::unix::fs::PermissionsExt as _;
+            file.set_permissions(fs::Permissions::from_mode(bits))?;
         }
+        #[cfg(not(unix))]
+        let _ = mode;
         file.sync_all()
     };
     let written = write(&mut file);
@@ -450,27 +483,60 @@ mod tests {
         assert_eq!(mode(&target), 0o600);
         // A file someone made wider is replaced by an owner-only one, and so
         // is its backup.
-        fs::set_permissions(&target, Permissions::from_mode(0o666)).unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o666)).unwrap();
         write_atomic(&target, b"[]", Backup::KeepPrevious).unwrap();
         assert_eq!(mode(&target), 0o600);
         assert_eq!(mode(&dir.path().join("trust.json.bak")), 0o600);
     }
 
+    /// The permission bits any new file of this process gets in `dir`:
+    /// `0666` less the umask, read from a file created the ordinary way.
+    #[cfg(unix)]
+    fn new_file_mode(dir: &Path) -> u32 {
+        use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+        let probe = dir.join("probe");
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o666)
+            .open(&probe)
+            .unwrap();
+        let mode = file.metadata().unwrap().permissions().mode() & 0o777;
+        drop(file);
+        fs::remove_file(&probe).unwrap();
+        mode
+    }
+
+    /// A new project gets what any new file of the user gets, not `0600`
+    /// (05 §5.10, 08 §8.6, decision Q13 of 10 §10.3); a saved project keeps
+    /// the bits it has, and so does its backup. (Under a umask of `077` the
+    /// two are the same, so this test can tell them apart only under a
+    /// wider umask such as the usual `022`.)
     #[cfg(unix)]
     #[test]
-    fn projects_keep_their_mode_and_new_ones_are_owner_only() {
+    fn projects_keep_their_mode_and_new_ones_get_the_users_default() {
         use std::os::unix::fs::PermissionsExt as _;
         let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
         let dir = tempfile::tempdir().unwrap();
+        let user_default = new_file_mode(dir.path());
         let new = dir.path().join("new.b2c");
         write_atomic_keeping_mode(&new, b"new", Backup::KeepPrevious).unwrap();
-        assert_eq!(mode(&new), 0o600);
+        assert_eq!(mode(&new), user_default, "{:o} {user_default:o}", mode(&new));
+        assert_eq!(listing(dir.path()), ["new.b2c"]);
+        write_atomic_keeping_mode(&new, b"newer", Backup::KeepPrevious).unwrap();
+        assert_eq!(mode(&new), user_default);
+        assert_eq!(mode(&dir.path().join("new.b2c.bak")), user_default);
+
         let project = dir.path().join("shared.b2c");
         fs::write(&project, b"old").unwrap();
-        fs::set_permissions(&project, Permissions::from_mode(0o640)).unwrap();
+        fs::set_permissions(&project, fs::Permissions::from_mode(0o640)).unwrap();
         write_atomic_keeping_mode(&project, b"new", Backup::KeepPrevious).unwrap();
         assert_eq!(mode(&project), 0o640);
         assert_eq!(mode(&dir.path().join("shared.b2c.bak")), 0o640);
+        // An owner-only project stays owner-only.
+        fs::set_permissions(&project, fs::Permissions::from_mode(0o600)).unwrap();
+        write_atomic_keeping_mode(&project, b"newer", Backup::KeepPrevious).unwrap();
+        assert_eq!(mode(&project), 0o600);
     }
 
     #[cfg(unix)]

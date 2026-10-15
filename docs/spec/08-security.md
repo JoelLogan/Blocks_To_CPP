@@ -1,6 +1,6 @@
 # 8. Security Design and Threat Model
 
-> Status: **Draft v0.1** · Reviewed at every milestone and whenever a trust boundary changes. The reporting policy is in [/SECURITY.md](../../SECURITY.md) · Related ADRs: [0007](../adr/0007-backend-crates-and-ipc-contract.md), [0008](../adr/0008-pty-and-containment-in-b2c-process.md), [0010](../adr/0010-wasm-delivery-under-the-csp.md), [0014](../adr/0014-extending-blockly.md)
+> Status: **Draft v0.1** · Reviewed at every milestone and whenever a trust boundary changes; the reviews are recorded in [threat-model-reviews.md](../security/threat-model-reviews.md) (last: M2, 2026-10-15). The reporting policy is in [/SECURITY.md](../../SECURITY.md) · Related ADRs: [0007](../adr/0007-backend-crates-and-ipc-contract.md), [0008](../adr/0008-pty-and-containment-in-b2c-process.md), [0010](../adr/0010-wasm-delivery-under-the-csp.md), [0014](../adr/0014-extending-blockly.md)
 
 ## 8.1 Scope and assumptions
 
@@ -171,7 +171,7 @@ decision the user makes explicitly, once, per project.**
   document's security hash.
 * **The dialog itself** is raised from Rust with `tauri-plugin-dialog`'s Rust
   API; the webview has no dialog permission. It is one native message dialog
-  with the three choices as its buttons: the pinned plugin (2.8.0) supports
+  with the three choices as its buttons: the pinned plugin (2.8.1) supports
   three buttons with custom labels on both systems, so the fallback of two
   questions in turn was not needed. On Linux it is a GTK 3 dialog without the
   XDG portal, so without D-Bus. The plugin is a new dependency justified
@@ -337,11 +337,18 @@ It is range-checked against the target type; overflow is error `E0517`.
   (the app manifest declares `longPathAware`).
 * **Atomic writes** for projects and settings ([05 §5.10](05-project-format.md#510-saving-and-recovery)).
   Exports never overwrite files they did not create (manifest-based).
+* **Project file permissions** (Linux): a new project file gets mode
+  `0666 & ~umask`, what any new file of the user gets (decision Q13 of
+  [10 §10.3](10-roadmap.md#103-product-decisions)); its temporary file is
+  created with that mode. A saved project, and its `.b2c.bak`, keeps the
+  mode the file had. Machine-local files and recovery snapshots are always
+  `0600`, also when an older one was left wider.
 * **Size-bounded reads:** files are read up to *limit + 1* bytes, so oversized
   files are rejected without being fully loaded.
 * **Temporary files:** the `tempfile` crate (random names, exclusive
-  creation, `0600`), always in private directories, never in shared `/tmp`
-  paths with predictable names.
+  creation, `0600`; a project's temporary file in its own folder gets the
+  project's mode, above), otherwise always in private directories, never in
+  shared `/tmp` paths with predictable names.
 * **Machine-local data** ([02 §2.7](02-architecture.md#27-persistence-locations)):
   every folder is created one level at a time, without following links, with
   mode `0700` on Linux (Windows: the user-profile ACL), and every file is
@@ -555,7 +562,7 @@ confirm the main document carries it without a backend command.
 | **Secrets** | gitleaks in CI, GitHub secret scanning + push protection. Signing keys live only in a protected `release` environment with required reviewers. |
 | **Reproducibility** | Pinned Rust toolchain (`rust-toolchain.toml`), exact pnpm version (`packageManager`) and Node.js major version (`.node-version`, so CI picks up Node security patches); `SOURCE_DATE_EPOCH`; `--remap-path-prefix` |
 | **Provenance** | CycloneDX SBOMs (Rust + npm) and GitHub artifact attestations (SLSA build provenance) attached to every release |
-| **Unsafe Rust** | `#![forbid(unsafe_code)]` everywhere except platform modules in `b2c-process`. `cargo-geiger` report in CI. Every `unsafe` needs `// SAFETY:` and CODEOWNERS review. |
+| **Unsafe Rust** | `unsafe_code = "forbid"` in every crate (the workspace lints), with two exceptions at `deny`: `b2c-process`, where only the platform modules (`os`, `platform`, `pty`) and the Windows tests allow it, and `b2c-core-wasm`, where only the glue that `#[wasm_bindgen]` generates contains it (`forbid` cannot be lifted for generated code; hand-written `unsafe` is still refused). Every `unsafe` block needs a `// SAFETY:` comment (Clippy's `undocumented_unsafe_blocks`, denied in `b2c-process`) and CODEOWNERS review. A weekly `cargo-geiger` report (informational). |
 
 ## 8.10 Releases and updates
 
@@ -644,7 +651,7 @@ safely), and the suite runs on every PR.
 | **Every PR** | CodeQL · cargo-deny · `pnpm audit` · OSV-Scanner · Clippy (`-D warnings`, security-relevant lints) · ESLint security rules · gitleaks · zizmor (when workflows change) · fuzz smoke run (60 s per target) · escaping property tests · malicious-project suite · security checklist in the PR template (new IPC? new `unsafe`? new dependency? new file write?) |
 | **Nightly** | Extended fuzzing (30 min per target, with a persisted corpus) · full OSV scan against the default branch (`osv-scanner.yml`, daily) · E2E security tests on Windows and Linux |
 | **Weekly** | Dependabot update PRs · OpenSSF Scorecard · review of open security alerts (triaged within the week) · mutation testing of the encoders and validators · dependency health report · `cargo-geiger` report of `unsafe` use |
-| **Per milestone** | Threat-model review (this document), recorded in `docs/security/threat-model-reviews.md` (date, commit, scope, findings, accepted residuals) · manual review of all new IPC commands, `unsafe` blocks and file/process code paths · dependency licence and health review |
+| **Per milestone** | Threat-model review (this document), recorded in [`docs/security/threat-model-reviews.md`](../security/threat-model-reviews.md), one entry per milestone (date, commit, scope, findings, accepted residuals) · manual review of all new IPC commands, `unsafe` blocks and file/process code paths · dependency licence and health review |
 | **Per release** | Release gate (§8.10) · SBOM + provenance · signed artifacts |
 
 **Nightly E2E security tests** run in the real app on both systems

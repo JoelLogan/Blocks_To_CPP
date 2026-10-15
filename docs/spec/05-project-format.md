@@ -468,7 +468,11 @@ could send back ([02 §2.5](02-architecture.md#25-ipc-surface)).
   Linux). A crash leaves either the old file or the new file, never a mix.
   Projects, `settings.json`, `trust.json`, `recent.json`, `toolchains.json`,
   recovery snapshots and build manifests are all written this way; the
-  temporary file is removed when anything fails.
+  temporary file is removed when anything fails. A new project file gets
+  the permissions any new file of the user gets (the umask applies); a saved
+  project keeps the permissions it had. Machine-local files and recovery
+  snapshots are always `0600`
+  ([08 §8.6](08-security.md#86-filesystem-safety)).
 * Before overwriting, the previous version is kept as `<name>.b2c.bak`
   (one generation, configurable). The `.bak` file is written through its own
   temporary file and rename, so a link planted at the `.bak` path is replaced,
