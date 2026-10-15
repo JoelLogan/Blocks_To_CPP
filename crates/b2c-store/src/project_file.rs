@@ -27,7 +27,8 @@ pub fn read_project(path: &Path) -> Result<Vec<u8>, ReadError> {
 /// Saves a project's canonical bytes (`b2c_model::to_canonical_json`)
 /// atomically, keeping the previous version as `<name>.b2c.bak`
 /// (05 §5.10; see [`write_atomic_keeping_mode`]). On Unix a saved project
-/// keeps the permission bits the user gave it; a new one is `0600`.
+/// keeps the permission bits the user gave it; a new one gets those of any
+/// new file of the user (`0666` less the umask).
 ///
 /// # Errors
 /// [`StoreError::Invalid`] when `canonical` is larger than

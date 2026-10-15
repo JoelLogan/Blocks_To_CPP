@@ -17,7 +17,8 @@
 //!   Windows or `rename(2)` plus a directory `fsync` on Unix, so a crash
 //!   leaves the old file or the new one, never a mix (05 §5.10, 01 N10).
 //!   The file is always `0600` on Unix; [`write_atomic_keeping_mode`], for
-//!   project files only, keeps the mode of the file it replaces.
+//!   project files only, keeps the mode of the file it replaces and gives a
+//!   new file the mode of any new file of the user (`0666` less the umask).
 //!   [`Backup::KeepPrevious`] keeps one `<name>.bak` generation, written the
 //!   same way, so a link planted there is replaced, never followed. Links at
 //!   the target are refused; temporary files never outlive an error.

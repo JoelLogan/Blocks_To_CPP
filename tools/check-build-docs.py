@@ -114,7 +114,8 @@ _END = r"(?![\w-]|\.\d)"
 
 
 def _after(name: str, version: str, gap: int = 40) -> re.Pattern[str]:
-    return re.compile(name + _GAP % gap + r"(?<![\w.])v?(" + version + ")" + _END)
+    # A version right after a hyphen belongs to another name (`Apache-2.0`).
+    return re.compile(name + _GAP % gap + r"(?<![\w.-])v?(" + version + ")" + _END)
 
 
 _XYZ = r"\d+\.\d+\.\d+"
@@ -714,6 +715,10 @@ On Debian, step 1 can be `sudo apt install build-essential git curl`.
     ),
     "CHANGELOG.md": "# Changelog\n\n- wasm-bindgen 0.2.128, Rust 1.96.0 and pnpm 11.20.0.\n",
     "docs/adr/0009-e2e.md": "# ADR\n\nWe use `tauri-driver` (2.1.0, installed with cargo).\n",
+    # A licence's version after a tool's name is not the tool's version.
+    "docs/security/reviews.md": (
+        "# Reviews\n\n`pnpm licenses list` found MIT (419), Apache-2.0 (21) and\nMPL-2.0 (4).\n"
+    ),
 }
 
 

@@ -112,11 +112,13 @@ fn writes_need_a_folder_and_leave_nothing_behind() {
 }
 
 /// Every machine-local file is `0600` (02 §2.7, 08 §8.6), also when an
-/// older one was left wider; a project keeps the mode its user gave it.
+/// older one was left wider; a new project gets what any new file of the
+/// user gets (`0666` less the umask, 05 §5.10), and a saved project keeps
+/// the mode its user gave it.
 #[cfg(unix)]
 #[test]
 fn machine_local_files_become_owner_only_and_projects_keep_their_mode() {
-    use std::os::unix::fs::PermissionsExt as _;
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
     let mode = |path: &std::path::Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
     let wide = || fs::Permissions::from_mode(0o666);
 
@@ -139,9 +141,16 @@ fn machine_local_files_become_owner_only_and_projects_keep_their_mode() {
     RecentStore::open(&dirs.config).touch(&project, "Game").unwrap();
     assert_eq!(mode(&recent_file), 0o600);
 
-    // A new project is owner-only; one the user made group-readable stays
-    // so, and so does its backup.
-    assert_eq!(mode(&project), 0o600);
+    // A new project has the mode of any new file of the user; one the user
+    // made group-readable stays so, and so does its backup.
+    let ordinary = projects.path().join("ordinary");
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o666)
+        .open(&ordinary)
+        .unwrap();
+    assert_eq!(mode(&project), mode(&ordinary));
     fs::set_permissions(&project, fs::Permissions::from_mode(0o640)).unwrap();
     save_project(&project, b"second\n").unwrap();
     assert_eq!(mode(&project), 0o640);
