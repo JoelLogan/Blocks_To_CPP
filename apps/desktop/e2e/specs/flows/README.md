@@ -38,9 +38,10 @@ three minutes; they run with the rest of the suite (`pnpm --filter @blocks2cpp/d
 
 - **Launching:** [`lib/launch.ts`](lib/launch.ts) starts the app as the harness's `launchApp` does,
   but with a profile (`B2C_E2E_ROOT`) that outlives one launch, so a test can restart the app,
-  kill it, or close its window, and with `B2C_E2E_TOOLCHAIN_DIRS` changed for the setup page. A
-  failed test keeps a screenshot, the page, the console, the project and the logs of every
-  launch, as the harness does.
+  kill it, or close its window, and with `B2C_E2E_TOOLCHAIN_DIRS` changed for the setup page (a
+  launch's `env` may set only that, `B2C_LOG` and `GTK_THEME`, which the visual diff's dark scenes
+  use on Linux). A failed test keeps a screenshot, the page, the console, the project and the logs
+  of every launch, as the harness does.
 - **Native dialogs** are answered by the e2e build's dialog script (`open`, `saveAs`, `trust`).
 - **Processes:** [`lib/processes.ts`](lib/processes.ts) reads `/proc` on Linux and
   `Win32_Process` (Windows PowerShell's `Get-CimInstance`) on Windows: the app's process, and the
