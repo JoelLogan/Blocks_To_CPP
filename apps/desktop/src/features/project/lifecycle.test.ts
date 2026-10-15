@@ -1,8 +1,9 @@
 /**
  * The project lifecycle against a fake backend and the real compiler core: new from each
  * template, open (cancelled, ok, refused), recent projects, saving (byte-identical, generator,
- * save-as fallback, changed on disk, edits made while saving), the unsaved-changes prompts of
- * open, new, close and the window's close request, and the order of operations.
+ * save-as fallback, changed on disk, edits made while saving, a Save asked for while one runs),
+ * the unsaved-changes prompts of open, new, close and the window's close request, and the order
+ * of operations.
  *
  * Without a build of the compiler core these tests are skipped, unless B2C_REQUIRE_WASM is set
  * (as in CI), in which case a missing build fails them.
@@ -13,9 +14,11 @@ import {
   type CoreWasm,
   type JsonValue,
 } from '@blocks2cpp/b2c-core-wasm';
+import type { Trust } from '@blocks2cpp/ipc-types';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EditorHandle } from '../../app/editor-types';
+import { installShortcuts } from '../../app/shortcuts';
 import { useAppStore } from '../../app/store';
 import { projectFixture } from '../../app/testing/fixtures';
 import { NEWER_FORMAT_CODE } from './errors';
@@ -777,6 +780,184 @@ describe.skipIf(!CORE_BUILT)('the project lifecycle', () => {
       const alert = await closeAlert(harness.dialogs);
       expect(await saving).toBe(false);
       expect(alert.options.message).toContain('could not be read from the editor');
+    });
+  });
+
+  // Nightly 17 (Windows): a Ctrl+S pressed right after an edit, while the first Save as was still
+  // finishing, joined that running command and was never saved.
+  describe('a Save asked for while a save runs', () => {
+    const SAVED = { savedAt: '2026-10-05T10:42:00Z', hash: 'f'.repeat(64) };
+
+    /** An answer the test gives when it wants to. */
+    function held<T>(): { readonly promise: Promise<T>; readonly answer: (value: T) => void } {
+      let answer: (value: T) => void = () => undefined;
+      const promise = new Promise<T>((resolve) => {
+        answer = resolve;
+      });
+      return { promise, answer };
+    }
+
+    /** Renames the project in the store, as the top bar's name field does; returns the text. */
+    function rename(name: string): string {
+      const edited = structuredClone(project().document);
+      edited.project.name = name;
+      const canonical = core.canonical(JSON.stringify(edited));
+      if (!canonical.ok) {
+        throw new Error('the renamed document does not load');
+      }
+      useAppStore.getState().actions.updateProject({
+        document: edited,
+        textHash: canonical.textHash,
+        contentHash: canonical.hash,
+        dirty: true,
+      });
+      return canonical.text;
+    }
+
+    /** A new project whose first Save (a Save as) waits for its `trust_get` until `answer`. */
+    async function newProjectWithSlowSaveAs(): Promise<(value: { trust: Trust }) => void> {
+      harness.ipc.projectNew.mockResolvedValueOnce({
+        handle: HANDLE_A,
+        document: EMPTY_TEXT,
+        trust: CREATED_HERE,
+      });
+      expect(await harness.feature.lifecycle.newProject('empty')).toBe(true);
+      harness.ipc.projectSaveAsDialog.mockResolvedValueOnce({
+        status: 'ok',
+        handle: HANDLE_A,
+        savedAt: '2026-10-05T10:41:00Z',
+        hash: 'e'.repeat(64),
+        fileName: 'mine.b2c',
+      });
+      const trust = held<{ trust: Trust }>();
+      harness.ipc.trustGet.mockReturnValueOnce(trust.promise);
+      return trust.answer;
+    }
+
+    it('saves an edit made while the first Save as was finishing, after it', async () => {
+      const answerTrust = await newProjectWithSlowSaveAs();
+      const first = harness.ctx.commands.runCommand('project.save');
+      // The file is written and named; the save still waits for the trust it recorded.
+      await vi.waitFor(() => {
+        expect(project().fileName).toBe('mine.b2c');
+      });
+      const edited = rename('Space Invaders');
+      harness.ipc.projectSave.mockResolvedValueOnce(SAVED);
+
+      const second = harness.ctx.commands.runCommand('project.save');
+      answerTrust({ trust: TRUSTED });
+      await first;
+      await second;
+
+      expect(harness.ipc.projectSaveAsDialog).toHaveBeenCalledTimes(1);
+      expect(harness.ipc.projectSave).toHaveBeenCalledTimes(1);
+      expect(harness.ipc.projectSave).toHaveBeenCalledWith({ handle: HANDLE_A, document: edited });
+      expect(project().dirty).toBe(false);
+      expect(project().savedAt).toBe(SAVED.savedAt);
+      expect(harness.feature.model.getState().busy).toBeNull();
+      expect(harness.feature.lifecycle.isSaving()).toBe(false);
+    });
+
+    it('makes one save after the running one of any number of requests, with the latest edits', async () => {
+      await openFile(HELLO_TEXT, HANDLE_A);
+      const writing = held<typeof SAVED>();
+      harness.ipc.projectSave.mockReturnValueOnce(writing.promise).mockResolvedValue(SAVED);
+      const first = harness.ctx.commands.runCommand('project.save');
+      await vi.waitFor(() => {
+        expect(harness.ipc.projectSave).toHaveBeenCalledTimes(1);
+      });
+
+      rename('Typed while saving');
+      const later = [
+        harness.ctx.commands.runCommand('project.save'),
+        harness.ctx.commands.runCommand('project.save'),
+      ];
+      const edited = rename('Typed again');
+      later.push(harness.ctx.commands.runCommand('project.save'));
+      // Until it starts, every request is that one save.
+      expect(harness.feature.lifecycle.save()).toBe(harness.feature.lifecycle.save());
+      expect(harness.feature.lifecycle.isSaving()).toBe(true);
+      writing.answer(SAVED);
+      await Promise.all([first, ...later]);
+
+      expect(harness.ipc.projectSave).toHaveBeenCalledTimes(2);
+      expect(harness.ipc.projectSave).toHaveBeenLastCalledWith({
+        handle: HANDLE_A,
+        document: edited,
+      });
+      expect(project().dirty).toBe(false);
+      expect(harness.feature.model.getState().busy).toBeNull();
+    });
+
+    it('keeps the order of operations: a Save asked for after another operation follows it', async () => {
+      await openFile(HELLO_TEXT, HANDLE_A);
+      const order: string[] = [];
+      const writing = held<typeof SAVED>();
+      harness.ipc.projectSave
+        .mockImplementationOnce(() => {
+          order.push('save');
+          return writing.promise;
+        })
+        .mockImplementation(() => {
+          order.push('save');
+          return Promise.resolve(SAVED);
+        });
+      const running = harness.feature.lifecycle.save();
+      await vi.waitFor(() => {
+        expect(order).toEqual(['save']);
+      });
+
+      const waiting = harness.feature.lifecycle.save();
+      const reloading = harness.feature.lifecycle.reloadWith(() => {
+        order.push('reload');
+        return Promise.resolve(true);
+      });
+      const after = harness.feature.lifecycle.save();
+      expect(after).not.toBe(waiting);
+      writing.answer(SAVED);
+
+      expect(await Promise.all([running, waiting, reloading, after])).toEqual([
+        true,
+        true,
+        true,
+        true,
+      ]);
+      expect(order).toEqual(['save', 'save', 'reload', 'save']);
+    });
+
+    it('still does nothing more for a held Ctrl+S', async () => {
+      await openFile(HELLO_TEXT, HANDLE_A);
+      const writing = held<typeof SAVED>();
+      harness.ipc.projectSave.mockReturnValueOnce(writing.promise).mockResolvedValue(SAVED);
+      const uninstall = installShortcuts(window, harness.ctx);
+      try {
+        const press = (repeat: boolean) =>
+          document.body.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key: 's',
+              ctrlKey: true,
+              repeat,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+        press(false);
+        await vi.waitFor(() => {
+          expect(harness.ipc.projectSave).toHaveBeenCalledTimes(1);
+        });
+        rename('Typed while saving');
+        press(true);
+        press(true);
+        writing.answer(SAVED);
+        await vi.waitFor(() => {
+          expect(harness.feature.model.getState().busy).toBeNull();
+        });
+
+        expect(harness.ipc.projectSave).toHaveBeenCalledTimes(1);
+        expect(project().dirty).toBe(true);
+      } finally {
+        uninstall();
+      }
     });
   });
 

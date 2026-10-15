@@ -18,11 +18,12 @@
  *   chooses *Save*, *Don't save* or *Cancel*, then `app_quit` ends the app.
  *
  * Operations run one at a time, in the order they were asked for, so a close never overtakes a
- * save. Other features' operations on the open project take their place in the same queue
- * (./link.ts): restoring a recovery snapshot and reloading after an outside change. A save or a
- * reload waits for an autosave snapshot that is being written before it sends the project, so the
- * backend never gets a snapshot after the save or reload that deleted it. Backend errors become messages for the user;
- * only bugs reject.
+ * save; the Saves asked for while a Save waits for its turn are that one Save. Other features'
+ * operations on the open project take their place in the same queue (./link.ts): restoring a
+ * recovery snapshot and reloading after an outside change. A save or a reload waits for an
+ * autosave snapshot that is being written before it sends the project, so the backend never gets
+ * a snapshot after the save or reload that deleted it. Backend errors become messages for the
+ * user; only bugs reject.
  */
 import {
   type BdmDocument,
@@ -125,6 +126,8 @@ export class ProjectLifecycle implements ProjectQueue {
   private recentRequest = 0;
   /** How many saves are under way (a Save as inside a save counts twice). */
   private saving = 0;
+  /** A {@link save} that is queued and has not started yet, which later requests join. */
+  private waitingSave: Promise<boolean> | null = null;
   /** What every save and reload waits for before it sends the project ({@link addSaveBarrier}). */
   private readonly saveBarriers = new Set<() => Promise<void>>();
   private disposed = false;
@@ -216,9 +219,24 @@ export class ProjectLifecycle implements ProjectQueue {
   /**
    * `project.save` (`Ctrl+S`): writes the project to its file, or asks for one with *Save as…*
    * when it has none. Resolves whether it was saved.
+   *
+   * A Save asked for while another operation runs (a save among them) is queued after it and
+   * writes what the editor shows when it starts. Until then, asking again returns that save,
+   * unless another operation was queued after it: any number of requests made during one save
+   * add one save after it.
    */
   save(): Promise<boolean> {
-    return this.exclusive('save', () => this.saveNow());
+    if (this.waitingSave !== null) {
+      return this.waitingSave;
+    }
+    const save: Promise<boolean> = this.exclusive('save', () => {
+      if (this.waitingSave === save) {
+        this.waitingSave = null;
+      }
+      return this.saveNow();
+    });
+    this.waitingSave = save;
+    return save;
   }
 
   /** `project.saveAs`: writes the project to a file the user picks. Resolves whether it was saved. */
@@ -397,6 +415,8 @@ export class ProjectLifecycle implements ProjectQueue {
 
   /** Runs `task` after every operation asked for before it; `busy` names the running one. */
   private exclusive(operation: LifecycleOperation, task: () => Promise<boolean>): Promise<boolean> {
+    // A Save asked for from now on comes after this operation, as asked.
+    this.waitingSave = null;
     const run = async (): Promise<boolean> => {
       if (this.disposed) {
         return false;

@@ -32,20 +32,38 @@ export type CommandId =
 /** What a command does. It may be asynchronous; it reports its own errors to the user. */
 export type CommandHandler = () => void | Promise<void>;
 
+/** How a registration handles a run asked for while the command is still running. */
+export interface CommandOptions {
+  /**
+   * `'join'` (the default): the run is the running one, so a double click or a held key does not
+   * start the command twice. `'call'`: the handler is called again and queues the work itself
+   * (`project.save`: a Save asked for after an edit made during a save must still write it).
+   */
+  readonly whileRunning?: 'join' | 'call';
+}
+
 /** The registry behind the module's functions; tests and the feature context use it directly. */
 export interface CommandRegistry {
   /** Registers `handler` for `id` and returns the function that removes this registration. */
-  registerCommand(id: CommandId, handler: CommandHandler): () => void;
+  registerCommand(id: CommandId, handler: CommandHandler, options?: CommandOptions): () => void;
   /**
    * Runs the command's newest handler. While it is still running, running the same command again
-   * returns the same promise instead of starting it twice (a double click or a held key). A
-   * command with no handler does nothing. The promise rejects when the handler throws.
+   * returns the same promise instead of starting it twice (a double click or a held key), unless
+   * the newest handler was registered with `whileRunning: 'call'`: then it is called again, and
+   * the promise is that call's. A command with no handler does nothing. The promise rejects when
+   * the handler throws.
    */
   runCommand(id: CommandId): Promise<void>;
   /** Whether a handler is registered for `id`. */
   hasCommand(id: CommandId): boolean;
   /** Calls `listener` whenever a registration is added or removed. Returns the unsubscriber. */
   subscribe: (listener: () => void) => () => void;
+}
+
+/** A handler as registered. */
+interface Registration {
+  readonly handler: CommandHandler;
+  readonly whileRunning: NonNullable<CommandOptions['whileRunning']>;
 }
 
 /** `reason` as an `Error`, keeping a thrown non-error value as the cause. */
@@ -55,7 +73,7 @@ function asError(reason: unknown): Error {
 
 /** Creates an empty registry. */
 export function createCommandRegistry(): CommandRegistry {
-  const handlers = new Map<CommandId, CommandHandler[]>();
+  const handlers = new Map<CommandId, Registration[]>();
   const running = new Map<CommandId, Promise<void>>();
   const listeners = new Set<() => void>();
 
@@ -66,9 +84,9 @@ export function createCommandRegistry(): CommandRegistry {
   }
 
   return {
-    registerCommand(id, handler) {
-      // A wrapper gives each registration its own identity, even for the same function.
-      const entry: CommandHandler = () => handler();
+    registerCommand(id, handler, options = {}) {
+      // Each registration has its own identity, even for the same function.
+      const entry: Registration = { handler, whileRunning: options.whileRunning ?? 'join' };
       handlers.set(id, [...(handlers.get(id) ?? []), entry]);
       notify();
       let registered = true;
@@ -88,16 +106,17 @@ export function createCommandRegistry(): CommandRegistry {
     },
 
     runCommand(id) {
+      const entry = handlers.get(id)?.at(-1);
       const pending = running.get(id);
-      if (pending !== undefined) {
+      if (pending !== undefined && entry?.whileRunning !== 'call') {
         return pending;
       }
-      const handler = handlers.get(id)?.at(-1);
-      if (handler === undefined) {
+      if (entry === undefined) {
         return Promise.resolve();
       }
       // The handler starts synchronously, so it can still use the event that triggered it (for
       // example the clipboard data of a copy event).
+      const { handler } = entry;
       let result: ReturnType<CommandHandler>;
       try {
         result = handler();
@@ -106,6 +125,10 @@ export function createCommandRegistry(): CommandRegistry {
       }
       if (!(result instanceof Promise)) {
         return Promise.resolve();
+      }
+      if (entry.whileRunning === 'call') {
+        // Not tracked: the next run calls the handler again.
+        return result;
       }
       const tracked = result.finally(() => {
         running.delete(id);
@@ -131,8 +154,12 @@ export function createCommandRegistry(): CommandRegistry {
 export const commands: CommandRegistry = createCommandRegistry();
 
 /** Registers a handler with the app's registry; see {@link CommandRegistry.registerCommand}. */
-export function registerCommand(id: CommandId, handler: CommandHandler): () => void {
-  return commands.registerCommand(id, handler);
+export function registerCommand(
+  id: CommandId,
+  handler: CommandHandler,
+  options?: CommandOptions,
+): () => void {
+  return commands.registerCommand(id, handler, options);
 }
 
 /** Runs a command of the app's registry; see {@link CommandRegistry.runCommand}. */

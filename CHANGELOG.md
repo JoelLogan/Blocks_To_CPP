@@ -532,6 +532,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 
 ### Fixed
 
+- A save asked for while the previous save was still finishing was dropped
+  without a word: after the first _Save as…_ of a new project, on a slow
+  disk, an edit saved at once with Ctrl+S or ≡ _Save_ stayed unsaved. Such a
+  save now runs after the one before it and writes what the editor shows
+  then; several asked for meanwhile make one save. A held key still saves
+  once.
 - Choosing another module, or a problem in another module (also the first
   error that F5 or Ctrl+B selects), while a block is dragged no longer
   switches modules in the middle of the drag, which lost the dragged block
