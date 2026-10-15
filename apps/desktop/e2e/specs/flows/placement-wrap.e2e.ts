@@ -272,7 +272,11 @@ describe('Wrapping statements in an empty C-block', () => {
     await centerOn(app, b.id);
     await bringIntoView(app.driver, () => connectionPoint(app, a.id, 'next'));
     const { grab, drop } = await toolboxIfOnto(app, a.id, 'next');
-    const away = { x: drop.x + 300, y: drop.y + 220 };
+    // Away from every connection (they are at the stack's left edge) and inside the window at
+    // every size the flows run at: to the right at the drop's height, clear of the trash can.
+    const width = await app.driver.executeScript<number>('return window.innerWidth;');
+    const away = { x: Math.min(drop.x + 300, width - 80), y: drop.y };
+    expect(away.x - drop.x, 'the move away, beyond the snap radius').toBeGreaterThan(150);
     const prints = [a.id, b.id, c.id];
 
     await follow(app.driver, grab, [drop], true);
