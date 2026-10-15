@@ -61,6 +61,7 @@ Checks run for this review, at `d4dfafb` unless the fix below is named:
 | Desktop workflow at `d4dfafb`: end-to-end tests on Linux and Windows | green |
 | Nightly at `bee5c0a` (2026-10-14): E2E security tests | Linux green; Windows did not start (see TM-M2-5) |
 | Nightly at `3f6f608` (2026-10-15, run 38787205549, dispatched by hand): E2E security tests | Linux and Windows green; Windows 31 passed in 7 files (TM-M2-5 closed) |
+| Desktop workflow at `7e8fcc7` (run 38799106518): the Trusted Types trial | 48 tests on each system, no violation, policy active in all (TM-M2-4 closed) |
 | Weekly `cargo-geiger` report (runs at `205ab1d` and `9e9bd35`) | no report: the job counted every crate as failed (TM-M2-3) |
 | `cargo geiger` 0.13.0, run locally as the weekly job runs it, for `b2c-process` and `b2c-app` | reports written, exit status 1 (TM-M2-3); numbers below |
 
@@ -288,19 +289,76 @@ The backend adds `Content-Security-Policy-Report-Only: require-trusted-types-for
 'script'` to the app's own HTML in every build
 (`add_trusted_types_report_only` in `src-tauri/src/window.rs`), and the E2E
 jobs of `desktop.yml` and `nightly.yml` write each test's violation count, its
-directives, and whether the policy was active, to their job summaries.
+directives, and whether the policy was active, to their job summaries and
+logs.
 
-No numbers are recorded here (TM-M2-4). The summaries exist only as GitHub
-Actions job summaries, which this review could not read, and they expire with
-the run; the job logs of the nightly at `3f6f608` do not hold the table
-either, since the step wrote it to the summary only. Since then the E2E jobs
-print it to the log too and keep `trusted-types.jsonl` and
-`trusted-types.md` as an artifact for 90 days. The report left by the last local Linux run on the review machine
-(WebKitGTK, which may ignore the header) has no test rows. The Windows E2E
-job at `d4dfafb`, the one that measures WebView2, passed, and the trial never
-fails a test. The trial stays report-only; the enforcement criterion of the
-roadmap (M6: no violations on WebView2 for a milestone) needs a recorded
-result.
+The summaries were at first only GitHub Actions job summaries, which this
+review could not read and which expire with the run; the job logs of the
+nightly at `3f6f608` do not hold the table either. Since `7e8fcc7` the E2E
+jobs print it to the log too and keep `trusted-types.jsonl` and
+`trusted-types.md` as an artifact for 90 days (TM-M2-4).
+
+**Result at `7e8fcc7`** (Desktop workflow run 38799106518, 2026-10-15): the
+48 tests of its E2E jobs (the flows, the exit test and the visual diff; the
+security specs run in the nightly) saw **no violation** on WebView2
+(`windows-2025`), and the report-only policy reached the page in every one
+(the probe's deliberate HTML-sink call was reported). The Linux job
+(`ubuntu-24.04`, WebKitGTK) gave the same table, row for row. The trial
+never fails a test and stays report-only; this is the first recorded result
+toward the roadmap's enforcement criterion (M6: no violations on WebView2
+for a milestone). The Windows table, as the job printed it (one test name is
+cut short by the report):
+
+| Test | Platform | Violations | Directives | Report-only policy active |
+| --- | --- | ---: | --- | --- |
+| wraps the statement an if from the toolbox is dropped on, in one undo step | win32 | 0 | — | yes |
+| wraps a loop’s statements from the top of its body | win32 | 0 | — | yes |
+| shows a second run below the first, after a New run line | win32 | 0 | — | yes |
+| fits the terminal inside its box at three dock heights, and nothing around it scrolls | win32 | 0 | — | yes |
+| scrolls a header taller than the smallest dock by itself, to its buttons | win32 | 0 | — | yes |
+| brings a new run into view after scrolling up, and Clear empties it once the program has ended | win32 | 0 | — | yes |
+| scrolls back with the wheel while a program prints, and stays there | win32 | 0 | — | yes |
+| deletes it anywhere over the categories and the open block list, at any height, after each rebuild | win32 | 0 | — | yes |
+| snaps a block dropped off its connection into an empty C-block at 90 % and at 52 % | win32 | 0 | — | yes |
+| deletes only the dragged block dropped on the toolbox or the trash can while a place is previewed, and Ctrl+Z brings it  | win32 | 0 | — | yes |
+| is assembled from the Empty template, built with F5, played to "Correct!" and stopped | win32 | 0 | — | yes |
+| shows a program that prints more than 8 KiB at once in the console (channel fetch) | win32 | 0 | — | yes |
+| leaves the canvas 200 px and shows the C++ dock at 800 × 560 | win32 | 0 | — | yes |
+| leaves the canvas 200 px and shows the C++ dock at 1024 × 700 | win32 | 0 | — | yes |
+| leaves the canvas 200 px and shows the C++ dock at 1028 × 749 | win32 | 0 | — | yes |
+| leaves the canvas 200 px and shows the C++ dock at 1280 × 800 | win32 | 0 | — | yes |
+| widens the toolbox’s flyout with its splitter, keeping the blocks clear of it | win32 | 0 | — | yes |
+| keeps the toolbox’s width and the docks after a restart | win32 | 0 | — | yes |
+| lists the variables in scope in the ask and getter menus | win32 | 0 | — | yes |
+| refuses a text block in repeat (10) times, where a number connects | win32 | 0 | — | yes |
+| selects the block of the C++ line that is clicked | win32 | 0 | — | yes |
+| drags a block from every toolbox category | win32 | 0 | — | yes |
+| keeps the chosen category selected at every zoom level | win32 | 0 | — | yes |
+| draws the main menu above the toolbox, where Close project works at its left edge | win32 | 0 | — | yes |
+| leaves the canvas 200 px beside the toolbox at the Windows runner’s size | win32 | 0 | — | yes |
+| draws the Debug/Release drop-down readable and no taller than the buttons | win32 | 0 | — | yes |
+| zoom in twice, then show all blocks at the same zoom, then reset to 100 % | win32 | 0 | — | yes |
+| zoom from the keyboard on the canvas, say the new zoom, and come next in the Tab order | win32 | 0 | — | yes |
+| shows the skipped marker for 10,000,000 lines and keeps the editor responsive | win32 | 0 | — | yes |
+| keeps the editor responsive and stops a program that floods the console within 5 s | win32 | 0 | — | yes |
+| renames, saves to the same file, and reopens from the recent list with the new name | win32 | 0 | — | yes |
+| undoes a block move with Ctrl+Z outside the canvas, and redoes it with Ctrl+Y | win32 | 0 | — | yes |
+| lets Run go ahead with a print left loose on the canvas | win32 | 0 | — | yes |
+| opens a copied example restricted, trusts it through the dialog and revokes the trust | win32 | 0 | — | yes |
+| reloads the changed file, keeps mine with Save as, and offers only Keep mine for a deleted file | win32 | 0 | — | yes |
+| restores the autosaved blocks after the app was killed | win32 | 0 | — | yes |
+| leaves the toolbox as it is: Variables lists every variable of the module | win32 | 0 | — | yes |
+| shows the exit code of exit_code.b2c | win32 | 0 | — | yes |
+| shows the 07 §7.6.4 text for a Release program that divides by zero | win32 | 0 | — | yes |
+| shows the platform install command without g++, and Rescan finds g++ once it is back | win32 | 0 | — | yes |
+| keep main’s variables in the toolbox and in their own menus | win32 | 0 | — | yes |
+| copies, pastes and cuts blocks with the keyboard | win32 | 0 | — | yes |
+| applies indent width 2 to the C++ panel at once and keeps it after a restart | win32 | 0 | — | yes |
+| stops an endless loop with the console button and with Shift+F5 | win32 | 0 | — | yes |
+| builds with Ctrl+B, finds nothing to rebuild, and runs a program that reads input | win32 | 0 | — | yes |
+| runs a countdown whose change block has -1 typed into it | win32 | 0 | — | yes |
+| opens a saved project with the same blocks, and saves it again byte for byte | win32 | 0 | — | yes |
+| draws the guessing game as this system’s baseline does | win32 | 0 | — | yes |
 
 ### Licences of dependencies added since M1
 
@@ -407,7 +465,7 @@ is still to come.
   after it, every crate's report is in the summary and the step passes.
 
 **TM-M2-4 (low): the Trusted Types trial's results are not recorded
-anywhere durable.** Open.
+anywhere durable.** Closed (2026-10-15).
 
 - *What:* the per-test counts go only to GitHub Actions job summaries, which
   expire with the run, and no milestone record holds them. The roadmap's M6
@@ -422,7 +480,10 @@ anywhere durable.** Open.
   log as well, which can be read from here, and upload `trusted-types.jsonl`
   and `trusted-types.md` as the artifacts `trusted-types-<os>`,
   `nightly-trusted-types-<os>` and `nightly-security-trusted-types-<os>`,
-  kept for 90 days. The table itself is still to be copied in.
+  kept for 90 days.
+- *Closed by:* the Windows table of Desktop run 38799106518 at `7e8fcc7`,
+  read from the job's log and copied into "Trusted Types trial" above: 48
+  tests, no violation, the policy active in all of them.
 
 **TM-M2-5 (informational): the nightly Windows E2E security job did not
 run its checks at `bee5c0a`.** Closed (2026-10-15).
@@ -516,7 +577,9 @@ clipboard payload or a web page can exploit.
 
 - The Web Worker preview (ADR-0016): the worker's CSP on both webviews, no
   IPC in the worker, and the scope index.
-- The first weekly `cargo-geiger` report after TM-M2-3's fix, and the
-  results of TM-M2-4.
+- The first weekly `cargo-geiger` report after TM-M2-3's fix (run
+  38780624565 at `2053c23` passed, with the reports in its job summary
+  only), and the Trusted Types table of the nightly's security specs, which
+  the E2E security job now prints to its log.
 - Before M4: R-3, and pasting Raw C++ blocks into a trusted project, which
   the in-app edit rule of §8.3 would then trust on the next save.
