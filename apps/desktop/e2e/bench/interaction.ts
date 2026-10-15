@@ -118,6 +118,24 @@ export function spanSummary(interactions: readonly SpanTimes[]): string {
     .join(', ');
 }
 
+/**
+ * One line with the medians of where the edits' time went: until the edit's C++ was in the editor's
+ * state, until the page settled (both less the preview's debounce), and the longest task, so that a
+ * benchmark log shows whether a slower edit is slower before its C++ shows or after it. Says so
+ * when there were no edits.
+ */
+export function editSummary(edits: readonly TimedEdit[]): string {
+  if (edits.length === 0) {
+    return 'no edits';
+  }
+  const ms = (pick: (edit: TimedEdit) => number): string =>
+    `${String(rounded(median(edits.map(pick)), 1))} ms`;
+  return (
+    `C++ in the state after ${ms((edit) => edit.editMs)}, settled after ` +
+    `${ms((edit) => edit.settledMs)}, longest task ${ms((edit) => edit.longestMs)}`
+  );
+}
+
 /** One timed edit (milliseconds). */
 export interface TimedEdit {
   /** The inserted block. */

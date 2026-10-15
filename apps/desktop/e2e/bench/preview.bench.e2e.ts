@@ -28,6 +28,7 @@ import { requireHookMethods } from './capabilities';
 import { MAIN_ID, writeBenchProject } from './document';
 import {
   deleteBlock,
+  editSummary,
   LONG_TASK_MS,
   SETTLE_MS,
   type SpanTimes,
@@ -56,10 +57,11 @@ afterAll(() => {
   }
 });
 
-/** What {@link rounds} measured: each round's p95, and the app's spans of every edit. */
+/** What {@link rounds} measured: each round's p95, and every edit with the app's spans. */
 interface Rounds {
   readonly samples: number[];
   readonly spans: SpanTimes[];
+  readonly edits: TimedEdit[];
 }
 
 /**
@@ -74,6 +76,7 @@ async function rounds(
   const ids = new NodeIds(phase.name);
   const result: number[] = [];
   const spans: SpanTimes[] = [];
+  const edits: TimedEdit[] = [];
   for (let round = 0; round < phase.samples; round += 1) {
     const values: number[] = [];
     for (let edit = 0; edit < EDITS; edit += 1) {
@@ -86,11 +89,12 @@ async function rounds(
       });
       values.push(measure(timed));
       spans.push(timed.spans);
+      edits.push(timed);
       await deleteBlock(app, timed.id, marker, phase.settleMs > 0);
     }
     result.push(percentile(values, 95));
   }
-  return { samples: result, spans };
+  return { samples: result, spans, edits };
 }
 
 describe('webview benchmark: the live preview and edits at 1,000 blocks', () => {
@@ -145,7 +149,8 @@ describe('webview benchmark: the live preview and edits at 1,000 blocks', () => 
         `At 1,000 blocks: preview task p95 median ${String(rounded(median(preview.samples), 1))} ms, ` +
           `edit until settled p95 median ${String(rounded(median(edit.samples), 1))} ms\n` +
           `  spans per edit, C++ panel folded (median): ${spanSummary(preview.spans)}\n` +
-          `  spans per edit, C++ panel shown (median): ${spanSummary(edit.spans)}\n`,
+          `  spans per edit, C++ panel shown (median): ${spanSummary(edit.spans)}\n` +
+          `  per edit, C++ panel shown (median): ${editSummary(edit.edits)}\n`,
       );
       expect(preview.samples).toHaveLength(samples);
       expect(edit.samples).toHaveLength(samples);
