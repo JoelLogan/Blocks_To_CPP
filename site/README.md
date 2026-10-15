@@ -9,13 +9,12 @@ generated page.
 
 ## Build locally
 
-Requirements: Node.js 22.13 or later, and pnpm. The exact pnpm version is
-pinned in the root `package.json`. Either install pnpm 11 directly, or run
-`corepack enable` once to have
-[Corepack](https://nodejs.org/docs/latest-v22.x/api/corepack.html) fetch the
-pinned version. Corepack needs Node.js 22.14 or later (older versions
-cannot verify current pnpm signatures), and Node.js 25 and later no longer
-bundle it (`npm install --global corepack`).
+Requirements: Node.js and pnpm, of the versions
+[`BUILDING.md`](../BUILDING.md#what-you-need) names. Either install that pnpm
+directly, or run `corepack enable` once to have
+[Corepack](https://nodejs.org/docs/latest-v22.x/api/corepack.html) fetch it
+(Node.js 25 and later no longer bundle Corepack:
+`npm install --global corepack`).
 
 ```sh
 pnpm install --frozen-lockfile

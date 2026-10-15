@@ -240,7 +240,7 @@ GitHub Actions workflows. All actions are SHA-pinned and least-privilege
 
 | Workflow | Trigger | Jobs |
 | ---------- | --------- | ------ |
-| `ci.yml` | PR, push to any branch, weekly, manual | `lint` (rustfmt, clippy, also for the Windows target, markdownlint) · `test` (ubuntu, windows) · `test-cgroup` (the Linux cgroup path) · `gcc` (GCC 11 and 15 containers) · `wasm` (build + size budget) · `coverage` (the gates of §9.2) · `docs` (rustdoc, lychee link check, links and heading anchors of every Markdown file, diagnostic codes documented, generated IPC types and catalog outputs up to date) · `deny` · `secrets` (gitleaks) · `security` (pnpm audit, security suite) · `fuzz` (60 s per target) |
+| `ci.yml` | PR, push to any branch, weekly, manual | `lint` (rustfmt, clippy, also for the Windows target, markdownlint) · `test` (ubuntu, windows) · `test-cgroup` (the Linux cgroup path) · `gcc` (GCC 11 and 15 containers) · `wasm` (build + size budget) · `coverage` (the gates of §9.2) · `docs` (rustdoc, lychee link check, links and heading anchors of every Markdown file, pinned versions in `BUILDING.md` and nowhere else, diagnostic codes documented, generated IPC types and catalog outputs up to date) · `deny` · `secrets` (gitleaks) · `security` (pnpm audit, security suite) · `fuzz` (60 s per target) |
 | `desktop.yml` | PR and push touching the app, the crates, the packages or the Rust and Node configuration; manual (optionally making new visual-diff candidates) | `frontend` (`tsc --noEmit`, eslint, prettier, package layering) · `test-web` (Vitest with coverage, after building the WASM core; the unit tests of the E2E harness, the benchmarks and the visual diff; the benchmark comparison's self-test and the acceptance file's check) · `app` (build, tests, release checks and start check on ubuntu and windows) · `e2e` (ubuntu, windows: the exit test and the breadth flows, then the visual diff; the Trusted Types summary, which is meaningful on WebView2; the longest main-thread task of each flow, reported) |
 | `codeql.yml` | PR, push, weekly | CodeQL: JavaScript/TypeScript, Rust, GitHub Actions (code scanning, see below) |
 | `osv-scanner.yml` | PR, push, daily | OSV-Scanner over every lockfile; fails on known vulnerabilities and uploads results to code scanning when available |
@@ -292,6 +292,16 @@ Notes on the jobs:
   scripts. Each relative link must point to a file in the repository, and
   each anchor to a heading GitHub gives that anchor; lychee checks no
   anchors.
+* The `docs` job's `tools/check-build-docs.py` checks the versions in
+  `BUILDING.md` against their sources (`Cargo.lock`, `rust-toolchain.toml`,
+  `package.json`'s `engines` and `packageManager`, `.node-version` and the
+  workflows' pinned tool versions) and its Debian `apt` packages against the
+  `app` job of `desktop.yml`, and fails when any other Markdown file states
+  one of these versions or installs those packages. Dated records
+  (`CHANGELOG.md`, `docs/plans/`, `docs/adr/`) are exempt, and a dependency
+  table's row of a pinned tool is checked against its source instead. Its
+  `--self-test` breaks each rule, and bumps wasm-bindgen in a scratch copy of
+  the repository.
 * (M3) A weekly `build-docs` job runs `BUILDING.md`'s Debian steps word for
   word in Debian 12 and 13 containers, up to a release build that starts
   under xvfb.
@@ -344,8 +354,8 @@ pages, and every diagnostic links to its reference entry.
   tracked Markdown file. rustdoc is built with warnings as errors.
 * Build steps are written once: other documents link to `BUILDING.md`.
   Pinned tool versions appear only there and in their source of truth (such
-  as `Cargo.lock`). Until the desktop app's README is cut to a code map, it
-  and the WebAssembly core's README still repeat a summary of them.
+  as `Cargo.lock`); `tools/check-build-docs.py` checks that for the pinned
+  versions and the Debian packages (§9.3).
 * **In M2** there is no *Help* menu: *Learn more* in Problems opens the
   published diagnostics reference, and the setup page opens the MSYS2 and
   WinLibs sites, in the system browser through fixed links
