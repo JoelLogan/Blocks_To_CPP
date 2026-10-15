@@ -110,6 +110,42 @@ function otherType(value: unknown): unknown {
   }
 }
 
+/** Whether `value` is a JSON object (not an array or null). */
+function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Every object nested in `object`, at any depth, with the path of keys that leads to it (the
+ * top level itself left out), iteratively.
+ */
+function nestedObjects(
+  object: Readonly<Record<string, unknown>>,
+  at: readonly string[],
+): { at: string[]; object: Readonly<Record<string, unknown>> }[] {
+  const found: { at: string[]; object: Readonly<Record<string, unknown>> }[] = [];
+  const pending = [{ at: [...at], object }];
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    for (const [key, value] of Object.entries(next.object)) {
+      if (isObject(value)) {
+        const entry = { at: [...next.at, key], object: value };
+        found.push(entry);
+        pending.push(entry);
+      }
+    }
+  }
+  return found.sort((a, b) => a.at.join('.').localeCompare(b.at.join('.')));
+}
+
+/** The object at the path `at` inside `root` (each step an object, as `nestedObjects` found). */
+function objectAt(root: Record<string, unknown>, at: readonly string[]): Record<string, unknown> {
+  let object = root;
+  for (const key of at) {
+    object = object[key] as Record<string, unknown>;
+  }
+  return object;
+}
+
 /** JSON text of `object` with a leading `"__proto__"` key holding `{"b2cPolluted": true}`. */
 export function withProtoKey(object: Readonly<Record<string, unknown>>): string {
   const rest = JSON.stringify(object).slice(1);
@@ -121,8 +157,10 @@ const DROPPED: Expected = 'dropped';
 /**
  * Every command's sample turned into messages the isolation hook must drop: an extra top-level
  * key, a `constructor` or `prototype` key at the top and in the request, a missing or wrongly
- * typed `request`, an unknown or wrongly typed request field, and a channel argument that is not
- * a channel. (`__proto__` keys never reach the hook: see {@link protoCases}.)
+ * typed `request`, an unknown or wrongly typed request field, the same (an unknown field, a
+ * `constructor` key, each field of another type) in every object nested in the request at any
+ * depth (`settings_update`'s `ui.layout`, for example), and a channel argument that is not a
+ * channel. (`__proto__` keys never reach the hook: see {@link protoCases}.)
  */
 export function hookMutations(samples: Samples): AbuseCase[] {
   const cases: AbuseCase[] = [];
@@ -161,6 +199,37 @@ export function hookMutations(samples: Samples): AbuseCase[] {
           ...copy(sample),
           request: { ...copy(fields), [field]: otherType(value) },
         });
+      }
+      for (const { at, object } of nestedObjects(fields, [])) {
+        const where = ['request', ...at].join('.');
+        const changed = (change: (object: Record<string, unknown>) => void) => {
+          const request = copy(fields) as Record<string, unknown>;
+          change(objectAt(request, at));
+          return { ...copy(sample), request };
+        };
+        add(
+          `${cmd}: an unknown field in ${where}`,
+          cmd,
+          changed((nested) => {
+            nested['b2cExtra'] = 'x';
+          }),
+        );
+        add(
+          `${cmd}: a constructor field in ${where}`,
+          cmd,
+          changed((nested) => {
+            Object.assign(nested, { constructor: { prototype: { b2cPolluted: true } } });
+          }),
+        );
+        for (const [field, value] of Object.entries(object)) {
+          add(
+            `${cmd}: ${where}.${field} of another type`,
+            cmd,
+            changed((nested) => {
+              nested[field] = otherType(value);
+            }),
+          );
+        }
       }
     }
     for (const [key, value] of Object.entries(sample)) {

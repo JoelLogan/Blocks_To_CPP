@@ -1,6 +1,8 @@
 //! Settings: `settings_get` and `settings_update`
 //! (`docs/spec/05-project-format.md` §5.9). The webview may change only the
-//! code style, the Run-on-errors choice and the console's scrollback.
+//! code style, the Run-on-errors choice, the console's scrollback and the
+//! editor's layout (`ui.layout`: the toolbox and dock sizes and which docks
+//! are hidden).
 
 use b2c_ipc::IpcError;
 use b2c_ipc::dto::{SettingsGetResponse, SettingsUpdateResponse};

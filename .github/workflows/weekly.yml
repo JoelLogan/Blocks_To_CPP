@@ -311,9 +311,13 @@ jobs:
               --output-format GitHubMarkdown > "$reports/$name.md" 2> "$reports/$name.err" || status=$?
             tail -n 20 "$reports/$name.err"
             echo "::endgroup::"
+            # cargo-geiger 0.13 exits with 1 whenever it warns, and it always warns about files
+            # it never scans (build-script outputs, READMEs included as docs), so a report on
+            # stdout counts whatever the exit status; only an empty report is a failure.
+            warnings=$(grep -c '^WARNING' "$reports/$name.err" || true)
             {
-              if [ "$status" -eq 0 ]; then
-                echo "<details><summary><code>$name</code></summary>"
+              if [ -s "$reports/$name.md" ]; then
+                echo "<details><summary><code>$name</code> (exit status $status, warnings: $warnings)</summary>"
                 echo
                 # At most 64 KiB per crate keeps the summary under its 1 MiB limit.
                 head -c 65536 "$reports/$name.md"
@@ -321,7 +325,7 @@ jobs:
                 echo "</details>"
               else
                 failed+=("$name")
-                echo "**\`$name\`: cargo-geiger failed (exit status $status)**; its log is in the job output."
+                echo "**\`$name\`: cargo-geiger wrote no report (exit status $status)**; its log is in the job output."
               fi
               echo
             } >> "$GITHUB_STEP_SUMMARY"

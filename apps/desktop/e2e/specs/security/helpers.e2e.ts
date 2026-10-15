@@ -263,6 +263,41 @@ describe('abuse cases', () => {
     expect([...mutated].sort()).toEqual([...commands].sort());
   });
 
+  it('mutate nested request objects at every depth (settings_update ui.layout, run_start)', () => {
+    type Json = Record<string, unknown>;
+    /** The object at `keys` inside `value` (each step an object). */
+    const at = (value: unknown, ...keys: string[]): Json =>
+      keys.reduce<Json>((object, key) => object[key] as Json, value as Json);
+    const cases = hookMutations(samples);
+    const argsOf = (name: string): Json => {
+      const found = cases.find((entry) => entry.name === name);
+      expect(found, name).toBeDefined();
+      return (found?.args ?? {}) as Json;
+    };
+    const sample = samples['settings_update'];
+
+    const unknown = argsOf('settings_update: an unknown field in request.ui.layout');
+    expect(at(unknown, 'request', 'ui', 'layout')).toMatchObject({ b2cExtra: 'x' });
+    expect(Object.keys(at(unknown, 'request', 'ui'))).toEqual(
+      Object.keys(at(sample, 'request', 'ui')),
+    );
+    const constructorKey = argsOf('settings_update: a constructor field in request.codeStyle');
+    expect(Object.keys(at(constructorKey, 'request', 'codeStyle'))).toContain('constructor');
+    expect(cases.map((entry) => entry.name)).toContain(
+      'run_start: an unknown field in request.runOptions',
+    );
+
+    const layout = at(sample, 'request', 'ui', 'layout');
+    expect(Object.keys(layout).length).toBeGreaterThan(0);
+    for (const [field, original] of Object.entries(layout)) {
+      const args = argsOf(`settings_update: request.ui.layout.${field} of another type`);
+      const sent = at(args, 'request', 'ui', 'layout')[field];
+      expect(
+        typeof sent === typeof original && Array.isArray(sent) === Array.isArray(original),
+      ).toBe(false);
+    }
+  });
+
   it('send nothing that the hook should pass and that would act (every mutation is dropped)', () => {
     expect(hookMutations(samples).every((entry) => entry.expected === 'dropped')).toBe(true);
     // A message around the hook with an empty body runs a command that takes no arguments:

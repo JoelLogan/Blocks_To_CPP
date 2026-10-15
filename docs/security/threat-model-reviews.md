@@ -367,11 +367,12 @@ Fixed in this review.
   (`apps/desktop/src-tauri/src/commands/settings.rs`) still says in its module
   documentation that the webview may change only the code style, the
   Run-on-errors choice and the scrollback; it may also change `ui.layout`.
-  Not changed here (the desktop crate was not built in this review); a
-  one-line documentation fix.
+  Fixed when the review was merged: the module documentation names the
+  layout too.
 
 **TM-M2-3 (low): the weekly `cargo-geiger` report has never produced a
-report.** Open.
+report.** Fixed when the review was merged; the first weekly run with the fix
+is still to come.
 
 - *What:* §8.13 lists a weekly `cargo-geiger` report of `unsafe` use. In all
   three weekly runs so far (`205ab1d` on 2026-10-05, `9e9bd35` twice on
@@ -388,10 +389,13 @@ report.** Open.
 - *Effect:* no count of `unsafe` in the dependency tree has been recorded
   before this review. The `unsafe_code` lints and review still gate the
   project's own code, so this is a gap in monitoring, not in the gate.
-- *Proposed fix* (in `weekly.yml`, for the package that owns it): count a
-  run as reported when the report file is not empty, whatever the exit status,
-  and add the number of `WARNING:` lines to the summary; fail only on an empty
-  report.
+- *Fix:* the `geiger` job of `weekly.yml` counts a crate as reported when
+  its report is not empty, whatever the exit status, and gives the exit
+  status and the number of `WARNING` lines next to each crate's report; only
+  an empty report counts as a failure. Replaying this review's recorded
+  `cargo geiger` run (report, warnings, exit status 1) through the job's
+  step: before the fix every crate was "failed" and no report was kept;
+  after it, every crate's report is in the summary and the step passes.
 
 **TM-M2-4 (low): the Trusted Types trial's results are not recorded
 anywhere durable.** Open.
@@ -416,14 +420,14 @@ run its checks at `bee5c0a`.** Open, tracked with the nightly failures.
 proposed for M3.
 
 - cargo-deny enforces an allowlist for crates; for npm packages the licence
-  is checked by hand, in the pull request that adds the package and its row in
-  `docs/developer-guide/dependencies.md`. Today's set is acceptable (see above), but a new
-  transitive package with a copyleft-only licence would not fail CI. Proposed:
-  a check of `pnpm licenses list --prod --json` against the `deny.toml`
-  allowlist next to `ci.yml`'s `pnpm audit` job.
+  is checked by hand, in the pull request that adds the package and its row
+  in `docs/developer-guide/dependencies.md`. Today's set is acceptable (see
+  above), but a new transitive package with a copyleft-only licence would
+  not fail CI. Proposed: a check of `pnpm licenses list --prod --json`
+  against the `deny.toml` allowlist next to `ci.yml`'s `pnpm audit` job.
 
 **TM-M2-7 (informational): the end-to-end IPC abuse cases stop at the
-request's top level.** Open.
+request's top level.** Fixed when the review was merged.
 
 - `hookMutations` in `apps/desktop/e2e/specs/security/lib/abuse.ts` replaces
   each top-level field of a request with a value of another type, but does
@@ -432,9 +436,11 @@ request's top level.** Open.
   decoder that the unit tests cover, so the gap is in end-to-end evidence
   only; polish item W3-4 asked to confirm that the nightly test covers
   `settings_update{ui}`, and it does so only at the top level.
-- *Proposed:* let `hookMutations` recurse into nested request objects (an
-  unknown key and a value of another type at each level), with a case in
-  `helpers.e2e.ts`.
+- *Fix:* `hookMutations` also mutates every object nested in a request, at
+  any depth (an unknown field, a `constructor` key, and each field of another
+  type), so `settings_update`'s `codeStyle`, `run`, `console`, `ui` and
+  `ui.layout` and `run_start`'s `runOptions` are covered end to end; a case
+  in `helpers.e2e.ts` checks the nested cases (it failed before the fix).
 
 No finding of this review is a vulnerability that a project file, a
 clipboard payload or a web page can exploit.
@@ -471,7 +477,7 @@ clipboard payload or a web page can exploit.
 
 - The Web Worker preview (ADR-0016): the worker's CSP on both webviews, no
   IPC in the worker, and the scope index.
-- The results of TM-M2-3 and TM-M2-4, and the Windows security run of
-  TM-M2-5.
+- The first weekly `cargo-geiger` report after TM-M2-3's fix, the results
+  of TM-M2-4, and the Windows security run of TM-M2-5.
 - Before M4: R-3, and pasting Raw C++ blocks into a trusted project, which
   the in-app edit rule of §8.3 would then trust on the next save.
