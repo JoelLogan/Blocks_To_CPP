@@ -86,10 +86,13 @@ desktop app's README:
 ```sh
 python3 tools/check-moved-text.py apps/desktop/README.md --rev d4dfafb \
   apps/desktop/README.md apps/desktop/e2e/README.md docs/developer-guide/*.md \
-  BUILDING.md CONTRIBUTING.md --dropped dropped.txt --verbose
+  BUILDING.md CONTRIBUTING.md --dropped docs/plans/m2-polish-w6-2-dropped.txt --verbose
 ```
 
 `--dropped` names each sentence left out on purpose, with why (the script's help describes the
-format); `python3 tools/check-moved-text.py --self-test` checks the script itself. Then fix the
-links into the old file: `node site/build.mjs --check-repo-markdown` finds every link and heading
-anchor that no longer resolves.
+format). Write a new list for each move and commit it with the move, under `docs/plans/` like the
+split's, so a reviewer can run the same comparison. The comparison holds for the commit that moves
+the text: later edits of the new files can make a sentence missing again, so it is not a CI check.
+`python3 tools/check-moved-text.py --self-test` checks the script itself. Then fix the links into
+the old file: `node site/build.mjs --check-repo-markdown` finds every link and heading anchor that
+no longer resolves.

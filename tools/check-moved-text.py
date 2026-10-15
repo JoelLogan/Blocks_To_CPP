@@ -40,12 +40,13 @@ docs/developer-guide/recipes.md):
 
     python3 tools/check-moved-text.py apps/desktop/README.md --rev d4dfafb \\
         apps/desktop/README.md apps/desktop/e2e/README.md docs/developer-guide/*.md \\
-        BUILDING.md CONTRIBUTING.md --dropped dropped.txt
+        BUILDING.md CONTRIBUTING.md --dropped docs/plans/m2-polish-w6-2-dropped.txt
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import difflib
 import io
 import re
@@ -429,6 +430,23 @@ def self_test() -> int:
                            "on debian or ubuntu": "a whole short sentence"})
         expect("a short or unexplained --dropped line is a problem", len(problems) == 2)
 
+        old_file = Path(folder, "old.md")
+        old_file.write_text(OLD_FIXTURE, encoding="utf-8")
+        new_file = Path(folder, "new.md")
+        new_file.write_text(NEW_FIXTURE, encoding="utf-8")
+        for name, args in [
+            ("a --dropped file", ["--dropped", str(Path(folder, "no-such-dropped.txt"))]),
+            ("a new file", [str(Path(folder, "no-such-new.md"))]),
+        ]:
+            errors = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(errors):
+                    status = main([str(old_file), str(new_file), *args])
+            except SystemExit as exit_:
+                status = exit_.code
+            expect(f"{name} that does not exist is a usage error (got {status!r})",
+                   status == 2 and "cannot read" in errors.getvalue())
+
         repo = Path(folder, "repo")
         repo.mkdir()
         git = ["git", "-C", str(repo), "-c", "user.name=self-test", "-c", "user.email=self@test"]
@@ -479,13 +497,17 @@ def main(argv: list[str]) -> int:
     if not 0.0 < args.threshold <= 1.0:
         parser.error("--threshold must be above 0 and at most 1")
     dropped: dict[str, str] = {}
-    if args.dropped is not None:
-        dropped, problems = read_dropped(args.dropped)
-        if problems:
-            print("\n".join(problems))
-            return 1
-    new_files = {name: Path(name).read_text(encoding="utf-8") for name in args.new}
-    old_text = read_old(args.old, args.rev)
+    try:
+        if args.dropped is not None:
+            dropped, problems = read_dropped(args.dropped)
+            if problems:
+                print("\n".join(problems))
+                return 1
+        new_files = {name: Path(name).read_text(encoding="utf-8") for name in args.new}
+        old_text = read_old(args.old, args.rev)
+    except OSError as error:
+        # A file named on the command line that cannot be read is a usage error, not a crash.
+        parser.error(f"cannot read {error.filename}: {error.strerror}")
     return 0 if check(old_text, new_files, args.threshold, dropped, args.verbose, sys.stdout) else 1
 
 
