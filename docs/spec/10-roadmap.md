@@ -19,8 +19,8 @@
 > changed outside the app, behind the hardened IPC contract of 36 commands.
 > The guessing-game exit test, assembled from the *Empty* template, and the
 > breadth E2E flows pass in CI on both systems (commit `8c531d3`); the visual
-> diff of the canvas runs there too, but compares nothing until its baselines
-> are committed. The first scheduled nightly run, with the E2E security
+> diff of the canvas, and since 2026-10-15 of the window's chrome, runs there
+> too, but compares nothing until its baselines are committed. The first scheduled nightly run, with the E2E security
 > tests, the benchmarks and the fuzzing, passed on both systems (2026-10-07,
 > commit `0709960`). The nightly of 2026-10-14 (commit `bee5c0a`) failed
 > three jobs: the two Windows E2E failures led to fixes in the app (a save
@@ -201,8 +201,10 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
 * Close-out (2026-10-15): the README and CONTRIBUTING rewritten, the
   housekeeping fixes, the `app_quit` follow-up of the nightly IPC-abuse
   test, a memory cap for the weekly mutation job (its first green run
-  followed, 2026-10-15), the threat-model review recorded and the toolchain
-  matrix protocol written. The owner's part remains: the Debian toolchain
+  followed, 2026-10-15), the threat-model review recorded, the toolchain
+  matrix protocol written (running it in a container found Release builds
+  warning with Ubuntu's GCC 14, since fixed), and the window's chrome in the
+  visual diff (light on both systems, dark on Linux). The owner's part remains: the Debian toolchain
   cell, the visual baselines from the CI runners, the profile on the owner's
   machine, the usability sessions, the NVDA and Orca pass and the demo
   review. A GitHub A/B of 2026-10-15 flagged an edit at 1,000 blocks as
