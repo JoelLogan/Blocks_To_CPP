@@ -152,9 +152,12 @@ notice. The values only size the layout, as numbers in CSS. The nightly
 IPC-abuse test builds its generic cases from the generated samples, so
 `settings_update` with its `ui` part gets them end to end (extra and reserved
 keys, a missing or malformed request, each top-level field of another type).
-Out-of-range sizes, extra keys and wrong types inside `ui.layout` are tested
-in the hook's unit tests (`isolation-tests/validate.test.js`) and the
-backend's (`b2c-ipc`, `b2c-store`), not end to end (TM-M2-7).
+Since TM-M2-7 was fixed, when the review was merged, it also sends an unknown
+field, a `constructor` key and each field of another type inside every
+nested object of the request: `codeStyle`, `run`, `console`, `ui` and
+`ui.layout`. Only out-of-range sizes are still tested in unit tests alone,
+the hook's (`isolation-tests/validate.test.js`) and the backend's (`b2c-ipc`,
+`b2c-store`): a mutation changes a value's type, never its range.
 
 Every update writes the whole `settings.json` (at most 1 MiB, `0600`,
 atomic). There is no rate limit: the 500 ms batching is the frontend's.
