@@ -6,8 +6,10 @@
 //! three environment variables, each optional:
 //!
 //! * [`ROOT_ENV`] (`B2C_E2E_ROOT`): every machine-local folder goes under this
-//!   absolute path ([`b2c_store::Dirs::under_root`]), so each test starts from
-//!   a fresh profile.
+//!   absolute path, so each test starts from a fresh profile: the app's own
+//!   ([`b2c_store::Dirs::under_root`]) and the web view's data
+//!   ([`E2eOptions::webview_data_dir`]), which Tauri otherwise keeps in the
+//!   app's local data folder for every launch.
 //! * [`DIALOGS_ENV`] (`B2C_E2E_DIALOGS`): the path of a JSON [`DialogScript`]
 //!   that answers the open, save-as, pick-compiler and trust dialogs in
 //!   order, and cancels once a list is exhausted.
@@ -44,6 +46,10 @@ pub const DIALOGS_ENV: &str = "B2C_E2E_DIALOGS";
 
 /// The variable listing the folders toolchain discovery searches.
 pub const TOOLCHAIN_DIRS_ENV: &str = "B2C_E2E_TOOLCHAIN_DIRS";
+
+/// The web view's data folder under the test root
+/// ([`E2eOptions::webview_data_dir`]).
+pub const WEBVIEW_DATA_FOLDER: &str = "webview";
 
 /// The largest dialog script, in bytes.
 pub const MAX_SCRIPT_BYTES: u64 = 1024 * 1024;
@@ -236,6 +242,19 @@ impl E2eOptions {
     /// As [`E2eOptions::from_lookup`].
     pub fn from_env() -> Result<Self, E2eError> {
         Self::from_lookup(&|name| std::env::var_os(name))
+    }
+
+    /// Where the web view keeps its data (`WebView2`'s user data folder,
+    /// `WebKitGTK`'s data and cache folders): `<root>/webview` with a test
+    /// root, so no launch sees what another left there or meets its browser
+    /// processes still running, and none touches the user's own; `None`
+    /// without one, which keeps Tauri's default, the app's local data folder
+    /// that every launch shares. On Windows each launch under `msedgedriver`
+    /// also has browser arguments of its own (its debugging port, see
+    /// [`webview2_browser_args`]), and web views with different browser
+    /// arguments must not share a data folder.
+    pub fn webview_data_dir(&self) -> Option<PathBuf> {
+        self.root.as_deref().map(|root| root.join(WEBVIEW_DATA_FOLDER))
     }
 
     /// The settings from the variables `lookup` returns (tests pass their own
@@ -431,10 +450,37 @@ mod tests {
 
         let none = E2eOptions::from_lookup(&|_| None).unwrap();
         assert_eq!(none, E2eOptions::default());
+        assert_eq!(none.webview_data_dir(), None);
 
         let empty =
             E2eOptions::from_lookup(&|name| (name == TOOLCHAIN_DIRS_ENV).then(OsString::new)).unwrap();
         assert_eq!(empty.toolchain_dirs, Some(Vec::new()));
+    }
+
+    #[test]
+    fn the_web_views_data_has_a_folder_of_its_own_under_the_root() {
+        let root = absolute("e2e-root");
+        let options = E2eOptions {
+            root: Some(root.clone()),
+            ..E2eOptions::default()
+        };
+        let webview = options.webview_data_dir().unwrap();
+        assert_eq!(webview, root.join("webview"));
+        let dirs = b2c_store::Dirs::under_root(&root);
+        for app_folder in [
+            &dirs.config,
+            &dirs.machine,
+            &dirs.cache,
+            &dirs.recovery,
+            &dirs.logs,
+        ] {
+            assert!(
+                !webview.starts_with(app_folder) && !app_folder.starts_with(&webview),
+                "{} and {}",
+                webview.display(),
+                app_folder.display()
+            );
+        }
     }
 
     #[test]
