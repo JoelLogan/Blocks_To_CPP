@@ -221,7 +221,10 @@ Details of each level as M2 sets them up:
     attached whose table compares their metric, or once their metrics have
     at least 5 nightly baselines. Their metrics are the selection at 1,000
     blocks, dragging at 5,000 blocks and the console's output; a pull
-    request's A/B run takes every benchmark but cold start. A benchmark the
+    request's A/B run takes every benchmark but cold start. Dragging at
+    5,000 blocks moves a definition where nothing can connect, so it never
+    previews a place: what the snap radius's previews cost is not gated in
+    M2 (the plan's W5-1 status keeps it open). A benchmark the
     base build cannot run, or that fails on the base, is left out without
     failing the job, and the summary then ends "Not conclusive" for it: such
     a run does not count for the rule.

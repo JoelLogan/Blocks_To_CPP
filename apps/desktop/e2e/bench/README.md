@@ -285,7 +285,9 @@ A change expected to alter a gated metric runs the A/B job on its pull request. 
 of the M2 polish wave merge only with a green A/B run attached whose table compares their metric,
 or once their metrics have at least 5 nightly baselines: the toolbox that no longer follows the
 selection (W4-2) is measured by `select-1000.max-task`, the snap radius (W5-1) by `drag-5000.frame-p95`, and the console's
-screen-reader output (W3-11) by `console-200000.run`, all part of a pull request's run. A run that
+screen-reader output (W3-11) by `console-200000.run`, all part of a pull request's run. `drag-5000` drags a definition
+across empty canvas, where nothing can connect: it shows that the radius does not slow a drag down, but it never
+previews a place, so what W5-1's previews cost is not gated (the plan's W5-1 status keeps that open). A run that
 is not conclusive for the benchmark of one of them (the base build cannot run it, or it failed on
 the base) does not count. Locally, with two builds of the app:
 
