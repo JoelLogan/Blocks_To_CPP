@@ -76,9 +76,14 @@ the secret scan run in CI only, and the nightly and weekly workflows add the
 security end-to-end tests, the benchmarks, longer fuzzing and mutation
 testing.
 
-**Rust** (`ci.yml` and the app job of `desktop.yml`):
+**Rust** (`ci.yml` and the app job of `desktop.yml`). Both workflows build
+with `RUSTFLAGS='-D warnings'`, so a compiler warning fails CI even where no
+Clippy line looks: in the fuzz targets, the wasm32 check and the tests. The
+first line sets it for your shell; changing `RUSTFLAGS` rebuilds everything,
+so you may prefer a `CARGO_TARGET_DIR` of its own for these checks.
 
 ```sh
+export RUSTFLAGS='-D warnings'               # as in CI
 cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 rustup target add x86_64-pc-windows-gnu      # once, for the next line
@@ -91,7 +96,7 @@ cargo test --locked -p blocks2cpp-desktop --features e2e-hooks
 cargo check --locked --manifest-path fuzz/Cargo.toml
 cargo check --locked --target wasm32-unknown-unknown -p b2c-ir -p b2c-model -p b2c-catalog -p b2c-lang -p b2c-codegen -p b2c-core-wasm
 python3 tools/check-layering.py              # which crate may use which
-cargo deny check --all-features --locked     # the dependency policy (cargo-deny)
+cargo deny --all-features --locked check     # the dependency policy (cargo-deny)
 cargo llvm-cov --locked --no-report          # the tests again, measured (cargo-llvm-cov), then the gates:
 cargo llvm-cov report --summary-only --fail-under-lines 80
 cargo llvm-cov report -p b2c-ir -p b2c-model -p b2c-catalog -p b2c-lang -p b2c-codegen --summary-only --fail-under-lines 90
