@@ -714,3 +714,18 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - The end-to-end harness gives `tauri-driver` and the native driver two
   different ports: it could hand out the same free port twice, and the test
   then failed before the app started.
+- _Save as…_ no longer suggests a Windows device name written with a
+  superscript digit (`COM¹.b2c`, `LPT².b2c`): the suggestion uses the device
+  rule of the project file's path checks.
+- Contributor docs: CONTRIBUTING's cargo-deny line runs as written (its
+  options come before `check`), and its Rust checks set
+  `RUSTFLAGS='-D warnings'` as CI does; BUILDING.md's Develop section tells
+  Windows users to set `B2C_SKIP_WASM_OPT` first, and says which pinned
+  versions the build checks. The toolchain protocol's Rescan step works on
+  Debian (`apt remove`, since the app always searches `/usr/bin` and reads
+  the path only at start), and its TDM-GCC cell expects the compiler to be
+  flagged too old (GCC 10.3).
+- `tools/check-build-docs.py` also reports a binaryen release right after the
+  tool's name and a Node.js minimum written in lower case (`engines.node`);
+  `tools/check-moved-text.py` reports a missing input file instead of
+  crashing, and the dropped list of the desktop README's split is committed.
