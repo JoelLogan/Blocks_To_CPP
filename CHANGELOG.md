@@ -465,6 +465,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   waives an A/B difference, because both builds are measured with the head's
   benchmarks. The two W2-1 entries for `webview.edit-1000.p95` are
   redefinitions.
+- End-to-end harness: the window gets 60 s to start, as long as a page load
+  may take, and a timeout says how far the start got (the page never loaded,
+  it loaded too late, or the app never became ready). End-to-end builds keep
+  the web view's data under the test's `B2C_E2E_ROOT`, or in the folder
+  `B2C_E2E_WEBVIEW_DATA` names, instead of the app's local data folder that
+  every launch shared: each launch of a flow test gets a folder of its own,
+  and the cold-start benchmark's starts share one, as a person's do.
 
 - A project or clipboard payload from a newer block catalog reports unknown
   fields, inputs, settings and options as `B2C-E0602` (made by a newer
@@ -576,6 +583,14 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 
 ### Fixed
 
+- A save asked for while the previous save was still finishing was dropped
+  without a word: after the first _Save as…_ of a new project, on a slow
+  disk, an edit saved at once with Ctrl+S or ≡ _Save_ stayed unsaved. Such a
+  save now runs once the one before it has saved, and writes what the editor
+  shows then; several asked for meanwhile make one save. After a cancelled
+  _Save as…_ or a failed save it does nothing more, so the dialog or the
+  message does not come twice, and it never saves a project opened after it
+  was asked for. A held key still saves once.
 - Choosing another module, or a problem in another module (also the first
   error that F5 or Ctrl+B selects), while a block is dragged no longer
   switches modules in the middle of the drag, which lost the dragged block

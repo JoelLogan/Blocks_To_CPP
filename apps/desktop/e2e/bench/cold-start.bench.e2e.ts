@@ -2,16 +2,20 @@
  * Webview benchmark: cold start (docs/spec/01-overview.md §1.4 N2, 09 §9.2). The app is started
  * {@link LAUNCHES} times, each with a fresh profile, and each start is timed from the WebDriver
  * session request (which starts the app) to the readiness marker: the start page shown, Blockly's
- * workspace injected and the toolbox rendered (bench/page.ts `READY_SCRIPT`). A first start warms
- * the system's file caches and is not counted. The samples go to `webview.cold-start.json`
- * (bench/results.ts) for tools/bench-compare.py.
+ * workspace injected and the toolbox rendered (bench/page.ts `READY_SCRIPT`). All starts share one
+ * web view data folder, as a person's starts share the app's: a first start, not counted, warms it
+ * and the system's file caches. (End-to-end builds would otherwise give each start a new folder
+ * under its profile, and each start would then include creating the web view's profile.) The
+ * samples go to `webview.cold-start.json` (bench/results.ts) for tools/bench-compare.py.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { harnessSettings } from '../support/env';
-import { measureColdStart } from './launch';
+import { measureColdStart, removeFolder } from './launch';
 import { benchSamples, writeMetric } from './results';
 import { median, rounded } from './stats';
 
@@ -24,19 +28,24 @@ describe('webview benchmark: cold start', () => {
     if (!existsSync(settings.app)) {
       throw new Error(`The app under test is missing: ${settings.app} (set B2C_E2E_APP)`);
     }
-    await measureColdStart(settings, 'cold-start-warm-up');
+    const webviewData = mkdtempSync(path.join(tmpdir(), 'b2c-bench-webview-'));
     const samples: number[] = [];
     let upperBounds = 0;
     let restarted = 0;
-    for (let launch = 1; launch <= LAUNCHES; launch += 1) {
-      const start = await measureColdStart(settings, `cold-start-${String(launch)}`);
-      samples.push(start.ms);
-      if (start.already) {
-        upperBounds += 1;
+    try {
+      await measureColdStart(settings, 'cold-start-warm-up', webviewData);
+      for (let launch = 1; launch <= LAUNCHES; launch += 1) {
+        const start = await measureColdStart(settings, `cold-start-${String(launch)}`, webviewData);
+        samples.push(start.ms);
+        if (start.already) {
+          upperBounds += 1;
+        }
+        if (start.restarts > 0) {
+          restarted += 1;
+        }
       }
-      if (start.restarts > 0) {
-        restarted += 1;
-      }
+    } finally {
+      await removeFolder(webviewData);
     }
     const file = writeMetric({
       name: 'webview.cold-start',

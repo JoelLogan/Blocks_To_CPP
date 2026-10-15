@@ -85,6 +85,20 @@ describe('appEnvironment', () => {
     expect(windows['B2C_E2E_TOOLCHAIN_DIRS']).toBe('C:\\msys64\\ucrt64\\bin');
   });
 
+  it('gives the web view a folder of its own only when the launch has one', () => {
+    const settings = harnessSettings({}, 'linux');
+    const profile = { root: '/tmp/x/profile', dialogs: '/tmp/x/dialogs.json' };
+    const inherited = { B2C_E2E_WEBVIEW_DATA: '/tmp/shared-webview' };
+    expect(appEnvironment(settings, profile, inherited, 'linux')['B2C_E2E_WEBVIEW_DATA']).toBe(
+      undefined,
+    );
+    expect(
+      appEnvironment(settings, { ...profile, webviewData: '/tmp/x/webview-2' }, inherited, 'linux')[
+        'B2C_E2E_WEBVIEW_DATA'
+      ],
+    ).toBe('/tmp/x/webview-2');
+  });
+
   it('sets the window’s size when a test asks for one', () => {
     const settings = harnessSettings({}, 'linux');
     const profile = { root: '/tmp/x/profile', dialogs: '/tmp/x/dialogs.json' };

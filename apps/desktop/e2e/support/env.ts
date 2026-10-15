@@ -120,6 +120,11 @@ export interface AppProfile {
   /** The dialog script (`B2C_E2E_DIALOGS`). */
   readonly dialogs: string;
   /**
+   * The web view's data folder (`B2C_E2E_WEBVIEW_DATA`, absolute); without it the app keeps it in
+   * the profile's `webview/`, which every launch with that profile shares.
+   */
+  readonly webviewData?: string;
+  /**
    * The window's size (`B2C_E2E_WINDOW_SIZE`), so the test sees the same layout on every system;
    * without it the app opens at its own size (1280 × 800, smaller on a smaller screen), unless the
    * harness's environment sets the variable for every launch.
@@ -129,8 +134,9 @@ export interface AppProfile {
 
 /**
  * The environment the app runs in: this process's, without the harness's own variables, with a
- * fresh profile (`root`), the dialog script, the toolchain folders and the window's size, if
- * given. On Linux, WebKitGTK's DMA-BUF renderer is turned off, as a virtual display has no GPU.
+ * fresh profile (`root`), the dialog script, the toolchain folders, and the web view's folder and
+ * the window's size, if given. On Linux, WebKitGTK's DMA-BUF renderer is turned off, as a virtual
+ * display has no GPU.
  */
 export function appEnvironment(
   settings: HarnessSettings,
@@ -145,6 +151,11 @@ export function appEnvironment(
   result['B2C_E2E_ROOT'] = profile.root;
   result['B2C_E2E_DIALOGS'] = profile.dialogs;
   result['B2C_E2E_TOOLCHAIN_DIRS'] = settings.toolchainDirs;
+  // Never inherited: a folder from the harness's environment would be shared by every launch.
+  Reflect.deleteProperty(result, 'B2C_E2E_WEBVIEW_DATA');
+  if (profile.webviewData !== undefined) {
+    result['B2C_E2E_WEBVIEW_DATA'] = profile.webviewData;
+  }
   if (profile.windowSize !== undefined) {
     result['B2C_E2E_WINDOW_SIZE'] = windowSizeValue(profile.windowSize);
   }

@@ -49,8 +49,13 @@ pub(crate) const TRUSTED_TYPES_REPORT_ONLY: &str = "require-trusted-types-for 's
 ///
 /// End-to-end builds take the window's size from [`WINDOW_SIZE_ENV`]; a value
 /// that is not `WIDTHxHEIGHT` stops the app, so a test never runs at a size it
-/// did not ask for.
-pub(crate) fn open_main_window<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
+/// did not ask for. They keep the web view's data in `webview_data` when given
+/// one, a folder under the test root or of the harness's choosing (see
+/// `crate::e2e`).
+pub(crate) fn open_main_window<R: Runtime>(
+    app: &App<R>,
+    #[cfg(feature = "e2e-hooks")] webview_data: Option<std::path::PathBuf>,
+) -> tauri::Result<()> {
     let config = app.config();
     let window = config
         .app
@@ -81,6 +86,11 @@ pub(crate) fn open_main_window<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
             Some(arguments) => builder.additional_browser_args(&arguments),
             None => builder,
         };
+    #[cfg(feature = "e2e-hooks")]
+    let builder = match webview_data {
+        Some(folder) => builder.data_directory(folder),
+        None => builder,
+    };
     #[cfg(feature = "e2e-hooks")]
     let builder = match std::env::var_os(WINDOW_SIZE_ENV) {
         None => builder,

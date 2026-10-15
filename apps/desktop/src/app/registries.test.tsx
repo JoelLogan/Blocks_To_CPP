@@ -83,6 +83,49 @@ describe('the command registry', () => {
     expect(handler).toHaveBeenCalledTimes(2);
   });
 
+  it('calls a handler registered with whileRunning "call" again while it runs', async () => {
+    const registry = createCommandRegistry();
+    const gates = [deferred(), deferred()];
+    const pending = [...gates];
+    const handler = vi.fn(() => pending.shift()?.promise);
+    registry.registerCommand('project.save', handler, { whileRunning: 'call' });
+
+    const first = registry.runCommand('project.save');
+    const second = registry.runCommand('project.save');
+    expect(second).not.toBe(first);
+    expect(handler).toHaveBeenCalledTimes(2);
+
+    // Each run is its own call's promise.
+    let secondDone = false;
+    void second.then(() => {
+      secondDone = true;
+    });
+    gates[0]?.resolve();
+    await first;
+    await Promise.resolve();
+    expect(secondDone).toBe(false);
+    gates[1]?.resolve();
+    await second;
+  });
+
+  it('lets the newest registration decide whether a run joins the running one', async () => {
+    const registry = createCommandRegistry();
+    const gate = deferred();
+    const calledAgain = vi.fn(() => gate.promise);
+    const joining = vi.fn(() => gate.promise);
+    registry.registerCommand('project.save', calledAgain, { whileRunning: 'call' });
+    const remove = registry.registerCommand('project.save', joining);
+
+    const first = registry.runCommand('project.save');
+    expect(registry.runCommand('project.save')).toBe(first);
+    remove();
+    void registry.runCommand('project.save');
+    expect(joining).toHaveBeenCalledTimes(1);
+    expect(calledAgain).toHaveBeenCalledTimes(1);
+    gate.resolve();
+    await first;
+  });
+
   it('rejects when the handler fails, synchronously or not', async () => {
     const registry = createCommandRegistry();
     registry.registerCommand('project.open', () => {

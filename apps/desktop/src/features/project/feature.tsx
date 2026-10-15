@@ -62,9 +62,13 @@ export function installProjectFeature(
       'project.open',
       command(() => lifecycle.open()),
     ),
+    // Not joined to a running save: a Save asked for after an edit made meanwhile must follow it.
+    // lifecycle.save queues it, and drops it when the running save did not save, so a cancelled
+    // Save as… is not asked again. Save as, New, Open and Close join a run of their own.
     ctx.commands.registerCommand(
       'project.save',
       command(() => lifecycle.save()),
+      { whileRunning: 'call' },
     ),
     ctx.commands.registerCommand(
       'project.saveAs',

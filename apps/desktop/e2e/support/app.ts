@@ -28,8 +28,16 @@ import { HookClient } from './hook';
 import { finishLongTaskRecorder, startLongTaskRecorder } from './longtasks';
 import { sleep, waitFor, withTimeout } from './wait';
 
-/** How long the window may take to start (02 §2.5.7 start-up, backend and features). */
-export const READY_TIMEOUT_MS = 30_000;
+/** WebDriver's page-load timeout of a session: how long a navigation may take. */
+export const PAGE_LOAD_TIMEOUT_MS = 60_000;
+
+/**
+ * How long the window may take to start (02 §2.5.7 start-up, backend and features), from the
+ * session's start. As long as a page load may take, and as the cold-start benchmark allows
+ * (bench/launch.ts): a call into the page waits for a navigation in progress first, so on a slow
+ * runner one call may take most of that time (34 s with WebView2 in nightly 17).
+ */
+export const READY_TIMEOUT_MS = PAGE_LOAD_TIMEOUT_MS;
 
 /** WebDriver's script timeout of a session: how long one `executeScript` call may take. */
 export const SCRIPT_TIMEOUT_MS = 30_000;
@@ -94,13 +102,37 @@ export interface App {
   readonly root: string;
 }
 
-/** Waits up to `timeout` for the window to start and the hook to answer. */
+/**
+ * Waits up to `timeout` for the window to start and the hook to answer. When it does not, the
+ * message says how far the start got: the hook never answered (the page did not load, or it is not
+ * the end-to-end build; with the last error), it first answered only after `timeout` (the page
+ * loaded too late: a call into the page waits for a navigation in progress), or it answered in
+ * time, and when, but the app never became ready.
+ */
 export async function waitUntilReady(app: App, timeout = READY_TIMEOUT_MS): Promise<void> {
-  await waitFor(() => app.hook.ready(), {
-    timeout,
-    interval: 250,
-    message: 'the window to start (window.__B2C_E2E__.ready())',
-  });
+  const start = Date.now();
+  let answeredAfter: number | null = null;
+  await waitFor(
+    async () => {
+      // Throws until the page has loaded and installed the hook.
+      const ready = await app.hook.call('ready');
+      answeredAfter ??= Date.now() - start;
+      return ready;
+    },
+    {
+      timeout,
+      interval: 250,
+      message: () => {
+        if (answeredAfter === null) {
+          return 'the window to start: window.__B2C_E2E__ never answered (the page did not load, or this is not the end-to-end build)';
+        }
+        const after = `${(answeredAfter / 1000).toFixed(1)} s`;
+        return answeredAfter >= timeout
+          ? `the window to start: the page loaded too late, window.__B2C_E2E__ first answered after ${after} (a call into the page waits for a navigation in progress)`
+          : `the window to start: the page loaded and window.__B2C_E2E__ answered after ${after}, but ready() stayed false (the backend or the features did not start)`;
+      },
+    },
+  );
 }
 
 /** Removes a folder; on Windows a program that just exited may still hold a file for a moment. */
@@ -298,7 +330,7 @@ export async function launchApp(context: TestContext, options: LaunchOptions = {
     driver = session;
     await session
       .manage()
-      .setTimeouts({ script: SCRIPT_TIMEOUT_MS, implicit: 0, pageLoad: 60_000 });
+      .setTimeouts({ script: SCRIPT_TIMEOUT_MS, implicit: 0, pageLoad: PAGE_LOAD_TIMEOUT_MS });
     app = { driver: session, hook: new HookClient(session), settings, root };
   } catch (error: unknown) {
     // No session: keep what the driver and the app wrote (the native driver's output is in

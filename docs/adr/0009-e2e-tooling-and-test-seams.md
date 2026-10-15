@@ -65,7 +65,12 @@ chosen instead.
   A `compile_error!` stops it in any build without debug assertions, so it
   cannot reach a release. With it, the app reads:
   * `B2C_E2E_ROOT`: all machine-local folders go under this root
-    (`b2c_store::Dirs::under_root`), so each test starts from a fresh profile;
+    (`b2c_store::Dirs::under_root`), and so does the web view's data
+    (`<root>/webview`, which Tauri otherwise keeps in the app's local data
+    folder for every launch), so each test starts from a fresh profile;
+  * `B2C_E2E_WEBVIEW_DATA`: the web view's data folder instead, for a
+    harness that gives each launch its own (the flow tests, whose launches
+    share a profile) or all launches one (the cold-start benchmark);
   * `B2C_E2E_DIALOGS`: a JSON script that answers the open, save-as,
     pick-compiler and trust dialogs in order, and cancels once exhausted;
   * `B2C_E2E_TOOLCHAIN_DIRS`: the only folders toolchain discovery searches

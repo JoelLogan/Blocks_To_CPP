@@ -56,8 +56,9 @@ libraries, so it is not a default member of the workspace
 ## The e2e-hooks feature
 
 `cargo build -p blocks2cpp-desktop --features e2e-hooks` (debug builds only: a `compile_error!`
-refuses it otherwise) builds the app with its end-to-end seams, which read `B2C_E2E_ROOT`,
-`B2C_E2E_DIALOGS` and `B2C_E2E_TOOLCHAIN_DIRS`
+refuses it otherwise) builds the app with its end-to-end seams, which read `B2C_E2E_ROOT` (every
+machine-local folder, the web view's data included), `B2C_E2E_WEBVIEW_DATA` (another web view data
+folder), `B2C_E2E_DIALOGS`, `B2C_E2E_TOOLCHAIN_DIRS` and `B2C_E2E_WINDOW_SIZE`
 ([ADR-0009](../adr/0009-e2e-tooling-and-test-seams.md)). `B2C_LOG=debug` makes the log more
 detailed. `pnpm build:e2e` builds the frontend with the test hook `window.__B2C_E2E__`
 (`src/e2e/`); no other build contains it, and CI checks that a release build contains neither

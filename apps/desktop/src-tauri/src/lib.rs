@@ -259,6 +259,10 @@ struct Launch {
     cwd: Option<PathBuf>,
     #[cfg(feature = "e2e-hooks")]
     dialog_script: Option<e2e::DialogScript>,
+    /// The web view's data folder ([`e2e::E2eOptions::webview_data_dir`]);
+    /// `None` keeps Tauri's.
+    #[cfg(feature = "e2e-hooks")]
+    webview_data: Option<PathBuf>,
 }
 
 impl fmt::Debug for Launch {
@@ -280,6 +284,7 @@ impl Launch {
                 Some(root) => Dirs::under_root(root),
                 None => Dirs::from_env().map_err(LaunchError::Folders)?,
             };
+            let webview_data = options.webview_data_dir();
             let discovery = options
                 .toolchain_dirs
                 .map_or(DiscoveryScope::Default, DiscoveryScope::Only);
@@ -288,6 +293,7 @@ impl Launch {
                 discovery,
                 cwd: None,
                 dialog_script: options.dialogs,
+                webview_data,
             })
         }
         #[cfg(not(feature = "e2e-hooks"))]
@@ -344,6 +350,9 @@ fn setup<R: Runtime>(app: &mut App<R>, mut launch: Launch) -> Result<(), LaunchE
         dialogs,
     )?;
     app.manage(backend);
+    #[cfg(feature = "e2e-hooks")]
+    window::open_main_window(app, launch.webview_data)?;
+    #[cfg(not(feature = "e2e-hooks"))]
     window::open_main_window(app)?;
     Ok(())
 }

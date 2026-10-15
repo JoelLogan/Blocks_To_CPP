@@ -729,7 +729,7 @@ jobs:
           Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" |
             Select-Object -First 3 -ExpandProperty CommandLine
           if (-not $app.HasExited) { Stop-Process -Id $app.Id } else { "The app exited with code $($app.ExitCode)" }
-          $places = @($probe, (Join-Path $env:LOCALAPPDATA 'org.blocks2cpp.desktop'))
+          $places = @($probe)
           Get-ChildItem -Path $places -Recurse -Filter DevToolsActivePort -ErrorAction SilentlyContinue |
             ForEach-Object { "$($_.FullName): $((Get-Content $_.FullName) -join ' ')" }
           Get-ChildItem -Path $places -Directory -Depth 1 -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
