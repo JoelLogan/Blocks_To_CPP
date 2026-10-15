@@ -1,0 +1,178 @@
+Blockly 12.5.1: draw again only the blocks whose shape an edit can change, and
+list a block's descendants without recursion.
+
+The patch of Blocks2Cpp's render-management spike (P-3 in
+docs/plans/m2-polish-plan.md), against Blockly 12.5.1's TypeScript sources
+(core/block.ts and core/render_management.ts, as the npm package's source map
+gives them). The report beside this file, blockly-render-management.md,
+explains it and gives the measurements. The same change in the npm package's
+bundle, as it was measured, is blockly-render-management.bundle.patch.
+
+Blocks2Cpp does not apply it: a reviewed pnpm patch is M3-2 (ADR-0014).
+
+To apply it to the 12.5.1 sources: patch -p1 < blockly-render-management.patch
+
+diff --git a/core/block.ts b/core/block.ts
+index 4c8f808..ed8314c 100644
+--- a/core/block.ts
++++ b/core/block.ts
+@@ -783,12 +783,19 @@ export class Block {
+    * @returns Flattened array of blocks.
+    */
+   getDescendants(ordered: boolean): this[] {
+-    const blocks = [this];
+-    const childBlocks = this.getChildren(ordered);
+-    for (let child, i = 0; (child = childBlocks[i]); i++) {
+-      // AnyDuringMigration because:  Argument of type 'Block[]' is not
+-      // assignable to parameter of type 'this[]'.
+-      blocks.push(...(child.getDescendants(ordered) as AnyDuringMigration));
++    // Walk the tree with a stack of its own, in the same order as a recursive
++    // walk: a block's next block is one of its children, so recursion went as
++    // deep as a stack of statements is long, and copying each child's list
++    // into its parent's took time quadratic in that length.
++    const blocks: this[] = [];
++    const pending: this[] = [this];
++    let block: this | undefined;
++    while ((block = pending.pop())) {
++      blocks.push(block);
++      const childBlocks = block.getChildren(ordered) as this[];
++      for (let i = childBlocks.length - 1; i >= 0; i--) {
++        pending.push(childBlocks[i]);
++      }
+     }
+     return blocks;
+   }
+diff --git a/core/render_management.ts b/core/render_management.ts
+index c3fe2e3..6e237f3 100644
+--- a/core/render_management.ts
++++ b/core/render_management.ts
+@@ -6,15 +6,27 @@
+ 
+ import {BlockSvg} from './block_svg.js';
+ import * as eventUtils from './events/utils.js';
++import {Coordinate} from './utils/coordinate.js';
+ import * as userAgent from './utils/useragent.js';
+ import type {WorkspaceSvg} from './workspace_svg.js';
+ 
+ /** The set of all blocks in need of rendering which don't have parents. */
+ const rootBlocks = new Set<BlockSvg>();
+ 
+-/** The set of all blocks in need of rendering. */
++/**
++ * The set of all blocks in need of rendering, and of every block above one of
++ * them.
++ */
+ const dirtyBlocks = new WeakSet<BlockSvg>();
+ 
++/**
++ * The set of dirty blocks that are measured and drawn again. The other dirty
++ * blocks only lead to one of these: a block's shape does not depend on the
++ * blocks below its next connection, so the statements above a changed
++ * statement in its stack keep their shape and are not drawn again.
++ */
++const blocksToRender = new WeakSet<BlockSvg>();
++
+ /** A map from queued blocks to the event group from when they were queued. */
+ const eventGroups = new WeakMap<BlockSvg, string>();
+ 
+@@ -103,16 +115,35 @@ function alwaysImmediatelyRender() {
+  * Adds the given block and its parents to the render queue. Adds the root block
+  * to the list of root blocks.
+  *
++ * The block and its parent are drawn again (a renderer may draw a block
++ * differently once a block is connected below it: Geras squares its bottom
++ * left corner). A block further up is drawn again only if the block below it
++ * on the way is connected to one of its inputs, whose contents the block's
++ * shape follows, or if it has an output connection (the renderers count the
++ * width of the blocks below such a block in its own). Otherwise that block is
++ * its next block, and it only leads to the changed block.
++ *
+  * @param block The block to queue.
+  */
+ function queueBlock(block: BlockSvg) {
+-  dirtyBlocks.add(block);
+-  eventGroups.set(block, eventUtils.getGroup());
+-  const parent = block.getParent();
+-  if (parent) {
+-    queueBlock(parent);
+-  } else {
+-    rootBlocks.add(block);
++  const group = eventUtils.getGroup();
++  let child: BlockSvg | null = null;
++  let current: BlockSvg | null = block;
++  while (current) {
++    dirtyBlocks.add(current);
++    eventGroups.set(current, group);
++    if (
++      !child ||
++      child === block ||
++      current.getNextBlock() !== child ||
++      current.outputConnection
++    ) {
++      blocksToRender.add(current);
++    }
++    const parent: BlockSvg | null = current.getParent();
++    if (!parent) rootBlocks.add(current);
++    child = current;
++    current = parent;
+   }
+ }
+ 
+@@ -136,7 +167,7 @@ function doRenders(workspace?: WorkspaceSvg) {
+   }
+   for (const block of blocks) {
+     const blockOrigin = block.getRelativeToSurfaceXY();
+-    block.updateComponentLocations(blockOrigin);
++    updateComponentLocations(block, blockOrigin);
+   }
+   for (const block of blocks) {
+     const oldGroup = eventUtils.getGroup();
+@@ -158,6 +189,7 @@ function doRenders(workspace?: WorkspaceSvg) {
+ function dequeueBlock(block: BlockSvg) {
+   rootBlocks.delete(block);
+   dirtyBlocks.delete(block);
++  blocksToRender.delete(block);
+   eventGroups.delete(block);
+   for (const child of block.getChildren(false)) {
+     dequeueBlock(child);
+@@ -179,7 +211,7 @@ function shouldRenderRootBlock(block: BlockSvg): boolean {
+ 
+ /**
+  * Recursively renders all of the dirty children of the given block, and
+- * then renders the block.
++ * then renders the block if its own shape may have changed.
+  *
+  * @param block The block to rerender.
+  */
+@@ -189,5 +221,30 @@ function renderBlock(block: BlockSvg) {
+   for (const child of block.getChildren(false)) {
+     renderBlock(child);
+   }
+-  block.renderEfficiently();
++  if (blocksToRender.has(block)) block.renderEfficiently();
++}
++
++/**
++ * Updates the locations of the components (connections, icons, fields) of
++ * every block that may have moved in this render: each block that was drawn
++ * again and every block below it. A dirty block that was not drawn again kept
++ * its shape and where its children are, so only its dirty children can have
++ * changed.
++ *
++ * @param block The dirty block to start from.
++ * @param blockOrigin The top-left of the block in workspace coordinates.
++ */
++function updateComponentLocations(block: BlockSvg, blockOrigin: Coordinate) {
++  if (blocksToRender.has(block)) {
++    block.updateComponentLocations(blockOrigin);
++    return;
++  }
++  for (const child of block.getChildren(false)) {
++    if (dirtyBlocks.has(child)) {
++      updateComponentLocations(
++        child,
++        Coordinate.sum(blockOrigin, child.relativeCoords),
++      );
++    }
++  }
+ }
