@@ -46,22 +46,54 @@ export class TauriDriverError extends Error {
   override readonly name = 'TauriDriverError';
 }
 
-/** A free TCP port on the loopback interface (free when asked; taken by the caller at once). */
-export function freePort(): Promise<number> {
+/** A port held by a listener: its number, and a function that closes the listener. */
+export interface HeldPort {
+  readonly port: number;
+  release(): Promise<void>;
+}
+
+/** Holds a free TCP port on the loopback interface by listening on it until it is released. */
+export function holdLoopbackPort(): Promise<HeldPort> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
+      const release = () =>
+        new Promise<void>((closed) => {
+          server.close(() => {
+            closed();
+          });
+        });
       const address = server.address();
-      server.close(() => {
-        if (typeof address === 'object' && address !== null) {
-          resolve(address.port);
-        } else {
+      if (typeof address === 'object' && address !== null) {
+        resolve({ port: address.port, release });
+      } else {
+        void release().then(() => {
           reject(new Error('No free port was found'));
-        }
-      });
+        });
+      }
     });
   });
+}
+
+/**
+ * `count` different free TCP ports on the loopback interface (free when asked; taken by the caller
+ * at once). Each port stays held until all are found: a port freed before the next is asked for
+ * can be handed out again, and tauri-driver and the native driver then both try to listen on it.
+ */
+export async function freePorts(
+  count: number,
+  hold: () => Promise<HeldPort> = holdLoopbackPort,
+): Promise<number[]> {
+  const held: HeldPort[] = [];
+  try {
+    for (let index = 0; index < count; index += 1) {
+      held.push(await hold());
+    }
+    return held.map(({ port }) => port);
+  } finally {
+    await Promise.all(held.map((entry) => entry.release()));
+  }
 }
 
 /**
@@ -117,8 +149,10 @@ export class TauriDriver {
    *   output.
    */
   static async start(options: TauriDriverOptions): Promise<TauriDriver> {
-    const port = await freePort();
-    const nativePort = await freePort();
+    const [port, nativePort] = await freePorts(2);
+    if (port === undefined || nativePort === undefined) {
+      throw new TauriDriverError('Two free ports for tauri-driver were not found');
+    }
     const args = [`--port=${String(port)}`, `--native-port=${String(nativePort)}`];
     if (options.nativeDriver !== null) {
       args.push(`--native-driver=${options.nativeDriver}`);

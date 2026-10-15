@@ -25,7 +25,7 @@ import {
   trustedTypesSummary,
   writeTrustedTypesSummary,
 } from './artifacts';
-import { freePort } from './driver';
+import { freePorts } from './driver';
 import { dropPoint } from './drag';
 import { mainFunction } from './editor';
 import { byTestId, clickTestId, errorCount, isNotReadyForClick } from './ui';
@@ -213,10 +213,36 @@ describe('the Trusted Types summary', () => {
 });
 
 describe('small helpers', () => {
-  it('finds a free port', async () => {
-    const port = await freePort();
-    expect(port).toBeGreaterThan(0);
-    expect(port).toBeLessThan(65536);
+  it('finds different free ports', async () => {
+    const ports = await freePorts(4);
+    expect(ports).toHaveLength(4);
+    expect(new Set(ports).size).toBe(4);
+    for (const port of ports) {
+      expect(port).toBeGreaterThan(0);
+      expect(port).toBeLessThan(65536);
+    }
+  });
+
+  it('holds every port until all are found, so none is handed out twice', async () => {
+    // Like the system, the fake hands out the lowest port that no listener holds, so a port
+    // released before the next is asked for would come back.
+    const held = new Set<number>();
+    const hold = () => {
+      let port = 40_000;
+      while (held.has(port)) {
+        port += 1;
+      }
+      held.add(port);
+      return Promise.resolve({
+        port,
+        release: () => {
+          held.delete(port);
+          return Promise.resolve();
+        },
+      });
+    };
+    expect(await freePorts(3, hold)).toEqual([40_000, 40_001, 40_002]);
+    expect(held.size).toBe(0);
   });
 
   it('computes where to drop a block so its connection lands on the target', () => {
