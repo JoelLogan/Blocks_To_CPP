@@ -510,8 +510,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   start at 1,000 blocks).
 - Each edit loads and analyses the document once in the WebAssembly core
   (`update()`), and the canonical text is made only to save, build, autosave
-  or check an external change. The preview task at 1,000 blocks is about
-  15–22 ms shorter in Vitest (about 35 ms less core work per edit).
+  or check an external change. At 1,000 blocks the preview task's p95 falls
+  from 113 to 92 ms in the app's benchmark (a local A/B), with about 35 ms
+  less core work per edit.
 - The core's `preview()` export is now `update()`, which also returns
   `textHash` (SHA-256 of the canonical text); `canonical()` returns
   `textHash` too. Unsaved changes are detected by that hash, so moving a

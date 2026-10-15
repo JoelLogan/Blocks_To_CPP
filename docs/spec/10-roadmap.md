@@ -41,9 +41,12 @@
 > follows the selection (2026-10-13), a click rebuilds no toolbox: a
 > selection on the guessing game takes about 20 ms; at 1,000 blocks half of
 > the clicks take 70–220 ms, and the others stay at 1–2 s, the click's own
-> work. M2 is done once the polish wave is finished and these are recorded
-> on a polish build: the threat-model review, the first green weekly run, the
-> toolchain matrix (at least the Debian cell, or a recorded deferral),
+> work. With one compiler-core update per edit (2026-10-15, a local A/B
+> against the build before it), the preview task at 1,000 blocks takes about
+> 92 ms at p95 (113 ms before) and an edit until the page settles about
+> 1.45 s (1.58 s). M2 is done once the polish wave is finished and these are
+> recorded on a polish build: the threat-model review, the first green weekly
+> run, the toolchain matrix (at least the Debian cell, or a recorded deferral),
 > committed visual baselines, the usability sessions with
 > at least three first-time users ([protocol](../manual-tests/m2-usability.md)),
 > the NVDA and Orca pass ([checklist](../manual-tests/m2-accessibility.md)),
@@ -163,7 +166,9 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
   below a previewed place; a negative number typed into a slot being
   rejected) and `BUILDING.md`.
 * A performance guard: the longest main-thread task of every E2E flow, A/B
-  benchmark runs, and selection and edit metrics.
+  benchmark runs, and selection and edit metrics; one compiler-core update
+  per edit, and a drag start that reuses the committed document (done
+  2026-10-15).
 * Layout (toolbox width, dock sizes, window fit), named canvas controls, the
   console between runs, and renaming the project (done 2026-10-13, with the
   remembered sizes, visible Undo and Redo and the compiler search's folder
@@ -172,7 +177,9 @@ a budget of 8 weeks (owner's decision of 2026-10-10). The
   not depend on the selection, snapping, and the remaining documentation
   (parked blocks, their scope, the command line's parity with the editor,
   the standard variable set with its listing, and the Program category that
-  offers *when program starts* only while there is none done 2026-10-13).
+  offers *when program starts* only while there is none done 2026-10-13;
+  snapping with a radius that follows the zoom and the placement E2E flows
+  done 2026-10-15).
 * If time: block upgrades on load and one *change* block for every update
   operator, Scratch-style wrapping, the developer guide, and the other items
   the plan marks *M2 if time* (block upgrades on load and the one *change*
