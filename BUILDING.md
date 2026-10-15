@@ -32,8 +32,9 @@ command runs from where the previous one left off.
 | g++ (only to run programs) | 11 or later                                             | building the programs you make; not needed to build the app    |
 
 The pinned versions come from the repository (`rust-toolchain.toml`,
-`package.json`, `Cargo.lock`): the commands below install exactly those, and
-the build stops with the command to run when one of them does not match.
+`package.json`, `Cargo.lock`, the CI workflows): the commands below install
+exactly those, and the build stops with the command to run when one of them
+does not match.
 
 ## Linux: Debian and Ubuntu
 
@@ -92,12 +93,11 @@ packages and build commands are the ones CI uses on Ubuntu 24.04
    ```
 
 5. Build the WebAssembly core (the compiler the editor runs for its live C++
-   view), then the app. The first build of the app compiles several hundred
-   Rust crates and takes a while.
+   view), then the app: `pnpm app:build` does both, in that order. The first
+   build of the app compiles several hundred Rust crates and takes a while.
 
    ```sh
-   pnpm --filter @blocks2cpp/b2c-core-wasm build
-   pnpm --filter @blocks2cpp/desktop tauri build --no-bundle
+   pnpm app:build
    ```
 
 6. Start it:
@@ -187,15 +187,15 @@ programs are on the path.
    pnpm install --frozen-lockfile
    ```
 
-5. Build the WebAssembly core and the app. `B2C_SKIP_WASM_OPT` skips
-   binaryen's `wasm-opt`, which Windows does not have; the core is then
-   larger but works the same (see [Troubleshooting](#the-webassembly-core-does-not-build)
-   to use `wasm-opt`).
+5. Build the WebAssembly core and then the app (`pnpm app:build` does both).
+   `B2C_SKIP_WASM_OPT` skips binaryen's `wasm-opt`, which Windows does not
+   have; the core is then larger but works the same (see
+   [Troubleshooting](#the-webassembly-core-does-not-build) to use
+   `wasm-opt`).
 
    ```powershell
    $env:B2C_SKIP_WASM_OPT = '1'
-   pnpm --filter @blocks2cpp/b2c-core-wasm build
-   pnpm --filter @blocks2cpp/desktop tauri build --no-bundle
+   pnpm app:build
    ```
 
 6. Start it:
@@ -226,12 +226,16 @@ yet; real installers come with milestone M6.
 ## Develop
 
 To change the app, run it from the development server, which reloads the
-editor as you edit. It needs steps 1 to 4 and the WebAssembly core (the first
-command of step 5):
+editor as you edit. It needs steps 1 to 4 and the WebAssembly core:
 
 ```sh
+pnpm wasm:build
 pnpm desktop:dev
 ```
+
+The development server warns when the WebAssembly core is older than its
+source, and the window does not start when the core's block catalog differs
+from the backend's; run `pnpm wasm:build` again in either case.
 
 **Do not judge speed or looks from it.** It runs a debug build of the
 backend, React's development mode (which renders everything twice to find
@@ -290,23 +294,28 @@ part has not changed:
 git pull
 rustup toolchain install
 pnpm install --frozen-lockfile
-pnpm --filter @blocks2cpp/b2c-core-wasm build
-pnpm --filter @blocks2cpp/desktop tauri build --no-bundle
+pnpm app:build
 ```
 
-Always rebuild the WebAssembly core before the app: the app embeds the core
-that is built at that moment, and an old core shows C++ from the old
-compiler. If the repository moved to a new wasm-bindgen version, the core's
-build stops and names the `cargo install` command to run. On Windows, set
-`$env:B2C_SKIP_WASM_OPT = '1'` first, as in step 5.
+`pnpm app:build` rebuilds the WebAssembly core before the app: the app
+embeds the core that is built at that moment, and an old core would show C++
+from the old compiler. The app's build stops, naming `pnpm wasm:build`, when
+the core is older than its source. If the repository moved to a new
+wasm-bindgen version, the core's build stops and names the `cargo install`
+command to run. On Windows, set `$env:B2C_SKIP_WASM_OPT = '1'` first, as in
+step 5.
 
 ## Troubleshooting
 
 ### The WebAssembly core does not build
 
 - **"The WebAssembly core of the editor has not been built"**: the app or
-  the development server was started before step 5's first command. Run
-  `pnpm --filter @blocks2cpp/b2c-core-wasm build`, then build again.
+  the development server was started before the core was built. Run
+  `pnpm wasm:build`, then build again.
+- **"The WebAssembly core in packages/b2c-core-wasm/pkg/ is out of date"**:
+  the compiler's source changed since the core was built (after a pull, for
+  example), so the app would show C++ from the old compiler. Run
+  `pnpm wasm:build`, or `pnpm app:build` for the core and the app.
 - **wasm-bindgen is missing or has another version**: the build names the
   exact `cargo install wasm-bindgen-cli --version … --locked` command; the
   version must equal the one in `Cargo.lock`. cargo puts the program in

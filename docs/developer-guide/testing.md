@@ -16,8 +16,10 @@ are relative to `apps/desktop/`.
 
 Set up your machine with [`BUILDING.md`](../../BUILDING.md) first. The editor imports the
 WebAssembly core (`packages/b2c-core-wasm`), so build it once before the first `dev`, `build` or
-test run, and again after changing the Rust crates it contains: the first command of step 5 in
-[`BUILDING.md`](../../BUILDING.md#linux-debian-and-ubuntu), with the tools that page installs.
+test run, and again after changing the Rust crates it contains: `pnpm wasm:build`, with the tools
+[`BUILDING.md`](../../BUILDING.md#linux-debian-and-ubuntu) installs. A production or end-to-end
+build of the frontend stops when the core is older than its source, and the dev server and Vitest
+warn.
 
 ## Unit and component tests
 
