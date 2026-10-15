@@ -316,6 +316,24 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   it (`B2C-E0430`, "Choose a variable in this block.") once the block is
   attached.
 
+- Scratch-style wrapping: an empty C-block dragged onto a statement takes its
+  place and wraps that statement and everything below it in the list. The
+  grey preview shows the C-block around them, and one Undo takes the drop
+  back. A block moved with the keyboard is still inserted (03 §3.3).
+- End-to-end flows `placement` (drops off target into a C-block at 90 % and
+  52 % zoom; drops on the toolbox's flyout, after moving over it and in one
+  go with the jump, and on the trash can while a place is previewed, each
+  deleting only the dragged block and undone with Ctrl+Z; _Show all blocks_
+  keeping the zoom) and `placement-wrap` (wrapping previewed, dropped, undone
+  and redone, and at zooms 0.5, 0.9 and 1.5 at the Windows runner's window
+  size). `B2C_E2E_WRAP_SWEEP` turns the zoom test into a measurement.
+- The plan records the render-management spike (P-3): with a local patch of
+  Blockly 12.5.1, appending to a 500-statement chain draws 4 blocks instead
+  of 503, and `edit-1000.p95` falls 34 % in a local A/B. Clicks are
+  unchanged: their cost is `BlockSvg.bringToFront`. The patch and two
+  upstream report drafts are in `docs/plans/upstream/`; the app still ships
+  Blockly unchanged, and the patch is M3-2.
+
 ### Changed
 
 - The specification gains goal N12 (interaction latency, met in M5); N4 is
@@ -481,6 +499,26 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   it and opened in an older version reports the menu as made by a newer
   version (`B2C-E0602`) and keeps it.
 
+- Placing blocks: a dragged block snaps from about 44 screen pixels at every
+  zoom (48 to 96 canvas units; Blockly used 28 units at any zoom, about 25 px
+  at 90 % and 14 px at 50 %). While a statement is dragged, its grey preview
+  stays on a place until another place is 20 units nearer. A dragged value
+  always goes to the nearest slot, so it can be dropped into the first slot
+  of a block that sits in a slot. Bumping is unchanged.
+- Starting a drag no longer reads the whole canvas when the live preview is
+  up to date; it reuses the project's document (about 10 ms saved per drag
+  start at 1,000 blocks).
+- Each edit loads and analyses the document once in the WebAssembly core
+  (`update()`), and the canonical text is made only to save, build, autosave
+  or check an external change. The preview task at 1,000 blocks is about
+  15–22 ms shorter in Vitest (about 35 ms less core work per edit).
+- The core's `preview()` export is now `update()`, which also returns
+  `textHash` (SHA-256 of the canonical text); `canonical()` returns
+  `textHash` too. Unsaved changes are detected by that hash, so moving a
+  block still counts as a change.
+- The User Timing spans `b2c:preview:canonical` and `b2c:preview:analyse` are
+  replaced by `b2c:preview:update`.
+
 ### Removed
 
 - The separate update block (`[score ▾] [*= ▾] (2)`, `var.update`) is
@@ -592,3 +630,6 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - `b2c migrate` names this version and its block catalog in `generator` when
   it upgraded blocks, as a save in the app does (never an older catalog than
   the file named).
+
+- The compiler core keeps answering scope queries for the document on screen
+  after an edit whose document fails to load.

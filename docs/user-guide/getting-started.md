@@ -87,11 +87,13 @@ Open a project (for example _New project → Empty project_) to see the editor:
   Logic, Text, Control, Loops, Input / Output and Functions. Click a category
   to scroll the list of blocks beside it to that category, then drag a block
   onto the canvas.
-- **The canvas** in the middle, where you snap blocks together. Drag empty
-  canvas or turn the mouse wheel to move around. The buttons at its top right
-  zoom out (**−**) and in (**+**), go back to 100 % (the button that shows the
-  zoom), and **Show all** scrolls to your blocks without zooming; `Ctrl` + the
-  mouse wheel zooms too.
+- **The canvas** in the middle, where you snap blocks together: drag a block
+  until a grey shadow shows where it will go, then let go. An empty C-block
+  (such as _if_ or a loop) dropped on a block wraps that block and the blocks
+  below it. Drag empty canvas or turn the mouse wheel to move around. The
+  buttons at its top right zoom out (**−**) and in (**+**), go back to 100 %
+  (the button that shows the zoom), and **Show all** scrolls to your blocks
+  without zooming; `Ctrl` + the mouse wheel zooms too.
 - **The C++ panel** on the right shows the C++ your blocks become, updated as
   you edit. Click a line of code to select the block it came from; select a
   block to highlight its code.
