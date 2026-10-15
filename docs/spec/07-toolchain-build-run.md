@@ -7,7 +7,7 @@
 | Toolchain | Minimum | Recommended | Notes |
 | ----------- | --------- | ------------- | ------- |
 | GCC (g++) | **11** | **13+** | 11: C++20 core, `-fdiagnostics-plain-output`. 13: `std::format`, SARIF diagnostics. 14: `<print>`, `-fhardened`. 15: `-fdiagnostics-add-output`. |
-| Windows flavours | MinGW-w64 (UCRT or MSVCRT runtime): MSYS2, WinLibs, TDM-GCC 10+, Scoop/Chocolatey `mingw`, Strawberry Perl's bundled GCC | MSYS2 UCRT64 | Cygwin GCC is detected and **warned against** (binaries need `cygwin1.dll`). Legacy mingw.org (`C:\MinGW`) is flagged as outdated. |
+| Windows flavours | MinGW-w64 (UCRT or MSVCRT runtime) with GCC 11 or newer: MSYS2, WinLibs, Scoop/Chocolatey `mingw`, Strawberry Perl's bundled GCC | MSYS2 UCRT64 | Cygwin GCC is detected and **warned against** (binaries need `cygwin1.dll`). Legacy mingw.org (`C:\MinGW`) is flagged as outdated. TDM-GCC is detected, but its newest release (GCC 10.3) is below the minimum and flagged too old (`B2C-T1004`). |
 | Linux | Distro GCC, `g++-NN` side-by-side versions, RHEL `gcc-toolset-N`, Homebrew-on-Linux | Distro GCC 13+ | |
 | Clang | — | — | Detected and labelled *not supported yet*. The driver abstraction (`trait Toolchain`) leaves room for it post-1.0. |
 
@@ -50,6 +50,11 @@ at once; the discovery itself goes on and updates the list.
      Linux (M3): `g++`, then every `g++-N` with N ≥ 11, newest first.
    * `/usr/bin`, `/usr/local/bin`, `/opt/rh/gcc-toolset-*/root/usr/bin`,
      `/home/linuxbrew/.linuxbrew/bin`.
+
+`PATH` is the app's own, as it was when the app started: a rescan does not
+see a later change of the user's path, so a compiler added to the path needs
+a restart of the app (or *Choose g++ manually…*), and taking a folder off the
+path never hides a compiler in a well-known location.
 
 **Never searched:** the open projects' folders, each as a tree, except that
 a project folder which is the user's home folder or a file-system or drive

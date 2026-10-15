@@ -22,30 +22,34 @@ app.
 
 ## The matrix
 
-| Cell | System                        | Compiler                                                              | Install                                                                         | M2                         |
-| ---- | ----------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------- |
-| L1   | Debian 12 or 13 (the owner's) | Debian's g++ (GCC 12 on Debian 12, GCC 14 on Debian 13)               | `sudo apt install g++`                                                          | Required                   |
-| L2   | Ubuntu 22.04 or later         | Ubuntu's g++                                                          | `sudo apt install g++`                                                          | If time, or deferred to M3 |
-| L3   | Debian or Ubuntu              | A second, side-by-side `g++-N` next to `g++`                          | `sudo apt install g++-14` (a version the release has)                           | If time, or deferred to M3 |
-| L4   | Fedora                        | Fedora's g++                                                          | `sudo dnf install gcc-c++`                                                      | If time, or deferred to M3 |
-| L5   | Arch Linux                    | Arch's g++                                                            | `sudo pacman -S gcc`                                                            | If time, or deferred to M3 |
-| L6   | RHEL, Rocky or AlmaLinux      | `gcc-toolset-N` (`/opt/rh/gcc-toolset-N/root/usr/bin`)                | `sudo dnf install gcc-toolset-14`                                               | If time, or deferred to M3 |
-| L7   | Any Linux                     | Homebrew on Linux (`/home/linuxbrew/.linuxbrew/bin`)                  | `brew install gcc`                                                              | If time, or deferred to M3 |
-| W1   | Windows 10 or 11              | MSYS2 UCRT64 (what CI uses, and what the setup page recommends)       | [`BUILDING.md`](../../BUILDING.md#windows), step 2                              | If time, or deferred to M3 |
-| W2   | Windows 10 or 11              | MSYS2 MINGW64 (the older MSVCRT runtime)                              | `pacman -S mingw-w64-x86_64-gcc` in the _MSYS2 MINGW64_ shell                   | If time, or deferred to M3 |
-| W3   | Windows 10 or 11              | WinLibs, through winget                                               | `winget install BrechtSanders.WinLibs.POSIX.UCRT`                               | If time, or deferred to M3 |
-| W4   | Windows 10 or 11              | TDM-GCC 10 or later (`C:\TDM-GCC-64\bin`)                             | The installer from the TDM-GCC site                                             | If time, or deferred to M3 |
-| W5   | Windows 10 or 11              | Scoop's `gcc` or `mingw`                                              | `scoop install gcc`                                                             | If time, or deferred to M3 |
-| W6   | Windows 10 or 11              | Chocolatey's `mingw`                                                  | `choco install mingw` (administrator)                                           | If time, or deferred to M3 |
-| W7   | Windows 10 or 11              | Strawberry Perl's bundled GCC (`C:\Strawberry\c\bin`)                 | `winget install StrawberryPerl.StrawberryPerl`                                  | If time, or deferred to M3 |
-| W8   | Windows 10 or 11              | Cygwin's g++: expected to be found and **warned against**             | The Cygwin installer, package `gcc-g++`                                         | If time, or deferred to M3 |
-| W9   | Windows 10 or 11              | Legacy mingw.org in `C:\MinGW\bin`: expected to be flagged outdated   | An existing old install only; do not install it for this test                   | If time, or deferred to M3 |
-| X1   | Linux or Windows              | Clang installed as `g++`: expected to be labelled _not supported yet_ | Linux: a `g++` symbolic link to `clang++` in a folder of its own, put on `PATH` | If time, or deferred to M3 |
+| Cell | System                        | Compiler                                                                                   | Install                                                                                               | M2                         |
+| ---- | ----------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | -------------------------- |
+| L1   | Debian 12 or 13 (the owner's) | Debian's g++ (GCC 12 on Debian 12, GCC 14 on Debian 13)                                    | `sudo apt install g++`                                                                                | Required                   |
+| L2   | Ubuntu 22.04 or later         | Ubuntu's g++                                                                               | `sudo apt install g++`                                                                                | If time, or deferred to M3 |
+| L3   | Debian or Ubuntu              | A second, side-by-side `g++-N` next to `g++`                                               | `sudo apt install g++-14` (a version the release has)                                                 | If time, or deferred to M3 |
+| L4   | Fedora                        | Fedora's g++                                                                               | `sudo dnf install gcc-c++`                                                                            | If time, or deferred to M3 |
+| L5   | Arch Linux                    | Arch's g++                                                                                 | `sudo pacman -S gcc`                                                                                  | If time, or deferred to M3 |
+| L6   | RHEL, Rocky or AlmaLinux      | `gcc-toolset-N` (`/opt/rh/gcc-toolset-N/root/usr/bin`)                                     | `sudo dnf install gcc-toolset-14`                                                                     | If time, or deferred to M3 |
+| L7   | Any Linux                     | Homebrew on Linux (`/home/linuxbrew/.linuxbrew/bin`)                                       | `brew install gcc`                                                                                    | If time, or deferred to M3 |
+| W1   | Windows 10 or 11              | MSYS2 UCRT64 (what CI uses, and what the setup page recommends)                            | [`BUILDING.md`](../../BUILDING.md#windows), step 2                                                    | If time, or deferred to M3 |
+| W2   | Windows 10 or 11              | MSYS2 MINGW64 (the older MSVCRT runtime)                                                   | `pacman -S mingw-w64-x86_64-gcc` in the _MSYS2 MINGW64_ shell                                         | If time, or deferred to M3 |
+| W3   | Windows 10 or 11              | WinLibs, through winget                                                                    | `winget install BrechtSanders.WinLibs.POSIX.UCRT`                                                     | If time, or deferred to M3 |
+| W4   | Windows 10 or 11              | TDM-GCC 10.3, its newest release (`C:\TDM-GCC-64\bin`): expected to be flagged **too old** | The installer from the TDM-GCC site                                                                   | If time, or deferred to M3 |
+| W5   | Windows 10 or 11              | Scoop's `gcc` or `mingw`                                                                   | `scoop install gcc`                                                                                   | If time, or deferred to M3 |
+| W6   | Windows 10 or 11              | Chocolatey's `mingw`                                                                       | `choco install mingw` (administrator)                                                                 | If time, or deferred to M3 |
+| W7   | Windows 10 or 11              | Strawberry Perl's bundled GCC (`C:\Strawberry\c\bin`)                                      | `winget install StrawberryPerl.StrawberryPerl`                                                        | If time, or deferred to M3 |
+| W8   | Windows 10 or 11              | Cygwin's g++: expected to be found and **warned against**                                  | The Cygwin installer, package `gcc-g++`; then `C:\cygwin64\bin` on the user path (below)              | If time, or deferred to M3 |
+| W9   | Windows 10 or 11              | Legacy mingw.org in `C:\MinGW\bin`: expected to be flagged outdated                        | An existing old install only; do not install it for this test                                         | If time, or deferred to M3 |
+| X1   | Linux or Windows              | Clang installed as `g++`: expected to be labelled _not supported yet_                      | Linux: a `g++` symbolic link to `clang++` in a folder of its own, put on `PATH` before the app starts | If time, or deferred to M3 |
 
-Cells W8, W9 and X1 check that the app says what is wrong with a compiler it
-should not be used with: they pass when the toolchain page shows the expected
-warning or error
-([toolchain diagnostics](../reference/diagnostics/toolchain.md)).
+Cells W4, W8, W9 and X1 check that the app says what is wrong with a
+compiler it should not be used with: they pass when the toolchain page shows
+the expected warning or error
+([toolchain diagnostics](../reference/diagnostics/toolchain.md)). Cell W4
+cannot build: TDM-GCC's newest release is GCC 10.3, and Blocks2Cpp needs
+GCC 11 or newer. For cell W8, put Cygwin's folder on the user path as
+[`BUILDING.md`](../../BUILDING.md#windows) step 2 does for MSYS2's: the
+Cygwin installer does not, and the app does not look there by itself.
 
 ## Before you start
 
@@ -55,7 +59,8 @@ warning or error
    ([The command-line tool](../../BUILDING.md#the-command-line-tool)). Write
    `git rev-parse --short HEAD` into the [record](#record).
 2. Install the cell's compiler as the matrix says. On Windows, open a new
-   PowerShell window afterwards, so that its folder is on the path.
+   PowerShell window afterwards, so that its folder is on the path. Start
+   the app only after that: it reads the path once, when it starts.
 3. Write down what the compiler says about itself, in a new terminal:
 
    ```sh
@@ -94,7 +99,8 @@ row of the [results](#results): **pass**, or **fail** with what you saw.
      (a Cygwin compiler, whose programs need `cygwin1.dll`) or `B2C-T1008`
      (the old mingw.org MinGW). Do the other steps with it only when it is
      selected, and note what happens.
-   - Cell X1: the compiler is listed as not usable, with the error
+   - Cells W4 and X1: the compiler is listed as not usable, with the error
+     `B2C-T1004` (_too old_: Blocks2Cpp needs GCC 11 or newer) or
      `B2C-T1005` (_Clang is not supported yet_). Skip steps 2 to 5 when no
      other compiler is found.
 2. **Hello World.** On the start page choose the _Hello World_ template, and
@@ -113,11 +119,37 @@ row of the [results](#results): **pass**, or **fail** with what you saw.
 5. **Release.** Switch the toolbar's _Debug_ to _Release_, and run the
    guessing game again. It is built again (the Build output shows a new
    build) and runs as in step 3.
-6. **Rescan.** Make the compiler unavailable, for example by renaming its
-   folder or removing it from the path, then choose _Rescan_ on the toolchain
-   page (with no other compiler, the setup page opens instead, with the
+6. **Rescan.** With the app running, make the compiler unavailable as below,
+   then choose _Rescan_ on the toolchain page: the compiler is no longer
+   listed (with no other compiler, the setup page opens instead, with the
    install command for the system). Put it back and choose _I installed it →
    Rescan_ or _Rescan_: the compiler is listed and usable again.
+
+   Changing the path does not make a compiler unavailable: the app reads the
+   path once, when it starts, and also looks in the well-known folders of
+   [07 §7.2](../spec/07-toolchain-build-run.md#72-discovery) whatever the
+   path says (`/usr/bin`, `/usr/local/bin`, MSYS2, Scoop, Chocolatey,
+   WinGet's WinLibs, TDM-GCC, Strawberry Perl), and on Linux under the names
+   `g++` and `g++-16` down to `g++-11`. Instead:
+   - Debian and Ubuntu (L1, L2): `sudo apt remove g++-N`, with N the major
+     version from step 3 of [Before you start](#before-you-start) (`g++-12`
+     on Debian 12, `g++-14` on Debian 13); apt also removes `g++` and
+     `build-essential`, which depend on it. Put them back with
+     `sudo apt install g++ build-essential`.
+   - L3: `sudo apt remove g++-M`, the side-by-side version you installed:
+     only that compiler disappears, and `g++` stays listed. Put it back with
+     `sudo apt install g++-M`.
+   - Fedora and Arch Linux (L4, L5): `sudo mv /usr/bin/g++ /usr/bin/g++.off`,
+     and back afterwards.
+   - L6: rename `/opt/rh/gcc-toolset-N` (with `sudo mv`), and back
+     afterwards. L7: `brew unlink gcc`, then `brew link gcc`.
+   - Windows: rename the compiler's install folder, and back afterwards:
+     `C:\msys64`, `C:\TDM-GCC-64`, `C:\Strawberry`, `C:\cygwin64`, Scoop's
+     `%USERPROFILE%\scoop\apps\gcc`, Chocolatey's `mingw` folder, or the
+     WinLibs folder under `%LOCALAPPDATA%\Microsoft\WinGet\Packages`. Close
+     every program that runs from it first.
+   - X1: delete the `g++` link, and make it again afterwards.
+
 7. **The command-line tool.** In a terminal in the repository folder:
 
    ```sh
@@ -129,11 +161,13 @@ row of the [results](#results): **pass**, or **fail** with what you saw.
    the second prints `Hello, world!`. On Windows, write
    `.\target\release\b2c.exe` and `examples\hello_world.b2c`.
 
-Only for cell L1, also check the setup page's Debian command, if g++ was not
-installed before this pass: start the app once **before** installing it. The
-setup page opens by itself and shows `sudo apt install g++` with a _Copy_
-button; after installing, _I installed it → Rescan_ finds the compiler
-without restarting the app.
+Only for cell L1, also check the setup page's Debian command. When Debian's
+g++ is the only compiler, step 6 does it: after `sudo apt remove g++-N` and
+_Rescan_, the setup page shows `sudo apt install g++` with a _Copy_ button,
+and after installing, _I installed it → Rescan_ finds the compiler without
+restarting the app. Otherwise, if g++ was not installed before this pass,
+start the app once **before** installing it: the setup page opens by itself
+and shows the same command.
 
 ## Recording results
 
