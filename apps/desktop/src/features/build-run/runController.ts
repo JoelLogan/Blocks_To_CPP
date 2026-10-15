@@ -7,7 +7,9 @@
  *    configuration and compiler), the project is built, and Run waits for that build. A build
  *    replaced by a newer one is followed to the newer one.
  * 3. `run_start` with the build and the console's size. If the backend says the build no longer
- *    matches (`staleBuild`), the project is built again once and the run tried again.
+ *    matches (`staleBuild`), the project is built again once and the run tried again. A run that
+ *    could not start (refused, or answered without a valid run ID) leaves the console's header as
+ *    it was before Run.
  *
  * ■ Stop ends whichever step is under way: it cancels the build, or stops the program.
  */
@@ -23,7 +25,7 @@ import type {
 } from '@blocks2cpp/ipc-types';
 
 import type { DialogService } from '../../app/dialogs';
-import type { BottomTab, useAppStore } from '../../app/store';
+import type { BottomTab, RunState, useAppStore } from '../../app/store';
 import type { TerminalSize } from '../../panels';
 import type { BuildController, BuildFinish } from './buildController';
 import type { Clock } from './clock';
@@ -344,17 +346,7 @@ export class RunController {
         session.onEvent,
       );
     } catch (error: unknown) {
-      session.detach();
-      if (this.#session === session) {
-        this.#session = null;
-        this.#sessionHandle = null;
-        if (store.getState().project?.handle === handle) {
-          store.getState().actions.setRun({
-            status: before.exit === null ? 'idle' : 'exited',
-            runId: before.runId,
-          });
-        }
-      }
+      this.#abandon(session, handle, before);
       const code = failureCode(error);
       console.warn('run_start failed', code);
       if (generation !== this.#generation) {
@@ -374,13 +366,39 @@ export class RunController {
 
     const runId: unknown = response.runId;
     if (typeof runId !== 'string' || !RUN_ID.test(runId)) {
+      // Without its ID the program can be neither followed nor stopped: the run did not start,
+      // as far as the console is concerned, and Run is ready again.
       console.error('run_start answered without a valid run ID');
-      session.detach();
+      this.#abandon(session, handle, before);
+      if (generation === this.#generation) {
+        await this.#report('transport', 'run');
+      }
       return;
     }
     session.started(runId as RunId);
     if (this.#isCurrent(session, handle)) {
       store.getState().actions.setRun({ runId: runId as RunId });
+    }
+  }
+
+  /**
+   * Gives up on `session`, a run that did not start: it stops following its channels and, while it
+   * is still the newest run of the open project, the console's header goes back to what it showed
+   * before Run (`before`), so it is never left at *starting*.
+   */
+  #abandon(session: RunSession, handle: Handle, before: RunState): void {
+    session.detach();
+    if (this.#session !== session) {
+      return;
+    }
+    this.#session = null;
+    this.#sessionHandle = null;
+    const { store } = this.#deps;
+    if (store.getState().project?.handle === handle) {
+      store.getState().actions.setRun({
+        status: before.exit === null ? 'idle' : 'exited',
+        runId: before.runId,
+      });
     }
   }
 

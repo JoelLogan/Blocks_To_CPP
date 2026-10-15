@@ -113,15 +113,6 @@ describe('following the blocks into the store', () => {
     expect(ui().hoverBlock).toBeNull();
   });
 
-  it('forgets the hovered block when another module is shown', () => {
-    const workspace = guessingGameCanvas();
-    const detach = attachHighlightTracking(editorContext(workspace));
-    useAppStore.getState().actions.setUi({ hoverBlock: 'b005' });
-    useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_other' });
-    expect(ui().hoverBlock).toBeNull();
-    detach();
-  });
-
   it('finds block IDs only on block drawings', () => {
     expect(blockIdAt(null)).toBeNull();
     expect(blockIdAt(document.body)).toBeNull();

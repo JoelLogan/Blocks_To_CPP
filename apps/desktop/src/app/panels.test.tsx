@@ -22,9 +22,15 @@ import {
 import { setIpcForTests } from '../lib/ipc';
 import { expectNoAxeViolations } from '../test/axe';
 import { type SelectBlockOptions, setEditorHandle } from './editor-types';
-import { ConnectedCodePanel, ConnectedProblemsPanel, DockPanels } from './panels';
+import {
+  ConnectedBuildOutputPanel,
+  ConnectedCodePanel,
+  ConnectedProblemsPanel,
+  DockPanels,
+  moduleSourcePath,
+} from './panels';
 import { resetAppStore, useAppStore } from './store';
-import { createFakeIpc, previewFixture, projectFixture } from './testing/fixtures';
+import { createFakeIpc, documentFixture, previewFixture, projectFixture } from './testing/fixtures';
 
 const MAIN_LINES = [
   '#include "b2c_support.hpp"',
@@ -226,6 +232,66 @@ describe('the C++ tab', () => {
     ]);
   });
 
+  it('shows the .cpp of the module on the canvas, and follows the module switcher', () => {
+    const doc = documentFixture();
+    doc.modules = [
+      { id: 'mod_main', name: 'main', workspace: { blocks: [] } },
+      { id: 'mod_util', name: 'util', workspace: { blocks: [] } },
+    ];
+    const { actions } = useAppStore.getState();
+    // A preview of the two modules (each edit brings a new one).
+    const twoModulePreview = (): PreviewResult => ({
+      ...preview(),
+      files: [
+        { path: 'main.cpp', kind: 'source', contents: MAIN_CPP },
+        { path: 'util.cpp', kind: 'source', contents: '// util\n' },
+        { path: 'b2c_support.hpp', kind: 'header', contents: '#pragma once\n' },
+      ],
+    });
+    const { container } = render(<ConnectedCodePanel />);
+    setState(() => {
+      actions.setProject(projectFixture({ document: doc, activeModuleId: 'mod_util' }));
+      actions.setAnalysis({ preview: twoModulePreview() });
+    });
+    const file = screen.getByLabelText<HTMLSelectElement>('File');
+    const shown = () => [file.value, codeView(container).state.doc.toString()];
+    expect(shown()).toEqual(['util.cpp', '// util\n']);
+
+    setState(() => {
+      actions.updateProject({ activeModuleId: 'mod_main' });
+    });
+    expect(shown()).toEqual(['main.cpp', MAIN_CPP]);
+
+    // A file picked in the panel stays until another module is shown.
+    fireEvent.change(file, { target: { value: 'b2c_support.hpp' } });
+    expect(shown()).toEqual(['b2c_support.hpp', '#pragma once\n']);
+    setState(() => {
+      actions.setAnalysis({ preview: twoModulePreview() });
+    });
+    expect(file.value).toBe('b2c_support.hpp');
+    setState(() => {
+      actions.updateProject({ activeModuleId: 'mod_util' });
+    });
+    expect(shown()).toEqual(['util.cpp', '// util\n']);
+    setState(() => {
+      actions.updateProject({ activeModuleId: 'mod_main' });
+    });
+    expect(file.value).toBe('main.cpp');
+  });
+
+  it('finds a module’s .cpp by the module’s place, past the IDE’s own units', () => {
+    const files = [
+      { path: 'main.cpp', kind: 'source', contents: '' },
+      { path: 'ide/b2c_ide_init.cpp', kind: 'source', contents: '' },
+      { path: 'util.cpp', kind: 'source', contents: '' },
+      { path: 'b2c_support.hpp', kind: 'header', contents: '' },
+    ] as const;
+    expect(moduleSourcePath(files, 0)).toBe('main.cpp');
+    expect(moduleSourcePath(files, 1)).toBe('util.cpp');
+    expect(moduleSourcePath(files, 2)).toBeNull();
+    expect(moduleSourcePath(files, -1)).toBeNull();
+  });
+
   it('has no accessibility problems', async () => {
     const { container } = render(<ConnectedCodePanel />);
     setState(() => {
@@ -337,6 +403,43 @@ describe('the Problems tab', () => {
     );
     const { container } = render(<ConnectedProblemsPanel />);
     await expectNoAxeViolations(container);
+  });
+});
+
+describe('the Build output tab', () => {
+  it('follows each new build from its start, even after scrolling up in the last one', () => {
+    const { actions } = useAppStore.getState();
+    setState(() => {
+      actions.setProject(projectFixture());
+      actions.setBuild({ serial: 1, output: [{ kind: 'progress', text: 'Building A…' }] });
+    });
+    render(<ConnectedBuildOutputPanel />);
+    const log = screen.getByRole('log', { name: 'Build output' });
+    let height = 500;
+    Object.defineProperty(log, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(log, 'clientHeight', { configurable: true, get: () => 100 });
+
+    // Scrolled up to read: the build's new lines leave the view alone.
+    log.scrollTop = 100;
+    fireEvent.scroll(log);
+    height = 600;
+    setState(() => {
+      actions.appendBuildOutput([{ kind: 'raw', text: 'main.cpp:3:1: warning: …' }]);
+    });
+    expect(log.scrollTop).toBe(100);
+
+    // The next build replaces the lines (as the build feature does) and is followed again.
+    height = 300;
+    setState(() => {
+      actions.setBuild({ serial: 2, output: [] });
+      actions.appendBuildOutput([{ kind: 'progress', text: 'Building A…' }]);
+    });
+    expect(log.scrollTop).toBe(300);
+    height = 400;
+    setState(() => {
+      actions.appendBuildOutput([{ kind: 'progress', text: 'Compiling main.cpp (1/1)' }]);
+    });
+    expect(log.scrollTop).toBe(400);
   });
 });
 

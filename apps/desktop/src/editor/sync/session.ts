@@ -4,6 +4,7 @@
  * is analysed, saved and sent to the backend.
  *
  * - Loading a document builds the shown module's canvas (./bdmToWorkspace.ts) with events off.
+ *   Building or emptying the canvas forgets the selected and hovered block of the store.
  * - Every content change on the canvas (create, delete, change, move, comment, mutation) starts the
  *   debounced preview pipeline (../preview/pipeline.ts), which reads the canvas back
  *   (./workspaceToBdm.ts) and updates the project and the analysis.
@@ -563,6 +564,7 @@ export class EditorSession {
     this.preDrag = null;
     this.waitingSwitch = null;
     loadModule(this.workspace, doc, moduleId);
+    this.forgetMarkedBlocks();
     this.shown = moduleId;
     if (clearUndo) {
       this.workspace.clearUndo();
@@ -581,12 +583,27 @@ export class EditorSession {
     }
   }
 
+  /**
+   * Forgets the selected and the hovered block of the store (`ui.selection`, `ui.hoverBlock`) once
+   * the canvas has been rebuilt or emptied (a module switch, a reload, a project closed): Blockly
+   * replaces the blocks without events, so the highlight tracking (../highlight/tracking.ts) hears
+   * of neither, and the code panel would go on highlighting a block that is gone, or that is no
+   * longer selected when the new canvas has a block with the same ID (04 §4.3).
+   */
+  private forgetMarkedBlocks(): void {
+    const { ui, actions } = this.store.getState();
+    if (ui.selection !== null || ui.hoverBlock !== null) {
+      actions.setUi({ selection: null, hoverBlock: null });
+    }
+  }
+
   /** Empties the canvas (the project was closed). */
   private clearCanvas(): void {
     this.pipeline.invalidate();
     this.preDrag = null;
     this.waitingSwitch = null;
     clearWorkspace(this.workspace);
+    this.forgetMarkedBlocks();
     this.workspace.clearUndo();
     this.shown = null;
     this.shownView = { saved: undefined, baseline: null, centreOn: null };

@@ -8,6 +8,7 @@
  * - 4: unknown fields, wrong types, `__proto__` keys, oversized documents and program input, an
  *   out-of-range terminal size and malformed IDs are dropped by the hook; well-formed forged IDs
  *   and documents the strict loader refuses reach the backend and are refused with typed errors.
+ *   The backend's debug log shows that no malformed `app_quit` ran.
  * - Around the hook: a message sent straight to the IPC endpoint with
  *   `__TAURI_INTERNALS__.postMessage` is refused (a plain JSON body cannot be decrypted; an empty
  *   body carries no arguments, and the capability grants no other command).
@@ -31,8 +32,8 @@ import {
   protoCases,
   readSamples,
 } from './lib/abuse';
-import { type AbuseCase, IpcProbe } from './lib/ipc';
-import { appLog, profileOf } from './lib/projects';
+import { type AbuseCase, ENDS_THE_APP, IpcProbe } from './lib/ipc';
+import { appLog, commandSpans, profileOf } from './lib/projects';
 
 /** The log level the app gets in these tests, so that the log check sees everything. */
 const LOG_LEVEL = 'debug';
@@ -99,6 +100,13 @@ describe('E2E security 3 and 4: IPC abuse from the webview', () => {
       'return ({}).b2cPolluted !== undefined || Object.prototype.hasOwnProperty.call(Object.prototype, "b2cPolluted");',
     );
     expect(polluted).toBe(false);
+
+    // None of the malformed app_quit messages ran (README, "The app_quit incident"): app_quit
+    // shuts the backend down inside its own command span, which the debug log would show.
+    const log = readFileSync(appLog(profileOf(app)), 'utf8');
+    expect(log.includes('"level":"DEBUG"'), 'a debug log').toBe(true);
+    expect(commandSpans(log), 'commands that ran').not.toContain(ENDS_THE_APP);
+    expect(log.includes(`"${ENDS_THE_APP}"`), `${ENDS_THE_APP} named in the log`).toBe(false);
   });
 
   it('refuses oversized payloads, out-of-range sizes and forged IDs at the hook or in the backend (4)', async (context) => {

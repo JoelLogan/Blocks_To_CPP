@@ -29,7 +29,9 @@ Each spec checks one or two items of 08 §8.13:
   terminals outside 2–1000 × 1–1000, acknowledgements beyond the safe integers and malformed IDs
   are dropped, while the largest valid values reach the backend. Well-formed forged IDs are
   refused with the matching `unknown…` error, and documents the strict loader refuses with
-  `invalidDocument` or `newerFormat`. Messages sent around the isolation frame are refused.
+  `invalidDocument` or `newerFormat`. Messages sent around the isolation frame are refused. After
+  the malformed messages, the backend's debug log must show that no `app_quit` ran (see
+  [the `app_quit` incident](#the-app_quit-incident)).
 - **5**, [`markup.e2e.ts`](markup.e2e.ts): HTML and script in a project's name, description,
   strings, a variable's value, comments and notes, and in a rejected file's keys, run nothing (the
   canary global `__b2cXss` stays unset) and make no element (nothing carries `data-b2c-xss`). The
@@ -76,6 +78,41 @@ Two properties of Tauri 2.12 that the cases rely on, found while writing them:
   (every such command is on the allowlist anyway); every command with arguments is refused, and
   so is every command the capability does not grant. The tests send no argument-free command that
   way, because `app_quit` would end the app.
+
+## The `app_quit` incident
+
+On the first manual run of the nightly E2E group (2026-10-06, at `dae1fcb`), the Windows run of the
+test that sends malformed messages for every command ended early: the app received `app_quit` and
+exited, so the probe got no report. The same test passed on Linux.
+
+What is known:
+
+- The isolation hook drops all three malformed `app_quit` messages of that test (an extra key, a
+  `constructor` key, a `prototype` key). Only `{}` passes for a command without arguments.
+  [`index.test.js`](../../../src-tauri/isolation-tests/index.test.js) ("commands that take no
+  arguments") checks this for every such command in the generated allowlist, with `constructor`,
+  `prototype` and `__proto__` keys, extra keys and payloads of other types.
+- `app_quit` takes no arguments, so a malformed `app_quit` that lost its one wrong key on the way
+  to the hook is a valid message, and it runs.
+- At the time the probe handed its calls to the native WebDriver as script arguments, which the
+  driver rebuilds as objects in the page. The Windows driver (msedgedriver) and the Linux one
+  (WebKitWebDriver) do this differently.
+
+The likely cause, not confirmed, is therefore WebDriver's conversion of the arguments: on Windows
+a malformed `app_quit` reached the page without its wrong key. msedgedriver's log of that run was
+not kept, so the conversion itself was never seen.
+
+What changed (`09dbc92`): the calls reach the page as JSON text, which the page parses itself (see
+above); the `app_quit` cases are sent one at a time after the others, so one that runs is named and
+hides no other outcome; and a failed test keeps its part of msedgedriver's verbose log as
+`native-driver.log` (`B2C_E2E_NATIVE_DRIVER_LOG`, set by the Windows jobs). The nightly runs
+after that passed on both systems (the last check, on 2026-10-10, found no failure since). The
+test now also reads the backend's debug log after the malformed messages and fails if an
+`app_quit` command span (or the command's name at all) is in it: the backend opens that span when
+`app_quit` runs and logs the shutdown inside it.
+
+If it happens again, `native-driver.log` shows the arguments msedgedriver received and passed on,
+and the app's log (kept with the test's artifacts) shows whether `app_quit` ran.
 
 [`lib/compilers.ts`](lib/compilers.ts) watches for compiler, assembler and linker processes: on
 Linux the processes below the app (every 100 ms, by `argv[0]` and `comm`), on Windows `tasklist`

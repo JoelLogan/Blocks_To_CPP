@@ -87,6 +87,47 @@ describe('BuildOutputPanel', () => {
     expect(log.scrollTop).toBe(100);
   });
 
+  it('follows a new build from its start, even after scrolling up in the last one', () => {
+    const { rerender } = render(<BuildOutputPanel lines={LINES.slice(0, 2)} build={1} />);
+    const log = screen.getByRole('log');
+    let height = 500;
+    Object.defineProperty(log, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(log, 'clientHeight', { configurable: true, get: () => 100 });
+
+    log.scrollTop = 100;
+    fireEvent.scroll(log);
+    height = 600;
+    rerender(<BuildOutputPanel lines={LINES.slice(0, 3)} build={1} />);
+    expect(log.scrollTop).toBe(100);
+
+    // The next build's lines replace the last build's: the panel follows them again.
+    height = 300;
+    rerender(<BuildOutputPanel lines={LINES.slice(0, 1)} build={2} />);
+    expect(log.scrollTop).toBe(300);
+    height = 400;
+    rerender(<BuildOutputPanel lines={LINES.slice(0, 2)} build={2} />);
+    expect(log.scrollTop).toBe(400);
+  });
+
+  it('follows a new build that starts while the panel says there is no output', () => {
+    const { rerender } = render(<BuildOutputPanel lines={LINES.slice(0, 2)} build={1} />);
+    const first = screen.getByRole('log');
+    Object.defineProperty(first, 'scrollHeight', { configurable: true, get: () => 500 });
+    Object.defineProperty(first, 'clientHeight', { configurable: true, get: () => 100 });
+    first.scrollTop = 100;
+    fireEvent.scroll(first);
+
+    // Another project opened: no output, then that project's first build.
+    rerender(<BuildOutputPanel lines={[]} build={0} />);
+    expect(screen.queryByRole('log')).toBeNull();
+    rerender(<BuildOutputPanel lines={LINES.slice(0, 1)} build={2} />);
+    const log = screen.getByRole('log');
+    Object.defineProperty(log, 'scrollHeight', { configurable: true, get: () => 200 });
+    Object.defineProperty(log, 'clientHeight', { configurable: true, get: () => 100 });
+    rerender(<BuildOutputPanel lines={LINES.slice(0, 2)} build={2} />);
+    expect(log.scrollTop).toBe(200);
+  });
+
   it('has no accessibility violations', async () => {
     const { container } = render(<BuildOutputPanel lines={LINES} />);
     await expectNoAxeViolations(container);

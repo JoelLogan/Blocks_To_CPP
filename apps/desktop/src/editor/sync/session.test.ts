@@ -20,6 +20,7 @@ import {
   previewFixture,
   projectFixture,
 } from '../../app/testing/fixtures';
+import { attachHighlightTracking } from '../highlight/tracking';
 import { createCoreHost } from '../preview/coreHost';
 import { SyncError } from './errors';
 import { EditorSession, FIRST_VIEW_MARGIN, type SessionHooks } from './session';
@@ -242,6 +243,56 @@ describe('the editing session', () => {
     session.selectBlock('b', { center: true });
     expect(session.shownModuleId()).toBe('mod_util');
     expect(Blockly.common.getSelected()).toBe(session.workspace.getBlockById('b'));
+  });
+
+  it('forgets the selected and hovered block when it shows another module or a reload', async () => {
+    const workspace = renderedWorkspace();
+    const session = start(twoModules(), workspace);
+    const stopTracking = attachHighlightTracking({
+      workspace,
+      store: useAppStore,
+      core: () => null,
+      selectBlock: () => undefined,
+      activeModuleId: () => session.shownModuleId() ?? '',
+    });
+    const ui = () => useAppStore.getState().ui;
+    // Blockly fires its events after the next animation frame.
+    const settle = () => vi.advanceTimersByTimeAsync(50);
+    const mark = async (id: string) => {
+      session.selectBlock(id);
+      useAppStore.getState().actions.setUi({ hoverBlock: id });
+      await settle();
+      expect(ui()).toMatchObject({ selection: id, hoverBlock: id });
+    };
+    // Once Blockly has settled, the store has what Blockly has selected, and that block is shown.
+    const followsBlockly = () => {
+      const selected = Blockly.common.getSelected();
+      const id = selected instanceof Blockly.BlockSvg ? selected.id : null;
+      expect(ui().selection).toBe(id);
+      if (id !== null) {
+        expect(workspace.getBlockById(id)).toBe(selected);
+      }
+    };
+    await settle();
+
+    // Another module: the code panel must not go on highlighting a block that is gone.
+    await mark('a');
+    useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_util' });
+    expect(session.shownModuleId()).toBe('mod_util');
+    expect(workspace.getBlockById('a')).toBeNull();
+    expect(ui()).toMatchObject({ selection: null, hoverBlock: null });
+    await settle();
+    followsBlockly();
+
+    // A reload builds the canvas afresh: block b is a new block with the same ID, not selected.
+    await mark('b');
+    const old = workspace.getBlockById('b');
+    session.loadDocument(twoModules(), { clearUndo: true });
+    expect(workspace.getBlockById('b')).not.toBe(old);
+    expect(ui()).toMatchObject({ selection: null, hoverBlock: null });
+    await settle();
+    followsBlockly();
+    stopTracking();
   });
 
   it.each([true, false])(

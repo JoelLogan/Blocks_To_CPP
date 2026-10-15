@@ -145,6 +145,8 @@ function isCompilerMessage(diagnostic: Diagnostic): boolean {
 export class BuildController {
   readonly #deps: BuildControllerDeps;
   #current: Session | null = null;
+  /** How many builds this controller started: the last one's `serial` in the store. */
+  #started = 0;
   /** The toolchain of recent successful builds, so a change of compiler builds again. */
   readonly #toolchains = new Map<BuildId, string | null>();
 
@@ -259,7 +261,14 @@ export class BuildController {
     };
     this.#current = session;
 
-    actions.setBuild({ status: 'building', buildId: null, progress: null, output: [] });
+    this.#started += 1;
+    actions.setBuild({
+      status: 'building',
+      buildId: null,
+      serial: this.#started,
+      progress: null,
+      output: [],
+    });
     const firstLines = [buildStartLine(prepared.projectName, prepared.key.config)];
     if (state.toolchains.discovering && !hasUsableToolchain(state)) {
       // The backend chooses the compiler once the search has ended (07 §7.2).

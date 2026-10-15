@@ -221,7 +221,7 @@ describe('the Tab order of the window', () => {
       'tabpanel: Console',
       'button: Clear',
       'textarea: Terminal input',
-      'button: g++ 15.2.0 (MSYS2 UCRT64) (open the toolchain page)',
+      'button: g++ 15.2.0 (MSYS2 UCRT64), C:\\msys64\\ucrt64\\bin\\g++.exe (open the toolchain page)',
       // Out of the page (to the webview), then round again.
       'nothing',
       'button: Main menu',
@@ -230,7 +230,9 @@ describe('the Tab order of the window', () => {
     // Shift+Tab goes the same way back.
     await user.tab({ shift: true });
     await user.tab({ shift: true });
-    expect(focusedName()).toBe('button: g++ 15.2.0 (MSYS2 UCRT64) (open the toolchain page)');
+    expect(focusedName()).toBe(
+      'button: g++ 15.2.0 (MSYS2 UCRT64), C:\\msys64\\ucrt64\\bin\\g++.exe (open the toolchain page)',
+    );
   });
 
   it('moves between the bottom tabs with the arrow keys, not with Tab', async () => {

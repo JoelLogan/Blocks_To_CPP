@@ -109,7 +109,13 @@
   top-left corner when they do not fit, clear of the toolbox.
 * The status bar says *Saved* (with the time after a save in this session)
   or *Unsaved* while there are unsaved changes or the project has no file
-  yet.
+  yet. It names the toolchain a build will use, with the compiler's full
+  path in its tooltip and accessible name
+  ([08 §8.5](08-security.md#85-compiler-invocation-safety)).
+* The *Build output* tab shows the last build's progress, toolchain notes and
+  the compiler's own text. It follows new output while it is scrolled to the
+  end and stays put while the user reads further up; each new build is
+  followed from its start again.
 * Menus, hints and dialogs are always drawn above the canvas, the toolbox and
   dragged blocks; opening a dialog (the console's link dialog included) or a
   full-window page such as Settings first closes the block editor's
@@ -191,7 +197,9 @@ toolbox search in M3.
 ## 4.3 Code panel (live C++)
 
 * A read-only CodeMirror 6 view of the generated C++ for the active module,
-  with a file switcher (`main.cpp`, `main.hpp`, `b2c_support.hpp`).
+  with a file switcher (`main.cpp`, `main.hpp`, `b2c_support.hpp`). It shows
+  the `.cpp` of the module on the canvas and follows the module switcher; a
+  file chosen in its own switcher stays shown until another module is.
 * **Two-way highlighting.** Hovering or selecting a block highlights its C++
   range. Clicking a line in the code selects and scrolls to the block that
   produced it (via the source map, [06 §6.9](06-compiler-pipeline.md#69-source-maps)).
@@ -273,10 +281,12 @@ function's name for a function definition, and for other blocks the friendly
 label up to its first placeholder, with the current dropdown text filled in
 (*when program starts › repeat until › if*).
 
-**In M2:** *Learn more* opens the published diagnostics reference through
-`open_help_link`; links to each code's entry and the bundled offline pages
-come in M5. Quick fixes and squiggles under slot tokens come with expression
-slots in M3, and *Change level…* with lint levels in M5.
+**In M2:** *Learn more* is one button in the Problems panel that opens the
+published diagnostics reference in the web browser (`open_help_link`), and it
+says so: its tooltip and accessible description say that it opens the web
+browser, and `↗` marks it. Links to each code's entry and the bundled offline
+pages come in M5. Quick fixes and squiggles under slot tokens come with
+expression slots in M3, and *Change level…* with lint levels in M5.
 
 **In M2** a canvas that cannot be read back as a project (a `B2C-E01xx`
 problem, such as blocks nested too deeply) does not go unnoticed: a banner

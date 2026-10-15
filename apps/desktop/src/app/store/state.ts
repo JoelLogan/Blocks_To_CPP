@@ -101,6 +101,13 @@ export interface BuildSuccess {
 export interface BuildState {
   /** The current or last build, or `null`. */
   buildId: BuildId | null;
+  /**
+   * The number of the current or last build among those started in this window (1, 2, …), or 0
+   * before the first build of the open project. A new build always has a new number, even in
+   * another project, so the Build output tab knows when a new build's output starts (it follows
+   * it from its start again).
+   */
+  serial: number;
   status: BuildStatus;
   /** The configuration for this session: Debug or Release, never saved (04 §4.1). */
   config: BuildConfig;
@@ -198,6 +205,7 @@ export function initialAnalysis(): AnalysisState {
 export function initialBuild(config: BuildConfig = 'debug'): BuildState {
   return {
     buildId: null,
+    serial: 0,
     status: 'idle',
     config,
     progress: null,

@@ -5,6 +5,10 @@
  *
  * Shadow blocks (the expression slots) are not document blocks, so they stand for the block whose
  * input holds them.
+ *
+ * A module switch, a reload or a closed project rebuilds the canvas without Blockly's events, so
+ * nothing reaches the listener here: the editing session forgets both blocks then
+ * (../sync/session.ts).
  */
 import * as Blockly from 'blockly/core';
 
@@ -68,13 +72,6 @@ export function attachHighlightTracking(ctx: EditorContext): () => void {
   };
   workspace.addChangeListener(onEvent);
 
-  // A module switch replaces every block without events: forget the hovered block then.
-  const unsubscribe = store.subscribe((state, previous) => {
-    if (state.project?.activeModuleId !== previous.project?.activeModuleId) {
-      setHover(null);
-    }
-  });
-
   const surface = workspace instanceof Blockly.WorkspaceSvg ? workspace.getParentSvg() : null;
   const onPointerOver = (event: PointerEvent): void => {
     setHover(documentBlockId(workspace, blockIdAt(event.target)));
@@ -87,7 +84,6 @@ export function attachHighlightTracking(ctx: EditorContext): () => void {
 
   return () => {
     workspace.removeChangeListener(onEvent);
-    unsubscribe();
     surface?.removeEventListener('pointerover', onPointerOver);
     surface?.removeEventListener('pointerleave', onPointerLeave);
     setHover(null);

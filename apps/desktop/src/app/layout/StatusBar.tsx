@@ -1,6 +1,7 @@
 import type { BuildConfig, Toolchain } from '@blocks2cpp/ipc-types';
 import { useShallow } from 'zustand/react/shallow';
 
+import { visibleInvisibles } from '../../panels/shared/invisibles';
 import { useRegisteredScreen } from '../screens';
 import { useAppStore } from '../store';
 import { selectedToolchain } from '../store/selectors';
@@ -13,6 +14,21 @@ const CONFIG_LABELS: Record<BuildConfig, string> = { debug: 'Debug', release: 'R
 export function toolchainLabel(toolchain: Toolchain): string {
   const name = toolchain.version === null ? 'g++' : `g++ ${toolchain.version}`;
   return toolchain.flavor === null ? name : `${name} (${toolchain.flavor})`;
+}
+
+/** The longest toolchain path the status bar shows, in UTF-16 units (as the toolchain page). */
+export const MAX_TOOLCHAIN_PATH_CHARS = 1024;
+
+/**
+ * The full path of a toolchain as the status bar shows it in its tooltip and accessible name
+ * (08 §8.5): characters that do not show or that reorder text become visible placeholders
+ * (`⟨U+202E⟩`), so a planted compiler cannot pass for another, and a very long path is cut.
+ */
+export function toolchainPathText(toolchain: Toolchain): string {
+  const visible = visibleInvisibles(toolchain.displayPath);
+  return visible.length <= MAX_TOOLCHAIN_PATH_CHARS
+    ? visible
+    : `${visible.slice(0, MAX_TOOLCHAIN_PATH_CHARS - 1)}…`;
 }
 
 /** How the status bar names the project's C++ standard: `C++20`, or `GNU++20` with extensions. */
@@ -94,7 +110,11 @@ export function StatusBar() {
   );
 }
 
-/** The selected toolchain, as a link to the toolchain page once a feature provides it. */
+/**
+ * The selected toolchain, as a link to the toolchain page once a feature provides it. Its full
+ * path is in the tooltip and the accessible name (08 §8.5: the person can see which compiler a
+ * build will run).
+ */
 function ToolchainStatus() {
   const { toolchain, discovering } = useAppStore(
     useShallow((state) => ({
@@ -105,6 +125,7 @@ function ToolchainStatus() {
   const setupPage = useRegisteredScreen('toolchainSetup');
 
   let content;
+  const path = toolchain === null ? null : toolchainPathText(toolchain);
   if (toolchain !== null) {
     content = (
       <>
@@ -112,6 +133,7 @@ function ToolchainStatus() {
           √
         </span>
         {toolchainLabel(toolchain)}
+        <span className="visually-hidden">, {path}</span>
       </>
     );
   } else if (discovering) {
@@ -127,9 +149,10 @@ function ToolchainStatus() {
     );
   }
 
+  const tooltip = path === null ? {} : { title: path };
   if (setupPage === null) {
     return (
-      <span className="status-item" data-testid="status-toolchain">
+      <span className="status-item" data-testid="status-toolchain" {...tooltip}>
         {content}
       </span>
     );
@@ -139,6 +162,7 @@ function ToolchainStatus() {
       type="button"
       className="status-item status-link"
       data-testid="status-toolchain"
+      {...tooltip}
       onClick={() => {
         useAppStore.getState().actions.setUi({ screen: 'toolchainSetup' });
       }}
