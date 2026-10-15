@@ -241,9 +241,24 @@ release build. For a quicker build that still behaves like the release, use
 `pnpm --filter @blocks2cpp/desktop tauri build --debug --no-bundle`, which
 writes `target/debug/blocks2cpp-desktop`.
 
-The checks, tests and code layout are described in the
-[desktop app's README](apps/desktop/README.md) and in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+The checks are listed in [CONTRIBUTING.md](CONTRIBUTING.md#checks); the code
+layout, the tests and how the app is built inside are described in the
+[desktop app's README](apps/desktop/README.md) and the
+[developer guide](docs/developer-guide/README.md).
+
+### End-to-end tests
+
+The end-to-end tests drive the app through WebDriver. Besides steps 1 to 4
+they need tauri-driver at the version the CI workflows pin and, on Linux,
+WebKitGTK's WebDriver and a virtual display:
+
+```sh
+cargo install tauri-driver --version 2.1.0 --locked
+sudo apt install webkit2gtk-driver xvfb
+```
+
+How to build the app under test and run the tests is in the
+[end-to-end tests' README](apps/desktop/e2e/README.md#running-them-locally-linux).
 
 ## The command-line tool
 

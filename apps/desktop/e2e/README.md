@@ -34,13 +34,8 @@ machine's folders are scripted, through the app's `e2e-hooks` feature.
 
 ## Running them locally (Linux)
 
-You need `WebKitWebDriver` (Ubuntu and Debian: `sudo apt-get install webkit2gtk-driver`), `xvfb`,
-g++, and `tauri-driver` at the pinned version (the `e2e` job in
-[`desktop.yml`](../../../.github/workflows/desktop.yml) names it):
-
-```sh
-cargo install tauri-driver --locked --version 2.1.0
-```
+You need `WebKitWebDriver`, `xvfb`, g++, and `tauri-driver` at the pinned version;
+[BUILDING.md](../../../BUILDING.md#end-to-end-tests) has the commands that install them.
 
 Build the WebAssembly core, then the app under test. CI uses the Tauri CLI:
 
@@ -158,6 +153,23 @@ the test can click and drag with real pointer input; it also scrolls the canvas 
 the selection (`scrollCanvasBy`, for the benchmarks' clicks). CI checks that a release
 build contains neither the hook nor the backend's `B2C_E2E_*` variables.
 
-Find elements by their `data-testid`; the stable ones are listed in the app's README. Wait for
-state with `waitFor` ([`support/wait.ts`](support/wait.ts)) rather than fixed delays, and keep
+Find elements by their `data-testid`; the stable ones are listed under [Test IDs](#test-ids). Wait
+for state with `waitFor` ([`support/wait.ts`](support/wait.ts)) rather than fixed delays, and keep
 each test independent: it starts from a fresh profile.
+
+## Test IDs
+
+Elements the tests find carry a `data-testid`; never rename or remove one. The stable ones are
+`window-banners`, `main-menu`, `toolbar-run`, `toolbar-stop`, `toolbar-config`,
+`toolbar-settings`, `project-name`, `module-switch`, `workspace`, `right-dock-toggle`,
+`bottom-dock-toggle`, `dock-tab-console`, `dock-tab-problems`, `dock-tab-buildOutput`, the
+`status-*` items (`status-save`, `status-config`, `status-standard`, `status-toolchain`,
+`status-restricted`), `start-page`, `template-empty`, `template-helloWorld`, `start-open`,
+`recent-item`, `recovery-offer`, `recovery-item`, the `restricted-banner*` parts, `code-panel`,
+`problems-panel`, `problems-summary`, `problem-row`, the `console-*` parts (`console-panel`,
+`console-header`, `console-state`, `console-elapsed`, `console-stop`, `console-run-again`,
+`console-clear`, `console-terminal`, `console-notice`), `build-output-panel`,
+`build-output-line`, `keyboard-announcer`, `app-dialog`, `feature-page-back` (the settings and
+toolchain pages' _Back_ button), and those pages' `settings-*` and `toolchain-*` IDs. The canvas
+controls are `canvas-controls`, `canvas-zoom-out`, `canvas-zoom-in`, `canvas-zoom-reset` and
+`canvas-show-all`.
