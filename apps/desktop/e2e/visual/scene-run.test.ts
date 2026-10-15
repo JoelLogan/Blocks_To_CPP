@@ -23,6 +23,7 @@ import {
   type Theme,
   themesOf,
 } from './scenes';
+import { PageNotStillError } from './settle';
 
 const folders: string[] = [];
 
@@ -171,6 +172,36 @@ describe('a test that stops early', () => {
       );
     }
     expect(run.failures).toHaveLength(CHROME_SCENES.length - taken.length);
+  });
+
+  it('stops at a page that does not come to rest, which no later scene would either', async () => {
+    const settings = settingsFor('linux');
+    const stuck = new PageNotStillError('Animations still run after 20 s: spin on div.busy');
+    const shoot = shooter({ 'toolbar-select': stuck });
+    const run = new SceneRun(settings, 'light', shoot);
+    let stopped: unknown = null;
+    try {
+      for (const scene of CHROME_SCENES) {
+        await run.take(scene.id);
+      }
+    } catch (error: unknown) {
+      stopped = error;
+      run.notReached(error);
+    }
+    expect(stopped).toBeInstanceOf(Error);
+    expect((stopped as Error).message).toBe(
+      'chrome-toolbar-select was not taken, nor the scenes after it: Animations still run after 20 s: spin on div.busy',
+    );
+    // One wait for the page, not one per scene.
+    expect(shoot.shot).toEqual(['window-smallest', 'toolbar-select']);
+    expect(run.missing()).toEqual([]);
+    expect(rows(settings).map((row) => row.name)).toEqual(namesOf('linux', 'light'));
+    expect(rows(settings)[1]?.result).toBe(
+      '**fail**: not taken: Animations still run after 20 s: spin on div.busy',
+    );
+    expect(rows(settings)[2]?.result).toMatch(
+      /^\*\*fail\*\*: not taken: the test stopped before it: chrome-toolbar-select was not taken/,
+    );
   });
 });
 

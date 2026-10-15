@@ -13,8 +13,22 @@ import { QUIET_SCRIPT } from '../bench/page';
 export const QUIET_FRAMES = 20;
 export const QUIET_FRAME_MS = 40;
 
-/** How long the page may take to come to rest, in milliseconds. */
-export const STILL_TIMEOUT_MS = 30_000;
+/**
+ * How long each wait for the page to come to rest (its fonts, its animations, its frames) may take,
+ * in milliseconds. The page answers at the first frame after it, or by its own timer
+ * {@link STILL_FALLBACK_MS} later, which is well inside WebDriver's script timeout (30 s, set by
+ * both launchers: support/app.ts `SCRIPT_TIMEOUT_MS`), so the page says what still moves instead of
+ * WebDriver timing out first; settle.test.ts checks both against the scripts.
+ */
+export const STILL_TIMEOUT_MS = 20_000;
+
+/** How long after {@link STILL_TIMEOUT_MS} the page's own timer answers without frames. */
+export const STILL_FALLBACK_MS = 1_000;
+
+/** The page did not come to rest within {@link STILL_TIMEOUT_MS}: no later screenshot would. */
+export class PageNotStillError extends Error {
+  override readonly name = 'PageNotStillError';
+}
 
 /**
  * Runs in the webview: takes focus away from whatever has it (no focus ring, no text caret, and
@@ -31,20 +45,34 @@ export const STILL_SCRIPT = `
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 `;
 
-/** Runs in the webview (async): calls back once the page's fonts have loaded. */
+/**
+ * Runs in the webview (`executeAsyncScript(FONTS_SCRIPT, timeoutMs)`): calls back with `true` once
+ * the page's fonts have loaded, or `false` when they fail or have not loaded after `timeoutMs`.
+ */
 export const FONTS_SCRIPT = `
+  const timeoutMs = arguments[0];
   const done = arguments[arguments.length - 1];
-  document.fonts.ready.then(() => done(true), () => done(false));
+  let finished = false;
+  const finish = (result) => {
+    if (!finished) {
+      finished = true;
+      done(result);
+    }
+  };
+  document.fonts.ready.then(() => finish(true), () => finish(false));
+  setTimeout(() => finish(false), timeoutMs);
 `;
 
 /**
- * Runs in the webview (`executeAsyncScript(ANIMATIONS_SCRIPT, timeoutMs)`): calls back with `[]`
- * once no CSS animation or transition (nor any other Web Animation) runs on the page, checking
- * every frame, or with up to 5 descriptions of those still running after `timeoutMs`. A page
- * without `document.getAnimations` counts as having none.
+ * Runs in the webview (`executeAsyncScript(ANIMATIONS_SCRIPT, timeoutMs, fallbackMs)`): calls back
+ * with `[]` once no CSS animation or transition (nor any other Web Animation) runs on the page,
+ * checking every frame, or with up to 5 descriptions of those still running after `timeoutMs` (at
+ * the latest `fallbackMs` later, when no frame comes). A page without `document.getAnimations`
+ * counts as having none.
  */
 export const ANIMATIONS_SCRIPT = `
   const timeoutMs = arguments[0];
+  const fallbackMs = typeof arguments[1] === 'number' ? arguments[1] : 1000;
   const done = arguments[arguments.length - 1];
   const begin = performance.now();
   let finished = false;
@@ -86,7 +114,7 @@ export const ANIMATIONS_SCRIPT = `
   };
   step();
   // Without animation frames (a hidden window) nothing would ever call back.
-  setTimeout(() => finish(running()), timeoutMs + 1000);
+  setTimeout(() => finish(running()), timeoutMs + fallbackMs);
 `;
 
 /** The window global that marks the page whose overlay scroll bars are hidden. */
@@ -180,17 +208,22 @@ export async function blurAll(driver: WebDriver): Promise<boolean> {
  * Waits until the page has its fonts, runs no animation and has drawn {@link QUIET_FRAMES} frames
  * in a row on time (the first preview, a flyout's scrolling and the like have ended).
  *
- * @throws Error naming what still moves after {@link STILL_TIMEOUT_MS}.
+ * @throws PageNotStillError naming what still moves after {@link STILL_TIMEOUT_MS}.
  */
 export async function waitUntilStill(driver: WebDriver): Promise<void> {
-  const fonts: unknown = await driver.executeAsyncScript(FONTS_SCRIPT);
+  const seconds = String(STILL_TIMEOUT_MS / 1000);
+  const fonts: unknown = await driver.executeAsyncScript(FONTS_SCRIPT, STILL_TIMEOUT_MS);
   if (fonts !== true) {
-    throw new Error('The page fonts did not load');
+    throw new PageNotStillError(`The page fonts did not load within ${seconds} s`);
   }
-  const moving: unknown = await driver.executeAsyncScript(ANIMATIONS_SCRIPT, STILL_TIMEOUT_MS);
+  const moving: unknown = await driver.executeAsyncScript(
+    ANIMATIONS_SCRIPT,
+    STILL_TIMEOUT_MS,
+    STILL_FALLBACK_MS,
+  );
   if (Array.isArray(moving) && moving.length > 0) {
-    throw new Error(
-      `Animations still run after ${String(STILL_TIMEOUT_MS / 1000)} s: ${moving.map(String).join('; ')}`,
+    throw new PageNotStillError(
+      `Animations still run after ${seconds} s: ${moving.map(String).join('; ')}`,
     );
   }
   const quiet: unknown = await driver.executeAsyncScript(
@@ -200,6 +233,6 @@ export async function waitUntilStill(driver: WebDriver): Promise<void> {
     STILL_TIMEOUT_MS,
   );
   if (quiet !== 'quiet') {
-    throw new Error(`The page did not come to rest within ${String(STILL_TIMEOUT_MS / 1000)} s`);
+    throw new PageNotStillError(`The page did not come to rest within ${seconds} s`);
   }
 }

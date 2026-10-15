@@ -15,7 +15,8 @@
  *
  * A scene that fails does not stop the others (scene-run.ts): every scene is listed in the summary,
  * the ones the test never reached as not taken, and the test fails at the end with all the
- * failures.
+ * failures. A page that does not come to rest stops the test at once, since every later scene
+ * would wait as long.
  */
 import { By, Key, type WebDriver } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';

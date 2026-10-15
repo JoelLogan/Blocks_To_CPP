@@ -3,13 +3,15 @@
  * function the test gives (the page brought to rest, the scene cut out and masked), compared with
  * this system's baseline (baselines.ts `checkShot`), and recorded in the summary, so that the
  * summary lists every scene of this system once per theme, the ones the test never reached as not
- * taken. A scene that fails does not stop the others.
+ * taken. A scene that fails does not stop the others, except when the page does not come to rest:
+ * every later scene would wait as long for it, and together they would outlast the test's
+ * timeout before the summary had a line for each.
  */
 import { checkShot, recordOutcome, type VisualSettings, writeCandidate } from './baselines';
 import { UnstableSceneError } from './capture';
 import { compareScreenshots } from './compare';
 import { CHROME_SCENES, type ChromeScene, chromeShotName, sceneRunsOn, type Theme } from './scenes';
-import { warn } from './settle';
+import { PageNotStillError, warn } from './settle';
 
 /** Takes a scene's image: the page brought to rest, the scene cut out and masked. */
 export type ShootScene = (scene: ChromeScene) => Promise<Buffer>;
@@ -51,7 +53,10 @@ export class SceneRun {
 
   /**
    * Takes scene `id` and compares it. A failure is noted (and recorded in the summary) and does
-   * not stop the test.
+   * not stop the test, unless the page did not come to rest.
+   *
+   * @throws Error when the page did not come to rest for this scene: no later scene would, and
+   *   the test is to stop (and record the rest with {@link notReached}).
    */
   async take(id: string): Promise<void> {
     const scene = this.#scenes.find((candidate) => candidate.id === id);
@@ -76,6 +81,11 @@ export class SceneRun {
         );
       }
       this.notTaken(name, error);
+      if (error instanceof PageNotStillError) {
+        throw new Error(`${name} was not taken, nor the scenes after it: ${reasonOf(error)}`, {
+          cause: error,
+        });
+      }
       return;
     }
     const check = checkShot(this.#settings, name, image);

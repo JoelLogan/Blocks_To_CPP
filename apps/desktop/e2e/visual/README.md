@@ -51,7 +51,10 @@ What makes a scene the same from run to run:
 - **At rest:** no Web Animation (CSS animation or transition) runs, the page has drawn 20 frames
   in a row on time ([`settle.ts`](settle.ts)), and two screenshots 150 ms apart give the same
   pixels ([`capture.ts`](capture.ts)); a scene that still changes after six fails as not taken,
-  with its last image as the candidate and a `.diff.png` of what moved.
+  with its last image as the candidate and a `.diff.png` of what moved. Each wait for the page
+  (its fonts, its animations, its frames) ends after 20 s, and the page then says what still
+  moves, well before WebDriver's own 30 s script timeout. A page that does not come to rest stops
+  the test at once, with the scenes after it recorded as not taken: each would wait as long.
 - **Pointer, focus, caret:** the pointer is parked in the status bar's padding (bottom-left
   corner), where it hovers nothing, except in the hover scene; nothing has the focus (no focus
   ring, the console's cursor drawn as the steady outline of an unfocused terminal) and the text
@@ -118,8 +121,8 @@ It takes about a minute: three launches (the canvas, the light chrome, the dark 
 chrome launch building and running its program twice. A local screenshot is only comparable with
 a baseline made on the same machine. The comparison, the masks and cut-outs, the screenshots
 taken until two are the same, the scene list and its bookkeeping (every scene in the summary once,
-whatever stopped the test), the page scripts, the fixture and the summary are tested without the
-app:
+whatever stopped the test), the page scripts and their time limits, the fixture and the summary
+are tested without the app:
 
 ```sh
 pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/visual/vitest.visual.config.ts --project visual-unit
