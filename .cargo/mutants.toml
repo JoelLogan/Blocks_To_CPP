@@ -13,7 +13,10 @@
 #   cargo mutants --no-config -f crates/b2c-ir/src/text.rs   # one file
 #
 # (`-f` adds to the globs below rather than narrowing them, hence
-# `--no-config` for a single file.)
+# `--no-config` for a single file.) The weekly job caps each test process's
+# memory (see `timeout_multiplier` below); to do the same, run first:
+#
+#   export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="python3 $PWD/tools/memory-capped-runner.py --limit-mib 2048 --"
 #
 # A mutant that is truly equivalent (no test can tell it apart) is excluded
 # with `#[mutants::skip]` on the function, or an `exclude_re` entry here, with
@@ -97,3 +100,16 @@ sharding = "round-robin"
 # Each mutant is checked against the tests of the package it is in (the
 # default). The rule is that the encoders' and validators' own tests must
 # notice every change, not that some distant snapshot test happens to.
+
+# Some mutants turn a bounded loop into an endless one (`pos += 1` becoming
+# `pos *= 1`). One that allocates as it loops is stopped by the weekly job's
+# memory cap on each test process (tools/memory-capped-runner.py, its cargo
+# target runner) and counts as caught. One that does not allocate runs until
+# this timeout and is reported as a timeout. The timeout is this many times
+# the baseline's test time: the unmutated tests of every package with mutants
+# in the run, which on a shard of the weekly job is all six crates (79 s
+# locally; at least cargo-mutants' minimum of 20 s). 1.5 times that is
+# about three times the slowest package's own tests (b2c-build's, about half
+# of the baseline), where cargo-mutants' default of 5 made each such mutant
+# cost several minutes.
+timeout_multiplier = 1.5

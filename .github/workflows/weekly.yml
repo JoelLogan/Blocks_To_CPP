@@ -1,7 +1,9 @@
 # Weekly checks (docs/spec/09-quality-and-delivery.md §9.2 "Mutation" and §9.3 weekly.yml;
 # docs/spec/08-security.md §8.9 and §8.13 "Weekly"):
 # - mutants: cargo-mutants over the security-critical encoders and validators listed in
-#   .cargo/mutants.toml, which must kill every mutant;
+#   .cargo/mutants.toml, which must kill every mutant; each test process runs under a memory
+#   cap (tools/memory-capped-runner.py), so a mutant that allocates without end is caught
+#   rather than shutting the runner down;
 # - dependency-health: a report of advisories (unmaintained crates included), outdated npm
 #   packages, duplicate crate versions and expiring OSV-Scanner exceptions
 #   (tools/dependency-health.sh);
@@ -36,12 +38,15 @@ env:
   CARGO_FUZZ_VERSION: 0.13.2
 
 jobs:
-  # About 830 mutants at 2 to 15 seconds each, spread over four runners (.cargo/mutants.toml
-  # deals them out round-robin). `cargo mutants --shard k/4` locally runs shard k.
+  # About 1,000 mutants, spread over four runners (.cargo/mutants.toml deals them out
+  # round-robin). `cargo mutants --shard k/4` locally runs shard k (with the runner setting
+  # of the step below, to cap the tests' memory the same way). Measured locally on 4 cores, a
+  # caught mutant takes about 16 s to build and test and a timeout about 2 minutes, so a shard
+  # of about 250 takes some 75 minutes; the job's limit leaves room for a slower runner.
   mutants:
     name: Mutation testing (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 240
     permissions:
       contents: read # check out the repository
     strategy:
@@ -54,6 +59,8 @@ jobs:
       # Tests that compile C++ fail, rather than skip, without g++ (GCC 13 on ubuntu-24.04),
       # so a missing compiler cannot make mutants look missed.
       B2C_REQUIRE_GXX: "1"
+      # The memory cap on each test process in the mutation step (see that step).
+      TEST_MEMORY_LIMIT_MIB: "2048"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,6 +70,11 @@ jobs:
       - name: Show g++ version
         run: g++ --version
 
+      # Before the shard's mutants depend on it: the cap stops a program that allocates past
+      # it, and passes everything else through.
+      - name: Check the memory-capped test runner (self-test)
+        run: python3 tools/memory-capped-runner.py --self-test
+
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
 
@@ -71,6 +83,16 @@ jobs:
 
       # Mutants are tested in a copy of the tree (the default), never in place. The exit status
       # is judged in the last step, so the report and the artifact come first.
+      #
+      # In this step only, cargo starts every test binary and doctest (of the baseline and of
+      # each mutant) through tools/memory-capped-runner.py, which stops a test process whose
+      # resident memory passes TEST_MEMORY_LIMIT_MIB. A mutant that makes a loop endless and
+      # allocating then fails its tests within seconds and counts as caught; uncapped, it
+      # filled the runner's 16 GB until the runner was shut down and the shard ended without a
+      # report. The largest test process peaks at about 340 MiB. The cap is per test process:
+      # cargo, rustc and the linker are not capped, nor are the compilers and programs the
+      # tests start (an address-space limit would be inherited by them, and AddressSanitizer
+      # programs cannot start under one).
       - name: Test the mutants of this shard
         id: run
         run: |
@@ -79,6 +101,20 @@ jobs:
             echo "::error::Bad shard '$SHARD' of '$SHARDS'"
             exit 1
           fi
+          # The setting is per target; a runner of another architecture would leave the tests
+          # uncapped without a word.
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          if [ "$host" != x86_64-unknown-linux-gnu ]; then
+            echo "::error::Expected an x86_64-unknown-linux-gnu host for the test runner setting, found '$host'"
+            exit 1
+          fi
+          runner="$GITHUB_WORKSPACE/tools/memory-capped-runner.py"
+          # cargo splits the runner setting at whitespace.
+          if [[ "$runner" =~ [[:space:]] ]]; then
+            echo "::error::The checkout path '$GITHUB_WORKSPACE' contains whitespace"
+            exit 1
+          fi
+          export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="python3 $runner --limit-mib $TEST_MEMORY_LIMIT_MIB --"
           status=0
           cargo mutants --shard "$SHARD/$SHARDS" --output "$RUNNER_TEMP" || status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
@@ -98,6 +134,10 @@ jobs:
             echo '````'
             if [ "$(count "$1")" -gt 200 ]; then echo "… and more in the artifact."; fi
           }
+          # Mutants whose tests the memory cap stopped (the runner says so in the mutant's log);
+          # they are among the caught ones.
+          capped=$(find "$out/log" -name '*.log' ! -name baseline.log \
+            -exec grep -l -F 'memory-capped-runner: stopped' {} + 2> /dev/null | wc -l || true)
           case "$STATUS" in
             0) verdict="Every mutant was caught or unviable." ;;
             2 | 3) verdict="cargo-mutants finished (exit status $STATUS)." ;;
@@ -112,6 +152,7 @@ jobs:
             echo "| Outcome | Mutants |"
             echo "|---|---:|"
             echo "| Caught | $(count caught) |"
+            echo "| (of which stopped at the ${TEST_MEMORY_LIMIT_MIB} MiB memory cap) | $capped |"
             echo "| **Missed** | $(count missed) |"
             echo "| Timeout | $(count timeout) |"
             echo "| Unviable | $(count unviable) |"
