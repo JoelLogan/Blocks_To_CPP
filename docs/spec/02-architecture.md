@@ -124,7 +124,7 @@ Blocks_To_CPP/
 │   ├── user-guide/                 # end-user documentation (built into a static site)
 │   ├── developer-guide/            # contributors: architecture, security settings, dependencies,
 │   │                               #   testing, recipes
-│   ├── manual-tests/               # manual test protocols (screen readers, usability)
+│   ├── manual-tests/               # manual test protocols (screen readers, usability, toolchains)
 │   ├── security/                   # review checklists (custom Blockly fields and tooltips)
 │   └── reference/                  # block reference (generated), diagnostics reference, CLI
 ├── site/                           # specification website generator (GitHub Pages), see site/README.md

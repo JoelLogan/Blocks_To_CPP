@@ -17,10 +17,13 @@ milestone, following the protocols here
 | [M2 accessibility](m2-accessibility.md)                  | M2        | Screen readers (NVDA on Windows, Orca on Linux), the Tab order, the block editor's keys, colour, contrast, zoom, reflow and reduced motion in the real webviews                                                                          | Not run yet                                                            |
 | [M2 usability ("without reading docs")](m2-usability.md) | M2        | At least three first-time users build and play the guessing game without documentation; and the exclusion review: nothing of M3–M6 has an entry point in the M2 app                                                                      | Exclusion review run on the code; sessions and demo review not run yet |
 | [M2 performance profile](m2-performance-profile.md)      | M2        | The owner's computer in a release build: webview, graphics driver, compositing, Wayland or X11, display scale; the first-start layout (U6) and lag (U11); a profile of clicks that change nothing; whether GTK reports a primary monitor | Not run yet                                                            |
+| [M2 toolchain matrix](m2-toolchains.md)                  | M2        | The compilers people install (distribution g++, side-by-side versions, MSYS2, WinLibs, TDM-GCC, Scoop, Chocolatey, Strawberry Perl, Cygwin, Clang): found, checked, and building and running programs in a release build                 | Not run yet; the owner's Debian cell is required for M2                |
 
 M2 is declared done only once the accessibility and usability protocols are
-recorded in their sign-off tables. The performance profile blocks nothing: it
-informs the performance budgets (W2-2 of the
+recorded in their sign-off tables, and the toolchain matrix has its Debian
+cell and a recorded deferral to M3 for each cell it leaves out
+([10 §10.1](../spec/10-roadmap.md#101-milestones)). The performance profile
+blocks nothing: it informs the performance budgets (W2-2 of the
 [polish plan](../plans/m2-polish-plan.md#w2--performance-guard)).
 
 ## Running a protocol
@@ -43,7 +46,4 @@ informs the performance budgets (W2-2 of the
 ## Not written yet
 
 [09 §9.2](../spec/09-quality-and-delivery.md#92-testing-strategy) also asks
-for manual checks of the High Contrast themes (they come in M5) and of a
-real-world toolchain matrix (WinLibs, TDM-GCC, Scoop, Strawberry Perl's
-GCC and distribution GCCs). CI covers GCC 11, 13 and 15 on Linux and MSYS2
-UCRT64 on Windows; the toolchain matrix protocol is still to be written.
+for a manual check of the High Contrast themes, which come in M5.
