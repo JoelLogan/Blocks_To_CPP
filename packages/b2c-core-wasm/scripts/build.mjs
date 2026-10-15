@@ -6,7 +6,8 @@
 //
 // Steps:
 //   0. the tools: wasm-bindgen and wasm-opt are checked before anything is built, and every
-//      missing or unsuitable one is reported at once with how to get it
+//      missing or unsuitable one is reported at once with how to get it; and the fingerprint of
+//      the core's inputs is taken (scripts/build-info.mjs), before cargo reads them
 //   1. cargo build --locked --profile wasm-release --target wasm32-unknown-unknown -p b2c-core-wasm
 //   2. wasm-bindgen --target web (the CLI must be the version of the wasm-bindgen crate in
 //      Cargo.lock), and a check that the crate's exports are the ones src/glue.d.ts declares
@@ -14,6 +15,8 @@
 //   4. pkg/glue.js: the generated glue wrapped in createGlue(), one glue state per instance
 //   5. pkg/pkg-bytes.js: the module as base64 (WASM_BASE64), for the lazily imported chunk
 //   6. the sizes, printed and written to pkg/sizes.json; the build fails over the size budget
+//   7. pkg/build-info.json, last: the fingerprint of step 0, which the desktop app's Vite plugin
+//      compares with the source to refuse a production build with an out-of-date core
 //
 // Environment:
 //   CARGO              cargo to run (default: cargo on PATH)
@@ -22,7 +25,8 @@
 //   B2C_SKIP_WASM_OPT  1 skips wasm-opt (local builds where binaryen is missing or too old); the
 //                      budget is then checked on the larger, unoptimised module
 //
-// Only Node built-ins; no shell: every tool runs with an argument list.
+// Root shortcut: pnpm wasm:build. Only Node built-ins; no shell: every tool runs with an argument
+// list.
 
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -30,6 +34,13 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+
+import {
+  BUILD_INFO_FILE,
+  BuildInfoError,
+  buildInfoText,
+  computeFingerprint,
+} from './build-info.mjs';
 
 /** The size budget for the optimised module (ADR-0003: at most 2 MB after wasm-opt -Oz). */
 const SIZE_BUDGET_BYTES = 2_000_000;
@@ -325,8 +336,11 @@ function formatBytes(bytes) {
   return `${bytes.toLocaleString('en-US')} bytes`;
 }
 
-/** Steps 4–6 on the bindgen output; writes pkg/ only when the module is within the budget. */
-function writePackage(glue, raw, finalBytes, optimised, bindgenVersion) {
+/**
+ * Steps 4–7 on the bindgen output; writes pkg/ only when the module is within the budget, and
+ * build-info.json last, so a pkg/ that has one is complete.
+ */
+function writePackage(glue, raw, finalBytes, optimised, bindgenVersion, fingerprint) {
   const base64 = finalBytes.toString('base64');
   const sizes = {
     raw: raw.length,
@@ -359,6 +373,26 @@ function writePackage(glue, raw, finalBytes, optimised, bindgenVersion) {
       `export const WASM_BASE64 = '${base64}';\n`,
   );
   writeFileSync(path.join(pkgDir, 'sizes.json'), `${JSON.stringify(sizes, null, 2)}\n`);
+  writeFileSync(
+    path.join(pkgDir, BUILD_INFO_FILE),
+    buildInfoText(fingerprint, {
+      wasmBindgen: bindgenVersion,
+      wasmOpt: optimised === null ? null : optimised.version,
+    }),
+  );
+  console.log(`inputs (SHA-256):     ${fingerprint.fingerprint} (${fingerprint.files} files)`);
+}
+
+/** Step 0: the fingerprint of the core's inputs, with a BuildError when one cannot be read. */
+function fingerprintInputs() {
+  try {
+    return computeFingerprint(repoRoot);
+  } catch (error) {
+    if (error instanceof BuildInfoError) {
+      throw new BuildError(error.message, { cause: error });
+    }
+    throw error;
+  }
 }
 
 function main() {
@@ -367,13 +401,16 @@ function main() {
   try {
     const bindgenVersion = lockedWasmBindgenVersion();
     const tools = checkTools(bindgenVersion);
+    // Taken before cargo reads the sources: an edit made during the build makes the result
+    // stale instead of being recorded as built.
+    const fingerprint = fingerprintInputs();
     const built = cargoBuild();
     mkdirSync(workDir, { recursive: true });
     const { glue, wasm } = bindgen(tools.wasmBindgen, built);
     const raw = readFileSync(wasm);
     const optimised = optimise(tools.wasmOpt, wasm);
     const finalBytes = optimised === null ? raw : readFileSync(optimised.file);
-    writePackage(glue, raw, finalBytes, optimised, bindgenVersion);
+    writePackage(glue, raw, finalBytes, optimised, bindgenVersion, fingerprint);
     rmSync(workDir, { recursive: true, force: true });
   } catch (error) {
     rmSync(pkgDir, { recursive: true, force: true });

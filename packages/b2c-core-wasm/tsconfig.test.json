@@ -26,5 +26,5 @@
     "allowUnreachableCode": false,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["test", "vitest.config.ts"]
+  "include": ["test", "scripts/*.d.mts", "vitest.config.ts"]
 }

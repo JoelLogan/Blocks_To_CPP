@@ -70,7 +70,11 @@ const RELEASED_VERSION_HEADING = /^## (?!\[Unreleased\])/m;
  * path (with its anchor, if any) in them as a link from the repository root, so
  * a reference must be written in one piece, not split across strings.
  */
-const SOURCE_FILES_WITH_DOC_REFERENCES = ['apps/desktop/vite.config.ts', 'packages/b2c-core-wasm/scripts/build.mjs'];
+const SOURCE_FILES_WITH_DOC_REFERENCES = [
+  'apps/desktop/vite.config.ts',
+  'packages/b2c-core-wasm/scripts/build.mjs',
+  'packages/b2c-core-wasm/scripts/build-info.mjs',
+];
 const DOC_REFERENCE = /(?<![\w./:#-])(?:[\w.-]+\/)*[\w.-]+\.md(?:#[\w-]+)?(?![\w/])/g;
 
 /** Static assets copied verbatim into dist/assets (paths relative to src/). */

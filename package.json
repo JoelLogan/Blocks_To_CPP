@@ -9,6 +9,8 @@
   },
   "scripts": {
     "site:build": "pnpm --filter @blocks2cpp/site run build",
+    "wasm:build": "pnpm --filter @blocks2cpp/b2c-core-wasm run build",
+    "app:build": "pnpm run wasm:build && pnpm --filter @blocks2cpp/desktop run tauri build --no-bundle",
     "desktop:dev": "pnpm --filter @blocks2cpp/desktop run tauri dev",
     "desktop:build": "pnpm --filter @blocks2cpp/desktop run tauri build",
     "desktop:check": "pnpm -r --if-present run typecheck && pnpm -r --if-present run lint && pnpm -r --if-present run format:check",

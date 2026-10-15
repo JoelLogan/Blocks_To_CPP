@@ -10,7 +10,10 @@ import { afterEach } from 'vitest';
 
 import { installEventTargetReceiverShim } from './dom-shims';
 
-installEventTargetReceiverShim();
+// The build plugins' tests (vite/*.test.ts) run in Node, which has no document to correct.
+if (typeof document !== 'undefined') {
+  installEventTargetReceiverShim();
+}
 
 afterEach(() => {
   cleanup();

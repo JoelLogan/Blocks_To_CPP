@@ -20,6 +20,7 @@ const REPO_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const SOURCE_FILES = {
   'apps/desktop/vite.config.ts': '// no references\n',
   'packages/b2c-core-wasm/scripts/build.mjs': '// no references\n',
+  'packages/b2c-core-wasm/scripts/build-info.mjs': '// no references\n',
 };
 
 const scratchDirs = [];

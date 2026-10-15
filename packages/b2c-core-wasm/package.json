@@ -7,7 +7,11 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./build-info": {
+      "types": "./scripts/build-info.d.mts",
+      "default": "./scripts/build-info.mjs"
+    }
   },
   "imports": {
     "#glue": {

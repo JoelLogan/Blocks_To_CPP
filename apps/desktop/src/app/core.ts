@@ -5,8 +5,10 @@
  * plugins through `EditorContext.core()`, both backed by {@link getCore}. Nothing may keep the
  * instance: after a trap it throws `CoreTrap` on every call.
  *
- * The shell itself never loads the WebAssembly module, so the app starts (and its tests run)
- * without it.
+ * The shell itself never loads the WebAssembly module, so its tests run without it. Only a
+ * development build's start (`main.tsx`) starts the core early, to compare its catalog version
+ * with the backend's (`AppRuntimeOptions.coreCatalogVersion`); the editor then gets the same
+ * instance.
  */
 import type { CoreWasm } from '@blocks2cpp/b2c-core-wasm';
 

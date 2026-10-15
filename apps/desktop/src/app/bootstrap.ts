@@ -2,7 +2,9 @@
  * Starting the window (docs/spec/02-architecture.md §2.5.7, §2.5.3):
  *
  * 1. `app_info`: the backend's IPC version must equal the one this frontend was generated with
- *    (`IPC_VERSION`); otherwise the window shows a blocking error and nothing else runs.
+ *    (`IPC_VERSION`), and in a development build the editor's compiler core must have the
+ *    backend's block catalog version (`catalogVersion`, see `coreCatalogVersion`); otherwise the
+ *    window shows a blocking error and nothing else runs.
  * 2. `app_subscribe`, exactly once: the backend's push events. The shell itself keeps the
  *    toolchain list and the settings notices in the store; every event then goes to the event bus.
  * 3. The settings and the toolchain list, so the toolbar and the status bar are right from the
@@ -31,6 +33,12 @@ export type BootPhase =
    * answer had no usable version.
    */
   | { kind: 'versionMismatch'; frontend: number; backend: number | null }
+  /**
+   * The editor's compiler core (WebAssembly) was built with another block catalog than the
+   * backend: a core older or newer than the app, which would preview other C++ than the backend
+   * builds. `backend` is `null` when `app_info` named no catalog version.
+   */
+  | { kind: 'coreMismatch'; core: string; backend: string | null }
   /** The backend did not answer; `code` is the IPC error code or `transport`. */
   | { kind: 'failed'; code: string };
 
@@ -47,6 +55,14 @@ export interface AppRuntimeOptions {
   installBlocklyDialogs: (service: DialogService) => () => void;
   /** The window the shortcuts listen on. */
   window: Window;
+  /**
+   * Reads the block catalog version of the editor's compiler core (`version().catalog` of
+   * `@blocks2cpp/b2c-core-wasm`; reading it starts the core). When given, the start compares it
+   * with the backend's `catalogVersion` right after the IPC version, before the subscription, and
+   * a difference is the blocking `coreMismatch`. A core that cannot start does not stop the window:
+   * the editor reports that when it needs the core.
+   */
+  coreCatalogVersion?: () => Promise<string>;
   /**
    * Start without the backend: only for the Vite dev server opened in a browser, where there is
    * none. The window then has no app information and no backend events.
@@ -82,6 +98,12 @@ function versionOf(info: unknown): number | null {
   }
   const version: unknown = (info as { ipcVersion?: unknown }).ipcVersion;
   return typeof version === 'number' && Number.isSafeInteger(version) ? version : null;
+}
+
+/** The catalog version in an `app_info` answer, or `null` when it has none. */
+function catalogVersionOf(info: AppInfo): string | null {
+  const version: unknown = (info as { catalogVersion?: unknown }).catalogVersion;
+  return typeof version === 'string' ? version : null;
 }
 
 /** Creates the window's runtime; nothing happens until {@link AppRuntime.start}. */
@@ -163,6 +185,25 @@ export function createAppRuntime(options: AppRuntimeOptions): AppRuntime {
     }
   }
 
+  /**
+   * The `coreMismatch` phase when the compiler core's catalog version differs from the backend's,
+   * or `null` when it is the same, not asked for, or unknown because the core did not start.
+   */
+  async function coreMismatch(info: AppInfo): Promise<BootPhase | null> {
+    if (options.coreCatalogVersion === undefined) {
+      return null;
+    }
+    let core: string;
+    try {
+      core = await options.coreCatalogVersion();
+    } catch (error: unknown) {
+      console.error('Could not start the compiler core to compare its catalog version', error);
+      return null;
+    }
+    const backend = catalogVersionOf(info);
+    return core === backend ? null : { kind: 'coreMismatch', core, backend };
+  }
+
   /** Installs everything that runs in a ready window. */
   function install(): void {
     const shell = {
@@ -193,6 +234,12 @@ export function createAppRuntime(options: AppRuntimeOptions): AppRuntime {
     const backendVersion = versionOf(info);
     if (backendVersion !== IPC_VERSION) {
       return setPhase({ kind: 'versionMismatch', frontend: IPC_VERSION, backend: backendVersion });
+    }
+    // Before the subscription, like the IPC version: a window that shows a blocking error must not
+    // take the backend's close requests, which only the features answer.
+    const mismatch = await coreMismatch(info);
+    if (mismatch !== null) {
+      return setPhase(mismatch);
     }
     store.getState().actions.setAppInfo(info);
 
