@@ -12,9 +12,17 @@ previews
 `core/render_management.ts` keeps the blocks that wait to be drawn in a module-level
 `Set<BlockSvg>` (`rootBlocks`). `queueRender(block)` adds the block's current root. `doRenders`
 draws only the roots for which `shouldRenderRootBlock` holds (`!block.isDisposed() &&
-!block.getParent()`) and removes only the blocks it drew (`dequeueBlock`). A root that is disposed,
-or that gets a parent, before the next `doRenders` is filtered out and never removed, so the Set
-keeps it (and with it the block's SVG subtree) for good.
+!block.getParent()`) and removes only the blocks it drew (`dequeueBlock`). A root that is
+disposed before the next `doRenders` is filtered out and never removed, so the Set keeps it (and
+with it the block's SVG subtree) for good.
+
+A root that gets a parent before the next `doRenders` is filtered out too, but it does not stay:
+`RenderedConnection.connect_` queues the child after connecting it, which queues its new root, and
+when `doRenders` draws that root, `dequeueBlock` walks down through `getChildren` and deletes the
+re-parented block from `rootBlocks` as well. (Measured as below: a print queued as a root,
+connected into a repeat before the frame and disposed with its parent after it, is collected like
+a block that was never connected, 1 of 20 alive.) Only a re-parented block that is disposed,
+with its new root, before the frame stays.
 
 Disconnecting a block always queues it as a root: `RenderedConnection.disconnectInternal` calls
 `child.queueRender()` after the child has become a top block. So every block that is unplugged and
@@ -55,8 +63,8 @@ was still alive). Twenty statement insertion markers shown and hidden by
 
 ## Cause
 
-`doRenders` filters disposed (and re-parented) roots out of the list it draws, but removes from
-`rootBlocks` only what it drew:
+`doRenders` filters disposed roots out of the list it draws, but removes from `rootBlocks` only
+what it drew and the blocks below it (a re-parented root goes that way, below its new root):
 
 ```ts
 const blocks = [...rootBlocks]
@@ -70,10 +78,13 @@ for (const block of blocks) {
 
 ## Suggested fix
 
-Remove from `rootBlocks` every root that is skipped because it is disposed or has a parent (a
-re-parented root's new root is queued by the connection that gave it the parent), for example by
-dequeuing the roots that fail `shouldRenderRootBlock` in `doRenders`; or let `BlockSvg.dispose`
-remove the block from the queue.
+Remove the disposed roots that `doRenders` skips from `rootBlocks` (`rootBlocks.delete(block)`),
+for example after the drawing loop; or let `BlockSvg.dispose` remove the block from the queue.
+
+Calling `dequeueBlock` on every root that fails `shouldRenderRootBlock` before the drawing loop
+would be wrong for a re-parented root: it would also clear the dirty marks of that block and the
+blocks below it, which its new root's `renderBlock` still needs (`renderBlock` returns early for a
+block that is not dirty), so the re-parented block would not be drawn.
 
 ## Workaround
 
