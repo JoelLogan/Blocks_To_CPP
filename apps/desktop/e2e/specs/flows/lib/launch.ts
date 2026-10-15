@@ -21,7 +21,14 @@ import path from 'node:path';
 import { Builder, Capabilities, type WebDriver } from 'selenium-webdriver';
 import type { TestContext } from 'vitest';
 
-import { type App, type DialogScript, QUIT_TIMEOUT_MS, waitUntilReady } from '../../../support/app';
+import {
+  type App,
+  type DialogScript,
+  PAGE_LOAD_TIMEOUT_MS,
+  QUIT_TIMEOUT_MS,
+  SCRIPT_TIMEOUT_MS,
+  waitUntilReady,
+} from '../../../support/app';
 import {
   artifactDir,
   copyFiles,
@@ -454,7 +461,9 @@ export class FlowSession {
         .usingServer(driverProcess.url)
         .withCapabilities(capabilities)
         .build();
-      await session.manage().setTimeouts({ script: 30_000, implicit: 0, pageLoad: 60_000 });
+      await session
+        .manage()
+        .setTimeouts({ script: SCRIPT_TIMEOUT_MS, implicit: 0, pageLoad: PAGE_LOAD_TIMEOUT_MS });
     } catch (error: unknown) {
       if (session !== null) {
         await withTimeout(session.quit(), QUIT_TIMEOUT_MS, 'the session to end').catch(

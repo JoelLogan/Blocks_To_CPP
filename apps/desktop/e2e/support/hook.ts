@@ -55,15 +55,6 @@ export class HookClient {
     return this.#driver.executeScript(INVOKE, E2E_HOOK_NAME, method, args);
   }
 
-  /** Whether the hook is installed and the window has started; false while the page loads. */
-  async ready(): Promise<boolean> {
-    try {
-      return await this.call('ready');
-    } catch {
-      return false;
-    }
-  }
-
   insertBlocks(parentBlockId: string, input: string, blocks: readonly unknown[]): Promise<void> {
     return this.call('insertBlocks', parentBlockId, input, blocks);
   }
