@@ -144,7 +144,10 @@ build needs.
   install script, and every version was at least 7 days old when added (dialog 1.2.0, tabs 1.1.22,
   tooltip 1.3.0 and the primitives updated with them came out on 2026-10-05). They work with
   `freezePrototype: true` (`src/app/freeze-prototype.test.tsx` checks this under Vitest; the
-  end-to-end tests check the release build).
+  end-to-end tests check the release build). Since `react-tooltip` 1.3 an open tooltip also
+  describes its control, which already has a description with the same text, so `Hint`
+  (`src/app/ui/Hint.tsx`) leaves the control's own description out while the hint is shown and a
+  screen reader reads the text once (`Hint.test.tsx`).
 - **Test tooling** (`vitest`, `@vitest/coverage-v8`, `happy-dom`, Testing Library, `axe-core`) adds
   about 70 development-only packages; none of it reaches the app bundle.
 - **`pixelmatch` 7.2.0**, not 8.0.0 (2026-10-06): 8.0 measures a pixel's colour difference as an
