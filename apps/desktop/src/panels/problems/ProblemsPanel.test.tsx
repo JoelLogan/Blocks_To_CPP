@@ -217,9 +217,15 @@ describe('ProblemsPanel', () => {
     expect(stale.closest('[role="row"]')?.className).toContain('b2c-problems-stale');
   });
 
-  it('opens the diagnostics reference', () => {
+  it('opens the diagnostics reference, saying that it opens the web browser', () => {
     const { props } = renderPanel();
-    fireEvent.click(screen.getByRole('button', { name: 'Learn more' }));
+    const learnMore = screen.getByRole('button', {
+      name: 'Learn more',
+      description: 'Opens the diagnostics reference in your web browser',
+    });
+    expect(learnMore.title).toBe('Opens the diagnostics reference in your web browser');
+    expect(learnMore.textContent).toBe('Learn more ↗');
+    fireEvent.click(learnMore);
     expect(props.onLearnMore).toHaveBeenCalledTimes(1);
   });
 

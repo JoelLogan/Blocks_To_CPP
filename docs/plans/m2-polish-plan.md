@@ -1351,6 +1351,15 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
 | FA-15 | *Learn more* says it opens the browser; block paths start with *when program starts* | `problemItems` and `ProblemsPanel` tests |
 | S8-1 | Toolchain path in the status bar's tooltip and accessible name | StatusBar test |
 
+*Status (2026-10-15):* done, each with a test that fails without its fix.
+
+- **FA-8:** the editing session forgets `ui.selection` and `ui.hoverBlock` whenever it rebuilds or empties the canvas (a module switch, also one that waited for a drag, a reload, a closed project); the highlight tracking no longer watches the module itself. Blockly may then select a block of the new canvas by itself (it moves the focus off a disposed block that had it), and the tracking follows that as usual. Test: `session.test.ts` with the tracking attached.
+- **FA-9:** the C++ tab shows the `.cpp` of the module on the canvas (the module's place in the project's module order, as the generator writes the files) and follows the module switcher; a file picked in the tab stays until another module (or project) is shown. Tests: `panels.test.tsx`.
+- **FA-10:** the store's `build.serial` numbers each build started in the window (never reused, also across projects); the Build output tab follows a new build from its start even after the user scrolled up in the last one. Tests: `BuildOutputPanel.test.tsx`, `panels.test.tsx`, `feature.test.ts`.
+- **FA-14:** a `run_start` answered without a valid run ID is given up like a refused one: the run session is dropped, the console header goes back to what it showed before Run, and a dialog says the program could not start. Test: `feature.test.ts` (fake IPC).
+- **FA-15:** *Learn more* has a `↗` and a tooltip and accessible description, "Opens the diagnostics reference in your web browser". Block paths already started with *when program starts* (`0a64101`, W4a). Tests: `ProblemsPanel.test.tsx` (the `problemItems` tests already covered the paths).
+- **S8-1:** the status bar's toolchain item has the compiler's full path in its tooltip and accessible name, with characters that hide or reorder text shown as placeholders and a path over 1,024 characters cut. Test: `StatusBar.test.tsx`.
+
 ### Future list
 
 - **F-1 Appearance setting (System, Light, Dark).** M3, after a `[data-theme]` token refactor.

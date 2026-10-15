@@ -231,6 +231,21 @@ describe('Build', () => {
     expect(state().build.lastSuccess?.buildId).toBe(backend.builds[1]?.buildId);
   });
 
+  it('numbers every build anew, also in the next project, so its output is followed from the start', async () => {
+    expect(state().build.serial).toBe(0);
+    await run('build.start');
+    expect(state().build.serial).toBe(1);
+    await finishBuild(0);
+
+    state().actions.setProject(
+      projectFixture({ handle: `ph_${'9'.repeat(32)}`, document: documentFixture('Other') }),
+    );
+    expect(state().build.serial).toBe(0);
+    await run('build.start');
+    expect(state().build.serial).toBe(2);
+    expect(state().build.output[0]?.text).toMatch(/^Building Other/);
+  });
+
   it('builds what the canvas shows now, through the core, when the editor and core are there', async () => {
     uninstall();
     const canonical = vi.fn((): CanonicalResult => ({
@@ -604,6 +619,28 @@ describe('Run', () => {
       message: 'Too many programs are running. Stop one of them, then try again.',
     });
     expect(state().run.status).toBe('idle');
+  });
+
+  it('gives up on a run answered without a valid run ID, so the header is not left at starting', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    // The shape of a run ID, but not one (`rn_` and 32 hex digits).
+    backend.ipc.runStart.mockResolvedValueOnce({ runId: 'rn_not-a-run-id' });
+    await run('run.start');
+    await finishBuild(0);
+    expect(logged).toHaveBeenCalledWith('run_start answered without a valid run ID');
+    expect(state().run).toMatchObject({ status: 'idle', runId: null });
+    expect(dialogs.alert).toHaveBeenCalledWith({
+      title: 'The program could not start',
+      message: 'Something went wrong. The details are in the log file.',
+    });
+
+    // Run works again at once, with nothing left of the abandoned run.
+    await run('run.start');
+    expect(backend.ipc.runStart).toHaveBeenCalledTimes(2);
+    expect(backend.runs).toHaveLength(1);
+    backend.runs[0]?.send(STARTED);
+    await settle();
+    expect(state().run).toMatchObject({ status: 'running', runId: backend.runs[0]?.runId });
   });
 
   it('says why the build of a run could not start', async () => {

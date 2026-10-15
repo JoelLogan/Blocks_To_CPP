@@ -302,7 +302,9 @@ describe('the status bar', () => {
     renderApp();
     const bar = screen.getByRole('contentinfo');
 
-    expect(screen.getByTestId('status-toolchain').textContent).toBe('√g++ 15.2.0 (MSYS2 UCRT64)');
+    expect(screen.getByTestId('status-toolchain').textContent).toBe(
+      '√g++ 15.2.0 (MSYS2 UCRT64), C:\\msys64\\ucrt64\\bin\\g++.exe',
+    );
     expect(within(bar).getByText('C++20')).toBeTruthy();
     expect(screen.getByTestId('status-config').textContent).toBe('Debug');
     expect(screen.getByTestId('status-save').textContent).toMatch(/^Saved \d\d:\d\d$/);

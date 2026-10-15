@@ -13,6 +13,12 @@ export interface BuildOutputLine {
 /** The props of {@link BuildOutputPanel}. */
 export interface BuildOutputPanelProps {
   lines: readonly BuildOutputLine[];
+  /**
+   * Which build the lines belong to (the store's `build.serial`): a new value means a new build
+   * started, and the panel follows its output from the start again, even when the person had
+   * scrolled up in the last build's.
+   */
+  build?: number;
 }
 
 /** The most lines shown: the latest ones, with a note saying how many earlier ones are hidden. */
@@ -27,21 +33,26 @@ const FOLLOW_SLACK_PX = 8;
 /**
  * The Build output tab (docs/spec/04-user-interface.md §4.1, 07 §7.5.3): build progress, toolchain
  * notes and the compiler's raw text, as plain text. It follows new output while the person is at
- * the end, and stays put once they scroll up.
+ * the end, and stays put once they scroll up, until the next build starts.
  */
-export function BuildOutputPanel({ lines }: BuildOutputPanelProps) {
+export function BuildOutputPanel({ lines, build = 0 }: BuildOutputPanelProps) {
   const log = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
+  const followedBuild = useRef(build);
 
   const hidden = Math.max(0, lines.length - MAX_BUILD_OUTPUT_LINES);
   const shown = hidden > 0 ? lines.slice(hidden) : lines;
 
   useLayoutEffect(() => {
+    if (followedBuild.current !== build) {
+      followedBuild.current = build;
+      follow.current = true;
+    }
     const element = log.current;
     if (element !== null && follow.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [lines]);
+  }, [lines, build]);
 
   if (lines.length === 0) {
     return (

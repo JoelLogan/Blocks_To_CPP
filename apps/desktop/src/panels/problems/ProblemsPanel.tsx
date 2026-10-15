@@ -21,6 +21,12 @@ export type { ProblemItem } from './problems';
 /** The most characters of a compiler message shown; the rest is summarised. */
 export const MAX_RAW_DISPLAY_CHARS = 64 * 1024;
 
+/**
+ * What *Learn more* does, as its tooltip and accessible description (04 §4.4): it leaves the app
+ * for the web browser, so it says so before it is pressed; the `↗` beside it says so at a glance.
+ */
+const LEARN_MORE_DESCRIPTION = 'Opens the diagnostics reference in your web browser';
+
 /** The props of {@link ProblemsPanel}. */
 export interface ProblemsPanelProps {
   /** The live and build diagnostics, already merged. */
@@ -29,7 +35,7 @@ export interface ProblemsPanelProps {
   onActivate: (item: ProblemItem) => void;
   /** The person revealed a row's C++ compiler message. */
   onShowRaw: (item: ProblemItem) => void;
-  /** The person asked for the diagnostics reference. */
+  /** The person asked for the diagnostics reference (it opens in the web browser). */
   onLearnMore: () => void;
 }
 
@@ -50,7 +56,8 @@ interface CellPosition {
  * the last build in a sortable grid with severity (icon and word), message, module, block path and
  * code. It follows the ARIA grid pattern: one Tab stop, arrow keys between cells, Home and End,
  * Ctrl+Home and Ctrl+End, Page Up and Page Down; Enter or a click activates a row. Compiler, linker
- * and toolchain rows can reveal the original compiler text.
+ * and toolchain rows can reveal the original compiler text. *Learn more* opens the diagnostics
+ * reference in the web browser, and says so.
  */
 export function ProblemsPanel({ items, onActivate, onShowRaw, onLearnMore }: ProblemsPanelProps) {
   const [sort, setSort] = useState<ProblemSort>(DEFAULT_PROBLEM_SORT);
@@ -128,8 +135,8 @@ export function ProblemsPanel({ items, onActivate, onShowRaw, onLearnMore }: Pro
       <div className="b2c-panel-bar">
         <span data-testid="problems-summary">{problemSummary(items)}</span>
         <span className="b2c-panel-status">
-          <button type="button" onClick={onLearnMore}>
-            Learn more
+          <button type="button" title={LEARN_MORE_DESCRIPTION} onClick={onLearnMore}>
+            Learn more <span aria-hidden="true">↗</span>
           </button>
         </span>
       </div>

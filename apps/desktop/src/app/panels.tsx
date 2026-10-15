@@ -101,23 +101,72 @@ function selectFromCode(blockId: string): void {
   selectBlockFromCode(getEditorHandle(), blockId);
 }
 
+/** The position of the shown module in the project's module order, or -1 without a project. */
+function activeModuleIndex(state: AppState): number {
+  const project = state.project;
+  return project === null
+    ? -1
+    : project.document.modules.findIndex((module) => module.id === project.activeModuleId);
+}
+
+/**
+ * The path of the generated `.cpp` of the module at `index` in the project's module order, or
+ * `null` when there is none: the generator writes one source file per module, in module order,
+ * before any header (`b2c_codegen::generate`). The IDE's own units are not counted.
+ */
+export function moduleSourcePath(files: readonly GeneratedFile[], index: number): string | null {
+  if (index < 0) {
+    return null;
+  }
+  const sources = files.filter((file) => file.kind === 'source' && !isHiddenFile(file.path));
+  return sources[index]?.path ?? null;
+}
+
+/** The file picked in the C++ tab's file switcher, and the module shown when it was picked. */
+interface PickedFile {
+  readonly project: string | null;
+  readonly module: string | null;
+  readonly path: string | null;
+}
+
 /**
  * The C++ tab: the live preview's files and source map, the diagnostics in the gutter, the hovered
  * (or else the selected) block's code highlighted, and a click selecting the block that produced
- * the code. Before there is any code it shows a note. While its dock is collapsed it keeps what it
- * showed, and takes the latest once when the dock opens.
+ * the code. It shows the `.cpp` of the module on the canvas, and follows the module switcher: a
+ * file picked in the panel's own switcher stays shown until another module is. Before there is
+ * any code it shows a note. While its dock is collapsed it keeps what it showed, and takes the
+ * latest once when the dock opens.
  */
 export function ConnectedCodePanel() {
   const shown = useAppStore(codeShown);
-  const { preview, hover, selection } = useAppStoreWhileShown(shown, (state) => ({
-    preview: state.analysis.preview,
-    hover: state.ui.hoverBlock,
-    selection: state.ui.selection,
-  }));
+  const { preview, hover, selection, project, module, moduleIndex } = useAppStoreWhileShown(
+    shown,
+    (state) => ({
+      preview: state.analysis.preview,
+      hover: state.ui.hoverBlock,
+      selection: state.ui.selection,
+      project: state.project?.handle ?? null,
+      module: state.project?.activeModuleId ?? null,
+      moduleIndex: activeModuleIndex(state),
+    }),
+  );
   const inputs = useDiagnosticInputs(shown);
   const diagnostics = useMemo(() => codePanelDiagnostics(inputs), [inputs]);
-  const [activePath, setActivePath] = useState<string | null>(null);
+  const [picked, setPicked] = useState<PickedFile>({ project, module, path: null });
+  // Another module (or project) shown: its own `.cpp` again, whatever was picked before. React
+  // renders again at once with the new state, before anything is shown.
+  if (picked.project !== project || picked.module !== module) {
+    setPicked({ project, module, path: null });
+  }
+  const pickFile = useCallback(
+    (path: string) => {
+      setPicked({ project, module, path });
+    },
+    [project, module],
+  );
   const files = preview?.files ?? NO_FILES;
+  const moduleFile = useMemo(() => moduleSourcePath(files, moduleIndex), [files, moduleIndex]);
+  const activePath = picked.path ?? moduleFile;
   const hasCode = useMemo(() => files.some((file) => !isHiddenFile(file.path)), [files]);
 
   if (preview === null || !hasCode) {
@@ -127,7 +176,7 @@ export function ConnectedCodePanel() {
     <CodePanel
       files={files}
       activePath={activePath}
-      onActivePathChange={setActivePath}
+      onActivePathChange={pickFile}
       sourceMap={preview.sourceMap}
       buildable={preview.buildable}
       diagnostics={diagnostics}
@@ -271,10 +320,11 @@ export function ConnectedConsolePanel() {
   );
 }
 
-/** The Build output tab: the lines of the last build. */
+/** The Build output tab: the lines of the last build, followed from each new build's start. */
 export function ConnectedBuildOutputPanel() {
   const lines = useAppStore((state) => state.build.output);
-  return <BuildOutputPanel lines={lines} />;
+  const build = useAppStore((state) => state.build.serial);
+  return <BuildOutputPanel lines={lines} build={build} />;
 }
 
 /** The Console tab's slot: the console while a project is open, a note otherwise. */
