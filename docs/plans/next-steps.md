@@ -55,8 +55,9 @@ the same edits, so the benchmark takes no longer. 3: the owner committed the
 47 baselines (`81100ec`); both systems' visual steps compare and pass. 8:
 approved, with every other open Dependabot update and the security findings;
 done (`44fe162`..`3cf40a2`), with a new finding fixed (TM-M2-9, below). The
-pull request (10) needs a base branch first: the repository's only branch is
-`ccr-01f82d9b-v70u20`, which is also its default branch. 11, D20: Nightly
+pull request (10): at the owner's word, `main` was made at `43a1389` (the
+last commit of M1), and the pull request goes from `ccr-01f82d9b-v70u20` into
+it. 11, D20: Nightly
 was red from 2026-10-16 to 2026-10-24 (the `selection` race, fixed; one
 Windows driver race; and the benchmark gate's history); decided (A) with (D)
 and done (`f4c152c`, `9fea7cc`, `30e3549`): every complete scheduled run
