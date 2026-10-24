@@ -4,7 +4,8 @@
 #   published advisories against the actions we use (for example a pinned action
 #   version that later turns out to be vulnerable).
 # The zizmor version is pinned below. When Dependabot updates zizmor-action, bump
-# `version:` to the newest version listed in that action's support/versions file.
+# `version:` to the newest version the action has a lock file for (support/locks/,
+# where zizmor-latest.txt names it), once that release is at least 7 days old.
 name: Workflow audit
 
 on:
@@ -39,10 +40,11 @@ jobs:
           persist-credentials: false
 
       - name: Run zizmor
-        # The action runs a zizmor container image pinned by digest for the requested version.
-        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        # The action downloads the zizmor wheel for the requested version from PyPI with
+        # pip --require-hashes, against the hashes in its own support/locks/ (python3 on the runner).
+        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
         with:
-          version: 1.30.1
+          version: 1.31.1
           persona: auditor
           # Online audits read public advisories with the read-only job token.
           online-audits: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
