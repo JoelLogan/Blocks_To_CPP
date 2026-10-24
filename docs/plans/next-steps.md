@@ -1,6 +1,6 @@
 # Next steps: closing M2, then M3
 
-Status: plan, 2026-10-15. Part 1 is what remains of M2, almost all of it the
+Status: plan, 2026-10-15; updated 2026-10-24 with the owner's decisions. Part 1 is what remains of M2, almost all of it the
 owner's. Part 2 is a draft plan for M3, for review before any M3 work
 starts. Nothing in Part 2 begins until M2 is closed (or the owner says
 otherwise).
@@ -39,6 +39,12 @@ then the baselines (they expire), then the release-build work.
 | 8   | Dependabot #5 and #6                    | criterion 0.8 and rfd 0.17: say "apply" and I update the branch, adapt the code and run the dialog E2E on both systems; or keep holding                                                                                                                              | GitHub                                                                                                             | 5 min  |
 | 9   | F-8: issue tracker and upstream reports | Say when to start the labels and issues (W0-7) and to file the Blockly drafts                                                                                                                                                                                        | [`upstream/`](upstream/README.md)                                                                                  | 5 min  |
 | 10  | The default branch                      | When M2 is signed off: ask for a pull request from `ccr-01f82d9b-v70u20`; I open it, you merge                                                                                                                                                                       | GitHub                                                                                                             | 10 min |
+
+**Status (2026-10-24):** 1, D13: approved (the top handle stays). 2, D19:
+the p95 over all the edits of a run, as long as it does not slow the testing
+down. 3: the owner committed the 47 baselines (`81100ec`). 8: approved, with
+every other open Dependabot update and the security findings; the pull
+request (10) follows once that work is green. 4–7 and 9 remain.
 
 What I do with each result:
 
@@ -112,7 +118,13 @@ From the roadmap, grouped by where the work lands:
 
 ### 3.3 Decisions before M3 starts
 
-Each with a recommendation; none is made until the owner answers.
+Each with a recommendation. **Decided 2026-10-24:** the owner accepted every
+recommendation; for M3-D1, the assignments listed. M3-D3 in the owner's
+words: like any good program, a program only touches what it is given
+permission to touch or told to touch. So the generated program reads and
+writes only the files its blocks name (no support helper touches a file on
+its own), and the app touches only the open project's folder, its own
+machine folders and what the user picks in a dialog.
 
 | ID    | Question                             | Recommendation                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | ----- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
