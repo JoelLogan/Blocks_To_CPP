@@ -221,12 +221,43 @@ describe('createE2eHook', () => {
     expect(() => hook.flyoutBlockIds([null as unknown as { type: string }])).toThrow(
       'each query must be an object',
     );
-    expect(() => hook.flyoutBlockIds([{ type: '' }])).toThrow(TypeError);
+    expect(() => hook.flyoutBlockIds([{ type: '' }])).toThrow('type must be a non-empty string');
     expect(() =>
       hook.flyoutBlockIds([
         { type: 'io.print', fields: { MODE: 1 } as unknown as Record<string, string> },
       ]),
     ).toThrow('string values');
+  });
+
+  it('reads several flyout blocks in one call, with their fields', () => {
+    const editor = fakeEditor();
+    const block = (id: string, type: string, VAR: string) => ({
+      id,
+      type,
+      getFieldValue: (name: string) => (name === 'VAR' ? VAR : null),
+    });
+    const flyout = {
+      getTopBlocks: () => [block('getA', 'var.get', 'a'), block('getB', 'var.get', 'b')],
+    };
+    const workspace = { getFlyout: () => ({ getWorkspace: () => flyout }) };
+    const hook = createE2eHook(
+      deps({
+        editor: () => ({ ...editor, workspace: workspace as unknown as Blockly.WorkspaceSvg }),
+      }),
+      new ConsoleTranscript(),
+    );
+    expect(
+      hook.flyoutBlockIds([
+        { type: 'var.get', fields: { VAR: 'b' } },
+        { type: 'var.get', fields: null },
+        { type: 'var.get' },
+        { type: 'var.get', fields: { VAR: 'c' } },
+        { type: 'io.ask' },
+      ]),
+    ).toEqual(['getB', 'getA', 'getA', null, null]);
+    const most = Array.from({ length: 64 }, () => ({ type: 'var.get', fields: { VAR: 'b' } }));
+    expect(hook.flyoutBlockIds(most)).toEqual(most.map(() => 'getB'));
+    expect(hook.flyoutBlockIds([])).toEqual([]);
   });
 
   it('gives a copy of the latest User Timing durations, null for spans that have not run', () => {
