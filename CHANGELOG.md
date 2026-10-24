@@ -811,3 +811,14 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   between two calls: the new variable's getter came from the new flyout
   while the others still had their old IDs, and the test failed although
   the app was right.
+- The end-to-end flows' launcher makes a launch once more when msedgedriver
+  cannot attach to WebView2's renderer
+  (`session not created: from disconnected: unable to connect to renderer`).
+  This race failed one Windows flow in about 1,400 launches (Nightly of
+  2026-10-19) before the test began, although the app had started normally.
+  The second attempt gets a web view data folder and a driver log of its
+  own, a line on standard error says that the launch was retried and why,
+  and the launch keeps its number; when it fails too, the message names both
+  attempts. Every other start failure, and every launch through `launchApp`
+  (the exit criterion, the security tests, the canvas screenshot and the
+  benchmarks), still fails at once.

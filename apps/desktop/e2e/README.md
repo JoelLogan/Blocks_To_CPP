@@ -97,7 +97,11 @@ browser processes of the app before it, and checks that the app used it. A faile
 screenshot, the page, the console transcript, the project and the app's and the driver's logs in a
 folder named after it. When no session starts (a missing or mismatched native driver), the test
 fails as soon as `tauri-driver` exits, and its message quotes the driver's output and names the
-saved copy of its log there.
+saved copy of its log there. Only when msedgedriver cannot attach to WebView2's renderer
+(`session not created: from disconnected: unable to connect to renderer`, a race seen once in about
+1,400 Windows launches) does the flows' launcher make the launch once more, with a web view data
+folder and a driver log of its own (`webview-<launch>-retry`, `tauri-driver-<launch>-retry.log`)
+and a line on standard error; `launchApp` never retries.
 
 When a test ends, the WebDriver session is ended (which closes the app) with a time limit, then
 `tauri-driver` is stopped. On Linux `tauri-driver` does not close the app itself, so whatever the test
