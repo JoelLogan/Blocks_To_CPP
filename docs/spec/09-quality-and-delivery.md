@@ -341,8 +341,9 @@ like the Linux ones (scheduled runs since 2026-10-07,
 only reports a metric until five scheduled runs per system have kept it;
 the A/B job (`bench-ab-pr.yml`, `bench-ab.yml` and `bench-ab-run.yml`) and
 the long-task recorder came with the M2 polish wave, and the A/B job gates a
-labelled pull request at once. The visual diff only warns until a person
-commits its baselines.
+labelled pull request at once. The visual diff compares every screenshot
+with its baseline since the baselines were committed on 2026-10-24; a new
+scene only warns until its baseline is committed.
 
 ## 9.4 Documentation
 
