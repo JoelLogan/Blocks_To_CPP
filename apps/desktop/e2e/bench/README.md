@@ -205,9 +205,9 @@ python3 tools/bench-compare.py --self-test
   `webview.drag-5000.frame-p95-all` are such metrics: their samples are every edit of the run, and
   every frame of its timed drags.
 - The value is compared with the baseline, the median of the metric's values in the same unit in
-  the last 5 runs of the history (a run without the metric gives none). A metric measured another way (another statistic
-  among them) takes a new name, so its history starts afresh, as the two `p95-all` metrics' did, or
-  an entry of the kind `redefined` (below).
+  the last 5 runs of the history (a run without the metric gives none). A metric measured another
+  way (another statistic among them) takes a new name, so its history starts afresh, as the two
+  `p95-all` metrics' did, or an entry of the kind `redefined` (below).
 - A gated metric more than 10% worse is over the gate. It fails the run (exit status 1) when it was
   also over the gate in one of the 2 runs before it in the history, in 2 of the last 3 runs;
   otherwise the table says it is over the gate once, the last line names it, and the job shows a

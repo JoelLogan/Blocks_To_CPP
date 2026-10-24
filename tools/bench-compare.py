@@ -68,9 +68,9 @@ Inputs and outputs are JSON files with a format tag:
   the newest run still has 5 before it), kept between nightly runs in the
   Actions cache, the gated metrics that each of them found over the gate
   (under "over", each with a value in that run), and the acceptances already
-  applied. Version 1
-  (without "accepted") and version 2 (without "over": none of its runs
-  counts as over the gate) are still read; version 3 is written:
+  applied. Version 1 (without "accepted") and version 2 (without "over":
+  none of its runs counts as over the gate) are still read; version 3 is
+  written:
 
       {"format": "blocks2cpp/bench-history", "formatVersion": 3, "os": "linux",
        "runs": [{"run": "<run id>", "commit": "<sha>", "date": "<UTC time>",
@@ -131,10 +131,10 @@ Commands (run from anywhere; paths are taken as given):
         Checks this script against synthetic fixtures (equal, +9% and +11%
         medians, too few baselines, too few samples, malformed input, history
         updates, runs over the gate once and in 2 of the last 3 runs, a
-        regression that lasts, re-runs, version 2 histories, acceptances and redefinitions restarting a history, A/B
-        comparisons with both kinds and with skipped and failed benchmarks,
-        pooled p95 metrics and version 1 results, the criterion conversion,
-        UTF-8 output).
+        regression that lasts, re-runs, version 2 histories, acceptances and
+        redefinitions restarting a history, A/B comparisons with both kinds
+        and with skipped and failed benchmarks, pooled p95 metrics and
+        version 1 results, the criterion conversion, UTF-8 output).
 
 The output is UTF-8 on every system (a Windows console or pipe would
 otherwise take the locale's code page). Exit status: 0 when nothing regressed
