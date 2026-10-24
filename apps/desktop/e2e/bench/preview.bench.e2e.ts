@@ -4,16 +4,22 @@
  * edit adds a print with a unique text at the end of `main` through the test hook, and the page
  * clock times it until that text is in the C++ of the editor's state (bench/page.ts
  * `EDIT_SCRIPT`); the print is then deleted again with the keyboard, so every edit is made to the
- * same 1,000 blocks. Two phases of {@link EDITS} edits per sample, each sample's p95 being one
- * sample of its metric:
+ * same 1,000 blocks. Two phases of {@link EDITS} edits per sample, whose metrics preview-metrics.ts
+ * takes:
  *
- * - with the C++ panel folded, `webview.preview-1000.p95` (gated): the preview pipeline's own
- *   task, found as the long task after which the edit is in the C++: reading the canvas,
- *   `update()` in WebAssembly (N4's update, as the editor runs it), and storing the result;
- * - with the C++ panel shown, as the editor starts, `webview.edit-1000.p95` (gated): from the
- *   edit until the page has finished what it started (Blockly's re-rendering of the edited stack,
- *   the preview, the C++ panel's update; the page has then run no long task for 300 ms), less the
- *   pipeline's 50 ms debounce. After each deletion the page is left to settle, outside the timing.
+ * - with the C++ panel folded, `webview.preview-1000.p95` (gated; each sample's p95 is one sample
+ *   of it): the preview pipeline's own task, found as the long task after which the edit is in the
+ *   C++: reading the canvas, `update()` in WebAssembly (N4's update, as the editor runs it), and
+ *   storing the result;
+ * - with the C++ panel shown, as the editor starts, from the edit until the page has finished what
+ *   it started (Blockly's re-rendering of the edited stack, the preview, the C++ panel's update;
+ *   the page has then run no long task for 300 ms), less the pipeline's 50 ms debounce. After each
+ *   deletion the page is left to settle, outside the timing. `webview.edit-1000.p95-all` (gated)
+ *   is the p95 of every edit of the run, pooled (decision D19: with 10 samples, 100 edits, so a
+ *   few slow edits do not decide it); `webview.edit-1000.p95` (reported; gated before D19) takes
+ *   each sample's p95, its slowest edit, as one sample.
+ *
+ * The pooled metric is taken from the same edits, so the benchmark takes no longer.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -36,12 +42,10 @@ import {
   timedEdit,
   type TimedEdit,
 } from './interaction';
+import { EDITS, previewMetrics } from './preview-metrics';
 import { openProjectFile } from './project';
-import { benchSamples, writeMetric } from './results';
-import { median, percentile, rounded } from './stats';
-
-/** Edits per sample. */
-const EDITS = 10;
+import { benchSamples, metricValue, writeMetric } from './results';
+import { median, rounded } from './stats';
 
 /** How long opening the document, rendering it and the first preview may take. */
 const OPEN_TIMEOUT_MS = 120_000;
@@ -57,16 +61,17 @@ afterAll(() => {
   }
 });
 
-/** What {@link rounds} measured: each round's p95, and every edit with the app's spans. */
+/** What {@link rounds} measured: what was taken from each edit, and every edit with its spans. */
 interface Rounds {
-  readonly samples: number[];
+  /** What `measure` took from each edit, one list of {@link EDITS} per round (sample). */
+  readonly values: number[][];
   readonly spans: SpanTimes[];
   readonly edits: TimedEdit[];
 }
 
 /**
- * Makes `samples` rounds of {@link EDITS} edits, each deleted again, and returns each round's p95
- * of what `measure` takes from an edit, with the spans of the edits.
+ * Makes `samples` rounds of {@link EDITS} edits, each deleted again, and returns what `measure`
+ * takes from each edit, per round, with the spans of the edits.
  */
 async function rounds(
   app: App,
@@ -74,7 +79,7 @@ async function rounds(
   measure: (edit: TimedEdit) => number,
 ): Promise<Rounds> {
   const ids = new NodeIds(phase.name);
-  const result: number[] = [];
+  const result: number[][] = [];
   const spans: SpanTimes[] = [];
   const edits: TimedEdit[] = [];
   for (let round = 0; round < phase.samples; round += 1) {
@@ -92,9 +97,9 @@ async function rounds(
       edits.push(timed);
       await deleteBlock(app, timed.id, marker, phase.settleMs > 0);
     }
-    result.push(percentile(values, 95));
+    result.push(values);
   }
-  return { samples: result, spans, edits };
+  return { values: result, spans, edits };
 }
 
 describe('webview benchmark: the live preview and edits at 1,000 blocks', () => {
@@ -128,32 +133,25 @@ describe('webview benchmark: the live preview and edits at 1,000 blocks', () => 
         (timed) => timed.settledMs,
       );
 
-      const per = `p95 of ${String(EDITS)} edits per sample`;
-      writeMetric({
-        name: 'webview.preview-1000.p95',
-        unit: 'ms',
-        better: 'lower',
-        gate: true,
-        description: `Preview pipeline task (canvas, update, store) at 1,000 blocks; ${per}`,
-        samples: preview.samples,
-      });
-      writeMetric({
-        name: 'webview.edit-1000.p95',
-        unit: 'ms',
-        better: 'lower',
-        gate: true,
-        description: `Edit until the page settles (rendering, preview, C++ panel shown) less the 50 ms debounce, 1,000 blocks; ${per}`,
-        samples: edit.samples,
-      });
+      // D19: gated on the p95 of every edit of the run; each sample's p95 is still reported.
+      const metrics = previewMetrics(preview.values, edit.values);
+      writeMetric(metrics.preview);
+      writeMetric(metrics.edit);
+      writeMetric(metrics.editPerRound);
+      const previewSamples = metrics.preview.samples;
+      const editSamples = metrics.editPerRound.samples;
       process.stdout.write(
-        `At 1,000 blocks: preview task p95 median ${String(rounded(median(preview.samples), 1))} ms, ` +
-          `edit until settled p95 median ${String(rounded(median(edit.samples), 1))} ms\n` +
+        `At 1,000 blocks: preview task p95 median ${String(rounded(median(previewSamples), 1))} ms, ` +
+          `edit until settled p95 of all ${String(metrics.edit.samples.length)} edits ` +
+          `${String(rounded(metricValue(metrics.edit), 1))} ms (p95 per sample, median ` +
+          `${String(rounded(median(editSamples), 1))} ms)\n` +
           `  spans per edit, C++ panel folded (median): ${spanSummary(preview.spans)}\n` +
           `  spans per edit, C++ panel shown (median): ${spanSummary(edit.spans)}\n` +
           `  per edit, C++ panel shown (median): ${editSummary(edit.edits)}\n`,
       );
-      expect(preview.samples).toHaveLength(samples);
-      expect(edit.samples).toHaveLength(samples);
+      expect(previewSamples).toHaveLength(samples);
+      expect(editSamples).toHaveLength(samples);
+      expect(metrics.edit.samples).toHaveLength(samples * EDITS);
     },
     TEST_TIMEOUT_MS,
   );

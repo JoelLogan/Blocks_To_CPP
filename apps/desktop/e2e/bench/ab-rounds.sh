@@ -4,7 +4,7 @@
 # alternating runs, so that both builds meet the same machine state. Each benchmark runs in a
 # Vitest call of its own, which writes its results files into
 # <out>/<base|head>/round-<n>/<benchmark>/; tools/bench-compare.py ab adds up each side's samples
-# and compares the medians.
+# and compares the medians (the edits' p95-all: the p95 of each side's pooled edits).
 #
 # Usage: ab-rounds.sh <base app> <head app> <out folder> <benchmark>...
 #   <benchmark> is a benchmark file's name without ".e2e.ts" (preview.bench, select.bench, ...);
