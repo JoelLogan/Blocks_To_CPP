@@ -80,7 +80,7 @@ to the Cargo workspace.
 | `ts-rs` (`b2c-ipc`, feature `ts` only)       | 12.0.1 (2026-01-31)  | MIT               | Generates the TypeScript IPC types of `packages/ipc-types` from the Rust types (ADR-0007). Only the generation test turns the feature on, so no app build compiles it. Brings `ts-rs-macros` 12.0.1 (MIT) and `termcolor` 1.4.1 (Unlicense OR MIT)                                                                                                                                  |
 | `wasm-bindgen` (through `b2c-core-wasm`)     | 0.2.129 (2026-09-25) | MIT OR Apache-2.0 | The JavaScript glue of the WebAssembly core the editor runs (ADR-0003, ADR-0010). Pinned exactly, because the wasm-bindgen CLI that writes the glue must be the same version. Already in the lockfile through Tauri                                                                                                                                                                 |
 | `libc` (through `b2c-process`, Unix only)    | 0.2.190 (2026-10-02) | MIT OR Apache-2.0 | Resets the signal mask and dispositions in a program's process before `exec`, which `rustix` does not offer. No default features. Already in the lockfile through `tempfile` and `getrandom`                                                                                                                                                                                        |
-| `criterion` (dev, `b2c-core-wasm`)           | 0.7.0 (2025-07-25)   | Apache-2.0 OR MIT | The native pipeline benchmark (`crates/b2c-core-wasm/benches/pipeline`). No default features (no plotters, no rayon). 0.8 adds `alloca`, whose build script needs a C compiler for the Windows target of the clippy check. Brings `anes`, `cast`, `ciborium` (with `-io` and `-ll`), `criterion-plot`, `crunchy`, `either`, `half`, `itertools` 0.13, `oorandom` and `tinytemplate` |
+| `criterion` (dev, `b2c-core-wasm`)           | 0.8.2 (2026-02-04)   | Apache-2.0 OR MIT | The native pipeline benchmark (`crates/b2c-core-wasm/benches/pipeline`). No default features (no plotters, no rayon). Brings `anes`, `cast`, `ciborium` (with `-io` and `-ll`), `criterion-plot`, `crunchy`, `either`, `half`, `itertools` 0.13, `oorandom`, `tinytemplate`, and from 0.8 `alloca` 0.4.0 (MIT, compiles C; see the notes) and `page_size` 0.6.0 (MIT OR Apache-2.0) |
 
 ## Tools
 
@@ -192,6 +192,16 @@ build needs.
   Apache-2.0, and Apache-2.0) and `cfg_aliases` 0.2.2 (MIT) are listed in `Cargo.lock` only because
   `bit-vec` names them in an optional feature that nothing turns on, so they are never built
   (`cargo tree --all-features --target all -i borsh` finds nothing).
+- **`criterion` 0.8** (Dependabot's pull request #5, held since 2026-10-12 and accepted on
+  2026-10-24) varies the stack depth of each measured iteration with `alloca`, to even out
+  memory-layout effects; the benchmark API we use and the `sample.json` files that
+  `tools/bench-compare.py criterion` reads are unchanged. `alloca`'s build script compiles C for
+  the target with the `cc` crate, so the lint job's Clippy check for `x86_64-pc-windows-gnu`, whose
+  runner has no MinGW gcc, gives it clang (`CC_`, `CFLAGS_` and `AR_x86_64_pc_windows_gnu` in
+  `ci.yml`); a check links nothing. On this container, two alternating runs each of 0.7.0 and 0.8.2
+  put the gated `native.pipeline.preview` at 18.9 and 18.9 ms against 20.8 and 18.3 ms (medians),
+  within the runs' own spread, so no `accepted.json` entry was added; if the nightly history trips
+  on it, the harness change is a `redefined` entry.
 - **`notify` 8.2.0**, the newest stable release (9.0 is still a release candidate). Without
   default features it brings `inotify`, `inotify-sys`, `mio`, `walkdir`, `notify-types`,
   `bitflags` and `log` on Linux (most already in the lockfile through Tauri), and `walkdir` and

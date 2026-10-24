@@ -33,10 +33,10 @@ wasm-bindgen.workspace = true
 
 [dev-dependencies]
 # The native pipeline benchmark (benches/pipeline; docs/spec/09-quality-and-delivery.md §9.2).
-# No default features: no plotting and no rayon. Not 0.8: it adds a C build step (the
-# `alloca` crate) that the lint job's Clippy check for the Windows target cannot run
-# without a MinGW compiler.
-criterion = { version = "0.7.0", default-features = false }
+# No default features: no plotting and no rayon. 0.8 brings the `alloca` crate, whose build
+# script compiles C for the target: the lint job's Clippy check for the Windows target gives
+# it clang as the MinGW C compiler (ci.yml; CONTRIBUTING.md for a local run).
+criterion = { version = "0.8.2", default-features = false }
 proptest.workspace = true
 # Tests parse the exports' JSON and compare numbers exactly (tests/round_trip.rs);
 # with this feature serde_json parses floats with correct rounding, as the

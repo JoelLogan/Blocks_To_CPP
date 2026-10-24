@@ -95,7 +95,10 @@ export RUSTFLAGS='-D warnings'               # as in CI
 export B2C_REQUIRE_GXX=1                     # as in CI: fail, not skip, without g++
 cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
-rustup target add x86_64-pc-windows-gnu      # once, for the next line
+rustup target add x86_64-pc-windows-gnu      # once, for the next lines
+# clang compiles a build script's C for MinGW, as in CI (or install x86_64-w64-mingw32-gcc):
+export CC_x86_64_pc_windows_gnu=clang AR_x86_64_pc_windows_gnu=ar
+export CFLAGS_x86_64_pc_windows_gnu=--target=x86_64-w64-mingw32
 cargo clippy --locked --all-targets --target x86_64-pc-windows-gnu -- -D warnings
 cargo clippy --locked -p blocks2cpp-desktop --all-targets -- -D warnings
 cargo clippy --locked -p blocks2cpp-desktop --all-targets --features e2e-hooks -- -D warnings
