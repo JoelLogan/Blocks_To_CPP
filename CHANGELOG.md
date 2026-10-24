@@ -439,12 +439,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   React 19.3.1, Vitest 4.1.12, criterion 0.8 for the native benchmark,
   `pixelmatch` 8 for the visual diff (its threshold of 0.1 is now a perceptual
   colour distance, and the baselines compare as before) and other patch
-  releases, and the CodeQL, OSV-Scanner, Scorecard and zizmor actions (zizmor
-  1.31.1). Vitest 4.1.12 and `tokio` 1.53.3 fix advisories, an override moves
-  `markdown-it` (through markdownlint-cli2) to 15.0.3, and the `braces`
-  exception is gone. `happy-dom`'s advisory is a tracked exception until its
-  fix, 21.0.4, is 7 days old on 2026-10-27; Tauri 2.12.5, `wry` 0.57.1 and
-  typescript-eslint 8.72 were too new.
+  releases, ESLint 10.13 and `libc` 0.2.191, and the CodeQL, OSV-Scanner,
+  Scorecard and zizmor actions (zizmor 1.31.1). Vitest 4.1.12 and `tokio`
+  1.53.3 fix advisories, an override moves `markdown-it` (through
+  markdownlint-cli2) to 15.0.3, and the `braces` exception is gone.
+  `happy-dom`'s advisory is a tracked exception until its fix, 21.0.4, is 7
+  days old on 2026-10-27; Tauri 2.12.5, `wry` 0.57.1 and typescript-eslint
+  8.72 were too new.
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.
