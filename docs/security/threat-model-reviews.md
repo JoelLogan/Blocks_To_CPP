@@ -64,6 +64,7 @@ Checks run for this review, at `d4dfafb` unless the fix below is named:
 | Desktop workflow at `7e8fcc7` (run 38799106518): the Trusted Types trial | 48 tests on each system, no violation, policy active in all (TM-M2-4 closed) |
 | Weekly `cargo-geiger` report (runs at `205ab1d` and `9e9bd35`) | no report: the job counted every crate as failed (TM-M2-3) |
 | `cargo geiger` 0.13.0, run locally as the weekly job runs it, for `b2c-process` and `b2c-app` | reports written, exit status 1 (TM-M2-3); numbers below |
+| Dependency and advisory check of 2026-10-24 at `095e62b`: `cargo deny --all-features --locked check` with a fresh advisory database, `pnpm audit`, the plugin's `rfd` read against its GTK 3 source | `cargo deny` ok; `pnpm audit` reports only GHSA-834v-8h66-3h79 (`happy-dom`, dev only, a dated exception until its fix is old enough); the printf format of TM-M2-9 |
 
 The desktop crate (`blocks2cpp-desktop`) was read, not built, for this
 review.
@@ -542,8 +543,33 @@ Fixed at the M2 close review.
   checks `COM¹`, `lpt²` and `Com³.v2` (it failed before the fix), and the
   property test checks that no suggested name is a device name.
 
-No finding of this review is a vulnerability that a project file, a
-clipboard payload or a web page can exploit.
+**TM-M2-9 (high): a project's name could be read as a printf format on
+Linux.** Found on 2026-10-24, while the open Dependabot updates were checked;
+fixed the same day.
+
+- *What:* on Linux the dialog plugin shows message dialogs with `rfd` 0.16.0,
+  whose GTK 3 backend passes the dialog's text to
+  `gtk_message_dialog_format_secondary_text` as its printf format (its title
+  goes through a `"%s"` format and is safe). The trust dialog, which opens
+  when the user asks to trust a restricted project (`trust_grant`), names the
+  project, its folder and its libraries, all written by whoever made the
+  project, and `display_text` keeps `%`. A project named `%s%s%n` could crash
+  the app, or write to memory, as that dialog opened. The *Replace file?*
+  question named a file the user typed, the same way. The webview has no
+  dialog-plugin permission, so these two backend calls were the only paths.
+  `rfd` 0.17.2 has the same call; 0.16.1 (2026-10-22) passes the text as an
+  argument, and is under the 7-day release age until 2026-10-29. There is no
+  RUSTSEC advisory yet.
+- *Fix:* `apps/desktop/src-tauri/src/dialogs.rs` doubles every `%` in a
+  message dialog's text where `rfd` uses GTK (`plugin_message_text`), so GTK
+  shows one. A test builds the trust dialog's text for a project named
+  `%s%s%n` and checks it (it failed before the fix); a second test reads the
+  plugin's `rfd` from `Cargo.lock` and fails when it is a release not known
+  to need the doubling, so the doubling goes when the plugin moves to
+  `rfd` 0.16.1, where a doubled `%` would show as two.
+
+Apart from TM-M2-9, no finding of this review is a vulnerability that a
+project file, a clipboard payload or a web page can exploit.
 
 ### Accepted residuals
 

@@ -21,6 +21,13 @@ Windows) and the weekly run green. The last additions:
   closed;
 - `BUILDING.md` and `CONTRIBUTING.md` corrected after a run on a clean clone
   (W6-3).
+- on 2026-10-24: the owner's decisions recorded (D13, D19, M3-D1 to D7), D19
+  implemented, every open Dependabot update applied under the release-age
+  policy, the advisories fixed (one high, `happy-dom`, dev only, is a dated
+  exception until its fix is old enough), a format-string bug in the Linux
+  native dialogs fixed (TM-M2-9), and an intermittent E2E failure of the
+  `selection` flow root-caused (the test read the toolbox in three calls a
+  rebuild could fall between) and fixed.
 
 ## 2. Closing M2: the owner's part
 
@@ -42,9 +49,24 @@ then the baselines (they expire), then the release-build work.
 
 **Status (2026-10-24):** 1, D13: approved (the top handle stays). 2, D19:
 the p95 over all the edits of a run, as long as it does not slow the testing
-down. 3: the owner committed the 47 baselines (`81100ec`). 8: approved, with
-every other open Dependabot update and the security findings; the pull
-request (10) follows once that work is green. 4–7 and 9 remain.
+down; done (merged in `095e62b`): `webview.edit-1000.p95-all` is gated, from
+the same edits, so the benchmark takes no longer. 3: the owner committed the
+47 baselines (`81100ec`); both systems' visual steps compare and pass. 8:
+approved, with every other open Dependabot update and the security findings;
+done (`44fe162`..`3cf40a2`), with a new finding fixed (TM-M2-9, below). The
+pull request (10) follows once CI is green. 4–7 and 9 remain.
+
+**Dated follow-ups** (held by the 7-day release age; each is a small
+commit with its checks, no decision needed):
+
+| From       | Update                                                                                                                  | Then                                                                                                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-26 | `typescript-eslint` 8.72                                                                                                | Dependabot opens it; apply it with the next batch                                                                                                                                     |
+| 2026-10-27 | `happy-dom` 21.0.4 (fixes GHSA-834v-8h66-3h79; a major: CSS files and iframe pages no longer load by default)           | Remove the dated exception from `pnpm-workspace.yaml` and `osv-scanner.toml` (its `osv-scanner.toml` entry expires on 2026-11-03, after which OSV-Scanner reports the advisory again) |
+| 2026-10-28 | `markdownlint-cli2` 0.24 (brings `markdown-it` 15.0.3)                                                                  | Remove the `markdown-it` override, and the `smol-toml` and `katex` overrides if 0.24 no longer needs them                                                                             |
+| 2026-10-28 | Tauri 2.12.5 and the crates released with it (each once 7 days old), `@tauri-apps/cli` 2.12.4; the CodeQL action 4.39.1 | With the E2E suites on both systems                                                                                                                                                   |
+| 2026-10-29 | `rfd` 0.16.1 for the dialog plugin (`cargo update -p rfd@0.16.0 --precise 0.16.1`)                                      | Remove the `%` doubling in `dialogs.rs` and its lockfile test (TM-M2-9), and check a dialog with a `%` in the project's name on Linux                                                 |
+| 2026-10-30 | wry 0.57.1, tao 0.37.2; `zizmor-action` 0.8.0                                                                           | Dependabot opens these; apply them with the next batch                                                                                                                                |
 
 What I do with each result:
 
