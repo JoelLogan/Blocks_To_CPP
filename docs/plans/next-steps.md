@@ -73,12 +73,17 @@ commit with its checks, no decision needed):
 | 2026-10-29 | `rfd` 0.16.1 for the dialog plugin (`cargo update -p rfd@0.16.0 --precise 0.16.1`)                                      | Remove the `%` doubling in `dialogs.rs` and its lockfile test (TM-M2-9), and check a dialog with a `%` in the project's name on Linux                                                 |
 | 2026-10-30 | wry 0.57.1, tao 0.37.2; `zizmor-action` 0.8.0                                                                           | Dependabot opens these; apply them with the next batch                                                                                                                                |
 
-**Nightly follow-up** (no decision needed): the flow launcher
-(`e2e/specs/flows/lib/launch.ts`) retries a launch once when msedgedriver
-cannot connect to WebView2's renderer ("session not created … unable to
-connect to renderer"), with a new web view folder and the retry printed; it
-happened once in about 1,400 Windows launches (Nightly of 2026-10-19), before
-the test began. Needs unit tests of the retry with a fake driver.
+**Nightly follow-up** (no decision needed): done in `fe2a57b`. The flow
+launcher (`e2e/specs/flows/lib/launch.ts`) retries a launch once when
+msedgedriver cannot connect to WebView2's renderer ("session not created …
+unable to connect to renderer"), with a new web view folder and driver log
+and the retry printed; it happened once in about 1,400 Windows launches
+(Nightly of 2026-10-19), before the test began. Unit tests check which
+driver messages count (msedgedriver's and WebKitWebDriver's, also ones that
+must not), the retry itself, and the launcher with the fake driver.
+`launchApp` still fails at once: the benchmarks must not retry, and the
+security tests, the exit criterion and the canvas screenshot make about a
+dozen Windows launches a night, against some 150 in the flows.
 
 What I do with each result:
 
