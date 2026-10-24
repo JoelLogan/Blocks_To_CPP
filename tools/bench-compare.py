@@ -1808,6 +1808,20 @@ def self_test() -> int:
             0,
             "| 100.0 ms (p95) |",
         )
+        # 30 edits (a run of 3 samples), 71 to 100 ms: 95% of 30 is 28.5, so the p95 is the 29th
+        # smallest (99), not the 28th (rounded down or to even) nor the 30th.
+        thirty = [float(v) for v in range(100, 70, -1)]
+        expect(
+            "pooled p95: the nearest rank rounds up",
+            compare(_results(root / "pooled-30.json", "linux", [_pooled("m.edit", thirty)]), edits),
+            0,
+            "| `m.edit` | yes | 30 | 99.00 ms (p95) |",
+        )
+        # The nearest rank in whole numbers, as stats.ts takes it (its tests check the same rank).
+        for count in range(1, 1001):
+            if nearest_rank(tuple(float(v) for v in range(1, count + 1)), 95) != (95 * count + 99) // 100:
+                failures.append(f"nearest_rank: p95 of 1 to {count}")
+                break
         expect(
             "pooled p95: a metric under a new name starts its own history",
             compare(_results(root / "pooled-new.json", "linux", [_pooled("m.edit-all", five_slow)]), edits),
@@ -1971,6 +1985,15 @@ def self_test() -> int:
             0,
             "| `m.edit` | yes | 100.0 ms (p95 of 100) | 100.0 ms (p95 of 100) | +0.0% | ok |",
             "or the p95 of all of them where marked",
+        )
+        expect(
+            "A/B pooled p95: the base is valued at the p95 of its edits too, not their median",
+            ab(
+                edit_runs("base-slow", [100.0] * 45 + [130.0] * 5, [100.0] * 45 + [130.0] * 5),
+                edit_runs("head-slower", [100.0] * 45 + [140.0] * 5, [100.0] * 45 + [140.0] * 5),
+            ),
+            0,
+            "| `m.edit` | yes | 130.0 ms (p95 of 100) | 140.0 ms (p95 of 100) | +7.7% | ok |",
         )
         expect(
             "A/B pooled p95: slow edits beyond 5% of a side's edits regress",
