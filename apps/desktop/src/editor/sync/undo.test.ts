@@ -3,12 +3,16 @@
  * a project leaves nothing to undo, one Ctrl+Z undoes one edit completely, and undoing a delete
  * brings the block back exactly as the file had it.
  *
+ * Undo and Redo pressed right after a change, before Blockly has delivered (and recorded) it, act
+ * once it has (./undo.ts): through Blockly's keys and canvas menu and through the session, one step
+ * each, in the order they were asked for. Blockly's own items are back once the last session ends.
+ *
  * Real timers: Blockly delivers (and records) its events after an animation frame and a task.
  */
 import type { BdmBlock, BdmDocument } from '@blocks2cpp/b2c-core-wasm';
 import { B2cSymbolDeclField } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { useAppStore } from '../../app/store';
 import { documentFixture } from '../../app/testing/fixtures';
@@ -23,6 +27,7 @@ import {
   testCore,
   type TestSession,
 } from './testing';
+import { installUndoItems, UNDO_MENU_ITEM_IDS } from './undo';
 
 const core = await testCore();
 
@@ -170,5 +175,169 @@ describe.skipIf(core === null)('undo', () => {
     await settle(running);
     expect(dirty()).toBe(false);
     expect(liveTextHash()).toBe(saved);
+  });
+});
+
+/** The prints of the guessing game whose line break the tests below turn off, one per change. */
+const PRINTS = ['b004', 'b006', 'b007'] as const;
+
+/** The guessing game on a rendered canvas, settled: nothing to undo yet. */
+async function openGame(): Promise<Blockly.WorkspaceSvg> {
+  const wasm = present(core, 'core');
+  const doc = loadText(wasm, present(EXAMPLE_PROJECTS['guessing_game.b2c'], 'guessing game'));
+  const workspace = renderedWorkspace();
+  running = startSession(wasm, doc, { workspace });
+  await settle(running);
+  expect(workspace.getUndoStack()).toHaveLength(0);
+  return workspace;
+}
+
+/** One change: print `id` no longer ends with a line break. */
+function dropNewline(workspace: Blockly.Workspace, id: string): void {
+  present(workspace.getBlockById(id), id).setFieldValue('FALSE', 'NEWLINE');
+}
+
+/** Whether each of {@link PRINTS} still ends with a line break. */
+function newlines(workspace: Blockly.Workspace): boolean[] {
+  return PRINTS.map(
+    (id) => present(workspace.getBlockById(id), id).getFieldValue('NEWLINE') === 'TRUE',
+  );
+}
+
+/** Presses Ctrl (and Shift) and the key `keyCode` on the canvas; Blockly matches it by `keyCode`. */
+function pressCtrl(workspace: Blockly.WorkspaceSvg, keyCode: number, shiftKey = false): void {
+  workspace.getInjectionDiv().dispatchEvent(
+    new KeyboardEvent('keydown', {
+      keyCode,
+      ctrlKey: true,
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+/** Chooses the canvas menu's item `id`, as a click on it does. */
+function choose(workspace: Blockly.WorkspaceSvg, id: string): void {
+  const item = Blockly.ContextMenuRegistry.registry.getItem(id);
+  if (item === null || item.separator === true) {
+    throw new Error(`no menu item ${id}`);
+  }
+  item.callback(
+    { workspace, focusedNode: workspace },
+    new Event('contextmenu'),
+    new Event('click'),
+    new Blockly.utils.Coordinate(0, 0),
+  );
+}
+
+describe.skipIf(core === null)('Undo and Redo right after a change', () => {
+  const { KeyCodes } = Blockly.utils;
+
+  it('undo the change and the ones before it, in the order the keys were pressed', async () => {
+    const workspace = await openGame();
+    dropNewline(workspace, 'b004');
+    await settle(present(running, 'session'));
+    dropNewline(workspace, 'b006');
+    await settle(present(running, 'session'));
+    // Changed, and three Ctrl+Z (a held key) before Blockly has delivered the change.
+    dropNewline(workspace, 'b007');
+    pressCtrl(workspace, KeyCodes.Z);
+    pressCtrl(workspace, KeyCodes.Z);
+    pressCtrl(workspace, KeyCodes.Z);
+    await settle(present(running, 'session'));
+    expect(newlines(workspace)).toEqual([true, true, true]);
+
+    // Undone last to first, so redo puts the first change back first: Ctrl+Y redoes it,
+    // Ctrl+Shift+Z the second, and Ctrl+Z, pressed in the same go, takes the second back again.
+    pressCtrl(workspace, KeyCodes.Y);
+    pressCtrl(workspace, KeyCodes.Z, true);
+    pressCtrl(workspace, KeyCodes.Z);
+    await settle(present(running, 'session'));
+    expect(newlines(workspace)).toEqual([false, true, true]);
+  });
+
+  it('record a change made between two presses before the second acts', async () => {
+    const workspace = await openGame();
+    dropNewline(workspace, 'b004');
+    await settle(present(running, 'session'));
+    dropNewline(workspace, 'b006');
+    await settle(present(running, 'session'));
+
+    pressCtrl(workspace, KeyCodes.Z);
+    dropNewline(workspace, 'b007');
+    pressCtrl(workspace, KeyCodes.Z);
+    await settle(present(running, 'session'));
+    // The first undid the second change, the second the change made in between.
+    expect(newlines(workspace)).toEqual([false, true, true]);
+    expect(workspace.getRedoStack()).toHaveLength(1);
+  });
+
+  it('wait for the change through the session (the window’s keys, ≡ menu and banner)', async () => {
+    const workspace = await openGame();
+    const { session } = present(running, 'session');
+    dropNewline(workspace, 'b004');
+    session.undo(false);
+    await settle(present(running, 'session'));
+    expect(newlines(workspace)).toEqual([true, true, true]);
+
+    session.undo(true);
+    await settle(present(running, 'session'));
+    expect(newlines(workspace)).toEqual([false, true, true]);
+  });
+
+  it('wait for the change through the canvas menu', async () => {
+    const workspace = await openGame();
+    dropNewline(workspace, 'b004');
+    choose(workspace, UNDO_MENU_ITEM_IDS.undo);
+    await settle(present(running, 'session'));
+    expect(newlines(workspace)).toEqual([true, true, true]);
+
+    choose(workspace, UNDO_MENU_ITEM_IDS.redo);
+    await settle(present(running, 'session'));
+    expect(newlines(workspace)).toEqual([false, true, true]);
+  });
+
+  it('do nothing on a canvas disposed before they act', async () => {
+    const workspace = await openGame();
+    const undo = vi.spyOn(workspace, 'undo');
+    dropNewline(workspace, 'b004');
+    pressCtrl(workspace, KeyCodes.Z);
+    running?.dispose();
+    running = null;
+    disposeWorkspaces();
+    await eventsDelivered();
+    expect(undo).not.toHaveBeenCalled();
+  });
+});
+
+describe('Blockly’s undo items', () => {
+  const shortcuts = Blockly.ShortcutRegistry.registry;
+  const menu = Blockly.ContextMenuRegistry.registry;
+  const { UNDO, REDO } = Blockly.ShortcutItems.names;
+
+  it('are Blockly’s own again once the last install is removed', () => {
+    const own = {
+      undo: shortcuts.getRegistry()[UNDO]?.callback,
+      redo: shortcuts.getRegistry()[REDO]?.callback,
+      keys: shortcuts.getKeyCodesByShortcutName(REDO),
+      undoItem: menu.getItem(UNDO_MENU_ITEM_IDS.undo),
+      redoItem: menu.getItem(UNDO_MENU_ITEM_IDS.redo),
+    };
+    const first = installUndoItems();
+    const second = installUndoItems();
+    expect(shortcuts.getRegistry()[UNDO]?.callback).not.toBe(own.undo);
+    expect(shortcuts.getKeyCodesByShortcutName(REDO)).toEqual(own.keys);
+    expect(menu.getItem(UNDO_MENU_ITEM_IDS.redo)).not.toBe(own.redoItem);
+
+    first();
+    first();
+    expect(shortcuts.getRegistry()[REDO]?.callback).not.toBe(own.redo);
+    second();
+    expect(shortcuts.getRegistry()[UNDO]?.callback).toBe(own.undo);
+    expect(shortcuts.getRegistry()[REDO]?.callback).toBe(own.redo);
+    expect(shortcuts.getKeyCodesByShortcutName(REDO)).toEqual(own.keys);
+    expect(menu.getItem(UNDO_MENU_ITEM_IDS.undo)).toBe(own.undoItem);
+    expect(menu.getItem(UNDO_MENU_ITEM_IDS.redo)).toBe(own.redoItem);
   });
 });

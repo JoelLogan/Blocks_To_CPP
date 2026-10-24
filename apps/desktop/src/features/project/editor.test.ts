@@ -334,13 +334,18 @@ describe.skipIf(!CORE_BUILT)('the project in the block editor', () => {
       expect(dirty()).toBe(true);
     });
 
+    // Each acts once Blockly has delivered the changes before it, after the next frame.
     editor.handle.undo();
-    expect(block?.getRelativeToSurfaceXY().x).toBe(before);
+    await waitFor(() => {
+      expect(block?.getRelativeToSurfaceXY().x).toBe(before);
+    });
     await waitFor(() => {
       expect(dirty()).toBe(false);
     });
     editor.handle.redo();
-    expect(block?.getRelativeToSurfaceXY().x).toBe(before + 48);
+    await waitFor(() => {
+      expect(block?.getRelativeToSurfaceXY().x).toBe(before + 48);
+    });
     await waitFor(() => {
       expect(dirty()).toBe(true);
     });

@@ -3,8 +3,8 @@
  * §4.7): Blockly's own `copy`, `cut` and `paste` shortcuts and its *Duplicate* block menu item are
  * replaced, so that every copy and paste goes through the validated format; `Ctrl+D` duplicates;
  * the block menu gets *Cut*, *Copy* and *Paste*, and the canvas menu *Paste*. The workspace's
- * other keys of 04 §4.7 are Blockly's own and stay as they are: `Delete`, `Ctrl+Z` and `Ctrl+Y`
- * (Blockly 12 maps `Ctrl+Y` and `Ctrl+Shift+Z` to redo).
+ * other keys of 04 §4.7 are Blockly's own: `Delete`, `Ctrl+Z` and `Ctrl+Y` (Blockly 12 maps
+ * `Ctrl+Y` and `Ctrl+Shift+Z` to redo); the undo keys wait for Blockly's events (../sync/undo.ts).
  *
  * The registries are global, while each editor has its own canvas: the replacements are installed
  * when the first editor attaches and Blockly's originals (with their key mappings at that time)

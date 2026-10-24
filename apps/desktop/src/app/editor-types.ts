@@ -39,9 +39,12 @@ export interface EditorHandle {
    * without a project or when nothing changes.
    */
   updateProjectInfo(info: ProjectInfo): void;
-  /** Undoes the last change on the canvas, as `Ctrl+Z` on the canvas does; not during a drag. */
+  /**
+   * Undoes the last change on the canvas, as `Ctrl+Z` on the canvas does; not during a drag. It
+   * acts once Blockly has delivered the changes made so far, after the next animation frame.
+   */
   undo(): void;
-  /** Redoes the last undone change on the canvas; not during a drag. */
+  /** Redoes the last undone change on the canvas; not during a drag, and as {@link undo} acts. */
   redo(): void;
   /** The Blockly workspace itself. */
   workspace: Blockly.WorkspaceSvg;

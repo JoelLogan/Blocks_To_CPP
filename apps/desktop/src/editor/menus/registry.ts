@@ -9,7 +9,8 @@
  *   block), always asks first with *Cancel* as the default, and deletes all or nothing in one
  *   event group, so one Undo brings every block back.
  * - The block menu's *Delete* (`blockDelete`) keeps Blockly's action but counts the same way.
- * - *Clean up blocks*, Undo, Redo, Collapse and Expand stay Blockly's own.
+ * - *Clean up blocks*, Undo, Redo, Collapse and Expand stay Blockly's own (Undo and Redo wait for
+ *   Blockly's events: ../sync/undo.ts).
  *
  * The registry is global, while each editor has its own canvas: the changes are made when the
  * first editor attaches and Blockly's items are put back when the last one detaches. A menu goes
