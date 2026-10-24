@@ -59,11 +59,12 @@ pull request (10) needs a base branch first: the repository's only branch is
 `ccr-01f82d9b-v70u20`, which is also its default branch. 11, D20: Nightly
 was red from 2026-10-16 to 2026-10-24 (the `selection` race, fixed; one
 Windows driver race; and the benchmark gate's history); decided (A) with (D)
-and done (`f4c152c`, `9fea7cc`): every complete scheduled run enters the
-benchmark history, a gated metric fails only when it is over the gate in 2
-of the last 3 scheduled runs (the first warns), and dragging is gated on
-`webview.drag-5000.frame-p95-all`, the p95 over every frame of a run's timed
-drags, whose history starts with its first nightly run. 4–7 and 9 remain.
+and done (`f4c152c`, `9fea7cc`, `30e3549`): every complete scheduled run
+enters the benchmark history, a gated metric fails only when it is over the
+gate in 2 of the last 3 scheduled runs (the first warns), and dragging is
+gated on `webview.drag-5000.frame-p95-all`, the p95 over every frame of a
+run's timed drags, whose history starts with its first nightly run. 4–7 and
+9 remain.
 
 **Dated follow-ups** (held by the 7-day release age; each is a small
 commit with its checks, no decision needed):
