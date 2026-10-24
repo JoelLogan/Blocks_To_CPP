@@ -171,7 +171,7 @@ decision the user makes explicitly, once, per project.**
   document's security hash.
 * **The dialog itself** is raised from Rust with `tauri-plugin-dialog`'s Rust
   API; the webview has no dialog permission. It is one native message dialog
-  with the three choices as its buttons: the pinned plugin (2.8.1) supports
+  with the three choices as its buttons: the pinned plugin (2.8.3) supports
   three buttons with custom labels on both systems, so the fallback of two
   questions in turn was not needed. On Linux it is a GTK 3 dialog without the
   XDG portal, so without D-Bus. The plugin is a new dependency justified

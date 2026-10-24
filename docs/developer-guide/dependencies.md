@@ -69,9 +69,9 @@ to the Cargo workspace.
 
 | Crate                                        | Version (released)   | Licence           | Why                                                                                                                                                                                                                                                                                                                                                                                 |
 | -------------------------------------------- | -------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tauri`                                      | 2.12.1 (2026-09-30)  | Apache-2.0 OR MIT | The desktop shell ([ADR-0001](../adr/0001-desktop-shell-tauri.md))                                                                                                                                                                                                                                                                                                                  |
-| `tauri-build` (build)                        | 2.7.1 (2026-09-30)   | Apache-2.0 OR MIT | Embeds the configuration, capabilities and Windows resources                                                                                                                                                                                                                                                                                                                        |
-| `tauri-plugin-dialog`                        | 2.8.1 (2026-10-01)   | Apache-2.0 OR MIT | Native open, save and message dialogs, from Rust only (no JavaScript permission). Default features off except `gtk3`: rfd 0.16.0's GTK 3 backend on Linux, no XDG portal and no D-Bus. Brings `tauri-plugin-fs` 2.6.0 (for its `FilePath` type; the fs plugin is not registered)                                                                                                    |
+| `tauri`                                      | 2.12.4 (2026-10-14)  | Apache-2.0 OR MIT | The desktop shell ([ADR-0001](../adr/0001-desktop-shell-tauri.md))                                                                                                                                                                                                                                                                                                                  |
+| `tauri-build` (build)                        | 2.7.3 (2026-10-14)   | Apache-2.0 OR MIT | Embeds the configuration, capabilities and Windows resources. 2.7.3 replaced its own module that links the C runtime statically into Windows MSVC builds with the `static_vcruntime` crate 3.0.0 (2025-11-25; MIT OR Apache-2.0 OR Zlib, no dependencies, build time only)                                                                                                          |
+| `tauri-plugin-dialog`                        | 2.8.3 (2026-10-14)   | Apache-2.0 OR MIT | Native open, save and message dialogs, from Rust only (no JavaScript permission). Default features off except `gtk3`: rfd 0.16.0's GTK 3 backend on Linux, no XDG portal and no D-Bus. Brings `tauri-plugin-fs` 2.7.1 (for its `FilePath` type; the fs plugin is not registered)                                                                                                    |
 | `rfd` (Windows only)                         | 0.16.0               | MIT               | The Windows trust dialog with _Stay in Restricted Mode_ as its first and default button (08 §8.3.1). No default features, `common-controls-v6`; already in the lockfile through `tauri-plugin-dialog` with the same features, so no new code is compiled                                                                                                                            |
 | `tracing-subscriber`                         | 0.3.23 (2026-03-13)  | MIT               | The span registry under the app's own JSON-lines log layer. Features `registry` and `std` only: no `fmt`, ANSI, `log` bridge or `EnvFilter`                                                                                                                                                                                                                                         |
 | `notify` (through `b2c-app`)                 | 8.2.0 (2025-08-03)   | CC0-1.0           | The file watcher of open projects (05 §5.10): inotify on Linux, `ReadDirectoryChangesW` on Windows, one non-recursive watch per project folder. No default features (no macOS FSEvents). Its events only wake the backend's own 300 ms debounce and SHA-256 check                                                                                                                   |
@@ -159,25 +159,35 @@ build needs.
   Left out: `devtools` (no built-in developer tools in release builds; WebKitGTK's remote
   inspector is a separate path, see 08 §8.8), `dynamic-acl` (capabilities are fixed
   at build time), `tray-icon`, and `dbus` (unused, and it would need libdbus to build).
-- **`rfd` 0.16.0**, not 0.17: `tauri-plugin-dialog` 2.8.1 still requires `rfd` 0.16 (so do 2.8.2
-  and 2.8.3, the newest on 2026-10-15), and the Windows trust dialog uses the plugin's copy, so
-  `rfd` moves when the plugin does. On Windows it brings `windows-sys` 0.60.2, which `notify` uses
-  too.
+- **`rfd` 0.16.0**, not 0.17: `tauri-plugin-dialog` 2.8.3, the newest on 2026-10-24, still
+  requires `rfd` 0.16, and the Windows trust dialog uses the plugin's copy, so `rfd` moves when the
+  plugin does. On Windows it brings `windows-sys` 0.60.2, which `notify` uses too.
 - **`lazy_static` 1.5.0** (through `tracing-subscriber`'s `sharded-slab`): 1.5.1 was less than 7
   days old when it was added. It is old enough now (2026-10-01), but it changes no code and, being
   a transitive crate, is in no Dependabot pull request, so it waits for a later Cargo update.
+- **`proptest` 1.12** (test-only, every crate's property tests) moved to `rand` 0.10 and brings
+  `rand` 0.10.3, `rand_core` 0.10.1, `rand_xorshift` 0.5.0, `chacha20` 0.10.2, `core_detect` 1.0.0,
+  `bit-set` 0.11.1 and `bit-vec` 0.10.1 (all MIT OR Apache-2.0); `rand_chacha`, `ppv-lite86` and
+  `rand` and `rand_core` 0.9 leave the lockfile. `borsh` and `borsh-derive` 1.8.1 (MIT OR
+  Apache-2.0, and Apache-2.0) and `cfg_aliases` 0.2.2 (MIT) are listed in `Cargo.lock` only because
+  `bit-vec` names them in an optional feature that nothing turns on, so they are never built
+  (`cargo tree --all-features --target all -i borsh` finds nothing).
 - **`notify` 8.2.0**, the newest stable release (9.0 is still a release candidate). Without
   default features it brings `inotify`, `inotify-sys`, `mio`, `walkdir`, `notify-types`,
   `bitflags` and `log` on Linux (most already in the lockfile through Tauri), and `walkdir` and
   `windows-sys` 0.60 on Windows.
 - Cargo has no minimum release age, so `Cargo.lock` holds Tauri's own crates and the crates it
   brought in at their newest versions that were at least 7 days old. Keep it that way when
-  updating them, with `cargo update -p <crate> --precise <version>`. On 2026-10-15 that was still
-  `tauri` 2.12.1 with `tauri-build`, `tauri-codegen` and `tauri-macros` 2.7.1 and `tauri-plugin-fs`
-  2.6.0: `tauri` 2.12.2 and 2.12.3, the 2.7.2 releases and `tauri-plugin-fs` 2.7.0 came out on
-  2026-10-09 and 2026-10-10, and `tauri` 2.12.4 on 2026-10-14. Other crates are updated the same
-  way: `toml` 1.1.7 came with `toml_parser` 1.1.4, because `toml_parser` 1.1.5 (and `toml` 1.1.8)
-  came out on 2026-10-09. A `--precise` update can also move unrelated crates between the
-  `windows-sys` (or `syn`) versions already in the lockfile, so read the `Cargo.lock` diff and keep
-  only the intended changes. `fuzz/Cargo.lock` gets the same versions, since `cargo check --locked`
+  updating them, with `cargo update -p <crate> --precise <version>`. On 2026-10-24 that was
+  `tauri` 2.12.4 with `tauri-build`, `tauri-codegen` and `tauri-macros` 2.7.3, `tauri-runtime` and
+  `tauri-runtime-wry` 2.12.2, `tauri-utils` 2.10.2 and `tauri-plugin-fs` 2.7.1 (all 2026-10-14):
+  `tauri` 2.12.5 with the 2.7.4 crates and `tauri-runtime-wry` 2.12.3 came out on 2026-10-21, and
+  `wry` 0.57.1 and `tao` 0.37.2 on 2026-10-23, so `wry` 0.57.0 and `tao` 0.37.1 stay. A plain
+  `cargo update -p tauri --precise 2.12.4` also takes `tauri-codegen` and `tauri-macros` 2.7.4 and
+  `tauri-runtime-wry` 2.12.3, which are set back with `--precise` too; `tauri` 2.12.4 needs
+  `swift-rs` 1.0.9 (2026-10-10, macOS only). Other crates are updated the same way: `tokio` is on
+  1.53.3 (2026-10-13), which fixes RUSTSEC-2026-0386, because 1.54.0 was yanked and 1.54.1 came
+  out on 2026-10-21. A `--precise` update can also move unrelated crates between the `windows-sys`
+  (or `syn`) versions already in the lockfile, so read the `Cargo.lock` diff and keep only the
+  intended changes. `fuzz/Cargo.lock` gets the same versions, since `cargo check --locked`
   of the fuzz targets fails once the workspace asks for a newer one.

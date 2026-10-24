@@ -31,10 +31,10 @@ b2c-app = { path = "crates/b2c-app" }
 
 # Third-party crates. Every addition needs a justification in the PR (spec §8.9).
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
-toml = { version = "1.1.7", default-features = false, features = ["parse", "serde", "std"] }
+serde_json = "1.0.154"
+toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
 thiserror = "2.0.21"
-sha2 = "0.11.0"
+sha2 = "0.11.1"
 # OS CSPRNG for the opaque IPC IDs (b2c-ipc); already in the lockfile through tempfile.
 getrandom = "0.4.3"
 # TypeScript bindings for the IPC types (b2c-ipc, feature `ts`, never in app builds).
@@ -47,7 +47,7 @@ tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
 # The desktop app's native open, save and trust dialogs, called from Rust only: the webview gets no
 # dialog permission (08 §8.8). GTK 3 on Linux through rfd, never the XDG portal (no D-Bus).
-tauri-plugin-dialog = { version = "2.8.1", default-features = false, features = ["gtk3"] }
+tauri-plugin-dialog = { version = "2.8.3", default-features = false, features = ["gtk3"] }
 clap ={ version = "4.6.7", features = ["derive"] }
 tempfile = "3.27.0"
 rustix = { version = "1.1.5", features = ["process"] }
@@ -72,7 +72,7 @@ windows-sys = { version = "0.61.2", features = [
 notify = { version = "8.2.0", default-features = false }
 
 # Test-only.
-proptest = "1.11.0"
+proptest = "1.12.0"
 insta = "1.49.0"
 regex = "1.13.1" # golden tests: outputs that vary between runs (e.g. random numbers)
 
