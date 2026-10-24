@@ -133,9 +133,11 @@ describe('the threshold on the committed baselines', () => {
   });
 
   it.each(baselines)('ignores rendering noise in %s', (_name, baseline) => {
-    // Each channel ±3 (a fixed pattern), and the whole image 10 brighter.
+    // Every channel of every pixel 3 up or down (a fixed pattern: bit `channel` of the pixel's
+    // index picks the sign, so each run of 8 pixels has all 8 combinations and neighbours differ),
+    // and the whole image 10 brighter.
     const noisy = changed(baseline, (rgb, index) =>
-      rgb.map((value, channel) => value + (((index * 7 + channel * 3) % 7) - 3)),
+      rgb.map((value, channel) => value + ((index >> channel) % 2 === 1 ? 3 : -3)),
     );
     expect(compareScreenshots(baseline, noisy).diffPixels).toBe(0);
     const brighter = changed(baseline, (rgb) => rgb.map((value) => value + 10));
