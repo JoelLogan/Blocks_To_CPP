@@ -14,8 +14,9 @@
 #   pipeline and, through the E2E harness, cold start, the preview and edits at 1,000 blocks,
 #   selecting blocks at 1,000 blocks, the guessing game's selections and edits, a program's
 #   output in the console, and dragging in a 5,000-block workspace. tools/bench-compare.py
-#   compares each metric's median (for webview.edit-1000.p95-all, the p95 of all the run's edits)
-#   with the baseline (the last 5 scheduled runs on this system, kept in the Actions cache). A
+#   compares each metric's median (for webview.edit-1000.p95-all and
+#   webview.drag-5000.frame-p95-all, the p95 of all the run's edits or frame times) with the
+#   baseline (the last 5 scheduled runs on this system, kept in the Actions cache). A
 #   gated metric more than 10% worse is over the gate: it fails when it was also over the gate in
 #   one of the 2 scheduled runs before (2 of the last 3), and otherwise only warns; until 5 runs
 #   are kept it only reports. Every complete scheduled run is kept, also one that failed, so the
@@ -773,12 +774,13 @@ jobs:
   # The benchmarks with their 10% regression gate (docs/spec/09-quality-and-delivery.md §9.2,
   # apps/desktop/e2e/bench/README.md): the native pipeline (criterion) first, while the runner is
   # quiet, then the webview benchmarks in the app under test. tools/bench-compare.py compares each
-  # metric's median (the edits' pooled p95 for webview.edit-1000.p95-all) with the history of this
-  # system (the last 5 scheduled runs, kept in the Actions cache), and a gated metric fails when it
-  # is more than 10% worse in 2 of the last 3 scheduled runs (the first warns). Every complete
-  # scheduled run is added to the history, also one that failed, with the metrics it found over
-  # the gate: the hosted runners' speed varies from night to night, and a history of only the runs
-  # that passed stayed at the fast ones (D20 in docs/plans/m2-polish-plan.md).
+  # metric's median (the pooled p95 of the edits and of the drag's frame times for the two p95-all
+  # metrics) with the history of this system (the last 5 scheduled runs, kept in the Actions
+  # cache), and a gated metric fails when it is more than 10% worse in 2 of the last 3 scheduled
+  # runs (the first warns). Every complete scheduled run is added to the history, also one that
+  # failed, with the metrics it found over the gate: the hosted runners' speed varies from night to
+  # night, and a history of only the runs that passed stayed at the fast ones (D20 in
+  # docs/plans/m2-polish-plan.md).
   bench:
     name: Benchmarks (${{ matrix.os }})
     needs: e2e-app

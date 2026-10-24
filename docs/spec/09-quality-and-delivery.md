@@ -187,9 +187,15 @@ Details of each level as M2 sets them up:
   module. Through the E2E harness, the webview benchmarks measure cold start
   to the editor's readiness marker, the p95 of the preview pipeline's task at
   1,000 blocks (reading the canvas, `update()` in WebAssembly and storing
-  the result, found by an in-page heartbeat) and the p95 frame time while
-  dragging in a 5,000-block workspace (one sample is a drag away and
-  back). The edit benchmark
+  the result, found by an in-page heartbeat) and the frame times while
+  dragging in a 5,000-block workspace: the gated metric is the p95 over
+  every frame of a run's timed drags away and back (about 1,200 in a
+  nightly run), and the p95 of each drag away and back is reported. The
+  pooled metric (decision D20) has a name of its own,
+  `webview.drag-5000.frame-p95-all`, so its nightly history starts empty
+  with its first run and needs no `accepted.json` entry; it is reported
+  until it has 5 baselines, and the per-pair metric's history goes on as a
+  report. The edit benchmark
   includes Blockly's rendering with the C++ panel open (from an edit until
   the page has finished what it started); its gated metric is the p95 over
   every edit of a run (100 in a nightly run), so that a few slow edits do
@@ -202,8 +208,9 @@ Details of each level as M2 sets them up:
   seconds there and may take 2 minutes); and, on
   the guessing game, the longest task after a selection and after an edit
   is reported. Every timing is taken inside the page, never across
-  WebDriver. A run takes the median of at least 10 samples (for the edits,
-  the p95 of all of them) and compares it with the baseline, the median of
+  WebDriver. A run takes the median of at least 10 samples (for the edits
+  and the drag's frames, the p95 of all of them) and compares it with the
+  baseline, the median of
   the last 5 scheduled nightly runs on the default branch for the same
   system, kept in the Actions cache per system (`tools/bench-compare.py`).
   A gated metric more than 10% worse is over the gate; it fails when it was
@@ -232,8 +239,9 @@ Details of each level as M2 sets them up:
     its pull request (`bench-ab-pr.yml`): the head (the pull request merged
     into its base branch) and the base (that branch) are built and measured
     in alternating runs on one runner, at least 10 samples each, and the
-    head's medians are compared with the base's at the same 10% (the edits'
-    p95 over all of each side's edits, its runs pooled). By hand
+    head's medians are compared with the base's at the same 10% (for the
+    edits and the drag's frames, the p95 over all of each side's edits or
+    frames, its runs pooled). By hand
     (`bench-ab.yml`), the job measures the commit it runs on against one of
     that commit's ancestors, and nothing else (§9.3). Each benchmark runs
     on its own: one that the base's build cannot run (its E2E hook lacks a

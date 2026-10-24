@@ -5,15 +5,16 @@
 # the chosen webview benchmarks of the head's checkout against both builds, in alternating runs
 # (apps/desktop/e2e/bench/ab-rounds.sh: base, head, head, base, ...; 10 samples per side; each
 # benchmark in a Vitest call of its own), and compare the medians at the 10% threshold
-# (tools/bench-compare.py ab; for webview.edit-1000.p95-all, the p95 of each side's edits, pooled
-# over its runs). A gated metric more than 10% worse fails, unless the head's
-# apps/desktop/e2e/bench/accepted.json accepts it as an intended slowdown (kind "accepted") and
-# the base's does not; a redefinition never waives an A/B difference, since the head's benchmarks
-# measure both builds. A benchmark the base build cannot run (its end-to-end hook lacks a method
-# the benchmark calls) is skipped, and one that fails is left out of the comparison: both are
-# listed in the summary, and only a benchmark that failed on the head fails the job. A run that left
-# a benchmark out ends "Not conclusive" (with a warning annotation): it says nothing about that
-# benchmark's metrics, so it does not count for a merge rule that needs them.
+# (tools/bench-compare.py ab; for webview.edit-1000.p95-all and webview.drag-5000.frame-p95-all,
+# the p95 of each side's edits or frame times, pooled over its runs). A gated metric more than 10%
+# worse fails, unless the head's apps/desktop/e2e/bench/accepted.json accepts it as an intended
+# slowdown (kind "accepted") and the base's does not; a redefinition never waives an A/B
+# difference, since the head's benchmarks measure both builds. A benchmark the base build cannot
+# run (its end-to-end hook lacks a method the benchmark calls) is skipped, and one that fails is
+# left out of the comparison: both are listed in the summary, and only a benchmark that failed on
+# the head fails the job. A run that left a benchmark out ends "Not conclusive" (with a warning
+# annotation): it says nothing about that benchmark's metrics, so it does not count for a merge
+# rule that needs them.
 #
 # What runs here (the trust boundary): these jobs build and run the code of both commits, so a
 # caller may pass only commits its own run may execute.

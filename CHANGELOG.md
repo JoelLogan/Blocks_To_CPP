@@ -521,6 +521,16 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   regression that lasts fails 2 or 3 nights and then becomes the baseline.
   The history file is format version 3, which lists the metrics each run
   found over the gate; versions 1 and 2 are still read.
+- The drag benchmark is gated on `webview.drag-5000.frame-p95-all`, the p95
+  over every frame time of a run's timed pairs of drags (about 1,200 in a
+  nightly run; an A/B run pools each side's frames), instead of the median
+  of each pair's p95, which sat on the drag's starting frames and near
+  multiples of the frame interval and stepped from about 36 to about 49 ms
+  on Linux at an unchanged commit (decision D20). `webview.drag-5000.frame-p95`
+  is still reported, ungated. The new metric has a name of its own, so its
+  nightly history starts with its first run and needs no `accepted.json`
+  entry. It comes from the frames the benchmark already records, so the
+  benchmark takes no longer.
 - End-to-end harness: the window gets 60 s to start, as long as a page load
   may take, and a timeout says how far the start got (the page never loaded,
   it loaded too late, or the app never became ready). End-to-end builds keep

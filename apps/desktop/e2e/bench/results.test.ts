@@ -10,6 +10,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { REPOSITORY_ROOT } from '../support/env';
+import { dragMetrics } from './drag-metrics';
 import {
   type BenchMetric,
   benchOffset,
@@ -290,6 +291,36 @@ describe('resultsJson and writeMetric', () => {
         runs: { medians: Record<string, { value: number }> }[];
       };
       expect(kept.runs[0]?.medians['webview.edit-1000.p95-all']?.value).toBe(metricValue(pooled));
+    },
+  );
+
+  it.skipIf(!python)(
+    'produces a drag run’s 1,200 frame times, which tools/bench-compare.py reads whole',
+    () => {
+      // The warm-up pair and 10 timed pairs of 120 frame times, as a page at 60 Hz gives them.
+      const pairs = Array.from({ length: 11 }, (_, pair) =>
+        Array.from({ length: 120 }, (_, frame) => 16.667 + ((pair * 120 + frame) % 37) * 0.5),
+      );
+      const { frames } = dragMetrics(pairs);
+      const folder = tempFolder();
+      const file = writeMetric(frames, folder, 'linux');
+      const run = spawnSync(
+        'python3',
+        [
+          path.join(REPOSITORY_ROOT, 'tools', 'bench-compare.py'),
+          'compare',
+          '--os',
+          'linux',
+          '--results',
+          file,
+        ],
+        { encoding: 'utf8' },
+      );
+      expect(run.stderr).toBe('');
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain(
+        `| \`webview.drag-5000.frame-p95-all\` | yes | 1200 | ${metricValue(frames).toFixed(2)} ms (p95) |`,
+      );
     },
   );
 });

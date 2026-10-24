@@ -30,7 +30,8 @@ on:
           The benchmarks, separated by spaces or commas: preview (webview.preview-1000.p95,
           webview.edit-1000.p95-all, and webview.edit-1000.p95 reported), select
           (webview.select-1000.max-task), guessing (the guessing game's select and edit), console
-          (webview.console-200000.run), cold-start, drag (webview.drag-5000.frame-p95)
+          (webview.console-200000.run), cold-start, drag (webview.drag-5000.frame-p95-all, and
+          webview.drag-5000.frame-p95 reported)
         type: string
         default: preview select guessing console drag
       systems:
