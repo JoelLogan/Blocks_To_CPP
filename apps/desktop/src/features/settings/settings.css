@@ -1,0 +1,31 @@
+/*
+ * The Settings page (docs/spec/04-user-interface.md §4.12) and the window banner about settings
+ * that were reset. The shared page frame is in page/page.css.
+ */
+
+.settings-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--b2c-border);
+  background: var(--b2c-warning-bg);
+  color: var(--b2c-warning-text);
+}
+
+.settings-banner-glyph {
+  flex: none;
+  font-weight: 700;
+}
+
+.settings-banner-text {
+  flex: 1 1 320px;
+  margin: 0;
+}
+
+.settings-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

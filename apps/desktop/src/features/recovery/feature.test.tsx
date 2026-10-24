@@ -1,0 +1,216 @@
+/**
+ * Installing the recovery feature: it reads the offered snapshots at start-up, puts its offer on
+ * the start page through `registerStartPageSection`, runs autosave against the window's `blur`,
+ * and takes all of that away again when uninstalled.
+ */
+import type { CanonicalResult, CoreWasm } from '@blocks2cpp/b2c-core-wasm';
+import { act, render, screen } from '@testing-library/react';
+import type { ComponentType } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { type FeatureContext, installAll } from '../../app/features';
+import { useAppStore } from '../../app/store';
+import { documentFixture, projectFixture } from '../../app/testing/fixtures';
+import { AUTOSAVE_INTERVAL_MS } from './autosave';
+import {
+  createRecoveryFeature,
+  installRecoveryFeature,
+  RECOVERY_SECTION_ID,
+  RECOVERY_SECTION_ORDER,
+  recoveryFeature,
+  type RegisterStartPageSection,
+} from './feature';
+import { createHarness, HANDLE_A, type Harness, projectQueue, snapshotInfo } from './testing';
+
+interface Section {
+  id: string;
+  component: ComponentType;
+  order: number | undefined;
+}
+
+let harness: Harness;
+let sections: Section[];
+let register: RegisterStartPageSection;
+
+/**
+ * The harness's feature context with a stand-in compiler core whose canonical text of a document
+ * is its JSON text: what autosave writes snapshots with.
+ */
+function withTextCore(): FeatureContext {
+  const core = {
+    canonical: (json: string): CanonicalResult => ({
+      ok: true,
+      text: json,
+      hash: 'a'.repeat(64),
+      textHash: json,
+      diagnostics: [],
+    }),
+  } as unknown as CoreWasm;
+  return { ...harness.ctx, core: () => core };
+}
+
+beforeEach(() => {
+  harness = createHarness();
+  sections = [];
+  register = vi.fn((id: string, component: ComponentType, options?: { order?: number }) => {
+    const section = { id, component, order: options?.order };
+    sections.push(section);
+    return () => {
+      sections = sections.filter((candidate) => candidate !== section);
+    };
+  });
+});
+
+afterEach(() => {
+  harness.dispose();
+  vi.useRealTimers();
+});
+
+describe('the recovery feature', () => {
+  it('lists the snapshots at start-up and offers them on the start page', async () => {
+    harness.ipc.recoveryList.mockResolvedValue({ snapshots: [snapshotInfo(1)] });
+    const feature = installRecoveryFeature(harness.ctx, {
+      project: projectQueue(harness),
+      registerStartPageSection: register,
+      window: null,
+    });
+    expect(harness.ipc.recoveryList).toHaveBeenCalledTimes(1);
+    expect(sections.map(({ id, order }) => [id, order])).toEqual([
+      [RECOVERY_SECTION_ID, RECOVERY_SECTION_ORDER],
+    ]);
+    const Section = sections[0]?.component;
+    if (Section === undefined) {
+      throw new Error('no section');
+    }
+    render(<Section />);
+    expect(await screen.findByRole('button', { name: 'Restore “Project 1”' })).toBeTruthy();
+
+    feature.uninstall();
+    feature.uninstall();
+    expect(sections).toEqual([]);
+  });
+
+  it('writes a snapshot when the window loses focus, until it is uninstalled', async () => {
+    const target = new EventTarget();
+    const feature = installRecoveryFeature(withTextCore(), {
+      project: projectQueue(harness),
+      registerStartPageSection: register,
+      window: target,
+    });
+    useAppStore
+      .getState()
+      .actions.setProject(
+        projectFixture({ handle: HANDLE_A, dirty: true, document: documentFixture('A 1') }),
+      );
+    target.dispatchEvent(new Event('blur'));
+    await vi.waitFor(() => {
+      expect(harness.ipc.recoverySave).toHaveBeenCalledWith({
+        handle: HANDLE_A,
+        document: JSON.stringify(documentFixture('A 1')),
+      });
+    });
+
+    feature.uninstall();
+    useAppStore.getState().actions.updateProject({ document: documentFixture('A 2') });
+    target.dispatchEvent(new Event('blur'));
+    await act(() => Promise.resolve());
+    expect(harness.ipc.recoverySave).toHaveBeenCalledTimes(1);
+  });
+
+  it('autosaves with the interval it is given', async () => {
+    vi.useFakeTimers();
+    const feature = installRecoveryFeature(withTextCore(), {
+      project: projectQueue(harness),
+      registerStartPageSection: register,
+      window: null,
+      intervalMs: 1000,
+    });
+    useAppStore.getState().actions.setProject(projectFixture({ handle: HANDLE_A, dirty: true }));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(harness.ipc.recoverySave).toHaveBeenCalledTimes(1);
+    feature.uninstall();
+    expect(AUTOSAVE_INTERVAL_MS).toBe(30_000);
+  });
+
+  it('listens to the app window by default', () => {
+    const add = vi.spyOn(window, 'addEventListener');
+    const remove = vi.spyOn(window, 'removeEventListener');
+    const feature = installRecoveryFeature(harness.ctx, {
+      registerStartPageSection: register,
+      project: projectQueue(harness),
+    });
+    expect(add).toHaveBeenCalledWith('blur', expect.any(Function));
+    feature.uninstall();
+    expect(remove).toHaveBeenCalledWith('blur', expect.any(Function));
+  });
+
+  it('works as a Feature, and says so when it has no start page or project lifecycle', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const project = projectQueue(harness);
+    const uninstall = installAll(
+      [createRecoveryFeature({ registerStartPageSection: register, window: null, project })],
+      harness.ctx,
+    );
+    expect(sections).toHaveLength(1);
+    uninstall();
+    expect(sections).toHaveLength(0);
+    expect(error).not.toHaveBeenCalled();
+
+    const autosaveOnly = installAll([recoveryFeature], harness.ctx);
+    expect(error).toHaveBeenCalledWith(
+      'The recovery feature has no start page section; unsaved work is not offered',
+    );
+    expect(error).toHaveBeenCalledWith(
+      'The recovery feature has no project lifecycle; unsaved work cannot be restored',
+    );
+    autosaveOnly();
+  });
+
+  it('makes saves wait for a snapshot being written, and pauses autosave while one runs', async () => {
+    let saving = false;
+    const barriers: (() => Promise<void>)[] = [];
+    const removed = vi.fn();
+    const project = {
+      replaceWith: vi.fn(() => Promise.resolve(false)),
+      reloadWith: vi.fn(() => Promise.resolve(false)),
+      isSaving: () => saving,
+      addSaveBarrier: (wait: () => Promise<void>) => {
+        barriers.push(wait);
+        return removed;
+      },
+    };
+    let written: () => void = () => undefined;
+    harness.ipc.recoverySave.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          written = () => {
+            resolve({});
+          };
+        }),
+    );
+    const feature = installRecoveryFeature(withTextCore(), { window: null, project });
+    useAppStore.getState().actions.setProject(projectFixture({ handle: HANDLE_A, dirty: true }));
+    expect(barriers).toHaveLength(1);
+
+    // A snapshot is being written: the save's barrier waits for it.
+    void feature.autosave.snapshotNow();
+    let passed = false;
+    const barrier = barriers[0]?.().then(() => {
+      passed = true;
+    });
+    await Promise.resolve();
+    expect(passed).toBe(false);
+    written();
+    await barrier;
+    expect(passed).toBe(true);
+
+    // While the save runs, no snapshot starts.
+    saving = true;
+    useAppStore.getState().actions.updateProject({ document: documentFixture('Edited') });
+    await feature.autosave.snapshotNow();
+    expect(harness.ipc.recoverySave).toHaveBeenCalledTimes(1);
+
+    feature.uninstall();
+    expect(removed).toHaveBeenCalledOnce();
+  });
+});

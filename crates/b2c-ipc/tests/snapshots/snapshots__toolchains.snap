@@ -1,0 +1,58 @@
+---
+source: crates/b2c-ipc/tests/snapshots.rs
+expression: render(&values)
+---
+--- probed
+{
+  "capabilities": {
+    "sanitizers": true,
+    "sarif": true,
+    "standards": [
+      "c++17",
+      "c++20",
+      "c++23"
+    ],
+    "stdFormat": true
+  },
+  "displayPath": "/usr/bin/g++-13",
+  "flavor": null,
+  "id": "tc_0123456789abcdef",
+  "problems": [],
+  "selected": true,
+  "source": "path",
+  "target": "x86_64-linux-gnu",
+  "usable": true,
+  "version": "13.3.0"
+}
+--- unusable
+{
+  "capabilities": {
+    "sanitizers": false,
+    "sarif": false,
+    "standards": [
+      "c++17"
+    ],
+    "stdFormat": false
+  },
+  "displayPath": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+  "flavor": "MSYS2 UCRT64",
+  "id": "tc_fedcba9876543210",
+  "problems": [
+    {
+      "code": "B2C-T1004",
+      "message": "This compiler is too old: Blocks2Cpp needs GCC 11 or later.",
+      "primary": {
+        "part": {
+          "kind": "whole"
+        }
+      },
+      "severity": "error",
+      "source": "toolchain"
+    }
+  ],
+  "selected": false,
+  "source": "wellKnown",
+  "target": "x86_64-w64-mingw32",
+  "usable": false,
+  "version": "9.4.0"
+}

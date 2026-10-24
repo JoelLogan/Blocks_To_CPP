@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-project-reload"
+description = "Enables the project_reload command without any pre-configured scope."
+commands.allow = ["project_reload"]
+
+[[permission]]
+identifier = "deny-project-reload"
+description = "Denies the project_reload command without any pre-configured scope."
+commands.deny = ["project_reload"]

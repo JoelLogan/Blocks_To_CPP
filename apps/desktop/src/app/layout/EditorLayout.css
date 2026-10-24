@@ -1,0 +1,9 @@
+/*
+ * The *Resize the toolbox* splitter (EditorLayout.tsx, docs/spec/04-user-interface.md §4.1): a
+ * bar like the docks' (app.css `.splitter`), laid over the canvas's left edge just right of the
+ * toolbox's flyout. Its left, top and bottom come from the flyout's layout. Drawn after the canvas
+ * and below Blockly's own layers, so a dragged block passes over it.
+ */
+.splitter-toolbox {
+  position: absolute;
+}

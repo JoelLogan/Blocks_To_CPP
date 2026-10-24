@@ -1,0 +1,623 @@
+/**
+ * The editing session with a stand-in core: what changes start the pipeline, the dirty state,
+ * switching modules, closing the project, selecting blocks and capturing the viewport for saving.
+ */
+import type {
+  BdmBlock,
+  BdmDocument,
+  CanonicalResult,
+  CoreWasm,
+  UpdateResult,
+} from '@blocks2cpp/b2c-core-wasm';
+import * as Blockly from 'blockly/core';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { getCore, setCore } from '../../app/core';
+import { resetAppStore, useAppStore } from '../../app/store';
+import {
+  diagnosticFixture,
+  documentFixture,
+  previewFixture,
+  projectFixture,
+} from '../../app/testing/fixtures';
+import { attachHighlightTracking } from '../highlight/tracking';
+import { createCoreHost } from '../preview/coreHost';
+import { SyncError } from './errors';
+import { EditorSession, FIRST_VIEW_MARGIN, type SessionHooks } from './session';
+import {
+  disposeWorkspaces,
+  headlessWorkspace,
+  present,
+  renderedWorkspace,
+  setViewSize,
+} from './testing';
+import { viewStateOf } from './viewport';
+
+/** The block whose document the stand-in core's loader refuses, as one nested too deeply. */
+const TOO_DEEP = 'too_deep';
+
+/** The loader's refusal of a document with {@link TOO_DEEP}. */
+const TOO_DEEP_PROBLEM = diagnosticFixture({ code: 'B2C-E0104', source: 'loader' });
+
+/** Whether the stand-in core's loader refuses a document's JSON. */
+function refused(json: string): boolean {
+  return json.includes(`"${TOO_DEEP}"`);
+}
+
+/**
+ * A stand-in core: the canonical text is the JSON itself; previews are empty. Its loader refuses a
+ * document with the block {@link TOO_DEEP}.
+ */
+function stubCore(): CoreWasm {
+  const unused = (): never => {
+    throw new Error('unused');
+  };
+  return {
+    version: unused,
+    load: unused,
+    canonical: (json: string): CanonicalResult =>
+      refused(json)
+        ? { ok: false, diagnostics: [TOO_DEEP_PROBLEM] }
+        : { ok: true, text: json, hash: 'c'.repeat(64), textHash: json, diagnostics: [] },
+    // The JSON text stands in for the hash of the canonical text: equal exactly when it is.
+    update: (json: string): UpdateResult =>
+      refused(json)
+        ? {
+            ...previewFixture(),
+            stage: 'load',
+            diagnostics: [TOO_DEEP_PROBLEM],
+            buildable: false,
+            contentHash: null,
+            textHash: null,
+          }
+        : { ...previewFixture(), textHash: json },
+    symbolsInScope: () => [],
+    conversionTable: unused,
+    clipboardMake: unused,
+    pastePrepare: unused,
+  };
+}
+
+const forever = (id: string): BdmBlock => ({ id, type: 'control.forever', v: 1 });
+
+/** Two modules: main with a loose block, util with another. */
+function twoModules(): BdmDocument {
+  const doc = documentFixture('Modules');
+  doc.modules = [
+    {
+      id: 'mod_main',
+      name: 'main',
+      workspace: {
+        blocks: [{ ...forever('a'), x: 10, y: 10 }],
+        viewport: { x: 3, y: 4, scale: 1.25 },
+      },
+    },
+    { id: 'mod_util', name: 'util', workspace: { blocks: [{ ...forever('b'), x: 20, y: 20 }] } },
+  ];
+  return doc;
+}
+
+/** Whether the middle of block `id` is inside the part of the canvas shown. */
+function isShown(workspace: Blockly.WorkspaceSvg, id: string): boolean {
+  const block = workspace.getBlockById(id);
+  if (!(block instanceof Blockly.BlockSvg)) {
+    return false;
+  }
+  const box = block.getBoundingRectangle();
+  const view = workspace.getMetricsManager().getViewMetrics(true);
+  const x = (box.left + box.right) / 2;
+  const y = (box.top + box.bottom) / 2;
+  return (
+    x >= view.left && x <= view.left + view.width && y >= view.top && y <= view.top + view.height
+  );
+}
+
+const sessions: EditorSession[] = [];
+
+function start(
+  doc: BdmDocument,
+  workspace: Blockly.Workspace = headlessWorkspace(),
+  hooks: SessionHooks = {},
+): EditorSession {
+  const core = stubCore();
+  setCore(core);
+  useAppStore.getState().actions.setProject(
+    projectFixture({
+      document: doc,
+      textHash: JSON.stringify(doc),
+      savedTextHash: JSON.stringify(doc),
+      activeModuleId: 'mod_main',
+    }),
+  );
+  const host = createCoreHost({
+    initCore: () => Promise.resolve(core),
+    resetCore: () => undefined,
+    getCore,
+    setCore,
+  });
+  const session = new EditorSession({ workspace, store: useAppStore, host, hooks });
+  sessions.push(session);
+  return session;
+}
+
+beforeEach(() => {
+  resetAppStore();
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'],
+  });
+});
+
+afterEach(() => {
+  for (const session of sessions.splice(0)) {
+    session.dispose();
+  }
+  disposeWorkspaces();
+  vi.advanceTimersByTime(50);
+  vi.useRealTimers();
+  setCore(null);
+});
+
+describe('the editing session', () => {
+  it('shows the active module and previews it at once', async () => {
+    const onLoaded = vi.fn();
+    const onPreviewed = vi.fn();
+    const session = start(twoModules(), headlessWorkspace(), { onLoaded, onPreviewed });
+    expect(session.shownModuleId()).toBe('mod_main');
+    expect(session.workspace.getBlockById('a')).not.toBeNull();
+    expect(onLoaded).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onPreviewed).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().project?.dirty).toBe(false);
+  });
+
+  it('previews 50 ms after a change and marks the project dirty', async () => {
+    const onCommitted = vi.fn();
+    const session = start(twoModules(), headlessWorkspace(), { onCommitted });
+    await vi.advanceTimersByTimeAsync(0);
+    onCommitted.mockClear();
+
+    session.workspace.getBlockById('a')?.setCommentText('later');
+    await vi.advanceTimersByTimeAsync(20);
+    expect(session.syncPending).toBe(true);
+    expect(onCommitted).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60);
+    expect(onCommitted).toHaveBeenCalledTimes(1);
+    const project = useAppStore.getState().project;
+    expect(project?.dirty).toBe(true);
+    expect(project?.document.modules[0]?.workspace.blocks[0]).toMatchObject({
+      id: 'a',
+      comment: { text: 'later' },
+    });
+
+    // Undoing the change makes the document equal to the saved one again.
+    session.workspace.getBlockById('a')?.setCommentText(null);
+    await vi.advanceTimersByTimeAsync(80);
+    expect(useAppStore.getState().project?.dirty).toBe(false);
+  });
+
+  it('ignores UI events, except opening or closing a comment', async () => {
+    const session = start(twoModules());
+    await vi.advanceTimersByTimeAsync(0);
+    const block = session.workspace.getBlockById('a');
+    Blockly.Events.fire(
+      new (Blockly.Events.get(Blockly.Events.SELECTED))(null, 'a', session.workspace.id),
+    );
+    await vi.advanceTimersByTimeAsync(20);
+    expect(session.syncPending).toBe(false);
+
+    const BubbleOpen = Blockly.Events.get(Blockly.Events.BUBBLE_OPEN);
+    Blockly.Events.fire(new BubbleOpen(block, true, 'comment'));
+    await vi.advanceTimersByTimeAsync(20);
+    expect(session.syncPending).toBe(true);
+  });
+
+  it('switches modules, keeping the left module in the document and clearing undo', async () => {
+    const session = start(twoModules());
+    await vi.advanceTimersByTimeAsync(0);
+    session.workspace.getBlockById('a')?.setCommentText('kept');
+    await vi.advanceTimersByTimeAsync(20);
+    expect(session.workspace.getUndoStack().length).toBeGreaterThan(0);
+
+    // The switcher only changes the store; the session follows.
+    useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_util' });
+    expect(session.shownModuleId()).toBe('mod_util');
+    expect(session.workspace.getBlockById('a')).toBeNull();
+    expect(session.workspace.getBlockById('b')).not.toBeNull();
+    expect(session.workspace.getUndoStack()).toHaveLength(0);
+    expect(useAppStore.getState().project?.document.modules[0]?.workspace.blocks[0]).toMatchObject({
+      id: 'a',
+      comment: { text: 'kept' },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useAppStore.getState().project?.dirty).toBe(true);
+
+    // An unknown module is refused: the store goes back to the shown one.
+    useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_none' });
+    expect(session.shownModuleId()).toBe('mod_util');
+    expect(useAppStore.getState().project?.activeModuleId).toBe('mod_util');
+  });
+
+  it('selects a block in another module by switching to it', async () => {
+    const session = start(twoModules(), renderedWorkspace());
+    await vi.advanceTimersByTimeAsync(0);
+    session.selectBlock('b', { center: true });
+    expect(session.shownModuleId()).toBe('mod_util');
+    expect(Blockly.common.getSelected()).toBe(session.workspace.getBlockById('b'));
+  });
+
+  it('forgets the selected and hovered block when it shows another module or a reload', async () => {
+    const workspace = renderedWorkspace();
+    const session = start(twoModules(), workspace);
+    const stopTracking = attachHighlightTracking({
+      workspace,
+      store: useAppStore,
+      core: () => null,
+      selectBlock: () => undefined,
+      activeModuleId: () => session.shownModuleId() ?? '',
+    });
+    const ui = () => useAppStore.getState().ui;
+    // Blockly fires its events after the next animation frame.
+    const settle = () => vi.advanceTimersByTimeAsync(50);
+    const mark = async (id: string) => {
+      session.selectBlock(id);
+      useAppStore.getState().actions.setUi({ hoverBlock: id });
+      await settle();
+      expect(ui()).toMatchObject({ selection: id, hoverBlock: id });
+    };
+    // Once Blockly has settled, the store has what Blockly has selected, and that block is shown.
+    const followsBlockly = () => {
+      const selected = Blockly.common.getSelected();
+      const id = selected instanceof Blockly.BlockSvg ? selected.id : null;
+      expect(ui().selection).toBe(id);
+      if (id !== null) {
+        expect(workspace.getBlockById(id)).toBe(selected);
+      }
+    };
+    await settle();
+
+    // Another module: the code panel must not go on highlighting a block that is gone.
+    await mark('a');
+    useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_util' });
+    expect(session.shownModuleId()).toBe('mod_util');
+    expect(workspace.getBlockById('a')).toBeNull();
+    expect(ui()).toMatchObject({ selection: null, hoverBlock: null });
+    await settle();
+    followsBlockly();
+
+    // A reload builds the canvas afresh: block b is a new block with the same ID, not selected.
+    await mark('b');
+    const old = workspace.getBlockById('b');
+    session.loadDocument(twoModules(), { clearUndo: true });
+    expect(workspace.getBlockById('b')).not.toBe(old);
+    expect(ui()).toMatchObject({ selection: null, hoverBlock: null });
+    await settle();
+    followsBlockly();
+    stopTracking();
+  });
+
+  it.each([true, false])(
+    'keeps a block in another module centred once that module has rendered (saved view: %s)',
+    async (withView) => {
+      const doc = twoModules();
+      const util = present(doc.modules[1], 'util');
+      util.workspace.blocks = [
+        { ...forever('near'), x: 0, y: 0 },
+        { ...forever('far'), x: 3000, y: 2500 },
+      ];
+      if (withView) {
+        util.workspace.viewport = { x: 0, y: 0, scale: 1 };
+      }
+      const workspace = renderedWorkspace({ move: { scrollbars: true, drag: true } });
+      setViewSize(workspace, 1000, 700);
+      const session = start(doc, workspace);
+      session.resize();
+      await vi.advanceTimersByTimeAsync(50);
+
+      // A click in Problems or the C++ panel on a block of another module.
+      session.selectBlock('far', { center: true });
+      expect(session.shownModuleId()).toBe('mod_util');
+      expect(isShown(workspace, 'far')).toBe(true);
+      // Blockly's first render of the module settles its view; the block stays in view.
+      await vi.advanceTimersByTimeAsync(50);
+      expect(isShown(workspace, 'far')).toBe(true);
+      // The jump moved the view, so the view shown is the one saved.
+      const saved = session.currentDocument().modules[1]?.workspace.viewport;
+      expect(saved).toBeDefined();
+      expect(saved).not.toEqual({ x: 0, y: 0, scale: 1 });
+    },
+  );
+
+  it('selects the outermost collapsed block around the one asked for', async () => {
+    const doc = documentFixture();
+    doc.modules = [
+      {
+        id: 'mod_main',
+        name: 'main',
+        workspace: {
+          blocks: [
+            {
+              id: 'main',
+              type: 'program.main',
+              v: 1,
+              x: 0,
+              y: 0,
+              statements: {
+                BODY: [
+                  {
+                    id: 'outer',
+                    type: 'control.forever',
+                    v: 1,
+                    collapsed: true,
+                    statements: { BODY: [forever('inner')] },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ];
+    const session = start(doc, renderedWorkspace());
+    await vi.advanceTimersByTimeAsync(0);
+    session.selectBlock('inner');
+    expect(Blockly.common.getSelected()).toBe(session.workspace.getBlockById('outer'));
+    session.selectBlock('no_such_block');
+    expect(Blockly.common.getSelected()).toBe(session.workspace.getBlockById('outer'));
+  });
+
+  it('selects a statement that follows a collapsed one, not the collapsed one', async () => {
+    const doc = documentFixture();
+    doc.modules = [
+      {
+        id: 'mod_main',
+        name: 'main',
+        workspace: {
+          blocks: [
+            {
+              id: 'main',
+              type: 'program.main',
+              v: 1,
+              x: 0,
+              y: 0,
+              statements: {
+                BODY: [
+                  {
+                    ...forever('folded'),
+                    collapsed: true,
+                    statements: { BODY: [forever('hidden')] },
+                  },
+                  { ...forever('after'), statements: { BODY: [forever('nested')] } },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ];
+    const session = start(doc, renderedWorkspace());
+    await vi.advanceTimersByTimeAsync(0);
+    // In Blockly the parent of a statement is the statement before it; only nesting hides a block.
+    for (const [asked, selected] of [
+      ['after', 'after'],
+      ['nested', 'nested'],
+      ['hidden', 'folded'],
+    ] as const) {
+      session.selectBlock(asked, { center: true });
+      expect((Blockly.common.getSelected() as Blockly.Block | null)?.id).toBe(selected);
+    }
+  });
+
+  it('empties the canvas when the project closes, and refuses to save without one', async () => {
+    const session = start(twoModules());
+    await vi.advanceTimersByTimeAsync(0);
+    useAppStore.getState().actions.setProject(null);
+    expect(session.shownModuleId()).toBeNull();
+    expect(session.workspace.getAllBlocks(false)).toHaveLength(0);
+    expect(() => session.currentDocument()).toThrow(SyncError);
+  });
+
+  it('makes a loaded document the project document', async () => {
+    const session = start(twoModules());
+    await vi.advanceTimersByTimeAsync(0);
+    const other = twoModules();
+    other.project.name = 'Reloaded';
+    session.loadDocument(other, { clearUndo: false });
+    expect(useAppStore.getState().project?.document).toBe(other);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useAppStore.getState().project?.document.project.name).toBe('Reloaded');
+  });
+
+  it("captures the viewport only for saving, keeping the file's while the view is unchanged", async () => {
+    const shown = renderedWorkspace();
+    setViewSize(shown, 1000, 700);
+    Blockly.svgResize(shown);
+    const session = start(twoModules(), shown);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(session.currentDocument().modules[0]?.workspace.viewport).toEqual({
+      x: 3,
+      y: 4,
+      scale: 1.25,
+    });
+
+    const workspace = session.workspace as Blockly.WorkspaceSvg;
+    workspace.setScale(2);
+    const saved = session.currentDocument().modules[0]?.workspace.viewport;
+    expect(saved?.scale).toBe(2);
+    // The live document (what decides dirty) never holds the view.
+    await session.flush();
+    expect(useAppStore.getState().project?.document.modules[0]?.workspace.viewport).toEqual({
+      x: 3,
+      y: 4,
+      scale: 1.25,
+    });
+
+    // A module left behind keeps the view it was left with.
+    useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_util' });
+    expect(session.currentDocument().modules[0]?.workspace.viewport?.scale).toBe(2);
+    expect(session.currentDocument().modules[1]?.workspace.viewport).toBeUndefined();
+  });
+
+  it.each([
+    ['without a viewport', undefined],
+    ['with a viewport', { x: -100, y: -60, scale: 1.25 }],
+  ])(
+    'keeps the view of a file %s that opened while the editor was hidden',
+    async (_what, viewport) => {
+      const doc = twoModules();
+      const main = doc.modules[0];
+      if (main === undefined) {
+        throw new Error('no main module');
+      }
+      if (viewport === undefined) {
+        delete main.workspace.viewport;
+      } else {
+        main.workspace.viewport = viewport;
+      }
+      // The start page opens projects while the editor is hidden: the view has no size yet.
+      const workspace = renderedWorkspace({ move: { scrollbars: true, drag: true } });
+      const session = start(doc, workspace);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(session.currentDocument().modules[0]?.workspace.viewport).toEqual(viewport);
+
+      // Showing the editor gives it a size; Blockly's first render and the resize move the
+      // scroll position, which is not the user scrolling.
+      setViewSize(workspace, 1000, 700);
+      session.resize();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(session.currentDocument().modules[0]?.workspace.viewport).toEqual(viewport);
+      if (viewport !== undefined) {
+        // The saved view is shown.
+        const state = present(viewStateOf(workspace), 'view');
+        expect(state.scale).toBe(1.25);
+        expect(Math.round(-state.scrollX / state.scale)).toBe(-100);
+        expect(Math.round(-state.scrollY / state.scale)).toBe(-60);
+      }
+
+      // A resize (a dock opening) is not the user moving the view either.
+      setViewSize(workspace, 800, 500);
+      session.resize();
+      expect(session.currentDocument().modules[0]?.workspace.viewport).toEqual(viewport);
+
+      // Scrolling is: the view shown is saved, also after another resize.
+      const scale = viewport?.scale ?? 1;
+      workspace.scroll(200 * scale, 100 * scale);
+      session.resize();
+      expect(session.currentDocument().modules[0]?.workspace.viewport).toEqual({
+        x: -200,
+        y: -100,
+        scale,
+      });
+    },
+  );
+
+  /** The middle of the blocks and of the view, and the view's edges, in workspace units. */
+  function placement(workspace: Blockly.WorkspaceSvg) {
+    const blocks = workspace.getBlocksBoundingBox();
+    const view = workspace.getMetricsManager().getViewMetrics(true);
+    return {
+      blocks,
+      view,
+      offCentre: [
+        (blocks.left + blocks.right) / 2 - (view.left + view.width / 2),
+        (blocks.top + blocks.bottom) / 2 - (view.top + view.height / 2),
+      ],
+    };
+  }
+
+  it('centres a module without a saved view that opened while the editor was hidden', async () => {
+    const doc = twoModules();
+    const main = present(doc.modules[0], 'the main module');
+    delete main.workspace.viewport;
+    // The start page opens projects while the editor is hidden: the view has no size yet, and
+    // Blockly scrolls the blocks' top-left corner onto the view's (against the toolbox's flyout).
+    const workspace = renderedWorkspace({ move: { scrollbars: true, drag: true } });
+    const session = start(doc, workspace);
+    await vi.advanceTimersByTimeAsync(50);
+
+    setViewSize(workspace, 1000, 700);
+    session.resize();
+    await vi.advanceTimersByTimeAsync(50);
+    const { blocks, view, offCentre } = placement(workspace);
+    expect(blocks.left - view.left).toBeGreaterThan(FIRST_VIEW_MARGIN);
+    expect(Math.abs(offCentre[0] ?? Infinity)).toBeLessThan(1);
+    expect(Math.abs(offCentre[1] ?? Infinity)).toBeLessThan(1);
+    // Showing the first view is not the user moving it: nothing is saved for it.
+    expect(session.currentDocument().modules[0]?.workspace.viewport).toBeUndefined();
+  });
+
+  it('centres a module without a saved view in an editor already shown', async () => {
+    const doc = twoModules();
+    delete present(doc.modules[0], 'the main module').workspace.viewport;
+    const workspace = renderedWorkspace({ move: { scrollbars: true, drag: true } });
+    setViewSize(workspace, 800, 500);
+    Blockly.svgResize(workspace);
+    start(doc, workspace);
+    await vi.advanceTimersByTimeAsync(50);
+    const { offCentre } = placement(workspace);
+    expect(Math.abs(offCentre[0] ?? Infinity)).toBeLessThan(1);
+    expect(Math.abs(offCentre[1] ?? Infinity)).toBeLessThan(1);
+  });
+
+  it('shows the top-left corner of blocks that do not fit, a margin inside the view', async () => {
+    const doc = twoModules();
+    const main = present(doc.modules[0], 'the main module');
+    delete main.workspace.viewport;
+    main.workspace.blocks.push({ ...forever('far'), x: 3000, y: 2000 });
+    const workspace = renderedWorkspace({ move: { scrollbars: true, drag: true } });
+    const session = start(doc, workspace);
+    await vi.advanceTimersByTimeAsync(50);
+    setViewSize(workspace, 1000, 700);
+    session.resize();
+    await vi.advanceTimersByTimeAsync(50);
+    const { blocks, view } = placement(workspace);
+    expect(blocks.left - view.left).toBeCloseTo(FIRST_VIEW_MARGIN, 6);
+    expect(blocks.top - view.top).toBeCloseTo(FIRST_VIEW_MARGIN, 6);
+    expect(isShown(workspace, 'a')).toBe(true);
+  });
+
+  it('stays on a module whose canvas does not load, keeping the Undo that takes it back', async () => {
+    const session = start(twoModules());
+    await vi.advanceTimersByTimeAsync(0);
+    // An edit that loads (E1), then one the loader refuses (blocks nested too deeply).
+    session.workspace.newBlock('control.forever', 'e1');
+    await vi.advanceTimersByTimeAsync(100);
+    const committed = present(useAppStore.getState().project, 'project').document;
+    expect(JSON.stringify(committed)).toContain('"e1"');
+    session.workspace.newBlock('control.forever', TOO_DEEP);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useAppStore.getState().analysis.notice).toBe('syncFailed');
+
+    // The switcher, and a problem in the other module: the editor stays where the change can be
+    // undone, and the project keeps the last document that loads (what autosave writes).
+    useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_util' });
+    session.selectBlock('b', { center: true });
+    expect(session.shownModuleId()).toBe('mod_main');
+    expect(useAppStore.getState().project?.activeModuleId).toBe('mod_main');
+    const project = present(useAppStore.getState().project, 'project');
+    expect(project.document).toBe(committed);
+    expect(getCore()?.canonical(JSON.stringify(project.document)).ok).toBe(true);
+    expect(session.workspace.getUndoStack().length).toBeGreaterThan(0);
+
+    // Undone, the canvas loads again, and the switch goes ahead.
+    session.undo(false);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useAppStore.getState().analysis.notice).toBeNull();
+    useAppStore.getState().actions.updateProject({ activeModuleId: 'mod_util' });
+    expect(session.shownModuleId()).toBe('mod_util');
+    expect(JSON.stringify(useAppStore.getState().project?.document)).toContain('"e1"');
+  });
+
+  it('keeps reading until a drag has ended', async () => {
+    const session = start(twoModules(), renderedWorkspace());
+    await vi.advanceTimersByTimeAsync(0);
+    const workspace = session.workspace as Blockly.WorkspaceSvg;
+    const dragging = vi.spyOn(workspace, 'isDragging').mockReturnValue(true);
+    workspace.getBlockById('a')?.moveBy(30, 0);
+    await vi.advanceTimersByTimeAsync(80);
+    expect(useAppStore.getState().project?.dirty).toBe(false);
+    expect(session.syncPending).toBe(true);
+    dragging.mockReturnValue(false);
+    await vi.advanceTimersByTimeAsync(60);
+    expect(useAppStore.getState().project?.dirty).toBe(true);
+  });
+});

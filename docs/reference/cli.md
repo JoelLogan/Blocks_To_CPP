@@ -25,15 +25,22 @@ b2c fmt        <project.b2c> [--check]
 ### `b2c check`
 
 Loads the project, checks every block against the block catalog and runs the
-analyser. It prints every problem and exits with `0` when there are no
-errors (warnings are allowed) or `1` when there are.
+analyser. Both always run once the project has loaded, so `check` lists the
+catalog's and the analyser's problems together: the same problems the app's
+Problems panel lists, each one once (the analyser does not repeat a problem
+the catalog reported). It prints every problem and exits with `0` when there
+are no errors, even with warnings (such as `B2C-W0505` for a block left
+loose on the canvas, which is parked and does not run), or `1` when there
+are errors. `b2c build`, `b2c generate` and `b2c run` stop on the same
+errors and accept the same warnings.
 
 ### `b2c generate`
 
 Writes the generated C++ files into the `--out` folder, creating it if
 needed. Each file is rewritten only when its content changed. `--export`
 leaves out the "edit the blocks, not this file" banner. The project must have
-no errors.
+no errors. The C++ is always indented with 4 spaces: `b2c` does not read the
+app's code style setting.
 
 ### `b2c build`
 
@@ -43,8 +50,15 @@ nor the compiler command changed. Errors and warnings are printed; notes
 (such as a sanitizer the compiler does not offer) are left out. `--out` also copies the executable to a path of your
 choice (atomically, never through a symbolic link, and executable). `--toolchain` picks a g++ by absolute path; otherwise `b2c` uses the
 first suitable g++ it finds (see `b2c toolchains`). `--cache-dir` keeps the
-build cache in another folder instead of the per-user one
-(`%LOCALAPPDATA%\Blocks2Cpp\cache` on Windows, `~/.cache/blocks2cpp` on Linux).
+build cache in another folder instead of the per-user one. By default builds
+go to `%LOCALAPPDATA%\Blocks2Cpp\builds\` on Windows and to
+`$XDG_CACHE_HOME/blocks2cpp/builds/` (normally `~/.cache/blocks2cpp/builds/`)
+on Linux, the same cache the app uses
+([spec §2.7](../spec/02-architecture.md#27-persistence-locations)). Earlier
+versions used `%LOCALAPPDATA%\Blocks2Cpp\cache\` on Windows; that folder is
+no longer used and can be deleted. `b2c` never deletes entries from the cache;
+the app removes old ones. Builds made by `b2c` and by the app are kept apart,
+because only the app's builds include its console helpers.
 Compiler errors are mapped back to the blocks that produced the code.
 
 ### `b2c run`
@@ -59,36 +73,54 @@ to the program as its arguments.
 
 Lists the g++ compilers found on this computer, with their version, target,
 supported C++ standards and any problems. Checking a compiler builds a few
-tiny test programs, so the results are kept in the build cache and checked
-again only when the compiler file changes.
+tiny test programs, so the results are kept in `toolchains.json` and checked
+again only when the compiler file changes. The file is shared with the app:
+it is in `%LOCALAPPDATA%\Blocks2Cpp\` on Windows and in
+`$XDG_CONFIG_HOME/blocks2cpp/` (normally `~/.config/blocks2cpp/`) on Linux.
+Compilers added by hand in the app are listed too, and a compiler you name
+with `--toolchain` that is not in the list yet is remembered there as added
+by hand.
 
 ### `b2c migrate`
 
-Upgrades a project file written by an older version of Blocks2Cpp to the
-current format. It prints the result, or rewrites the file with `--in-place`.
-Printed to a terminal, control and invisible characters in project text are
-shown as JSON `\uXXXX` escapes (the same JSON value); piped output is the
-file exactly.
+Upgrades a project file written by an older version of Blocks2Cpp: it
+migrates the file to the current format and upgrades its blocks (blocks of an
+older version, and blocks of a type that was replaced by another,
+[spec §5.7](../spec/05-project-format.md#57-versioning-and-migration)). It
+prints the result, or rewrites the file with `--in-place`, keeping the file
+as it was as `<name>.b2c.bak`; a file that is already current is left alone.
+When a block cannot be upgraded (`B2C-E0603`), the problems are printed and
+nothing is written (exit code `1`). When blocks were upgraded, the file names
+this version of Blocks2Cpp and its block catalog in `generator`, as a save in
+the app does; a newer catalog the file already names is kept
+([spec §5.3](../spec/05-project-format.md#53-top-level-structure)). Printed
+to a terminal, control and invisible characters in project text are shown as
+JSON `\uXXXX` escapes (the same JSON value); piped output is the file
+exactly.
+
+`b2c check`, `generate`, `build` and `run` upgrade old blocks in memory only
+and never change the file.
 
 ### `b2c fmt`
 
 Rewrites the project file in its canonical form: the same layout the app
-saves, so diffs stay small. `--check` only reports whether the file is
-already formatted (exit code `1` if not), which is useful in CI.
+saves, so diffs stay small. It never upgrades blocks (that is `b2c migrate`).
+`--check` only reports whether the file is already formatted (exit code `1`
+if not), which is useful in CI.
 
 ## Exit codes
 
 | Code | Meaning |
-|------|---------|
+| ------ | --------- |
 | `0` | Success |
-| `1` | The project has errors (or, for `fmt --check`, is not formatted) |
+| `1` | The project has errors; warnings alone never give `1` (or, for `fmt --check`, the file is not formatted) |
 | `2` | Usage problem: bad arguments, or a file that cannot be read or written |
 | `3` | Toolchain problem: no suitable g++ found, it is broken or cannot be started, or it crashed |
 
 `b2c run` returns the **program's own exit code**, except:
 
 | Code | Meaning |
-|------|---------|
+| ------ | --------- |
 | `124` | The program was stopped by `--timeout` |
 | `125` | The program could not be built or started (the reason is printed) |
 | `128 + N` | Linux: the program was killed by signal `N` (for example `139` for a segmentation fault) |

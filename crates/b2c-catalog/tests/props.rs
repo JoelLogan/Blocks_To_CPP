@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use b2c_catalog::{core_catalog, resolve};
+use b2c_catalog::{FieldKind, core_catalog, resolve};
 use b2c_ir::sast::CppStandard;
 use b2c_ir::{BlockId, ModuleId, ProjectId, SymbolId};
 use b2c_model::{
@@ -166,6 +166,7 @@ fn leaf() -> impl Strategy<Value = Block> {
             fields,
             inputs,
             statements: BTreeMap::new(),
+            stack: Vec::new(),
         })
 }
 
@@ -196,7 +197,12 @@ fn block() -> impl Strategy<Value = Block> {
 }
 
 fn document() -> impl Strategy<Value = Document> {
-    vec(block(), 0..5).prop_map(|blocks| Document {
+    vec(block(), 0..5).prop_map(document_with)
+}
+
+/// A one-module document holding `blocks` at the top level.
+fn document_with(blocks: Vec<Block>) -> Document {
+    Document {
         format: b2c_model::FORMAT_TAG.into(),
         format_version: 1,
         generator: Generator {
@@ -224,7 +230,74 @@ fn document() -> impl Strategy<Value = Document> {
             },
         }],
         ext: None,
-    })
+    }
+}
+
+/// The first field or input the catalog requires that a resolved document
+/// lacks, as `"<block type>.<name>"`, or `None`. A name or reference field
+/// (`symbol_decl`, `symbol_ref`) is not required here: the editor saves an
+/// unchosen variable as an absent field, and resolve leaves it to the analyser
+/// (ADR-0012), so a clean result may lack one.
+fn missing_required(document: &Document) -> Option<String> {
+    let mut stack: Vec<&Block> = document.modules[0].workspace.blocks.iter().collect();
+    while let Some(block) = stack.pop() {
+        let def = &core_catalog().blocks[&block.block_type];
+        let named = |kind: FieldKind| matches!(kind, FieldKind::SymbolDecl | FieldKind::SymbolRef);
+        for field in def.field.iter().filter(|f| !named(f.kind)) {
+            if !block.fields.contains_key(&field.name) {
+                return Some(format!("{}.{}", block.block_type, field.name));
+            }
+        }
+        for input in def.input.iter().filter(|i| i.repeat.is_none() && !i.optional) {
+            if !block.inputs.contains_key(&input.name) {
+                return Some(format!("{}.{}", block.block_type, input.name));
+            }
+        }
+        for input in block.inputs.values() {
+            if let Input::Block(nested) = input {
+                stack.push(&nested.block);
+            }
+        }
+        stack.extend(block.statements.values().flatten());
+    }
+    None
+}
+
+/// A `set` whose variable is not chosen yet resolves clean (the analyser
+/// reports it once the block is attached), so a clean result can lack a
+/// reference field. The property below once required every field, and failed
+/// on such a block (a `func.call` without `FUNC` in CI).
+#[test]
+fn a_clean_result_may_lack_an_unchosen_variable() {
+    let set = Block {
+        id: BlockId::new("b").unwrap(),
+        block_type: "var.set".into(),
+        v: 1,
+        x: None,
+        y: None,
+        collapsed: false,
+        disabled: false,
+        comment: None,
+        extra: BTreeMap::new(),
+        fields: BTreeMap::new(),
+        inputs: BTreeMap::from([(
+            "VALUE".to_owned(),
+            Input::Expr(ExprInput {
+                expr: vec![Token::Num("1".into())],
+                draft: false,
+            }),
+        )]),
+        statements: BTreeMap::new(),
+        stack: Vec::new(),
+    };
+    let (completed, diagnostics) = resolve(&document_with(vec![set]), core_catalog());
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert!(
+        !completed.modules[0].workspace.blocks[0]
+            .fields
+            .contains_key("VAR")
+    );
+    assert_eq!(missing_required(&completed), None);
 }
 
 proptest! {
@@ -247,22 +320,7 @@ proptest! {
     fn a_clean_result_has_every_required_input(document in document()) {
         let (completed, diagnostics) = resolve(&document, core_catalog());
         if diagnostics.is_empty() {
-            let mut stack: Vec<&Block> = completed.modules[0].workspace.blocks.iter().collect();
-            while let Some(block) = stack.pop() {
-                let def = &core_catalog().blocks[&block.block_type];
-                for field in &def.field {
-                    prop_assert!(block.fields.contains_key(&field.name));
-                }
-                for input in def.input.iter().filter(|i| i.repeat.is_none() && !i.optional) {
-                    prop_assert!(block.inputs.contains_key(&input.name));
-                }
-                for input in block.inputs.values() {
-                    if let Input::Block(nested) = input {
-                        stack.push(&nested.block);
-                    }
-                }
-                stack.extend(block.statements.values().flatten());
-            }
+            prop_assert_eq!(missing_required(&completed), None);
         }
     }
 }

@@ -19,7 +19,18 @@ pub const MAX_STRING_BYTES: usize = 64 * 1024;
 pub const MAX_RAW_CPP_BYTES: usize = 256 * 1024;
 /// Maximum identifier length (enforced again by `b2c_ir::text::Ident`).
 pub const MAX_IDENT_LEN: usize = 64;
+/// Maximum length, in characters, of a qualified name such as `geo::area`
+/// in a clipboard payload's `refs` (spec §5.12). A name of
+/// [`MAX_IDENT_LEN`] characters inside 14 namespaces of that length fits.
+pub const MAX_QUALIFIED_NAME_LEN: usize = 1024;
 /// Maximum number of parts in a variadic (`⊕`) block.
 pub const MAX_VARIADIC_PARTS: usize = 64;
 /// Maximum absolute canvas coordinate.
 pub const MAX_COORDINATE: i32 = 10_000_000;
+/// Largest magnitude of a preprocessor define's `int` value and of every
+/// number in free-form data (`extra`, `x-ext`): 2^53 − 1, JavaScript's
+/// `Number.MAX_SAFE_INTEGER`. The editor holds the document as JavaScript
+/// numbers, which keep every whole number up to this size exactly; a larger
+/// one would change on its way through the editor, and with it the program
+/// or the security hash.
+pub const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;

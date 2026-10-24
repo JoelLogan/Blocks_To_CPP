@@ -8,7 +8,8 @@ use b2c_model::Token;
 use b2c_model::limits::MAX_VARIADIC_PARTS;
 
 use crate::schema::{
-    BlockDef, CatalogFile, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, InputDef,
+    BlockDef, CatalogFile, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, InputDef, OutputType,
+    Shape, is_part_name,
 };
 use crate::{CATALOG_VERSION, Catalog};
 
@@ -103,13 +104,6 @@ pub(crate) fn is_block_id(id: &str) -> bool {
     first_ok
         && rest.peek().is_some()
         && rest.all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'))
-}
-
-/// Field, input and statement names: `^[A-Z][A-Z0-9_]*$`.
-fn is_part_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes.next().is_some_and(|b| b.is_ascii_uppercase())
-        && bytes.all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
 }
 
 /// `extra` key names: `^[a-z][A-Za-z0-9]*$`.
@@ -244,8 +238,59 @@ pub(crate) fn check_block(def: &BlockDef) -> Vec<String> {
             "reporter and predicate blocks cannot have statement inputs",
         ));
     }
+    check_output(def, &mut problems);
     check_labels(def, &mut problems);
+    check_friendly_label(def, &mut problems);
     problems
+}
+
+/// Reporters and predicates declare the type of their value; other shapes
+/// give no value. A predicate gives `bool`, `symbol` needs exactly one
+/// `symbol_ref` field to take the type from, and `field:NAME` names a
+/// `type` field.
+fn check_output(def: &BlockDef, problems: &mut Vec<String>) {
+    let Some(output) = &def.output else {
+        if def.shape.is_value() {
+            problems.push(String::from("reporter and predicate blocks need an output type"));
+        }
+        return;
+    };
+    if !def.shape.is_value() {
+        problems.push(format!(
+            "only reporter and predicate blocks give a value, so this block cannot have the output type {output}"
+        ));
+        return;
+    }
+    if def.shape == Shape::Predicate && *output != OutputType::Bool {
+        problems.push(format!(
+            "a predicate gives bool, so its output type cannot be {output}"
+        ));
+    }
+    match output {
+        OutputType::Symbol => {
+            let refs = def
+                .field
+                .iter()
+                .filter(|f| f.kind == FieldKind::SymbolRef)
+                .count();
+            if refs != 1 {
+                problems.push(format!(
+                    "the output type symbol needs exactly one symbol_ref field to take the type from, but the block has {refs}"
+                ));
+            }
+        }
+        OutputType::Field(name)
+            if !def
+                .field
+                .iter()
+                .any(|f| &f.name == name && f.kind == FieldKind::Type) =>
+        {
+            problems.push(format!(
+                "the output type {output} does not name a type field of the block"
+            ));
+        }
+        _ => {}
+    }
 }
 
 /// Checks `extra` definitions; returns their kinds by name.
@@ -383,8 +428,7 @@ fn check_field(field: &FieldDef, problems: &mut Vec<String>) {
     if field.kind != FieldKind::Type && !field.types.is_empty() {
         problems.push(format!("only type fields have types ({name})"));
     }
-    let default = field.default.as_ref();
-    let default_ok = match field.kind {
+    match field.kind {
         FieldKind::Dropdown => {
             let values: Vec<&String> = field.options.iter().map(|[_, value]| value).collect();
             let labels_ok = field
@@ -396,21 +440,30 @@ fn check_field(field: &FieldDef, problems: &mut Vec<String>) {
                     "the dropdown {name} needs options with distinct, non-empty values"
                 ));
             }
-            default.is_none_or(|d| matches!(d, FieldDefault::Text(t) if values.contains(&t)))
         }
-        FieldKind::Checkbox => default.is_none_or(|d| matches!(d, FieldDefault::Bool(_))),
-        FieldKind::Text => default.is_none_or(|d| matches!(d, FieldDefault::Text(_))),
-        FieldKind::Number => default.is_none_or(|d| matches!(d, FieldDefault::Text(t) if !t.is_empty())),
-        FieldKind::Type => {
-            if field.types.is_empty() || !all_unique(&field.types) {
-                problems.push(format!("the type field {name} needs a list of distinct types"));
-            }
-            default.is_none_or(|d| matches!(d, FieldDefault::Text(t) if field.types.contains(t)))
+        FieldKind::Type if field.types.is_empty() || !all_unique(&field.types) => {
+            problems.push(format!("the type field {name} needs a list of distinct types"));
         }
-        FieldKind::SymbolDecl | FieldKind::SymbolRef => default.is_none(),
-    };
-    if !default_ok {
+        _ => {}
+    }
+    if !field.default.as_ref().is_none_or(|d| field_value_fits(field, d)) {
         problems.push(format!("the default of {name} does not fit its kind or choices"));
+    }
+}
+
+/// Whether a value written in the catalog (a default, or a toolbox preset)
+/// fits a field: a dropdown's option value, a checkbox's `true` or `false`,
+/// text, non-empty number text, or one of a type field's types. Symbol
+/// fields take no such value: the editor fills them in.
+pub(crate) fn field_value_fits(field: &FieldDef, value: &FieldDefault) -> bool {
+    match (field.kind, value) {
+        (FieldKind::Dropdown, FieldDefault::Text(text)) => {
+            field.options.iter().any(|[_, option]| option == text)
+        }
+        (FieldKind::Checkbox, FieldDefault::Bool(_)) | (FieldKind::Text, FieldDefault::Text(_)) => true,
+        (FieldKind::Number, FieldDefault::Text(text)) => !text.is_empty(),
+        (FieldKind::Type, FieldDefault::Text(text)) => field.types.contains(text),
+        _ => false,
     }
 }
 
@@ -438,6 +491,97 @@ fn check_labels(def: &BlockDef, problems: &mut Vec<String>) {
     }
 }
 
+/// One piece of a label template: text, or a `%NAME` placeholder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LabelPiece<'a> {
+    /// Text between placeholders (with its spaces, and any `…`).
+    Text(&'a str),
+    /// The name of a `%NAME` placeholder.
+    Arg(&'a str),
+}
+
+/// Splits a label template into text and `%NAME` pieces, with the
+/// grammar of the editor's label parser (`packages/catalog-gen`): a `%`
+/// followed by `[A-Z][A-Z0-9_]*` is a placeholder, any other `%` is text.
+fn label_pieces(label: &str) -> Vec<LabelPiece<'_>> {
+    let mut pieces = Vec::new();
+    let mut text_start = 0;
+    let mut index = 0;
+    let bytes = label.as_bytes();
+    while index < bytes.len() {
+        let starts_name = bytes[index] == b'%' && bytes.get(index + 1).is_some_and(u8::is_ascii_uppercase);
+        if !starts_name {
+            index += 1;
+            continue;
+        }
+        let name_start = index + 1;
+        let name_end = bytes[name_start..]
+            .iter()
+            .position(|b| !(b.is_ascii_uppercase() || b.is_ascii_digit() || *b == b'_'))
+            .map_or(bytes.len(), |offset| name_start + offset);
+        if text_start < index {
+            pieces.push(LabelPiece::Text(&label[text_start..index]));
+        }
+        pieces.push(LabelPiece::Arg(&label[name_start..name_end]));
+        text_start = name_end;
+        index = name_end;
+    }
+    if text_start < label.len() {
+        pieces.push(LabelPiece::Text(&label[text_start..]));
+    }
+    pieces
+}
+
+/// The friendly label is all a block shows, so it must name every part a
+/// user sets on the block (spec §3.11.1): every field and every value input
+/// that is not repeated (repeated inputs come with the block's ⊕/⊖ parts)
+/// appears in it as `%NAME`, and a checkbox stands next to words that say
+/// what ticking it means (`new line %NEWLINE`), because a bare ☑ explains
+/// nothing.
+fn check_friendly_label(def: &BlockDef, problems: &mut Vec<String>) {
+    let pieces = label_pieces(&def.label.friendly);
+    let shown: BTreeSet<&str> = pieces
+        .iter()
+        .filter_map(|piece| match piece {
+            LabelPiece::Arg(name) => Some(*name),
+            LabelPiece::Text(_) => None,
+        })
+        .collect();
+    let parts = def
+        .field
+        .iter()
+        .map(|field| ("field", field.name.as_str()))
+        .chain(
+            def.input
+                .iter()
+                .filter(|input| input.repeat.is_none())
+                .map(|input| ("input", input.name.as_str())),
+        );
+    for (what, name) in parts {
+        if !shown.contains(name) {
+            problems.push(format!(
+                "the friendly label does not show the {what} {name}: add %{name} where it belongs"
+            ));
+        }
+    }
+    let has_words = |piece: Option<&LabelPiece<'_>>| matches!(piece, Some(LabelPiece::Text(text)) if text.chars().any(char::is_alphabetic));
+    for field in def.field.iter().filter(|field| field.kind == FieldKind::Checkbox) {
+        let name = field.name.as_str();
+        for (index, piece) in pieces.iter().enumerate() {
+            if *piece != LabelPiece::Arg(name) {
+                continue;
+            }
+            let before = index.checked_sub(1).and_then(|i| pieces.get(i));
+            if !has_words(before) && !has_words(pieces.get(index + 1)) {
+                problems.push(format!(
+                    "the checkbox {name} has no words next to it in the friendly label: say what \
+                     ticking it means, as in \"new line %NEWLINE\""
+                ));
+            }
+        }
+    }
+}
+
 fn all_unique<T: Ord>(items: &[T]) -> bool {
     let set: BTreeSet<&T> = items.iter().collect();
     set.len() == items.len()
@@ -454,6 +598,7 @@ mod tests {
             version: 1,
             category: Category::Control,
             shape: Shape::Statement,
+            output: None,
             label: Label {
                 friendly: "do %X with %ITEM".into(),
                 cpp: "%X(%ITEM)".into(),
@@ -518,13 +663,103 @@ mod tests {
     fn the_core_catalog_is_valid_and_complete() {
         let (catalog, problems) = build(&CORE_FILES);
         assert_eq!(problems, []);
-        assert_eq!(catalog.blocks.len(), 32);
+        assert_eq!(catalog.blocks.len(), 31);
         assert_eq!(catalog.version, CATALOG_VERSION);
     }
 
     #[test]
     fn the_test_definition_is_valid() {
         assert_eq!(check_block(&def()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn labels_split_into_text_and_placeholders() {
+        use LabelPiece::{Arg, Text};
+        assert_eq!(
+            label_pieces("print %ITEM … %SEP new line %NEWLINE to %STREAM"),
+            [
+                Text("print "),
+                Arg("ITEM"),
+                Text(" … "),
+                Arg("SEP"),
+                Text(" new line "),
+                Arg("NEWLINE"),
+                Text(" to "),
+                Arg("STREAM"),
+            ]
+        );
+        assert_eq!(label_pieces("%A%B_2 x"), [Arg("A"), Arg("B_2"), Text(" x")]);
+        // A % that does not start an upper-case name is text, as in the editor's parser.
+        assert_eq!(
+            label_pieces("100% of %x and %_Y %"),
+            [Text("100% of %x and %_Y %")]
+        );
+        assert_eq!(label_pieces("'%VALUE'"), [Text("'"), Arg("VALUE"), Text("'")]);
+        assert_eq!(label_pieces(""), []);
+    }
+
+    #[test]
+    fn friendly_labels_show_every_field_and_fixed_input() {
+        // The test definition shows X; its ITEM is repeated, so ⊕/⊖ show it.
+        assert_eq!(
+            problems_after(|d| d.label.friendly = "do it with %ITEM".into()),
+            ["the friendly label does not show the field X: add %X where it belongs"]
+        );
+        let fixed_item = |d: &mut BlockDef| {
+            d.input[0].repeat = None;
+            d.extra.remove(0);
+        };
+        assert_eq!(problems_after(fixed_item), Vec::<String>::new());
+        assert_eq!(
+            problems_after(|d| {
+                fixed_item(d);
+                d.label.friendly = "do %X".into();
+            }),
+            ["the friendly label does not show the input ITEM: add %ITEM where it belongs"]
+        );
+        // The C++ label may leave parts out, and statement inputs may be left
+        // out of both (they go after the label).
+        assert_eq!(
+            problems_after(|d| d.label.cpp = "f();".into()),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_checkbox_needs_words_next_to_it() {
+        let checkbox = |d: &mut BlockDef, label: &str| {
+            d.field[0] = FieldDef {
+                name: "X".into(),
+                kind: FieldKind::Checkbox,
+                options: vec![],
+                types: vec![],
+                default: Some(FieldDefault::Bool(true)),
+            };
+            d.label.friendly = label.into();
+        };
+        for good in [
+            "print %ITEM … new line %X",
+            "%X new line %ITEM",
+            "%ITEM … constant %X",
+            "do %X",
+            "%X once",
+        ] {
+            assert_eq!(
+                problems_after(|d| checkbox(d, good)),
+                Vec::<String>::new(),
+                "{good}"
+            );
+        }
+        let expected = "the checkbox X has no words next to it in the friendly label: say what \
+                        ticking it means, as in \"new line %NEWLINE\"";
+        for bad in ["%ITEM … %X", "%X %ITEM", "%X", "%ITEM = %X …", "'%X'"] {
+            assert_eq!(problems_after(|d| checkbox(d, bad)), [expected], "{bad}");
+        }
+        // A dropdown or a type field needs no words: its choices say it.
+        assert_eq!(
+            problems_after(|d| d.label.friendly = "%X %ITEM".into()),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -618,6 +853,151 @@ mod tests {
         assert!(!problems_after(|d| d.shape = Shape::Reporter).is_empty());
         assert!(!problems_after(|d| d.shape = Shape::Predicate).is_empty());
         assert!(problems_after(|d| d.shape = Shape::Definition).is_empty());
+    }
+
+    /// The test definition as a reporter (no statement inputs) with the
+    /// given output type and extra fields (shown in its friendly label).
+    fn value_block(shape: Shape, output: Option<OutputType>, fields: Vec<FieldDef>) -> Vec<String> {
+        problems_after(|d| {
+            d.shape = shape;
+            d.statement.clear();
+            d.output = output;
+            for field in &fields {
+                d.label.friendly.push_str(" %");
+                d.label.friendly.push_str(&field.name);
+            }
+            d.field.extend(fields);
+        })
+    }
+
+    fn plain_field(name: &str, kind: FieldKind) -> FieldDef {
+        FieldDef {
+            name: name.into(),
+            kind,
+            options: vec![],
+            types: if kind == FieldKind::Type {
+                vec!["int".into(), "double".into()]
+            } else {
+                vec![]
+            },
+            default: None,
+        }
+    }
+
+    #[test]
+    fn output_types_follow_the_shape() {
+        use OutputType as O;
+        // Required for value shapes, forbidden for the others.
+        assert!(!value_block(Shape::Reporter, None, vec![]).is_empty());
+        assert!(!value_block(Shape::Predicate, None, vec![]).is_empty());
+        for shape in [Shape::Hat, Shape::Definition, Shape::Statement] {
+            let problems = value_block(shape, Some(O::Int), vec![]);
+            assert_eq!(problems.len(), 1, "{shape:?}: {problems:?}");
+            assert!(
+                problems[0].contains("only reporter and predicate"),
+                "{problems:?}"
+            );
+            assert!(value_block(shape, None, vec![]).is_empty(), "{shape:?}");
+        }
+        for output in [
+            O::Any,
+            O::Bool,
+            O::Int,
+            O::Double,
+            O::Number,
+            O::Char,
+            O::StdString,
+        ] {
+            assert!(
+                value_block(Shape::Reporter, Some(output.clone()), vec![]).is_empty(),
+                "{output}"
+            );
+        }
+        // A predicate gives bool.
+        assert!(value_block(Shape::Predicate, Some(O::Bool), vec![]).is_empty());
+        let problems = value_block(Shape::Predicate, Some(O::Int), vec![]);
+        assert_eq!(
+            problems,
+            ["a predicate gives bool, so its output type cannot be int"]
+        );
+    }
+
+    #[test]
+    fn symbol_and_field_outputs_need_their_field() {
+        use OutputType as O;
+        let reference = || plain_field("VAR", FieldKind::SymbolRef);
+        assert!(value_block(Shape::Reporter, Some(O::Symbol), vec![reference()]).is_empty());
+        let none = value_block(Shape::Reporter, Some(O::Symbol), vec![]);
+        assert_eq!(none.len(), 1);
+        assert!(none[0].contains("exactly one symbol_ref field"), "{none:?}");
+        let mut second = reference();
+        second.name = "OTHER".into();
+        assert!(!value_block(Shape::Reporter, Some(O::Symbol), vec![reference(), second]).is_empty());
+
+        let type_field = || plain_field("TO", FieldKind::Type);
+        assert!(value_block(Shape::Reporter, Some(O::Field("TO".into())), vec![type_field()]).is_empty());
+        // The field must exist and be a type field (X is a dropdown).
+        for name in ["NOPE", "X"] {
+            let problems = value_block(Shape::Reporter, Some(O::Field(name.into())), vec![type_field()]);
+            assert_eq!(
+                problems,
+                [format!(
+                    "the output type field:{name} does not name a type field of the block"
+                )]
+            );
+        }
+    }
+
+    #[test]
+    fn output_types_parse_and_print() {
+        use OutputType as O;
+        for (text, output) in [
+            ("any", O::Any),
+            ("bool", O::Bool),
+            ("int", O::Int),
+            ("double", O::Double),
+            ("number", O::Number),
+            ("char", O::Char),
+            ("string", O::StdString),
+            ("symbol", O::Symbol),
+            ("field:TO", O::Field("TO".into())),
+            ("field:A_1", O::Field("A_1".into())),
+        ] {
+            assert_eq!(text.parse::<OutputType>(), Ok(output.clone()), "{text}");
+            assert_eq!(output.to_string(), text);
+            assert_eq!(String::from(output), text);
+        }
+        for bad in [
+            "",
+            "Int",
+            "std::string",
+            "void",
+            "field:",
+            "field:to",
+            "field:1X",
+            "field: TO",
+            "TO",
+        ] {
+            assert_eq!(
+                bad.parse::<OutputType>(),
+                Err(crate::schema::OutputTypeError(bad.into())),
+                "{bad}"
+            );
+        }
+        let error = "float".parse::<OutputType>().unwrap_err().to_string();
+        assert!(error.starts_with("\"float\" is not an output type"), "{error}");
+        // In a catalog file, a bad output type makes the file invalid.
+        let text = "[[block]]\nid = \"x.y\"\nversion = 1\ncategory = \"math\"\nshape = \"reporter\"\noutput = \"float\"\nlabel = { friendly = \"x\", cpp = \"x\" }\nlowering = \"builtin\"\nhelp = \"X.\"\n";
+        let (catalog, problems) = build(&[("x.toml", text)]);
+        assert!(catalog.blocks.is_empty());
+        assert_eq!(problems.len(), 1);
+        assert!(
+            problems[0].message.contains("is not an output type"),
+            "{problems:?}"
+        );
+        let (catalog, problems) = build(&[("x.toml", &text.replace("float", "double"))]);
+        assert_eq!(problems, []);
+        assert_eq!(catalog.blocks["x.y"].output, Some(O::Double));
     }
 
     #[test]

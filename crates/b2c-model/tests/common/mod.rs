@@ -2,10 +2,51 @@
 
 #![allow(dead_code, reason = "each test crate uses a different subset")]
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use b2c_ir::Diagnostic;
 use serde_json::{Value, json};
+
+/// The `B2C-…` codes written in backticks in a table cell.
+pub(crate) fn codes_in(cell: &str) -> BTreeSet<String> {
+    cell.split('`')
+        .filter(|piece| piece.starts_with("B2C-"))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Characters a message must never show raw: controls, bidi controls and
+/// invisible format characters (hostile text is quoted with escapes).
+pub(crate) fn is_unsafe_to_show(c: char) -> bool {
+    c.is_control()
+        || b2c_ir::text::is_invisible(c)
+        || matches!(c,
+            '\u{00AD}' | '\u{061C}' | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{2028}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{FEFF}')
+}
+
+/// Every message is short and free of characters that could hide or fake
+/// text in a terminal or the UI.
+pub(crate) fn assert_messages_are_safe(file: &str, diagnostics: &[Diagnostic]) {
+    let texts = diagnostics
+        .iter()
+        .flat_map(|d| std::iter::once(&d.message).chain(d.related.iter().map(|r| &r.message)));
+    for text in texts {
+        assert!(
+            !text.chars().any(is_unsafe_to_show),
+            "{file}: a message shows an unsafe character: {text:?}"
+        );
+        assert!(
+            text.len() < 1024,
+            "{file}: a message is {} bytes long",
+            text.len()
+        );
+    }
+}
 
 /// The repository root.
 pub(crate) fn repo_root() -> PathBuf {

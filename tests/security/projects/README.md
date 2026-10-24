@@ -53,6 +53,7 @@ rest of the project valid, so that the file tests one thing.
 | `deep-expression.b2c` | T5 | 255 nested parentheses in one slot (within the token limit) | accepted | clean | The expression parser stops at depth 64 |
 | `deep-nesting.b2c` | T5 | 5,000 nested lists (stack exhaustion) | `B2C-E0104` | — |  |
 | `define-name-injection.b2c` | T2 | A compiler flag disguised as a `-D` define name | `B2C-E0132` | — |  |
+| `define-unsafe-integer.b2c` | T2 | A define value of 2⁵³ + 1, which the editor's JavaScript numbers would silently change (and with it the program and the security hash) | `B2C-E0112` | — |  |
 | `define-value-injection.b2c` | T3 | A define value that tries to end its string | accepted | clean | The backend passes it as one escaped string argument |
 | `diagnostic-flood.b2c` | T5 | 1,500 unknown keys, to flood the problem list | `B2C-E0110`, `B2C-E0199` | — | At most 1,000 problems are listed, then one summary |
 | `duplicate-block-ids.b2c` | T1 | Two blocks with the same ID (diagnostics and edits would hit the wrong one) | `B2C-E0114` | — |  |
@@ -60,7 +61,7 @@ rest of the project valid, so that the file tests one thing.
 | `duplicate-key.b2c` | T5 | A block's `type` appears twice; parsers disagree about which one counts | `B2C-E0105` | — |  |
 | `duplicate-module-ids.b2c` | T1 | Two modules with the same ID | `B2C-E0116` | — |  |
 | `duplicate-symbol-ids.b2c` | T1 | Two variables and a parameter declaring the same symbol ID | `B2C-E0115` | — |  |
-| `hat-inside-statement.b2c` | T1 | A second `when program starts` inside the first | accepted | `B2C-E0604` |  |
+| `hat-inside-statement.b2c` | T1 | A second `when program starts` inside the first | accepted | `B2C-E0604` | A placement the editor cannot produce stays an error; only blocks left on the canvas are parked ([ADR-0012](../../../docs/adr/0012-parked-blocks.md)) |
 | `homoglyph-identifier.b2c` | T3 | A name with a Cyrillic `о` that looks like `score` | accepted | clean | The analyser accepts only ASCII names (08 §8.4.1) |
 | `huge-coordinates.b2c` | T5 | Canvas coordinates beyond ±10⁷ (and beyond 32 bits) | `B2C-E0129` | — |  |
 | `huge-format-version.b2c` | T5 | A `formatVersion` beyond 32 bits (refused as a newer format, never truncated) | `B2C-E0108` | — |  |
@@ -70,7 +71,7 @@ rest of the project valid, so that the file tests one thing.
 | `huge-zoom.b2c` | T5 | A viewport zoom of 10³⁰⁸ | `B2C-E0130` | — |  |
 | `id-injection.b2c` | T7 | Markup in a block ID | `B2C-E0113` | — |  |
 | `injection-block-type.b2c` | T3 | A block type containing code | accepted | `B2C-E0601` |  |
-| `injection-comment-splice.b2c` | T3/T4 | Comments ending in `\` or `??/` that would splice the next line | accepted | clean | `Comment` adds the ` //` sentinel (08 §8.4.3) |
+| `injection-comment-splice.b2c` | T3/T4 | Comments ending in `\` or `??/` that would splice the next line | accepted | clean | `Comment` adds a space and the `//` sentinel (08 §8.4.3) |
 | `injection-dropdown.b2c` | T3 | A dropdown value containing code | accepted | `B2C-E0607` |  |
 | `injection-identifier.b2c` | T3 | A variable name containing code | accepted | clean | The analyser rejects the name (`Ident`, 08 §8.4.1) |
 | `injection-number-field.b2c` | T3 | A number field containing code | accepted | clean | `NumLit` accepts only the literal grammar (08 §8.4.4) |
@@ -95,6 +96,8 @@ rest of the project valid, so that the file tests one thing.
 | `module-name-traversal.b2c` | T9 | A module name that walks out of the output folder | `B2C-E0117` | — |  |
 | `nan-number.b2c` | T5 | `NaN` (not JSON) | `B2C-E0103` | — |  |
 | `nested-block-position.b2c` | T1 | A canvas position on a block inside another block | `B2C-E0128` | — |  |
+| `newer-app-compiler-flags.b2c` | T2 | Compiler flags and include paths in `build` of a file that claims a far newer Blocks2Cpp (`generator.app` beyond 64 bits): refused as made with a newer version, never loaded | `B2C-E0108` | — | The message names no version from the file ([ADR-0013](../../../docs/adr/0013-additive-format-keys.md)) |
+| `newer-app-unknown-keys.b2c` | T1 | Keys this version does not know (`options.usingNamespaceStd`, `lints`) in a file a newer Blocks2Cpp saved (`generator.app` 9.0.0) | `B2C-E0108` | — | The message names no version from the file ([ADR-0013](../../../docs/adr/0013-additive-format-keys.md)) |
 | `newer-block-version.b2c` | T1 | A block from a newer catalog version | accepted | `B2C-E0602` |  |
 | `newer-format-version.b2c` | T1 | A project from a newer Blocks2Cpp (never half-loaded) | `B2C-E0108` | — |  |
 | `nul-in-name.b2c` | T4 | A NUL character in a variable name (C strings end there) | `B2C-E0124` | — |  |
@@ -105,13 +108,14 @@ rest of the project valid, so that the file tests one thing.
 | `oversized-number-literal.b2c` | T3 | A number literal far beyond every number type | accepted | clean | Range-checked by `NumLit` (`B2C-E0517`) |
 | `oversized-string.b2c` | T5 | A string literal of 64 KiB + 1 byte | `B2C-E0123` | — |  |
 | `pack-path-traversal.b2c` | T9/T13 | A library pack ID that walks out of the packs folder | `B2C-E0136` | — |  |
+| `parked-raw-cpp-block.b2c` | T2 | A Raw C++ block (not available in this version), with a block stacked below it, left loose on the canvas instead of in the program | accepted | `B2C-E0601` | Parked blocks are checked against the catalog like any other, so the build stops ([ADR-0012](../../../docs/adr/0012-parked-blocks.md)) |
 | `proto-key-in-token.b2c` | T6 | A `__proto__` key as an expression token | `B2C-E0127` | — |  |
 | `proto-key-in-x-ext.b2c` | T6 | `__proto__` and `constructor` inside `x-ext` | accepted | clean | Preserved as data, never interpreted (05 §5.6) |
 | `proto-key.b2c` | T6 | A top-level `__proto__` key | `B2C-E0127` | — |  |
 | `prototype-key-in-extra.b2c` | T6 | A `prototype` key in a block's `extra` | `B2C-E0127` | — |  |
 | `raw-cpp-block.b2c` | T2 | A Raw C++ block (not available in this version) | accepted | `B2C-E0601` |  |
 | `run-args-shell.b2c` | T2 | Shell syntax in program arguments | accepted | clean | Arguments are an argv list, never a shell command (07 §7.6) |
-| `statement-in-value-input.b2c` | T1 | A statement block plugged into a value input | accepted | `B2C-E0604` |  |
+| `statement-in-value-input.b2c` | T1 | A statement block plugged into a value input | accepted | `B2C-E0604` | A placement the editor cannot produce stays an error; only blocks left on the canvas are parked ([ADR-0012](../../../docs/adr/0012-parked-blocks.md)) |
 | `tag-characters-in-block-type.b2c` | T4/T7 | Invisible Unicode tag characters (U+E0001–U+E007F, "ASCII smuggling") hiding `rm -rf` in a block type | accepted | `B2C-E0601` | The message shows them as `\u{E00XX}` escapes |
 | `tag-characters-in-module-name.b2c` | T4/T7/T9 | The same hidden text in a module name | `B2C-E0117` | — |  |
 | `tag-characters-in-string-literal.b2c` | T4 | The same hidden text in a string literal | accepted | clean | `StrLit` writes them as `\U000E00XX` (08 §8.4.2) |

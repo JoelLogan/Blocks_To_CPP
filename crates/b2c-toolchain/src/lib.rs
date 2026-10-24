@@ -12,11 +12,15 @@
 //! 4. [`command`]: build the exact argv from the probed toolchain and the
 //!    project's closed build options (§7.4), for a compile-only, link-only
 //!    or single compile-and-link step.
-//! 5. [`env`]: the compiler's allowlisted environment (§7.5.2).
+//! 5. [`env`](mod@env): the compiler's allowlisted environment (§7.5.2).
 //! 6. [`diagnostics`]: parse what g++ and the linker reported (§7.5.3).
+//! 7. [`sanitizer`]: find the first AddressSanitizer or
+//!    UndefinedBehaviorSanitizer report in a running program's output
+//!    (§7.6.4).
 //!
 //! Every problem is reported as a [`b2c_ir::Diagnostic`] with a
-//! `B2C-T1xxx` code from [`codes`].
+//! `B2C-T1xxx` code from [`codes`]. [`host`] reads what the toolchain setup
+//! page needs to know about this computer (the Linux distribution).
 //!
 //! # Example: compile and run hello world
 //!
@@ -61,6 +65,8 @@ pub mod discovery;
 pub mod env;
 pub mod fingerprint;
 pub mod flags;
+pub mod host;
 pub mod paths;
 pub mod probe;
+pub mod sanitizer;
 pub mod target;

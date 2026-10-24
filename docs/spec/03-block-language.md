@@ -11,7 +11,7 @@ functions, classes, control flow, statements) and offers denser ways to fill
 in **details**:
 
 | Technique | Example | Saves |
-|-----------|---------|-------|
+| ----------- | --------- | ------- |
 | **Inline typed fields** | `create [int ▾] [score] = (0)` declares, types and initialises in one block | 2–3 blocks per declaration |
 | **Type picker field** | `[map from string to list of int ▾]` is one field, not nested type blocks | 3–6 blocks per type |
 | **Expression slots** | Type `price * qty + tax` directly into any value slot | 4–10 blocks per expression |
@@ -29,10 +29,19 @@ programmer would say out loud.** "Read a number from the user" is one block.
 "Open a stream, check it, read with `>>`, clear on failure, ignore the rest of
 the line and retry" is what that block *generates*.
 
+**One idea, one block, one toolbox entry.** Variants of one idea that share a
+shape are choices on one block (a dropdown, a ⊕/⊖ part or a checkbox), never
+separate toolbox entries. A separate block type is used only when the
+variants differ in shape (a call used as a statement or as a value) or in
+what the block holds (*forever* has no condition). A toolbox preset may fill
+in a value, but never stands in for a choice the block offers in place. In
+M3, *with arguments* is a checkbox on *when program starts* (a compatible
+field), not a second block.
+
 ## 3.2 Notation used in this document
 
 | Notation | Meaning |
-|----------|---------|
+| ---------- | --------- |
 | `[text ▾]` | Dropdown field |
 | `[text]` | Editable text field (identifier, label) |
 | `(value)` | Value input (round slot): accepts a block **or** typed expression text |
@@ -45,7 +54,7 @@ the line and retry" is what that block *generates*.
 ## 3.3 Block shapes
 
 | Shape | Look (Zelos) | Role | Examples |
-|-------|--------------|------|----------|
+| ------- | -------------- | ------ | ---------- |
 | **Definition (hat)** | Rounded top, no previous connection | Top-level construct. Position on canvas does not matter. | `when program starts`, `define function`, `struct`, `class`, `enum`, `global constant` |
 | **Container** | Hat with sections | Definition holding member rows/blocks | `class` (fields, methods, constructors) |
 | **Statement** | Puzzle notch top and bottom | One C++ statement | `print`, `set`, `add to list` |
@@ -58,6 +67,49 @@ the line and retry" is what that block *generates*.
 Connection compatibility is enforced by a custom Blockly `ConnectionChecker`
 backed by the type system ([§3.5](#35-types)). Shapes stop structurally
 invalid programs, and types stop most semantic errors.
+
+**Placing blocks.** A dragged block snaps to the nearest place that accepts it
+when its connection is within about 44 screen pixels of that place, and never
+less than 48 or more than 96 canvas units away, so a place is as easy to hit
+at every zoom. A grey preview shows where it will go. While a statement is
+dragged, the preview stays on its place until another place is 20 canvas units
+nearer, so it does not jump between two places of a list that are almost as
+near; a dragged value always goes to the nearest slot, since a block's first
+slot lies only 8 units from the slot that holds the block. A loose block
+dropped so that it only looks connected is still moved aside by Blockly's
+usual 28 units. A drop with the pointer anywhere over the toolbox (its
+categories and its open list of blocks alike) or over the trash can deletes
+only the dragged blocks and never connects them. The toolbox counts at any
+height: a drop with the pointer left of its right edge deletes, also above or
+below the editor (over the toolbar or the bottom dock). The pointer decides,
+not how much of the dragged blocks lies over the toolbox. While a drop would
+delete, no place is previewed and the dragged blocks are shown faded. While
+the pointer is left of the toolbox's right edge, the whole toolbox is tinted
+as well; over the trash can, the toolbox is not tinted and the trash can opens
+its lid instead.
+
+An empty C-block (its first mouth holds nothing) dropped with its top on a
+statement takes the statement's place and wraps that statement and everything
+below it in the same list, as in Scratch: the first statement of a list or
+one in the middle. Dropped with its mouth at the top of a loose stack, it
+wraps the stack. An empty C-block is never inserted between two statements;
+at the end of a list, with nothing below to wrap, it is added there. The
+preview shows the C-block around the statements it will wrap. Hats and
+definitions never take statements out of a list. Wrapping is a pointer
+gesture: a block moved with the keyboard is inserted, and the keyboard
+equivalent of wrapping comes in M5.
+
+**Parked blocks.** As in Scratch, a statement or value block, or a stack of
+them, can be left anywhere on the canvas. Only statements attached to *when
+program starts* or to a function run; definitions are never parked. Parked
+blocks are saved, show the ⚠ badge of `B2C-W0505` (*not attached*), are not
+analysed until they are attached and never stop Run
+([ADR-0012](../adr/0012-parked-blocks.md)). The block catalog still checks
+them, so an unknown or damaged block is an error wherever it is. A block in
+which nothing is chosen yet (an *ask* without its variable, straight from
+the toolbox) is not damaged: it asks for the choice only once it is
+attached. Until M3, a variable created inside a parked stack can be chosen
+in the blocks below it only once the stack is attached.
 
 ## 3.4 Expression slots
 
@@ -122,10 +174,40 @@ drafts are stored too (with a `"draft": true` flag), so in-progress text is
 never lost. The token list is flat, so parser recursion depth is bounded by
 expression depth (limit 64) and not by JSON nesting.
 
+A token is an object with exactly one key. The kinds are `num`, `str`, `chr`,
+`ref`, `op`, `kw` and `text`; a new kind needs a new format version
+([05 §5.7](05-project-format.md#57-versioning-and-migration)). Values are
+checked when the slot is parsed, not when the file loads: an `op` or `kw`
+outside this section's grammar, or a `num` that is not an accepted literal,
+is a slot error (`E0310`, …), and the file still loads. In M2 the accepted
+forms are the operators `+ - * / % == != < <= > >= && || ! and or not ?:`,
+parentheses, `true` and `false`, and numbers written as decimal digits with
+an optional fraction and exponent (a whole number has no leading zero, except
+a lone `0`), or as `0x`/`0b` integers, with `'` separators. Suffixes and the
+other operators ([08 §8.4.4](08-security.md#844-numbers)) come with typing in
+slots (M3). A `num` may start with one `-` or `+`, which lowering applies as
+a unary operator; the literal itself (`NumLit`) never carries a sign. The
+file keeps numbers as typed; the generated C++ prints them in canonical form
+([08 §8.4.4](08-security.md#844-numbers)).
+
 **Expand / collapse.** Right-click → *Expand into blocks* converts the parsed
 expression into nested operator/value blocks. *Collapse to text* does the
 reverse whenever the block subtree is expressible in slot syntax. This lets
 teachers show structure and lets experts type quickly.
+
+**In M2** there is no slot editor yet: typing into slots, *Expand* and
+*Collapse* arrive with Quick Insert in M3. Until then a value input that holds
+tokens (or nothing) shows an internal *shadow* block, which is never saved as
+a `{"block": …}` input:
+
+* a single literal token (`num`, `str`, `chr`) is an editable literal;
+* a number typed with a leading `-` is stored as one `num` token;
+* a single reference (`ref`) is a dropdown of the symbols in scope that fit
+  the input;
+* any other token list is shown read-only, as text, and is kept unchanged;
+* an input that is absent from the file stays absent until the user edits it.
+
+A value the user edits is saved as a single-token `expr`.
 
 ## 3.5 Types
 
@@ -155,12 +237,17 @@ A global toggle (**View → Block labels: Friendly | C++**) switches how types
 and block labels read. Both modes generate identical code.
 
 | Friendly | C++ |
-|----------|-----|
+| ---------- | ----- |
 | `list of int` | `std::vector<int>` |
 | `map from string to number` | `std::map<std::string, double>` |
 | `print (x)` | `std::cout << (x)` |
 | `add (x) to [v]` | `v.push_back(x)` |
 | `read-only reference to Player` | `const Player&` |
+
+**In M2** only the Friendly labels exist; the C++ mode arrives in M3. Type
+dropdowns show `int`, `double`, `bool`, `char`, `string` and `auto`, with
+`std::string` displayed as `string`. The stored values are the catalog's type
+names (`std::string`), so files do not change when the C++ mode arrives.
 
 ### 3.5.3 Type checking model (gradual)
 
@@ -186,16 +273,52 @@ The analyser implements a **gradual** type system that approximates C++:
 * **References point to IDs.** Getter blocks and expression tokens reference
   `sym_…` IDs. Renaming is safe and instant. Deleting a declaration turns its
   references into errors ("`score` no longer exists") with a quick fix to
-  re-create it.
+  re-create it. The editor keeps the last-known name of a deleted symbol for
+  the rest of the session. A file stores only the ID, so after a reload such a
+  reference shows *missing (`sym_…`)* with the analyser's badge (`B2C-E0201`,
+  or `E0202`–`E0204`).
 * **Scope follows C++.** A variable is visible from its declaration to the end
   of the enclosing statement list, including nested blocks. Symbol dropdowns
   list **only** the symbols in scope at that block. Dragging a block out of
-  scope marks its references as errors in place.
+  scope marks its references as errors in place; a *set* or *change* just
+  taken from the toolbox is the exception: if its variable is not visible
+  where it is dropped, it takes the first fitting variable visible there, in
+  the same Undo step (a getter keeps its variable and shows `B2C-E0203`;
+  [04 §4.2](04-user-interface.md#42-toolbox)). The dropdowns of blocks that
+  change a variable (*set*, *change* and *ask*) list only what may be
+  changed there: they leave out constants, a `for` loop's counter inside its
+  loop and read-only parameters, and *change*, whatever its operator, also
+  leaves out text and true/false variables. A reference already chosen
+  stays shown. Any other type mismatch is left to the analyser. The editor
+  gets these lists from the scope query of
+  [06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes).
+  A parked block's dropdowns list what is visible at the end of `main`'s
+  body (of the enabled *when program starts*, never a disabled one; the
+  module's functions when there is no `main`); a block inside a
+  disabled statement lists what is visible at that statement. A block the
+  analysis has not seen yet (just dropped or pasted) lists what its place
+  gives it: what the statement before it, or the list or input around it,
+  sees, or, on the canvas, the end of `main`'s body. A block still in the
+  toolbox has no place in the program: its dropdowns list every variable
+  (or function) of the module shown that it may take, grouped by the
+  function that declares it, like the Variables category
+  ([04 §4.2](04-user-interface.md#42-toolbox)).
 * **Unlike Scratch, there are no implicit globals.** *Make a variable* in the
-  Variables category inserts a declaration at the keyboard cursor (or at the
-  top of the selected function). Globals require an explicit top-level
+  Variables category asks for a name and a type (`int` by default) and
+  inserts a declaration before the selected statement (or at the top of the
+  selected function). Globals require an explicit top-level
   `global variable` block, and the analyser suggests `const` / `constexpr`
-  where possible.
+  where possible. With nothing selected, *Make a variable* inserts at the top
+  of `main` (creating `main` if there is none). The Variables category lists
+  every variable of the module, grouped by the function that declares it,
+  and does not depend on the selection
+  ([04 §4.2](04-user-interface.md#42-toolbox)).
+* **Default names** are the first free name in scope where the block is
+  dropped: `value`, `value2`, `value3`, … for a new variable; `i`, `j`, `k`
+  for a counted loop; and `myFunction` for a new function. A counted loop
+  that wraps statements when it is dropped ([§3.3](#33-block-shapes)) also
+  leaves out the names they declare, nested ones included: wrapped around
+  `create i` or a `for i` loop, it counts with `j`.
 * **Identifiers are validated** ([08 §8.4.1](08-security.md#841-identifiers)):
   ASCII `[A-Za-z][A-Za-z0-9_]{0,63}`, not a keyword, not reserved, and not a
   standard macro name. Duplicate names in one scope are errors with a rename
@@ -210,7 +333,7 @@ until **View → Show advanced blocks** is enabled, which keeps the beginner
 toolbox small.
 
 | Category | Icon | Contents |
-|----------|------|----------|
+| ---------- | ------ | ---------- |
 | Program | ▶ | `main`, command-line arguments, exit |
 | Variables | 𝑥 | declare, set, change, getters, constants |
 | Math | ∑ | arithmetic, comparison, math functions, random, conversions |
@@ -219,7 +342,7 @@ toolbox small.
 | Control | ⑂ | if/else-if/else, switch, wait, stop |
 | Loops | ↻ | repeat, while/until, for range, for each, forever, break/continue |
 | Input / Output | ⌨ | print, ask, read, formatting manipulators |
-| Functions | ƒ | define, return, lambda, *My Blocks* (calls, auto-generated) |
+| Functions | ƒ | define, return, lambda, *Your functions*: a call block for each function you define, kept up to date (grouped under a module heading only when the project has more than one module) |
 | Collections | ☰ | list/map/set/queue/stack… polymorphic blocks |
 | Types | ◆ | struct, class, enum, alias, members, object creation |
 | Files | 🗎 | streams, line iteration, filesystem |
@@ -236,10 +359,20 @@ The tables below show representative blocks. The complete, normative list is
 the catalog itself ([§3.11](#311-the-catalog-and-library-packs)), from which
 the reference documentation in `docs/reference/blocks/` is **generated**.
 
+**In M2** the catalog has the blocks of `catalog/core/` only: *create* with a
+*constant* checkbox (no `constexpr`/`static`), *set*, *change* with the
+operators `+= -= *= /= %=` in its menu, getters; numbers, arithmetic,
+comparison, *random integer*, *as int/double*; and/or/not, true/false,
+conditional value; text, character, *join*; *if/else if/else*; *repeat*,
+*repeat while/until*, *for*, *forever*, *leave loop*, *skip to next round*;
+*print*, *ask*; *define* (copy, editable and read-only parameters; a
+read-only number, character or true/false is passed by value), *return*,
+calls; *when program starts*, *stop program*.
+
 ### 3.7.1 Program
 
 | Block | Generates |
-|-------|-----------|
+| ------- | ----------- |
 | `when program starts { … }` | `int main() { … return 0; }` (implicit `return 0`) |
 | `when program starts with arguments [args] { … }` | `int main(int argc, char* argv[]) { const std::vector<std::string> args(argv, argv + argc); … }` |
 | `stop program with exit code (0)` | `return 0;` inside `main`, otherwise `std::exit(0);` |
@@ -249,19 +382,22 @@ A project has exactly one `main`; a second one is an analyser error.
 ### 3.7.2 Variables
 
 | Block | Generates |
-|-------|-----------|
-| `create [int ▾] [score] = (0) ⚙` | `int score = 0;` (`⚙`: `const`, `constexpr`, `static`) |
+| ------- | ----------- |
+| `create [int ▾] variable [score] = (0) constant ☐` | `int score = 0;` (`const int` when ticked; the ⚙ popover with `constexpr` and `static` replaces the checkbox in M3 as a compatible change) |
 | `create [auto ▾] [a], [b] ⊕ from (pairValue)` | `auto [a, b] = pairValue;` (structured binding) |
 | `set [score ▾] to (expr)` | `score = expr;` |
-| `change [score ▾] by (1)` | `score += 1;` (and `++score;` when the value is the literal 1) |
-| `[score ▾] [*= ▾] (2)` | `score *= 2;` (all compound operators) |
+| `change [score ▾] [by ▾] (1)` | `score += 1;` (`++score;` for *by* the literal 1); the menu also gives *down by* (`-=`), *times* (`*=`), *divided by* (`/=`) and *mod* (`%=`), and, with *Show advanced blocks* (M3), the bitwise forms `&=`, `\|=`, `^=`, `<<=` and `>>=`. In C++ label mode every option shows its operator. For number and character variables |
 | `(score)` | `score` |
 | `global [constant ▾] [double] [kGravity] = (9.81)` *(top level)* | `constexpr double kGravity = 9.81;` |
+
+The toolbox does not repeat these blocks per variable: it shows one *set*
+and one *change* block whose menu chooses the variable
+([04 §4.2](04-user-interface.md#42-toolbox)).
 
 ### 3.7.3 Math and Logic
 
 | Block | Generates | Notes |
-|-------|-----------|-------|
+| ------- | ----------- | ------- |
 | `(a) [+ ▾] (b)` | `a + b` | `+ − × ÷ mod` → `+ - * / %`. Parentheses inserted only when precedence requires. |
 | `(a) [< ▾] (b)` | `a < b` | |
 | `<a> [and ▾] <b> ⊕` | `a && b && c` | Variadic |
@@ -281,9 +417,10 @@ unsigned comparison, and possible overflow of a literal into its target type
 ### 3.7.4 Text
 
 | Block | Generates |
-|-------|-----------|
+| ------- | ----------- |
 | `"hello"` | `"hello"` (escaped per [08 §8.4.2](08-security.md#842-string-and-character-literals)) |
-| `join (a) (b) ⊕` | Idiomatic per part: `std::string(a) + b`, `+ std::to_string(n)`, `+ std::string(1, c)`; `std::format` when the *formatting style* setting is `format` and the toolchain supports it |
+| `character 'a'` | `'a'` (one ASCII character; use text for anything else) |
+| `join (a) (b) ⊕` | Idiomatic per part: `std::string(a) + b`, `+ std::to_string(n)` for whole numbers and `+ b2c::to_text(x)` for decimal numbers, which writes the number exactly as `print` would, `+ std::string(1, c)`; `std::format` when the *formatting style* setting is `format` and the toolchain supports it |
 | `format ("{} scored {}") with (name) (score) ⊕` | `std::format("{} scored {}", name, score)` (C++20 with GCC 13+; otherwise an `std::ostringstream` helper) |
 | `length of (s)` | `s.size()` |
 | `letter (i) of (s)` | `s.at(i)` |
@@ -295,11 +432,11 @@ unsigned comparison, and possible overflow of a literal into its target type
 ### 3.7.5 Control and Loops
 
 | Block | Generates |
-|-------|-----------|
-| `if <c> then { } ⊕else if ⊕else` | `if (c) { } else if (d) { } else { }` |
+| ------- | ----------- |
+| `if <c> then { } ⊕else if ⊕else` | `if (c) { } else if (d) { } else { }`. One block: *else if* and *else* are added and removed with ⊕/⊖ on the block. |
 | `switch on (v) case [1] { } ⊕ default { }` | `switch (v) { case 1: { … break; } default: { … } }`. `break` is automatic unless *fall through ☑*. Case labels must be constants or enum values. |
 | `repeat (10) times { }` | `for (int i = 0; i < 10; ++i) { }` (a hidden counter with a unique, readable name). A count that could change while the loop runs (it calls a function, or reads a variable the body may change) is evaluated once: `for (int i = 0, n = b2c::random_int(1, 6); i < n; ++i)`. The same applies to a `for` loop's end and step. |
-| `repeat while <c> { }` / `repeat until <c> { }` | `while (c) { }` / `while (!(c)) { }` (simplified to the inverse operator where that is exact, e.g. `!(a == b)` → `a != b`; ordering comparisons on decimal numbers are not inverted, because `!(x < y)` and `x >= y` differ when a value is NaN) |
+| `repeat [while ▾] <c> { }` (choose *until* in the menu) | `while (c) { }` / `while (!(c)) { }` (simplified to the inverse operator where that is exact, e.g. `!(a == b)` → `a != b`; ordering comparisons on decimal numbers are not inverted, because `!(x < y)` and `x >= y` differ when a value is NaN) |
 | `do { } while <c>` | `do { } while (c);` |
 | `for [i] from (1) [to ▾] (10) [step (1)]` | `to` → `i < 10`, `through` → `i <= 10`, `down to` → `i >= 10` with `i -= step`. The direction is explicit, so a runtime step sign is never needed. `step` is hidden until expanded. |
 | `for each [item] in (list) [read-only ▾]` | `for (const auto& item : list)`; *copy* → `auto item`, *editable* → `auto& item` |
@@ -311,26 +448,28 @@ unsigned comparison, and possible overflow of a literal into its target type
 ### 3.7.6 Input / Output
 
 | Block | Generates | Notes |
-|-------|-----------|-------|
-| `print (a) (b) ⊕ [no separator ▾] ☑ new line` | `std::cout << a << b << '\n';` | `bool` prints as `true`/`false` (via `(b ? "true" : "false")`); 8-bit integers print as numbers (unary `+`); separators can be spaces or commas; `print to error stream` uses `std::cerr` |
-| `ask ("Name? ") and save answer in [name ▾]` | string: `std::cout << "Name? "; std::getline(std::cin >> std::ws, name);` | `std::ws` avoids the classic "getline after `>>`" bug |
-| (same, numeric target) `[keep asking until valid ▾]` | `age = b2c::ask<int>("Age? ");` | The helper asks again after invalid input, with a short message such as *"Please enter a whole number."* At end of input (e.g. stdin from a file) it prints *"Input ended"* and exits with code 1 instead of looping forever. `simple` mode emits `std::cin >> age;`. |
+| ------- | ----------- | ------- |
+| `print (a) (b) ⊕ [no separator ▾] new line ☑ to [the console ▾]` | `std::cout << a << b << '\n';` | `bool` prints as `true`/`false` (via `(b ? "true" : "false")`); 8-bit integers print as numbers (unary `+`); separators can be spaces or commas; *the error stream* writes to `std::cerr` |
+| `ask ("Name? ") and save answer in [name ▾]` | *keep asking until valid* (default): `name = b2c::ask_line("Name? ");` reads one line; an empty line asks again | Leading spaces are dropped. `simple` mode emits `std::cout << "Name? "; std::getline(std::cin >> std::ws, name);`, where `std::ws` avoids the classic "getline after `>>`" bug |
+| (same, numeric target) `[keep asking until valid ▾]` | `age = b2c::ask<int>("Age? ");` | The helper asks again after invalid input, with a short message such as *"Please enter a whole number."* An answer is valid only when the whole line, apart from spaces, is one value of the variable's type: `3.5` or `12abc` for a whole number asks again with *Please enter a whole number.* At end of input (e.g. stdin from a file) it prints *"Input ended"* and exits with code 1 instead of looping forever. `simple` mode emits `std::cin >> age;` followed by `std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');`, which drops the rest of the line, so a later `ask` in either mode reads the next line. Both helpers first recover from a failed `simple` read (for example a word typed for a number): they clear the stream and drop that line. |
 | `read [word ▾] into [w]` | `std::cin >> w;` / `std::getline(std::cin, w);` | |
 | `show numbers with (2) decimal places` | `std::cout << std::fixed << std::setprecision(2);` | |
 
 ### 3.7.7 Functions
 
 | Block | Generates |
-|-------|-----------|
+| ------- | ----------- |
 | `define [greet] with ([string] name [read-only ▾]) ([int] times = (1)) ⊕ returns [nothing ▾] { }` | `void greet(const std::string& name, int times = 1) { }`. Parameter pass modes: *copy*, *editable* (`&`), *read-only* (`const&`), *moved* (`&&`). |
-| *(auto-generated, in My Blocks)* `greet (name: "Ada") (times: 3)` | `greet("Ada", 3);` A statement block when the result is `void`, a reporter otherwise. A reporter can be used as a statement via *ignore result*. |
+| *(auto-generated, under Your functions)* `greet (name: "Ada") (times: 3)` | `greet("Ada", 3);` A statement block when the result is `void`, a reporter otherwise. A reporter can be used as a statement via *ignore result*. |
 | `return (value)` | `return value;` |
 | `function ([auto] x) ⊕ capturing [nothing ▾] returns [auto] { }` | `[](auto x) { … }`. Capture options: nothing, everything by reference `[&]`, everything by copy `[=]`, or chosen variables. |
 | `function of ([auto] x) giving (x * 2)` | `[](auto x) { return x * 2; }` (single-expression form) |
 
-Overloads (same name, different parameters), default arguments and recursion
-are supported. **Definition order on the canvas never matters**: the generator
-emits forward declarations automatically ([06 §6.7](06-compiler-pipeline.md#67-ordering-and-declarations)).
+Recursion is supported. Overloads (same name, different parameters) and
+default arguments come in M3 ([10 §10.1](10-roadmap.md#101-milestones)); until
+then a second function with the same name is `E0211`. **Definition order on
+the canvas never matters**: the generator emits forward declarations
+automatically ([06 §6.7](06-compiler-pipeline.md#67-ordering-and-declarations)).
 
 ### 3.7.8 Collections
 
@@ -339,7 +478,7 @@ idiomatic operation for the static type, and the dropdowns only show what that
 type supports.
 
 | Block | vector / deque | set | map | queue / stack / priority_queue |
-|-------|----------------|-----|-----|--------------------------------|
+| ------- | ---------------- | ----- | ----- | -------------------------------- |
 | `add (x) to [c]` | `c.push_back(x)` | `c.insert(x)` | — (use `set key`) | `c.push(x)` |
 | `item (i) of [c]` | `c.at(i)` | — | `c.at(k)` | `c.front()` / `c.top()` |
 | `set item (i) of [c] to (x)` | `c.at(i) = x` | — | `c[k] = x` | — |
@@ -365,7 +504,7 @@ dedicated block for each method.
 ### 3.7.9 Types (structs, classes, enums)
 
 | Block | Generates |
-|-------|-----------|
+| ------- | ----------- |
 | `struct [Point] fields: [double] x = (0) ⊕ ☐ printable ☐ comparable` | `struct Point { double x = 0; … };` *printable* auto-generates `operator<<`; *comparable* adds `auto operator<=>(const Point&) const = default;` (C++20) |
 | `new [Point] with x: (1) y: (2)` | `Point{.x = 1, .y = 2}` (C++20 designated initialisers), or `Point{1, 2}` in C++17 mode. Slots are generated from the fields, in declaration order. |
 | `class [Player] inherits [public ▾] [Entity] ⊕ { members }` | `class Player : public Entity { … };` |
@@ -387,7 +526,7 @@ the C++ view and in the class block's `⚙`). Copy/move special members can be
 ### 3.7.10 Files
 
 | Block | Generates |
-|-------|-----------|
+| ------- | ----------- |
 | `open file ("scores.txt") for [reading ▾] as [file]` | `std::ifstream file("scores.txt");` (`writing` → `std::ofstream`; `appending` → `std::ofstream file(path, std::ios::app)`), plus an *if it failed* mouth: `if (!file) { … }` |
 | `read line from [file] into [line]` | `std::getline(file, line)` (a predicate, usable in `repeat while`) |
 | `for each line [line] in file ("data.txt") { } ⊕ if it can't be opened { }` | `std::ifstream` + `while (std::getline(...))` |
@@ -397,7 +536,7 @@ the C++ view and in the class block's `⚙`). Copy/move special members can be
 ### 3.7.11 Errors
 
 | Block | Generates |
-|-------|-----------|
+| ------- | ----------- |
 | `try { } catch [any error ▾] as [e] { } ⊕` | `try { } catch (const std::exception& e) { }`. The dropdown lists standard exception types, user exception classes and `...` (*anything*). |
 | `throw [runtime error ▾] ("message")` | `throw std::runtime_error("message");` |
 | `error message of [e]` | `e.what()` |
@@ -406,7 +545,7 @@ the C++ view and in the class block's `⚙`). Copy/move special members can be
 ### 3.7.12 Memory, Concurrency, Generics *(Advanced)*
 
 | Block | Generates |
-|-------|-----------|
+| ------- | ----------- |
 | `address of [x]` / `value at (p)` | `&x` / `*p` |
 | `make [unique ▾] [Player] with (args) ⊕` | `std::make_unique<Player>(args)` / `std::make_shared<…>` |
 | `move (x)` | `std::move(x)` (the analyser warns on later use of a moved-from variable) |
@@ -421,7 +560,7 @@ the C++ view and in the class block's `⚙`). Copy/move special members can be
 ### 3.7.13 Organisation
 
 | Block | Generates |
-|-------|-----------|
+| ------- | ----------- |
 | `namespace [geometry] { definitions }` | `namespace geometry { … }` |
 | `use header [<cmath> ▾]` | `#include <cmath>`. Usually unnecessary, because includes are computed automatically. The dropdown offers standard headers, library-pack headers and project modules only. |
 | `use namespace [std ▾] in this file` (module top level) · `use namespace [std ▾] here` (inside a function) | `using namespace std;` for this module's `.cpp`, or from this point to the end of the statement list. The dropdown offers `std`, the standard sub-namespaces of the project's standard (`std::chrono`, `std::this_thread`, `std::filesystem`; `std::numbers`, `std::ranges`, `std::views` from C++20) and the module's top-level namespaces. Never in a header or a class or namespace block (enforced). The project setting *Textbook style* does the same for every `.cpp`. How names are then spelled, and the few that must be renamed: [06 §6.14](06-compiler-pipeline.md#614-standard-names-and-using-namespace). |
@@ -435,7 +574,12 @@ Clear organisation is a core requirement, not polish:
 1. **Modules = tabs = files.** Each module becomes `name.cpp`, plus `name.hpp`
    when it has *shared* definitions. Using another module's shared
    definitions adds the `#include` automatically, and the toolbox's
-   *My Blocks* shows each module's functions under a module heading.
+   *Your functions* offers a call block for each function you define, kept
+   up to date (grouped under a module heading only when the project has more
+   than one module).
+   **In M2** every module is compiled on its own: functions cannot be called
+   across modules (`E0206`), their names are unique in the program
+   (`E0211`), and helpers are inline in each file.
 2. **Order-independent definitions.** Top-level definition blocks can sit
    anywhere on the canvas. The generator sorts them by dependency and adds
    forward declarations.
@@ -464,14 +608,18 @@ Clear organisation is a core requirement, not polish:
 ## 3.9 Support helpers
 
 Some blocks generate a call into a tiny, readable **support library** of
-helpers in the `b2c` namespace: `random_int`, `random_real`, `ask<T>`, `trim`,
-`split`, `to_upper`, `replace_all`, `Stopwatch` and similar.
+helpers in the `b2c` namespace: `random_int`, `random_real`, `ask<T>`,
+`to_text`, `trim`, `split`, `to_upper`, `replace_all`, `Stopwatch` and
+similar.
 
 * Helpers are plain C++ with Doxygen comments, versioned with the catalog, and
   emitted **only if used**.
 * **Placement.** Single-module projects get the helpers inline in a clearly
   delimited section at the top of `main.cpp`, so a student can submit one
-  file. Multi-module projects get them in `b2c_support.hpp`.
+  file. Multi-module projects get them in `b2c_support.hpp`. **In M2** every
+  module is compiled on its own: functions cannot be called across modules
+  (`E0206`), their names are unique in the program (`E0211`), and helpers
+  are inline in each file.
 * A project setting, **Prefer plain standard C++**, swaps helpers for inline
   standard code wherever a reasonable inline form exists (e.g. `std::cin >>
   x;` for `ask`).
@@ -480,7 +628,7 @@ helpers in the `b2c` namespace: `random_int`, `random_real`, `ask<T>`, `trim`,
 ## 3.10 Raw C++ blocks
 
 | Block | Shape | Use |
-|-------|-------|-----|
+| ------- | ------- | ----- |
 | `C++ statements { code }` | Statement | Any statements, e.g. a `goto`, a coroutine body, platform calls |
 | `C++ expression (code) of type [T ▾]` | Reporter | An expression with a declared result type (or `opaque`) |
 | `C++ declarations { code }` | Definition | Macros, unions, specialisations, `extern "C"` blocks, … |
@@ -501,42 +649,130 @@ helpers in the `b2c` namespace: `random_int`, `random_real`, `ask<T>`, `trim`,
 
 ### 3.11.1 Catalog format
 
-All block types are defined declaratively in TOML under `catalog/`. A build
-step (`packages/catalog-gen`) generates typed Blockly definitions and the
-block reference docs, and the Rust compiler loads the same files. This gives
-one source of truth for both editor and compiler.
+All block types are defined declaratively in TOML under `catalog/`. The Rust
+compiler (`b2c-catalog`) loads and validates these files, and the editor's
+block definitions and the block reference are generated from the validated
+result. This gives one source of truth for both editor and compiler.
 
 ```toml
 # catalog/core/io.toml
 [[block]]
-id        = "io.print"              # stable, namespaced ID; never reused
-version   = 1                       # bumped on breaking change; migrations required
-category  = "io"
-shape     = "statement"
-label     = { friendly = "print %items %sep %newline", cpp = "std::cout << %items %sep %newline" }
-lowering  = "builtin:io.print"      # hand-written Rust lowering for core blocks
-headers   = ["<iostream>"]
-help      = "io/print.md"
+id       = "io.print"                  # stable, namespaced ID; never reused
+version  = 1                           # bumped on breaking change; migrations required
+category = "io"
+shape    = "statement"
+label    = { friendly = "print %ITEM … %SEP new line %NEWLINE to %STREAM", cpp = "std::cout << %ITEM << …;" }
+lowering = "builtin"                   # hand-written Rust lowering for core blocks
+headers  = ["<iostream>"]
+help     = "Shows values in the console."
 
-[[block.input]]
-name    = "items"
-kind    = "variadic-value"          # renders ⊕ / ⊖
+[[block.extra]]                        # mutator state, saved in the block's "extra"
+name    = "itemCount"
+kind    = "count"                      # count | flag | params
 min     = 1
 max     = 32
-type    = "printable"               # type class checked by the analyser
-default = { text = "Hello, world!" }
+default = "1"
+
+[[block.input]]
+name    = "ITEM"                       # repeated: ITEM0, ITEM1, … (itemCount inputs)
+check   = "any"                        # type class for the editor's connection checker
+repeat  = { count = "itemCount" }
+default = [{ str = "Hello, world!" }]  # tokens shown (as a shadow) while the input is absent
 
 [[block.field]]
-name    = "sep"
+name    = "SEP"
 kind    = "dropdown"
 options = [["no separator", "none"], ["spaces", "space"], ["commas", "comma"]]
 default = "none"
 
 [[block.field]]
-name    = "newline"
-kind    = "checkbox"
+name    = "NEWLINE"
+kind    = "checkbox"                   # the label's words next to it say what it means
 default = true
+
+[[block.field]]
+name    = "STREAM"
+kind    = "dropdown"
+options = [["the console", "out"], ["the error stream", "err"]]
+default = "out"
+
+# catalog/core/math.toml
+[[block]]
+id       = "math.random_int"
+version  = 1
+category = "math"
+shape    = "reporter"
+output   = "int"                       # required for reporters and predicates
+label    = { friendly = "random integer from %LOW to %HIGH", cpp = "b2c::random_int(%LOW, %HIGH)" }
+lowering = "builtin"
+headers  = ["<random>"]
+help     = "A random whole number between the two values, including both."
 ```
+
+* **Tables and keys.** `[[block]]` has `id`, `version`, `category`, `shape`
+  (`hat`, `definition`, `statement`, `reporter`, `predicate`), `label`,
+  `lowering`, `headers`, `help` and `output`. `[[block.field]]` declares
+  fields (`dropdown`, `checkbox`, `text`, `number`, `type`, `symbol_decl`,
+  `symbol_ref`); `[[block.input]]` value inputs (a `check` type class of
+  `any`, `number`, `integer`, `bool` or `text`, `optional`, `repeat` and
+  `default` tokens); `[[block.statement]]` statement inputs (`repeat`, and
+  `when` for an input present only while an `extra` flag is set); and
+  `[[block.extra]]` the mutator state (`count`, `flag` or `params`). Unknown
+  keys are errors.
+* **Label templates.** In both labels, `%NAME` marks where the field or input
+  `NAME` goes, and a bare `…` marks where a repeated group continues: the
+  repeated inputs (`ITEM0`, `ITEM1`, …) or the repeated parts of a block such
+  as the *else if* branches of `control.if`. Statement inputs that the label
+  does not mention are placed after it, in catalog order. The blocks with a
+  variable number of parts (`control.if`, `io.print`, `text.join`,
+  `logic.operation`, `func.define`, `func.call`, `func.call_stmt`) get ⊕/⊖
+  mutators from `blockly-ext`, keyed by block ID; their text still comes from
+  the catalog label.
+* **Messages.** Catalog messages use a block's short name: its friendly
+  label up to the first field or input (*print*, *repeat*, *when program
+  starts*). A message about a block whose label starts with a field or input
+  says *this block*. Messages never show a block's catalog ID, except for an
+  unknown block type (`E0601`) and a broken catalog definition (`E0620`, a
+  bug report). Block paths in Problems name blocks differently, with the
+  current dropdown text filled in and a function's name for its definition
+  ([04 §4.4](04-user-interface.md#44-diagnostics-ux)). An optional `short`
+  key for a shorter name is left for the localisation work of M5.
+* **Output types.** `output` is required for `reporter` and `predicate`
+  shapes and forbidden for the others. Its values are `any`, `bool`, `int`,
+  `double`, `number`, `char`, `string`, `symbol` and `field:<NAME>`.
+  `symbol` means the type of the referenced symbol (`var.get`: the variable's
+  type; `func.call`: the function's return type), which the editor takes from
+  the live analysis ([06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes)).
+  `field:<NAME>` means the type chosen in field `NAME` (`math.convert`'s
+  `TO`). The editor's connection checker refuses a connection only when the
+  analyser's conversion rule says the value cannot convert at all; unknown and
+  erroneous types always connect, and the analyser reports the problem.
+* **Toolbox.** `catalog/toolbox.toml` lists the toolbox categories in the
+  order of §3.7 (in M2: Program, Variables, Math, Logic, Text, Control, Loops,
+  Input / Output and Functions). Each category has a name, an icon, a colour
+  token (its ID; the colour values live in the editor theme) and, for
+  *Variables* and *Functions*, a dynamic kind whose entries the editor fills
+  in ([04 §4.2](04-user-interface.md#42-toolbox)). Its ordered entries name a
+  block, with an optional label and an optional *preset* of field values,
+  `extra` values and input tokens: for example `var.declare` as an `int`
+  starting at `0`, and `io.ask` with the prompt `"Your answer: "`. A block
+  has at most one entry (§3.1). `b2c-catalog` validates the toolbox: every
+  entry names an existing block, no block has two entries, no entry label
+  equals a category name (the editor's tests check the same for its dynamic
+  headings), every catalog block is reachable through an entry or a dynamic
+  category (`var.get`, `var.set` and `var.change` through Variables;
+  `func.call` and `func.call_stmt` through Functions), and every
+  preset value fits its field, `extra` or input. It also checks each block's
+  friendly label: every field and non-repeated value input appears in it,
+  and a checkbox is next to the words naming it.
+* **Generation.** A `b2c-catalog` test exports the validated catalog and
+  toolbox as `packages/catalog-gen/catalog.json`. The build-time package
+  `catalog-gen` reads only that JSON (it never parses TOML, so all validation
+  stays in Rust) and generates the typed Blockly definitions
+  (`packages/blockly-ext/src/generated/catalog.ts`, with each friendly label
+  pre-parsed into text, argument and repeat parts) and the block reference in
+  `docs/reference/blocks/`. Both outputs and the JSON are committed, and CI
+  fails when any of them is stale.
 
 ### 3.11.2 Template lowering (library blocks)
 
@@ -590,16 +826,38 @@ User-installed packs are **code** and are subject to workspace trust
 
 ### 3.11.3 Block versioning
 
-Block IDs are stable and never reused. A breaking change to a block's
-inputs/fields bumps `version`, and the catalog ships a migration (pure
-function, BDM → BDM) from every older version. Removing a block type
-requires a deprecation period of one minor release in which the block still
-loads, shows a deprecation badge, and offers an automatic replacement.
+Block IDs are stable and never reused. **Compatible** changes (a field,
+`extra` key or input with a default; a dropdown option; label, help or
+colour text) keep `version` and raise `generator.catalog`'s minor version.
+The catalog is 1.1.0 since M2's labels name every field, and 1.2.0 since
+*change* (`var.change`) has its operator menu `OP`. A file that leaves
+the new key out loads with the default, and the editor keeps leaving it out
+while the block keeps that default; blocks a newer editor creates write it.
+When a document or clipboard payload names a `generator.catalog` newer than
+this app's, a block with an unknown field, input, `extra` key or option is
+reported as made by a newer catalog (`B2C-E0602`, not `E0605`), shown as a
+placeholder and kept unchanged on save.
+
+**Breaking** changes raise `version` and ship a migration (a pure BDM → BDM
+function). **Merging or retiring a block type** ships a *replacement* from
+the old type and version to its successor that keeps the block's ID,
+position, comment, flags, stack and nested blocks, and lists the old ID as
+retired ([ADR-0015](../adr/0015-block-upgrades-on-load.md)). Before 1.0 an
+exact replacement takes the place of a deprecation period. Migrations and
+replacements run when a document is loaded, before the editor or compiler
+see it ([05 §5.7](05-project-format.md#57-versioning-and-migration)), so the
+editor never shows an upgradable block as a placeholder. Each has a
+golden-file test.
+
+Retired so far: *update* (`var.update` v1, `[score ▾] [*= ▾] (2)`), which
+catalog 1.2.0 merged into *change*. Its replacement makes it the *change*
+block with the same operator chosen in the menu, its value as the amount
+(`VALUE` becomes `BY`), and the same C++.
 
 ## 3.12 C++ coverage matrix
 
 | C++ feature | Support in 1.0 | How |
-|-------------|----------------|-----|
+| ------------- | ---------------- | ----- |
 | Fundamental types, literals, `auto`, `const`, `constexpr` | ✅ Native | Type picker, declaration blocks |
 | All operators | ✅ Native | Operator blocks + expression slots |
 | `if`/`switch`/`while`/`do`/`for`/range-`for`/`break`/`continue`/`return` | ✅ Native | Control and Loops |
@@ -634,7 +892,7 @@ loads, shows a deprecation badge, and offers an automatic replacement.
 
 ### 3.13.1 Guessing game (input, random, loops, branching)
 
-```
+```text
 when program starts
 │ create [int] [secret] = (random integer from (1) to (100))
 │ create [int] [guess] = (0)
@@ -655,15 +913,15 @@ token, needs about 30.
 ```cpp
 // Generated by Blocks2Cpp from project "Guessing Game", module "main".
 #include <iostream>
-#include <limits>
 #include <random>
+#include <sstream>
 #include <string>
 
 // ---- Blocks2Cpp support helpers (only those used) --------------------
 namespace b2c {
 /// Returns a uniformly distributed integer in [low, high].
 inline int random_int(int low, int high) { /* … */ }
-/// Prints `prompt` and reads a T, re-prompting until the input is valid.
+/// Prints `prompt` and reads one line holding a T, asking again until it is valid.
 template <typename T> T ask(const std::string& prompt) { /* … */ }
 }  // namespace b2c
 // -------------------------------------------------------------------------
@@ -688,7 +946,7 @@ int main() {
 
 ### 3.13.2 Structs, lists, sorting with a lambda
 
-```
+```text
 struct [Student] fields: [string] name, [int] score
 
 when program starts
@@ -725,7 +983,7 @@ int main() {
 
 ### 3.13.3 Classes, inheritance, polymorphism
 
-```
+```text
 class [Shape]
 │ method [public] [area] returns [double] ⚙{const, abstract}
 │ method [public] [describe] returns [string] ⚙{const}  { return (join ("Area: ") (area())) }
@@ -788,16 +1046,16 @@ popup at the keyboard cursor (or at the mouse position). It offers:
    blocks, and `endl` finds *print* with *new line*.
 2. **Statement parsing** of common one-liners, inserted as proper blocks:
 
-| Typed | Inserted block |
-|-------|----------------|
-| `int x = 5` | `create [int] [x] = (5)` |
-| `x = y + 1` / `x += 2` / `x++` | `set` / `change` / `change by 1` |
-| `print "hi", x` or `cout << "hi" << x` | `print ("hi") (x)` |
-| `if x > 3` / `while running` / `repeat 10` | C-block with the condition filled in, cursor inside |
-| `for i = 0 to 10` / `for (int i = 0; i < n; ++i)` | `for [i] from (0) to (10)` |
-| `for (auto& p : players)` / `for p in players` | `for each [p] in (players) [editable]` |
-| `return x` / `break` / `continue` | corresponding block |
-| `greet("Ada", 3)` / `v.push_back(3)` | call / member-call block |
+   | Typed | Inserted block |
+   | ------- | ---------------- |
+   | `int x = 5` | `create [int] [x] = (5)` |
+   | `x = y + 1` / `x += 2` / `x++` | `set` / `change` / `change by 1` |
+   | `print "hi", x` or `cout << "hi" << x` | `print ("hi") (x)` |
+   | `if x > 3` / `while running` / `repeat 10` | C-block with the condition filled in, cursor inside |
+   | `for i = 0 to 10` / `for (int i = 0; i < n; ++i)` | `for [i] from (0) to (10)` |
+   | `for (auto& p : players)` / `for p in players` | `for each [p] in (players) [editable]` |
+   | `return x` / `break` / `continue` | corresponding block |
+   | `greet("Ada", 3)` / `v.push_back(3)` | call / member-call block |
 
 3. If parsing fails, the popup explains why and offers *Insert as Raw C++*
    (explicit, never automatic).

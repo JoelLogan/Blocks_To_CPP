@@ -1,0 +1,42 @@
+/*
+ * The live analysis' notice banner (src/features/analysis). Shown by a glyph, a heading and text,
+ * never by colour alone (04 §4.8).
+ */
+
+.analysis-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--b2c-warning-text);
+  background: var(--b2c-warning-bg);
+  color: var(--b2c-warning-text);
+}
+
+.analysis-banner-glyph {
+  flex: none;
+  margin-top: 1px;
+  font-weight: 700;
+}
+
+.analysis-banner-text {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+.analysis-banner-text p {
+  margin: 2px 0;
+}
+
+.analysis-banner-title {
+  margin: 0 0 2px;
+  font-size: 15px;
+}
+
+.analysis-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: center;
+  gap: 8px;
+}

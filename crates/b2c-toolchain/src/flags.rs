@@ -833,6 +833,48 @@ mod tests {
         }
     }
 
+    /// Library names are stored in machine settings as plain text and read
+    /// back through the same check.
+    #[test]
+    fn link_names_round_trip_through_json() {
+        let name = LinkName::new("sfml-graphics").unwrap();
+        assert_eq!(serde_json::to_string(&name).unwrap(), r#""sfml-graphics""#);
+        assert_eq!(String::from(name.clone()), "sfml-graphics");
+        let read: LinkName = serde_json::from_str(r#""sfml-graphics""#).unwrap();
+        assert_eq!(read, name);
+        let error = serde_json::from_str::<LinkName>(r#""-lfoo;rm""#).unwrap_err();
+        assert!(
+            error.to_string().contains("is not a valid library name"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn library_profiles_keep_what_they_were_given() {
+        let root = std::env::temp_dir();
+        let profile = LibraryProfile::new(
+            vec![root.join("sdl/include")],
+            vec![root.join("sdl/lib"), root.join("sdl/lib64")],
+            vec![LinkName::new("SDL2").unwrap(), LinkName::new("SDL2main").unwrap()],
+            vec![root.join("sdl/bin")],
+            Subsystem::Windows,
+        )
+        .unwrap();
+        assert_eq!(profile.include_dirs(), [root.join("sdl/include")]);
+        assert_eq!(profile.lib_dirs(), [root.join("sdl/lib"), root.join("sdl/lib64")]);
+        let links: Vec<&str> = profile.link().iter().map(LinkName::as_str).collect();
+        assert_eq!(links, ["SDL2", "SDL2main"]);
+        assert_eq!(profile.runtime_dirs(), [root.join("sdl/bin")]);
+        assert_eq!(profile.subsystem(), Subsystem::Windows);
+        assert_eq!(profile.pkg_config(), &PkgConfigFlags::default());
+        let flags = filter_pkg_config("-pthread");
+        let profile = profile.with_pkg_config(flags.clone());
+        assert_eq!(profile.pkg_config(), &flags);
+        // Every kind of folder must be absolute, runtime folders included.
+        let relative = LibraryProfile::new(vec![], vec![], vec![], vec!["bin".into()], Subsystem::Console);
+        assert_eq!(relative.unwrap_err().code.0, codes::BAD_LIBRARY);
+    }
+
     #[test]
     fn library_dirs_must_be_absolute() {
         assert!(
@@ -901,6 +943,19 @@ mod tests {
         assert_eq!(tokenize(r#"a 'b c' "d e" f\ g  "#), ["a", "b c", "d e", "f g"]);
         assert_eq!(tokenize(""), Vec::<String>::new());
         assert_eq!(tokenize("''"), [""]);
+    }
+
+    /// As in a POSIX shell: inside single quotes a backslash is an ordinary
+    /// character; inside double quotes and outside quotes it escapes the next
+    /// one.
+    #[test]
+    fn tokenizer_keeps_backslashes_inside_single_quotes() {
+        assert_eq!(
+            tokenize(r#"'C:\msys64\include' "a\"b" c\'d"#),
+            [r"C:\msys64\include", r#"a"b"#, "c'd"]
+        );
+        let flags = filter_pkg_config(r"-DTITLE='a\b' -DDIR=a\\b");
+        assert_eq!(flags.compile, [r"-DTITLE=a\b", r"-DDIR=a\b"]);
     }
 
     proptest! {

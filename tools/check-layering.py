@@ -22,15 +22,27 @@ ALLOWED_WORKSPACE_DEPS = {
     "b2c-codegen": {"b2c-ir"},
     "b2c-core-wasm": {"b2c-ir", "b2c-model", "b2c-catalog", "b2c-lang", "b2c-codegen"},
     "b2c-process": set(),
+    # Machine-local storage (02 §2.7, 05 §5.9): files and folders only; the
+    # one OS call it needs (the atomic rename) comes from b2c-process.
+    "b2c-store": {"b2c-ir", "b2c-model", "b2c-process"},
     "b2c-toolchain": {"b2c-ir", "b2c-model", "b2c-process"},
+    # Build and run sessions: the cache root and atomic writes come from
+    # b2c-store, and the sessions report through b2c-ipc's event types.
     "b2c-build": {
         "b2c-ir", "b2c-model", "b2c-catalog", "b2c-lang", "b2c-codegen",
-        "b2c-toolchain", "b2c-process",
+        "b2c-toolchain", "b2c-process", "b2c-store", "b2c-ipc",
     },
     "b2c-cli": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain"},
-    # The desktop shell holds no business logic: it adapts IPC to the build
-    # and toolchain layers (and may use their shared types).
-    "blocks2cpp-desktop": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain"},
+    # The IPC contract: types, IDs and decoding only (no Tauri, no services).
+    "b2c-ipc": {"b2c-ir", "b2c-model"},
+    # The Tauri-free backend services behind every IPC command.
+    "b2c-app": {"b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain", "b2c-store", "b2c-ipc"},
+    # The desktop shell holds no business logic: it adapts Tauri's IPC to the
+    # backend services (b2c-app) and the contract (b2c-ipc), and may use the
+    # shared types of the layers below them.
+    "blocks2cpp-desktop": {
+        "b2c-ir", "b2c-model", "b2c-build", "b2c-toolchain", "b2c-ipc", "b2c-store", "b2c-app",
+    },
 }
 
 # Test-only exceptions to the rules above, each with its reason.
@@ -38,6 +50,13 @@ ALLOWED_DEV_DEPS = {
     # The analyser's end-to-end tests compile the C++ generated from what it
     # accepts; production code of the two crates stays independent.
     ("b2c-lang", "b2c-codegen"),
+    # The analyser's scope and robustness tests analyse documents exactly as
+    # the resolve stage completes them, including documents it rejects (the
+    # editor's preview analyses those too).
+    ("b2c-lang", "b2c-catalog"),
+    # The backend's generation-parity test compares the editor preview's files
+    # with the build's generated files.
+    ("b2c-app", "b2c-core-wasm"),
 }
 
 # The pure compiler crates and the external crates they may use. Anything
@@ -49,7 +68,7 @@ PURE_CRATES = {
     "b2c-catalog": {"serde", "serde_json", "thiserror", "toml"},
     "b2c-lang": {"serde", "serde_json", "thiserror"},
     "b2c-codegen": {"serde", "thiserror"},
-    "b2c-core-wasm": {"serde", "serde_json", "thiserror", "wasm-bindgen"},
+    "b2c-core-wasm": {"serde", "serde_json", "sha2", "thiserror", "wasm-bindgen"},
 }
 
 

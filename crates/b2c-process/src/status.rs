@@ -407,6 +407,118 @@ mod tests {
         );
     }
 
+    /// Every row of the exit-decoding table in
+    /// `docs/spec/07-toolchain-build-run.md` §7.6.4 that comes from the exit
+    /// status alone (the sanitizer row and *Stopped* are decided by the
+    /// caller), as a fixture status on the platform it comes from.
+    #[test]
+    fn spec_exit_decoding_table() {
+        const MEMORY: &str = "Crashed: the program tried to use memory it doesn't own (segmentation fault / \
+                              access violation). Common causes are an index out of range with fast unchecked \
+                              access, a null pointer, or a dangling reference";
+        const ABORTED: &str = "Stopped itself: an uncaught error or failed check";
+        let windows = true;
+        let linux = false;
+        let cases: [(ExitStatus, bool, Option<Crash>, String); 12] = [
+            (
+                ExitStatus::Exited(0),
+                linux,
+                None,
+                String::from("Finished (exit code 0)"),
+            ),
+            (
+                ExitStatus::Exited(0),
+                windows,
+                None,
+                String::from("Finished (exit code 0)"),
+            ),
+            (
+                ExitStatus::Exited(5),
+                linux,
+                None,
+                String::from("Finished with exit code 5"),
+            ),
+            (
+                ExitStatus::Exited(-1),
+                windows,
+                None,
+                String::from("Finished with exit code -1"),
+            ),
+            (
+                ExitStatus::Signaled(11),
+                linux,
+                Some(Crash::MemoryAccess),
+                format!("{MEMORY} (SIGSEGV)."),
+            ),
+            (
+                ExitStatus::from_windows_code(0xC000_0005),
+                windows,
+                Some(Crash::MemoryAccess),
+                format!("{MEMORY} (exception 0xC0000005)."),
+            ),
+            (
+                ExitStatus::from_windows_code(0xC000_00FD),
+                windows,
+                Some(Crash::StackOverflow),
+                String::from("Crashed: stack overflow, probably infinite recursion (exception 0xC00000FD)."),
+            ),
+            (
+                ExitStatus::Signaled(8),
+                linux,
+                Some(Crash::DivisionByZero),
+                String::from("Crashed: integer division by zero (SIGFPE)."),
+            ),
+            (
+                ExitStatus::from_windows_code(0xC000_0094),
+                windows,
+                Some(Crash::DivisionByZero),
+                String::from("Crashed: integer division by zero (exception 0xC0000094)."),
+            ),
+            (
+                ExitStatus::Signaled(6),
+                linux,
+                Some(Crash::Aborted),
+                format!("{ABORTED} (SIGABRT)."),
+            ),
+            (
+                ExitStatus::from_windows_code(3),
+                windows,
+                Some(Crash::Aborted),
+                format!("{ABORTED} (exit code 3)."),
+            ),
+            (
+                ExitStatus::from_windows_code(0xC000_0409),
+                windows,
+                Some(Crash::Aborted),
+                format!("{ABORTED} (exception 0xC0000409)."),
+            ),
+        ];
+        for (status, on_windows, crash, text) in cases {
+            assert_eq!(status.crash_for(on_windows), crash, "{status:?}");
+            assert_eq!(status.describe_for(on_windows), text, "{status:?}");
+        }
+    }
+
+    /// The same Unix rows, from raw `wait` statuses as the kernel reports
+    /// them (signal number in the low bits, 0x80 when a core was dumped).
+    #[cfg(unix)]
+    #[test]
+    fn spec_exit_decoding_from_raw_unix_statuses() {
+        use std::os::unix::process::ExitStatusExt as _;
+        let decode = |raw| ExitStatus::from_std(std::process::ExitStatus::from_raw(raw));
+        assert_eq!(decode(0x0b).crash(), Some(Crash::MemoryAccess));
+        assert_eq!(decode(0x80 | 0x0b).crash(), Some(Crash::MemoryAccess));
+        assert_eq!(decode(0x08).crash(), Some(Crash::DivisionByZero));
+        assert_eq!(decode(0x80 | 0x06).crash(), Some(Crash::Aborted));
+        assert_eq!(decode(2).crash(), Some(Crash::Interrupted));
+        assert_eq!(decode(3 << 8), ExitStatus::Exited(3));
+        assert_eq!(
+            decode(3 << 8).crash(),
+            None,
+            "exit code 3 is only special on Windows"
+        );
+    }
+
     #[test]
     fn negative_exit_codes_are_not_exceptions() {
         assert_eq!(ExitStatus::from_windows_code(u32::MAX), ExitStatus::Exited(-1));

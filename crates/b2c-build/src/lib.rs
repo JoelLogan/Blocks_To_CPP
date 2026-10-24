@@ -3,9 +3,18 @@
 //!
 //! * [`frontend`]: the pure part, project bytes to generated C++.
 //! * [`build_dir`]: the per-project build directory and safe file writing.
-//! * [`build`]: the front end, then g++ in the build cache.
-//! * [`run_program`] / [`run_program_captured`]: running what was built.
-//! * [`list_toolchains`]: the compilers on this computer.
+//! * [`session`]: the app's build sessions, one thread per build, with
+//!   cancellation, progress and diagnostics events and build records.
+//! * [`build`]: the same build, synchronously, for the command-line tool.
+//! * [`ide`]: the IDE init unit that the app links into the programs it runs.
+//! * [`cache`]: build cache eviction and clearing.
+//! * [`run_program`] / [`run_program_captured`]: running what was built
+//!   (the CLI).
+//! * [`RunSessions`]: the IDE's running programs, in a pseudo-terminal with
+//!   streamed, flood-protected output, input, resizing, Stop and exit
+//!   decoding; [`run_environment`] gives their environment.
+//! * [`list_toolchains`]: the compilers on this computer; [`toolchains`]:
+//!   the app's toolchain list and choice ([`toolchains::ToolchainRegistry`]).
 //!
 //! ```no_run
 //! use b2c_build::{BuildOutcome, BuildRequest, Configuration, FrontendOptions, ToolchainChoice};
@@ -16,6 +25,7 @@
 //!     toolchain: ToolchainChoice::Auto,
 //!     cache_root: b2c_build::default_cache_root().expect("a cache folder"),
 //!     frontend: FrontendOptions::default(),
+//!     ide: false,
 //! };
 //! let report = b2c_build::build(&project, &request)?;
 //! if let BuildOutcome::Built { executable } = report.outcome {
@@ -29,10 +39,14 @@
 #![allow(clippy::result_large_err)]
 
 pub mod build_dir;
+pub mod cache;
 mod compile;
 pub mod frontend;
+pub mod ide;
+mod manifest;
 mod run;
-mod toolchains;
+pub mod session;
+pub mod toolchains;
 
 pub use build_dir::{
     BuildDir, BuildDirError, default_cache_root, sandbox_dir, write_executable, write_generated_files,
@@ -41,8 +55,37 @@ pub use build_dir::{
 pub use compile::{
     BuildError, BuildOutcome, BuildReport, BuildRequest, Configuration, LIBRARIES_UNSUPPORTED, build,
 };
-pub use frontend::{Frontend, FrontendOptions, GENERATOR_INCOMPLETE, Stage, run_frontend};
-pub use run::{
-    CapturedRun, ProgramExit, ProgramInput, RunError, RunRequest, run_program, run_program_captured,
+pub use frontend::{
+    DEFAULT_INDENT_WIDTH, Frontend, FrontendOptions, GENERATOR_INCOMPLETE, INDENT_WIDTHS, Stage, run_frontend,
 };
+pub use run::{
+    ASAN_OPTIONS, ASAN_OPTIONS_NO_LEAKS, CapturedRun, ProgramExit, ProgramInput, PtySize, RunEnvOptions,
+    RunError, RunRequest, RunSessions, RunSpec, TERM, UBSAN_OPTIONS, run_environment, run_program,
+    run_program_captured,
+};
+pub use session::{BuildJob, BuildRecord, BuildSessions, RecordOutcome, StaleReason, ToolchainForBuild};
 pub use toolchains::{ToolchainChoice, ToolchainReport, list_toolchains};
+
+/// The version of the block catalog the app builds with (`app_info`, and the
+/// `generator.catalog` of new projects).
+pub use b2c_catalog::CATALOG_VERSION;
+/// Block upgrades on load (`docs/spec/05-project-format.md` §5.7,
+/// ADR-0015), for the app and the command-line tool, which use the block
+/// catalog only through this crate. The build itself upgrades in memory, in
+/// the resolve stage.
+pub use b2c_catalog::{
+    BlockMigration, BlockReplacement, BlockUpgrades, UpgradeReport, core_catalog, upgrade_document,
+    upgrade_document_with,
+};
+/// Saving a project file atomically, keeping the previous version as
+/// `<name>.b2c.bak` (`docs/spec/05-project-format.md` §5.10), for
+/// `b2c migrate --in-place`.
+pub use b2c_store::save_project;
+
+/// Operating-system helpers for the desktop app and the command-line tool, so
+/// neither needs a direct dependency on `b2c-process`
+/// (`docs/spec/08-security.md` §8.5, §8.8 and §8.14).
+pub mod os {
+    pub use b2c_process::os::{harden_dll_search, open_https_url};
+    pub use b2c_process::{ContainmentLevel, cleanup_stale_scopes, containment_level};
+}

@@ -1,0 +1,60 @@
+/*
+ * The Restricted Mode banner (docs/spec/08-security.md §8.3, 04 §4.10). It is shown by a padlock,
+ * a heading and text, never by colour alone (§4.8); the Mark-of-the-Web warning adds a glyph and
+ * bold text.
+ */
+
+.trust-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--b2c-warning-text);
+  background: var(--b2c-warning-bg);
+  color: var(--b2c-warning-text);
+}
+
+.trust-banner-icon {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+}
+
+.trust-banner-text {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+.trust-banner-text p {
+  margin: 2px 0;
+}
+
+.trust-banner-title {
+  margin: 0 0 2px;
+  font-size: 15px;
+}
+
+.trust-banner-motw {
+  border-bottom-width: 3px;
+}
+
+.trust-banner-warning {
+  font-size: 15px;
+}
+
+.trust-banner-error {
+  font-weight: 600;
+}
+
+.trust-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: center;
+  gap: 8px;
+}
+
+.trust-project-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

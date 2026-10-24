@@ -2,6 +2,7 @@
 // rules of docs/spec/08-security.md §8.8. Run: pnpm --filter @blocks2cpp/desktop lint
 import js from '@eslint/js';
 import { defineConfig, globalIgnores } from 'eslint/config';
+import jsxA11y from 'eslint-plugin-jsx-a11y';
 import noUnsanitized from 'eslint-plugin-no-unsanitized';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
@@ -14,7 +15,7 @@ const htmlSinks = [
 ].map(([property, message]) => ({ property, message }));
 
 export default defineConfig([
-  globalIgnores(['dist/', 'src-tauri/target/', 'src-tauri/gen/']),
+  globalIgnores(['dist/', 'coverage/', 'src-tauri/target/', 'src-tauri/gen/']),
 
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
@@ -29,6 +30,9 @@ export default defineConfig([
   },
 
   reactHooks.configs['recommended-latest'],
+  // Accessibility rules for JSX (docs/spec/04-user-interface.md §4.8: WCAG 2.2 AA). The strict set:
+  // with --max-warnings 0 every finding fails the lint anyway.
+  { files: ['**/*.{jsx,tsx}'], ...jsxA11y.flatConfigs.strict },
   noUnsanitized.configs.recommended,
 
   {

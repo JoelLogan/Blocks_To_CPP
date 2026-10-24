@@ -1,0 +1,49 @@
+{
+  "name": "@blocks2cpp/b2c-core-wasm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Blocks2Cpp compiler core for the editor: crates/b2c-core-wasm compiled to WebAssembly, with an embedded-bytes loader",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./build-info": {
+      "types": "./scripts/build-info.d.mts",
+      "default": "./scripts/build-info.mjs"
+    }
+  },
+  "imports": {
+    "#glue": {
+      "types": "./src/glue.d.ts",
+      "default": "./pkg/glue.js"
+    },
+    "#pkg-bytes": {
+      "types": "./src/pkg-bytes.d.ts",
+      "default": "./pkg/pkg-bytes.js"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -b",
+    "lint": "eslint --max-warnings 0 .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@blocks2cpp/ipc-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "4.1.12",
+    "eslint": "10.13.0",
+    "eslint-plugin-no-unsanitized": "4.1.5",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2",
+    "vitest": "4.1.12"
+  }
+}

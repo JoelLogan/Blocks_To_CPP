@@ -1,0 +1,38 @@
+# Sentences of apps/desktop/README.md (d4dfafb) left out of the split on purpose (W6-2, D7 (a)),
+# for tools/check-moved-text.py --dropped (docs/developer-guide/recipes.md, "Moving documentation").
+# A dated record: written for the split and its integration (2026-10-15); later edits of the new
+# files can make a sentence missing again.
+# "Requirements": a summary of BUILDING.md's "What you need" and install steps; BUILDING.md is the
+# only place with build steps and pinned versions (D7, 09 §9.4).
+building.md installs all of these on debian, ubuntu and windows | Requirements summary: BUILDING.md is the one place (D7)
+node.js 22.13 or later and pnpm 11 (the exact version | BUILDING.md "What you need" (Node.js, pnpm through Corepack)
+rust: the toolchain pinned in rust-toolchain.toml | BUILDING.md "What you need" and step 4 (rustup toolchain install)
+the tools that build the webassembly core: the wasm-bindgen cli | BUILDING.md "What you need" and step 4; dependencies.md "Tools"
+cargo install wasm-bindgen-cli --version 0.2.129 --locked | BUILDING.md step 4 (pinned version only there)
+sudo apt install binaryen # debian or ubuntu | BUILDING.md step 1 and Troubleshooting (B2C_SKIP_WASM_OPT)
+on windows, take wasm-opt from a binaryen release | BUILDING.md Troubleshooting "The WebAssembly core does not build"
+linux: the webkitgtk and gtk development packages | BUILDING.md step 1 (the apt list)
+on debian or ubuntu | BUILDING.md step 1 (the apt list)
+other distributions: see tauri's prerequisites | BUILDING.md Fedora and Arch Linux (untested) sections
+windows: the microsoft c++ build tools (msvc) and webview2 | BUILDING.md "What you need" and Windows step 1
+# "Develop" and "Build": run and build steps, all in BUILDING.md (Develop, Run Blocks2Cpp, After you pull changes).
+the development server below is for changing the app | BUILDING.md "Develop" (do not judge speed or looks from it)
+pnpm --filter @blocks2cpp/b2c-core-wasm build # the webassembly | BUILDING.md step 5 and "After you pull changes"
+pnpm desktop:dev # the app, with the frontend | BUILDING.md "Develop"
+it needs the tools under requirements; without binaryen | BUILDING.md Troubleshooting; testing.md "Before the first test run"
+building.md has the complete steps for each system | the README links BUILDING.md as the one place with build steps
+build the webassembly core first, as for dev | BUILDING.md step 5, "After you pull changes" and Troubleshooting (same error text)
+pnpm --filter @blocks2cpp/b2c-core-wasm build # once, and after rust | BUILDING.md step 5 and "After you pull changes"
+pnpm --filter @blocks2cpp/desktop tauri build --no-bundle # the executable only | BUILDING.md step 5 (pnpm app:build, W6-5, runs it)
+pnpm desktop:build # release build and installers | BUILDING.md "Run Blocks2Cpp" (pnpm desktop:build and the installer types)
+the executable is written to target/release/ | BUILDING.md steps 5-6, "Run Blocks2Cpp" and "Develop" (target/debug)
+installers are configured for windows (msi and nsis) | BUILDING.md "Run Blocks2Cpp" (MSI and NSIS; AppImage, .deb and .rpm)
+signing and release builds come with the release workflow | BUILDING.md "Run Blocks2Cpp" (real installers in M6); 09 §9.6
+on linux, if the window stays blank | BUILDING.md Troubleshooting "The window is blank or flickers (Linux)"
+# Checks: one consolidated list in CONTRIBUTING.md#checks (W6-3).
+checks (ci runs them all, see .github/workflows/desktop.yml) | CONTRIBUTING.md "Checks" (all CI workflows, not only desktop.yml)
+pnpm --filter @blocks2cpp/desktop run test # vitest | CONTRIBUTING.md "Checks" prose (In one package: ...) and testing.md
+pnpm --filter @blocks2cpp/desktop run test:coverage # the same | CONTRIBUTING.md "Checks" prose and testing.md (75% line gate)
+pnpm --filter @blocks2cpp/desktop run test:isolation # the isolation | CONTRIBUTING.md "Checks" prose and testing.md "The isolation hook's tests"
+# Pinned tool versions only in their source (09 §9.4).
+tauri-driver 2.1.0 (apache-2.0 or mit) is a tool | dependencies.md "Tools" and testing.md (the pin is in BUILDING.md "End-to-end tests" and the workflows)

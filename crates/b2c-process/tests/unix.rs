@@ -9,8 +9,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use b2c_process::{
-    CancelToken, Captured, Command, Crash, ExitStatus, Limits, ProcessError, ProcessGroup, Stdin,
-    run_captured, run_interactive,
+    CancelToken, Captured, Command, Containment, Crash, ExitStatus, Limits, ProcessError, ProcessGroup,
+    Stdin, run_captured, run_interactive,
 };
 
 const SH: &str = "/bin/sh";
@@ -102,12 +102,17 @@ fn stdout_and_stderr_are_separate() {
 
 #[test]
 fn environment_is_isolated() {
+    // Without a scope: exactly the command's environment. (A cgroup scope
+    // adds the bus variables `systemd-run` needs; tests/containment.rs.)
     let mut command = Command::new("/usr/bin/env", std::env::temp_dir()).unwrap();
-    command.env("ONLY_THIS", "yes");
+    command
+        .env("ONLY_THIS", "yes")
+        .containment(Containment::ProcessGroupOnly);
     let result = run_captured(&command).unwrap();
     assert_eq!(text(&result.stdout), "ONLY_THIS=yes\n");
 
-    let empty = Command::new("/usr/bin/env", std::env::temp_dir()).unwrap();
+    let mut empty = Command::new("/usr/bin/env", std::env::temp_dir()).unwrap();
+    empty.containment(Containment::ProcessGroupOnly);
     assert_eq!(text(&run_captured(&empty).unwrap().stdout), "");
 }
 
@@ -224,7 +229,11 @@ fn missing_working_directory_is_a_spawn_error() {
 #[test]
 fn timeout_kills_the_child_and_its_grandchildren() {
     let mut command = sh("sleep 30 & echo $!; sleep 30");
-    command.timeout(Duration::from_millis(300));
+    // The group: the shell must have started within the 300 ms, which the
+    // start of a cgroup scope could delay on a slow runner.
+    command
+        .timeout(Duration::from_millis(300))
+        .containment(Containment::ProcessGroupOnly);
     let start = Instant::now();
     let result = run_captured(&command).unwrap();
     assert!(result.timed_out);
@@ -252,9 +261,18 @@ fn escaped_processes_cannot_hold_the_run_open() {
     if !Path::new("/usr/bin/setsid").exists() {
         return;
     }
-    // `setsid` leaves the process group but keeps the stdout pipe open.
-    let mut command = sh("/usr/bin/setsid sleep 6 & echo started");
-    command.timeout(Duration::from_secs(30));
+    // `setsid` leaves the process group but keeps the stdout pipe open. The
+    // shell waits until it has (field 6 of its stat line, the session ID, is
+    // its own PID): the group cleanup at the shell's exit would otherwise
+    // kill it first, and the test would prove nothing. Only without a cgroup
+    // scope can a process escape like this (a scope kills it when the
+    // program exits; tests/containment.rs).
+    let mut command = sh("/usr/bin/setsid sleep 6 & p=$!; \
+                          while [ \"$(cut -d' ' -f6 /proc/$p/stat)\" != \"$p\" ]; do sleep 0.01; done; \
+                          echo started");
+    command
+        .containment(Containment::ProcessGroupOnly)
+        .timeout(Duration::from_secs(30));
     let start = Instant::now();
     let result = run_captured(&command).unwrap();
     assert!(result.status.success());
@@ -283,6 +301,63 @@ fn cancel_token_stops_a_run_from_another_thread() {
 }
 
 #[test]
+fn captured_runs_get_sigterm_first_when_a_grace_is_set() {
+    // The compiler's limits set a 2 s grace (07 §7.5.4): a timeout or a
+    // cancel sends SIGTERM to the group, and the program may clean up.
+    let mut command = sh("trap 'echo got-term; exit 7' TERM; while :; do sleep 0.05; done");
+    // The trap must be in place within the 300 ms (see above).
+    command.containment(Containment::ProcessGroupOnly).limits(Limits {
+        timeout: Some(Duration::from_millis(300)),
+        grace: Some(Duration::from_secs(10)),
+        ..Limits::default()
+    });
+    let start = Instant::now();
+    let result = run_captured(&command).unwrap();
+    assert!(result.timed_out);
+    assert_eq!(result.status, ExitStatus::Exited(7));
+    assert_eq!(text(&result.stdout), "got-term\n");
+    assert!(start.elapsed() < Duration::from_secs(5), "{:?}", start.elapsed());
+}
+
+#[test]
+fn captured_runs_are_killed_after_the_grace() {
+    let token = CancelToken::new();
+    let mut command = sh("trap '' TERM; while :; do sleep 0.05; done");
+    // The trap must be in place within the 200 ms (see above).
+    command.containment(Containment::ProcessGroupOnly);
+    command.cancel_token(&token).limits(Limits {
+        grace: Some(Duration::from_millis(600)),
+        ..Limits::default()
+    });
+    let canceller = {
+        let token = token.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200));
+            token.cancel();
+        })
+    };
+    let start = Instant::now();
+    let result = run_captured(&command).unwrap();
+    canceller.join().unwrap();
+    let took = start.elapsed();
+    assert!(result.cancelled);
+    assert_eq!(result.status, ExitStatus::Signaled(9));
+    // 200 ms until the cancel, then the 600 ms grace before SIGKILL.
+    assert!(took >= Duration::from_millis(750), "{took:?}");
+    assert!(took < Duration::from_secs(5), "{took:?}");
+}
+
+#[test]
+fn captured_runs_without_a_grace_are_killed_at_once() {
+    let mut command = sh("trap 'echo got-term' TERM; while :; do sleep 0.05; done");
+    command.timeout(Duration::from_millis(200));
+    let result = run_captured(&command).unwrap();
+    assert!(result.timed_out);
+    assert_eq!(result.status, ExitStatus::Signaled(9));
+    assert_eq!(text(&result.stdout), "");
+}
+
+#[test]
 fn cancelled_token_prevents_starting() {
     let token = CancelToken::new();
     token.cancel();
@@ -304,20 +379,24 @@ fn captured_runs_lead_their_own_process_group() {
 #[cfg(target_os = "linux")]
 #[test]
 fn memory_limit_is_applied() {
-    let mut command = sh("sleep 0.2; ulimit -v");
-    command.limits(Limits {
+    // The fallback's address-space limit (a cgroup scope enforces
+    // `MemoryMax` instead; tests/containment.rs). The child sets it on
+    // itself before `exec`, so the program reads it at once: the soft and
+    // the hard limit, in KiB.
+    let mut command = sh("ulimit -v; ulimit -H -v");
+    command.containment(Containment::ProcessGroupOnly).limits(Limits {
         memory: Some(512 * 1024 * 1024),
         ..Limits::default()
     });
     let result = run_captured(&command).unwrap();
-    assert_eq!(text(&result.stdout).trim(), "524288");
+    assert_eq!(text(&result.stdout), "524288\n524288\n");
 }
 
 #[cfg(target_os = "linux")]
 #[test]
 fn process_watchdog_stops_a_growing_tree() {
     let mut command = sh("for i in 1 2 3 4 5 6 7 8; do sleep 30 & done; wait");
-    command.limits(Limits {
+    command.containment(Containment::ProcessGroupOnly).limits(Limits {
         processes: Some(4),
         timeout: Some(Duration::from_secs(20)),
         ..Limits::default()
@@ -377,13 +456,38 @@ fn interactive_timeout_kills_tree(group: ProcessGroup) {
     let finished = run_interactive(&command).unwrap();
     assert!(finished.timed_out);
     assert!(start.elapsed() < Duration::from_secs(10));
-    // `sh` dies of the polite SIGTERM.
-    assert_eq!(finished.status, ExitStatus::Signaled(15));
+    // `sh` dies of the polite SIGTERM. In the shared-group case `sh` can
+    // instead see its `sleep` die of SIGTERM first and exit with 128 + 15
+    // before the signal reaches `sh` itself; both mean the polite stop
+    // ended the tree.
+    assert!(
+        matches!(
+            finished.status,
+            ExitStatus::Signaled(15) | ExitStatus::Exited(143)
+        ),
+        "unexpected status {:?} ({group:?})",
+        finished.status
+    );
     let grandchild = read_pid(&pid_file);
     assert!(
         is_gone(grandchild),
         "grandchild {grandchild} survived ({group:?})"
     );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn an_absurd_grace_does_not_panic_the_stop() {
+    // `sleep` ends at the polite SIGTERM, so the endless grace never matters.
+    let mut command = sh("exec sleep 30");
+    command.limits(Limits {
+        timeout: Some(Duration::from_millis(200)),
+        grace: Some(Duration::MAX),
+        ..Limits::default()
+    });
+    let finished = run_interactive(&command).unwrap();
+    assert!(finished.timed_out);
+    assert_eq!(finished.status, ExitStatus::Signaled(15));
 }
 
 #[cfg(target_os = "linux")]

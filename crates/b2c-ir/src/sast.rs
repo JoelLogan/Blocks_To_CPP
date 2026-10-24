@@ -142,7 +142,10 @@ pub struct Param {
 }
 
 /// How an argument is passed (spec §3.7.7).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+///
+/// Its JSON is `"copy"`, `"editable"` or `"read_only"`, also inside a
+/// [`SymbolInfo`](crate::scope_info::SymbolInfo), which the editor reads back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PassMode {
     /// By value (`T`).

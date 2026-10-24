@@ -7,7 +7,7 @@ category = "control"
 shape = "statement"
 label = { friendly = "if %COND then %DO else if … else %ELSE", cpp = "if (%COND) { … } else { … }" }
 lowering = "builtin"
-help = "Runs blocks only when a condition is true. Add else-if and else parts with ⊕."
+help = "Runs blocks only when a condition is true. Add else if and else parts with ⊕, and remove them with ⊖."
 
 [[block.extra]]
 name = "elseIfCount"
@@ -43,7 +43,7 @@ category = "loops"
 shape = "statement"
 label = { friendly = "repeat %MODE %COND", cpp = "while (%COND) { … }" }
 lowering = "builtin"
-help = "Repeats blocks while a condition is true, or until it becomes true."
+help = "Repeats blocks while a condition is true; choose until in the menu to repeat until it becomes true."
 
 [[block.field]]
 name = "MODE"

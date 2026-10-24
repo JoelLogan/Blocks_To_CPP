@@ -1,0 +1,36 @@
+{
+  "name": "@blocks2cpp/blockly-ext",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Everything Blockly-specific in the Blocks2Cpp editor: blocks, custom fields, theme, connection checker and mutators (ADR-0002)",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint --max-warnings 0 .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@blocks2cpp/b2c-core-wasm": "workspace:*",
+    "blockly": "12.5.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@vitest/coverage-v8": "4.1.12",
+    "axe-core": "4.14.0",
+    "eslint": "10.13.0",
+    "eslint-plugin-no-unsanitized": "4.1.5",
+    "happy-dom": "20.14.5",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2",
+    "vitest": "4.1.12"
+  }
+}

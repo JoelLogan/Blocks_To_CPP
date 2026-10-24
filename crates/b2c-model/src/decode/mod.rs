@@ -8,6 +8,7 @@
 //! finds, pointing at the block when there is one, and recovers so that later
 //! parts of the file are still checked.
 
+mod clipboard;
 mod project;
 mod workspace;
 
@@ -20,7 +21,7 @@ use serde::Serialize;
 use crate::codes::{self, Diags};
 use crate::document::Document;
 use crate::json::Json;
-use crate::limits::MAX_STRING_BYTES;
+use crate::limits::{MAX_SAFE_INTEGER, MAX_STRING_BYTES};
 use crate::text_rules::{self, quote};
 
 /// Maximum number of JSON values stored as free-form data in all `extra`
@@ -37,6 +38,39 @@ const RESERVED_KEYS: [&str; 3] = ["__proto__", "constructor", "prototype"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Invalid;
 
+/// What is being decoded. Both kinds of input follow the same rules; this
+/// only changes the words of the messages that talk about the input as a
+/// whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Origin {
+    /// A `.b2c` project file (spec §5.3).
+    Project,
+    /// A clipboard payload (spec §5.12).
+    Clipboard,
+}
+
+impl Origin {
+    /// The subject of a message about the input as a whole.
+    pub(crate) fn whole(self) -> &'static str {
+        match self {
+            Self::Project => "The project file",
+            Self::Clipboard => "The pasted data",
+        }
+    }
+}
+
+/// Where a block sits, which decides the canvas-only keys it may have.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Placement {
+    /// Directly on a canvas, or directly in a clipboard payload: may have
+    /// `x`, `y` and a `stack`. (The clipboard decoder drops the position.)
+    Canvas,
+    /// In another block's value input or statement list.
+    Nested,
+    /// An element of a top-level block's `stack` (ADR-0011).
+    Stacked,
+}
+
 /// One step of the path to the value being decoded.
 #[derive(Debug, Clone, Copy)]
 enum Seg<'a> {
@@ -51,6 +85,10 @@ type Entries<'a> = &'a [(Box<str>, Json)];
 /// for project-wide uniqueness checks.
 pub(crate) struct Decoder<'a> {
     diags: Diags,
+    origin: Origin,
+    /// Whether a newer version of Blocks2Cpp saved the input
+    /// (`generator.app`), which makes an unknown key `B2C-E0108`.
+    saved_by_newer: bool,
     path: Vec<Seg<'a>>,
     module: Option<ModuleId>,
     block: Option<BlockId>,
@@ -70,10 +108,12 @@ pub(crate) struct Decoder<'a> {
 }
 
 impl<'a> Decoder<'a> {
-    /// A decoder that adds to `diags`.
-    pub(crate) fn new(diags: Diags) -> Self {
+    /// A decoder for `origin` that adds to `diags`.
+    pub(crate) fn new(diags: Diags, origin: Origin) -> Self {
         Self {
             diags,
+            origin,
+            saved_by_newer: false,
             path: Vec::new(),
             module: None,
             block: None,
@@ -86,6 +126,15 @@ impl<'a> Decoder<'a> {
             module_ids: BTreeMap::new(),
             module_names: BTreeMap::new(),
         }
+    }
+
+    /// Records that a newer version of Blocks2Cpp saved the input, so a key
+    /// this version does not know is one that version added: it is reported
+    /// as `B2C-E0108` ("made with a newer version") instead of `B2C-E0110`
+    /// (ADR-0013).
+    pub(crate) fn saved_by_newer_app(mut self, newer: bool) -> Self {
+        self.saved_by_newer = newer;
+        self
     }
 
     /// Decodes a whole document; returns it with the diagnostics.
@@ -198,7 +247,7 @@ impl<'a> Decoder<'a> {
         } else {
             let path = Self::render(&self.path);
             if path.is_empty() {
-                String::from("The project file")
+                String::from(self.origin.whole())
             } else {
                 format!("\"{path}\"")
             }
@@ -225,7 +274,9 @@ impl<'a> Decoder<'a> {
     // Objects and keys
     // -----------------------------------------------------------------------
 
-    /// Expects an object whose keys are all in `known`; reports the others.
+    /// Expects an object whose keys are all in `known`; reports the others:
+    /// as made with a newer version when a newer app saved the input
+    /// (`B2C-E0108`, naming no version), else as unknown (`B2C-E0110`).
     fn object(&mut self, value: &'a Json, known: &[&str]) -> Option<Entries<'a>> {
         let Json::Object(entries) = value else {
             self.wrong(value, "an object");
@@ -237,6 +288,14 @@ impl<'a> Decoder<'a> {
             }
             if RESERVED_KEYS.contains(&&**key) {
                 self.reserved_key(key);
+            } else if self.saved_by_newer {
+                let message = format!(
+                    "{} has the key {}, which this version of Blocks2Cpp does not know. The project was made \
+                     with a newer version of Blocks2Cpp; update Blocks2Cpp to open it.",
+                    self.subject(),
+                    quote(key)
+                );
+                self.report(codes::NEWER_FORMAT, message);
             } else {
                 let message = format!(
                     "{} has an unknown key {}. Remove it or check its spelling.",
@@ -261,8 +320,12 @@ impl<'a> Decoder<'a> {
     }
 
     fn reserved_key(&mut self, key: &str) {
+        let place = match self.origin {
+            Origin::Project => "project files",
+            Origin::Clipboard => "pasted blocks",
+        };
         let message = format!(
-            "{} uses the key {}, which is not allowed in project files because it could be used to tamper with the editor.",
+            "{} uses the key {}, which is not allowed in {place} because it could be used to tamper with the editor.",
             self.subject(),
             quote(key)
         );
@@ -421,16 +484,17 @@ impl<'a> Decoder<'a> {
         parsed
     }
 
-    fn i64(&mut self, value: &Json) -> Option<i64> {
+    /// A whole number within ±[`MAX_SAFE_INTEGER`], which JavaScript holds
+    /// exactly (a define's `int` value).
+    fn safe_int(&mut self, value: &Json) -> Option<i64> {
         let parsed = match value {
-            Json::Number(n) => n.as_i64(),
+            Json::Number(n) => n
+                .as_i64()
+                .filter(|n| n.unsigned_abs() <= MAX_SAFE_INTEGER.unsigned_abs()),
             _ => None,
         };
         if parsed.is_none() {
-            self.wrong(
-                value,
-                "a whole number from -9223372036854775808 to 9223372036854775807",
-            );
+            self.wrong(value, "a whole number from -9007199254740991 to 9007199254740991");
         }
         parsed
     }
@@ -482,15 +546,21 @@ impl<'a> Decoder<'a> {
     // -----------------------------------------------------------------------
 
     /// Converts free-form JSON, checking text rules on every string and key,
-    /// reserved keys (unless `reserved_allowed`) and the free-form budget.
+    /// reserved keys (unless `reserved_allowed`), numbers (see
+    /// [`Self::free_number`]) and the free-form budget.
     fn untyped(&mut self, value: &'a Json, reserved_allowed: bool) -> Option<serde_json::Value> {
         self.untyped_values += 1;
         if self.untyped_values > MAX_UNTYPED_VALUES {
             if !self.untyped_limit_reported {
                 self.untyped_limit_reported = true;
-                let message = format!(
-                    "This project stores more than {MAX_UNTYPED_VALUES} values of free-form data in \"extra\" and \"x-ext\", which is far more than any real project needs."
-                );
+                let message = match self.origin {
+                    Origin::Project => format!(
+                        "This project stores more than {MAX_UNTYPED_VALUES} values of free-form data in \"extra\" and \"x-ext\", which is far more than any real project needs."
+                    ),
+                    Origin::Clipboard => format!(
+                        "The pasted data stores more than {MAX_UNTYPED_VALUES} values of free-form data in \"extra\", which is far more than any real blocks need."
+                    ),
+                };
                 self.diags
                     .error(codes::TOO_MUCH_EXTRA_DATA, Location::project(), message);
             }
@@ -518,8 +588,34 @@ impl<'a> Decoder<'a> {
                 }
                 serde_json::Value::Object(out)
             }
+            Json::Number(n) => serde_json::Value::Number(self.free_number(value, n)),
             other => other.to_value(),
         })
+    }
+
+    /// A number of free-form data, as JavaScript reads it (spec §5.6): the
+    /// editor holds the document as JavaScript numbers, so whatever it
+    /// stores must survive that unchanged.
+    ///
+    /// * A number beyond ±[`MAX_SAFE_INTEGER`] is reported (JavaScript
+    ///   would change a whole number that large; every larger float is
+    ///   whole). It is kept as it is, so later problems are still found.
+    /// * A whole number written with a fraction or an exponent (`1.0`,
+    ///   `2e3`, `-0.0`) becomes the integer it is, as in JavaScript, so the
+    ///   document holds one value for one number and a save writes it one
+    ///   way.
+    /// * Other numbers (fractions) are kept as floats.
+    fn free_number(&mut self, value: &Json, n: &serde_json::Number) -> serde_json::Number {
+        if let Some(number) = safe_number(n) {
+            return number;
+        }
+        let message = format!(
+            "{} is {}, but numbers in free-form data must be between -9007199254740991 and 9007199254740991, which the editor can hold exactly.",
+            self.subject(),
+            describe(value)
+        );
+        self.report(codes::WRONG_VALUE, message);
+        n.clone()
     }
 
     // -----------------------------------------------------------------------
@@ -564,6 +660,38 @@ impl<'a> Decoder<'a> {
             self.symbols.insert(sym.clone(), location);
         }
     }
+}
+
+/// A number of free-form data in the form a document stores it (see
+/// [`Decoder::free_number`]), or `None` when it is beyond
+/// ±[`MAX_SAFE_INTEGER`].
+fn safe_number(n: &serde_json::Number) -> Option<serde_json::Number> {
+    let limit = MAX_SAFE_INTEGER.unsigned_abs();
+    if let Some(whole) = n.as_i64() {
+        return (whole.unsigned_abs() <= limit).then(|| serde_json::Number::from(whole));
+    }
+    if n.is_u64() {
+        // Above i64::MAX, so far above the limit.
+        return None;
+    }
+    let x = n.as_f64()?;
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "the limit, 2^53 - 1, is exactly representable as an f64"
+    )]
+    let in_range = x.abs() <= limit as f64;
+    if !in_range {
+        return None;
+    }
+    if x.fract() == 0.0 {
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "a whole number within ±(2^53 - 1) converts exactly"
+        )]
+        let whole = x as i64;
+        return Some(serde_json::Number::from(whole));
+    }
+    Some(n.clone())
 }
 
 /// The value of `key` among `entries`.
@@ -639,5 +767,48 @@ mod tests {
         );
         assert_eq!(describe(&Json::Array(Box::default())), "a list");
         assert_eq!(describe(&Json::Object(Box::default())), "an object");
+    }
+
+    #[test]
+    fn free_form_numbers_are_stored_as_javascript_reads_them() {
+        use serde_json::Number;
+        let float = |x: f64| Number::from_f64(x).unwrap();
+        let max = MAX_SAFE_INTEGER;
+        // Whole numbers within ±(2^53 − 1), however written, are integers.
+        for (number, expected) in [
+            (Number::from(max), Number::from(max)),
+            (Number::from(-max), Number::from(-max)),
+            (Number::from(7u64), Number::from(7u64)),
+            (float(9_007_199_254_740_991.0), Number::from(max)),
+            (float(-9_007_199_254_740_991.0), Number::from(-max)),
+            (float(1.0), Number::from(1u64)),
+            (float(-3.0), Number::from(-3i64)),
+            (float(-0.0), Number::from(0u64)),
+            (float(2e3), Number::from(2000u64)),
+            (float(0.5), float(0.5)),
+            (float(-1.5e-300), float(-1.5e-300)),
+            (float(4_503_599_627_370_495.5), float(4_503_599_627_370_495.5)),
+        ] {
+            let stored = safe_number(&number);
+            assert_eq!(stored, Some(expected.clone()), "{number}");
+            assert_eq!(
+                stored.map(|n| (n.is_u64(), n.is_i64(), n.is_f64())),
+                Some((expected.is_u64(), expected.is_i64(), expected.is_f64())),
+                "{number}"
+            );
+        }
+        // Anything larger is refused.
+        for number in [
+            Number::from(max + 1),
+            Number::from(-max - 1),
+            Number::from(u64::MAX),
+            Number::from(i64::MIN),
+            float(9_007_199_254_740_992.0),
+            float(-9_007_199_254_740_992.0),
+            float(1e300),
+            float(f64::MAX),
+        ] {
+            assert_eq!(safe_number(&number), None, "{number}");
+        }
     }
 }

@@ -28,9 +28,10 @@ use crate::access::{self, FieldProblem};
 use crate::codes;
 use crate::collect::{self, DeclInfo, DeclKind, DeclStatus, MAX_BLOCK_DEPTH};
 use crate::flow;
-use crate::messages::{Diags, quoted};
+use crate::messages::{self, Diags, quoted};
 use crate::nesting;
-use crate::scope::{ListKey, PARAMS_LIST, Scopes};
+use crate::query::{Point, ScopeIndex};
+use crate::scope::{HideMark, ListKey, PARAMS_LIST, Scopes};
 
 /// Functions of namespace `std` that are not templates and take a
 /// `std::string` first. A call `stoi(text)` of a user function with the same
@@ -58,10 +59,20 @@ pub(crate) fn run(document: &Document) -> Analysis {
         return Analysis {
             program,
             diagnostics: diags.list,
+            index: ScopeIndex::default(),
         };
     };
     let mut lowerer = Lowerer::new(document, first.id.clone());
     let modules = lowerer.program();
+    // Parked blocks and skipped definitions answer the scope query too; the
+    // parked scope is known once every `main` is lowered.
+    lowerer.index.record_unlowered(document);
+    let trail = lowerer.scopes.take_trail();
+    let functions = lowerer
+        .functions
+        .iter()
+        .map(|(sym, sig)| (sig.module, sig.name.as_str(), sym));
+    lowerer.index.finish(trail, document.modules.len(), functions);
     Analysis {
         program: Program {
             standard,
@@ -69,6 +80,7 @@ pub(crate) fn run(document: &Document) -> Analysis {
             symbols: lowerer.symbols,
         },
         diagnostics: lowerer.diags.list,
+        index: lowerer.index,
     }
 }
 
@@ -123,6 +135,8 @@ struct Pending {
     name: String,
     sym: SymbolId,
     kind: PendingKind,
+    /// Ends the hiding of `name` in the scope stack's trail.
+    mark: HideMark,
 }
 
 #[derive(Debug, Clone)]
@@ -145,6 +159,8 @@ struct Lowerer<'d> {
     symbols: SymbolTable,
     diags: Diags,
     scopes: Scopes,
+    /// What is visible at each lowered block, for the editor's scope query.
+    index: ScopeIndex,
     pending: Vec<Pending>,
     module_index: usize,
     module: ModuleId,
@@ -169,6 +185,29 @@ fn sorted_blocks(module: &b2c_model::Module) -> Vec<&Block> {
     blocks
 }
 
+/// Block types the analyser lowers as values (`Lowerer::value_block`): the
+/// reporters and predicates of the catalog. A test checks the list against
+/// the catalog's shapes.
+fn is_value_type(block_type: &str) -> bool {
+    matches!(
+        block_type,
+        "var.get"
+            | "math.number"
+            | "math.arithmetic"
+            | "math.compare"
+            | "math.random_int"
+            | "math.convert"
+            | "logic.boolean"
+            | "logic.operation"
+            | "logic.not"
+            | "logic.ternary"
+            | "text.literal"
+            | "text.char"
+            | "text.join"
+            | "func.call"
+    )
+}
+
 impl<'d> Lowerer<'d> {
     fn new(document: &'d Document, module: ModuleId) -> Self {
         let decls = collect::collect(document);
@@ -189,6 +228,7 @@ impl<'d> Lowerer<'d> {
             symbols: SymbolTable::default(),
             diags: Diags::default(),
             scopes: Scopes::default(),
+            index: ScopeIndex::default(),
             pending: Vec::new(),
             module_index: 0,
             module,
@@ -227,7 +267,10 @@ impl<'d> Lowerer<'d> {
                 let (item, keep) = match block.block_type.as_str() {
                     "program.main" => (Some(self.main(block)), chosen_main.as_ref() == Some(&block.id)),
                     "func.define" => (self.function(block), true),
-                    _ => (None, false),
+                    _ => {
+                        self.report_parked(block);
+                        (None, false)
+                    }
                 };
                 if let Some(item) = item {
                     if self.check_nesting(&item) {
@@ -245,6 +288,29 @@ impl<'d> Lowerer<'d> {
             });
         }
         modules
+    }
+
+    /// Reports a parked stack (ADR-0012, 05 §5.4): an enabled top-level
+    /// statement or value block, with the blocks stacked below it, is not
+    /// part of the program, so it is not lowered and does not run. It gets
+    /// one `B2C-W0505`, on its head, which counts the stacked blocks. A head
+    /// the user disabled is not reported (the caller skips it), and neither
+    /// is a block type the analyser does not lower: the catalog reports an
+    /// unknown type (`B2C-E0601`).
+    fn report_parked(&mut self, head: &Block) {
+        let gives_value = if access::is_statement_type(&head.block_type) {
+            false
+        } else if is_value_type(&head.block_type) {
+            true
+        } else {
+            return;
+        };
+        let location = self.loc(&head.id, Part::Whole);
+        self.diags.warning(
+            codes::PARKED,
+            location,
+            messages::parked(gives_value, head.stack.len()),
+        );
     }
 
     /// Reports an item that nests too deeply for the later stages (unless
@@ -320,7 +386,7 @@ impl<'d> Lowerer<'d> {
     /// Starts lowering a new item.
     fn begin_item(&mut self, item: ItemCtx) {
         self.item = item;
-        self.scopes = Scopes::default();
+        self.scopes.reset();
         self.pending.clear();
         self.loop_depth = 0;
         self.depth = 0;
@@ -329,7 +395,10 @@ impl<'d> Lowerer<'d> {
 
     fn main(&mut self, block: &Block) -> Item {
         self.begin_item(ItemCtx::Main);
-        let body = self.body(block, "BODY", false);
+        self.record_block(&block.id);
+        let (body, end) = self.body_and_end(block, "BODY", false);
+        // What parked blocks see (06 §6.5).
+        self.index.record_main_end(end);
         Item {
             kind: ItemKind::Main(MainDef { body }),
             origin: self.origin(&block.id, Part::Whole),
@@ -344,6 +413,7 @@ impl<'d> Lowerer<'d> {
             name: sig.name.clone(),
             ret: sig.ret.clone(),
         });
+        self.record_block(&block.id);
         self.scopes.push(ListKey::new(&block.id, PARAMS_LIST), false);
         for param in &sig.params {
             self.scopes.declare(&param.name, &param.sym);
@@ -417,7 +487,7 @@ impl<'d> Lowerer<'d> {
             ty: ret.clone(),
             origin: self.origin(&block.id, field("NAME")),
         };
-        if self.insert_symbol(&decl.sym, symbol, name_loc) {
+        if self.insert_symbol(&decl.sym, &decl.name, symbol, name_loc) {
             let sig = FuncSig {
                 name: decl.name.clone(),
                 module: self.module_index,
@@ -473,7 +543,7 @@ impl<'d> Lowerer<'d> {
                 ty: ty.clone(),
                 origin: origin.clone(),
             };
-            let declared = self.insert_symbol(&row.sym, symbol, loc);
+            let declared = self.insert_symbol(&row.sym, &row.name, symbol, loc);
             params.push(ParamSig {
                 sym: row.sym,
                 name: row.name,
@@ -573,8 +643,9 @@ impl<'d> Lowerer<'d> {
         }
     }
 
-    /// Adds a symbol to the table; reports a duplicate symbol ID instead.
-    fn insert_symbol(&mut self, sym: &SymbolId, symbol: Symbol, location: Location) -> bool {
+    /// Adds a symbol, whose user's name is `name`, to the table; reports a
+    /// duplicate symbol ID instead.
+    fn insert_symbol(&mut self, sym: &SymbolId, name: &str, symbol: Symbol, location: Location) -> bool {
         if self.symbols.symbols.contains_key(sym) {
             self.diags.error(
                 codes::DUPLICATE_SYMBOL_ID,
@@ -584,8 +655,65 @@ impl<'d> Lowerer<'d> {
             );
             return false;
         }
+        if symbol.name.as_str() != name {
+            // An invalid name has a placeholder in the table; the editor
+            // shows what the user wrote.
+            self.index.record_name(sym, name);
+        }
         self.symbols.symbols.insert(sym.clone(), symbol);
         true
+    }
+
+    // --- The editor's scope index -----------------------------------------------
+
+    /// What is visible at the current point of the lowering.
+    fn point(&self) -> Point {
+        Point {
+            node: self.scopes.here(),
+            module: self.module_index,
+        }
+    }
+
+    /// Records what is visible at a block that is being lowered, or at a
+    /// disabled statement of a list that is being lowered.
+    fn record_block(&mut self, block: &BlockId) {
+        let point = self.point();
+        self.index.record_block(block, point);
+    }
+
+    /// Records what is visible at the start of a statement list, or inside a
+    /// value input, of a block that is being lowered.
+    fn record_input(&mut self, block: &BlockId, input: &str) {
+        let point = self.point();
+        self.index.record_input(block, input, point);
+    }
+
+    /// Records a disabled block that the lowering skips where an enabled one
+    /// would be lowered (a statement of a list, or the value of an input):
+    /// it answers for this position, and so does every block nested in it.
+    /// Like a lowered block, it is recorded only within [`MAX_BLOCK_DEPTH`].
+    fn record_skipped(&mut self, block: &Block) {
+        let point = self.point();
+        self.index.record_tree(block, point, self.depth + 1);
+    }
+
+    /// Starts lowering the starting value of a variable, or the header of a
+    /// `for` loop: C++ already binds `name` there to the new declaration.
+    fn push_pending(&mut self, name: &str, sym: &SymbolId, kind: PendingKind) {
+        let mark = self.scopes.hide(name);
+        self.pending.push(Pending {
+            name: name.to_owned(),
+            sym: sym.clone(),
+            kind,
+            mark,
+        });
+    }
+
+    /// Ends what [`Self::push_pending`] started.
+    fn pop_pending(&mut self) {
+        if let Some(pending) = self.pending.pop() {
+            self.scopes.unhide(pending.mark);
+        }
     }
 
     /// Warns when a local name hides a function of the module.

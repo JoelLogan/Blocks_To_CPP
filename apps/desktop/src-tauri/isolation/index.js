@@ -2,46 +2,42 @@
 // origin. Tauri calls it with every IPC message from the editor before encrypting the message for
 // the backend. A message that is not on the allowlist is dropped here: the hook throws, so the
 // message is never sent, and a compromised editor cannot reach any other command.
+//
+// index.html loads allowlist.generated.js (B2C_IPC_ALLOWLIST, generated from the Rust command
+// table) and validate.js (b2cValidateIpcMessage) before this script. The backend checks every
+// request again; this hook keeps everything the allowlist does not name away from it.
 'use strict';
+/* global B2C_IPC_ALLOWLIST, b2cValidateIpcMessage */
 
 /**
- * Whether `value` is an ordinary object (no class instance, array or exotic prototype).
- * @param {unknown} value
- * @returns {value is Record<string, unknown>}
+ * The command name of a refused message, for the error text: only a short name made of the
+ * characters command names use, read without running any getter. Anything else is not shown.
+ * @param {unknown} message
+ * @returns {string}
  */
-function isPlainObject(value) {
-  if (typeof value !== 'object' || value === null) {
-    return false;
+function b2cRefusedCommand(message) {
+  try {
+    if (typeof message !== 'object' || message === null) {
+      return '(not a message)';
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(message, 'cmd');
+    const command = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    return typeof command === 'string' && /^[A-Za-z0-9_:|.-]{1,64}$/.test(command)
+      ? command
+      : '(not shown)';
+  } catch {
+    return '(not shown)';
   }
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
 }
-
-/**
- * Whether `value` is an object without any keys: the arguments of a command that takes none.
- * @param {unknown} value
- */
-function isNoArguments(value) {
-  return isPlainObject(value) && Object.keys(value).length === 0;
-}
-
-/**
- * Every command the editor may call, with a check of its arguments. Keep this in step with
- * `generate_handler!` in ../src/main.rs and the permissions in ../capabilities/.
- * @type {ReadonlyMap<string, (payload: unknown) => boolean>}
- */
-const ALLOWED_COMMANDS = new Map([['app_version', isNoArguments]]);
 
 /**
  * @param {unknown} message - `{ cmd, callback, error, payload, options }` from the editor
  * @returns {unknown} the unchanged message, when it is allowed
  */
 window.__TAURI_ISOLATION_HOOK__ = (message) => {
-  const command = isPlainObject(message) ? message.cmd : undefined;
-  const check = typeof command === 'string' ? ALLOWED_COMMANDS.get(command) : undefined;
-  if (check === undefined || !isPlainObject(message) || !check(message.payload)) {
+  if (!b2cValidateIpcMessage(message, B2C_IPC_ALLOWLIST)) {
     throw new Error(
-      `Blocked an IPC message that is not on the allowlist (command: ${String(command)})`,
+      `Blocked an IPC message that is not on the allowlist (command: ${b2cRefusedCommand(message)})`,
     );
   }
   return message;

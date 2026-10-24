@@ -78,6 +78,10 @@ pub(crate) const TOO_MUCH_EXTRA_DATA: &str = "B2C-E0135";
 pub(crate) const BAD_PACK: &str = "B2C-E0136";
 /// The same library pack is listed twice.
 pub(crate) const DUPLICATE_PACK: &str = "B2C-E0137";
+/// The data is not Blocks2Cpp clipboard data.
+pub(crate) const NOT_CLIPBOARD: &str = "B2C-E0138";
+/// A `stack` on a block that is not directly on the canvas.
+pub(crate) const MISPLACED_STACK: &str = "B2C-E0139";
 /// More problems than are listed.
 pub(crate) const TOO_MANY_PROBLEMS: &str = "B2C-E0199";
 

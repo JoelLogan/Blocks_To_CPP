@@ -10,10 +10,27 @@ of the [translation pipeline](../../spec/06-compiler-pipeline.md#61-overview):
   one (at most 1,000, then `B2C-E0199`). Problems with the bytes, the JSON
   syntax and the format header stop loading right away, because everything
   after them would be guesswork.
+
+  Pasted blocks ([spec §5.12](../../spec/05-project-format.md#512-clipboard-format))
+  go through the same checks with the same codes, so a paste with any of
+  these problems inserts nothing. Their messages say "the pasted data"
+  instead of "the project file". One code exists only for pastes:
+  `B2C-E0138`, data that is not Blocks2Cpp clipboard data.
 * **`B2C-E06xx`: catalog.** `b2c-catalog` checks every block against its
   definition in the block catalog ([spec §6.3](../../spec/06-compiler-pipeline.md#63-stage--resolve-catalog)).
   The project still opens, with the problem shown on the block, but it cannot
-  be built until it is fixed.
+  be built until it is fixed. Blocks left loose on the canvas are checked
+  too: they are *parked* ([ADR-0012](../../adr/0012-parked-blocks.md)), which
+  is no catalog problem in itself, but every other problem below is an error
+  wherever the block is. A variable or name that is not chosen yet is no
+  catalog problem either (see `B2C-E0606`). Messages name a block by its
+  label up to its first field or input (*the "print" block*), never by its
+  catalog ID, except for an unknown block type (`B2C-E0601`) and a broken
+  definition (`B2C-E0620`). The analyser does not report a problem of this
+  list again ([spec §6.1](../../spec/06-compiler-pipeline.md#61-overview)),
+  so a field or input the catalog rejected, and the fields and inputs of a
+  block kept as it is (`B2C-E0601` to `B2C-E0603`, `B2C-E0620`), get no
+  second message.
 
 All of them are **errors**. Text from the project file that appears in a
 message is quoted, cut after 40 characters, and invisible or control
@@ -26,7 +43,9 @@ is in, such as `"fields.NAME.name" in this block`.
 
 The malicious-project regression suite in
 [`tests/security/projects/`](../../../tests/security/projects/README.md) has a
-crafted file for most of these codes.
+crafted file for most of these codes, and
+[`tests/security/clipboard/`](../../../tests/security/clipboard/README.md) has
+crafted clipboard payloads.
 
 ## Loading the project file (`B2C-E01xx`)
 
@@ -37,6 +56,9 @@ parsed, and Blocks2Cpp stops reading a file one byte after the limit, so an
 oversized file cannot use up memory (which is also why the message does not
 say how large the file is). Real projects are far smaller (typically under
 1 MiB).
+
+The editor also refuses, with this code, a paste that would make the project
+file larger than 32 MiB; nothing is pasted.
 
 > The project file is larger than 33554432 bytes (32 MiB), the most a project file can be.
 
@@ -50,7 +72,7 @@ UTF-16, in a legacy code page, or with a BOM are refused. The message gives
 the position of the first byte that is not UTF-8.
 
 > The project file is not valid UTF-8 text (line 1, column 1). Save it with the UTF-8 encoding.
-
+>
 > The project file starts with an invisible byte order mark (BOM). Save it as UTF-8 without a BOM.
 
 **Fix:** save the file as "UTF-8" (not "UTF-8 with BOM" or "Unicode") in your
@@ -73,6 +95,13 @@ anything after the end of the data are all refused.
 Lists and objects are nested more than 128 levels deep. Statement lists keep
 the nesting of a file equal to the logical nesting of the program, which is
 far smaller; very deep nesting is only used to crash parsers.
+
+The editor also shows this code when a paste, a duplicate or a cut holds a
+chain of statements too long for the block editor to handle in one piece: it
+keeps each statement of a chain inside the one before it, so after a few
+thousand statements its undo records reach the JavaScript stack limit.
+Nothing is changed; move fewer statements at a time, or put some of them into
+a function.
 
 > Lists and objects in the project file are nested more than 128 levels deep (line 1, column 3127). Real projects need far fewer levels, so the file was not opened.
 
@@ -110,12 +139,28 @@ file is not a JSON object at all.
 
 ### B2C-E0108: made with a newer version of Blocks2Cpp
 
-The project uses a newer file format than this version of Blocks2Cpp
-understands (any whole number above the current format version, however
-large). It is refused as a whole instead of being half loaded, so nothing in
-it is lost or misread.
+The project was saved by a newer version of Blocks2Cpp, in one of two ways
+([spec §5.7](../../spec/05-project-format.md#57-versioning-and-migration)):
 
-> This project was made with a newer version of Blocks2Cpp (needs ≥ 0.3.0; it uses project format 2, and this version reads format 1). Update Blocks2Cpp to open it.
+* it uses a newer file format than this version understands (any whole
+  number above the current format version, however large); or
+* it has a key that this version does not know, and its `generator.app` is a
+  newer version than this app (compared by SemVer precedence). Each format
+  version only adds keys, so such a key is one that the newer version added,
+  not a mistake (otherwise it is [`B2C-E0110`](#b2c-e0110-unknown-key)).
+
+The file is refused as a whole instead of being half loaded, so nothing in it
+is lost or misread. The message never names a version taken from the file,
+because the file could claim any.
+
+> This project was made with a newer version of Blocks2Cpp, which saves projects in a newer format than this version can read. Update Blocks2Cpp to open it.
+>
+> "project.options" has the key "usingNamespaceStd", which this version of Blocks2Cpp does not know. The project was made with a newer version of Blocks2Cpp; update Blocks2Cpp to open it.
+
+Blocks copied in a newer version of Blocks2Cpp can use a newer clipboard
+format, and are refused the same way when pasted:
+
+> These blocks were copied from a newer version of Blocks2Cpp, which copies blocks in a newer format than this version can read. Update Blocks2Cpp to paste them.
 
 **Fix:** update Blocks2Cpp.
 
@@ -126,7 +171,7 @@ never existed or that this version cannot upgrade from. (Older versions are
 upgraded automatically; see [spec §5.7](../../spec/05-project-format.md#57-versioning-and-migration).)
 
 > The project file has no valid "formatVersion" (a whole number such as 1), so it cannot be read.
-
+>
 > This project uses project format 0, which this version of Blocks2Cpp cannot read or upgrade.
 
 **Fix:** restore the file from a backup or version control.
@@ -142,6 +187,10 @@ their own data in the `"x-ext"` object, which is preserved but never
 interpreted.
 
 > "project" has an unknown key "junk0". Remove it or check its spelling.
+
+In a file whose `generator.app` is a newer version than this app, an unknown
+key is reported as [`B2C-E0108`](#b2c-e0108-made-with-a-newer-version-of-blocks2cpp)
+instead: the newer version added it.
 
 **Fix:** remove the key or correct its spelling. Machine-specific settings
 belong in the app's settings, not in the project.
@@ -160,11 +209,29 @@ saved by Blocks2Cpp.
 
 A value has the wrong kind (text where a number belongs, for example), is
 not one of the allowed choices, or is a number out of range for its key.
-`"x-ext"`, when present, must be an object.
+`"x-ext"`, when present, must be an object. A block's `"stack"` (the blocks
+stacked below a loose block on the canvas) is never an empty list: a block
+with nothing below it has no `"stack"` key, so every project has one
+spelling.
+
+A preprocessor define's `int` value, and every number in free-form data
+(a block's `"extra"` and `"x-ext"`), must be between -9007199254740991 and
+9007199254740991 (±(2⁵³ − 1)). The editor holds the project as JavaScript
+numbers, which keep whole numbers only up to that size exactly: a larger
+one would silently change on its way through the editor, and with it the
+program or the project's security hash.
 
 > "project.run.workingDirectory" should be one of "project" or "sandbox", but it is the text "/etc".
+>
+> "stack" in this block is an empty list. Leave "stack" out when no blocks are stacked below the block.
+>
+> "project.build.defines[0].value.int" should be a whole number from -9007199254740991 to 9007199254740991, but it is the number 9007199254740993.
+>
+> "x-ext.a" is the number 9007199254740992, but numbers in free-form data must be between -9007199254740991 and 9007199254740991, which the editor can hold exactly.
 
-**Fix:** use one of the values the message lists.
+**Fix:** use one of the values the message lists, remove an empty
+`"stack"`, or use a smaller number (or text, in `"x-ext"`, for a large ID or
+count that a tool needs to keep exactly).
 
 ### B2C-E0113: invalid ID
 
@@ -242,7 +309,7 @@ A project has 1 to 256 modules. When there are too many, only the first 256
 are checked.
 
 > The project has no modules. It needs at least one (usually called "main").
-
+>
 > The project has 257 modules, but at most 256 are allowed. Only the first 256 were checked.
 
 **Fix:** add a `main` module, or merge modules.
@@ -321,11 +388,14 @@ by them ("prototype pollution").
 ### B2C-E0128: canvas position on a nested block
 
 Only blocks directly on a module's canvas have a position (`"x"` and `"y"`);
-blocks inside other blocks are placed by their parent.
+blocks inside other blocks are placed by their parent, and blocks in a
+`"stack"` sit below the block that holds the stack.
 
 > This block is inside another block, so it cannot have a canvas position ("x" and "y"). Remove them.
+>
+> This block is stacked below another block, so it cannot have a canvas position ("x" and "y"). Remove them.
 
-**Fix:** remove `"x"` and `"y"` from the nested block.
+**Fix:** remove `"x"` and `"y"` from the nested or stacked block.
 
 ### B2C-E0129: coordinate out of range
 
@@ -409,6 +479,37 @@ cannot contain paths.
 
 **Fix:** keep one entry, with the version requirement you want.
 
+### B2C-E0138: not Blocks2Cpp clipboard data
+
+Only for pastes. The pasted data is JSON, but its `"format"` is not
+`"blocks2cpp/clipboard"`, it has no `"format"`, or it is not a JSON object at
+all. Data copied from another program, and whole project files, are refused:
+a paste only accepts blocks copied in Blocks2Cpp
+([spec §5.12](../../spec/05-project-format.md#512-clipboard-format)).
+
+> The pasted data is not Blocks2Cpp blocks: its "format" is "blockly/clipboard", not "blocks2cpp/clipboard".
+>
+> The pasted data is a whole Blocks2Cpp project, not copied blocks. Open it as a project instead.
+
+**Fix:** copy the blocks in Blocks2Cpp and paste again. To use a project
+file, open it.
+
+### B2C-E0139: blocks stacked below a block that is not on the canvas
+
+A block that sits directly on a module's canvas, with no place in a program
+yet, can keep the statement blocks attached below it in its `"stack"` (and
+so can a block directly in pasted data). Blocks inside other blocks, and
+blocks that are themselves in a stack, cannot have a stack: their
+statements belong in a statement list. (Whether the block holding the stack
+is a statement block is checked later, against the catalog.)
+
+> This block is inside another block, so it cannot have a "stack": only a block directly on the canvas can have blocks stacked below it. Move the stacked blocks into the statement list they belong to.
+>
+> This block is itself in a "stack", so it cannot have a "stack" of its own. Put all the stacked blocks in the stack of the first block.
+
+**Fix:** move the stacked blocks into the statement list they belong to,
+or into the stack of the first block of the canvas stack.
+
 ### B2C-E0199: more problems than are listed
 
 At most 1,000 problems are listed for one file; this note counts the rest.
@@ -438,49 +539,96 @@ editor), and saving the project preserves it; the blocks inside it are still
 checked.
 
 > This block has the type "sfml.window.open", which this version of Blocks2Cpp does not know. Missing pack: "sfml". Install that library pack, or update Blocks2Cpp if the block comes from a newer version.
-
+>
 > This block has the type "Not A Type", which is not a valid block type. Block types look like "io.print".
 
 **Fix:** install the library pack, update Blocks2Cpp, or delete the block.
 
 ### B2C-E0602: block from a newer version
 
-The block was saved by a newer version of its definition than this version
-of Blocks2Cpp knows.
+The block was made by a newer version of Blocks2Cpp. Either it was saved by
+a newer version of its definition than this version knows, or the project
+(or the pasted blocks) came from a newer block catalog
+([spec §3.11.3](../../spec/03-block-language.md#3113-block-versioning)) and
+the block has a field, input, setting in `extra` or dropdown choice that
+this version does not know. Such a newer addition is not reported as unknown
+(`B2C-E0605`, `E0607`, `E0608`, `E0610`, `E0611`): the block is kept
+unchanged (shown as a placeholder in the editor), and saving the project
+preserves it. The save also keeps the newer catalog version the file names
+(`generator.catalog`), so the block is still reported this way after the
+save.
 
-> This block was made with a newer version of Blocks2Cpp: it is version 2 of "io.print", and this version knows only up to version 1. Update Blocks2Cpp to use it.
+> This "print" block was made with a newer version of Blocks2Cpp: it is version 2, and this version knows only up to version 1. Update Blocks2Cpp to use it.
+>
+> This "change" block was made with a newer version of Blocks2Cpp: it has the field "OP", which this version does not know. Update Blocks2Cpp to use it; until then the block is kept as it is.
 
 **Fix:** update Blocks2Cpp.
 
 ### B2C-E0603: block version cannot be upgraded
 
-The block was saved with an older version of its definition. Blocks2Cpp
-upgrades such blocks automatically
-([spec §3.11.3](../../spec/03-block-language.md#3113-block-versioning)), but
-here no upgrade exists (for example for version 0, which never existed), or
-the upgrade failed because the block does not have the shape its version
-promises. The block is kept unchanged.
+The block was saved with an older version of its definition, or is of a
+block type that was retired (merged into another). Blocks2Cpp upgrades such
+blocks when a project, a recovery snapshot or pasted blocks are loaded, and
+the project then has unsaved changes
+([spec §5.7](../../spec/05-project-format.md#57-versioning-and-migration)).
+Here the upgrade was not possible: no upgrade exists (for example for
+version 0, which never existed), the upgrade failed because the block does
+not have the shape its version promises, or the upgraded block would have
+broken a rule every upgrade keeps (it never adds or removes blocks, never
+makes an expression longer, never changes the IDs of what the block
+declares, never changes what workspace trust looks at, and stays within the
+limits of project files). The block is kept unchanged (shown as a
+placeholder in the editor), and saving the project preserves it. When the
+upgraded project as a whole would break such a rule (it would change what
+workspace trust looks at, or go past a limit of project files), no single
+block is to blame: every upgrade of the project is undone, and each block
+that was upgraded is reported (*upgrading the old blocks would …*).
 
-> This block is version 0 of "control.break", which this version of Blocks2Cpp cannot upgrade to version 1.
+> This "leave loop" block is version 0, which this version of Blocks2Cpp cannot upgrade to version 1.
+>
+> This "print" block is version 1, and upgrading it from version 1 failed: the separator is unknown.
+>
+> This block is version 1 of a retired kind of block, which is now the "change" block, and replacing it failed: its operator "pow" is not one of +=, -=, \*=, /= and %=.
+>
+> This block is version 2 of a retired kind of block, and this version of Blocks2Cpp cannot upgrade it.
+>
+> This "print" block is version 1, and upgrading it would add a block, so it was left as it was. This is a bug in Blocks2Cpp.
+>
+> This "print" block is version 1, and upgrading the old blocks would change what workspace trust looks at (Raw C++, libraries or blocks that use files), so it was left as it was. This is a bug in Blocks2Cpp.
 
-> This block is version 1 of "io.print", and upgrading it from version 1 failed: the separator is unknown.
-
-**Fix:** replace the block with a new one from the toolbox.
+**Fix:** replace the block with a new one from the toolbox. The messages
+that end with *This is a bug in Blocks2Cpp* come from an upgrade that ships
+with Blocks2Cpp: [report the bug](../../../CONTRIBUTING.md) with the
+project file.
 
 ### B2C-E0604: block in the wrong place
 
-The block's shape does not fit where it is: `when program starts` and
-function definitions sit directly on the canvas; statement blocks go in
-statement lists (inside `when program starts`, a function or a loop); value
-blocks go into inputs.
+The block sits where the editor could never put it, so the file was made or
+changed outside Blocks2Cpp: `when program starts` or a function definition
+inside another block, a statement block plugged into a value input, a value
+block used as a step in a statement list, or blocks stacked below a block
+that is not a statement.
 
-> This "io.print" block is not inside "when program starts" or a function, so it would never run. Move it inside one, or delete it.
+A statement or value block left loose directly on the canvas is not in the
+wrong place: it is *parked* ([ADR-0012](../../adr/0012-parked-blocks.md)).
+It does not run, and the analyser points it out with the warning
+[`B2C-W0505`](analyser.md#b2c-w0505-block-not-attached).
 
-> A "program.main" block must sit directly on the canvas, not inside another block.
+> A "when program starts" block must sit directly on the canvas, not inside another block.
+>
+> This "leave loop" block is a step, not a value, so it cannot be plugged into an input.
+>
+> This block gives a value and cannot be a step on its own. Put it into an input of another block.
 
-> This "io.print" block is a step, not a value, so it cannot be plugged into an input.
+Only a statement block has a connection below it, so blocks stacked below
+any other block on the canvas (its `"stack"`, see
+[spec §5.4](../../spec/05-project-format.md#54-block-nodes)) are reported
+once, on that block. The stacked blocks are still checked like any other
+blocks:
 
-**Fix:** move the block where the message says.
+> 1 block is stacked below this "when program starts" block, but nothing can be attached below it, so the stacked block would never run. Move it inside a block, or delete it.
+
+**Fix:** move the block where the message says, or delete it.
 
 ### B2C-E0605: unknown field
 
@@ -492,10 +640,20 @@ The block has a field its definition does not have.
 
 ### B2C-E0606: required field missing
 
-A field without a default value is missing, such as the name a `create
-variable` block declares or the variable a `set` block changes.
+A field without a default value is missing. A name or a reference to a
+variable or function is the exception: the name a `create variable` block
+declares, or the variable a `set` or `ask` block uses, is absent while
+nothing is chosen yet, which is how the editor saves a block straight from
+the toolbox. That is not a catalog problem, so such a block left loose or
+disabled never stops a build
+([ADR-0012](../../adr/0012-parked-blocks.md)); once the block is part of the
+program, the analyser asks for the choice
+([`B2C-E0430`](analyser.md#b2c-e0430-incomplete-or-damaged-block)). The core
+block catalog has no other field without a default, so this code is only
+reported for library packs and for files made outside the editor against
+such a catalog.
 
-> This block needs to know which variable or function it uses: its field VAR is missing.
+> This block is missing its field SEP.
 
 **Fix:** choose a value for the field in the editor.
 
@@ -562,7 +720,7 @@ false, a parameter list is not a list, or a function has more parameters than
 allowed.
 
 > "extra.itemCount" of this block is 0, but it must be a whole number from 1 to 32.
-
+>
 > This block has 17 parameters, but at most 16 are allowed.
 
 **Fix:** use a value within the range given.

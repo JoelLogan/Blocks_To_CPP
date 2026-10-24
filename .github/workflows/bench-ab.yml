@@ -1,0 +1,136 @@
+# The A/B benchmarks by hand (docs/spec/09-quality-and-delivery.md §9.2,
+# apps/desktop/e2e/bench/README.md "A/B runs"). The jobs are bench-ab-run.yml's; this workflow
+# starts them and checks the base. A pull request's A/B run is bench-ab-pr.yml.
+#
+# Run it on the branch or tag to measure ("Use workflow from"): the head is the commit the run is
+# for (github.sha), and no input changes it. The base is one of the head's ancestors: by default
+# the commit where the head branched off the default branch (their merge base; on the default
+# branch itself that is the head, which measures the build against itself), or the branch, tag or
+# commit that the `base` input names, which must be in the head's history. Anything else fails
+# the base job before anything is built.
+#
+# Why: a manual run can write to the cache scope of the branch it runs on, the default branch's
+# included, from which other runs restore. Code that runs in it could take the run's cache token
+# and plant entries for them, so it builds and runs only commits of the repository's own history,
+# which only people with write access put there. A pull request's code runs only in
+# bench-ab-pr.yml, whose pull_request runs have the pull request's own cache scope.
+name: Bench A/B
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: >-
+          The base, an ancestor of the commit this run is for: a branch, tag or commit; empty for
+          where that commit branched off the default branch
+        type: string
+        default: ""
+      metrics:
+        description: >-
+          The benchmarks, separated by spaces or commas: preview (webview.preview-1000.p95,
+          webview.edit-1000.p95-all, and webview.edit-1000.p95 reported), select
+          (webview.select-1000.max-task), guessing (the guessing game's select and edit), console
+          (webview.console-200000.run), cold-start, drag (webview.drag-5000.frame-p95-all, and
+          webview.drag-5000.frame-p95 reported)
+        type: string
+        default: preview select guessing console drag
+      systems:
+        description: Which systems to run on
+        type: choice
+        options: [both, linux, windows]
+        default: both
+
+permissions: {}
+
+# A newer manual run on the same branch or tag replaces one that has not finished.
+concurrency:
+  group: bench-ab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  base:
+    name: Check the base
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # read the repository's history
+    outputs:
+      base: ${{ steps.base.outputs.base }}
+    steps:
+      # The dispatched commit with every branch and tag of the repository and their history (no
+      # pull request refs), for resolving the base and checking it; one small file of the tree is
+      # enough.
+      - name: Check out the dispatched commit with the repository's history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: history
+          fetch-depth: 0
+          sparse-checkout: .node-version
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Resolve the base and check that it is an ancestor of the dispatched commit
+        id: base
+        working-directory: history
+        env:
+          RUN_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          INPUT_BASE: ${{ inputs.base }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$RUN_SHA" ]; then
+            echo "::error::The checkout is not the dispatched commit $RUN_SHA"
+            exit 1
+          fi
+          if [ -z "$INPUT_BASE" ]; then
+            if ! base=$(git merge-base "refs/remotes/origin/$DEFAULT_BRANCH" HEAD); then
+              echo "::error::The dispatched commit has no common history with $DEFAULT_BRANCH; name a base"
+              exit 1
+            fi
+            named="where it branched off $DEFAULT_BRANCH"
+          else
+            if ! [[ "$INPUT_BASE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]] || [[ "$INPUT_BASE" == *..* ]]; then
+              echo "::error::The base is not a branch, tag or commit name (letters, digits, '.', '_', '/' and '-')"
+              exit 1
+            fi
+            # A branch, then a tag, then a commit ID (which may be abbreviated).
+            base=""
+            for name in "refs/remotes/origin/$INPUT_BASE" "refs/tags/$INPUT_BASE"; do
+              if base=$(git rev-parse --verify --quiet "$name^{commit}"); then
+                break
+              fi
+            done
+            if [ -z "$base" ] && [[ "$INPUT_BASE" =~ ^[0-9a-f]{7,40}$ ]]; then
+              base=$(git rev-parse --verify --quiet "$INPUT_BASE^{commit}") || base=""
+            fi
+            if [ -z "$base" ]; then
+              echo "::error::'$INPUT_BASE' is no branch, tag or commit of this repository"
+              exit 1
+            fi
+            named="$INPUT_BASE"
+          fi
+          if ! git merge-base --is-ancestor "$base" HEAD; then
+            echo "::error::The base $named ($base) is not an ancestor of the dispatched commit $RUN_SHA; a manual run builds only that commit and one of its ancestors"
+            exit 1
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          {
+            echo "### A/B commits"
+            echo
+            echo "- Base: \`$base\` ($named)"
+            echo "- Head: \`$RUN_SHA\` (the dispatched commit, on \`$GITHUB_REF_NAME\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ab:
+    name: A/B
+    needs: base
+    permissions:
+      contents: read # check out the repository
+    # The called workflow comes from this run's commit. Not `$/...` (zizmor's self-repository):
+    # actionlint 1.7.12 rejects it, and CodeQL 2.27.2 does not follow it, so its analysis of the
+    # called jobs would no longer see this workflow's trigger.
+    uses: ./.github/workflows/bench-ab-run.yml # zizmor: ignore[self-repository]
+    with:
+      base: ${{ needs.base.outputs.base }}
+      metrics: ${{ inputs.metrics }}
+      systems: ${{ inputs.systems }}

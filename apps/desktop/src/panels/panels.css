@@ -1,0 +1,461 @@
+/*
+ * Styles of the code, Problems, console and build output panels (docs/spec/04-user-interface.md
+ * §4.3–§4.5). They use the app's colour tokens from src/app/app.css where those exist, with the
+ * same values as fallbacks, and add the panel tokens below. Text colours meet WCAG 2.2 AA (4.5:1)
+ * on their backgrounds in both themes; severity is never shown by colour alone (§4.8).
+ */
+
+:root {
+  --b2c-mono-font:
+    ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', 'DejaVu Sans Mono', 'Liberation Mono', Menlo,
+    Consolas, monospace;
+
+  --b2c-panel-focus: var(--b2c-focus, #1a56db);
+  --b2c-panel-error: #b42318;
+  --b2c-panel-warning: #8a5300;
+  --b2c-panel-info: #1a56db;
+  --b2c-panel-ok: #1e7b34;
+  --b2c-panel-warning-bg: #fff4d6;
+  --b2c-panel-warning-text: #6b4500;
+
+  --b2c-code-bg: #ffffff;
+  --b2c-code-text: #1f2328;
+  --b2c-code-gutter-bg: #f6f8fa;
+  --b2c-code-gutter-text: #57606a;
+  --b2c-code-highlight: rgb(255 214 0 / 28%);
+  --b2c-code-highlight-border: #c69026;
+  --b2c-code-keyword: #cf222e;
+  --b2c-code-type: #953800;
+  --b2c-code-string: #0a3069;
+  --b2c-code-escape: #0550ae;
+  --b2c-code-number: #0550ae;
+  --b2c-code-comment: #59636e;
+  --b2c-code-preprocessor: #116329;
+  --b2c-code-function: #8250df;
+  --b2c-code-hidden-char: #9a3412;
+
+  /* The console stays dark in both themes, like most terminals: programs pick colours for it. */
+  --b2c-console-bg: #161a22;
+  --b2c-console-fg: #e6e9f0;
+  --b2c-console-cursor: #ffc266;
+  --b2c-console-selection: rgb(138 180 255 / 35%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --b2c-panel-error: #ff8a80;
+    --b2c-panel-warning: #ffcc66;
+    --b2c-panel-info: #8ab4ff;
+    --b2c-panel-ok: #6fd18a;
+    --b2c-panel-warning-bg: #3d2f0a;
+    --b2c-panel-warning-text: #ffd98a;
+
+    --b2c-code-bg: #11141b;
+    --b2c-code-text: #e6edf3;
+    --b2c-code-gutter-bg: #161b22;
+    --b2c-code-gutter-text: #9ba3af;
+    --b2c-code-highlight: rgb(255 214 0 / 18%);
+    --b2c-code-highlight-border: #b08800;
+    --b2c-code-keyword: #ff7b72;
+    --b2c-code-type: #ffa657;
+    --b2c-code-string: #a5d6ff;
+    --b2c-code-escape: #79c0ff;
+    --b2c-code-number: #79c0ff;
+    --b2c-code-comment: #9ba3af;
+    --b2c-code-preprocessor: #7ee787;
+    --b2c-code-function: #d2a8ff;
+    --b2c-code-hidden-char: #fdba74;
+  }
+}
+
+/* Shared panel frame: a bar of controls above the content, which fills the rest. */
+
+.b2c-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--b2c-text, #1b2130);
+}
+
+.b2c-panel-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--b2c-border, #c9cfdb);
+}
+
+.b2c-panel button,
+.b2c-panel select,
+.b2c-dialog button {
+  min-height: 24px;
+  padding: 2px 10px;
+  border: 1px solid var(--b2c-border, #c9cfdb);
+  border-radius: 4px;
+  background: var(--b2c-surface-raised, #ffffff);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* A drop-down shows its edge at 3:1 (WCAG 1.4.11); a button is known by its text. */
+.b2c-panel select {
+  border-color: var(--b2c-control-border, #767f91);
+}
+
+.b2c-panel button:disabled,
+.b2c-panel select:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* Hidden on screen, read by screen readers (such as the console's keyboard note). */
+.b2c-panel-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.b2c-panel :focus-visible,
+.b2c-dialog :focus-visible {
+  outline: 2px solid var(--b2c-panel-focus);
+  outline-offset: 2px;
+}
+
+.b2c-panel-status {
+  margin-left: auto;
+  color: var(--b2c-text-muted, #4f596c);
+  white-space: nowrap;
+}
+
+.b2c-panel-empty {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--b2c-text-muted, #4f596c);
+}
+
+.b2c-severity-error {
+  color: var(--b2c-panel-error);
+}
+
+.b2c-severity-warning {
+  color: var(--b2c-panel-warning);
+}
+
+.b2c-severity-info {
+  color: var(--b2c-panel-info);
+}
+
+/* Code panel */
+
+.b2c-code-file {
+  color: var(--b2c-text-muted, #4f596c);
+}
+
+/*
+ * The copy confirmation never moves the code (04 §4.3). In the bar it would need a line of its
+ * own whenever the bar is full (the C++ dock's usual width), so it floats just below the bar's
+ * right end, over the code, and lets the pointer through to it. Its z-index counts only inside
+ * the panel, so it never covers a dialog.
+ */
+.b2c-code-panel {
+  isolation: isolate;
+}
+
+.b2c-code-panel .b2c-panel-bar {
+  position: relative;
+}
+
+.b2c-code-copy-status {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 8px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.b2c-code-copy-status:not(:empty) {
+  padding: 2px 8px;
+  border: 1px solid var(--b2c-border, #c9cfdb);
+  border-radius: 4px;
+  background: var(--b2c-surface-raised, #ffffff);
+  color: var(--b2c-text, #1b2130);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 15%);
+}
+
+.b2c-code-not-buildable {
+  margin: 0;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--b2c-border, #c9cfdb);
+  background: var(--b2c-panel-warning-bg);
+  color: var(--b2c-panel-warning-text);
+}
+
+/* Its own stacking context, so CodeMirror's layers stay below the copy confirmation. */
+.b2c-code-editor {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  isolation: isolate;
+}
+
+.b2c-code-editor[hidden] {
+  display: none;
+}
+
+/* Problems panel */
+
+.b2c-problems-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  /* A row scrolled to with the keyboard never hides under the sticky header (WCAG 2.4.11). */
+  scroll-padding-top: 2.5em;
+}
+
+.b2c-problems-grid {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.b2c-problems-head {
+  display: table-header-group;
+}
+
+.b2c-problems-body {
+  display: table-row-group;
+}
+
+.b2c-problems-row {
+  display: table-row;
+}
+
+.b2c-problems-cell {
+  display: table-cell;
+  padding: 3px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.b2c-problems-head .b2c-problems-cell {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--b2c-surface, #f0f2f7);
+  font-weight: 600;
+}
+
+.b2c-problems-head button {
+  padding: 0 4px;
+  border: none;
+  background: none;
+  font-weight: inherit;
+}
+
+.b2c-problems-body .b2c-problems-row {
+  border-top: 1px solid var(--b2c-border, #c9cfdb);
+  cursor: pointer;
+}
+
+.b2c-problems-body .b2c-problems-row:hover {
+  background: var(--b2c-surface, #f0f2f7);
+}
+
+.b2c-problems-cell:focus-visible {
+  outline: 2px solid var(--b2c-panel-focus);
+  outline-offset: -2px;
+}
+
+.b2c-problems-stale .b2c-problems-cell {
+  color: var(--b2c-text-muted, #4f596c);
+}
+
+.b2c-problems-stale-note {
+  font-style: italic;
+}
+
+.b2c-problems-code,
+.b2c-problems-raw {
+  font-family: var(--b2c-mono-font);
+}
+
+.b2c-problems-raw {
+  max-height: 16em;
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  overflow: auto;
+  border: 1px solid var(--b2c-border, #c9cfdb);
+  border-radius: 4px;
+  background: var(--b2c-surface, #f0f2f7);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Console */
+
+/*
+ * In a short bottom dock an open notice can make the header taller than the panel. The header
+ * then scrolls by itself (the terminal shrinks to nothing), so Stop, Run again and Clear can
+ * always be scrolled to while the dock panel around it never scrolls.
+ */
+.b2c-console-header {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.b2c-console-state {
+  font-weight: 600;
+}
+
+.b2c-console-state-ok {
+  color: var(--b2c-panel-ok);
+}
+
+.b2c-console-state-warning {
+  color: var(--b2c-panel-warning);
+}
+
+.b2c-console-state-error {
+  color: var(--b2c-panel-error);
+}
+
+.b2c-console-notice {
+  padding: 0 6px;
+  border: 1px solid var(--b2c-border, #c9cfdb);
+  border-radius: 10px;
+  color: var(--b2c-text-muted, #4f596c);
+  font-size: 12px;
+}
+
+/* A notice is a disclosure: its explanation opens with the keyboard as well as by pointer. */
+.b2c-console-notice summary {
+  min-height: 24px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.b2c-console-notice[open] {
+  flex-basis: 100%;
+  border-radius: 6px;
+}
+
+.b2c-console-notice-detail {
+  margin: 0 0 4px;
+  color: var(--b2c-text, #1b2130);
+}
+
+.b2c-console-elapsed {
+  color: var(--b2c-text-muted, #4f596c);
+}
+
+/*
+ * The console scrolls by itself, never the panel around it (04 §4.5). The fit add-on sizes the
+ * terminal to its host's whole height minus the padding of xterm's own element, so the padding
+ * sits on that element: padding on the host would fit one row too many, which then spilled out
+ * and made the dock panel scroll. Nothing may spill out of the host or the console's dock panel;
+ * a header taller than the panel scrolls itself (above).
+ */
+.b2c-console-terminal {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--b2c-console-bg);
+}
+
+.b2c-console-terminal .xterm {
+  height: 100%;
+  padding: 4px 0 0 6px;
+}
+
+.dock-panel:has(> .b2c-console-panel) {
+  overflow: hidden;
+}
+
+/* Build output */
+
+.b2c-build-log {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 8px;
+  overflow: auto;
+  font-family: var(--b2c-mono-font);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.b2c-build-line-progress {
+  color: var(--b2c-text-muted, #4f596c);
+}
+
+.b2c-build-line-note {
+  color: var(--b2c-panel-info);
+}
+
+/* Link confirmation (a program's OSC 8 link) */
+
+.b2c-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--b2c-overlay, rgb(10 14 24 / 45%));
+}
+
+.b2c-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 101;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 16px 20px;
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--b2c-border, #c9cfdb);
+  border-radius: 8px;
+  background: var(--b2c-surface-raised, #ffffff);
+  color: var(--b2c-text, #1b2130);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 25%);
+}
+
+.b2c-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.b2c-dialog-url {
+  padding: 6px 8px;
+  border: 1px solid var(--b2c-border, #c9cfdb);
+  border-radius: 4px;
+  background: var(--b2c-surface, #f0f2f7);
+  font-family: var(--b2c-mono-font);
+  overflow-wrap: anywhere;
+}
+
+.b2c-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .b2c-panel *,
+  .b2c-dialog,
+  .b2c-dialog-overlay {
+    transition: none !important;
+    animation: none !important;
+  }
+}

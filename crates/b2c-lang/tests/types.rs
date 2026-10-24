@@ -212,7 +212,7 @@ fn integer_division_into_decimal() {
     let mut body = vars();
     body.push(declare("double", "r", Some(convert("double", e("i / 2")))));
     body.push(set("d", e("7 / 2")));
-    body.push(update("d", "add", e("i / 3")));
+    body.push(change_op("d", "add", e("i / 3")));
     assert_codes(&run_main(body), &["B2C-W0510", "B2C-W0510", "B2C-W0510"]);
 }
 
@@ -297,18 +297,18 @@ fn const_counters_and_read_only_cannot_change() {
 }
 
 #[test]
-fn change_and_update_rules() {
+fn change_rules_for_each_operator() {
     let mut body = vars();
     body.extend([
         change("s", num("1")),
         change("b", num("1")),
         change("i", text("x")),
         change("i", num("1.5")),
-        update("d", "mod", num("2")),
-        update("i", "mod", num("2.0")),
+        change_op("d", "mod", num("2")),
+        change_op("i", "mod", num("2.0")),
         change("d", num("1")),
         change("c", num("1")),
-        update("i", "mul", boolean(true)),
+        change_op("i", "mul", boolean(true)),
     ]);
     assert_codes(
         &run_main(body),
@@ -605,6 +605,114 @@ fn literals_are_checked() {
     only(&a, "B2C-E0312");
     let a = run_main(vec![declare("std::string", "x", Some(text("a\0b")))]);
     only(&a, "B2C-E0312");
+}
+
+/// The declaration of `x` the generator writes for an analysed `main`.
+fn generated_line(a: &b2c_lang::Analysis) -> String {
+    let program = b2c_codegen::generate(&a.program, &b2c_codegen::CodegenOptions::default());
+    let contents = &program.files[0].contents;
+    contents
+        .lines()
+        .map(str::trim)
+        .find(|line| line.contains(" x = "))
+        .unwrap_or_else(|| panic!("no declaration of x in:\n{contents}"))
+        .to_owned()
+}
+
+#[test]
+fn typed_numbers_may_start_with_a_sign() {
+    // The editor saves a number typed into a slot as one token, sign
+    // included (`{"num": "-1"}`); lowering applies the sign as an operator.
+    for (ty, text, line) in [
+        ("int", "-5", "int x = -5;"),
+        ("int", "-1", "int x = -1;"),
+        ("int", "+3", "int x = 3;"),
+        ("int", "-0x10", "int x = -16;"),
+        ("int", "-1'000", "int x = -1000;"),
+        ("int", "-2147483648", "int x = -2147483647 - 1;"),
+        ("double", "-1.5", "double x = -1.5;"),
+        ("double", "-.5e1", "double x = -5.0;"),
+    ] {
+        let a = run_main(vec![declare(ty, "x", Some(typed_num(text)))]);
+        assert_clean(&a);
+        assert_eq!(generated_line(&a), line, "{text}");
+    }
+    // A typed negative number is a value like any other.
+    assert_clean(&run_main(vec![
+        declare("int", "i", Some(num("3"))),
+        set("i", e("i - 1")),
+        change("i", typed_num("-1")),
+        declare(
+            "bool",
+            "b",
+            Some(json!({"expr": [{"ref": sym("i")}, {"op": ">"}, {"num": "-1"}]})),
+        ),
+    ]));
+    let a = run_main(vec![declare(
+        "int",
+        "x",
+        Some(json!({"expr": [{"num": "1"}, {"op": "-"}, {"num": "-1"}]})),
+    )]);
+    assert_clean(&a);
+    assert_eq!(generated_line(&a), "int x = 1 - -1;");
+}
+
+#[test]
+fn signs_are_checked_like_the_rest_of_the_number() {
+    for text in ["--1", "-", "+", "+-1", "-+1", "- 1", "-x"] {
+        let a = run_main(vec![declare("int", "x", Some(typed_num(text)))]);
+        let d = only(&a, "B2C-E0310");
+        assert!(
+            d.message.contains(&format!("`{text}` is not a number")),
+            "{}",
+            d.message
+        );
+    }
+    let a = run_main(vec![declare("int", "x", Some(typed_num("-2147483649")))]);
+    assert_eq!(
+        only(&a, "B2C-E0517").message,
+        "`-2147483649` is too small for a whole number (the smallest is -2147483648). Write it as a decimal \
+         number, such as -2147483649.0, if you need it."
+    );
+    // The same rules hold in a number block.
+    let a = run_main(vec![declare("int", "x", Some(num("--1")))]);
+    assert!(only(&a, "B2C-E0310").message.starts_with("`--1` is not a number"));
+}
+
+#[test]
+fn octal_looking_numbers_get_their_own_message() {
+    for (input, message) in [
+        (
+            typed_num("010"),
+            "Write `10`, not `010`: in C++ a number that starts with 0 is octal.",
+        ),
+        (
+            num("010"),
+            "Write `10`, not `010`: in C++ a number that starts with 0 is octal.",
+        ),
+        (
+            typed_num("-007"),
+            "Write `-7`, not `-007`: in C++ a number that starts with 0 is octal.",
+        ),
+        (
+            e("08"),
+            "Write `8`, not `08`: in C++ a number that starts with 0 is octal.",
+        ),
+        (
+            typed_num("00"),
+            "Write `0`, not `00`: in C++ a number that starts with 0 is octal.",
+        ),
+        (
+            typed_num("0'100"),
+            "Write `100`, not `0'100`: in C++ a number that starts with 0 is octal.",
+        ),
+    ] {
+        let a = run_main(vec![declare("int", "x", Some(input))]);
+        assert_eq!(only(&a, "B2C-E0310").message, message);
+    }
+    // A decimal number may start with 0, as in C++.
+    assert_clean(&run_main(vec![declare("double", "x", Some(typed_num("01.5")))]));
+    assert_clean(&run_main(vec![declare("int", "x", Some(typed_num("0")))]));
 }
 
 #[test]

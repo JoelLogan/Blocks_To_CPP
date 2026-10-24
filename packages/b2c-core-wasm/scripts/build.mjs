@@ -1,0 +1,429 @@
+#!/usr/bin/env node
+// Builds @blocks2cpp/b2c-core-wasm: crates/b2c-core-wasm → WebAssembly → wasm-bindgen glue →
+// wasm-opt → the embedded-bytes chunk (docs/spec/06-compiler-pipeline.md §6.13, ADR-0003).
+//
+//   pnpm --filter @blocks2cpp/b2c-core-wasm build
+//
+// Steps:
+//   0. the tools: wasm-bindgen and wasm-opt are checked before anything is built, and every
+//      missing or unsuitable one is reported at once with how to get it; and the fingerprint of
+//      the core's inputs is taken (scripts/build-info.mjs), before cargo reads them
+//   1. cargo build --locked --profile wasm-release --target wasm32-unknown-unknown -p b2c-core-wasm
+//   2. wasm-bindgen --target web (the CLI must be the version of the wasm-bindgen crate in
+//      Cargo.lock), and a check that the crate's exports are the ones src/glue.d.ts declares
+//   3. wasm-opt -Oz with the WebAssembly features rustc emits (skipped with B2C_SKIP_WASM_OPT=1)
+//   4. pkg/glue.js: the generated glue wrapped in createGlue(), one glue state per instance
+//   5. pkg/pkg-bytes.js: the module as base64 (WASM_BASE64), for the lazily imported chunk
+//   6. the sizes, printed and written to pkg/sizes.json; the build fails over the size budget
+//   7. pkg/build-info.json, last: the fingerprint of step 0, which the desktop app's Vite plugin
+//      compares with the source to refuse a production build with an out-of-date core
+//
+// Environment:
+//   CARGO              cargo to run (default: cargo on PATH)
+//   WASM_BINDGEN       the wasm-bindgen CLI (default: wasm-bindgen on PATH)
+//   WASM_OPT           binaryen's wasm-opt (default: wasm-opt on PATH)
+//   B2C_SKIP_WASM_OPT  1 skips wasm-opt (local builds where binaryen is missing or too old); the
+//                      budget is then checked on the larger, unoptimised module
+//
+// Root shortcut: pnpm wasm:build. Only Node built-ins; no shell: every tool runs with an argument
+// list.
+
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
+
+import {
+  BUILD_INFO_FILE,
+  BuildInfoError,
+  buildInfoText,
+  computeFingerprint,
+} from './build-info.mjs';
+
+/** The size budget for the optimised module (ADR-0003: at most 2 MB after wasm-opt -Oz). */
+const SIZE_BUDGET_BYTES = 2_000_000;
+
+const CRATE = 'b2c-core-wasm';
+const STEM = 'b2c_core_wasm';
+
+/**
+ * The crate's exports as wasm-bindgen declares them. src/glue.d.ts, src/core.ts and the
+ * wrapper below follow this list; the build stops when the crate's exports differ.
+ */
+const EXPECTED_EXPORTS = [
+  'export function canonical(document_json: string): string;',
+  'export function clipboard_make(document_json: string, block_ids_json: string): string;',
+  'export function conversion_table(): string;',
+  'export function load(bytes: Uint8Array): string;',
+  'export function paste_prepare(clipboard_text: string, document_json: string, target_json: string, seed_hex: string): string;',
+  'export function symbols_in_scope(block_id: string, input?: string | null): string;',
+  'export function update(document_json: string, options_json: string): string;',
+  'export function version(): string;',
+];
+const EXPORTED_FUNCTIONS = [
+  'canonical',
+  'clipboard_make',
+  'conversion_table',
+  'load',
+  'paste_prepare',
+  'symbols_in_scope',
+  'update',
+  'version',
+];
+
+/**
+ * The WebAssembly features rustc 1.97 enables for wasm32-unknown-unknown (LLVM's generic CPU),
+ * as wasm-opt flags. The module carries no target_features section (the release profile strips
+ * it), so wasm-opt must be told. The optional ones are passed when this wasm-opt knows them.
+ */
+const REQUIRED_FEATURES = [
+  '--enable-bulk-memory',
+  '--enable-multivalue',
+  '--enable-mutable-globals',
+  '--enable-nontrapping-float-to-int',
+  '--enable-reference-types',
+  '--enable-sign-ext',
+];
+const OPTIONAL_FEATURES = ['--enable-bulk-memory-opt', '--enable-call-indirect-overlong'];
+
+/**
+ * Where a missing or unsuitable tool is explained for each system. The repository's anchor
+ * check (site/build.mjs --check-repo-markdown) checks this reference, so keep it in one piece.
+ */
+const TOOLS_HELP =
+  'How to install these tools on each system: BUILDING.md#the-webassembly-core-does-not-build';
+
+const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = path.resolve(packageDir, '..', '..');
+const pkgDir = path.join(packageDir, 'pkg');
+const workDir = path.join(pkgDir, '.work');
+
+class BuildError extends Error {}
+
+function tool(variable, fallback) {
+  const value = process.env[variable];
+  return value === undefined || value === '' ? fallback : value;
+}
+
+/** Runs a tool and returns its standard output; its standard error goes to ours. */
+function capture(command, args, options = {}) {
+  try {
+    return execFileSync(command, args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'inherit'],
+      maxBuffer: 256 * 1024 * 1024,
+      ...options,
+    });
+  } catch (error) {
+    const reason = error.code === 'ENOENT' ? 'not found' : `failed (${error.message})`;
+    throw new BuildError(`${command} ${args.join(' ')}: ${reason}`, { cause: error });
+  }
+}
+
+/** Whether a capture() failure means that there is no such program. */
+function isNotFound(error) {
+  return error instanceof BuildError && error.cause?.code === 'ENOENT';
+}
+
+/** The wasm-bindgen version pinned in Cargo.lock. */
+function lockedWasmBindgenVersion() {
+  const lock = readFileSync(path.join(repoRoot, 'Cargo.lock'), 'utf8');
+  const versions = [
+    ...lock.matchAll(/^\[\[package\]\]\nname = "wasm-bindgen"\nversion = "([^"]+)"$/gm),
+  ].map((match) => match[1]);
+  if (versions.length !== 1) {
+    throw new BuildError(
+      `Cargo.lock should hold exactly one wasm-bindgen version, found ${versions.length}`,
+    );
+  }
+  return versions[0];
+}
+
+/**
+ * Step 0: the tools steps 2 and 3 run, checked before cargo builds, so that a first build names
+ * everything it needs in one run. Returns the wasm-bindgen command and the wasm-opt to run (null
+ * when B2C_SKIP_WASM_OPT=1).
+ */
+function checkTools(bindgenVersion) {
+  const problems = [];
+  const install = `cargo install wasm-bindgen-cli --version ${bindgenVersion} --locked`;
+
+  const wasmBindgen = tool('WASM_BINDGEN', 'wasm-bindgen');
+  try {
+    const version = capture(wasmBindgen, ['--version']).trim();
+    if (version !== `wasm-bindgen ${bindgenVersion}`) {
+      problems.push(
+        `${wasmBindgen} is "${version}", but Cargo.lock pins wasm-bindgen ${bindgenVersion}; ` +
+          `install that version with: ${install}`,
+      );
+    }
+  } catch (error) {
+    problems.push(
+      isNotFound(error)
+        ? `the wasm-bindgen CLI (${wasmBindgen}) was not found; install it with: ${install} ` +
+            '(cargo puts it in ~/.cargo/bin, which must be on PATH), or set WASM_BINDGEN to it'
+        : `${error.message}; reinstall it with: ${install}, or set WASM_BINDGEN to a working one`,
+    );
+  }
+
+  let wasmOpt = null;
+  if (process.env.B2C_SKIP_WASM_OPT !== '1') {
+    const command = tool('WASM_OPT', 'wasm-opt');
+    const instead = 'or set B2C_SKIP_WASM_OPT=1 to build without it';
+    try {
+      const version = capture(command, ['--version']).trim();
+      // The options this wasm-opt knows, as whole words of its help text.
+      const known = new Set(capture(command, ['--help']).split(/\s+/));
+      const missing = REQUIRED_FEATURES.filter((flag) => !known.has(flag));
+      if (missing.length > 0) {
+        problems.push(
+          `${command} (${version}) does not know ${missing.join(', ')}; use a newer binaryen ` +
+            `(https://github.com/WebAssembly/binaryen/releases), ${instead}`,
+        );
+      } else {
+        wasmOpt = { command, version, known };
+      }
+    } catch (error) {
+      problems.push(
+        isNotFound(error)
+          ? `binaryen's wasm-opt (${command}) was not found; install binaryen (Debian and ` +
+              'Ubuntu: sudo apt install binaryen; or a release from ' +
+              'https://github.com/WebAssembly/binaryen/releases), set WASM_OPT to it, ' +
+              instead
+          : `${error.message}; reinstall binaryen, set WASM_OPT to a working wasm-opt, ${instead}`,
+      );
+    }
+  }
+
+  if (problems.length === 1) {
+    throw new BuildError(`${problems[0]}\n${TOOLS_HELP}`);
+  }
+  if (problems.length > 1) {
+    const list = problems.map((problem) => `  - ${problem}`).join('\n');
+    throw new BuildError(
+      `${problems.length} tools are missing or unsuitable:\n${list}\n${TOOLS_HELP}`,
+    );
+  }
+  return { wasmBindgen, wasmOpt };
+}
+
+/** Step 1: the WebAssembly module, located through cargo's JSON messages. */
+function cargoBuild() {
+  const cargo = tool('CARGO', 'cargo');
+  const output = capture(
+    cargo,
+    [
+      'build',
+      '--locked',
+      '--profile',
+      'wasm-release',
+      '--target',
+      'wasm32-unknown-unknown',
+      '-p',
+      CRATE,
+      '--message-format=json-render-diagnostics',
+    ],
+    { cwd: repoRoot },
+  );
+  const artifacts = output
+    .split('\n')
+    .filter((line) => line.startsWith('{'))
+    .map((line) => JSON.parse(line))
+    .filter((message) => message.reason === 'compiler-artifact' && message.target?.name === STEM)
+    .flatMap((message) => message.filenames)
+    .filter((file) => file.endsWith('.wasm'));
+  if (artifacts.length !== 1) {
+    throw new BuildError(`cargo built ${artifacts.length} .wasm files for ${CRATE}, expected 1`);
+  }
+  return artifacts[0];
+}
+
+/** Step 2: wasm-bindgen (its version checked in step 0), with the export check. */
+function bindgen(wasmBindgen, wasmFile) {
+  capture(wasmBindgen, [
+    '--target',
+    'web',
+    // The module is always passed in; no fallback that would fetch a URL.
+    '--omit-default-module-path',
+    '--remove-producers-section',
+    '--out-name',
+    STEM,
+    '--out-dir',
+    workDir,
+    wasmFile,
+  ]);
+  const declarations = readFileSync(path.join(workDir, `${STEM}.d.ts`), 'utf8');
+  const exported = [...declarations.matchAll(/^export function (?!initSync\b)\w+\(.*\): .*;$/gm)]
+    .map((match) => match[0])
+    .sort();
+  if (JSON.stringify(exported) !== JSON.stringify([...EXPECTED_EXPORTS].sort())) {
+    throw new BuildError(
+      `the exports of ${CRATE} changed:\n  ${exported.join('\n  ')}\n` +
+        'Update src/glue.d.ts, src/core.ts and EXPECTED_EXPORTS in scripts/build.mjs together.',
+    );
+  }
+  return {
+    glue: readFileSync(path.join(workDir, `${STEM}.js`), 'utf8'),
+    wasm: path.join(workDir, `${STEM}_bg.wasm`),
+  };
+}
+
+/** Step 3: wasm-opt -Oz (checked in step 0), or null when skipped. */
+function optimise(wasmOpt, wasmFile) {
+  if (wasmOpt === null) {
+    return null;
+  }
+  const { command, version, known } = wasmOpt;
+  const features = [...REQUIRED_FEATURES, ...OPTIONAL_FEATURES.filter((flag) => known.has(flag))];
+  const optimised = path.join(workDir, `${STEM}_opt.wasm`);
+  capture(command, ['-Oz', ...features, '--output', optimised, wasmFile]);
+  return { file: optimised, version };
+}
+
+/**
+ * Step 4: wraps the generated glue module in `createGlue()`. The generated module keeps its
+ * instance in module-level variables and refuses a second initialisation; inside a function,
+ * every call gets fresh variables, so a trapped instance can be replaced. The shape of the
+ * generated code is checked first, so a different wasm-bindgen output stops the build instead of
+ * producing broken glue.
+ */
+function wrapGlue(source, bindgenVersion) {
+  let body = source.replace(/^\/\* @ts-self-types="[^"]*" \*\/\n/, '');
+  const functions = [...body.matchAll(/^export function (\w+)\s*\(/gm)].map((match) => match[1]);
+  if (JSON.stringify(functions.sort()) !== JSON.stringify(EXPORTED_FUNCTIONS)) {
+    throw new BuildError(`unexpected glue functions: ${functions.join(', ')}`);
+  }
+  body = body.replace(/^export function /gm, 'function ');
+  const tail = 'export { initSync, __wbg_init as default };';
+  if (body.split(tail).length !== 2) {
+    throw new BuildError('the generated glue does not end with the expected export list');
+  }
+  body = body.replace(tail, '');
+  const forbidden = [
+    [/^\s*export\b/m, 'another export'],
+    [/^\s*import\b/m, 'an import'],
+    [/\bimport\s*\(/, 'a dynamic import'],
+    [/\bimport\.meta\b/, 'import.meta'],
+    [/\beval\s*\(/, 'eval'],
+    [/\bnew\s+Function\b/, 'new Function'],
+    [/^let wasm;$|^let wasmModule, wasmInstance, wasm;$/m, null],
+  ];
+  for (const [pattern, what] of forbidden) {
+    const found = pattern.test(body);
+    if (what === null ? !found : found) {
+      throw new BuildError(
+        what === null
+          ? 'the generated glue does not keep its instance in a module-level variable'
+          : `the generated glue contains ${what}`,
+      );
+    }
+  }
+  return [
+    `// Generated by scripts/build.mjs from the wasm-bindgen ${bindgenVersion} --target web glue of`,
+    `// crates/${CRATE}. Do not edit. The glue is wrapped in createGlue() so that every`,
+    '// WebAssembly instance gets its own glue state (see src/loader.ts).',
+    'export function createGlue() {',
+    body.trim(),
+    `  return { init: __wbg_init, ${EXPORTED_FUNCTIONS.join(', ')} };`,
+    '}',
+    '',
+  ].join('\n');
+}
+
+function formatBytes(bytes) {
+  return `${bytes.toLocaleString('en-US')} bytes`;
+}
+
+/**
+ * Steps 4–7 on the bindgen output; writes pkg/ only when the module is within the budget, and
+ * build-info.json last, so a pkg/ that has one is complete.
+ */
+function writePackage(glue, raw, finalBytes, optimised, bindgenVersion, fingerprint) {
+  const base64 = finalBytes.toString('base64');
+  const sizes = {
+    raw: raw.length,
+    optimised: optimised === null ? null : finalBytes.length,
+    wasmOpt: optimised === null ? null : optimised.version,
+    gzip: gzipSync(finalBytes, { level: 9 }).length,
+    base64Chunk: base64.length,
+    budget: SIZE_BUDGET_BYTES,
+  };
+  console.log(`wasm-bindgen output: ${formatBytes(sizes.raw)}`);
+  console.log(
+    optimised === null
+      ? 'wasm-opt -Oz:         skipped (B2C_SKIP_WASM_OPT=1)'
+      : `wasm-opt -Oz:         ${formatBytes(sizes.optimised)} (${optimised.version})`,
+  );
+  console.log(`gzip -9 (reported):   ${formatBytes(sizes.gzip)}`);
+  console.log(`base64 chunk:         ${formatBytes(sizes.base64Chunk)}`);
+  console.log(`budget:               ${formatBytes(SIZE_BUDGET_BYTES)} after wasm-opt`);
+  if (finalBytes.length > SIZE_BUDGET_BYTES) {
+    throw new BuildError(
+      `the module is ${formatBytes(finalBytes.length)}, over the budget of ${formatBytes(SIZE_BUDGET_BYTES)}`,
+    );
+  }
+
+  writeFileSync(path.join(pkgDir, 'glue.js'), wrapGlue(glue, bindgenVersion));
+  writeFileSync(path.join(pkgDir, `${STEM}_bg.wasm`), finalBytes);
+  writeFileSync(
+    path.join(pkgDir, 'pkg-bytes.js'),
+    `// Generated by scripts/build.mjs: the compiler core module (${finalBytes.length} bytes) as base64. Do not edit.\n` +
+      `export const WASM_BASE64 = '${base64}';\n`,
+  );
+  writeFileSync(path.join(pkgDir, 'sizes.json'), `${JSON.stringify(sizes, null, 2)}\n`);
+  writeFileSync(
+    path.join(pkgDir, BUILD_INFO_FILE),
+    buildInfoText(fingerprint, {
+      wasmBindgen: bindgenVersion,
+      wasmOpt: optimised === null ? null : optimised.version,
+    }),
+  );
+  console.log(`inputs (SHA-256):     ${fingerprint.fingerprint} (${fingerprint.files} files)`);
+}
+
+/** Step 0: the fingerprint of the core's inputs, with a BuildError when one cannot be read. */
+function fingerprintInputs() {
+  try {
+    return computeFingerprint(repoRoot);
+  } catch (error) {
+    if (error instanceof BuildInfoError) {
+      throw new BuildError(error.message, { cause: error });
+    }
+    throw error;
+  }
+}
+
+function main() {
+  // A failed build leaves no pkg/ behind, so nothing stale is ever tested or bundled.
+  rmSync(pkgDir, { recursive: true, force: true });
+  try {
+    const bindgenVersion = lockedWasmBindgenVersion();
+    const tools = checkTools(bindgenVersion);
+    // Taken before cargo reads the sources: an edit made during the build makes the result
+    // stale instead of being recorded as built.
+    const fingerprint = fingerprintInputs();
+    const built = cargoBuild();
+    mkdirSync(workDir, { recursive: true });
+    const { glue, wasm } = bindgen(tools.wasmBindgen, built);
+    const raw = readFileSync(wasm);
+    const optimised = optimise(tools.wasmOpt, wasm);
+    const finalBytes = optimised === null ? raw : readFileSync(optimised.file);
+    writePackage(glue, raw, finalBytes, optimised, bindgenVersion, fingerprint);
+    rmSync(workDir, { recursive: true, force: true });
+  } catch (error) {
+    rmSync(pkgDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+try {
+  main();
+} catch (error) {
+  if (error instanceof BuildError) {
+    console.error(`b2c-core-wasm build failed: ${error.message}`);
+    process.exit(1);
+  }
+  throw error;
+}

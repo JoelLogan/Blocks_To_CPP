@@ -353,25 +353,41 @@ impl Lowerer<'_> {
                 }
             }
             AskMode::Simple => {
-                let read = if symbol.ty == Type::String {
+                let mut stmts = Vec::new();
+                if let Some(prompt) = prompt {
+                    let prompt = self.print_operand(prompt);
+                    let show = CExpr::binary(BinOp::Shl, CExpr::fixed("std::cout"), prompt);
+                    stmts.push(CStmt::new(CStmtKind::Expr(show)));
+                }
+                if symbol.ty == Type::String {
                     // `std::ws` skips the line break a previous `>>` left behind.
                     self.include("<string>");
                     let stream = CExpr::binary(BinOp::Shr, CExpr::fixed("std::cin"), CExpr::fixed("std::ws"));
-                    CExpr::call_fixed("std::getline", vec![stream, name_expr(name)])
+                    let read = CExpr::call_fixed("std::getline", vec![stream, name_expr(name)]);
+                    stmts.push(CStmt::new(CStmtKind::Expr(read)));
                 } else if is_scalar(&symbol.ty) {
-                    CExpr::binary(BinOp::Shr, CExpr::fixed("std::cin"), name_expr(name))
+                    // `>>` stops after the value. Dropping the rest of its line
+                    // leaves the input at the start of the next line, so a
+                    // later `ask` reads the next answer, not this line's end.
+                    self.include("<limits>");
+                    let read = CExpr::binary(BinOp::Shr, CExpr::fixed("std::cin"), name_expr(name));
+                    let rest_of_line = CExpr::call_fixed(
+                        "std::cin.ignore",
+                        vec![
+                            CExpr::fixed("std::numeric_limits<std::streamsize>::max()"),
+                            CExpr::fixed("'\\n'"),
+                        ],
+                    );
+                    stmts.push(CStmt::new(CStmtKind::Expr(read)));
+                    stmts.push(CStmt::new(CStmtKind::Expr(rest_of_line)));
                 } else {
                     return CStmtKind::Error;
-                };
+                }
                 self.include("<iostream>");
-                let read = CStmtKind::Expr(read);
-                match prompt {
-                    None => read,
-                    Some(prompt) => {
-                        let prompt = self.print_operand(prompt);
-                        let show = CExpr::binary(BinOp::Shl, CExpr::fixed("std::cout"), prompt);
-                        CStmtKind::Seq(vec![CStmt::new(CStmtKind::Expr(show)), CStmt::new(read)])
-                    }
+                if stmts.len() == 1 {
+                    stmts.remove(0).kind
+                } else {
+                    CStmtKind::Seq(stmts)
                 }
             }
         }

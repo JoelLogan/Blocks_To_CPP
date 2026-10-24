@@ -148,6 +148,15 @@ fn disabled_and_detached_declarations() {
     let d = only(&a, "B2C-E0204");
     assert!(d.message.contains("isn't attached"), "{}", d.message);
 
+    // An enabled declaration stacked below a disabled loose head (05 §5.4) is
+    // detached, not disabled: enabling the head would not attach the stack.
+    let mut head = print(vec![num("1")]);
+    head["disabled"] = json!(true);
+    head["stack"] = json!([declare("int", "w", Some(num("1")))]);
+    let a = run(vec![main(vec![print(vec![get("w")])]), head]);
+    let d = only(&a, "B2C-E0204");
+    assert!(d.message.contains("isn't attached"), "{}", d.message);
+
     // A call to a disabled function.
     let mut f = func("f", "void", &[], vec![]);
     f["disabled"] = json!(true);

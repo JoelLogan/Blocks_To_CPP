@@ -1,0 +1,76 @@
+/*
+ * The block editor's keyboard focus, moves and reduced motion (docs/spec/04-user-interface.md
+ * §4.7, §4.8). Blockly 12 removes the browser's outline from everything it focuses and draws no
+ * ring of its own, so these rules draw one while the keyboard is in use (Blockly marks the page
+ * with `.blocklyKeyboardNavigation`): a yellow ring with a dark edge, visible on the light and the
+ * dark canvas and on every block colour (WCAG 2.2 AA 2.4.7, 1.4.11).
+ */
+
+:root {
+  --b2c-kb-ring: #ffd400;
+  --b2c-kb-ring-edge: #000000;
+}
+
+/* A block, a field, an empty input or a connection that has the keyboard focus. */
+.blocklyKeyboardNavigation .blocklyActiveFocus.blocklyPath,
+.blocklyKeyboardNavigation .blocklyActiveFocus.blocklyField > rect,
+.blocklyKeyboardNavigation .blocklyActiveFocus.blocklyField > .blocklyPath,
+.blocklyKeyboardNavigation .blocklyActiveFocus.blocklyHighlightedConnectionPath {
+  stroke: var(--b2c-kb-ring);
+  stroke-width: 3px;
+  filter: drop-shadow(0 0 1px var(--b2c-kb-ring-edge)) drop-shadow(0 0 1px var(--b2c-kb-ring-edge));
+}
+
+/*
+ * A place a held block can go (./mover.ts highlights its connection). The selector outweighs the
+ * Zelos renderer's own colour for highlighted connections, a pale yellow without an edge.
+ */
+.injectionDiv .blocklySvg .blocklyBlockCanvas .blocklyHighlightedConnectionPath {
+  stroke: var(--b2c-kb-ring);
+  stroke-width: 4px;
+  filter: drop-shadow(0 0 1px var(--b2c-kb-ring-edge)) drop-shadow(0 0 1px var(--b2c-kb-ring-edge));
+}
+
+/* The canvas itself, or the toolbox's blocks, has the keyboard focus. */
+.blocklyKeyboardNavigation .blocklyWorkspace.blocklyActiveFocus > .blocklyMainBackground,
+.blocklyKeyboardNavigation .blocklyFlyout:has(.blocklyActiveFocus) > .blocklyFlyoutBackground {
+  stroke: var(--b2c-focus, #1a56db);
+  stroke-width: 4px;
+}
+
+/* A block held for a keyboard move: dashed, so it does not look like the focused block. */
+.b2cKeyboardMoving > .blocklyPath {
+  stroke: var(--b2c-kb-ring);
+  stroke-dasharray: 6 4;
+  stroke-width: 3px;
+  filter: drop-shadow(0 0 1px var(--b2c-kb-ring-edge));
+}
+
+/* The screen-reader text of ./announcer.ts: hidden on screen. */
+.b2c-keyboard-a11y {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * Reduced motion: Blockly animates a deleted block (a shrinking copy in its animation layer) and a
+ * new connection (a ripple drawn straight on the canvas's SVG) with timers and SVG animation,
+ * which the app's CSS rule for transitions cannot stop. They are hidden instead; ./motion.ts stops
+ * the wiggle of a block dragged out of a stack.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .blocklyAnimationLayer {
+    display: none;
+  }
+
+  .blocklySvg > circle {
+    display: none;
+  }
+}

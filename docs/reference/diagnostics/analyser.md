@@ -36,7 +36,9 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** a block or expression refers to a variable or function that is
   declared nowhere in the project. This happens when the block that created
-  it was deleted, or when a project file was edited by hand.
+  it was deleted, or when a project file was edited by hand. Pasting reports
+  it too, for a pasted block that refers to a variable or function with no
+  match where it was pasted; the message then names the original.
 * **Example:** the `create [int] [score]` block was deleted, but
   `print (score)` still refers to it.
 * **Message:** "This refers to a variable or function that doesn't exist (any
@@ -312,10 +314,13 @@ Codes by area:
 * **Meaning:** a number block or a number in an expression is not valid C++
   number syntax. Whole numbers are written like `42`, `0x2A` or `0b101`
   (with optional `'` separators); decimal numbers like `3.14`, `.5` or `1e-3`.
-  A leading `0` is not allowed, because C++ would read the number as octal.
-* **Example:** `1.2.3`, `012`.
+  A number may start with one `-` or `+` (`-1`, `+3`), which is applied as a
+  sign. A whole number with a leading `0` is not allowed, because C++ would
+  read it as octal; it gets its own message.
+* **Example:** `1.2.3`, `--1`, `012`.
 * **Message:** "`1.2.3` is not a number. Write whole numbers like 42 and
-  decimal numbers like 3.14."
+  decimal numbers like 3.14." For a leading zero: "Write `12`, not `012`: in
+  C++ a number that starts with 0 is octal."
 * **How to fix:** correct the number.
 
 ## B2C-E0311 Different kinds of values in a conditional value
@@ -333,7 +338,7 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** a text value contains the NUL character or is longer than
   64 KiB, or a character value is not exactly one plain ASCII character.
-* **Example:** `letter 'é'`, `letter 'ab'`.
+* **Example:** `character 'é'`, `character 'ab'`.
 * **Message:** "This character can't be used: a character value must be a
   plain ASCII character; use text for 'é'."
 * **How to fix:** use a text value for anything other than one ASCII
@@ -420,7 +425,13 @@ Codes by area:
 * **Meaning:** a block lacks something the analyser needs: a value in a value
   input, a name, a chosen variable or function, or a valid setting (type,
   dropdown choice, checkbox, function input row). Also reported when the
-  block in a value input is disabled.
+  block in a value input is disabled. A block from the toolbox in which
+  nothing is chosen yet gets it once it is attached; left loose or disabled,
+  it gets nothing ([ADR-0012](../../adr/0012-parked-blocks.md)). A field or
+  input the block catalog already reported (`B2C-E06xx`), and the fields
+  and inputs of a block the catalog kept as it is (made by a newer version,
+  `B2C-E0602`, or too old to upgrade, `B2C-E0603`), are not reported again
+  ([spec §6.1](../../spec/06-compiler-pipeline.md#61-overview)).
 * **Example:** an `if` block whose condition slot is empty, or a `set` block
   with no variable chosen.
 * **Message:** "This block needs a condition." / "Choose a variable in this
@@ -551,6 +562,35 @@ Codes by area:
 * **How to fix:** give the variable a starting value in its `create` block,
   or set it first.
 
+## B2C-W0505 Block not attached
+
+* **Severity:** warning (from M5 a project can raise it to an error with a
+  lint level)
+* **Meaning:** a block lies on the canvas without being attached to `when
+  program starts` or a function, so it is *parked*
+  ([ADR-0012](../../adr/0012-parked-blocks.md)): it is saved and shown, but it
+  does not run and the generated C++ does not change. Run still works. A
+  statement with blocks attached below it is one parked stack, reported once,
+  on its top block. A parked block that you disabled is not reported.
+  Parked code is not checked until it is attached, apart from the block
+  catalog's checks (an unknown block type, for example, is still an error).
+  A variable or name that is not chosen yet is not an error while the block
+  is parked (`B2C-E0430` asks for it once the block is attached).
+  A variable created inside a parked stack cannot be chosen in the blocks
+  below it until the stack is attached (until M3).
+* **Example:** a `print ("Hello")` dropped next to `when program starts`
+  instead of inside it.
+* **Message:** one of:
+  * "This block isn't attached to 'when program starts' or a function, so it
+    doesn't run."
+  * "This block and the 2 blocks below it aren't attached to 'when program
+    starts' or a function, so they don't run."
+  * "This block gives a value, but it isn't plugged into another block, so it
+    isn't used." (a value block, such as `(a + b)`)
+* **How to fix:** attach the block where it should run (or plug a value block
+  into an input), delete it, or disable it to keep it parked without a
+  warning.
+
 ## B2C-W0510 Whole-number division where a decimal is expected
 
 * **Severity:** warning
@@ -599,7 +639,8 @@ Codes by area:
 * **Example:** `create [int] [big] = (3000000000)`.
 * **Message:** "`3000000000` is too large for a whole number (the largest is
   2147483647). Write it as a decimal number, such as 3000000000.0, if you
-  need it."
+  need it." Below the smallest whole number: "`-3000000000` is too small for
+  a whole number (the smallest is -2147483648). …"
 * **How to fix:** use a smaller number, or a decimal number.
 
 ## B2C-W0518 Value may lose information

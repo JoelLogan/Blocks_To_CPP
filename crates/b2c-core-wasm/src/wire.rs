@@ -1,0 +1,264 @@
+//! The JSON text the exports return (compact, 06 §6.13).
+//!
+//! Every function here returns a complete JSON document and never panics.
+//! Should encoding fail anyway (a bug: the types here always serialise), the
+//! result is the [`FacadeError::Encode`] envelope instead.
+
+use b2c_ir::{Diagnostic, SymbolInfo};
+use b2c_model::{Block, LoadError};
+use serde::Serialize;
+
+use crate::clipboard::Unresolved;
+use crate::error::{FacadeError, Failure};
+use crate::facade::{Canonical, Loaded, Update, VersionInfo};
+use crate::scope::ConversionRow;
+use crate::session::{ClipboardMade, Pasted};
+
+/// Encodes a value, or the encode-error envelope when that fails.
+fn encode<T: Serialize>(value: &T) -> String {
+    serde_json::to_string(value).unwrap_or_else(|failure| error(&FacadeError::Encode(failure.to_string())))
+}
+
+/// `{"error": {"kind": "...", "message": "..."}}`.
+pub(crate) fn error(failure: &FacadeError) -> String {
+    #[derive(Serialize)]
+    struct Envelope<'a> {
+        error: Body<'a>,
+    }
+    #[derive(Serialize)]
+    struct Body<'a> {
+        kind: &'a str,
+        message: &'a str,
+    }
+    let message = failure.to_string();
+    let envelope = Envelope {
+        error: Body {
+            kind: failure.kind(),
+            message: &message,
+        },
+    };
+    // Two plain strings always encode; the literal is a last resort that
+    // keeps the promise of returning JSON.
+    serde_json::to_string(&envelope).unwrap_or_else(|_| {
+        String::from(r#"{"error":{"kind":"encode","message":"the error could not be encoded as JSON"}}"#)
+    })
+}
+
+/// Input that did not load: `{"ok": false, "diagnostics": [...]}`.
+#[derive(Serialize)]
+struct NotLoaded<'a> {
+    ok: bool,
+    diagnostics: &'a [Diagnostic],
+}
+
+fn failure(problem: &LoadError) -> String {
+    not_loaded(&problem.diagnostics)
+}
+
+fn not_loaded(diagnostics: &[Diagnostic]) -> String {
+    encode(&NotLoaded {
+        ok: false,
+        diagnostics,
+    })
+}
+
+pub(crate) fn version(info: &VersionInfo) -> String {
+    encode(info)
+}
+
+/// `{"ok": true, "document": {…}, "diagnostics": [...]}` with the document
+/// in canonical key order and the blocks that could not be upgraded
+/// (`B2C-E0603`), or the failure.
+///
+/// The document is written by `b2c_model`'s canonical writer (struct keys in
+/// declaration order, map keys sorted, top-level blocks by ID) and then
+/// compacted, rather than through `serde_json`, so the key order cannot
+/// depend on `serde_json` features, and the text is not parsed again.
+pub(crate) fn load(result: &Result<Loaded, LoadError>) -> String {
+    match result {
+        Ok(loaded) => {
+            let compact = compact_json(&b2c_model::to_canonical_json(&loaded.document));
+            let diagnostics = encode(&loaded.diagnostics);
+            let capacity = compact.len().saturating_add(diagnostics.len()).saturating_add(48);
+            let mut out = String::with_capacity(capacity);
+            out.push_str(r#"{"ok":true,"document":"#);
+            out.push_str(&compact);
+            out.push_str(r#","diagnostics":"#);
+            out.push_str(&diagnostics);
+            out.push('}');
+            out
+        }
+        Err(problem) => failure(problem),
+    }
+}
+
+/// `{"ok": true, "text": "…", "hash": "…", "textHash": "…",
+/// "diagnostics": []}`, or the failure.
+pub(crate) fn canonical(result: &Result<Canonical, LoadError>) -> String {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Success<'a> {
+        ok: bool,
+        text: &'a str,
+        hash: &'a str,
+        text_hash: &'a str,
+        diagnostics: [Diagnostic; 0],
+    }
+    match result {
+        Ok(canonical) => encode(&Success {
+            ok: true,
+            text: &canonical.text,
+            hash: &canonical.hash,
+            text_hash: &canonical.text_hash,
+            diagnostics: [],
+        }),
+        Err(problem) => failure(problem),
+    }
+}
+
+/// The preview's fields followed by `textHash`.
+pub(crate) fn update(update: &Update) -> String {
+    encode(update)
+}
+
+/// `[SymbolInfo, …]`, or `null` for no answer.
+pub(crate) fn symbols(symbols: Option<&[SymbolInfo]>) -> String {
+    encode(&symbols)
+}
+
+/// `[{"from", "to", "conversion"}, …]`.
+pub(crate) fn conversion_table(rows: &[ConversionRow]) -> String {
+    encode(&rows)
+}
+
+/// `{"ok": true, "payload": "…", "text"?: "…", "diagnostics": []}`, the
+/// failure `{"ok": false, "diagnostics": [...]}`, or the error envelope.
+pub(crate) fn clipboard_made(result: &Result<ClipboardMade, Failure>) -> String {
+    #[derive(Serialize)]
+    struct Success<'a> {
+        ok: bool,
+        payload: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        text: Option<&'a str>,
+        diagnostics: [Diagnostic; 0],
+    }
+    match result {
+        Ok(made) => encode(&Success {
+            ok: true,
+            payload: &made.payload,
+            text: made.text.as_deref(),
+            diagnostics: [],
+        }),
+        Err(Failure::Diagnostics(diagnostics)) => not_loaded(diagnostics),
+        Err(Failure::Error(failure)) => error(failure),
+    }
+}
+
+/// `{"ok": true, "blocks": [...], "unresolved": [{"sym", "name"}],
+/// "diagnostics": [...]}`, the failure `{"ok": false, "unresolved": [],
+/// "diagnostics": [...]}`, or the error envelope.
+///
+/// The blocks are written in their serde shape, which is the project file
+/// shape (05 §5.4); they have no canvas position.
+pub(crate) fn pasted(result: &Result<Pasted, Failure>) -> String {
+    #[derive(Serialize)]
+    struct Success<'a> {
+        ok: bool,
+        blocks: &'a [Block],
+        unresolved: &'a [Unresolved],
+        diagnostics: &'a [Diagnostic],
+    }
+    #[derive(Serialize)]
+    struct Refused<'a> {
+        ok: bool,
+        unresolved: [Unresolved; 0],
+        diagnostics: &'a [Diagnostic],
+    }
+    match result {
+        Ok(pasted) => encode(&Success {
+            ok: true,
+            blocks: &pasted.blocks,
+            unresolved: &pasted.unresolved,
+            diagnostics: &pasted.diagnostics,
+        }),
+        Err(Failure::Diagnostics(diagnostics)) => encode(&Refused {
+            ok: false,
+            unresolved: [],
+            diagnostics,
+        }),
+        Err(Failure::Error(failure)) => error(failure),
+    }
+}
+
+/// Removes the whitespace between JSON tokens (outside strings).
+///
+/// For JSON text produced by a trusted writer (the canonical writer): it
+/// only drops the four JSON whitespace characters outside string literals
+/// and keeps everything else, escapes included, byte for byte.
+pub(crate) fn compact_json(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for c in text.chars() {
+        if in_string {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+        } else if c == '"' {
+            in_string = true;
+            out.push(c);
+        } else if !matches!(c, ' ' | '\n' | '\r' | '\t') {
+            out.push(c);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+#[allow(clippy::indexing_slicing)] // tests fail by panicking
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_keeps_strings_and_escapes() {
+        let pretty = "{\n  \"a b\": [\n    1,\n    \"x \\\" y\\\\\",\n    \"\\n \"\n  ],\n  \"c\": {}\n}\n";
+        let compact = compact_json(pretty);
+        assert_eq!(compact, r#"{"a b":[1,"x \" y\\","\n "],"c":{}}"#);
+        let a: serde_json::Value = serde_json::from_str(pretty).unwrap();
+        let b: serde_json::Value = serde_json::from_str(&compact).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn compact_keeps_non_ascii_text() {
+        assert_eq!(
+            compact_json("[ \"é \u{1F600}\" ,\t\"\\u0007\" ]"),
+            "[\"é \u{1F600}\",\"\\u0007\"]"
+        );
+    }
+
+    #[test]
+    fn error_envelope() {
+        let text = error(&FacadeError::InvalidOptions(String::from("say \"2\"")));
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["error"]["kind"], "invalidOptions");
+        assert_eq!(
+            value["error"]["message"],
+            "the preview options are not valid: say \"2\""
+        );
+    }
+
+    #[test]
+    fn failure_shape() {
+        let text = load(&crate::facade::load_document(b"[]"));
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["ok"], false);
+        assert!(value.get("document").is_none());
+        assert!(!value["diagnostics"].as_array().unwrap().is_empty());
+    }
+}

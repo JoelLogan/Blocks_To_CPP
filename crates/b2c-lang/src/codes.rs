@@ -89,6 +89,9 @@ pub(crate) const SHADOWING: &str = "B2C-W0501";
 pub(crate) const UNREACHABLE: &str = "B2C-W0502";
 /// A variable used before it is given a value.
 pub(crate) const USE_BEFORE_ASSIGNMENT: &str = "B2C-W0503";
+/// A block left on the canvas outside `when program starts` and every
+/// function: parked, so it does not run (ADR-0012).
+pub(crate) const PARKED: &str = "B2C-W0505";
 /// Integer division where a decimal result is expected.
 pub(crate) const INTEGER_DIVISION: &str = "B2C-W0510";
 /// `==` or `!=` on decimal numbers.
@@ -146,6 +149,7 @@ pub(crate) const ALL: &[&str] = &[
     SHADOWING,
     UNREACHABLE,
     USE_BEFORE_ASSIGNMENT,
+    PARKED,
     INTEGER_DIVISION,
     FLOAT_EQUALITY,
     ENDLESS_LOOP,

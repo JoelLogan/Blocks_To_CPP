@@ -12,11 +12,25 @@
 //! everything else (hello world, standards, library features, diagnostics
 //! format, sanitizers, hardening, static linking). With g++ 13 on four
 //! cores the whole probe takes about a second.
+//!
+//! A probe in which an essential check timed out says nothing reliable: its
+//! record carries `B2C-T1023` ([`codes::probe_timed_out`]) instead of the
+//! "did not run" or "broken" verdict the missing answers would give, is not
+//! usable, and is not reused ([`Toolchain::is_reusable`]). Callers probe such
+//! a compiler once more with [`ProbeOptions::for_retry`] before they report
+//! it (spec §7.3): security software often holds up the first start of a new
+//! program, and a cold disk cache can slow the first compile down. The
+//! essential checks are the quick questions, hello world, the standards, the
+//! library features and the diagnostics formats. An optional one
+//! (sanitizers, hardening, static linking) that times out only makes its
+//! capability unavailable, as when it fails: a sanitizer's test program that
+//! hangs on this system must not make the compiler unusable.
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -32,11 +46,19 @@ use crate::target::{GccVersion, Platform, Target, TargetOs};
 
 /// Timeout for each probe invocation (spec §7.3).
 pub const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Timeout for each invocation when a compiler whose probe timed out is
+/// probed once more (spec §7.3, [`ProbeOptions::for_retry`]).
+pub const PROBE_RETRY_TIMEOUT: Duration = Duration::from_secs(30);
 /// The oldest supported GCC major version (spec §7.1).
 pub const MIN_GCC_MAJOR: u32 = 11;
 /// Version of the [`Toolchain`] record; cached records with another version
-/// must be probed again.
-pub const PROBE_FORMAT: u32 = 1;
+/// must be probed again. Version 2 reports a probe that timed out as
+/// `B2C-T1023`: a version 1 record may call a compiler whose probe timed out
+/// a broken installation (`B2C-T1006`), so it is probed again once. Version 3
+/// counts `-fhardened` as supported only when an optimised build with it
+/// prints no diagnostic: a version 2 record says yes for Ubuntu's GCC 14,
+/// whose Release builds then all warned (`-Whardened`).
+pub const PROBE_FORMAT: u32 = 3;
 
 /// Most output kept from one probe invocation.
 const PROBE_OUTPUT_CAP: usize = 256 * 1024;
@@ -233,6 +255,22 @@ impl Toolchain {
     pub fn is_current(&self) -> bool {
         self.format == PROBE_FORMAT && self.fingerprint.is_current()
     }
+
+    /// Whether the probe timed out (`B2C-T1023`): the record then says
+    /// nothing reliable about the compiler.
+    pub fn timed_out(&self) -> bool {
+        self.problems
+            .iter()
+            .any(|problem| problem.code.0 == codes::PROBE_TIMED_OUT)
+    }
+
+    /// Whether this record can stand for the compiler without probing it
+    /// again: [`Toolchain::is_current`], and its probe did not time out (a
+    /// probe that timed out is done again the next time the compiler is
+    /// needed).
+    pub fn is_reusable(&self) -> bool {
+        self.is_current() && !self.timed_out()
+    }
 }
 
 /// Settings for [`probe`].
@@ -251,6 +289,19 @@ pub struct ProbeOptions {
     pub jobs: usize,
     /// Stops probing early.
     pub cancel: Option<CancelToken>,
+}
+
+impl ProbeOptions {
+    /// These options for probing a compiler once more after its probe timed
+    /// out (spec §7.3): the same, with a timeout of at least
+    /// [`PROBE_RETRY_TIMEOUT`].
+    #[must_use]
+    pub fn for_retry(&self) -> Self {
+        Self {
+            timeout: self.timeout.max(PROBE_RETRY_TIMEOUT),
+            ..self.clone()
+        }
+    }
 }
 
 impl Default for ProbeOptions {
@@ -332,6 +383,8 @@ pub fn probe(path: &Path, options: &ProbeOptions) -> Result<Toolchain, ProbeErro
         timeout: options.timeout,
         cancel: options.cancel.as_ref(),
         exe_suffix: "",
+        timed_out: AtomicBool::new(false),
+        essential: true,
     };
     let toolchain = prober.run(fingerprint, options.jobs.max(1));
     if options.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
@@ -348,6 +401,12 @@ struct Prober<'a> {
     timeout: Duration,
     cancel: Option<&'a CancelToken>,
     exe_suffix: &'static str,
+    /// Set when an invocation of an essential check ran into the timeout
+    /// (never for an [`Prober::optional`] one).
+    timed_out: AtomicBool,
+    /// Whether a timeout is noted in `timed_out`: false for the optional
+    /// checks.
+    essential: bool,
 }
 
 /// The result of a sanitizer run.
@@ -358,8 +417,19 @@ enum SanitizerRun {
     Fails,
 }
 
-impl Prober<'_> {
+impl<'a> Prober<'a> {
+    /// Runs the probe; a probe in which an essential check timed out is
+    /// reported as timed out ([`mark_timed_out`]).
     fn run(mut self, fingerprint: Fingerprint, jobs: usize) -> Toolchain {
+        let mut toolchain = self.checks(fingerprint, jobs);
+        if self.timed_out.load(Ordering::Relaxed) {
+            mark_timed_out(&mut toolchain, self.timeout);
+        }
+        toolchain
+    }
+
+    /// Both rounds of checks.
+    fn checks(&mut self, fingerprint: Fingerprint, jobs: usize) -> Toolchain {
         let mut toolchain = Toolchain {
             format: PROBE_FORMAT,
             fingerprint,
@@ -398,11 +468,9 @@ impl Prober<'_> {
         };
         let version_output = answer(0).or_else(|| answer(1));
         let Some(version_output) = version_output else {
+            // A question that timed out is reported by `run` instead.
             let reason = match answers.first() {
                 Some(Some(Err(error))) => error.clone(),
-                Some(Some(Ok(captured))) if captured.timed_out => {
-                    format!("it did not answer within {} ms", self.timeout.as_millis())
-                }
                 _ => String::from("it did not report a version"),
             };
             toolchain.problems.push(codes::error(
@@ -459,7 +527,8 @@ impl Prober<'_> {
                 .iter()
                 .enumerate()
                 .map(|(index, flags)| {
-                    Box::new(move || self.links(&format!("hardening-{index}"), HELLO, flags)) as Job<'_, bool>
+                    Box::new(move || self.optional().links(&format!("hardening-{index}"), HELLO, flags))
+                        as Job<'_, bool>
                 })
                 .collect();
             parallel(jobs, jobs_list)
@@ -559,7 +628,7 @@ impl Prober<'_> {
             jobs_list.push((
                 Check::AddressUndefined,
                 Box::new(|| {
-                    Answer::Sanitizer(self.sanitizer_run(
+                    Answer::Sanitizer(self.optional().sanitizer_run(
                         "asan",
                         &["-fsanitize=address,undefined", "-fno-sanitize-recover=undefined"],
                         true,
@@ -569,7 +638,7 @@ impl Prober<'_> {
             jobs_list.push((
                 Check::Undefined,
                 Box::new(|| {
-                    Answer::Sanitizer(self.sanitizer_run(
+                    Answer::Sanitizer(self.optional().sanitizer_run(
                         "ubsan",
                         &["-fsanitize=undefined", "-fno-sanitize-recover=undefined"],
                         false,
@@ -579,19 +648,28 @@ impl Prober<'_> {
             if version.major >= 14 {
                 jobs_list.push((
                     Check::Fhardened,
-                    Box::new(|| Answer::Bool(self.links("fhardened", HELLO, &["-fhardened"]))),
+                    // As a Release build uses it: optimised, and only where it
+                    // says nothing. A driver that defines _FORTIFY_SOURCE
+                    // itself (Ubuntu's) makes -fhardened warn (-Whardened).
+                    Box::new(|| {
+                        Answer::Bool(self.optional().links_silently(
+                            "fhardened",
+                            HELLO,
+                            &["-O2", "-fhardened"],
+                        ))
+                    }),
                 ));
             }
         } else {
             jobs_list.push((
                 Check::Static,
-                Box::new(|| Answer::Bool(self.links_and_runs("static", HELLO, &["-static"]))),
+                Box::new(|| Answer::Bool(self.optional().links_and_runs("static", HELLO, &["-static"]))),
             ));
         }
         jobs_list.push((
             Check::UndefinedTrap,
             Box::new(|| {
-                Answer::Sanitizer(self.sanitizer_run(
+                Answer::Sanitizer(self.optional().sanitizer_run(
                     "ubsan-trap",
                     &["-fsanitize=undefined", "-fsanitize-undefined-trap-on-error"],
                     false,
@@ -600,10 +678,26 @@ impl Prober<'_> {
         ));
         jobs_list.push((
             Check::HardeningAll,
-            Box::new(move || Answer::Bool(self.links("hardening", HELLO, &all_hardening))),
+            Box::new(move || Answer::Bool(self.optional().links("hardening", HELLO, &all_hardening))),
         ));
 
         jobs_list
+    }
+
+    /// The same session for an optional check (a sanitizer, hardening,
+    /// static linking; see the module documentation): its timeouts are not
+    /// noted, so one only makes the check fail.
+    fn optional(&self) -> Prober<'a> {
+        Prober {
+            gxx: self.gxx.clone(),
+            dir: self.dir.clone(),
+            env: self.env.clone(),
+            timeout: self.timeout,
+            cancel: self.cancel,
+            exe_suffix: self.exe_suffix,
+            timed_out: AtomicBool::new(false),
+            essential: false,
+        }
     }
 
     /// A Blocks2Cpp process command for a program in the probe folder.
@@ -628,10 +722,20 @@ impl Prober<'_> {
     fn gxx(&self, args: &[&str]) -> Result<Captured, String> {
         let mut command = self.command(&self.gxx)?;
         command.args(args);
-        run_captured(&command).map_err(|error| match error {
+        let result = run_captured(&command).map_err(|error| match error {
             ProcessError::Spawn { source, .. } => source.to_string(),
             other => other.to_string(),
-        })
+        });
+        self.note_timeout(&result);
+        result
+    }
+
+    /// Remembers an invocation of an essential check that ran into the
+    /// timeout.
+    fn note_timeout(&self, result: &Result<Captured, String>) {
+        if self.essential && matches!(result, Ok(captured) if captured.timed_out) {
+            self.timed_out.store(true, Ordering::Relaxed);
+        }
     }
 
     /// Writes `name.cpp` and returns its file name.
@@ -668,11 +772,26 @@ impl Prober<'_> {
         self.link(name, text, flags).is_some()
     }
 
+    /// Whether `text` compiles and links with `flags` without a warning or
+    /// any other diagnostic.
+    fn links_silently(&self, name: &str, text: &str, flags: &[&str]) -> bool {
+        let Some(file) = self.source(name, text) else {
+            return false;
+        };
+        let output = format!("{name}{}", self.exe_suffix);
+        let mut args: Vec<&str> = flags.to_vec();
+        args.extend([file.as_str(), "-o", output.as_str()]);
+        let result = self.gxx(&args);
+        Self::succeeded(&result) && matches!(&result, Ok(captured) if captured.stderr.is_empty())
+    }
+
     /// Runs a probe program; `extra_env` is added to the probe environment.
     fn execute(&self, program: &Path, extra_env: &[(&str, &str)]) -> Result<Captured, String> {
         let mut command = self.command(program)?;
         command.envs(extra_env.iter().map(|(name, value)| (*name, *value)));
-        run_captured(&command).map_err(|error| error.to_string())
+        let result = run_captured(&command).map_err(|error| error.to_string());
+        self.note_timeout(&result);
+        result
     }
 
     fn printed_marker(result: &Result<Captured, String>) -> bool {
@@ -799,6 +918,19 @@ const FEATURES: &[(Check, &str, &str)] = &[
         "struct Point { int x; int y; };\nint main() { Point p{.x = 1, .y = 2}; return p.x + p.y - 3; }\n",
     ),
 ];
+
+/// Reports a probe in which an invocation timed out (spec §7.3): the "did
+/// not run" (`B2C-T1003`) and "broken" (`B2C-T1006`) verdicts that missing
+/// answers give are dropped, since nothing is known about them, and
+/// `B2C-T1023` comes first. The verdicts based on answers that did come
+/// (Clang, too old) stay.
+fn mark_timed_out(toolchain: &mut Toolchain, timeout: Duration) {
+    toolchain
+        .problems
+        .retain(|problem| problem.code.0 != codes::NOT_RUNNABLE && problem.code.0 != codes::BROKEN_INSTALL);
+    let timed_out = codes::probe_timed_out(&toolchain.fingerprint.path, timeout);
+    toolchain.problems.insert(0, timed_out);
+}
 
 /// Round 1 checks on the answers: Clang, the GCC version and minimum, the
 /// target and an installed `cc1plus`. Records problems in `toolchain` and
@@ -1102,6 +1234,187 @@ mod tests {
         assert!(toolchain.problems[0].message.contains("GCC 9.4.0"));
     }
 
+    /// Spec §7.3 (W3-12): a GCC that answers the quick questions but whose
+    /// test compiles do not finish in time was reported as a broken
+    /// installation (`B2C-T1006`). It is reported as timed out now.
+    #[cfg(unix)]
+    #[test]
+    fn a_compiler_too_slow_for_its_test_compiles_has_timed_out_not_broken() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("g++");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\ncase \"$1\" in\n  -dumpfullversion|-dumpversion) echo 13.2.0 ;;\n  -dumpmachine) echo x86_64-linux-gnu ;;\n  --version) echo 'g++ (GCC) 13.2.0' ;;\n  -print-prog-name=cc1plus) echo \"$0\" ;;\n  *) exec sleep 30 ;;\nesac\n",
+        )
+        .unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let options = ProbeOptions {
+            timeout: Duration::from_millis(300),
+            jobs: 8,
+            ..ProbeOptions::default()
+        };
+        let toolchain = probe(&fake, &options).unwrap();
+        let codes: Vec<&str> = toolchain.problems.iter().map(|p| p.code.0.as_str()).collect();
+        assert_eq!(codes, [codes::PROBE_TIMED_OUT], "{:?}", toolchain.problems);
+        assert!(toolchain.problems[0].message.contains("timed out"));
+        assert!(toolchain.problems[0].message.contains("within 300 ms"));
+        assert_eq!(toolchain.kind, CompilerKind::Gcc);
+        assert!(toolchain.timed_out());
+        assert!(!toolchain.is_usable());
+        assert!(toolchain.is_current());
+        assert!(!toolchain.is_reusable(), "a timed-out check is done again");
+    }
+
+    /// A fake GCC 13 on Linux that passes every check, except that the
+    /// programs it builds with `-fsanitize=address` hang (as with an older
+    /// libasan on a kernel with high `vm.mmap_rnd_bits`).
+    #[cfg(unix)]
+    const HANGING_ASAN_GXX: &str = r#"#!/bin/sh
+case "$1" in
+  -dumpfullversion|-dumpversion) echo 13.2.0; exit 0 ;;
+  -dumpmachine) echo x86_64-linux-gnu; exit 0 ;;
+  --version) echo 'g++ (GCC) 13.2.0'; exit 0 ;;
+  -print-prog-name=cc1plus) echo "$0"; exit 0 ;;
+esac
+output=''
+asan=''
+previous=''
+for argument in "$@"; do
+  case "$argument" in
+    -fsanitize=address*) asan=yes ;;
+  esac
+  if [ "$previous" = '-o' ]; then output="$argument"; fi
+  previous="$argument"
+done
+if [ -n "$output" ]; then
+  if [ -n "$asan" ]; then
+    printf '#!/bin/sh\nexec sleep 30\n' > "$output"
+  else
+    printf '#!/bin/sh\necho b2c-probe-ok\n' > "$output"
+  fi
+  chmod +x "$output"
+fi
+exit 0
+"#;
+
+    /// Spec §7.3: an optional check that times out (here AddressSanitizer's
+    /// test program, which hangs) only makes its capability unavailable. It
+    /// made the whole compiler unusable (`B2C-T1023`).
+    #[cfg(unix)]
+    #[test]
+    fn an_optional_check_that_times_out_leaves_the_compiler_usable() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("g++");
+        std::fs::write(&fake, HANGING_ASAN_GXX).unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let options = ProbeOptions {
+            timeout: Duration::from_millis(500),
+            jobs: 8,
+            ..ProbeOptions::default()
+        };
+        let toolchain = probe(&fake, &options).unwrap();
+        assert!(!toolchain.timed_out(), "{:?}", toolchain.problems);
+        assert!(toolchain.is_usable(), "{:?}", toolchain.problems);
+        assert!(toolchain.is_reusable());
+        assert!(toolchain.capabilities.hello_world);
+        assert!(!toolchain.capabilities.sanitizers.address_undefined);
+        assert!(!toolchain.capabilities.sanitizers.leak_detection);
+        assert!(toolchain.capabilities.sanitizers.undefined);
+        assert!(toolchain.capabilities.sanitizers.undefined_trap);
+    }
+
+    /// A fake GCC 14 on Linux that passes every check. With `-fhardened` it
+    /// warns as GCC 14 does without optimisation, and, when `predefines` is
+    /// set, also with it, as Ubuntu's GCC does: Ubuntu's driver defines
+    /// `_FORTIFY_SOURCE` itself.
+    #[cfg(unix)]
+    fn fhardened_gxx(predefines: bool) -> String {
+        format!(
+            r#"#!/bin/sh
+case "$1" in
+  -dumpfullversion|-dumpversion) echo 14.2.0; exit 0 ;;
+  -dumpmachine) echo x86_64-linux-gnu; exit 0 ;;
+  --version) echo 'g++ (GCC) 14.2.0'; exit 0 ;;
+  -print-prog-name=cc1plus) echo "$0"; exit 0 ;;
+esac
+output=''
+hardened=''
+optimised=''
+previous=''
+for argument in "$@"; do
+  case "$argument" in
+    -fhardened) hardened=yes ;;
+    -O1|-O2|-O3|-Os|-Og) optimised=yes ;;
+  esac
+  if [ "$previous" = '-o' ]; then output="$argument"; fi
+  previous="$argument"
+done
+if [ -n "$hardened" ]; then
+  if [ -z "$optimised" ]; then
+    echo "cc1plus: warning: '_FORTIFY_SOURCE' is not enabled by '-fhardened' because optimizations are turned off [-Whardened]" >&2
+  elif [ -n "{predefines}" ]; then
+    echo "cc1plus: warning: '_FORTIFY_SOURCE' is not enabled by '-fhardened' because it was specified in '-D' or '-U' [-Whardened]" >&2
+  fi
+fi
+if [ -n "$output" ]; then
+  printf '#!/bin/sh\necho b2c-probe-ok\n' > "$output"
+  chmod +x "$output"
+fi
+exit 0
+"#,
+            predefines = if predefines { "yes" } else { "" }
+        )
+    }
+
+    /// Spec §7.4.3: `-fhardened` is used only where it builds an optimised
+    /// program without a warning. On Ubuntu's GCC 14 every Release build
+    /// warned (`-Whardened`), since its driver defines `_FORTIFY_SOURCE`;
+    /// such a compiler gets the separate hardening flags instead.
+    #[cfg(unix)]
+    #[test]
+    fn fhardened_is_used_only_where_an_optimised_build_does_not_warn() {
+        for (predefines, expected) in [(false, true), (true, false)] {
+            let dir = tempfile::tempdir().unwrap();
+            let fake = dir.path().join("g++");
+            std::fs::write(&fake, fhardened_gxx(predefines)).unwrap();
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            let toolchain = probe(&fake, &ProbeOptions::default()).unwrap();
+            assert!(toolchain.is_usable(), "{:?}", toolchain.problems);
+            assert_eq!(
+                toolchain.capabilities.hardening.fhardened, expected,
+                "a compiler that defines _FORTIFY_SOURCE itself: {predefines}"
+            );
+            assert!(toolchain.capabilities.hardening.fortify_source);
+        }
+    }
+
+    #[test]
+    fn a_retry_waits_at_least_thirty_seconds() {
+        let quick = ProbeOptions {
+            timeout: Duration::from_millis(300),
+            jobs: 3,
+            ..ProbeOptions::default()
+        };
+        let retry = quick.for_retry();
+        assert_eq!(retry.timeout, PROBE_RETRY_TIMEOUT);
+        assert_eq!(PROBE_RETRY_TIMEOUT, Duration::from_secs(30));
+        assert_eq!(retry.jobs, 3);
+        let patient = ProbeOptions {
+            timeout: Duration::from_mins(1),
+            ..ProbeOptions::default()
+        };
+        assert_eq!(patient.for_retry().timeout, Duration::from_mins(1));
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_hanging_compiler_times_out() {
@@ -1119,11 +1432,13 @@ mod tests {
         let start = std::time::Instant::now();
         let toolchain = probe(&fake, &options).unwrap();
         assert!(start.elapsed() < Duration::from_secs(10));
-        assert_eq!(toolchain.problems[0].code.0, codes::NOT_RUNNABLE);
+        let codes: Vec<&str> = toolchain.problems.iter().map(|p| p.code.0.as_str()).collect();
+        assert_eq!(codes, [codes::PROBE_TIMED_OUT]);
         assert!(
-            toolchain.problems[0].message.contains("did not answer"),
+            toolchain.problems[0].message.contains("within 300 ms"),
             "{}",
             toolchain.problems[0].message
         );
+        assert!(toolchain.timed_out());
     }
 }

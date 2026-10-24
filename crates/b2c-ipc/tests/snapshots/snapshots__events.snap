@@ -1,0 +1,160 @@
+---
+source: crates/b2c-ipc/tests/snapshots.rs
+expression: render(&values)
+---
+--- AppEvent
+{
+  "deleted": true,
+  "handle": "ph_0123456789abcdef0123456789abcdef",
+  "kind": "projectChangedOnDisk"
+}
+--- AppEvent
+{
+  "discovering": false,
+  "kind": "toolchainsUpdated",
+  "toolchains": [
+    {
+      "capabilities": {
+        "sanitizers": true,
+        "sarif": true,
+        "standards": [
+          "c++17",
+          "c++20",
+          "c++23"
+        ],
+        "stdFormat": true
+      },
+      "displayPath": "/usr/bin/g++-13",
+      "flavor": null,
+      "id": "tc_0123456789abcdef",
+      "problems": [],
+      "selected": true,
+      "source": "path",
+      "target": "x86_64-linux-gnu",
+      "usable": true,
+      "version": "13.3.0"
+    }
+  ]
+}
+--- AppEvent
+{
+  "kind": "settingsNotice",
+  "notices": [
+    {
+      "key": "console.scrollbackLines",
+      "reason": "invalidValue"
+    }
+  ]
+}
+--- AppEvent
+{
+  "kind": "closeRequested"
+}
+--- BuildEvent
+{
+  "done": 1,
+  "kind": "progress",
+  "stage": "compile",
+  "total": 3
+}
+--- BuildEvent
+{
+  "items": [
+    {
+      "code": "B2C-E0201",
+      "message": "The variable 'score' does not exist here.",
+      "primary": {
+        "block": "b012",
+        "module": "mod_main",
+        "part": {
+          "kind": "field",
+          "name": "VAR"
+        }
+      },
+      "severity": "error",
+      "source": "analyser"
+    }
+  ],
+  "kind": "diagnostics"
+}
+--- BuildEvent
+{
+  "elapsedMs": 1834,
+  "kind": "finished",
+  "outcome": "built",
+  "projectHash": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+}
+--- BuildEvent
+{
+  "elapsedMs": 12,
+  "kind": "finished",
+  "outcome": "projectErrors",
+  "projectHash": null
+}
+--- RunEvent
+{
+  "containment": "processGroupOnly",
+  "ideHelpers": true,
+  "kind": "started",
+  "mode": "pty"
+}
+--- RunEvent
+{
+  "afterSeq": 40,
+  "kind": "skipped",
+  "lines": 52113
+}
+--- RunEvent
+{
+  "afterSeq": 41,
+  "crash": null,
+  "elapsedMs": 2500,
+  "kind": "exit",
+  "message": "Finished (exit code 0)",
+  "sanitizer": null,
+  "status": {
+    "code": 0,
+    "type": "exited"
+  }
+}
+--- RunEvent
+{
+  "afterSeq": 2,
+  "crash": "aborted",
+  "elapsedMs": 31,
+  "kind": "exit",
+  "message": "Crashed: heap-buffer-overflow (AddressSanitizer)",
+  "sanitizer": {
+    "kind": "heap-buffer-overflow",
+    "tool": "address"
+  },
+  "status": {
+    "signal": 6,
+    "type": "signaled"
+  }
+}
+--- RunEvent
+{
+  "afterSeq": 0,
+  "crash": "stackOverflow",
+  "elapsedMs": 4,
+  "kind": "exit",
+  "message": "Crashed: stack overflow",
+  "sanitizer": null,
+  "status": {
+    "ntstatus": 3221225725,
+    "type": "exception"
+  }
+}
+--- RunEvent
+{
+  "afterSeq": 9,
+  "crash": null,
+  "elapsedMs": 900,
+  "kind": "exit",
+  "message": "Stopped",
+  "sanitizer": null,
+  "status": {
+    "type": "stopped"
+  }
+}

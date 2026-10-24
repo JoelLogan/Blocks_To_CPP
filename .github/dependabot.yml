@@ -1,5 +1,15 @@
 # Keeps pinned GitHub Actions, Cargo and npm dependencies current (docs/spec/08-security.md §8.9).
 # Updates wait 7 days after release, matching the pnpm minimumReleaseAge policy.
+#
+# Minor and patch updates are grouped per ecosystem, so one pull request a week brings each
+# ecosystem up to date; a major update gets a pull request of its own, so a breaking change
+# never holds back a fix. The groups apply to version updates only (the default `applies-to`).
+#
+# Tauri is the exception. `tauri build` refuses a `tauri` crate and an `@tauri-apps/api` package
+# of different major or minor versions, and the `@tauri-apps/cli` is kept on the same version, so
+# on a Tauri minor release either half alone fails CI. The Tauri crates and the @tauri-apps
+# packages therefore have a group of their own in each ecosystem, outside the minor-and-patch
+# groups, and the two pull requests are combined by hand.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -9,9 +19,12 @@ updates:
     cooldown:
       default-days: 7
     groups:
-      github-actions:
+      github-actions-minor-and-patch:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: cargo
     directory: /
@@ -20,9 +33,22 @@ updates:
     cooldown:
       default-days: 7
     groups:
-      cargo-dependencies:
+      cargo-tauri:
+        patterns:
+          - tauri
+          - "tauri-*"
+        update-types:
+          - minor
+          - patch
+      cargo-minor-and-patch:
         patterns:
           - "*"
+        exclude-patterns:
+          - tauri
+          - "tauri-*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: npm
     directory: /
@@ -31,6 +57,52 @@ updates:
     cooldown:
       default-days: 7
     groups:
-      npm-dependencies:
+      npm-tauri:
+        patterns:
+          - "@tauri-apps/*"
+        update-types:
+          - minor
+          - patch
+      npm-minor-and-patch:
         patterns:
           - "*"
+        exclude-patterns:
+          - "@tauri-apps/*"
+        update-types:
+          - minor
+          - patch
+    # New majors of these move only when a roadmap item schedules the migration
+    # (docs/spec/10-roadmap.md). GitHub applies `ignore` to security updates as well, so an
+    # advisory that needs one of these majors is fixed by hand: OSV-Scanner and pnpm audit
+    # still fail CI on it. @vitest/* (coverage-v8) is released in step with vitest.
+    ignore:
+      - dependency-name: blockly
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@blockly/*"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@xterm/*"
+        update-types:
+          - version-update:semver-major
+      # xterm.js's add-ons are 0.x and released with it, so their minor version is the breaking
+      # step (@xterm/addon-fit 0.11 is the add-on for xterm.js 6): they wait with xterm.js.
+      - dependency-name: "@xterm/addon-*"
+        update-types:
+          - version-update:semver-minor
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+      - dependency-name: vitest
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@vitest/*"
+        update-types:
+          - version-update:semver-major
+      # Node.js's types follow the Node.js major the project runs on (.node-version, 22), not the
+      # newest Node.js release. They are on 24 because @types/node 22 depends on undici-types 6.21,
+      # which trustPolicy rejects (docs/developer-guide/dependencies.md); a newer major waits for
+      # the runtime.
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major

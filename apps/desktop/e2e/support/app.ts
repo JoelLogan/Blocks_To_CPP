@@ -1,0 +1,383 @@
+/**
+ * Launching the app under test (docs/adr/0009-e2e-tooling-and-test-seams.md): each test gets a
+ * fresh temporary profile (`B2C_E2E_ROOT`), a dialog script (`B2C_E2E_DIALOGS`, empty by default,
+ * so every native dialog is cancelled instead of waiting for a person), the toolchain folders
+ * (`B2C_E2E_TOOLCHAIN_DIRS`), its own `tauri-driver` and a WebDriver session. Once the window is
+ * ready the long-task recorder starts (./longtasks.ts). When the test ends the recorder's record is
+ * saved, the app is closed and the profile deleted; a failed test first saves its artifacts.
+ */
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import { Builder, Capabilities, type WebDriver } from 'selenium-webdriver';
+import type { TestContext } from 'vitest';
+
+import {
+  artifactDir,
+  copyFiles,
+  copyLogSince,
+  fileSize,
+  NATIVE_DRIVER_LOG_PART,
+  recordTrustedTypes,
+  writeArtifact,
+} from './artifacts';
+import { TauriDriver } from './driver';
+import { appEnvironment, harnessSettings, type HarnessSettings, type WindowSize } from './env';
+import { HookClient } from './hook';
+import { finishLongTaskRecorder, startLongTaskRecorder } from './longtasks';
+import { sleep, waitFor, withTimeout } from './wait';
+
+/** WebDriver's page-load timeout of a session: how long a navigation may take. */
+export const PAGE_LOAD_TIMEOUT_MS = 60_000;
+
+/**
+ * How long the window may take to start (02 §2.5.7 start-up, backend and features), from the
+ * session's start. As long as a page load may take, and as the cold-start benchmark allows
+ * (bench/launch.ts): a call into the page waits for a navigation in progress first, so on a slow
+ * runner one call may take most of that time (34 s with WebView2 in nightly 17).
+ */
+export const READY_TIMEOUT_MS = PAGE_LOAD_TIMEOUT_MS;
+
+/** WebDriver's script timeout of a session: how long one `executeScript` call may take. */
+export const SCRIPT_TIMEOUT_MS = 30_000;
+
+/**
+ * How long ending the WebDriver session (which closes the app) may take before the driver and
+ * whatever it started are stopped anyway. selenium-webdriver's requests have no timeout of their
+ * own, so a hung app or native driver would otherwise hold the test until its hook times out.
+ */
+export const QUIT_TIMEOUT_MS = 15_000;
+
+/** How long each artifact of a failed test (screenshot, page, …) may take to read. */
+const ARTIFACT_TIMEOUT_MS = 10_000;
+
+/** How long reading and probing the Trusted Types counts may take. */
+const TRUSTED_TYPES_TIMEOUT_MS = 10_000;
+
+/** How long the clean-up after a test may take in all (Vitest's hook timeout). */
+const FINISH_TIMEOUT_MS = 120_000;
+
+/** How many times each test has launched the app so far (a test may launch it more than once). */
+const launches = new Map<string, number>();
+
+/** The number of a test's next launch, from 1. */
+function nextLaunch(test: string): number {
+  const launch = (launches.get(test) ?? 0) + 1;
+  launches.set(test, launch);
+  return launch;
+}
+
+/** What the native dialogs answer (src-tauri/src/e2e.rs `DialogScript`). */
+export interface DialogScript {
+  readonly open?: readonly (string | null)[];
+  readonly saveAs?: readonly (string | null)[];
+  readonly pickCompiler?: readonly (string | null)[];
+  readonly trust?: readonly ('trustProject' | 'trustFolder' | 'stayRestricted')[];
+}
+
+/** Options of {@link launchApp}. */
+export interface LaunchOptions {
+  /** The dialog script; none answers every dialog with Cancel. */
+  readonly dialogs?: DialogScript;
+  /**
+   * Whether the long-task recorder runs (./longtasks.ts; default `true`). The benchmarks turn it
+   * off: they time the page's tasks themselves, and nothing else may run in the page meanwhile.
+   */
+  readonly recordLongTasks?: boolean;
+  /**
+   * The window's size in CSS pixels (the app's `B2C_E2E_WINDOW_SIZE`), so the layout is the same
+   * on every system; the app still keeps the window on the screen. Without it the app opens at its
+   * own size.
+   */
+  readonly windowSize?: WindowSize;
+}
+
+/** The app under test. */
+export interface App {
+  readonly driver: WebDriver;
+  readonly hook: HookClient;
+  readonly settings: HarnessSettings;
+  /** The temporary folder of this test (the profile is `profile/` in it). */
+  readonly root: string;
+}
+
+/**
+ * Waits up to `timeout` for the window to start and the hook to answer. When it does not, the
+ * message says how far the start got: the hook never answered (the page did not load, or it is not
+ * the end-to-end build; with the last error), it first answered only after `timeout` (the page
+ * loaded too late: a call into the page waits for a navigation in progress), or it answered in
+ * time, and when, but the app never became ready.
+ */
+export async function waitUntilReady(app: App, timeout = READY_TIMEOUT_MS): Promise<void> {
+  const start = Date.now();
+  let answeredAfter: number | null = null;
+  await waitFor(
+    async () => {
+      // Throws until the page has loaded and installed the hook.
+      const ready = await app.hook.call('ready');
+      answeredAfter ??= Date.now() - start;
+      return ready;
+    },
+    {
+      timeout,
+      interval: 250,
+      message: () => {
+        if (answeredAfter === null) {
+          return 'the window to start: window.__B2C_E2E__ never answered (the page did not load, or this is not the end-to-end build)';
+        }
+        const after = `${(answeredAfter / 1000).toFixed(1)} s`;
+        return answeredAfter >= timeout
+          ? `the window to start: the page loaded too late, window.__B2C_E2E__ first answered after ${after} (a call into the page waits for a navigation in progress)`
+          : `the window to start: the page loaded and window.__B2C_E2E__ answered after ${after}, but ready() stayed false (the backend or the features did not start)`;
+      },
+    },
+  );
+}
+
+/** Removes a folder; on Windows a program that just exited may still hold a file for a moment. */
+async function removeFolder(folder: string): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      rmSync(folder, { recursive: true, force: true });
+      return;
+    } catch {
+      await sleep(500);
+    }
+  }
+  process.stderr.write(`Could not remove the test folder ${folder}\n`);
+}
+
+/**
+ * Saves what helps to understand a failure (best effort: each part on its own, and each bounded
+ * in time, so that a hung app cannot keep the clean-up from closing it).
+ */
+async function saveFailureArtifacts(app: App, test: string): Promise<void> {
+  const dir = artifactDir(app.settings.artifacts, test);
+  const attempts: [string, () => Promise<void>][] = [
+    [
+      'screenshot',
+      async () => {
+        writeArtifact(
+          dir,
+          'screenshot.png',
+          Buffer.from(await app.driver.takeScreenshot(), 'base64'),
+        );
+      },
+    ],
+    [
+      'page',
+      async () => {
+        writeArtifact(dir, 'page.html', await app.driver.getPageSource());
+      },
+    ],
+    [
+      'console',
+      async () => {
+        writeArtifact(dir, 'console.txt', await app.hook.consoleText());
+      },
+    ],
+    [
+      'project',
+      async () => {
+        writeArtifact(dir, 'project.b2c', await app.hook.documentText());
+      },
+    ],
+  ];
+  for (const [what, attempt] of attempts) {
+    try {
+      await withTimeout(attempt(), ARTIFACT_TIMEOUT_MS, `the ${what}`);
+    } catch (error: unknown) {
+      writeArtifact(dir, `${what}.error.txt`, String(error));
+    }
+  }
+}
+
+/** The name of `tauri-driver`'s log in the test's folder (`driver-` is put in front when saved). */
+const TAURI_DRIVER_LOG = 'tauri-driver.log';
+
+/** Where an app that did not start left its logs, for the error message ('' when nowhere). */
+function launchLogsNote(dir: string | null): string {
+  if (dir === null) {
+    return '';
+  }
+  const driverLog = path.join(dir, `driver-${TAURI_DRIVER_LOG}`);
+  return existsSync(driverLog)
+    ? `\nThe driver's log is ${driverLog}; the app's logs, if any, are next to it.`
+    : `\nThe logs, if any, are in ${dir}.`;
+}
+
+/**
+ * Copies the app's and the driver's logs (`root` is the test's folder) into the test's artifact
+ * folder, with the part of the native driver's log written since it was `nativeLogStart` bytes
+ * long, and returns that folder.
+ */
+function saveLogs(
+  settings: HarnessSettings,
+  root: string,
+  test: string,
+  nativeLogStart: number,
+): string {
+  const dir = artifactDir(settings.artifacts, test);
+  copyFiles(path.join(root, 'profile', 'state', 'logs'), dir, 'app-');
+  copyFiles(root, dir, 'driver-');
+  if (settings.nativeDriverLog !== null) {
+    copyLogSince(settings.nativeDriverLog, nativeLogStart, path.join(dir, NATIVE_DRIVER_LOG_PART));
+  }
+  return dir;
+}
+
+/**
+ * Reads the Trusted Types counts of the test, then probes whether the report-only policy is in
+ * force (one deliberate violation), and appends both to the report.
+ */
+async function reportTrustedTypes(app: App, test: string): Promise<void> {
+  const before = await app.hook.trustedTypes();
+  let policyActive: boolean | null;
+  try {
+    await app.hook.probeTrustedTypes();
+    // Violation events are delivered in a later task.
+    const after = await waitFor(
+      async () => {
+        const report = await app.hook.trustedTypes();
+        return report.count > before.count ? report : null;
+      },
+      { timeout: 2_000, interval: 100, message: 'the probe' },
+    ).catch(() => null);
+    policyActive = after?.directives.includes('require-trusted-types-for') === true;
+  } catch {
+    policyActive = null;
+  }
+  recordTrustedTypes(app.settings.artifacts, {
+    test,
+    platform: process.platform,
+    count: before.count,
+    directives: before.directives,
+    policyActive,
+  });
+}
+
+/**
+ * Starts the app for the test `context` and waits until its window is ready. It is closed (and on
+ * failure its artifacts saved) when the test finishes.
+ */
+export async function launchApp(context: TestContext, options: LaunchOptions = {}): Promise<App> {
+  const settings = harnessSettings();
+  if (!existsSync(settings.app)) {
+    throw new Error(
+      `The app under test is missing: ${settings.app}. Build it first (see apps/desktop/e2e/README.md) or set B2C_E2E_APP.`,
+    );
+  }
+  const root = mkdtempSync(path.join(tmpdir(), 'b2c-e2e-'));
+  const profile = path.join(root, 'profile');
+  const dialogs = path.join(root, 'dialogs.json');
+  writeFileSync(dialogs, JSON.stringify(options.dialogs ?? {}));
+
+  const test = context.task.name;
+  const launch = nextLaunch(test);
+  const recordLongTasks = options.recordLongTasks ?? true;
+  let recording = false;
+  const nativeLogStart = settings.nativeDriverLog === null ? 0 : fileSize(settings.nativeDriverLog);
+  let driverProcess: TauriDriver | null = null;
+  let driver: WebDriver | null = null;
+  /**
+   * Ends the session (which closes the app), stops the driver and whatever it started, and deletes
+   * the folder. A session that does not end within {@link QUIT_TIMEOUT_MS} (a hung app or native
+   * driver) or fails to end is left to the driver's stop, which on Linux kills the app's
+   * processes too; every step runs whatever happened before it.
+   */
+  const close = async (beforeRemoving?: () => void): Promise<void> => {
+    const session = driver;
+    driver = null;
+    if (session !== null) {
+      await withTimeout(session.quit(), QUIT_TIMEOUT_MS, 'the WebDriver session to end').catch(
+        (error: unknown) => {
+          process.stderr.write(`The WebDriver session did not end cleanly: ${String(error)}\n`);
+        },
+      );
+    }
+    await driverProcess?.stop().catch((error: unknown) => {
+      process.stderr.write(`tauri-driver did not stop cleanly: ${String(error)}\n`);
+    });
+    try {
+      beforeRemoving?.();
+    } catch (error: unknown) {
+      process.stderr.write(`The test's logs could not be saved: ${String(error)}\n`);
+    }
+    await removeFolder(root);
+  };
+
+  let app: App;
+  try {
+    driverProcess = await TauriDriver.start({
+      command: settings.tauriDriver,
+      nativeDriver: settings.nativeDriver,
+      env: appEnvironment(settings, {
+        root: profile,
+        dialogs,
+        ...(options.windowSize === undefined ? {} : { windowSize: options.windowSize }),
+      }),
+      logFile: path.join(root, TAURI_DRIVER_LOG),
+      marker: `B2C_E2E_ROOT=${profile}`,
+    });
+    const capabilities = new Capabilities();
+    capabilities.set('tauri:options', { application: settings.app });
+    capabilities.setBrowserName('wry');
+    const session = await new Builder()
+      .usingServer(driverProcess.url)
+      .withCapabilities(capabilities)
+      .build();
+    driver = session;
+    await session
+      .manage()
+      .setTimeouts({ script: SCRIPT_TIMEOUT_MS, implicit: 0, pageLoad: PAGE_LOAD_TIMEOUT_MS });
+    app = { driver: session, hook: new HookClient(session), settings, root };
+  } catch (error: unknown) {
+    // No session: keep what the driver and the app wrote (the native driver's output is in
+    // tauri-driver.log), which is all there is to tell why. The test's folder is deleted, so the
+    // message names the copies.
+    let saved: string | null = null;
+    await close(() => {
+      saved = saveLogs(settings, root, test, nativeLogStart);
+    });
+    throw new Error(
+      `The app under test did not start: ${error instanceof Error ? error.message : String(error)}${launchLogsNote(saved)}`,
+      { cause: error },
+    );
+  }
+
+  context.onTestFinished(async ({ task }) => {
+    const failed = task.result?.state === 'fail';
+    try {
+      // First, so that reading the failure's artifacts is not part of the record.
+      if (recording) {
+        await finishLongTaskRecorder(app.driver, { root: settings.artifacts, test, launch });
+      }
+      if (failed) {
+        await saveFailureArtifacts(app, test);
+      }
+      await withTimeout(
+        reportTrustedTypes(app, test),
+        TRUSTED_TYPES_TIMEOUT_MS,
+        'the counts',
+      ).catch((error: unknown) => {
+        process.stderr.write(`The Trusted Types counts could not be read: ${String(error)}\n`);
+      });
+    } finally {
+      await close(
+        failed
+          ? () => {
+              saveLogs(settings, root, test, nativeLogStart);
+            }
+          : undefined,
+      );
+    }
+  }, FINISH_TIMEOUT_MS);
+
+  await waitUntilReady(app);
+  if (recordLongTasks) {
+    recording = true;
+    await startLongTaskRecorder(app.driver);
+  }
+  return app;
+}

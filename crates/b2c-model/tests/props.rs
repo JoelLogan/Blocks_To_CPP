@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 
 use b2c_ir::sast::CppStandard;
 use b2c_ir::{BlockId, ModuleId, ProjectId, SymbolId};
+use b2c_model::limits::MAX_SAFE_INTEGER;
 use b2c_model::{
     Block, BlockComment, BlockInput, BuildConfiguration, BuildSettings, Configurations, Define, DefineValue,
     Document, ExprInput, FieldValue, FormattingStyle, Frame, FrameColor, Generator, Input, Language, Module,
@@ -97,20 +98,45 @@ fn float() -> impl Strategy<Value = Value> {
         .prop_map(|x| Value::Number(serde_json::Number::from_f64(x).unwrap()))
 }
 
-/// Free-form JSON whose strings and keys follow the text rules. `extra`
+/// A finite float that is not a whole number, as free-form data stores it:
+/// the loader stores whole numbers as integers (spec §5.6), and every float
+/// from 2^52 up is whole, so these are all within the free-form limit.
+///
+/// Leaves out magnitudes from 10^-6 up to 10^-5, which JavaScript (and so
+/// the canonical writer) writes in plain notation (`0.0000015`) and
+/// `serde_json` with an exponent (`1.5e-6`), so that
+/// `canonical_output_is_what_serde_writes` can compare bytes. The unit tests
+/// of the writer and the WebAssembly suite cover them.
+fn free_float() -> impl Strategy<Value = Value> {
+    any::<f64>()
+        .prop_filter("a finite fraction", |x| {
+            x.is_finite() && x.fract() != 0.0 && !(1e-6..1e-5).contains(&x.abs())
+        })
+        .prop_map(|x| Value::Number(serde_json::Number::from_f64(x).unwrap()))
+}
+
+/// A whole number within the free-form limit (spec §5.6).
+fn safe_int() -> impl Strategy<Value = i64> {
+    -MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER
+}
+
+/// Free-form JSON whose strings and keys follow the text rules, and whose
+/// numbers are stored as the loader stores them (spec §5.6). `extra`
 /// numbers stay at most 64 (the variadic limit).
 fn free_json(for_extra: bool) -> impl Strategy<Value = Value> {
     let number = if for_extra {
         prop_oneof![
             (-1000i64..=64).prop_map(Value::from),
-            (-1.0e6f64..64.0).prop_map(Value::from),
+            (-1.0e6f64..64.0)
+                .prop_filter("a fraction", |x| x.fract() != 0.0)
+                .prop_map(Value::from),
         ]
         .boxed()
     } else {
         prop_oneof![
-            any::<i64>().prop_map(Value::from),
-            any::<u64>().prop_map(Value::from),
-            float()
+            safe_int().prop_map(Value::from),
+            prop_oneof![Just(MAX_SAFE_INTEGER), Just(-MAX_SAFE_INTEGER)].prop_map(Value::from),
+            free_float()
         ]
         .boxed()
     };
@@ -164,6 +190,7 @@ fn leaf_block() -> impl Strategy<Value = Block> {
                 fields,
                 inputs,
                 statements: BTreeMap::new(),
+                stack: Vec::new(),
             },
         )
 }
@@ -194,12 +221,19 @@ fn position() -> impl Strategy<Value = i32> {
     -10_000_000..=10_000_000i32
 }
 
+/// A top-level block, sometimes with a loose stack below it (ADR-0011).
 fn top_level_block() -> impl Strategy<Value = Block> {
-    (block(), option::of((position(), position()))).prop_map(|(mut block, at)| {
-        block.x = at.map(|(x, _)| x);
-        block.y = at.map(|(_, y)| y);
-        block
-    })
+    (
+        block(),
+        option::of((position(), position())),
+        prop_oneof![3 => Just(Vec::new()), 1 => vec(block(), 1..3)],
+    )
+        .prop_map(|(mut block, at, stack)| {
+            block.x = at.map(|(x, _)| x);
+            block.y = at.map(|(_, y)| y);
+            block.stack = stack;
+            block
+        })
 }
 
 fn frame() -> impl Strategy<Value = Frame> {
@@ -292,7 +326,7 @@ fn configuration() -> impl Strategy<Value = BuildConfiguration> {
 
 fn define_value() -> impl Strategy<Value = DefineValue> {
     prop_oneof![
-        any::<i64>().prop_map(DefineValue::Int),
+        safe_int().prop_map(DefineValue::Int),
         any::<bool>().prop_map(DefineValue::Bool),
         text().prop_map(DefineValue::String),
     ]
@@ -408,6 +442,9 @@ impl Numbering {
                 self.block(child);
             }
         }
+        for child in &mut block.stack {
+            self.block(child);
+        }
     }
 }
 
@@ -500,6 +537,7 @@ fn any_json() -> impl Strategy<Value = Value> {
                 "fields",
                 "inputs",
                 "statements",
+                "stack",
                 "extra",
                 "expr",
                 "block",
@@ -580,7 +618,12 @@ fn replace_at(value: &mut Value, path: &[prop::sample::Index], replacement: Valu
 fn check_accepted(bytes: &[u8]) {
     if let Ok(document) = load(bytes) {
         let through_serde: Document = serde_json::from_slice(bytes).expect("serde rejects what load accepts");
-        assert_eq!(document, through_serde);
+        if document != through_serde {
+            // The loader stores a whole number of free-form data as an
+            // integer even when it is written `1.0` (spec §5.6), where serde
+            // keeps a float: the same numbers, saved the same way.
+            assert_eq!(to_canonical_json(&document), to_canonical_json(&through_serde));
+        }
         let canonical = to_canonical_json(&document);
         let again = load(canonical.as_bytes()).expect("canonical output must load");
         assert_eq!(to_canonical_json(&again), canonical);

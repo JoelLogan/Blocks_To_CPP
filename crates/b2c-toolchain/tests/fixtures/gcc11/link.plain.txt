@@ -1,0 +1,4 @@
+/usr/bin/ld: /tmp/cc3prBQ7.o: in function `main':
+link.cpp:(.text+0x13): undefined reference to `say(char const*)'
+/usr/bin/ld: link.cpp:(.text+0x1d): undefined reference to `twice(int)'
+collect2: error: ld returned 1 exit status

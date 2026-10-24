@@ -1,6 +1,6 @@
 # 1. Overview, Goals and Requirements
 
-> Status: **Draft v0.1** · Owner: project maintainers · Last reviewed: 2026-10-02
+> Status: **Draft v0.1** · Owner: project maintainers · Last reviewed: 2026-10-11
 
 ## 1.1 Product summary
 
@@ -25,7 +25,7 @@ It is meant to be:
 ## 1.2 Guiding principles
 
 | # | Principle | What it means in practice |
-|---|-----------|---------------------------|
+| --- | ----------- | --------------------------- |
 | P1 | **Few blocks, much power** | One block should express one *idea*, not one *token*. We use inline fields, dropdowns, `+`/`−` variadic slots, typed expression slots and type pickers instead of making users drag extra blocks. |
 | P2 | **Organisation is a feature** | Projects are split into modules (files), definition blocks are top-level and order-independent, and users get grouping frames, collapse, search, a minimap and "go to definition". |
 | P3 | **What you see is what compiles** | Each block maps to well-defined C++. There is no hidden runtime, no interpreter and no proprietary VM. The live C++ view is the source of truth for semantics. |
@@ -37,7 +37,7 @@ It is meant to be:
 ## 1.3 Target users (personas)
 
 | Persona | Background | Needs |
-|---------|------------|-------|
+| --------- | ------------ | ------- |
 | **Learner** (age 12+) | Has used Scratch and wants "real" programming. | Friendly block labels ("list of numbers"), help with errors, no setup pain, can see the C++ it is learning. |
 | **Student** | Taking an intro C++ / CS course. | Can complete course assignments (I/O, loops, functions, structs, classes, vectors, files) and hand in readable `.cpp` files. |
 | **Teacher** | Teaches programming. | Example projects, a CLI for batch-checking submissions, predictable output, exported code students can diff. |
@@ -56,8 +56,9 @@ It is meant to be:
   else, typed *expression slots* for concise maths and logic, and *Raw C++*
   blocks as a last resort. See the coverage matrix in
   [03-block-language.md §3.12](03-block-language.md#312-c-coverage-matrix).
-* **G3 Live C++ preview.** Generated C++ updates within 50 ms of an edit, with
-  two-way highlighting between blocks and code.
+* **G3 Live C++ preview.** Generated C++ follows your edits: it updates
+  within 100 ms of the last change (a 50 ms pause, then analysis and
+  generation within N4), with two-way highlighting between blocks and code.
 * **G4 Compile with system g++.** Automatic discovery of g++ installations
   (MSYS2/MinGW-w64, WinLibs, TDM, Scoop, Chocolatey, distro packages), version
   and capability probing, and a guided setup when none is found.
@@ -82,11 +83,11 @@ It is meant to be:
 ### Non-functional goals
 
 | ID | Requirement | Target |
-|----|-------------|--------|
+| ---- | ------------- | -------- |
 | N1 | Platforms | Windows 10 (1809+) and Windows 11 x64; Linux x64 (glibc 2.35+, e.g. Ubuntu 22.04+, Fedora 39+, Debian 12+). arm64 Linux is best-effort. macOS is out of scope for 1.0 but is not precluded by the architecture. |
 | N2 | Cold start | < 2 s to an interactive editor on a mid-range laptop |
 | N3 | Editor responsiveness | ≥ 30 fps dragging in a 5,000-block workspace |
-| N4 | Live preview latency | < 50 ms (p95) codegen + analysis for a 1,000-block module |
+| N4 | Live preview latency | < 50 ms (p95) for the compiler core's `update()` (load, analysis and generation) of a 1,000-block module, measured in the webview |
 | N5 | Memory | < 400 MB resident for a typical (≤ 2,000 blocks) project |
 | N6 | Installer size | < 30 MB (no bundled browser engine, no bundled compiler) |
 | N7 | Accessibility | Full keyboard operation, screen-reader labels, high-contrast theme, colour-blind-safe category palette (WCAG 2.2 AA for app chrome) |
@@ -94,6 +95,7 @@ It is meant to be:
 | N9 | Privacy | No telemetry. No network access except opt-in update checks and user-clicked links. |
 | N10 | Reliability | Autosave and crash recovery. Atomic saves. A project file is never left half-written. |
 | N11 | Determinism | The same project, catalog version and settings always generate byte-identical C++. |
+| N12 | Interaction latency | Selecting a block, choosing a toolbox category, opening a dropdown and dropping a block respond within 100 ms (p95) in a 1,000-block module. While a program of up to 200 blocks is edited, no main-thread task exceeds 50 ms. Met in M5; until then the benchmarks of [09 §9.2](09-quality-and-delivery.md#92-testing-strategy) report it and gate its regressions (`webview.select-1000.max-task` and `webview.edit-1000.p95-all`, the p95 over all the edits of a run, at 1,000 blocks; the guessing game's longest task after a selection and after an edit, and every E2E flow's longest main-thread task, reported). |
 
 ## 1.5 Non-goals (for 1.0)
 
@@ -114,7 +116,7 @@ It is meant to be:
 ## 1.6 Key terms
 
 | Term | Meaning |
-|------|---------|
+| ------ | --------- |
 | **Block** | A visual element on the canvas: a statement, expression, definition or container. |
 | **BDM** | *Block Document Model*: our versioned, editor-independent JSON representation of blocks, and the canonical storage format. |
 | **Catalog** | The declarative definitions of all block types (TOML), shared by the editor and the compiler. |
@@ -124,4 +126,9 @@ It is meant to be:
 | **SAST / CAST** | *Semantic AST* (language-level, typed) and *C++ AST* (syntax-level); the compiler's internal representations. |
 | **Source map** | A mapping from generated C++ ranges to block IDs, used for highlighting and diagnostics. |
 | **Restricted Mode** | The state of an untrusted project: it can be viewed and edited, but cannot be built or run. |
+| **Trust store** | The machine-local record of which projects and folders the user trusts (`trust.json`). A project file can never vouch for itself. |
 | **Toolchain** | A discovered g++ installation and its probed capabilities. |
+| **Handle** | The opaque ID (`ph_…`) by which the editor refers to an open project. Only the backend knows the file it stands for, so the webview never sends a path. |
+| **Machine-local data** | Settings, the trust store, recent projects, the toolchain list, the build cache, recovery snapshots and logs: kept per user on this computer and never in a project file. |
+| **Recovery snapshot** | An autosaved copy of a project with unsaved changes, offered for restore after a crash. |
+| **IDE init unit** | A small extra C++ file linked into programs run from the app (never into exports or CLI builds), for example to switch the Windows console to UTF-8. |

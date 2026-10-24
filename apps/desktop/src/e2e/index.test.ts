@@ -1,0 +1,321 @@
+/** The end-to-end test hook: what it reads, what it checks, and how it is installed. */
+import type { CoreWasm } from '@blocks2cpp/b2c-core-wasm';
+import type * as Blockly from 'blockly/core';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { BootPhase } from '../app/bootstrap';
+import type { EditorHandle } from '../app/editor-types';
+import { resetAppStore, useAppStore } from '../app/store';
+import { projectFixture } from '../app/testing/fixtures';
+import { ConsoleBridge } from '../features/build-run';
+import { FakeConsole } from '../features/build-run/testing';
+import { resetTimings, timed, TIMING_SPANS } from '../lib/timing';
+import type { TrustedTypesReport } from '../lib/trustedTypes';
+import type { ConsoleScreen } from '../panels';
+import { createE2eHook, E2E_HOOK_NAME, type E2eHookDeps, installE2eHook } from './index';
+import { ConsoleTranscript } from './transcript';
+
+/** A canonical result the fake core gives. */
+const CANONICAL = { ok: true, text: '{"canonical":true}\n', hash: 'b'.repeat(64), diagnostics: [] };
+
+function fakeCore(result: unknown = CANONICAL): CoreWasm {
+  return { canonical: vi.fn(() => result) } as unknown as CoreWasm;
+}
+
+/** A fake editor, and its `selectBlock` mock. */
+function fakeEditor(): EditorHandle & { readonly selectBlockMock: ReturnType<typeof vi.fn> } {
+  const selectBlockMock = vi.fn();
+  return {
+    loadDocument: vi.fn(),
+    currentDocument: () => {
+      const project = useAppStore.getState().project;
+      if (project === null) {
+        throw new Error('no project');
+      }
+      return project.document;
+    },
+    selectBlock: selectBlockMock,
+    updateProjectInfo: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
+    workspace: {} as Blockly.WorkspaceSvg,
+    selectBlockMock,
+  };
+}
+
+/** A console screen with a second run below the first. */
+const SHOWN: ConsoleScreen = {
+  buffer: 'normal',
+  lines: ['1', '', '── New run ──', '1', ''],
+  baseY: 2,
+  viewportY: 1,
+  cursor: { row: 4, column: 0 },
+  cols: 40,
+  rows: 3,
+};
+
+/** A console that shows `shown`. */
+function screenConsole(shown: ConsoleScreen): FakeConsole {
+  const terminal = new FakeConsole();
+  terminal.screen = () => shown;
+  return terminal;
+}
+
+function deps(overrides: Partial<E2eHookDeps> = {}): E2eHookDeps {
+  const report: TrustedTypesReport = { count: 2, directives: ['require-trusted-types-for'] };
+  return {
+    target: {},
+    phase: (): BootPhase => ({ kind: 'ready' }),
+    store: useAppStore,
+    editor: () => null,
+    core: () => null,
+    console: new ConsoleBridge(),
+    trustedTypes: () => report,
+    elementAt: () => null,
+    parseHtml: vi.fn(),
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  resetAppStore();
+});
+
+afterEach(() => {
+  resetAppStore();
+});
+
+describe('createE2eHook', () => {
+  it('reports readiness from the start-up phase', () => {
+    let phase: BootPhase = { kind: 'starting' };
+    const hook = createE2eHook(deps({ phase: () => phase }), new ConsoleTranscript());
+    expect(hook.ready()).toBe(false);
+    phase = { kind: 'ready' };
+    expect(hook.ready()).toBe(true);
+    expect(Object.isFrozen(hook)).toBe(true);
+  });
+
+  it('gives the canonical document of the canvas, or says why it cannot', () => {
+    const editor = fakeEditor();
+    const core = fakeCore();
+    const hook = createE2eHook(
+      deps({ editor: () => editor, core: () => core }),
+      new ConsoleTranscript(),
+    );
+    expect(() => hook.document()).toThrow('No project is open');
+    useAppStore.getState().actions.setProject(projectFixture());
+    expect(hook.document()).toBe(CANONICAL.text);
+
+    const refusing = fakeCore({ ok: false, diagnostics: [{ code: 'B2C-E0104' }] });
+    const unreadable = createE2eHook(
+      deps({ editor: () => editor, core: () => refusing }),
+      new ConsoleTranscript(),
+    );
+    expect(() => unreadable.document()).toThrow('(B2C-E0104)');
+  });
+
+  it('reads the transcript, the Trusted Types counts and the C++ the code panel shows', () => {
+    const transcript = new ConsoleTranscript();
+    transcript.appendText('Correct!\r\n');
+    const hook = createE2eHook(deps(), transcript);
+    expect(hook.consoleText()).toBe('Correct!\n');
+    const report = hook.trustedTypes();
+    expect(report).toEqual({ count: 2, directives: ['require-trusted-types-for'] });
+
+    expect(hook.code()).toBe('');
+    useAppStore.getState().actions.setAnalysis({
+      preview: {
+        files: [
+          { path: 'main.cpp', kind: 'source', contents: 'int main() {}\n' },
+          { path: 'ide/b2c_ide_init.cpp', kind: 'source', contents: 'hidden\n' },
+          { path: 'util.h', kind: 'header', contents: '#pragma once\n' },
+        ],
+      } as never,
+    });
+    expect(hook.code()).toBe('int main() {}\n\n#pragma once\n');
+  });
+
+  it("reads the console's screen through the bridge, as plain data", () => {
+    const bridge = new ConsoleBridge();
+    const hook = createE2eHook(deps({ console: bridge }), new ConsoleTranscript());
+    // No console attached: an empty screen of the size a run would get.
+    expect(hook.consoleScreen()).toEqual({
+      buffer: 'normal',
+      lines: [],
+      baseY: 0,
+      viewportY: 0,
+      cursor: { row: 0, column: 0 },
+      cols: 80,
+      rows: 24,
+    });
+
+    const terminal = screenConsole(SHOWN);
+    bridge.attach(terminal);
+    const screen = hook.consoleScreen();
+    expect(screen).toEqual(SHOWN);
+    expect(screen.lines).not.toBe(SHOWN.lines);
+    expect(screen.cursor).not.toBe(SHOWN.cursor);
+  });
+
+  it('selects and centres a block, and needs the editor for the canvas helpers', () => {
+    const editor = fakeEditor();
+    const hook = createE2eHook(deps({ editor: () => editor }), new ConsoleTranscript());
+    hook.selectBlock('b005');
+    expect(editor.selectBlockMock).toHaveBeenCalledWith('b005', { center: true });
+    expect(() => {
+      hook.selectBlock('');
+    }).toThrow(TypeError);
+
+    const closed = createE2eHook(deps(), new ConsoleTranscript());
+    expect(() => {
+      closed.selectBlock('b005');
+    }).toThrow('The editor is not open');
+    expect(() => closed.blockElement('b005')).toThrow('The editor is not open');
+    expect(() => {
+      closed.insertBlocks('b011', 'BODY', []);
+    }).toThrow('The editor is not open');
+  });
+
+  it('scrolls the canvas by a distance without touching the selection', () => {
+    const editor = fakeEditor();
+    const scroll = vi.fn();
+    const workspace = { scrollX: -120, scrollY: 40, scroll };
+    const hook = createE2eHook(
+      deps({
+        editor: () => ({ ...editor, workspace: workspace as unknown as Blockly.WorkspaceSvg }),
+      }),
+      new ConsoleTranscript(),
+    );
+    hook.scrollCanvasBy(30, -15.5);
+    expect(scroll).toHaveBeenCalledWith(-90, 24.5);
+    expect(editor.selectBlockMock).not.toHaveBeenCalled();
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 2_000_000, '5']) {
+      expect(() => {
+        hook.scrollCanvasBy(bad as number, 0);
+      }).toThrow(TypeError);
+    }
+    expect(scroll).toHaveBeenCalledTimes(1);
+    const closed = createE2eHook(deps(), new ConsoleTranscript());
+    expect(() => {
+      closed.scrollCanvasBy(1, 1);
+    }).toThrow('The editor is not open');
+  });
+
+  it('checks the arguments of the canvas helpers', () => {
+    const editor = fakeEditor();
+    const hook = createE2eHook(deps({ editor: () => editor }), new ConsoleTranscript());
+    expect(() => hook.blockElement(7 as unknown as string)).toThrow(TypeError);
+    expect(() => hook.fieldElement('b', 'x'.repeat(257))).toThrow(TypeError);
+    expect(() => hook.connectionPoint('b', '')).toThrow(TypeError);
+    expect(() => hook.grabPoint('')).toThrow(TypeError);
+    expect(() => hook.flyoutBlockId('io.print', [] as unknown as Record<string, string>)).toThrow(
+      'fields must be an object',
+    );
+    expect(() =>
+      hook.flyoutBlockId('io.print', { MODE: 1 } as unknown as Record<string, string>),
+    ).toThrow('string values');
+    expect(() => hook.flyoutBlockIds({} as unknown as [])).toThrow('queries must be an array');
+    expect(() =>
+      hook.flyoutBlockIds(Array.from({ length: 65 }, () => ({ type: 'io.print' }))),
+    ).toThrow('at most 64');
+    expect(() => hook.flyoutBlockIds([null as unknown as { type: string }])).toThrow(
+      'each query must be an object',
+    );
+    expect(() => hook.flyoutBlockIds([{ type: '' }])).toThrow('type must be a non-empty string');
+    expect(() =>
+      hook.flyoutBlockIds([
+        { type: 'io.print', fields: { MODE: 1 } as unknown as Record<string, string> },
+      ]),
+    ).toThrow('string values');
+  });
+
+  it('reads several flyout blocks in one call, with their fields', () => {
+    const editor = fakeEditor();
+    const block = (id: string, type: string, VAR: string) => ({
+      id,
+      type,
+      getFieldValue: (name: string) => (name === 'VAR' ? VAR : null),
+    });
+    const flyout = {
+      getTopBlocks: () => [block('getA', 'var.get', 'a'), block('getB', 'var.get', 'b')],
+    };
+    const workspace = { getFlyout: () => ({ getWorkspace: () => flyout }) };
+    const hook = createE2eHook(
+      deps({
+        editor: () => ({ ...editor, workspace: workspace as unknown as Blockly.WorkspaceSvg }),
+      }),
+      new ConsoleTranscript(),
+    );
+    expect(
+      hook.flyoutBlockIds([
+        { type: 'var.get', fields: { VAR: 'b' } },
+        { type: 'var.get', fields: null },
+        { type: 'var.get' },
+        { type: 'var.get', fields: { VAR: 'c' } },
+        { type: 'io.ask' },
+      ]),
+    ).toEqual(['getB', 'getA', 'getA', null, null]);
+    const most = Array.from({ length: 64 }, () => ({ type: 'var.get', fields: { VAR: 'b' } }));
+    expect(hook.flyoutBlockIds(most)).toEqual(most.map(() => 'getB'));
+    expect(hook.flyoutBlockIds([])).toEqual([]);
+  });
+
+  it('gives a copy of the latest User Timing durations, null for spans that have not run', () => {
+    resetTimings();
+    const hook = createE2eHook(deps(), new ConsoleTranscript());
+    const before = hook.timings();
+    expect(Object.keys(before)).toEqual([...TIMING_SPANS]);
+    expect(Object.values(before).every((duration) => duration === null)).toBe(true);
+
+    timed('b2c:select', () => undefined);
+    const after = hook.timings();
+    expect(after['b2c:select']).toBeGreaterThanOrEqual(0);
+    expect(after['b2c:preview']).toBeNull();
+    // A copy: changing it changes nothing in the app.
+    (after as Record<string, number | null>)['b2c:select'] = -1;
+    expect(hook.timings()['b2c:select']).toBeGreaterThanOrEqual(0);
+    resetTimings();
+  });
+
+  it('probes the Trusted Types policy with a constant string', () => {
+    const parseHtml = vi.fn();
+    const hook = createE2eHook(deps({ parseHtml }), new ConsoleTranscript());
+    hook.probeTrustedTypes();
+    expect(parseHtml).toHaveBeenCalledWith('<p>Blocks2Cpp Trusted Types probe</p>');
+    // The default parser accepts it without running anything.
+    const withoutParser = { ...deps() };
+    Reflect.deleteProperty(withoutParser, 'parseHtml');
+    expect(() => {
+      createE2eHook(withoutParser, new ConsoleTranscript()).probeTrustedTypes();
+    }).not.toThrow();
+  });
+});
+
+describe('installE2eHook', () => {
+  it('installs a read-only hook with a console transcript, and removes both again', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const target: Record<string, unknown> = {};
+    const bridge = new ConsoleBridge();
+    const uninstall = installE2eHook(deps({ target, console: bridge }));
+
+    const hook = target[E2E_HOOK_NAME] as {
+      consoleText(): string;
+      consoleScreen(): ConsoleScreen;
+    };
+    expect(hook).toBeDefined();
+    expect(Object.keys(target)).toEqual([]);
+    expect(() => {
+      target[E2E_HOOK_NAME] = 'replaced';
+    }).toThrow(TypeError);
+
+    await bridge.write(new TextEncoder().encode('Too low!\r\n'));
+    expect(hook.consoleText()).toBe('Too low!\n');
+    // The screen comes through the bridge the transcript taps.
+    bridge.attach(screenConsole(SHOWN));
+    expect(hook.consoleScreen()).toEqual(SHOWN);
+
+    uninstall();
+    expect(E2E_HOOK_NAME in target).toBe(false);
+    expect(Object.hasOwn(bridge, 'write')).toBe(false);
+  });
+});

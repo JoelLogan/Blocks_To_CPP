@@ -5,6 +5,9 @@ node_modules/
 site/dist/
 target/
 
+# Test coverage reports (Vitest)
+coverage/
+
 # Logs and OS files
 *.log
 .DS_Store

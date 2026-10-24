@@ -370,7 +370,7 @@ fn every_slot_input_is_parsed() {
             declare("int", "n", Some(e("1"))),
             set("n", e("n + 1")),
             change("n", e("2")),
-            update("n", "mul", e("3")),
+            change_op("n", "mul", e("3")),
             if_else(vec![(e("n > 1"), vec![]), (e("n > 2"), vec![])], None),
             while_loop("while", e("n < 0"), vec![]),
             repeat(e("n"), vec![]),

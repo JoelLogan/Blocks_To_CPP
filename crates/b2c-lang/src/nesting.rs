@@ -52,7 +52,7 @@ fn expr_too_deep(expr: &Expr, depth: usize) -> bool {
 }
 
 /// The expressions and statement lists directly inside a statement.
-fn parts(stmt: &Stmt) -> (Vec<&Expr>, Vec<&Block>) {
+pub(crate) fn parts(stmt: &Stmt) -> (Vec<&Expr>, Vec<&Block>) {
     match &stmt.kind {
         StmtKind::VarDecl(decl) => (decl.init.iter().collect(), Vec::new()),
         StmtKind::Assign { value, .. } | StmtKind::CompoundAssign { value, .. } => (vec![value], Vec::new()),

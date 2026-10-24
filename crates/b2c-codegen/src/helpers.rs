@@ -17,19 +17,29 @@ pub(crate) enum Helper {
     AskLine,
     /// `b2c::ask<T>(prompt)`: reads a number, character or true/false value.
     Ask,
+    /// `b2c::to_text(x)`: a decimal number as text, written as `print` writes it.
+    ToText,
 }
 
 impl Helper {
     /// Every helper, in emission order.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 3] = [Self::RandomInt, Self::AskLine, Self::Ask];
+    pub(crate) const ALL: [Self; 4] = [Self::RandomInt, Self::AskLine, Self::Ask, Self::ToText];
 
     /// The standard headers the helper's code needs.
     pub(crate) fn headers(self) -> &'static [&'static str] {
         match self {
             Self::RandomInt => &["<random>", "<utility>"],
-            Self::AskLine => &["<cstdlib>", "<iostream>", "<string>"],
-            Self::Ask => &["<cctype>", "<cstdlib>", "<iostream>", "<limits>", "<string>"],
+            Self::AskLine => &["<cstdlib>", "<iostream>", "<limits>", "<string>"],
+            Self::Ask => &[
+                "<cctype>",
+                "<cstdlib>",
+                "<iostream>",
+                "<limits>",
+                "<sstream>",
+                "<string>",
+            ],
+            Self::ToText => &["<iostream>", "<sstream>", "<string>"],
         }
     }
 
@@ -39,6 +49,7 @@ impl Helper {
             Self::RandomInt => RANDOM_INT,
             Self::AskLine => ASK_LINE,
             Self::Ask => ASK,
+            Self::ToText => TO_TEXT,
         }
     }
 }
@@ -66,20 +77,31 @@ inline int random_int(int low, int high) {
 ";
 
 const ASK_LINE: &str = "\
-/// Prints `prompt` and reads a line of text, skipping empty lines and leading
-/// spaces. At the end of the input (for example when the input comes from a
-/// file), prints \"Input ended\" to the error stream and exits with code 1.
+/// Prints `prompt` and reads one line of text, without its leading spaces.
+/// An empty line asks again. At the end of the input (for example when the
+/// input comes from a file), prints \"Input ended\" to the error stream and
+/// exits with code 1. If an earlier plain `std::cin >>` read failed, its
+/// line is dropped first, so the answer is read from the next line.
 inline std::string ask_line(const std::string& prompt = \"\") {
-\tstd::cout << prompt;
-\tstd::string line;
-\tif (!std::getline(std::cin >> std::ws, line)) {
-\t\tstd::cerr << \"Input ended\" << '\\n';
-\t\tstd::exit(1);
+\tif (std::cin.fail() && !std::cin.eof()) {
+\t\tstd::cin.clear();
+\t\tstd::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\\n');
 \t}
-\tif (!line.empty() && line.back() == '\\r') {
-\t\tline.pop_back();
+\twhile (true) {
+\t\tstd::cout << prompt;
+\t\tstd::string line;
+\t\tif (!std::getline(std::cin, line)) {
+\t\t\tstd::cerr << \"Input ended\" << '\\n';
+\t\t\tstd::exit(1);
+\t\t}
+\t\tif (!line.empty() && line.back() == '\\r') {
+\t\t\tline.pop_back();
+\t\t}
+\t\tconst auto start = line.find_first_not_of(\" \\t\");
+\t\tif (start != std::string::npos) {
+\t\t\treturn line.substr(start);
+\t\t}
 \t}
-\treturn line;
 }
 ";
 
@@ -102,24 +124,30 @@ inline const char* invalid_input_message<double>() {
 \treturn \"Please enter a number.\";
 }
 
+/// The message shown when the typed input is not one character.
+template <>
+inline const char* invalid_input_message<char>() {
+\treturn \"Please enter one character.\";
+}
+
 /// The message shown when the typed input is not true or false.
 template <>
 inline const char* invalid_input_message<bool>() {
 \treturn \"Please enter true or false.\";
 }
 
-/// Reads one `T` from standard input. Returns false if the input is not a
-/// valid `T`.
+/// Reads one `T` from `in`. Returns false if the text there does not start
+/// with a valid `T`.
 template <typename T>
-bool read_value(T& value) {
-\treturn static_cast<bool>(std::cin >> value);
+bool read_value(std::istream& in, T& value) {
+\treturn static_cast<bool>(in >> value);
 }
 
-/// Reads a true/false answer: accepts true/false, yes/no and 1/0, in any
-/// letter case. Returns false for any other word.
-inline bool read_value(bool& value) {
+/// Reads a true/false answer from `in`: accepts true/false, yes/no and 1/0,
+/// in any letter case. Returns false for any other word.
+inline bool read_value(std::istream& in, bool& value) {
 \tstd::string word;
-\tif (!(std::cin >> word)) {
+\tif (!(in >> word)) {
 \t\treturn false;
 \t}
 \tfor (char& letter : word) {
@@ -136,28 +164,44 @@ inline bool read_value(bool& value) {
 \treturn false;
 }
 
-/// Prints `prompt` and reads a `T` (a number, a character or true/false),
-/// asking again until the input is valid. The rest of the line after the
-/// value is ignored. At the end of the input (for example when the input
-/// comes from a file), prints \"Input ended\" to the error stream and exits
-/// with code 1 instead of asking forever.
+/// Prints `prompt` and reads one line holding a `T` (a number, a character
+/// or true/false), asking again until the line is valid: apart from spaces,
+/// the whole line must be one `T`, so `3.5` or `12abc` is not a whole
+/// number. At the end of the input (for example when the input comes from a
+/// file), prints \"Input ended\" to the error stream and exits with code 1
+/// instead of asking forever. If an earlier plain `std::cin >>` read failed,
+/// its line is dropped first, so the answer is read from the next line.
 template <typename T>
 T ask(const std::string& prompt = \"\") {
+\tif (std::cin.fail() && !std::cin.eof()) {
+\t\tstd::cin.clear();
+\t\tstd::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\\n');
+\t}
 \twhile (true) {
 \t\tstd::cout << prompt;
-\t\tT value{};
-\t\tif (read_value(value)) {
-\t\t\tstd::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\\n');
-\t\t\treturn value;
-\t\t}
-\t\tif (std::cin.eof()) {
+\t\tstd::string line;
+\t\tif (!std::getline(std::cin, line)) {
 \t\t\tstd::cerr << \"Input ended\" << '\\n';
 \t\t\tstd::exit(1);
 \t\t}
-\t\tstd::cin.clear();
-\t\tstd::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\\n');
+\t\tstd::istringstream in(line);
+\t\tT value{};
+\t\tif (read_value(in, value) && (in >> std::ws).eof()) {
+\t\t\treturn value;
+\t\t}
 \t\tstd::cout << invalid_input_message<T>() << '\\n';
 \t}
+}
+";
+
+const TO_TEXT: &str = "\
+/// Returns `value` as text, written exactly as `std::cout << value` would
+/// write it now (2.5 as \"2.5\", where `std::to_string` gives \"2.500000\").
+inline std::string to_text(double value) {
+\tstd::ostringstream out;
+\tout.copyfmt(std::cout);
+\tout << value;
+\treturn out.str();
 }
 ";
 

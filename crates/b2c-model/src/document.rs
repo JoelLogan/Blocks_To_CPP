@@ -2,7 +2,7 @@
 //! (`docs/spec/05-project-format.md` §5.3–5.5).
 //!
 //! These types derive `serde` so tests and tools can build documents directly,
-//! but untrusted input must go through [`crate::load`], which adds the limits,
+//! but untrusted input must go through [`crate::load()`], which adds the limits,
 //! duplicate-key rejection and text rules of §5.6 that plain `serde` does not.
 
 use std::collections::BTreeMap;
@@ -41,6 +41,9 @@ pub struct Document {
     /// Modules (at least one).
     pub modules: Vec<Module>,
     /// Forward-compatible tooling metadata: preserved, never interpreted.
+    /// Its numbers follow the rules of free-form data (spec §5.6): within
+    /// ±[`crate::limits::MAX_SAFE_INTEGER`], and a whole number (even one
+    /// written `1.0`) is stored as an integer, as JavaScript reads it.
     #[serde(rename = "x-ext", default, skip_serializing_if = "Option::is_none")]
     pub ext: Option<serde_json::Value>,
 }
@@ -258,7 +261,8 @@ pub struct Define {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum DefineValue {
-    /// Integer.
+    /// Integer, within ±[`crate::limits::MAX_SAFE_INTEGER`] in a loaded
+    /// document (the editor's JavaScript numbers hold those exactly).
     Int(i64),
     /// Boolean (`1` / `0`).
     Bool(bool),
@@ -408,10 +412,12 @@ pub struct Block {
     pub block_type: String,
     /// Catalog block version.
     pub v: u32,
-    /// Canvas X (top-level blocks only).
+    /// Canvas X (top-level blocks only; copied blocks in a clipboard
+    /// payload have none, spec §5.12).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub x: Option<i32>,
-    /// Canvas Y (top-level blocks only).
+    /// Canvas Y (top-level blocks only; copied blocks in a clipboard
+    /// payload have none, spec §5.12).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub y: Option<i32>,
     /// Shown collapsed.
@@ -424,7 +430,9 @@ pub struct Block {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<BlockComment>,
     /// Mutator state (variadic counts, parameter rows), validated against the
-    /// catalog's schema for the block type.
+    /// catalog's schema for the block type. Free-form data: a loaded
+    /// document's numbers here are within ±[`crate::limits::MAX_SAFE_INTEGER`]
+    /// and whole ones are integers (spec §5.6).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extra: BTreeMap<String, serde_json::Value>,
     /// Field values.
@@ -436,6 +444,15 @@ pub struct Block {
     /// Statement inputs, as arrays (never linked `next` chains).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub statements: BTreeMap<String, Vec<Block>>,
+    /// A loose statement stack: the statement blocks attached below this
+    /// block on the canvas, in order (ADR-0011). Only a block directly on a
+    /// canvas (or directly in a clipboard payload) may have one; its
+    /// elements have no `x`/`y` and no `stack` of their own. Never empty:
+    /// the loader rejects `"stack": []`, so the canonical form has one
+    /// spelling. Whether the head block is a statement is checked against
+    /// the catalog by `b2c-catalog`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stack: Vec<Block>,
 }
 
 /// A block comment.

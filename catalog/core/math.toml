@@ -5,6 +5,7 @@ id = "math.number"
 version = 1
 category = "math"
 shape = "reporter"
+output = "number"
 label = { friendly = "%VALUE", cpp = "%VALUE" }
 lowering = "builtin"
 help = "A number, such as 42 or 3.14."
@@ -19,6 +20,7 @@ id = "math.arithmetic"
 version = 1
 category = "math"
 shape = "reporter"
+output = "number"
 label = { friendly = "%A %OP %B", cpp = "%A %OP %B" }
 lowering = "builtin"
 help = "Adds, subtracts, multiplies or divides two numbers, or gives the remainder."
@@ -44,6 +46,7 @@ id = "math.compare"
 version = 1
 category = "math"
 shape = "predicate"
+output = "bool"
 label = { friendly = "%A %OP %B", cpp = "%A %OP %B" }
 lowering = "builtin"
 help = "Compares two values."
@@ -69,6 +72,7 @@ id = "math.random_int"
 version = 1
 category = "math"
 shape = "reporter"
+output = "int"
 label = { friendly = "random integer from %LOW to %HIGH", cpp = "b2c::random_int(%LOW, %HIGH)" }
 lowering = "builtin"
 headers = ["<random>"]
@@ -89,6 +93,7 @@ id = "math.convert"
 version = 1
 category = "math"
 shape = "reporter"
+output = "field:TO"
 label = { friendly = "%VALUE as %TO", cpp = "static_cast<%TO>(%VALUE)" }
 lowering = "builtin"
 help = "Converts a number to another number type, e.g. a decimal to a whole number."

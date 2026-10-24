@@ -1,10 +1,10 @@
 # 6. Translation Pipeline: Blocks → C++
 
-> Status: **Draft v0.1** · Crates: `b2c-ir` (shared types), `b2c-model`, `b2c-catalog`, `b2c-lang`, `b2c-codegen` · Related ADR: [0003](../adr/0003-rust-core-native-and-wasm.md)
+> Status: **Draft v0.1** · Crates: `b2c-ir` (shared types), `b2c-model`, `b2c-catalog`, `b2c-lang`, `b2c-codegen` · Related ADRs: [0003](../adr/0003-rust-core-native-and-wasm.md), [0010](../adr/0010-wasm-delivery-under-the-csp.md)
 
 ## 6.1 Overview
 
-```
+```text
  .b2c JSON / IPC payload / clipboard
         │
   ① Load & validate            b2c-model     limits, schema, UTF-8/text rules, migrations          → Document
@@ -20,11 +20,35 @@ The types passed between stages (the SAST, symbols, typed text leaves,
 diagnostics and source maps) live in `b2c-ir`, so each stage depends only on
 the contract it consumes, not on the crate that produced it.
 
+Block upgrades ([05 §5.7](05-project-format.md#57-versioning-and-migration))
+are the first step of stage ②, and the app also runs them when it loads a
+document for the editor.
+
 Every stage is a **pure, deterministic function**: no I/O, no clock, no
 randomness, and no global mutable state. The same code runs natively in the
 backend and CLI, and as WebAssembly in the editor. A stage that finds errors
-still produces output where it can, so the editor can always show as much C++
-as possible. Building, however, requires stages ①–⑤ to report zero errors.
+still produces output where it can. The editor's preview, `b2c check` and
+the build all run stages ①–⑤ on any document that loads, so they report the
+same diagnostics; only a load failure stops early. Each problem is reported
+once: the analyser does not repeat as `E0430` a problem the catalog reported
+at the same field or input (or, for a function input, on the whole block),
+nor report the fields and inputs of a block the catalog kept as it was
+without a check (`E0601`–`E0603`, `E0620`). Generating and compiling files
+requires zero errors.
+
+**The live preview is best-effort.** Once stage ① succeeds, the editor's
+preview (`b2c-core-wasm`) continues through catalog and analyser errors and
+always returns C++, with `/* error */` placeholders where a part could not be
+generated, and `buildable: false`. Only a load failure gives no files. The
+analyser must never panic on a document whose resolution failed; a test runs
+it on every file of the security suite that loads, and on the examples with a
+dangling reference added. The preview
+composes the stages exactly as the build does (`b2c_build::run_frontend`):
+the same generator options, with the workspace's app version, the banner, the
+inline helpers and the indent width from the settings. Two tests keep them
+equal: the preview's files must match the golden files of `tests/golden/`,
+and `b2c-app` compares the preview's files with the build's `gen/` files for
+every example at indent widths 2 and 4.
 
 **Core invariants:**
 
@@ -51,7 +75,10 @@ as possible. Building, however, requires stages ①–⑤ to report zero errors.
   allocation-heavy work (the size check happens before parsing).
 * Strongly typed structs with `deny_unknown_fields`. Field values are decoded
   into enums and newtypes, never left as untyped JSON. The decoder reports
-  every problem it finds, not just the first.
+  every problem it finds, not just the first. An unknown key is `B2C-E0110`,
+  or `B2C-E0108` (*made with a newer version*) when the file's
+  `generator.app` is newer than this app
+  ([05 §5.7](05-project-format.md#57-versioning-and-migration)).
 * Format migrations (the `formatVersion` chain) run on the parsed JSON tree
   before decoding, because an older file may not fit the current types. The
   upgraded tree then goes through the full decoder and validation.
@@ -59,13 +86,25 @@ as possible. Building, however, requires stages ①–⑤ to report zero errors.
 
 ## 6.3 Stage ② Resolve catalog
 
+* Block upgrades ([05 §5.7](05-project-format.md#57-versioning-and-migration))
+  are the first step of stage ②, and the app also runs them when it loads a
+  document for the editor: blocks of an older version and of a retired type
+  are upgraded, and a block that cannot be upgraded stays as it was and is
+  `B2C-E0603`.
 * Each block's `type@v` is looked up in the catalog (core + std pack + project
-  packs). Older versions are migrated. Unknown types produce a placeholder
+  packs). Unknown types produce a placeholder
   "missing block" (shown greyed out with a *Missing pack: X* badge, and
   preserved on save) plus diagnostic `B2C-E0601`.
 * Fields are validated against their kinds: dropdown values must be one of the
-  options, numbers must be in range, checkboxes must be booleans, identifiers
-  go through `Ident::new`, and text through the text rules.
+  options, type fields one of the block's types, checkboxes must be
+  booleans, number fields hold non-empty text, and declarations have the
+  `{sym, name}` shape. Whether a number is a valid literal in range (`E0310`,
+  `E0517`) and a name a valid identifier (`E0220`) is checked when lowering.
+  An absent name or reference field is how the editor saves a block in which
+  nothing is chosen yet, so it is not a catalog problem: lowering reports it
+  (`E0430`, *Choose a variable in this block.*), and a parked or disabled
+  block without one never stops a build
+  ([ADR-0012](../adr/0012-parked-blocks.md)).
 * `extra` (mutator state) is validated against the block's declared schema,
   and the ⊕ counts must match the inputs present.
 
@@ -104,11 +143,19 @@ enum Expr {
   ([03 §3.4](03-block-language.md#34-expression-slots)) is parsed by a
   hand-written recursive-descent / precedence-climbing parser with an explicit
   depth limit of 64. It produces the same `Expr` nodes that blocks produce, so
-  later stages cannot tell a typed expression from a block-built one.
+  later stages cannot tell a typed expression from a block-built one. A `num`
+  token, like a number block, may start with one `-` or `+`, which lowering
+  applies as a unary operator: a `NumLit` never carries a sign, and
+  `-2147483648` becomes `-2147483647 - 1`.
 * **Library-pack blocks** lower to `Template` nodes that hold the parsed
   template and their argument `Expr`s ([03 §3.11.2](03-block-language.md#3112-template-lowering-library-blocks)).
 * **Disabled blocks** are dropped here, though their symbols are still
   declared for diagnostics.
+* **Parked blocks** (top-level statements, reporters and predicates with
+  their stacks, [05 §5.4](05-project-format.md#54-block-nodes)) are not
+  lowered. The analyser reports `W0505` on each enabled parked head (warning
+  by default; a project can raise it to an error from M5) and records the
+  parked scope (§6.5).
 
 ## 6.5 Stage ④ Names and scopes
 
@@ -125,6 +172,78 @@ enum Expr {
 * Exposes a **scope query API** to the editor:
   `symbols_in_scope(block_id, input) -> Vec<SymbolInfo>`. It feeds variable
   dropdowns, Quick Insert and the member block.
+
+**Scope query.** `b2c_lang::Analysis` answers from an index recorded while
+lowering, from the same scope stack the analyser resolves names with, so a
+dropdown on an attached block never offers a symbol that is out of scope
+there. A parked block's dropdowns offer the parked scope, the field's filter
+leaves out symbols the block can never accept, and other type mismatches are
+left to the analyser
+([03 §3.6](03-block-language.md#36-symbols-and-scoping)):
+
+* `symbols_in_scope(block, None)`, or with the name of a value input or
+  field, gives what is visible **at the block**: declarations before it in the
+  same and the enclosing statement lists, a loop's counter inside its body,
+  the parameters inside their function, and every function (definition order
+  never matters).
+* `symbols_in_scope(block, Some(statement input))` gives what is visible at
+  the **start of that statement list**, including the loop counter and
+  parameters that the block itself declares.
+* Declarations in disabled blocks are left out. A disabled statement in a
+  statement list that the analyser reaches (or a disabled value block in an
+  input it reaches) answers for its position, like an enabled block there
+  (for its own dropdowns and for a paste directly after it); since a
+  disabled declaration declares nothing, the same symbols are visible at it
+  and after it. A block nested in a disabled statement answers like that
+  statement.
+* A parked block (loose, in a parked stack, or nested in one) answers with
+  the **parked scope**: what is visible at the end of its module's `main`
+  body, or the module's functions alone when there is no `main`;
+  declarations inside parked blocks declare nothing. That `main` is the one
+  the analyser lowers first: the enabled one with the smallest block ID (a
+  disabled one is skipped, and a second enabled one is `E0406`). The
+  editor's own fallback picks the same one. A `when program
+  starts` or function definition that the analyser skips (a disabled one),
+  and every block in it, answers with the module's functions.
+* An unknown block, or one nested too deeply, gives an empty list. The
+  result is sorted by name, then by ID. Every walk that records these
+  answers is iterative and stops at the analyser's depth limit, and the
+  index keeps one position per block, so it grows linearly with the
+  document.
+* `scope_at(block, input)` is the same query, but gives no answer (`None`;
+  `null` from the WASM core) instead of an empty list for a block the
+  analysis has no position for: one added since (for the editor) or nested
+  too deeply. The editor resolves such a block from its place: the
+  statement before it, the list or input around it, or, on the canvas, the
+  parked scope ([03 §3.6](03-block-language.md#36-symbols-and-scoping)).
+  `scope_after(block)` is what a block inserted directly after `block` sees
+  (the variable `block` creates, if the analyser accepted it, is added and
+  hides any other symbol with its name), and `parked_scope(module)` is what
+  a block placed on the module's canvas sees. Paste re-binding uses them
+  ([05 §5.12](05-project-format.md#512-clipboard-format)).
+* `symbol_infos()` lists every symbol, and `block_types()` gives the static
+  type of each value block, which the editor's connection checker uses
+  together with `conversion(from, to)`, the analyser's own conversion rule
+  (`same`, `widening`, `narrowing`, `boolNumber` or `invalid`). That rule
+  covers initialising a variable, passing an argument and returning a value.
+  `set` (assignment) also accepts a `char` for a `std::string` variable, as
+  C++ does, although `conversion` calls that `invalid`; `change by` has rules
+  of its own; and an input with a catalog check class (such as `ask`'s `text`
+  prompt) follows that class.
+
+`SymbolInfo` lives in `b2c-ir`, and its JSON is the same everywhere (WASM, IPC
+and tests):
+
+```json
+{ "id": "s_guess", "name": "guess", "kind": "variable", "isConst": false,
+  "type": "int", "module": "mod_main", "declBlock": "b003" }
+```
+
+`kind` is `variable` (with `isConst`), `parameter` (with `mode`: `copy`,
+`editable` or `read_only`), `loopVariable`, or `function` (with `params`, the
+parameter symbol IDs, and `returns`, a type). Types are `void`, `bool`,
+`char`, `int`, `double`, `string` or `error`. The WASM core answers scope
+queries from the analysis cached by its last preview.
 
 ## 6.6 Stage ⑤ Types, flow checks and lints
 
@@ -149,13 +268,15 @@ enum Expr {
   outside a loop (`E0401`), unreachable statements after
   `return`/`break`/`throw` (`W0502`), use before initialisation for scalars
   (`W0503`), use after `move` (`W0504`), `rethrow` outside a catch (`E0402`).
-* **Lints:** integer division into a floating-point context (`W0510`), `==`
-  on floating-point values (`W0511`), signed/unsigned comparison (`W0512`),
-  `forever` without an exit (`I0513`), raw `new` without a matching owner
-  (`W0515`), capturing locals by reference in a detached context (`W0516`),
-  and the name-spelling notes of
+* **Lints:** a parked block (`W0505`, §6.4), integer division into a
+  floating-point context (`W0510`), `==` on floating-point values (`W0511`),
+  signed/unsigned comparison (`W0512`), `forever` without an exit (`I0513`),
+  raw `new` without a matching owner (`W0515`), capturing locals by
+  reference in a detached context (`W0516`), and the name-spelling notes of
   [§6.14](#614-standard-names-and-using-namespace) (`I0523`, `I0524`,
-  `W0525`). Literal overflow (`E0517`) is an error.
+  `W0525`). Literal overflow (`E0517`) is an error. The diagnostics
+  reference in `docs/reference/diagnostics/` is the normative list of the
+  codes that are reported (§6.12).
 * **Lint levels.** Every analyser warning and info code (`W05xx` and
   `I05xx`, including the flow checks above) can be set to `off`, `info`,
   `warning` or `error`:
@@ -241,7 +362,7 @@ changes the generated code.
 `⚙`) goes into `module.hpp`:
 
 | Construct | `module.hpp` | `module.cpp` |
-|-----------|--------------|--------------|
+| ----------- | -------------- | -------------- |
 | Shared struct/class/enum/alias | full definition | out-of-line non-template method bodies |
 | Shared function | declaration | definition |
 | Shared template function / class | full definition | — |
@@ -250,6 +371,10 @@ changes the generated code.
 
 Headers use `#pragma once`. Single-module projects emit only `main.cpp`
 without an anonymous namespace, to keep student code simple.
+
+**In M2** every module is compiled on its own: functions cannot be called
+across modules (`E0206`), their names are unique in the program (`E0211`),
+and helpers are inline in each file.
 
 ## 6.8 Stage ⑥–⑦ Desugaring and emission
 
@@ -260,8 +385,8 @@ types, and the typed text leaves below. Desugaring makes every language-level
 construct concrete. For example:
 
 * `Repeat(n, body)` → `for (int <fresh> = 0; <fresh> < n; ++<fresh>)`, where
-  `<fresh>` is a readable unique name (`i`, `i2`, … unless taken, or
-  `repeat_i`).
+  `<fresh>` is the first of `i`, `j`, `k`, `i2`, `i3`, … that nothing
+  visible, nothing in the count and nothing in the body uses.
 * `Print` → a chain of `<<` with per-type adjustments (bool, 8-bit integers,
   enums with auto-generated `operator<<`).
 * `ForEachLine` → `std::ifstream` declaration + `if (!stream)` branch + `while
@@ -293,15 +418,18 @@ pub struct Comment(Box<str>);
 pub struct RawCode { text: Box<str>, origin: Origin, provenance: RawProvenance }
 ```
 
-The emitter's write functions accept only these types, so there is no
-function in `b2c-codegen` that writes an arbitrary `&str` into the output.
-This is enforced by code review and by a Clippy `disallowed_methods`
-configuration that bans `Printer::write_str` outside the token module.
+The emitter's write functions accept only these types or `&'static str`
+text chosen by the generator, so no runtime string reaches the output except
+through a typed leaf. The one function that appends raw text is private to
+the printer module, so the compiler enforces this; code review covers the
+printer module itself.
 
 ### 6.8.3 Pretty-printer
 
 * A Wadler-style document algebra (groups, nesting, soft line breaks) with a
-  configurable line width (default 100).
+  configurable line width (default 100). In M2 only stream statements are
+  broken (each continuation starts with `<<`); the document algebra comes
+  with the code style options (M5).
 * Style options: indent width (2/4/tab, default 4), brace style (attached
   default, or Allman), pointer alignment (`int* p` default), spaces in
   template brackets (never).
@@ -354,6 +482,7 @@ statement (with its comment lines and nested bodies) and expression has one.
 * **Raw code:** ranges inside Raw C++ blocks map to the raw block plus a line
   offset, so the Raw editor can underline the exact line.
 * The editor uses the same map for hover highlighting and click-to-block.
+  (M3) The editor receives the source map in a compact form.
 
 ## 6.10 Includes and support helpers
 
@@ -379,7 +508,7 @@ statement (with its comment lines and nested bodies) and expression has one.
 
 *Export as C++ project* (UI and `b2c generate --export`) writes:
 
-```
+```text
 <chosen folder>/<project-slug>/
 ├── src/                 # generated .cpp / .hpp (no "do not edit" banner)
 ├── CMakeLists.txt       # cmake ≥ 3.20, CXX_STANDARD from project, warnings, link libs by name
@@ -389,6 +518,8 @@ statement (with its comment lines and nested bodies) and expression has one.
 
 * The exported code is identical to what the IDE builds, minus the IDE-only
   init unit ([07 §7.6](07-toolchain-build-run.md#76-running-programs)).
+* In M1/M2 `b2c generate --export` only drops the banner; the folder layout
+  comes in M3.
 * Library profile paths are machine-specific and are **not** exported by
   default. An opt-in checkbox adds them to `CMakeLists.txt` as cache
   variables, with a warning.
@@ -402,21 +533,22 @@ statement (with its comment lines and nested bodies) and expression has one.
 pub struct Diagnostic {
     pub code: DiagCode,             // e.g. B2C-E0201, or GCC-mapped "C:<option or hash>"
     pub severity: Severity,         // Error | Warning | Info, after lint levels (§6.6)
-    pub message: MessageKey,        // i18n key + typed args; rendered in the UI
+    pub message: MessageKey,        // (M5) i18n key + typed args; plain English text until then
     pub primary: Location,          // block + part (+ token range)
     pub related: Vec<(Location, MessageKey)>,
-    pub fixes: Vec<QuickFix>,       // structured BDM edits, applied via the editor's undo stack
+    pub fixes: Vec<QuickFix>,       // (M3) structured BDM edits, applied via the editor's undo stack
     pub source: DiagSource,         // Analyser | Compiler | Linker | Runtime
     pub raw: Option<String>,        // original compiler text when source != Analyser
 }
 ```
 
 | Code range | Area |
-|------------|------|
+| ------------ | ------ |
 | `E01xx` | Loading / format / migration |
-| `E02xx`, `W05xx` | Names, scopes, lints |
+| `E02xx` | Names and scopes |
 | `E03xx` | Types and conversions |
 | `E04xx` | Structure and flow |
+| `E05xx`, `W05xx`, `I05xx` | Flow checks and lints |
 | `E06xx` | Catalog and packs |
 | `E07xx` | Feature gating / codegen limits |
 | `T1xxx` | Toolchain problems (not found, too old, broken install) |
@@ -438,7 +570,39 @@ severity: `W0510` set to `error` is still `W0510`.
 * The WASM module (~1–2 MB, optimised with `wasm-opt -Oz`) is loaded once.
   Data crosses the JS ↔ WASM boundary as compact JSON. If profiling shows
   boundary costs dominate, it can switch to a binary format (`postcard`).
+* **Delivery under the CSP** ([ADR-0010](../adr/0010-wasm-delivery-under-the-csp.md)):
+  `connect-src` forbids fetching the `.wasm` file, so the build embeds the
+  optimised bytes as base64 in a separate JavaScript chunk that the app
+  imports lazily from `'self'`. The bytes are instantiated asynchronously
+  (`WebAssembly.instantiate` through wasm-bindgen's init), which
+  `'wasm-unsafe-eval'` allows; they are never fetched and never put in a
+  `data:` URL. After a WebAssembly trap the module is instantiated afresh.
+* **Size budget:** at most 2,000,000 bytes after `wasm-opt -Oz`, checked in
+  CI; the gzip size is reported only.
+* **Freshness:** the core is built from source, not committed, so its build
+  records a SHA-256 of its inputs in `pkg/build-info.json` (the crates
+  compiled into it and their `Cargo.lock` entries, the workspace manifest,
+  the catalog, the toolchain file and the build scripts). A production build
+  of the editor fails when the core is missing, has no build info, or its
+  inputs changed since, naming what changed; the dev server warns, and a
+  development build compares the core's catalog version with the backend's
+  at start-up ([02 §2.5.7](02-architecture.md#257-versioning)).
 * Modules over 2,000 blocks run analysis in a Web Worker.
+* **In M2** each debounced change runs one `update()` in WebAssembly: the
+  document is loaded and hashed once, and the preview and hash are
+  returned; the canonical text is produced on demand (save, build, autosave,
+  recovery), and the dirty flag compares hashes. The hash the dirty flag
+  compares is the SHA-256 of the canonical text, not the content hash of
+  [05 §5.11](05-project-format.md#511-content-hash), so moving a block, which
+  changes only the layout, is still an unsaved change. A document that does
+  not load keeps the analysis of the last one that did, which the editor
+  still shows. N4 covers the compiler core; what the user waits for also
+  includes Blockly's rendering, which N12 bounds and the edit benchmark
+  measures.
+* **In M2** the analysis runs on the main thread, for the whole module on
+  each debounced change, behind an asynchronous API. The per-block cache and
+  the Web Worker come in M5, or earlier if the 1,000-block benchmark in the
+  webview misses the N4 target.
 
 ## 6.14 Standard names and `using namespace`
 
@@ -915,10 +1079,18 @@ are kept. `E0216` is reported only while typed text is being resolved: stored
 tokens, and tokens of a slot that the user did not edit, keep their symbol IDs
 and are never re-resolved. Re-resolution by name (paste, snippets, Quick
 Insert) uses the target's qualified name recorded in the payload (`::count`,
-`geo::area`, `std::max`), never its shortened spelling. It binds only to an
-entity with that qualified name, of the same kind, that is visible at the new
-position (for a module's non-shared name, the target module's own entity);
-otherwise the reference is `E0201`, naming the original.
+`geo::area`, `std::max`), never its shortened spelling. It binds to an entity
+with that qualified name, of the same kind, that is visible at the new
+position (for a module's non-shared name, the target module's own entity),
+and to the original entity when it is one of them. When no visible entity
+has that name, a reference whose original entity (the same symbol ID) is
+visible there with the same kind keeps it, even when it was renamed since
+the reference was recorded: the analyser accepts that reference, so copy,
+rename and paste within one project needs no fix. Symbol IDs are stable but
+not unique across projects (projects made from the same example or template
+share them), so a paste between such projects binds that way too, silently,
+to whatever the entity with that ID is called in the target. Otherwise (no
+match, or several) the reference is `E0201`, naming the original.
 
 ### 6.14.12 Turning Textbook style on and off; export
 
@@ -934,7 +1106,7 @@ otherwise the reference is `E0201`, naming the original.
   block* in each affected function; turning it off without fixing them is
   allowed but shown as breaking the build. Changing the project's C++ standard
   is previewed the same way.
-* These previews ignore lint levels ([§6.6](#66-stage--types-flow-checks-and-lints)):
+* These previews ignore lint levels ([§6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints)):
   they list every `E0218` and `W0525` match, even when `W0525` is set to
   `off`.
 * Export writes exactly what the build compiles. When any exported `.cpp`

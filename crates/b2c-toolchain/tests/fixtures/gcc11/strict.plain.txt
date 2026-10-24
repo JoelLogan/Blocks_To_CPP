@@ -1,0 +1,4 @@
+src/strict.cpp: In function 'int divide(int, int)':
+src/strict.cpp:6:13: warning: declaration of 'int total' shadows a parameter [-Wshadow]
+src/strict.cpp:3:16: note: shadowed declaration is here
+src/strict.cpp:10:18: warning: conversion from 'double' to 'int' may change value [-Wfloat-conversion]

@@ -1,0 +1,3 @@
+src/template.cpp: In instantiation of 'T total(const std::vector<T>&) [with T = int]':
+src/template.cpp:14:17:   required from here
+src/template.cpp:7:22: error: request for member 'size' in 'value', which is of non-class type 'const int'

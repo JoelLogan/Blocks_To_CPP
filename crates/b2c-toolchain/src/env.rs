@@ -337,6 +337,95 @@ mod tests {
         }
     }
 
+    /// Set in the child process started by [`host_env_is_read_from_the_process`].
+    const HOST_ENV_PROBE: &str = "B2C_TEST_HOST_ENV_PROBE";
+
+    /// What the child prints once its checks passed (a filter that matched
+    /// no test would also exit successfully).
+    const HOST_ENV_PROBE_PASSED: &str = "host env probe passed";
+
+    /// [`HostEnv::from_process`] reads this process's environment, which a
+    /// test cannot change safely while other tests run. So the test binary
+    /// is started again with exactly the variables below and checks what it
+    /// reads in [`host_env_probe`].
+    #[cfg(unix)]
+    #[test]
+    fn host_env_is_read_from_the_process() {
+        let exe = std::env::current_exe().unwrap();
+        let mut command = b2c_process::Command::new(exe, std::env::temp_dir()).unwrap();
+        command
+            .args(["--exact", "env::tests::host_env_probe", "--nocapture"])
+            .env(HOST_ENV_PROBE, "1")
+            .env("HOME", "/home/ada")
+            .env("SystemRoot", r"C:\Windows")
+            .env("windir", r"C:\WINDOWS")
+            .env("SystemDrive", "D:")
+            .env("CCACHE_DIR", "/var/cache/ccache")
+            .env("MY_FLAGS", "")
+            .env("NOT_LISTED", "x")
+            .timeout(std::time::Duration::from_mins(1));
+        // A coverage run collects the child's counters through this.
+        if let Some(value) = std::env::var_os("LLVM_PROFILE_FILE") {
+            command.env("LLVM_PROFILE_FILE", value);
+        }
+        let captured = b2c_process::run_captured(&command).unwrap();
+        let stdout = String::from_utf8_lossy(&captured.stdout);
+        assert!(
+            captured.status.success() && stdout.contains(HOST_ENV_PROBE_PASSED),
+            "{stdout}{}",
+            String::from_utf8_lossy(&captured.stderr)
+        );
+    }
+
+    /// Not a check of its own: in the child process started by
+    /// [`host_env_is_read_from_the_process`] it checks what
+    /// [`HostEnv::from_process`] reads. In an ordinary test run it does
+    /// nothing.
+    #[test]
+    fn host_env_probe() {
+        if std::env::var_os(HOST_ENV_PROBE).is_none() {
+            return;
+        }
+        let names: Vec<OsString> = ["MY_FLAGS", "UNSET_VARIABLE", "CCACHE_DIR"]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+        let host = HostEnv::from_process(&names);
+        assert_eq!(
+            host,
+            HostEnv {
+                home: Some("/home/ada".into()),
+                system_root: Some(r"C:\Windows".into()),
+                windir: Some(r"C:\WINDOWS".into()),
+                system_drive: Some("D:".into()),
+                // In list order; names that are not set are skipped, empty
+                // values are kept, and unlisted variables are never read.
+                passthrough: vec![
+                    ("MY_FLAGS".into(), OsString::new()),
+                    ("CCACHE_DIR".into(), "/var/cache/ccache".into()),
+                ],
+            }
+        );
+        println!("{HOST_ENV_PROBE_PASSED}");
+    }
+
+    #[test]
+    fn passthrough_names_are_at_most_128_characters() {
+        let longest = format!("V{}", "_".repeat(127));
+        assert!(check_passthrough_name(OsStr::new(&longest)).is_ok());
+        let too_long = format!("{longest}X");
+        let reason = check_passthrough_name(OsStr::new(&too_long)).unwrap_err();
+        assert!(reason.contains("is not a valid variable name"), "{reason}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn passthrough_names_must_be_text() {
+        use std::os::unix::ffi::OsStrExt as _;
+        let reason = check_passthrough_name(OsStr::from_bytes(b"MY_\xffVAR")).unwrap_err();
+        assert_eq!(reason, "the name is not valid text");
+    }
+
     #[test]
     fn passthrough_adds_allowed_and_reports_refused() {
         let host = HostEnv {

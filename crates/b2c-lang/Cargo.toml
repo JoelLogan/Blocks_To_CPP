@@ -16,6 +16,9 @@ serde_json.workspace = true
 [dev-dependencies]
 # End-to-end test: analysed examples must generate C++ that g++ accepts.
 b2c-codegen.workspace = true
+# Scope and robustness tests: documents completed (or rejected) by the real
+# resolve stage, as the build and the editor's preview analyse them.
+b2c-catalog.workspace = true
 proptest.workspace = true
 insta.workspace = true
 # Examples test: fills absent inputs from the catalog defaults, as resolve does.

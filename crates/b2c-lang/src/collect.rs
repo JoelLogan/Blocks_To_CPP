@@ -147,6 +147,13 @@ impl Collector {
             "func.define" => self.function(block, status),
             _ => self.anywhere(block, Self::off_program(status), 0),
         }
+        // A loose stack (05 §5.4) is outside the program, like its head. The
+        // head's own disabled flag does not carry over: a disabled statement
+        // never disables the statements after it, only what is nested in it.
+        // `anywhere` still marks a stacked block that is itself disabled.
+        for stacked in &block.stack {
+            self.anywhere(stacked, DeclStatus::Detached, 0);
+        }
     }
 
     fn function(&mut self, block: &Block, status: DeclStatus) {
@@ -357,6 +364,41 @@ mod tests {
         assert_eq!(get(&decls, "h").path.len(), 2);
         assert_eq!(get(&decls, "g2").status, DeclStatus::Disabled);
         assert_eq!(get(&decls, "k").status, DeclStatus::Disabled);
+    }
+
+    #[test]
+    fn declarations_in_a_loose_stack_are_detached() {
+        let mut head = declare("head", "h", false);
+        head["x"] = json!(0);
+        head["y"] = json!(0);
+        head["stack"] = json!([
+            declare("s1", "s", false),
+            {"id": "w", "type": "control.while", "v": 1,
+             "statements": {"BODY": [declare("s2", "t", false)]}},
+            declare("s3", "u", true)
+        ]);
+        let decls = collect(&doc(&json!([head])));
+        assert_eq!(get(&decls, "h").status, DeclStatus::Detached);
+        assert_eq!(get(&decls, "s").status, DeclStatus::Detached);
+        assert_eq!(get(&decls, "t").status, DeclStatus::Detached);
+        assert_eq!(get(&decls, "u").status, DeclStatus::Disabled);
+
+        // A disabled head does not disable the enabled blocks stacked below it,
+        // so a reference to them gets the "detached" advice, not "enable it".
+        let mut off = declare("off", "o", true);
+        off["x"] = json!(0);
+        off["y"] = json!(0);
+        off["stack"] = json!([
+            declare("dx", "x", false),
+            {"id": "w2", "type": "control.while", "v": 1,
+             "statements": {"BODY": [declare("dy", "y", false)]}},
+            declare("dz", "z", true)
+        ]);
+        let decls = collect(&doc(&json!([off])));
+        assert_eq!(get(&decls, "o").status, DeclStatus::Disabled);
+        assert_eq!(get(&decls, "x").status, DeclStatus::Detached);
+        assert_eq!(get(&decls, "y").status, DeclStatus::Detached);
+        assert_eq!(get(&decls, "z").status, DeclStatus::Disabled);
     }
 
     #[test]

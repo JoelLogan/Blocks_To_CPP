@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-toolchain-rescan"
+description = "Enables the toolchain_rescan command without any pre-configured scope."
+commands.allow = ["toolchain_rescan"]
+
+[[permission]]
+identifier = "deny-toolchain-rescan"
+description = "Denies the toolchain_rescan command without any pre-configured scope."
+commands.deny = ["toolchain_rescan"]

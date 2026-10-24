@@ -1,0 +1,48 @@
+[package]
+name = "b2c-app"
+description = "Blocks2Cpp backend services: one method per IPC command, with no Tauri dependency"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# Every dependency needs a justification (docs/spec/08-security.md §8.9). The only
+# third-party crate this crate adds to the workspace is `notify`; the rest were already
+# workspace dependencies.
+[dependencies]
+b2c-ir.workspace = true
+b2c-model.workspace = true
+# Build and run sessions, the toolchain registry, the build cache and the OS helpers.
+b2c-build.workspace = true
+# The host platform of a run's environment and the probe types of the toolchain registry.
+b2c-toolchain.workspace = true
+# Settings, recent projects, the trust store, Mark-of-the-Web and project file I/O.
+b2c-store.workspace = true
+# The IPC contract: requests, responses, events, IDs, errors and limits.
+b2c-ipc.workspace = true
+# The file watcher of open projects (docs/spec/05-project-format.md §5.10 "External
+# changes"): the operating system's change notifications (inotify on Linux,
+# ReadDirectoryChangesW on Windows) for the project file's folder. Writing a correct
+# watcher on each OS ourselves would need `unsafe` outside b2c-process. notify 8.2.0
+# (2025-08-03) is the current stable release of the widely used notify-rs project
+# (CC0-1.0); without default features it adds inotify, inotify-sys, mio, walkdir,
+# notify-types, bitflags and log on Linux, and walkdir and windows-sys on Windows. Its
+# events only wake the watcher: what counts is our own debounce and SHA-256 check.
+notify.workspace = true
+# Reading the `formatVersion` of an opened file (migrated projects).
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# One debug span per command, without content (docs/spec/08-security.md §8.11).
+tracing.workspace = true
+
+[dev-dependencies]
+# The generation-parity test: the editor preview's files equal the build's (01 P3).
+b2c-core-wasm.workspace = true
+proptest.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

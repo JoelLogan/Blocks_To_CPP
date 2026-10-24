@@ -9,12 +9,12 @@ generated page.
 
 ## Build locally
 
-Requirements: Node.js 22.13 or later, and pnpm. The exact pnpm version is
-pinned in the root `package.json`. Either install pnpm 11 directly, or run
-`corepack enable` once to have [Corepack](https://nodejs.org/api/corepack.html)
-fetch the pinned version. Corepack needs Node.js 22.14 or later (older versions
-cannot verify current pnpm signatures), and Node.js 25 and later no longer
-bundle it (`npm install --global corepack`).
+Requirements: Node.js and pnpm, of the versions
+[`BUILDING.md`](../BUILDING.md#what-you-need) names. Either install that pnpm
+directly, or run `corepack enable` once to have
+[Corepack](https://nodejs.org/docs/latest-v22.x/api/corepack.html) fetch it
+(Node.js 25 and later no longer bundle Corepack:
+`npm install --global corepack`).
 
 ```sh
 pnpm install --frozen-lockfile
@@ -48,6 +48,27 @@ on github.com and on the site.
 Links between documents become in-page anchors (for example
 `03-block-language.md#34-expression-slots` → `#ch03-34-expression-slots`).
 Links to other repository files point to GitHub.
+
+## Checking every Markdown file
+
+```sh
+node site/build.mjs --check-repo-markdown    # from the repository root
+pnpm --filter @blocks2cpp/site test          # its tests (node --test)
+```
+
+This builds nothing. It applies the link rules above to every Markdown file
+of the repository, not only the page's documents: each relative link or image
+must point to a file or folder in the repository, and each anchor into a
+Markdown file (including the file's own) to a heading GitHub gives that
+anchor. It reads the files git tracks plus new files git does not ignore, and
+skips installed dependencies, `.claude/`, fuzz corpora and the released
+entries of `CHANGELOG.md` (history is not rewritten when a heading moves). It
+also checks the Markdown references, such as
+`BUILDING.md#the-webassembly-core-does-not-build`, in the messages of
+`apps/desktop/vite.config.ts` and `packages/b2c-core-wasm/scripts/build.mjs`
+(`SOURCE_FILES_WITH_DOC_REFERENCES` in `build.mjs`). External links are left
+to lychee. CI runs it in the `docs` job of
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
 
 ## Publishing
 
@@ -83,7 +104,8 @@ The page follows the same rules as the app ([spec §8.8](../docs/spec/08-securit
 
 | Path | Purpose |
 |------|---------|
-| `build.mjs` | Generator: discovers documents, renders Markdown, rewrites and validates links, builds the table of contents |
+| `build.mjs` | Generator: discovers documents, renders Markdown, rewrites and validates links, builds the table of contents; with `--check-repo-markdown`, the all-Markdown link check |
+| `build.test.mjs` | Tests of the all-Markdown link check, on scratch git repositories |
 | `src/index.html` | Page template (header, hero, layout, footer) |
 | `src/site.css` | Styles and colour tokens for light and dark themes |
 | `src/site.js` | Optional enhancements: theme button, current-section highlight, copy buttons |

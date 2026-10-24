@@ -1,0 +1,34 @@
+// markdownlint-cli2 configuration (docs/spec/09-quality-and-delivery.md §9.3,
+// ci.yml `lint` job). Run from the repository root:
+//
+//   pnpm exec markdownlint-cli2
+//
+// Every default rule is on, except the ones adjusted below.
+{
+  "config": {
+    "default": true,
+    // Prose is wrapped by hand, and tables, links and code blocks cannot be.
+    "MD013": false,
+    // No inline HTML: the website renders Markdown, and raw HTML would bypass
+    // its sanitising (allow an element here only with a reason).
+    "MD033": true,
+    // The same heading text is fine under different parents (for example
+    // "Tests" in each section), but not twice under one parent.
+    "MD024": { "siblings_only": true },
+    // Pipe padding in tables is cosmetic (the rendered table is the same),
+    // and the docs mix compact and hand-aligned tables; enforcing one style
+    // would rewrite most tables of the specification for no reader benefit.
+    "MD060": false
+  },
+  // Lint every Markdown file of the repository by default.
+  "globs": ["**/*.md"],
+  "ignores": [
+    "**/node_modules/**",
+    "**/target/**",
+    "site/dist/**",
+    "fuzz/corpus/**",
+    "fuzz/artifacts/**",
+    // Local tool state, such as agent worktrees (also in .gitignore).
+    ".claude/**"
+  ]
+}

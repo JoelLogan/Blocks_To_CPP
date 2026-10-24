@@ -157,6 +157,14 @@ impl From<Status> for ExitCode {
 }
 
 fn main() -> ExitCode {
+    // First, before anything can load a DLL by name: on Windows, DLLs then
+    // come only from System32 and the folder of `b2c.exe`, never from the
+    // current directory (a project folder, say) or `PATH`
+    // (`docs/spec/08-security.md` §8.7). Elsewhere it does nothing.
+    let dll_search = b2c_build::os::harden_dll_search();
+    if let Err(error) = &dll_search {
+        warn_dll_search_not_hardened(&mut std::io::stderr().lock(), error);
+    }
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(error) => {
@@ -211,4 +219,60 @@ fn main() -> ExitCode {
         std::process::exit(code);
     }
     status.into()
+}
+
+/// The warning for a failed [`b2c_build::os::harden_dll_search`]: the tool
+/// carries on with the default search order (`docs/spec/08-security.md`
+/// §8.7) and says so on standard error, where it cannot be mistaken for
+/// `--format json` output.
+fn warn_dll_search_not_hardened(stderr: &mut impl std::io::Write, error: &std::io::Error) {
+    // If standard error is gone, there is nobody left to warn.
+    let _ = writeln!(
+        stderr,
+        "b2c: warning: could not restrict where DLLs are loaded from ({error}); \
+         continuing with the default search order"
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_dll_hardening_is_a_warning_on_stderr() {
+        let mut stderr = Vec::new();
+        let error = std::io::Error::from_raw_os_error(87);
+        warn_dll_search_not_hardened(&mut stderr, &error);
+        let text = String::from_utf8(stderr).unwrap();
+        assert_eq!(
+            text,
+            format!(
+                "b2c: warning: could not restrict where DLLs are loaded from ({error}); \
+                 continuing with the default search order\n"
+            )
+        );
+    }
+
+    /// 08 §8.7: nothing may run before the hardening that could load a DLL
+    /// by name, so it is the first statement of `main`.
+    #[test]
+    fn dll_hardening_is_the_first_thing_main_does() {
+        let source = include_str!("main.rs");
+        let (_, body) = source.split_once("fn main() -> ExitCode {").unwrap();
+        let first_statement = body
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty() && !line.starts_with("//"))
+            .unwrap();
+        assert_eq!(
+            first_statement,
+            "let dll_search = b2c_build::os::harden_dll_search();"
+        );
+    }
+
+    #[test]
+    fn dll_hardening_succeeds_here() {
+        // A no-op outside Windows; the real call on the Windows CI runners.
+        b2c_build::os::harden_dll_search().unwrap();
+    }
 }

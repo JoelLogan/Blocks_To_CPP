@@ -15,10 +15,12 @@
 //!   ending in whitespace, `\` or `??/`, and ends with exactly one newline;
 //!   source-map ranges are sorted and lie inside the file.
 //!
-//! Generation also runs for programs with analysis errors: `b2c_codegen`
-//! promises never to panic on any program, and its best-effort output must
-//! be just as safe. Only error-free programs are built (as in `run_frontend`),
-//! and only for those must there be no error placeholders.
+//! Analysis and generation also run for documents that failed to resolve
+//! and for programs with analysis errors, as the live preview does:
+//! `b2c_lang` and `b2c_codegen` promise never to panic on any input, and the
+//! best-effort output must be just as safe. Only error-free programs are
+//! built (as in `run_frontend`), and only for those must there be no error
+//! placeholders.
 
 #![no_main]
 
@@ -34,16 +36,16 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
     let (document, resolve_diagnostics) = b2c_catalog::resolve(&loaded, b2c_catalog::core_catalog());
-    // The analyser's input contract: a document the resolve stage accepted.
-    if b2c_ir::has_errors(&resolve_diagnostics) {
-        return;
-    }
+    // A build stops when resolving fails, but the live preview (spec 06 §6.1)
+    // analyses and generates the completed document anyway, so that path
+    // must be just as safe.
+    let resolved = !b2c_ir::has_errors(&resolve_diagnostics);
     let analysis = b2c_lang::analyze(&document);
     assert!(
         b2c_lang::analyze(&document) == analysis,
         "analysing the same document twice gave different results"
     );
-    let accepted = !b2c_ir::has_errors(&analysis.diagnostics);
+    let accepted = resolved && !b2c_ir::has_errors(&analysis.diagnostics);
 
     let inline = CodegenOptions {
         project_name: document.project.name.clone(),

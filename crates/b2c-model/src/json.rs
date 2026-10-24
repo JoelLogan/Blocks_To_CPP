@@ -662,6 +662,87 @@ mod tests {
         assert_eq!(err("\"abc\\").kind, ErrorKind::UnterminatedString);
     }
 
+    /// UTF-16 units written as JSON escapes (a backslash, `u` and four
+    /// hexadecimal digits each), in lower or upper case.
+    fn escaped(units: &[u16], upper: bool) -> String {
+        units
+            .iter()
+            .map(|unit| {
+                if upper {
+                    format!("\\u{unit:04X}")
+                } else {
+                    format!("\\u{unit:04x}")
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn unicode_escapes_decode_to_their_characters() {
+        // Every hexadecimal digit, in both cases, at every position.
+        let chars = [
+            '\u{0}', 'A', 'é', '€', '\u{1234}', '\u{5678}', '\u{9abc}', '\u{cdef}', '\u{7fff}', '\u{fffd}',
+        ];
+        for upper in [false, true] {
+            for c in chars {
+                let mut units = [0; 2];
+                let text = format!("\"x{}y\"", escaped(c.encode_utf16(&mut units), upper));
+                assert_eq!(ok(&text), Json::String(format!("x{c}y").into()), "{text}");
+            }
+        }
+    }
+
+    #[test]
+    fn surrogate_pairs_decode_to_one_character() {
+        for c in ['\u{1f600}', '\u{1d11e}', '\u{10000}', '\u{10ffff}', '\u{e0001}'] {
+            for upper in [false, true] {
+                let mut units = [0; 2];
+                let pair = escaped(c.encode_utf16(&mut units), upper);
+                assert_eq!(pair.len(), 12, "{pair}");
+                assert_eq!(
+                    ok(&format!("\"{pair}\"")),
+                    Json::String(c.to_string().into()),
+                    "{pair}"
+                );
+                // The pair works anywhere in a string, after other escapes too.
+                assert_eq!(
+                    ok(&format!("\"a\\n{pair}b\"")),
+                    Json::String(format!("a\n{c}b").into()),
+                    "{pair}"
+                );
+            }
+        }
+        // A high surrogate needs a low one right after it; the error points
+        // at the escape that starts the pair.
+        let high = escaped(&[0xd83d], false);
+        for after in [
+            escaped(&[0x0041], false),
+            escaped(&[0xd83d], false),
+            escaped(&[0xdbff], true),
+            escaped(&[0xe000], false),
+            String::from("\\n"),
+            String::from("A"),
+            String::new(),
+        ] {
+            let text = format!("\"ab{high}{after}\"");
+            let error = err(&text);
+            assert_eq!(error.kind, ErrorKind::LoneSurrogate, "{text}");
+            assert_eq!(error.offset, 3, "{text}");
+        }
+        // A low surrogate alone, at either end of its range.
+        for low in [0xdc00, 0xdfff] {
+            let text = format!("\"ab{}\"", escaped(&[low], true));
+            let error = err(&text);
+            assert_eq!(error.kind, ErrorKind::LoneSurrogate, "{text}");
+            assert_eq!(error.offset, 3, "{text}");
+        }
+        // A second escape that is cut off.
+        let cut = format!("\"{high}\\ude0\"");
+        assert_eq!(err(&cut).kind, ErrorKind::InvalidUnicodeEscape, "{cut}");
+        let cut = format!("\"{high}\\u\"");
+        assert_eq!(err(&cut).kind, ErrorKind::InvalidUnicodeEscape, "{cut}");
+    }
+
     #[test]
     fn structure_errors() {
         assert_eq!(err("").kind, ErrorKind::Expected("a value"));
@@ -697,12 +778,18 @@ mod tests {
 
     #[test]
     fn value_limit() {
+        // The documented limit, written out so that a changed constant fails
+        // here: 4 Mi values, the array itself included.
+        const LIMIT: usize = 4_194_304;
         let mut text = String::from("[");
-        text.push_str(&"0,".repeat(MAX_JSON_VALUES - 2));
+        text.push_str(&"0,".repeat(LIMIT - 2));
         text.push_str("0]");
         assert!(parse(&text).is_ok());
         text.insert_str(1, "0,");
-        assert_eq!(err(&text).kind, ErrorKind::TooManyValues);
+        let error = err(&text);
+        assert_eq!(error.kind, ErrorKind::TooManyValues);
+        // Reported where the first value beyond the limit starts.
+        assert_eq!(error.offset, text.len() - 2);
     }
 
     #[test]
@@ -722,6 +809,25 @@ mod tests {
         // Escaped spellings of the same key are the same key.
         let parsed = parse(r#"{"a":1,"a":2}"#).unwrap();
         assert_eq!(parsed.duplicates.len(), 1);
+    }
+
+    /// Hostile input is cut short (spec §5.6): an object with hundreds of
+    /// thousands of keys, which fits easily in a 32 MiB file, is checked for
+    /// duplicates in well under a second. Comparing every key with every
+    /// earlier one would take minutes here.
+    #[test]
+    fn duplicates_in_huge_objects_are_found_quickly() {
+        const KEYS: usize = 400_000;
+        let mut members: Vec<String> = (0..KEYS).map(|i| format!("\"{i:x}\":0")).collect();
+        members.push("\"ff\":1".into());
+        members.push("\"0\":1".into());
+        let parsed = parse(&format!("{{{}}}", members.join(","))).unwrap();
+        let keys: Vec<&str> = parsed.duplicates.iter().map(|d| &*d.key).collect();
+        assert_eq!(keys, ["ff", "0"]);
+        let Json::Object(entries) = parsed.value else {
+            panic!("not an object");
+        };
+        assert_eq!(entries.len(), KEYS + 2);
     }
 
     #[test]
@@ -801,6 +907,15 @@ mod tests {
             if let Ok(text) = std::str::from_utf8(&bytes) {
                 let _ = parse(text);
             }
+        }
+
+        /// Every character, escaped the way JSON allows (its UTF-16 units,
+        /// in either case), reads back as itself.
+        #[test]
+        fn every_escaped_character_reads_back(c in proptest::prelude::any::<char>(), upper in proptest::prelude::any::<bool>()) {
+            let mut units = [0; 2];
+            let text = format!("\"{}\"", escaped(c.encode_utf16(&mut units), upper));
+            proptest::prop_assert_eq!(parse(&text).map(|parsed| parsed.value), Ok(Json::String(c.to_string().into())));
         }
     }
 

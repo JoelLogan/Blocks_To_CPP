@@ -1,5 +1,10 @@
-# The desktop app (apps/desktop): lint and build the frontend, then lint, test and build the
-# Tauri app on Linux and Windows and check that it starts (docs/spec/10-roadmap.md, M0).
+# The desktop app (apps/desktop) and the frontend packages (packages/*): typecheck, lint and
+# format every frontend package and check the package layering rules; run the frontend tests
+# with the coverage gate (docs/spec/09-quality-and-delivery.md §9.2, §9.3) and the isolation
+# hook's tests; then lint, test and build the Tauri app on Linux and Windows, check that it
+# starts and that its release build has no end-to-end hooks; and run the end-to-end tests, the
+# M2 exit flow among them, and the visual diff of the block canvas and the chrome in the real
+# app on both systems (docs/adr/0009). The E2E security tests and the benchmarks run nightly (nightly.yml).
 # The app is not a default member of the Cargo workspace, so ci.yml's root `cargo` commands
 # skip it; this workflow covers it. Installers (MSI, NSIS, AppImage, deb, rpm) are built by
 # the release workflow once there is one (M6), so this one builds the executable only.
@@ -10,28 +15,60 @@ on:
     branches: ["**"]
     paths:
       - "apps/desktop/**"
+      - "packages/**"
       - "crates/**"
+      # Compiled into the crates (include_str!), so into the app and the WebAssembly core.
+      - "catalog/**"
+      # Read by the WebAssembly core's tests (packages/b2c-core-wasm/test/wasm.test.ts).
+      - "examples/**"
+      - "tests/golden/**"
+      - "tests/security/projects/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "package.json"
+      # A workspace package that the package rules cover (the site is built in pages.yml).
+      - "site/package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".node-version"
+      - "tools/check-package-layering.py"
+      - "tools/check-windows-manifest.ps1"
+      - "tools/bench-compare.py"
       - ".github/workflows/desktop.yml"
   pull_request:
     paths:
       - "apps/desktop/**"
+      - "packages/**"
       - "crates/**"
+      # Compiled into the crates (include_str!), so into the app and the WebAssembly core.
+      - "catalog/**"
+      # Read by the WebAssembly core's tests (packages/b2c-core-wasm/test/wasm.test.ts).
+      - "examples/**"
+      - "tests/golden/**"
+      - "tests/security/projects/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "package.json"
+      # A workspace package that the package rules cover (the site is built in pages.yml).
+      - "site/package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".node-version"
+      - "tools/check-package-layering.py"
+      - "tools/check-windows-manifest.ps1"
+      - "tools/bench-compare.py"
       - ".github/workflows/desktop.yml"
   workflow_dispatch:
+    inputs:
+      visual-baselines:
+        description: >-
+          Make new visual-diff baselines: the e2e job only writes the screenshots of the
+          canvas and the chrome (artifact visual-candidates-<os>) for a person to review and
+          commit to apps/desktop/e2e/visual/baselines/, and does not compare them.
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -42,12 +79,14 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # The CLI must be the version of the wasm-bindgen crate in Cargo.lock (test-web checks it).
+  WASM_BINDGEN_VERSION: 0.2.129
 
 jobs:
   frontend:
-    name: Frontend (typecheck, lint, format, build)
+    name: Frontend (typecheck, lint, format, layering, build)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read # check out the repository
     steps:
@@ -60,7 +99,7 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           package-manager-cache: false
@@ -68,17 +107,195 @@ jobs:
       - name: Install dependencies under the supply-chain policy
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm --filter @blocks2cpp/desktop run typecheck
+      # Every workspace package that has the script: the app and packages/*.
+      - name: Typecheck (tsc)
+        run: pnpm -r --if-present run typecheck
 
-      - name: Lint (ESLint, including the security rules)
-        run: pnpm --filter @blocks2cpp/desktop run lint
+      - name: Lint (ESLint, including the security and accessibility rules)
+        run: pnpm -r --if-present run lint
 
       - name: Check formatting (Prettier)
-        run: pnpm --filter @blocks2cpp/desktop run format:check
+        run: pnpm -r --if-present run format:check
+
+      # Which package may depend on which, exact versions and the workspace: protocol
+      # (docs/spec/02-architecture.md §2.3, docs/spec/08-security.md §8.9); then the
+      # checker's own test against generated workspaces that break each rule.
+      - name: Package layering rules
+        run: |
+          python3 tools/check-package-layering.py
+          python3 tools/check-package-layering.py --self-test
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      # Building wasm-bindgen-cli takes minutes; its binaries are cached per version.
+      - name: Restore wasm-bindgen-cli from the cache
+        id: wasm-bindgen-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen*
+            ~/.cargo/bin/wasm2es6js*
+          key: wasm-bindgen-cli-${{ env.WASM_BINDGEN_VERSION }}-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Install wasm-bindgen-cli
+        if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+
+      # The editor imports the WebAssembly core, so the app cannot be built without it.
+      # Unoptimised (no wasm-opt), the module is about 1.1 MB, inside the 2 MB budget the
+      # build still checks; ci.yml and test-web check the optimised module.
+      - name: Build the WebAssembly core (without wasm-opt)
+        shell: bash
+        env:
+          B2C_SKIP_WASM_OPT: "1"
+        run: pnpm --filter @blocks2cpp/b2c-core-wasm run build
 
       - name: Build
         run: pnpm --filter @blocks2cpp/desktop run build
+
+  test-web:
+    name: Frontend tests (Vitest, coverage gate)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read # check out the repository
+    env:
+      # wasm-opt (binaryen), pinned by release and checksum like rustup-init in ci.yml.
+      BINARYEN_VERSION: "133"
+      BINARYEN_SHA256: 2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # rust-toolchain.toml pins the version and lists the wasm32-unknown-unknown target.
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      # Building wasm-bindgen-cli takes minutes; its binaries are cached per version.
+      - name: Restore wasm-bindgen-cli from the cache
+        id: wasm-bindgen-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm2es6js
+          key: wasm-bindgen-cli-${{ env.WASM_BINDGEN_VERSION }}-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Install wasm-bindgen-cli
+        if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+
+      - name: Check that wasm-bindgen-cli matches Cargo.lock
+        run: |
+          locked="$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)"
+          installed="$(wasm-bindgen --version)"
+          echo "Cargo.lock has wasm-bindgen ${locked}; installed: ${installed}"
+          if [ "$locked" != "$WASM_BINDGEN_VERSION" ] || [ "$installed" != "wasm-bindgen $WASM_BINDGEN_VERSION" ]; then
+            echo "::error::wasm-bindgen-cli must be the version in Cargo.lock; update WASM_BINDGEN_VERSION"
+            exit 1
+          fi
+
+      - name: Install wasm-opt (binaryen)
+        run: |
+          archive="binaryen-version_${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/${archive}"
+          echo "${BINARYEN_SHA256}  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar --extract --gzip --file "$RUNNER_TEMP/$archive" --directory "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Show wasm-opt version
+        run: wasm-opt --version
+
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      # The WebAssembly core's tests load the optimised module, as the app does.
+      - name: Build the WebAssembly core package
+        run: pnpm --filter @blocks2cpp/b2c-core-wasm run build
+
+      # Vitest in every package that has tests, each with its 75% line-coverage gate. The app's
+      # test:coverage also runs the isolation hook's tests (node --test, apps/desktop/package.json).
+      # B2C_REQUIRE_WASM: the WebAssembly core's tests fail, rather than skip, without the module
+      # built above.
+      - name: Run the frontend tests with coverage
+        env:
+          B2C_REQUIRE_WASM: "1"
+        run: pnpm -r --if-present run test:coverage
+
+      # The end-to-end harness's own logic (binary search, transcript oracle, settings); the
+      # end-to-end tests themselves run in the e2e job.
+      - name: Run the end-to-end harness's own tests
+        run: pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/vitest.e2e.config.ts --project support
+
+      # The logic of the benchmarks and the visual diff (statistics, page scripts, the generated
+      # benchmark document and its parity with the native one, the screenshot comparison, the
+      # chrome scenes, their cut-outs and masks); the benchmarks run nightly (nightly.yml, bench)
+      # and the visual diff in the e2e job.
+      - name: Run the benchmarks' and the visual diff's own tests
+        run: |
+          pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/bench/vitest.bench.config.ts --project bench-unit
+          pnpm --filter @blocks2cpp/desktop exec vitest run --config e2e/visual/vitest.visual.config.ts --project visual-unit
+
+      # The benchmark gate's comparison against synthetic baselines (equal, +9% and +11% medians,
+      # too few baselines or samples, malformed files, history updates, acceptances, A/B runs),
+      # and the acceptance file of intended slowdowns, which the nightly and A/B jobs read.
+      - name: Benchmark comparison (self-test, acceptance file)
+        run: |
+          python3 tools/bench-compare.py --self-test
+          python3 tools/bench-compare.py check-accepted apps/desktop/e2e/bench/accepted.json
+
+      - name: Write the coverage summary
+        if: ${{ !cancelled() }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import glob
+          import json
+
+          print("### Frontend line coverage (gate: 75% per package)")
+          print()
+          print("| Package | Lines | Statements | Functions | Branches |")
+          print("| --- | ---: | ---: | ---: | ---: |")
+          reports = sorted(glob.glob("apps/*/coverage/coverage-summary.json"))
+          reports += sorted(glob.glob("packages/*/coverage/coverage-summary.json"))
+          for report in reports:
+              with open(report, encoding="utf-8") as file:
+                  total = json.load(file)["total"]
+              package = report.removesuffix("/coverage/coverage-summary.json")
+              cells = [
+                  f"{total[kind]['pct']}% ({total[kind]['covered']}/{total[kind]['total']})"
+                  for kind in ("lines", "statements", "functions", "branches")
+              ]
+              print(f"| `{package}` | " + " | ".join(cells) + " |")
+          if not reports:
+              print("| (no coverage reports) | | | | |")
+          EOF
+
+      - name: Upload the coverage reports (lcov)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: frontend-coverage-lcov
+          path: |
+            apps/*/coverage/lcov.info
+            packages/*/coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 14
 
   app:
     name: App (${{ matrix.os }})
@@ -110,7 +327,7 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           package-manager-cache: false
@@ -121,16 +338,109 @@ jobs:
       - name: Install dependencies under the supply-chain policy
         run: pnpm install --frozen-lockfile
 
+      # The desktop crate's tests build and run programs through the app's IPC.
+      - name: Install g++ (MSYS2 UCRT64)
+        if: runner.os == 'Windows'
+        id: msys2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+
+      - name: Put g++ on PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $env:MSYS2_LOCATION 'ucrt64\bin')
+
+      - name: Show g++ version
+        run: g++ --version
+
+      # bash, not pwsh, on Windows: it stops at the first failing command.
       - name: Clippy
-        run: cargo clippy --locked -p blocks2cpp-desktop --all-targets -- -D warnings
+        shell: bash
+        run: |
+          cargo clippy --locked -p blocks2cpp-desktop --all-targets -- -D warnings
+          cargo clippy --locked -p blocks2cpp-desktop --all-targets --features e2e-hooks -- -D warnings
+
+      # docs/spec/08-security.md §8.6: tests/hardening.rs saves, reopens and builds a project
+      # under a path longer than 260 characters (through verbatim paths; the longPathAware
+      # manifest entry is checked separately, by check-windows-manifest.ps1). The system
+      # setting is read when a process starts, so it comes first.
+      - name: Enable long paths (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1 -PropertyType DWord -Force
 
       - name: Test
-        run: cargo test --locked -p blocks2cpp-desktop
+        shell: bash
+        env:
+          B2C_REQUIRE_GXX: "1" # fail, rather than skip, tests that need g++
+        # Both runs, every test binary: one failure does not hide the others.
+        run: |
+          status=0
+          cargo test --locked --no-fail-fast -p blocks2cpp-desktop || status=$?
+          cargo test --locked --no-fail-fast -p blocks2cpp-desktop --features e2e-hooks || status=$?
+          exit "$status"
+
+      # Building wasm-bindgen-cli takes minutes; its binaries are cached per version.
+      - name: Restore wasm-bindgen-cli from the cache
+        id: wasm-bindgen-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen*
+            ~/.cargo/bin/wasm2es6js*
+          key: wasm-bindgen-cli-${{ env.WASM_BINDGEN_VERSION }}-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Install wasm-bindgen-cli
+        if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+
+      # The editor imports the WebAssembly core, so the app cannot be built without it.
+      # Unoptimised (no wasm-opt), the module is about 1.1 MB, inside the 2 MB budget the
+      # build still checks; ci.yml and test-web check the optimised module.
+      - name: Build the WebAssembly core (without wasm-opt)
+        shell: bash
+        env:
+          B2C_SKIP_WASM_OPT: "1"
+        run: pnpm --filter @blocks2cpp/b2c-core-wasm run build
 
       # A release build of the executable with the frontend embedded, as it ships: the
       # Content Security Policy applies and the web inspector is compiled out.
       - name: Build the app
         run: pnpm --filter @blocks2cpp/desktop tauri build --no-bundle
+
+      # docs/adr/0009: the end-to-end seams never reach a release. The backend's variable names are
+      # looked for in the executable, the frontend's hook in the built frontend (the executable
+      # embeds it compressed). The e2e job checks that its build does contain both.
+      - name: Check that the release build has no end-to-end hooks
+        shell: bash
+        run: |
+          exe=target/release/blocks2cpp-desktop
+          if [ "$RUNNER_OS" = "Windows" ]; then exe="$exe.exe"; fi
+          status=0
+          for needle in B2C_E2E_DIALOGS __B2C_E2E__; do
+            if grep --binary-files=text --quiet --fixed-strings "$needle" "$exe"; then
+              echo "::error::The release executable contains $needle"
+              status=1
+            fi
+          done
+          if grep --recursive --quiet --fixed-strings -e __B2C_E2E__ -e B2C_E2E_ apps/desktop/dist; then
+            echo "::error::The release frontend (apps/desktop/dist) contains the end-to-end hook"
+            status=1
+          fi
+          exit "$status"
+
+      # docs/spec/08-security.md §8.6 and §8.8: the released executable must embed the manifest
+      # with Common-Controls v6 (the native dialogs need it) and longPathAware.
+      - name: Check the embedded application manifest (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/check-windows-manifest.ps1 target/release/blocks2cpp-desktop.exe
 
       - name: Check that the app starts (Linux)
         if: runner.os == 'Linux'
@@ -159,3 +469,345 @@ jobs:
             exit 1
           }
           Stop-Process -Id $app.Id
+
+  e2e:
+    name: E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    env:
+      # tauri-driver, pinned (docs/adr/0009); installed with cargo install --locked.
+      TAURI_DRIVER_VERSION: 2.1.0
+      # "1" only in a manual run asked to make new visual-diff baselines: the visual diff then
+      # writes the screenshots as candidates and compares nothing (e2e/visual/README.md).
+      B2C_VISUAL_UPDATE: ${{ inputs.visual-baselines && '1' || '0' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # WebKitGTK and GTK for the webview, WebKitWebDriver (webkit2gtk-driver) and a virtual
+      # display. g++ 13 is the runner's own. Windows runners already have WebView2.
+      - name: Install the webview libraries, WebKitWebDriver and xvfb (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential pkg-config libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev libgtk-3-dev librsvg2-dev xvfb webkit2gtk-driver
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      # The same g++ as ci.yml's test job and this workflow's app job.
+      - name: Install g++ (MSYS2 UCRT64)
+        if: runner.os == 'Windows'
+        id: msys2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+
+      # On PATH for the programs the tests build (they need its runtime libraries); discovery in
+      # the app looks only where B2C_E2E_TOOLCHAIN_DIRS says.
+      - name: Put g++ on PATH and name its folder for the app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $bin = Join-Path $env:MSYS2_LOCATION 'ucrt64\bin'
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_TOOLCHAIN_DIRS=$bin"
+
+      - name: Show g++ version
+        run: g++ --version
+
+      - name: Restore tauri-driver from the cache
+        id: tauri-driver-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/tauri-driver
+            ~/.cargo/bin/tauri-driver.exe
+          key: tauri-driver-${{ env.TAURI_DRIVER_VERSION }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
+
+      - name: Install tauri-driver
+        if: steps.tauri-driver-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          # A third-party tool: its warnings are not ours to deny.
+          RUSTFLAGS: ""
+        run: cargo install tauri-driver --version "$TAURI_DRIVER_VERSION" --locked
+
+      # Building wasm-bindgen-cli takes minutes; its binaries are cached per version.
+      - name: Restore wasm-bindgen-cli from the cache
+        id: wasm-bindgen-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen*
+            ~/.cargo/bin/wasm2es6js*
+          key: wasm-bindgen-cli-${{ env.WASM_BINDGEN_VERSION }}-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Install wasm-bindgen-cli
+        if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+
+      - name: Build the WebAssembly core (without wasm-opt)
+        shell: bash
+        env:
+          B2C_SKIP_WASM_OPT: "1"
+        run: pnpm --filter @blocks2cpp/b2c-core-wasm run build
+
+      # The app under test: a debug build with the e2e-hooks feature and the frontend built in
+      # e2e mode (the test hook), embedded as in a release, so the CSP, the isolation hook and
+      # freezePrototype are all active. Output: target/debug/blocks2cpp-desktop[.exe].
+      - name: Build the app for the end-to-end tests
+        id: app-build
+        shell: bash
+        run: >-
+          pnpm --filter @blocks2cpp/desktop tauri build --debug --no-bundle
+          --features e2e-hooks
+          --config '{"build":{"beforeBuildCommand":"pnpm build:e2e"}}'
+
+      # The other side of the app job's release check: this build has the seams it looks for.
+      - name: Check that the end-to-end build has its hooks
+        shell: bash
+        run: |
+          exe=target/debug/blocks2cpp-desktop
+          if [ "$RUNNER_OS" = "Windows" ]; then exe="$exe.exe"; fi
+          grep --binary-files=text --quiet --fixed-strings B2C_E2E_DIALOGS "$exe"
+          grep --recursive --quiet --fixed-strings __B2C_E2E__ apps/desktop/dist
+
+      - name: Fetch msedgedriver for the installed WebView2 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./apps/desktop/e2e/scripts/msedgedriver.ps1 -OutDir (Join-Path $env:RUNNER_TEMP 'msedgedriver')
+
+      # msedgedriver logs verbosely into the artifacts: tauri-driver passes it no options, so a
+      # command file in front of it adds them.
+      - name: Log msedgedriver verbosely (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $artifacts = Join-Path $env:RUNNER_TEMP 'e2e-artifacts'
+          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+          $log = Join-Path $artifacts 'msedgedriver.log'
+          $wrapper = Join-Path $env:RUNNER_TEMP 'msedgedriver-verbose.cmd'
+          $line = '@"{0}" --verbose --append-log "--log-path={1}" %*' -f $env:B2C_E2E_NATIVE_DRIVER, $log
+          Set-Content -Path $wrapper -Encoding ascii -Value $line
+          Get-Content $wrapper
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_NATIVE_DRIVER=$wrapper"
+          # A failed test keeps its part of the log (e2e/README.md).
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_NATIVE_DRIVER_LOG=$log"
+
+      # Every spec except the E2E security tests, which run nightly (nightly.yml, e2e-security).
+      - name: Run the end-to-end tests (Linux)
+        if: runner.os == 'Linux'
+        env:
+          # A virtual display has no GPU (docs/spec/02-architecture.md §2.8).
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          B2C_E2E_APP: ${{ github.workspace }}/target/debug/blocks2cpp-desktop
+          B2C_E2E_ARTIFACTS: ${{ runner.temp }}/e2e-artifacts
+          B2C_E2E_TOOLCHAIN_DIRS: /usr/bin
+        run: xvfb-run --auto-servernum pnpm --filter @blocks2cpp/desktop run e2e --exclude 'specs/security/**'
+
+      # Before the tests, so a failure to start is told apart from a driver problem: the app
+      # under test starts with a fresh profile and keeps running; its output and log are shown.
+      - name: Check that the end-to-end app starts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          B2C_LOG: debug
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'e2e-start-check'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $env:B2C_E2E_ROOT = Join-Path $root 'profile'
+          $env:B2C_E2E_DIALOGS = Join-Path $root 'dialogs.json'
+          Set-Content -Path $env:B2C_E2E_DIALOGS -Value '{}'
+          $stderr = Join-Path $root 'stderr.txt'
+          $app = Start-Process -FilePath 'target\debug\blocks2cpp-desktop.exe' -PassThru -RedirectStandardError $stderr
+          Start-Sleep -Seconds 20
+          $exited = $app.HasExited
+          if (-not $exited) { Stop-Process -Id $app.Id }
+          Get-Content $stderr -ErrorAction SilentlyContinue
+          Get-ChildItem -Path $root -Recurse -Filter *.log | ForEach-Object {
+            Write-Output "== $($_.FullName)"
+            Get-Content $_.FullName -Tail 60
+          }
+          if ($exited) {
+            Write-Output "::error::The end-to-end app exited with code $($app.ExitCode) within 20 seconds"
+            exit 1
+          }
+
+      - name: Run the end-to-end tests (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          B2C_E2E_APP: ${{ github.workspace }}\target\debug\blocks2cpp-desktop.exe
+          B2C_E2E_ARTIFACTS: ${{ runner.temp }}\e2e-artifacts
+          # The app's debug log shows each page it loads (kept with the artifacts on failure).
+          B2C_LOG: debug
+        run: pnpm --filter @blocks2cpp/desktop run e2e --exclude 'specs/security/**'
+
+      # The visual diff of the block canvas and the chrome (docs/spec/09-quality-and-delivery.md
+      # §9.2, apps/desktop/e2e/visual): after the other tests, whatever they found, so a failure
+      # there still shows how the app looks. Its screenshots are uploaded below as candidates. On
+      # Linux it launches the app once per theme and sets GTK_THEME for each launch itself (light,
+      # then dark), so one step takes both; on Windows it takes the light theme only.
+      - name: Run the visual diff (Linux)
+        if: ${{ !cancelled() && runner.os == 'Linux' && steps.app-build.outcome == 'success' }}
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          B2C_E2E_APP: ${{ github.workspace }}/target/debug/blocks2cpp-desktop
+          B2C_E2E_ARTIFACTS: ${{ runner.temp }}/e2e-artifacts
+          B2C_E2E_TOOLCHAIN_DIRS: /usr/bin
+        run: >-
+          xvfb-run --auto-servernum pnpm --filter @blocks2cpp/desktop exec
+          vitest run --config e2e/visual/vitest.visual.config.ts --project visual
+
+      - name: Run the visual diff (Windows)
+        if: ${{ !cancelled() && runner.os == 'Windows' && steps.app-build.outcome == 'success' }}
+        shell: bash
+        env:
+          B2C_E2E_APP: ${{ github.workspace }}\target\debug\blocks2cpp-desktop.exe
+          B2C_E2E_ARTIFACTS: ${{ runner.temp }}\e2e-artifacts
+          B2C_LOG: debug
+        run: >-
+          pnpm --filter @blocks2cpp/desktop exec
+          vitest run --config e2e/visual/vitest.visual.config.ts --project visual
+
+      # The logs the harness keeps (the app's, tauri-driver's with the native driver's output, and
+      # msedgedriver's own) in the job log, as artifacts are not always at hand.
+      - name: Show the end-to-end logs (on failure)
+        if: failure()
+        shell: bash
+        env:
+          ARTIFACTS: ${{ runner.temp }}/e2e-artifacts
+        run: apps/desktop/e2e/scripts/show-logs.sh "$ARTIFACTS"
+
+      # When no WebDriver session starts on Windows: start the app as msedgedriver does (its user
+      # data folder and remote debugging port through the WEBVIEW2_* variables) and show whether
+      # WebView2 opens the DevTools endpoint and where it writes DevToolsActivePort.
+      - name: Probe WebView2 remote debugging (Windows, on failure)
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $probe = Join-Path $env:RUNNER_TEMP 'webview2-probe'
+          New-Item -ItemType Directory -Force -Path $probe | Out-Null
+          $env:B2C_E2E_ROOT = Join-Path $probe 'profile'
+          $env:B2C_E2E_DIALOGS = Join-Path $probe 'dialogs.json'
+          Set-Content -Path $env:B2C_E2E_DIALOGS -Value '{}'
+          $env:B2C_LOG = 'debug'
+          $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $probe 'user-data'
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9333'
+          $app = Start-Process -FilePath 'target\debug\blocks2cpp-desktop.exe' -PassThru
+          Start-Sleep -Seconds 20
+          try {
+            (Invoke-WebRequest -Uri 'http://127.0.0.1:9333/json/version' -UseBasicParsing -TimeoutSec 5).Content
+          } catch {
+            Write-Output "No DevTools endpoint on port 9333: $($_.Exception.Message)"
+          }
+          Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" |
+            Select-Object -First 3 -ExpandProperty CommandLine
+          if (-not $app.HasExited) { Stop-Process -Id $app.Id } else { "The app exited with code $($app.ExitCode)" }
+          $places = @($probe)
+          Get-ChildItem -Path $places -Recurse -Filter DevToolsActivePort -ErrorAction SilentlyContinue |
+            ForEach-Object { "$($_.FullName): $((Get-Content $_.FullName) -join ' ')" }
+          Get-ChildItem -Path $places -Directory -Depth 1 -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+          Get-Content (Join-Path $probe 'profile\state\logs\blocks2cpp.log') -Tail 30 -ErrorAction SilentlyContinue
+
+      # The Trusted Types trial (docs/spec/08-security.md §8.8): violations per test, reported,
+      # never failing. Meaningful on WebView2; WebKitGTK may ignore the report-only header. The
+      # table goes to the log too, which can be read where job summaries cannot.
+      - name: Write the Trusted Types summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          SUMMARY: ${{ runner.temp }}/e2e-artifacts/trusted-types.md
+        run: |
+          if [ -f "$SUMMARY" ]; then
+            tee -a "$GITHUB_STEP_SUMMARY" < "$SUMMARY"
+          else
+            echo "No Trusted Types report was written." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # The trial's per-test report, kept for the milestone's threat-model review
+      # (docs/security/threat-model-reviews.md, TM-M2-4).
+      - name: Upload the Trusted Types report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trusted-types-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/e2e-artifacts/trusted-types.jsonl
+            ${{ runner.temp }}/e2e-artifacts/trusted-types.md
+          if-no-files-found: ignore
+          retention-days: 90
+
+      # Every flow's longest main-thread task (docs/spec/09-quality-and-delivery.md §9.2): reported,
+      # never failing (N12 is met in M5).
+      - name: Write the long-task summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          SUMMARY: ${{ runner.temp }}/e2e-artifacts/long-tasks.md
+        run: |
+          if [ -f "$SUMMARY" ]; then
+            cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No long-task report was written." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Write the visual diff summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          SUMMARY: ${{ runner.temp }}/e2e-artifacts/visual/visual-diff.md
+        run: |
+          if [ -f "$SUMMARY" ]; then
+            cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The visual diff did not run." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Always: the screenshots (and diff images) are what a person commits as new baselines
+      # (apps/desktop/e2e/visual/baselines/<linux|windows>/), from any run.
+      - name: Upload the visual diff candidates
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: visual-candidates-${{ matrix.os }}
+          path: ${{ runner.temp }}/e2e-artifacts/visual
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload screenshots and logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-artifacts-${{ matrix.os }}
+          path: ${{ runner.temp }}/e2e-artifacts
+          if-no-files-found: warn
+          retention-days: 14

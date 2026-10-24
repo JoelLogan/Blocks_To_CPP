@@ -1,0 +1,4 @@
+# A diff's context line for an empty line is a single space: trimming it
+# would break the patch.
+[*.patch]
+trim_trailing_whitespace = false

@@ -1,0 +1,279 @@
+# Manual test: M2 accessibility
+
+This is the manual accessibility pass for milestone M2 (the desktop editor
+MVP). [Spec §9.2](../spec/09-quality-and-delivery.md#92-testing-strategy) asks for a screen-reader
+check with NVDA on Windows and Orca on Linux at each milestone, and
+[spec §4.8](../spec/04-user-interface.md#48-accessibility) sets the bar: WCAG
+2.2 AA for the app's chrome, ARIA roles and labels on every panel and
+dialog, everything reachable with the keyboard, and colour never the only
+signal.
+
+The automated tests already cover a lot, so this pass covers only what they
+cannot. What they check:
+
+- axe-core runs on every panel, dialog, page and banner in the component
+  tests (`apps/desktop/src/**/*.test.tsx`), and on the editor window
+  (`src/app/layout/accessibility.test.tsx`).
+- The Tab order through the window and the block editor is tested in
+  `src/app/layout/accessibility.test.tsx`, `src/app/layout/tabOrder.test.tsx`,
+  `src/panels/accessibility.test.tsx` and
+  `src/features/accessibility.test.tsx`.
+- The block editor's keys are tested in `src/editor/keyboard/*.test.ts`.
+- Contrast ratios of the colour tokens in both themes, the focus rings,
+  target sizes and reduced motion are tested in
+  `src/app/layout/styles.test.ts`, which reads the style sheets.
+
+What the tests cannot check: what a screen reader actually says, how the real
+webview (WebView2 or WebKitGTK) draws focus and colours, zoom and reflow, and
+the operating system's reduced-motion setting. That is this pass.
+
+Run it on a release build of the commit you are signing off, made as
+[`BUILDING.md`](../../BUILDING.md#run-blocks2cpp) describes (never the
+development server, which differs in speed and looks), once on Windows with
+NVDA and once on Linux with Orca. Record the result in the sign-off table at
+the end and file an issue for each failure, quoting the step.
+
+## Before you start
+
+1. Build the commit under test with [`BUILDING.md`](../../BUILDING.md) (the
+   release build) and install a supported g++ (GCC 11 or newer).
+2. Windows: install the current NVDA release and use its default settings
+   (browse mode on, *Speak typed characters* on). Linux: use Orca from the
+   distribution (GNOME), with *Speak object under mouse* off.
+3. Set the display scale to 100% and the window to at least 1280 × 800.
+4. Open the *Guessing Game* template: *Start page → Guessing Game*, then save
+   it anywhere. Most steps use it.
+5. Keep a pointer device out of reach. Every step below is done with the
+   keyboard only, unless the step says otherwise.
+
+## 1. Start page and window
+
+1. Start the app. The start page appears and the screen reader announces the
+   heading **Start**.
+2. Press Tab repeatedly. The focus visits, in this order: the main menu
+   button, the toolbar, then the start page's *Empty project*,
+   *Hello World* (and the other templates), *Open…*, each recent project and
+   its *Remove … from the list* button, then the status bar. Each control is
+   announced with its name and role ("Open…, button").
+3. Every focused control shows a clearly visible focus ring.
+4. Open a template with Enter. The editor replaces the start page and the
+   focus is not lost (the next Tab continues from the toolbar or the
+   workspace, not from the top of the page).
+5. *Main menu → Close project*. The start page comes back and the screen
+   reader announces **Start** again.
+
+## 2. Tab order through the editor
+
+With the Guessing Game open, put the focus on the main menu button and press
+Tab repeatedly. Expected order:
+
+1. Main menu
+2. The project's name (a button, described as *Rename the project*)
+3. Debug / Release drop-down
+4. Run (F5), Stop (Shift+F5), Build (Ctrl+B), Settings
+5. The toolbox (its selected category)
+6. The toolbox's blocks (announced as **Blocks to add**)
+7. The block canvas (announced as **Block canvas**, followed by the first
+   block, for example "block “when program starts”")
+8. The canvas's zoom controls: *Zoom out*, *Zoom in*, *Reset zoom* (with
+   the zoom now) and *Show all blocks*
+9. *Resize the toolbox* (a separator, with its width in pixels; the arrow
+   keys, Home and End change the width of the toolbox's blocks)
+10. *Resize the C++ panel* (a separator), *Hide the C++ panel*
+11. The C++ panel: *File* drop-down, *Copy all*, the code
+12. *Resize the bottom panel*, the bottom tabs (Problems, Console, Build
+    output: one stop, arrow keys switch tabs), *Hide the bottom panel*
+13. The open tab's contents
+14. The status bar's toolchain button
+
+Shift+Tab goes the same way back. Check that:
+
+- [ ] Every stop is announced with a name and a role.
+- [ ] No stop is skipped, and the focus never disappears (nothing announced,
+  no ring visible).
+- [ ] Hidden things are never reached: a collapsed panel's contents, a tab
+  that is not open.
+- [ ] With a panel hidden (*Hide the C++ panel*), Tab goes from
+  *Resize the toolbox* to its *Show the C++ panel* button, never into the
+  hidden panel.
+
+## 3. Block editor keys
+
+These keys come from `KEY_MAP` in
+`apps/desktop/src/editor/keyboard/help.ts`; a test keeps this table and that
+map the same. Tab into the canvas and try each one. After each key the screen
+reader announces where the focus is or what happened.
+
+### On the canvas
+
+| Keys | Action |
+| --- | --- |
+| ↓ / ↑ | Next or previous block |
+| → / ← | Next or previous part of a block (fields and inputs) |
+| Enter or Space | Edit the field; on the canvas itself, open the toolbox |
+| M | Move the block (choose where it goes) |
+| T | Open the toolbox to add a block here |
+| Delete or Backspace | Delete the block |
+| Ctrl+C / Ctrl+X / Ctrl+V | Copy, cut or paste blocks |
+| Ctrl+D | Duplicate the block |
+| Ctrl+Z / Ctrl+Y | Undo or redo |
+| Ctrl+Enter | Open the block’s menu |
+| Ctrl+= / Ctrl+- | Zoom in or out |
+| Ctrl+0 | Reset the zoom to 100% |
+
+### While moving a block
+
+| Keys | Action |
+| --- | --- |
+| ↓ / ↑ (or → / ←) | Next or previous place for the block |
+| Enter or Space | Put the block there |
+| Escape | Leave the block where it was |
+
+### In the toolbox
+
+| Keys | Action |
+| --- | --- |
+| ↓ / ↑ | Next or previous category |
+| → or Enter | Go to the category’s blocks |
+| Escape | Back to the canvas |
+
+### In the toolbox's blocks
+
+| Keys | Action |
+| --- | --- |
+| ↓ / ↑ | Next or previous block, button, heading or note |
+| Enter or Space | Add the block (then choose where it goes), or press the button |
+| ← | Back to the categories |
+| Escape | Back to the canvas |
+
+Check that:
+
+- [ ] Blocks are announced by their text, for example "block “create int
+  variable guess”", and a field by its name and value.
+- [ ] M on the `print` block in `main`, then ↓, announces each place it could
+  go ("after “…”", "into “…”", "loose on the canvas"); Enter puts it there;
+  Escape puts it back where it was. A held block is drawn with a dashed
+  outline.
+- [ ] T, a category, a block and Enter adds the block where the focus was and
+  starts a move, so you can choose where it goes.
+- [ ] T, a block, Enter, Enter, then one Ctrl+Z removes the added block; T, a
+  block, Enter, Escape, then Ctrl+Z brings nothing back.
+- [ ] M on a text value never offers `repeat (…) times`.
+- [ ] Delete on a top-level block (for example a function) leaves the focus on
+  the canvas; ↓ works at once.
+- [ ] *Make a variable* in the toolbox's blocks opens the app's dialog; the
+  focus goes into the dialog and comes back afterwards.
+- [ ] In the toolbox's blocks, ↓ also stops on *Make a variable* ("button
+  “Make a variable”"), on the Variables category's group headings ("heading
+  “In greet”"), and on the Program category's note, read as a whole ("note:
+  Your program starts at “when program starts”."). A getter is announced
+  with its group ("block “i”, in greet").
+- [ ] Ctrl+C then Ctrl+V pastes a copy; Ctrl+Z undoes it.
+- [ ] Tab always leaves the canvas, also while moving a block (the move is
+  cancelled).
+- [ ] Clicking a block with the pointer, then using the arrow keys, works
+  without the yellow keyboard ring until a key is pressed.
+
+## 4. Panels
+
+1. Problems: make an error (empty a value input), open the Problems tab.
+   - [ ] The grid is announced as **Problems** with its column headings. The
+     arrow keys move between cells; Enter on a row selects the block in the
+     canvas.
+   - [ ] Each severity is read as a word ("Error", "Warning", "Info"); the
+     icon is not read separately.
+   - [ ] *Show C++ compiler message* expands and collapses (after a failed
+     build) and its state is announced.
+2. Console: run the program (F5).
+   - [ ] While it runs, typing goes to the program, Tab is sent to the
+     program, and Ctrl+Tab leaves the console. The terminal's description
+     says so.
+   - [ ] The program's output is read aloud as it arrives ("Guess a number
+     from 1 to 100!", then "Your guess:"), and a guess you type is not read
+     a second time when the program echoes it.
+   - [ ] With the screen reader's reading keys (NVDA: browse mode and the
+     arrow keys; Orca: browse mode or flat review), the console's rows are
+     read one by one, and moving up past the top row reads the earlier
+     output.
+   - [ ] After it ends, Tab leaves the console as usual, and the exit state
+     is announced in words ("Finished (exit code 0)").
+   - [ ] *Clear* (after the program has ended): the reading keys find
+     nothing of the earlier output.
+   - [ ] Change the program to print a line in a *repeat (100000) times*
+     loop and run it. The screen reader is not flooded and the app keeps
+     answering; a second or two after the output stops, the rows on screen
+     (the last lines) can be read again.
+   - [ ] A notice ("Running with IDE helpers", "Process group only") opens
+     with Enter and its explanation is read.
+3. Build output: build (Ctrl+B).
+   - [ ] The log is one Tab stop, announced as **Build output**, and scrolls
+     with the arrow keys.
+4. C++ panel:
+   - [ ] The code is read line by line with the arrow keys; *Copy all*
+     reports "Copied".
+
+## 5. Dialogs and pages
+
+1. *Main menu → Close project* with unsaved changes. The dialog is announced
+   with its title and text; the focus is on its first answer; Tab stays
+   inside the dialog; Escape cancels; the focus returns to where it was.
+2. *Settings*: the page's heading is announced; each setting is reachable;
+   a group of choices is one stop and the arrow keys choose within it;
+   *Back to the editor* returns the focus to the workspace.
+3. The status bar's toolchain button opens the toolchain page; the same
+   checks as for Settings apply.
+
+## 6. Colour, contrast, zoom and motion
+
+1. Switch the operating system between light and dark. Repeat in each:
+   - [ ] All text is readable; every control's edge (drop-downs, text
+     fields) and the selected bottom tab's mark are visible.
+   - [ ] The focus ring is visible on every control, on the canvas, in the
+     toolbox and in the panels.
+   - [ ] The *Debug / Release* drop-down is readable while closed (on Linux
+     also with the default light GTK theme).
+   - [ ] With a project open, the `≡` main menu is drawn over the toolbox,
+     and each item can be clicked across its full width, also at its left
+     edge above the toolbox.
+2. Zoom: set the display scale to 200%.
+   - [ ] Nothing is cut off or overlaps; panels can still be resized and
+     hidden; the dialogs fit the window.
+   - [ ] With the focus on the canvas, Ctrl+= and Ctrl+- zoom the canvas
+     (not the window) around its middle and Ctrl+0 resets it to 100%; each
+     time the screen reader says the new zoom ("Zoom 108%"). The zoom
+     controls do the same, and *Show all blocks* scrolls to the blocks
+     without changing the zoom.
+3. Reflow: make the window 640 px wide (320 CSS px at 200%).
+   - [ ] The start page and the dialogs reflow without scrolling sideways.
+     (The editor itself needs more width; that is expected in M2.)
+4. Turn on *Reduce motion* (Windows: *Settings → Accessibility → Visual
+   effects → Animation effects* off; GNOME: *Settings → Accessibility →
+   Reduce Animation*).
+   - [ ] Dragging and connecting blocks shows no wiggle or connection
+     animation, and deleting a block shows no shrinking animation.
+   - [ ] Nothing slides or fades: toolbox categories, dialogs and panels
+     change at once.
+5. Colour is never the only signal:
+   - [ ] Errors, warnings and infos have icons and words everywhere
+     (Problems, gutter markers, the status bar).
+   - [ ] "Not buildable" in the C++ panel and a non-zero exit in the console
+     have an icon and words.
+
+## 7. Target sizes
+
+- [ ] Toolbar buttons, panel buttons, tabs, dialog buttons and the start
+  page's buttons are at least 24 × 24 CSS pixels (check with the webview's
+  developer tools in a debug build).
+- [ ] Known limitation in M2: the splitter bars between the canvas and the
+  panels, and the one at the toolbox's edge, are 6 px wide. They can be
+  focused and moved with the arrow keys, every panel has a *Hide* button and
+  the toolbox works at its default width, so a pointer user does not depend
+  on the bars. Larger hit areas and a non-drag alternative for the bars and for
+  block dragging (WCAG 2.5.7) are part of the M5 audit.
+
+## Sign-off
+
+| Platform | Screen reader | Build (commit) | Date | Tester | Result | Issues |
+| --- | --- | --- | --- | --- | --- | --- |
+| Windows 11 | NVDA | | | | | |
+| Linux (GNOME) | Orca | | | | | |

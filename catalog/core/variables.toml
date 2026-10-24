@@ -5,7 +5,7 @@ id = "var.declare"
 version = 1
 category = "variables"
 shape = "statement"
-label = { friendly = "create %TYPE variable %NAME = %VALUE %CONST", cpp = "%TYPE %NAME = %VALUE;" }
+label = { friendly = "create %TYPE variable %NAME = %VALUE constant %CONST", cpp = "%TYPE %NAME = %VALUE;" }
 lowering = "builtin"
 help = "Creates a variable. It can be used by the blocks after it in the same place."
 
@@ -46,32 +46,17 @@ kind = "symbol_ref"
 name = "VALUE"
 check = "any"
 
+# `OP` was added in catalog 1.2.0, when `change` took over the retired
+# `var.update` (03 §3.11.3, ADR-0015): a compatible change, so the version
+# stays 1 and a block saved without `OP` adds.
 [[block]]
 id = "var.change"
 version = 1
 category = "variables"
 shape = "statement"
-label = { friendly = "change %VAR by %BY", cpp = "%VAR += %BY;" }
+label = { friendly = "change %VAR %OP %BY", cpp = "%VAR %OP %BY;" }
 lowering = "builtin"
-help = "Adds to a variable."
-
-[[block.field]]
-name = "VAR"
-kind = "symbol_ref"
-
-[[block.input]]
-name = "BY"
-check = "number"
-default = [{ num = "1" }]
-
-[[block]]
-id = "var.update"
-version = 1
-category = "variables"
-shape = "statement"
-label = { friendly = "%VAR %OP %VALUE", cpp = "%VAR %OP %VALUE;" }
-lowering = "builtin"
-help = "Updates a variable with an operator, such as multiplying it."
+help = "Adds to a variable (+=); choose down by (-=), times (*=), divided by (/=) or mod (%=) in the menu to subtract, multiply, divide or keep the remainder instead."
 
 [[block.field]]
 name = "VAR"
@@ -80,11 +65,11 @@ kind = "symbol_ref"
 [[block.field]]
 name = "OP"
 kind = "dropdown"
-options = [["+=", "add"], ["-=", "sub"], ["*=", "mul"], ["/=", "div"], ["%=", "mod"]]
+options = [["by", "add"], ["down by", "sub"], ["times", "mul"], ["divided by", "div"], ["mod", "mod"]]
 default = "add"
 
 [[block.input]]
-name = "VALUE"
+name = "BY"
 check = "number"
 default = [{ num = "1" }]
 
@@ -93,6 +78,7 @@ id = "var.get"
 version = 1
 category = "variables"
 shape = "reporter"
+output = "symbol"
 label = { friendly = "%VAR", cpp = "%VAR" }
 lowering = "builtin"
 help = "The value of a variable."

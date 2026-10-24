@@ -2,6 +2,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
 import { BLOCKLY_MEDIA_DIR } from './src/editor/media.ts';
+import { wasmCore } from './vite/wasmCore.ts';
 
 /** Blockly's images and cursors. Its sounds are left out: the workspace has sound turned off. */
 const BLOCKLY_MEDIA_FILE = /\.(?:cur|gif|png|svg)$/;
@@ -34,7 +35,9 @@ function blocklyMedia(): Plugin {
 
 // https://vite.dev/config/ and https://v2.tauri.app/start/frontend/vite/
 export default defineConfig({
-  plugins: [react(), blocklyMedia()],
+  // wasmCore: a production build stops when the WebAssembly core is missing or older than its
+  // source (packages/b2c-core-wasm/pkg/build-info.json); the dev server warns.
+  plugins: [react(), blocklyMedia(), wasmCore()],
   // Keep Rust compiler errors from `tauri dev` visible.
   clearScreen: false,
   server: {

@@ -1,0 +1,82 @@
+[package]
+name = "b2c-core-wasm"
+description = "Blocks2Cpp compiler core for the editor: a WebAssembly facade over the pure compiler crates"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+# cdylib: the .wasm for the editor (packages/b2c-core-wasm); rlib: native tests and
+# native callers (the same functions, the same results).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Only the pure compiler crates and the externals allowed for them
+# (tools/check-layering.py, PURE_CRATES): no I/O, clock, randomness or threads.
+b2c-ir.workspace = true
+b2c-model.workspace = true
+b2c-catalog.workspace = true
+b2c-lang.workspace = true
+b2c-codegen.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# The hash of a document's canonical text (`update`, `canonical`), and the
+# benchmark document's parity digest with the TypeScript generator of the
+# webview benchmarks (benches/pipeline/document.rs). Already in the module
+# through b2c-model, which hashes with it.
+sha2.workspace = true
+thiserror.workspace = true
+wasm-bindgen.workspace = true
+
+[dev-dependencies]
+# The native pipeline benchmark (benches/pipeline; docs/spec/09-quality-and-delivery.md §9.2).
+# No default features: no plotting and no rayon. 0.8 brings the `alloca` crate, whose build
+# script compiles C for the target: the lint job's Clippy check for the Windows target gives
+# it clang as the MinGW C compiler (ci.yml; CONTRIBUTING.md for a local run).
+criterion = { version = "0.8.2", default-features = false }
+proptest.workspace = true
+# Tests parse the exports' JSON and compare numbers exactly (tests/round_trip.rs);
+# with this feature serde_json parses floats with correct rounding, as the
+# loader and JavaScript do. Tests only: the WebAssembly build does not get it.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+# The native pipeline benchmark: `cargo bench -p b2c-core-wasm --bench pipeline`.
+[[bench]]
+name = "pipeline"
+path = "benches/pipeline/main.rs"
+harness = false
+
+# The benchmark document's own checks, which `cargo test` runs (it does not run benchmarks).
+[[test]]
+name = "bench_document"
+path = "benches/pipeline/tests.rs"
+
+# A copy of the workspace lints with one change: `unsafe_code` is `deny`, not
+# `forbid`, because the `#[wasm_bindgen]` expansion contains `unsafe` glue and
+# `forbid` cannot be lifted for generated code. Hand-written `unsafe` is still
+# rejected (by this lint and in review); keep the rest in step with the
+# workspace table in the root Cargo.toml.
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+disallowed_methods = "deny"
+# Indexing that can panic is not allowed in a facade that must never trap.
+indexing_slicing = "deny"

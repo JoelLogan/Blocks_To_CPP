@@ -1,0 +1,45 @@
+/*
+ * The toolbox's category rows (src/editor/toolbox/category.ts): a round bubble in the category's
+ * colour with its icon, and the category name below it (docs/spec/04-user-interface.md §4.2). The
+ * bubble's colour is set from the Blockly theme; white text on every category colour has a
+ * contrast of at least 4.5:1 (packages/blockly-ext/src/theme/categories.ts).
+ */
+.b2cToolboxCategory > .blocklyToolboxCategory {
+  height: auto;
+  line-height: normal;
+  margin-bottom: 2px;
+  padding: 4px 6px;
+  white-space: normal;
+}
+
+.b2cToolboxCategory .blocklyTreeRowContentContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.b2cToolboxIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border: 1px solid rgb(255 255 255 / 60%);
+  border-radius: 50%;
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.b2cToolboxCategory .blocklyToolboxCategoryLabel {
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .b2cToolboxCategory > .blocklyToolboxCategory {
+    transition: none;
+  }
+}

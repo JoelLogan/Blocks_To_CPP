@@ -314,7 +314,9 @@ impl<'a> Decoder<'a> {
             return None;
         };
         match &**kind {
-            "int" => self.at(Seg::Key(kind), |d| d.i64(inner)).map(DefineValue::Int),
+            "int" => self
+                .at(Seg::Key(kind), |d| d.safe_int(inner))
+                .map(DefineValue::Int),
             "bool" => self.at(Seg::Key(kind), |d| d.bool(inner)).map(DefineValue::Bool),
             "string" => self
                 .at(Seg::Key(kind), |d| d.string(inner))

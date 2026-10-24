@@ -1,0 +1,400 @@
+# The A/B benchmark jobs (docs/spec/09-quality-and-delivery.md §9.2,
+# apps/desktop/e2e/bench/README.md "A/B runs"), called by the two workflows that start an A/B run:
+# bench-ab-pr.yml for a pull request and bench-ab.yml by hand. They build the app under test (as
+# nightly.yml's e2e-app job does) from a base and a head commit, then on one runner per system run
+# the chosen webview benchmarks of the head's checkout against both builds, in alternating runs
+# (apps/desktop/e2e/bench/ab-rounds.sh: base, head, head, base, ...; 10 samples per side; each
+# benchmark in a Vitest call of its own), and compare the medians at the 10% threshold
+# (tools/bench-compare.py ab; for webview.edit-1000.p95-all and webview.drag-5000.frame-p95-all,
+# the p95 of each side's edits or frame times, pooled over its runs). A gated metric more than 10%
+# worse fails, unless the head's apps/desktop/e2e/bench/accepted.json accepts it as an intended
+# slowdown (kind "accepted") and the base's does not; a redefinition never waives an A/B
+# difference, since the head's benchmarks measure both builds. A benchmark the base build cannot
+# run (its end-to-end hook lacks a method the benchmark calls) is skipped, and one that fails is
+# left out of the comparison: both are listed in the summary, and only a benchmark that failed on
+# the head fails the job. A run that left a benchmark out ends "Not conclusive" (with a warning
+# annotation): it says nothing about that benchmark's metrics, so it does not count for a merge
+# rule that needs them.
+#
+# What runs here (the trust boundary): these jobs build and run the code of both commits, so a
+# caller may pass only commits its own run may execute.
+# - The head is always the commit the calling run is for (github.sha); no input can change it.
+# - The base is the full commit ID the caller passes, and the caller checks it: bench-ab-pr.yml
+#   takes its merge commit's first parent (the base branch), and bench-ab.yml an ancestor of the
+#   dispatched commit.
+# A pull request's code thus runs only in a pull_request run (bench-ab-pr.yml), which GitHub
+# gives a read-only token and the pull request's own cache scope. A manual run (bench-ab.yml)
+# can write to the cache scope of the branch it runs on, the default branch's included, which
+# other runs restore from; it runs only commits of the repository's own history. No job saves to
+# the Actions cache (they only restore from it; setup-msys2's package cache is off), and none has
+# secrets.
+name: Bench A/B (jobs)
+
+on:
+  workflow_call:
+    inputs:
+      base:
+        description: The base, as a full commit ID that the caller has checked
+        type: string
+        required: true
+      metrics:
+        description: The benchmarks, separated by spaces or commas (bench-ab.yml's input lists them)
+        type: string
+        required: true
+      systems:
+        description: Which systems to run on (both, linux or windows)
+        type: string
+        required: true
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  # As in nightly.yml: the wasm-bindgen CLI of Cargo.lock, and tauri-driver, pinned.
+  WASM_BINDGEN_VERSION: 0.2.129
+  TAURI_DRIVER_VERSION: 2.1.0
+  # Runs per side and samples per run: 2 rounds of 5 give each side 10 samples.
+  AB_ROUNDS: "2"
+  AB_SAMPLES: "5"
+
+jobs:
+  # The matrices, from the inputs. The inputs reach the script only as environment variables, and
+  # are checked there.
+  plan:
+    name: Plan the A/B run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      filters: ${{ steps.plan.outputs.filters }}
+      apps: ${{ steps.plan.outputs.apps }}
+      systems: ${{ steps.plan.outputs.systems }}
+    steps:
+      - name: Check the inputs and plan the jobs
+        id: plan
+        env:
+          BASE: ${{ inputs.base }}
+          RUN_SHA: ${{ github.sha }}
+          INPUT_METRICS: ${{ inputs.metrics }}
+          INPUT_SYSTEMS: ${{ inputs.systems }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$BASE" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The base is not a full commit ID"
+            exit 1
+          fi
+          # Split the benchmarks into words, without expanding file name patterns.
+          set -o noglob
+          filters=()
+          for metric in ${INPUT_METRICS//,/ }; do
+            case "$metric" in
+              preview | select | guessing | console | cold-start | drag) filters+=("$metric.bench") ;;
+              *)
+                echo "::error::Unknown benchmark '$metric' (preview, select, guessing, console, cold-start, drag)"
+                exit 1
+                ;;
+            esac
+          done
+          if [ "${#filters[@]}" -eq 0 ]; then
+            echo "::error::No benchmark was chosen"
+            exit 1
+          fi
+          linux='{"os":"ubuntu-24.04","system":"linux","app":"blocks2cpp-desktop","python":"python3"}'
+          windows='{"os":"windows-2025","system":"windows","app":"blocks2cpp-desktop.exe","python":"python"}'
+          case "$INPUT_SYSTEMS" in
+            both) chosen=("$linux" "$windows") ;;
+            linux) chosen=("$linux") ;;
+            windows) chosen=("$windows") ;;
+            *) echo "::error::Unknown systems (both, linux, windows)"; exit 1 ;;
+          esac
+          apps=()
+          for system in "${chosen[@]}"; do
+            for side in base head; do
+              apps+=("$(jq --compact-output --arg side "$side" '. + {side: $side}' <<< "$system")")
+            done
+          done
+          {
+            echo "filters=${filters[*]}"
+            echo "systems=$(printf '%s\n' "${chosen[@]}" | jq --compact-output --slurp .)"
+            echo "apps=$(printf '%s\n' "${apps[@]}" | jq --compact-output --slurp .)"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### A/B plan"
+            echo
+            echo "- Base: \`$BASE\`"
+            echo "- Head: \`$RUN_SHA\`"
+            echo "- Benchmarks: \`${filters[*]}\`"
+            echo "- Systems: $INPUT_SYSTEMS; $AB_ROUNDS rounds of $AB_SAMPLES samples per side"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The app under test of each side (a debug build with the e2e-hooks feature and the e2e
+  # frontend embedded), as nightly.yml's e2e-app job builds it, from that side's own checkout.
+  app:
+    name: App (${{ matrix.side }}, ${{ matrix.os }})
+    needs: plan
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: true
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.apps) }}
+    steps:
+      - name: Check out the ${{ matrix.side }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ matrix.side == 'base' && inputs.base || github.sha }}
+          persist-credentials: false
+
+      - name: Install the webview libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential pkg-config libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev libgtk-3-dev librsvg2-dev
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore wasm-bindgen-cli from the cache
+        id: wasm-bindgen-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen*
+            ~/.cargo/bin/wasm2es6js*
+          key: wasm-bindgen-cli-${{ env.WASM_BINDGEN_VERSION }}-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Install wasm-bindgen-cli
+        if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked
+
+      - name: Build the WebAssembly core (without wasm-opt)
+        shell: bash
+        env:
+          B2C_SKIP_WASM_OPT: "1"
+        run: pnpm --filter @blocks2cpp/b2c-core-wasm run build
+
+      - name: Build the app for the end-to-end tests
+        shell: bash
+        run: >-
+          pnpm --filter @blocks2cpp/desktop tauri build --debug --no-bundle
+          --features e2e-hooks
+          --config '{"build":{"beforeBuildCommand":"pnpm build:e2e"}}'
+
+      - name: Check that the end-to-end build has its hooks
+        shell: bash
+        run: |
+          exe=target/debug/blocks2cpp-desktop
+          if [ "$RUNNER_OS" = "Windows" ]; then exe="$exe.exe"; fi
+          grep --binary-files=text --quiet --fixed-strings B2C_E2E_DIALOGS "$exe"
+          grep --recursive --quiet --fixed-strings __B2C_E2E__ apps/desktop/dist
+
+      - name: Upload the app under test
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ab-app-${{ matrix.side }}-${{ matrix.os }}
+          path: |
+            target/debug/blocks2cpp-desktop
+            target/debug/blocks2cpp-desktop.exe
+          if-no-files-found: error
+          retention-days: 3
+
+  # The benchmarks of the head's checkout against both builds, alternating, on one runner.
+  bench:
+    name: A/B benchmarks (${{ matrix.os }})
+    needs: [plan, app]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    permissions:
+      contents: read # check out the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.systems) }}
+    env:
+      B2C_E2E_ARTIFACTS: ${{ github.workspace }}/e2e-artifacts
+      AB_OUT: ${{ github.workspace }}/ab-results
+      BASE_APP: ${{ github.workspace }}/ab-app/base/${{ matrix.app }}
+      HEAD_APP: ${{ github.workspace }}/ab-app/head/${{ matrix.app }}
+      BENCH_SYSTEM: ${{ matrix.system }}
+      PYTHON: ${{ matrix.python }}
+      FILTERS: ${{ needs.plan.outputs.filters }}
+    steps:
+      # The commit of the calling run (github.sha), as actions/checkout takes it by default.
+      - name: Check out the head (the benchmarks and the comparison)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Only the base's acceptance file: what the head newly accepts is what it adds to it.
+      - name: Check out the base's acceptance file
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.base }}
+          path: ab-base
+          sparse-checkout: apps/desktop/e2e/bench/accepted.json
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Install the webview libraries, WebKitWebDriver and xvfb (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential pkg-config libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev libgtk-3-dev librsvg2-dev xvfb webkit2gtk-driver
+
+      - name: Set up pnpm (version from package.json)
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install dependencies under the supply-chain policy
+        run: pnpm install --frozen-lockfile
+
+      # The app finds a compiler as on a user's machine, so it opens on its start page. The
+      # action's package cache is off: it would save the pacman cache during this step, and no
+      # A/B job saves to the Actions cache (the header's trust boundary).
+      - name: Install g++ (MSYS2 UCRT64)
+        if: runner.os == 'Windows'
+        id: msys2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+          cache: false
+
+      - name: Put g++ on PATH and name its folder for the app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $bin = Join-Path $env:MSYS2_LOCATION 'ucrt64\bin'
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          Add-Content -Path $env:GITHUB_ENV -Value "B2C_E2E_TOOLCHAIN_DIRS=$bin"
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Check the benchmark comparison script
+        shell: bash
+        run: |
+          "$PYTHON" --version
+          "$PYTHON" tools/bench-compare.py --self-test
+
+      - name: Restore tauri-driver from the cache
+        id: tauri-driver-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/tauri-driver
+            ~/.cargo/bin/tauri-driver.exe
+          key: tauri-driver-${{ env.TAURI_DRIVER_VERSION }}-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
+
+      - name: Install tauri-driver
+        if: steps.tauri-driver-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          # A third-party tool: its warnings are not ours to deny.
+          RUSTFLAGS: ""
+        run: cargo install tauri-driver --version "$TAURI_DRIVER_VERSION" --locked
+
+      - name: Download the base's app
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ab-app-base-${{ matrix.os }}
+          path: ab-app/base
+
+      - name: Download the head's app
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ab-app-head-${{ matrix.os }}
+          path: ab-app/head
+
+      # Artifacts do not keep file modes.
+      - name: Make the apps executable (Linux)
+        if: runner.os == 'Linux'
+        run: chmod +x "$BASE_APP" "$HEAD_APP"
+
+      - name: Fetch msedgedriver for the installed WebView2 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./apps/desktop/e2e/scripts/msedgedriver.ps1 -OutDir (Join-Path $env:RUNNER_TEMP 'msedgedriver')
+
+      # Each benchmark runs in its own Vitest call, and the rounds go on when one is skipped or
+      # fails: the script records what happened to each in $AB_OUT/ab-runs.tsv for the comparison,
+      # and fails only when its arguments are not usable. Each run's artifacts go into
+      # $B2C_E2E_ARTIFACTS/<side>/round-<n>/<benchmark>/.
+      - name: Run the benchmarks against both builds, alternating
+        shell: bash
+        env:
+          # Linux: a virtual display, which has no GPU (docs/spec/02-architecture.md §2.8).
+          AB_XVFB: ${{ runner.os == 'Linux' && '1' || '0' }}
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            export B2C_E2E_TOOLCHAIN_DIRS=/usr/bin
+          fi
+          read -r -a filters <<< "$FILTERS"
+          apps/desktop/e2e/bench/ab-rounds.sh "$BASE_APP" "$HEAD_APP" "$AB_OUT" "${filters[@]}"
+
+      # Fails on a gated regression, or on a benchmark that failed on the head; the skipped
+      # benchmarks and those that failed on the base are listed after the table, and the summary
+      # (and a warning annotation) says the run is not conclusive for them.
+      - name: Compare the head with the base
+        shell: bash
+        run: |
+          arguments=(--accepted apps/desktop/e2e/bench/accepted.json --runs "$AB_OUT/ab-runs.tsv")
+          if [ -f ab-base/apps/desktop/e2e/bench/accepted.json ]; then
+            arguments+=(--accepted-base ab-base/apps/desktop/e2e/bench/accepted.json)
+          fi
+          "$PYTHON" tools/bench-compare.py ab --os "$BENCH_SYSTEM" \
+            --base "$AB_OUT/base" --head "$AB_OUT/head" "${arguments[@]}" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the A/B results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ab-results-${{ matrix.system }}
+          path: ab-results
+          if-no-files-found: warn
+          retention-days: 30
+
+      # A failed benchmark run leaves its logs (only a failed test saves them), also when the job
+      # passes: a failure on the base does not fail it.
+      - name: Show the logs of the failed benchmark runs
+        if: ${{ !cancelled() && hashFiles('e2e-artifacts/**/*.log') != '' }}
+        shell: bash
+        run: apps/desktop/e2e/scripts/show-logs.sh "$B2C_E2E_ARTIFACTS"
+
+      - name: Upload screenshots and logs
+        if: ${{ !cancelled() && hashFiles('e2e-artifacts/**/*.log') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ab-artifacts-${{ matrix.system }}
+          path: e2e-artifacts
+          if-no-files-found: ignore
+          retention-days: 14

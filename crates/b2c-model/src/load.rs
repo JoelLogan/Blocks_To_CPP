@@ -6,7 +6,10 @@
 //!   [`crate::limits::MAX_JSON_DEPTH`], then decode into [`crate::Document`]
 //!   with unknown keys rejected (except inside `"x-ext"`).
 //! * Check `format == FORMAT_TAG`; refuse newer `formatVersion`s with a clear
-//!   message; migrate older ones (none exist yet for version 1).
+//!   message; migrate older ones (none exist yet for version 1). A key this
+//!   version does not know, in a file a newer app saved (`generator.app`),
+//!   is reported as made with a newer version (ADR-0013). Messages never name
+//!   a version taken from the file.
 //! * Enforce every limit in [`crate::limits`], unique block/module/symbol IDs,
 //!   module-name rules, and the text rules: valid UTF-8, no NUL, no C0 controls
 //!   other than tab and newline, no Unicode bidi controls, in every string.
@@ -26,23 +29,24 @@
 use b2c_ir::{Diagnostic, Location};
 
 use crate::codes::{self, Diags};
-use crate::decode::Decoder;
+use crate::decode::{Decoder, Origin};
 use crate::json::{self, ErrorKind, Json};
 use crate::limits::{MAX_FILE_BYTES, MAX_JSON_DEPTH};
 use crate::migrate::{self, MigrationError};
 use crate::text_rules::quote;
+use crate::version::{APP_VERSION, is_newer};
 use crate::{CURRENT_FORMAT_VERSION, Document, FORMAT_TAG};
 
-/// Why a project could not be loaded.
+/// Why a project file or a clipboard payload could not be loaded.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("the project could not be loaded ({} problem(s))", .diagnostics.len())]
+#[error("the input could not be loaded ({} problem(s))", .diagnostics.len())]
 pub struct LoadError {
     /// Every problem found (at least one).
     pub diagnostics: Vec<Diagnostic>,
 }
 
 impl LoadError {
-    fn from_diags(diags: Diags) -> Self {
+    pub(crate) fn from_diags(diags: Diags) -> Self {
         let mut diagnostics = diags.finish();
         if diagnostics.is_empty() {
             // Unreachable by construction; keeps the "at least one" promise.
@@ -56,7 +60,7 @@ impl LoadError {
         Self { diagnostics }
     }
 
-    fn single(code: &str, message: String) -> Self {
+    pub(crate) fn single(code: &str, message: String) -> Self {
         let mut diags = Diags::default();
         diags.error(code, Location::project(), message);
         Self::from_diags(diags)
@@ -68,10 +72,12 @@ impl LoadError {
 /// # Errors
 /// Returns every problem found when the input is not a valid project.
 pub fn load(bytes: &[u8]) -> Result<Document, LoadError> {
-    let text = check_bytes(bytes)?;
-    let root = parse(text)?;
+    let text = check_bytes(bytes, Origin::Project)?;
+    let root = parse(text, Origin::Project)?;
     let root = check_header(root)?;
-    let (document, diags) = Decoder::new(Diags::default()).run(&root);
+    let (document, diags) = Decoder::new(Diags::default(), Origin::Project)
+        .saved_by_newer_app(made_by_newer_app(&root))
+        .run(&root);
     match document {
         Some(document) if diags.is_empty() => Ok(document),
         _ => Err(LoadError::from_diags(diags)),
@@ -79,17 +85,20 @@ pub fn load(bytes: &[u8]) -> Result<Document, LoadError> {
 }
 
 /// Step 1: size, UTF-8 and no byte order mark.
-fn check_bytes(bytes: &[u8]) -> Result<&str, LoadError> {
+pub(crate) fn check_bytes(bytes: &[u8], origin: Origin) -> Result<&str, LoadError> {
     if bytes.len() > MAX_FILE_BYTES {
         // No exact size: callers stop reading one byte past the limit (so a
         // huge file cannot exhaust memory), so `bytes.len()` is usually not
         // the size of the file.
-        return Err(LoadError::single(
-            codes::FILE_TOO_LARGE,
-            format!(
+        let message = match origin {
+            Origin::Project => format!(
                 "The project file is larger than {MAX_FILE_BYTES} bytes (32 MiB), the most a project file can be."
             ),
-        ));
+            Origin::Clipboard => format!(
+                "The pasted data is larger than {MAX_FILE_BYTES} bytes (32 MiB), the most a paste can be."
+            ),
+        };
+        return Err(LoadError::single(codes::FILE_TOO_LARGE, message));
     }
     let text = std::str::from_utf8(bytes).map_err(|error| {
         let valid = bytes.get(..error.valid_up_to()).unwrap_or_default();
@@ -98,26 +107,30 @@ fn check_bytes(bytes: &[u8]) -> Result<&str, LoadError> {
             .first()
             .copied()
             .unwrap_or((1, 1));
-        LoadError::single(
-            codes::NOT_UTF8,
-            format!(
+        let message = match origin {
+            Origin::Project => format!(
                 "The project file is not valid UTF-8 text (line {line}, column {column}). Save it with the UTF-8 encoding."
             ),
-        )
+            Origin::Clipboard => {
+                format!("The pasted data is not valid UTF-8 text (line {line}, column {column}).")
+            }
+        };
+        LoadError::single(codes::NOT_UTF8, message)
     })?;
     if text.starts_with('\u{feff}') {
-        return Err(LoadError::single(
-            codes::NOT_UTF8,
-            String::from(
-                "The project file starts with an invisible byte order mark (BOM). Save it as UTF-8 without a BOM.",
-            ),
-        ));
+        let message = match origin {
+            Origin::Project => {
+                "The project file starts with an invisible byte order mark (BOM). Save it as UTF-8 without a BOM."
+            }
+            Origin::Clipboard => "The pasted data starts with an invisible byte order mark (BOM).",
+        };
+        return Err(LoadError::single(codes::NOT_UTF8, String::from(message)));
     }
     Ok(text)
 }
 
 /// Step 2: JSON syntax, depth, size and duplicate keys.
-fn parse(text: &str) -> Result<Json, LoadError> {
+pub(crate) fn parse(text: &str, origin: Origin) -> Result<Json, LoadError> {
     let parsed = json::parse(text).map_err(|error| {
         let (line, column) = json::line_columns(text, &[error.offset])
             .first()
@@ -125,23 +138,40 @@ fn parse(text: &str) -> Result<Json, LoadError> {
             .unwrap_or((1, 1));
         let at = format!("line {line}, column {column}");
         let found = json::describe_at(text, error.offset);
-        let (code, message) = match error.kind {
-            ErrorKind::TooDeep => (
+        let (code, message) = match (error.kind, origin) {
+            (ErrorKind::TooDeep, Origin::Project) => (
                 codes::TOO_DEEP,
                 format!(
                     "Lists and objects in the project file are nested more than {MAX_JSON_DEPTH} levels deep ({at}). Real projects need far fewer levels, so the file was not opened."
                 ),
             ),
-            ErrorKind::TooManyValues => (
+            (ErrorKind::TooDeep, Origin::Clipboard) => (
+                codes::TOO_DEEP,
+                format!(
+                    "Lists and objects in the pasted data are nested more than {MAX_JSON_DEPTH} levels deep ({at}). Real blocks need far fewer levels, so nothing was pasted."
+                ),
+            ),
+            (ErrorKind::TooManyValues, Origin::Project) => (
                 codes::TOO_MANY_VALUES,
                 format!(
                     "The project file holds more than {} values ({at}), far more than any real project, so it was not opened.",
                     json::MAX_JSON_VALUES
                 ),
             ),
-            kind => (
+            (ErrorKind::TooManyValues, Origin::Clipboard) => (
+                codes::TOO_MANY_VALUES,
+                format!(
+                    "The pasted data holds more than {} values ({at}), far more than any real blocks, so nothing was pasted.",
+                    json::MAX_JSON_VALUES
+                ),
+            ),
+            (kind, origin) => (
                 codes::JSON_SYNTAX,
-                format!("The project file is not valid JSON: {} ({at}).", syntax_problem(kind, &found)),
+                format!(
+                    "{} is not valid JSON: {} ({at}).",
+                    origin.whole(),
+                    syntax_problem(kind, &found)
+                ),
             ),
         };
         LoadError::single(code, message)
@@ -188,17 +218,14 @@ fn syntax_problem(kind: ErrorKind, found: &str) -> String {
     }
 }
 
-/// A short, safe version string from the file (for messages), if it looks
-/// like one.
-fn saved_by(root: &Json) -> Option<&str> {
-    let Some(Json::String(app)) = root.get("generator").and_then(|g| g.get("app")) else {
-        return None;
-    };
-    let plausible = (1..=32).contains(&app.len())
-        && app
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'+'));
-    plausible.then_some(&**app)
+/// Whether the file says a newer version of Blocks2Cpp saved it: its
+/// `generator.app` is a SemVer version newer than this app's. The version is
+/// only compared, never shown: the file could claim anything.
+fn made_by_newer_app(root: &Json) -> bool {
+    match root.get("generator").and_then(|g| g.get("app")) {
+        Some(Json::String(app)) => is_newer(app, APP_VERSION),
+        _ => false,
+    }
 }
 
 /// Step 3: `format`, `formatVersion` and migrations.
@@ -252,15 +279,14 @@ fn check_header(root: Json) -> Result<Json, LoadError> {
         ));
     };
     // Any whole number above the current version is a newer format, even
-    // one beyond 32 bits (spec §5.7).
+    // one beyond 32 bits (spec §5.7). The message names no version taken
+    // from the file (ADR-0013).
     if version > u64::from(CURRENT_FORMAT_VERSION) {
-        let needs = saved_by(&root)
-            .map(|app| format!("needs ≥ {app}; "))
-            .unwrap_or_default();
         return Err(LoadError::single(
             codes::NEWER_FORMAT,
-            format!(
-                "This project was made with a newer version of Blocks2Cpp ({needs}it uses project format {version}, and this version reads format {CURRENT_FORMAT_VERSION}). Update Blocks2Cpp to open it."
+            String::from(
+                "This project was made with a newer version of Blocks2Cpp, which saves projects in a newer format \
+                 than this version can read. Update Blocks2Cpp to open it.",
             ),
         ));
     }
@@ -362,39 +388,49 @@ mod tests {
 
     #[test]
     fn newer_versions_are_refused_clearly() {
-        let error = load(
-            br#"{"format": "blocks2cpp/project", "formatVersion": 7, "generator": {"app": "3.1.0", "catalog": "2.0.0"}, "anything": "goes"}"#,
-        )
-        .unwrap_err();
-        assert_eq!(error.diagnostics.len(), 1);
-        assert_eq!(error.diagnostics[0].code.0, codes::NEWER_FORMAT);
-        assert_eq!(
-            error.diagnostics[0].message,
-            "This project was made with a newer version of Blocks2Cpp (needs ≥ 3.1.0; it uses project format 7, and this version reads format 1). Update Blocks2Cpp to open it."
-        );
-        let error = load(
+        const MESSAGE: &str = "This project was made with a newer version of Blocks2Cpp, which saves projects in a \
+                               newer format than this version can read. Update Blocks2Cpp to open it.";
+        // The message names no version from the file: neither the app that
+        // saved it nor its format.
+        for text in [
+            &br#"{"format": "blocks2cpp/project", "formatVersion": 7, "generator": {"app": "3.1.0", "catalog": "2.0.0"}, "anything": "goes"}"#[..],
             br#"{"format": "blocks2cpp/project", "formatVersion": 2, "generator": {"app": "<b>evil</b>"}}"#,
-        )
-        .unwrap_err();
-        assert!(error.diagnostics[0].message.contains("(it uses project format 2"));
-        // A whole number beyond 32 bits is a newer format too, not "no valid
-        // formatVersion".
-        let error = load(br#"{"format": "blocks2cpp/project", "formatVersion": 4294967296}"#).unwrap_err();
-        assert_eq!(error.diagnostics[0].code.0, codes::NEWER_FORMAT);
-        assert!(
-            error.diagnostics[0]
-                .message
-                .contains("it uses project format 4294967296,")
-        );
+            // A whole number beyond 32 bits is a newer format too, not "no
+            // valid formatVersion".
+            br#"{"format": "blocks2cpp/project", "formatVersion": 4294967296}"#,
+        ] {
+            let error = load(text).unwrap_err();
+            assert_eq!(error.diagnostics.len(), 1);
+            assert_eq!(error.diagnostics[0].code.0, codes::NEWER_FORMAT);
+            assert_eq!(error.diagnostics[0].message, MESSAGE);
+        }
+    }
+
+    #[test]
+    fn only_a_semver_version_newer_than_this_app_counts_as_newer() {
+        let root = |app: &str| {
+            parse(
+                &format!(r#"{{"generator": {{"app": "{app}"}}}}"#),
+                Origin::Project,
+            )
+            .unwrap()
+        };
+        assert!(made_by_newer_app(&root("9.0.0")));
+        assert!(!made_by_newer_app(&root(APP_VERSION)));
+        assert!(!made_by_newer_app(&root("0.0.0")));
+        assert!(!made_by_newer_app(&root("nine")));
+        for text in ["{}", r#"{"generator": "9.0.0"}"#, r#"{"generator": {"app": 9}}"#] {
+            assert!(
+                !made_by_newer_app(&parse(text, Origin::Project).unwrap()),
+                "{text}"
+            );
+        }
     }
 
     #[test]
     fn load_error_display() {
         let error = load(b"[]").unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "the project could not be loaded (1 problem(s))"
-        );
+        assert_eq!(error.to_string(), "the input could not be loaded (1 problem(s))");
         let empty = LoadError::from_diags(Diags::default());
         assert_eq!(empty.diagnostics.len(), 1);
     }

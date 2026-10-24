@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-recovery-save"
+description = "Enables the recovery_save command without any pre-configured scope."
+commands.allow = ["recovery_save"]
+
+[[permission]]
+identifier = "deny-recovery-save"
+description = "Denies the recovery_save command without any pre-configured scope."
+commands.deny = ["recovery_save"]
