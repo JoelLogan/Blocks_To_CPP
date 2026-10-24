@@ -245,7 +245,21 @@ impl<R: Runtime> NativeDialogs<R> {
         if let Some(window) = self.app.get_webview_window(MAIN_WINDOW) {
             dialog = dialog.set_parent(&window);
         }
-        windows_trust_choice(&dialog.show().into())
+        windows_trust_choice(&from_rfd(dialog.show()))
+    }
+}
+
+/// Windows: `rfd`'s answer as the plugin's. The trust dialog's `rfd` (0.17)
+/// is another version than the plugin's (0.16), so the plugin's own
+/// conversion does not apply.
+#[cfg(windows)]
+fn from_rfd(result: rfd::MessageDialogResult) -> MessageDialogResult {
+    match result {
+        rfd::MessageDialogResult::Yes => MessageDialogResult::Yes,
+        rfd::MessageDialogResult::No => MessageDialogResult::No,
+        rfd::MessageDialogResult::Ok => MessageDialogResult::Ok,
+        rfd::MessageDialogResult::Cancel => MessageDialogResult::Cancel,
+        rfd::MessageDialogResult::Custom(label) => MessageDialogResult::Custom(label),
     }
 }
 
@@ -512,6 +526,29 @@ mod tests {
             lock.contains("name = \"rfd\"\nversion = \"0.16.0\"\n"),
             "the plugin's rfd is no longer 0.16.0: remove the doubling of % in plugin_message_text"
         );
+    }
+
+    /// Windows: every answer of the trust dialog's `rfd` reaches
+    /// [`windows_trust_choice`] as the same answer, so only a trust
+    /// button's own label grants trust.
+    #[cfg(windows)]
+    #[test]
+    fn the_windows_dialogs_answers_keep_their_meaning() {
+        for (choice, label) in TrustChoice::LABELS {
+            let answer = from_rfd(rfd::MessageDialogResult::Custom(label.to_owned()));
+            assert_eq!(answer, MessageDialogResult::Custom(label.to_owned()));
+            assert_eq!(windows_trust_choice(&answer), choice);
+        }
+        for (rfd_answer, answer) in [
+            (rfd::MessageDialogResult::Yes, MessageDialogResult::Yes),
+            (rfd::MessageDialogResult::No, MessageDialogResult::No),
+            (rfd::MessageDialogResult::Ok, MessageDialogResult::Ok),
+            (rfd::MessageDialogResult::Cancel, MessageDialogResult::Cancel),
+        ] {
+            let converted = from_rfd(rfd_answer);
+            assert_eq!(converted, answer);
+            assert_eq!(windows_trust_choice(&converted), TrustChoice::StayRestricted);
+        }
     }
 
     #[test]

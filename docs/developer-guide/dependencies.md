@@ -72,7 +72,7 @@ to the Cargo workspace.
 | `tauri`                                      | 2.12.4 (2026-10-14)  | Apache-2.0 OR MIT | The desktop shell ([ADR-0001](../adr/0001-desktop-shell-tauri.md))                                                                                                                                                                                                                                                                                                                  |
 | `tauri-build` (build)                        | 2.7.3 (2026-10-14)   | Apache-2.0 OR MIT | Embeds the configuration, capabilities and Windows resources. 2.7.3 replaced its own module that links the C runtime statically into Windows MSVC builds with the `static_vcruntime` crate 3.0.0 (2025-11-25; MIT OR Apache-2.0 OR Zlib, no dependencies, build time only)                                                                                                          |
 | `tauri-plugin-dialog`                        | 2.8.3 (2026-10-14)   | Apache-2.0 OR MIT | Native open, save and message dialogs, from Rust only (no JavaScript permission). Default features off except `gtk3`: rfd 0.16.0's GTK 3 backend on Linux, no XDG portal and no D-Bus. Brings `tauri-plugin-fs` 2.7.1 (for its `FilePath` type; the fs plugin is not registered)                                                                                                    |
-| `rfd` (Windows only)                         | 0.16.0               | MIT               | The Windows trust dialog with _Stay in Restricted Mode_ as its first and default button (08 §8.3.1). No default features, `common-controls-v6`; already in the lockfile through `tauri-plugin-dialog` with the same features, so no new code is compiled                                                                                                                            |
+| `rfd` (Windows only)                         | 0.17.2 (2026-01-12)  | MIT               | The Windows trust dialog with _Stay in Restricted Mode_ as its first and default button (08 §8.3.1). No default features (no XDG portal or Wayland code), `common-controls-v6`. A newer release than the dialog plugin's 0.16.0, so Windows builds compile both (see the notes); its `windows-sys` 0.61.2 is already in the lockfile                                                |
 | `tracing-subscriber`                         | 0.3.23 (2026-03-13)  | MIT               | The span registry under the app's own JSON-lines log layer. Features `registry` and `std` only: no `fmt`, ANSI, `log` bridge or `EnvFilter`                                                                                                                                                                                                                                         |
 | `notify` (through `b2c-app`)                 | 8.2.0 (2025-08-03)   | CC0-1.0           | The file watcher of open projects (05 §5.10): inotify on Linux, `ReadDirectoryChangesW` on Windows, one non-recursive watch per project folder. No default features (no macOS FSEvents). Its events only wake the backend's own 300 ms debounce and SHA-256 check                                                                                                                   |
 | `tracing` (through `b2c-build`, `b2c-app`)   | 0.1.44 (2025-12-18)  | MIT               | Structured logging with a span per build and run session (09 §9.1, 08 §8.11). No default features (`std` only): no `log` bridge and no attribute macros. Already in the lockfile through Tauri                                                                                                                                                                                      |
@@ -166,9 +166,14 @@ build needs.
   Left out: `devtools` (no built-in developer tools in release builds; WebKitGTK's remote
   inspector is a separate path, see 08 §8.8), `dynamic-acl` (capabilities are fixed
   at build time), `tray-icon`, and `dbus` (unused, and it would need libdbus to build).
-- **`rfd` 0.16.0**, not 0.17: `tauri-plugin-dialog` 2.8.3, the newest on 2026-10-24, still
-  requires `rfd` 0.16, and the Windows trust dialog uses the plugin's copy, so `rfd` moves when the
-  plugin does. On Windows it brings `windows-sys` 0.60.2, which `notify` uses too.
+- **Two `rfd` releases on Windows:** `tauri-plugin-dialog` 2.8.3, the newest on 2026-10-24, still
+  requires `rfd` 0.16, while the Windows trust dialog uses `rfd` 0.17.2 directly (Dependabot's
+  pull request #6, accepted on 2026-10-24). The two releases' Windows message dialog (the Task
+  Dialog behind `MessageDialog::show`) is the same code; 0.17 dropped the `tokio` and `async-std`
+  features and moved to `windows-sys` 0.61. Windows builds compile both copies, Linux builds only
+  the plugin's. The plugin converts only its own release's answers, so `src-tauri/src/dialogs.rs`
+  converts 0.17's itself (`from_rfd`). The copies become one when the plugin moves to 0.17. The
+  plugin's copy brings `windows-sys` 0.60.2 on Windows, which `notify` uses too.
 - **`rfd` 0.16.0's GTK 3 message dialog** hands its text to
   `gtk_message_dialog_format_secondary_text` as a printf format, so a `%` in a project's name,
   folder or library names would be read as a conversion when the trust dialog opens.

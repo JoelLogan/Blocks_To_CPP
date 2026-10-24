@@ -434,7 +434,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   threshold measures and moves on its own.
 - Dependencies updated on 2026-10-24, again to releases at least 7 days old:
   Tauri 2.12.4 (crate and `@tauri-apps/api`; `@tauri-apps/cli` 2.12.3) with
-  the dialog plugin 2.8.3, `proptest` 1.12, `toml` 1.1.8, Radix's dialog 1.3,
+  the dialog plugin 2.8.3, `rfd` 0.17.2 for the Windows trust dialog,
+  `proptest` 1.12, `toml` 1.1.8, Radix's dialog 1.3,
   tabs 1.2 and tooltip 1.4, React 19.3.1, Vitest 4.1.12 and other patch
   releases, and the CodeQL, OSV-Scanner, Scorecard and zizmor actions (zizmor
   1.31.1). Vitest 4.1.12 and `tokio` 1.53.3 fix advisories, an override moves

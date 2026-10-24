@@ -175,8 +175,9 @@ decision the user makes explicitly, once, per project.**
   three buttons with custom labels on both systems, so the fallback of two
   questions in turn was not needed. On Linux it is a GTK 3 dialog without the
   XDG portal, so without D-Bus. The plugin is a new dependency justified
-  under §8.9. On Windows the dialog uses the plugin's dialog library (`rfd`)
-  directly, with **Stay in Restricted Mode** as the first button:
+  under §8.9. On Windows the dialog uses the plugin's dialog library (`rfd`,
+  in a newer release of its own) directly, with **Stay in Restricted Mode**
+  as the first button:
   the Task Dialog's default button is its first one, so Enter (also a held
   or repeated one) never grants trust, and the plugin cannot show that
   order (it reports Escape as the third button). Cancelling, Escape and
