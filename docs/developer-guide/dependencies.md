@@ -217,7 +217,8 @@ build needs.
   brought in at their newest versions that were at least 7 days old. Keep it that way when
   updating them, with `cargo update -p <crate> --precise <version>`. On 2026-10-24 that was
   `tauri` 2.12.4 with `tauri-build`, `tauri-codegen` and `tauri-macros` 2.7.3, `tauri-runtime` and
-  `tauri-runtime-wry` 2.12.2, `tauri-utils` 2.10.2 and `tauri-plugin-fs` 2.7.1 (all 2026-10-14):
+  `tauri-runtime-wry` 2.12.2, `tauri-utils` 2.10.2, `tauri-plugin` 2.7.2 (the plugins' build
+  helper, which only moved to that `tauri-utils`) and `tauri-plugin-fs` 2.7.1 (all 2026-10-14):
   `tauri` 2.12.5 with the 2.7.4 crates and `tauri-runtime-wry` 2.12.3 came out on 2026-10-21, and
   `wry` 0.57.1 and `tao` 0.37.2 on 2026-10-23, so `wry` 0.57.0 and `tao` 0.37.1 stay. A plain
   `cargo update -p tauri --precise 2.12.4` also takes `tauri-codegen` and `tauri-macros` 2.7.4 and
