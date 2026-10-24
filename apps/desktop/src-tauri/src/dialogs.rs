@@ -277,7 +277,8 @@ fn from_rfd(result: rfd::MessageDialogResult) -> MessageDialogResult {
 ///
 /// `rfd` 0.16.1 passes the text as an argument instead, and then a doubled
 /// `%` would show as two: this must go when the lockfile moves the plugin's
-/// `rfd` to 0.16.1, which a test below checks.
+/// `rfd` to 0.16.1, which a test below checks. `rfd` 0.17.2 still hands it
+/// over as the format, so the plugin moving to 0.17 is no reason to drop it.
 fn plugin_message_text(text: &str) -> Cow<'_, str> {
     if GTK_DIALOGS {
         printf_literal(text)
@@ -515,17 +516,93 @@ mod tests {
         assert_eq!(GTK_DIALOGS, cfg!(target_os = "linux"));
     }
 
-    /// The doubling above is for `rfd` 0.16.0, which the dialog plugin
-    /// brings. `rfd` 0.16.1 passes the text as an argument, so once the
-    /// lockfile moves to it a doubled `%` would show as two: then remove
-    /// [`plugin_message_text`]'s doubling, and this test.
+    /// The doubling above is for the `rfd` releases that hand a message to
+    /// GTK as its printf format: 0.16.0, which the dialog plugin brings, and
+    /// 0.17.2. `rfd` 0.16.1 passes the text as an argument, so once the
+    /// lockfile moves the plugin to it a doubled `%` would show as two: then
+    /// remove [`plugin_message_text`]'s doubling, and this test.
     #[test]
     fn the_percent_doubling_matches_the_locked_rfd() {
-        let lock = include_str!("../../../../Cargo.lock");
+        const FORMAT_RELEASES: [&str; 2] = ["0.16.0", "0.17.2"];
+        let rfd = plugin_rfd_version(include_str!("../../../../Cargo.lock"));
         assert!(
-            lock.contains("name = \"rfd\"\nversion = \"0.16.0\"\n"),
-            "the plugin's rfd is no longer 0.16.0: remove the doubling of % in plugin_message_text"
+            FORMAT_RELEASES.contains(&rfd.as_str()),
+            "the dialog plugin's rfd is now {rfd}: if its GTK 3 message dialog passes the text \
+             as an argument (0.16.1 does), remove the doubling of % in plugin_message_text and \
+             this test; if it still passes the text as the printf format, add {rfd} here"
         );
+    }
+
+    /// The version of `rfd` that `tauri-plugin-dialog` uses in `lock` (a
+    /// `Cargo.lock`): the one its dependency names, or the only one locked.
+    fn plugin_rfd_version(lock: &str) -> String {
+        let packages: Vec<&str> = lock.split("[[package]]").collect();
+        let field = |package: &str, key: &str| {
+            package.lines().find_map(|line| {
+                line.strip_prefix(key)
+                    .and_then(|rest| rest.strip_prefix(" = \""))
+                    .and_then(|rest| rest.strip_suffix('"'))
+                    .map(str::to_owned)
+            })
+        };
+        let plugin = packages
+            .iter()
+            .find(|package| field(package, "name").as_deref() == Some("tauri-plugin-dialog"))
+            .expect("Cargo.lock has tauri-plugin-dialog");
+        let dependency = plugin
+            .lines()
+            .map(|line| line.trim().trim_end_matches(',').trim_matches('"'))
+            .find(|line| *line == "rfd" || line.starts_with("rfd "))
+            .expect("tauri-plugin-dialog depends on rfd");
+        dependency.strip_prefix("rfd ").map_or_else(
+            || {
+                packages
+                    .iter()
+                    .find(|package| field(package, "name").as_deref() == Some("rfd"))
+                    .and_then(|package| field(package, "version"))
+                    .expect("Cargo.lock has rfd")
+            },
+            str::to_owned,
+        )
+    }
+
+    #[test]
+    fn the_plugins_rfd_is_read_from_the_lockfile() {
+        // Two releases locked: the plugin's dependency names its version.
+        let two = r#"
+[[package]]
+name = "rfd"
+version = "0.16.0"
+
+[[package]]
+name = "rfd"
+version = "0.17.2"
+
+[[package]]
+name = "tauri-plugin-dialog"
+version = "2.8.3"
+dependencies = [
+ "log",
+ "rfd 0.16.0",
+ "serde",
+]
+"#;
+        assert_eq!(plugin_rfd_version(two), "0.16.0");
+        // One release locked: the dependency is the bare name.
+        let one = r#"
+[[package]]
+name = "rfd"
+version = "0.16.1"
+
+[[package]]
+name = "tauri-plugin-dialog"
+version = "2.8.4"
+dependencies = [
+ "log",
+ "rfd",
+]
+"#;
+        assert_eq!(plugin_rfd_version(one), "0.16.1");
     }
 
     /// Windows: every answer of the trust dialog's `rfd` reaches

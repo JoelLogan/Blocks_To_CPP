@@ -187,7 +187,8 @@ build needs.
   `rfd` 0.16.1 (2026-10-22 21:30 UTC) passes the text as an argument and fits the plugin's `^0.16`;
   it is old enough on 2026-10-29. Update it with `cargo update -p rfd@0.16.0 --precise 0.16.1` and
   remove the doubling then, or every `%` shows twice; a test in `dialogs.rs` fails once the
-  lockfile no longer has 0.16.0.
+  plugin's `rfd` is another release than 0.16.0 or 0.17.2. `rfd` 0.17.2 still hands the text to
+  GTK as the format, so the plugin moving to 0.17 is no reason to remove the doubling.
 - **`lazy_static` 1.5.0** (through `tracing-subscriber`'s `sharded-slab`): 1.5.1 was less than 7
   days old when it was added. It is old enough now (2026-10-01), but it changes no code and, being
   a transitive crate, is in no Dependabot pull request, so it waits for a later Cargo update.
