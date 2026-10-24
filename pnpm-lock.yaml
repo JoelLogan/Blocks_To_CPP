@@ -129,8 +129,8 @@ importers:
         specifier: 5.2.0
         version: 5.2.0(eslint@10.13.0(supports-color@7.2.0))
       happy-dom:
-        specifier: 20.14.5
-        version: 20.14.5
+        specifier: 21.0.4
+        version: 21.0.4
       pixelmatch:
         specifier: 8.0.0
         version: 8.0.0
@@ -154,7 +154,7 @@ importers:
         version: 8.3.4(@types/node@24.19.2)
       vitest:
         specifier: 4.1.12
-        version: 4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(happy-dom@20.14.5)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@24.19.2))
+        version: 4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(happy-dom@21.0.4)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@24.19.2))
 
   packages/b2c-core-wasm:
     dependencies:
@@ -188,7 +188,7 @@ importers:
         version: 8.71.2(eslint@10.13.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       vitest:
         specifier: 4.1.12
-        version: 4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(happy-dom@20.14.5)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@24.19.2))
+        version: 4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(happy-dom@21.0.4)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@24.19.2))
 
   packages/blockly-ext:
     dependencies:
@@ -215,8 +215,8 @@ importers:
         specifier: 4.1.5
         version: 4.1.5(eslint@10.13.0(supports-color@7.2.0))
       happy-dom:
-        specifier: 20.14.5
-        version: 20.14.5
+        specifier: 21.0.4
+        version: 21.0.4
       prettier:
         specifier: 3.9.10
         version: 3.9.10
@@ -228,7 +228,7 @@ importers:
         version: 8.71.2(eslint@10.13.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       vitest:
         specifier: 4.1.12
-        version: 4.1.12(@types/node@26.6.3)(@vitest/coverage-v8@4.1.12)(happy-dom@20.14.5)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@26.6.3))
+        version: 4.1.12(@types/node@26.6.3)(@vitest/coverage-v8@4.1.12)(happy-dom@21.0.4)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@26.6.3))
 
   packages/catalog-gen:
     devDependencies:
@@ -258,7 +258,7 @@ importers:
         version: 8.71.2(eslint@10.13.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       vitest:
         specifier: 4.1.12
-        version: 4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(happy-dom@20.14.5)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@24.19.2))
+        version: 4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(happy-dom@21.0.4)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@24.19.2))
 
   packages/ipc-types:
     devDependencies:
@@ -285,7 +285,7 @@ importers:
         version: 8.71.2(eslint@10.13.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       vitest:
         specifier: 4.1.12
-        version: 4.1.12(@types/node@26.6.3)(@vitest/coverage-v8@4.1.12)(happy-dom@20.14.5)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@26.6.3))
+        version: 4.1.12(@types/node@26.6.3)(@vitest/coverage-v8@4.1.12)(happy-dom@21.0.4)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@26.6.3))
 
   site:
     dependencies:
@@ -1651,8 +1651,8 @@ packages:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
 
-  happy-dom@20.14.5:
-    resolution: {integrity: sha512-x/RzkpWO40bTjIoT30iQtt64FLLmH/iRcUCN2X//bLx7H3ifkdfPXyqsro/OYtqzIAhiLMMA7mmiOR9C3NOKjQ==}
+  happy-dom@21.0.4:
+    resolution: {integrity: sha512-tFm+GaLBgo6o0awHnvHaNoraVo27qJ+2tZEtZ+cIa08hXbeitrxAJajLI05hsUy/2/YTKcUjQYzHe5mCcraLBw==}
     engines: {node: '>=20.0.0'}
 
   has-bigints@1.1.0:
@@ -3568,7 +3568,7 @@ snapshots:
       obug: 2.2.1
       std-env: 4.2.0
       tinyrainbow: 3.1.1
-      vitest: 4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(happy-dom@20.14.5)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@24.19.2))
+      vitest: 4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(happy-dom@21.0.4)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@24.19.2))
 
   '@vitest/expect@4.1.12':
     dependencies:
@@ -4197,7 +4197,7 @@ snapshots:
 
   gopd@1.2.0: {}
 
-  happy-dom@20.14.5:
+  happy-dom@21.0.4:
     dependencies:
       '@types/node': 24.19.2
       '@types/whatwg-mimetype': 3.0.2
@@ -5343,7 +5343,7 @@ snapshots:
       '@types/node': 26.6.3
       fsevents: 2.3.3
 
-  vitest@4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(happy-dom@20.14.5)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@24.19.2)):
+  vitest@4.1.12(@types/node@24.19.2)(@vitest/coverage-v8@4.1.12)(happy-dom@21.0.4)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@24.19.2)):
     dependencies:
       '@vitest/expect': 4.1.12
       '@vitest/mocker': 4.1.12(vite@8.3.4(@types/node@24.19.2))
@@ -5368,12 +5368,12 @@ snapshots:
     optionalDependencies:
       '@types/node': 24.19.2
       '@vitest/coverage-v8': 4.1.12(vitest@4.1.12)
-      happy-dom: 20.14.5
+      happy-dom: 21.0.4
       jsdom: 26.1.0(supports-color@7.2.0)
     transitivePeerDependencies:
       - msw
 
-  vitest@4.1.12(@types/node@26.6.3)(@vitest/coverage-v8@4.1.12)(happy-dom@20.14.5)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@26.6.3)):
+  vitest@4.1.12(@types/node@26.6.3)(@vitest/coverage-v8@4.1.12)(happy-dom@21.0.4)(jsdom@26.1.0(supports-color@7.2.0))(vite@8.3.4(@types/node@26.6.3)):
     dependencies:
       '@vitest/expect': 4.1.12
       '@vitest/mocker': 4.1.12(vite@8.3.4(@types/node@26.6.3))
@@ -5398,7 +5398,7 @@ snapshots:
     optionalDependencies:
       '@types/node': 26.6.3
       '@vitest/coverage-v8': 4.1.12(vitest@4.1.12)
-      happy-dom: 20.14.5
+      happy-dom: 21.0.4
       jsdom: 26.1.0(supports-color@7.2.0)
     transitivePeerDependencies:
       - msw
