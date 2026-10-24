@@ -19,6 +19,9 @@
  * - While a block is dragged, saving writes the canvas as it was just before the drag (./drag.ts).
  * - Renaming the project changes the document outside the canvas and previews it again
  *   ({@link EditorSession.updateProjectInfo}); Undo and Redo act on the canvas only.
+ * - Undo and Redo act once Blockly has delivered the events of the changes made before them
+ *   (./undo.ts): the session's own ({@link EditorSession.undo}), and, while a session shows a
+ *   rendered canvas, Blockly's own keys and canvas menu items.
  */
 import type { BdmBlock, BdmDocument, BdmViewport, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
 import * as Blockly from 'blockly/core';
@@ -36,6 +39,7 @@ import { DeclIndex, DuplicateGuard } from './duplicates';
 import { SyncError } from './errors';
 import { placeholderNode } from './placeholders';
 import { allBlocks, clearWorkspace } from './traverse';
+import { installUndoItems, undoAfterDelivery } from './undo';
 import {
   captureViewport,
   restoreViewport,
@@ -194,6 +198,7 @@ export class EditorSession {
   /** The module switch asked for during the block drag in progress, or `null`. */
   private waitingSwitch: WaitingSwitch | null = null;
   private readonly stopDragListening: () => void;
+  private readonly uninstallUndoItems: () => void;
   private disposed = false;
 
   constructor(options: EditorSessionOptions) {
@@ -229,6 +234,8 @@ export class EditorSession {
             },
           })
         : () => undefined;
+    this.uninstallUndoItems =
+      this.workspace instanceof Blockly.WorkspaceSvg ? installUndoItems() : () => undefined;
     this.unsubscribe = this.store.subscribe((state, previous) => {
       this.onStore(state.project, previous.project);
     });
@@ -334,6 +341,8 @@ export class EditorSession {
   /**
    * Undoes (or, with `redo`, redoes) the last change on the canvas, as Blockly's own `Ctrl+Z` and
    * `Ctrl+Y` do: its drop-downs and field editors close first, and nothing happens during a drag.
+   * The undo acts once Blockly has delivered the events of the changes made so far, and of those its
+   * listeners made in turn, after the next animation frame or a few (./undo.ts).
    */
   undo(redo: boolean): void {
     const workspace = this.workspace;
@@ -343,7 +352,7 @@ export class EditorSession {
     if (workspace instanceof Blockly.WorkspaceSvg) {
       workspace.hideChaff();
     }
-    workspace.undo(redo);
+    undoAfterDelivery(workspace, redo);
   }
 
   /**
@@ -479,6 +488,7 @@ export class EditorSession {
     this.preDrag = null;
     this.waitingSwitch = null;
     this.stopDragListening();
+    this.uninstallUndoItems();
     this.workspace.removeChangeListener(this.onEvent);
     this.unsubscribe();
     this.pipeline.dispose();

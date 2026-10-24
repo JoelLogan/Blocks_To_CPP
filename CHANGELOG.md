@@ -846,3 +846,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   attempts. Every other start failure, and every launch through `launchApp`
   (the exit criterion, the security tests, the canvas screenshot and the
   benchmarks), still fails at once.
+- An undo right after a change no longer loses the change. Blockly records a
+  change for undo only after the next frame is drawn; a `Ctrl+Z` handled
+  before that (a slow frame on a large program) undid the step before it, and
+  the change then cleared the redo history, so neither Undo nor Redo brought it
+  back. A block dropped on the toolbox and undone at once was lost that way.
+  Undo and Redo (the keys, the canvas menu, the `≡` menu and the banner's _Undo
+  last change_) now wait for that frame, and for the next one when the change
+  made another (a start value that follows a new type comes a frame later),
+  one step each, in the order they were asked for.

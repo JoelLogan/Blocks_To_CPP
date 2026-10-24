@@ -116,6 +116,13 @@ project, build, run, toolchain, settings, trust and recovery services:
   `syncFailed`.
 - **Duplicates** (`sync/duplicates.ts`): blocks Blockly creates (duplicate, paste, toolbox drags,
   redo) get fresh symbol IDs where theirs are already declared, so B2C-E0114/E0115 cannot occur.
+- **Undo** (`sync/undo.ts`): Blockly records a change for undo only when it delivers the change's
+  events, in a task after the next animation frame. Every undo and redo (Blockly's keys and canvas
+  menu items, whose actions the session replaces, and `EditorSession.undo` behind `edit.undo` and
+  `edit.redo`) therefore acts after a frame and a task in which Blockly recorded nothing new (a
+  change a listener makes in the group as it hears of one, such as a start value that follows a new
+  type, comes a frame later still), so a `Ctrl+Z` right after a change undoes all of it; undos act
+  one at a time, in the order they were asked for.
 - **Opening** (`load.ts`): `openDocumentInEditor` loads backend text through the core's loader
   (never `JSON.parse`), sets the store and shows the editor.
 - **Saving**: call `editor.currentDocument()`; it reads the canvas now and captures the viewports

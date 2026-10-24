@@ -17,7 +17,9 @@
  *   starts after reads no area's place (./dragTargets.ts). happy-dom lays nothing out, so a delete
  *   area here is a component with a screen rectangle of its own, as the toolbox's flyout and the
  *   trash can are in the app; the end-to-end drops on the real toolbox are
- *   e2e/specs/flows/tray-delete.e2e.ts.
+ *   e2e/specs/flows/tray-delete.e2e.ts. `Ctrl+Z` brings the block back even when it is pressed
+ *   before Blockly has recorded the drop for undo (./undo.ts).
+ * - An undo asked for just before a drag starts does nothing once the drag has started.
  * - The feedback: the dragged blocks are faded, and over the toolbox the whole toolbox (the
  *   category column and the flyout) is tinted, with the category names still readable.
  * - A drop on the canvas is settled in the drag's event group (`handleBlockDrops`): a *set*
@@ -63,6 +65,7 @@ import {
   startSession,
   testCore,
   type TestSession,
+  undosMade,
 } from './testing';
 import { allBlocks } from './traverse';
 import { readTopBlocks } from './workspaceToBdm';
@@ -287,6 +290,25 @@ describe.skipIf(core === null)('saving during a drag', () => {
   });
 });
 
+describe.skipIf(core === null)('an undo asked for just before a drag starts', () => {
+  it('does nothing once the drag has started, as Blockly does nothing during a drag', async () => {
+    const { workspace } = await guessingGame();
+    const svg = workspace as Blockly.WorkspaceSvg;
+    const print = present(svg.getBlockById('b004'), 'b004');
+    print.setFieldValue(false, 'NEWLINE');
+    await eventsDelivered();
+
+    // Ctrl+Z, then a drag that starts before the undo would act (after the next frame).
+    pressCtrl(svg, Blockly.utils.KeyCodes.Z);
+    startDrag(present(svg.getBlockById('b010'), 'b010'));
+    await eventsDelivered();
+    expect(svg.isDragging()).toBe(true);
+    expect(print.getFieldValue('NEWLINE')).toBe('FALSE');
+    drop();
+    expect(svg.isDragging()).toBe(false);
+  });
+});
+
 /**
  * Waits until Blockly has rendered new blocks and put their connections in its connection
  * database, which it does a millisecond after a load (the editor's loader does the same).
@@ -418,6 +440,15 @@ function release(point: { x: number; y: number }): void {
   );
 }
 
+/** Presses Ctrl and the key `keyCode` on the canvas, which Blockly matches by `keyCode`. */
+function pressCtrl(svg: Blockly.WorkspaceSvg, keyCode: number): void {
+  svg
+    .getInjectionDiv()
+    .dispatchEvent(
+      new KeyboardEvent('keydown', { keyCode, ctrlKey: true, bubbles: true, cancelable: true }),
+    );
+}
+
 /** Whether a drag preview (an insertion marker) is on the canvas (`getAllBlocks` omits them). */
 function previewShown(svg: Blockly.WorkspaceSvg): boolean {
   return allBlocks(svg).some((block) => block.isInsertionMarker());
@@ -533,6 +564,38 @@ describe.skipIf(core === null)('a drop on a delete area', () => {
     expect(back.getParent()).toBeNull();
     expect(back.getInputTargetBlock('ITEM0')?.isShadow()).toBe(true);
     expect(mainList(svg)).toEqual(MAIN);
+  });
+
+  // A Ctrl+Z before the frame in which Blockly records the drop for undo undid the drag's start on
+  // a block that was gone, and the drop then cleared the redo history: the block was lost.
+  it('is undone by a Ctrl+Z pressed before Blockly delivers the drop, and redone by Ctrl+Y', async () => {
+    const { workspace } = await guessingGame();
+    const svg = workspace as Blockly.WorkspaceSvg;
+    svg.setScale(0.9);
+    await placed();
+    const { KeyCodes } = Blockly.utils;
+    const dragged = present(svg.getBlockById('b010'), 'b010');
+    const near = pointerNear(svg, dragged, 'b002');
+    addDeleteArea(svg, near.x - 2);
+    await eventsDelivered();
+
+    // As the end-to-end flow flicks it (placement.e2e.ts): main's last statement is held over a
+    // place below main's first one, long enough for the drag's start to be recorded for undo,
+    // then jumps onto the delete area and is let go there, and the keys come at once.
+    press(dragged);
+    moveTo(near);
+    expect(previewShown(svg)).toBe(true);
+    await eventsDelivered();
+    release({ x: near.x - 6, y: near.y });
+    expect(svg.getBlockById('b010')).toBeNull();
+    pressCtrl(svg, KeyCodes.Z);
+    await undosMade();
+    expect(mainList(svg)).toEqual(MAIN);
+
+    pressCtrl(svg, KeyCodes.Y);
+    await undosMade();
+    expect(svg.getBlockById('b010')).toBeNull();
+    expect(mainList(svg)).toEqual(['b002', 'b003', 'b004']);
   });
 
   it('finds the area where it is when the drag starts, not where it was recorded', async () => {
