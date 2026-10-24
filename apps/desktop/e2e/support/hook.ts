@@ -6,6 +6,7 @@ import type { WebDriver, WebElement } from 'selenium-webdriver';
 
 import {
   E2E_HOOK_NAME,
+  type E2eFlyoutQuery,
   type E2eHookContract,
   type E2ePoint,
   type E2eTrustedTypesReport,
@@ -102,6 +103,10 @@ export class HookClient {
     fields: Readonly<Record<string, string>> = {},
   ): Promise<string | null> {
     return this.call('flyoutBlockId', type, fields);
+  }
+
+  flyoutBlockIds(queries: readonly E2eFlyoutQuery[]): Promise<(string | null)[]> {
+    return this.call('flyoutBlockIds', queries);
   }
 
   connectionPoint(blockId: string, connection: string): Promise<E2ePoint | null> {

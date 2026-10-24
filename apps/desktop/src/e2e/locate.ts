@@ -90,6 +90,24 @@ export function flyoutBlockId(
   return null;
 }
 
+/** A flyout block to look for: its type and the values of some of its fields. */
+export interface FlyoutQuery {
+  readonly type: string;
+  readonly fields?: Readonly<Record<string, string>>;
+}
+
+/**
+ * {@link flyoutBlockId} for each of `queries`, all read from the flyout as it is now. The toolbox
+ * shows its flyout again from a timer, so it can do that between two separate calls of the hook,
+ * and their IDs would then come from different showings; it cannot within one call.
+ */
+export function flyoutBlockIds(
+  workspace: Blockly.WorkspaceSvg,
+  queries: readonly FlyoutQuery[],
+): (string | null)[] {
+  return queries.map((query) => flyoutBlockId(workspace, query.type, query.fields));
+}
+
 /**
  * Where a connection of a block is on screen: `previous`, `next` or `output`, or the name of one of
  * its inputs. `null` when the block or the connection does not exist.

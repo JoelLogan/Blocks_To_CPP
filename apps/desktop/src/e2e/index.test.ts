@@ -214,6 +214,19 @@ describe('createE2eHook', () => {
     expect(() =>
       hook.flyoutBlockId('io.print', { MODE: 1 } as unknown as Record<string, string>),
     ).toThrow('string values');
+    expect(() => hook.flyoutBlockIds({} as unknown as [])).toThrow('queries must be an array');
+    expect(() =>
+      hook.flyoutBlockIds(Array.from({ length: 65 }, () => ({ type: 'io.print' }))),
+    ).toThrow('at most 64');
+    expect(() => hook.flyoutBlockIds([null as unknown as { type: string }])).toThrow(
+      'each query must be an object',
+    );
+    expect(() => hook.flyoutBlockIds([{ type: '' }])).toThrow(TypeError);
+    expect(() =>
+      hook.flyoutBlockIds([
+        { type: 'io.print', fields: { MODE: 1 } as unknown as Record<string, string> },
+      ]),
+    ).toThrow('string values');
   });
 
   it('gives a copy of the latest User Timing durations, null for spans that have not run', () => {

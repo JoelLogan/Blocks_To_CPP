@@ -13,6 +13,12 @@ export interface E2ePoint {
   readonly y: number;
 }
 
+/** A block to look for in the toolbox's flyout: its type and the values of some of its fields. */
+export interface E2eFlyoutQuery {
+  readonly type: string;
+  readonly fields?: Readonly<Record<string, string>> | null;
+}
+
 /** The Content Security Policy violations the window has seen (src/lib/trustedTypes.ts). */
 export interface E2eTrustedTypesReport {
   /** How many violation events there were (report-only and enforced together). */
@@ -110,6 +116,12 @@ export interface E2eHookContract {
    * given values (`{MODE: 'until'}` picks the *repeat until* entry); `null` when there is none.
    */
   flyoutBlockId(type: string, fields?: Readonly<Record<string, string>> | null): string | null;
+  /**
+   * {@link flyoutBlockId} for each of `queries` (at most 64), all from the flyout as one showing
+   * of it holds them: the toolbox shows its flyout again from a timer, which can run between two
+   * calls of the hook but not within one.
+   */
+  flyoutBlockIds(queries: readonly E2eFlyoutQuery[]): (string | null)[];
   /**
    * Where a block's `previous`, `next` or `output` connection, or the connection of one of its
    * inputs, is on screen; `null` when there is no such block or connection.

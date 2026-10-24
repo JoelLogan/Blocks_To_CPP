@@ -775,3 +775,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   selected row as the selection, so the new rows were drawn unselected and,
   depending on timing, no category was highlighted until the flyout was
   scrolled or a category chosen.
+- The end-to-end flow `selection` reads the toolbox's getter IDs in one call
+  of the test hook (its new `flyoutBlockIds`). It read them one call at a
+  time, and the toolbox's delayed rebuild after a new variable could run
+  between two calls: the new variable's getter came from the new flyout
+  while the others still had their old IDs, and the test failed although
+  the app was right.

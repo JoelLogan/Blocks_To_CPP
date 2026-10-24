@@ -159,7 +159,9 @@ build contains neither the hook nor the backend's `B2C_E2E_*` variables.
 
 Find elements by their `data-testid`; the stable ones are listed under [Test IDs](#test-ids). Wait
 for state with `waitFor` ([`support/wait.ts`](support/wait.ts)) rather than fixed delays, and keep
-each test independent: it starts from a fresh profile.
+each test independent: it starts from a fresh profile. Read values that must come from the same
+state in one call of the hook (`flyoutBlockIds` for several toolbox blocks): the app's timers, such
+as the toolbox's delayed rebuild, can run between two calls.
 
 ## Test IDs
 

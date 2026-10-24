@@ -11,6 +11,7 @@ import {
   fieldElement,
   findBlock,
   flyoutBlockId,
+  flyoutBlockIds,
   grabPoint,
 } from './locate';
 
@@ -60,6 +61,22 @@ describe('finding blocks and fields', () => {
   it('has no flyout blocks without a toolbox', () => {
     const workspace = renderedWorkspace();
     expect(flyoutBlockId(workspace, 'io.print')).toBeNull();
+    expect(flyoutBlockIds(workspace, [{ type: 'io.print' }])).toEqual([null]);
+  });
+
+  it('finds several flyout blocks at once, as one by one', () => {
+    const workspace = canvas();
+    const queries = [
+      { type: 'io.print' },
+      { type: 'control.while', fields: { MODE: 'until' } },
+      { type: 'io.ask' },
+      { type: 'control.while' },
+    ];
+    const ids = flyoutBlockIds(workspace, queries);
+    expect(ids).toEqual(queries.map((query) => flyoutBlockId(workspace, query.type, query.fields)));
+    expect(ids[2]).toBeNull();
+    expect(ids.filter((id) => id !== null)).toHaveLength(3);
+    expect(flyoutBlockIds(workspace, [])).toEqual([]);
   });
 
   it('finds a field of a block, or of the block in one of its inputs', () => {

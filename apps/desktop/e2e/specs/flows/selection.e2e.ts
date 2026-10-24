@@ -36,13 +36,13 @@ const HOLD_MS = 100;
  */
 const SETTLE_MS = 1_000;
 
-/** The flyout block IDs of the getters of `syms` (`null` for a getter the toolbox does not list). */
-async function getterIds(app: FlowApp, syms: readonly string[]): Promise<(string | null)[]> {
-  const ids: (string | null)[] = [];
-  for (const sym of syms) {
-    ids.push(await app.hook.flyoutBlockId('var.get', { VAR: sym }));
-  }
-  return ids;
+/**
+ * The flyout block IDs of the getters of `syms` (`null` for a getter the toolbox does not list),
+ * read in one call of the hook: the toolbox shows its flyout again from a timer, which could run
+ * between separate calls and mix the IDs of two showings.
+ */
+function getterIds(app: FlowApp, syms: readonly string[]): Promise<(string | null)[]> {
+  return app.hook.flyoutBlockIds(syms.map((sym) => ({ type: 'var.get', fields: { VAR: sym } })));
 }
 
 /**

@@ -28,6 +28,8 @@ import {
   type ElementAtPoint,
   fieldElement,
   flyoutBlockId,
+  flyoutBlockIds,
+  type FlyoutQuery,
   grabPoint,
 } from './locate';
 import { ConsoleTranscript, tapConsoleBridge } from './transcript';
@@ -99,6 +101,25 @@ function fieldsArg(value: unknown): Readonly<Record<string, string>> {
   return Object.fromEntries(entries);
 }
 
+/** The most queries {@link E2eHook.flyoutBlockIds} takes in one call. */
+const MAX_FLYOUT_QUERIES = 64;
+
+/** Flyout queries from the test, checked: at most {@link MAX_FLYOUT_QUERIES} of them. */
+function flyoutQueriesArg(value: unknown): FlyoutQuery[] {
+  if (!Array.isArray(value) || value.length > MAX_FLYOUT_QUERIES) {
+    throw new TypeError(
+      `queries must be an array of at most ${String(MAX_FLYOUT_QUERIES)} flyout queries`,
+    );
+  }
+  return value.map((query: unknown) => {
+    if (typeof query !== 'object' || query === null || Array.isArray(query)) {
+      throw new TypeError('each query must be an object with a type and fields');
+    }
+    const { type, fields } = query as { type?: unknown; fields?: unknown };
+    return { type: stringArg(type, 'type'), fields: fieldsArg(fields) };
+  });
+}
+
 function defaultParseHtml(html: string): void {
   new DOMParser().parseFromString(html, 'text/html');
 }
@@ -164,6 +185,8 @@ export function createE2eHook(deps: E2eHookDeps, transcript: ConsoleTranscript):
       ),
     flyoutBlockId: (type: string, fields?: Readonly<Record<string, string>> | null) =>
       flyoutBlockId(workspaceOf(deps.editor()), stringArg(type, 'type'), fieldsArg(fields)),
+    flyoutBlockIds: (queries: readonly unknown[]) =>
+      flyoutBlockIds(workspaceOf(deps.editor()), flyoutQueriesArg(queries)),
     connectionPoint: (blockId: string, connection: string) =>
       connectionPoint(
         workspaceOf(deps.editor()),
