@@ -1871,6 +1871,7 @@ The structured decisions list has the full options and recommendations. They are
 | D | W5 | D13 | C-block wrapping rule |
 | none | nothing in M2 | D6 | Renderer and patched dependencies (ADR-0014) |
 | none | nothing in M2 | D15 | Worker, Blockly 13 timing, budget gating |
+| none | the nightly | D20 | The nightly benchmark gate and the runners' variance (2026-10-24) |
 
 **Questions for the owner (information, not decisions).** Answers of 2026-10-10: the owner used a release build (the executable), not the dev server, so U11's lag is not a dev-server effect; the desktop session is Wayland, so W3's window fitting (`preventOverflow`) and U14's wheel handling must be checked on Wayland. The scale factor and the exact U14 glitch are still open.
 
@@ -2115,3 +2116,25 @@ The recommendation stands. In M3 the Worker (M3-1) takes the preview's 110 ms of
 (1) formatVersion per file (ADR-0013): a file gets the lowest version whose keys cover it. Version 2 adds usingNamespaceStd (M3), version 3 adds lints (M5). An unknown key from a newer app says 'made with a newer version' (E0108) instead of 'remove this key'. The alternative is to bump formatVersion for every file whenever a feature lands, which breaks 'files that do not use it are unchanged'. (2) New fields on existing blocks: (a) treat every new field as breaking (a version bump and a migration; old files are marked changed on open), or (b) keep the version and make the catalog version count, so an older build shows a block from a newer catalog as 'made by a newer catalog' (E0602) and keeps it unchanged. (3) Before 1.0, may a block type be retired at once by an exact replacement on load (ADR-0015: same ID, position, comment, flags, stack and nested blocks kept), or are core block IDs frozen from M2 on?
 
 **Recommendation.** (1) Adopt ADR-0013. (2) Option (b). (3) Yes: before 1.0 an exact replacement retires a type at once, and retired IDs are never reused. After 1.0 a deprecation period with a badge applies. This is what merging var.update into var.change (W4-5) needs, whenever it lands.
+
+### D20. How should the nightly benchmark gate deal with the runners' variance?
+
+**Context (2026-10-24).** Nightly failed every night from 2026-10-16 to 2026-10-24, all at one commit (`81cecd5`, the branch head while the owner was away); the last green run was 2026-10-15 at `3f6f608`. Three causes, from the 9 runs' logs and the 2 green runs before them:
+
+- the `selection` flow's race (a read of the toolbox in three calls that its delayed rebuild could fall between; one night): fixed in `5c50fc5`;
+- one Windows launch where msedgedriver could not connect to WebView2's renderer before the test began ("session not created … unable to connect to renderer"; once in about 1,400 launches): to be retried once by the flow launcher, on that error only, with the retry printed;
+- the benchmark gate. Only scheduled runs that pass enter a system's history (`tools/bench-compare.py` skips a run that regressed, and the cache is saved only after a green job). On Linux, `webview.drag-5000.frame-p95` stepped from about 36 ms to about 49 ms on 2026-10-12 at an unchanged commit (`9e9bd35`: 36 ms on 10-11, 52 ms on 10-12, the same runner image), so the frozen baseline (36 ms) failed every night since, and the five metrics added on 10-13 to 10-15 never got past one baseline, so they are not gated on Linux at all (D19's metric would join them). On Windows only the nights on fast runners passed, so the baseline moved down to them (`preview-1000.p95` 108 → 41.75 ms, `cold-start` 2,464 → 2,258 ms) and the nights on slow runners failed. Over the 9 nights at one commit the gated metrics' robust coefficient of variation was 6–60 % (range over median 22–134 %), against a 10 % gate. Windows `cold-start` is bimodal at `81cecd5` (2.1–2.4 s or 3.2–3.7 s); whether code since `3f6f608` caused the slow mode is being checked with an A/B run on Windows (base `3f6f608`).
+
+The bench job now prints the runner's processor and memory, and the cold-start benchmark each start's time.
+
+**Options.**
+
+(A) Record every complete scheduled run in the history, with the metrics it flagged, and fail when 2 of the last 3 scheduled runs are over the gate (the first one warns). Replayed on the 19 nights from 2026-10-07: Linux `drag-5000` fails 1 night instead of 9, Linux `native.pipeline.preview` 1 instead of 3, Windows `cold-start` 2 instead of 5, Windows `native.pipeline.preview` 0 instead of 3. The cost: a real regression fails 2 or 3 nights and then becomes the baseline, so a red night must be acted on (a fix, or an `accepted.json` entry) when it comes.
+
+(B) Make the nightly benchmarks report-only, and gate only through A/B runs (`bench-ab-pr.yml` on pull requests, `bench-ab.yml` by hand), which measure base and head on the same runner and so cancel the runners' variance. The nightly shows trends.
+
+(C) Keep today's rule (a regression fails every night until fixed or accepted), but compare a run only with runs on the same processor model (the job now logs it). Each processor model needs 5 runs before it gates, and each system has at least two in the fleet.
+
+(D) Independent of A to C: gate dragging, as D19 did for edits, on the p95 over all the frame times of the 10 timed drags (about 1,200 frames) instead of the median of each drag's p95, which sits on the drag's starting transient and near multiples of the frame interval. It costs no time.
+
+**Recommendation.** (A) with (D): the nightly keeps catching a regression that lasts, without failing on the runner of the night; pull requests are gated by A/B runs, as now. (B) is the simplest if the owner prefers the nightly to be a trend report only.

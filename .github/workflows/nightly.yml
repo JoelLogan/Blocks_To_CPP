@@ -811,6 +811,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # The hosted runners differ from night to night (processor and its speed), and the webview
+      # metrics move with them: the log names the machine each night's numbers come from.
+      - name: Show the runner's processor and memory
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            pwsh -NoProfile -Command 'Get-CimInstance Win32_Processor | Format-List Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed; Get-CimInstance Win32_ComputerSystem | Format-List TotalPhysicalMemory'
+          else
+            lscpu | grep -E '^(Model name|CPU\(s\)|Thread\(s\) per core|CPU max MHz)' || true
+            free -h
+          fi
+
       - name: Install the webview libraries, WebKitWebDriver and xvfb (Linux)
         if: runner.os == 'Linux'
         run: |

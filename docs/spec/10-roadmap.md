@@ -28,7 +28,11 @@
 > asked for while another was finishing was dropped) and in the harness
 > (both since passed on Windows, nightly of 2026-10-15 at `3f6f608`), and
 > the Linux benchmark flags came from a slower runner, not the code
-> ([record](../plans/m2-polish-plan.md#w7--m2-close-out)). The first
+> ([record](../plans/m2-polish-plan.md#w7--m2-close-out)). Nightly was red
+> from 2026-10-16 to 2026-10-24 at one commit: the `selection` flow's race
+> (fixed), one Windows driver race, and a benchmark history that only takes
+> runs that pass, which runners of varying speed froze on Linux and skewed on
+> Windows (decision [D20](../plans/m2-polish-plan.md#d20-how-should-the-nightly-benchmark-gate-deal-with-the-runners-variance)). The first
 > measurements on CI's runners, which have no GPU, are a cold start of 1.2 s
 > (Linux) and 2.8 s (Windows), and a p95 frame time while dragging in a
 > 5,000-block workspace of 40 ms (Linux) and 914 ms (Windows): meeting the

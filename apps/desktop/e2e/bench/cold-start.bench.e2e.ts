@@ -58,7 +58,8 @@ describe('webview benchmark: cold start', () => {
     process.stdout.write(
       `Cold start: median ${String(rounded(median(samples), 1))} ms over ${String(LAUNCHES)} starts ` +
         `(${String(upperBounds)} already ready when first asked, ${String(restarted)} waited again ` +
-        `after the window replaced its page); written to ${file}\n`,
+        `after the window replaced its page); written to ${file}\n` +
+        `Cold start, each start in order: ${samples.map((ms) => String(rounded(ms, 1))).join(', ')} ms\n`,
     );
     expect(samples).toHaveLength(LAUNCHES);
   });
