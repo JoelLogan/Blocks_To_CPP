@@ -485,6 +485,16 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   waives an A/B difference, because both builds are measured with the head's
   benchmarks. The two W2-1 entries for `webview.edit-1000.p95` are
   redefinitions.
+- The edit benchmark is gated on `webview.edit-1000.p95-all`, the p95 over
+  every edit of a run (100 in a nightly run; an A/B run pools each side's
+  edits), instead of the p95 of each sample's 10 edits, which is nearly each
+  sample's slowest edit and moved by more than the 10 % gate between runs
+  whose per-edit medians were equal (decision D19). `webview.edit-1000.p95`
+  is still reported, ungated, and the new metric's nightly history starts
+  with its first run. The pooled metric comes from the same edits, so the
+  benchmark takes no longer. Results files (format version 2) name each
+  metric's statistic, `median` or `p95`; `bench-compare.py` still reads
+  version 1 files, as medians.
 - End-to-end harness: the window gets 60 s to start, as long as a page load
   may take, and a timeout says how far the start got (the page never loaded,
   it loaded too late, or the app never became ready). End-to-end builds keep

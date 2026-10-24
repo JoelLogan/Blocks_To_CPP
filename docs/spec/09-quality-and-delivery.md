@@ -191,7 +191,10 @@ Details of each level as M2 sets them up:
   dragging in a 5,000-block workspace (one sample is a drag away and
   back). The edit benchmark
   includes Blockly's rendering with the C++ panel open (from an edit until
-  the page has finished what it started); selecting blocks in 8 scopes at
+  the page has finished what it started); its gated metric is the p95 over
+  every edit of a run (100 in a nightly run), so that a few slow edits do
+  not decide it, and the p95 of each sample's 10 edits is reported;
+  selecting blocks in 8 scopes at
   1,000 blocks measures the longest task after a click; a program's output
   in the console is timed from a click on ► Run until the console says
   *Finished*, for 200,000 lines (the median of 3 runs per sample; on
@@ -199,11 +202,12 @@ Details of each level as M2 sets them up:
   seconds there and may take 2 minutes); and, on
   the guessing game, the longest task after a selection and after an edit
   is reported. Every timing is taken inside the page, never across
-  WebDriver. A run takes the median of at least 10 samples and compares it
-  with the baseline, the median of the last 5 successful nightly runs on the
-  default branch for the same system, kept in the Actions cache per system
-  (`tools/bench-compare.py`). More than 10% worse fails; until 5 baselines
-  exist the comparison is only reported.
+  WebDriver. A run takes the median of at least 10 samples (for the edits,
+  the p95 of all of them) and compares it with the baseline, the median of
+  the last 5 successful nightly runs on the default branch for the same
+  system, kept in the Actions cache per system (`tools/bench-compare.py`).
+  More than 10% worse fails; until 5 baselines exist the comparison is
+  only reported.
   * Every E2E flow records its longest main-thread task (a heartbeat in the
     page, from the window's readiness until the test ends); the report never
     fails a test.
@@ -217,7 +221,8 @@ Details of each level as M2 sets them up:
     its pull request (`bench-ab-pr.yml`): the head (the pull request merged
     into its base branch) and the base (that branch) are built and measured
     in alternating runs on one runner, at least 10 samples each, and the
-    head's medians are compared with the base's at the same 10%. By hand
+    head's medians are compared with the base's at the same 10% (the edits'
+    p95 over all of each side's edits, its runs pooled). By hand
     (`bench-ab.yml`), the job measures the commit it runs on against one of
     that commit's ancestors, and nothing else (§9.3). Each benchmark runs
     on its own: one that the base's build cannot run (its E2E hook lacks a

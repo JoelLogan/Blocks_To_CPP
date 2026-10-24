@@ -95,7 +95,7 @@ It is meant to be:
 | N9 | Privacy | No telemetry. No network access except opt-in update checks and user-clicked links. |
 | N10 | Reliability | Autosave and crash recovery. Atomic saves. A project file is never left half-written. |
 | N11 | Determinism | The same project, catalog version and settings always generate byte-identical C++. |
-| N12 | Interaction latency | Selecting a block, choosing a toolbox category, opening a dropdown and dropping a block respond within 100 ms (p95) in a 1,000-block module. While a program of up to 200 blocks is edited, no main-thread task exceeds 50 ms. Met in M5; until then the benchmarks of [09 §9.2](09-quality-and-delivery.md#92-testing-strategy) report it and gate its regressions (`webview.select-1000.max-task` and `webview.edit-1000.p95` at 1,000 blocks; the guessing game's longest task after a selection and after an edit, and every E2E flow's longest main-thread task, reported). |
+| N12 | Interaction latency | Selecting a block, choosing a toolbox category, opening a dropdown and dropping a block respond within 100 ms (p95) in a 1,000-block module. While a program of up to 200 blocks is edited, no main-thread task exceeds 50 ms. Met in M5; until then the benchmarks of [09 §9.2](09-quality-and-delivery.md#92-testing-strategy) report it and gate its regressions (`webview.select-1000.max-task` and `webview.edit-1000.p95-all`, the p95 over all the edits of a run, at 1,000 blocks; the guessing game's longest task after a selection and after an edit, and every E2E flow's longest main-thread task, reported). |
 
 ## 1.5 Non-goals (for 1.0)
 

@@ -14,7 +14,8 @@ base's on one runner ([A/B runs](#ab-runs)).
 | `native.pipeline.{load,resolve,analyze,generate}` | criterion: each stage on its own                                                                                                                                                                                                                           | no    |               |
 | `webview.cold-start`                              | From the WebDriver session request (which starts the app) to the readiness marker: the start page shown, Blockly's workspace injected and the toolbox rendered; 10 starts with fresh profiles that share one web view data folder, after one warm-up start | yes   | N2: < 2 s     |
 | `webview.preview-1000.p95`                        | The preview pipeline's task in the app at 1,000 blocks, C++ panel folded: reading the canvas, `update()` in WebAssembly (one load of the document), storing the result; p95 of 10 edits per sample, 10 samples                                             | yes   | N4: < 50 ms   |
-| `webview.edit-1000.p95`                           | From an edit until the page has finished what it started (Blockly's re-rendering of the edited stack, the preview, the C++ panel's update), with the C++ panel shown, less the pipeline's 50 ms debounce; p95 of 10 edits per sample                       | yes   | N12           |
+| `webview.edit-1000.p95-all`                       | From an edit until the page has finished what it started (Blockly's re-rendering of the edited stack, the preview, the C++ panel's update), C++ panel shown, less the pipeline's 50 ms debounce; p95 of every edit of the run (100 in a nightly run)       | yes   | N12           |
+| `webview.edit-1000.p95`                           | The same edits; p95 of the 10 edits of each sample, nearly each sample's slowest edit (gated until `p95-all` replaced it)                                                                                                                                  | no    |               |
 | `webview.select-1000.max-task`                    | The longest main-thread task after a click that selects a block at 1,000 blocks, in 8 scopes in turn; one click per sample, 10 samples after a warm-up click                                                                                               | yes   | N12           |
 | `webview.guessing-game.select.max-task`           | The guessing game (40 blocks, C++ panel shown): the longest task after a click that selects a block in another scope; one click per sample                                                                                                                 | no    | N12: ≤ 50 ms  |
 | `webview.guessing-game.edit.max-task`             | The guessing game: the longest task after a print is added to `main`, until the page has finished what it started; one edit per sample                                                                                                                     | no    | N12: ≤ 50 ms  |
@@ -68,7 +69,12 @@ the C++ appeared or after it, which the spans alone do not.
   shown, the page also waits until it has run no long task for 300 ms, and the edit lasts until
   the end of the last one. The print is then deleted with the keyboard (selected, then _Delete_),
   so every edit is made to the same 1,000 blocks; in the second phase the page is also left to
-  settle afterwards, outside the timing.
+  settle afterwards, outside the timing. Every edit of that phase is a sample of
+  `webview.edit-1000.p95-all`, whose value is the p95 of all of them (decision D19 of the
+  [M2 polish plan](../../../../docs/plans/m2-polish-plan.md)): the p95 of a sample's 10 edits,
+  `webview.edit-1000.p95`, is nearly its slowest edit, and moved by more than the gate between runs
+  whose per-edit medians were equal. Both are taken from the same edits, so the pooled metric costs
+  no time.
 - **Selecting** ([`select.bench.e2e.ts`](select.bench.e2e.ts), the guessing game's in
   [`guessing.bench.e2e.ts`](guessing.bench.e2e.ts)): the blocks of [`targets.ts`](targets.ts) are
   clicked in turn with real pointer input, the button held for 50 ms as a person's click holds it,
@@ -185,8 +191,14 @@ python3 tools/bench-compare.py check-accepted apps/desktop/e2e/bench/accepted.js
 python3 tools/bench-compare.py --self-test
 ```
 
-- Each metric needs at least 10 samples; its median is compared with the baseline, the median of
-  the medians of the last 5 runs in the history that have the metric in the same unit.
+- Each metric needs at least 10 samples. Its value is their median, unless its results file names
+  the statistic `p95`: then it is the p95 of all its samples by the nearest rank, which needs at
+  least 20 of them (fewer would make it the largest). `webview.edit-1000.p95-all` is such a metric:
+  its samples are every edit of the run.
+- The value is compared with the baseline, the median of the values of the last 5 runs in the
+  history that have the metric in the same unit. A metric measured another way (another statistic
+  among them) takes a new name, so its history starts afresh, as `p95-all`'s did, or an entry of
+  the kind `redefined` (below).
 - A gated metric more than 10% worse fails the run (exit status 1). Until a metric has 5 baselines,
   or for an ungated metric, the comparison is only reported. Unusable input exits with status 2.
 - The table goes to standard output (as UTF-8 on every system) and, with `--summary`, to the job
@@ -260,9 +272,10 @@ builds only commits of the repository's own history. No A/B job saves to the Act
 The jobs build the app under test from each commit, and then on one runner per system
 [`ab-rounds.sh`](ab-rounds.sh) runs the head's benchmarks against both builds in alternating runs
 (base, head, head, base: 2 rounds of 5 samples, 10 per side), and `bench-compare.py ab` compares
-the head's medians with the base's at 10%. Each round starts the selection benchmarks where the
-round before stopped (`B2C_BENCH_OFFSET`, the same for both builds), so each side clicks the same
-10 targets as a nightly run, all 8 scopes of `select-1000` among them.
+the head's values with the base's at 10%. The samples of a side's runs are added up first, so the
+edits' `p95-all` is the p95 of all of a side's 100 edits. Each round starts the selection
+benchmarks where the round before stopped (`B2C_BENCH_OFFSET`, the same for both builds), so each
+side clicks the same 10 targets as a nightly run, all 8 scopes of `select-1000` among them.
 
 Each benchmark runs in a Vitest call of its own, and one that cannot be compared does not stop the
 others:
@@ -306,7 +319,8 @@ python3 tools/bench-compare.py ab --os linux --base /tmp/ab/base --head /tmp/ab/
   --runs /tmp/ab/ab-runs.tsv
 ```
 
-Results files (`blocks2cpp/bench-results`, one per producer), the history
-(`blocks2cpp/bench-history`) and the acceptance file (`blocks2cpp/bench-accepted`) are JSON with a
-format tag, checked strictly when read (sizes, names, finite non-negative samples, no unknown or
-duplicate keys); the script's docstring describes them.
+Results files (`blocks2cpp/bench-results`, one per producer; format version 2 names each metric's
+`statistic`, `median` or `p95`, and version 1 files, without, are still read as medians), the
+history (`blocks2cpp/bench-history`) and the acceptance file (`blocks2cpp/bench-accepted`) are JSON
+with a format tag, checked strictly when read (sizes, names, finite non-negative samples, no
+unknown or duplicate keys); the script's docstring describes them.
