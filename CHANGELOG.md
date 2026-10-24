@@ -613,6 +613,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 
 ### Fixed
 
+- On Linux, a project whose name, folder or library names hold a `%` (a
+  project named `%s%s%n`, say) could crash the app, or worse, as its trust
+  dialog opened: the dialog library (`rfd` 0.16.0, through the dialog plugin)
+  handed the text to GTK as a printf format. The _Replace file?_ question did
+  the same with a file name. Every `%` is now doubled for GTK, so it shows as
+  typed, until `rfd` 0.16.1, which fixes this, is old enough to use.
 - Every Release build with Ubuntu's GCC 14 or newer showed a warning
   (`-Whardened`: `_FORTIFY_SOURCE` is not enabled by `-fhardened`), since
   Ubuntu's compiler defines `_FORTIFY_SOURCE` itself. The compiler check now

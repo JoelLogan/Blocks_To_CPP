@@ -23,8 +23,11 @@
 //! (or Stay in Restricted Mode), never a panic.
 //!
 //! The trust dialog's text comes from [`trust_dialog_text`], built by the
-//! backend from its own parsed copy of the project.
+//! backend from its own parsed copy of the project. The text of a message
+//! dialog shown through the plugin goes through [`plugin_message_text`]
+//! first.
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{SyncSender, sync_channel};
 
@@ -100,7 +103,7 @@ impl<R: Runtime> NativeDialogs<R> {
             return false;
         };
         let mut builder = dialog
-            .message(message)
+            .message(plugin_message_text(message))
             .title(title)
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::OkCancelCustom(
@@ -190,7 +193,7 @@ impl<R: Runtime> Dialogs for NativeDialogs<R> {
         }
         #[cfg(not(windows))]
         {
-            self.plugin_trust_dialog(title, body)
+            self.plugin_trust_dialog(title, &body)
         }
     }
 }
@@ -200,13 +203,13 @@ impl<R: Runtime> NativeDialogs<R> {
     /// Its buttons are [`TrustChoice::LABELS`] in order; see
     /// [`trust_choice`] for how its answers are read.
     #[cfg(not(windows))]
-    fn plugin_trust_dialog(&self, title: String, body: String) -> TrustChoice {
+    fn plugin_trust_dialog(&self, title: String, body: &str) -> TrustChoice {
         let Some(dialog) = self.plugin() else {
             return TrustChoice::StayRestricted;
         };
         let [project, folder, restricted] = TrustChoice::LABELS.map(|(_, label)| label.to_owned());
         let mut builder = dialog
-            .message(body)
+            .message(plugin_message_text(body))
             .title(title)
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::YesNoCancelCustom(
@@ -243,6 +246,48 @@ impl<R: Runtime> NativeDialogs<R> {
             dialog = dialog.set_parent(&window);
         }
         windows_trust_choice(&dialog.show().into())
+    }
+}
+
+/// The text of a message dialog shown through the plugin, made safe for
+/// the dialog library that shows it.
+///
+/// On Linux the plugin's `rfd` 0.16.0 hands the text to GTK's
+/// `gtk_message_dialog_format_secondary_text` as its printf format, so each
+/// `%` in it would be read as a conversion. The trust dialog's text names the
+/// project, its folder and its libraries, all chosen by whoever made the
+/// project, and the "Replace file?" question names a file: a project named
+/// `%s%s%n` could crash the app, or worse, as the dialog opens. Doubling
+/// every `%` makes GTK show one. Elsewhere ([`GTK_DIALOGS`] false: Windows)
+/// the text is shown as it is.
+///
+/// `rfd` 0.16.1 passes the text as an argument instead, and then a doubled
+/// `%` would show as two: this must go when the lockfile moves the plugin's
+/// `rfd` to 0.16.1, which a test below checks.
+fn plugin_message_text(text: &str) -> Cow<'_, str> {
+    if GTK_DIALOGS {
+        printf_literal(text)
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
+/// Whether `rfd` shows message dialogs with GTK 3 on this system (its
+/// `gtk3` backend's systems).
+const GTK_DIALOGS: bool = cfg!(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "dragonfly",
+    target_os = "netbsd",
+    target_os = "openbsd"
+));
+
+/// `text` as a printf format that prints `text` itself: every `%` doubled.
+fn printf_literal(text: &str) -> Cow<'_, str> {
+    if text.contains('%') {
+        Cow::Owned(text.replace('%', "%%"))
+    } else {
+        Cow::Borrowed(text)
     }
 }
 
@@ -419,6 +464,54 @@ mod tests {
                 "{result:?}"
             );
         }
+    }
+
+    /// A `%` in a dialog's text is shown as a `%`, never read as a printf
+    /// conversion by GTK (Linux): the trust dialog of a project named
+    /// `%s%s%n` passes the name with every `%` doubled.
+    #[test]
+    fn a_percent_sign_in_a_message_is_never_a_printf_conversion() {
+        assert_eq!(printf_literal("Project: %s%s%n"), "Project: %%s%%s%%n");
+        assert_eq!(printf_literal("100% %%"), "100%% %%%%");
+        assert!(matches!(
+            printf_literal("no percent"),
+            Cow::Borrowed("no percent")
+        ));
+
+        let prompt = TrustPrompt {
+            project_name: String::from("%s%s%n"),
+            folder_display: String::from("/home/ada/%x%x"),
+            raw_cpp_blocks: 0,
+            libraries: vec![String::from("lib%d")],
+            file_system_blocks: 0,
+            mark_of_the_web: false,
+        };
+        let (_, body) = trust_dialog_text(&prompt);
+        let shown = plugin_message_text(&body);
+        if GTK_DIALOGS {
+            assert!(shown.contains("Project: %%s%%s%%n"), "{shown}");
+            assert!(shown.contains("Folder: /home/ada/%%x%%x"), "{shown}");
+            assert!(shown.contains("Libraries: lib%%d"), "{shown}");
+            // Read back as GTK reads a format, it is the body again.
+            assert_eq!(shown.replace("%%", "%"), body);
+        } else {
+            assert_eq!(shown, body);
+        }
+        // The systems the app is built for: GTK on Linux, not on Windows.
+        assert_eq!(GTK_DIALOGS, cfg!(target_os = "linux"));
+    }
+
+    /// The doubling above is for `rfd` 0.16.0, which the dialog plugin
+    /// brings. `rfd` 0.16.1 passes the text as an argument, so once the
+    /// lockfile moves to it a doubled `%` would show as two: then remove
+    /// [`plugin_message_text`]'s doubling, and this test.
+    #[test]
+    fn the_percent_doubling_matches_the_locked_rfd() {
+        let lock = include_str!("../../../../Cargo.lock");
+        assert!(
+            lock.contains("name = \"rfd\"\nversion = \"0.16.0\"\n"),
+            "the plugin's rfd is no longer 0.16.0: remove the doubling of % in plugin_message_text"
+        );
     }
 
     #[test]

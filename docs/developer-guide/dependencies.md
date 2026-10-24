@@ -169,6 +169,14 @@ build needs.
 - **`rfd` 0.16.0**, not 0.17: `tauri-plugin-dialog` 2.8.3, the newest on 2026-10-24, still
   requires `rfd` 0.16, and the Windows trust dialog uses the plugin's copy, so `rfd` moves when the
   plugin does. On Windows it brings `windows-sys` 0.60.2, which `notify` uses too.
+- **`rfd` 0.16.0's GTK 3 message dialog** hands its text to
+  `gtk_message_dialog_format_secondary_text` as a printf format, so a `%` in a project's name,
+  folder or library names would be read as a conversion when the trust dialog opens.
+  `src-tauri/src/dialogs.rs` doubles every `%` of a message on Linux (`plugin_message_text`).
+  `rfd` 0.16.1 (2026-10-22 21:30 UTC) passes the text as an argument and fits the plugin's `^0.16`;
+  it is old enough on 2026-10-29. Update it with `cargo update -p rfd@0.16.0 --precise 0.16.1` and
+  remove the doubling then, or every `%` shows twice; a test in `dialogs.rs` fails once the
+  lockfile no longer has 0.16.0.
 - **`lazy_static` 1.5.0** (through `tracing-subscriber`'s `sharded-slab`): 1.5.1 was less than 7
   days old when it was added. It is old enough now (2026-10-01), but it changes no code and, being
   a transitive crate, is in no Dependabot pull request, so it waits for a later Cargo update.
