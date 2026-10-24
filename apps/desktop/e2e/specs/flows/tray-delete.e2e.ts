@@ -43,6 +43,7 @@ import {
   currentDocument,
   foldCodePanel,
   grabPointOf,
+  waitForDelivery,
 } from '../../support/editor';
 import { sleep, waitFor } from '../../support/wait';
 import { contrastRatio } from './lib/contrast';
@@ -399,6 +400,8 @@ describe('Dropping a block on the toolbox', () => {
         timeout: UI_TIMEOUT_MS,
         message: `the print dropped on ${drop.where} to be deleted`,
       });
+      // Undo has the drop once Blockly has delivered it, after the next animation frame.
+      await waitForDelivery(app.driver);
       await pressCtrl(app.driver, 'z');
       await waitForLastInMain(
         app,

@@ -855,3 +855,15 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   last change_) now wait for that frame, and for the next one when the change
   made another (a start value that follows a new type comes a frame later),
   one step each, in the order they were asked for.
+- The end-to-end flows `placement` and `tray-delete` press Ctrl+Z after a
+  deleting drop only once Blockly has delivered the drop's events, after the
+  next animation frame, as a person sees the drop drawn before pressing a key
+  (the harness's new `waitForDelivery`). Blockly puts a change on its undo
+  stack only when it delivers it. On Windows, where msedgedriver sends the
+  key about 8 ms after the release, Ctrl+Z could come first: it undid the
+  start of the drag instead, the late drop then emptied the redo stack, and
+  the block never came back (Desktop run 40123025195). The flow
+  `placement-wrap` waits for the delivery too before its Ctrl+Z after a
+  wrapping drop, where only a 300 ms pause stood in for it: a frame or a
+  long task later than that undid the new _if_ with the statements it had
+  wrapped.

@@ -1,6 +1,7 @@
 /**
- * Working with the block editor in the tests: reading the open project, dragging blocks from the
- * toolbox onto connections, and waiting for the live analysis (Problems, the C++ panel).
+ * Working with the block editor in the tests: reading the open project, waiting until Blockly has
+ * delivered a change (before an undo), dragging blocks from the toolbox onto connections, and
+ * waiting for the live analysis (Problems, the C++ panel).
  */
 import { By, type WebDriver, type WebElement } from 'selenium-webdriver';
 
@@ -23,6 +24,41 @@ import { sleep, waitFor } from './wait';
 /** The open project as the canvas has it now. */
 export async function currentDocument(app: App): Promise<ProjectDocument> {
   return parseDocument(await app.hook.documentText());
+}
+
+/**
+ * Runs in the webview (`executeAsyncScript`): calls back after the next animation frame and then
+ * two zero timeouts. Blockly delivers a change's events in a zero timeout that it queues in the
+ * first animation frame after the change (`requestAnimationFrame(() => setTimeout(fireNow, 0))`,
+ * `core/events/utils.ts` of Blockly 12.5.1). Blockly asked for that frame callback while the change
+ * was made (or earlier, for events still queued), before this script ran, so it runs first in the
+ * same frame or in an earlier one, and queues its timeout first: the first zero timeout here runs
+ * after the delivery, the second after anything the delivery queued with a zero timeout in turn.
+ * There is no fallback timer: without animation frames the script never calls back, and WebDriver's
+ * script timeout fails the test. A plain script, so nothing the test runner adds to compiled
+ * functions can end up in the page.
+ */
+export const DELIVERY_SCRIPT = `
+  const done = arguments[arguments.length - 1];
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      setTimeout(() => done(true), 0);
+    }, 0);
+  });
+`;
+
+/**
+ * Waits until Blockly has delivered the events of a change already seen on the canvas (see
+ * {@link DELIVERY_SCRIPT}), as a person sees a drop drawn before pressing a key. The canvas, and so
+ * {@link currentDocument}, shows a change at once, but Blockly puts it on its undo stack only when
+ * it delivers its events: Ctrl+Z pressed before that undoes what came before the change, and the
+ * late delivery then puts the change on the undo stack and empties the redo stack.
+ *
+ * @throws WebDriver's script timeout error when no animation frame comes within the session's
+ *   script timeout (`SCRIPT_TIMEOUT_MS`).
+ */
+export async function waitForDelivery(driver: WebDriver): Promise<void> {
+  await driver.executeAsyncScript(DELIVERY_SCRIPT);
 }
 
 /**

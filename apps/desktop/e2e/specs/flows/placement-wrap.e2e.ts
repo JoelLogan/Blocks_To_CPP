@@ -47,7 +47,13 @@ import {
 } from '../../support/bdm';
 import { bringIntoView, scrollIntoView } from '../../support/canvas';
 import { releaseButton } from '../../support/drag';
-import { centerOn, currentDocument, flyoutGrabPoint, foldCodePanel } from '../../support/editor';
+import {
+  centerOn,
+  currentDocument,
+  flyoutGrabPoint,
+  foldCodePanel,
+  waitForDelivery,
+} from '../../support/editor';
 import { harnessSettings } from '../../support/env';
 import { clickTestId, openCategory } from '../../support/ui';
 import { sleep, waitFor } from '../../support/wait';
@@ -226,7 +232,8 @@ async function toolboxIfOnto(
 
 /**
  * Presses Ctrl+Z until the project's blocks are `blocks` again, at most `steps` times (a press
- * that has changed nothing after 2 s is taken as done), and returns how many it took.
+ * that has changed nothing after 2 s is taken as done), and returns how many it took. The first
+ * press comes once Blockly has delivered the drop: Undo does not have it before that.
  */
 async function undoDrop(
   app: FlowApp,
@@ -234,6 +241,7 @@ async function undoDrop(
   facts: string,
   steps: number,
 ): Promise<number> {
+  await waitForDelivery(app.driver);
   for (let step = 1; ; step += 1) {
     await pressCtrl(app.driver, 'z');
     if (step >= steps) {
@@ -299,7 +307,8 @@ describe('Wrapping statements in an empty C-block', () => {
     const wrapped = `${a.id} ${wrapper.id}{${b.id} ${c.id}}`;
     expect(listOf(await mainBody(app))).toBe(wrapped);
 
-    // One Ctrl+Z takes the whole drop back; Ctrl+Y wraps again.
+    // One Ctrl+Z takes the whole drop back, once Blockly has delivered it; Ctrl+Y wraps again.
+    await waitForDelivery(app.driver);
     await pressCtrl(app.driver, 'z');
     await waitForBlocks(app, initial, 'Ctrl+Z to put main back exactly');
     expect(moduleNodes(await currentDocument(app)).some((node) => node.id === wrapper.id)).toBe(

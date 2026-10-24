@@ -165,7 +165,9 @@ Find elements by their `data-testid`; the stable ones are listed under [Test IDs
 for state with `waitFor` ([`support/wait.ts`](support/wait.ts)) rather than fixed delays, and keep
 each test independent: it starts from a fresh profile. Read values that must come from the same
 state in one call of the hook (`flyoutBlockIds` for several toolbox blocks): the app's timers, such
-as the toolbox's delayed rebuild, can run between two calls.
+as the toolbox's delayed rebuild, can run between two calls. Before an undo, wait for the change's
+delivery (`waitForDelivery`), not only for the change on the live canvas: Blockly puts a change on
+its undo stack only when it delivers the change's events, after the next animation frame.
 
 ## Test IDs
 
