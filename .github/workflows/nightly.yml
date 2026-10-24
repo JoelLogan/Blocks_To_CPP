@@ -955,7 +955,8 @@ jobs:
       # the gate in one of the 2 runs before in the history; over the gate once, it warns. Otherwise
       # it only reports. A metric the acceptance file newly lists (redefined or accepted) does not
       # fail, and its history restarts with this run. The history file always gets this run, with
-      # the metrics it found over the gate; whether it is kept is the next step's decision. This
+      # the metrics it found over the gate (a re-run of the job takes the place of the attempt the
+      # history kept: the run ID is the same); whether it is kept is the next step's decision. This
       # step's failure is the job's failure on a regression.
       - name: Compare with the baseline
         if: ${{ !cancelled() }}

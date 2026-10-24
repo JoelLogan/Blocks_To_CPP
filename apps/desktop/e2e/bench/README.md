@@ -204,8 +204,8 @@ python3 tools/bench-compare.py --self-test
   least 20 of them (fewer would make it the largest). `webview.edit-1000.p95-all` and
   `webview.drag-5000.frame-p95-all` are such metrics: their samples are every edit of the run, and
   every frame of its timed drags.
-- The value is compared with the baseline, the median of the values of the last 5 runs in the
-  history that have the metric in the same unit. A metric measured another way (another statistic
+- The value is compared with the baseline, the median of the metric's values in the same unit in
+  the last 5 runs of the history (a run without the metric gives none). A metric measured another way (another statistic
   among them) takes a new name, so its history starts afresh, as the two `p95-all` metrics' did, or
   an entry of the kind `redefined` (below).
 - A gated metric more than 10% worse is over the gate. It fails the run (exit status 1) when it was
@@ -216,7 +216,10 @@ python3 tools/bench-compare.py --self-test
 - The table goes to standard output (as UTF-8 on every system) and, with `--summary`, to the job
   summary.
 - With `--update-history`, the run is added to the history with the gated metrics it found over
-  the gate, also when it failed, and the history keeps the last 5 runs. The nightly job keeps the
+  the gate, also when it failed. The history keeps the last 6 runs, the 5 of the baseline and one
+  more: a re-run of a workflow run (`--run-id` names a run the history has) leaves the attempt the
+  history kept out of the comparison and takes its place, so that attempt is neither the run
+  before it nor a baseline, and the re-run still has 5 baselines. The nightly job keeps the
   history of each system in the Actions cache (`bench-history-<system>-<run>`): a scheduled run
   (always on the default branch) is kept when the native and webview benchmarks ran to the end and
   the comparison ran, whether it passed or failed. A manual run compares without changing it.

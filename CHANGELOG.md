@@ -519,8 +519,10 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   before 2026-10-12 and the Windows one at the fast runners, and Nightly was
   red from 2026-10-16 to 2026-10-24 at one commit (decision D20). A
   regression that lasts fails 2 or 3 nights and then becomes the baseline.
-  The history file is format version 3, which lists the metrics each run
-  found over the gate; versions 1 and 2 are still read.
+  A re-run of the job takes the place of the attempt the history kept, so
+  one night never counts twice. The history file is format version 3, which
+  lists the metrics each run found over the gate, and keeps 6 runs (the 5
+  of the baseline and one for a re-run); versions 1 and 2 are still read.
 - The drag benchmark is gated on `webview.drag-5000.frame-p95-all`, the p95
   over every frame time of a run's timed pairs of drags (about 1,200 in a
   nightly run; an A/B run pools each side's frames), instead of the median
