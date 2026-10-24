@@ -199,15 +199,24 @@ python3 tools/bench-compare.py --self-test
   history that have the metric in the same unit. A metric measured another way (another statistic
   among them) takes a new name, so its history starts afresh, as `p95-all`'s did, or an entry of
   the kind `redefined` (below).
-- A gated metric more than 10% worse fails the run (exit status 1). Until a metric has 5 baselines,
-  or for an ungated metric, the comparison is only reported. Unusable input exits with status 2.
+- A gated metric more than 10% worse is over the gate. It fails the run (exit status 1) when it was
+  also over the gate in one of the 2 runs before it in the history, in 2 of the last 3 runs;
+  otherwise the table says it is over the gate once, the last line names it, and the job shows a
+  warning. Until a metric has 5 baselines, or for an ungated metric, the comparison is only
+  reported. Unusable input exits with status 2.
 - The table goes to standard output (as UTF-8 on every system) and, with `--summary`, to the job
   summary.
-- With `--update-history`, a run without an unaccepted regression is added to the history, which
-  keeps the last 5 runs. The nightly job keeps the history of each system in the Actions cache
-  (`bench-history-<system>-<run>`), and only a scheduled run (always on the default branch) in which
-  every benchmark ran and none regressed unaccepted is kept. A manual run compares without changing
-  it.
+- With `--update-history`, the run is added to the history with the gated metrics it found over
+  the gate, also when it failed, and the history keeps the last 5 runs. The nightly job keeps the
+  history of each system in the Actions cache (`bench-history-<system>-<run>`): a scheduled run
+  (always on the default branch) is kept when the native and webview benchmarks ran to the end and
+  the comparison ran, whether it passed or failed. A manual run compares without changing it.
+- Why every run: the hosted runners' speed varies from night to night by more than the gate. A
+  history of only the runs that passed stayed at the level of the runners before a change on their
+  side (Linux) or at the fast runners (Windows), and every slower night then failed (decision D20
+  of the [M2 polish plan](../../../../docs/plans/m2-polish-plan.md)). Kept runs let the baseline
+  follow; a regression that lasts fails 2 or 3 nights and then becomes the baseline, so a red night
+  is acted on when it comes: a fix, or an entry in `accepted.json`.
 
 ### Redefinitions and intended slowdowns: `accepted.json`
 
@@ -229,7 +238,8 @@ A change that makes a gated metric slower on purpose records it in [`accepted.js
 ```
 
 - The first nightly run that sees an entry of either kind, and has its metric, does not fail on that
-  metric: the metric's history restarts with that run (its older medians are dropped) and the
+  metric, nor counts it as over the gate: the metric's history restarts with that run (its older
+  medians are dropped, and so is the record of the runs that were over the gate on it) and the
   history notes the entry as applied, so it applies once. The metric is then reported until it has
   5 new baselines.
 - An A/B run does not fail on a metric that the head's file accepts (`accepted`) and the base's file
@@ -240,7 +250,8 @@ A change that makes a gated metric slower on purpose records it in [`accepted.js
 - Every entry needs its kind (`check-accepted` refuses a file without, and so do the nightly and
   A/B comparisons; only an A/B run's base file may still be format version 1, without kinds).
 - Entries stay as a record; one taken out of the file is also forgotten by the history. The history
-  file (format version 2) lists the applied entries; version 1 files are still read.
+  file (format version 3) lists the applied entries and, for each run, the gated metrics it found
+  over the gate; version 1 and 2 files are still read (none of their runs counts as over the gate).
 
 ### A/B runs
 

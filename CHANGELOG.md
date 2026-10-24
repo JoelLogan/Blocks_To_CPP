@@ -509,6 +509,18 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   benchmark takes no longer. Results files (format version 2) name each
   metric's statistic, `median` or `p95`; `bench-compare.py` still reads
   version 1 files, as medians.
+- The nightly benchmark gate fails a gated metric only when it is more than
+  10% worse than its baseline in 2 of the last 3 scheduled runs; the first
+  such run warns (the table says "over the gate", and the job shows a
+  warning). Every complete scheduled run now enters the system's history,
+  one that failed too, so the baseline follows the hosted runners, whose
+  speed varies from night to night by more than the gate. Before, only the
+  runs that passed were kept: the Linux baseline stayed at the runners of
+  before 2026-10-12 and the Windows one at the fast runners, and Nightly was
+  red from 2026-10-16 to 2026-10-24 at one commit (decision D20). A
+  regression that lasts fails 2 or 3 nights and then becomes the baseline.
+  The history file is format version 3, which lists the metrics each run
+  found over the gate; versions 1 and 2 are still read.
 - End-to-end harness: the window gets 60 s to start, as long as a page load
   may take, and a timeout says how far the start got (the page never loaded,
   it loaded too late, or the app never became ready). End-to-end builds keep

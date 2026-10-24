@@ -204,10 +204,21 @@ Details of each level as M2 sets them up:
   is reported. Every timing is taken inside the page, never across
   WebDriver. A run takes the median of at least 10 samples (for the edits,
   the p95 of all of them) and compares it with the baseline, the median of
-  the last 5 successful nightly runs on the default branch for the same
+  the last 5 scheduled nightly runs on the default branch for the same
   system, kept in the Actions cache per system (`tools/bench-compare.py`).
-  More than 10% worse fails; until 5 baselines exist the comparison is
-  only reported.
+  A gated metric more than 10% worse is over the gate; it fails when it was
+  also over the gate in one of the 2 runs before (2 of the last 3 runs),
+  and the first time it only warns. Every complete scheduled run enters the
+  history, one that failed too, with the metrics it found over the gate: the
+  hosted runners' speed varies from night to night by more than the gate,
+  and a history of only the runs that passed stayed at the fast runners
+  (decision
+  [D20](../plans/m2-polish-plan.md#d20-how-should-the-nightly-benchmark-gate-deal-with-the-runners-variance)
+  of the M2 polish plan). A regression
+  that lasts thus fails 2 or 3 nights and then becomes the baseline, so a
+  red night is acted on when it comes (a fix, or an entry in
+  `accepted.json`, below). Until 5 baselines exist the comparison is only
+  reported.
   * Every E2E flow records its longest main-thread task (a heartbeat in the
     page, from the window's readiness until the test ends); the report never
     fails a test.
@@ -233,10 +244,11 @@ Details of each level as M2 sets them up:
     `apps/desktop/e2e/bench/accepted.json` with its reason and its kind:
     `redefined` (the benchmark now measures something else) or `accepted`
     (an intended slowdown). Either kind restarts that metric's baseline:
-    the first nightly run that sees the entry does not fail on it and
-    starts the metric's history again. An A/B run whose head adds an
-    `accepted` entry passes; a redefinition never waives an A/B difference,
-    because both builds are measured with the head's benchmarks.
+    the first nightly run that sees the entry does not fail on it, does not
+    count it as over the gate, and starts the metric's history again. An
+    A/B run whose head adds an `accepted` entry passes; a redefinition never
+    waives an A/B difference, because both builds are measured with the
+    head's benchmarks.
   * The M2 polish wave's Variables listing, zoom-aware snap radius and
     screen-reader console output (W4-2, W5-1 and W3-11 of the
     [plan](../plans/m2-polish-plan.md)) merge only with a green A/B run
@@ -269,7 +281,7 @@ GitHub Actions workflows. All actions are SHA-pinned and least-privilege
 | `scorecard.yml` | Push to `main`, weekly, branch-protection changes | OpenSSF Scorecard (code scanning, see below) |
 | `workflow-audit.yml` | PR and push touching `.github/`; weekly and manual (adding online audits) | zizmor (auditor persona) |
 | `pages.yml` | PR and push touching `docs/`, `site/`, `LICENSE`, `SECURITY.md`, the Node/pnpm config or the workflow itself; manual | Build the specification website (fails on broken links or anchors, unpublished docs and raw HTML); deploy to GitHub Pages from the default branch |
-| `nightly.yml` | Daily, manual | `fuzz` (30 minutes per target, one job per target, with a kept corpus) · `links` (lychee over all Markdown) · `e2e-app` (the app under test, built once per OS for the jobs below) · `e2e` (both OSes, every flow and the visual diff) · `e2e-security` (both OSes, [08 §8.13](08-security.md#813-continuous-security-process)) · `bench` (both OSes, with the 10% gate and the acceptance file) |
+| `nightly.yml` | Daily, manual | `fuzz` (30 minutes per target, one job per target, with a kept corpus) · `links` (lychee over all Markdown) · `e2e-app` (the app under test, built once per OS for the jobs below) · `e2e` (both OSes, every flow and the visual diff) · `e2e-security` (both OSes, [08 §8.13](08-security.md#813-continuous-security-process)) · `bench` (both OSes, with the 10% gate over 2 of the last 3 scheduled runs and the acceptance file) |
 | `bench-ab-pr.yml` | The `bench-ab` label on a PR (and each push while it has the label) | `base` (the PR's merge commit is the head, its first parent the base) · `ab` (`bench-ab-run.yml`, every benchmark but cold start, both OSes) |
 | `bench-ab.yml` | Manual (base, benchmarks, systems) | `base` (the dispatched commit is the head; checks that the base is one of its ancestors, by default its merge base with the default branch) · `ab` (`bench-ab-run.yml`) |
 | `bench-ab-run.yml` | Called by the two above | `plan` (checks the inputs) · `app` (the app under test from the base and from the head, per OS) · `bench` (ubuntu, windows: the head's benchmarks against both builds in alternating runs on one runner, 10 samples each, each benchmark on its own, those the base cannot run skipped; compared at 10% with the head's acceptance file; §9.2) |
@@ -343,9 +355,11 @@ breadth flows and the visual diff in `desktop.yml`'s `e2e` job, and
 in M2. The Windows runs of the breadth flows and the nightly suites pass,
 like the Linux ones (scheduled runs since 2026-10-07,
 [10 §10.1](10-roadmap.md#101-milestones)). The nightly benchmark gate
-only reports a metric until five scheduled runs per system have kept it;
-the A/B job (`bench-ab-pr.yml`, `bench-ab.yml` and `bench-ab-run.yml`) and
-the long-task recorder came with the M2 polish wave, and the A/B job gates a
+only reports a metric until five scheduled runs per system have kept it,
+and since 2026-10-24 keeps every complete scheduled run and fails a metric
+over the gate in 2 of the last 3 (§9.2); the A/B job (`bench-ab-pr.yml`,
+`bench-ab.yml` and `bench-ab-run.yml`) and the long-task recorder came
+with the M2 polish wave, and the A/B job gates a
 labelled pull request at once. The visual diff compares every screenshot
 with its baseline since the baselines were committed on 2026-10-24; a new
 scene only warns until its baseline is committed.
