@@ -10,6 +10,6 @@
     "test": "node --test --test-reporter=spec build.test.mjs"
   },
   "dependencies": {
-    "marked": "18.1.0"
+    "marked": "18.1.1"
   }
 }

@@ -28,13 +28,19 @@ overrides:
   # GHSA-238p-pmpm-9mq7 (katex <0.18.2): markdownlint's math syntax extension
   # (micromark-extension-math) asks for ^0.16 but never renders math; 0.18.2 is the fixed release.
   katex: 0.18.2
+  # GHSA-r7fv-28h4-cvq7, GHSA-gfr2-rv44-r23c (high) and GHSA-vfgh-jcmw-g37q (markdown-it <15.0.3,
+  # quadratic-time parsing and rendering): markdownlint-cli2 0.23.3 pins 15.0.1. 15.0.3 is the
+  # fixed release of the same major; drop this once markdownlint-cli2 0.24 (15.0.3) is old enough.
+  markdown-it: 15.0.3
 
 # Tracked `pnpm audit` exceptions (docs/spec/08-security.md §8.9). Each one names the
 # only path that reaches the package and is reviewed by its date.
 auditConfig:
   ignoreGhsas:
-    # braces <=3.0.3 stack exhaustion on deeply nested brace patterns, no fixed release yet.
-    # Reached only through markdownlint-cli2 (dev-only Markdown lint), whose patterns come
-    # from our own .markdownlint-cli2.jsonc; nothing user-supplied is expanded. Review by
-    # 2027-01-04 or as soon as a fixed braces release exists.
-    - GHSA-vfj7-8cjw-p6xm
+    # happy-dom <=21.0.3 host code execution through an unsanitised import alias (high). Only
+    # the tests use happy-dom (the desktop app's and blockly-ext's test DOM, and the isolation
+    # tests, all on our own code); it is never shipped. The only fixed release, 21.0.4, is a
+    # new major that is younger than the 7-day minimum release age until 2026-10-27 18:05 UTC.
+    # Remove this, with the entry in osv-scanner.toml, when happy-dom moves to 21.0.4; review
+    # by 2026-11-03.
+    - GHSA-834v-8h66-3h79
