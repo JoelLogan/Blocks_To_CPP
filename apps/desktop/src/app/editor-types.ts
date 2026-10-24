@@ -41,7 +41,8 @@ export interface EditorHandle {
   updateProjectInfo(info: ProjectInfo): void;
   /**
    * Undoes the last change on the canvas, as `Ctrl+Z` on the canvas does; not during a drag. It
-   * acts once Blockly has delivered the changes made so far, after the next animation frame.
+   * acts once Blockly has delivered the changes made so far, after the next animation frame or a
+   * few.
    */
   undo(): void;
   /** Redoes the last undone change on the canvas; not during a drag, and as {@link undo} acts. */

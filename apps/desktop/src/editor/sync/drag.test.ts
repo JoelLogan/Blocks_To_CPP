@@ -65,6 +65,7 @@ import {
   startSession,
   testCore,
   type TestSession,
+  undosMade,
 } from './testing';
 import { allBlocks } from './traverse';
 import { readTopBlocks } from './workspaceToBdm';
@@ -588,11 +589,11 @@ describe.skipIf(core === null)('a drop on a delete area', () => {
     release({ x: near.x - 6, y: near.y });
     expect(svg.getBlockById('b010')).toBeNull();
     pressCtrl(svg, KeyCodes.Z);
-    await eventsDelivered();
+    await undosMade();
     expect(mainList(svg)).toEqual(MAIN);
 
     pressCtrl(svg, KeyCodes.Y);
-    await eventsDelivered();
+    await undosMade();
     expect(svg.getBlockById('b010')).toBeNull();
     expect(mainList(svg)).toEqual(['b002', 'b003', 'b004']);
   });

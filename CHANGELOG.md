@@ -852,5 +852,6 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   the change then cleared the redo history, so neither Undo nor Redo brought it
   back. A block dropped on the toolbox and undone at once was lost that way.
   Undo and Redo (the keys, the canvas menu, the `≡` menu and the banner's _Undo
-  last change_) now wait for that frame, one step each, in the order they were
-  asked for.
+  last change_) now wait for that frame, and for the next one when the change
+  made another (a start value that follows a new type comes a frame later),
+  one step each, in the order they were asked for.

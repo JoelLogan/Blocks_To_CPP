@@ -334,7 +334,7 @@ describe.skipIf(!CORE_BUILT)('the project in the block editor', () => {
       expect(dirty()).toBe(true);
     });
 
-    // Each acts once Blockly has delivered the changes before it, after the next frame.
+    // Each acts once Blockly has delivered the changes before it, after the next frame or a few.
     editor.handle.undo();
     await waitFor(() => {
       expect(block?.getRelativeToSurfaceXY().x).toBe(before);

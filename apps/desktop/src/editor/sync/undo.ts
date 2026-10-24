@@ -16,15 +16,20 @@
  * ({@link installUndoItems}), and the session's own undo (the window's keys, the ≡ menu, the
  * banner's *Undo last change*). A frame callback asked for after a change runs after Blockly's,
  * and its task after Blockly's, so the change is on the undo stack by then. Blockly has no public
- * way to tell whether events wait to be delivered, so every undo waits; the cost is one frame:
- * what an undo changes is drawn one frame later than before.
+ * way to tell whether events wait to be delivered, so every undo waits; the cost is one frame (two
+ * right after a change): what an undo changes is drawn that much later than before.
  *
- * Each undo waits on its own, so undos act in the order they were asked for (a held key undoes step
- * by step), and a change made between two of them is recorded before the second acts. Blockly's
- * checks are made when the key is pressed (a canvas that can be edited, no drag, no field editor or
- * drop-down open), and its pop-ups close then. An undo does nothing if, by the time it would act,
- * its canvas has been disposed or a block is dragged on it (Blockly never undoes during a drag).
- * One undo still takes back a whole event group.
+ * A listener that hears of a change may make one of its own in the change's event group (a start
+ * value that follows a new type, ../toolbox/reshape.ts), which Blockly delivers a frame later
+ * still. So an undo acts only after a frame in which Blockly recorded nothing new for undo; until
+ * then it waits another frame, and one undo still takes back a whole event group.
+ *
+ * Undos wait in line and act one at a time, each after a frame of its own, so they act in the
+ * order they were asked for (a held key undoes step by step), and a change made between two of
+ * them is recorded before the second acts. Blockly's checks are made when the key is pressed (a
+ * canvas that can be edited, no drag, no field editor or drop-down open), and its pop-ups close
+ * then. An undo does nothing if, by the time it would act, its canvas has been disposed or a block
+ * is dragged on it (Blockly never undoes during a drag).
  *
  * The registries are global, while each editor has its own canvas: the actions are replaced when
  * the first session installs them, and Blockly's own are put back when the last one is removed.
@@ -43,20 +48,79 @@ export const UNDO_MENU_ITEM_IDS = { undo: 'undoWorkspace', redo: 'redoWorkspace'
 /** A menu action (an item that is not a separator). */
 type ActionItem = Exclude<Blockly.ContextMenuRegistry.RegistryItem, { separator: true }>;
 
+/** An undo or redo asked for and not made yet. */
+interface WaitingUndo {
+  readonly workspace: Blockly.Workspace;
+  readonly redo: boolean;
+  /** The event on top of the workspace's undo stack when the undo last looked. */
+  lastRecorded: Blockly.Events.Abstract | undefined;
+}
+
+/** The undos and redos asked for and not made yet, the first asked for first. */
+const waiting: WaitingUndo[] = [];
+
+/** The event Blockly recorded for undo last on `workspace` (the top of its undo stack). */
+function lastRecorded(workspace: Blockly.Workspace): Blockly.Events.Abstract | undefined {
+  return workspace.getUndoStack().at(-1);
+}
+
+/** Calls `next` after the next animation frame and a task, as Blockly delivers its events. */
+function afterNextFrame(next: () => void): void {
+  requestAnimationFrame(() => {
+    setTimeout(next, 0);
+  });
+}
+
 /**
- * Undoes (or, with `redo`, redoes) the last change on `workspace` once Blockly has delivered the
- * events fired so far: after the next animation frame and a task (see the module comment). It does
- * nothing if by then `workspace` has been disposed or a block is dragged on it.
+ * Undoes (or, with `redo`, redoes) the last change on `workspace` once Blockly has delivered and
+ * recorded the events fired so far, and those its listeners fired in turn, and once the undos asked
+ * for before it have acted (see the module comment). It does nothing if by then `workspace` has
+ * been disposed or a block is dragged on it.
  */
 export function undoAfterDelivery(workspace: Blockly.Workspace, redo: boolean): void {
-  requestAnimationFrame(() => {
-    setTimeout(() => {
-      const dragging = workspace instanceof Blockly.WorkspaceSvg && workspace.isDragging();
-      if (Blockly.Workspace.getById(workspace.id) === workspace && !dragging) {
-        workspace.undo(redo);
-      }
-    }, 0);
-  });
+  waiting.push({ workspace, redo, lastRecorded: lastRecorded(workspace) });
+  if (waiting.length === 1) {
+    afterNextFrame(undoFirstWaiting);
+  }
+}
+
+/** How many undos and redos wait to act (tests). */
+export function undosWaiting(): number {
+  return waiting.length;
+}
+
+/**
+ * Makes the first waiting undo, unless Blockly has recorded events on its canvas since it last
+ * looked: their listeners may have made changes of their own, which come a frame later, so it looks
+ * again after the next frame. The undo after it waits for a frame of its own, also when this one
+ * fails (it is logged).
+ */
+function undoFirstWaiting(): void {
+  const first = waiting[0];
+  if (first === undefined) {
+    return;
+  }
+  const { workspace, redo } = first;
+  const dragging = workspace instanceof Blockly.WorkspaceSvg && workspace.isDragging();
+  if (Blockly.Workspace.getById(workspace.id) === workspace && !dragging) {
+    const last = lastRecorded(workspace);
+    if (last !== first.lastRecorded) {
+      first.lastRecorded = last;
+      afterNextFrame(undoFirstWaiting);
+      return;
+    }
+    try {
+      workspace.undo(redo);
+    } catch (error: unknown) {
+      console.error('An undo failed', error);
+    }
+  }
+  waiting.shift();
+  const next = waiting[0];
+  if (next !== undefined) {
+    next.lastRecorded = lastRecorded(next.workspace);
+    afterNextFrame(undoFirstWaiting);
+  }
 }
 
 /** Blockly's shortcut `original` on `keyCodes`, acting through {@link undoAfterDelivery}. */

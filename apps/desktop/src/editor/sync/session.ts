@@ -341,8 +341,8 @@ export class EditorSession {
   /**
    * Undoes (or, with `redo`, redoes) the last change on the canvas, as Blockly's own `Ctrl+Z` and
    * `Ctrl+Y` do: its drop-downs and field editors close first, and nothing happens during a drag.
-   * The undo acts once Blockly has delivered the events of the changes made so far, after the next
-   * animation frame (./undo.ts).
+   * The undo acts once Blockly has delivered the events of the changes made so far, and of those its
+   * listeners made in turn, after the next animation frame or a few (./undo.ts).
    */
   undo(redo: boolean): void {
     const workspace = this.workspace;

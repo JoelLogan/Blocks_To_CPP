@@ -27,6 +27,7 @@ import { registerEditorBlocks } from '../services/install';
 import { withoutEvents } from './bdmToWorkspace';
 import { EditorSession } from './session';
 import { clearWorkspace } from './traverse';
+import { undosWaiting } from './undo';
 
 /** Every example project (examples/*.b2c) by file name. */
 export const EXAMPLE_PROJECTS: Readonly<Record<string, string>> = fileMap(
@@ -181,6 +182,26 @@ export function disposeWorkspaces(): void {
       workspace.dispose();
     });
   }
+}
+
+/** Waits for the next animation frame and a task after it, as Blockly delivers its events. */
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      setTimeout(resolve, 0);
+    });
+  });
+}
+
+/**
+ * Waits until every undo and redo asked for has acted (./undo.ts) and Blockly has delivered the
+ * events of what they changed.
+ */
+export async function undosMade(): Promise<void> {
+  do {
+    await nextFrame();
+  } while (undosWaiting() > 0);
+  await nextFrame();
 }
 
 /** `value`, or a failed test naming `what` when it is missing. */
