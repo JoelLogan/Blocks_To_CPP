@@ -853,4 +853,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   stack only when it delivers it. On Windows, where msedgedriver sends the
   key about 8 ms after the release, Ctrl+Z could come first: it undid the
   start of the drag instead, the late drop then emptied the redo stack, and
-  the block never came back (Desktop run 40123025195).
+  the block never came back (Desktop run 40123025195). The flow
+  `placement-wrap` waits for the delivery too before its Ctrl+Z after a
+  wrapping drop, where only a 300 ms pause stood in for it: a frame or a
+  long task later than that undid the new _if_ with the statements it had
+  wrapped.
