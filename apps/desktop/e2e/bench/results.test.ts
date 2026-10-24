@@ -164,7 +164,7 @@ describe('metricValue', () => {
     // The 95th smallest of the 100 edits: the slowest edit of the rounds without a slow one.
     expect(metricValue(pooled)).toBe(1_009);
     expect(metricValue(pooled)).toBe(percentile(editRounds.flat(), 95));
-    // Each round's p95 is nearly its slowest edit, so half the rounds' samples are slow ones and
+    // Each round's p95 is its slowest edit, so half the rounds' samples are slow ones and
     // their median moves halfway to them.
     const perRound = editRounds.map((values) => percentile(values, 95));
     expect(perRound.filter((value) => value === 3_000)).toHaveLength(5);

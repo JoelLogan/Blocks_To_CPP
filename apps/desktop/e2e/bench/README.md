@@ -15,7 +15,7 @@ base's on one runner ([A/B runs](#ab-runs)).
 | `webview.cold-start`                              | From the WebDriver session request (which starts the app) to the readiness marker: the start page shown, Blockly's workspace injected and the toolbox rendered; 10 starts with fresh profiles that share one web view data folder, after one warm-up start | yes   | N2: < 2 s     |
 | `webview.preview-1000.p95`                        | The preview pipeline's task in the app at 1,000 blocks, C++ panel folded: reading the canvas, `update()` in WebAssembly (one load of the document), storing the result; p95 of 10 edits per sample, 10 samples                                             | yes   | N4: < 50 ms   |
 | `webview.edit-1000.p95-all`                       | From an edit until the page has finished what it started (Blockly's re-rendering of the edited stack, the preview, the C++ panel's update), C++ panel shown, less the pipeline's 50 ms debounce; p95 of every edit of the run (100 in a nightly run)       | yes   | N12           |
-| `webview.edit-1000.p95`                           | The same edits; p95 of the 10 edits of each sample, nearly each sample's slowest edit (gated until `p95-all` replaced it)                                                                                                                                  | no    |               |
+| `webview.edit-1000.p95`                           | The same edits; p95 of the 10 edits of each sample, which is each sample's slowest edit (gated until `p95-all` replaced it)                                                                                                                                | no    |               |
 | `webview.select-1000.max-task`                    | The longest main-thread task after a click that selects a block at 1,000 blocks, in 8 scopes in turn; one click per sample, 10 samples after a warm-up click                                                                                               | yes   | N12           |
 | `webview.guessing-game.select.max-task`           | The guessing game (40 blocks, C++ panel shown): the longest task after a click that selects a block in another scope; one click per sample                                                                                                                 | no    | N12: ≤ 50 ms  |
 | `webview.guessing-game.edit.max-task`             | The guessing game: the longest task after a print is added to `main`, until the page has finished what it started; one edit per sample                                                                                                                     | no    | N12: ≤ 50 ms  |
@@ -72,9 +72,9 @@ the C++ appeared or after it, which the spans alone do not.
   settle afterwards, outside the timing. Every edit of that phase is a sample of
   `webview.edit-1000.p95-all`, whose value is the p95 of all of them (decision D19 of the
   [M2 polish plan](../../../../docs/plans/m2-polish-plan.md)): the p95 of a sample's 10 edits,
-  `webview.edit-1000.p95`, is nearly its slowest edit, and moved by more than the gate between runs
-  whose per-edit medians were equal. Both are taken from the same edits, so the pooled metric costs
-  no time.
+  `webview.edit-1000.p95`, is its slowest edit, and moved by more than the gate between runs whose
+  per-edit medians were equal. Both are taken from the same edits, so the pooled metric costs no
+  time ([`preview-metrics.ts`](preview-metrics.ts) takes the metrics).
 - **Selecting** ([`select.bench.e2e.ts`](select.bench.e2e.ts), the guessing game's in
   [`guessing.bench.e2e.ts`](guessing.bench.e2e.ts)): the blocks of [`targets.ts`](targets.ts) are
   clicked in turn with real pointer input, the button held for 50 ms as a person's click holds it,
@@ -236,7 +236,7 @@ A change that makes a gated metric slower on purpose records it in [`accepted.js
   does not: the change under test brings the entry. For an entry added together with the change,
   `commit` is the pull request's head commit (the A/B run measures it merged into the base).
 - A redefinition never waives an A/B difference: the head's benchmarks measure both builds, so both
-  medians follow the new definition, and a difference between them is the change's.
+  sides' values follow the new definition, and a difference between them is the change's.
 - Every entry needs its kind (`check-accepted` refuses a file without, and so do the nightly and
   A/B comparisons; only an A/B run's base file may still be format version 1, without kinds).
 - Entries stay as a record; one taken out of the file is also forgotten by the history. The history
