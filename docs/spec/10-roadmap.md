@@ -30,9 +30,14 @@
 > the Linux benchmark flags came from a slower runner, not the code
 > ([record](../plans/m2-polish-plan.md#w7--m2-close-out)). Nightly was red
 > from 2026-10-16 to 2026-10-24 at one commit: the `selection` flow's race
-> (fixed), one Windows driver race, and a benchmark history that only takes
-> runs that pass, which runners of varying speed froze on Linux and skewed on
-> Windows (decision [D20](../plans/m2-polish-plan.md#d20-how-should-the-nightly-benchmark-gate-deal-with-the-runners-variance)). The first
+> (fixed), one Windows driver race, and a benchmark history that only took
+> runs that passed, which runners of varying speed froze on Linux and skewed
+> on Windows. Decision
+> [D20](../plans/m2-polish-plan.md#d20-how-should-the-nightly-benchmark-gate-deal-with-the-runners-variance)
+> (2026-10-24) is decided and done: every complete scheduled run enters the
+> history, a gated metric fails only when it is over the gate in 2 of the
+> last 3 scheduled runs, and dragging is gated on the p95 over every frame
+> of a run's timed drags. The first
 > measurements on CI's runners, which have no GPU, are a cold start of 1.2 s
 > (Linux) and 2.8 s (Windows), and a p95 frame time while dragging in a
 > 5,000-block workspace of 40 ms (Linux) and 914 ms (Windows): meeting the

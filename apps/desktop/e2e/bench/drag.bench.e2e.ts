@@ -4,10 +4,12 @@
  * `func.define dragMe` beside `main`) is opened, and the handle is dragged away and back again
  * {@link PAIRS} times across empty canvas with real pointer input, in {@link STEPS} small moves per
  * drag. While the pointer drags, the page records the timestamps of its animation frames
- * (bench/page.ts `FRAMES_START_SCRIPT`); the p95 of the frame times of one pair (both directions,
- * about 120 frames) is one sample of `webview.drag-5000.frame-p95` (N3's 30 fps is 33.3 ms). A
- * first pair warms up and is not counted, and after every drop the page is left to finish what the
- * drop started (its preview) before the next drag.
+ * (bench/page.ts `FRAMES_START_SCRIPT`), about 120 frame times per pair (both directions). Every
+ * frame time of the timed pairs is a sample of the gated `webview.drag-5000.frame-p95-all`, whose
+ * value is their p95 (decision D20; N3's 30 fps is 33.3 ms), and each pair's p95 is a sample of
+ * the reported `webview.drag-5000.frame-p95` (bench/drag-metrics.ts takes both). A first pair warms
+ * up and is not counted, and after every drop the page is left to finish what the drop started (its
+ * preview) before the next drag.
  *
  * Before every drag, outside what is timed, the canvas is panned until the handle is well inside
  * the part of it that is visible then, and the drag ends at a point of that part: up and to the
@@ -32,6 +34,7 @@ import { centerOn, foldCodePanel } from '../support/editor';
 import { waitFor } from '../support/wait';
 import { requireHookMethods } from './capabilities';
 import { handleId, MAIN_ID, writeBenchProject } from './document';
+import { BLOCKS, dragMetrics, WARM_UP_PAIRS } from './drag-metrics';
 import { aimDelta, checkLanding, describePlace, type DragAim, isBlockPlace } from './handle';
 import {
   type BlockPlace,
@@ -46,15 +49,12 @@ import {
   QUIET_SCRIPT,
 } from './page';
 import { openProjectFile } from './project';
-import { benchSamples, writeMetric } from './results';
-import { deltas, median, percentile, rounded } from './stats';
-
-/** The workspace size. */
-const BLOCKS = 5_000;
+import { benchSamples, metricValue, writeMetric } from './results';
+import { deltas, median, rounded } from './stats';
 
 /**
- * Timed pairs of drags (away and back); each pair's p95 frame time is one sample (results.ts
- * `benchSamples`, 10 by default).
+ * Timed pairs of drags (away and back), after the warm-up pair (results.ts `benchSamples`, 10 by
+ * default); each pair's p95 frame time is one sample of the reported metric.
  */
 const PAIRS = benchSamples();
 
@@ -270,34 +270,31 @@ describe('webview benchmark: dragging in a 5,000-block workspace', () => {
       await waitUntilQuiet(app, 'centring the canvas on the drag handle');
       progress(started, `opened the ${String(BLOCKS)}-block document`);
 
-      const samples: number[] = [];
+      // The frame times of each pair, the warm-up pair first (drag-metrics.ts leaves it out).
+      const pairs: number[][] = [];
       let worstLanding = 0;
-      for (let pair = 0; pair <= PAIRS; pair += 1) {
+      for (let pair = 0; pair < WARM_UP_PAIRS + PAIRS; pair += 1) {
         const away = await timedDrag(app, handle, 'away');
         const back = await timedDrag(app, handle, 'back');
         worstLanding = Math.max(worstLanding, away.landing, back.landing);
         progress(
           started,
-          `pair ${String(pair)} of ${String(PAIRS)} done (${pair === 0 ? 'warm-up' : 'timed'})`,
+          `pair ${String(pair)} of ${String(PAIRS)} done (${pair < WARM_UP_PAIRS ? 'warm-up' : 'timed'})`,
         );
-        // The first pair warms up (Blockly's drag surface, the connection database): not kept.
-        if (pair > 0) {
-          samples.push(percentile([...away.times, ...back.times], 95));
-        }
+        pairs.push([...away.times, ...back.times]);
       }
-      writeMetric({
-        name: 'webview.drag-5000.frame-p95',
-        unit: 'ms',
-        better: 'lower',
-        gate: true,
-        description: `p95 frame time dragging a block away and back in a ${String(BLOCKS)}-block workspace; one pair per sample`,
-        samples,
-      });
+
+      // D20: gated on the p95 of every frame of the timed pairs; each pair's p95 is still reported.
+      const metrics = dragMetrics(pairs);
+      writeMetric(metrics.frames);
+      writeMetric(metrics.perPair);
       process.stdout.write(
-        `Dragging at ${String(BLOCKS)} blocks: p95 frame time per pair, median ${String(rounded(median(samples), 1))} ms ` +
-          `(every drop within ${String(rounded(worstLanding, 1))} px of the pointer's end)\n`,
+        `Dragging at ${String(BLOCKS)} blocks: p95 frame time of all ${String(metrics.frames.samples.length)} ` +
+          `frames ${String(rounded(metricValue(metrics.frames), 1))} ms (p95 per pair, median ` +
+          `${String(rounded(median(metrics.perPair.samples), 1))} ms; every drop within ` +
+          `${String(rounded(worstLanding, 1))} px of the pointer's end)\n`,
       );
-      expect(samples).toHaveLength(PAIRS);
+      expect(metrics.perPair.samples).toHaveLength(PAIRS);
     },
     TEST_TIMEOUT_MS,
   );

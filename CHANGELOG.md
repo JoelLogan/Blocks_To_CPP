@@ -509,6 +509,30 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   benchmark takes no longer. Results files (format version 2) name each
   metric's statistic, `median` or `p95`; `bench-compare.py` still reads
   version 1 files, as medians.
+- The nightly benchmark gate fails a gated metric only when it is more than
+  10% worse than its baseline in 2 of the last 3 scheduled runs; the first
+  such run warns (the table says "over the gate", and the job shows a
+  warning). Every complete scheduled run now enters the system's history,
+  one that failed too, so the baseline follows the hosted runners, whose
+  speed varies from night to night by more than the gate. Before, only the
+  runs that passed were kept: the Linux baseline stayed at the runners of
+  before 2026-10-12 and the Windows one at the fast runners, and Nightly was
+  red from 2026-10-16 to 2026-10-24 at one commit (decision D20). A
+  regression that lasts fails 2 or 3 nights and then becomes the baseline.
+  A re-run of the job takes the place of the attempt the history kept, so
+  one night never counts twice. The history file is format version 3, which
+  lists the metrics each run found over the gate, and keeps 6 runs (the 5
+  of the baseline and one for a re-run); versions 1 and 2 are still read.
+- The drag benchmark is gated on `webview.drag-5000.frame-p95-all`, the p95
+  over every frame time of a run's timed pairs of drags (about 1,200 in a
+  nightly run; an A/B run pools each side's frames), instead of the median
+  of each pair's p95, which sat on the drag's starting frames and near
+  multiples of the frame interval and stepped from about 36 to about 49 ms
+  on Linux at an unchanged commit (decision D20). `webview.drag-5000.frame-p95`
+  is still reported, ungated. The new metric has a name of its own, so its
+  nightly history starts with its first run and needs no `accepted.json`
+  entry. It comes from the frames the benchmark already records, so the
+  benchmark takes no longer.
 - End-to-end harness: the window gets 60 s to start, as long as a page load
   may take, and a timeout says how far the start got (the page never loaded,
   it loaded too late, or the app never became ready). End-to-end builds keep

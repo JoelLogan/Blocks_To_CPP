@@ -14,12 +14,15 @@
 #   pipeline and, through the E2E harness, cold start, the preview and edits at 1,000 blocks,
 #   selecting blocks at 1,000 blocks, the guessing game's selections and edits, a program's
 #   output in the console, and dragging in a 5,000-block workspace. tools/bench-compare.py
-#   compares each metric's median (for webview.edit-1000.p95-all, the p95 of all the run's edits)
-#   with the baseline (the last 5 scheduled runs on this system, kept in the Actions cache) and
-#   fails at more than 10% worse; until 5 runs are kept it only reports. An
-#   entry of apps/desktop/e2e/bench/accepted.json, a new definition of a metric or an intended
-#   slowdown, restarts that metric's history instead of failing. Pull requests are gated by the
-#   A/B job (bench-ab-pr.yml).
+#   compares each metric's median (for webview.edit-1000.p95-all and
+#   webview.drag-5000.frame-p95-all, the p95 of all the run's edits or frame times) with the
+#   baseline (the last 5 scheduled runs on this system, kept in the Actions cache). A
+#   gated metric more than 10% worse is over the gate: it fails when it was also over the gate in
+#   one of the 2 scheduled runs before (2 of the last 3), and otherwise only warns; until 5 runs
+#   are kept it only reports. Every complete scheduled run is kept, also one that failed, so the
+#   baseline follows the runners. An entry of apps/desktop/e2e/bench/accepted.json, a new
+#   definition of a metric or an intended slowdown, restarts that metric's history instead of
+#   failing. Pull requests are gated by the A/B job (bench-ab-pr.yml).
 # The full OSV scan of the default branch runs daily in osv-scanner.yml and is not repeated here.
 name: Nightly
 
@@ -771,9 +774,13 @@ jobs:
   # The benchmarks with their 10% regression gate (docs/spec/09-quality-and-delivery.md §9.2,
   # apps/desktop/e2e/bench/README.md): the native pipeline (criterion) first, while the runner is
   # quiet, then the webview benchmarks in the app under test. tools/bench-compare.py compares each
-  # metric's median (the edits' pooled p95 for webview.edit-1000.p95-all) with the history of this
-  # system (the last 5 scheduled runs, kept in the Actions cache); only a scheduled run without an
-  # unaccepted regression is added to the history.
+  # metric's median (the pooled p95 of the edits and of the drag's frame times for the two p95-all
+  # metrics) with the history of this system (the last 5 scheduled runs, kept in the Actions
+  # cache), and a gated metric fails when it is more than 10% worse in 2 of the last 3 scheduled
+  # runs (the first warns). Every complete scheduled run is added to the history, also one that
+  # failed, with the metrics it found over the gate: the hosted runners' speed varies from night to
+  # night, and a history of only the runs that passed stayed at the fast ones (D20 in
+  # docs/plans/m2-polish-plan.md).
   bench:
     name: Benchmarks (${{ matrix.os }})
     needs: e2e-app
@@ -875,6 +882,7 @@ jobs:
       # criterion, 50 samples per benchmark (crates/b2c-core-wasm/benches/pipeline); the document is
       # checked before anything is measured.
       - name: Run the native pipeline benchmark
+        id: native
         shell: bash
         run: |
           cargo bench --locked -p b2c-core-wasm --bench pipeline
@@ -917,6 +925,7 @@ jobs:
       # has g++) and dragging at 5,000 blocks, one results file per metric in B2C_BENCH_OUT.
       - name: Run the webview benchmarks (Linux)
         if: runner.os == 'Linux'
+        id: webview-linux
         env:
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
           B2C_E2E_TOOLCHAIN_DIRS: /usr/bin
@@ -926,6 +935,7 @@ jobs:
 
       - name: Run the webview benchmarks (Windows)
         if: runner.os == 'Windows'
+        id: webview-windows
         shell: bash
         run: >-
           pnpm --filter @blocks2cpp/desktop exec
@@ -941,12 +951,16 @@ jobs:
           key: bench-history-${{ matrix.system }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: bench-history-${{ matrix.system }}-
 
-      # Fails at more than 10% worse on a gated metric once it has 5 baselines; otherwise only
-      # reports. A metric the acceptance file newly lists (redefined or accepted) does not fail, and
-      # its history restarts with this run. The history file gets this run only when nothing else
-      # regressed.
+      # Fails on a gated metric more than 10% worse, once it has 5 baselines, when it was also over
+      # the gate in one of the 2 runs before in the history; over the gate once, it warns. Otherwise
+      # it only reports. A metric the acceptance file newly lists (redefined or accepted) does not
+      # fail, and its history restarts with this run. The history file always gets this run, with
+      # the metrics it found over the gate (a re-run of the job takes the place of the attempt the
+      # history kept: the run ID is the same); whether it is kept is the next step's decision. This
+      # step's failure is the job's failure on a regression.
       - name: Compare with the baseline
         if: ${{ !cancelled() }}
+        id: compare
         shell: bash
         run: |
           "$PYTHON" tools/bench-compare.py compare --os "$BENCH_SYSTEM" \
@@ -955,11 +969,18 @@ jobs:
             --update-history "$HISTORY" --run-id "$GITHUB_RUN_ID" --commit "$GITHUB_SHA" \
             --summary "$GITHUB_STEP_SUMMARY"
 
-      # Only the scheduled run (always on the default branch) keeps its medians as a baseline,
-      # and only when every benchmark ran and none regressed unaccepted; manual runs compare
+      # Only the scheduled run (always on the default branch) keeps its values as baselines, and
+      # only a complete one: the native and webview benchmarks ran to the end, and the comparison
+      # ran, whether it passed or failed on a regression (a run over the gate counts for the next
+      # runs' rule, and a regression becomes the baseline once it lasts). Manual runs compare
       # without changing the history (an acceptance then applies to the next scheduled run).
       - name: Keep the benchmark history
-        if: ${{ success() && github.event_name == 'schedule' }}
+        if: >-
+          ${{ !cancelled() && github.event_name == 'schedule'
+          && steps.native.outcome == 'success'
+          && (steps.webview-linux.outcome == 'success' || steps.webview-windows.outcome == 'success')
+          && (steps.compare.outcome == 'success' || steps.compare.outcome == 'failure')
+          && hashFiles('.bench-history/history.json') != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .bench-history/history.json

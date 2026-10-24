@@ -21,7 +21,8 @@ base's on one runner ([A/B runs](#ab-runs)).
 | `webview.guessing-game.edit.max-task`             | The guessing game: the longest task after a print is added to `main`, until the page has finished what it started; one edit per sample                                                                                                                     | no    | N12: ≤ 50 ms  |
 | `webview.console-200000.run`                      | From a click on ► Run until the console says _Finished_, for a built program that prints 200,000 lines (the console cleared before); the median of 3 runs per sample                                                                                       | yes   |               |
 | `webview.console-200000.max-task`                 | The longest main-thread task of such a run, until the page has finished what the run started; the median of 3 runs per sample                                                                                                                              | no    | N12           |
-| `webview.drag-5000.frame-p95`                     | Frame times while a block is dragged away and back with real pointer input in a 5,000-block workspace; p95 of one pair of drags per sample, 10 samples after a warm-up pair                                                                                | yes   | N3: ≤ 33.3 ms |
+| `webview.drag-5000.frame-p95-all`                 | Frame times while a block is dragged away and back with real pointer input in a 5,000-block workspace; p95 of every frame of the run's 10 pairs of drags after a warm-up pair (about 1,200 frames in a nightly run)                                        | yes   | N3: ≤ 33.3 ms |
+| `webview.drag-5000.frame-p95`                     | The same frames; p95 of each pair of drags (about 120 frames), one pair per sample (gated until `frame-p95-all` replaced it)                                                                                                                               | no    |               |
 
 Every timing of the webview benchmarks is taken inside the page with its own clock
 ([`page.ts`](page.ts)), so WebDriver's round trips are not part of any measurement. A heartbeat (a
@@ -122,7 +123,14 @@ the C++ appeared or after it, which the spans alone do not.
   run fails rather than measure a drag that missed the handle. A handle that cannot be grabbed
   fails the run with where it is on screen, and a drop that loses it with what the page looked
   like (the drag, the window, the elements under the drop point, where the flyout, the zoom
-  controls and the trash can are, and the last press and release).
+  controls and the trash can are, and the last press and release). Every frame time of the timed
+  pairs is a sample of `webview.drag-5000.frame-p95-all`, whose value is the p95 of all of them
+  (decision D20 of the [M2 polish plan](../../../../docs/plans/m2-polish-plan.md)): the p95 of
+  one pair, its 7th-longest frame of about 120, sits on the drag's starting frames and near
+  multiples of the frame interval, and the median of the pairs' p95s, `webview.drag-5000.frame-p95`,
+  stepped from about 36 to about 49 ms on Linux between two nights at one commit. Both are taken
+  from the same frames, so the pooled metric costs no time ([`drag-metrics.ts`](drag-metrics.ts)
+  takes the metrics).
 
 The benchmarks turn off the end-to-end harness's long-task recorder (`launchApp`'s
 `recordLongTasks: false`, see [`../README.md`](../README.md)): they time the page's tasks
@@ -193,21 +201,34 @@ python3 tools/bench-compare.py --self-test
 
 - Each metric needs at least 10 samples. Its value is their median, unless its results file names
   the statistic `p95`: then it is the p95 of all its samples by the nearest rank, which needs at
-  least 20 of them (fewer would make it the largest). `webview.edit-1000.p95-all` is such a metric:
-  its samples are every edit of the run.
-- The value is compared with the baseline, the median of the values of the last 5 runs in the
-  history that have the metric in the same unit. A metric measured another way (another statistic
-  among them) takes a new name, so its history starts afresh, as `p95-all`'s did, or an entry of
-  the kind `redefined` (below).
-- A gated metric more than 10% worse fails the run (exit status 1). Until a metric has 5 baselines,
-  or for an ungated metric, the comparison is only reported. Unusable input exits with status 2.
+  least 20 of them (fewer would make it the largest). `webview.edit-1000.p95-all` and
+  `webview.drag-5000.frame-p95-all` are such metrics: their samples are every edit of the run, and
+  every frame of its timed drags.
+- The value is compared with the baseline, the median of the metric's values in the same unit in
+  the last 5 runs of the history (a run without the metric gives none). A metric measured another
+  way (another statistic among them) takes a new name, so its history starts afresh, as the two
+  `p95-all` metrics' did, or an entry of the kind `redefined` (below).
+- A gated metric more than 10% worse is over the gate. It fails the run (exit status 1) when it was
+  also over the gate in one of the 2 runs before it in the history, in 2 of the last 3 runs;
+  otherwise the table says it is over the gate once, the last line names it, and the job shows a
+  warning. Until a metric has 5 baselines, or for an ungated metric, the comparison is only
+  reported. Unusable input exits with status 2.
 - The table goes to standard output (as UTF-8 on every system) and, with `--summary`, to the job
   summary.
-- With `--update-history`, a run without an unaccepted regression is added to the history, which
-  keeps the last 5 runs. The nightly job keeps the history of each system in the Actions cache
-  (`bench-history-<system>-<run>`), and only a scheduled run (always on the default branch) in which
-  every benchmark ran and none regressed unaccepted is kept. A manual run compares without changing
-  it.
+- With `--update-history`, the run is added to the history with the gated metrics it found over
+  the gate, also when it failed. The history keeps the last 6 runs, the 5 of the baseline and one
+  more: a re-run of a workflow run (`--run-id` names a run the history has) leaves the attempt the
+  history kept out of the comparison and takes its place, so that attempt is neither the run
+  before it nor a baseline, and the re-run still has 5 baselines. The nightly job keeps the
+  history of each system in the Actions cache (`bench-history-<system>-<run>`): a scheduled run
+  (always on the default branch) is kept when the native and webview benchmarks ran to the end and
+  the comparison ran, whether it passed or failed. A manual run compares without changing it.
+- Why every run: the hosted runners' speed varies from night to night by more than the gate. A
+  history of only the runs that passed stayed at the level of the runners before a change on their
+  side (Linux) or at the fast runners (Windows), and every slower night then failed (decision D20
+  of the [M2 polish plan](../../../../docs/plans/m2-polish-plan.md)). Kept runs let the baseline
+  follow; a regression that lasts fails 2 or 3 nights and then becomes the baseline, so a red night
+  is acted on when it comes: a fix, or an entry in `accepted.json`.
 
 ### Redefinitions and intended slowdowns: `accepted.json`
 
@@ -229,7 +250,8 @@ A change that makes a gated metric slower on purpose records it in [`accepted.js
 ```
 
 - The first nightly run that sees an entry of either kind, and has its metric, does not fail on that
-  metric: the metric's history restarts with that run (its older medians are dropped) and the
+  metric, nor counts it as over the gate: the metric's history restarts with that run (its older
+  medians are dropped, and so is the record of the runs that were over the gate on it) and the
   history notes the entry as applied, so it applies once. The metric is then reported until it has
   5 new baselines.
 - An A/B run does not fail on a metric that the head's file accepts (`accepted`) and the base's file
@@ -240,7 +262,8 @@ A change that makes a gated metric slower on purpose records it in [`accepted.js
 - Every entry needs its kind (`check-accepted` refuses a file without, and so do the nightly and
   A/B comparisons; only an A/B run's base file may still be format version 1, without kinds).
 - Entries stay as a record; one taken out of the file is also forgotten by the history. The history
-  file (format version 2) lists the applied entries; version 1 files are still read.
+  file (format version 3) lists the applied entries and, for each run, the gated metrics it found
+  over the gate; version 1 and 2 files are still read (none of their runs counts as over the gate).
 
 ### A/B runs
 
@@ -273,7 +296,8 @@ The jobs build the app under test from each commit, and then on one runner per s
 [`ab-rounds.sh`](ab-rounds.sh) runs the head's benchmarks against both builds in alternating runs
 (base, head, head, base: 2 rounds of 5 samples, 10 per side), and `bench-compare.py ab` compares
 the head's values with the base's at 10%. The samples of a side's runs are added up first, so the
-edits' `p95-all` is the p95 of all of a side's 100 edits. Each round starts the selection
+edits' `p95-all` is the p95 of all of a side's 100 edits, and the drag's `frame-p95-all` of all
+the frames of its 10 timed pairs. Each round starts the selection
 benchmarks where the round before stopped (`B2C_BENCH_OFFSET`, the same for both builds), so each
 side clicks the same 10 targets as a nightly run, all 8 scopes of `select-1000` among them.
 
@@ -304,7 +328,7 @@ warning): the run says nothing about their metrics.
 A change expected to alter a gated metric runs the A/B job on its pull request. W4-2, W5-1 and W3-11
 of the M2 polish wave merge only with a green A/B run attached whose table compares their metric,
 or once their metrics have at least 5 nightly baselines: the toolbox that no longer follows the
-selection (W4-2) is measured by `select-1000.max-task`, the snap radius (W5-1) by `drag-5000.frame-p95`, and the console's
+selection (W4-2) is measured by `select-1000.max-task`, the snap radius (W5-1) by `drag-5000.frame-p95-all` (`frame-p95` before D20), and the console's
 screen-reader output (W3-11) by `console-200000.run`, all part of a pull request's run. `drag-5000` drags a definition
 across empty canvas, where nothing can connect: it shows that the radius does not slow a drag down, but it never
 previews a place, so what W5-1's previews cost is not gated (the plan's W5-1 status keeps that open). A run that

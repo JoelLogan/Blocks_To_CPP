@@ -6,8 +6,14 @@ The benchmark gate of docs/spec/09-quality-and-delivery.md §9.2, in two ways:
 * compare (the nightly job): every metric of a run has at least 10 samples;
   its value is compared with the baseline, the median of its values in the
   last 5 runs kept in the history of the same system (the scheduled nightly
-  runs on the default branch). A gated metric more than 10% worse fails the
-  run. Until a metric has 5 baselines, its comparison is only reported.
+  runs on the default branch). A gated metric more than 10% worse is over
+  the gate. It fails the run when it was also over the gate in one of the 2
+  runs before it in the history (2 of the last 3 runs); otherwise it is
+  reported as over the gate once, a warning, so that one slow runner does
+  not fail the night. Until a metric has 5 baselines, its comparison is only
+  reported. Every run is added to the history with the gated metrics it
+  found over the gate, the runs that failed too, so the baseline follows the
+  runners instead of staying at the last runs that passed.
 * ab (the A/B job, .github/workflows/bench-ab-run.yml): the same metrics
   measured on one runner for a base and a head build, in alternating runs
   whose samples are added up per side (at least 10 each). Head's value is
@@ -31,16 +37,17 @@ kind, reason}, of one of two kinds:
 * "accepted": an intended slowdown (a feature that costs time).
 
 The first nightly run that sees an entry of either kind does not fail on that
-metric; its history restarts from that run (the older medians of the metric
-are dropped, and the history notes the entry as applied, so later runs gate
-against the new baselines once there are 5). An A/B run does not fail on a
-metric that the head's acceptance file accepts ("accepted") and the base's
-does not yet. A redefinition never waives an A/B difference: both builds are
-measured with the head's benchmarks, so their medians compare under the new
-definition. The commit names the change whose performance is accepted (for an
-entry added with the change itself, the pull request's head commit, which its
-A/B run measured merged into the base); together with the metric and the
-system it identifies the entry.
+metric, nor counts it as over the gate; its history restarts from that run
+(the older medians of the metric are dropped, and so is its place in the
+earlier runs' lists of metrics over the gate, and the history notes the entry
+as applied, so later runs gate against the new baselines once there are 5).
+An A/B run does not fail on a metric that the head's acceptance file accepts
+("accepted") and the base's does not yet. A redefinition never waives an A/B
+difference: both builds are measured with the head's benchmarks, so their
+medians compare under the new definition. The commit names the change whose
+performance is accepted (for an entry added with the change itself, the pull
+request's head commit, which its A/B run measured merged into the base);
+together with the metric and the system it identifies the entry.
 
 Inputs and outputs are JSON files with a format tag:
 
@@ -57,13 +64,18 @@ Inputs and outputs are JSON files with a format tag:
                     "description": "...", "samples": [1234.5, ...]}]}
 
 * history (``blocks2cpp/bench-history``): the values (under "medians") of
-  the last 5 runs that became baselines, kept between nightly runs in the
-  Actions cache, and the acceptances already applied. Version 1 (without
-  "accepted") is still read; version 2 is written:
+  the last 6 runs (the 5 of the baseline and one more, so that a re-run of
+  the newest run still has 5 before it), kept between nightly runs in the
+  Actions cache, the gated metrics that each of them found over the gate
+  (under "over", each with a value in that run), and the acceptances already
+  applied. Version 1 (without "accepted") and version 2 (without "over":
+  none of its runs counts as over the gate) are still read; version 3 is
+  written:
 
-      {"format": "blocks2cpp/bench-history", "formatVersion": 2, "os": "linux",
+      {"format": "blocks2cpp/bench-history", "formatVersion": 3, "os": "linux",
        "runs": [{"run": "<run id>", "commit": "<sha>", "date": "<UTC time>",
-                 "medians": {"<metric>": {"value": 1234.5, "unit": "ms"}}}],
+                 "medians": {"<metric>": {"value": 1234.5, "unit": "ms"}},
+                 "over": ["<metric>"]}],
        "accepted": [{"metric": "<metric>", "commit": "<sha>"}]}
 
 * acceptances (``blocks2cpp/bench-accepted``); version 1 (entries without a
@@ -95,9 +107,11 @@ Commands (run from anywhere; paths are taken as given):
         [--update-history history.json --run-id ID --commit SHA] [--summary summary.md]
         Compares the metrics of the results files (given, or every *.json in
         DIR) with the history and prints a table (and appends it to --summary,
-        such as $GITHUB_STEP_SUMMARY). With --update-history, a run without an
-        unaccepted regression is added to the history, which keeps the last 5
-        runs.
+        such as $GITHUB_STEP_SUMMARY). With --update-history, the run is added
+        to the history with the gated metrics it found over the gate, also when
+        it failed, and the history keeps the last 6 runs. A run whose ID the
+        history has (an earlier attempt of the same workflow run, re-run) is
+        left out of the comparison and replaced.
 
     bench-compare.py ab --os linux --base PATH... --head PATH... \\
         [--accepted head-accepted.json --accepted-base base-accepted.json] \\
@@ -116,16 +130,18 @@ Commands (run from anywhere; paths are taken as given):
     bench-compare.py --self-test
         Checks this script against synthetic fixtures (equal, +9% and +11%
         medians, too few baselines, too few samples, malformed input, history
-        updates, acceptances and redefinitions restarting a history, A/B
-        comparisons with both kinds and with skipped and failed benchmarks,
-        pooled p95 metrics and version 1 results, the criterion conversion,
-        UTF-8 output).
+        updates, runs over the gate once and in 2 of the last 3 runs, a
+        regression that lasts, re-runs, version 2 histories, acceptances and
+        redefinitions restarting a history, A/B comparisons with both kinds
+        and with skipped and failed benchmarks, pooled p95 metrics and
+        version 1 results, the criterion conversion, UTF-8 output).
 
 The output is UTF-8 on every system (a Windows console or pipe would
 otherwise take the locale's code page). Exit status: 0 when nothing regressed
 (or only informational comparisons were made), 1 on a regression of a gated
 metric or, for ab with --runs, a benchmark that failed on the head, 2 when
-the input is not usable (the message says why).
+the input is not usable (the message says why). A metric over the gate once
+does not fail: it is reported, and a GitHub Actions warning names it.
 """
 
 from __future__ import annotations
@@ -152,11 +168,11 @@ RUNS_FORMAT = "blocks2cpp/ab-runs"
 # Results files are written as FORMAT_VERSION and read in any of FORMAT_VERSIONS
 # (version 1 has no statistics: every metric takes the median); a history is
 # written as HISTORY_VERSION and read in any of HISTORY_VERSIONS (version 1 has
-# no applied acceptances).
+# no applied acceptances, and versions 1 and 2 no metrics over the gate).
 FORMAT_VERSION = 2
 FORMAT_VERSIONS = (1, 2)
-HISTORY_VERSION = 2
-HISTORY_VERSIONS = (1, 2)
+HISTORY_VERSION = 3
+HISTORY_VERSIONS = (1, 2, 3)
 # Acceptance files: version 2 gives every entry a kind; version 1 (no kinds)
 # is read only as an A/B run's base file.
 ACCEPTED_VERSION = 2
@@ -167,6 +183,11 @@ RUNS_VERSION = 1
 DEFAULT_THRESHOLD = 0.10
 DEFAULT_BASELINE_RUNS = 5
 DEFAULT_MIN_SAMPLES = 10
+# A gated metric over the gate fails only when it was also over the gate in one
+# of this many runs before it in the history (2 of the last 3 runs); otherwise
+# it warns. The history keeps at least this many runs, and the baseline's, and
+# one more: a re-run of the newest run takes its place and still finds them all.
+PREVIOUS_RUNS = 2
 
 # Limits on what is read: these files come from earlier runs and from the
 # benchmarks, so they are checked before they are trusted.
@@ -202,8 +223,16 @@ METRIC_KEYS = {
     1: {"name", "unit", "better", "gate", "description", "samples"},
     2: {"name", "unit", "better", "gate", "statistic", "description", "samples"},
 }
-HISTORY_KEYS = {1: {"format", "formatVersion", "os", "runs"}, 2: {"format", "formatVersion", "os", "runs", "accepted"}}
-RUN_KEYS = {"run", "commit", "date", "medians"}
+HISTORY_KEYS = {
+    1: {"format", "formatVersion", "os", "runs"},
+    2: {"format", "formatVersion", "os", "runs", "accepted"},
+    3: {"format", "formatVersion", "os", "runs", "accepted"},
+}
+RUN_KEYS = {
+    1: {"run", "commit", "date", "medians"},
+    2: {"run", "commit", "date", "medians"},
+    3: {"run", "commit", "date", "medians", "over"},
+}
 MEDIAN_KEYS = {"value", "unit"}
 APPLIED_KEYS = {"metric", "commit"}
 ACCEPTED_KEYS = {"format", "formatVersion", "accepted"}
@@ -294,12 +323,15 @@ class Baseline:
 
 @dataclass(frozen=True)
 class HistoryRun:
-    """One run that became a baseline."""
+    """One run kept in the history: its values, and the gated metrics it found over the gate."""
 
     run: str
     commit: str
     date: str
     medians: dict[str, Baseline]
+    # The gated metrics that were worse than the threshold against their baselines in this run
+    # (each has a value in `medians`); empty in a version 1 or 2 history.
+    over: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -336,8 +368,8 @@ class Comparison:
     baselines: int
     baseline: float | None
     change: float | None
-    # new, informational, ok, regression, worse-ungated, accepted (both modes),
-    # redefined (compare only), missing (ab only)
+    # new, informational, ok, over (compare only: over the gate once), regression,
+    # worse-ungated, accepted (both modes), redefined (compare only), missing (ab only)
     status: str
     # The A/B comparison's base: its sample count (0 when the base lacks the metric).
     base_samples: int = 0
@@ -345,6 +377,11 @@ class Comparison:
     @property
     def failed(self) -> bool:
         return self.status == "regression"
+
+    @property
+    def over(self) -> bool:
+        """Whether the run counts the metric as over the gate (once, or failing)."""
+        return self.status in ("over", "regression")
 
 
 # --- Reading and checking ----------------------------------------------------
@@ -493,7 +530,7 @@ def read_history(path: Path | None, system: str) -> History:
     history = History(system)
     for index, item in enumerate(runs):
         run_where = f"{where}, run {index}"
-        run = exact_keys(item, RUN_KEYS, run_where)
+        run = exact_keys(item, RUN_KEYS[version], run_where)
         for key in ("run", "commit"):
             if not isinstance(run[key], str) or not RUN_FIELD.match(run[key]):
                 raise InputError(f"{run_where}: {key} is not a plain identifier")
@@ -510,7 +547,16 @@ def read_history(path: Path | None, system: str) -> History:
                 value=number(median["value"], f"{run_where}, median {name}"),
                 unit=unit_name(median["unit"], f"{run_where}, median {name}"),
             )
-        history.runs.append(HistoryRun(run["run"], run["commit"], run["date"], parsed))
+        over = run.get("over", [])
+        if not isinstance(over, list) or len(over) > MAX_METRICS:
+            raise InputError(f"{run_where}: over must be a list of at most {MAX_METRICS} metrics")
+        for name in over:
+            metric_name(name, f"{run_where}, over")
+            if name not in parsed:
+                raise InputError(f"{run_where}: over names {name}, which the run has no value of")
+        if len(set(over)) != len(over):
+            raise InputError(f"{run_where}: over names a metric twice")
+        history.runs.append(HistoryRun(run["run"], run["commit"], run["date"], parsed, list(over)))
     applied = value.get("accepted", [])
     if not isinstance(applied, list) or len(applied) > MAX_ACCEPTED:
         raise InputError(f"{where}: accepted must be a list of at most {MAX_ACCEPTED} entries")
@@ -602,6 +648,7 @@ def history_json(history: History) -> dict:
                     name: {"value": median.value, "unit": median.unit}
                     for name, median in sorted(run.medians.items())
                 },
+                "over": sorted(run.over),
             }
             for run in history.runs
         ],
@@ -629,17 +676,20 @@ def compare_metric(
     baseline_runs: int,
     restart: str | None = None,
 ) -> Comparison:
-    """Compares one metric's value with the median of its last `baseline_runs` baselines.
+    """Compares one metric's value with the median of its values in the last `baseline_runs` runs.
 
-    With `restart` (the kind, REDEFINED or ACCEPTED, of an acceptance entry
-    this history has not applied yet), the run restarts the metric's history:
-    its change is shown, and it never fails.
+    A gated metric worse than `threshold` is over the gate: a regression when
+    one of the last PREVIOUS_RUNS runs of the history was over the gate on it
+    too, and otherwise over the gate once. With `restart` (the kind,
+    REDEFINED or ACCEPTED, of an acceptance entry this history has not applied
+    yet), the run restarts the metric's history: its change is shown, and it
+    is never over the gate.
     """
     values = [
         run.medians[metric.name].value
-        for run in history.runs
+        for run in history.runs[-baseline_runs:]
         if metric.name in run.medians and run.medians[metric.name].unit == metric.unit
-    ][-baseline_runs:]
+    ]
     if not values:
         return Comparison(metric, 0, None, None, restart or "new")
     baseline = statistics.median(values)
@@ -650,10 +700,12 @@ def compare_metric(
         status = "informational"
     elif not worse:
         status = "ok"
-    elif metric.gate:
+    elif not metric.gate:
+        status = "worse-ungated"
+    elif any(metric.name in run.over for run in history.runs[-PREVIOUS_RUNS:]):
         status = "regression"
     else:
-        status = "worse-ungated"
+        status = "over"
     return Comparison(metric, len(values), baseline, change, status)
 
 
@@ -661,7 +713,8 @@ STATUS_TEXT = {
     "new": "new: no baseline yet",
     "informational": "informational: fewer than {runs} baselines",
     "ok": "ok",
-    "regression": "**regression**",
+    "over": "over the gate: a regression if one of the next {previous} runs is over too",
+    "regression": "**regression**: over the gate in {previous} of the last {window} runs",
     "worse-ungated": "worse (not gated)",
     "accepted": "accepted: the history restarts here",
     "redefined": "redefined: the history restarts here",
@@ -692,6 +745,24 @@ def regressions_line(comparisons: list[Comparison]) -> str:
     return "No gated metric regressed."
 
 
+def over_once(comparisons: list[Comparison]) -> list[str]:
+    """The metrics over the gate in this run only (of the last PREVIOUS_RUNS + 1): a warning."""
+    return [c.metric.name for c in comparisons if c.status == "over"]
+
+
+def over_once_text(names: list[str]) -> str:
+    """What the nightly comparison says of the metrics over the gate once."""
+    listed = ", ".join(f"`{name}`" for name in names)
+    return f"Over the gate once: {listed} (a regression if one of the next {PREVIOUS_RUNS} runs is over too)."
+
+
+def compare_line(comparisons: list[Comparison]) -> str:
+    """The nightly comparison's last line: the metrics that failed, and those over the gate once."""
+    line = regressions_line(comparisons)
+    names = over_once(comparisons)
+    return f"{line} {over_once_text(names)}" if names else line
+
+
 def summary_markdown(
     system: str, comparisons: list[Comparison], *, threshold: float, baseline_runs: int
 ) -> str:
@@ -699,10 +770,12 @@ def summary_markdown(
         f"### Benchmarks ({system})",
         "",
         "Each metric's value (the median of its samples, or the p95 of all of them where marked) "
-        f"against the median of its values in the last {baseline_runs} nightly runs on the default "
-        f"branch; a gated metric more than {threshold:.0%} worse fails, unless "
-        "apps/desktop/e2e/bench/accepted.json newly redefines it or accepts it as an intended slowdown "
-        "(docs/spec/09-quality-and-delivery.md §9.2).",
+        f"against the median of its values in the last {baseline_runs} scheduled nightly runs on the "
+        f"default branch. A gated metric more than {threshold:.0%} worse is over the gate: it fails "
+        f"when it was also over the gate in one of the {PREVIOUS_RUNS} runs before (over in "
+        f"{PREVIOUS_RUNS} of the last {PREVIOUS_RUNS + 1} runs), and otherwise only warns. A metric "
+        "that apps/desktop/e2e/bench/accepted.json newly redefines or accepts as an intended slowdown "
+        "does not fail, and its history restarts (docs/spec/09-quality-and-delivery.md §9.2).",
         "",
         "| Metric | Gated | Samples | Value | Baseline (runs) | Change | Result |",
         "| --- | --- | ---: | ---: | ---: | ---: | --- |",
@@ -715,13 +788,15 @@ def summary_markdown(
             else f"{fmt(comparison.baseline)} {metric.unit} ({comparison.baselines})"
         )
         change = "—" if comparison.change is None else f"{comparison.change:+.1%}"
-        status = STATUS_TEXT[comparison.status].format(runs=baseline_runs)
+        status = STATUS_TEXT[comparison.status].format(
+            runs=baseline_runs, previous=PREVIOUS_RUNS, window=PREVIOUS_RUNS + 1
+        )
         lines.append(
             f"| `{metric.name}` | {'yes' if metric.gate else 'no'} | {len(metric.samples)} | "
             f"{value_text(metric.value, metric)} | {baseline} | {change} | {status} |"
         )
     lines.append("")
-    lines.append(regressions_line(comparisons))
+    lines.append(compare_line(comparisons))
     return "\n".join(lines) + "\n"
 
 
@@ -791,6 +866,10 @@ def command_compare(arguments: argparse.Namespace) -> int:
 
     history_path = None if arguments.history is None else Path(arguments.history)
     history = read_history(history_path, system)
+    if arguments.run_id is not None:
+        # A re-run of a workflow run (another attempt, with the same run ID) takes the place of the
+        # attempt the history kept: that attempt is neither the run before it nor a baseline.
+        history.runs = [run for run in history.runs if run.run != arguments.run_id]
     entries = acceptances_for(arguments.accepted, system)
     # An entry applies to the first run that has its metric; the history notes it then.
     pending = [entry for entry in entries if entry.key not in history.applied]
@@ -824,38 +903,47 @@ def command_compare(arguments: argparse.Namespace) -> int:
         text += "\n"
     write_summary(arguments, text)
 
-    failed = any(comparison.failed for comparison in comparisons)
+    names = over_once(comparisons)
+    if names:
+        # A GitHub Actions annotation, so a green job still shows it (metric names are plain,
+        # checked by metric_name).
+        print(f"::warning title=Benchmarks over the gate ({system})::{over_once_text(names)}")
     if arguments.update_history is not None:
-        if failed:
-            print("The run regressed, so it is not added to the history.")
-        else:
-            update_history(history, arguments, metrics, applied_now, entries)
-            write_json(Path(arguments.update_history), history_json(history))
-            count = len(history.runs)
-            print(f"The history now has {count} run{'' if count == 1 else 's'}.")
-    return 1 if failed else 0
+        # Every run is kept, also one that failed: the baseline follows the runners, and the next
+        # runs see which metrics this one found over the gate.
+        update_history(history, arguments, metrics, comparisons, applied_now, entries)
+        write_json(Path(arguments.update_history), history_json(history))
+        count = len(history.runs)
+        print(f"The history now has {count} run{'' if count == 1 else 's'}.")
+    return 1 if any(comparison.failed for comparison in comparisons) else 0
 
 
 def update_history(
     history: History,
     arguments: argparse.Namespace,
     metrics: dict[str, Metric],
+    comparisons: list[Comparison],
     applied_now: list[Acceptance],
     entries: list[Acceptance],
 ) -> None:
-    """Adds the run to the history, restarting the histories of the accepted metrics."""
+    """Adds the run to the history with the metrics it found over the gate, restarting the
+    histories of the accepted metrics."""
     for run in history.runs:
         for entry in applied_now:
             run.medians.pop(entry.metric, None)
+            if entry.metric in run.over:
+                run.over.remove(entry.metric)
     history.runs.append(
         HistoryRun(
             run=arguments.run_id,
             commit=arguments.commit,
             date=arguments.date or utc_now(),
             medians={name: Baseline(value=metric.value, unit=metric.unit) for name, metric in metrics.items()},
+            over=[comparison.metric.name for comparison in comparisons if comparison.over],
         )
     )
-    history.runs = history.runs[-arguments.baseline_runs :]
+    # The runs the next comparison needs, and one more for a re-run of this one (command_compare).
+    history.runs = history.runs[-(max(arguments.baseline_runs, PREVIOUS_RUNS) + 1) :]
     history.applied.extend(entry.key for entry in applied_now)
     if arguments.accepted is not None:
         # Entries taken out of the acceptance file are forgotten.
@@ -1272,7 +1360,7 @@ def parser() -> argparse.ArgumentParser:
     compare.add_argument("--history", help="the history file (missing: no baselines yet)")
     compare.add_argument("--accepted", help="the acceptance file (apps/desktop/e2e/bench/accepted.json)")
     compare.add_argument(
-        "--update-history", help="write the history with this run added (without an unaccepted regression only)"
+        "--update-history", help="write the history with this run added, and the metrics it found over the gate"
     )
     compare.add_argument("--run-id", help="this run's ID, for the history")
     compare.add_argument("--commit", help="this run's commit, for the history")
@@ -1373,7 +1461,14 @@ def _pooled(name: str, values: list[float], *, gate: bool = True) -> dict:
     return {**_metric(name, 1.0, gate=gate), "statistic": "p95", "samples": values}
 
 
-def _history(path: Path, system: str, medians: list[dict[str, float]], unit: str = "ms") -> Path:
+def _history(
+    path: Path,
+    system: str,
+    medians: list[dict[str, float]],
+    unit: str = "ms",
+    over: list[list[str]] | None = None,
+) -> Path:
+    """A history of these runs, oldest first; `over` gives the metrics each run found over the gate."""
     history = History(system)
     for index, values in enumerate(medians):
         history.runs.append(
@@ -1382,9 +1477,23 @@ def _history(path: Path, system: str, medians: list[dict[str, float]], unit: str
                 commit=f"c{index:039d}",
                 date=f"2026-10-0{index + 1}T03:23:00Z",
                 medians={name: Baseline(value, unit) for name, value in values.items()},
+                over=list(over[index]) if over is not None else [],
             )
         )
     write_json(path, history_json(history))
+    return path
+
+
+def _older_history(path: Path, version: int) -> Path:
+    """The history at `path` rewritten as a version 1 or 2 file, which has no marks over the gate
+    (and version 1 no applied acceptances)."""
+    value = json.loads(path.read_text(encoding="utf-8"))
+    value["formatVersion"] = version
+    for run in value["runs"]:
+        del run["over"]
+    if version == 1:
+        del value["accepted"]
+    write_json(path, value)
     return path
 
 
@@ -1421,6 +1530,10 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory(prefix="bench-compare-") as folder:
         root = Path(folder)
         five = _history(root / "five.json", "linux", [{"m.time": 100.0}] * 5)
+        # The same, but the last run was over the gate on m.time.
+        five_over = _history(
+            root / "five-over.json", "linux", [{"m.time": 100.0}] * 5, over=[[], [], [], [], ["m.time"]]
+        )
         four = _history(root / "four.json", "linux", [{"m.time": 100.0}] * 4)
         # The baseline is the median of the last five runs, not of all of them.
         six = _history(
@@ -1437,8 +1550,28 @@ def self_test() -> int:
         plus9 = _results(root / "plus9.json", "linux", [_metric("m.time", 109.0)])
         expect("+9% passes", compare(plus9, five), 0, "+9.0%", "| ok |")
         plus11 = _results(root / "plus11.json", "linux", [_metric("m.time", 111.0)])
-        expect("+11% fails", compare(plus11, five), 1, "+11.0%", "**regression**", "Regressed: `m.time`")
-        expect("+11% on the last five fails", compare(plus11, six), 1, "100.0 ms (5)")
+        once = expect(
+            "+11% once is over the gate: it warns and does not fail",
+            compare(plus11, five),
+            0,
+            "+11.0%",
+            "| over the gate: a regression if one of the next 2 runs is over too |",
+            "No gated metric regressed. Over the gate once: `m.time` (a regression if one of the next 2 "
+            "runs is over too).",
+            "::warning title=Benchmarks over the gate (linux)::Over the gate once: `m.time`",
+            "it fails when it was also over the gate in one of the 2 runs before",
+        )
+        if "**regression**" in once:
+            failures.append("a metric over the gate once was reported as a regression")
+        expect(
+            "+11% fails when the run before was over the gate too",
+            compare(plus11, five_over),
+            1,
+            "+11.0%",
+            "| **regression**: over the gate in 2 of the last 3 runs |",
+            "Regressed: `m.time`.",
+        )
+        expect("the baseline is the median of the last five runs", compare(plus11, six), 0, "100.0 ms (5)", "+11.0%")
         expect("+11% with four baselines is informational", compare(plus11, four), 0, "informational")
         expect("no history file is new", compare(plus11, root / "missing.json"), 0, "new: no baseline yet")
         faster = _results(root / "faster.json", "linux", [_metric("m.time", 50.0)])
@@ -1446,7 +1579,8 @@ def self_test() -> int:
         ungated = _results(root / "ungated.json", "linux", [_metric("m.time", 150.0, gate=False)])
         expect("an ungated metric only reports", compare(ungated, five), 0, "worse (not gated)")
         higher = _results(root / "higher.json", "linux", [_metric("m.time", 89.0, better="higher")])
-        expect("higher-is-better regresses when lower", compare(higher, five), 1, "**regression**")
+        expect("higher-is-better is over the gate when lower", compare(higher, five), 0, "| over the gate:")
+        expect("higher-is-better regresses when lower again", compare(higher, five_over), 1, "**regression**")
         seconds = _results(root / "seconds.json", "linux", [_metric("m.time", 0.2, unit="s")])
         expect("a changed unit has no baseline", compare(seconds, five), 0, "new: no baseline yet")
 
@@ -1510,7 +1644,8 @@ def self_test() -> int:
         )
         expect("results are required", ["compare", "--os", "linux"], 2, "--results or --results-dir")
 
-        # History updates: a passing run is added and the oldest dropped; a regression is not added.
+        # History updates: every run is added, with the metrics it found over the gate; the history
+        # keeps the 5 runs of the baseline and one more (for a re-run, below).
         updated = root / "updated.json"
         expect(
             "a passing run updates the history",
@@ -1519,22 +1654,145 @@ def self_test() -> int:
                 "--run-id", "999", "--commit", "abc", "--date", "2026-10-06T03:23:00Z",
             ),
             0,
-            "history now has 5 runs",
+            "history now has 6 runs",
         )
         kept = read_history(updated, "linux")
-        if [run.run for run in kept.runs] != ["101", "102", "103", "104", "999"]:
+        if [run.run for run in kept.runs] != ["100", "101", "102", "103", "104", "999"]:
             failures.append(f"history update: runs {[run.run for run in kept.runs]}")
-        elif abs(kept.runs[-1].medians["m.time"].value - 109.0) > 1e-9:
-            failures.append("history update: the median of the run was not kept")
-        regressed = root / "regressed.json"
-        expect(
-            "a regression does not update the history",
-            compare(plus11, five, "--update-history", str(regressed), "--run-id", "1", "--commit", "abc"),
-            1,
-            "not added to the history",
+        elif abs(kept.runs[-1].medians["m.time"].value - 109.0) > 1e-9 or kept.runs[-1].over:
+            failures.append(f"history update: the run was not kept as it was: {kept.runs[-1]}")
+
+        def run_after(
+            name: str,
+            key: str,
+            history: Path,
+            results: list[dict],
+            status: int,
+            *texts: str,
+            options: tuple[str, ...] = (),
+        ) -> Path:
+            """Compares a run of `results` with `history` (check `name`) and returns the history with
+            the run added, as run `key`."""
+            after = root / f"history-{key}.json"
+            expect(
+                name,
+                compare(
+                    _results(root / f"results-{key}.json", "linux", results), history, *options,
+                    "--update-history", str(after), "--run-id", key, "--commit", "abc",
+                ),
+                status,
+                *texts,
+            )
+            return after
+
+        def over_marks(history: Path) -> list[list[str]]:
+            """The metrics each run of a history found over the gate, oldest first."""
+            return [run.over for run in read_history(history, "linux").runs] if history.exists() else []
+
+        within = [_metric("m.time", 100.0)]
+        over = [_metric("m.time", 111.0)]
+        # 2 of the last 3 runs: the first run over the gate warns and is kept, marked over the gate.
+        first = run_after("over: a first run over the gate warns", "o1", five, over, 0, "over the gate:")
+        if over_marks(first) != [[], [], [], [], [], ["m.time"]]:
+            failures.append(f"over: the first run over the gate is not marked: {over_marks(first)}")
+        # A second run over the gate in a row fails, and is kept too (its baseline is still 100 ms,
+        # the median of 100, 100, 100, 100 and 111).
+        second = run_after(
+            "over: a second run over the gate in a row fails", "o2", first, over, 1,
+            "100.0 ms (5)", "**regression**", "Regressed: `m.time`.", "The history now has 6 runs.",
         )
-        if regressed.exists():
-            failures.append("a regressed run was written to the history")
+        if over_marks(second) != [[], [], [], [], ["m.time"], ["m.time"]] or read_history(second, "linux").runs[-1].run != "o2":
+            failures.append(f"over: the run that failed is not kept with its mark: {over_marks(second)}")
+        # Over, within, over: over the gate in 2 of the last 3 runs.
+        not_over = run_after("over: then a run within the gate", "o3", first, within, 0, "| ok |")
+        run_after("over: over, within, over fails", "o4", not_over, over, 1, "**regression**", "Regressed: `m.time`.")
+        # Over, within, within, over: the first is no longer one of the 2 runs before.
+        not_over_again = run_after("over: then another run within the gate", "o5", not_over, within, 0, "| ok |")
+        if over_marks(not_over_again) != [[], [], [], ["m.time"], [], []]:
+            failures.append(f"over: runs within the gate were marked: {over_marks(not_over_again)}")
+        run_after(
+            "over: over, within, within, over only warns", "o6", not_over_again, over, 0,
+            "over the gate:", "No gated metric regressed. Over the gate once: `m.time`",
+        )
+        # The marks are per metric: m.time over the gate 3 runs ago only warns, though m.other was
+        # over in both runs before; m.other within the gate now does not fail.
+        per_metric = _history(
+            root / "per-metric.json",
+            "linux",
+            [{"m.time": 100.0, "m.other": 5.0}] * 5,
+            over=[[], ["m.time"], [], ["m.other"], ["m.other"]],
+        )
+        expect(
+            "over: a metric over the gate 3 runs ago only warns",
+            compare(
+                _results(root / "per-metric-results.json", "linux", [_metric("m.time", 111.0), _metric("m.other", 5.0)]),
+                per_metric,
+            ),
+            0,
+            "| `m.time` | yes | 10 | 111.0 ms | 100.0 ms (5) | +11.0% | over the gate:",
+            "| `m.other` | yes | 10 | 5.00 ms | 5.00 ms (5) | +0.0% | ok |",
+            "No gated metric regressed. Over the gate once: `m.time`",
+        )
+        expect(
+            "over: the last line names the metrics that failed and those over the gate once",
+            compare(
+                _results(root / "per-metric-both.json", "linux", [_metric("m.time", 111.0), _metric("m.other", 6.0)]),
+                per_metric,
+            ),
+            1,
+            "Regressed: `m.other`. Over the gate once: `m.time` (a regression if one of the next 2 runs is over too).",
+        )
+        # Only a gated comparison with 5 baselines marks a run: neither an ungated metric worse than
+        # the threshold (m.u) nor one with fewer baselines (m.time, informational).
+        unmarked = run_after(
+            "over: ungated and informational comparisons are not marked",
+            "o7",
+            _history(root / "unmarked.json", "linux", [{"m.u": 100.0}] + [{"m.time": 100.0, "m.u": 100.0}] * 4),
+            [_metric("m.time", 150.0), _metric("m.u", 150.0, gate=False)],
+            0,
+            "informational: fewer than 5 baselines",
+            "worse (not gated)",
+        )
+        if over_marks(unmarked)[-1:] != [[]]:
+            failures.append(f"over: an ungated or informational comparison was marked: {over_marks(unmarked)}")
+        # With a baseline of 1 run the history still keeps the 2 runs before (and one more): over,
+        # within, over fails.
+        one = ("--baseline-runs", "1")
+        b1 = run_after("over: one baseline, a run over the gate", "b1", five, over, 0, "over the gate:", options=one)
+        b2 = run_after("over: one baseline, then a run within the gate", "b2", b1, within, 0, "| ok |", options=one)
+        if over_marks(b2) != [[], ["m.time"], []]:
+            failures.append(f"over: with one baseline the history does not keep the 2 runs before: {over_marks(b2)}")
+        run_after("over: one baseline, over, within, over fails", "b3", b2, over, 1, "**regression**", options=one)
+        # A re-run (another attempt of the same workflow run: the same run ID) takes the place of the
+        # attempt the history kept. That attempt was over the gate, but it is not the run before its
+        # re-run, so the re-run over the gate only warns, against the same 5 baselines.
+        rerun = run_after(
+            "re-run: the attempt the history kept is not the run before", "o1", first, over, 0,
+            "100.0 ms (5)", "over the gate:", "The history now has 6 runs.",
+        )
+        if [run.run for run in read_history(rerun, "linux").runs] != ["100", "101", "102", "103", "104", "o1"]:
+            failures.append(f"re-run: runs {[run.run for run in read_history(rerun, 'linux').runs]}")
+        # The run that failed, re-run within the gate: it passes, and the history keeps the re-run.
+        rerun_within = run_after("re-run: a run that failed, re-run within the gate", "o2", second, within, 0, "| ok |")
+        if over_marks(rerun_within) != [[], [], [], [], ["m.time"], []]:
+            failures.append(f"re-run: the re-run within the gate did not replace the run: {over_marks(rerun_within)}")
+        # The baseline is taken from the last 5 runs, not the last 5 that have the metric: the run
+        # kept for a re-run does not stand in for a run without the metric.
+        gap = _history(
+            root / "gap.json", "linux", [{"m.time": 100.0}] * 3 + [{"m.other": 5.0}] + [{"m.time": 100.0}] * 2
+        )
+        expect("the baseline is taken from the last 5 runs", compare(plus11, gap), 0, "100.0 ms (4)", "informational")
+        # A regression that lasts (20% from one run on): over the gate on its first run, a regression
+        # on the second and third, and from the fourth the baseline (the median of the last 5 runs)
+        # has moved to it.
+        lasting = five
+        for index, (status, text) in enumerate(
+            [(0, "over the gate:"), (1, "**regression**"), (1, "**regression**"), (0, "| ok |"), (0, "| ok |")]
+        ):
+            lasting = run_after(
+                f"a regression that lasts, run {index + 1}", f"l{index}", lasting, [_metric("m.time", 120.0)], status,
+                text,
+            )
         summary = root / "summary.md"
         expect("the summary is appended", compare(equal, five, "--summary", str(summary)), 0)
         if "### Benchmarks (linux)" not in summary.read_text(encoding="utf-8"):
@@ -1591,11 +1849,14 @@ def self_test() -> int:
             ],
         )
         expect("an acceptance file is checked", ["check-accepted", str(accepted)], 0, "2 entries (0 redefined, 2 accepted)")
-        two = _history(root / "two.json", "linux", [{"m.time": 100.0, "m.other": 5.0}] * 5)
+        # The last run was over the gate on m.time, so another run over it fails without an entry.
+        two = _history(
+            root / "two.json", "linux", [{"m.time": 100.0, "m.other": 5.0}] * 5, over=[[], [], [], [], ["m.time"]]
+        )
         both = _results(root / "both.json", "linux", [_metric("m.time", 150.0), _metric("m.other", 5.0)])
         restarted = root / "restarted.json"
         expect(
-            "an accepted regression passes and restarts the history",
+            "an accepted regression passes, is not over the gate, and restarts the history",
             compare(
                 both, two, "--accepted", str(accepted), "--update-history", str(restarted),
                 "--run-id", "200", "--commit", "abc", "--date", "2026-10-07T03:23:00Z",
@@ -1609,8 +1870,11 @@ def self_test() -> int:
         kept = read_history(restarted, "linux")
         with_time = [run.run for run in kept.runs if "m.time" in run.medians]
         with_other = [run.run for run in kept.runs if "m.other" in run.medians]
-        if with_time != ["200"] or len(with_other) != 5 or kept.applied != [("m.time", commit)]:
+        if with_time != ["200"] or len(with_other) != 6 or kept.applied != [("m.time", commit)]:
             failures.append(f"acceptance: m.time in {with_time}, m.other in {with_other}, applied {kept.applied}")
+        # The restart is not over the gate, and the earlier marks of the metric go with its values.
+        if any(run.over for run in kept.runs):
+            failures.append(f"acceptance: marks over the gate kept: {[run.over for run in kept.runs]}")
         expect(
             "an applied acceptance is not applied again: one baseline is informational",
             compare(
@@ -1681,13 +1945,56 @@ def self_test() -> int:
         )
         if sorted(read_history(both_entries, "linux").applied) != sorted([("m.time", commit), ("m.time", other)]):
             failures.append(f"two acceptances: applied {read_history(both_entries, 'linux').applied}")
-        # A version 1 history (no acceptances) is still read.
-        old = root / "old.json"
-        write_json(old, {**history_json(read_history(five, "linux")), "formatVersion": 1})
-        old_value = json.loads(old.read_text(encoding="utf-8"))
-        del old_value["accepted"]
-        write_json(old, old_value)
+        # Version 1 (no acceptances) and 2 (no marks over the gate) histories are still read.
+        old = _older_history(_history(root / "old.json", "linux", [{"m.time": 100.0}] * 5), 1)
         expect("a version 1 history is read", compare(equal, old), 0, "100.0 ms (5)", "| ok |")
+        version2 = _older_history(
+            _history(root / "version-2.json", "linux", [{"m.time": 100.0}] * 5, over=[[]] * 4 + [["m.time"]]), 2
+        )
+        expect(
+            "a version 2 history is read: none of its runs was over the gate",
+            compare(plus11, version2),
+            0,
+            "100.0 ms (5)",
+            "over the gate:",
+        )
+        if any(run.over for run in read_history(version2, "linux").runs):
+            failures.append(f"a version 2 history has marks: {[run.over for run in read_history(version2, 'linux').runs]}")
+        version2_value = json.loads(version2.read_text(encoding="utf-8"))
+        version2_value["runs"][0]["over"] = []
+        write_json(root / "version-2-over.json", version2_value)
+        expect(
+            "a version 2 history with marks over the gate is refused",
+            compare(equal, root / "version-2-over.json"),
+            2,
+            "run 0 has unknown keys: over",
+        )
+        unmarked_value = json.loads(five.read_text(encoding="utf-8"))
+        del unmarked_value["runs"][0]["over"]
+        write_json(root / "version-3-unmarked.json", unmarked_value)
+        expect(
+            "a version 3 history run without its marks is refused",
+            compare(equal, root / "version-3-unmarked.json"),
+            2,
+            "run 0 is missing over",
+        )
+        for index, (marks, message) in enumerate(
+            [
+                (["m.gone"], "over names m.gone, which the run has no value of"),
+                (["m.time", "m.time"], "over names a metric twice"),
+                (["M"], "not a metric name"),
+                ("m.time", "over must be a list"),
+            ]
+        ):
+            bad_value = json.loads(five.read_text(encoding="utf-8"))
+            bad_value["runs"][4]["over"] = marks
+            write_json(root / f"bad-marks-{index}.json", bad_value)
+            expect(
+                f"a history with malformed marks ({message}) is refused",
+                compare(equal, root / f"bad-marks-{index}.json"),
+                2,
+                message,
+            )
         bad_entries = [
             ({"metric": "m.time", "system": "linux", "commit": "XYZ", "kind": "accepted", "reason": "r"}, "commit must be"),
             ({"metric": "m.time", "system": "linux", "commit": commit, "kind": "accepted", "reason": "two\nlines"}, "one line"),
@@ -1759,6 +2066,8 @@ def self_test() -> int:
         kept = read_history(redefined_history, "linux")
         if [run.run for run in kept.runs if "m.time" in run.medians] != ["204"] or kept.applied != [("m.time", commit)]:
             failures.append(f"redefinition: runs {[run.run for run in kept.runs]}, applied {kept.applied}")
+        if any(run.over for run in kept.runs):
+            failures.append(f"redefinition: marks over the gate kept: {[run.over for run in kept.runs]}")
         expect(
             "history: an applied redefinition is not applied again",
             compare(_results(root / "after-redefined.json", "linux", [_metric("m.time", 200.0)]), redefined_history,
@@ -1768,7 +2077,7 @@ def self_test() -> int:
         )
 
         # --- A metric valued at the p95 of all its samples (every edit of a run, pooled). ---
-        edits = _history(root / "edits.json", "linux", [{"m.edit": 100.0}] * 5)
+        edits = _history(root / "edits.json", "linux", [{"m.edit": 100.0}] * 5, over=[[]] * 4 + [["m.edit"]])
         # 100 edits, the 5 slowest far slower: the p95 (the 95th smallest) is 108, not the
         # median (100) nor the slowest (500).
         five_slow = [100.0] * 90 + [108.0] * 5 + [500.0] * 5
@@ -1822,6 +2131,27 @@ def self_test() -> int:
             if nearest_rank(tuple(float(v) for v in range(1, count + 1)), 95) != (95 * count + 99) // 100:
                 failures.append(f"nearest_rank: p95 of 1 to {count}")
                 break
+        # A drag's frame times: about 120 per pair of drags, so about 1,200 in a nightly run and on
+        # an A/B side (2 runs of 600); the limits on samples and file size take them.
+        frames = [16.0 + (index % 40) for index in range(1_300)]
+        expect(
+            "pooled p95: 1,300 frame times of a run are read",
+            compare(_results(root / "pooled-frames.json", "linux", [_pooled("m.frames", frames)]), edits),
+            0,
+            "| `m.frames` | yes | 1300 | 53.00 ms (p95) |",
+        )
+        expect(
+            "pooled p95: an A/B side's runs of 600 frame times each are pooled",
+            [
+                "ab", "--os", "linux",
+                "--base", str(_results(root / "ab-frames" / "base-1.json", "linux", [_pooled("m.frames", frames[:600])])),
+                str(_results(root / "ab-frames" / "base-2.json", "linux", [_pooled("m.frames", frames[600:1_200])])),
+                "--head", str(_results(root / "ab-frames" / "head-1.json", "linux", [_pooled("m.frames", frames[:600])])),
+                str(_results(root / "ab-frames" / "head-2.json", "linux", [_pooled("m.frames", frames[600:1_200])])),
+            ],
+            0,
+            "| `m.frames` | yes | 53.00 ms (p95 of 1200) | 53.00 ms (p95 of 1200) | +0.0% | ok |",
+        )
         expect(
             "pooled p95: a metric under a new name starts its own history",
             compare(_results(root / "pooled-new.json", "linux", [_pooled("m.edit-all", five_slow)]), edits),
