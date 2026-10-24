@@ -56,10 +56,14 @@ the same edits, so the benchmark takes no longer. 3: the owner committed the
 approved, with every other open Dependabot update and the security findings;
 done (`44fe162`..`3cf40a2`), with a new finding fixed (TM-M2-9, below). The
 pull request (10) needs a base branch first: the repository's only branch is
-`ccr-01f82d9b-v70u20`, which is also its default branch. 11, D20, is new:
-Nightly was red from 2026-10-16 to 2026-10-24 (the `selection` race, fixed;
-one Windows driver race; and the benchmark gate's history). 4–7, 9 and 11
-remain.
+`ccr-01f82d9b-v70u20`, which is also its default branch. 11, D20: Nightly
+was red from 2026-10-16 to 2026-10-24 (the `selection` race, fixed; one
+Windows driver race; and the benchmark gate's history); decided (A) with (D)
+and done (`f4c152c`, `9fea7cc`): every complete scheduled run enters the
+benchmark history, a gated metric fails only when it is over the gate in 2
+of the last 3 scheduled runs (the first warns), and dragging is gated on
+`webview.drag-5000.frame-p95-all`, the p95 over every frame of a run's timed
+drags, whose history starts with its first nightly run. 4–7 and 9 remain.
 
 **Dated follow-ups** (held by the 7-day release age; each is a small
 commit with its checks, no decision needed):
@@ -82,7 +86,7 @@ the test began. Needs unit tests of the retry with a fake driver.
 
 What I do with each result:
 
-- **Decisions (1, 2, 8, 9):** apply them on the branch the same day, with the
+- **Decisions (1, 2, 8, 9, 11):** apply them on the branch the same day, with the
   spec, plan and changelog updated and CI green.
 - **Baselines (3):** check that both systems' visual steps now compare and
   pass, and that a throwaway colour change fails them (the W7-2 check), then

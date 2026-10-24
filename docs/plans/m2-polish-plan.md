@@ -1871,7 +1871,7 @@ The structured decisions list has the full options and recommendations. They are
 | D | W5 | D13 | C-block wrapping rule |
 | none | nothing in M2 | D6 | Renderer and patched dependencies (ADR-0014) |
 | none | nothing in M2 | D15 | Worker, Blockly 13 timing, budget gating |
-| none | the nightly | D20 | The nightly benchmark gate and the runners' variance (2026-10-24) |
+| none | the nightly | D20 | The nightly benchmark gate and the runners' variance (2026-10-24; decided and done: (A) with (D)) |
 
 **Questions for the owner (information, not decisions).** Answers of 2026-10-10: the owner used a release build (the executable), not the dev server, so U11's lag is not a dev-server effect; the desktop session is Wayland, so W3's window fitting (`preventOverflow`) and U14's wheel handling must be checked on Wayland. The scale factor and the exact U14 glitch are still open.
 
@@ -2138,3 +2138,9 @@ The bench job now prints the runner's processor and memory, and the cold-start b
 (D) Independent of A to C: gate dragging, as D19 did for edits, on the p95 over all the frame times of the 10 timed drags (about 1,200 frames) instead of the median of each drag's p95, which sits on the drag's starting transient and near multiples of the frame interval. It costs no time.
 
 **Recommendation.** (A) with (D): the nightly keeps catching a regression that lasts, without failing on the runner of the night; pull requests are gated by A/B runs, as now. (B) is the simplest if the owner prefers the nightly to be a trend report only.
+
+**Decided 2026-10-24: (A) with (D).** Done the same day (`f4c152c`, `9fea7cc`):
+
+- (A) `tools/bench-compare.py compare` adds every run to the history, also one that failed, with the gated metrics it found over the gate (more than 10% worse than its baseline; history format version 3 lists them per run, and versions 1 and 2 are read with none). A gated metric over the gate fails only when it was also over the gate in one of the 2 runs before (2 of the last 3); otherwise its row says "over the gate", the summary's last line names it and the job shows a warning. The baseline is still the median of the last 5 runs, now including runs over the gate; fewer than 5 baselines and ungated metrics only report, and an `accepted.json` entry still restarts a metric's history and never fails (the restarting run does not count as over the gate). `nightly.yml` saves the history for a scheduled run whenever its native and webview benchmarks succeeded and the comparison ran, passed or failed; a manual run compares without saving. The A/B comparison is unchanged.
+- Replayed through the new `compare` on the 18 scheduled nights from 2026-10-07 (the manual run of 10-15 left out), with the metrics that were gated on those nights, the 9 nights at `81cecd5` fail: on Linux `drag-5000.frame-p95` 1 (10-16), `native.pipeline.preview` 1, `preview-1000.p95` 2, `edit-1000.p95` 3 (ungated since D19), and cold start, console and select none; on Windows `cold-start` 2, `drag-5000.frame-p95` 1, `edit-1000.p95` 1 and the others none. That is the replay of option (A) above, metric for metric.
+- (D) The drag benchmark also writes `webview.drag-5000.frame-p95-all`, gated, whose samples are every frame time of the timed pairs (about 1,200 in a nightly run, the warm-up pair left out) and whose value is their p95; an A/B run pools each side's frames. It comes from the frames the benchmark already records, so the benchmark takes no longer. `webview.drag-5000.frame-p95` (each pair's p95) is still written, ungated, as a report. `e2e/bench/drag-metrics.ts` takes both metrics, with unit tests. The new metric's nightly history starts empty with its first run (it reports until it has 5 baselines), so no `accepted.json` entry is needed.
