@@ -846,3 +846,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   attempts. Every other start failure, and every launch through `launchApp`
   (the exit criterion, the security tests, the canvas screenshot and the
   benchmarks), still fails at once.
+- The end-to-end flows `placement` and `tray-delete` press Ctrl+Z after a
+  deleting drop only once Blockly has delivered the drop's events, after the
+  next animation frame, as a person sees the drop drawn before pressing a key
+  (the harness's new `waitForDelivery`). Blockly puts a change on its undo
+  stack only when it delivers it. On Windows, where msedgedriver sends the
+  key about 8 ms after the release, Ctrl+Z could come first: it undid the
+  start of the drag instead, the late drop then emptied the redo stack, and
+  the block never came back (Desktop run 40123025195).

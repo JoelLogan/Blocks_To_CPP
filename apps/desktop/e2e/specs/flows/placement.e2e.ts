@@ -17,7 +17,9 @@
  *   WebDriver action always moves the pointer before it releases it; a release with no move at
  *   all before it, as a touch can end, is covered by `src/editor/sync/drag.test.ts`.)
  * - **On the trash can**, from the same preview: the block is deleted.
- * - After each deleting drop, Ctrl+Z puts the block back at the end of `main`.
+ * - After each deleting drop, Ctrl+Z puts the block back at the end of `main`. It is pressed once
+ *   Blockly has delivered the drop (after the next animation frame), as a person sees the drop
+ *   drawn before pressing a key: Undo does not have the drop before that.
  *
  * Window sizes come from `B2C_E2E_WINDOW_SIZE` (800 × 560, 1024 × 700, 1028 × 749 and the default
  * 1280 × 800); the C++ panel is folded away to give the canvas room.
@@ -37,7 +39,13 @@ import {
 } from '../../support/bdm';
 import { bringIntoView, visibleCanvas, wellInside } from '../../support/canvas';
 import { drag, dropPoint, pressAndMove, releaseButton } from '../../support/drag';
-import { centerOn, currentDocument, foldCodePanel, grabPointOf } from '../../support/editor';
+import {
+  centerOn,
+  currentDocument,
+  foldCodePanel,
+  grabPointOf,
+  waitForDelivery,
+} from '../../support/editor';
 import { clickTestId, waitForFlyout } from '../../support/ui';
 import { sleep, waitFor } from '../../support/wait';
 import { type FlowApp, startFlow } from './lib/launch';
@@ -350,6 +358,7 @@ describe('Placing blocks', () => {
 
       // Only the dragged print is gone: nothing was connected before the delete.
       await waitForMain(app, kept, `main without the print dropped ${how} (${facts})`);
+      await waitForDelivery(driver);
       await pressCtrl(driver, 'z');
       await waitForMain(app, before, `Ctrl+Z to put back the print dropped ${how}`);
     }
