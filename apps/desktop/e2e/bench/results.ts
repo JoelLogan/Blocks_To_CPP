@@ -8,14 +8,28 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { harnessSettings } from '../support/env';
-import { rounded } from './stats';
+import { median, percentile, rounded } from './stats';
 
 /** The results format tag (tools/bench-compare.py RESULTS_FORMAT). */
 export const RESULTS_FORMAT = 'blocks2cpp/bench-results';
 
+/** The results format version written (tools/bench-compare.py FORMAT_VERSION): with statistics. */
+export const RESULTS_FORMAT_VERSION = 2;
+
 /**
- * The fewest samples a metric may have in a run of its own: the comparison refuses fewer. The A/B
- * job's runs take fewer each ({@link benchSamples}) and the comparison adds them up.
+ * How the comparison takes a run's value of a metric from its samples (tools/bench-compare.py
+ * STATISTICS): their median, or the 95th percentile of all of them (stats.ts `percentile`), for a
+ * metric whose samples pool every measurement of the run, such as each of its edits.
+ */
+export type BenchStatistic = 'median' | 'p95';
+
+/** The statistics the comparison knows. */
+export const STATISTICS: readonly BenchStatistic[] = ['median', 'p95'];
+
+/**
+ * The fewest samples a metric may have in a run of its own: the comparison refuses fewer, and fewer
+ * than 20 for a `p95` metric (whose samples are the run's measurements, pooled). The A/B job's runs
+ * take fewer each ({@link benchSamples}) and the comparison adds them up.
  */
 export const MIN_SAMPLES = 10;
 
@@ -40,6 +54,12 @@ export interface BenchMetric {
   readonly better: 'lower';
   /** Whether a regression fails the nightly job (otherwise it is only reported). */
   readonly gate: boolean;
+  /**
+   * How the comparison takes the run's value from the samples ({@link metricValue}): `median`
+   * (the default) when each sample is one round's result, `p95` when the samples are every
+   * measurement of the run, pooled (an A/B side's runs are pooled too).
+   */
+  readonly statistic?: BenchStatistic;
   /** One line saying what is measured. */
   readonly description: string;
   readonly samples: readonly number[];
@@ -48,6 +68,14 @@ export interface BenchMetric {
 /** A metric that cannot be written. */
 export class BenchResultsError extends Error {
   override readonly name = 'BenchResultsError';
+}
+
+/**
+ * The run's value of a metric, as tools/bench-compare.py takes it (`Metric.value`): the median of
+ * its samples, or for `p95` the 95th percentile of all of them by the nearest rank.
+ */
+export function metricValue(metric: BenchMetric): number {
+  return metric.statistic === 'p95' ? percentile(metric.samples, 95) : median(metric.samples);
 }
 
 /** The results files' name for a Node.js platform. */
@@ -142,6 +170,11 @@ export function checkMetric(metric: BenchMetric, minSamples: number = MIN_SAMPLE
   if (!metric.samples.every((sample) => Number.isFinite(sample) && sample >= 0)) {
     throw new BenchResultsError(`${metric.name}: every sample must be a finite time of 0 or more`);
   }
+  if (metric.statistic !== undefined && !STATISTICS.includes(metric.statistic)) {
+    throw new BenchResultsError(
+      `${metric.name}: the statistic must be one of ${STATISTICS.join(', ')}`,
+    );
+  }
 }
 
 /** The results file of one metric, as tools/bench-compare.py reads it. */
@@ -153,9 +186,15 @@ export function resultsJson(
   checkMetric(metric, minSamples);
   const file = {
     format: RESULTS_FORMAT,
-    formatVersion: 1,
+    formatVersion: RESULTS_FORMAT_VERSION,
     os,
-    metrics: [{ ...metric, samples: metric.samples.map((sample) => rounded(sample)) }],
+    metrics: [
+      {
+        ...metric,
+        statistic: metric.statistic ?? 'median',
+        samples: metric.samples.map((sample) => rounded(sample)),
+      },
+    ],
   };
   return `${JSON.stringify(file, null, 2)}\n`;
 }

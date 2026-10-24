@@ -19,11 +19,14 @@ import {
   BenchResultsError,
   checkMetric,
   MAX_OFFSET,
+  metricValue,
   MIN_SAMPLES,
   RESULTS_FORMAT,
+  RESULTS_FORMAT_VERSION,
   resultsJson,
   writeMetric,
 } from './results';
+import { median, percentile } from './stats';
 
 const folders: string[] = [];
 
@@ -46,6 +49,25 @@ const metric: BenchMetric = {
   gate: true,
   description: 'A test metric',
   samples: [1000.1234, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009],
+};
+
+/**
+ * Ten rounds of 10 edits, as the preview benchmark makes them: about 1,000 ms each, and in five of
+ * the rounds one slow edit (3,000 ms), 5 of the run's 100 edits.
+ */
+const editRounds: number[][] = Array.from({ length: 10 }, (_, round) =>
+  Array.from({ length: 10 }, (_, edit) => (round % 2 === 0 && edit === 3 ? 3_000 : 1_000 + edit)),
+);
+
+/** The edits' metric pooled over the run (D19): every edit is a sample, valued at their p95. */
+const pooled: BenchMetric = {
+  name: 'webview.edit-1000.p95-all',
+  unit: 'ms',
+  better: 'lower',
+  gate: true,
+  statistic: 'p95',
+  description: 'Edits, pooled',
+  samples: editRounds.flat(),
 };
 
 /** Whether `python3` can be run here. */
@@ -104,6 +126,15 @@ describe('checkMetric', () => {
     }).not.toThrow();
   });
 
+  it('refuses a statistic the comparison does not know', () => {
+    expect(() => {
+      checkMetric({ ...metric, statistic: 'p50' as unknown as 'p95' });
+    }).toThrow(/statistic must be one of median, p95/);
+    expect(() => {
+      checkMetric(pooled);
+    }).not.toThrow();
+  });
+
   it('refuses bad names, descriptions and samples', () => {
     const bad: Partial<BenchMetric>[] = [
       { name: 'Webview.Cold' },
@@ -123,12 +154,34 @@ describe('checkMetric', () => {
   });
 });
 
+describe('metricValue', () => {
+  it('is the median of the samples, as the comparison takes it by default', () => {
+    expect(metricValue(metric)).toBe(1004.5);
+    expect(metricValue({ ...metric, statistic: 'median' })).toBe(1004.5);
+  });
+
+  it('is the p95 of every sample for a pooled metric: five slow edits of 100 do not decide it', () => {
+    // The 95th smallest of the 100 edits: the slowest edit of the rounds without a slow one.
+    expect(metricValue(pooled)).toBe(1_009);
+    expect(metricValue(pooled)).toBe(percentile(editRounds.flat(), 95));
+    // Each round's p95 is nearly its slowest edit, so half the rounds' samples are slow ones and
+    // their median moves halfway to them.
+    const perRound = editRounds.map((values) => percentile(values, 95));
+    expect(perRound.filter((value) => value === 3_000)).toHaveLength(5);
+    expect(median(perRound)).toBe(2_004.5);
+    // A sixth slow edit does decide it.
+    const six = [...pooled.samples.slice(1), 3_000];
+    expect(metricValue({ ...pooled, samples: six })).toBe(3_000);
+  });
+});
+
 describe('resultsJson and writeMetric', () => {
   it('write the comparison script’s format, rounding the samples', () => {
     const value = JSON.parse(resultsJson(metric, 'linux')) as Record<string, unknown>;
     expect(Object.keys(value).sort()).toEqual(['format', 'formatVersion', 'metrics', 'os']);
     expect(value['format']).toBe(RESULTS_FORMAT);
-    expect(value['formatVersion']).toBe(1);
+    expect(value['formatVersion']).toBe(RESULTS_FORMAT_VERSION);
+    expect(RESULTS_FORMAT_VERSION).toBe(2);
     expect(value['os']).toBe('linux');
     const [written] = value['metrics'] as Record<string, unknown>[];
     expect(Object.keys(written ?? {}).sort()).toEqual([
@@ -137,9 +190,19 @@ describe('resultsJson and writeMetric', () => {
       'gate',
       'name',
       'samples',
+      'statistic',
       'unit',
     ]);
+    expect(written?.['statistic']).toBe('median');
     expect((written?.['samples'] as number[])[0]).toBe(1000.123);
+  });
+
+  it('write a pooled metric’s statistic and every one of its samples', () => {
+    const value = JSON.parse(resultsJson(pooled, 'linux')) as {
+      metrics: Record<string, unknown>[];
+    };
+    expect(value.metrics[0]?.['statistic']).toBe('p95');
+    expect(value.metrics[0]?.['samples']).toHaveLength(100);
   });
 
   it('writes <name>.json into the folder', () => {
@@ -195,4 +258,38 @@ describe('resultsJson and writeMetric', () => {
     };
     expect(kept.runs[0]?.medians['webview.cold-start']?.value).toBe(1004.5);
   });
+
+  it.skipIf(!python)(
+    'produces pooled metrics that tools/bench-compare.py values at their p95',
+    () => {
+      const folder = tempFolder();
+      const file = writeMetric(pooled, folder, 'linux');
+      const history = path.join(folder, 'history.json');
+      const run = spawnSync(
+        'python3',
+        [
+          path.join(REPOSITORY_ROOT, 'tools', 'bench-compare.py'),
+          'compare',
+          '--os',
+          'linux',
+          '--results',
+          file,
+          '--update-history',
+          history,
+          '--run-id',
+          '1',
+          '--commit',
+          'abc',
+        ],
+        { encoding: 'utf8' },
+      );
+      expect(run.stderr).toBe('');
+      expect(run.status).toBe(0);
+      expect(run.stdout).toContain('| `webview.edit-1000.p95-all` | yes | 100 | 1009.0 ms (p95) |');
+      const kept = JSON.parse(readFileSync(history, 'utf8')) as {
+        runs: { medians: Record<string, { value: number }> }[];
+      };
+      expect(kept.runs[0]?.medians['webview.edit-1000.p95-all']?.value).toBe(metricValue(pooled));
+    },
+  );
 });

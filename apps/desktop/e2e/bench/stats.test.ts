@@ -35,6 +35,20 @@ describe('percentile', () => {
     expect(percentile([42], 95)).toBe(42);
   });
 
+  it('takes the 95th smallest of 100 values, as tools/bench-compare.py does', () => {
+    const hundred = Array.from({ length: 100 }, (_, index) => 100 - index);
+    expect(percentile(hundred, 95)).toBe(95);
+    // The p95 of 10 values is their largest; of 20, the second largest.
+    expect(percentile(twenty.slice(0, 10), 95)).toBe(20);
+    expect(percentile(twenty, 95)).toBe(19);
+    // From 1 to 1,000 values, the nearest rank in whole numbers (bench-compare.py's
+    // nearest_rank): the floating-point 0.95 never moves it.
+    for (let count = 1; count <= 1_000; count += 1) {
+      const values = Array.from({ length: count }, (_, index) => index + 1);
+      expect(percentile(values, 95)).toBe(Math.floor((95 * count + 99) / 100));
+    }
+  });
+
   it('refuses percentiles outside (0, 100] and bad values', () => {
     expect(() => percentile(twenty, 0)).toThrow(StatsError);
     expect(() => percentile(twenty, 101)).toThrow(StatsError);

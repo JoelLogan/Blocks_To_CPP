@@ -4,15 +4,23 @@
 The benchmark gate of docs/spec/09-quality-and-delivery.md §9.2, in two ways:
 
 * compare (the nightly job): every metric of a run has at least 10 samples;
-  its median is compared with the baseline, the median of the medians of the
+  its value is compared with the baseline, the median of its values in the
   last 5 runs kept in the history of the same system (the scheduled nightly
   runs on the default branch). A gated metric more than 10% worse fails the
   run. Until a metric has 5 baselines, its comparison is only reported.
 * ab (the A/B job, .github/workflows/bench-ab-run.yml): the same metrics
   measured on one runner for a base and a head build, in alternating runs
-  whose samples are added up per side (at least 10 each). Head's median is
+  whose samples are added up per side (at least 10 each). Head's value is
   compared with base's at the same threshold, so a pull request is gated at
   once, also for metrics that have no history yet.
+
+A metric's value in a run is the median of its samples, unless its results
+name another statistic: "p95" is the 95th percentile of all its samples by
+the nearest rank (as the benchmarks' stats.ts takes it), for a metric whose
+samples are every measurement of the run pooled, such as each edit of
+webview.edit-1000.p95-all. Its rounds, and an A/B side's runs, are pooled
+before the percentile is taken, so a few slow measurements do not decide it;
+it needs at least 20 samples (fewer would make its p95 the largest).
 
 A change of a gated metric that is meant is recorded in the acceptance file
 (apps/desktop/e2e/bench/accepted.json): an entry {metric, system, commit,
@@ -37,18 +45,21 @@ system it identifies the entry.
 Inputs and outputs are JSON files with a format tag:
 
 * results (``blocks2cpp/bench-results``): what one run measured, one file per
-  producer (the criterion conversion below, each webview benchmark):
+  producer (the criterion conversion below, each webview benchmark). Version
+  1 (metrics without "statistic", which take the median) is still read;
+  version 2 is written:
 
-      {"format": "blocks2cpp/bench-results", "formatVersion": 1,
+      {"format": "blocks2cpp/bench-results", "formatVersion": 2,
        "os": "linux" | "windows",
        "metrics": [{"name": "webview.cold-start", "unit": "ms",
                     "better": "lower" | "higher", "gate": true,
+                    "statistic": "median" | "p95",
                     "description": "...", "samples": [1234.5, ...]}]}
 
-* history (``blocks2cpp/bench-history``): the medians of the last 5 runs that
-  became baselines, kept between nightly runs in the Actions cache, and the
-  acceptances already applied. Version 1 (without "accepted") is still read;
-  version 2 is written:
+* history (``blocks2cpp/bench-history``): the values (under "medians") of
+  the last 5 runs that became baselines, kept between nightly runs in the
+  Actions cache, and the acceptances already applied. Version 1 (without
+  "accepted") is still read; version 2 is written:
 
       {"format": "blocks2cpp/bench-history", "formatVersion": 2, "os": "linux",
        "runs": [{"run": "<run id>", "commit": "<sha>", "date": "<UTC time>",
@@ -107,7 +118,8 @@ Commands (run from anywhere; paths are taken as given):
         medians, too few baselines, too few samples, malformed input, history
         updates, acceptances and redefinitions restarting a history, A/B
         comparisons with both kinds and with skipped and failed benchmarks,
-        the criterion conversion, UTF-8 output).
+        pooled p95 metrics and version 1 results, the criterion conversion,
+        UTF-8 output).
 
 The output is UTF-8 on every system (a Windows console or pipe would
 otherwise take the locale's code page). Exit status: 0 when nothing regressed
@@ -137,9 +149,12 @@ RESULTS_FORMAT = "blocks2cpp/bench-results"
 HISTORY_FORMAT = "blocks2cpp/bench-history"
 ACCEPTED_FORMAT = "blocks2cpp/bench-accepted"
 RUNS_FORMAT = "blocks2cpp/ab-runs"
-# Results files; a history is written as HISTORY_VERSION and read in any of
-# HISTORY_VERSIONS (version 1 has no applied acceptances).
-FORMAT_VERSION = 1
+# Results files are written as FORMAT_VERSION and read in any of FORMAT_VERSIONS
+# (version 1 has no statistics: every metric takes the median); a history is
+# written as HISTORY_VERSION and read in any of HISTORY_VERSIONS (version 1 has
+# no applied acceptances).
+FORMAT_VERSION = 2
+FORMAT_VERSIONS = (1, 2)
 HISTORY_VERSION = 2
 HISTORY_VERSIONS = (1, 2)
 # Acceptance files: version 2 gives every entry a kind; version 1 (no kinds)
@@ -183,7 +198,10 @@ RUN_FIELD = re.compile(r"^[0-9A-Za-z._-]{1,64}$")
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 RESULT_KEYS = {"format", "formatVersion", "os", "metrics"}
-METRIC_KEYS = {"name", "unit", "better", "gate", "description", "samples"}
+METRIC_KEYS = {
+    1: {"name", "unit", "better", "gate", "description", "samples"},
+    2: {"name", "unit", "better", "gate", "statistic", "description", "samples"},
+}
 HISTORY_KEYS = {1: {"format", "formatVersion", "os", "runs"}, 2: {"format", "formatVersion", "os", "runs", "accepted"}}
 RUN_KEYS = {"run", "commit", "date", "medians"}
 MEDIAN_KEYS = {"value", "unit"}
@@ -197,6 +215,12 @@ ACCEPTED = "accepted"
 KINDS = (REDEFINED, ACCEPTED)
 # What ab-rounds.sh says happened to a benchmark.
 RUN_OUTCOMES = ("compared", "skipped", "failed")
+# How a run's value of a metric is taken from its samples (a results file's
+# "statistic"): the median, or the percentile of all of them by the nearest
+# rank (the number). A percentile is for samples that pool every measurement
+# of a run, such as each of its edits.
+MEDIAN = "median"
+STATISTICS: dict[str, int | None] = {MEDIAN: None, "p95": 95}
 
 
 class InputError(Exception):
@@ -213,10 +237,51 @@ class Metric:
     gate: bool
     description: str
     samples: tuple[float, ...]
+    # How the run's value is taken from the samples (a key of STATISTICS).
+    statistic: str = MEDIAN
 
     @property
-    def median(self) -> float:
-        return statistics.median(self.samples)
+    def value(self) -> float:
+        """The run's value: the median of the samples, or the percentile the statistic names."""
+        rank = STATISTICS[self.statistic]
+        if rank is None:
+            return statistics.median(self.samples)
+        return nearest_rank(self.samples, rank)
+
+    def samples_needed(self, min_samples: int) -> int:
+        """The fewest samples the metric may have: `min_samples`, and for a percentile
+        enough that it is not simply the largest sample (20 for p95)."""
+        rank = STATISTICS[self.statistic]
+        if rank is None:
+            return min_samples
+        return max(min_samples, -(-100 // (100 - rank)))
+
+
+def nearest_rank(values: tuple[float, ...], rank: int) -> float:
+    """The `rank`th percentile by the nearest-rank method, as the benchmarks' stats.ts takes it:
+    the smallest value with at least `rank`% of the values at or below it (p95 of 100 values is
+    the 95th smallest)."""
+    ordered = sorted(values)
+    return ordered[-(-rank * len(ordered) // 100) - 1]
+
+
+def value_text(value: float, metric: Metric, samples: int | None = None) -> str:
+    """A value of `metric` for a table: a percentile is named, and with `samples`, how many
+    samples the value was taken of."""
+    text = f"{fmt(value)} {metric.unit}"
+    if metric.statistic == MEDIAN:
+        return text if samples is None else f"{text} ({samples})"
+    return f"{text} ({metric.statistic})" if samples is None else f"{text} ({metric.statistic} of {samples})"
+
+
+def check_sample_count(metric: Metric, min_samples: int, where: str = "") -> None:
+    """Refuses a metric with fewer samples than it needs (Metric.samples_needed)."""
+    needed = metric.samples_needed(min_samples)
+    if len(metric.samples) < needed:
+        why = "" if needed == min_samples else f" for its {metric.statistic}, which would otherwise be its largest"
+        raise InputError(
+            f"metric {metric.name} has {len(metric.samples)} samples{where}; at least {needed} are needed{why}"
+        )
 
 
 @dataclass(frozen=True)
@@ -366,8 +431,8 @@ def unit_name(value: object, where: str) -> str:
     return str(value)
 
 
-def parse_metric(value: object, where: str) -> Metric:
-    item = exact_keys(value, METRIC_KEYS, where)
+def parse_metric(value: object, where: str, version: int = FORMAT_VERSION) -> Metric:
+    item = exact_keys(value, METRIC_KEYS[version], where)
     name = metric_name(item["name"], where)
     where = f"{where} ({name})"
     better = item["better"]
@@ -375,6 +440,9 @@ def parse_metric(value: object, where: str) -> Metric:
         raise InputError(f"{where}: better must be one of {', '.join(DIRECTIONS)}")
     if not isinstance(item["gate"], bool):
         raise InputError(f"{where}: gate must be true or false")
+    statistic = item.get("statistic", MEDIAN)
+    if not isinstance(statistic, str) or statistic not in STATISTICS:
+        raise InputError(f"{where}: statistic must be one of {', '.join(STATISTICS)}")
     description = item["description"]
     if (
         not isinstance(description, str)
@@ -392,6 +460,7 @@ def parse_metric(value: object, where: str) -> Metric:
         gate=item["gate"],
         description=description,
         samples=tuple(number(sample, f"{where} sample {index}") for index, sample in enumerate(samples)),
+        statistic=statistic,
     )
 
 
@@ -399,12 +468,12 @@ def read_results(path: Path) -> tuple[str, list[Metric]]:
     """A results file's system and metrics."""
     where = f"results file {path}"
     value = exact_keys(read_json(path, "The results file"), RESULT_KEYS, where)
-    format_header(value, RESULTS_FORMAT, where)
+    version = format_header(value, RESULTS_FORMAT, where, FORMAT_VERSIONS)
     system = system_name(value["os"], where)
     metrics = value["metrics"]
     if not isinstance(metrics, list) or not 1 <= len(metrics) <= MAX_METRICS:
         raise InputError(f"{where}: metrics must be a list of 1 to {MAX_METRICS} metrics")
-    parsed = [parse_metric(item, f"{where}, metric {index}") for index, item in enumerate(metrics)]
+    parsed = [parse_metric(item, f"{where}, metric {index}", version) for index, item in enumerate(metrics)]
     return system, parsed
 
 
@@ -560,7 +629,7 @@ def compare_metric(
     baseline_runs: int,
     restart: str | None = None,
 ) -> Comparison:
-    """Compares one metric with the median of its last `baseline_runs` baselines.
+    """Compares one metric's value with the median of its last `baseline_runs` baselines.
 
     With `restart` (the kind, REDEFINED or ACCEPTED, of an acceptance entry
     this history has not applied yet), the run restarts the metric's history:
@@ -574,7 +643,7 @@ def compare_metric(
     if not values:
         return Comparison(metric, 0, None, None, restart or "new")
     baseline = statistics.median(values)
-    change, worse = relative_change(metric.median, baseline, metric, threshold)
+    change, worse = relative_change(metric.value, baseline, metric, threshold)
     if restart is not None:
         status = restart
     elif len(values) < baseline_runs:
@@ -629,12 +698,13 @@ def summary_markdown(
     lines = [
         f"### Benchmarks ({system})",
         "",
-        f"Median of each metric's samples against the median of the last {baseline_runs} nightly "
-        f"runs on the default branch; a gated metric more than {threshold:.0%} worse fails, unless "
+        "Each metric's value (the median of its samples, or the p95 of all of them where marked) "
+        f"against the median of its values in the last {baseline_runs} nightly runs on the default "
+        f"branch; a gated metric more than {threshold:.0%} worse fails, unless "
         "apps/desktop/e2e/bench/accepted.json newly redefines it or accepts it as an intended slowdown "
         "(docs/spec/09-quality-and-delivery.md §9.2).",
         "",
-        "| Metric | Gated | Samples | Median | Baseline (runs) | Change | Result |",
+        "| Metric | Gated | Samples | Value | Baseline (runs) | Change | Result |",
         "| --- | --- | ---: | ---: | ---: | ---: | --- |",
     ]
     for comparison in comparisons:
@@ -648,7 +718,7 @@ def summary_markdown(
         status = STATUS_TEXT[comparison.status].format(runs=baseline_runs)
         lines.append(
             f"| `{metric.name}` | {'yes' if metric.gate else 'no'} | {len(metric.samples)} | "
-            f"{fmt(metric.median)} {metric.unit} | {baseline} | {change} | {status} |"
+            f"{value_text(metric.value, metric)} | {baseline} | {change} | {status} |"
         )
     lines.append("")
     lines.append(regressions_line(comparisons))
@@ -714,11 +784,7 @@ def command_compare(arguments: argparse.Namespace) -> int:
         for metric in parsed:
             if metric.name in metrics:
                 raise InputError(f"metric {metric.name} is in more than one results file")
-            if len(metric.samples) < arguments.min_samples:
-                raise InputError(
-                    f"metric {metric.name} has {len(metric.samples)} samples; "
-                    f"at least {arguments.min_samples} are needed"
-                )
+            check_sample_count(metric, arguments.min_samples)
             metrics[metric.name] = metric
     if len(metrics) > MAX_METRICS:
         raise InputError(f"the results have {len(metrics)} metrics; at most {MAX_METRICS}")
@@ -786,7 +852,7 @@ def update_history(
             run=arguments.run_id,
             commit=arguments.commit,
             date=arguments.date or utc_now(),
-            medians={name: Baseline(value=metric.median, unit=metric.unit) for name, metric in metrics.items()},
+            medians={name: Baseline(value=metric.value, unit=metric.unit) for name, metric in metrics.items()},
         )
     )
     history.runs = history.runs[-arguments.baseline_runs :]
@@ -822,7 +888,11 @@ def results_paths(values: list[str], what: str, *, allow_empty: bool = False) ->
 
 
 def merged_metrics(paths: list[Path], system: str, what: str) -> dict[str, Metric]:
-    """One side's metrics, the samples of each added up over its files (one per run)."""
+    """One side's metrics, the samples of each added up over its files (one per run).
+
+    A percentile metric's samples are pooled so: its value is the percentile over every
+    measurement of the side's runs.
+    """
     merged: dict[str, Metric] = {}
     for path in paths:
         results_system, parsed = read_results(path)
@@ -833,10 +903,15 @@ def merged_metrics(paths: list[Path], system: str, what: str) -> dict[str, Metri
             if known is None:
                 merged[metric.name] = metric
                 continue
-            if (known.unit, known.better, known.gate) != (metric.unit, metric.better, metric.gate):
+            if (known.unit, known.better, known.gate, known.statistic) != (
+                metric.unit,
+                metric.better,
+                metric.gate,
+                metric.statistic,
+            ):
                 raise InputError(
-                    f"metric {metric.name} has a different unit, direction or gate in {path} than "
-                    f"in the {what}'s other results files"
+                    f"metric {metric.name} has a different unit, direction, gate or statistic in {path} "
+                    f"than in the {what}'s other results files"
                 )
             if len(known.samples) + len(metric.samples) > MAX_SAMPLES:
                 raise InputError(f"metric {metric.name} has more than {MAX_SAMPLES} samples on the {what}")
@@ -847,6 +922,7 @@ def merged_metrics(paths: list[Path], system: str, what: str) -> dict[str, Metri
                 gate=known.gate,
                 description=known.description,
                 samples=known.samples + metric.samples,
+                statistic=known.statistic,
             )
     if len(merged) > MAX_METRICS:
         raise InputError(f"the {what} has {len(merged)} metrics; at most {MAX_METRICS}")
@@ -854,16 +930,16 @@ def merged_metrics(paths: list[Path], system: str, what: str) -> dict[str, Metri
 
 
 def compare_ab(base: Metric | None, head: Metric | None, *, threshold: float, accepted: bool) -> Comparison:
-    """Compares the head's median of a metric with the base's."""
+    """Compares the head's value of a metric with the base's."""
     if head is None:
         if base is None:
             raise InputError("a metric is on neither side")
-        return Comparison(base, 0, base.median, None, "missing", base_samples=len(base.samples))
+        return Comparison(base, 0, base.value, None, "missing", base_samples=len(base.samples))
     if base is None:
         return Comparison(head, 0, None, None, "new")
-    if base.unit != head.unit or base.better != head.better:
-        raise InputError(f"metric {head.name} has another unit or direction on the head than on the base")
-    change, worse = relative_change(head.median, base.median, head, threshold)
+    if (base.unit, base.better, base.statistic) != (head.unit, head.better, head.statistic):
+        raise InputError(f"metric {head.name} has another unit, direction or statistic on the head than on the base")
+    change, worse = relative_change(head.value, base.value, head, threshold)
     if not worse:
         status = "ok"
     elif not head.gate:
@@ -872,7 +948,7 @@ def compare_ab(base: Metric | None, head: Metric | None, *, threshold: float, ac
         status = "accepted"
     else:
         status = "regression"
-    return Comparison(head, 0, base.median, change, status, base_samples=len(base.samples))
+    return Comparison(head, 0, base.value, change, status, base_samples=len(base.samples))
 
 
 @dataclass(frozen=True)
@@ -996,8 +1072,9 @@ def ab_markdown(
     lines = [
         f"### A/B benchmarks ({system})",
         "",
-        "Median of the head's samples against the median of the base's, measured in alternating "
-        f"runs on one runner; a gated metric more than {threshold:.0%} worse fails, unless the head's "
+        "Each metric's value on the head (the median of its samples, or the p95 of all of them where "
+        "marked) against the base's, measured in alternating runs on one runner whose samples are "
+        f"pooled per side; a gated metric more than {threshold:.0%} worse fails, unless the head's "
         "apps/desktop/e2e/bench/accepted.json newly accepts it as an intended slowdown "
         "(docs/spec/09-quality-and-delivery.md §9.2).",
         "",
@@ -1006,20 +1083,20 @@ def ab_markdown(
         lines.append("No benchmark was compared.")
         lines.append("")
     else:
-        lines.append("| Metric | Gated | Base median (samples) | Head median (samples) | Change | Result |")
+        lines.append("| Metric | Gated | Base (samples) | Head (samples) | Change | Result |")
         lines.append("| --- | --- | ---: | ---: | ---: | --- |")
     for comparison in comparisons:
         metric = comparison.metric
         if comparison.status == "missing":
-            base = f"{fmt(metric.median)} {metric.unit} ({comparison.base_samples})"
+            base = value_text(metric.value, metric, comparison.base_samples)
             head = "—"
         else:
             base = (
                 "—"
                 if comparison.baseline is None
-                else f"{fmt(comparison.baseline)} {metric.unit} ({comparison.base_samples})"
+                else value_text(comparison.baseline, metric, comparison.base_samples)
             )
-            head = f"{fmt(metric.median)} {metric.unit} ({len(metric.samples)})"
+            head = value_text(metric.value, metric, len(metric.samples))
         change = "—" if comparison.change is None else f"{comparison.change:+.1%}"
         lines.append(
             f"| `{metric.name}` | {'yes' if metric.gate else 'no'} | {base} | {head} | {change} | "
@@ -1064,11 +1141,7 @@ def command_ab(arguments: argparse.Namespace) -> int:
         paths = results_paths(values, what, allow_empty=runs is not None)
         metrics = merged_metrics(paths, system, what)
         for metric in metrics.values():
-            if len(metric.samples) < arguments.min_samples:
-                raise InputError(
-                    f"metric {metric.name} has {len(metric.samples)} samples on the {what}; "
-                    f"at least {arguments.min_samples} are needed"
-                )
+            check_sample_count(metric, arguments.min_samples, f" on the {what}")
         sides[what] = metrics
     base, head = sides["base"], sides["head"]
     # What the head newly brings (the base's file lacks the entry): an intended slowdown passes;
@@ -1154,6 +1227,7 @@ def command_criterion(arguments: argparse.Namespace) -> int:
                 "unit": "ms",
                 "better": "lower",
                 "gate": bench.name in arguments.gate,
+                "statistic": MEDIAN,
                 "description": f"criterion {arguments.group}/{bench.name}: mean time per iteration of each sample",
                 "samples": list(criterion_samples(sample)),
             }
@@ -1288,9 +1362,15 @@ def _metric(
         "unit": unit,
         "better": better,
         "gate": gate,
+        "statistic": MEDIAN,
         "description": "synthetic",
         "samples": values,
     }
+
+
+def _pooled(name: str, values: list[float], *, gate: bool = True) -> dict:
+    """A metric whose samples pool every measurement of a run (each edit), valued at their p95."""
+    return {**_metric(name, 1.0, gate=gate), "statistic": "p95", "samples": values}
 
 
 def _history(path: Path, system: str, medians: list[dict[str, float]], unit: str = "ms") -> Path:
@@ -1479,7 +1559,14 @@ def self_test() -> int:
         by_name = {metric.name: metric for metric in converted}
         preview = by_name.get("native.pipeline.preview")
         load = by_name.get("native.pipeline.load")
-        if preview is None or load is None or not preview.gate or load.gate or abs(preview.median - 20.0) > 1e-9:
+        if (
+            preview is None
+            or load is None
+            or not preview.gate
+            or load.gate
+            or preview.statistic != MEDIAN
+            or abs(preview.value - 20.0) > 1e-9
+        ):
             failures.append(f"criterion conversion: {converted}")
         expect(
             "a gated benchmark without results is refused",
@@ -1680,6 +1767,89 @@ def self_test() -> int:
             "informational: fewer than 5 baselines",
         )
 
+        # --- A metric valued at the p95 of all its samples (every edit of a run, pooled). ---
+        edits = _history(root / "edits.json", "linux", [{"m.edit": 100.0}] * 5)
+        # 100 edits, the 5 slowest far slower: the p95 (the 95th smallest) is 108, not the
+        # median (100) nor the slowest (500).
+        five_slow = [100.0] * 90 + [108.0] * 5 + [500.0] * 5
+        pooled = _results(root / "pooled.json", "linux", [_pooled("m.edit", five_slow)])
+        expect(
+            "pooled p95: the value is the p95 of every sample, not their median nor the largest",
+            compare(pooled, edits),
+            0,
+            "| `m.edit` | yes | 100 | 108.0 ms (p95) | 100.0 ms (5) | +8.0% | ok |",
+            "or the p95 of all of them where marked",
+        )
+        six_slow = _results(root / "six-slow.json", "linux", [_pooled("m.edit", [100.0] * 94 + [500.0] * 6)])
+        expect(
+            "pooled p95: a sixth slow edit of 100 is a regression",
+            compare(six_slow, edits),
+            1,
+            "| 500.0 ms (p95) |",
+            "Regressed: `m.edit`",
+        )
+        pooled_history = root / "pooled-history.json"
+        expect(
+            "pooled p95: the history keeps the run's p95",
+            compare(pooled, edits, "--update-history", str(pooled_history), "--run-id", "300", "--commit", "abc"),
+            0,
+        )
+        if read_history(pooled_history, "linux").runs[-1].medians["m.edit"].value != 108.0:
+            failures.append(f"pooled p95 history: {read_history(pooled_history, 'linux').runs[-1]}")
+        expect(
+            "pooled p95: fewer than 20 samples are refused (the p95 would be the largest)",
+            compare(_results(root / "pooled-19.json", "linux", [_pooled("m.edit", [100.0] * 19)]), edits),
+            2,
+            "metric m.edit has 19 samples; at least 20 are needed for its p95",
+        )
+        expect(
+            "pooled p95: 20 samples are enough",
+            compare(_results(root / "pooled-20.json", "linux", [_pooled("m.edit", [100.0] * 19 + [900.0])]), edits),
+            0,
+            "| 100.0 ms (p95) |",
+        )
+        expect(
+            "pooled p95: a metric under a new name starts its own history",
+            compare(_results(root / "pooled-new.json", "linux", [_pooled("m.edit-all", five_slow)]), edits),
+            0,
+            "| `m.edit-all` | yes | 100 | 108.0 ms (p95) | — | — | new: no baseline yet |",
+        )
+        expect(
+            "an unknown statistic is refused",
+            compare(_results(root / "p50.json", "linux", [{**_metric("m.time", 1.0), "statistic": "p50"}]), five),
+            2,
+            "statistic must be one of median, p95",
+        )
+        no_statistic = _metric("m.time", 100.0)
+        del no_statistic["statistic"]
+        expect(
+            "a version 2 metric without a statistic is refused",
+            compare(_results(root / "no-statistic.json", "linux", [no_statistic]), five),
+            2,
+            "is missing statistic",
+        )
+        version1_results = root / "results-version-1.json"
+        write_json(
+            version1_results,
+            {"format": RESULTS_FORMAT, "formatVersion": 1, "os": "linux", "metrics": [no_statistic]},
+        )
+        expect(
+            "a version 1 results file is read, with medians",
+            compare(version1_results, five),
+            0,
+            "| 100.0 ms | 100.0 ms (5) |",
+        )
+        write_json(
+            version1_results,
+            {"format": RESULTS_FORMAT, "formatVersion": 1, "os": "linux", "metrics": [_pooled("m.edit", five_slow)]},
+        )
+        expect(
+            "a version 1 results file names no statistic",
+            compare(version1_results, five),
+            2,
+            "unknown keys: statistic",
+        )
+
         # --- A/B: head against base, samples added up over alternating runs. ---
         def ab_side(name: str, rounds: list[list[dict]], system: str = "linux") -> Path:
             side = root / "ab" / name
@@ -1764,13 +1934,13 @@ def self_test() -> int:
                 ab_side("head-mixed", [[_metric("m.time", 100.0, samples=5)], [_metric("m.time", 100.0, samples=5, gate=False)]]),
             ),
             2,
-            "different unit, direction or gate",
+            "different unit, direction, gate or statistic",
         )
         expect(
             "A/B: another unit on the head is refused",
             ab(base100, ab_side("head-s", halves("m.time", 0.1, unit="s"))),
             2,
-            "another unit or direction",
+            "another unit, direction or statistic",
         )
         expect(
             "A/B: another system's results are refused",
@@ -1789,6 +1959,43 @@ def self_test() -> int:
             ab(base100, head111, "--accepted-base", str(accepted)),
             2,
             "--accepted-base needs --accepted",
+        )
+        # A/B with a pooled p95: each side's runs are pooled before the percentile is taken.
+        def edit_runs(name: str, *runs: list[float]) -> Path:
+            return ab_side(name, [[_pooled("m.edit", values)] for values in runs])
+
+        base_edits = edit_runs("base-edits", [100.0] * 50, [100.0] * 50)
+        expect(
+            "A/B pooled p95: five slow edits in one run do not decide it (each run's p95 would)",
+            ab(base_edits, edit_runs("head-edits", [100.0] * 45 + [500.0] * 5, [100.0] * 50)),
+            0,
+            "| `m.edit` | yes | 100.0 ms (p95 of 100) | 100.0 ms (p95 of 100) | +0.0% | ok |",
+            "or the p95 of all of them where marked",
+        )
+        expect(
+            "A/B pooled p95: slow edits beyond 5% of a side's edits regress",
+            ab(base_edits, edit_runs("head-slow", [100.0] * 47 + [130.0] * 3, [100.0] * 47 + [130.0] * 3)),
+            1,
+            "| 100.0 ms (p95 of 100) | 130.0 ms (p95 of 100) | +30.0% | **regression** |",
+        )
+        expect(
+            "A/B pooled p95: fewer than 20 samples on a side are refused",
+            ab(base_edits, edit_runs("head-15", [100.0] * 15)),
+            2,
+            "15 samples on the head; at least 20 are needed for its p95",
+        )
+        median_edits = {**_metric("m.edit", 100.0), "samples": [100.0] * 50}
+        expect(
+            "A/B pooled p95: a statistic that differs between a side's runs is refused",
+            ab(base_edits, ab_side("head-mixed-statistic", [[_pooled("m.edit", [100.0] * 50)], [median_edits]])),
+            2,
+            "different unit, direction, gate or statistic",
+        )
+        expect(
+            "A/B pooled p95: another statistic on the head is refused",
+            ab(base_edits, ab_side("head-median", [[median_edits], [median_edits]])),
+            2,
+            "another unit, direction or statistic",
         )
         ab_summary = root / "ab-summary.md"
         expect("A/B: the summary is appended", ab(base100, head111, "--summary", str(ab_summary)), 1)

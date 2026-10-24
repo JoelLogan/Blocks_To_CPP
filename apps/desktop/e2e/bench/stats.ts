@@ -1,7 +1,9 @@
 /**
  * The statistics of the webview benchmarks: medians, percentiles and frame times. The comparison
- * with the baseline (tools/bench-compare.py) takes the median of a metric's samples; a sample of a
- * percentile metric is itself the percentile of one round of measurements.
+ * with the baseline (tools/bench-compare.py) takes the median of a metric's samples, or, for a
+ * metric whose samples pool every measurement of a run (results.ts `statistic`), their p95 by the
+ * nearest rank, as {@link percentile} takes it; a sample of the other percentile metrics is itself
+ * the percentile of one round of measurements.
  */
 
 /** The values are not usable: empty, or not finite numbers. */
