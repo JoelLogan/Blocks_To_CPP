@@ -1,7 +1,7 @@
 /**
  * Helpers for the harness's own unit tests (not for the specs): a fake `tauri-driver` that starts a
- * process tree the way the real one does on Linux, so that starting and stopping the driver can be
- * tested without an app or a browser.
+ * process tree the way the real one does on Linux, so that starting and stopping the driver, and a
+ * launch whose session is refused, can be tested without an app or a browser.
  */
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -13,9 +13,15 @@ import { waitFor } from './wait';
  * The fake driver, a Node.js script. Its role comes from `FAKE_ROLE`:
  *
  * - `driver` (the command itself): with `FAKE_MODE=exit` it prints why it cannot start and exits
- *   with code 1, as `tauri-driver` does without a native driver. Otherwise it answers every HTTP
- *   request on `--port` and starts the native driver; on SIGTERM it kills the native driver and
- *   exits, as `tauri-driver` 2.1.0 does, which leaves the app running.
+ *   with code 1, as `tauri-driver` does without a native driver. Otherwise it prints the app's
+ *   `B2C_E2E_WEBVIEW_DATA`, answers every HTTP request on `--port` and starts the native driver;
+ *   on SIGTERM it kills the native driver and exits, as `tauri-driver` 2.1.0 does, which leaves
+ *   the app running. With `FAKE_MODE=refuse` it answers WebDriver's New Session with a `session
+ *   not created` error whose message is `FAKE_SESSION_ERROR`, as a native driver that cannot
+ *   attach to the app does. With `FAKE_MODE=refuse-once` only the first New Session of all the
+ *   drivers that share `FAKE_PIDS` is refused, and the driver stands in for the app itself (it
+ *   starts no native driver): a later New Session creates a session and the app's web view folder,
+ *   as Tauri does, and ending the session ends the driver, as WebKitWebDriver closes the app.
  * - `native`: starts the app and waits; with `FAKE_MODE=orphan` it exits at once instead, so the
  *   app is reparented before the driver is stopped.
  * - `app`: starts a child with an empty environment (as the app starts g++ or the program), writes
@@ -23,7 +29,7 @@ import { waitFor } from './wait';
  */
 const FAKE_DRIVER = String.raw`'use strict';
 const { spawn } = require('node:child_process');
-const { writeFileSync } = require('node:fs');
+const { existsSync, mkdirSync, writeFileSync } = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 
@@ -42,15 +48,48 @@ if (role === 'driver') {
     process.exit(1);
   }
   const port = Number(process.argv.find((arg) => arg.startsWith('--port=')).slice(7));
-  const native = start('native');
+  process.stdout.write('B2C_E2E_WEBVIEW_DATA=' + (process.env.B2C_E2E_WEBVIEW_DATA || '') + '\n');
+  const native = mode === 'refuse-once' ? null : start('native');
+  const refuses = () => {
+    if (mode !== 'refuse-once') {
+      return mode === 'refuse';
+    }
+    const refused = path.join(process.env.FAKE_PIDS, 'refused');
+    if (existsSync(refused)) {
+      return false;
+    }
+    writeFileSync(refused, '');
+    return true;
+  };
+  const answer = (response, status, body, then) => {
+    response.writeHead(status, { 'content-type': 'application/json' });
+    response.end(JSON.stringify(body), then);
+  };
   http
     .createServer((request, response) => {
-      response.writeHead(200, { 'content-type': 'application/json' });
-      response.end('{"value":{"ready":true}}');
+      if (request.method === 'POST' && request.url === '/session') {
+        if (refuses()) {
+          const message = process.env.FAKE_SESSION_ERROR;
+          answer(response, 500, { value: { error: 'session not created', message } });
+          return;
+        }
+        if (mode === 'refuse-once') {
+          mkdirSync(process.env.B2C_E2E_WEBVIEW_DATA, { recursive: true });
+          answer(response, 200, { value: { sessionId: 'fake', capabilities: {} } });
+          return;
+        }
+      }
+      if (request.method === 'DELETE' && mode === 'refuse-once') {
+        answer(response, 200, { value: null }, () => process.exit(0));
+        return;
+      }
+      answer(response, 200, { value: { ready: true } });
     })
     .listen(port, '127.0.0.1');
   process.on('SIGTERM', () => {
-    native.kill('SIGKILL');
+    if (native !== null) {
+      native.kill('SIGKILL');
+    }
     process.exit(0);
   });
 } else if (role === 'native') {

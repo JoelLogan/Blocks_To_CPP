@@ -13,6 +13,10 @@
  * counts of the last app are reported, the app is closed and the folder removed. Each launch runs
  * the long-task recorder from its readiness until it ends (quit, killed or its window closed).
  *
+ * A launch whose WebDriver session was not created because the native driver could not attach to
+ * the web view ({@link isRendererAttachFailure}) is made once more, with a web view data folder
+ * and a driver log of its own, and says so on standard error; every other failure ends it at once.
+ *
  * The harness's own pieces are reused: `TauriDriver`, `HookClient`, the settings and the app's
  * environment, the artifact files and `waitUntilReady`.
  */
@@ -41,14 +45,19 @@ import {
   writeArtifact,
 } from '../../../support/artifacts';
 import { TauriDriver } from '../../../support/driver';
-import { appEnvironment, harnessSettings, type WindowSize } from '../../../support/env';
+import {
+  appEnvironment,
+  type HarnessSettings,
+  harnessSettings,
+  type WindowSize,
+} from '../../../support/env';
 import { HookClient } from '../../../support/hook';
 import { finishLongTaskRecorder, startLongTaskRecorder } from '../../../support/longtasks';
 import { sleep, waitFor, withTimeout } from '../../../support/wait';
 import { crashProcess, findAppProcess, waitForProcessEnd } from './processes';
 import { requestWindowClose } from './window';
 
-/** The most launches one test may make. */
+/** The most launches one test may make (a launch that was retried counts once). */
 export const MAX_LAUNCHES = 8;
 
 /** How long the app may take to exit once it was asked to (a quit, a closed window, a kill). */
@@ -75,6 +84,13 @@ const TRUSTED_TYPES_TIMEOUT_MS = 10_000;
 
 /** How long the clean-up after a test may take in all (Vitest's hook timeout). */
 const FINISH_TIMEOUT_MS = 120_000;
+
+/**
+ * How long a launch waits after its first attempt failed, and the driver and the app of that
+ * attempt were stopped, before it makes the second: a moment for the failed attempt's browser
+ * processes to end. The second attempt has a web view data folder of its own anyway.
+ */
+export const RETRY_DELAY_MS = 2_000;
 
 /**
  * The variables a test may set for the app; the harness sets the rest itself. `GTK_THEME` is how
@@ -180,6 +196,138 @@ export function portOf(url: string): number {
     throw new Error(`tauri-driver's URL has no port: ${url}`);
   }
   return port;
+}
+
+/** An error's message, or the thrown value as text. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Whether an error of creating a WebDriver session says that the native driver could not attach to
+ * the web view's renderer: msedgedriver's (chromedriver's) `session not created: from disconnected:
+ * unable to connect to renderer`, also with the cause on a line of its own. It came once in about
+ * 1,400 Windows launches (Nightly of 2026-10-19), 0.93 s after the request, while the app's backend
+ * had started normally: a race between msedgedriver and WebView2, which a second attempt gets past.
+ * selenium-webdriver throws it as a `SessionNotCreatedError`; any error with such a message counts.
+ *
+ * The other `disconnected` causes (`not connected to DevTools`, `Unable to receive message from
+ * renderer`) do not: the driver had reached the renderer and lost it, which is what a web view or
+ * an app that crashed at start looks like. Neither do a timeout (`Timed out receiving message from
+ * renderer`), a missing or mismatched browser or driver, and WebKitWebDriver's failures (`Failed
+ * to match capabilities`, `Failed to connect to browser: …`): they would fail again, or say
+ * something about the app.
+ */
+export function isRendererAttachFailure(error: unknown): boolean {
+  return error instanceof Error && /\bunable to connect to renderer\b/i.test(error.message);
+}
+
+/** Creating the WebDriver session failed; the native driver's error is the cause. */
+export class NewSessionError extends Error {
+  override readonly name = 'NewSessionError';
+
+  constructor(cause: unknown) {
+    super(messageOf(cause), { cause });
+  }
+}
+
+/**
+ * Whether a launch makes a second attempt after this error of its first: only when creating the
+ * WebDriver session failed as {@link isRendererAttachFailure} describes. A `tauri-driver` that did
+ * not start, a session that did not take its timeouts and every other error end the launch.
+ */
+export function isRetryableLaunchFailure(error: unknown): boolean {
+  return error instanceof NewSessionError && isRendererAttachFailure(error.cause);
+}
+
+/** What {@link retryOnce} needs besides the attempt. */
+export interface RetryOptions {
+  /** Whether the first attempt's error is worth a second attempt. */
+  readonly retryable: (error: unknown) => boolean;
+  /** Told the first attempt's error before the second attempt is made. */
+  readonly onRetry: (error: unknown) => void;
+  /** How long to wait before the second attempt, in milliseconds. */
+  readonly delay: number;
+  /** How to wait (default {@link sleep}). */
+  readonly wait?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Makes `attempt(1)` and returns its result. When it fails with an error that `options.retryable`
+ * accepts, `options.onRetry` is told, and after `options.delay` the outcome is that of
+ * `attempt(2)`: there is never a third attempt. Each attempt cleans up after itself when it fails.
+ */
+export async function retryOnce<T>(
+  attempt: (number: 1 | 2) => Promise<T>,
+  options: RetryOptions,
+): Promise<T> {
+  try {
+    return await attempt(1);
+  } catch (error: unknown) {
+    if (!options.retryable(error)) {
+      throw error;
+    }
+    options.onRetry(error);
+    await (options.wait ?? sleep)(options.delay);
+    return attempt(2);
+  }
+}
+
+/** The files one attempt of a launch gives the app and its driver. */
+export interface AttemptFiles {
+  /** The web view's data folder (`B2C_E2E_WEBVIEW_DATA`). */
+  readonly webviewData: string;
+  /** `tauri-driver`'s log, which also has the native driver's output. */
+  readonly driverLog: string;
+}
+
+/**
+ * The files of attempt `attempt` of launch `launch` in the test's folder `root`:
+ * `webview-<launch>` and `tauri-driver-<launch>.log`, and for the second attempt
+ * `webview-<launch>-retry` and `tauri-driver-<launch>-retry.log`, so that it never meets the
+ * browser processes of the failed attempt and both logs are kept.
+ */
+export function attemptFiles(root: string, launch: number, attempt: 1 | 2): AttemptFiles {
+  const name = attempt === 1 ? String(launch) : `${String(launch)}-retry`;
+  return {
+    webviewData: path.join(root, `webview-${name}`),
+    driverLog: path.join(root, `tauri-driver-${name}.log`),
+  };
+}
+
+/** The line on standard error when launch `launch` is retried after `error`. */
+export function retryNote(launch: number, error: unknown): string {
+  const message = messageOf(error).replace(/\s+/g, ' ').trim();
+  return `Launch ${String(launch)} is retried once: the native driver could not attach to the web view (${message})`;
+}
+
+/**
+ * The message of launch `launch` that did not start, with the errors of its attempts in order:
+ * one, or two when the first was retried.
+ */
+export function notStartedMessage(launch: number, errors: readonly unknown[]): string {
+  const [first, second] = errors.map(messageOf);
+  if (second === undefined) {
+    return `The app under test did not start (launch ${String(launch)}): ${first ?? ''}`;
+  }
+  return `The app under test did not start (launch ${String(launch)}, retried once). First attempt: ${first ?? ''}\nSecond attempt: ${second}`;
+}
+
+/** The driver and the session of an attempt that started, and the app's web view data folder. */
+interface StartedAttempt {
+  readonly driverProcess: TauriDriver;
+  readonly session: WebDriver;
+  readonly webviewData: string;
+}
+
+/** What every attempt of one launch shares. */
+interface LaunchPlan {
+  readonly settings: HarnessSettings;
+  readonly launch: number;
+  readonly dialogs: string;
+  /** The test's checked environment overrides ({@link checkedOverrides}). */
+  readonly overrides: Readonly<Record<string, string>>;
+  readonly windowSize: WindowSize | undefined;
 }
 
 /** The internals of one launch. */
@@ -426,7 +574,9 @@ export class FlowSession {
 
   /**
    * Starts the app with the test's profile and waits until its window is ready. The app of an
-   * earlier launch must have ended (quit, exited or killed).
+   * earlier launch must have ended (quit, exited or killed). When the native driver cannot attach
+   * to the web view, the launch is retried once ({@link isRetryableLaunchFailure}); it stays the
+   * same launch, with the same number.
    */
   async launch(options: FlowLaunchOptions = {}): Promise<FlowApp> {
     if (this.#current?.end === 'running') {
@@ -445,15 +595,68 @@ export class FlowSession {
     const launch = this.#launches;
     const dialogs = path.join(this.folders.root, `dialogs-${String(launch)}.json`);
     writeFileSync(dialogs, JSON.stringify(options.dialogs ?? {}));
-    const webviewData = path.join(this.folders.root, `webview-${String(launch)}`);
+    const plan: LaunchPlan = {
+      settings,
+      launch,
+      dialogs,
+      overrides: checkedOverrides(options.env ?? {}),
+      windowSize: options.windowSize,
+    };
+
+    // The errors of the failed attempts, in order.
+    const failures: unknown[] = [];
+    let started: StartedAttempt;
+    try {
+      started = await retryOnce((attempt) => this.#startAttempt(plan, attempt), {
+        retryable: isRetryableLaunchFailure,
+        onRetry: (error) => {
+          failures.push(error);
+          process.stderr.write(`${retryNote(launch, error)}\n`);
+        },
+        delay: RETRY_DELAY_MS,
+      });
+    } catch (error: unknown) {
+      failures.push(error);
+      throw new Error(notStartedMessage(launch, failures), { cause: error });
+    }
+    const app = new Launch(
+      started.session,
+      started.driverProcess,
+      this.folders,
+      launch,
+      this.#test,
+    );
+    this.#current = app;
+    await waitUntilReady(app);
+    // Tauri makes the folder before the web view, so a missing one means the app did not use it.
+    if (!existsSync(started.webviewData)) {
+      throw new Error(
+        `The app keeps its web view's data elsewhere, not in ${started.webviewData} (B2C_E2E_WEBVIEW_DATA): is it an end-to-end build of this version?`,
+      );
+    }
+    await app.recordLongTasks();
+    return app;
+  }
+
+  /**
+   * Attempt `attempt` of a launch ({@link attemptFiles}): starts `tauri-driver` with the app's
+   * environment and creates the WebDriver session, which starts the app. When that fails, the
+   * session and the driver are ended (and with the driver whatever is left of the app) before it
+   * throws.
+   *
+   * @throws NewSessionError when the session was not created; any other error as it came.
+   */
+  async #startAttempt(plan: LaunchPlan, attempt: 1 | 2): Promise<StartedAttempt> {
+    const { settings } = plan;
+    const files = attemptFiles(this.folders.root, plan.launch, attempt);
     const env = {
       ...appEnvironment(settings, {
         root: this.folders.profile,
-        dialogs,
-        webviewData,
-        ...(options.windowSize === undefined ? {} : { windowSize: options.windowSize }),
+        dialogs: plan.dialogs,
+        webviewData: files.webviewData,
+        ...(plan.windowSize === undefined ? {} : { windowSize: plan.windowSize }),
       }),
-      ...checkedOverrides(options.env ?? {}),
+      ...plan.overrides,
     };
 
     let driverProcess: TauriDriver | null = null;
@@ -463,7 +666,7 @@ export class FlowSession {
         command: settings.tauriDriver,
         nativeDriver: settings.nativeDriver,
         env,
-        logFile: path.join(this.folders.root, `tauri-driver-${String(launch)}.log`),
+        logFile: files.driverLog,
         marker: `B2C_E2E_ROOT=${this.folders.profile}`,
       });
       const capabilities = new Capabilities();
@@ -472,10 +675,14 @@ export class FlowSession {
       session = await new Builder()
         .usingServer(driverProcess.url)
         .withCapabilities(capabilities)
-        .build();
+        .build()
+        .catch((error: unknown) => {
+          throw new NewSessionError(error);
+        });
       await session
         .manage()
         .setTimeouts({ script: SCRIPT_TIMEOUT_MS, implicit: 0, pageLoad: PAGE_LOAD_TIMEOUT_MS });
+      return { driverProcess, session, webviewData: files.webviewData };
     } catch (error: unknown) {
       if (session !== null) {
         await withTimeout(session.quit(), QUIT_TIMEOUT_MS, 'the session to end').catch(
@@ -483,22 +690,8 @@ export class FlowSession {
         );
       }
       await driverProcess?.stop().catch(() => undefined);
-      throw new Error(
-        `The app under test did not start (launch ${String(launch)}): ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error },
-      );
+      throw error;
     }
-    const app = new Launch(session, driverProcess, this.folders, launch, this.#test);
-    this.#current = app;
-    await waitUntilReady(app);
-    // Tauri makes the folder before the web view, so a missing one means the app did not use it.
-    if (!existsSync(webviewData)) {
-      throw new Error(
-        `The app keeps its web view's data elsewhere, not in ${webviewData} (B2C_E2E_WEBVIEW_DATA): is it an end-to-end build of this version?`,
-      );
-    }
-    await app.recordLongTasks();
-    return app;
   }
 
   /** Saves a failed test's artifacts, reports the Trusted Types counts, ends the app, cleans up. */
