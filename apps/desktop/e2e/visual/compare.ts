@@ -2,11 +2,16 @@
  * Comparing a screenshot with its baseline (docs/spec/09-quality-and-delivery.md §9.2 "Visual
  * diff"): pixelmatch with a colour threshold of 0.1 counts the pixels that differ noticeably
  * (anti-aliased edges are not counted), and more than 0.5% of them fails.
+ *
+ * Since pixelmatch 8 the threshold is a perceptual colour distance (OKLab HyAB, where 1 is black
+ * against white); pixelmatch 7 measured a YIQ difference on the same 0-to-1 scale. 0.1 still
+ * ignores rendering noise (each channel ±3, a brightness change of 10) on every committed baseline,
+ * and counts a moved or recoloured element as before (compare.test.ts).
  */
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 
-/** pixelmatch's per-pixel colour threshold (0 to 1; smaller is stricter). */
+/** pixelmatch's per-pixel colour threshold: an OKLab HyAB distance, 0 to 1 (smaller is stricter). */
 export const PIXEL_THRESHOLD = 0.1;
 
 /** The largest share of differing pixels that still passes. */

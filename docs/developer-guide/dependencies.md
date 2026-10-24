@@ -48,7 +48,7 @@ to the Cargo workspace.
 | `@testing-library/user-event` (dev)      | 14.6.8 (2026-10-13)  | MIT               | Types and tabs like a person in the keyboard tests (`src/app/layout/accessibility.test.tsx`); no dependencies                                                                                                                                                                                                                                   |
 | `selenium-webdriver` (dev)               | 4.51.0 (2026-10-09)  | Apache-2.0        | The end-to-end tests' WebDriver client (`e2e/`, [ADR-0009](../adr/0009-e2e-tooling-and-test-seams.md)); WebdriverIO fails `trustPolicy: no-downgrade`. npm provenance; brings `ws`, `tmp`, `jszip` (with `lie`, `pako`, `readable-stream` 2 and their helpers) and `@bazel/runfiles`, all development-only, none with an install script         |
 | `@types/selenium-webdriver` (dev)        | 4.35.7 (2026-09-14)  | MIT               | Types for `selenium-webdriver` (it ships none)                                                                                                                                                                                                                                                                                                  |
-| `pixelmatch` (dev)                       | 7.2.0 (2026-04-29)   | ISC               | The visual diff's pixel comparison (`e2e/visual/`); no install script. 8.0.0 changes what the threshold measures (see the notes)                                                                                                                                                                                                                |
+| `pixelmatch` (dev)                       | 8.0.0 (2026-10-06)   | ISC               | The visual diff's pixel comparison (`e2e/visual/`); no install script. Since 8.0 the threshold is a perceptual (OKLab HyAB) colour distance (see the notes)                                                                                                                                                                                     |
 | `pngjs` (dev)                            | 7.0.0 (2023-02-20)   | MIT               | Reads and writes the visual diff's PNG screenshots and baselines; no dependencies                                                                                                                                                                                                                                                               |
 | `@types/pngjs` (dev)                     | 6.0.5 (2024-05-02)   | MIT               | Types for `pngjs`                                                                                                                                                                                                                                                                                                                               |
 | `@types/node` (dev)                      | 24.19.2 (2026-10-09) | MIT               | Node.js types for the end-to-end harness only (`e2e/tsconfig.json`); the app's own TypeScript configuration loads none. The same version as `b2c-core-wasm` and `catalog-gen`                                                                                                                                                                   |
@@ -157,11 +157,17 @@ build needs.
   and iframe pages by default, which the tests do not appear to rely on. Until then the advisory is
   a tracked exception in `osv-scanner.toml` and `auditConfig` (review by 2026-11-03): happy-dom is
   never shipped and runs only our own tests.
-- **`pixelmatch` 7.2.0**, not 8.0.0 (2026-10-06): 8.0 measures a pixel's colour difference as an
-  OKLab HyAB distance instead of a YIQ one, so the visual diff's threshold of 0.1
-  (`e2e/visual/compare.ts`) would mean something else. It moves as a change of its own, with the
-  baselines checked against the new measure. 8.0.0 was also published from its author's own npm
-  account, where 7.1.1 and 7.2.0 came from Mapbox's release accounts; no version has provenance.
+- **`pixelmatch` 8.0.0** (Dependabot's pull request #22) measures a pixel's colour difference as an
+  OKLab HyAB distance instead of a YIQ one, on the same 0-to-1 scale, so the visual diff's threshold
+  of 0.1 (`e2e/visual/compare.ts`) is now a perceptual distance. On all 47 committed baselines (31
+  Linux, 16 Windows), 7.2.0 and 8.0.0 both count no pixel for each channel ±3, blue +6 or
+  brightness +10, count the same pixels for a 20 × 20 red square, and fail every baseline shifted
+  by one pixel (8.0.0 counting 0.4% fewer to 8.3% more pixels), so the threshold stays 0.1;
+  `compare.test.ts` checks the noise on every committed baseline. The API and the `pngjs`
+  dependency are the same, and the new checkerboard blend applies only to semi-transparent pixels,
+  which our screenshots do not have. 8.0.0 was published from its author's own npm account, where
+  7.1.1 and 7.2.0 came from Mapbox's release accounts; no version has provenance, so
+  `trustPolicy: no-downgrade` has nothing to compare.
 - **`tauri` features:** `wry`, `compression`, `isolation`, `common-controls-v6` and `x11`.
   Left out: `devtools` (no built-in developer tools in release builds; WebKitGTK's remote
   inspector is a separate path, see 08 §8.8), `dynamic-acl` (capabilities are fixed

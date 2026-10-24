@@ -91,7 +91,9 @@ as not taken. The canvas screenshot is recorded as not taken, too, when its test
 [`compare.ts`](compare.ts) compares a screenshot with this system's baseline,
 `baselines/<linux|windows>/<name>.png`: pixelmatch with a colour threshold of 0.1 counts the
 differing pixels (anti-aliased edges are not counted), and more than 0.5% of them fails. A
-screenshot of another size than its baseline fails too. [`baselines.ts`](baselines.ts)
+screenshot of another size than its baseline fails too. The threshold is pixelmatch 8's perceptual
+colour distance (OKLab HyAB, where 1 is black against white): small rendering noise is not counted,
+and [`compare.test.ts`](compare.test.ts) checks that on every committed baseline. [`baselines.ts`](baselines.ts)
 (`checkShot`) does it for every screenshot, the canvas and each chrome scene alike.
 
 ## Baselines

@@ -436,13 +436,15 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   Tauri 2.12.4 (crate and `@tauri-apps/api`; `@tauri-apps/cli` 2.12.3) with
   the dialog plugin 2.8.3, `rfd` 0.17.2 for the Windows trust dialog,
   `proptest` 1.12, `toml` 1.1.8, Radix's dialog 1.3, tabs 1.2 and tooltip 1.4,
-  React 19.3.1, Vitest 4.1.12, criterion 0.8 for the native benchmark and
-  other patch releases, and the CodeQL, OSV-Scanner, Scorecard and zizmor
-  actions (zizmor 1.31.1). Vitest 4.1.12 and `tokio` 1.53.3 fix advisories, an
-  override moves `markdown-it` (through markdownlint-cli2) to 15.0.3, and the
-  `braces` exception is gone. `happy-dom`'s advisory is a tracked exception
-  until its fix, 21.0.4, is 7 days old on 2026-10-27; Tauri 2.12.5, `wry`
-  0.57.1 and typescript-eslint 8.72 were too new.
+  React 19.3.1, Vitest 4.1.12, criterion 0.8 for the native benchmark,
+  `pixelmatch` 8 for the visual diff (its threshold of 0.1 is now a perceptual
+  colour distance, and the baselines compare as before) and other patch
+  releases, and the CodeQL, OSV-Scanner, Scorecard and zizmor actions (zizmor
+  1.31.1). Vitest 4.1.12 and `tokio` 1.53.3 fix advisories, an override moves
+  `markdown-it` (through markdownlint-cli2) to 15.0.3, and the `braces`
+  exception is gone. `happy-dom`'s advisory is a tracked exception until its
+  fix, 21.0.4, is 7 days old on 2026-10-27; Tauri 2.12.5, `wry` 0.57.1 and
+  typescript-eslint 8.72 were too new.
 - `webview.edit-1000.p95` is now gated and measured with the C++ panel shown,
   until the page has finished what the edit started. It is redefined in
   `accepted.json`, so its history restarts.

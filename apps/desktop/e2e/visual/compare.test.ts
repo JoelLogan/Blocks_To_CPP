@@ -1,7 +1,11 @@
-/** Comparing screenshots with their baselines (compare.ts), on synthetic PNG images. */
+/** Comparing screenshots with their baselines (compare.ts), on synthetic and committed PNG images. */
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { PNG } from 'pngjs';
 import { describe, expect, it } from 'vitest';
 
+import { BASELINES_DIR } from './baselines';
 import {
   compareScreenshots,
   decodePng,
@@ -52,6 +56,20 @@ describe('compareScreenshots', () => {
     expect(result.diffPixels).toBe(0);
   });
 
+  it('counts a recoloured area pixel for pixel', () => {
+    // A 20 × 20 red square on light grey: 400 pixels, every one well beyond the threshold.
+    const base = png(100, 100);
+    const image = PNG.sync.read(base);
+    for (let y = 10; y < 30; y += 1) {
+      for (let x = 10; x < 30; x += 1) {
+        image.data.set([200, 30, 30], (y * 100 + x) * 4);
+      }
+    }
+    const result = compareScreenshots(base, PNG.sync.write(image));
+    expect(result.diffPixels).toBe(400);
+    expect(result.passed).toBe(false);
+  });
+
   it('refuses images of different sizes', () => {
     expect(() => compareScreenshots(png(100, 50), png(100, 51))).toThrow(VisualCompareError);
     expect(() => compareScreenshots(png(100, 50), png(99, 50))).toThrow(
@@ -73,5 +91,54 @@ describe('compareScreenshots', () => {
 describe('pngSize', () => {
   it('names the size of a PNG', () => {
     expect(pngSize(png(963, 510))).toBe('963×510');
+  });
+});
+
+/** `bytes` (a PNG) with each pixel changed by `change`, which gets the pixel's index. */
+function changed(bytes: Buffer, change: (rgb: number[], index: number) => number[]): Buffer {
+  const image = PNG.sync.read(bytes);
+  for (let index = 0; index < image.width * image.height; index += 1) {
+    const at = index * 4;
+    const rgb = change(
+      [image.data[at] ?? 0, image.data[at + 1] ?? 0, image.data[at + 2] ?? 0],
+      index,
+    );
+    image.data.set(
+      rgb.map((value) => Math.min(255, Math.max(0, value))),
+      at,
+    );
+  }
+  return PNG.sync.write(image);
+}
+
+/** Every committed baseline, as `<system>/<name>.png` and its bytes. */
+function committedBaselines(): [string, Buffer][] {
+  return ['linux', 'windows'].flatMap((system) =>
+    readdirSync(path.join(BASELINES_DIR, system))
+      .filter((name) => name.endsWith('.png'))
+      .map((name): [string, Buffer] => [
+        `${system}/${name}`,
+        readFileSync(path.join(BASELINES_DIR, system, name)),
+      ]),
+  );
+}
+
+describe('the threshold on the committed baselines', () => {
+  // pixelmatch 8 measures a perceptual (OKLab HyAB) distance where pixelmatch 7 measured YIQ; at
+  // 0.1 it must still let a runner's rendering noise through (a real change is counted above).
+  const baselines = committedBaselines();
+
+  it('has baselines to check', () => {
+    expect(baselines.length).toBeGreaterThan(0);
+  });
+
+  it.each(baselines)('ignores rendering noise in %s', (_name, baseline) => {
+    // Each channel ±3 (a fixed pattern), and the whole image 10 brighter.
+    const noisy = changed(baseline, (rgb, index) =>
+      rgb.map((value, channel) => value + (((index * 7 + channel * 3) % 7) - 3)),
+    );
+    expect(compareScreenshots(baseline, noisy).diffPixels).toBe(0);
+    const brighter = changed(baseline, (rgb) => rgb.map((value) => value + 10));
+    expect(compareScreenshots(baseline, brighter).diffPixels).toBe(0);
   });
 });
