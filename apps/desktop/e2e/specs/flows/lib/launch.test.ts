@@ -72,10 +72,7 @@ describe('isRendererAttachFailure', () => {
         `${RENDERER_ERROR}\n  (Session info: MicrosoftEdge=154.0.4258.62)`,
       ),
       new webdriver.SessionNotCreatedError(
-        'session not created\nfrom disconnected: Unable to receive message from renderer',
-      ),
-      new webdriver.SessionNotCreatedError(
-        'session not created: from disconnected: not connected to DevTools',
+        'session not created\nfrom disconnected: unable to connect to renderer',
       ),
       new webdriver.WebDriverError('disconnected: unable to connect to renderer'),
       new Error(RENDERER_ERROR),
@@ -85,8 +82,16 @@ describe('isRendererAttachFailure', () => {
     }
   });
 
-  it('leaves out timeouts, missing or mismatched browsers and WebKitWebDriver', () => {
+  it('leaves out a lost renderer, timeouts, missing or mismatched browsers and WebKitWebDriver', () => {
     const errors = [
+      // msedgedriver had reached the renderer and lost it, as when the web view or the app crashed
+      new webdriver.SessionNotCreatedError(
+        'session not created: from disconnected: not connected to DevTools',
+      ),
+      new webdriver.SessionNotCreatedError(
+        'session not created\nfrom disconnected: Unable to receive message from renderer',
+      ),
+      new webdriver.WebDriverError('disconnected: not connected to DevTools'),
       // msedgedriver
       new webdriver.TimeoutError('timeout: Timed out receiving message from renderer: 10.000'),
       new webdriver.SessionNotCreatedError(
@@ -356,15 +361,22 @@ describe.skipIf(process.platform !== 'linux')('FlowSession.launch', () => {
     expect(testProcesses({ roots: [], marker: `B2C_E2E_ROOT=${profile}` })).toEqual([]);
   }, 30_000);
 
-  it('does not retry a launch whose session fails for another reason', async () => {
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const message = 'session not created: cannot find MSEdge binary';
-    const flow = refusedFlow(message);
-    await expect(flow.launch()).rejects.toThrow(
-      new RegExp(`^The app under test did not start \\(launch 1\\): ${message}$`),
-    );
-    expect(retryNotes(stderr)).toEqual([]);
-    expect(existsSync(path.join(flow.folders.root, 'tauri-driver-1.log'))).toBe(true);
-    expect(existsSync(path.join(flow.folders.root, 'tauri-driver-1-retry.log'))).toBe(false);
-  }, 30_000);
+  it.each([
+    'session not created: cannot find MSEdge binary',
+    // The renderer was reached and lost: the web view or the app may have crashed at start.
+    'session not created: from disconnected: not connected to DevTools',
+  ])(
+    'does not retry a launch whose session fails otherwise (%s)',
+    async (message) => {
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const flow = refusedFlow(message);
+      await expect(flow.launch()).rejects.toThrow(
+        new RegExp(`^The app under test did not start \\(launch 1\\): ${message}$`),
+      );
+      expect(retryNotes(stderr)).toEqual([]);
+      expect(existsSync(path.join(flow.folders.root, 'tauri-driver-1.log'))).toBe(true);
+      expect(existsSync(path.join(flow.folders.root, 'tauri-driver-1-retry.log'))).toBe(false);
+    },
+    30_000,
+  );
 });

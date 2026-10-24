@@ -205,26 +205,21 @@ function messageOf(error: unknown): string {
 
 /**
  * Whether an error of creating a WebDriver session says that the native driver could not attach to
- * the web view's renderer. That is msedgedriver's (chromedriver's) `session not created: from
- * disconnected: unable to connect to renderer`, or another `from disconnected:` cause (the DevTools
- * connection to the renderer was lost while the session started, as in `Unable to receive message
- * from renderer`). It came once in about 1,400 Windows launches (Nightly of 2026-10-19), 0.93 s
- * after the request, while the app's backend had started normally: a race between msedgedriver and
- * WebView2, which a second attempt gets past. selenium-webdriver throws it as a
- * `SessionNotCreatedError`; any error with such a message counts.
+ * the web view's renderer: msedgedriver's (chromedriver's) `session not created: from disconnected:
+ * unable to connect to renderer`, also with the cause on a line of its own. It came once in about
+ * 1,400 Windows launches (Nightly of 2026-10-19), 0.93 s after the request, while the app's backend
+ * had started normally: a race between msedgedriver and WebView2, which a second attempt gets past.
+ * selenium-webdriver throws it as a `SessionNotCreatedError`; any error with such a message counts.
  *
- * A timeout (`Timed out receiving message from renderer`), a missing or mismatched browser or
- * driver, and WebKitWebDriver's failures (`Failed to match capabilities`, `Failed to connect to
- * browser: …`) do not: they would fail again, or say something about the app.
+ * The other `disconnected` causes (`not connected to DevTools`, `Unable to receive message from
+ * renderer`) do not: the driver had reached the renderer and lost it, which is what a web view or
+ * an app that crashed at start looks like. Neither do a timeout (`Timed out receiving message from
+ * renderer`), a missing or mismatched browser or driver, and WebKitWebDriver's failures (`Failed
+ * to match capabilities`, `Failed to connect to browser: …`): they would fail again, or say
+ * something about the app.
  */
 export function isRendererAttachFailure(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  return (
-    /\bunable to connect to renderer\b/i.test(error.message) ||
-    /\bfrom disconnected:/i.test(error.message)
-  );
+  return error instanceof Error && /\bunable to connect to renderer\b/i.test(error.message);
 }
 
 /** Creating the WebDriver session failed; the native driver's error is the cause. */
