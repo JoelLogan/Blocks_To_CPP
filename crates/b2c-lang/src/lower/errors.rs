@@ -187,6 +187,8 @@ impl Lowerer<'_> {
             self.insert_symbol(&decl.sym, &decl.name, symbol, location)
                 .then(|| {
                     self.scopes.declare(&decl.name, &decl.sym);
+                    // Visible in its own part only, not after the block.
+                    self.index.record_part_variable(&decl.sym);
                     decl.sym.clone()
                 })
         } else {

@@ -320,10 +320,13 @@ Codes by area:
 
 * **Severity:** error
 * **Meaning:** a block changes something that may not change: a constant, the
-  counter of a `for` loop, or a read-only function input.
+  counter of a `for` loop, a read-only function input, or the error a `catch`
+  part caught.
 * **Example:** `set [max] to (10)` where `max` was created with *const* ticked.
 * **Message:** "`max` was created as a constant, so it can't be changed.
-  Untick 'const' in its 'create' block if it needs to change."
+  Untick 'const' in its 'create' block if it needs to change."; for a caught
+  error, "`e` is the error caught by a 'catch' part, so it can't be changed.
+  Create a variable for a value that changes."
 * **How to fix:** untick *const*, use another variable, or change the input's
   mode.
 

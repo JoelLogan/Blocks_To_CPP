@@ -560,3 +560,37 @@ fn throw_again_needs_a_catch_part_around_it() {
     )]);
     assert_eq!(codes(&a), ["B2C-E0402"]);
 }
+
+#[test]
+fn a_caught_error_cannot_be_changed_and_ends_with_its_part() {
+    // Changing it is refused with its own reason (and *set* takes no error
+    // type at all).
+    let set_error = json!({"id": id(), "type": "var.set", "v": 1,
+                           "fields": {"VAR": {"ref": catch_sym("e", 0)}},
+                           "inputs": {"VALUE": text("other")}});
+    let a = check_main(vec![try_catch(
+        vec![],
+        vec![("std::exception", "e", vec![set_error])],
+    )]);
+    assert_eq!(
+        messages(&a),
+        [
+            "B2C-E0308 `e` is the error caught by a 'catch' part, so it can't be changed. Create a variable \
+             for a value that changes.",
+            "B2C-E0301 This is an error, but this block needs a value that a variable can hold here.",
+        ]
+    );
+    // A block put after the try block does not see it: the scope query
+    // answers there with what is visible at the try block.
+    let block = try_catch(vec![], vec![("std::invalid_argument", "e", vec![])]);
+    let try_id = BlockId::new(block["id"].as_str().unwrap()).unwrap();
+    let a = check_main(vec![declare("int", "n", Some(num("1"))), block]);
+    assert_clean(&a);
+    let names = |infos: Vec<b2c_ir::scope_info::SymbolInfo>| -> Vec<String> {
+        infos.into_iter().map(|info| info.name).collect()
+    };
+    assert_eq!(names(a.scope_after(&try_id).unwrap()), ["n"]);
+    assert_eq!(a.scope_after(&try_id), a.scope_at(&try_id, None));
+    // Inside the part, it is visible.
+    assert_eq!(names(a.scope_at(&try_id, Some("CATCH0")).unwrap()), ["e", "n"]);
+}

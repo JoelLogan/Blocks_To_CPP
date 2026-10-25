@@ -116,6 +116,16 @@ impl Lowerer<'_> {
     /// Why a visible symbol may not be changed, as a full message.
     pub(super) fn not_changeable(&self, sym: &SymbolId) -> Option<String> {
         let name = self.name_of(sym);
+        if self
+            .decls
+            .get(sym)
+            .is_some_and(|decl| decl.kind == DeclKind::CatchVariable)
+        {
+            return Some(format!(
+                "{name} is the error caught by a 'catch' part, so it can't be changed. Create a variable \
+                 for a value that changes."
+            ));
+        }
         match self.symbols.get(sym).map(|s| &s.kind)? {
             SymbolKind::Variable { is_const: true } => Some(format!(
                 "{name} was created as a constant, so it can't be changed. Untick 'const' in its 'create' block \
