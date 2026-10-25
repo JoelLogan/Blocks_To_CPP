@@ -15,6 +15,7 @@ mod roundtrip;
 mod runtime;
 mod snapshots;
 mod source_map;
+mod text_plus;
 mod types;
 
 use b2c_codegen::{CodegenOptions, generate};

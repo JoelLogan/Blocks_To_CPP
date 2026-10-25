@@ -33,7 +33,8 @@ const INT_MAX = 2147483647n;
  * * a fixed `output` (`bool`, `int`, `double`, `char`, `std::string`) is that type;
  * * `field:NAME` reads the type chosen in field `NAME` (`math.convert`'s `TO`);
  * * `number` comes from the literal text of the block's number field (`math.number`) or from its
- *   operand types (`math.arithmetic`, with `mod` giving a whole number);
+ *   operand types (`math.arithmetic`, with `mod` giving a whole number, and `+` on text giving
+ *   `std::string`);
  * * `symbol` asks the oracle (`var.get`, `func.call`), and so does `any` (`logic.ternary`), which
  *   falls back to the common type of its two choices while the oracle does not know the block.
  *
@@ -133,9 +134,8 @@ function numberType(
   const operands = def.inputs
     .filter((input) => input.repeat === null)
     .map((input) => operandType(block, input, oracle, depth));
-  const remainder =
-    def.fields.some((field) => field.name === 'OP') && fieldText(block, 'OP') === 'mod';
-  return arithmeticType(operands, remainder);
+  const op = def.fields.some((field) => field.name === 'OP') ? fieldText(block, 'OP') : 'add';
+  return arithmeticType(operands, op);
 }
 
 /**
@@ -159,15 +159,28 @@ function operandType(
 }
 
 /**
- * The type of an arithmetic result after the usual promotions (b2c-lang `binary_type` and
- * `arithmetic_result`): an operand that is not a number or `bool` (text, `void`, a library or user
- * type: an error the analyser reports) or an error on either side gives `error`; `mod` gives `int`,
- * or `error` with a decimal operand; otherwise `double` if either side is `double`, else `int`.
+ * The type of an arithmetic result after the usual promotions (b2c-lang `binary_type`,
+ * `joins_text` and `arithmetic_result`):
+ *
+ * * an error on either side gives `error`;
+ * * `+` with `std::string` on one side and `std::string` or `char` on the other joins text and
+ *   gives `std::string` (L16, docs/plans/m3-contracts/types.md §11.1); with text and anything else
+ *   (a number, `bool`, `void`, a library or user type) it gives `error`, which the analyser reports;
+ * * otherwise an operand that is not a number or `bool` gives `error`; `mod` gives `int`, or
+ *   `error` with a decimal operand; else `double` if either side is `double`, else `int`.
+ *
+ * An operand that is not known gives `null`, unless a known one already decides.
  */
-function arithmeticType(
-  operands: readonly (StaticType | null)[],
-  remainder: boolean,
-): StaticType | null {
+function arithmeticType(operands: readonly (StaticType | null)[], op: string): StaticType | null {
+  if (operands.some((type) => type?.kind === 'error')) {
+    return ERROR_TYPE;
+  }
+  if (operands.some((type) => isPrimNamed(type, 'std::string'))) {
+    if (op !== 'add' || operands.some((type) => type !== null && !isText(type))) {
+      return ERROR_TYPE;
+    }
+    return operands.some((type) => type === null) ? null : prim('std::string');
+  }
   if (operands.some((type) => type !== null && !isNumeric(type) && !isPrimNamed(type, 'bool'))) {
     return ERROR_TYPE;
   }
@@ -175,10 +188,15 @@ function arithmeticType(
     return null;
   }
   const decimal = operands.some((type) => isPrimNamed(type, 'double'));
-  if (remainder) {
+  if (op === 'mod') {
     return decimal ? ERROR_TYPE : prim('int');
   }
   return prim(decimal ? 'double' : 'int');
+}
+
+/** Whether a type is `std::string` or `char`, what `+` joins as text (b2c-lang `joins_text`). */
+function isText(type: StaticType): boolean {
+  return isPrimNamed(type, 'std::string') || isPrimNamed(type, 'char');
 }
 
 // --- `any` outputs ----------------------------------------------------------------------------

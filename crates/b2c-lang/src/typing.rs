@@ -171,6 +171,18 @@ pub(crate) fn is_scalar(ty: &Type) -> bool {
     matches!(ty, Type::Int | Type::Double | Type::Char | Type::Bool)
 }
 
+/// Whether `lhs + rhs` joins text (L16, types.md §11.1): one side is
+/// `std::string` and the other `std::string` or `char`, which C++'s
+/// `operator+` for `std::string` takes in either order. The result is a
+/// `std::string`. Two `char`s are not text: C++ adds their codes as `int`s.
+/// The generator turns the left side into a `std::string` when neither side
+/// is one in C++ (two literals, or a literal and a character), so the C++ is
+/// valid in every case this accepts.
+pub(crate) fn joins_text(lhs: &Type, rhs: &Type) -> bool {
+    let text = |ty: &Type| matches!(ty, Type::String | Type::Char);
+    (*lhs == Type::String || *rhs == Type::String) && text(lhs) && text(rhs)
+}
+
 /// The type of an arithmetic result after the usual promotions.
 pub(crate) fn arithmetic_result(lhs: &Type, rhs: &Type) -> Type {
     if *lhs == Type::Double || *rhs == Type::Double {
@@ -371,6 +383,27 @@ mod tests {
         assert!(is_integral(&Type::Bool) && !is_integral(&Type::Double));
         assert!(is_scalar(&Type::Char) && !is_scalar(&Type::String));
         assert_eq!(arithmetic_result(&Type::Char, &Type::Char), Type::Int);
+    }
+
+    #[test]
+    fn plus_joins_text_with_text_or_a_character() {
+        use Type as T;
+        let list = Type::lib(b2c_ir::types::LibType::Vector, vec![T::Char]).expect("type");
+        for (l, r) in [(T::String, T::String), (T::String, T::Char), (T::Char, T::String)] {
+            assert!(joins_text(&l, &r), "{l:?} + {r:?}");
+        }
+        for (l, r) in [
+            (T::Char, T::Char),
+            (T::String, T::Int),
+            (T::Double, T::String),
+            (T::String, T::Bool),
+            (T::String, list.clone()),
+            (list, T::String),
+            (T::Int, T::Int),
+            (T::Error, T::String),
+        ] {
+            assert!(!joins_text(&l, &r), "{l:?} + {r:?}");
+        }
     }
 
     #[test]

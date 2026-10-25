@@ -69,6 +69,28 @@ fn text_literals_and_text_values_mix() {
     ]));
 }
 
+/// `+` on text (L16, types.md §11.1): every form the analyser accepts,
+/// quoted text and characters on either side included.
+#[test]
+fn text_joined_with_plus() {
+    compiles(with_vars(vec![
+        set("s", e("s + \"!\"")),
+        set("s", e("\"<\" + s + '>'")),
+        print(vec![
+            e("\"a\" + \"b\""),
+            e("\"a\" + 'b'"),
+            e("'b' + \"a\""),
+            e("c + s"),
+            e("s + c"),
+            e("(b ? \"x\" : \"yy\") + \"z\""),
+            e("s + (b ? 'y' : 'n')"),
+            e("(s + \"a\") == \"xa\""),
+        ]),
+        declare("auto", "t", Some(e("'(' + s"))),
+        print(vec![get("t")]),
+    ]));
+}
+
 #[test]
 fn characters_are_numbers_and_can_be_assigned_to_text() {
     compiles(with_vars(vec![

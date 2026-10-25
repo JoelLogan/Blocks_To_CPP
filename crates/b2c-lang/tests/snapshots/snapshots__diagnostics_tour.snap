@@ -4,7 +4,7 @@ expression: render_all(&a)
 ---
 error B2C-E0410 at fn_half: `half` must give back a whole number, but it can reach its end without a 'return' block. Add a 'return' block at the end (or on every path).
 error B2C-E0301 at b0001: `x` needs a whole number, but this is text. Text is not turned into a number automatically.
-error B2C-E0303 at b0003 VALUE[0..3]: Text can't be added with +. Use the 'join' block to put text and other values together.
+error B2C-E0303 at b0003 VALUE[0..3]: Text can't be added to a whole number with +: + joins text only with text or a character. Use the 'join' block to put text and other values together.
 error B2C-E0201 at b0004 field VAR: This refers to a variable or function that doesn't exist (any more). Choose another one, or create it again.
 error B2C-E0202 at b0006 ITEM0[0..1]: `y` is used before it is created. Move this block below the block that creates `y`.
 error B2C-E0517 at b0007 field VALUE: `3000000000` is too large for a whole number (the largest is 2147483647). Write it as a decimal number, such as 3000000000.0, if you need it.

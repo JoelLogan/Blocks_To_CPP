@@ -254,12 +254,21 @@ Codes by area:
 ## B2C-E0303 Text added with +
 
 * **Severity:** error
-* **Meaning:** `+` is used with text. In C++, `"a" + "b"` does not compile and
-  `text + number` does something unexpected, so Blocks2Cpp joins text with the
-  `join` block instead.
-* **Example:** `"Score: " + score` typed in a slot.
-* **Message:** "Text can't be added with +. Use the 'join' block to put text
-  and other values together."
+* **Meaning:** `+` is used with text and a value that is not text or a
+  character. In C++, `+` joins a `std::string` with another `std::string`,
+  with quoted text or with a character, in either order, and Blocks2Cpp
+  accepts exactly that (`name + "!"`, `'(' + name`, `"Hi " + name`; two
+  pieces of quoted text are joined too, and the generated C++ then turns the
+  first one into a `std::string`, as in `std::string("a") + "b"`). Text and a
+  number or a true/false value do not join with `+`: `name + 1` does not
+  compile, and `"Score: " + 1` compiles but does something else entirely, so
+  the `join` block is needed. Two characters are not text: `'a' + 'b'` adds
+  their codes as whole numbers, as in C++.
+* **Example:** `"Score: " + score` typed in a slot, where `score` is a whole
+  number.
+* **Message:** "Text can't be added to a whole number with +: + joins text
+  only with text or a character. Use the 'join' block to put text and other
+  values together."
 * **How to fix:** use `join ("Score: ") (score)`.
 
 ## B2C-E0304 mod with decimal numbers

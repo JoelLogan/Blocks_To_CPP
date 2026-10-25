@@ -208,6 +208,43 @@ describe('staticOutputType', () => {
     expect(typeOf(nested)).toBe('double');
   });
 
+  it('types + on text with text or a character as text (L16)', () => {
+    const typed = (a: M2Name, b: M2Name, op = 'add'): string | null => {
+      const sum = workspace.newBlock('math.arithmetic');
+      sum.setFieldValue(op, 'OP');
+      const left = workspace.newBlock('var.get');
+      const right = workspace.newBlock('var.get');
+      plug(sum, 'A', left);
+      plug(sum, 'B', right);
+      return typeOf(
+        sum,
+        oracleOf((asked) => (asked === left ? a : asked === right ? b : null)),
+      );
+    };
+    expect(typed('string', 'string')).toBe('string');
+    expect(typed('string', 'char')).toBe('string');
+    expect(typed('char', 'string')).toBe('string');
+    // Two characters add their codes, as in C++.
+    expect(typed('char', 'char')).toBe('int');
+    expect(typed('string', 'int')).toBe('error');
+    expect(typed('bool', 'string')).toBe('error');
+    expect(typed('string', 'void')).toBe('error');
+    expect(typed('string', 'error')).toBe('error');
+    expect(typed('string', 'string', 'sub')).toBe('error');
+    expect(typed('string', 'char', 'mod')).toBe('error');
+
+    const literals = workspace.newBlock('math.arithmetic');
+    plug(literals, 'A', text());
+    plug(literals, 'B', text());
+    expect(typeOf(literals)).toBe('string');
+
+    // Text with a value the editor does not know yet is not known either.
+    const unknown = workspace.newBlock('math.arithmetic');
+    plug(unknown, 'A', text());
+    plug(unknown, 'B', workspace.newBlock('var.get'));
+    expect(typeOf(unknown)).toBeNull();
+  });
+
   it('asks the oracle for operands outside the catalog', () => {
     const sum = workspace.newBlock('math.arithmetic');
     plug(sum, 'A', workspace.newBlock(TEST_UNKNOWN_REPORTER));
