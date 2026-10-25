@@ -30,7 +30,7 @@
 import type { BdmDocument, UpdateResult } from '@blocks2cpp/b2c-core-wasm';
 import { b2cDarkTheme, b2cLightTheme, readExprShadow } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import appCss from '../../app/app.css?raw';
 import { contrastOf, declarationsOf, parseRules, themeTokens } from '../../app/layout/cssAudit';
@@ -741,24 +741,32 @@ describe.skipIf(core === null)('a drop on a delete area', () => {
 
 /**
  * Blockly ripples a connection it makes with an SVG animation; happy-dom has no SMIL, so in the
- * tests of the `describe` that calls this, the animation's `beginElement` is a no-op.
+ * tests of the `describe` that calls this, the animation's `beginElement` is a no-op. It stays one
+ * until the `describe` ends, not each test: a drop still running when a test ends (one that timed
+ * out) must not reach a missing `beginElement` and fail the run with an unhandled error.
  */
 function withoutSmil(): void {
   const svgElement = SVGElement.prototype as SVGElement & { beginElement?: () => void };
   const hadBeginElement = typeof svgElement.beginElement === 'function';
 
-  beforeEach(() => {
+  beforeAll(() => {
     if (!hadBeginElement) {
       svgElement.beginElement = () => undefined;
     }
   });
 
-  afterEach(() => {
+  afterAll(() => {
     if (!hadBeginElement) {
       delete svgElement.beginElement;
     }
   });
 }
+
+/**
+ * The time a test with the real core and a rendered toolbox may take: each takes 2.5 to 4 s alone,
+ * and more when the suite runs in parallel, over Vitest's default of 5 s.
+ */
+const TOOLBOX_TEST_TIMEOUT = 30_000;
 
 /** Blockly's own snapping configuration, which the editor never changes outside a move. */
 const BLOCKLY_SNAPPING = {
@@ -1378,88 +1386,92 @@ async function dragFromFlyout(
   return created;
 }
 
-describe.skipIf(core === null)('a block dragged from the toolbox', () => {
-  withoutSmil();
+describe.skipIf(core === null)(
+  'a block dragged from the toolbox',
+  { timeout: TOOLBOX_TEST_TIMEOUT },
+  () => {
+    withoutSmil();
 
-  afterEach(() => {
-    const workspace = running?.workspace;
-    if (workspace instanceof Blockly.WorkspaceSvg) {
-      workspace.cancelCurrentGesture();
-    }
-  });
+    afterEach(() => {
+      const workspace = running?.workspace;
+      if (workspace instanceof Blockly.WorkspaceSvg) {
+        workspace.cancelCurrentGesture();
+      }
+    });
 
-  it('is a set preset to main’s guess that takes a variable of greet, in one drop and one preview', async () => {
-    const { svg, flyout, previews } = await withToolbox();
-    const preset = flyoutBlock(flyout, 'var.set');
-    expect(preset.getFieldValue('VAR')).toBe('s_guess');
-    await eventsDelivered();
-    svg.clearUndo();
-    const runs = previews.runs();
+    it('is a set preset to main’s guess that takes a variable of greet, in one drop and one preview', async () => {
+      const { svg, flyout, previews } = await withToolbox();
+      const preset = flyoutBlock(flyout, 'var.set');
+      expect(preset.getFieldValue('VAR')).toBe('s_guess');
+      await eventsDelivered();
+      svg.clearUndo();
+      const runs = previews.runs();
 
-    const set = await dragFromFlyout(
-      svg,
-      preset,
-      'previous',
-      present(svg.getBlockById('b_count')?.nextConnection, 'below create count'),
-    );
-    expect(set.getPreviousBlock()?.id).toBe('b_count');
-    // In greet, count and times are visible (and fit): count comes first by name.
-    expect(set.getFieldValue('VAR')).toBe('s_count');
-    await running?.session.flush();
-    await eventsDelivered();
-    // One preview for the drop and its new variable.
-    expect(previews.runs() - runs).toBe(1);
-    const diagnostics = useAppStore.getState().analysis.preview?.diagnostics ?? [];
-    expect(diagnostics.filter((diagnostic) => diagnostic.primary.block === set.id)).toEqual([]);
+      const set = await dragFromFlyout(
+        svg,
+        preset,
+        'previous',
+        present(svg.getBlockById('b_count')?.nextConnection, 'below create count'),
+      );
+      expect(set.getPreviousBlock()?.id).toBe('b_count');
+      // In greet, count and times are visible (and fit): count comes first by name.
+      expect(set.getFieldValue('VAR')).toBe('s_count');
+      await running?.session.flush();
+      await eventsDelivered();
+      // One preview for the drop and its new variable.
+      expect(previews.runs() - runs).toBe(1);
+      const diagnostics = useAppStore.getState().analysis.preview?.diagnostics ?? [];
+      expect(diagnostics.filter((diagnostic) => diagnostic.primary.block === set.id)).toEqual([]);
 
-    // One Undo takes the drop back: the block is gone, greet's body as it was.
-    svg.undo(false);
-    await eventsDelivered();
-    expect(svg.getBlockById(set.id)).toBeNull();
-    expect(svg.getBlockById('b_count')?.getNextBlock()).toBeNull();
-  });
+      // One Undo takes the drop back: the block is gone, greet's body as it was.
+      svg.undo(false);
+      await eventsDelivered();
+      expect(svg.getBlockById(set.id)).toBeNull();
+      expect(svg.getBlockById('b_count')?.getNextBlock()).toBeNull();
+    });
 
-  it('is a set whose variable was chosen in the toolbox, with that variable’s start value', async () => {
-    const { svg, flyout } = await withToolbox();
-    const preset = flyoutBlock(flyout, 'var.set');
-    expect(preset.getFieldValue('VAR')).toBe('s_guess');
-    // In the toolbox, word (a text) is chosen in the menu of set, preset to guess with 0.
-    preset.getField('VAR')?.setValue('s_word');
-    await eventsDelivered();
-    const set = await dragFromFlyout(
-      svg,
-      preset,
-      'previous',
-      present(svg.getBlockById('b_word')?.nextConnection, 'below create word'),
-    );
-    expect(set.getPreviousBlock()?.id).toBe('b_word');
-    expect(set.getFieldValue('VAR')).toBe('s_word');
-    expect(readExprShadow(present(set.getInputTargetBlock('VALUE'), 'value'))?.tokens).toEqual([
-      { str: '' },
-    ]);
-    await running?.session.flush();
-    // `word = ""`: no B2C-E0301 (text needed, a whole number given) holding Run back.
-    const diagnostics = useAppStore.getState().analysis.preview?.diagnostics ?? [];
-    expect(diagnostics.filter((diagnostic) => diagnostic.primary.block === set.id)).toEqual([]);
-  });
+    it('is a set whose variable was chosen in the toolbox, with that variable’s start value', async () => {
+      const { svg, flyout } = await withToolbox();
+      const preset = flyoutBlock(flyout, 'var.set');
+      expect(preset.getFieldValue('VAR')).toBe('s_guess');
+      // In the toolbox, word (a text) is chosen in the menu of set, preset to guess with 0.
+      preset.getField('VAR')?.setValue('s_word');
+      await eventsDelivered();
+      const set = await dragFromFlyout(
+        svg,
+        preset,
+        'previous',
+        present(svg.getBlockById('b_word')?.nextConnection, 'below create word'),
+      );
+      expect(set.getPreviousBlock()?.id).toBe('b_word');
+      expect(set.getFieldValue('VAR')).toBe('s_word');
+      expect(readExprShadow(present(set.getInputTargetBlock('VALUE'), 'value'))?.tokens).toEqual([
+        { str: '' },
+      ]);
+      await running?.session.flush();
+      // `word = ""`: no B2C-E0301 (text needed, a whole number given) holding Run back.
+      const diagnostics = useAppStore.getState().analysis.preview?.diagnostics ?? [];
+      expect(diagnostics.filter((diagnostic) => diagnostic.primary.block === set.id)).toEqual([]);
+    });
 
-  it('is a getter of greet’s times that keeps it in main, where it is B2C-E0203', async () => {
-    const { svg, flyout } = await withToolbox();
-    const getter = flyoutBlock(flyout, 'var.get', 's_times');
-    // The print of main (b004): its text slot.
-    const print = present(svg.getBlockById('b004'), 'b004');
-    const dropped = await dragFromFlyout(
-      svg,
-      getter,
-      'output',
-      present(print.getInput('ITEM0')?.connection as Blockly.RenderedConnection, 'ITEM0'),
-    );
-    expect(dropped.getParent()?.id).toBe('b004');
-    expect(dropped.getFieldValue('VAR')).toBe('s_times');
-    await running?.session.flush();
-    const codes = (useAppStore.getState().analysis.preview?.diagnostics ?? [])
-      .filter((diagnostic) => diagnostic.primary.block === dropped.id)
-      .map((diagnostic) => diagnostic.code);
-    expect(codes).toEqual(['B2C-E0203']);
-  });
-});
+    it('is a getter of greet’s times that keeps it in main, where it is B2C-E0203', async () => {
+      const { svg, flyout } = await withToolbox();
+      const getter = flyoutBlock(flyout, 'var.get', 's_times');
+      // The print of main (b004): its text slot.
+      const print = present(svg.getBlockById('b004'), 'b004');
+      const dropped = await dragFromFlyout(
+        svg,
+        getter,
+        'output',
+        present(print.getInput('ITEM0')?.connection as Blockly.RenderedConnection, 'ITEM0'),
+      );
+      expect(dropped.getParent()?.id).toBe('b004');
+      expect(dropped.getFieldValue('VAR')).toBe('s_times');
+      await running?.session.flush();
+      const codes = (useAppStore.getState().analysis.preview?.diagnostics ?? [])
+        .filter((diagnostic) => diagnostic.primary.block === dropped.id)
+        .map((diagnostic) => diagnostic.code);
+      expect(codes).toEqual(['B2C-E0203']);
+    });
+  },
+);

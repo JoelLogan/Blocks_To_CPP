@@ -266,7 +266,9 @@ describe.skipIf(!WITH_CORE)('on a rendered canvas', () => {
   });
 });
 
-describe.skipIf(!WITH_CORE)('a statement chain Blockly can serialise', () => {
+// With the real core, each test takes several seconds when the suite runs in parallel, over
+// Vitest's default of 5 s.
+describe.skipIf(!WITH_CORE)('a statement chain Blockly can serialise', { timeout: 30_000 }, () => {
   it('is pasted and cut as one undo step each', async () => {
     const { session: opened, notices, controller } = await open(loadGuessingGame(core));
     const before = state(opened);

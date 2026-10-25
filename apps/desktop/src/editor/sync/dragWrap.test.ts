@@ -856,6 +856,9 @@ function createAndPrintI(): string {
 
 describe.skipIf(core === null)(
   'a counted loop taken from the toolbox that wraps statements',
+  // With the real core and a rendered toolbox, each test takes 2.5 to 4 s alone, and more when the
+  // suite runs in parallel, over Vitest's default of 5 s.
+  { timeout: 30_000 },
   () => {
     afterEach(() => {
       const workspace = running?.workspace;
