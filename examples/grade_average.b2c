@@ -1,0 +1,885 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 2,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.3.0"
+  },
+  "project": {
+    "id": "prj_grade_average",
+    "name": "Grade Average",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b001",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b002",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_grades",
+                      "name": "grades"
+                    },
+                    "TYPE": {
+                      "std::vector": "int"
+                    }
+                  }
+                },
+                {
+                  "id": "b003",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Enter grades from 0 to 100, and -1 to finish."
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b004",
+                  "type": "control.forever",
+                  "v": 1,
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b005",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "CONST": false,
+                          "NAME": {
+                            "sym": "s_grade",
+                            "name": "grade"
+                          },
+                          "TYPE": "int"
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b006",
+                        "type": "io.ask",
+                        "v": 1,
+                        "fields": {
+                          "MODE": "keep_asking",
+                          "VAR": {
+                            "ref": "s_grade"
+                          }
+                        },
+                        "inputs": {
+                          "PROMPT": {
+                            "expr": [
+                              {
+                                "str": "Grade: "
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b007",
+                        "type": "control.if",
+                        "v": 1,
+                        "extra": {
+                          "elseIfCount": 0,
+                          "hasElse": false
+                        },
+                        "inputs": {
+                          "COND0": {
+                            "expr": [
+                              {
+                                "ref": "s_grade"
+                              },
+                              {
+                                "op": "=="
+                              },
+                              {
+                                "op": "-"
+                              },
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b008",
+                              "type": "control.break",
+                              "v": 1
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "id": "b009",
+                        "type": "control.if",
+                        "v": 1,
+                        "extra": {
+                          "elseIfCount": 0,
+                          "hasElse": false
+                        },
+                        "inputs": {
+                          "COND0": {
+                            "expr": [
+                              {
+                                "ref": "s_grade"
+                              },
+                              {
+                                "op": "<"
+                              },
+                              {
+                                "num": "0"
+                              },
+                              {
+                                "op": "or"
+                              },
+                              {
+                                "ref": "s_grade"
+                              },
+                              {
+                                "op": ">"
+                              },
+                              {
+                                "num": "100"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b010",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 1
+                              },
+                              "fields": {
+                                "NEWLINE": true,
+                                "SEP": "none",
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "expr": [
+                                    {
+                                      "str": "A grade must be from 0 to 100."
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "id": "b011",
+                              "type": "control.continue",
+                              "v": 1
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "id": "b012",
+                        "type": "coll.add",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_grades"
+                          }
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "ref": "s_grade"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b013",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": ""
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b014",
+                  "type": "control.if",
+                  "v": 1,
+                  "extra": {
+                    "elseIfCount": 0,
+                    "hasElse": false
+                  },
+                  "inputs": {
+                    "COND0": {
+                      "block": {
+                        "id": "b015",
+                        "type": "coll.is_empty",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_grades"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b016",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 1
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "No grades."
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b017",
+                        "type": "program.exit",
+                        "v": 1,
+                        "inputs": {
+                          "CODE": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b018",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": false,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Grades:"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b019",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_total",
+                      "name": "total"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b020",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_highest",
+                      "name": "highest"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "block": {
+                        "id": "b021",
+                        "type": "coll.item",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_grades"
+                          }
+                        },
+                        "inputs": {
+                          "INDEX": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b022",
+                  "type": "coll.for_each",
+                  "v": 1,
+                  "fields": {
+                    "ITEM": {
+                      "sym": "s_grade2",
+                      "name": "grade"
+                    },
+                    "MODE": "read_only"
+                  },
+                  "inputs": {
+                    "LIST": {
+                      "expr": [
+                        {
+                          "ref": "s_grades"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b023",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 2
+                        },
+                        "fields": {
+                          "NEWLINE": false,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": " "
+                              }
+                            ]
+                          },
+                          "ITEM1": {
+                            "expr": [
+                              {
+                                "ref": "s_grade2"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b024",
+                        "type": "var.change",
+                        "v": 1,
+                        "fields": {
+                          "OP": "add",
+                          "VAR": {
+                            "ref": "s_total"
+                          }
+                        },
+                        "inputs": {
+                          "BY": {
+                            "expr": [
+                              {
+                                "ref": "s_grade2"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b025",
+                        "type": "control.if",
+                        "v": 1,
+                        "extra": {
+                          "elseIfCount": 0,
+                          "hasElse": false
+                        },
+                        "inputs": {
+                          "COND0": {
+                            "expr": [
+                              {
+                                "ref": "s_grade2"
+                              },
+                              {
+                                "op": ">"
+                              },
+                              {
+                                "ref": "s_highest"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b026",
+                              "type": "var.set",
+                              "v": 1,
+                              "fields": {
+                                "VAR": {
+                                  "ref": "s_highest"
+                                }
+                              },
+                              "inputs": {
+                                "VALUE": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_grade2"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b027",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": ""
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b028",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_average",
+                      "name": "average"
+                    },
+                    "TYPE": "double"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "block": {
+                        "id": "b029",
+                        "type": "math.arithmetic",
+                        "v": 1,
+                        "fields": {
+                          "OP": "div"
+                        },
+                        "inputs": {
+                          "A": {
+                            "block": {
+                              "id": "b030",
+                              "type": "math.convert",
+                              "v": 1,
+                              "fields": {
+                                "TO": "double"
+                              },
+                              "inputs": {
+                                "VALUE": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_total"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "B": {
+                            "block": {
+                              "id": "b031",
+                              "type": "math.convert",
+                              "v": 1,
+                              "fields": {
+                                "TO": "double"
+                              },
+                              "inputs": {
+                                "VALUE": {
+                                  "block": {
+                                    "id": "b032",
+                                    "type": "coll.length",
+                                    "v": 1,
+                                    "fields": {
+                                      "LIST": {
+                                        "ref": "s_grades"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b033",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_above",
+                      "name": "above"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b034",
+                  "type": "coll.for_each",
+                  "v": 1,
+                  "fields": {
+                    "ITEM": {
+                      "sym": "s_grade3",
+                      "name": "grade"
+                    },
+                    "MODE": "read_only"
+                  },
+                  "inputs": {
+                    "LIST": {
+                      "expr": [
+                        {
+                          "ref": "s_grades"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b035",
+                        "type": "control.if",
+                        "v": 1,
+                        "extra": {
+                          "elseIfCount": 0,
+                          "hasElse": false
+                        },
+                        "inputs": {
+                          "COND0": {
+                            "expr": [
+                              {
+                                "ref": "s_grade3"
+                              },
+                              {
+                                "op": ">"
+                              },
+                              {
+                                "ref": "s_average"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b036",
+                              "type": "var.change",
+                              "v": 1,
+                              "fields": {
+                                "OP": "add",
+                                "VAR": {
+                                  "ref": "s_above"
+                                }
+                              },
+                              "inputs": {
+                                "BY": {
+                                  "expr": [
+                                    {
+                                      "num": "1"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b037",
+                  "type": "io.decimals",
+                  "v": 1,
+                  "inputs": {
+                    "DIGITS": {
+                      "expr": [
+                        {
+                          "num": "2"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b038",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Count: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "block": {
+                        "id": "b039",
+                        "type": "coll.length",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_grades"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b040",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Average: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_average"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b041",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Highest: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_highest"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b042",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Above the average: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_above"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -17,6 +17,14 @@ fizzbuzz.b2c:
   b005: "bool"
   b007: "int"
   b008: "bool"
+grade_average.b2c:
+  b015: "bool"
+  b021: "int"
+  b029: "double"
+  b030: "double"
+  b031: "double"
+  b032: "int"
+  b039: "int"
 greeting.b2c:
   b003: "std::string"
 guessing_game.b2c:
