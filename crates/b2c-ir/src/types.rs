@@ -561,79 +561,6 @@ impl Type {
     }
 }
 
-/// The deprecated helpers of milestone M2, which the integration pull
-/// request of M3's first wave removes. They answer a placeholder for
-/// [`Type::Lib`] and [`Type::Named`], which no M2 path produces.
-impl Type {
-    /// The C++ spelling, e.g. `std::string`. A library type gives its name
-    /// without arguments, a user type `<user type>`.
-    #[deprecated(note = "use `Type::cpp`")]
-    pub fn cpp_name(&self) -> &'static str {
-        match self {
-            Self::Lib(app) => app.ty.cpp_name(),
-            Self::Named(_) => "<user type>",
-            Self::Error => "<error>",
-            Self::Void | Self::Bool | Self::Char | Self::Int | Self::Double | Self::String => {
-                self.primitive_name()
-            }
-        }
-    }
-
-    /// The friendly spelling used in M2's messages (spec §3.5.2); `unknown`
-    /// for a library or user type.
-    #[deprecated(note = "use `Type::label`")]
-    pub fn friendly_name(&self) -> &'static str {
-        match self {
-            Self::Void => "nothing",
-            Self::Bool => "true/false",
-            Self::Char => "character",
-            Self::Int => "whole number",
-            Self::Double => "decimal number",
-            Self::String => "text",
-            Self::Lib(_) | Self::Named(_) | Self::Error => "unknown",
-        }
-    }
-
-    /// Parses an M2 type field value from a project file (`"int"`,
-    /// `"std::string"`, …). `auto` is handled by the caller. Returns `None`
-    /// for unknown types; it never gives a library or user type.
-    #[deprecated(note = "use `Type::from_term`")]
-    pub fn from_field(value: &str) -> Option<Self> {
-        Some(match value {
-            "void" => Self::Void,
-            "bool" => Self::Bool,
-            "char" => Self::Char,
-            "int" => Self::Int,
-            "double" => Self::Double,
-            "std::string" => Self::String,
-            _ => return None,
-        })
-    }
-
-    /// Whether this is `int`, `double` or `char` (usable in arithmetic).
-    #[deprecated(note = "use `Type::is_in` with `TypeClass::Number`")]
-    pub fn is_numeric(&self) -> bool {
-        matches!(self, Self::Int | Self::Double | Self::Char)
-    }
-
-    /// The header that declares this type, if any: `<string>`, or a library
-    /// type's own header (not its arguments').
-    #[deprecated(note = "use `Type::headers`")]
-    pub fn header(&self) -> Option<&'static str> {
-        match self {
-            Self::String => Some("<string>"),
-            Self::Lib(app) => Some(app.ty.header().as_str()),
-            Self::Void
-            | Self::Bool
-            | Self::Char
-            | Self::Int
-            | Self::Double
-            | Self::Named(_)
-            | Self::Error => None,
-        }
-    }
-}
-
 /// `false` as soon as one answer is `false`, `true` when all are `true`, and
 /// `None` otherwise.
 fn all_of(answers: impl Iterator<Item = Option<bool>>) -> Option<bool> {
@@ -1886,24 +1813,6 @@ mod tests {
         for ty in &samples[7..] {
             assert_eq!(Type::from_term(&ty.to_term().unwrap()).as_ref(), Ok(ty));
         }
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn the_m2_helpers_stay() {
-        assert_eq!(Type::String.cpp_name(), "std::string");
-        assert_eq!(Type::Error.cpp_name(), "<error>");
-        assert_eq!(vector(Type::Int).cpp_name(), "std::vector");
-        assert_eq!(Type::Named(sym("s")).cpp_name(), "<user type>");
-        assert_eq!(Type::Int.friendly_name(), "whole number");
-        assert_eq!(vector(Type::Int).friendly_name(), "unknown");
-        assert_eq!(Type::from_field("std::string"), Some(Type::String));
-        assert_eq!(Type::from_field("std::vector"), None);
-        assert!(Type::Char.is_numeric());
-        assert!(!vector(Type::Int).is_numeric());
-        assert_eq!(Type::String.header(), Some("<string>"));
-        assert_eq!(vector(Type::String).header(), Some("<vector>"));
-        assert_eq!(Type::Named(sym("s")).header(), None);
     }
 
     #[test]

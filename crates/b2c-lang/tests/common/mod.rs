@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use b2c_ir::diag::{Diagnostic, Part, Severity};
 use b2c_ir::sig::{BlockSig, InputSig, PartName, SigTable, TypePattern, TypeVar};
 use b2c_ir::types::TypeClass;
-use b2c_lang::{Analysis, analyze, analyze_with};
+use b2c_lang::{Analysis, analyze_checked_with, analyze_with};
 use b2c_model::{Block, Document, Input};
 use serde_json::{Value, json};
 
@@ -165,6 +165,23 @@ pub(crate) fn all_blocks(document: &Document) -> Vec<(usize, bool, &Block)> {
     found
 }
 
+/// Analyses a document with the catalog's signatures
+/// (`b2c_catalog::Catalog::sigs`), as the build and the editor's preview
+/// do, but without the catalog's findings.
+pub(crate) fn analyze(document: &Document) -> Analysis {
+    analyze_with(document, b2c_catalog::core_catalog().sigs())
+}
+
+/// `b2c_lang::analyze_checked_with` with the catalog's signatures, as the
+/// build and the editor's preview run it.
+pub(crate) fn analyze_checked(
+    document: &Document,
+    catalog: &[Diagnostic],
+    unchecked: &BTreeSet<b2c_ir::BlockId>,
+) -> Analysis {
+    analyze_checked_with(document, catalog, unchecked, b2c_catalog::core_catalog().sigs())
+}
+
 /// Analyses a program whose `main` holds these statements (see
 /// [`analyse`]).
 pub(crate) fn run_main(body: Vec<Value>) -> Analysis {
@@ -254,41 +271,40 @@ pub(crate) fn m2_sigs() -> SigTable {
     table
 }
 
-/// Analyses a document with M2's typing rules and again with M2's patterns
-/// ([`m2_sigs`]), checks that both give the same program, diagnostics and
-/// scope answers (ADR-0018: M2's blocks go through `type_block` with
-/// unchanged results), and returns the analysis.
+/// Analyses a document with the catalog's signatures ([`analyze`]) and
+/// again with the patterns slots.md §5 gives M2's blocks ([`m2_sigs`]),
+/// checks that both give the same diagnostics, program (but for the items'
+/// catalog headers, which only the catalog's table has), block types and
+/// slot types, and returns the analysis with the catalog's signatures.
+///
+/// M2's own rules for these blocks went in M3's first wave (types.md §8.3);
+/// `props.rs` holds the catalog's table to a record of what they gave.
 #[track_caller]
 pub(crate) fn analyse(document: &Document) -> Analysis {
-    let plain = analyze(document);
-    let typed = analyze_with(document, &m2_sigs());
+    let catalog = analyze(document);
+    let contract = analyze_with(document, &m2_sigs());
     assert_eq!(
-        render_all(&typed),
-        render_all(&plain),
-        "M2's patterns change the diagnostics"
-    );
-    assert!(typed == plain, "M2's patterns change the analysis");
-    // And so must the catalog's own table, whatever it holds: its headers
-    // fill the items' `headers`, and change nothing else.
-    let catalog = analyze_with(document, b2c_catalog::core_catalog().sigs());
-    assert_eq!(
+        render_all(&contract),
         render_all(&catalog),
-        render_all(&plain),
-        "the catalog's signatures change the diagnostics"
+        "the catalog's signatures and slots.md §5's give different diagnostics"
     );
-    let without_headers = |a: &Analysis| {
-        let mut program = a.program.clone();
-        for item in program.modules.iter_mut().flat_map(|module| &mut module.items) {
-            item.headers = b2c_ir::headers::ItemHeaders::default();
-        }
-        program
-    };
     assert!(
-        without_headers(&catalog) == plain.program,
-        "the catalog's signatures change the program"
+        without_headers(&catalog) == contract.program,
+        "the catalog's signatures and slots.md §5's give different programs"
     );
-    assert_eq!(catalog.slot_types(), plain.slot_types());
-    plain
+    assert_eq!(catalog.block_types(), contract.block_types());
+    assert_eq!(catalog.slot_types(), contract.slot_types());
+    catalog
+}
+
+/// The analysis's program without the items' catalog headers, which only the
+/// catalog's table fills.
+pub(crate) fn without_headers(a: &Analysis) -> b2c_ir::sast::Program {
+    let mut program = a.program.clone();
+    for item in program.modules.iter_mut().flat_map(|module| &mut module.items) {
+        item.headers = b2c_ir::headers::ItemHeaders::default();
+    }
+    program
 }
 
 // --- Assertions ----------------------------------------------------------------

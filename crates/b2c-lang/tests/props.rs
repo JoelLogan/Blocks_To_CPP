@@ -15,9 +15,9 @@ use std::collections::BTreeSet;
 use b2c_codegen::{CodegenOptions, generate};
 use b2c_ir::diag::{DiagSource, Part, Severity};
 use b2c_ir::source_map::FileKind;
-use b2c_lang::{Analysis, analyze, analyze_with};
+use b2c_lang::{Analysis, analyze_with};
 use b2c_model::Document;
-use common::{doc, render_all};
+use common::{analyze, doc, render_all};
 use proptest::prelude::*;
 use serde_json::{Value, json};
 
@@ -365,10 +365,13 @@ fn has_unchecked_blocks(document: &Document) -> bool {
 fn check_invariants(document: &Document, a: &Analysis) -> Result<(), TestCaseError> {
     // Deterministic.
     prop_assert_eq!(&analyze(document), a);
-    // M2's blocks give the same through their patterns (ADR-0018).
-    let typed = analyze_with(document, &common::m2_sigs());
-    prop_assert_eq!(render_all(&typed), render_all(a));
-    prop_assert!(&typed == a, "M2's patterns change the analysis");
+    // The catalog's patterns of M2's blocks are slots.md §5's (ADR-0018).
+    let contract = analyze_with(document, &common::m2_sigs());
+    prop_assert_eq!(render_all(&contract), render_all(a));
+    prop_assert!(
+        common::without_headers(a) == contract.program,
+        "the catalog's signatures and slots.md §5's give different programs"
+    );
     // Every diagnostic is ours, and slot ranges are well formed.
     for d in &a.diagnostics {
         prop_assert_eq!(d.source, DiagSource::Analyser);
@@ -707,8 +710,9 @@ proptest! {
 // types.md §8.3: the analyser's M2 rules of `create`, `set`, call arguments and
 // `return` went once the catalog's patterns covered them (slots.md §5). The
 // record below was written by those M2 rules, an analysis without signatures,
-// in the commit before they went; the catalog's table must give every document
-// in it the same diagnostics, program, block types and slot types.
+// in the commit before they went, and the catalog's table gave every document
+// in it the same diagnostics, program, block types and slot types then. It
+// still must.
 
 /// A document of the record, with what the catalog check said of it.
 struct Recorded {
@@ -764,10 +768,7 @@ fn record_documents() -> Vec<Recorded> {
 /// catalog headers (which only signatures fill), its block types and its slot
 /// types.
 fn record_line(a: &Analysis) -> String {
-    let mut program = a.program.clone();
-    for item in program.modules.iter_mut().flat_map(|module| &mut module.items) {
-        item.headers = b2c_ir::headers::ItemHeaders::default();
-    }
+    let program = common::without_headers(a);
     let text = format!(
         "{}\n{}\n{:?}\n{:?}",
         render_all(a),
@@ -784,21 +785,13 @@ fn record_line(a: &Analysis) -> String {
 
 #[test]
 fn m2_documents_analyse_with_the_catalog_table_as_with_m2_rules() {
-    let sigs = b2c_catalog::core_catalog().sigs();
-    let mut lines = Vec::new();
-    for recorded in record_documents() {
-        let Recorded {
-            name,
-            document,
-            catalog,
-            unchecked,
-        } = recorded;
-        let m2 = record_line(&b2c_lang::analyze_checked(&document, &catalog, &unchecked));
-        let line = record_line(&b2c_lang::analyze_checked_with(
-            &document, &catalog, &unchecked, sigs,
-        ));
-        assert_eq!(line, m2, "{name}");
-        lines.push(format!("{name}: {line}"));
-    }
+    let lines: Vec<String> = record_documents()
+        .into_iter()
+        .map(|recorded| {
+            let analysis =
+                common::analyze_checked(&recorded.document, &recorded.catalog, &recorded.unchecked);
+            format!("{}: {}", recorded.name, record_line(&analysis))
+        })
+        .collect();
     insta::assert_snapshot!(lines.join("\n"));
 }

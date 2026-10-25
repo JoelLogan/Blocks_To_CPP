@@ -7,7 +7,6 @@
 mod common;
 
 use b2c_ir::diag::{Location, Part, Severity};
-use b2c_lang::analyze;
 use common::*;
 use serde_json::json;
 

@@ -12,7 +12,7 @@ use b2c_catalog::{FieldKind, Shape};
 use b2c_codegen::{CodegenOptions, generate};
 use b2c_ir::diag::{DiagSource, Diagnostic, Part, Severity};
 use b2c_ir::ids::BlockId;
-use b2c_lang::{Analysis, analyze_checked};
+use b2c_lang::Analysis;
 use common::*;
 use serde_json::{Value, json};
 

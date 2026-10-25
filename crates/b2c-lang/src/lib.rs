@@ -12,9 +12,9 @@
 //!   structure and flow, `W05xx`/`I05xx` lints; every code is documented in
 //!   `docs/reference/diagnostics/analyser.md`). Expressions that have errors
 //!   get `Type::Error`, and anything involving `Type::Error` is not reported
-//!   again, so one mistake gives one message. [`analyze_checked`], which the
-//!   build and the editor's preview run, does not repeat as `B2C-E0430` what
-//!   the catalog check already reported either.
+//!   again, so one mistake gives one message. [`analyze_checked_with`], which
+//!   the build and the editor's preview run, does not repeat as `B2C-E0430`
+//!   what the catalog check already reported either.
 //! * Expression slots are parsed by a precedence-climbing parser over the
 //!   token list, with the depth limit `b2c_model::limits::MAX_EXPR_DEPTH` and
 //!   the token limit `MAX_EXPR_TOKENS`.
@@ -40,8 +40,10 @@
 //! part's fit through the checks M2's blocks always used. The catalog
 //! headers of the blocks lowered into an item are recorded in its
 //! `headers`, by where their code is printed. [`analyze_with`] and
-//! [`analyze_checked_with`] take the signatures; [`analyze`] and
-//! [`analyze_checked`] use none, which gives every block its M2 rules.
+//! [`analyze_checked_with`] take the signatures, the catalog's
+//! (`b2c_catalog::Catalog::sigs`) outside tests: M2's `create`, `set`, call
+//! arguments and `return` are typed by their patterns too (slots.md §5), and
+//! a block the table does not know checks nothing of its inputs' types.
 //!
 //! For the editor, an [`Analysis`] also answers questions about the blocks
 //! (spec §6.5): [`Analysis::symbols_in_scope`] lists the symbols a block may
@@ -99,26 +101,21 @@ impl Analysis {
 }
 
 /// Analyses a document, normally one that `b2c_catalog::resolve` completed,
-/// with no catalog signatures: every block keeps its M2 typing rules.
+/// with the catalog's signatures (`b2c_catalog::Catalog::sigs`), which type
+/// the slots of the blocks that have patterns (ADR-0018, [`type_block`]) and
+/// give the items their catalog headers (`Item::headers`). Taking the table
+/// keeps this crate independent of `b2c-catalog`. A block whose signature
+/// has no patterns keeps its own rules; `create`, `set`, a call or `return`
+/// that the table does not know checks nothing of its values' types.
 ///
 /// Never panics, also on a document whose resolution failed (the editor's
 /// preview analyses those too): problems in the document become
 /// diagnostics, and the program contains everything that could be lowered.
-pub fn analyze(document: &Document) -> Analysis {
-    analyze_with(document, &SigTable::empty())
-}
-
-/// [`analyze`] with the catalog's signatures (`b2c_catalog::Catalog::sigs`),
-/// which type the slots of the blocks that have patterns (ADR-0018, [`type_block`])
-/// and give the items their catalog headers (`Item::headers`). Taking the
-/// table keeps this crate independent of `b2c-catalog`. A block whose
-/// signature has no patterns, or that the table does not know, keeps its M2
-/// typing rules.
 pub fn analyze_with(document: &Document, sigs: &SigTable) -> Analysis {
     lower::run(document, sigs, &BTreeSet::new())
 }
 
-/// [`analyze`] for a document the block catalog has checked
+/// [`analyze_with`] for a document the block catalog has checked
 /// (`b2c_catalog::resolve_report`), as the build and the editor's preview
 /// run it: what the catalog already reported is not reported again, so one
 /// mistake gives one message (06 §6.1).
@@ -137,24 +134,13 @@ pub fn analyze_with(document: &Document, sigs: &SigTable) -> Analysis {
 ///   error on as a whole: the function inputs are kept in the block's
 ///   `extra` settings, whose problems the catalog reports on the whole block.
 ///
-/// Everything else, the program and the scope query included, is exactly
-/// what [`analyze`] gives.
-pub fn analyze_checked(
-    document: &Document,
-    catalog: &[Diagnostic],
-    unchecked: &BTreeSet<BlockId>,
-) -> Analysis {
-    analyze_checked_with(document, catalog, unchecked, &SigTable::empty())
-}
-
-/// [`analyze_checked`] with the catalog's signatures, as [`analyze_with`]
-/// takes them: what the build and the editor's preview run.
-///
-/// The `unchecked` blocks also go into lowering (ADR-0018 §3): the value of
-/// an unchecked block has type `Error`, and an unchecked block's inputs are
-/// lowered but check nothing, so neither gives a `B2C-E0301` or
-/// `B2C-E0315` (which a filter afterwards could not catch, since they are
-/// reported at the value, not at the unchecked block).
+/// Everything else, the program and the scope query included, is what
+/// [`analyze_with`] gives, except that the `unchecked` blocks also go into
+/// lowering (ADR-0018 §3): the value of an unchecked block has type `Error`,
+/// and an unchecked block's inputs are lowered but check nothing, so neither
+/// gives a `B2C-E0301` or `B2C-E0315` (which a filter afterwards could not
+/// catch, since they are reported at the value, not at the unchecked
+/// block).
 pub fn analyze_checked_with(
     document: &Document,
     catalog: &[Diagnostic],
@@ -189,7 +175,7 @@ pub fn analyze_checked_with(
     analysis
 }
 
-/// The part of a block a diagnostic is about, for [`analyze_checked`]
+/// The part of a block a diagnostic is about, for [`analyze_checked_with`]
 /// (token ranges are left out: the catalog never reports them).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum PartKey<'a> {

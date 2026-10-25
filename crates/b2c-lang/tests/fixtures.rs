@@ -48,7 +48,7 @@ use std::collections::BTreeMap;
 use b2c_ir::ids::SymbolId;
 use b2c_ir::sig::{BlockParts, BlockSig, Fit, InputSig, PartName, PartType, TypeEnv, TypePattern, TypeVar};
 use b2c_ir::types::{LibType, Type, TypeClass, TypeFacts, TypeFn, UserKind, UserType, sample_types};
-use b2c_lang::{Binder, BlockTyping, SlotFit, analyze, assignment, check_accepts, conversion, type_block};
+use b2c_lang::{Binder, BlockTyping, SlotFit, assignment, check_accepts, conversion, type_block};
 use serde_json::{Map, Value, json};
 
 /// The variable that makes the test write the files instead of comparing.
@@ -1184,7 +1184,7 @@ fn m2_output_types() -> Vec<Value> {
         let mut body = declarations.clone();
         body.push(common::print(vec![value]));
         let document = common::doc(vec![common::main(body)]);
-        let analysis = analyze(&document);
+        let analysis = common::analyze(&document);
         let id = b2c_ir::ids::BlockId::new("probe").unwrap();
         let ty = analysis.block_types().get(&id).cloned().unwrap_or(Type::Error);
         let inputs: Map<String, Value> = inputs

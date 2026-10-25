@@ -429,7 +429,9 @@ pub struct SigTable {
 }
 
 impl SigTable {
-    /// A table without signatures: every block keeps its M2 typing rules.
+    /// A table without signatures, for tests: no block is typed by patterns,
+    /// and the blocks the analyser always types by them (M2's `create`, `set`,
+    /// calls and `return`) check nothing of their values' types.
     pub const fn empty() -> SigTable {
         SigTable {
             sigs: BTreeMap::new(),
