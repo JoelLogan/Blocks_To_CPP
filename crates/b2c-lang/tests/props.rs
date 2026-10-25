@@ -633,11 +633,40 @@ fn typed_program() -> impl Strategy<Value = Vec<Value>> {
     })
 }
 
+/// Makes every whole-number `/` and `%` of a `typed_program` divide by
+/// `b + i` instead of `b`. A divisor that is a constant zero (`0`, `5 - 5`)
+/// is a real error, which constant folding reports (B2C-E0316), not a false
+/// positive; `i` is a variable, so `b + i` is never a constant. The
+/// generator itself stays as it is, since the record of M2's rules
+/// (`record_documents`) is made from it.
+fn without_constant_zero_divisors(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.values_mut().for_each(without_constant_zero_divisors);
+            let divides = map.get("type").and_then(Value::as_str) == Some("math.arithmetic")
+                && matches!(map["fields"]["OP"].as_str(), Some("div" | "mod"));
+            if divides {
+                let divisor = map["inputs"]["B"].take();
+                map["inputs"]["B"] = common::arith("add", divisor, common::get("i"));
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(without_constant_zero_divisors),
+        _ => {}
+    }
+}
+
+fn well_typed_program() -> impl Strategy<Value = Vec<Value>> {
+    typed_program().prop_map(|mut blocks| {
+        blocks.iter_mut().for_each(without_constant_zero_divisors);
+        blocks
+    })
+}
+
 proptest! {
     #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
 
     #[test]
-    fn well_typed_programs_have_no_errors(blocks in typed_program()) {
+    fn well_typed_programs_have_no_errors(blocks in well_typed_program()) {
         let document = build(blocks);
         let a = analyze(&document);
         prop_assert!(
