@@ -1,11 +1,19 @@
 //! Fuzzes the whole pure pipeline on arbitrary bytes, chained as
-//! `b2c_build::run_frontend` does: load, resolve with the core catalog,
-//! analyse (including the expression-slot parser) and generate C++
-//! (docs/spec/06-compiler-pipeline.md §6.1, 08-security.md §8.4).
+//! `b2c_build::run_frontend` and the editor's preview
+//! (`b2c_core_wasm`) do: load, resolve with the core catalog
+//! (`resolve_report`), analyse with the blocks the catalog kept unchecked
+//! (`analyze_checked_with`, including the expression-slot parser and
+//! ADR-0018 §3's handling of those blocks), answer the preview's queries and
+//! generate C++ (docs/spec/06-compiler-pipeline.md §6.1, 08-security.md
+//! §8.4).
 //!
 //! * No stage panics, overflows the stack or allocates without bound.
 //! * Analysis and generation are deterministic: running them again gives the
 //!   same program, diagnostics, files and source map.
+//! * Every type the preview sends (each slot's and block's type, each
+//!   symbol's) reads back from its wire form (the type term,
+//!   `b2c_ir::types::term_form`) as the same type, and the scope query
+//!   answers at the first 64 blocks and their typed inputs.
 //! * A program the analyser accepts generates without error placeholders.
 //! * Every generated file has a plain generated name (`<stem>.cpp` from
 //!   letters, digits, `_` and `-`, not a Windows device name, or
@@ -27,6 +35,7 @@
 use std::collections::BTreeSet;
 
 use b2c_codegen::{CodegenOptions, Generation, HelperPlacement};
+use b2c_ir::Type;
 use b2c_ir::source_map::{FileKind, GeneratedProject};
 use b2c_ir::text::is_invisible;
 use libfuzzer_sys::fuzz_target;
@@ -36,17 +45,21 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
     let catalog = b2c_catalog::core_catalog();
-    let (document, resolve_diagnostics) = b2c_catalog::resolve(&loaded, catalog);
+    let report = b2c_catalog::resolve_report(&loaded, catalog);
+    let document = &report.document;
     // A build stops when resolving fails, but the live preview (spec 06 §6.1)
     // analyses and generates the completed document anyway, so that path
     // must be just as safe.
-    let resolved = !b2c_ir::has_errors(&resolve_diagnostics);
-    let analysis = b2c_lang::analyze_with(&document, catalog.sigs());
+    let resolved = !b2c_ir::has_errors(&report.diagnostics);
+    let analyse =
+        || b2c_lang::analyze_checked_with(document, &report.diagnostics, &report.unchecked, catalog.sigs());
+    let analysis = analyse();
     assert!(
-        b2c_lang::analyze_with(&document, catalog.sigs()) == analysis,
+        analyse() == analysis,
         "analysing the same document twice gave different results"
     );
     let accepted = resolved && !b2c_ir::has_errors(&analysis.diagnostics);
+    check_queries(&analysis);
 
     let inline = CodegenOptions {
         project_name: document.project.name.clone(),
@@ -70,6 +83,33 @@ fuzz_target!(|data: &[u8]| {
         check_generation(&generation, accepted, options.helper_placement);
     }
 });
+
+/// The preview's queries: every type it sends reads back from its term form
+/// as the same type, and the scope query answers without panicking.
+fn check_queries(analysis: &b2c_lang::Analysis) {
+    let slots = analysis.slot_types();
+    let blocks = analysis.block_types();
+    let symbols = analysis.symbol_infos();
+    let types = slots
+        .values()
+        .flat_map(|inputs| inputs.values())
+        .chain(blocks.values())
+        .chain(symbols.iter().map(|symbol| &symbol.ty));
+    for ty in types {
+        let wire = serde_json::to_string(ty).expect("a type always serialises");
+        let back: Type = serde_json::from_str(&wire)
+            .unwrap_or_else(|error| panic!("the type {ty:?} sent as {wire} does not read back: {error}"));
+        assert_eq!(&back, ty, "the type sent as {wire} reads back as another type");
+    }
+    for block in blocks.keys().chain(slots.keys()).take(64) {
+        let _ = analysis.scope_at(block, None);
+        if let Some(inputs) = slots.get(block) {
+            for input in inputs.keys().take(8) {
+                let _ = analysis.scope_at(block, Some(input));
+            }
+        }
+    }
+}
 
 fn check_generation(generation: &Generation, accepted: bool, placement: HelperPlacement) {
     if accepted {

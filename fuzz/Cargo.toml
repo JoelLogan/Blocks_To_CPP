@@ -27,6 +27,8 @@ b2c-model = { path = "../crates/b2c-model" }
 b2c-catalog = { path = "../crates/b2c-catalog" }
 b2c-lang = { path = "../crates/b2c-lang" }
 b2c-codegen = { path = "../crates/b2c-codegen" }
+# To send each type through its wire form (JSON), as the preview does.
+serde_json = "1"
 # For its pure diagnostics parsers (`b2c_toolchain::diagnostics`) and sanitizer
 # report scanner (`b2c_toolchain::sanitizer`) only.
 b2c-toolchain = { path = "../crates/b2c-toolchain" }

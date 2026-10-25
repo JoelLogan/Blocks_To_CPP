@@ -39,6 +39,7 @@ dependencies = [
  "b2c-model",
  "b2c-toolchain",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
