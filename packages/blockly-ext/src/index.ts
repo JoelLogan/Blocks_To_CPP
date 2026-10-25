@@ -79,6 +79,7 @@ export {
   sameType,
   startTokens,
   staticAssignment,
+  renameTermRefs,
   termFromKey,
   termJson,
   termKey,

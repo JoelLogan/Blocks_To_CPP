@@ -201,6 +201,28 @@ export type TypeTerm =
   | { readonly kind: 'app'; readonly name: string; readonly args: readonly TypeTerm[] };
 
 /**
+ * `term` with each user type it names renamed by `ids` (old symbol ID to new; `b2c_model`'s
+ * `terms::rename`, which a paste or a duplicate's ID remapping applies). The same term object when
+ * nothing in it is renamed.
+ */
+export function renameTermRefs(term: TypeTerm, ids: ReadonlyMap<string, string>): TypeTerm {
+  switch (term.kind) {
+    case 'name':
+      return term;
+    case 'ref': {
+      const renamed = ids.get(term.id);
+      return renamed === undefined ? term : { kind: 'ref', id: renamed };
+    }
+    case 'app': {
+      const args = term.args.map((arg) => renameTermRefs(arg, ids));
+      return args.every((arg, index) => arg === term.args[index])
+        ? term
+        : { kind: 'app', name: term.name, args };
+    }
+  }
+}
+
+/**
  * The name rule (types.md §2.2): 1 to 64 ASCII characters, identifiers joined by `::` or single
  * spaces.
  */

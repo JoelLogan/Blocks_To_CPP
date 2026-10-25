@@ -7,6 +7,7 @@
  * Every walk is iterative: statement lists and stacks may hold thousands of blocks.
  */
 import type { BdmBlock, InputValue, JsonValue, TokenJson } from '@blocks2cpp/b2c-core-wasm';
+import { parseTerm, renameTermRefs, termJson } from '@blocks2cpp/blockly-ext';
 
 /** A symbol declaration found in a block. */
 export interface FoundDecl {
@@ -145,6 +146,23 @@ function renameInput(input: InputValue, syms: ReadonlyMap<string, string>): void
 }
 
 /**
+ * A type term (a field's value or a parameter row's type) with the user types it names renamed by
+ * `syms`, as the core's ID remapping renames them (`terms::rename`); `null` when it is not a term
+ * or names none of them.
+ */
+export function renamedTypeJson(
+  value: unknown,
+  syms: ReadonlyMap<string, string>,
+): JsonValue | null {
+  const term = parseTerm(value);
+  if (term === null) {
+    return null;
+  }
+  const renamed = renameTermRefs(term, syms);
+  return renamed === term ? null : (termJson(renamed) as JsonValue);
+}
+
+/**
  * Renames, in place, block IDs (`blockIds`) and symbol IDs (`syms`) in the trees: block `id`s,
  * declarations (fields and `params` rows), field references and expression-token references.
  * IDs that are not in the maps stay as they are.
@@ -165,8 +183,6 @@ export function renameInTrees(
         if (typeof value !== 'object') {
           continue;
         }
-        // A template type term (format version 2) is an object too; its references are renamed
-        // with the type terms (types.md §2.4).
         if ('sym' in value && typeof value.sym === 'string' && typeof value.name === 'string') {
           const renamed = syms.get(value.sym);
           if (renamed !== undefined) {
@@ -177,17 +193,30 @@ export function renameInTrees(
           if (renamed !== undefined) {
             setOwn(fields, key, { ref: renamed });
           }
+        } else {
+          // A template type term (format version 2): the user types it names (types.md §2.4).
+          const renamed = renamedTypeJson(value, syms);
+          if (renamed !== null) {
+            setOwn(fields, key, renamed);
+          }
         }
       }
     }
     const rows = node.extra === undefined ? undefined : own(node.extra, 'params');
     if (Array.isArray(rows)) {
       rows.forEach((row) => {
-        if (isRecord(row) && typeof row['sym'] === 'string') {
+        if (!isRecord(row)) {
+          return;
+        }
+        if (typeof row['sym'] === 'string') {
           const renamed = syms.get(row['sym']);
           if (renamed !== undefined) {
             row['sym'] = renamed;
           }
+        }
+        const type = renamedTypeJson(row['type'], syms);
+        if (type !== null) {
+          row['type'] = type;
         }
       });
     }

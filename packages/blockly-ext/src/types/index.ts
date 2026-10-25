@@ -22,6 +22,7 @@ export {
   sameType,
   staticAssignment,
   staticConversion,
+  renameTermRefs,
   termFromKey,
   termJson,
   termKey,

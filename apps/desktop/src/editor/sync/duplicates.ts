@@ -17,6 +17,7 @@ import type { BdmBlock } from '@blocks2cpp/b2c-core-wasm';
 import {
   B2cSymbolDeclField,
   B2cSymbolRefField,
+  B2cTypeField,
   copyTokens,
   type ExprShadowExtra,
   hasB2cMutator,
@@ -24,11 +25,14 @@ import {
   isExprShadowType,
   isProjectId,
   newId,
+  renameTermRefs,
+  termFromKey,
+  termKey,
 } from '@blocks2cpp/blockly-ext';
 import type * as Blockly from 'blockly/core';
 
 import { withoutEvents } from './bdmToWorkspace';
-import { renameInTrees, treeBlockIds, treeDecls } from './bdmTree';
+import { renamedTypeJson, renameInTrees, treeBlockIds, treeDecls } from './bdmTree';
 import { blockDefOf } from './catalog';
 import { MAX_REMAP_MEMO } from './limits';
 import { placeholderNode, replacePlaceholderNode } from './placeholders';
@@ -152,8 +156,13 @@ export class DeclIndex {
   }
 }
 
-/** Renames what one created block declares or refers to. */
-function renameInBlock(
+/**
+ * Renames what one created block declares or refers to: declarations, references, the user types
+ * its type fields and parameter rows name, and the tokens of its expression shadows.
+ *
+ * @internal Exported for tests.
+ */
+export function renameInBlock(
   block: Blockly.Block,
   syms: ReadonlyMap<string, string>,
   nestedIds: (placeholder: Blockly.Block, node: BdmBlock) => ReadonlyMap<string, string>,
@@ -183,15 +192,27 @@ function renameInBlock(
         if (renamed !== undefined) {
           field.setRef({ ref: renamed });
         }
+      } else if (field instanceof B2cTypeField) {
+        // A type field holds a term by its key: the user types it names (types.md §2.4).
+        const key: unknown = field.getValue();
+        const term = typeof key === 'string' ? termFromKey(key) : null;
+        const renamed = term === null ? null : renameTermRefs(term, syms);
+        if (renamed !== null && renamed !== term) {
+          field.setValue(termKey(renamed));
+        }
       }
     }
   }
   const rows = paramRows(block);
-  if (rows !== null && hasB2cMutator(block) && rows.some((row) => syms.has(String(row['sym'])))) {
-    const params = rows.map((row) => {
-      const renamed = syms.get(String(row['sym']));
-      return renamed === undefined ? row : { ...row, sym: renamed };
-    });
+  const renamedRow = (row: Record<string, unknown>): Record<string, unknown> => {
+    const sym = syms.get(String(row['sym']));
+    const type = renamedTypeJson(row['type'], syms);
+    return sym === undefined && type === null
+      ? row
+      : { ...row, ...(sym === undefined ? {} : { sym }), ...(type === null ? {} : { type }) };
+  };
+  if (rows !== null && hasB2cMutator(block) && rows.some((row) => renamedRow(row) !== row)) {
+    const params = rows.map(renamedRow);
     try {
       block.b2cSetExtra({ ...block.b2cGetExtra(), params });
     } catch (error: unknown) {
