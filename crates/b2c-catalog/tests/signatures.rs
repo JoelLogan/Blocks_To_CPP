@@ -116,8 +116,10 @@ fn every_block_has_a_signature_in_catalog_order() {
         let headers: Vec<&str> = sig.headers.iter().map(|h| h.as_str()).collect();
         assert_eq!(headers, def.headers, "{id}");
         assert_eq!(sig.output.is_some(), def.shape.is_value(), "{id}");
-        // No M2 block takes its type from its place or lists members.
-        assert_eq!(sig.place_var, None, "{id}");
+        // Only *list of* takes its type from its place (slots.md §3); no
+        // block lists members before W2's struct blocks.
+        let place = (id == "coll.list_of").then(|| TypeVar::new("C").unwrap());
+        assert_eq!(sig.place_var, place, "{id}");
         assert!(sig.members.is_empty(), "{id}");
         assert!(sig.option_headers.is_empty(), "{id}");
     }
@@ -365,7 +367,8 @@ fn create_takes_every_type_a_variable_can_hold() {
         .insert("TYPE".into(), FieldValue::Type(list));
     assert_eq!(problems(&doc), []);
     // Not a value type, not a type of this catalog, not a type: E0607.
-    let wider = "\"int\", \"double\", \"bool\", \"char\", \"std::string\" or \"auto\", or another type a variable can hold.";
+    let wider = "\"int\", \"double\", \"bool\", \"char\", \"std::string\", \"auto\", \
+                 \"std::vector<int>\", \"std::vector<double>\" or \"std::vector<std::string>\", or another type a variable can hold.";
     for (ty, shown) in [
         ("std::ifstream", "\"std::ifstream\""),
         ("void", "\"void\""),
@@ -452,8 +455,8 @@ fn parameters_take_every_type_a_variable_can_hold() {
             "{ty}"
         );
     }
-    let wider =
-        "\"int\", \"double\", \"bool\", \"char\" or \"std::string\", or another type a variable can hold.";
+    let wider = "\"int\", \"double\", \"bool\", \"char\", \"std::string\", \"std::vector<int>\", \"std::vector<double>\" or \"std::vector<std::string>\", or \
+         another type a variable can hold.";
     for (ty, shown) in [
         (json!("std::ifstream"), "\"std::ifstream\""),
         (json!("auto"), "\"auto\""),

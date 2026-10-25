@@ -10,13 +10,14 @@ lowering = "builtin"
 help = "Creates a variable. It can be used by the blocks after it in the same place."
 # The type field binds T (catalog 1.3.0): it offers its types and takes any
 # type a variable can hold; the name is declared with T, and the value
-# converts to it. `auto` binds nothing.
+# converts to it. `auto` binds nothing. The lists after M2's types stand in
+# for the type picker until it arrives (docs/plans/m3-contracts/w2.md §1.2).
 where = { T = "value" }
 
 [[block.field]]
 name = "TYPE"
 kind = "type"
-types = ["int", "double", "bool", "char", "std::string", "auto"]
+types = ["int", "double", "bool", "char", "std::string", "auto", "std::vector<int>", "std::vector<double>", "std::vector<std::string>"]
 default = "int"
 type = "T"
 

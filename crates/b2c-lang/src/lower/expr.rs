@@ -112,6 +112,8 @@ fn input_label(name: &str) -> String {
         "THEN" => String::from("the value to use when the condition is true"),
         "ELSE" => String::from("the value to use when the condition is false"),
         "ITEM" => format!("item {}", index + 1),
+        "INDEX" => String::from("a position or key"),
+        "LIST" => String::from("a collection"),
         "ARG" => format!("input {}", index + 1),
         "CODE" => String::from("an exit code"),
         "PROMPT" => String::from("a question"),
@@ -210,7 +212,7 @@ impl Lowerer<'_> {
         }
         self.record_block(&block.id);
         self.begin_block(block);
-        let mut expr = self.value_kind(block, origin);
+        let mut expr = self.value_kind(block, origin, place);
         if let Some(sig) = self.sigs.get(&block.block_type)
             && sig.place_var.is_some()
         {
@@ -224,8 +226,9 @@ impl Lowerer<'_> {
         expr
     }
 
-    /// The node of a reporter block.
-    fn value_kind(&mut self, block: &Block, origin: Origin) -> Expr {
+    /// The node of a reporter block; `place` is the type its place expects,
+    /// which *list of* gives its items (slots.md §3).
+    fn value_kind(&mut self, block: &Block, origin: Origin, place: Option<&Type>) -> Expr {
         match block.block_type.as_str() {
             "var.get" => self.var_get(block, origin),
             "math.number" => self.number_block(block, origin),
@@ -273,7 +276,7 @@ impl Lowerer<'_> {
             // W2's values, each lowered by its family's module (w2.md §3.2),
             // which the packages fill in.
             "coll.item" | "coll.length" | "coll.is_empty" | "coll.list_of" | "coll.contains"
-            | "coll.next" => self.collection_value(block, origin),
+            | "coll.next" => self.collection_value(block, origin, place),
             "text.length" | "text.letter" | "text.case" | "text.split" | "text.to_number"
             | "text.as_text" | "text.find" | "text.part" | "text.trim" | "text.replace" | "math.fn"
             | "math.abs" | "math.minmax" | "math.fn2" | "math.clamp" | "math.random_real" => {

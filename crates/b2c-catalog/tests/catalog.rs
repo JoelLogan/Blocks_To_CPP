@@ -52,6 +52,12 @@ fn only_hats_and_definitions_are_top_level() {
 #[test]
 fn value_blocks_declare_their_output_type() {
     let expected: BTreeMap<&str, &str> = [
+        ("coll.contains", "bool"),
+        ("coll.is_empty", "bool"),
+        ("coll.item", "elem(C)"),
+        ("coll.length", "int"),
+        ("coll.list_of", "C"),
+        ("coll.next", "elem(C)"),
         ("func.call", "symbol"),
         ("logic.boolean", "bool"),
         ("logic.not", "bool"),
@@ -161,8 +167,20 @@ fn instance(def: &BlockDef, index: usize) -> Value {
     }
     let mut inputs = Map::new();
     for input in &def.input {
-        if input.repeat.is_none() && input.default.is_empty() && !input.optional {
-            inputs.insert(input.name.clone(), json!({"expr": [{"num": "1"}]}));
+        if !input.default.is_empty() || input.optional {
+            continue;
+        }
+        let names: Vec<String> = match &input.repeat {
+            None => vec![input.name.clone()],
+            // A repeated part without a default (*list of*'s items) needs a
+            // value too.
+            Some(repeat) => {
+                let count = counts.get(&repeat.count).copied().unwrap_or(0) + repeat.plus;
+                (0..count).map(|i| format!("{}{i}", input.name)).collect()
+            }
+        };
+        for name in names {
+            inputs.insert(name, json!({"expr": [{"num": "1"}]}));
         }
     }
     json!({

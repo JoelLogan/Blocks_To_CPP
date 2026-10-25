@@ -31,7 +31,20 @@ const DIGEST_1000: &str = "7b3b8ab738fd7e1889d002a0bb0f73686c7451ba2b3c22d8c436f
 const DIGEST_5000_HANDLE: &str = "86b15b3d6a7946838870b5a7e2f46b1557c88e367bb44c51398911479085bb98";
 
 fn shape(blocks: usize, drag_handle: bool) -> Shape {
-    Shape { blocks, drag_handle }
+    Shape {
+        blocks,
+        drag_handle,
+        collections: false,
+    }
+}
+
+/// The shape of the collection blocks (W2).
+fn collections(blocks: usize) -> Shape {
+    Shape {
+        blocks,
+        drag_handle: false,
+        collections: true,
+    }
 }
 
 /// The deepest JSON nesting of a value (an object or array is one level).
@@ -162,6 +175,32 @@ fn the_benchmark_documents_load_and_preview_without_errors() {
         if drag_handle {
             assert!(cpp.contains("void dragMe()"), "{cpp:.2000}");
         }
+    }
+}
+
+#[test]
+fn the_collection_blocks_document_has_the_size_and_no_diagnostics_at_all() {
+    for blocks in [1, 9, 17, 1_000] {
+        let generated = generate(collections(blocks)).unwrap();
+        assert_eq!(count_blocks(&generated), blocks, "{blocks} blocks");
+    }
+    let generated = generate(collections(1_000)).unwrap();
+    assert_eq!(generated["formatVersion"], 2);
+    let loaded = b2c_model::load(generated.to_string().as_bytes()).unwrap();
+    let text = b2c_model::to_canonical_json(&loaded);
+    let preview = preview_document(&text, &PreviewOptions::default());
+    assert!(preview.diagnostics.is_empty(), "{:?}", preview.diagnostics);
+    assert!(preview.buildable);
+    let cpp = &preview.files.first().unwrap().contents;
+    for line in [
+        "std::vector<int> scores_0{};",
+        "scores_0.push_back(i_0);",
+        "for (const auto& item_0 : scores_0) {",
+        "scores_0.at(0) = item_0;",
+        "std::cout << \"count 0: \" << static_cast<int>(scores_0.size()) << '\\n';",
+        "std::ranges::sort(scores_0, std::greater{});",
+    ] {
+        assert!(cpp.contains(line), "{line}\n{cpp:.3000}");
     }
 }
 

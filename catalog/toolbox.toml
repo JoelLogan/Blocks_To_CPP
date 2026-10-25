@@ -127,6 +127,12 @@ block = "control.break"
 [[category.entry]]
 block = "control.continue"
 
+[[category.entry]]
+block = "coll.for_each"
+
+[[category.entry]]
+block = "coll.for_each_pair"
+
 [[category]]
 id = "io"
 name = "Input / Output"
@@ -161,6 +167,45 @@ id = "collections"
 name = "Collections"
 icon = "☰"
 colour = "collections"
+
+[[category.entry]]
+block = "coll.add"
+
+[[category.entry]]
+block = "coll.item"
+
+[[category.entry]]
+block = "coll.set_item"
+
+[[category.entry]]
+block = "coll.length"
+
+[[category.entry]]
+block = "coll.is_empty"
+
+[[category.entry]]
+block = "coll.list_of"
+
+[[category.entry]]
+block = "coll.contains"
+
+[[category.entry]]
+block = "coll.remove_at"
+
+[[category.entry]]
+block = "coll.remove_value"
+
+[[category.entry]]
+block = "coll.clear"
+
+[[category.entry]]
+block = "coll.sort"
+
+[[category.entry]]
+block = "coll.next"
+
+[[category.entry]]
+block = "coll.remove_next"
 
 [[category]]
 id = "types"

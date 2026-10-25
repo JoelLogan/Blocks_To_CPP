@@ -223,38 +223,40 @@ fn checked(blocks: Vec<Value>) -> Vec<String> {
 /// editor saves an unchosen name or reference as an absent field. Parked,
 /// it is only the warning, also below a `create` in a loose stack (the
 /// Scratch habit of building on the side, ADR-0012); disabled, it is
-/// nothing; attached, it is one `B2C-E0430` at the field. Every block of the
+/// nothing; attached, it is one `B2C-E0430` at each such field. Every block of the
 /// catalog with a name or reference field, so a new one cannot bring the
 /// catalog's error back.
 #[test]
 fn a_parked_block_with_nothing_chosen_yet_is_only_a_warning() {
     let mut seen = 0;
     for def in b2c_catalog::core_catalog().blocks.values() {
-        let Some(field) = def
+        // One `B2C-E0430` at each name or reference field, in catalog
+        // order (*for each key value* has three).
+        let missing: Vec<String> = def
             .field
             .iter()
-            .find(|f| matches!(f.kind, FieldKind::SymbolDecl | FieldKind::SymbolRef))
-        else {
+            .filter(|f| matches!(f.kind, FieldKind::SymbolDecl | FieldKind::SymbolRef))
+            .map(|field| format!("B2C-E0430 {}", field.name))
+            .collect();
+        if missing.is_empty() {
             continue;
-        };
+        }
         seen += 1;
-        let missing = format!("B2C-E0430 {}", field.name);
         let mut block = json!({"id": "p1", "type": def.id, "v": def.version, "x": 400, "y": 40});
         // A value for every input without a default (the `set` of the
-        // Variables category comes with one).
+        // Variables category comes with one). *for each* goes through text.
         for input in &def.input {
             if input.default.is_empty() && !input.optional && input.repeat.is_none() {
-                block["inputs"][&input.name] = num("0");
+                block["inputs"][&input.name] = if def.id == "coll.for_each" {
+                    text("abc")
+                } else {
+                    num("0")
+                };
             }
         }
         if def.shape == Shape::Definition {
             block["extra"] = json!({"params": []});
-            assert_eq!(
-                checked(vec![main(vec![]), block.clone()]),
-                [missing.as_str()],
-                "{}",
-                def.id
-            );
+            assert_eq!(checked(vec![main(vec![]), block.clone()]), missing, "{}", def.id);
             block["disabled"] = json!(true);
             let found = checked(vec![main(vec![]), block]);
             assert!(found.is_empty(), "{}: {found:?}", def.id);
@@ -269,7 +271,7 @@ fn a_parked_block_with_nothing_chosen_yet_is_only_a_warning() {
             Shape::Statement => main(vec![block]),
             _ => main(vec![print(vec![json!({"block": block})])]),
         };
-        assert_eq!(checked(vec![attached]), [missing.as_str()], "{}", def.id);
+        assert_eq!(checked(vec![attached]), missing, "{}", def.id);
     }
     assert!(seen >= 9, "{seen}");
 

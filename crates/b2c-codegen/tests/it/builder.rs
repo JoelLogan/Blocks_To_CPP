@@ -83,6 +83,12 @@ impl Builder {
         self.symbol(name, SymbolKind::LoopVariable, Type::Int)
     }
 
+    /// A name a loop over items declares for its body (*for each*'s item, a
+    /// map's key and value): read-only, of any type.
+    pub(crate) fn loop_item(&self, name: &str, ty: Type) -> SymbolId {
+        self.symbol(name, SymbolKind::LoopVariable, ty)
+    }
+
     /// A struct with its fields (from milestone M3; no SAST item defines it
     /// before the definition blocks, so only its symbols exist).
     pub(crate) fn structure(

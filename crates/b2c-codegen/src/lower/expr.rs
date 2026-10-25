@@ -85,7 +85,14 @@ fn is_std_string_at(expr: &Expr, depth: usize) -> bool {
         return false;
     }
     match &expr.kind {
-        ExprKind::Var(_) | ExprKind::Call { .. } | ExprKind::Join(_) | ExprKind::Binary { .. } => true,
+        // An item of a collection of text is a `std::string` object too
+        // (`names.at(0)`, `queue.front()`).
+        ExprKind::Var(_)
+        | ExprKind::Call { .. }
+        | ExprKind::Join(_)
+        | ExprKind::Binary { .. }
+        | ExprKind::Item { .. }
+        | ExprKind::Next(_) => true,
         ExprKind::Conditional {
             then_value,
             else_value,

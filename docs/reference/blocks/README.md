@@ -16,9 +16,10 @@ Catalog version: 1.3.0.
 | [Logic](logic.md) | ◇ | 4 |
 | [Text](text.md) | “ ” | 3 |
 | [Control](control.md) | ⑂ | 1 |
-| [Loops](loops.md) | ↻ | 6 |
+| [Loops](loops.md) | ↻ | 8 |
 | [Input / Output](io.md) | ⌨ | 2 |
 | [Functions](functions.md) | ƒ | 4 |
+| [Collections](collections.md) | ☰ | 13 |
 
 ## How to read the tables
 

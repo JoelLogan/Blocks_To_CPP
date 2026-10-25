@@ -107,6 +107,7 @@ export const TOOLBOX_CATEGORIES: readonly ToolboxCategory[] = [
   { id: 'loops', name: 'Loops' },
   { id: 'io', name: 'Input / Output' },
   { id: 'functions', name: 'Functions' },
+  { id: 'collections', name: 'Collections' },
 ];
 
 /** The toolbar's area: its whole bar, the Debug/Release drop-down in it. */

@@ -246,6 +246,15 @@ pub(super) fn names_mentioned(
         .collect()
 }
 
+/// Whether `block` declares or refers to any of the symbols `ids`: for a
+/// range-`for` whose body never uses its names, which then get
+/// `[[maybe_unused]]` (w2.md §2.12). A walk that is cut off counts as a
+/// use, so the attribute is only added when it is certainly needed.
+pub(super) fn mentions_any(block: &Block, ids: &[SymbolId]) -> bool {
+    let mut mentions = Mentions::default();
+    !walk_block(block, &mut mentions, 0) || ids.iter().any(|id| mentions.0.contains(id))
+}
+
 /// Collects the variables an expression reads, and whether it calls anything.
 #[derive(Default)]
 struct Reads {

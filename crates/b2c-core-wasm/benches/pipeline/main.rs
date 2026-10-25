@@ -12,7 +12,10 @@
 //!   build uses;
 //! * `preview`: the four together, as the editor's WebAssembly core runs
 //!   them ([`b2c_core_wasm::preview_document`]); this is the one the nightly
-//!   job gates (`tools/bench-compare.py`).
+//!   job gates (`tools/bench-compare.py`);
+//! * `preview-collections`: the same on the document of W2's collection
+//!   blocks (`collections`, docs/plans/m3-contracts/w2.md §1.2), reported
+//!   and not gated until it has its baselines.
 //!
 //! Run it with `cargo bench -p b2c-core-wasm --bench pipeline` (add
 //! `-- --quick` for a short run). Criterion writes each benchmark's samples
@@ -41,20 +44,27 @@ use crate::document::{Shape, count_blocks, generate};
 const SHAPE: Shape = Shape {
     blocks: 1_000,
     drag_handle: false,
+    collections: false,
+};
+
+/// The same size made of the collection blocks.
+const COLLECTIONS: Shape = Shape {
+    collections: true,
+    ..SHAPE
 };
 
 /// Samples per benchmark (`tools/bench-compare.py` needs at least 10).
 const SAMPLES: usize = 50;
 
-/// The benchmark document as a saved file has it, checked; or why it cannot
-/// be benchmarked.
-fn prepared_document() -> Result<String, String> {
-    let generated = generate(SHAPE).map_err(|error| error.to_string())?;
+/// The benchmark document of `shape` as a saved file has it, checked; or
+/// why it cannot be benchmarked.
+fn prepared_document(shape: Shape) -> Result<String, String> {
+    let generated = generate(shape).map_err(|error| error.to_string())?;
     let blocks = count_blocks(&generated);
-    if blocks != SHAPE.blocks {
+    if blocks != shape.blocks {
         return Err(format!(
             "the generated document has {blocks} blocks, not {}",
-            SHAPE.blocks
+            shape.blocks
         ));
     }
     let loaded = b2c_model::load(generated.to_string().as_bytes()).map_err(|error| {
@@ -84,8 +94,9 @@ fn codegen_options(project_name: &str) -> CodegenOptions {
     }
 }
 
-/// The `pipeline` group on `text`, which [`prepared_document`] checked.
-fn bench_pipeline(criterion: &mut Criterion, text: &str) -> Result<(), String> {
+/// The `pipeline` group on `text`, and the preview of `collections`, which
+/// [`prepared_document`] checked.
+fn bench_pipeline(criterion: &mut Criterion, text: &str, collections: &str) -> Result<(), String> {
     let bytes = text.as_bytes();
     let loaded = b2c_model::load(bytes).map_err(|_| "the document no longer loads")?;
     let catalog = b2c_catalog::core_catalog();
@@ -113,14 +124,18 @@ fn bench_pipeline(criterion: &mut Criterion, text: &str) -> Result<(), String> {
     group.bench_function("preview", |b| {
         b.iter(|| preview_document(black_box(text), &preview_options));
     });
+    group.bench_function("preview-collections", |b| {
+        b.iter(|| preview_document(black_box(collections), &preview_options));
+    });
     group.finish();
     Ok(())
 }
 
 fn main() -> ExitCode {
-    let outcome = prepared_document().and_then(|text| {
+    let documents = prepared_document(SHAPE).and_then(|text| Ok((text, prepared_document(COLLECTIONS)?)));
+    let outcome = documents.and_then(|(text, collections)| {
         let mut criterion = Criterion::default().configure_from_args();
-        bench_pipeline(&mut criterion, &text)?;
+        bench_pipeline(&mut criterion, &text, &collections)?;
         criterion.final_summary();
         Ok(())
     });

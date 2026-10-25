@@ -6,6 +6,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
 mod builder;
+mod collections;
 mod determinism;
 mod examples;
 mod gxx;

@@ -633,10 +633,40 @@ fn every_toolbox_block_resolves_apart_from_what_the_editor_fills_in() {
             (types[block].clone(), d.code.0.clone(), part)
         })
         .collect();
-    let expected: BTreeSet<(String, String, String)> = [("func.define", "B2C-E0612", "Whole")]
+    let mut expected: BTreeSet<(String, String, String)> = [("func.define", "B2C-E0612", "Whole")]
         .into_iter()
         .map(|(a, b, c)| (a.to_owned(), b.to_owned(), c.to_owned()))
         .collect();
+    // An input typed by another part (`elem(C)`, `index(C)`) has no catalog
+    // default: the editor writes its start value once that part is chosen,
+    // which in the toolbox it is not (types.md §4.3, slots.md §6).
+    for entry in toolbox().categories.iter().flat_map(|category| &category.entries) {
+        let def = &core_catalog().blocks[&entry.block];
+        for input in &def.input {
+            if !input.default.is_empty() || input.optional || input.pattern.is_none() {
+                continue;
+            }
+            let parts = match &input.repeat {
+                None => vec![input.name.clone()],
+                Some(repeat) => {
+                    let count = def
+                        .extra
+                        .iter()
+                        .find(|extra| extra.name == repeat.count)
+                        .and_then(|extra| match &extra.default {
+                            Some(b2c_catalog::FieldDefault::Text(text)) => text.parse().ok(),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
+                    (0..count).map(|i| format!("{}{i}", input.name)).collect()
+                }
+            };
+            for name in parts {
+                let part = format!("{:?}", b2c_ir::Part::Input { name });
+                expected.insert((def.id.clone(), String::from("B2C-E0609"), part));
+            }
+        }
+    }
     assert_eq!(found, expected, "{diagnostics:#?}");
     // The second program.main (from the toolbox) is the analyser's business,
     // not the catalog's.

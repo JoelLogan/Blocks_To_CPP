@@ -121,6 +121,20 @@ impl Lowerer<'_> {
                 "{name} was created as a constant, so it can't be changed. Untick 'const' in its 'create' block \
                  if it needs to change."
             )),
+            // What a loop over items declares for its body (w2.md §1.2):
+            // a read-only *for each* item, a map's key and value.
+            SymbolKind::LoopVariable
+                if self
+                    .decls
+                    .get(sym)
+                    .is_some_and(|decl| decl.kind == DeclKind::LoopItem) =>
+            {
+                Some(format!(
+                    "{name} is read-only: the loop that creates it gives it each item in turn, and the blocks \
+                     inside can't change it. In a 'for each' loop over a list, choose 'copy' to change a copy \
+                     of each item, or 'editable' to change the items themselves."
+                ))
+            }
             SymbolKind::LoopVariable => Some(format!(
                 "{name} is the counter of a 'for' loop: the loop changes it, so the blocks inside can't. \
                  Use another variable."
