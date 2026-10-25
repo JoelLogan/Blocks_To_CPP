@@ -286,7 +286,10 @@ the getting-started guide describe the polished editor.
     newer `g++-N` names, and the skipped-lines marker on Windows;
   * every polish item moved past the cut line.
 * **Exit:** a typical intro-CS course's assignments (I/O, loops, functions,
-  vectors, structs, files) can be completed. Each has a golden test.
+  vectors, structs, files) can be completed. Each has a golden test. The
+  assignments are the ten of decision M3-D1, kept as acceptance tests in
+  [`tests/assignments/`](../../tests/assignments/README.md) until each one's
+  block project passes and joins the golden tests.
 
 ### M4: Language breadth II
 

@@ -1,0 +1,14 @@
+Type a word or a sentence, or quit to stop.
+Text: Reversed: racecar
+"racecar" is a palindrome.
+Text: Reversed: neve ro ddo reveN
+"Never odd or even" is a palindrome.
+Text: Reversed: ++C ot skcolB
+"Blocks to C++" is not a palindrome.
+Text: Reversed: step on no petS
+"Step on no pets" is a palindrome.
+Text: Reversed: olleh
+"hello" is not a palindrome.
+Text: Reversed: A
+"A" is a palindrome.
+Text: Palindromes: 4 of 6

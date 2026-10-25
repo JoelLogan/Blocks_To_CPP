@@ -1,0 +1,7 @@
+racecar
+Never odd or even
+Blocks to C++
+Step on no pets
+hello
+A
+quit

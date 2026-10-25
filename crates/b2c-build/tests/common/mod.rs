@@ -1,9 +1,12 @@
 //! Helpers shared by the build session tests: the real g++, fake compilers,
-//! example projects and event recording.
+//! example projects and event recording; and, in [`run_data`], building a
+//! program and checking it against golden-style run data.
 
 // Test helpers fail the test by panicking; not every test file uses every
 // helper.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, dead_code)]
+
+pub(crate) mod run_data;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};

@@ -1,0 +1,6 @@
+Rows: Columns: Row 1, column 1: Row 1, column 2: Row 1, column 3: Row 1, column 4: Row 2, column 1: Row 2, column 2: Row 2, column 3: Row 2, column 4: Row 3, column 1: Row 3, column 2: Row 3, column 3: Row 3, column 4: 
+4 -2 7 0 | 9
+1 5 3 8 | 17
+-6 2 9 1 | 6
+Column sums: -1 5 19 9
+Total: 32

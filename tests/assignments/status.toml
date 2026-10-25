@@ -1,0 +1,22 @@
+# The M3 acceptance assignments (docs/plans/next-steps.md §3.3, decision
+# M3-D1) and where each one stands. The order is the order of the index in
+# README.md. The test crates/b2c-build/tests/assignments.rs reads this file.
+#
+#   "pending": tests/assignments/<name>/ holds the assignment, a reference
+#              solution and its run data; the reference solution must pass.
+#   "green":   examples/<name>.b2c, built from blocks, passes; its run data
+#              is in tests/golden/<name>/.
+#
+# How to turn an assignment green: tests/assignments/README.md.
+
+[assignments]
+temperature_table = "pending"
+grade_average = "pending"
+word_count = "pending"
+student_records = "pending"
+bank_menu = "pending"
+palindrome = "pending"
+dice_statistics = "pending"
+guessing_game = "green"
+matrix_sum = "pending"
+input_validation = "pending"

@@ -1,0 +1,11 @@
+Celsius to Fahrenheit
+From: To: Step: 
+-10 C = 14.0 F
+-3 C = 26.6 F
+4 C = 39.2 F
+11 C = 51.8 F
+18 C = 64.4 F
+25 C = 77.0 F
+32 C = 89.6 F
+39 C = 102.2 F
+8 rows

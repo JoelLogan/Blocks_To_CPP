@@ -5,6 +5,11 @@ golden end-to-end tests (spec §9.2): CI generates C++ from each one, compiles
 it with g++, runs it with the input in `tests/golden/<name>/stdin.txt` and
 compares the output and exit code with the expected files in that folder.
 
+The intro-CS assignments that make up M3's exit are acceptance tests in
+[`tests/assignments/`](../tests/assignments/README.md) until their block
+projects exist; each one joins this list, with its golden test, once its
+project passes.
+
 | File | Name | What it shows |
 |------|------|---------------|
 | [`hello_world.b2c`](hello_world.b2c) | Hello World | The smallest program: one print block. |

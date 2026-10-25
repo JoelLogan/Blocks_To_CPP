@@ -373,6 +373,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   summary; the candidates start without baselines until they are committed
   from CI (W7-2). The canvas screenshot now sets its window through the
   window-size seam.
+- The M3 acceptance assignments (`tests/assignments/`): the ten intro-CS
+  assignments of decision M3-D1, each with the assignment, a reference
+  solution and golden-style run data. Until its block project passes, the
+  reference solution is built with the debug configuration's flags and
+  `-Werror` and must give the expected output; `status.toml` records which
+  are green (the guessing game so far), and the test fails when a pending
+  assignment's project starts to pass.
 
 ### Changed
 

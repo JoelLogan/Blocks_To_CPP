@@ -163,6 +163,18 @@ Details of each level as M2 sets them up:
   tested in M2. *Without reading docs* is checked by a manual usability
   session with first-time users on both systems before M2 is declared done
   ([the protocol](../manual-tests/m2-usability.md)).
+* **The M3 assignments.** The intro-CS assignments that make up M3's exit
+  (decision M3-D1 of the
+  [next steps](../plans/next-steps.md#33-decisions-before-m3-starts)) are
+  acceptance tests in
+  [`tests/assignments/`](../../tests/assignments/README.md), with run data
+  in the golden tests' form. Until an assignment's block project passes, a
+  hand-written reference solution, built with the debug configuration's
+  flags and `-Werror`, checks that data; then the run data moves to
+  `tests/golden/` and the example is a golden test like the others. The
+  folder's `status.toml` says which are green, and the test
+  (`crates/b2c-build/tests/assignments.rs`) prints the count and fails when
+  a pending assignment's project starts to pass, until it is marked green.
 * **Visual diff.** The guessing game in a 1000×700 window (set through the
   app's window-size seam) at zoom 1.0, light theme, caret hidden, with the
   C++ and bottom panels folded and the *Program* category chosen, compared

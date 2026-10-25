@@ -1,0 +1,8 @@
+Enter grades from 0 to 100, and -1 to finish.
+Grade: Grade: Grade: A grade must be from 0 to 100.
+Grade: Grade: Grade: Grade: Grade: 
+Grades: 72 85 90 64 100 58
+Count: 6
+Average: 78.17
+Highest: 100
+Above the average: 3

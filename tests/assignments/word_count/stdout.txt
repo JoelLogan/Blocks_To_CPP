@@ -1,0 +1,6 @@
+Which word should I count? 
+Lines: 5
+Words: 22
+Characters (without line breaks): 98
+Longest line: 1 (31 characters)
+"the" appears 4 times.

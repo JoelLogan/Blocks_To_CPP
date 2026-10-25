@@ -1,0 +1,48 @@
+
+1) Deposit
+2) Withdraw
+3) Show balance
+4) Quit
+Choice: Balance: 0
+
+1) Deposit
+2) Withdraw
+3) Show balance
+4) Quit
+Choice: Amount: Deposited 50.
+
+1) Deposit
+2) Withdraw
+3) Show balance
+4) Quit
+Choice: Amount: Not enough money: the balance is 50.
+
+1) Deposit
+2) Withdraw
+3) Show balance
+4) Quit
+Choice: Amount: Withdrew 20.
+
+1) Deposit
+2) Withdraw
+3) Show balance
+4) Quit
+Choice: Please choose 1, 2, 3 or 4.
+
+1) Deposit
+2) Withdraw
+3) Show balance
+4) Quit
+Choice: Amount: The amount must be more than 0.
+
+1) Deposit
+2) Withdraw
+3) Show balance
+4) Quit
+Choice: Balance: 30
+
+1) Deposit
+2) Withdraw
+3) Show balance
+4) Quit
+Choice: Goodbye!
