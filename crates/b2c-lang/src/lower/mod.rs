@@ -329,7 +329,13 @@ impl<'d> Lowerer<'d> {
                 if let Some(item) = item {
                     if self.check_nesting(&item) {
                         flow::check_item(&item, &self.symbols, &mut self.diags);
-                        consts::check_item(&item, &self.symbols, &mut self.diags, &mut self.constants);
+                        consts::check_item(
+                            &item,
+                            &self.symbols,
+                            self.unchecked,
+                            &mut self.diags,
+                            &mut self.constants,
+                        );
                     }
                     if keep {
                         items.push(item);

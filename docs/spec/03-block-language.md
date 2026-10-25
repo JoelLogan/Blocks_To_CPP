@@ -476,7 +476,8 @@ program would crash), a constant whole-number calculation or *as int* that
 does not fit an `int` is an error like a literal that does not fit
 (`B2C-E0517`, `2147483647 + 1`), and a decimal division by a constant 0 or a
 constant decimal result too large gives infinity or NaN, a warning
-(`B2C-W0506`).
+(`B2C-W0506`), or the error `B2C-E0517` when a division's infinity or NaN
+goes straight into a whole number, which C++ leaves undefined.
 
 ### 3.7.4 Text
 

@@ -409,7 +409,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   C++'s rules. New error `B2C-E0316`: a whole-number division or _mod_ by a
   value that is always 0 (also _change … divided by_ and _mod_). New
   warning `B2C-W0506`: a decimal division by a constant 0, or a constant
-  decimal result too large, gives infinity or NaN.
+  decimal result too large, gives infinity or NaN. When a division's
+  infinity or NaN goes straight into a whole number (`int y = x / 0.0`, or
+  _change … divided by (0.0)_ on an `int`), it is the error `B2C-E0517`
+  instead, since C++ leaves that conversion undefined. Nothing is reported
+  in the slots or _change_ of a block the catalog kept unchecked.
 - Block catalog 1.3.0: type signatures (`where`, `type` patterns, `assign`,
   `members`, `type_class`), a closed table of standard headers with the
   `header` field kind and per-option headers, and in `catalog.json` a

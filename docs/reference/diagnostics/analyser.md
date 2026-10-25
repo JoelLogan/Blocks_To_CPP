@@ -706,7 +706,11 @@ Codes by area:
   for a `double` (more than about 1.8 × 10³⁰⁸). C++ follows IEEE 754 there:
   the result is infinity (`inf`), or not a number (`nan`) for 0 / 0, and the
   program goes on with it. That is legal, but hardly ever meant. Also
-  reported for `change [x] divided by (0)` on a decimal variable. As for
+  reported for `change [x] divided by (0)` on a decimal variable. When the
+  infinity or NaN of a division by zero goes straight into a whole number
+  (`create [int] [y] = (x / 0.0)`, or `change [x] divided by (0.0)` on a
+  whole-number variable), it is the error `B2C-E0517` instead: a whole
+  number cannot hold it, and C++ leaves the result undefined. As for
   `B2C-E0316`, a part of an expression that never runs is not reported.
 * **Example:** `create [double] [average] = (total / 0.0)`, or `(1e308) ×
   (10)`.
@@ -768,8 +772,12 @@ Codes by area:
   result does not fit, such as `2147483647 + 1` or `65536 × 65536`, and for
   `(x) as [int]` of a decimal number the analyser works out that does not
   fit: C++ leaves the result undefined (g++ usually wraps it round to a
-  wrong number). A part of an expression that never runs is not reported, as
-  for `B2C-E0316`.
+  wrong number). The same goes for a decimal division by a value that is
+  always 0 whose result (infinity or `nan`) goes straight into a whole
+  number: a whole-number or character variable, parameter or return value,
+  a count, loop bound, random-number bound or exit code, `(x) as [int]`, or
+  `change [x] divided by (0.0)` on a whole-number variable. A part of an
+  expression that never runs is not reported, as for `B2C-E0316`.
 * **Example:** `create [int] [big] = (3000000000)`, or `(2147483647) + (1)`.
 * **Message:** "`3000000000` is too large for a whole number (the largest is
   2147483647). Write it as a decimal number, such as 3000000000.0, if you
@@ -779,7 +787,11 @@ Codes by area:
   largest is 2147483647), so C++ gives an unpredictable result. Use smaller
   values, or decimal numbers." For a conversion: "This turns 10000000000
   into a whole number, but it does not fit in one (whole numbers go from
-  -2147483648 to 2147483647), so C++ gives an unpredictable result. …"
+  -2147483648 to 2147483647), so C++ gives an unpredictable result. …" For a
+  division by zero: "This divides by zero: the value it divides by is always
+  0, so the result is infinity or 'nan' (not a number), and it is then
+  stored as a whole number, which cannot hold either, so C++ gives an
+  unpredictable result. Check the value you divide by."
 * **How to fix:** use smaller numbers, or decimal numbers.
 
 ## B2C-W0518 Value may lose information

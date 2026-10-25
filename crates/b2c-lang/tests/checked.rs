@@ -112,6 +112,38 @@ fn blocks_the_catalog_keeps_unchecked_are_not_reported_again() {
     assert_eq!(checked(&doc(vec![main(vec![old])])), ["B2C-E0603 p1"]);
 }
 
+/// Constant folding (types.md §11.2) reports nothing in the slots or the
+/// `change` of a block the catalog keeps unchecked, as the rest of the
+/// analysis checks nothing there; a block in one of its inputs is still
+/// checked.
+#[test]
+fn constant_folding_skips_what_unchecked_blocks_hold() {
+    let newer = |mut block: Value, id: &str| {
+        block["v"] = json!(2);
+        with_id(block, id)
+    };
+    let nested = with_id(arith("div", num("1"), num("0"))["block"].clone(), "m1");
+    let document = doc(vec![main(vec![
+        declare("int", "x", Some(num("7"))),
+        newer(declare("int", "y", Some(e("x / 0"))), "d1"),
+        newer(declare("int", "z", Some(e("2147483647 + 1"))), "d2"),
+        newer(declare("int", "w", Some(e("x / 0.0"))), "d3"),
+        newer(change_op("x", "div", num("0")), "c1"),
+        newer(print(vec![e("1 / 0"), json!({"block": nested})]), "p1"),
+    ])]);
+    assert_eq!(
+        checked(&document),
+        [
+            "B2C-E0602 d1",
+            "B2C-E0602 d2",
+            "B2C-E0602 d3",
+            "B2C-E0602 c1",
+            "B2C-E0602 p1",
+            "B2C-E0316 m1",
+        ]
+    );
+}
+
 /// Without catalog findings, `analyze_checked_with` is `analyze_with`.
 #[test]
 fn without_catalog_findings_nothing_is_left_out() {

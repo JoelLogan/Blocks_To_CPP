@@ -367,7 +367,10 @@ queries from the analysis cached by its last preview.
   whole-number division or `mod` by a constant 0 is `B2C-E0316`, a constant
   `int` calculation or a *convert* to `int` that does not fit is `E0517`
   (the code of a literal that does not fit), and a decimal division by a
-  constant 0 or a constant decimal result too large is `W0506`. An operand
+  constant 0 or a constant decimal result too large is `W0506` (`E0517`
+  when the division's infinity or NaN goes straight into an `int` or
+  `char`, which C++ leaves undefined). The slots and *change* of a block
+  the catalog kept unchecked report nothing. An operand
   that C++ does not evaluate (after a constant left side of `&&` or `||`
   that decides, the branch of `?:` a constant condition does not choose) is
   not checked, and a part that was reported is no constant further up.

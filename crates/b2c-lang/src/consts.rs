@@ -18,27 +18,36 @@
 //!   the result undefined;
 //! * a decimal division by a constant zero, and a constant decimal
 //!   calculation too large for a `double`: `B2C-W0506`, since IEEE 754 gives
-//!   infinity or NaN, which is defined but hardly ever meant.
+//!   infinity or NaN, which is defined but hardly ever meant;
+//! * a decimal division by a constant zero whose result goes straight into a
+//!   whole number (a `char` or `int` variable, parameter, return value or
+//!   count, `convert`, or `change … divided by` on a whole-number variable):
+//!   `B2C-E0517` instead of `B2C-W0506`, since infinity and NaN do not fit a
+//!   whole number and C++ leaves that conversion undefined.
 //!
 //! Operands that C++ does not evaluate are not checked: the right side of
 //! `&&` and `||` when the constant left side decides, and the choice of `?:`
 //! that a constant condition does not pick (g++ does not warn there either).
-//! Statements are all checked. A value that was reported is not a constant
-//! further up, so one mistake gives one message, and an expression of type
-//! `Error` is never folded.
+//! Statements are all checked, except the parts of a block the catalog kept
+//! unchecked (ADR-0018 §3): the expressions in its own slots and its own
+//! `change` are evaluated without a report, as the lowerer checks nothing
+//! there either (a block in one of its inputs is checked as usual). A value
+//! that was reported is not a constant further up, so one mistake gives one
+//! message, and an expression of type `Error` is never folded.
 //!
 //! [`constant_value`] exposes the same evaluation without diagnostics, and
 //! [`crate::Analysis::constants`] the value of each `const` variable whose
 //! starting value is constant, which ADR-0019's initialisation-order rule
 //! (modules.md §4.4) reads.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::FpCategory;
 
 use b2c_ir::diag::Location;
-use b2c_ir::ids::SymbolId;
+use b2c_ir::ids::{BlockId, SymbolId};
 use b2c_ir::sast::{
-    BinaryOp, Block, CompoundOp, Expr, ExprKind, Item, ItemKind, Stmt, StmtKind, SymbolTable, UnaryOp,
+    BinaryOp, Block, CompoundOp, Expr, ExprKind, Item, ItemKind, Stmt, StmtKind, SymbolKind, SymbolTable,
+    UnaryOp,
 };
 use b2c_ir::types::Type;
 
@@ -169,45 +178,81 @@ pub fn constant_value(expr: &Expr, constants: &BTreeMap<SymbolId, Constant>) -> 
     Folder {
         constants,
         diags: None,
+        context: None,
     }
     .eval(expr)
 }
 
+/// What the checks read besides the expression: the symbols (for a
+/// function's parameter types) and the blocks the catalog kept unchecked,
+/// whose own expressions report nothing.
+#[derive(Clone, Copy)]
+struct Context<'a> {
+    symbols: &'a SymbolTable,
+    unchecked: &'a BTreeSet<BlockId>,
+}
+
 /// Checks one lowered item and records its `const` variables' values in
 /// `constants`. The item's nesting must have been checked (`nesting.rs`),
-/// which bounds the recursion.
+/// which bounds the recursion. `unchecked` is the blocks the catalog kept
+/// unchecked: what they hold themselves is not reported (ADR-0018 §3).
 pub(crate) fn check_item(
     item: &Item,
     symbols: &SymbolTable,
+    unchecked: &BTreeSet<BlockId>,
     diags: &mut Diags,
     constants: &mut BTreeMap<SymbolId, Constant>,
 ) {
-    let body = match &item.kind {
-        ItemKind::Main(main) => &main.body,
-        ItemKind::Function(function) => &function.body,
+    let (body, ret) = match &item.kind {
+        ItemKind::Main(main) => (&main.body, Type::Int),
+        ItemKind::Function(function) => (&function.body, function.ret.clone()),
     };
     let mut checker = Checker {
-        symbols,
+        context: Context { symbols, unchecked },
         diags,
         constants,
+        ret,
     };
     checker.block(body);
 }
 
 /// The statement walk of [`check_item`].
 struct Checker<'a> {
-    symbols: &'a SymbolTable,
+    context: Context<'a>,
     diags: &'a mut Diags,
     constants: &'a mut BTreeMap<SymbolId, Constant>,
+    /// The item's return type: what a `return` converts its value to.
+    ret: Type,
 }
 
 impl Checker<'_> {
     fn eval(&mut self, expr: &Expr) -> Option<Constant> {
+        self.eval_into(expr, None)
+    }
+
+    /// [`Self::eval`] for a value C++ converts to `into`.
+    fn eval_into(&mut self, expr: &Expr, into: Option<&Type>) -> Option<Constant> {
         Folder {
             constants: &*self.constants,
             diags: Some(&mut *self.diags),
+            context: Some(self.context),
         }
-        .eval(expr)
+        .eval_into(expr, into)
+    }
+
+    /// The type a statement converts a value to, read from `symbol`: not
+    /// known for the statement of a block the catalog kept unchecked.
+    fn type_of(&self, stmt: &Stmt, symbol: &SymbolId) -> Option<Type> {
+        if self.context.unchecked.contains(&stmt.origin.block) {
+            return None;
+        }
+        self.context.symbols.get(symbol).map(|symbol| symbol.ty.clone())
+    }
+
+    /// `ty`, unless `stmt` is the statement of a block the catalog kept
+    /// unchecked.
+    fn checked_type(&self, stmt: &Stmt, ty: Type) -> Option<Type> {
+        (!self.context.unchecked.contains(&stmt.origin.block)).then_some(ty)
     }
 
     fn block(&mut self, block: &Block) {
@@ -220,8 +265,12 @@ impl Checker<'_> {
         match &stmt.kind {
             StmtKind::VarDecl(decl) => {
                 let Some(init) = &decl.init else { return };
-                let value = self.eval(init);
-                let ty = self.symbols.get(&decl.symbol).map(|symbol| symbol.ty.clone());
+                let value = self.eval_into(init, self.type_of(stmt, &decl.symbol).as_ref());
+                let ty = self
+                    .context
+                    .symbols
+                    .get(&decl.symbol)
+                    .map(|symbol| symbol.ty.clone());
                 if decl.is_const
                     && let (Some(value), Some(ty)) = (value, ty)
                     && let Some(converted) = value.value.convert(&ty)
@@ -235,29 +284,11 @@ impl Checker<'_> {
                     );
                 }
             }
-            StmtKind::Assign { value, .. } => {
-                self.eval(value);
+            StmtKind::Assign { target, value } => {
+                let ty = self.type_of(stmt, target);
+                self.eval_into(value, ty.as_ref());
             }
-            StmtKind::CompoundAssign { target, op, value } => {
-                let divisor = self.eval(value);
-                let divides = matches!(op, CompoundOp::Div | CompoundOp::Mod);
-                if divides && divisor.is_some_and(|divisor| divisor.value.is_zero()) {
-                    // `x /= v` divides as `x / v` does: as whole numbers when
-                    // both are, else as decimal numbers.
-                    let target = self.symbols.get(target).map(|symbol| &symbol.ty);
-                    let location = value.origin.location();
-                    let whole = |ty: &Type| matches!(ty, Type::Int | Type::Char | Type::Bool);
-                    match target {
-                        Some(ty) if whole(ty) && whole(&value.ty) => {
-                            whole_division(self.diags, location, *op == CompoundOp::Mod);
-                        }
-                        Some(Type::Int | Type::Char | Type::Double) if *op == CompoundOp::Div => {
-                            decimal_division(self.diags, location);
-                        }
-                        _ => {}
-                    }
-                }
-            }
+            StmtKind::CompoundAssign { target, op, value } => self.compound(stmt, target, *op, value),
             StmtKind::If { branches, else_body } => {
                 for branch in branches {
                     self.eval(&branch.cond);
@@ -272,22 +303,36 @@ impl Checker<'_> {
                 self.block(body);
             }
             StmtKind::Repeat { count, body } => {
-                self.eval(count);
+                let ty = self.checked_type(stmt, Type::Int);
+                self.eval_into(count, ty.as_ref());
                 self.block(body);
             }
             StmtKind::ForRange {
-                from, to, step, body, ..
+                var,
+                from,
+                to,
+                step,
+                body,
+                ..
             } => {
+                let ty = self.type_of(stmt, var);
                 for value in [Some(from), Some(to), step.as_ref()].into_iter().flatten() {
-                    self.eval(value);
+                    self.eval_into(value, ty.as_ref());
                 }
                 self.block(body);
             }
             StmtKind::Forever { body } => self.block(body),
             StmtKind::Break | StmtKind::Continue => {}
-            StmtKind::Return { value } | StmtKind::Exit { code: value, .. } => {
+            StmtKind::Return { value } => {
                 if let Some(value) = value {
-                    self.eval(value);
+                    let ty = self.checked_type(stmt, self.ret.clone());
+                    self.eval_into(value, ty.as_ref());
+                }
+            }
+            StmtKind::Exit { code, .. } => {
+                if let Some(code) = code {
+                    let ty = self.checked_type(stmt, Type::Int);
+                    self.eval_into(code, ty.as_ref());
                 }
             }
             StmtKind::Eval { expr } => {
@@ -303,6 +348,34 @@ impl Checker<'_> {
                     self.eval(prompt);
                 }
             }
+        }
+    }
+}
+
+impl Checker<'_> {
+    /// `change … by`: a division or `mod` by a constant zero.
+    fn compound(&mut self, stmt: &Stmt, target: &SymbolId, op: CompoundOp, value: &Expr) {
+        let divisor = self.eval(value);
+        let divides = matches!(op, CompoundOp::Div | CompoundOp::Mod);
+        if !divides || !divisor.is_some_and(|divisor| divisor.value.is_zero()) {
+            return;
+        }
+        // `x /= v` divides as `x / v` does: as whole numbers when both are,
+        // else as decimal numbers, whose infinity or NaN is then stored in
+        // `x`. The `change` of a block the catalog kept unchecked follows a
+        // definition this catalog does not have: its target type is not
+        // known here.
+        let location = value.origin.location();
+        let whole = |ty: &Type| matches!(ty, Type::Int | Type::Char | Type::Bool);
+        match self.type_of(stmt, target) {
+            Some(ty) if whole(&ty) && whole(&value.ty) => {
+                whole_division(self.diags, location, op == CompoundOp::Mod);
+            }
+            Some(Type::Int | Type::Char) if op == CompoundOp::Div => {
+                decimal_division_into_whole(self.diags, location);
+            }
+            Some(Type::Double) if op == CompoundOp::Div => decimal_division(self.diags, location),
+            _ => {}
         }
     }
 }
@@ -334,6 +407,25 @@ fn decimal_division(diags: &mut Diags, location: Location) {
     );
 }
 
+/// Reports a decimal division by a constant zero whose result goes straight
+/// into a whole number: infinity and NaN do not fit one, and C++ leaves the
+/// conversion undefined (as for `convert`, `B2C-E0517`).
+fn decimal_division_into_whole(diags: &mut Diags, location: Location) {
+    diags.error(
+        codes::LITERAL_OVERFLOW,
+        location,
+        "This divides by zero: the value it divides by is always 0, so the result is infinity or 'nan' (not a \
+         number), and it is then stored as a whole number, which cannot hold either, so C++ gives an \
+         unpredictable result. Check the value you divide by.",
+    );
+}
+
+/// Whether C++ converts a value to `ty` as a whole number (a `bool` takes
+/// infinity and NaN as `true`, which is defined).
+fn whole_number(ty: Option<&Type>) -> bool {
+    matches!(ty, Some(Type::Int | Type::Char))
+}
+
 /// A whole number for a message.
 fn whole_limit(value: i64) -> String {
     if value > i64::from(i32::MAX) {
@@ -358,12 +450,22 @@ struct Folder<'a, 'd> {
     constants: &'a BTreeMap<SymbolId, Constant>,
     /// Where reports go; `None` evaluates without reporting.
     diags: Option<&'d mut Diags>,
+    /// The symbols and unchecked blocks while checking; `None` evaluates
+    /// without them.
+    context: Option<Context<'a>>,
 }
 
 impl Folder<'_, '_> {
     /// The value of `expr`, after checking it and the operands C++
     /// evaluates.
     fn eval(&mut self, expr: &Expr) -> Option<Constant> {
+        self.eval_into(expr, None)
+    }
+
+    /// [`Self::eval`] for a value C++ then converts to `into` (`None`: not
+    /// converted, or not known): a decimal division by zero that goes into a
+    /// whole number is an error, not a warning.
+    fn eval_into(&mut self, expr: &Expr, into: Option<&Type>) -> Option<Constant> {
         let foldable = matches!(expr.ty, Type::Bool | Type::Char | Type::Int | Type::Double);
         match &expr.kind {
             ExprKind::Int(literal) if expr.ty == Type::Int => literal
@@ -384,14 +486,16 @@ impl Folder<'_, '_> {
                 .map(|code| exact(ConstValue::Char(code))),
             ExprKind::Var(sym) if foldable => self.variable(sym, &expr.ty),
             ExprKind::Unary { op, operand } => {
-                let value = self.eval(operand);
+                // A sign keeps infinity and NaN what they are.
+                let into = if *op == UnaryOp::Not { None } else { into };
+                let value = self.eval_into(operand, into);
                 if foldable {
                     self.unary(*op, value?, expr)
                 } else {
                     None
                 }
             }
-            ExprKind::Binary { op, lhs, rhs } => self.binary(*op, lhs, rhs, expr),
+            ExprKind::Binary { op, lhs, rhs } => self.binary(*op, lhs, rhs, expr, whole_number(into)),
             ExprKind::Conditional {
                 cond,
                 then_value,
@@ -408,7 +512,7 @@ impl Folder<'_, '_> {
                 } else {
                     else_value
                 };
-                let value = self.eval(chosen)?;
+                let value = self.eval_into(chosen, into)?;
                 if !foldable {
                     return None;
                 }
@@ -417,32 +521,22 @@ impl Folder<'_, '_> {
                     constant_expression: cond.constant_expression && value.constant_expression,
                 })
             }
-            ExprKind::Convert { to, value } => {
-                let value = self.eval(value)?;
-                if *to == Type::Int
-                    && let ConstValue::Double(real) = value.value
-                    && truncate(real).is_none()
-                {
-                    if let Some(diags) = self.diags.as_deref_mut() {
-                        diags.error(
-                            codes::LITERAL_OVERFLOW,
-                            expr.origin.location(),
-                            format!(
-                                "This turns {} into a whole number, but it does not fit in one (whole numbers go \
-                                 from -2147483648 to 2147483647), so C++ gives an unpredictable result. Use smaller \
-                                 values, or keep it a decimal number.",
-                                decimal_shown(real)
-                            ),
-                        );
+            ExprKind::Convert { to, value } => self.convert(to, value, expr),
+            ExprKind::Call { function, args } => {
+                if self.diags.is_some() {
+                    let params = if self.unchecked(expr) {
+                        None
+                    } else {
+                        self.parameter_types(function)
+                    };
+                    for (index, arg) in args.iter().enumerate() {
+                        let ty = params.as_ref().and_then(|params| params.get(index));
+                        self.eval_into(arg, ty);
                     }
-                    return None;
                 }
-                Some(Constant {
-                    value: value.value.convert(to)?,
-                    constant_expression: value.constant_expression,
-                })
+                None
             }
-            ExprKind::Call { args: items, .. } | ExprKind::Join(items) => {
+            ExprKind::Join(items) => {
                 if self.diags.is_some() {
                     for item in items {
                         self.eval(item);
@@ -452,8 +546,9 @@ impl Folder<'_, '_> {
             }
             ExprKind::RandomInt { low, high } => {
                 if self.diags.is_some() {
-                    self.eval(low);
-                    self.eval(high);
+                    let into = (!self.unchecked(expr)).then_some(&Type::Int);
+                    self.eval_into(low, into);
+                    self.eval_into(high, into);
                 }
                 None
             }
@@ -464,6 +559,63 @@ impl Folder<'_, '_> {
             | ExprKind::Str(_)
             | ExprKind::Var(_) => None,
         }
+    }
+
+    /// *convert*: a constant decimal number that does not fit an `int`.
+    fn convert(&mut self, to: &Type, value: &Expr, expr: &Expr) -> Option<Constant> {
+        let into = (!self.unchecked(expr)).then_some(to);
+        let value = self.eval_into(value, into)?;
+        if *to == Type::Int
+            && let ConstValue::Double(real) = value.value
+            && truncate(real).is_none()
+        {
+            if let Some(diags) = self.diags_at(expr) {
+                diags.error(
+                    codes::LITERAL_OVERFLOW,
+                    expr.origin.location(),
+                    format!(
+                        "This turns {} into a whole number, but it does not fit in one (whole numbers go from \
+                         -2147483648 to 2147483647), so C++ gives an unpredictable result. Use smaller values, or \
+                         keep it a decimal number.",
+                        decimal_shown(real)
+                    ),
+                );
+            }
+            return None;
+        }
+        Some(Constant {
+            value: value.value.convert(to)?,
+            constant_expression: value.constant_expression,
+        })
+    }
+
+    /// Where a report about `expr` goes: nowhere while evaluating without
+    /// reports, and nowhere for an expression of a block the catalog kept
+    /// unchecked (a block nested in one is checked as usual).
+    fn diags_at(&mut self, expr: &Expr) -> Option<&mut Diags> {
+        if self.unchecked(expr) {
+            return None;
+        }
+        self.diags.as_deref_mut()
+    }
+
+    /// Whether `expr` belongs to a block the catalog kept unchecked, whose
+    /// types (a conversion's, a call's parameters) are not to be trusted.
+    fn unchecked(&self, expr: &Expr) -> bool {
+        self.context
+            .is_some_and(|context| context.unchecked.contains(&expr.origin.block))
+    }
+
+    /// The types of a function's parameters, in order, when they are known.
+    fn parameter_types(&self, function: &SymbolId) -> Option<Vec<Type>> {
+        let symbols = self.context?.symbols;
+        let SymbolKind::Function { params } = &symbols.get(function)?.kind else {
+            return None;
+        };
+        params
+            .iter()
+            .map(|param| symbols.get(param).map(|param| param.ty.clone()))
+            .collect()
     }
 
     /// A `const` variable with a known value. Only an integral one is a
@@ -494,16 +646,26 @@ impl Folder<'_, '_> {
         })
     }
 
-    fn binary(&mut self, op: BinaryOp, lhs: &Expr, rhs: &Expr, expr: &Expr) -> Option<Constant> {
+    /// A binary operation; `into_whole` when its value goes straight into a
+    /// whole number.
+    fn binary(
+        &mut self,
+        op: BinaryOp,
+        lhs: &Expr,
+        rhs: &Expr,
+        expr: &Expr,
+        into_whole: bool,
+    ) -> Option<Constant> {
         if matches!(op, BinaryOp::And | BinaryOp::Or) {
             return self.logical(op, lhs, rhs, expr);
         }
         let left = self.eval(lhs);
         let right = self.eval(rhs);
         if matches!(op, BinaryOp::Div | BinaryOp::Mod) && right.is_some_and(|right| right.value.is_zero()) {
-            if let Some(diags) = self.diags.as_deref_mut() {
+            if let Some(diags) = self.diags_at(expr) {
                 match expr.ty {
                     Type::Int => whole_division(diags, expr.origin.location(), op == BinaryOp::Mod),
+                    Type::Double if into_whole => decimal_division_into_whole(diags, expr.origin.location()),
                     Type::Double => decimal_division(diags, expr.origin.location()),
                     _ => {}
                 }
@@ -522,7 +684,7 @@ impl Folder<'_, '_> {
                     _ => a / b,
                 };
                 if !result.is_finite() {
-                    if let Some(diags) = self.diags.as_deref_mut() {
+                    if let Some(diags) = self.diags_at(expr) {
                         diags.warning(
                             codes::NOT_FINITE,
                             expr.origin.location(),
@@ -609,7 +771,7 @@ impl Folder<'_, '_> {
     }
 
     fn report_overflow(&mut self, expr: &Expr, message: String) {
-        if let Some(diags) = self.diags.as_deref_mut() {
+        if let Some(diags) = self.diags_at(expr) {
             diags.error(codes::LITERAL_OVERFLOW, expr.origin.location(), message);
         }
     }

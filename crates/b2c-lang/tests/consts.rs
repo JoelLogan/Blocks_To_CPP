@@ -126,8 +126,11 @@ fn division_by_zero_in_blocks_and_change_blocks() {
         change_op("d", "div", num("0")),
         change_op("x", "div", num("2")),
         change_op("d", "mul", num("0")),
-        // `x / 0.0` divides as decimal numbers: infinity, not a crash.
+        // `x / 0.0` divides as decimal numbers: no crash, but the infinity or
+        // NaN is then stored in the whole number `x`, which C++ leaves
+        // undefined.
         change_op("x", "div", num("0.0")),
+        change_op("d", "div", num("0.0")),
     ]);
     assert_eq!(
         folding_codes(&a),
@@ -136,9 +139,107 @@ fn division_by_zero_in_blocks_and_change_blocks() {
             DIVISION_BY_ZERO,
             DIVISION_BY_ZERO,
             DIVISION_BY_ZERO,
+            OVERFLOW,
             NOT_FINITE,
             NOT_FINITE
         ],
+        "{}",
+        render_all(&a)
+    );
+    // The two messages of `change`: a remainder, and a whole division.
+    let a = program(vec![change_op("x", "mod", num("0"))]);
+    assert!(
+        only(&a, DIVISION_BY_ZERO).message.contains("'mod'"),
+        "{}",
+        render_all(&a)
+    );
+    let a = program(vec![change_op("x", "div", num("0"))]);
+    assert!(
+        only(&a, DIVISION_BY_ZERO)
+            .message
+            .starts_with("This divides a whole number by zero")
+    );
+}
+
+/// A decimal division by zero whose infinity or NaN goes straight into a
+/// whole number is an error (`B2C-E0517`, as for `convert`), and a warning
+/// (`B2C-W0506`) everywhere else.
+#[test]
+fn decimal_division_by_zero_into_a_whole_number() {
+    #[track_caller]
+    fn check(steps: Vec<Value>, expected: &[&str]) {
+        let a = program(steps);
+        assert_eq!(folding_codes(&a), expected, "{}", render_all(&a));
+    }
+    let into_whole = &[OVERFLOW][..];
+    let warning = &[NOT_FINITE][..];
+    check(vec![declare("int", "y", Some(e("x / 0.0")))], into_whole);
+    check(vec![declare("char", "y", Some(e("1 / 0.0")))], into_whole);
+    check(
+        vec![declare("int", "y", Some(e("-(x / (half - 0.5))")))],
+        into_whole,
+    );
+    check(
+        vec![declare("int", "y", Some(e("true ? x / 0.0 : 1.5")))],
+        into_whole,
+    );
+    check(vec![set("x", e("x / 0.0"))], into_whole);
+    check(vec![change_op("x", "div", e("0.0"))], into_whole);
+    check(vec![repeat(e("10 / 0.0"), vec![])], into_whole);
+    check(vec![exit(e("1 / 0.0"))], into_whole);
+    check(
+        vec![declare("int", "y", Some(convert("int", e("x / 0.0"))))],
+        into_whole,
+    );
+    check(
+        vec![declare("int", "y", Some(random_int(e("1 / 0.0"), num("3"))))],
+        into_whole,
+    );
+    // A double, a `bool` (infinity and NaN are `true`) or a value that is
+    // not stored as it is: the warning.
+    check(vec![declare("double", "y", Some(e("x / 0.0")))], warning);
+    check(vec![declare("bool", "y", Some(e("x / 0.0")))], warning);
+    check(
+        vec![declare("int", "y", Some(e("x > 0 ? x / 0.0 : 1.5")))],
+        warning,
+    );
+    check(vec![declare("int", "y", Some(e("(x / 0.0) > 1.0")))], warning);
+    check(vec![print(vec![e("x / 0.0")])], warning);
+    let a = program(vec![declare("int", "y", Some(e("x / 0.0")))]);
+    let d = only(&a, OVERFLOW);
+    assert_eq!(d.severity, Severity::Error);
+    assert_eq!(
+        d.message,
+        "This divides by zero: the value it divides by is always 0, so the result is infinity or 'nan' (not a \
+         number), and it is then stored as a whole number, which cannot hold either, so C++ gives an \
+         unpredictable result. Check the value you divide by."
+    );
+}
+
+/// A function's return value and arguments go into its types too.
+#[test]
+fn decimal_division_by_zero_into_a_return_value_or_argument() {
+    let a = run(vec![
+        func(
+            "whole",
+            "int",
+            &[("n", "int", "copy")],
+            vec![ret(Some(e("n / 0.0")))],
+        ),
+        func(
+            "real",
+            "double",
+            &[("d", "double", "copy")],
+            vec![ret(Some(e("d / 0.0")))],
+        ),
+        main(vec![
+            call_stmt("whole", vec![e("1 / 0.0")]),
+            call_stmt("real", vec![e("1 / 0.0")]),
+        ]),
+    ]);
+    assert_eq!(
+        folding_codes(&a),
+        [OVERFLOW, OVERFLOW, NOT_FINITE, NOT_FINITE],
         "{}",
         render_all(&a)
     );

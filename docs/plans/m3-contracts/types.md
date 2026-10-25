@@ -1334,7 +1334,10 @@ IEEE 754 binary64.
   constant condition does not choose (g++ does not warn there either).
   `false && x` folds to `false`; `x > 0 || true` does not fold.
 * Statements are all checked, also under `if <false>` (`W0502` is the lint
-  for code that cannot run).
+  for code that cannot run), except what a block the catalog kept unchecked
+  holds itself (ADR-0018 §3): the expressions in its own slots and its own
+  *change* report nothing, as the rest of the analysis checks nothing there
+  (a block in one of its inputs is checked as usual).
 * One mistake, one report: a reported part is no constant further up, and
   an expression of type `Error` never folds.
 * It runs on each item after the flow checks (`lower/mod.rs`), once its
@@ -1345,8 +1348,8 @@ IEEE 754 binary64.
 | Code | Severity | When | Why |
 | --- | --- | --- | --- |
 | `B2C-E0316` | error | a whole-number `/` or `mod`, also *change … divided by* and *mod*, whose divisor is a constant 0, also when the other side is not constant | the program crashes there (`SIGFPE`; C++ leaves it undefined, g++ only warns `-Wdiv-by-zero`); the free code of the types group |
-| `B2C-E0517` (reused) | error | a constant `int` calculation whose result does not fit; *convert* of a constant `double` that does not fit an `int` | the fault of a literal that does not fit (03 §3.7.3: "possible overflow of a literal into its target type (which is an error)"); one code for one idea |
-| `B2C-W0506` | warning | a `double` division (also *change … divided by*, and an `int` divided by `0.0`) whose divisor is a constant 0; a constant `double` calculation too large | IEEE 754 defines the result (infinity or NaN), so it is not an `E` code (06 §6.6), but it is hardly ever meant; a lint level can raise it; the first free code of `W05xx` |
+| `B2C-E0517` (reused) | error | a constant `int` calculation whose result does not fit; *convert* of a constant `double` that does not fit an `int`; a `double` division by a constant 0 whose result goes straight into an `int` or `char` (a variable, parameter, return value, count, bound or exit code, *convert*, or *change … divided by* on an `int` or `char` variable), since C++ leaves the conversion of infinity or NaN undefined (\[conv.fpint\]) | the fault of a literal that does not fit (03 §3.7.3: "possible overflow of a literal into its target type (which is an error)"); one code for one idea |
+| `B2C-W0506` | warning | a `double` division (also *change … divided by* on a `double` variable) whose divisor is a constant 0 and whose result stays a `double` (or becomes a `bool`); a constant `double` calculation too large | IEEE 754 defines the result (infinity or NaN), so it is not an `E` code (06 §6.6), but it is hardly ever meant; a lint level can raise it; the first free code of `W05xx` |
 
 * `E0316`: *"This divides a whole number by zero: the value it divides by
   is always 0. That stops the program with a crash. Check the value you
@@ -1365,6 +1368,11 @@ IEEE 754 binary64.
   use. Check the value you divide by."* / *"This calculation gives a result
   too large for a decimal number (the largest is about 1.8e308), so it
   becomes infinity. Check the values."*
+* `E0517` for a division by zero into a whole number: *"This divides by
+  zero: the value it divides by is always 0, so the result is infinity or
+  'nan' (not a number), and it is then stored as a whole number, which
+  cannot hold either, so C++ gives an unpredictable result. Check the value
+  you divide by."*
 
 **What it exposes** (for ADR-0019's rule, modules.md §4.4, and for W2):
 
