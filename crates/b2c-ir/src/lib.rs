@@ -39,4 +39,4 @@ pub use scope_info::{SymbolInfo, SymbolInfoKind};
 pub use sig::{
     BlockParts, BlockSig, Fit, PartName, PartType, Resolution, SigTable, TypeEnv, TypePattern, TypeVar,
 };
-pub use types::{LibType, Type, TypeClass, TypeFacts, TypeFn, TypeTerm};
+pub use types::{LibType, TermForm, Type, TypeClass, TypeFacts, TypeFn, TypeTerm};

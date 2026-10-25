@@ -13,7 +13,10 @@
 //!
 //! Until the serialisation pull request of milestone M3's first wave,
 //! [`Type`] serialises as in M2 (`"int"`, `"string"`, `"error"`), and the
-//! new variants, which no stage produces yet, do not serialise at all.
+//! library and user types do not serialise at all. The form it then
+//! switches to, its term with `"error"` for [`Type::Error`], is
+//! [`term_form`] (with [`TermForm`] for a single value), which fields can
+//! opt in to already.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
@@ -1088,6 +1091,100 @@ impl<'de> Visitor<'de> for TermVisitor {
     }
 }
 
+/// How [`term_form`] writes [`Type::Error`], which has no term: the type of
+/// an expression that already has an error.
+pub const ERROR_JSON: &str = "error";
+
+/// A [`Type`] serialised in its term form ([`term_form`]): its
+/// [`TypeTerm`]'s canonical JSON, or [`ERROR_JSON`] for [`Type::Error`].
+/// Writing it allocates nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TermForm<'a>(pub &'a Type);
+
+impl Serialize for TermForm<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            Type::Error => serializer.serialize_str(ERROR_JSON),
+            Type::Named(id) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("ref", id)?;
+                map.end()
+            }
+            // `Type::lib` keeps a type within `Type::MAX_DEPTH`, so the
+            // recursion stays shallow.
+            Type::Lib(app) => match app.args() {
+                [] => serializer.serialize_str(app.ty().cpp_name()),
+                [arg] => {
+                    let mut map = serializer.serialize_map(Some(1))?;
+                    map.serialize_entry(app.ty().cpp_name(), &TermForm(arg))?;
+                    map.end()
+                }
+                args => {
+                    let mut map = serializer.serialize_map(Some(1))?;
+                    map.serialize_entry(app.ty().cpp_name(), &TermArgs(args))?;
+                    map.end()
+                }
+            },
+            ty @ (Type::Void | Type::Bool | Type::Char | Type::Int | Type::Double | Type::String) => {
+                serializer.serialize_str(ty.primitive_name())
+            }
+        }
+    }
+}
+
+/// Two or more template arguments in their term form, as an array.
+struct TermArgs<'a>(&'a [Type]);
+
+impl Serialize for TermArgs<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+        for arg in self.0 {
+            seq.serialize_element(&TermForm(arg))?;
+        }
+        seq.end()
+    }
+}
+
+/// The term form of a [`Type`] (types.md §3.1), for `#[serde(with = "…")]`:
+/// a type is written as its [`TypeTerm`] (`"int"`, `"std::string"`,
+/// `{"std::vector": "int"}`, `{"std::map": ["std::string", "int"]}`,
+/// `{"ref": "sym_x"}`), and [`Type::Error`] as [`ERROR_JSON`]. Reading checks
+/// the term's shape and limits, looks its names up ([`Type::from_term`]) and
+/// accepts [`ERROR_JSON`]; M2's `"string"` is not a type name there.
+///
+/// `Type` serialises as in M2 until the serialisation switch of milestone
+/// M3's first wave (types.md §8.2, packages 5 and 6), which makes its own
+/// `Serialize` and `Deserialize` these two functions. Until then, a field
+/// opts in with `#[serde(with = "b2c_ir::types::term_form")]`, and a value
+/// with [`TermForm`].
+pub mod term_form {
+    use serde::de::{self, Deserialize, Deserializer};
+    use serde::ser::{Serialize, Serializer};
+
+    use super::{ERROR_JSON, TermForm, Type, TypeTerm};
+
+    /// Writes `ty` in its term form.
+    ///
+    /// # Errors
+    /// Only the serializer's own errors.
+    pub fn serialize<S: Serializer>(ty: &Type, serializer: S) -> Result<S::Ok, S::Error> {
+        TermForm(ty).serialize(serializer)
+    }
+
+    /// Reads a type in its term form.
+    ///
+    /// # Errors
+    /// A term of the wrong shape or over the limits, or a name that is not a
+    /// type (`auto`, `string`, an unknown name, a library type with the
+    /// wrong arguments).
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Type, D::Error> {
+        match TypeTerm::deserialize(deserializer)? {
+            TypeTerm::Name(name) if &*name == ERROR_JSON => Ok(Type::Error),
+            term => Type::from_term(&term).map_err(de::Error::custom),
+        }
+    }
+}
+
 /// What the type rules need to know about user types.
 pub trait TypeFacts {
     /// The user type defined by the symbol `id`, or `None` when the facts do
@@ -1820,6 +1917,102 @@ mod tests {
         assert!(serde_json::from_value::<Type>(json!("named")).is_err());
     }
 
+    fn term_json(ty: &Type) -> serde_json::Value {
+        serde_json::to_value(TermForm(ty)).unwrap()
+    }
+
+    fn read_term_form(json: serde_json::Value) -> Result<Type, serde_json::Error> {
+        term_form::deserialize(json)
+    }
+
+    #[test]
+    fn the_term_form_is_the_term_and_error() {
+        for ty in sample_types() {
+            let expected = ty
+                .to_term()
+                .map_or(json!(ERROR_JSON), |term| serde_json::to_value(term).unwrap());
+            assert_eq!(term_json(&ty), expected, "{ty:?}");
+            assert_eq!(read_term_form(term_json(&ty)).unwrap(), ty);
+            if let Some(term) = ty.to_term() {
+                assert_eq!(
+                    serde_json::to_string(&TermForm(&ty)).unwrap(),
+                    serde_json::to_string(&term).unwrap()
+                );
+            }
+        }
+        assert_eq!(term_json(&Type::String), json!("std::string"));
+        assert_eq!(term_json(&Type::Error), json!("error"));
+        assert_eq!(term_json(&Type::Void), json!("void"));
+        let nested = map(Type::String, vector(Type::Named(sym("sym_Pt12"))));
+        assert_eq!(
+            serde_json::to_string(&TermForm(&nested)).unwrap(),
+            r#"{"std::map":["std::string",{"std::vector":{"ref":"sym_Pt12"}}]}"#
+        );
+        assert_eq!(
+            term_json(&lib(LibType::IfStream, Vec::new())),
+            json!("std::ifstream")
+        );
+    }
+
+    #[test]
+    fn the_term_form_reads_only_types() {
+        for bad in [
+            json!("string"),
+            json!("auto"),
+            json!("lib"),
+            json!("named"),
+            json!("std::vector"),
+            json!("Error"),
+            json!({"std::vector": "void"}),
+            json!({"std::vector": "std::ofstream"}),
+            json!({"std::vector": ["int"]}),
+            json!({"std::vector": []}),
+            json!({"std::map": "int"}),
+            json!({"std::ifstream": "int"}),
+            json!({"std::vector": "int", "std::set": "int"}),
+            json!({"ref": "not an id"}),
+            json!({"ref": "sym_x", "x": 1}),
+            json!({}),
+            json!(["int", "int"]),
+            json!(1),
+            json!(null),
+            json!(true),
+        ] {
+            assert!(read_term_form(bad.clone()).is_err(), "{bad}");
+        }
+        let nest = |levels: usize| {
+            let mut json = json!("int");
+            for _ in 0..levels {
+                json = json!({ "std::vector": json });
+            }
+            json
+        };
+        assert!(read_term_form(nest(Type::MAX_DEPTH)).is_ok());
+        assert!(read_term_form(nest(Type::MAX_DEPTH + 1)).is_err());
+        // 15 maps and 16 leaves are 31 names; a vector around them is 32.
+        let int = json!("int");
+        assert!(read_term_form(json!({"std::vector": tree(4, &int)})).is_ok());
+        assert!(read_term_form(json!({"std::set": {"std::vector": tree(4, &int)}})).is_err());
+    }
+
+    /// A struct with a field that opts in to the term form.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Opted {
+        #[serde(with = "term_form")]
+        ty: Type,
+    }
+
+    #[test]
+    fn a_field_opts_in_to_the_term_form() {
+        let opted = Opted {
+            ty: map(Type::String, Type::Int),
+        };
+        let json = serde_json::to_value(&opted).unwrap();
+        assert_eq!(json, json!({"ty": {"std::map": ["std::string", "int"]}}));
+        assert_eq!(serde_json::from_value::<Opted>(json).unwrap(), opted);
+        assert!(serde_json::from_value::<Opted>(json!({"ty": "string"})).is_err());
+    }
+
     fn arb_type() -> impl Strategy<Value = Type> {
         let leaf = prop_oneof![
             Just(Type::Bool),
@@ -1857,6 +2050,8 @@ mod tests {
             let json = serde_json::to_value(&term).unwrap();
             prop_assert_eq!(serde_json::from_value::<TypeTerm>(json.clone()).unwrap(), term.clone());
             prop_assert_eq!(term.key() == serde_json::to_string(&json).unwrap(), !json.is_string());
+            prop_assert_eq!(&term_json(&ty), &json);
+            prop_assert_eq!(read_term_form(json).unwrap(), ty);
         }
     }
 }
