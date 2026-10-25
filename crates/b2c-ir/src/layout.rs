@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use crate::ids::{ModuleId, SymbolId};
 use crate::sast::{ItemKind, Module, PassMode, SymbolTable};
 use crate::text::FileStem;
-use crate::types::Type;
+use crate::types::{Type, TypeFacts, UserKind};
 
 /// The files of a program's modules, what they include and in which order
 /// their declarations are printed.
@@ -114,17 +114,17 @@ fn function_order(module: &Module, symbols: &SymbolTable) -> Vec<usize> {
                 return None;
             };
             let name = symbols.get(&def.symbol)?.name.as_str();
-            let signature: Vec<(&'static str, u8)> = def
+            let signature: Vec<(String, u8)> = def
                 .params
                 .iter()
                 .filter_map(|param| {
                     let ty = &symbols.get(&param.symbol)?.ty;
                     let style = match param.mode {
                         PassMode::Editable => 1,
-                        PassMode::ReadOnly if *ty == Type::String => 2,
+                        PassMode::ReadOnly if by_const_ref(ty, symbols) => 2,
                         PassMode::Copy | PassMode::ReadOnly => 0,
                     };
-                    Some((value_spelling(ty), style))
+                    Some((value_spelling(ty, symbols), style))
                 })
                 .collect();
             Some(((name, signature, &item.origin.block), index))
@@ -134,16 +134,26 @@ fn function_order(module: &Module, symbols: &SymbolTable) -> Vec<usize> {
     functions.into_iter().map(|(_, index)| index).collect()
 }
 
-/// How code generation spells a value of this type in a parameter list
-/// (M2's types; the rest print as an error placeholder there).
-fn value_spelling(ty: &Type) -> &'static str {
+/// How code generation spells a value of this type in a parameter list: in
+/// full, user types by their name (`std::vector<Point>`); `void` and
+/// `Error` print as an error placeholder there.
+fn value_spelling(ty: &Type, symbols: &SymbolTable) -> String {
     match ty {
-        Type::Bool => "bool",
-        Type::Char => "char",
-        Type::Int => "int",
-        Type::Double => "double",
-        Type::String => "std::string",
-        Type::Void | Type::Lib(_) | Type::Named(_) | Type::Error => "int /* error */",
+        Type::Void | Type::Error => String::from("int /* error */"),
+        _ => ty.cpp(symbols).to_string(),
+    }
+}
+
+/// Whether code generation passes a read-only parameter of this type as
+/// `const T&`: every type that is not a scalar (types.md §5.1), so
+/// `std::string`, the library types and structs, but not enums.
+fn by_const_ref(ty: &Type, symbols: &SymbolTable) -> bool {
+    match ty {
+        Type::String | Type::Lib(_) => true,
+        Type::Named(id) => symbols
+            .user_type(id)
+            .is_some_and(|user| user.kind == UserKind::Struct),
+        Type::Void | Type::Bool | Type::Char | Type::Int | Type::Double | Type::Error => false,
     }
 }
 

@@ -46,12 +46,15 @@ fn is_comparison(op: BinaryOp) -> bool {
 }
 
 /// The comparison that is true exactly when `op` is false, if the operand
-/// types allow it. `==`/`!=` invert for every built-in type. The ordering
-/// comparisons do not invert for `double`, because `!(a < b)` and `a >= b`
-/// differ when a value is NaN.
+/// types allow it. `==`/`!=` invert for every type that has them: the
+/// built-in types, and the library and user types, whose `!=` the standard
+/// library or the generated operators define as the opposite of `==`
+/// (types.md §1.6). The ordering comparisons do not invert for `double`,
+/// because `!(a < b)` and `a >= b` differ when a value is NaN, nor for
+/// library and user types, which may hold one.
 fn inverse_comparison(op: BinaryOp, lhs: &Type, rhs: &Type) -> Option<BinaryOp> {
     let ordered = |ty: &Type| matches!(ty, Type::Int | Type::Char | Type::Bool | Type::String);
-    let comparable = |ty: &Type| ordered(ty) || *ty == Type::Double;
+    let comparable = |ty: &Type| ordered(ty) || matches!(ty, Type::Double | Type::Lib(_) | Type::Named(_));
     let (inverse, needs_order) = match op {
         BinaryOp::Eq => (BinaryOp::Ne, false),
         BinaryOp::Ne => (BinaryOp::Eq, false),
@@ -98,6 +101,14 @@ fn replace_kind(from: CExpr, kind: CExprKind) -> CExpr {
         kind,
         origins: from.origins,
     }
+}
+
+/// A desugared enum value as text: `to_string(c)`, the function generated
+/// for an enum that is joined (types.md §5.2). It is written plainly:
+/// argument-dependent lookup finds it next to the enum, and no standard
+/// `to_string` takes an `enum class`.
+fn enum_text(lowered: CExpr) -> CExpr {
+    CExpr::call_fixed("to_string", vec![lowered])
 }
 
 /// A desugared `bool` as text: `b ? "true" : "false"`, or just `"true"` /
@@ -149,7 +160,7 @@ impl Lowerer<'_> {
                 Some(symbol) => {
                     // Using a returned `std::string` (e.g. printing it) needs
                     // `<string>` even if this module never names the type.
-                    self.note_type(CType::result(&symbol.ty));
+                    self.note_value_type(&symbol.ty);
                     let args = args.iter().map(|arg| self.expr(arg)).collect();
                     CExpr::new(CExprKind::Call {
                         callee: Callee::User(symbol.name.clone()),
@@ -165,12 +176,9 @@ impl Lowerer<'_> {
                 let high = self.expr(high);
                 CExpr::call_fixed("b2c::random_int", vec![low, high])
             }
-            ExprKind::Convert { to, value } => match CType::value(to) {
+            ExprKind::Convert { to, value } => match self.ctype(to) {
                 ty @ (CType::Int | CType::Double | CType::Char | CType::Bool) => {
-                    CExpr::new(CExprKind::Cast {
-                        ty,
-                        value: Box::new(self.expr(value)),
-                    })
+                    CExpr::cast(ty, self.expr(value))
                 }
                 _ => CExpr::error(),
             },
@@ -221,7 +229,8 @@ impl Lowerer<'_> {
 
     /// Converts a desugared expression to a `std::string` object:
     /// `std::string(text)`, `std::string(1, c)`, `std::to_string(n)`,
-    /// `b2c::to_text(x)` or `std::string(b ? "true" : "false")`.
+    /// `b2c::to_text(x)`, `std::string(b ? "true" : "false")` or, for an
+    /// enum, its generated `to_string(c)` (types.md §5.2).
     pub(super) fn std_string_of(&mut self, expr: &Expr, lowered: CExpr) -> CExpr {
         self.include("<string>");
         match expr.ty {
@@ -233,6 +242,7 @@ impl Lowerer<'_> {
                 let text = bool_text(expr, lowered);
                 CExpr::call_fixed("std::string", vec![text])
             }
+            Type::Named(_) if self.is_enum(&expr.ty) => enum_text(lowered),
             Type::Void | Type::Lib(_) | Type::Named(_) | Type::Error => lowered,
         }
     }
@@ -263,6 +273,7 @@ impl Lowerer<'_> {
                 Type::Char => CExpr::call_fixed("std::string", vec![int_literal(1), lowered]),
                 Type::Int | Type::Double => self.number_text(&item.ty, lowered),
                 Type::Bool => bool_text(item, lowered),
+                Type::Named(_) if self.is_enum(&item.ty) => enum_text(lowered),
                 Type::String | Type::Void | Type::Lib(_) | Type::Named(_) | Type::Error => lowered,
             };
             joined = CExpr::binary(BinOp::Add, joined, part);

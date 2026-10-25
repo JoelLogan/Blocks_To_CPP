@@ -123,8 +123,8 @@ impl Lowerer<'_> {
         let Some(symbol) = self.variable(&decl.symbol) else {
             return CStmtKind::Error;
         };
-        let declared = CType::value(&symbol.ty);
-        self.note_type(declared);
+        let declared = self.ctype(&symbol.ty);
+        self.note_type(&declared);
         let init = decl.init.as_ref().map(|value| {
             let lowered = self.expr(value);
             // `auto s = "text";` would make a `const char*`; keep it a string.
@@ -230,7 +230,7 @@ impl Lowerer<'_> {
             return CStmtKind::Error;
         };
         let var = symbol.name.clone();
-        let ty = match CType::value(&symbol.ty) {
+        let ty = match self.ctype(&symbol.ty) {
             ty @ (CType::Int | CType::Double | CType::Char) => ty,
             _ => CType::Int,
         };
