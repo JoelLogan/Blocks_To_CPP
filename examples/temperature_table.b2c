@@ -1,0 +1,502 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.3.0"
+  },
+  "project": {
+    "id": "prj_temperature_table",
+    "name": "Temperature table",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b001",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b002",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_start",
+                      "name": "start"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b003",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_end",
+                      "name": "end"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b004",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_step",
+                      "name": "step"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b005",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Celsius to Fahrenheit"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b006",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "MODE": "keep_asking",
+                    "VAR": {
+                      "ref": "s_start"
+                    }
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "From: "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b007",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "MODE": "keep_asking",
+                    "VAR": {
+                      "ref": "s_end"
+                    }
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "To: "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b008",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "MODE": "keep_asking",
+                    "VAR": {
+                      "ref": "s_step"
+                    }
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "Step: "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b009",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": ""
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b010",
+                  "type": "control.if",
+                  "v": 1,
+                  "extra": {
+                    "elseIfCount": 0,
+                    "hasElse": false
+                  },
+                  "inputs": {
+                    "COND0": {
+                      "expr": [
+                        {
+                          "ref": "s_step"
+                        },
+                        {
+                          "op": "<"
+                        },
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b011",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 1
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "The step must be at least 1."
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b012",
+                        "type": "program.exit",
+                        "v": 1,
+                        "inputs": {
+                          "CODE": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b013",
+                  "type": "io.decimals",
+                  "v": 1,
+                  "inputs": {
+                    "DIGITS": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b014",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_rows",
+                      "name": "rows"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b015",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "DIRECTION": "through",
+                    "VAR": {
+                      "sym": "s_celsius",
+                      "name": "celsius"
+                    }
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "ref": "s_start"
+                        }
+                      ]
+                    },
+                    "STEP": {
+                      "expr": [
+                        {
+                          "ref": "s_step"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "ref": "s_end"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b016",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "CONST": false,
+                          "NAME": {
+                            "sym": "s_fahrenheit",
+                            "name": "fahrenheit"
+                          },
+                          "TYPE": "double"
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "ref": "s_celsius"
+                              },
+                              {
+                                "op": "*"
+                              },
+                              {
+                                "num": "1.8"
+                              },
+                              {
+                                "op": "+"
+                              },
+                              {
+                                "num": "32"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b017",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 4
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "ref": "s_celsius"
+                              }
+                            ]
+                          },
+                          "ITEM1": {
+                            "expr": [
+                              {
+                                "str": " C = "
+                              }
+                            ]
+                          },
+                          "ITEM2": {
+                            "expr": [
+                              {
+                                "ref": "s_fahrenheit"
+                              }
+                            ]
+                          },
+                          "ITEM3": {
+                            "expr": [
+                              {
+                                "str": " F"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b018",
+                        "type": "var.change",
+                        "v": 1,
+                        "fields": {
+                          "OP": "add",
+                          "VAR": {
+                            "ref": "s_rows"
+                          }
+                        },
+                        "inputs": {
+                          "BY": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b019",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "ref": "s_rows"
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "str": " rows"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

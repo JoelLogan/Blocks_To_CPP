@@ -14,7 +14,7 @@ green one by one as the block projects arrive.
 
 | Assignment | Concepts | Wave | Status |
 | --- | --- | --- | --- |
-| [`temperature_table`](temperature_table/README.md) | loops, formatting | W2 | pending |
+| [`temperature_table`](temperature_table/README.md) | loops, formatting | W2 | green |
 | [`grade_average`](grade_average/README.md) | list (vector), average and maximum | W2 | pending |
 | [`word_count`](word_count/README.md) | files, strings | W2 | pending |
 | [`student_records`](student_records/README.md) | struct, list of structs, sorting | W2 | pending |
