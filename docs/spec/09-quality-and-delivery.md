@@ -78,7 +78,7 @@
 | Level | Tooling | Scope / oracle |
 | ------- | --------- | ---------------- |
 | **Unit** | `cargo nextest`, Vitest | Every module. Encoders, parsers and validators aim for 100% branch coverage. |
-| **Snapshot** | `insta` | Generated C++ for every catalog block in its default configuration, plus curated variants (the forms whose headers the generator chooses). Each snapshot is also compiled with `-fsyntax-only` under C++17 and C++20 with the *strict* warnings as errors. |
+| **Snapshot** | `insta` | Generated C++ for every catalog block in its default configuration, plus curated variants (the forms whose headers the generator chooses, and library-typed variables and parameters from a project file). Each snapshot must include the header of every standard name it uses, and is compiled with `g++ -c` under C++17 and C++20 with the *strict* warnings as errors. |
 | **Golden end-to-end** | `b2c` CLI | `examples/*.b2c` → generate → compile → run with an stdin fixture → compare stdout, stderr and exit code with `tests/golden/`. Matrix: GCC 11, 13 and 15 on Linux (containers), MSYS2 UCRT64 GCC on Windows. |
 | **Property-based** | `proptest` | (a) String-literal round trip: arbitrary text → program prints exactly those bytes. (b) **Differential "no generator bugs" oracle**: random well-typed block programs from a BDM generator; if the analyser reports no errors, g++ must accept the output. (c) Determinism: generate twice, and with shuffled top-level order → identical bytes. (d) BDM → Blockly → BDM round trip is the identity. |
 | **Fuzzing** | `cargo-fuzz` (libFuzzer) | BDM parser, expression parser, type parser, catalog/pack loader, SARIF/JSON/text diagnostics parsers, GDB/MI parser, event-channel parser, comment/string encoders |
@@ -112,12 +112,18 @@ Details of each level as M2 sets them up:
   function, *set*'s start value and a new *define*'s empty parameter list),
   each in the smallest program that passes the analyser and g++, and for
   curated variants: *stop program* in a function, a simple *ask*, an *ask*
-  for text and a literal used as a `std::string`. It runs the whole front end
-  (`run_frontend`), as the build does, and snapshots each case with `insta`
-  (the app version masked; a `<case>@c++17` snapshot only where the C++17
-  code differs). All cases are compiled with `g++ -fsyntax-only`, one
-  invocation per standard, under C++17 and C++20 with a debug build's flags
-  at the *strict* warning level and `-Werror`. A catalog block without a
+  for text, a literal used as a `std::string`, and variables and parameters
+  of library types read from a format-version-2 project. It runs the whole
+  front end (`run_frontend`), as the build does, and snapshots each case
+  with `insta` (the app version masked; a `<case>@c++17` snapshot only where
+  the C++17 code differs). g++ cannot show a missing header, since
+  libstdc++'s headers include one another, so each `std::` name in a case's
+  code must have its header (from a table in the test) among the file's
+  `#include` lines. All cases are compiled with `g++ -c` (not
+  `-fsyntax-only`, which skips the middle end's warnings such as
+  `-Wreturn-type`), one invocation per standard, under C++17 and C++20 with
+  a debug build's flags at the *strict* warning level and `-Werror`. A
+  catalog block without a
   case fails the test. It is skipped without g++ unless `B2C_REQUIRE_GXX` is
   set, and runs in the Linux (GCC 13), GCC 11, GCC 15 and Windows (MSYS2)
   test jobs.

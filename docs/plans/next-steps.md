@@ -164,7 +164,7 @@ From the roadmap, grouped by where the work lands:
   that follows `BUILDING.md` in Debian 12 and 13 containers (M3-7), the
   skipped-lines marker on Windows (RD-15).
 - **Quality and security:** a snapshot test of every catalog block's default
-  C++ compiled with `-fsyntax-only` (done in W1); the M3 threat-model review
+  C++ compiled with `g++ -c` (done in W1); the M3 threat-model review
   (the worker's CSP and scope index, files and paths a program may touch,
   the Trusted Types table of the security specs); an npm licence gate
   (TM-M2-6); the toolchain matrix cells deferred from M2.
@@ -224,7 +224,7 @@ need no new blocks (expert mode, toolbox search, Appearance).
   small-program budgets (M3-9) are gated once measured.
 - **Windows behaviour** of close-input (ConPTY), the external terminal and
   file paths: each gets a Windows E2E flow from the start, not at the end.
-- **Generated C++ correctness** across GCC 11 to 15: the `-fsyntax-only`
+- **Generated C++ correctness** across GCC 11 to 15: the catalog
   snapshot test (in place since W1) runs in CI on GCC 11, 13 and 15 and on
   MSYS2, and the every-g++ build test added in M2 covers the local
   side-by-side compilers, as W1's test of codegen's new forms does.

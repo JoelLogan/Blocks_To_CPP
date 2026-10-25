@@ -432,10 +432,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `int`, range-`for`, struct comparisons in C++17 and C++20, struct and enum
   printing), which no block reaches yet.
 - Tests: the catalog snapshot test generates C++ for every core block in its
-  default configuration and for four curated variants, through the whole
-  front end, snapshots it and compiles it with `g++ -fsyntax-only` under
-  C++17 and C++20 with the strict warnings as errors (GCC 11, 13, 15 and
-  MSYS2 in CI); a block without a case fails it. Also a no-false-refusal
+  default configuration and for five curated variants (one with
+  library-typed variables and parameters from a format-version-2 project),
+  through the whole front end, snapshots it, checks that each `std::` name
+  it uses has its header among the `#include` lines, and compiles it with
+  `g++ -c` under C++17 and C++20 with the strict warnings as errors (GCC 11,
+  13, 15 and MSYS2 in CI); a block without a case fails it. Also a no-false-refusal
   test of the editor's checker with the real core (parked parents
   included), the E2E flow `typed-slots`, a record of what M2's rules gave
   that the catalog's table is held to, and codegen's new forms compiled

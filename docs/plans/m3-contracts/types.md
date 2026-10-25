@@ -1167,7 +1167,11 @@ table. Every golden file stays byte-identical and every snapshot as it was.
   (`src/lower/tests.rs`) does this with the `g++` on `PATH` and every
   `/usr/bin/g++-N`, and runs the program; the GCC 11 and 15 container jobs
   run it with W1's catalog snapshot test
-  (`crates/b2c-build/tests/catalog_syntax.rs`).
+  (`crates/b2c-build/tests/catalog_syntax.rs`), which compiles with `g++
+  -c` (so the middle end's warnings count), checks that each `std::` name
+  has its header among the `#include` lines (libstdc++'s headers include
+  one another, so g++ cannot), and has a case with library-typed variables
+  and parameters read from a format-version-2 project.
 
 **TypeScript (Vitest).**
 

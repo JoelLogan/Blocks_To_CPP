@@ -1,8 +1,8 @@
 //! The catalog snapshot test (spec §9.2, *Snapshot*): every block of the core
 //! catalog in its default configuration, and a few curated variants, goes
 //! through the whole front end ([`run_frontend`]); its generated C++ is
-//! snapshotted with `insta` and compiled with `g++ -fsyntax-only` under C++17
-//! and C++20.
+//! snapshotted with `insta`, checked to include the header of every standard
+//! name it uses, and compiled with `g++ -c` under C++17 and C++20.
 //!
 //! * **Default configuration.** A block comes as the toolbox gives it: its
 //!   type and version with the toolbox entry's preset and nothing else, so
@@ -36,7 +36,9 @@
 //! * **Curated variants** add the forms whose headers the code generator
 //!   chooses rather than the catalog (catalog 1.3.0, M3 contracts types.md
 //!   §5.3): *stop program* outside `main` (`std::exit`), a simple *ask*, an
-//!   *ask* for text, and a text literal that becomes a `std::string`.
+//!   *ask* for text, and a text literal that becomes a `std::string`; and
+//!   variables and parameters of library types read from a project file
+//!   (format version 2), passed read-only (`const T&`) and editable.
 //! * **Coverage.** Every block of the core catalog has exactly one default
 //!   case, and every case's block is in the catalog and in the case's
 //!   program, so a new block without a case fails
@@ -48,12 +50,21 @@
 //!   case must also pass the front end without a warning. After an intended
 //!   change, review the new snapshots with `cargo insta review`, or rewrite
 //!   them with `INSTA_UPDATE=always` and review the diff.
+//! * **Headers.** g++ cannot show a missing header: libstdc++'s headers
+//!   include one another, so code that names `std::string` with only
+//!   `<iostream>` still compiles. So each `std::` name in a case's code must
+//!   have its header (one the C++ standard says declares it) among the
+//!   file's `#include` lines, from the table [`HEADERS`]; a name missing from
+//!   the table fails the test until it is added.
 //! * **Compiling.** All cases go to g++ in one invocation per standard, the
 //!   two standards in parallel: the compile flags of a debug build at the
 //!   *strict* warning level, warnings as errors (`CommandPlan`, spec §7.4),
-//!   and `-fsyntax-only`. Without g++ this part is skipped, unless
-//!   `B2C_REQUIRE_GXX` is set, as in CI, where the Linux job (GCC 13), the
-//!   GCC 11 and GCC 15 containers and the Windows job (MSYS2) run it.
+//!   and `-c` (not `-fsyntax-only`, which skips the warnings GCC's middle
+//!   end gives, such as `-Wreturn-type` and `-Wuninitialized`), each object
+//!   file written to the standard's folder and dropped. Without g++ this part
+//!   is skipped, unless `B2C_REQUIRE_GXX` is set, as in CI, where the Linux
+//!   job (GCC 13), the GCC 11 and GCC 15 containers and the Windows job
+//!   (MSYS2) run it.
 
 // Test helpers fail the test by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -113,6 +124,9 @@ struct Case {
     placement: &'static str,
     /// The module's top-level blocks.
     blocks: Vec<Value>,
+    /// The project file's format version: 2 for a case with a template
+    /// type term (M3 contracts types.md §2).
+    format_version: u32,
 }
 
 impl Case {
@@ -124,6 +138,7 @@ impl Case {
             curated: false,
             placement,
             blocks,
+            format_version: 1,
         }
     }
 
@@ -135,14 +150,21 @@ impl Case {
             curated: true,
             placement,
             blocks,
+            format_version: 1,
         }
+    }
+
+    /// The case saved with format version `version`.
+    fn with_format_version(mut self, version: u32) -> Self {
+        self.format_version = version;
+        self
     }
 
     /// The case as project bytes for `standard`.
     fn project(&self, standard: CppStandard) -> Vec<u8> {
         let document = json!({
             "format": "blocks2cpp/project",
-            "formatVersion": 1,
+            "formatVersion": self.format_version,
             "generator": {
                 "app": env!("CARGO_PKG_VERSION"),
                 "catalog": b2c_catalog::CATALOG_VERSION,
@@ -502,7 +524,71 @@ fn variants(b: &Blocks) -> Vec<Case> {
             "the value of create x, a text, before a print of x, in main",
             vec![b.main(&[text_x(&nested(&b.plain("text.literal"))), b.print_x()])],
         ),
+        library_types(b),
     ]
+}
+
+/// Variables and parameters of library types, from a format-version-2
+/// project: `f` takes a list of `int` read-only and one editable, a map by
+/// copy and one editable, and copies each into the editable one; `main`
+/// creates the four and calls `f`.
+fn library_types(b: &Blocks) -> Case {
+    let list = json!({ "std::vector": "int" });
+    let map = json!({ "std::map": ["std::string", { "std::set": "char" }] });
+    // Without the toolbox's start value 0: a list starts empty.
+    let create = |symbol: &str, name: &str, ty: &Value| {
+        let mut block = b.block(
+            "var.declare",
+            &json!({ "fields": { "TYPE": ty, "NAME": declaration(symbol, name) } }),
+        );
+        block.as_object_mut().unwrap().remove("inputs");
+        block
+    };
+    let row = |symbol: &str, name: &str, ty: &Value, mode: &str| json!({ "sym": symbol, "name": name, "type": ty, "mode": mode });
+    let set = |to: &str, from: &str| {
+        b.block(
+            "var.set",
+            &json!({
+                "fields": { "VAR": reference(to) },
+                "inputs": { "VALUE": tokens(&json!([reference(from)])) },
+            }),
+        )
+    };
+    let define = b.define_f(&json!({
+        "extra": { "params": [
+            row("s_from", "from", &list, "read_only"),
+            row("s_to", "to", &list, "editable"),
+            row("s_names", "names", &map, "copy"),
+            row("s_out", "out", &map, "editable"),
+        ] },
+        "statements": { "BODY": [set("s_to", "s_from"), set("s_out", "s_names")] },
+    }));
+    let args: Map<String, Value> = ["s_a", "s_b", "s_m", "s_n"]
+        .iter()
+        .enumerate()
+        .map(|(index, symbol)| (format!("ARG{index}"), tokens(&json!([reference(symbol)]))))
+        .collect();
+    let call = b.block(
+        "func.call_stmt",
+        &json!({ "fields": { "FUNC": reference(F) }, "extra": { "argCount": 4 }, "inputs": args }),
+    );
+    Case::variant(
+        "var.declare",
+        "library-types",
+        "creates the lists a and b and the maps m and n, and calls f(a, b, m, n), in main; f copies its \
+         read-only list and its copied map into its editable ones (format version 2)",
+        vec![
+            b.main(&[
+                create("s_a", "a", &list),
+                create("s_b", "b", &list),
+                create("s_m", "m", &map),
+                create("s_n", "n", &map),
+                call,
+            ]),
+            define,
+        ],
+    )
+    .with_format_version(2)
 }
 
 /// The generated project of `case` for `standard`, or what went wrong: any
@@ -630,6 +716,112 @@ fn catalog_blocks_generate_the_expected_cpp() {
     }
 }
 
+/// The header of each standard name the generated code uses: any one of
+/// the listed headers declares it (C++ standard, \[headers\] and each
+/// name's synopsis), so the code does not depend on one header including
+/// another. A name used outside this table fails
+/// `catalog_blocks_include_what_they_use`.
+const HEADERS: &[(&str, &[&str])] = &[
+    ("std::cerr", &["<iostream>"]),
+    ("std::cin", &["<iostream>"]),
+    ("std::cout", &["<iostream>"]),
+    ("std::exit", &["<cstdlib>"]),
+    ("std::getline", &["<string>"]),
+    ("std::isspace", &["<cctype>"]),
+    ("std::istream", &["<istream>", "<iostream>"]),
+    ("std::istringstream", &["<sstream>"]),
+    ("std::map", &["<map>"]),
+    ("std::mt19937", &["<random>"]),
+    ("std::numeric_limits", &["<limits>"]),
+    ("std::random_device", &["<random>"]),
+    ("std::set", &["<set>"]),
+    ("std::streamsize", &["<ios>", "<iostream>"]),
+    ("std::string", &["<string>"]),
+    ("std::strtol", &["<cstdlib>"]),
+    ("std::swap", &["<utility>"]),
+    ("std::to_string", &["<string>"]),
+    ("std::tolower", &["<cctype>"]),
+    ("std::uniform_int_distribution", &["<random>"]),
+    ("std::vector", &["<vector>"]),
+    ("std::ws", &["<istream>", "<iostream>"]),
+];
+
+/// The `std::` names in `code` (`std::numeric_limits`, not its members).
+fn standard_names(code: &str) -> BTreeSet<&str> {
+    let mut names = BTreeSet::new();
+    let mut rest = code;
+    while let Some(at) = rest.find("std::") {
+        let tail = &rest[at..];
+        let end = tail[5..]
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .map_or(tail.len(), |end| end + 5);
+        // `xstd::` is no standard name.
+        let starts_word = rest[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !(c.is_ascii_alphanumeric() || c == '_'));
+        if starts_word && end > 5 {
+            names.insert(&tail[..end]);
+        }
+        rest = &tail[end.max(5)..];
+    }
+    names
+}
+
+#[test]
+fn standard_names_are_found() {
+    let names = standard_names("std::cout << std::numeric_limits<std::streamsize>::max(); mystd::x; std::");
+    assert_eq!(
+        names.into_iter().collect::<Vec<_>>(),
+        ["std::cout", "std::numeric_limits", "std::streamsize"]
+    );
+}
+
+/// Every `std::` name in a case's code has its header among the file's
+/// `#include` lines (see [`HEADERS`]): what g++ cannot check, since
+/// libstdc++'s headers include one another.
+#[test]
+fn catalog_blocks_include_what_they_use() {
+    let mut failures = Vec::new();
+    for case in cases() {
+        for standard in STANDARDS {
+            let project = match generate(&case, standard) {
+                Ok(project) => project,
+                Err(failure) => {
+                    failures.push(failure);
+                    continue;
+                }
+            };
+            for file in &project.files {
+                let included: BTreeSet<&str> = file
+                    .contents
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("#include "))
+                    .collect();
+                for name in standard_names(&file.contents) {
+                    match HEADERS.iter().find(|(known, _)| *known == name) {
+                        None => failures.push(format!(
+                            "{} ({}): {name} is not in HEADERS; add it with the header that declares it",
+                            case.name,
+                            spelling(standard)
+                        )),
+                        Some((_, headers)) if !headers.iter().any(|header| included.contains(header)) => {
+                            failures.push(format!(
+                                "{} ({}, {}): uses {name} but includes none of {headers:?}",
+                                case.name,
+                                spelling(standard),
+                                file.path
+                            ));
+                        }
+                        Some(_) => {}
+                    }
+                }
+            }
+        }
+    }
+    finish(&failures);
+}
+
 #[test]
 fn catalog_blocks_compile_with_the_strict_warnings() {
     let Some(toolchain) = common::real_toolchain() else {
@@ -654,8 +846,8 @@ fn catalog_blocks_compile_with_the_strict_warnings() {
 }
 
 /// Generates every case as a `standard` project into a folder of `root`,
-/// each into a folder named after the case, and checks them all with one
-/// `g++ -fsyntax-only`.
+/// each into a folder named after the case, and compiles them all with one
+/// `g++ -c`.
 fn syntax_check(
     toolchain: &Toolchain,
     cases: &[Case],
@@ -676,7 +868,7 @@ fn syntax_check(
             }
         }
     }
-    let command = syntax_only(toolchain, standard, &folder, &sources)?;
+    let command = compile_only(toolchain, standard, &folder, &sources)?;
     let env = compiler_env(
         toolchain.platform(),
         toolchain.bin_dir(),
@@ -700,11 +892,12 @@ fn syntax_check(
     }
 }
 
-/// `g++ -fsyntax-only` over `sources` (relative to `folder`, its working
-/// directory) with the compile flags a debug build of a `standard` project
-/// gets at the strict warning level with warnings as errors, and plain-text
-/// messages.
-fn syntax_only(
+/// `g++ -c` over `sources` (relative to `folder`, its working directory,
+/// where the object files go: several are named `main.o`, and each
+/// overwrites the last, which is all the same since only the messages count)
+/// with the compile flags a debug build of a `standard` project gets at the
+/// strict warning level with warnings as errors, and plain-text messages.
+fn compile_only(
     toolchain: &Toolchain,
     standard: CppStandard,
     folder: &Path,
@@ -733,7 +926,7 @@ fn syntax_only(
     if !args.contains(&plain_output) {
         args.push(plain_output);
     }
-    args.push("-fsyntax-only".into());
+    args.push("-c".into());
     args.extend(sources.iter().map(|source| source.clone().into_os_string()));
     Ok(CompilerCommand {
         program: toolchain.path().to_path_buf(),
