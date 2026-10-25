@@ -268,6 +268,26 @@ pub(crate) fn analyse(document: &Document) -> Analysis {
         "M2's patterns change the diagnostics"
     );
     assert!(typed == plain, "M2's patterns change the analysis");
+    // And so must the catalog's own table, whatever it holds: its headers
+    // fill the items' `headers`, and change nothing else.
+    let catalog = analyze_with(document, b2c_catalog::core_catalog().sigs());
+    assert_eq!(
+        render_all(&catalog),
+        render_all(&plain),
+        "the catalog's signatures change the diagnostics"
+    );
+    let without_headers = |a: &Analysis| {
+        let mut program = a.program.clone();
+        for item in program.modules.iter_mut().flat_map(|module| &mut module.items) {
+            item.headers = b2c_ir::headers::ItemHeaders::default();
+        }
+        program
+    };
+    assert!(
+        without_headers(&catalog) == plain.program,
+        "the catalog's signatures change the program"
+    );
+    assert_eq!(catalog.slot_types(), plain.slot_types());
     plain
 }
 

@@ -326,13 +326,16 @@ impl Resolver<'_> {
 }
 
 /// The parts of the value input `base`: the input itself, or each part of a
-/// repeated input (`ITEM0`, `ITEM1`, …) with its index.
+/// repeated input (`ITEM0`, `ITEM1`, …) with its index. An input is repeated
+/// when the signature says so, or when the parts count parts of it (an input
+/// with one part has no count), so a signature built without `repeated`
+/// still types every part.
 pub(crate) fn input_parts(
     sig: &BlockSig,
     parts: &dyn BlockParts,
     base: &str,
 ) -> Vec<(String, Option<usize>)> {
-    if sig.repeated.contains(base) {
+    if sig.repeated.contains(base) || parts.count(base) > 0 {
         (0..parts.count(base).min(MAX_VARIADIC_PARTS))
             .map(|i| (format!("{base}{i}"), Some(i)))
             .collect()

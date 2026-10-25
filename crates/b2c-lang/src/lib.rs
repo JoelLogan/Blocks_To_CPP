@@ -32,6 +32,17 @@
 //!    blocks, variables used before they get a value, endless loops. An item
 //!    that nests too deeply for the later stages is reported instead.
 //!
+//! Blocks whose catalog signature has type patterns (ADR-0017 §5,
+//! `b2c_ir::sig`) are typed by [`type_block`], the one-pass rule of typed
+//! slots (ADR-0018) that the editor's TypeScript copy shares: the analyser
+//! lowers their inputs, types the block with the place its parent expects,
+//! lowers the values that take their type from that place, and reports each
+//! part's fit through the checks M2's blocks always used. The catalog
+//! headers of the blocks lowered into an item are recorded in its
+//! `headers`, by where their code is printed. [`analyze_with`] and
+//! [`analyze_checked_with`] take the signatures; [`analyze`] and
+//! [`analyze_checked`] use none, which gives every block its M2 rules.
+//!
 //! For the editor, an [`Analysis`] also answers questions about the blocks
 //! (spec §6.5): [`Analysis::symbols_in_scope`] lists the symbols a block may
 //! refer to, [`Analysis::symbol_infos`] every symbol, and
