@@ -9,6 +9,7 @@
 import type * as Blockly from 'blockly/core';
 
 import type { BlockDefJson, InputDefJson, TokenJson } from '../generated/catalog';
+import { ERROR_TYPE, prim, sameType, termFromKey, typeFromTerm } from '../types/static-type';
 import { blockDef } from './catalog';
 import { isStaticType, type OutputTypeOracle, type StaticType } from './types';
 
@@ -61,9 +62,8 @@ function outputType(
     case 'int':
     case 'double':
     case 'char':
-      return output;
     case 'std::string':
-      return 'string';
+      return prim(output);
     case 'symbol':
       return askOracle(oracle, block);
     case 'any':
@@ -98,22 +98,24 @@ function fieldText(block: Blockly.Block, name: string): string {
   return typeof value === 'number' ? String(value) : '';
 }
 
-/** A catalog type name (as type fields store it) as a static type. */
-function typeNameToStatic(name: string): StaticType | null {
-  switch (name) {
-    case 'void':
-    case 'bool':
-    case 'char':
-    case 'int':
-    case 'double':
-      return name;
-    case 'std::string':
-    case 'string':
-      return 'string';
-    default:
-      // `auto` and types this editor does not know yet.
-      return null;
-  }
+/**
+ * A type field's value (a name, or a term's key, types.md §3.2) as a static type; `null` for `auto`
+ * and anything this editor does not know.
+ */
+function typeNameToStatic(value: string): StaticType | null {
+  const term = termFromKey(value);
+  return term === null ? null : typeFromTerm(term);
+}
+
+/** Whether a type is `int`, `double` or `char`: the types b2c-lang calls numbers. */
+function isNumeric(type: StaticType): boolean {
+  return (
+    type.kind === 'prim' && (type.name === 'int' || type.name === 'double' || type.name === 'char')
+  );
+}
+
+function isPrimNamed(type: StaticType | null, name: string): boolean {
+  return type !== null && type.kind === 'prim' && type.name === name;
 }
 
 // --- `number` outputs -------------------------------------------------------------------------
@@ -126,7 +128,7 @@ function numberType(
 ): StaticType | null {
   const literal = def.fields.find((field) => field.kind === 'number');
   if (literal !== undefined) {
-    return literalType(fieldText(block, literal.name));
+    return literalStatic(fieldText(block, literal.name));
   }
   const operands = def.inputs
     .filter((input) => input.repeat === null)
@@ -158,25 +160,25 @@ function operandType(
 
 /**
  * The type of an arithmetic result after the usual promotions (b2c-lang `binary_type` and
- * `arithmetic_result`): text, `void` (an error already reported at the call) or an error on either
- * side gives `error`; `mod` gives `int`, or `error` with a decimal operand; otherwise `double` if
- * either side is `double`, else `int`.
+ * `arithmetic_result`): an operand that is not a number or `bool` (text, `void`, a library or user
+ * type: an error the analyser reports) or an error on either side gives `error`; `mod` gives `int`,
+ * or `error` with a decimal operand; otherwise `double` if either side is `double`, else `int`.
  */
 function arithmeticType(
   operands: readonly (StaticType | null)[],
   remainder: boolean,
 ): StaticType | null {
-  if (operands.some((type) => type === 'error' || type === 'void' || type === 'string')) {
-    return 'error';
+  if (operands.some((type) => type !== null && !isNumeric(type) && !isPrimNamed(type, 'bool'))) {
+    return ERROR_TYPE;
   }
   if (operands.some((type) => type === null)) {
     return null;
   }
-  const decimal = operands.includes('double');
+  const decimal = operands.some((type) => isPrimNamed(type, 'double'));
   if (remainder) {
-    return decimal ? 'error' : 'int';
+    return decimal ? ERROR_TYPE : prim('int');
   }
-  return decimal ? 'double' : 'int';
+  return prim(decimal ? 'double' : 'int');
 }
 
 // --- `any` outputs ----------------------------------------------------------------------------
@@ -198,21 +200,20 @@ function conditionalType(
   }
   const a = operandType(block, first, oracle, depth);
   const b = operandType(block, second, oracle, depth);
-  if (a === 'error' || b === 'error') {
-    return 'error';
+  if (a?.kind === 'error' || b?.kind === 'error') {
+    return ERROR_TYPE;
   }
   if (a === null || b === null) {
     return null;
   }
-  if (a === b && a !== 'void') {
+  if (sameType(a, b) && !isPrimNamed(a, 'void')) {
     return a;
   }
-  const numeric = (type: StaticType): boolean =>
-    type === 'int' || type === 'double' || type === 'char';
-  if ((numeric(a) || a === 'bool') && (numeric(b) || b === 'bool') && (numeric(a) || numeric(b))) {
-    return a === 'double' || b === 'double' ? 'double' : 'int';
+  const numberOrBool = (type: StaticType): boolean => isNumeric(type) || isPrimNamed(type, 'bool');
+  if (numberOrBool(a) && numberOrBool(b) && (isNumeric(a) || isNumeric(b))) {
+    return prim(isPrimNamed(a, 'double') || isPrimNamed(b, 'double') ? 'double' : 'int');
   }
-  return 'error';
+  return ERROR_TYPE;
 }
 
 // --- Literals and default tokens --------------------------------------------------------------
@@ -227,18 +228,24 @@ function tokensType(tokens: readonly TokenJson[]): StaticType | null {
     return null;
   }
   if ('num' in token) {
-    return literalType(token.num);
+    return literalStatic(token.num);
   }
   if ('str' in token) {
-    return 'string';
+    return prim('std::string');
   }
   if ('chr' in token) {
-    return 'char';
+    return prim('char');
   }
   if ('kw' in token && (token.kw === 'true' || token.kw === 'false')) {
-    return 'bool';
+    return prim('bool');
   }
   return null;
+}
+
+/** {@link literalType} as a static type. */
+function literalStatic(raw: string): StaticType {
+  const type = literalType(raw);
+  return type === 'error' ? ERROR_TYPE : prim(type);
 }
 
 /**

@@ -11,12 +11,10 @@
 //! * [`TypeClass`]: named sets of types, for a catalog input's `check` and a
 //!   signature's `where`; [`TypeFn`]: the type functions of catalog patterns.
 //!
-//! Until the serialisation pull request of milestone M3's first wave,
-//! [`Type`] serialises as in M2 (`"int"`, `"string"`, `"error"`), and the
-//! library and user types do not serialise at all. The form it then
-//! switches to, its term with `"error"` for [`Type::Error`], is
-//! [`term_form`] (with [`TermForm`] for a single value), which fields can
-//! opt in to already.
+//! A [`Type`] serialises as its term, with `"error"` for [`Type::Error`]
+//! ([`term_form`], types.md §3.1): `"int"`, `"std::string"`,
+//! `{"std::vector": "int"}`, `{"ref": "sym_x"}`. Reading one checks the
+//! term's shape and limits and looks its names up.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
@@ -31,8 +29,7 @@ use crate::ids::SymbolId;
 
 /// A static type (06 §6.6). Equality, order and hash are structural.
 /// At most 24 bytes; a clone never copies a type's arguments.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Type {
     /// `void` (function results only).
     Void,
@@ -47,12 +44,9 @@ pub enum Type {
     /// `std::string`.
     String,
     /// A standard-library type with its template arguments, if any. Made
-    /// only by [`Type::lib`]. Not serialised yet (see the module docs).
-    #[serde(skip)]
+    /// only by [`Type::lib`].
     Lib(LibApp),
-    /// A user struct or enum: the symbol ID of its definition. Not
-    /// serialised yet (see the module docs).
-    #[serde(skip)]
+    /// A user struct or enum: the symbol ID of its definition.
     Named(SymbolId),
     /// The type of an expression that already has an error. It is compatible
     /// with everything, so one mistake does not cause a cascade of errors.
@@ -1145,6 +1139,20 @@ impl Serialize for TermArgs<'_> {
     }
 }
 
+/// A type serialises in its term form ([`term_form`]).
+impl Serialize for Type {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        term_form::serialize(self, serializer)
+    }
+}
+
+/// A type is read in its term form ([`term_form`]).
+impl<'de> Deserialize<'de> for Type {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        term_form::deserialize(deserializer)
+    }
+}
+
 /// The term form of a [`Type`] (types.md §3.1), for `#[serde(with = "…")]`:
 /// a type is written as its [`TypeTerm`] (`"int"`, `"std::string"`,
 /// `{"std::vector": "int"}`, `{"std::map": ["std::string", "int"]}`,
@@ -1152,11 +1160,7 @@ impl Serialize for TermArgs<'_> {
 /// the term's shape and limits, looks its names up ([`Type::from_term`]) and
 /// accepts [`ERROR_JSON`]; M2's `"string"` is not a type name there.
 ///
-/// `Type` serialises as in M2 until the serialisation switch of milestone
-/// M3's first wave (types.md §8.2, packages 5 and 6), which makes its own
-/// `Serialize` and `Deserialize` these two functions. Until then, a field
-/// opts in with `#[serde(with = "b2c_ir::types::term_form")]`, and a value
-/// with [`TermForm`].
+/// `Type`'s own `Serialize` and `Deserialize` are these two functions.
 pub mod term_form {
     use serde::de::{self, Deserialize, Deserializer};
     use serde::ser::{Serialize, Serializer};
@@ -1903,18 +1907,19 @@ mod tests {
     }
 
     #[test]
-    fn m2_types_serialise_as_before() {
-        for (ty, text) in [
-            (Type::Void, "void"),
-            (Type::String, "string"),
-            (Type::Error, "error"),
-        ] {
-            assert_eq!(serde_json::to_value(&ty).unwrap(), json!(text));
-            assert_eq!(serde_json::from_value::<Type>(json!(text)).unwrap(), ty);
+    fn types_serialise_as_their_terms() {
+        for ty in sample_types() {
+            assert_eq!(serde_json::to_value(&ty).unwrap(), term_json(&ty));
+            assert_eq!(serde_json::from_value::<Type>(term_json(&ty)).unwrap(), ty);
         }
-        assert!(serde_json::to_value(vector(Type::Int)).is_err());
-        assert!(serde_json::from_value::<Type>(json!("lib")).is_err());
-        assert!(serde_json::from_value::<Type>(json!("named")).is_err());
+        assert_eq!(serde_json::to_value(Type::String).unwrap(), json!("std::string"));
+        assert_eq!(
+            serde_json::to_value(vector(Type::Int)).unwrap(),
+            json!({"std::vector": "int"})
+        );
+        for m2 in ["string", "lib", "named"] {
+            assert!(serde_json::from_value::<Type>(json!(m2)).is_err(), "{m2}");
+        }
     }
 
     fn term_json(ty: &Type) -> serde_json::Value {

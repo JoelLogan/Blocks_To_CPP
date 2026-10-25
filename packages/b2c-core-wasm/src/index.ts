@@ -32,7 +32,6 @@ export type {
   PreviewResult,
   PreviewStage,
   StaticConversion,
-  StaticType,
   UnresolvedRef,
   UpdateResult,
 } from './api';

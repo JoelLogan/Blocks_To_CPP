@@ -5,49 +5,32 @@
  * parameter's type.
  */
 import type { TypeJson } from '@blocks2cpp/b2c-core-wasm';
-import type { TokenJson } from '@blocks2cpp/blockly-ext';
+import {
+  parseType,
+  startTokens,
+  termFromKey,
+  type TokenJson,
+  typeFromTerm,
+} from '@blocks2cpp/blockly-ext';
 
 /**
  * The value a new variable or argument of a static type starts with, or `null` for none: `void`,
- * `error`, and, until start values follow every type (docs/plans/m3-contracts/slots.md §6), the
- * library and user types. The type is as the analysis sends it, M2's types by their names until
- * the switch to type terms (docs/plans/m3-contracts/types.md §3.1).
+ * `error`, a type the editor cannot read, and, in milestone M3, the library and user types
+ * (docs/plans/m3-contracts/slots.md §6). The type is as the analysis sends it: its term
+ * (`"int"`, `"std::string"`), docs/plans/m3-contracts/types.md §3.1.
  */
 export function startTokensForStaticType(type: TypeJson): readonly TokenJson[] | null {
-  switch (type) {
-    case 'int':
-      return [{ num: '0' }];
-    case 'double':
-      return [{ num: '0.0' }];
-    case 'bool':
-      return [{ kw: 'true' }];
-    case 'char':
-      return [{ chr: 'a' }];
-    case 'string':
-      return [{ str: '' }];
-    default:
-      return null;
-  }
+  const parsed = parseType(type);
+  return parsed === null ? null : startTokens(parsed);
 }
 
 /**
- * The start value for a `var.declare` TYPE (the type field's values: `int`, `double`, `bool`,
- * `char`, `std::string`, `auto`), or `null` when the type has none of its own (`auto` takes its
- * type from the value, so its value is left as it is).
+ * The start value for a type field's value (`var.declare`'s TYPE: `int`, `double`, `bool`, `char`,
+ * `std::string`, `auto`, or a term's key), or `null` when the type has none of its own (`auto`
+ * takes its type from the value, so its value is left as it is).
  */
 export function startTokensForDeclaredType(type: string): readonly TokenJson[] | null {
-  switch (type) {
-    case 'int':
-      return startTokensForStaticType('int');
-    case 'double':
-      return startTokensForStaticType('double');
-    case 'bool':
-      return startTokensForStaticType('bool');
-    case 'char':
-      return startTokensForStaticType('char');
-    case 'std::string':
-      return startTokensForStaticType('string');
-    default:
-      return null;
-  }
+  const term = termFromKey(type);
+  const parsed = term === null ? null : typeFromTerm(term);
+  return parsed === null ? null : startTokens(parsed);
 }

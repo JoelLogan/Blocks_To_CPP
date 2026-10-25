@@ -118,7 +118,7 @@ expression: snapshot(&a)
                             "kind": {
                               "str": "Guess a number from 1 to 100!"
                             },
-                            "ty": "string",
+                            "ty": "std::string",
                             "origin": {
                               "module": "mod_0",
                               "block": "b0007",
@@ -205,7 +205,7 @@ expression: snapshot(&a)
                                     "kind": {
                                       "str": "Your guess: "
                                     },
-                                    "ty": "string",
+                                    "ty": "std::string",
                                     "origin": {
                                       "module": "mod_0",
                                       "block": "b0009",
@@ -292,7 +292,7 @@ expression: snapshot(&a)
                                                     "kind": {
                                                       "str": "Too low!"
                                                     },
-                                                    "ty": "string",
+                                                    "ty": "std::string",
                                                     "origin": {
                                                       "module": "mod_0",
                                                       "block": "b0011",
@@ -380,7 +380,7 @@ expression: snapshot(&a)
                                                     "kind": {
                                                       "str": "Too high!"
                                                     },
-                                                    "ty": "string",
+                                                    "ty": "std::string",
                                                     "origin": {
                                                       "module": "mod_0",
                                                       "block": "b0013",
@@ -418,7 +418,7 @@ expression: snapshot(&a)
                                                 "kind": {
                                                   "str": "Correct!"
                                                 },
-                                                "ty": "string",
+                                                "ty": "std::string",
                                                 "origin": {
                                                   "module": "mod_0",
                                                   "block": "b0015",

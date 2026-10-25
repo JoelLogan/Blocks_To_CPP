@@ -1,4 +1,4 @@
-import type { StaticType } from '@blocks2cpp/b2c-core-wasm';
+import type { TypeJson } from '@blocks2cpp/b2c-core-wasm';
 import { readExprShadow, type TokenJson } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -69,9 +69,15 @@ describe('start values (M2 smart defaults)', () => {
     expect(startTokensForStaticType('double')).toEqual([{ num: '0.0' }]);
     expect(startTokensForStaticType('bool')).toEqual([{ kw: 'true' }]);
     expect(startTokensForStaticType('char')).toEqual([{ chr: 'a' }]);
-    expect(startTokensForStaticType('string')).toEqual([{ str: '' }]);
+    expect(startTokensForStaticType('std::string')).toEqual([{ str: '' }]);
     expect(startTokensForStaticType('void')).toBeNull();
     expect(startTokensForStaticType('error')).toBeNull();
+    // M2's name for text is no type name on the wire any more (types.md §3.1).
+    expect(startTokensForStaticType('string')).toBeNull();
+    // No start values for library and user types in M3 (slots.md §6).
+    expect(startTokensForStaticType({ 'std::vector': 'int' })).toBeNull();
+    expect(startTokensForStaticType({ ref: 's_point' })).toBeNull();
+    expect(startTokensForDeclaredType('{"std::vector":"int"}')).toBeNull();
     expect(startTokensForDeclaredType('std::string')).toEqual([{ str: '' }]);
     expect(startTokensForDeclaredType('auto')).toBeNull();
     expect(startTokensForDeclaredType('nonsense')).toBeNull();
@@ -190,12 +196,12 @@ describe('reshaping a new variable’s start value', () => {
 
 describe('reshaping the value of set when its variable changes', () => {
   /** The types of the variables the tests choose: int, double, text, and one not known. */
-  const TYPES: Readonly<Record<string, StaticType>> = {
+  const TYPES: Readonly<Record<string, TypeJson>> = {
     s_count: 'int',
     s_price: 'double',
-    s_name: 'string',
+    s_name: 'std::string',
   };
-  const typeOf = (sym: string): StaticType | null => TYPES[sym] ?? null;
+  const typeOf = (sym: string): TypeJson | null => TYPES[sym] ?? null;
 
   /** `set count to 0`, as the toolbox gives it, on a new headless canvas. */
   function newSet(): { workspace: Blockly.Workspace; block: Blockly.Block } {

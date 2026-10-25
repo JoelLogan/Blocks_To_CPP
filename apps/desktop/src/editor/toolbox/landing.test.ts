@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 const guess = symbolFixture('s_guess', 'guess', { declBlock: 'decl' });
-const label = symbolFixture('s_label', 'label', { declBlock: 'decl', type: 'string' });
+const label = symbolFixture('s_label', 'label', { declBlock: 'decl', type: 'std::string' });
 const n = symbolFixture('s_n', 'n', { kind: 'parameter', mode: 'copy', declBlock: 'fn' });
 const factorial = symbolFixture('s_fact', 'factorial', {
   kind: 'function',

@@ -12,15 +12,34 @@ import {
   defineTestBlocks,
   TEST_UNKNOWN_REPORTER,
 } from '../mutators/test-fixtures';
+import slotFixture from '../types/slot-fixture.json';
+import { parseType, toTypeJson, type TypeJson, typeKey } from '../types/static-type';
 import { blockDef } from './catalog';
 import { conversionAllowed } from './conversion';
 import { literalType, staticOutputType } from './output-type';
 import type { Compatibility, OutputTypeOracle, StaticType } from './types';
 
+/** M2's seven types by the names its tables use (`string` is `std::string`). */
+type M2Name = 'void' | 'bool' | 'char' | 'int' | 'double' | 'string' | 'error';
+
+/** The type object of an M2 name, as the analysis sends it (types.md §3.1). */
+function typeNamed(name: M2Name | null): StaticType | null {
+  return name === null ? null : parseType(name === 'string' ? 'std::string' : name);
+}
+
+/** An answer's M2 name (`string` for `std::string`), or its key for a type of milestone M3. */
+function nameOf(type: StaticType | null): string | null {
+  if (type === null) {
+    return null;
+  }
+  const key = typeKey(type);
+  return key === 'std::string' ? 'string' : key;
+}
+
 const CLASSES: readonly TypeClass[] = ['any', 'number', 'integer', 'bool', 'text'];
 
 /** What `conversionAllowed` gives for each type, in the order of `CLASSES` (see conversion.test). */
-const ROW: Record<StaticType | 'unknown', readonly Compatibility[]> = {
+const ROW: Record<M2Name | 'unknown', readonly Compatibility[]> = {
   unknown: ['ok', 'ok', 'ok', 'ok', 'ok'],
   error: ['ok', 'ok', 'ok', 'ok', 'ok'],
   void: ['invalid', 'invalid', 'invalid', 'invalid', 'invalid'],
@@ -33,8 +52,8 @@ const ROW: Record<StaticType | 'unknown', readonly Compatibility[]> = {
 
 const NO_ORACLE: OutputTypeOracle = { outputTypeOf: () => null };
 
-function oracleOf(answer: (block: Blockly.Block) => StaticType | null): OutputTypeOracle {
-  return { outputTypeOf: answer };
+function oracleOf(answer: (block: Blockly.Block) => M2Name | null): OutputTypeOracle {
+  return { outputTypeOf: (block) => typeNamed(answer(block)) };
 }
 
 let workspace: Blockly.Workspace;
@@ -53,12 +72,13 @@ afterEach(() => {
   workspace.dispose();
 });
 
-function typeOf(block: Blockly.Block, oracle: OutputTypeOracle = NO_ORACLE): StaticType | null {
+/** The block's static type, by its M2 name. */
+function typeOf(block: Blockly.Block, oracle: OutputTypeOracle = NO_ORACLE): string | null {
   const def = blockDef(block.type);
   if (def === undefined) {
     throw new Error(`not a catalog block: ${block.type}`);
   }
-  return staticOutputType(block, def, oracle);
+  return nameOf(staticOutputType(block, def, oracle));
 }
 
 function plug(parent: Blockly.Block, input: string, child: Blockly.Block): void {
@@ -225,12 +245,8 @@ describe('staticOutputType', () => {
       throw new Error('stale analysis');
     });
     expect(typeOf(block, failing)).toBeNull();
-    expect(
-      typeOf(
-        block,
-        oracleOf(() => 'list<int>' as StaticType),
-      ),
-    ).toBeNull();
+    expect(typeOf(block, { outputTypeOf: () => 'list<int>' as unknown as StaticType })).toBeNull();
+    expect(typeOf(block, { outputTypeOf: () => 'int' as unknown as StaticType })).toBeNull();
   });
 
   it('types logic.ternary by the oracle, or else by its two choices', () => {
@@ -276,11 +292,11 @@ describe('staticOutputType', () => {
 
 describe('every reporter against every type class', () => {
   /** The types a reporter can have here: fixed ones, or every oracle answer for the others. */
-  function possibleTypes(type: string): (StaticType | null)[] {
+  function possibleTypes(type: string): (M2Name | null)[] {
     const block = workspace.newBlock(type);
     const def = blockDef(type);
     if (def?.output === 'symbol' || def?.output === 'any') {
-      const answers: (StaticType | null)[] = [
+      const answers: (M2Name | null)[] = [
         null,
         'void',
         'bool',
@@ -290,26 +306,27 @@ describe('every reporter against every type class', () => {
         'string',
         'error',
       ];
-      return answers.map((answer) =>
-        typeOf(
-          block,
-          oracleOf(() => answer),
-        ),
+      return answers.map(
+        (answer) =>
+          typeOf(
+            block,
+            oracleOf(() => answer),
+          ) as M2Name | null,
       );
     }
     if (type === 'math.convert') {
       return ['int', 'double'].map((to) => {
         block.setFieldValue(to, 'TO');
-        return typeOf(block);
+        return typeOf(block) as M2Name | null;
       });
     }
     if (type === 'math.number') {
       return ['1', '1.5', 'x'].map((literal) => {
         block.setFieldValue(literal, 'VALUE');
-        return typeOf(block);
+        return typeOf(block) as M2Name | null;
       });
     }
-    return [typeOf(block)];
+    return [typeOf(block) as M2Name | null];
   }
 
   it('covers every reporter and predicate of the catalog', () => {
@@ -321,11 +338,47 @@ describe('every reporter against every type class', () => {
       for (const type of possibleTypes(def.id)) {
         const row = ROW[type ?? 'unknown'];
         CLASSES.forEach((check, column) => {
-          expect(conversionAllowed(type, check), `${def.id} (${String(type)}) into ${check}`).toBe(
-            row[column],
-          );
+          expect(
+            conversionAllowed(typeNamed(type), check),
+            `${def.id} (${String(type)}) into ${check}`,
+          ).toBe(row[column]);
         });
       }
+    }
+  });
+});
+
+describe('the M2 output rules of the slot fixture', () => {
+  interface OutputCase {
+    readonly block: string;
+    readonly fields: Readonly<Record<string, string>>;
+    readonly inputs: Readonly<Record<string, TypeJson>>;
+    readonly type: TypeJson;
+  }
+
+  it('type math.number, math.arithmetic and logic.ternary as the analyser does', () => {
+    const cases = (slotFixture as unknown as { outputs: readonly OutputCase[] }).outputs;
+    expect(cases.length).toBeGreaterThan(100);
+    for (const json of cases) {
+      const block = workspace.newBlock(json.block);
+      for (const [name, value] of Object.entries(json.fields)) {
+        block.setFieldValue(value, name);
+      }
+      const operands = new Map<Blockly.Block, StaticType | null>();
+      for (const [name, type] of Object.entries(json.inputs)) {
+        const operand = workspace.newBlock('var.get');
+        operands.set(operand, parseType(type));
+        plug(block, name, operand);
+      }
+      const def = blockDef(block.type);
+      const answer =
+        def === undefined
+          ? null
+          : staticOutputType(block, def, { outputTypeOf: (asked) => operands.get(asked) ?? null });
+      expect(
+        answer === null ? null : toTypeJson(answer),
+        `${json.block} ${JSON.stringify(json.fields)} ${JSON.stringify(json.inputs)}`,
+      ).toEqual(json.type);
     }
   });
 });

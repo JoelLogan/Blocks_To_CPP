@@ -1,37 +1,27 @@
 /**
  * Types shared by the connection checker's modules.
  *
- * `StaticType` is the analyser's static type as the editor receives it (06 §6.6, the JSON of
- * `b2c_ir::Type`). It is structurally identical to `StaticType` of `@blocks2cpp/b2c-core-wasm`;
- * it is declared here because this package does not depend on that one yet, and it is not
- * re-exported from the package entry so that the two never clash.
+ * `StaticType` is the analyser's static type as an object (`b2c_ir::Type`, ../types/static-type.ts):
+ * the analysis sends it as its term (`TypeJson`, docs/plans/m3-contracts/types.md §3.1), and the
+ * editor reads it with `parseType`.
  */
 import type * as Blockly from 'blockly/core';
 
-/** A static type: `string` is `std::string`; `error` is compatible with everything. */
-export type StaticType = 'void' | 'bool' | 'char' | 'int' | 'double' | 'string' | 'error';
+import type { StaticConversion, StaticType } from '../types/static-type';
 
-/** Every static type, in the order of b2c-lang's own tables. */
-export const STATIC_TYPES: readonly StaticType[] = [
-  'void',
-  'bool',
-  'char',
-  'int',
-  'double',
-  'string',
-  'error',
-];
-
-/** Whether a value received from outside (the analysis, the oracle) is a known static type. */
-export function isStaticType(value: unknown): value is StaticType {
-  return typeof value === 'string' && (STATIC_TYPES as readonly string[]).includes(value);
-}
+export type { StaticConversion, StaticType };
 
 /**
- * How a value of one static type converts to another, by name: `b2c_lang::Conversion::name()`.
- * Only `invalid` is an analyser error.
+ * Whether a value received from outside (an oracle) is a static type object. The oracles build
+ * their answers with `parseType`, so only the outer shape is checked here.
  */
-export type StaticConversion = 'same' | 'widening' | 'narrowing' | 'boolNumber' | 'invalid';
+export function isStaticType(value: unknown): value is StaticType {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const kind: unknown = (value as { kind?: unknown }).kind;
+  return kind === 'prim' || kind === 'lib' || kind === 'named' || kind === 'error';
+}
 
 /**
  * Whether a value may go into an input: `ok` (silently), `warning` (the analyser warns, the

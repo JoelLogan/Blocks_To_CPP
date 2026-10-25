@@ -387,7 +387,7 @@ expression: snapshot(&a)
                                             "kind": {
                                               "str": "Round "
                                             },
-                                            "ty": "string",
+                                            "ty": "std::string",
                                             "origin": {
                                               "module": "mod_0",
                                               "block": "b0011",
@@ -411,7 +411,7 @@ expression: snapshot(&a)
                                           }
                                         ]
                                       },
-                                      "ty": "string",
+                                      "ty": "std::string",
                                       "origin": {
                                         "module": "mod_0",
                                         "block": "b0013",

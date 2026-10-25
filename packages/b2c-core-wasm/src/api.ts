@@ -9,14 +9,6 @@ import type { Diagnostic, GeneratedFile, SourceMap, SymbolInfo } from '@blocks2c
 
 import type { BdmBlock, BdmDocument, TypeJson } from './bdm';
 
-/**
- * The names M2's seven static types have in `blockTypes` and `conversionTable()` until the switch
- * to the term form (docs/plans/m3-contracts/types.md §8.2): `TypeJson`, with `string` for
- * `std::string`. The switch replaces them with type terms (`std::string`, `{"std::vector":
- * "int"}`), and this type with `TypeJson`.
- */
-export type StaticType = 'void' | 'bool' | 'char' | 'int' | 'double' | 'string' | 'error';
-
 /** What `CoreWasm.version()` reports. */
 export interface CoreVersion {
   /** The app (workspace) version, for example `0.1.0`. */
@@ -87,9 +79,11 @@ export interface PreviewResult {
   /**
    * The static type of each value block of the program, by block ID: what the connection checker
    * and the output types of `var.get` and `func.call` use. Blocks outside the program (disabled
-   * or loose) are not listed; empty when loading failed.
+   * or loose) are not listed; empty when loading failed. Each type is its term (`"int"`,
+   * `"std::string"`, `{"std::vector": "int"}`), or `"error"` (docs/plans/m3-contracts/types.md
+   * §3.1).
    */
-  blockTypes: Record<string, StaticType>;
+  blockTypes: Record<string, TypeJson>;
   /** Every symbol of the program, sorted by name, then ID; empty when loading failed. */
   symbols: SymbolInfo[];
   /**
@@ -120,9 +114,9 @@ export type StaticConversion = 'same' | 'widening' | 'narrowing' | 'boolNumber' 
 /** One entry of `CoreWasm.conversionTable()`. */
 export interface ConversionRow {
   /** The type of the value. */
-  from: StaticType;
+  from: TypeJson;
   /** The type of the place it goes to. */
-  to: StaticType;
+  to: TypeJson;
   conversion: StaticConversion;
 }
 
@@ -236,8 +230,9 @@ export interface CoreWasm {
    */
   symbolsInScope(blockId: string, input: string | null): SymbolInfo[] | null;
   /**
-   * The analyser's conversion rule for every pair of static types: until the switch to the term
-   * form, the 49 pairs of M2's seven types (see `StaticType`).
+   * The analyser's conversion rule for every pair of the sample types of the shared type fixture
+   * (`b2c_ir::types::sample_types`, `packages/blockly-ext/src/types/fixture.json`), in sample
+   * order: M2's seven types and the library and user types of milestone M3.
    */
   conversionTable(): ConversionRow[];
   /**

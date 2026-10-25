@@ -408,7 +408,7 @@ describe('the toolbox plugin with the continuous toolbox', () => {
     const workspace = attached('continuous');
     await settle();
     // A text variable in main beside guess.
-    const label = symbolFixture('s_label', 'label', { declBlock: 'decl', type: 'string' });
+    const label = symbolFixture('s_label', 'label', { declBlock: 'decl', type: 'std::string' });
     publishPreview([factorial, guess, label, n]);
     await settle();
     const valueOf = (block: Blockly.Block): readonly TokenJson[] | null => {

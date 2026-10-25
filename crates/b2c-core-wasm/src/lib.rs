@@ -206,13 +206,11 @@ pub fn symbols_in_scope(block_id: &str, input: Option<String>) -> String {
 /// pair of static types: a JSON list of
 /// `{"from": <type>, "to": <type>, "conversion": "same" | "widening" |
 /// "narrowing" | "boolNumber" | "invalid"}`. Only `invalid` is an analyser
-/// error; the editor's connection checker refuses exactly those. Until the
-/// switch to the term form (types.md §8.2), the 49 rows between M2's seven
-/// types ([`scope::exported_conversion_table`]); from then on, every pair of
-/// the sample types ([`scope::conversion_table`]).
+/// error; the editor's connection checker refuses exactly those. The rows
+/// are every pair of the sample types ([`scope::conversion_table`]).
 #[wasm_bindgen]
 pub fn conversion_table() -> String {
-    wire::conversion_table(&scope::exported_conversion_table())
+    wire::conversion_table(&scope::conversion_table())
 }
 
 /// Copies blocks of a document (05 §5.12).

@@ -137,7 +137,8 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     expect(preview.textHash).toBe(sha256(exampleText(name)));
     // Scope data of the program (the exact values are checked natively and in
     // scope-clipboard.test.ts): static types, and symbols sorted by name.
-    const types = ['void', 'bool', 'char', 'int', 'double', 'string', 'error'];
+    // Types are terms (types.md §3.1): M2's examples use M2's types, with `std::string` spelled out.
+    const types = ['void', 'bool', 'char', 'int', 'double', 'std::string', 'error'];
     for (const type of Object.values(preview.blockTypes)) {
       expect(types).toContain(type);
     }

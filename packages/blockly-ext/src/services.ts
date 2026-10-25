@@ -10,12 +10,12 @@
  * Every call into a service is guarded: a service that throws is treated like one that has no
  * answer, and the field keeps working.
  */
-import type { StaticType, TypeJson } from '@blocks2cpp/b2c-core-wasm';
+import type { TypeJson } from '@blocks2cpp/b2c-core-wasm';
 import type * as Blockly from 'blockly/core';
 
 import { setCheckerTypeOracle } from './checker/oracle';
 import { configureMutators } from './mutators/hooks';
-import type { StaticType as TypedStaticType, TypeFactsTs } from './types';
+import type { StaticType, TypeFactsTs } from './types';
 
 /** How a parameter is passed (`b2c_ir::PassMode`). */
 export type PassMode = 'copy' | 'editable' | 'read_only';
@@ -57,8 +57,9 @@ export interface SymbolInfo {
   /** Functions: the return type. */
   readonly returns?: TypeJson;
   /**
-   * The value type (a function's return type), as the wire writes it: M2's types by their names
-   * until the switch to type terms (docs/plans/m3-contracts/types.md §3.1).
+   * The value type (a function's return type), as the wire writes it: its term (`"int"`,
+   * `"std::string"`, `{"std::vector": "int"}`) or `"error"` (docs/plans/m3-contracts/types.md
+   * §3.1); read it with `parseType`.
    */
   readonly type: TypeJson;
   /** The ID of the module that declares it. */
@@ -91,17 +92,18 @@ export interface SymbolProvider {
 }
 
 /**
- * Static types from the latest analysis.
+ * Static types from the latest analysis, as type objects (`./types`, read from the wire's terms
+ * with `parseType`).
  *
  * The four optional methods are typed slots' (ADR-0018, docs/plans/m3-contracts/slots.md §4.3);
- * they use the type objects of `./types` and become required when the editor's oracle implements
- * them and the connection checker types slots.
+ * they become required when the editor's oracle implements them and the connection checker types
+ * slots.
  */
 export interface TypeOracle {
   /** The type of the value a reporter or predicate block gives, or null when unknown. */
   outputTypeOf(block: Blockly.Block): StaticType | null;
   /** The analysis's type of an expression slot (the preview's `slotTypes`), or null. */
-  slotTypeOf?(blockId: string, input: string): TypedStaticType | null;
+  slotTypeOf?(blockId: string, input: string): StaticType | null;
   /** A symbol of the latest analysis, or null. */
   symbol?(symId: string): SymbolInfo | null;
   /**

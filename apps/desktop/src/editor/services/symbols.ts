@@ -10,11 +10,12 @@
  * analysis has not seen yet (one dropped or pasted since) lists what its place gives it instead of
  * nothing (03 §3.6).
  */
-import type { CoreWasm, PreviewResult, StaticType, SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
+import type { CoreWasm, PreviewResult, SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import {
   B2cSymbolRefField,
   EXPR_SHADOW_TYPE,
   EXPR_VALUE_FIELD,
+  parseType,
   type SymbolProvider,
   type TypeOracle,
 } from '@blocks2cpp/blockly-ext';
@@ -22,21 +23,6 @@ import type * as Blockly from 'blockly/core';
 
 import { symbolsAtBlock, type SymbolSource } from '../toolbox/scope';
 import type { SymbolNames } from './names';
-
-const STATIC_TYPES: readonly string[] = [
-  'void',
-  'bool',
-  'char',
-  'int',
-  'double',
-  'string',
-  'error',
-];
-
-/** Whether a value from the analysis is a static type. */
-function isStaticType(value: unknown): value is StaticType {
-  return typeof value === 'string' && STATIC_TYPES.includes(value);
-}
 
 /** The symbols of a preview by ID, built once per preview. */
 const SYMBOLS_BY_ID = new WeakMap<PreviewResult, ReadonlyMap<string, SymbolInfo>>();
@@ -162,7 +148,8 @@ function referencedSymbol(block: Blockly.Block): string | null {
 /**
  * Static types for the connection checker: the type the latest analysis gave the block, or, for a
  * reference the analysis has not seen yet (a block just dragged out), the type of the symbol it
- * names. `null` ("not known") always connects.
+ * names, read from the wire's term (`parseType`, docs/plans/m3-contracts/types.md §3.1). `null`
+ * ("not known", also for anything that does not read as a type) always connects.
  */
 export function createTypeOracle(deps: Pick<SymbolServiceDeps, 'preview'>): TypeOracle {
   return {
@@ -173,8 +160,8 @@ export function createTypeOracle(deps: Pick<SymbolServiceDeps, 'preview'>): Type
       }
       const types = preview.blockTypes;
       if (Object.hasOwn(types, block.id)) {
-        const type: unknown = types[block.id];
-        if (isStaticType(type)) {
+        const type = parseType(types[block.id]);
+        if (type !== null) {
           return type;
         }
       }
@@ -183,8 +170,7 @@ export function createTypeOracle(deps: Pick<SymbolServiceDeps, 'preview'>): Type
       if (symbol === undefined) {
         return null;
       }
-      const type = symbol.kind === 'function' ? symbol.returns : symbol.type;
-      return isStaticType(type) ? type : null;
+      return parseType(symbol.kind === 'function' ? symbol.returns : symbol.type);
     },
   };
 }

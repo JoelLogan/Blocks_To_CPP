@@ -16,7 +16,7 @@ import type {
   PastePrepareResult,
   PasteTarget,
   StaticConversion,
-  StaticType,
+  TypeJson,
 } from '../src/index';
 import { CoreError, initCoreFromBytes, randomSeedHex } from '../src/index';
 
@@ -135,25 +135,16 @@ function otherDocument(): string {
   return JSON.stringify(tree, null, 2);
 }
 
-/** The analyser's conversion rule (`b2c_lang::conversion`), written out from its documentation. */
-function expectedConversion(from: StaticType, to: StaticType): StaticConversion {
-  const numbers: StaticType[] = ['int', 'double', 'char'];
-  if (from === 'error' || to === 'error' || from === to) {
-    return 'same';
-  }
-  if ((from === 'bool' && numbers.includes(to)) || (numbers.includes(from) && to === 'bool')) {
-    return 'boolNumber';
-  }
-  if (
-    (to === 'double' && (from === 'int' || from === 'char')) ||
-    (from === 'char' && to === 'int')
-  ) {
-    return 'widening';
-  }
-  if ((from === 'double' && (to === 'int' || to === 'char')) || (from === 'int' && to === 'char')) {
-    return 'narrowing';
-  }
-  return 'invalid';
+/**
+ * The shared type fixture that b2c-lang writes (docs/plans/m3-contracts/types.md §9): the sample
+ * types and the analyser's conversion between every pair of them.
+ */
+function typeFixture(): {
+  samples: { type: TypeJson }[];
+  conversions: StaticConversion[][];
+} {
+  const text = readFileSync(repo('packages/blockly-ext/src/types/fixture.json'), 'utf8');
+  return JSON.parse(text) as { samples: { type: TypeJson }[]; conversions: StaticConversion[][] };
 }
 
 /** The rows of tests/security/clipboard/README.md: file and loader codes (null: accepted). */
@@ -263,15 +254,21 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
   });
 
   describe('conversionTable', () => {
-    it('is the analyser rule for every pair', () => {
+    it('is the analyser rule for every pair of the fixture samples, as type terms', () => {
       const table: ConversionRow[] = core.conversionTable();
-      const types: StaticType[] = ['void', 'bool', 'char', 'int', 'double', 'string', 'error'];
-      expect(table).toHaveLength(49);
+      const fixture = typeFixture();
+      const types = fixture.samples.map((sample) => sample.type);
+      expect(types).toContain('std::string');
+      expect(types).toContainEqual({ 'std::vector': 'int' });
+      expect(table).toHaveLength(types.length * types.length);
       expect(table).toEqual(
-        types.flatMap((from) =>
-          types.map((to) => ({ from, to, conversion: expectedConversion(from, to) })),
+        types.flatMap((from, i) =>
+          types.map((to, j) => ({ from, to, conversion: fixture.conversions[i]?.[j] })),
         ),
       );
+      // M2's rule, written out: text to a number does not convert.
+      expect(table).toContainEqual({ from: 'std::string', to: 'int', conversion: 'invalid' });
+      expect(table).toContainEqual({ from: 'int', to: 'double', conversion: 'widening' });
     });
   });
 

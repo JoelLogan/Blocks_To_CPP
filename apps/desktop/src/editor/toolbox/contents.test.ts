@@ -1,4 +1,4 @@
-import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
+import type { SymbolInfo, TypeJson } from '@blocks2cpp/b2c-core-wasm';
 import { BLOCK_DEFS, GENERATED_ID_PATTERN, TOOLBOX, catalogBlock } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -329,7 +329,7 @@ describe('the Variables category', () => {
    */
   const guess = variable('s_guess', 'guess', 'd_guess');
   const secret = variable('s_secret', 'answer', 'd_secret', { isConst: true });
-  const label = variable('s_label', 'apple', 'd_label', { type: 'string' });
+  const label = variable('s_label', 'apple', 'd_label', { type: 'std::string' });
   const n = symbolFixture('s_n', 'n', { kind: 'parameter', mode: 'copy', declBlock: 'fn_greet' });
   const count = variable('s_count', 'count', 'd_count', { type: 'double' });
   const greet = symbolFixture('s_greet', 'greet', {
@@ -437,7 +437,7 @@ describe('the Variables category', () => {
   });
 
   it('gives set the start value of its variable’s type', () => {
-    const typed = (type: string) =>
+    const typed = (type: TypeJson) =>
       shadowOf(
         blocksOf(
           variablesContents(context({ ...game, all: [variable('s_x', 'x', 'd_guess', { type })] })),
@@ -448,7 +448,9 @@ describe('the Variables category', () => {
     expect(typed('double')).toMatchObject({ type: 'b2c.expr.num', value: '0.0' });
     expect(typed('bool')).toMatchObject({ type: 'b2c.expr.kw', value: 'true' });
     expect(typed('char')).toMatchObject({ type: 'b2c.expr.chr', value: 'a' });
-    expect(typed('string')).toMatchObject({ type: 'b2c.expr.str', value: '' });
+    expect(typed('std::string')).toMatchObject({ type: 'b2c.expr.str', value: '' });
+    // A list has no start value in M3 (slots.md §6), so its set block's value stays empty.
+    expect(typed({ 'std::vector': 'int' })).toBeUndefined();
     expect(typed('error')).toBeUndefined();
   });
 
@@ -605,7 +607,7 @@ describe('the Functions category and Your functions', () => {
   const label = symbolFixture('s_label', 'label', {
     kind: 'parameter',
     mode: 'read_only',
-    type: 'string',
+    type: 'std::string',
   });
   const factorial = symbolFixture('s_fact', 'factorial', {
     kind: 'function',

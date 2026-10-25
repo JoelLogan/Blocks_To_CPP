@@ -153,7 +153,7 @@ fn types_and_pass_modes() {
     }
     assert_eq!(
         TYPES.map(|ty| TypeJson::from(&ty).as_json().clone()),
-        ["void", "bool", "char", "int", "double", "string", "error"].map(|name| json!(name))
+        ["void", "bool", "char", "int", "double", "std::string", "error"].map(|name| json!(name))
     );
     for mode in MODES {
         let dto = PassMode::from(mode);
@@ -165,15 +165,13 @@ fn types_and_pass_modes() {
     assert_eq!(PassMode::VALUES, ["copy", "editable", "read_only"]);
 }
 
-/// Library and user types, which `b2c_ir::Type` does not serialise until the
-/// switch to the term form (types.md §8.2), get their term form, and every
-/// sample type reads back.
+/// Every sample type has its term form, and reads back.
 #[test]
 fn every_sample_type_has_its_json() {
     for ty in sample_types() {
         let dto = TypeJson::from(&ty);
-        let expected =
-            serde_json::to_value(&ty).unwrap_or_else(|_| serde_json::to_value(TermForm(&ty)).unwrap());
+        let expected = serde_json::to_value(TermForm(&ty)).unwrap();
+        assert_eq!(serde_json::to_value(&ty).unwrap(), expected);
         assert_eq!(dto.as_json(), &expected, "{ty:?}");
         assert_eq!(serde_json::from_value::<TypeJson>(expected).unwrap(), dto);
     }
@@ -196,7 +194,6 @@ fn every_sample_type_has_its_json() {
 fn only_types_read_as_types() {
     for good in [
         json!("int"),
-        json!("string"),
         json!("std::string"),
         json!("error"),
         json!("std::ifstream"),
@@ -207,6 +204,7 @@ fn only_types_read_as_types() {
     }
     for bad in [
         json!("auto"),
+        json!("string"),
         json!("Student"),
         json!(""),
         json!({"std::vector": "void"}),
@@ -258,9 +256,7 @@ fn symbol_infos() {
     }
 }
 
-/// The kinds of user types (milestone M3). Their records carry M2 types here:
-/// `b2c_ir::Type` does not serialise user types until the switch to the term
-/// form (types.md §8.2).
+/// The kinds of user types (milestone M3).
 fn user_type_kinds() -> Vec<b2c_ir::SymbolInfoKind> {
     vec![
         b2c_ir::SymbolInfoKind::Struct {

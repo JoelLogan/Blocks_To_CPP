@@ -1623,9 +1623,7 @@ export type TrustState = "trusted" | "restricted";
  * type term (`"int"`, `"std::string"`, `{"std::vector": "int"}`,
  * `{"std::map": ["std::string", "int"]}`, `{"ref": "sym_x"}` for a user
  * struct or enum), or `"error"` for the type of an expression that already
- * has an error, which is compatible with everything. Until the switch to
- * the term form (types.md §8.2), M2's seven types keep their M2 names
- * (`"string"` for `std::string`).
+ * has an error, which is compatible with everything.
  */
 export type TypeJson = string | { readonly [name: string]: TypeJson | readonly TypeJson[] };
 

@@ -9,6 +9,7 @@ import {
   EXPR_SHADOW_TYPE,
   hasB2cMutator,
   isPlaceholder,
+  parseType,
   readExprShadow,
   setManuallyDisabled,
   staticConversion,
@@ -454,10 +455,18 @@ const core = await testCore();
 
 describe.skipIf(core === null)('the connection checker and the analyser', () => {
   it('agree on every conversion (blockly-ext staticConversion = the core conversion table)', () => {
+    // Every pair of the shared fixture's sample types, M2's and M3's, as type terms.
     const table = core?.conversionTable() ?? [];
-    expect(table).toHaveLength(49);
+    expect(table.length).toBeGreaterThanOrEqual(28 * 28);
     for (const row of table) {
-      expect(staticConversion(row.from, row.to), `${row.from} → ${row.to}`).toBe(row.conversion);
+      const from = parseType(row.from);
+      const to = parseType(row.to);
+      const where = `${JSON.stringify(row.from)} → ${JSON.stringify(row.to)}`;
+      expect(from, where).not.toBeNull();
+      expect(to, where).not.toBeNull();
+      if (from !== null && to !== null) {
+        expect(staticConversion(from, to), where).toBe(row.conversion);
+      }
     }
   });
 });

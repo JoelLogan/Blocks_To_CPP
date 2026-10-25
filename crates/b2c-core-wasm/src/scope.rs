@@ -9,9 +9,7 @@ use b2c_model::Block;
 use serde::Serialize;
 
 /// M2's seven static types, in the order of the analyser's own tables: the
-/// first seven of `b2c_ir::types::sample_types()`, and the only types whose
-/// rows the `conversion_table` export writes until the switch to the term
-/// form ([`exported_conversion_table`]).
+/// first seven of `b2c_ir::types::sample_types()`.
 pub const STATIC_TYPES: [Type; 7] = [
     Type::Void,
     Type::Bool,
@@ -63,18 +61,6 @@ pub fn conversion_table() -> Vec<ConversionRow> {
                 conversion: conversion(from, to),
             })
         })
-        .collect()
-}
-
-/// The rows of [`conversion_table`] that the `conversion_table` export
-/// writes. Until the switch to the term form (types.md §8.2), `Type`
-/// serialises only M2's seven types, so these are the 49 rows between
-/// [`STATIC_TYPES`], in the table's order; the switch makes the export
-/// write the whole table.
-pub fn exported_conversion_table() -> Vec<ConversionRow> {
-    conversion_table()
-        .into_iter()
-        .filter(|row| STATIC_TYPES.contains(&row.from) && STATIC_TYPES.contains(&row.to))
         .collect()
 }
 
@@ -175,15 +161,9 @@ mod tests {
     }
 
     #[test]
-    fn the_export_writes_the_rows_of_m2_types_until_the_switch() {
+    fn rows_serialise_with_their_terms() {
         assert_eq!(sample_types().get(..7), Some(&STATIC_TYPES[..]));
-        let table = exported_conversion_table();
-        assert_eq!(table.len(), 49);
-        for (index, row) in table.iter().enumerate() {
-            assert_eq!(Some(&row.from), STATIC_TYPES.get(index / 7));
-            assert_eq!(Some(&row.to), STATIC_TYPES.get(index % 7));
-            assert_eq!(row.conversion, conversion(&row.from, &row.to));
-        }
+        let table = conversion_table();
         let json = serde_json::to_string(table.first().unwrap()).unwrap();
         assert_eq!(json, r#"{"from":"void","to":"void","conversion":"same"}"#);
         let int_to_double = table
@@ -264,7 +244,7 @@ mod tests {
     fn every_type_is_listed_once() {
         // Fails to compile when a type is added, so the list stays complete.
         // The library and user types are in the table through
-        // `sample_types()`, and in the export once they serialise.
+        // `sample_types()`.
         let position = |ty: &Type| match ty {
             Type::Void => 0,
             Type::Bool => 1,

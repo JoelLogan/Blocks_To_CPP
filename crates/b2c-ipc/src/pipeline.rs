@@ -111,9 +111,7 @@ pub struct MappedRange {
 /// type term (`"int"`, `"std::string"`, `{"std::vector": "int"}`,
 /// `{"std::map": ["std::string", "int"]}`, `{"ref": "sym_x"}` for a user
 /// struct or enum), or `"error"` for the type of an expression that already
-/// has an error, which is compatible with everything. Until the switch to
-/// the term form (types.md §8.2), M2's seven types keep their M2 names
-/// (`"string"` for `std::string`).
+/// has an error, which is compatible with everything.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
     feature = "ts",
@@ -138,16 +136,13 @@ impl Serialize for TypeJson {
     }
 }
 
-/// Accepts what `b2c_ir::Type` reads, and the term form it switches to
-/// (`b2c_ir::types::term_form`), so a value is always a type.
+/// Accepts what `b2c_ir::Type` reads, so a value is always a type.
 impl<'de> Deserialize<'de> for TypeJson {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = Value::deserialize(deserializer)?;
-        let shared = b2c_ir::Type::deserialize(&value).is_ok();
-        if shared || b2c_ir::types::term_form::deserialize(&value).is_ok() {
-            Ok(Self(value))
-        } else {
-            Err(de::Error::custom("not a type"))
+        match b2c_ir::Type::deserialize(&value) {
+            Ok(_) => Ok(Self(value)),
+            Err(_) => Err(de::Error::custom("not a type")),
         }
     }
 }
@@ -305,14 +300,11 @@ impl From<&b2c_ir::source_map::MappedRange> for MappedRange {
     }
 }
 
-/// `b2c_ir::Type`'s own JSON. Until the switch to the term form (types.md
-/// §8.2), the shared type has none for library and user types, and they get
-/// their term form, which the switch gives them there.
+/// `b2c_ir::Type`'s own JSON: its term form.
 impl From<&b2c_ir::Type> for TypeJson {
     fn from(ty: &b2c_ir::Type) -> Self {
-        let json = serde_json::to_value(ty).or_else(|_| serde_json::to_value(b2c_ir::TermForm(ty)));
-        // Both always serialise; the fallback keeps `From` total.
-        Self(json.unwrap_or_else(|_| Value::from(b2c_ir::types::ERROR_JSON)))
+        // A type always serialises; the fallback keeps `From` total.
+        Self(serde_json::to_value(ty).unwrap_or_else(|_| Value::from(b2c_ir::types::ERROR_JSON)))
     }
 }
 

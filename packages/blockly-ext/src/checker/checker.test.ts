@@ -13,6 +13,7 @@ import {
 } from '../mutators/test-fixtures';
 import { B2C_CHECKER_NAME, B2cConnectionChecker, registerB2cConnectionChecker } from './checker';
 import { setCheckerTypeOracle } from './oracle';
+import { ERROR_TYPE, prim } from '../types/static-type';
 import type { StaticType } from './types';
 
 const FAR = 1e9;
@@ -233,14 +234,14 @@ describe('the type rule while dragging', () => {
 
     const variable = rendered('var.get');
     expect(canDrop(variable, repeat, 'TIMES')).toBe(true);
-    types.set(variable, 'string');
+    types.set(variable, prim('std::string'));
     expect(canDrop(variable, repeat, 'TIMES')).toBe(false);
     expect(canDrop(variable, print, 'ITEM0')).toBe(true);
 
     const call = rendered('func.call');
-    types.set(call, 'void');
+    types.set(call, prim('void'));
     expect(canDrop(call, print, 'ITEM0')).toBe(false);
-    types.set(call, 'error');
+    types.set(call, ERROR_TYPE);
     expect(canDrop(call, repeat, 'TIMES')).toBe(true);
   });
 
@@ -255,7 +256,7 @@ describe('the type rule while dragging', () => {
     });
     expect(canDrop(unknown, repeat, 'TIMES')).toBe(true);
     expect(canDrop(rendered('var.get'), repeat, 'TIMES')).toBe(true);
-    setCheckerTypeOracle({ outputTypeOf: () => 'string' });
+    setCheckerTypeOracle({ outputTypeOf: () => prim('std::string') });
     expect(canDrop(unknown, repeat, 'TIMES')).toBe(false);
   });
 

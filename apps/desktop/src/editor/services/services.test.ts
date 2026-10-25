@@ -6,6 +6,7 @@ import {
   EXPR_SHADOW_TYPE,
   getEditorServices,
   isExprShadowType,
+  prim,
   refreshMutatorLabels,
   resetEditorServices,
 } from '@blocks2cpp/blockly-ext';
@@ -121,7 +122,7 @@ describe('the symbol provider and the type oracle', () => {
   const preview: PreviewResult = {
     ...previewFixture(),
     blockTypes: JSON.parse(
-      '{"b_get": "double", "__proto__": "bool", "b_bad": "nonsense"}',
+      '{"b_get": "double", "__proto__": "bool", "b_bad": "nonsense", "b_m2": "string"}',
     ) as never,
     symbols: [
       symbol('s_x', 'x', { type: 'char' }),
@@ -187,17 +188,19 @@ describe('the symbol provider and the type oracle', () => {
     const getter = block('var.get', 'b_get');
     expect(types.outputTypeOf(getter)).toBeNull();
     current = preview;
-    expect(types.outputTypeOf(getter)).toBe('double');
+    expect(types.outputTypeOf(getter)).toEqual(prim('double'));
     // IDs are looked up as own keys only; values that are not static types are ignored.
-    expect(types.outputTypeOf(block('math.number', '__proto__'))).toBe('bool');
+    expect(types.outputTypeOf(block('math.number', '__proto__'))).toEqual(prim('bool'));
     expect(types.outputTypeOf(block('math.number', 'b_bad'))).toBeNull();
+    // M2's `string` is not a type term: the wire says `std::string` (types.md §3.1).
+    expect(types.outputTypeOf(block('math.number', 'b_m2'))).toBeNull();
 
     const fresh = block('var.get', 'b_new');
     (fresh.getField('VAR') as B2cSymbolRefField).setRef({ ref: 's_x' });
-    expect(types.outputTypeOf(fresh)).toBe('char');
+    expect(types.outputTypeOf(fresh)).toEqual(prim('char'));
     const call = block('func.call', 'b_call');
     (call.getField('FUNC') as B2cSymbolRefField).setRef({ ref: 's_fn' });
-    expect(types.outputTypeOf(call)).toBe('double');
+    expect(types.outputTypeOf(call)).toEqual(prim('double'));
     expect(types.outputTypeOf(block('math.number', 'b_other'))).toBeNull();
   });
 });

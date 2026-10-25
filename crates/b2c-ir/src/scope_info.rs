@@ -11,8 +11,10 @@
 //!
 //! `kind` is `variable` (with `isConst`), `parameter` (with `mode`: `copy`,
 //! `editable` or `read_only`), `loopVariable`, or `function` (with `params`,
-//! the parameter symbol IDs in order, and `returns`). Types are `void`,
-//! `bool`, `char`, `int`, `double`, `string` or `error`.
+//! the parameter symbol IDs in order, and `returns`). Types are written as
+//! their terms (`"int"`, `"std::string"`, `{"std::vector": "int"}`,
+//! `{"ref": "sym_x"}`), and `"error"` for an expression that already has an
+//! error (`crate::types::term_form`).
 //!
 //! Milestone M3 adds the kinds `struct` (with `fields`, `comparable` and
 //! `printable`), `field` (with `owner`), `enum` (with `values`) and
@@ -222,7 +224,7 @@ mod tests {
         round_trip(
             &SymbolInfo::new(sym("p_text"), "text", &param),
             &json!({"id": "p_text", "name": "text", "kind": "parameter", "mode": "read_only",
-                    "type": "string", "module": "mod_main", "declBlock": "fn_f"}),
+                    "type": "std::string", "module": "mod_main", "declBlock": "fn_f"}),
         );
         let counter = symbol("i", SymbolKind::LoopVariable, Type::Int, "b_for", field("VAR"));
         round_trip(
@@ -298,7 +300,7 @@ mod tests {
             (Type::Char, "char"),
             (Type::Int, "int"),
             (Type::Double, "double"),
-            (Type::String, "string"),
+            (Type::String, "std::string"),
             (Type::Error, "error"),
         ] {
             assert_eq!(serde_json::to_value(&ty).expect("json"), json!(text));
@@ -332,15 +334,11 @@ mod tests {
                 printable: false
             }
         );
-        // `Named` types do not serialise until the serialisation pull request,
-        // so the records are checked with an M2 type.
-        let mut record = structure;
-        record.ty = Type::Int;
         round_trip(
-            &record,
+            &structure,
             &json!({"id": "s1", "name": "Point", "kind": "struct", "fields": ["f_x", "f_y"],
-                    "comparable": true, "printable": false, "type": "int", "module": "mod_main",
-                    "declBlock": "b1"}),
+                    "comparable": true, "printable": false, "type": {"ref": "s1"},
+                    "module": "mod_main", "declBlock": "b1"}),
         );
         let mut shared = make(SymbolKind::Field { owner: sym("s_pt") }, Type::Double);
         assert!(!shared.shared);

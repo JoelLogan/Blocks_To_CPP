@@ -12,6 +12,7 @@ import {
 import { checkerTypeOracle } from '../src/checker/oracle';
 import { configureMutators, mutatorHooks } from '../src/mutators/hooks';
 import { nameOf, outputTypeOf, symbolsAt } from '../src/services';
+import { prim } from '../src/types/static-type';
 import { headlessWorkspace, setUpBlocks, symbol } from './helpers';
 
 beforeEach(() => {
@@ -33,13 +34,13 @@ describe('editor services', () => {
     const services = {
       ...DEFAULT_EDITOR_SERVICES,
       symbols: { symbolsAt: () => [symbol('s_a', 'a')], nameOf: () => 'a' },
-      types: { outputTypeOf: () => 'int' as const },
+      types: { outputTypeOf: () => prim('int') },
     };
     setEditorServices(services);
     expect(getEditorServices()).toBe(services);
     expect(symbolsAt('b1', 'BODY').map((info) => info.id)).toEqual(['s_a']);
     expect(nameOf('s_a')).toBe('a');
-    expect(outputTypeOf(headlessWorkspace().newBlock('math.number'))).toBe('int');
+    expect(outputTypeOf(headlessWorkspace().newBlock('math.number'))).toEqual(prim('int'));
     resetEditorServices();
     expect(getEditorServices()).toBe(DEFAULT_EDITOR_SERVICES);
   });
@@ -49,14 +50,14 @@ describe('editor services', () => {
     const newSymbolId = () => 'sym_fixed';
     configureMutators({ inputShadow, newSymbolId });
     const symbols = { symbolsAt: () => [symbol('s_a', 'a')], nameOf: () => 'a' };
-    const types = { outputTypeOf: () => 'double' as const };
+    const types = { outputTypeOf: () => prim('double') };
     // The dialogs are optional: nothing in the package asks for one yet.
     setEditorServices({ symbols, types });
     expect(getEditorServices().dialogs).toBeUndefined();
 
     const block = headlessWorkspace().newBlock('math.number');
     expect(checkerTypeOracle()).toBe(types);
-    expect(checkerTypeOracle().outputTypeOf(block)).toBe('double');
+    expect(checkerTypeOracle().outputTypeOf(block)).toEqual(prim('double'));
     expect(mutatorHooks().symbols).toBe(symbols);
 
     resetEditorServices();

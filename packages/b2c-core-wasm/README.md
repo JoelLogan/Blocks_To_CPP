@@ -48,9 +48,8 @@ if (loaded.ok) {
 - `blockTypes` gives the static type of each value block of the program (what the connection
   checker and the output types of `var.get` and `func.call` use), `slotTypes` that of each
   expression slot, by block ID, then input name (ADR-0018), and `symbols` every symbol of the
-  program, sorted by name. Types are `TypeJson`: type terms (`"int"`, `{"std::vector": "int"}`,
-  `{"ref": "sym_x"}`) and `"error"`; until the switch to the term form
-  (docs/plans/m3-contracts/types.md §8.2), M2's seven types keep their M2 names (`"string"`).
+  program, sorted by name. Types are `TypeJson`: type terms (`"int"`, `"std::string"`,
+  `{"std::vector": "int"}`, `{"ref": "sym_x"}`) and `"error"`.
 
 ### One load per edit
 
@@ -79,8 +78,7 @@ An update whose document does not load keeps the analysis of the last one that d
 what the editor still shows.
 `conversionTable()` lets the connection checker refuse exactly the connections the analyser would
 report (`invalid`). The core's table covers every pair of the sample types of the shared type
-fixture (`packages/blockly-ext/src/types/fixture.json`); until the switch to the term form, the
-export returns the 49 pairs of M2's seven types. The scope query also lists the fields and
+fixture (`packages/blockly-ext/src/types/fixture.json`). The scope query also lists the fields and
 enumerators of each struct and enum it lists (milestone M3), each with its `owner`.
 
 ### Clipboard
