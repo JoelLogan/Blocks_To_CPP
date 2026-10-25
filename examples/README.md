@@ -28,3 +28,4 @@ joins this list, with its golden test, once its project passes.
 | [`average.b2c`](average.b2c) | Average | Repeat a number of times, decimal arithmetic and an explicit conversion. |
 | [`exit_code.b2c`](exit_code.b2c) | Exit Code | Stopping the program with an exit code from inside a function. |
 | [`tricky_text.b2c`](tricky_text.b2c) | Tricky Text | Text that must be escaped correctly in C++ (spec §8.4.2), and a comment ending in a backslash that must not hide the next line (§8.4.3). |
+| [`matrix_sum.b2c`](matrix_sum.b2c) | Matrix Sum | A list of lists (M3 assignment): building each row with *add*, *for each* over the rows, *item* and *set item* by position, and the sums of rows and columns. |

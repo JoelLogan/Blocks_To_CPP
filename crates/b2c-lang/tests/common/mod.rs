@@ -271,18 +271,30 @@ pub(crate) fn m2_sigs() -> SigTable {
     table
 }
 
+/// The families of blocks that came after M2 (w2.md §1), which slots.md §5
+/// gives no pattern: each W2 package adds its own.
+pub(crate) const AFTER_M2: &[&str] = &["coll."];
+
 /// Analyses a document with the catalog's signatures ([`analyze`]) and
 /// again with the patterns slots.md §5 gives M2's blocks ([`m2_sigs`]),
 /// checks that both give the same diagnostics, program (but for the items'
 /// catalog headers, which only the catalog's table has), block types and
 /// slot types, and returns the analysis with the catalog's signatures.
+/// W2's blocks ([`AFTER_M2`], w2.md §1) have no slots.md §5 pattern, so
+/// both analyses take the catalog's signatures for them.
 ///
 /// M2's own rules for these blocks went in M3's first wave (types.md §8.3);
 /// `props.rs` holds the catalog's table to a record of what they gave.
 #[track_caller]
 pub(crate) fn analyse(document: &Document) -> Analysis {
     let catalog = analyze(document);
-    let contract = analyze_with(document, &m2_sigs());
+    let mut contract_sigs = m2_sigs();
+    for (block_type, sig) in b2c_catalog::core_catalog().sigs().iter() {
+        if AFTER_M2.iter().any(|family| block_type.starts_with(family)) {
+            contract_sigs.insert(block_type, sig.clone());
+        }
+    }
+    let contract = analyze_with(document, &contract_sigs);
     assert_eq!(
         render_all(&contract),
         render_all(&catalog),

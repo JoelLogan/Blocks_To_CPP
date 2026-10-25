@@ -1,0 +1,966 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 2,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.3.0"
+  },
+  "project": {
+    "id": "prj_matrix_sum",
+    "name": "Matrix Sum",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b001",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b002",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_rows",
+                      "name": "rows"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b003",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_columns",
+                      "name": "columns"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b004",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "MODE": "keep_asking",
+                    "VAR": {
+                      "ref": "s_rows"
+                    }
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "Rows: "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b005",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "MODE": "keep_asking",
+                    "VAR": {
+                      "ref": "s_columns"
+                    }
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "Columns: "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b006",
+                  "type": "control.if",
+                  "v": 1,
+                  "inputs": {
+                    "COND0": {
+                      "expr": [
+                        {
+                          "ref": "s_rows"
+                        },
+                        {
+                          "op": "<"
+                        },
+                        {
+                          "num": "1"
+                        },
+                        {
+                          "op": "or"
+                        },
+                        {
+                          "ref": "s_columns"
+                        },
+                        {
+                          "op": "<"
+                        },
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b007",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 1
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "A matrix needs at least one row and one column."
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b008",
+                        "type": "program.exit",
+                        "v": 1,
+                        "inputs": {
+                          "CODE": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b009",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_matrix",
+                      "name": "matrix"
+                    },
+                    "TYPE": {
+                      "std::vector": {
+                        "std::vector": "int"
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b010",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "DIRECTION": "to",
+                    "VAR": {
+                      "sym": "s_r",
+                      "name": "r"
+                    }
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "ref": "s_rows"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b011",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "CONST": false,
+                          "NAME": {
+                            "sym": "s_row",
+                            "name": "row"
+                          },
+                          "TYPE": {
+                            "std::vector": "int"
+                          }
+                        }
+                      },
+                      {
+                        "id": "b012",
+                        "type": "control.for_range",
+                        "v": 1,
+                        "fields": {
+                          "DIRECTION": "to",
+                          "VAR": {
+                            "sym": "s_c",
+                            "name": "c"
+                          }
+                        },
+                        "inputs": {
+                          "FROM": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          },
+                          "TO": {
+                            "expr": [
+                              {
+                                "ref": "s_columns"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "BODY": [
+                            {
+                              "id": "b013",
+                              "type": "var.declare",
+                              "v": 1,
+                              "fields": {
+                                "CONST": false,
+                                "NAME": {
+                                  "sym": "s_value",
+                                  "name": "value"
+                                },
+                                "TYPE": "int"
+                              },
+                              "inputs": {
+                                "VALUE": {
+                                  "expr": [
+                                    {
+                                      "num": "0"
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "id": "b014",
+                              "type": "io.ask",
+                              "v": 1,
+                              "fields": {
+                                "MODE": "keep_asking",
+                                "VAR": {
+                                  "ref": "s_value"
+                                }
+                              },
+                              "inputs": {
+                                "PROMPT": {
+                                  "block": {
+                                    "id": "b015",
+                                    "type": "text.join",
+                                    "v": 1,
+                                    "extra": {
+                                      "itemCount": 5
+                                    },
+                                    "inputs": {
+                                      "ITEM0": {
+                                        "expr": [
+                                          {
+                                            "str": "Row "
+                                          }
+                                        ]
+                                      },
+                                      "ITEM1": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_r"
+                                          },
+                                          {
+                                            "op": "+"
+                                          },
+                                          {
+                                            "num": "1"
+                                          }
+                                        ]
+                                      },
+                                      "ITEM2": {
+                                        "expr": [
+                                          {
+                                            "str": ", column "
+                                          }
+                                        ]
+                                      },
+                                      "ITEM3": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_c"
+                                          },
+                                          {
+                                            "op": "+"
+                                          },
+                                          {
+                                            "num": "1"
+                                          }
+                                        ]
+                                      },
+                                      "ITEM4": {
+                                        "expr": [
+                                          {
+                                            "str": ": "
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "id": "b016",
+                              "type": "coll.add",
+                              "v": 1,
+                              "fields": {
+                                "LIST": {
+                                  "ref": "s_row"
+                                }
+                              },
+                              "inputs": {
+                                "VALUE": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_value"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "id": "b017",
+                        "type": "coll.add",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_matrix"
+                          }
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "ref": "s_row"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b018",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": ""
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b019",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_column_sums",
+                      "name": "column_sums"
+                    },
+                    "TYPE": {
+                      "std::vector": "int"
+                    }
+                  }
+                },
+                {
+                  "id": "b020",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "DIRECTION": "to",
+                    "VAR": {
+                      "sym": "s_c2",
+                      "name": "c"
+                    }
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "ref": "s_columns"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b021",
+                        "type": "coll.add",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_column_sums"
+                          }
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b022",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_total",
+                      "name": "total"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b023",
+                  "type": "coll.for_each",
+                  "v": 1,
+                  "fields": {
+                    "ITEM": {
+                      "sym": "s_matrix_row",
+                      "name": "row"
+                    },
+                    "MODE": "read_only"
+                  },
+                  "inputs": {
+                    "LIST": {
+                      "expr": [
+                        {
+                          "ref": "s_matrix"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b024",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "CONST": false,
+                          "NAME": {
+                            "sym": "s_row_sum",
+                            "name": "row_sum"
+                          },
+                          "TYPE": "int"
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b025",
+                        "type": "control.for_range",
+                        "v": 1,
+                        "fields": {
+                          "DIRECTION": "to",
+                          "VAR": {
+                            "sym": "s_c3",
+                            "name": "c"
+                          }
+                        },
+                        "inputs": {
+                          "FROM": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          },
+                          "TO": {
+                            "expr": [
+                              {
+                                "ref": "s_columns"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "BODY": [
+                            {
+                              "id": "b026",
+                              "type": "io.print",
+                              "v": 1,
+                              "extra": {
+                                "itemCount": 2
+                              },
+                              "fields": {
+                                "NEWLINE": false,
+                                "SEP": "none",
+                                "STREAM": "out"
+                              },
+                              "inputs": {
+                                "ITEM0": {
+                                  "block": {
+                                    "id": "b027",
+                                    "type": "coll.item",
+                                    "v": 1,
+                                    "fields": {
+                                      "LIST": {
+                                        "ref": "s_matrix_row"
+                                      }
+                                    },
+                                    "inputs": {
+                                      "INDEX": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_c3"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                "ITEM1": {
+                                  "expr": [
+                                    {
+                                      "str": " "
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            {
+                              "id": "b028",
+                              "type": "var.change",
+                              "v": 1,
+                              "fields": {
+                                "OP": "add",
+                                "VAR": {
+                                  "ref": "s_row_sum"
+                                }
+                              },
+                              "inputs": {
+                                "BY": {
+                                  "block": {
+                                    "id": "b029",
+                                    "type": "coll.item",
+                                    "v": 1,
+                                    "fields": {
+                                      "LIST": {
+                                        "ref": "s_matrix_row"
+                                      }
+                                    },
+                                    "inputs": {
+                                      "INDEX": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_c3"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "id": "b030",
+                              "type": "coll.set_item",
+                              "v": 1,
+                              "fields": {
+                                "LIST": {
+                                  "ref": "s_column_sums"
+                                }
+                              },
+                              "inputs": {
+                                "INDEX": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_c3"
+                                    }
+                                  ]
+                                },
+                                "VALUE": {
+                                  "block": {
+                                    "id": "b031",
+                                    "type": "math.arithmetic",
+                                    "v": 1,
+                                    "fields": {
+                                      "OP": "add"
+                                    },
+                                    "inputs": {
+                                      "A": {
+                                        "block": {
+                                          "id": "b032",
+                                          "type": "coll.item",
+                                          "v": 1,
+                                          "fields": {
+                                            "LIST": {
+                                              "ref": "s_column_sums"
+                                            }
+                                          },
+                                          "inputs": {
+                                            "INDEX": {
+                                              "expr": [
+                                                {
+                                                  "ref": "s_c3"
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "B": {
+                                        "block": {
+                                          "id": "b033",
+                                          "type": "coll.item",
+                                          "v": 1,
+                                          "fields": {
+                                            "LIST": {
+                                              "ref": "s_matrix_row"
+                                            }
+                                          },
+                                          "inputs": {
+                                            "INDEX": {
+                                              "expr": [
+                                                {
+                                                  "ref": "s_c3"
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "id": "b034",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 2
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "| "
+                              }
+                            ]
+                          },
+                          "ITEM1": {
+                            "expr": [
+                              {
+                                "ref": "s_row_sum"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b035",
+                        "type": "var.change",
+                        "v": 1,
+                        "fields": {
+                          "OP": "add",
+                          "VAR": {
+                            "ref": "s_total"
+                          }
+                        },
+                        "inputs": {
+                          "BY": {
+                            "expr": [
+                              {
+                                "ref": "s_row_sum"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b036",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": false,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Column sums:"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b037",
+                  "type": "coll.for_each",
+                  "v": 1,
+                  "fields": {
+                    "ITEM": {
+                      "sym": "s_sum",
+                      "name": "sum"
+                    },
+                    "MODE": "read_only"
+                  },
+                  "inputs": {
+                    "LIST": {
+                      "expr": [
+                        {
+                          "ref": "s_column_sums"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b038",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 2
+                        },
+                        "fields": {
+                          "NEWLINE": false,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": " "
+                              }
+                            ]
+                          },
+                          "ITEM1": {
+                            "expr": [
+                              {
+                                "ref": "s_sum"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b039",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": ""
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b040",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Total: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_total"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
