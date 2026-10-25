@@ -3,7 +3,7 @@
  * (docs/spec/05-project-format.md §5.4, 03 §3.4): what the editor writes for each kind of change.
  * These tests need no compiler core.
  */
-import type { BdmBlock, BdmDocument } from '@blocks2cpp/b2c-core-wasm';
+import type { BdmBlock, BdmDocument, TypeJson } from '@blocks2cpp/b2c-core-wasm';
 import {
   B2cSymbolRefField,
   EXPR_SHADOW_TYPE,
@@ -274,6 +274,29 @@ describe('block state', () => {
       extra: { itemCount: 2 },
       fields: { SEP: 'space' },
     });
+  });
+
+  it('keeps a type field holding a template or a user type, by its key (types.md §3.2)', () => {
+    const declare = (id: string, type: TypeJson): BdmBlock => ({
+      id,
+      type: 'var.declare',
+      v: 1,
+      fields: { TYPE: type, NAME: { sym: `s_${id}`, name: id }, CONST: false },
+    });
+    const blocks = [
+      declare('d1', 'int'),
+      declare('d2', { 'std::vector': 'int' }),
+      declare('d3', { 'std::map': ['std::string', { ref: 's_point' }] }),
+      declare('d4', { ref: 's_point' }),
+    ];
+    const { workspace } = load([mainWith(blocks)]);
+    // Real blocks, not placeholders, and every value reads back as the file wrote it.
+    for (const block of blocks) {
+      expect(isPlaceholder(blockOf(workspace, block.id))).toBe(false);
+    }
+    expect(readBack(workspace)).toEqual([mainWith(blocks)]);
+    expect(blockOf(workspace, 'd2').getFieldValue('TYPE')).toBe('{"std::vector":"int"}');
+    expect(blockOf(workspace, 'd1').getFieldValue('TYPE')).toBe('int');
   });
 
   it('writes every key for a block the editor created', () => {

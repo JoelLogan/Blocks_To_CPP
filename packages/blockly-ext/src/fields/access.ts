@@ -10,15 +10,30 @@ import { B2cOptionsFieldBase } from './options-base';
 import { B2cSymbolDeclField } from './symbol-decl';
 import { B2cSymbolRefField } from './symbol-ref';
 import { B2cTextInputBase } from './text-input-base';
+import { B2cTypeField } from './type';
+import { parseTerm, termFromKey, termJson, termKey } from '../types/static-type';
 import { isSymbolDeclValue, isSymbolRefValue, type B2cFieldValue } from './values';
 
 /**
  * A Blocks2Cpp field's value as a project file stores it: a boolean (checkbox), a string (number,
- * text, dropdown, type), `{sym, name}` (declaration) or `{ref}` (reference). Null when the field has
- * no value yet (a declaration without a symbol ID, a reference with nothing chosen) or is not a
- * Blocks2Cpp field.
+ * text, dropdown, type), `{sym, name}` (declaration), `{ref}` (reference) or a type term (a type
+ * field holding a template or a user type). Null when the field has no value yet (a declaration
+ * without a symbol ID, a reference with nothing chosen) or is not a Blocks2Cpp field.
+ *
+ * A type field keeps a term's key as its value (types.md §3.2): `int`, `std::string`,
+ * `{"std::vector":"int"}`, `{"ref":"sym_x"}`, so Blockly's events and undo stay text-based and M2
+ * values are unchanged. The key of a template or a user type reads as its term; any other value,
+ * one the field does not know included, reads as the text it is.
  */
 export function readB2cField(field: Blockly.Field): B2cFieldValue | null {
+  if (field instanceof B2cTypeField) {
+    const value = field.getValue();
+    if (!value?.startsWith('{')) {
+      return value;
+    }
+    const term = termFromKey(value);
+    return term === null ? value : termJson(term);
+  }
   if (field instanceof B2cSymbolDeclField) {
     return field.getDecl();
   }
@@ -40,6 +55,20 @@ export function readB2cField(field: Blockly.Field): B2cFieldValue | null {
  * field is not a Blocks2Cpp field.
  */
 export function writeB2cField(field: Blockly.Field, value: B2cFieldValue): boolean {
+  if (field instanceof B2cTypeField) {
+    let key: string;
+    if (typeof value === 'string') {
+      key = value;
+    } else {
+      const term = typeof value === 'boolean' ? null : parseTerm(value);
+      if (term === null || term.kind === 'name') {
+        return false;
+      }
+      key = termKey(term);
+    }
+    field.setValue(key);
+    return field.getValue() === key;
+  }
   if (field instanceof B2cSymbolDeclField) {
     return isSymbolDeclValue(value) && field.setDecl(value);
   }

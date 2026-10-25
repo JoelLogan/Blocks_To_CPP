@@ -30,8 +30,15 @@ export interface SymbolRefValue {
   readonly ref: string;
 }
 
+/**
+ * A type as a type field stores it in a project file (docs/plans/m3-contracts/types.md §2.1): a
+ * name, a user type `{"ref": id}`, or a template `{"std::vector": "int"}`.
+ */
+export type TypeTermValue =
+  string | { readonly [name: string]: TypeTermValue | readonly TypeTermValue[] };
+
 /** Any field value of a project file. */
-export type B2cFieldValue = boolean | string | SymbolDeclValue | SymbolRefValue;
+export type B2cFieldValue = boolean | string | SymbolDeclValue | SymbolRefValue | TypeTermValue;
 
 /** The longest name a declaration may have, in code points (05 §5.6, `MAX_IDENT_LEN`). */
 export const MAX_NAME_CHARS = 64;

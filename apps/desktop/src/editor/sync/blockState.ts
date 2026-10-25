@@ -11,6 +11,7 @@ import {
   isManuallyDisabled,
   isSymbolDeclValue,
   isSymbolRefValue,
+  parseTerm,
   readB2cField,
   setManuallyDisabled,
   writeB2cField,
@@ -161,15 +162,17 @@ export function writeFlagsAndComment(block: Blockly.Block, node: BdmBlock): void
 }
 
 /**
- * Whether a field value is one a Blockly field holds. A template type term (format version 2,
- * docs/plans/m3-contracts/types.md §2.1) is not yet: the type field's key for it comes with the
- * editor's type package, and the loader does not produce one before.
+ * Whether a field value is one a Blockly field holds: a boolean, text, a declaration, a reference,
+ * or a type term (format version 2, docs/plans/m3-contracts/types.md §2.1), which a type field
+ * holds by its key (§3.2).
  */
 function isB2cFieldValue(value: FieldValue): value is B2cFieldValue {
   return (
     typeof value === 'boolean' ||
     typeof value === 'string' ||
     isSymbolDeclValue(value) ||
-    isSymbolRefValue(value)
+    isSymbolRefValue(value) ||
+    // A type term: a template or a user type in a type field (types.md §2.1).
+    parseTerm(value) !== null
   );
 }

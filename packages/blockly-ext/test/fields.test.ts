@@ -660,6 +660,31 @@ describe('type fields', () => {
     expect(field.getValue()).toBe('long\u200b');
     expect(field.getText()).toBe('long⟨U+200B⟩');
   });
+
+  it('hold a term by its key, so M2 values keep their text and templates round-trip', () => {
+    const workspace = headlessWorkspace();
+    const field = workspace.newBlock('var.declare').getField('TYPE') as B2cTypeField;
+    // An M2 value is its own key.
+    expect(writeB2cField(field, 'std::string')).toBe(true);
+    expect(field.getValue()).toBe('std::string');
+    expect(readB2cField(field)).toBe('std::string');
+    // A template and a user type are held by their keys and read back as their terms.
+    const list = { 'std::map': ['std::string', { 'std::vector': 'int' }] };
+    expect(writeB2cField(field, list)).toBe(true);
+    expect(field.getValue()).toBe('{"std::map":["std::string",{"std::vector":"int"}]}');
+    expect(readB2cField(field)).toEqual(list);
+    expect(writeB2cField(field, { ref: 'sym_Point' })).toBe(true);
+    expect(field.getValue()).toBe('{"ref":"sym_Point"}');
+    expect(readB2cField(field)).toEqual({ ref: 'sym_Point' });
+    // A value the field does not know is kept as text, even when it looks like JSON.
+    field.setValue('{ "std::vector": "int" }');
+    expect(readB2cField(field)).toBe('{ "std::vector": "int" }');
+    // A term of the wrong shape is refused, and the field keeps its value.
+    expect(writeB2cField(field, { 'std::vector': [] })).toBe(false);
+    expect(writeB2cField(field, { 'std::vector': 'int', 'std::set': 'int' })).toBe(false);
+    expect(writeB2cField(field, true)).toBe(false);
+    expect(field.getValue()).toBe('{ "std::vector": "int" }');
+  });
 });
 
 describe('dropdown fields', () => {

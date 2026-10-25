@@ -30,6 +30,7 @@ export {
   isSymbolRefValue,
   type B2cFieldType,
   type B2cFieldValue,
+  type TypeTermValue,
   type SymbolDeclValue,
   type SymbolRefValue,
 } from './values';
