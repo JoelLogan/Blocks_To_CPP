@@ -1,0 +1,4333 @@
+{
+  "cases": [
+    {
+      "facts": "known",
+      "name": "a type field binds T, the value converts",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "TYPE": {
+            "kind": "known",
+            "type": "double"
+          }
+        },
+        "inputs": {
+          "VALUE": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "create",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "field",
+              "name": "TYPE"
+            },
+            "type": "double"
+          }
+        },
+        "declares": {
+          "NAME": "double"
+        },
+        "fields": {
+          "TYPE": "same"
+        },
+        "inputs": {
+          "VALUE": {
+            "expects": "double",
+            "fit": "widening"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "auto binds nothing; the value binds T",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "TYPE": {
+            "kind": "auto"
+          }
+        },
+        "inputs": {
+          "VALUE": {
+            "kind": "known",
+            "type": "std::string"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "create",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "input",
+              "name": "VALUE"
+            },
+            "type": "std::string"
+          }
+        },
+        "declares": {
+          "NAME": "std::string"
+        },
+        "fields": {
+          "TYPE": "unknown"
+        },
+        "inputs": {
+          "VALUE": {
+            "expects": "std::string",
+            "fit": "same"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "auto and a value typed from its place: nothing gives a type",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "TYPE": {
+            "kind": "auto"
+          }
+        },
+        "inputs": {
+          "VALUE": {
+            "kind": "fromPlace"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "create",
+      "typing": {
+        "bound": {},
+        "declares": {
+          "NAME": "error"
+        },
+        "fields": {
+          "TYPE": "unknown"
+        },
+        "inputs": {
+          "VALUE": {
+            "expects": null,
+            "fit": "unknown"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a type outside the variable's class binds Error",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "TYPE": {
+            "kind": "known",
+            "type": "std::ifstream"
+          }
+        },
+        "inputs": {
+          "VALUE": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "create",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "field",
+              "name": "TYPE"
+            },
+            "type": "error"
+          }
+        },
+        "declares": {
+          "NAME": "error"
+        },
+        "fields": {
+          "TYPE": "outsideClass"
+        },
+        "inputs": {
+          "VALUE": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "an empty binder makes the expectation Error, not open",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {},
+        "inputs": {
+          "VALUE": {
+            "kind": "fromPlace"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "set",
+      "typing": {
+        "bound": {},
+        "declares": {},
+        "fields": {
+          "VAR": "unknown"
+        },
+        "inputs": {
+          "VALUE": {
+            "expects": "error",
+            "fit": "unknown"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "assign: a char into a string, and it never binds",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "VAR": {
+            "kind": "known",
+            "type": "std::string"
+          }
+        },
+        "inputs": {
+          "VALUE": {
+            "kind": "known",
+            "type": "char"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "set",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "field",
+              "name": "VAR"
+            },
+            "type": "std::string"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "VAR": "same"
+        },
+        "inputs": {
+          "VALUE": {
+            "expects": "std::string",
+            "fit": "widening"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "text into an int variable does not convert",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "VAR": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "inputs": {
+          "VALUE": {
+            "kind": "known",
+            "type": "std::string"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "set",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "field",
+              "name": "VAR"
+            },
+            "type": "int"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "VAR": "same"
+        },
+        "inputs": {
+          "VALUE": {
+            "expects": "int",
+            "fit": "invalid"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "an unknown reference binds Error",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "VAR": {
+            "kind": "unknown"
+          }
+        },
+        "inputs": {
+          "VALUE": {
+            "kind": "known",
+            "type": "std::string"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "set",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "field",
+              "name": "VAR"
+            },
+            "type": "error"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "VAR": "unknown"
+        },
+        "inputs": {
+          "VALUE": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a class mismatch binds Error, which then fits",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "LIST": {
+            "kind": "known",
+            "type": {
+              "std::set": "int"
+            }
+          }
+        },
+        "inputs": {
+          "INDEX": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "item of",
+      "typing": {
+        "bound": {
+          "C": {
+            "binder": {
+              "kind": "field",
+              "name": "LIST"
+            },
+            "type": "error"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "LIST": "outsideClass"
+        },
+        "inputs": {
+          "INDEX": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": "error",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a list binds C; the index and the output follow it",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "LIST": {
+            "kind": "known",
+            "type": {
+              "std::vector": "std::string"
+            }
+          }
+        },
+        "inputs": {
+          "INDEX": {
+            "kind": "known",
+            "type": "double"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "item of",
+      "typing": {
+        "bound": {
+          "C": {
+            "binder": {
+              "kind": "field",
+              "name": "LIST"
+            },
+            "type": {
+              "std::vector": "std::string"
+            }
+          }
+        },
+        "declares": {},
+        "fields": {
+          "LIST": "same"
+        },
+        "inputs": {
+          "INDEX": {
+            "expects": "int",
+            "fit": "narrowing"
+          }
+        },
+        "output": "std::string",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "partial",
+      "name": "unknown membership binds Error",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "LIST": {
+            "kind": "known",
+            "type": {
+              "ref": "sym_Point"
+            }
+          }
+        },
+        "inputs": {
+          "INDEX": {
+            "kind": "known",
+            "type": "std::string"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "item of",
+      "typing": {
+        "bound": {
+          "C": {
+            "binder": {
+              "kind": "field",
+              "name": "LIST"
+            },
+            "type": "error"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "LIST": "same"
+        },
+        "inputs": {
+          "INDEX": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": "error",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a shape mismatch is invalid",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "LIST": {
+            "kind": "known",
+            "type": {
+              "std::set": "int"
+            }
+          },
+          "OTHER": {
+            "kind": "known",
+            "type": {
+              "std::vector": "int"
+            }
+          }
+        },
+        "inputs": {},
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "two lists",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "field",
+              "name": "LIST"
+            },
+            "type": "error"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "LIST": "invalid",
+          "OTHER": "same"
+        },
+        "inputs": {},
+        "output": "error",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a reference never converts to what an earlier part bound",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "LIST": {
+            "kind": "known",
+            "type": {
+              "std::vector": "int"
+            }
+          },
+          "OTHER": {
+            "kind": "known",
+            "type": {
+              "std::vector": "double"
+            }
+          }
+        },
+        "inputs": {},
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "two lists",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "field",
+              "name": "LIST"
+            },
+            "type": "int"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "LIST": "same",
+          "OTHER": "invalid"
+        },
+        "inputs": {},
+        "output": "int",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a place-typed block with a place",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {
+          "ITEM": 2
+        },
+        "fields": {},
+        "inputs": {
+          "ITEM0": {
+            "kind": "known",
+            "type": {
+              "ref": "sym_Point"
+            }
+          },
+          "ITEM1": {
+            "kind": "known",
+            "type": "double"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": {
+        "std::vector": {
+          "ref": "sym_Point"
+        }
+      },
+      "sig": "list of",
+      "typing": {
+        "bound": {
+          "C": {
+            "binder": {
+              "kind": "place"
+            },
+            "type": {
+              "std::vector": {
+                "ref": "sym_Point"
+              }
+            }
+          }
+        },
+        "declares": {},
+        "fields": {},
+        "inputs": {
+          "ITEM0": {
+            "expects": {
+              "ref": "sym_Point"
+            },
+            "fit": "same"
+          },
+          "ITEM1": {
+            "expects": {
+              "ref": "sym_Point"
+            },
+            "fit": "invalid"
+          }
+        },
+        "output": {
+          "std::vector": {
+            "ref": "sym_Point"
+          }
+        },
+        "place": "same"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a place-typed block without a place",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {
+          "ITEM": 1
+        },
+        "fields": {},
+        "inputs": {
+          "ITEM0": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "list of",
+      "typing": {
+        "bound": {},
+        "declares": {},
+        "fields": {},
+        "inputs": {
+          "ITEM0": {
+            "expects": null,
+            "fit": "unknown"
+          }
+        },
+        "output": "error",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a place-typed block outside its class",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {
+          "ITEM": 1
+        },
+        "fields": {},
+        "inputs": {
+          "ITEM0": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": "int",
+      "sig": "list of",
+      "typing": {
+        "bound": {
+          "C": {
+            "binder": {
+              "kind": "place"
+            },
+            "type": "error"
+          }
+        },
+        "declares": {},
+        "fields": {},
+        "inputs": {
+          "ITEM0": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": "error",
+        "place": "outsideClass"
+      }
+    },
+    {
+      "facts": "partial",
+      "name": "a place whose membership is not known",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {},
+        "inputs": {},
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": {
+        "ref": "sym_Point"
+      },
+      "sig": "list of",
+      "typing": {
+        "bound": {
+          "C": {
+            "binder": {
+              "kind": "place"
+            },
+            "type": "error"
+          }
+        },
+        "declares": {},
+        "fields": {},
+        "inputs": {},
+        "output": "error",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "the first binding wins; a later narrowing warns",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {},
+        "inputs": {
+          "A": {
+            "kind": "known",
+            "type": "int"
+          },
+          "B": {
+            "kind": "known",
+            "type": "double"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "two integers",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "input",
+              "name": "A"
+            },
+            "type": "int"
+          }
+        },
+        "declares": {},
+        "fields": {},
+        "inputs": {
+          "A": {
+            "expects": "int",
+            "fit": "same"
+          },
+          "B": {
+            "expects": "int",
+            "fit": "narrowing"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "the counterexample: an unknown binder never turns a fit into an error",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {},
+        "inputs": {
+          "A": {
+            "kind": "unknown"
+          },
+          "B": {
+            "kind": "known",
+            "type": "double"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "two integers",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "input",
+              "name": "A"
+            },
+            "type": "error"
+          }
+        },
+        "declares": {},
+        "fields": {},
+        "inputs": {
+          "A": {
+            "expects": "error",
+            "fit": "unknown"
+          },
+          "B": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "the second counterexample: an assigned char among strings does not bind",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {},
+        "inputs": {
+          "A": {
+            "kind": "unknown"
+          },
+          "B": {
+            "kind": "known",
+            "type": "char"
+          },
+          "C": {
+            "kind": "known",
+            "type": "std::string"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "texts",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "input",
+              "name": "A"
+            },
+            "type": "error"
+          }
+        },
+        "declares": {},
+        "fields": {},
+        "inputs": {
+          "A": {
+            "expects": "error",
+            "fit": "unknown"
+          },
+          "B": {
+            "expects": "error",
+            "fit": "same"
+          },
+          "C": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "param: by index, also out of range",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {
+          "ARG": 2
+        },
+        "fields": {
+          "FUNC": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "inputs": {
+          "ARG0": {
+            "kind": "known",
+            "type": "int"
+          },
+          "ARG1": {
+            "kind": "known",
+            "type": "std::string"
+          }
+        },
+        "members": {},
+        "params": {
+          "FUNC": [
+            {
+              "kind": "known",
+              "type": "double"
+            }
+          ]
+        },
+        "result": null
+      },
+      "place": null,
+      "sig": "call",
+      "typing": {
+        "bound": {},
+        "declares": {},
+        "fields": {},
+        "inputs": {
+          "ARG0": {
+            "expects": "double",
+            "fit": "widening"
+          },
+          "ARG1": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": "int",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "result of a function",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {},
+        "inputs": {
+          "VALUE": {
+            "kind": "known",
+            "type": "std::string"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": {
+          "kind": "known",
+          "type": "double"
+        }
+      },
+      "place": null,
+      "sig": "return",
+      "typing": {
+        "bound": {},
+        "declares": {},
+        "fields": {},
+        "inputs": {
+          "VALUE": {
+            "expects": "double",
+            "fit": "invalid"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "result of a void function",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {},
+        "inputs": {
+          "VALUE": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "return",
+      "typing": {
+        "bound": {},
+        "declares": {},
+        "fields": {},
+        "inputs": {
+          "VALUE": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "member: a struct's fields by index",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {
+          "FIELD": 3
+        },
+        "fields": {
+          "TYPE": {
+            "kind": "known",
+            "type": {
+              "ref": "sym_Point"
+            }
+          }
+        },
+        "inputs": {
+          "FIELD0": {
+            "kind": "known",
+            "type": "double"
+          },
+          "FIELD1": {
+            "kind": "known",
+            "type": "int"
+          },
+          "FIELD2": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "members": {
+          "TYPE": [
+            {
+              "kind": "known",
+              "type": "int"
+            },
+            {
+              "kind": "known",
+              "type": "std::string"
+            }
+          ]
+        },
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "new with",
+      "typing": {
+        "bound": {
+          "S": {
+            "binder": {
+              "kind": "field",
+              "name": "TYPE"
+            },
+            "type": {
+              "ref": "sym_Point"
+            }
+          }
+        },
+        "declares": {},
+        "fields": {
+          "TYPE": "same"
+        },
+        "inputs": {
+          "FIELD0": {
+            "expects": "int",
+            "fit": "narrowing"
+          },
+          "FIELD1": {
+            "expects": "std::string",
+            "fit": "invalid"
+          },
+          "FIELD2": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": {
+          "ref": "sym_Point"
+        },
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a members field fits through its owner",
+      "parts": {
+        "chosenMembers": {
+          "MEMBER": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "counts": {},
+        "fields": {
+          "OBJ": {
+            "kind": "known",
+            "type": {
+              "ref": "sym_Point"
+            }
+          }
+        },
+        "inputs": {},
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "member",
+      "typing": {
+        "bound": {
+          "S": {
+            "binder": {
+              "kind": "field",
+              "name": "OBJ"
+            },
+            "type": {
+              "ref": "sym_Point"
+            }
+          }
+        },
+        "declares": {},
+        "fields": {
+          "MEMBER": "same",
+          "OBJ": "same"
+        },
+        "inputs": {},
+        "output": "int",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "partial",
+      "name": "a members field whose owner is not known",
+      "parts": {
+        "chosenMembers": {
+          "MEMBER": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "counts": {},
+        "fields": {
+          "OBJ": {
+            "kind": "known",
+            "type": {
+              "ref": "sym_Point"
+            }
+          }
+        },
+        "inputs": {},
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "member",
+      "typing": {
+        "bound": {
+          "S": {
+            "binder": {
+              "kind": "field",
+              "name": "OBJ"
+            },
+            "type": "error"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "MEMBER": "unknown",
+          "OBJ": "same"
+        },
+        "inputs": {},
+        "output": "error",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "checks: bool, integer and number by conversion, the others by membership",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {},
+        "inputs": {
+          "BOOL": {
+            "kind": "known",
+            "type": "int"
+          },
+          "COLL": {
+            "kind": "known",
+            "type": "int"
+          },
+          "INT": {
+            "kind": "known",
+            "type": "double"
+          },
+          "NUM": {
+            "kind": "known",
+            "type": "std::string"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "checks",
+      "typing": {
+        "bound": {},
+        "declares": {},
+        "fields": {},
+        "inputs": {
+          "BOOL": {
+            "expects": null,
+            "fit": "unknown"
+          },
+          "COLL": {
+            "expects": null,
+            "fit": "outsideClass"
+          },
+          "INT": {
+            "expects": null,
+            "fit": "unknown"
+          },
+          "NUM": {
+            "expects": null,
+            "fit": "outsideClass"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    }
+  ],
+  "catalog": [],
+  "description": "Written by crates/b2c-lang/tests/fixtures.rs: type_block's answers (slots.md §7). See that file for the JSON shapes and how a case's parts answer.",
+  "facts": {
+    "known": {
+      "sym_Color": {
+        "comparable": true,
+        "kind": "enum",
+        "name": "Color",
+        "printable": true
+      },
+      "sym_Point": {
+        "comparable": true,
+        "kind": "struct",
+        "name": "Point",
+        "printable": false
+      }
+    },
+    "partial": {
+      "sym_Color": {
+        "comparable": true,
+        "kind": "enum",
+        "name": "Color",
+        "printable": true
+      }
+    }
+  },
+  "outputs": [
+    {
+      "block": "math.number",
+      "fields": {
+        "VALUE": "0"
+      },
+      "inputs": {},
+      "type": "int"
+    },
+    {
+      "block": "math.number",
+      "fields": {
+        "VALUE": "42"
+      },
+      "inputs": {},
+      "type": "int"
+    },
+    {
+      "block": "math.number",
+      "fields": {
+        "VALUE": "-7"
+      },
+      "inputs": {},
+      "type": "int"
+    },
+    {
+      "block": "math.number",
+      "fields": {
+        "VALUE": "1.5"
+      },
+      "inputs": {},
+      "type": "double"
+    },
+    {
+      "block": "math.number",
+      "fields": {
+        "VALUE": "1e3"
+      },
+      "inputs": {},
+      "type": "double"
+    },
+    {
+      "block": "math.number",
+      "fields": {
+        "VALUE": "0x1F"
+      },
+      "inputs": {},
+      "type": "int"
+    },
+    {
+      "block": "math.number",
+      "fields": {
+        "VALUE": "2147483648"
+      },
+      "inputs": {},
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "int",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "int"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "char"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "bool"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "double",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "char",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "add"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "int",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "int"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "char"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "bool"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "double",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "char",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "sub"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "int",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "int"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "char"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "bool"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "double",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "char",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mul"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "int",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "int"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "char"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "bool"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "double",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "char",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "div"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "int",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "int",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "double",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "double",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "char",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "char",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "bool",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": "std::string",
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "math.arithmetic",
+      "fields": {
+        "OP": "mod"
+      },
+      "inputs": {
+        "A": {
+          "std::vector": "int"
+        },
+        "B": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "int",
+        "THEN": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "double",
+        "THEN": "int"
+      },
+      "type": "double"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "char",
+        "THEN": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "bool",
+        "THEN": "int"
+      },
+      "type": "int"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "std::string",
+        "THEN": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": {
+          "std::vector": "int"
+        },
+        "THEN": "int"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "int",
+        "THEN": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "double",
+        "THEN": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "char",
+        "THEN": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "bool",
+        "THEN": "double"
+      },
+      "type": "double"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "std::string",
+        "THEN": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": {
+          "std::vector": "int"
+        },
+        "THEN": "double"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "int",
+        "THEN": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "double",
+        "THEN": "char"
+      },
+      "type": "double"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "char",
+        "THEN": "char"
+      },
+      "type": "char"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "bool",
+        "THEN": "char"
+      },
+      "type": "int"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "std::string",
+        "THEN": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": {
+          "std::vector": "int"
+        },
+        "THEN": "char"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "int",
+        "THEN": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "double",
+        "THEN": "bool"
+      },
+      "type": "double"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "char",
+        "THEN": "bool"
+      },
+      "type": "int"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "bool",
+        "THEN": "bool"
+      },
+      "type": "bool"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "std::string",
+        "THEN": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": {
+          "std::vector": "int"
+        },
+        "THEN": "bool"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "int",
+        "THEN": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "double",
+        "THEN": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "char",
+        "THEN": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "bool",
+        "THEN": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "std::string",
+        "THEN": "std::string"
+      },
+      "type": "std::string"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": {
+          "std::vector": "int"
+        },
+        "THEN": "std::string"
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "int",
+        "THEN": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "double",
+        "THEN": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "char",
+        "THEN": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "bool",
+        "THEN": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": "std::string",
+        "THEN": {
+          "std::vector": "int"
+        }
+      },
+      "type": "error"
+    },
+    {
+      "block": "logic.ternary",
+      "fields": {},
+      "inputs": {
+        "ELSE": {
+          "std::vector": "int"
+        },
+        "THEN": {
+          "std::vector": "int"
+        }
+      },
+      "type": {
+        "std::vector": "int"
+      }
+    }
+  ],
+  "sigs": {
+    "call": {
+      "field": [],
+      "id": "call",
+      "input": [
+        {
+          "assign": false,
+          "check": "any",
+          "name": "ARG",
+          "repeat": {
+            "count": "argCount",
+            "plus": 0
+          },
+          "type": {
+            "field": "FUNC",
+            "kind": "param"
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "input": "ARG"
+        }
+      ],
+      "output": {
+        "field": "FUNC",
+        "kind": "symbol"
+      },
+      "placeVar": null,
+      "typeVars": {}
+    },
+    "checks": {
+      "field": [],
+      "id": "checks",
+      "input": [
+        {
+          "assign": false,
+          "check": "bool",
+          "name": "BOOL",
+          "repeat": null,
+          "type": null
+        },
+        {
+          "assign": false,
+          "check": "collection",
+          "name": "COLL",
+          "repeat": null,
+          "type": null
+        },
+        {
+          "assign": false,
+          "check": "integer",
+          "name": "INT",
+          "repeat": null,
+          "type": null
+        },
+        {
+          "assign": false,
+          "check": "number",
+          "name": "NUM",
+          "repeat": null,
+          "type": null
+        }
+      ],
+      "members": {},
+      "order": [],
+      "output": null,
+      "placeVar": null,
+      "typeVars": {}
+    },
+    "create": {
+      "field": [
+        {
+          "kind": "symbol_decl",
+          "name": "NAME",
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        },
+        {
+          "kind": "type",
+          "name": "TYPE",
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        }
+      ],
+      "id": "create",
+      "input": [
+        {
+          "assign": false,
+          "check": "any",
+          "name": "VALUE",
+          "repeat": null,
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "field": "TYPE"
+        },
+        {
+          "field": "NAME"
+        },
+        {
+          "input": "VALUE"
+        }
+      ],
+      "output": null,
+      "placeVar": null,
+      "typeVars": {
+        "T": "value"
+      }
+    },
+    "item of": {
+      "field": [
+        {
+          "kind": "symbol_ref",
+          "name": "LIST",
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "id": "item of",
+      "input": [
+        {
+          "assign": false,
+          "check": "any",
+          "name": "INDEX",
+          "repeat": null,
+          "type": {
+            "fn": "index",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "field": "LIST"
+        },
+        {
+          "input": "INDEX"
+        }
+      ],
+      "output": {
+        "fn": "elem",
+        "kind": "fn",
+        "of": {
+          "kind": "var",
+          "name": "C"
+        }
+      },
+      "placeVar": null,
+      "typeVars": {
+        "C": "indexable"
+      }
+    },
+    "list of": {
+      "field": [],
+      "id": "list of",
+      "input": [
+        {
+          "assign": false,
+          "check": "any",
+          "name": "ITEM",
+          "repeat": {
+            "count": "itemCount",
+            "plus": 0
+          },
+          "type": {
+            "fn": "elem",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "input": "ITEM"
+        }
+      ],
+      "output": {
+        "kind": "var",
+        "name": "C"
+      },
+      "placeVar": "C",
+      "typeVars": {
+        "C": "listable"
+      }
+    },
+    "member": {
+      "field": [
+        {
+          "kind": "symbol_ref",
+          "name": "OBJ",
+          "type": {
+            "kind": "var",
+            "name": "S"
+          }
+        },
+        {
+          "kind": "symbol_ref",
+          "name": "MEMBER"
+        }
+      ],
+      "id": "member",
+      "input": [],
+      "members": {
+        "MEMBER": "S"
+      },
+      "order": [
+        {
+          "field": "OBJ"
+        }
+      ],
+      "output": {
+        "field": "MEMBER",
+        "kind": "symbol"
+      },
+      "placeVar": null,
+      "typeVars": {
+        "S": "struct"
+      }
+    },
+    "new with": {
+      "field": [
+        {
+          "kind": "type",
+          "name": "TYPE",
+          "type": {
+            "kind": "var",
+            "name": "S"
+          }
+        }
+      ],
+      "id": "new with",
+      "input": [
+        {
+          "assign": false,
+          "check": "any",
+          "name": "FIELD",
+          "repeat": {
+            "count": "fieldCount",
+            "plus": 0
+          },
+          "type": {
+            "field": "TYPE",
+            "kind": "member"
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "field": "TYPE"
+        },
+        {
+          "input": "FIELD"
+        }
+      ],
+      "output": {
+        "kind": "var",
+        "name": "S"
+      },
+      "placeVar": null,
+      "typeVars": {
+        "S": "struct"
+      }
+    },
+    "return": {
+      "field": [],
+      "id": "return",
+      "input": [
+        {
+          "assign": false,
+          "check": "any",
+          "name": "VALUE",
+          "repeat": null,
+          "type": {
+            "kind": "result"
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "input": "VALUE"
+        }
+      ],
+      "output": null,
+      "placeVar": null,
+      "typeVars": {}
+    },
+    "set": {
+      "field": [
+        {
+          "kind": "symbol_ref",
+          "name": "VAR",
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        }
+      ],
+      "id": "set",
+      "input": [
+        {
+          "assign": true,
+          "check": "any",
+          "name": "VALUE",
+          "repeat": null,
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "field": "VAR"
+        },
+        {
+          "input": "VALUE"
+        }
+      ],
+      "output": null,
+      "placeVar": null,
+      "typeVars": {
+        "T": "value"
+      }
+    },
+    "texts": {
+      "field": [],
+      "id": "texts",
+      "input": [
+        {
+          "assign": false,
+          "check": "any",
+          "name": "A",
+          "repeat": null,
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        },
+        {
+          "assign": true,
+          "check": "any",
+          "name": "B",
+          "repeat": null,
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        },
+        {
+          "assign": false,
+          "check": "any",
+          "name": "C",
+          "repeat": null,
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "input": "A"
+        },
+        {
+          "input": "B"
+        },
+        {
+          "input": "C"
+        }
+      ],
+      "output": null,
+      "placeVar": null,
+      "typeVars": {
+        "T": "text"
+      }
+    },
+    "two integers": {
+      "field": [],
+      "id": "two integers",
+      "input": [
+        {
+          "assign": false,
+          "check": "any",
+          "name": "A",
+          "repeat": null,
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        },
+        {
+          "assign": false,
+          "check": "any",
+          "name": "B",
+          "repeat": null,
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "input": "A"
+        },
+        {
+          "input": "B"
+        }
+      ],
+      "output": null,
+      "placeVar": null,
+      "typeVars": {
+        "T": "integer"
+      }
+    },
+    "two lists": {
+      "field": [
+        {
+          "kind": "symbol_ref",
+          "name": "LIST",
+          "type": {
+            "args": [
+              {
+                "kind": "var",
+                "name": "T"
+              }
+            ],
+            "kind": "lib",
+            "name": "std::vector"
+          }
+        },
+        {
+          "kind": "symbol_ref",
+          "name": "OTHER",
+          "type": {
+            "args": [
+              {
+                "kind": "var",
+                "name": "T"
+              }
+            ],
+            "kind": "lib",
+            "name": "std::vector"
+          }
+        }
+      ],
+      "id": "two lists",
+      "input": [],
+      "members": {},
+      "order": [
+        {
+          "field": "LIST"
+        },
+        {
+          "field": "OTHER"
+        }
+      ],
+      "output": {
+        "kind": "var",
+        "name": "T"
+      },
+      "placeVar": null,
+      "typeVars": {
+        "T": "number"
+      }
+    }
+  }
+}

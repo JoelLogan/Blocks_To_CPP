@@ -1,1 +1,4 @@
 coverage/
+# Written by crates/b2c-lang/tests/fixtures.rs (serde_json's pretty printer), not by hand.
+src/types/fixture.json
+src/types/slot-fixture.json
