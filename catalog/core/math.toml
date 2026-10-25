@@ -75,7 +75,8 @@ shape = "reporter"
 output = "int"
 label = { friendly = "random integer from %LOW to %HIGH", cpp = "b2c::random_int(%LOW, %HIGH)" }
 lowering = "builtin"
-headers = ["<random>"]
+# b2c::random_int is a support helper, whose own headers the generator
+# includes with it (catalog 1.3.0, M3 contracts types.md §5.3).
 help = "A random whole number between the two values, including both."
 
 [[block.input]]

@@ -48,8 +48,9 @@ use crate::Catalog;
 use crate::codes::{self, Diags};
 use crate::definitions::repeat_index;
 use crate::migrate::{BLOCK_MIGRATIONS, BlockMigration};
-use crate::resolve::{block_noun, quote, short_name};
-use crate::schema::{BlockDef, FieldKind};
+use crate::resolve::{block_noun, describe_row_type, describe_type, quote, short_name};
+use crate::schema::{BlockDef, ExtraKind, FieldKind};
+use crate::signature;
 
 /// A replacement that retires a block type (03 §3.11.3, ADR-0015): it turns
 /// a block of type `from` at version `version` into a block of type `to` at
@@ -782,8 +783,13 @@ fn check_limits(block: &Block) -> Result<(), String> {
 
 /// Whether a block that a newer catalog may have extended compatibly has
 /// something this definition does not know (03 §3.11.3, ADR-0015): a field,
-/// a dropdown option, an `extra` setting, a value input or a statement
-/// input. The message for `B2C-E0602` names the first such thing.
+/// a dropdown option, a type in a type field or a parameter row that this
+/// catalog does not know or does not allow there (a new type, or a widened
+/// field), a header of a newer header table, an `extra` setting, a value
+/// input or a statement input. The message for `B2C-E0602` names the first
+/// such thing. A value that no catalog could have written (a type name that
+/// breaks the name rule, a template with the wrong arguments) is not one: it
+/// stays `B2C-E0607` or `E0614`.
 pub(crate) fn newer_catalog_problem(def: &BlockDef, block: &Block) -> Option<String> {
     let field = block.fields.iter().find_map(|(name, value)| {
         let Some(field) = def.field.iter().find(|field| &field.name == name) else {
@@ -796,6 +802,24 @@ pub(crate) fn newer_catalog_problem(def: &BlockDef, block: &Block) -> Option<Str
             {
                 Some(format!("the choice {} in its field {}", quote(text), quote(name)))
             }
+            // A new type, or a type field a newer catalog widened.
+            _ if field.kind == FieldKind::Type
+                && signature::field_type_fit(def, field, value).may_be_newer() =>
+            {
+                Some(format!(
+                    "the type {} in its field {}",
+                    describe_type(value),
+                    quote(name)
+                ))
+            }
+            // A header of a newer standard, in a newer header table.
+            FieldValue::Text(text)
+                if field.kind == FieldKind::Header
+                    && !signature::header_fits(text)
+                    && signature::looks_like_header(text) =>
+            {
+                Some(format!("the header {} in its field {}", quote(text), quote(name)))
+            }
             _ => None,
         }
     });
@@ -807,6 +831,7 @@ pub(crate) fn newer_catalog_problem(def: &BlockDef, block: &Block) -> Option<Str
                 .find(|key| !def.extra.iter().any(|e| &e.name == *key))?;
             Some(format!("the setting {}", quote(extra)))
         })
+        .or_else(|| newer_row_type(def, block))
         .or_else(|| {
             let input = block.inputs.keys().find(|name| {
                 !def.input.iter().any(|input| match input.repeat {
@@ -829,6 +854,27 @@ pub(crate) fn newer_catalog_problem(def: &BlockDef, block: &Block) -> Option<Str
         "This {} was made with a newer version of Blocks2Cpp: it has {what}, which this version does not know. Update Blocks2Cpp to use it; until then the block is kept as it is.",
         block_noun(def)
     ))
+}
+
+/// The first parameter row whose `type` a newer catalog may have added or
+/// allowed, as [`newer_catalog_problem`] names it.
+fn newer_row_type(def: &BlockDef, block: &Block) -> Option<String> {
+    def.extra
+        .iter()
+        .filter(|extra| extra.kind == ExtraKind::Params)
+        .find_map(|extra| {
+            let rows = block.extra.get(&extra.name)?.as_array()?;
+            rows.iter().enumerate().find_map(|(index, row)| {
+                let ty = row.get("type")?;
+                signature::row_type_fit(extra, ty).may_be_newer().then(|| {
+                    format!(
+                        "the type {} in parameter {}",
+                        describe_row_type(Some(ty)),
+                        index + 1
+                    )
+                })
+            })
+        })
 }
 
 #[cfg(test)]
@@ -1593,7 +1639,7 @@ mod tests {
             json!({"id": "p1", "type": "io.print", "v": 1, "fields": {"LOUDNESS": "11"}}),
             json!({"id": "p2", "type": "io.print", "v": 1}),
         ];
-        let mut payload = clipboard_of("1.3.0", &newer);
+        let mut payload = clipboard_of("1.4.0", &newer);
         let report = clipboard(&mut payload, crate::core_catalog(), &BlockUpgrades::SHIPPED);
         assert_eq!(report.upgraded, 0);
         let found: Vec<(&str, Option<&str>)> = report

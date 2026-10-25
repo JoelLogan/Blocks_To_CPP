@@ -19,8 +19,8 @@
 //!
 //! Added in milestone M2 for the editor:
 //! * Every `reporter` and `predicate` definition declares the type of its
-//!   value ([`BlockDef::output`], [`OutputType`]), which the editor's
-//!   connection checker uses.
+//!   value ([`BlockDef::output`]), which the editor's connection checker
+//!   uses.
 //! * [`toolbox`] parses `catalog/toolbox.toml` (embedded like the catalog)
 //!   and checks it against the core catalog: the categories in toolbox
 //!   order, their entries and presets, and the dynamic Variables and
@@ -43,6 +43,21 @@
 //!   kept without a check, so the analyser does not repeat the catalog's
 //!   problems (`b2c_lang::analyze_checked`).
 //!
+//! Added in milestone M3 (ADR-0017 §5, ADR-0018,
+//! `docs/plans/m3-contracts/types.md` §4):
+//! * A definition may declare a type signature: type variables with their
+//!   classes (`where`), patterns on its output, fields and value inputs
+//!   (`type`), `assign` inputs and `members` fields. The catalog checks it
+//!   when it loads, and [`Catalog::sigs`] gives each block's
+//!   [`b2c_ir::BlockSig`], which `b2c_lang` reads without depending on this
+//!   crate.
+//! * A type field accepts its `types` and every type its pattern allows,
+//!   and a parameter row its `types` and its `type_class`; a type a newer
+//!   catalog may have added is `B2C-E0602` in a document from that catalog.
+//! * Headers come from the closed header table (`b2c_ir::Header`): a block's
+//!   own, a dropdown option's (`headers` on the field) and the `header`
+//!   field kind.
+//!
 //! The editor never reads the TOML files: a test exports the validated
 //! catalog and toolbox as `packages/catalog-gen/catalog.json`, from which
 //! `packages/catalog-gen` generates the editor's block definitions and the
@@ -53,6 +68,7 @@ mod definitions;
 mod migrate;
 mod resolve;
 pub mod schema;
+mod signature;
 mod stack;
 mod toolbox;
 mod upgrade;
@@ -85,7 +101,17 @@ pub use upgrade::{BLOCK_REPLACEMENTS, BlockReplacement, BlockUpgrades, RETIRED_B
 /// *times*, *divided by*, *mod*; default *by*), and *update* (`var.update`)
 /// is retired: it is replaced by *change* on load (M2 polish W4-5,
 /// ADR-0015). A file that leaves `OP` out loads as before.
-pub const CATALOG_VERSION: &str = "1.2.0";
+///
+/// 1.3.0 (every catalog change up to the M3 release ships as 1.3.0,
+/// ADR-0017 §7): type signatures (`where`, `type` patterns, `assign`,
+/// `members`, `type_class`, per-option `headers`) and the `header` field
+/// kind; *create* takes every type a variable can hold, its value and
+/// *set*'s value follow the variable's type, call arguments their
+/// parameters' and *return*'s value the function's result; parameters take
+/// every type a variable can hold; `std::string` is written `std::string`
+/// in outputs; four blocks name only the headers all their forms need.
+/// Files from 1.2.0 load unchanged.
+pub const CATALOG_VERSION: &str = "1.3.0";
 
 /// A loaded, validated catalog.
 #[derive(Debug, Clone, PartialEq)]
@@ -94,18 +120,42 @@ pub struct Catalog {
     pub version: String,
     /// Block definitions by ID.
     pub blocks: std::collections::BTreeMap<String, BlockDef>,
+    /// The signatures of the definitions, built by [`Catalog::new`].
+    sigs: SigTable,
 }
 
 impl Catalog {
-    /// The blocks' type signatures (ADR-0017 §5), which `b2c_lang`'s
-    /// `analyze_with` and `analyze_checked_with` read. Empty until the
-    /// catalog's definitions declare `where` and `type`
-    /// (`docs/plans/m3-contracts/types.md` §8.2, package 2), so every block
-    /// keeps its M2 typing rules.
-    #[allow(clippy::unused_self, reason = "built from the definitions with package 2")]
+    /// A catalog of these definitions, with their signatures
+    /// ([`Catalog::sigs`]). It does not check the definitions: [`resolve`]
+    /// reports blocks whose definition is broken (`B2C-E0620`), and such a
+    /// definition gets no signature.
+    pub fn new(version: impl Into<String>, blocks: std::collections::BTreeMap<String, BlockDef>) -> Catalog {
+        let sigs = signature::table(&blocks);
+        Catalog {
+            version: version.into(),
+            blocks,
+            sigs,
+        }
+    }
+
+    /// The blocks' type signatures (ADR-0017 §5,
+    /// `docs/plans/m3-contracts/types.md` §4.4), which `b2c_lang`'s
+    /// `analyze_with` and `analyze_checked_with` read: one for every valid
+    /// definition, by block type, with its parts in catalog order. They are
+    /// built when the catalog is made, so a catalog whose `blocks` are
+    /// changed afterwards keeps the signatures it was made with; make a new
+    /// one with [`Catalog::new`] instead.
+    ///
+    /// ```
+    /// use b2c_catalog::core_catalog;
+    /// let sigs = core_catalog().sigs();
+    /// assert_eq!(sigs.len(), core_catalog().blocks.len());
+    /// // *set* binds `T` from its variable; its value is assigned to it.
+    /// let set = sigs.get("var.set").expect("a signature");
+    /// assert!(set.inputs["VALUE"].assign);
+    /// ```
     pub fn sigs(&self) -> &SigTable {
-        static EMPTY: SigTable = SigTable::empty();
-        &EMPTY
+        &self.sigs
     }
 }
 

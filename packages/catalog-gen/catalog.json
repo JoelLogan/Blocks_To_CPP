@@ -1,5 +1,5 @@
 {
-  "catalogVersion": "1.2.0",
+  "catalogVersion": "1.3.0",
   "blocks": [
     {
       "id": "control.break",
@@ -327,7 +327,11 @@
             "count": "argCount",
             "plus": 0
           },
-          "default": []
+          "default": [],
+          "type": {
+            "field": "FUNC",
+            "kind": "param"
+          }
         }
       ],
       "statement": [],
@@ -339,6 +343,11 @@
           "max": 16,
           "default": "0",
           "types": []
+        }
+      ],
+      "order": [
+        {
+          "input": "ARG"
         }
       ]
     },
@@ -373,7 +382,11 @@
             "count": "argCount",
             "plus": 0
           },
-          "default": []
+          "default": [],
+          "type": {
+            "field": "FUNC",
+            "kind": "param"
+          }
         }
       ],
       "statement": [],
@@ -385,6 +398,11 @@
           "max": 16,
           "default": "0",
           "types": []
+        }
+      ],
+      "order": [
+        {
+          "input": "ARG"
         }
       ]
     },
@@ -445,7 +463,8 @@
             "bool",
             "char",
             "std::string"
-          ]
+          ],
+          "typeClass": "value"
         }
       ]
     },
@@ -469,11 +488,19 @@
           "check": "any",
           "optional": true,
           "repeat": null,
-          "default": []
+          "default": [],
+          "type": {
+            "kind": "result"
+          }
         }
       ],
       "statement": [],
-      "extra": []
+      "extra": [],
+      "order": [
+        {
+          "input": "VALUE"
+        }
+      ]
     },
     {
       "id": "io.ask",
@@ -487,8 +514,7 @@
       },
       "lowering": "builtin",
       "headers": [
-        "<iostream>",
-        "<string>"
+        "<iostream>"
       ],
       "help": "Asks the user to type something and stores it in a variable.",
       "field": [
@@ -1014,9 +1040,7 @@
         "cpp": "b2c::random_int(%LOW, %HIGH)"
       },
       "lowering": "builtin",
-      "headers": [
-        "<random>"
-      ],
+      "headers": [],
       "help": "A random whole number between the two values, including both.",
       "field": [],
       "input": [
@@ -1057,9 +1081,7 @@
         "cpp": "return %CODE / std::exit(%CODE)"
       },
       "lowering": "builtin",
-      "headers": [
-        "<cstdlib>"
-      ],
+      "headers": [],
       "help": "Ends the program. Exit code 0 means success.",
       "field": [],
       "input": [
@@ -1133,7 +1155,7 @@
       "version": 1,
       "category": "text",
       "shape": "reporter",
-      "output": "string",
+      "output": "std::string",
       "label": {
         "friendly": "join %ITEM …",
         "cpp": "%ITEM + …"
@@ -1177,15 +1199,13 @@
       "version": 1,
       "category": "text",
       "shape": "reporter",
-      "output": "string",
+      "output": "std::string",
       "label": {
         "friendly": "\"%VALUE\"",
         "cpp": "\"%VALUE\""
       },
       "lowering": "builtin",
-      "headers": [
-        "<string>"
-      ],
+      "headers": [],
       "help": "A piece of text.",
       "field": [
         {
@@ -1272,6 +1292,9 @@
       "category": "variables",
       "shape": "statement",
       "output": null,
+      "typeVars": {
+        "T": "value"
+      },
       "label": {
         "friendly": "create %TYPE variable %NAME = %VALUE constant %CONST",
         "cpp": "%TYPE %NAME = %VALUE;"
@@ -1292,14 +1315,22 @@
             "std::string",
             "auto"
           ],
-          "default": "int"
+          "default": "int",
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
         },
         {
           "name": "NAME",
           "kind": "symbol_decl",
           "options": [],
           "types": [],
-          "default": null
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
         },
         {
           "name": "CONST",
@@ -1315,11 +1346,26 @@
           "check": "any",
           "optional": true,
           "repeat": null,
-          "default": []
+          "default": [],
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
         }
       ],
       "statement": [],
-      "extra": []
+      "extra": [],
+      "order": [
+        {
+          "field": "TYPE"
+        },
+        {
+          "field": "NAME"
+        },
+        {
+          "input": "VALUE"
+        }
+      ]
     },
     {
       "id": "var.get",
@@ -1353,6 +1399,9 @@
       "category": "variables",
       "shape": "statement",
       "output": null,
+      "typeVars": {
+        "T": "value"
+      },
       "label": {
         "friendly": "set %VAR to %VALUE",
         "cpp": "%VAR = %VALUE;"
@@ -1366,7 +1415,11 @@
           "kind": "symbol_ref",
           "options": [],
           "types": [],
-          "default": null
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
         }
       ],
       "input": [
@@ -1375,11 +1428,24 @@
           "check": "any",
           "optional": false,
           "repeat": null,
-          "default": []
+          "default": [],
+          "type": {
+            "kind": "var",
+            "name": "T"
+          },
+          "assign": true
         }
       ],
       "statement": [],
-      "extra": []
+      "extra": [],
+      "order": [
+        {
+          "field": "VAR"
+        },
+        {
+          "input": "VALUE"
+        }
+      ]
     }
   ],
   "toolbox": {
@@ -1615,5 +1681,121 @@
         ]
       }
     ]
-  }
+  },
+  "types": [
+    {
+      "name": "void",
+      "arity": 0,
+      "label": "void",
+      "header": null
+    },
+    {
+      "name": "bool",
+      "arity": 0,
+      "label": "bool",
+      "header": null
+    },
+    {
+      "name": "char",
+      "arity": 0,
+      "label": "char",
+      "header": null
+    },
+    {
+      "name": "int",
+      "arity": 0,
+      "label": "int",
+      "header": null
+    },
+    {
+      "name": "double",
+      "arity": 0,
+      "label": "double",
+      "header": null
+    },
+    {
+      "name": "std::string",
+      "arity": 0,
+      "label": "string",
+      "header": "<string>"
+    },
+    {
+      "name": "std::vector",
+      "arity": 1,
+      "label": "list of %1",
+      "header": "<vector>"
+    },
+    {
+      "name": "std::deque",
+      "arity": 1,
+      "label": "deque of %1",
+      "header": "<deque>"
+    },
+    {
+      "name": "std::set",
+      "arity": 1,
+      "label": "set of %1",
+      "header": "<set>"
+    },
+    {
+      "name": "std::map",
+      "arity": 2,
+      "label": "map from %1 to %2",
+      "header": "<map>"
+    },
+    {
+      "name": "std::queue",
+      "arity": 1,
+      "label": "queue of %1",
+      "header": "<queue>"
+    },
+    {
+      "name": "std::stack",
+      "arity": 1,
+      "label": "stack of %1",
+      "header": "<stack>"
+    },
+    {
+      "name": "std::priority_queue",
+      "arity": 1,
+      "label": "priority queue of %1",
+      "header": "<queue>"
+    },
+    {
+      "name": "std::ifstream",
+      "arity": 0,
+      "label": "input file",
+      "header": "<fstream>"
+    },
+    {
+      "name": "std::ofstream",
+      "arity": 0,
+      "label": "output file",
+      "header": "<fstream>"
+    },
+    {
+      "name": "std::exception",
+      "arity": 0,
+      "label": "error",
+      "header": "<exception>"
+    },
+    {
+      "name": "std::runtime_error",
+      "arity": 0,
+      "label": "runtime error",
+      "header": "<stdexcept>"
+    },
+    {
+      "name": "std::invalid_argument",
+      "arity": 0,
+      "label": "invalid argument error",
+      "header": "<stdexcept>"
+    },
+    {
+      "name": "std::out_of_range",
+      "arity": 0,
+      "label": "out-of-range error",
+      "header": "<stdexcept>"
+    }
+  ]
 }

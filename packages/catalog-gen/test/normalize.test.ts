@@ -104,6 +104,11 @@ describe('normalize', () => {
     expect(() =>
       model((c) => c.blocks.push(rustBlock('x.y', { shape: 'reporter', output: 'float' }))),
     ).toThrow('blocks[5].output is not an output type ("float")');
+    // Catalog 1.3.0 spells the text type `std::string`; the editor's checker still says `string`.
+    const text = model((c) =>
+      c.blocks.push(rustBlock('x.y', { shape: 'reporter', output: 'std::string' })),
+    );
+    expect(text.blocks.at(-1)?.output).toBe('string');
   });
 
   it('converts every token kind', () => {

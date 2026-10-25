@@ -501,7 +501,7 @@ fn migrate_leaves_every_example_as_it_is() {
 
 /// A file saved before catalog 1.2.0 with *update* blocks: `migrate`
 /// writes them as *change* blocks (the golden file of the replacement),
-/// names catalog 1.2.0 in `generator`, and leaves nothing to upgrade.
+/// names this app's catalog in `generator`, and leaves nothing to upgrade.
 #[test]
 fn migrate_turns_update_blocks_into_change_blocks() {
     let cases = repo_root().join("crates/b2c-catalog/tests/migrations");
@@ -513,7 +513,11 @@ fn migrate_turns_update_blocks_into_change_blocks() {
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     let expected = std::fs::read_to_string(cases.join("var_update.upgraded.b2c"))
         .unwrap()
-        .replacen("\"catalog\": \"1.1.0\"", "\"catalog\": \"1.2.0\"", 1);
+        .replacen(
+            "\"catalog\": \"1.1.0\"",
+            &format!("\"catalog\": \"{}\"", b2c_build::CATALOG_VERSION),
+            1,
+        );
     assert_eq!(std::fs::read_to_string(&copy).unwrap(), expected);
     let backup = dir.path().join("old.b2c.bak");
     assert!(backup.exists());

@@ -448,7 +448,7 @@ describe.skipIf(!built && !required)('scope and clipboard in the built core', ()
         ),
       ).toBe('invalidArguments');
       // The instance keeps working.
-      expect(core.version().catalog).toBe('1.2.0');
+      expect(core.version().catalog).toBe('1.3.0');
     });
   });
 });

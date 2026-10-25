@@ -2,11 +2,22 @@
 //!
 //! The same files drive the editor (block shapes, fields, toolbox) and the
 //! compiler (validation of project files before analysis).
+//!
+//! From milestone M3 a definition may also declare its type signature
+//! (ADR-0017 §5, `docs/plans/m3-contracts/types.md` §4): type variables with
+//! their classes (`where`), type patterns on its output, fields and value
+//! inputs (`type`), `assign` inputs, `members` fields, the class of types a
+//! parameter row accepts (`type_class`) and the headers a dropdown option
+//! needs. Patterns are written in C++ syntax and parsed when the file loads,
+//! so a pattern that does not parse makes its file invalid.
 
+use std::collections::BTreeMap;
 use std::fmt;
-use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use b2c_ir::sig::TypePattern;
+use b2c_ir::types::TypeTerm;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::{Value, json};
 
 /// One catalog TOML file: a list of `[[block]]` tables.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,17 +40,31 @@ pub struct BlockDef {
     pub category: Category,
     /// Visual and structural shape.
     pub shape: Shape,
-    /// The type of the value the block gives: required for the `reporter`
-    /// and `predicate` shapes and forbidden for the others (a predicate
-    /// gives `bool`). The editor's connection checker uses it; the analyser
-    /// does the real type checking.
-    #[serde(default)]
-    pub output: Option<OutputType>,
+    /// The type of the value the block gives, a type pattern (types.md
+    /// §4.2): required for the `reporter` and `predicate` shapes and
+    /// forbidden for the others (a predicate gives `bool`). M2's values keep
+    /// their meaning: `any` and `number` leave the type to the analyser,
+    /// `symbol` is the type of the symbol in the block's one `symbol_ref`
+    /// field and `field:NAME` the type chosen in the type field `NAME`.
+    /// `catalog.json` writes it as its text (`"std::string"`).
+    #[serde(default, with = "output_pattern")]
+    pub output: Option<TypePattern>,
+    /// `where`: each type variable of the block's patterns and its class
+    /// (`where = { C = "indexable" }`); `typeVars` in `catalog.json`.
+    #[serde(
+        default,
+        rename(deserialize = "where", serialize = "typeVars"),
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub type_vars: BTreeMap<String, TypeClass>,
     /// Label templates; `%NAME` marks where a field or input goes.
     pub label: Label,
     /// How the compiler lowers the block (`builtin` for core blocks).
     pub lowering: Lowering,
-    /// Headers the generated code needs (informational; the generator decides).
+    /// The standard headers every form of the block's code needs, each from
+    /// the header table (types.md §5): emitted with the code. A header only
+    /// some forms need is left to the code generator, which adds it with
+    /// the form; a dropdown option's own headers are the field's `headers`.
     #[serde(default)]
     pub headers: Vec<String>,
     /// One-line help text (tooltip).
@@ -147,100 +172,6 @@ impl Shape {
     }
 }
 
-/// The static type of the value a `reporter` or `predicate` block gives
-/// (spec §3.11.1), written in catalog files as one of `any`, `bool`, `int`,
-/// `double`, `number`, `char`, `string`, `symbol` or `field:NAME`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub enum OutputType {
-    /// Depends on the inputs (for example `logic.ternary`).
-    Any,
-    /// `bool`.
-    Bool,
-    /// `int`.
-    Int,
-    /// `double`.
-    Double,
-    /// `int` or `double`, depending on the values (for example a number
-    /// literal, or arithmetic).
-    Number,
-    /// `char`.
-    Char,
-    /// `std::string` (written `string`).
-    StdString,
-    /// The type of the symbol that the block's one `symbol_ref` field refers
-    /// to: a variable's type, or a function's return type. The editor takes
-    /// it from the live analysis.
-    Symbol,
-    /// The type chosen in the block's `type` field of this name (for
-    /// example `field:TO` for `math.convert`).
-    Field(String),
-}
-
-impl OutputType {
-    /// The prefix of [`OutputType::Field`] in catalog files.
-    pub const FIELD_PREFIX: &'static str = "field:";
-}
-
-impl fmt::Display for OutputType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match self {
-            Self::Any => "any",
-            Self::Bool => "bool",
-            Self::Int => "int",
-            Self::Double => "double",
-            Self::Number => "number",
-            Self::Char => "char",
-            Self::StdString => "string",
-            Self::Symbol => "symbol",
-            Self::Field(field) => return write!(f, "{}{field}", Self::FIELD_PREFIX),
-        };
-        f.write_str(name)
-    }
-}
-
-/// Text that is not an [`OutputType`].
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error(
-    "{0:?} is not an output type (use any, bool, int, double, number, char, string, symbol, or field:NAME with an UPPER_CASE field name)"
-)]
-pub struct OutputTypeError(pub String);
-
-impl FromStr for OutputType {
-    type Err = OutputTypeError;
-
-    fn from_str(text: &str) -> Result<Self, Self::Err> {
-        Ok(match text {
-            "any" => Self::Any,
-            "bool" => Self::Bool,
-            "int" => Self::Int,
-            "double" => Self::Double,
-            "number" => Self::Number,
-            "char" => Self::Char,
-            "string" => Self::StdString,
-            "symbol" => Self::Symbol,
-            _ => match text.strip_prefix(Self::FIELD_PREFIX) {
-                Some(field) if is_part_name(field) => Self::Field(field.to_owned()),
-                _ => return Err(OutputTypeError(text.to_owned())),
-            },
-        })
-    }
-}
-
-impl TryFrom<String> for OutputType {
-    type Error = OutputTypeError;
-
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        text.parse()
-    }
-}
-
-impl From<OutputType> for String {
-    fn from(output: OutputType) -> Self {
-        output.to_string()
-    }
-}
-
 /// Field, input and statement names: `^[A-Z][A-Z0-9_]*$`.
 pub(crate) fn is_part_name(name: &str) -> bool {
     let mut bytes = name.bytes();
@@ -277,13 +208,39 @@ pub struct FieldDef {
     /// Dropdown options as `[label, value]` pairs.
     #[serde(default)]
     pub options: Vec<[String; 2]>,
-    /// Allowed type names for `type` fields (e.g. `int`, `std::string`, `auto`).
-    #[serde(default)]
+    /// The types a `type` field always offers, its menu's first choices, in
+    /// C++ syntax (`int`, `std::string`, `auto`, `std::vector<int>`).
+    /// `catalog.json` writes each as a type term (types.md §3.1).
+    #[serde(default, serialize_with = "serialize_types")]
     pub types: Vec<String>,
-    /// Default value (dropdown value, checkbox, text or type name). Fields
-    /// without a default are required.
+    /// Default value (dropdown value, checkbox, text, type name or header).
+    /// Fields without a default are required.
     #[serde(default)]
     pub default: Option<FieldDefault>,
+    /// `type`: the field's type pattern, on `type`, `symbol_ref` and
+    /// `symbol_decl` fields. A type field also accepts every type the
+    /// pattern matches within its variables' classes; a reference binds the
+    /// pattern's variables from the symbol's type; a name declares its
+    /// symbol with the pattern's type.
+    #[serde(
+        default,
+        rename = "type",
+        with = "part_pattern",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub pattern: Option<TypePattern>,
+    /// `members = "S"` on a `symbol_ref` field: the field lists the members of
+    /// the user type bound to the variable `S` (a struct's fields, an enum's
+    /// values) instead of the symbols in scope, and binds nothing.
+    /// `catalog.json` lists these per block (`members`).
+    #[serde(default, skip_serializing)]
+    pub members: Option<String>,
+    /// `headers` on a dropdown: the standard headers each option's code
+    /// needs besides the block's, by option value
+    /// (`headers = { sqrt = ["<cmath>"] }`). `catalog.json` lists these per
+    /// block (`optionHeaders`).
+    #[serde(default, skip_serializing)]
+    pub headers: BTreeMap<String, Vec<String>>,
 }
 
 /// A field's default.
@@ -308,12 +265,15 @@ pub enum FieldKind {
     Text,
     /// Numeric literal text.
     Number,
-    /// A type name from `types`.
+    /// A type: one of `types`, or a type the field's pattern allows.
     Type,
     /// Declares a symbol: `{"sym", "name"}`.
     SymbolDecl,
     /// References a symbol: `{"ref"}`.
     SymbolRef,
+    /// A standard header from the header table, such as `<vector>`, stored
+    /// as its text (*use header*, types.md §5.4).
+    Header,
 }
 
 /// A value-input definition.
@@ -333,8 +293,23 @@ pub struct InputDef {
     pub repeat: Option<Repeat>,
     /// Default expression tokens used when the input is absent (a "shadow").
     /// Same JSON-style token objects as project files, e.g. `[{ num = "0" }]`.
+    /// An input whose pattern is not one fixed type has none (types.md §4.3).
     #[serde(default)]
     pub default: Vec<toml::Value>,
+    /// `type`: the type pattern the input's value must fit, for each part of
+    /// a repeated input.
+    #[serde(
+        default,
+        rename = "type",
+        with = "part_pattern",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub pattern: Option<TypePattern>,
+    /// `assign = true`: the value is assigned, not used to initialise, so a
+    /// `char` also fits a `std::string`, as C++ allows; such an input never
+    /// binds a type variable.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub assign: bool,
 }
 
 /// A statement-input definition.
@@ -362,8 +337,8 @@ pub struct Repeat {
     pub plus: u32,
 }
 
-/// Type classes for an input's `check` (and, from milestone M3, a
-/// signature's `where`): defined in `b2c-ir` with the type rules
+/// Type classes for an input's `check`, a signature's `where` and a
+/// parameter row's `type_class`: defined in `b2c-ir` with the type rules
 /// (`docs/plans/m3-contracts/types.md` §1.3).
 pub use b2c_ir::types::TypeClass;
 
@@ -383,9 +358,18 @@ pub struct ExtraDef {
     /// Default (for `count` and `flag`).
     #[serde(default)]
     pub default: Option<FieldDefault>,
-    /// Allowed parameter types (for `params`).
-    #[serde(default)]
+    /// The parameter types a `params` row always offers, in C++ syntax, as a
+    /// type field's `types`.
+    #[serde(default, serialize_with = "serialize_types")]
     pub types: Vec<String>,
+    /// `type_class` (for `params`): the class of types a row also accepts
+    /// besides `types`; `typeClass` in `catalog.json`.
+    #[serde(
+        default,
+        rename(deserialize = "type_class", serialize = "typeClass"),
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub type_class: Option<TypeClass>,
 }
 
 /// Kinds of mutator state.
@@ -397,6 +381,109 @@ pub enum ExtraKind {
     /// A boolean.
     Flag,
     /// Function parameter rows: an array of
-    /// `{"sym": SymbolId, "name": String, "type": type name, "mode": "copy"|"editable"|"read_only"}`.
+    /// `{"sym": SymbolId, "name": String, "type": type term, "mode": "copy"|"editable"|"read_only"}`.
     Params,
+}
+
+/// `skip_serializing_if` for flags that are off by default.
+#[allow(clippy::trivially_copy_pass_by_ref, reason = "the signature serde calls")]
+fn is_false(flag: &bool) -> bool {
+    !*flag
+}
+
+/// A type pattern as `catalog.json` writes it on a part (types.md §4.5):
+/// JSON tagged by `kind`, such as `{"kind": "var", "name": "C"}`,
+/// `{"kind": "fn", "fn": "elem", "of": …}`, `{"kind": "type", "type": "int"}`
+/// (a fixed type as its term) or `{"kind": "param", "field": "FUNC"}`.
+pub fn pattern_json(pattern: &TypePattern) -> Value {
+    match pattern {
+        TypePattern::Any => json!({"kind": "any"}),
+        TypePattern::Number => json!({"kind": "number"}),
+        TypePattern::Type(ty) => {
+            let term = ty.to_term().and_then(|term| serde_json::to_value(term).ok());
+            json!({"kind": "type", "type": term.unwrap_or(Value::Null)})
+        }
+        TypePattern::Var(var) => json!({"kind": "var", "name": var.as_str()}),
+        TypePattern::Lib(ty, args) => json!({
+            "kind": "lib",
+            "name": ty.cpp_name(),
+            "args": args.iter().map(pattern_json).collect::<Vec<_>>(),
+        }),
+        TypePattern::Fn(function, arg) => {
+            json!({"kind": "fn", "fn": function.name(), "of": pattern_json(arg)})
+        }
+        TypePattern::Field(field) => json!({"kind": "field", "field": field}),
+        TypePattern::Symbol(field) => json!({"kind": "symbol", "field": field}),
+        TypePattern::Param(field) => json!({"kind": "param", "field": field}),
+        TypePattern::Member(field) => json!({"kind": "member", "field": field}),
+        TypePattern::Result => json!({"kind": "result"}),
+    }
+}
+
+/// An entry of a `types` list as `catalog.json` writes it: its type term
+/// (`"int"`, `"auto"`, `{"std::vector": "int"}`). An entry that is not a
+/// type, which the catalog's checks refuse, is written as it is.
+pub fn type_json(entry: &str) -> Value {
+    let term = match TypePattern::parse(entry) {
+        Ok(TypePattern::Type(ty)) => ty.to_term(),
+        _ => TypeTerm::name(entry).ok(),
+    };
+    term.and_then(|term| serde_json::to_value(term).ok())
+        .unwrap_or_else(|| Value::String(entry.to_owned()))
+}
+
+/// Writes a `types` list as type terms ([`type_json`]).
+fn serialize_types<S: Serializer>(types: &[String], serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(types.iter().map(|entry| type_json(entry)))
+}
+
+/// Reads a pattern from its C++ syntax (types.md §4.2).
+fn parse_pattern<'de, D: Deserializer<'de>>(deserializer: D) -> Result<TypePattern, D::Error> {
+    let text = String::deserialize(deserializer)?;
+    TypePattern::parse(&text)
+        .map_err(|error| serde::de::Error::custom(format!("{text:?} is not a type pattern: {error}")))
+}
+
+/// A block's `output`: read as a pattern, written as its text.
+mod output_pattern {
+    use b2c_ir::sig::TypePattern;
+    use serde::{Deserializer, Serializer};
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<TypePattern>, D::Error> {
+        super::parse_pattern(deserializer).map(Some)
+    }
+
+    #[allow(clippy::ref_option, reason = "the signature serde calls")]
+    pub(super) fn serialize<S: Serializer>(
+        pattern: &Option<TypePattern>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match pattern {
+            Some(pattern) => serializer.collect_str(pattern),
+            None => serializer.serialize_none(),
+        }
+    }
+}
+
+/// A part's `type`: read as a pattern, written as tagged JSON
+/// ([`pattern_json`]).
+mod part_pattern {
+    use b2c_ir::sig::TypePattern;
+    use serde::{Deserializer, Serialize, Serializer};
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<TypePattern>, D::Error> {
+        super::parse_pattern(deserializer).map(Some)
+    }
+
+    #[allow(clippy::ref_option, reason = "the signature serde calls")]
+    pub(super) fn serialize<S: Serializer>(
+        pattern: &Option<TypePattern>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        pattern.as_ref().map(super::pattern_json).serialize(serializer)
+    }
 }
