@@ -198,6 +198,12 @@ describe('the toolbox definition', () => {
     const categories = definition.contents as (Blockly.utils.toolbox.CategoryInfo & {
       name: string;
     })[];
+    // M2's nine, then each of W2's four once its package has given it blocks (w2.md §2.1), so a
+    // package that fills its category need not change this list.
+    const w2 = ['Collections', 'Types', 'Files', 'Errors'];
+    const filled = TOOLBOX.filter((category) => category.entries.length > 0).map(
+      (category) => category.name,
+    );
     expect(categories.map((category) => category.name)).toEqual([
       'Program',
       'Variables',
@@ -208,6 +214,7 @@ describe('the toolbox definition', () => {
       'Loops',
       'Input / Output',
       'Functions',
+      ...w2.filter((name) => filled.includes(name)),
     ]);
     const shown = TOOLBOX.filter(isShownCategory);
     for (const [index, category] of categories.entries()) {

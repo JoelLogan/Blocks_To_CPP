@@ -87,8 +87,10 @@ describe('registerB2cBlocks', () => {
       expect(block.getOutputShape(), `${blockDef.id} output shape`).toBe(expectedShape);
       expect(block.getStyleName()).toBe(blockStyleFor(blockDef.category, blockDef.shape));
       expect(block.getInputsInline()).toBe(true);
-      // Every catalog field exists, and no connection carries Blockly type checks.
-      for (const field of blockDef.fields) {
+      // Every catalog field exists, and no connection carries Blockly type checks. A repeated
+      // field (w2.md §2.1) is the mutator's to draw in each copy of its group (blocks/layout.ts),
+      // so the stub mutators here leave it out.
+      for (const field of blockDef.fields.filter((candidate) => candidate.repeat === null)) {
         expect(block.getField(field.name), `${blockDef.id}.${field.name}`).not.toBeNull();
       }
       for (const input of block.inputList) {

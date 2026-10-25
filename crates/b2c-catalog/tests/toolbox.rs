@@ -518,7 +518,8 @@ fn bad_entries_and_categories_are_rejected() {
     // An empty toolbox.
     let messages = messages_after(|t| t.categories.clear());
     assert_eq!(messages[0], "the toolbox has no categories");
-    assert_eq!(messages.len(), 32);
+    // Then every block of the catalog, which none of them reaches.
+    assert_eq!(messages.len(), 1 + core_catalog().blocks.len());
 }
 
 #[test]
@@ -561,7 +562,7 @@ fn malformed_files_are_rejected_before_checking() {
     let ToolboxError::Invalid(problems) = &error else {
         panic!("{error:?}");
     };
-    assert_eq!(problems.len(), 32);
+    assert_eq!(problems.len(), 1 + core_catalog().blocks.len());
     assert!(
         error
             .to_string()
