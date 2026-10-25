@@ -4,10 +4,12 @@ use serde_json::json;
 
 use super::{Blocks, Case, X, only_step, reference, tokens};
 
-/// *print*, and *ask* in its three forms.
+/// *print*, *ask* in its three forms, and *show numbers with* (W2, package
+/// B).
 pub(super) fn cases(b: &Blocks) -> Vec<Case> {
     vec![
         only_step(b, "io.print"),
+        only_step(b, "io.decimals"),
         Case::new(
             "io.ask",
             "asks for the int x, after create x and before a print of x, in main",

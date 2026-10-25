@@ -1,2 +1,88 @@
-# Errors (docs/spec/03-block-language.md §3.7.11): try, catch and throw. Empty until milestone
-# M3's second wave fills it (package B, docs/plans/m3-contracts/w2.md §1.7).
+# Errors (docs/spec/03-block-language.md §3.7.11): try, catch and throw
+# (docs/plans/m3-contracts/w2.md §1.7, §2.5). The errors are the four
+# standard ones of M3 contracts types.md §1.1; their headers come with their
+# types (types.md §5.2).
+
+[[block]]
+id = "error.try"
+version = 1
+category = "errors"
+shape = "statement"
+label = { friendly = "try %TRY catch %ERROR as %NAME %CATCH catch …", cpp = "try { %TRY } catch (const %ERROR& %NAME) { %CATCH } …" }
+lowering = "builtin"
+help = "Runs the blocks after try. If one of them throws an error, the first catch part for that kind of error runs, with the error in its variable; the parts are tried in order, and std::exception catches every kind. Add catch parts with ⊕ and remove them with ⊖."
+
+[[block.extra]]
+name = "catchCount"
+kind = "count"
+min = 1
+max = 8
+default = "1"
+
+[[block.field]]
+name = "ERROR"
+kind = "type"
+types = ["std::exception", "std::invalid_argument", "std::out_of_range", "std::runtime_error"]
+default = "std::exception"
+repeat = { count = "catchCount" }
+
+# Each catch part's variable holds the error its part caught.
+[[block.field]]
+name = "NAME"
+kind = "symbol_decl"
+type = "field:ERROR"
+repeat = { count = "catchCount" }
+
+[[block.statement]]
+name = "TRY"
+
+[[block.statement]]
+name = "CATCH"
+repeat = { count = "catchCount" }
+
+[[block]]
+id = "error.throw"
+version = 1
+category = "errors"
+shape = "statement"
+label = { friendly = "throw %ERROR with message %MESSAGE", cpp = "throw %ERROR(%MESSAGE);" }
+lowering = "builtin"
+help = "Stops the blocks here with an error of this kind and this message. The nearest try block around it that catches the kind runs its catch part next; with none, the program stops."
+
+[[block.field]]
+name = "ERROR"
+kind = "type"
+types = ["std::runtime_error", "std::invalid_argument", "std::out_of_range"]
+default = "std::runtime_error"
+
+[[block.input]]
+name = "MESSAGE"
+check = "text"
+type = "std::string"
+default = [{ str = "Something went wrong." }]
+
+[[block]]
+id = "error.message"
+version = 1
+category = "errors"
+shape = "reporter"
+output = "std::string"
+label = { friendly = "message of %ERROR", cpp = "%ERROR.what()" }
+lowering = "builtin"
+# The menu lists the errors that catch parts around the block caught.
+where = { X = "exception" }
+help = "The message of an error that a catch part caught."
+
+[[block.field]]
+name = "ERROR"
+kind = "symbol_ref"
+type = "X"
+
+[[block]]
+id = "error.rethrow"
+version = 1
+category = "errors"
+shape = "statement"
+label = { friendly = "throw the error again", cpp = "throw;" }
+lowering = "builtin"
+help = "Throws the error this catch part caught again, for a try block further out to catch. It can only be used inside a catch part."

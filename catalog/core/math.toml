@@ -109,3 +109,166 @@ default = "int"
 name = "VALUE"
 check = "number"
 default = [{ num = "0" }]
+
+# Milestone M3's second wave (docs/plans/m3-contracts/w2.md §1.4). A
+# `number` output is the arithmetic type of the block's inputs, as *add*
+# gives it: a character or a true/false value counts as a whole number.
+
+[[block]]
+id = "math.fn"
+version = 1
+category = "math"
+shape = "reporter"
+output = "double"
+label = { friendly = "%FN of %VALUE", cpp = "std::round(%VALUE)" }
+lowering = "builtin"
+# Every option's function is declared in <cmath>.
+headers = ["<cmath>"]
+help = "A function of a number: rounding, roots, powers of e, logarithms, and the angle functions, whose angles are in radians. The result is a decimal number."
+
+[[block.field]]
+name = "FN"
+kind = "dropdown"
+options = [
+    ["round down", "floor"],
+    ["round up", "ceil"],
+    ["round", "round"],
+    ["square root", "sqrt"],
+    ["cube root", "cbrt"],
+    ["e to the power", "exp"],
+    ["natural log", "log"],
+    ["log base 10", "log10"],
+    ["sin", "sin"],
+    ["cos", "cos"],
+    ["tan", "tan"],
+    ["asin", "asin"],
+    ["acos", "acos"],
+    ["atan", "atan"],
+]
+default = "round"
+
+[[block.input]]
+name = "VALUE"
+check = "number"
+default = [{ num = "2.5" }]
+
+[[block]]
+id = "math.abs"
+version = 1
+category = "math"
+shape = "reporter"
+output = "number"
+label = { friendly = "absolute value of %VALUE", cpp = "std::abs(%VALUE)" }
+lowering = "builtin"
+# std::abs is declared in <cstdlib> for whole numbers and in <cmath> for
+# decimal numbers: the generator includes the header of the form.
+help = "The number without its minus sign."
+
+[[block.input]]
+name = "VALUE"
+check = "number"
+default = [{ num = "-3" }]
+
+[[block]]
+id = "math.minmax"
+version = 1
+category = "math"
+shape = "reporter"
+output = "number"
+label = { friendly = "%FN of %A and %B", cpp = "std::max(%A, %B)" }
+lowering = "builtin"
+headers = ["<algorithm>"]
+help = "The larger or the smaller of two numbers."
+
+[[block.field]]
+name = "FN"
+kind = "dropdown"
+options = [["larger", "max"], ["smaller", "min"]]
+default = "max"
+
+[[block.input]]
+name = "A"
+check = "number"
+default = [{ num = "3" }]
+
+[[block.input]]
+name = "B"
+check = "number"
+default = [{ num = "7" }]
+
+[[block]]
+id = "math.fn_two"
+version = 1
+category = "math"
+shape = "reporter"
+output = "double"
+label = { friendly = "%FN of %A and %B", cpp = "std::pow(%A, %B)" }
+lowering = "builtin"
+headers = ["<cmath>"]
+help = "A function of two numbers: the first to the power of the second; the angle, in radians, of the point whose y is the first and whose x is the second; or the long side of a right-angled triangle whose other sides are the two."
+
+[[block.field]]
+name = "FN"
+kind = "dropdown"
+options = [["power", "pow"], ["atan2", "atan2"], ["hypotenuse", "hypot"]]
+default = "pow"
+
+[[block.input]]
+name = "A"
+check = "number"
+default = [{ num = "2" }]
+
+[[block.input]]
+name = "B"
+check = "number"
+default = [{ num = "10" }]
+
+[[block]]
+id = "math.clamp"
+version = 1
+category = "math"
+shape = "reporter"
+output = "number"
+label = { friendly = "%VALUE kept between %LOW and %HIGH", cpp = "std::clamp(%VALUE, %LOW, %HIGH)" }
+lowering = "builtin"
+headers = ["<algorithm>"]
+help = "The number if it is between the two limits, otherwise the nearer limit. The lower limit must not be above the higher one: a debug build stops the program then."
+
+[[block.input]]
+name = "VALUE"
+check = "number"
+default = [{ num = "15" }]
+
+[[block.input]]
+name = "LOW"
+check = "number"
+default = [{ num = "0" }]
+
+[[block.input]]
+name = "HIGH"
+check = "number"
+default = [{ num = "10" }]
+
+[[block]]
+id = "math.random_real"
+version = 1
+category = "math"
+shape = "reporter"
+output = "double"
+label = { friendly = "random decimal from %LOW to %HIGH", cpp = "b2c::random_real(%LOW, %HIGH)" }
+lowering = "builtin"
+# b2c::random_real is a support helper, whose own headers the generator
+# includes with it (M3 contracts types.md §5.3).
+help = "A random decimal number between the two values."
+
+[[block.input]]
+name = "LOW"
+check = "number"
+type = "double"
+default = [{ num = "0.0" }]
+
+[[block.input]]
+name = "HIGH"
+check = "number"
+type = "double"
+default = [{ num = "1.0" }]

@@ -11,9 +11,29 @@ Toolbox icon: “ ”. Back to [all categories](README.md).
 | `text.literal` (reporter, gives `std::string`) | `"%VALUE"` | `"%VALUE"` | A piece of text. | `VALUE`: text, default empty. | — |
 | `text.join` (reporter, gives `std::string`) | `join %ITEM …` | `%ITEM + …` | Joins text and numbers into one piece of text. | — | `ITEM0`, `ITEM1`, …: any value, one for each of `itemCount`; default `""`. Setting `itemCount`: 2 to 32, default 2. |
 | `text.char` (reporter, gives `char`) | `character '%VALUE'` | `'%VALUE'` | A single character, such as 'a'. | `VALUE`: text, default `a`. | — |
+| `text.length` (reporter, gives `int`) | `length of %TEXT` | `static_cast<int>(%TEXT.size())` | The number of characters in a text. | — | `TEXT`: text; default `"hello"`. |
+| `text.letter` (reporter, gives `char`) | `letter %INDEX of %TEXT` | `%TEXT.at(%INDEX)` | The character at a position of a text, counting from 0. A position outside the text stops the program with an out-of-range error. | — | `INDEX`: a whole number; default `0`. `TEXT`: text; default `"hello"`. |
+| `text.case` (reporter, gives `std::string`) | `%CASE %TEXT` | `b2c::to_lower(%TEXT)` | The text in lowercase or in uppercase. Only the letters A to Z change; every other character stays as it is. | `CASE`: one of lowercase (`lower`) or uppercase (`upper`), default `lower`. | `TEXT`: text; default `"Hello"`. |
+| `text.split` (reporter, gives a value of type `std::vector<std::string>`) | `split %TEXT by %SEPARATOR` | `b2c::split(%TEXT, %SEPARATOR)` | A list of the parts of a text between its separators. Two separators in a row give an empty part, and an empty separator gives one part for each character. | — | `TEXT`: text; default `"a b"`. `SEPARATOR`: text; default `" "`. |
+| `text.to_number` (reporter, gives the type chosen in `TO`) | `text %TEXT as number %TO` | `std::stoi(%TEXT)` | The number at the start of a text: 12abc gives 12. A text that does not start with a number throws an invalid argument error, and a number too large for its type throws an out-of-range error; the Errors category has the blocks that catch them. | `TO`: a type, `int` or `double`, default `int`. | `TEXT`: text; default `"42"`. |
+| `text.as_text` (reporter, gives `std::string`) | `%VALUE as text` | `std::to_string(%VALUE)` | A value as text, written as print writes it: a decimal number with the decimal places 'show numbers with' chose, true or false for a true/false value. A struct cannot be turned into text in one go; join its fields instead. | — | `VALUE`: any value; default `42`. |
+| `text.find` (predicate, gives `bool`) | `%TEXT %OP %PART` | `%TEXT.find(%PART) != std::string::npos` | Whether a text contains another text, starts with it or ends with it. | `OP`: one of `contains`, starts with (`starts`) or ends with (`ends`), default `contains`. | `TEXT`: text; default `"hello"`. `PART`: text; default `"ell"`. |
+| `text.part` (reporter, gives `std::string`) | `part of %TEXT from %START length %LENGTH` | `%TEXT.substr(%START, %LENGTH)` | The characters of a text from a position, counting from 0, up to this many of them; fewer when the text ends first. A start past the end of the text stops the program with an out-of-range error. | — | `TEXT`: text; default `"hello"`. `START`: a whole number; default `1`. `LENGTH`: a whole number; default `3`. |
+| `text.trim` (reporter, gives `std::string`) | `trim %TEXT` | `b2c::trim(%TEXT)` | The text without the spaces and tabs at its start and end. | — | `TEXT`: text; default `" hello "`. |
+| `text.replace` (reporter, gives `std::string`) | `replace all %OLD with %NEW in %TEXT` | `b2c::replace_all(%TEXT, %OLD, %NEW)` | The text with every place where the first text occurs replaced by the second. An empty first text changes nothing. | — | `OLD`: text; default `"a"`. `NEW`: text; default `"o"`. `TEXT`: text; default `"banana"`. |
 
 ## In the toolbox
 
 1. `text.literal`
 2. `text.join`
 3. `text.char`
+4. `text.length`
+5. `text.letter`
+6. `text.case`
+7. `text.split`
+8. `text.to_number`
+9. `text.as_text`
+10. `text.find`
+11. `text.part`
+12. `text.trim`
+13. `text.replace`

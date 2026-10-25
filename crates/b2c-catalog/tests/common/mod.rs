@@ -55,6 +55,36 @@ pub(crate) fn project(body: Value, extra: Value) -> Value {
     })
 }
 
+/// `print` blocks (ids `{id}_0`, `{id}_1`, …) that print `values` between
+/// them, each with as many items as the catalog lets one `print` hold, so a
+/// test can place every value block of the catalog or the toolbox.
+pub(crate) fn prints(id: &str, values: Vec<Value>) -> Vec<Value> {
+    let print = &b2c_catalog::core_catalog().blocks["io.print"];
+    let limit = print
+        .extra
+        .iter()
+        .find(|extra| extra.name == "itemCount")
+        .map_or(1, |extra| extra.max as usize);
+    values
+        .chunks(limit)
+        .enumerate()
+        .map(|(i, chunk)| {
+            let inputs: serde_json::Map<String, Value> = chunk
+                .iter()
+                .enumerate()
+                .map(|(item, block)| (format!("ITEM{item}"), json!({ "block": block })))
+                .collect();
+            json!({
+                "id": format!("{id}_{i}"),
+                "type": "io.print",
+                "v": 1,
+                "extra": { "itemCount": chunk.len() },
+                "inputs": inputs,
+            })
+        })
+        .collect()
+}
+
 /// Loads a JSON project (which must be valid for the loader).
 pub(crate) fn load(value: &Value) -> Document {
     match b2c_model::load(&serde_json::to_vec(value).unwrap()) {

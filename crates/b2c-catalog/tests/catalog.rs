@@ -15,7 +15,7 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_catalog::{BlockDef, CATALOG_VERSION, ExtraKind, FieldDefault, FieldKind, Shape, core_catalog};
-use common::{block_ids_on_disk, project, resolve};
+use common::{block_ids_on_disk, prints, project, resolve};
 use serde_json::{Map, Value, json};
 
 #[test]
@@ -58,6 +58,7 @@ fn value_blocks_declare_their_output_type() {
         ("coll.length", "int"),
         ("coll.list_of", "C"),
         ("coll.next", "elem(C)"),
+        ("error.message", "std::string"),
         ("func.call", "symbol"),
         ("logic.boolean", "bool"),
         ("logic.not", "bool"),
@@ -65,12 +66,28 @@ fn value_blocks_declare_their_output_type() {
         ("logic.ternary", "any"),
         ("math.arithmetic", "number"),
         ("math.compare", "bool"),
+        ("math.abs", "number"),
+        ("math.clamp", "number"),
         ("math.convert", "field:TO"),
+        ("math.fn", "double"),
+        ("math.fn_two", "double"),
+        ("math.minmax", "number"),
         ("math.number", "number"),
         ("math.random_int", "int"),
+        ("math.random_real", "double"),
+        ("text.as_text", "std::string"),
+        ("text.case", "std::string"),
         ("text.char", "char"),
+        ("text.find", "bool"),
         ("text.join", "std::string"),
+        ("text.length", "int"),
+        ("text.letter", "char"),
         ("text.literal", "std::string"),
+        ("text.part", "std::string"),
+        ("text.replace", "std::string"),
+        ("text.split", "std::vector<std::string>"),
+        ("text.to_number", "field:TO"),
+        ("text.trim", "std::string"),
         ("var.get", "symbol"),
     ]
     .into_iter()
@@ -207,19 +224,7 @@ fn every_block_resolves_cleanly_in_its_place() {
             Shape::Reporter | Shape::Predicate => values.push(block),
         }
     }
-    let value_count = values.len();
-    let inputs: Map<String, Value> = values
-        .into_iter()
-        .enumerate()
-        .map(|(i, block)| (format!("ITEM{i}"), json!({ "block": block })))
-        .collect();
-    body.push(json!({
-        "id": "b_print_all",
-        "type": "io.print",
-        "v": 1,
-        "extra": { "itemCount": value_count },
-        "inputs": inputs,
-    }));
+    body.extend(prints("b_print_all", values));
     let (document, diagnostics) = resolve(&project(Value::Array(body), Value::Array(top)));
     assert_eq!(diagnostics, []);
     // Every block type appears in the completed document.

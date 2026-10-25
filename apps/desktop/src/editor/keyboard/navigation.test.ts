@@ -11,9 +11,12 @@ import type { ChoiceOptions, DialogService } from '../../app/dialogs';
 import { useAppStore } from '../../app/store';
 import { type B2cContinuousToolbox, CONTINUOUS_REFRESH_DELAY_MS } from '../toolbox/continuous';
 import { createToolboxPlugin } from '../toolbox/plugin';
-import { guessDocument, symbolFixture } from '../toolbox/testing';
+import { FLYOUT_TEST_TIMEOUT_MS, guessDocument, symbolFixture } from '../toolbox/testing';
 import { keepFlyoutFocus } from './keepFocus';
 import { focused, type KeyboardEditor, keyboardEditor, press } from './testing';
+
+// Each test here shows the toolbox's flyout of every catalog block (toolbox/testing.ts).
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 let editor: KeyboardEditor | null = null;
 

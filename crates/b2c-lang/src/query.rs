@@ -95,6 +95,10 @@ pub(crate) struct ScopeIndex {
     /// What is visible at the end of the body of each module's `main` (the
     /// first one lowered there), by module index.
     main_ends: BTreeMap<usize, Point>,
+    /// The variables a block declares for one of its own statement lists
+    /// only: a catch part's error (w2.md §2.5), which is not visible after
+    /// the block ([`Analysis::scope_after`]).
+    part_variables: BTreeSet<SymbolId>,
 }
 
 impl ScopeIndex {
@@ -105,6 +109,13 @@ impl ScopeIndex {
     pub(crate) fn record_block(&mut self, block: &BlockId, point: Point) {
         let points = self.blocks.entry(block.clone()).or_default();
         points.at.get_or_insert(point);
+    }
+
+    /// Records a variable that a block declares for one of its own
+    /// statement lists only (a catch part's error), so that it is not
+    /// visible after the block.
+    pub(crate) fn record_part_variable(&mut self, sym: &SymbolId) {
+        self.part_variables.insert(sym.clone());
     }
 
     /// Records what is visible at the end of a `main` body, the parked scope
@@ -320,9 +331,10 @@ impl Analysis {
     /// block, plus the variable the block creates if the analyser accepted
     /// that declaration (it hides any other symbol with its name). A
     /// disabled or parked `create` declares nothing, and a `for` loop's
-    /// counter is visible only inside the loop, so for those it is what is
-    /// visible at the block. `None` when the analysis has no answer for the
-    /// block ([`Self::scope_at`]). Sorted like [`Self::symbols_in_scope`].
+    /// counter and a catch part's error are visible only inside their block,
+    /// so for those it is what is visible at the block. `None` when the
+    /// analysis has no answer for the block ([`Self::scope_at`]). Sorted like
+    /// [`Self::symbols_in_scope`].
     pub fn scope_after(&self, block: &BlockId) -> Option<Vec<SymbolInfo>> {
         let mut visible = self.scope_at(block, None)?;
         let created = self
@@ -330,8 +342,10 @@ impl Analysis {
             .symbols
             .symbols
             .iter()
-            .find(|(_, symbol)| {
-                symbol.origin.block == *block && matches!(symbol.kind, SymbolKind::Variable { .. })
+            .find(|(id, symbol)| {
+                symbol.origin.block == *block
+                    && matches!(symbol.kind, SymbolKind::Variable { .. })
+                    && !self.index.part_variables.contains(*id)
             })
             .map(|(id, _)| id);
         if let Some(own) = created.and_then(|id| self.infos(vec![id]).pop()) {

@@ -61,6 +61,24 @@ block = "math.random_int"
 [[category.entry]]
 block = "math.convert"
 
+[[category.entry]]
+block = "math.fn"
+
+[[category.entry]]
+block = "math.abs"
+
+[[category.entry]]
+block = "math.minmax"
+
+[[category.entry]]
+block = "math.fn_two"
+
+[[category.entry]]
+block = "math.clamp"
+
+[[category.entry]]
+block = "math.random_real"
+
 [[category]]
 id = "logic"
 name = "Logic"
@@ -93,6 +111,36 @@ block = "text.join"
 
 [[category.entry]]
 block = "text.char"
+
+[[category.entry]]
+block = "text.length"
+
+[[category.entry]]
+block = "text.letter"
+
+[[category.entry]]
+block = "text.case"
+
+[[category.entry]]
+block = "text.split"
+
+[[category.entry]]
+block = "text.to_number"
+
+[[category.entry]]
+block = "text.as_text"
+
+[[category.entry]]
+block = "text.find"
+
+[[category.entry]]
+block = "text.part"
+
+[[category.entry]]
+block = "text.trim"
+
+[[category.entry]]
+block = "text.replace"
 
 [[category]]
 id = "control"
@@ -145,6 +193,9 @@ block = "io.print"
 [[category.entry]]
 block = "io.ask"
 preset = { inputs = { PROMPT = [{ str = "Your answer: " }] } }
+
+[[category.entry]]
+block = "io.decimals"
 
 [[category]]
 id = "functions"
@@ -224,3 +275,15 @@ id = "errors"
 name = "Errors"
 icon = "⚠"
 colour = "errors"
+
+[[category.entry]]
+block = "error.try"
+
+[[category.entry]]
+block = "error.throw"
+
+[[category.entry]]
+block = "error.message"
+
+[[category.entry]]
+block = "error.rethrow"

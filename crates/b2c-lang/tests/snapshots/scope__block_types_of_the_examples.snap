@@ -23,6 +23,11 @@ guessing_game.b2c:
   b001: "int"
 hello_world.b2c:
   (no value blocks)
+input_validation.b2c:
+  b003: "int"
+  b008: "std::string"
+  b020: "int"
+  b025: "std::string"
 matrix_sum.b2c:
   b015: "std::string"
   b027: "int"
@@ -37,6 +42,8 @@ primes.b2c:
 sum_to_ten.b2c:
   (no value blocks)
 temperature.b2c:
+  (no value blocks)
+temperature_table.b2c:
   (no value blocks)
 times_table.b2c:
   (no value blocks)

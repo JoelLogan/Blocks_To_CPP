@@ -50,9 +50,20 @@ const M2_TYPES: readonly unknown[] = [
   'error',
 ];
 
-/** Whether a type term is one the examples use: M2's types and lists of them (W2's matrix_sum). */
+/** The errors W2's input_validation catches in its catch parts (types.md §1.1). */
+const ERROR_TYPES: readonly unknown[] = [
+  'std::exception',
+  'std::invalid_argument',
+  'std::out_of_range',
+  'std::runtime_error',
+];
+
+/**
+ * Whether a type term is one the examples use: M2's types, the errors of W2's input_validation,
+ * and lists of them (W2's matrix_sum).
+ */
 function isExampleType(type: unknown): boolean {
-  if (M2_TYPES.includes(type)) {
+  if (M2_TYPES.includes(type) || ERROR_TYPES.includes(type)) {
     return true;
   }
   if (typeof type !== 'object' || type === null) {
@@ -160,7 +171,8 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     expect(preview.textHash).toBe(sha256(exampleText(name)));
     // Scope data of the program (the exact values are checked natively and in
     // scope-clipboard.test.ts): static types, and symbols sorted by name.
-    // Types are terms (types.md §3.1): the examples use M2's types and lists of them.
+    // Types are terms (types.md §3.1): the examples use M2's types, the errors W2's
+    // input_validation catches, and lists of them.
     for (const type of Object.values(preview.blockTypes)) {
       expect(isExampleType(type), JSON.stringify(type)).toBe(true);
     }

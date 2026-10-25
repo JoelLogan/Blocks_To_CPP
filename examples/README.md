@@ -29,3 +29,5 @@ joins this list, with its golden test, once its project passes.
 | [`exit_code.b2c`](exit_code.b2c) | Exit Code | Stopping the program with an exit code from inside a function. |
 | [`tricky_text.b2c`](tricky_text.b2c) | Tricky Text | Text that must be escaped correctly in C++ (spec §8.4.2), and a comment ending in a backslash that must not hide the next line (§8.4.3). |
 | [`matrix_sum.b2c`](matrix_sum.b2c) | Matrix Sum | A list of lists (M3 assignment): building each row with *add*, *for each* over the rows, *item* and *set item* by position, and the sums of rows and columns. |
+| [`temperature_table.b2c`](temperature_table.b2c) | Temperature Table | An M3 assignment: a counting loop with a step, stopping early with an exit code, and decimal numbers shown with one decimal place. |
+| [`input_validation.b2c`](input_validation.b2c) | Input Validation | An M3 assignment: text read as a number, errors thrown by a function and caught by a try block with three catch parts, and the message of a caught error. |

@@ -56,3 +56,232 @@ name = "ITEM"
 check = "any"
 repeat = { count = "itemCount" }
 default = [{ str = "" }]
+
+# Milestone M3's second wave (docs/plans/m3-contracts/w2.md §1.3): what a text
+# holds, and a text read as a number. A quoted literal where an object is
+# needed becomes a std::string (M3 contracts types.md §11.1).
+
+[[block]]
+id = "text.length"
+version = 1
+category = "text"
+shape = "reporter"
+output = "int"
+label = { friendly = "length of %TEXT", cpp = "static_cast<int>(%TEXT.size())" }
+lowering = "builtin"
+help = "The number of characters in a text."
+
+[[block.input]]
+name = "TEXT"
+check = "text"
+type = "std::string"
+default = [{ str = "hello" }]
+
+[[block]]
+id = "text.letter"
+version = 1
+category = "text"
+shape = "reporter"
+output = "char"
+label = { friendly = "letter %INDEX of %TEXT", cpp = "%TEXT.at(%INDEX)" }
+lowering = "builtin"
+help = "The character at a position of a text, counting from 0. A position outside the text stops the program with an out-of-range error."
+
+[[block.input]]
+name = "INDEX"
+check = "integer"
+type = "int"
+default = [{ num = "0" }]
+
+[[block.input]]
+name = "TEXT"
+check = "text"
+type = "std::string"
+default = [{ str = "hello" }]
+
+[[block]]
+id = "text.case"
+version = 1
+category = "text"
+shape = "reporter"
+output = "std::string"
+label = { friendly = "%CASE %TEXT", cpp = "b2c::to_lower(%TEXT)" }
+lowering = "builtin"
+# b2c::to_lower and b2c::to_upper are support helpers, whose own headers the
+# generator includes with them (M3 contracts types.md §5.3).
+help = "The text in lowercase or in uppercase. Only the letters A to Z change; every other character stays as it is."
+
+[[block.field]]
+name = "CASE"
+kind = "dropdown"
+options = [["lowercase", "lower"], ["uppercase", "upper"]]
+default = "lower"
+
+[[block.input]]
+name = "TEXT"
+check = "text"
+type = "std::string"
+default = [{ str = "Hello" }]
+
+[[block]]
+id = "text.split"
+version = 1
+category = "text"
+shape = "reporter"
+output = "std::vector<std::string>"
+label = { friendly = "split %TEXT by %SEPARATOR", cpp = "b2c::split(%TEXT, %SEPARATOR)" }
+lowering = "builtin"
+help = "A list of the parts of a text between its separators. Two separators in a row give an empty part, and an empty separator gives one part for each character."
+
+[[block.input]]
+name = "TEXT"
+check = "text"
+type = "std::string"
+default = [{ str = "a b" }]
+
+[[block.input]]
+name = "SEPARATOR"
+check = "text"
+type = "std::string"
+default = [{ str = " " }]
+
+[[block]]
+id = "text.to_number"
+version = 1
+category = "text"
+shape = "reporter"
+output = "field:TO"
+label = { friendly = "text %TEXT as number %TO", cpp = "std::stoi(%TEXT)" }
+lowering = "builtin"
+headers = ["<string>"]
+help = "The number at the start of a text: 12abc gives 12. A text that does not start with a number throws an invalid argument error, and a number too large for its type throws an out-of-range error; the Errors category has the blocks that catch them."
+
+[[block.field]]
+name = "TO"
+kind = "type"
+types = ["int", "double"]
+default = "int"
+
+[[block.input]]
+name = "TEXT"
+check = "text"
+type = "std::string"
+default = [{ str = "42" }]
+
+[[block]]
+id = "text.as_text"
+version = 1
+category = "text"
+shape = "reporter"
+output = "std::string"
+label = { friendly = "%VALUE as text", cpp = "std::to_string(%VALUE)" }
+lowering = "builtin"
+headers = ["<string>"]
+help = "A value as text, written as print writes it: a decimal number with the decimal places 'show numbers with' chose, true or false for a true/false value. A struct cannot be turned into text in one go; join its fields instead."
+
+# Any value, as join's items: what cannot be turned into text is reported as
+# join reports it (B2C-E0314).
+[[block.input]]
+name = "VALUE"
+check = "any"
+default = [{ num = "42" }]
+
+[[block]]
+id = "text.find"
+version = 1
+category = "text"
+shape = "predicate"
+output = "bool"
+label = { friendly = "%TEXT %OP %PART", cpp = "%TEXT.find(%PART) != std::string::npos" }
+lowering = "builtin"
+help = "Whether a text contains another text, starts with it or ends with it."
+
+[[block.field]]
+name = "OP"
+kind = "dropdown"
+options = [["contains", "contains"], ["starts with", "starts"], ["ends with", "ends"]]
+default = "contains"
+
+[[block.input]]
+name = "TEXT"
+check = "text"
+type = "std::string"
+default = [{ str = "hello" }]
+
+[[block.input]]
+name = "PART"
+check = "text"
+type = "std::string"
+default = [{ str = "ell" }]
+
+[[block]]
+id = "text.part"
+version = 1
+category = "text"
+shape = "reporter"
+output = "std::string"
+label = { friendly = "part of %TEXT from %START length %LENGTH", cpp = "%TEXT.substr(%START, %LENGTH)" }
+lowering = "builtin"
+help = "The characters of a text from a position, counting from 0, up to this many of them; fewer when the text ends first. A start past the end of the text stops the program with an out-of-range error."
+
+[[block.input]]
+name = "TEXT"
+check = "text"
+type = "std::string"
+default = [{ str = "hello" }]
+
+[[block.input]]
+name = "START"
+check = "integer"
+type = "int"
+default = [{ num = "1" }]
+
+[[block.input]]
+name = "LENGTH"
+check = "integer"
+type = "int"
+default = [{ num = "3" }]
+
+[[block]]
+id = "text.trim"
+version = 1
+category = "text"
+shape = "reporter"
+output = "std::string"
+label = { friendly = "trim %TEXT", cpp = "b2c::trim(%TEXT)" }
+lowering = "builtin"
+help = "The text without the spaces and tabs at its start and end."
+
+[[block.input]]
+name = "TEXT"
+check = "text"
+type = "std::string"
+default = [{ str = "  hello  " }]
+
+[[block]]
+id = "text.replace"
+version = 1
+category = "text"
+shape = "reporter"
+output = "std::string"
+label = { friendly = "replace all %OLD with %NEW in %TEXT", cpp = "b2c::replace_all(%TEXT, %OLD, %NEW)" }
+lowering = "builtin"
+help = "The text with every place where the first text occurs replaced by the second. An empty first text changes nothing."
+
+[[block.input]]
+name = "OLD"
+check = "text"
+type = "std::string"
+default = [{ str = "a" }]
+
+[[block.input]]
+name = "NEW"
+check = "text"
+type = "std::string"
+default = [{ str = "o" }]
+
+[[block.input]]
+name = "TEXT"
+check = "text"
+type = "std::string"
+default = [{ str = "banana" }]

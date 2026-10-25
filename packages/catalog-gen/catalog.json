@@ -1123,6 +1123,191 @@
       "extra": []
     },
     {
+      "id": "error.message",
+      "version": 1,
+      "category": "errors",
+      "shape": "reporter",
+      "output": "std::string",
+      "typeVars": {
+        "X": "exception"
+      },
+      "label": {
+        "friendly": "message of %ERROR",
+        "cpp": "%ERROR.what()"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The message of an error that a catch part caught.",
+      "field": [
+        {
+          "name": "ERROR",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "X"
+          }
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "ERROR"
+        }
+      ]
+    },
+    {
+      "id": "error.rethrow",
+      "version": 1,
+      "category": "errors",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "throw the error again",
+        "cpp": "throw;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Throws the error this catch part caught again, for a try block further out to catch. It can only be used inside a catch part.",
+      "field": [],
+      "input": [],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "error.throw",
+      "version": 1,
+      "category": "errors",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "throw %ERROR with message %MESSAGE",
+        "cpp": "throw %ERROR(%MESSAGE);"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Stops the blocks here with an error of this kind and this message. The nearest try block around it that catches the kind runs its catch part next; with none, the program stops.",
+      "field": [
+        {
+          "name": "ERROR",
+          "kind": "type",
+          "options": [],
+          "types": [
+            "std::runtime_error",
+            "std::invalid_argument",
+            "std::out_of_range"
+          ],
+          "default": "std::runtime_error"
+        }
+      ],
+      "input": [
+        {
+          "name": "MESSAGE",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "Something went wrong."
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "MESSAGE"
+        }
+      ]
+    },
+    {
+      "id": "error.try",
+      "version": 1,
+      "category": "errors",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "try %TRY catch %ERROR as %NAME %CATCH catch …",
+        "cpp": "try { %TRY } catch (const %ERROR& %NAME) { %CATCH } …"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Runs the blocks after try. If one of them throws an error, the first catch part for that kind of error runs, with the error in its variable; the parts are tried in order, and std::exception catches every kind. Add catch parts with ⊕ and remove them with ⊖.",
+      "field": [
+        {
+          "name": "ERROR",
+          "kind": "type",
+          "options": [],
+          "types": [
+            "std::exception",
+            "std::invalid_argument",
+            "std::out_of_range",
+            "std::runtime_error"
+          ],
+          "default": "std::exception",
+          "repeat": {
+            "count": "catchCount",
+            "plus": 0
+          }
+        },
+        {
+          "name": "NAME",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "field": "ERROR",
+            "kind": "field"
+          },
+          "repeat": {
+            "count": "catchCount",
+            "plus": 0
+          }
+        }
+      ],
+      "input": [],
+      "statement": [
+        {
+          "name": "TRY",
+          "repeat": null,
+          "when": null
+        },
+        {
+          "name": "CATCH",
+          "repeat": {
+            "count": "catchCount",
+            "plus": 0
+          },
+          "when": null
+        }
+      ],
+      "extra": [
+        {
+          "name": "catchCount",
+          "kind": "count",
+          "min": 1,
+          "max": 8,
+          "default": "1",
+          "types": []
+        }
+      ],
+      "order": [
+        {
+          "field": "NAME"
+        }
+      ]
+    },
+    {
       "id": "func.call",
       "version": 1,
       "category": "functions",
@@ -1402,6 +1587,48 @@
       "extra": []
     },
     {
+      "id": "io.decimals",
+      "version": 1,
+      "category": "io",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "show numbers with %DIGITS decimal places",
+        "cpp": "std::cout << std::fixed << std::setprecision(%DIGITS);"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<iomanip>",
+        "<iostream>"
+      ],
+      "help": "From here on, prints every decimal number with this many digits after the decimal point, also in join and as text. Whole numbers are not changed.",
+      "field": [],
+      "input": [
+        {
+          "name": "DIGITS",
+          "check": "integer",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "2"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "int"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "DIGITS"
+        }
+      ]
+    },
+    {
       "id": "io.print",
       "version": 1,
       "category": "io",
@@ -1666,6 +1893,36 @@
       "extra": []
     },
     {
+      "id": "math.abs",
+      "version": 1,
+      "category": "math",
+      "shape": "reporter",
+      "output": "number",
+      "label": {
+        "friendly": "absolute value of %VALUE",
+        "cpp": "std::abs(%VALUE)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The number without its minus sign.",
+      "field": [],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "-3"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
       "id": "math.arithmetic",
       "version": 1,
       "category": "math",
@@ -1728,6 +1985,60 @@
           "default": [
             {
               "num": "0"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "math.clamp",
+      "version": 1,
+      "category": "math",
+      "shape": "reporter",
+      "output": "number",
+      "label": {
+        "friendly": "%VALUE kept between %LOW and %HIGH",
+        "cpp": "std::clamp(%VALUE, %LOW, %HIGH)"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<algorithm>"
+      ],
+      "help": "The number if it is between the two limits, otherwise the nearer limit. The lower limit must not be above the higher one: a debug build stops the program then.",
+      "field": [],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "15"
+            }
+          ]
+        },
+        {
+          "name": "LOW",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0"
+            }
+          ]
+        },
+        {
+          "name": "HIGH",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "10"
             }
           ]
         }
@@ -1851,6 +2162,227 @@
       "extra": []
     },
     {
+      "id": "math.fn",
+      "version": 1,
+      "category": "math",
+      "shape": "reporter",
+      "output": "double",
+      "label": {
+        "friendly": "%FN of %VALUE",
+        "cpp": "std::round(%VALUE)"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<cmath>"
+      ],
+      "help": "A function of a number: rounding, roots, powers of e, logarithms, and the angle functions, whose angles are in radians. The result is a decimal number.",
+      "field": [
+        {
+          "name": "FN",
+          "kind": "dropdown",
+          "options": [
+            [
+              "round down",
+              "floor"
+            ],
+            [
+              "round up",
+              "ceil"
+            ],
+            [
+              "round",
+              "round"
+            ],
+            [
+              "square root",
+              "sqrt"
+            ],
+            [
+              "cube root",
+              "cbrt"
+            ],
+            [
+              "e to the power",
+              "exp"
+            ],
+            [
+              "natural log",
+              "log"
+            ],
+            [
+              "log base 10",
+              "log10"
+            ],
+            [
+              "sin",
+              "sin"
+            ],
+            [
+              "cos",
+              "cos"
+            ],
+            [
+              "tan",
+              "tan"
+            ],
+            [
+              "asin",
+              "asin"
+            ],
+            [
+              "acos",
+              "acos"
+            ],
+            [
+              "atan",
+              "atan"
+            ]
+          ],
+          "types": [],
+          "default": "round"
+        }
+      ],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "2.5"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "math.fn_two",
+      "version": 1,
+      "category": "math",
+      "shape": "reporter",
+      "output": "double",
+      "label": {
+        "friendly": "%FN of %A and %B",
+        "cpp": "std::pow(%A, %B)"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<cmath>"
+      ],
+      "help": "A function of two numbers: the first to the power of the second; the angle, in radians, of the point whose y is the first and whose x is the second; or the long side of a right-angled triangle whose other sides are the two.",
+      "field": [
+        {
+          "name": "FN",
+          "kind": "dropdown",
+          "options": [
+            [
+              "power",
+              "pow"
+            ],
+            [
+              "atan2",
+              "atan2"
+            ],
+            [
+              "hypotenuse",
+              "hypot"
+            ]
+          ],
+          "types": [],
+          "default": "pow"
+        }
+      ],
+      "input": [
+        {
+          "name": "A",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "2"
+            }
+          ]
+        },
+        {
+          "name": "B",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "10"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "math.minmax",
+      "version": 1,
+      "category": "math",
+      "shape": "reporter",
+      "output": "number",
+      "label": {
+        "friendly": "%FN of %A and %B",
+        "cpp": "std::max(%A, %B)"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<algorithm>"
+      ],
+      "help": "The larger or the smaller of two numbers.",
+      "field": [
+        {
+          "name": "FN",
+          "kind": "dropdown",
+          "options": [
+            [
+              "larger",
+              "max"
+            ],
+            [
+              "smaller",
+              "min"
+            ]
+          ],
+          "types": [],
+          "default": "max"
+        }
+      ],
+      "input": [
+        {
+          "name": "A",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "3"
+            }
+          ]
+        },
+        {
+          "name": "B",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "7"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
       "id": "math.number",
       "version": 1,
       "category": "math",
@@ -1918,6 +2450,63 @@
       "extra": []
     },
     {
+      "id": "math.random_real",
+      "version": 1,
+      "category": "math",
+      "shape": "reporter",
+      "output": "double",
+      "label": {
+        "friendly": "random decimal from %LOW to %HIGH",
+        "cpp": "b2c::random_real(%LOW, %HIGH)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "A random decimal number between the two values.",
+      "field": [],
+      "input": [
+        {
+          "name": "LOW",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0.0"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "double"
+          }
+        },
+        {
+          "name": "HIGH",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "1.0"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "double"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "LOW"
+        },
+        {
+          "input": "HIGH"
+        }
+      ]
+    },
+    {
       "id": "program.exit",
       "version": 1,
       "category": "program",
@@ -1972,6 +2561,94 @@
       "extra": []
     },
     {
+      "id": "text.as_text",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "std::string",
+      "label": {
+        "friendly": "%VALUE as text",
+        "cpp": "std::to_string(%VALUE)"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<string>"
+      ],
+      "help": "A value as text, written as print writes it: a decimal number with the decimal places 'show numbers with' chose, true or false for a true/false value. A struct cannot be turned into text in one go; join its fields instead.",
+      "field": [],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "42"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
+      "id": "text.case",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "std::string",
+      "label": {
+        "friendly": "%CASE %TEXT",
+        "cpp": "b2c::to_lower(%TEXT)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The text in lowercase or in uppercase. Only the letters A to Z change; every other character stays as it is.",
+      "field": [
+        {
+          "name": "CASE",
+          "kind": "dropdown",
+          "options": [
+            [
+              "lowercase",
+              "lower"
+            ],
+            [
+              "uppercase",
+              "upper"
+            ]
+          ],
+          "types": [],
+          "default": "lower"
+        }
+      ],
+      "input": [
+        {
+          "name": "TEXT",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "Hello"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "TEXT"
+        }
+      ]
+    },
+    {
       "id": "text.char",
       "version": 1,
       "category": "text",
@@ -1996,6 +2673,84 @@
       "input": [],
       "statement": [],
       "extra": []
+    },
+    {
+      "id": "text.find",
+      "version": 1,
+      "category": "text",
+      "shape": "predicate",
+      "output": "bool",
+      "label": {
+        "friendly": "%TEXT %OP %PART",
+        "cpp": "%TEXT.find(%PART) != std::string::npos"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Whether a text contains another text, starts with it or ends with it.",
+      "field": [
+        {
+          "name": "OP",
+          "kind": "dropdown",
+          "options": [
+            [
+              "contains",
+              "contains"
+            ],
+            [
+              "starts with",
+              "starts"
+            ],
+            [
+              "ends with",
+              "ends"
+            ]
+          ],
+          "types": [],
+          "default": "contains"
+        }
+      ],
+      "input": [
+        {
+          "name": "TEXT",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "hello"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        },
+        {
+          "name": "PART",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "ell"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "TEXT"
+        },
+        {
+          "input": "PART"
+        }
+      ]
     },
     {
       "id": "text.join",
@@ -2042,6 +2797,102 @@
       ]
     },
     {
+      "id": "text.length",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "int",
+      "label": {
+        "friendly": "length of %TEXT",
+        "cpp": "static_cast<int>(%TEXT.size())"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The number of characters in a text.",
+      "field": [],
+      "input": [
+        {
+          "name": "TEXT",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "hello"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "TEXT"
+        }
+      ]
+    },
+    {
+      "id": "text.letter",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "char",
+      "label": {
+        "friendly": "letter %INDEX of %TEXT",
+        "cpp": "%TEXT.at(%INDEX)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The character at a position of a text, counting from 0. A position outside the text stops the program with an out-of-range error.",
+      "field": [],
+      "input": [
+        {
+          "name": "INDEX",
+          "check": "integer",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "int"
+          }
+        },
+        {
+          "name": "TEXT",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "hello"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "INDEX"
+        },
+        {
+          "input": "TEXT"
+        }
+      ]
+    },
+    {
       "id": "text.literal",
       "version": 1,
       "category": "text",
@@ -2066,6 +2917,304 @@
       "input": [],
       "statement": [],
       "extra": []
+    },
+    {
+      "id": "text.part",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "std::string",
+      "label": {
+        "friendly": "part of %TEXT from %START length %LENGTH",
+        "cpp": "%TEXT.substr(%START, %LENGTH)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The characters of a text from a position, counting from 0, up to this many of them; fewer when the text ends first. A start past the end of the text stops the program with an out-of-range error.",
+      "field": [],
+      "input": [
+        {
+          "name": "TEXT",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "hello"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        },
+        {
+          "name": "START",
+          "check": "integer",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "1"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "int"
+          }
+        },
+        {
+          "name": "LENGTH",
+          "check": "integer",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "3"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "int"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "TEXT"
+        },
+        {
+          "input": "START"
+        },
+        {
+          "input": "LENGTH"
+        }
+      ]
+    },
+    {
+      "id": "text.replace",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "std::string",
+      "label": {
+        "friendly": "replace all %OLD with %NEW in %TEXT",
+        "cpp": "b2c::replace_all(%TEXT, %OLD, %NEW)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The text with every place where the first text occurs replaced by the second. An empty first text changes nothing.",
+      "field": [],
+      "input": [
+        {
+          "name": "OLD",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "a"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        },
+        {
+          "name": "NEW",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "o"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        },
+        {
+          "name": "TEXT",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "banana"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "OLD"
+        },
+        {
+          "input": "NEW"
+        },
+        {
+          "input": "TEXT"
+        }
+      ]
+    },
+    {
+      "id": "text.split",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "std::vector<std::string>",
+      "label": {
+        "friendly": "split %TEXT by %SEPARATOR",
+        "cpp": "b2c::split(%TEXT, %SEPARATOR)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "A list of the parts of a text between its separators. Two separators in a row give an empty part, and an empty separator gives one part for each character.",
+      "field": [],
+      "input": [
+        {
+          "name": "TEXT",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "a b"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        },
+        {
+          "name": "SEPARATOR",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": " "
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "TEXT"
+        },
+        {
+          "input": "SEPARATOR"
+        }
+      ]
+    },
+    {
+      "id": "text.to_number",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "field:TO",
+      "label": {
+        "friendly": "text %TEXT as number %TO",
+        "cpp": "std::stoi(%TEXT)"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<string>"
+      ],
+      "help": "The number at the start of a text: 12abc gives 12. A text that does not start with a number throws an invalid argument error, and a number too large for its type throws an out-of-range error; the Errors category has the blocks that catch them.",
+      "field": [
+        {
+          "name": "TO",
+          "kind": "type",
+          "options": [],
+          "types": [
+            "int",
+            "double"
+          ],
+          "default": "int"
+        }
+      ],
+      "input": [
+        {
+          "name": "TEXT",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "42"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "TEXT"
+        }
+      ]
+    },
+    {
+      "id": "text.trim",
+      "version": 1,
+      "category": "text",
+      "shape": "reporter",
+      "output": "std::string",
+      "label": {
+        "friendly": "trim %TEXT",
+        "cpp": "b2c::trim(%TEXT)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The text without the spaces and tabs at its start and end.",
+      "field": [],
+      "input": [
+        {
+          "name": "TEXT",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "  hello  "
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "TEXT"
+        }
+      ]
     },
     {
       "id": "var.change",
@@ -2381,6 +3530,36 @@
             "block": "math.convert",
             "label": null,
             "preset": null
+          },
+          {
+            "block": "math.fn",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "math.abs",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "math.minmax",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "math.fn_two",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "math.clamp",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "math.random_real",
+            "label": null,
+            "preset": null
           }
         ]
       },
@@ -2432,6 +3611,56 @@
           },
           {
             "block": "text.char",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.length",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.letter",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.case",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.split",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.to_number",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.as_text",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.find",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.part",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.trim",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "text.replace",
             "label": null,
             "preset": null
           }
@@ -2524,6 +3753,11 @@
                 ]
               }
             }
+          },
+          {
+            "block": "io.decimals",
+            "label": null,
+            "preset": null
           }
         ]
       },
@@ -2642,7 +3876,28 @@
         "icon": "⚠",
         "colour": "errors",
         "dynamic": null,
-        "entry": []
+        "entry": [
+          {
+            "block": "error.try",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "error.throw",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "error.message",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "error.rethrow",
+            "label": null,
+            "preset": null
+          }
+        ]
       }
     ]
   },

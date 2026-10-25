@@ -39,8 +39,10 @@ pub(super) enum Subject {
     RandomLow,
     /// The upper bound of `random integer`.
     RandomHigh,
-    /// Any other part, by a phrase that starts a sentence ("An item of
-    /// `scores`"), and whether the value is stored (W2's collection blocks).
+    /// Any other part of one of W2's blocks, by a phrase that starts a
+    /// sentence about it ("An item of `scores`", "The position in 'letter
+    /// of'"), and whether the value is stored (an item of a list is; a
+    /// position, like a count, is not).
     Phrase {
         /// The phrase.
         text: String,

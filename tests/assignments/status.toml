@@ -11,7 +11,7 @@
 # How to turn an assignment green: tests/assignments/README.md.
 
 [assignments]
-temperature_table = "pending"
+temperature_table = "green"
 grade_average = "pending"
 word_count = "pending"
 student_records = "pending"
@@ -20,4 +20,4 @@ palindrome = "pending"
 dice_statistics = "pending"
 guessing_game = "green"
 matrix_sum = "green"
-input_validation = "pending"
+input_validation = "green"

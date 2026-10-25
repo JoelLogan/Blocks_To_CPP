@@ -231,12 +231,19 @@ fn a_parked_block_with_nothing_chosen_yet_is_only_a_warning() {
     let mut seen = 0;
     for def in b2c_catalog::core_catalog().blocks.values() {
         // One `B2C-E0430` at each name or reference field, in catalog
-        // order (*for each key value* has three).
+        // order (*for each key value* has three); a repeated field (w2.md
+        // §2.1) is reported at its first part.
         let missing: Vec<String> = def
             .field
             .iter()
             .filter(|f| matches!(f.kind, FieldKind::SymbolDecl | FieldKind::SymbolRef))
-            .map(|field| format!("B2C-E0430 {}", field.name))
+            .map(|field| {
+                if field.repeat.is_some() {
+                    format!("B2C-E0430 {}0", field.name)
+                } else {
+                    format!("B2C-E0430 {}", field.name)
+                }
+            })
             .collect();
         if missing.is_empty() {
             continue;

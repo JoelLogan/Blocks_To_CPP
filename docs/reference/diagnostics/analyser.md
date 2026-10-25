@@ -328,16 +328,18 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** a block changes something that may not change: a constant, the
   counter of a `for` loop, the item of a `for each` loop in *read-only* mode
-  (or the key or value of `for each key, value`), or a read-only function
-  input. A `for each` loop in *editable* mode changes the items of its
-  collection, so the collection must be a variable that may change.
+  (or the key or value of `for each key, value`), a read-only function input,
+  or the error a `catch` part caught. A `for each` loop in *editable* mode
+  changes the items of its collection, so the collection must be a variable
+  that may change.
 * **Example:** `set [max] to (10)` where `max` was created with *const* ticked.
 * **Message:** "`max` was created as a constant, so it can't be changed.
   Untick 'const' in its 'create' block if it needs to change." / "`score` is
   read-only: the loop that creates it gives it each item in turn, and the
   blocks inside can't change it. In a 'for each' loop over a list, choose
   'copy' to change a copy of each item, or 'editable' to change the items
-  themselves."
+  themselves." / for a caught error, "`e` is the error caught by a 'catch'
+  part, so it can't be changed. Create a variable for a value that changes."
 * **How to fix:** untick *const*, use another variable, or change the input's
   or the loop's mode.
 
@@ -863,16 +865,21 @@ Codes by area:
 
 * **Severity:** warning
 * **Meaning:** a `catch` part of a `try` block catches an error that an
-  earlier part already catches: the same error, or one derived from it
-  (*any error* catches them all). The earlier part always gets it first.
-  g++ warns about this too, so a project with it does not build when
-  warnings are errors.
-* **Example:** `catch [any error] as [e]` followed by `catch [out-of-range
-  error] as [e]`.
-* **Message:** for example "This part never runs: the part before catches
-  every out-of-range error. Move it up."
+  earlier part already catches: the same error, or every error
+  (`std::exception`, the base of the other three). The earlier part always
+  gets it first. g++ warns about this too, so a project with it does not
+  build when warnings are errors. The invalid argument, out-of-range and
+  runtime errors do not hide one another, so their parts may come in any
+  order.
+* **Example:** `catch [std::exception] as [e]` followed by `catch
+  [std::out_of_range] as [e]`.
+* **Message:** after a part for every error, "This part never runs: a part
+  before it catches every error, so every out-of-range error too. Move this
+  part above that one."; after a part for the same error, "This part never
+  runs: a part before it already catches every out-of-range error. Remove one
+  of the two, or choose another error here."
 * **How to fix:** move the more specific part up, before the part that
-  catches more.
+  catches every error, or remove the second part for the same error.
 
 ## B2C-W0508 Switch misses values of its enum
 
