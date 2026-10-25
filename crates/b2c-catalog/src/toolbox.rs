@@ -666,7 +666,7 @@ block = "math.number"
         assert_eq!(problems[1].entry, None);
         // Then every block that cannot be reached (math.number's category
         // was left out, but the toolbox still names it).
-        assert_eq!(problems.len(), 2 + 31 - 2);
+        assert_eq!(problems.len(), 2 + core().blocks.len() - 2);
 
         let (toolbox, problems) = build("[[category]]\nid = \"nope\"\n", core());
         assert_eq!(toolbox, Toolbox::default());

@@ -33,7 +33,8 @@ describe('the generated outputs', () => {
     const defined = generated.BLOCK_DEFS.map((block) => block.id);
     expect(new Set(defined).size).toBe(defined.length);
     expect(defined).toEqual(ids);
-    expect(ids).toHaveLength(31);
+    // M2's 31 blocks at least; W2's packages add theirs (docs/plans/m3-contracts/w2.md §3.2).
+    expect(ids.length).toBeGreaterThanOrEqual(31);
   });
 
   it('hold exactly the generator model, with mutually compatible types', async () => {

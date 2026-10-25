@@ -117,7 +117,7 @@ fn categories_follow_the_spec_order_with_names_and_icons() {
 #[test]
 fn every_catalog_block_is_reachable_exactly_as_planned() {
     let catalog_ids: BTreeSet<&str> = core_catalog().blocks.keys().map(String::as_str).collect();
-    assert_eq!(catalog_ids.len(), 31);
+    assert_eq!(catalog_ids.len(), common::block_ids_on_disk().len());
     assert_eq!(toolbox().reachable_blocks(), catalog_ids);
     // Variable and call blocks come only through the dynamic categories.
     let static_ids: BTreeSet<&str> = toolbox()

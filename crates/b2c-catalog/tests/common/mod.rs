@@ -3,8 +3,10 @@
 #![allow(dead_code, reason = "each test crate uses a different subset")]
 #![allow(clippy::needless_pass_by_value, reason = "helpers take json! values")]
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use b2c_catalog::CatalogFile;
 use b2c_ir::Diagnostic;
 use b2c_model::Document;
 use serde_json::{Value, json};
@@ -12,6 +14,24 @@ use serde_json::{Value, json};
 /// The repository root.
 pub(crate) fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+/// Every block ID in the TOML files of `catalog/core/` on disk. The tests
+/// count the catalog's blocks with it, so a package that adds blocks to its
+/// own file (`docs/plans/m3-contracts/w2.md` §3.2) need not change a count
+/// here.
+pub(crate) fn block_ids_on_disk() -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
+    let dir = repo_root().join("catalog/core");
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        assert_eq!(path.extension().unwrap(), "toml", "{}", path.display());
+        let file: CatalogFile = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        for block in file.block {
+            assert!(ids.insert(block.id.clone()), "{} is defined twice", block.id);
+        }
+    }
+    ids
 }
 
 /// A project whose `main` holds `body` and whose canvas also holds `extra`

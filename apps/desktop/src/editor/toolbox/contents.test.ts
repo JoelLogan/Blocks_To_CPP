@@ -921,7 +921,8 @@ describe('coverage of the catalog', () => {
       ...typesOf(variablesContents(ctx)),
       ...typesOf(functionsContents(ctx)),
     ];
-    expect(BLOCK_DEFS).toHaveLength(31);
+    // M2's 31 blocks at least; W2's packages add theirs (docs/plans/m3-contracts/w2.md §3.2).
+    expect(BLOCK_DEFS.length).toBeGreaterThanOrEqual(31);
     expect([...new Set(reached)].sort()).toEqual(BLOCK_DEFS.map((def) => def.id).sort());
     const count = (type: string) => reached.filter((reachedType) => reachedType === type).length;
     for (const def of BLOCK_DEFS) {

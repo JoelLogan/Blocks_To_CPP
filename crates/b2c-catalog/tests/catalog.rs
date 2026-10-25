@@ -14,26 +14,9 @@ mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use b2c_catalog::{
-    BlockDef, CATALOG_VERSION, CatalogFile, ExtraKind, FieldDefault, FieldKind, Shape, core_catalog,
-};
-use common::{project, resolve};
+use b2c_catalog::{BlockDef, CATALOG_VERSION, ExtraKind, FieldDefault, FieldKind, Shape, core_catalog};
+use common::{block_ids_on_disk, project, resolve};
 use serde_json::{Map, Value, json};
-
-/// Every block ID in the TOML files on disk.
-fn ids_on_disk() -> BTreeSet<String> {
-    let mut ids = BTreeSet::new();
-    let dir = common::repo_root().join("catalog/core");
-    for entry in std::fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
-        assert_eq!(path.extension().unwrap(), "toml", "{}", path.display());
-        let file: CatalogFile = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        for block in file.block {
-            assert!(ids.insert(block.id.clone()), "{} is defined twice", block.id);
-        }
-    }
-    ids
-}
 
 #[test]
 fn the_core_catalog_loads_every_block_on_disk() {
@@ -41,8 +24,9 @@ fn the_core_catalog_loads_every_block_on_disk() {
     assert_eq!(catalog.version, CATALOG_VERSION);
     let embedded: BTreeSet<String> = catalog.blocks.keys().cloned().collect();
     // A TOML file added to catalog/core/ but not embedded fails here.
-    assert_eq!(embedded, ids_on_disk());
-    assert_eq!(embedded.len(), 31);
+    assert_eq!(embedded, block_ids_on_disk());
+    // M2's 31 blocks at least; W2's packages add theirs to their own files.
+    assert!(embedded.len() >= 31, "{}", embedded.len());
     assert!(std::ptr::eq(catalog, core_catalog()), "the catalog is cached");
 }
 
