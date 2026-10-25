@@ -24,6 +24,10 @@ points that no longer hold; the rest stays in force.
 | [0013](0013-additive-format-keys.md) | Additive format keys raise `formatVersion` only when they are used | Accepted |
 | [0014](0014-extending-blockly.md) | Extending Blockly: allowed seams and patched dependencies | Accepted |
 | [0015](0015-block-upgrades-on-load.md) | Block upgrades run on load; before 1.0 a retired block type is replaced at once | Accepted |
+| [0016](0016-preview-in-a-web-worker.md) | The live preview runs in a Web Worker | Proposed |
+| [0017](0017-open-type-representation.md) | An open type representation, typed catalog signatures and per-block headers | Proposed |
+| [0018](0018-slot-typing.md) | Typed slots: what each input expects, worked out in one pass | Proposed |
+| [0019](0019-multi-module-header-split.md) | Multi-module projects: shared definitions and one header per module | Proposed |
 
 A *Proposed* ADR records a decision that work already proceeds on, with
 points the owner still confirms or reverses (each marked *owner to confirm*).

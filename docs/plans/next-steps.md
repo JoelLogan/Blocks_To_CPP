@@ -1,9 +1,9 @@
 # Next steps: closing M2, then M3
 
-Status: plan, 2026-10-15; updated 2026-10-24 with the owner's decisions. Part 1 is what remains of M2, almost all of it the
-owner's. Part 2 is a draft plan for M3, for review before any M3 work
-starts. Nothing in Part 2 begins until M2 is closed (or the owner says
-otherwise).
+Status: plan, 2026-10-15; updated 2026-10-24 with the owner's decisions,
+and on 2026-10-25: M2 is merged into `main`, and M3 has begun at the
+owner's word (Part 2, §3.6). Part 1 is what remains of M2, almost all of
+it the owner's. Part 2 is the plan for M3.
 
 ## 1. Where M2 stands
 
@@ -28,6 +28,14 @@ Windows) and the weekly run green. The last additions:
   native dialogs fixed (TM-M2-9), and an intermittent E2E failure of the
   `selection` flow root-caused (the test read the toolbox in three calls a
   rebuild could fall between) and fixed.
+- on 2026-10-24: pull request #30 merged the branch into `main`
+  (`22c2532`), with every check green, and the owner made `main` the default
+  branch and let the `github-pages` environment deploy from it. Dependabot,
+  the scheduled Nightly, Weekly and Scorecard runs and the Pages deploy now
+  follow `main`. The Actions cache is kept per branch, so Nightly's
+  benchmark history and the kept fuzz corpora start again on `main`: the
+  first five complete scheduled runs only report, the gates apply from the
+  sixth, and the fuzzers grow their corpora again from the seeds.
 
 ## 2. Closing M2: the owner's part
 
@@ -57,7 +65,7 @@ approved, with every other open Dependabot update and the security findings;
 done (`44fe162`..`3cf40a2`), with a new finding fixed (TM-M2-9, below). The
 pull request (10): at the owner's word, `main` was made at `43a1389` (the
 last commit of M1), and the pull request goes from `ccr-01f82d9b-v70u20` into
-it. 11, D20: Nightly
+it; merged on 2026-10-24 (#30). 11, D20: Nightly
 was red from 2026-10-16 to 2026-10-24 (the `selection` race, fixed; one
 Windows driver race; and the benchmark gate's history); decided (A) with (D)
 and done (`f4c152c`, `9fea7cc`, `30e3549`): every complete scheduled run
@@ -195,7 +203,7 @@ pushed.
 | W2   | Language blocks needed by the assignments: collections, strings, structs, enums, files, errors, random, time, globals, constants, math, conversions, `switch`, `do … while`, overloads, default arguments, M3-8                                          | W1                             | XL   |
 | W3   | Projects, build, run: multi-module (L18), CMake/Make export, project settings dialog, run options, close-input, S7-5, S7-7, S7-8                                                                                                                         | W1 (L18 ADR)                   | L    |
 | W4   | Editor: type picker, Quick Insert, toolbox search, expert mode, quick fixes, _Copy bug report_, feature gating, friendly g++ messages, Appearance (F-1, U14d)                                                                                            | W1, W2 for the blocks it shows | L    |
-| W5   | Performance and platform: Worker preview (M3-1), M3-5, M3-4, M3-9, the Blockly 13 upgrade if W0 cleared it, M3-6, M3-7, RD-15                                                                                                                            | W2 (stable `update()`)         | L    |
+| W5   | Performance and platform: Worker preview (M3-1), M3-5, M3-4, M3-9, M3-6, M3-7, RD-15 (the Blockly 13 upgrade moved after M3: W0's spike was not clean)                                                                                                                            | W2 (stable `update()`)         | L    |
 | W6   | Close-out: every M3-D1 assignment green, threat-model review, toolchain cells, docs and the getting-started guide, usability protocol for M3, a green nightly and weekly                                                                                 | all                            | M    |
 
 W2 and W3 can run in parallel once W1's contracts land; W4 starts with the
@@ -223,7 +231,21 @@ pieces that need no new blocks (expert mode, toolbox search, Appearance).
 
 1. Ask the M3-D questions in one batch, with the recommendations above.
 2. Write the M3-D1 assignments as example projects whose golden tests fail
-   until W2, so progress is visible as tests turning green.
-3. Draft the four ADRs (Worker, types, slots, headers) for review.
-4. Run the Blockly 13 / xterm 6.1 spike and record it.
+   until W2, so progress is visible as tests turning green. Done:
+   [`tests/assignments/`](../../tests/assignments/README.md) holds the ten,
+   each with a reference solution that checks its run data until its block
+   project passes (1 of 10 green: the guessing game).
+3. Draft the four ADRs (Worker, types, slots, headers) for review. Drafted
+   on 2026-10-25 as Proposed: [ADR-0016](../adr/0016-preview-in-a-web-worker.md)
+   (the preview in a Web Worker), [ADR-0017](../adr/0017-open-type-representation.md)
+   (the open type representation, with L17 and L8),
+   [ADR-0018](../adr/0018-slot-typing.md) (slot typing) and
+   [ADR-0019](../adr/0019-multi-module-header-split.md) (multi-module
+   projects and the header split); each lists the points for the owner to
+   confirm.
+4. Run the Blockly 13 / xterm 6.1 spike and record it. Done:
+   [the record](m3-spike-blockly13.md). Not clean (4 of 105 Linux E2E
+   tests and 79 unit tests fail, the slots render differently, dragging is
+   16.7 % slower), so under M3-D7 the upgrade waits until after M3; xterm
+   6.1 has no stable release yet.
 5. Then W1, with the plan's must-have and if-time sets agreed.
