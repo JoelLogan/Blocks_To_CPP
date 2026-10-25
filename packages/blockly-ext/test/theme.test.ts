@@ -35,10 +35,7 @@ function blockColours(mode: ThemeMode): [string, string][] {
 
 describe('category styles', () => {
   it('cover every toolbox category, in toolbox order, with the toolbox icons', () => {
-    // The toolbox may not have W2's categories yet (catalog/toolbox.toml gains them with the
-    // catalog's schema, w2.md §2.1); the ones it has come in this order.
-    const toolboxIds = TOOLBOX.map((category) => category.id);
-    expect(CATEGORY_IDS.filter((id) => toolboxIds.includes(id))).toEqual(toolboxIds);
+    expect(CATEGORY_IDS).toEqual(TOOLBOX.map((category) => category.id));
     for (const category of TOOLBOX) {
       expect(CATEGORY_STYLE[category.id].icon).toBe(category.icon);
     }

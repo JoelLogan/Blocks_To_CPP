@@ -149,6 +149,11 @@ describe('the generated outputs', () => {
       'loops',
       'io',
       'functions',
+      // Milestone M3's second wave (docs/plans/m3-contracts/w2.md §2.1).
+      'collections',
+      'types',
+      'files',
+      'errors',
     ]);
   });
 });

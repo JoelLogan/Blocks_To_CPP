@@ -1737,6 +1737,17 @@ export const TOOLBOX: readonly ToolboxCategoryJson[] = [
       { block: 'func.return', label: null, preset: null },
     ],
   },
+  {
+    id: 'collections',
+    name: 'Collections',
+    icon: '☰',
+    colour: 'collections',
+    dynamic: null,
+    entries: [],
+  },
+  { id: 'types', name: 'Types', icon: '◆', colour: 'types', dynamic: null, entries: [] },
+  { id: 'files', name: 'Files', icon: '🗎', colour: 'files', dynamic: null, entries: [] },
+  { id: 'errors', name: 'Errors', icon: '⚠', colour: 'errors', dynamic: null, entries: [] },
 ];
 
 /** The type table (docs/plans/m3-contracts/types.md §1.1): the names a type field may hold. */

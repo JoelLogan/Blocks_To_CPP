@@ -110,6 +110,11 @@ fn categories_follow_the_spec_order_with_names_and_icons() {
                 "functions",
                 Some(DynamicCategory::Functions)
             ),
+            // Milestone M3's second wave (w2.md §2.1).
+            (Category::Collections, "Collections", "☰", "collections", None),
+            (Category::Types, "Types", "◆", "types", None),
+            (Category::Files, "Files", "🗎", "files", None),
+            (Category::Errors, "Errors", "⚠", "errors", None),
         ]
     );
 }

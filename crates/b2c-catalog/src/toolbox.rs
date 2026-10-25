@@ -587,11 +587,10 @@ mod tests {
         let (toolbox, problems) = build(CORE_TOOLBOX, core());
         assert_eq!(problems, []);
         assert_eq!(toolbox, Toolbox::load(CORE_TOOLBOX, core()).unwrap());
-        // The categories in toolbox order: M2's nine, then those of W2's
-        // blocks as the toolbox gains them (w2.md §2.1).
+        // Every category in toolbox order, W2's four too while they are
+        // still empty (w2.md §2.1).
         let ids: Vec<Category> = toolbox.categories.iter().map(|c| c.id).collect();
-        assert_eq!(ids[..9], Category::ALL[..9]);
-        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "{ids:?}");
+        assert_eq!(ids, Category::ALL);
         let reachable = toolbox.reachable_blocks();
         let all: BTreeSet<&str> = core().blocks.keys().map(String::as_str).collect();
         assert_eq!(reachable, all);

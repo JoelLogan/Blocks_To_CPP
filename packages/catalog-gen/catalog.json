@@ -1691,6 +1691,38 @@
             "preset": null
           }
         ]
+      },
+      {
+        "id": "collections",
+        "name": "Collections",
+        "icon": "☰",
+        "colour": "collections",
+        "dynamic": null,
+        "entry": []
+      },
+      {
+        "id": "types",
+        "name": "Types",
+        "icon": "◆",
+        "colour": "types",
+        "dynamic": null,
+        "entry": []
+      },
+      {
+        "id": "files",
+        "name": "Files",
+        "icon": "🗎",
+        "colour": "files",
+        "dynamic": null,
+        "entry": []
+      },
+      {
+        "id": "errors",
+        "name": "Errors",
+        "icon": "⚠",
+        "colour": "errors",
+        "dynamic": null,
+        "entry": []
       }
     ]
   },
