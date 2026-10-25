@@ -20,6 +20,8 @@
 import { beginSlotGesture, currentSlotCache, setCurrentSlotCache } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
+import { timed } from '../../lib/timing';
+
 /** The most places offered; a larger canvas offers the first ones in reading order. */
 export const MAX_DROP_TARGETS = 5000;
 
@@ -181,7 +183,8 @@ type Step =
  *
  * The listing is one gesture of typed slots (docs/plans/m3-contracts/slots.md §4.3): it types each
  * parent once, in a cache that counts the moved block, still connected while the places are
- * listed, as missing from its current input.
+ * listed, as missing from its current input. The listing is the User Timing span
+ * `b2c:keyboard-targets` (src/lib/timing.ts), which a benchmark reads.
  */
 export function dropTargets(
   block: Blockly.BlockSvg,
@@ -190,7 +193,7 @@ export function dropTargets(
   const outer = currentSlotCache();
   beginSlotGesture({ absent: block });
   try {
-    return listTargets(block, limit);
+    return timed('b2c:keyboard-targets', () => listTargets(block, limit));
   } finally {
     setCurrentSlotCache(outer);
   }

@@ -9,8 +9,10 @@ use b2c_lang::Analysis;
 use common::*;
 use serde_json::json;
 
+/// The program without the items' catalog headers (as in M2, which had
+/// none; `typed.rs` tests the headers), then the diagnostics.
 fn snapshot(a: &Analysis) -> String {
-    let program = serde_json::to_string_pretty(&a.program).expect("serialise");
+    let program = serde_json::to_string_pretty(&without_headers(a)).expect("serialise");
     format!("{program}\n--- diagnostics ---\n{}\n", render_all(a))
 }
 

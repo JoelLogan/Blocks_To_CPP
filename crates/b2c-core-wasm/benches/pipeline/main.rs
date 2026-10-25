@@ -7,7 +7,7 @@
 //!
 //! * `load`: [`b2c_model::load`] on the canonical file bytes;
 //! * `resolve`: [`b2c_catalog::resolve`] against the core catalog;
-//! * `analyze`: [`b2c_lang::analyze`];
+//! * `analyze`: [`b2c_lang::analyze_with`] with the catalog's signatures;
 //! * `generate`: [`b2c_codegen::generate_with_report`] with the options a
 //!   build uses;
 //! * `preview`: the four together, as the editor's WebAssembly core runs
@@ -90,7 +90,8 @@ fn bench_pipeline(criterion: &mut Criterion, text: &str) -> Result<(), String> {
     let loaded = b2c_model::load(bytes).map_err(|_| "the document no longer loads")?;
     let catalog = b2c_catalog::core_catalog();
     let (resolved, _) = b2c_catalog::resolve(&loaded, catalog);
-    let analysis = b2c_lang::analyze(&resolved);
+    let sigs = catalog.sigs();
+    let analysis = b2c_lang::analyze_with(&resolved, sigs);
     let options = codegen_options(&resolved.project.name);
     let preview_options = PreviewOptions::default();
 
@@ -103,7 +104,9 @@ fn bench_pipeline(criterion: &mut Criterion, text: &str) -> Result<(), String> {
     group.bench_function("resolve", |b| {
         b.iter(|| b2c_catalog::resolve(black_box(&loaded), catalog));
     });
-    group.bench_function("analyze", |b| b.iter(|| b2c_lang::analyze(black_box(&resolved))));
+    group.bench_function("analyze", |b| {
+        b.iter(|| b2c_lang::analyze_with(black_box(&resolved), sigs));
+    });
     group.bench_function("generate", |b| {
         b.iter(|| b2c_codegen::generate_with_report(black_box(&analysis.program), &options));
     });

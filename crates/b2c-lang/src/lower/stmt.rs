@@ -158,28 +158,19 @@ impl Lowerer<'_> {
         self.push_pending(&decl.name, &decl.sym, kind);
         self.record_input(&block.id, "VALUE");
         let subject = Subject::Variable(decl.name.clone());
-        let (init, typed_ty) = if let Some(sig) = self.typed_sig(&block.block_type) {
-            // `where = { T = "value" }`, and `T` on `TYPE`, `NAME` and
-            // `VALUE` (slots.md §5): the type or the value binds `T`.
-            let mut typed = self.typed(sig);
-            typed.field("TYPE", declared.clone().map_or(PartType::Auto, PartType::Known));
-            self.typed_input(block, &mut typed, "VALUE", false);
-            let typing = self.type_parts(block, &mut typed, None);
-            let init = typed.take("VALUE");
-            self.pop_pending();
-            self.report_field_fit(block, &typed, &typing, "TYPE");
-            if let Some(value) = &init {
-                self.report_fit(&typed, &typing, "VALUE", value, &subject);
-            }
-            (init, typing.declares.get("NAME").cloned())
-        } else {
-            let init = self.optional_input(block, "VALUE");
-            self.pop_pending();
-            if let (Some(ty), Some(value)) = (&declared, &init) {
-                self.check_conversion(value, ty, &subject);
-            }
-            (init, None)
-        };
+        // `where = { T = "value" }`, and `T` on `TYPE`, `NAME` and `VALUE`
+        // (slots.md §5): the type or the value binds `T`.
+        let mut typed = self.typed(self.block_sig(&block.block_type));
+        typed.field("TYPE", declared.clone().map_or(PartType::Auto, PartType::Known));
+        self.typed_input(block, &mut typed, "VALUE", false);
+        let typing = self.type_parts(block, &mut typed, None);
+        let init = typed.take("VALUE");
+        self.pop_pending();
+        self.report_field_fit(block, &typed, &typing, "TYPE");
+        if let Some(value) = &init {
+            self.report_fit(&typed, &typing, "VALUE", value, &subject);
+        }
+        let typed_ty = typing.declares.get("NAME").cloned();
         let ty = match (declared, &init) {
             (Some(ty), _) => typed_ty.unwrap_or(ty),
             (None, Some(value)) => typed_ty.unwrap_or_else(|| value.ty.clone()),
@@ -244,21 +235,11 @@ impl Lowerer<'_> {
 
     fn set(&mut self, block: &Block) -> Option<StmtKind> {
         let target = self.target(block);
-        let Some(sig) = self.typed_sig(&block.block_type) else {
-            let value = self.required_input(block, "VALUE");
-            let (sym, ty) = target?;
-            // `std::string` can be assigned a single `char` (`s = 'a';`),
-            // although it can't be initialised with one, so this is fine for
-            // `set`.
-            if let Some(ty) = ty.filter(|ty| !(*ty == Type::String && value.ty == Type::Char)) {
-                self.check_conversion(&value, &ty, &Subject::Variable(self.raw_name(&sym)));
-            }
-            return Some(StmtKind::Assign { target: sym, value });
-        };
         // `where = { T = "value" }`, `T` on `VAR` and `VALUE`, and `assign`
         // on `VALUE` (slots.md §5): the variable binds `T`, the value is
-        // assigned, so a `char` also fits a `std::string`.
-        let mut typed = self.typed(sig);
+        // assigned, so a `char` also fits a `std::string` (`s = 'a';`
+        // compiles although `std::string s = 'a';` does not).
+        let mut typed = self.typed(self.block_sig(&block.block_type));
         let var = match &target {
             None => PartType::Empty,
             Some((_, ty)) => PartType::Known(ty.clone().unwrap_or(Type::Error)),
@@ -539,17 +520,10 @@ impl Lowerer<'_> {
     fn return_value(&mut self, block: &Block) -> StmtKind {
         // `VALUE` is `result` (slots.md §5): it expects what the function
         // gives back, `int` in `main`, and anything for a `void` function.
-        let typed_value = self.typed_sig(&block.block_type).map(|sig| {
-            let mut typed = self.typed(sig);
-            self.typed_input(block, &mut typed, "VALUE", false);
-            let typing = self.type_parts(block, &mut typed, None);
-            let value = typed.take("VALUE");
-            (typed, typing, value)
-        });
-        let (value, typing) = match typed_value {
-            Some((typed, typing, value)) => (value, Some((typed, typing))),
-            None => (self.optional_input(block, "VALUE"), None),
-        };
+        let mut typed = self.typed(self.block_sig(&block.block_type));
+        self.typed_input(block, &mut typed, "VALUE", false);
+        let typing = self.type_parts(block, &mut typed, None);
+        let value = typed.take("VALUE");
         let location = self.loc(&block.id, Part::Whole);
         match (self.item.clone(), &value) {
             (ItemCtx::Main, None) => self.diags.error(
@@ -558,10 +532,9 @@ impl Lowerer<'_> {
                 "In 'when program starts', 'return' needs an exit code (0 means success). You can also use \
                  'stop program with exit code'.",
             ),
-            (ItemCtx::Main, Some(value)) => match &typing {
-                Some((typed, typing)) => self.report_fit(typed, typing, "VALUE", value, &Subject::ExitCode),
-                None => self.check_conversion(value, &Type::Int, &Subject::ExitCode),
-            },
+            (ItemCtx::Main, Some(value)) => {
+                self.report_fit(&typed, &typing, "VALUE", value, &Subject::ExitCode);
+            }
             (
                 ItemCtx::Function {
                     name,
@@ -592,12 +565,9 @@ impl Lowerer<'_> {
                 );
                 self.diags.error(codes::RETURN_NEEDS_VALUE, location, message);
             }
-            (ItemCtx::Function { name, ret }, Some(value)) => match &typing {
-                Some((typed, typing)) => {
-                    self.report_fit(typed, typing, "VALUE", value, &Subject::Result(name));
-                }
-                None => self.check_conversion(value, &ret, &Subject::Result(name)),
-            },
+            (ItemCtx::Function { name, .. }, Some(value)) => {
+                self.report_fit(&typed, &typing, "VALUE", value, &Subject::Result(name));
+            }
         }
         StmtKind::Return { value }
     }

@@ -10,12 +10,14 @@
 
 mod common;
 
+use std::collections::BTreeSet;
+
 use b2c_codegen::{CodegenOptions, generate};
 use b2c_ir::diag::{DiagSource, Part, Severity};
 use b2c_ir::source_map::FileKind;
-use b2c_lang::{Analysis, analyze, analyze_with};
+use b2c_lang::{Analysis, analyze_with};
 use b2c_model::Document;
-use common::{doc, render_all};
+use common::{analyze, doc, render_all};
 use proptest::prelude::*;
 use serde_json::{Value, json};
 
@@ -363,10 +365,13 @@ fn has_unchecked_blocks(document: &Document) -> bool {
 fn check_invariants(document: &Document, a: &Analysis) -> Result<(), TestCaseError> {
     // Deterministic.
     prop_assert_eq!(&analyze(document), a);
-    // M2's blocks give the same through their patterns (ADR-0018).
-    let typed = analyze_with(document, &common::m2_sigs());
-    prop_assert_eq!(render_all(&typed), render_all(a));
-    prop_assert!(&typed == a, "M2's patterns change the analysis");
+    // The catalog's patterns of M2's blocks are slots.md §5's (ADR-0018).
+    let contract = analyze_with(document, &common::m2_sigs());
+    prop_assert_eq!(render_all(&contract), render_all(a));
+    prop_assert!(
+        common::without_headers(a) == contract.program,
+        "the catalog's signatures and slots.md §5's give different programs"
+    );
     // Every diagnostic is ours, and slot ranges are well formed.
     for d in &a.diagnostics {
         prop_assert_eq!(d.source, DiagSource::Analyser);
@@ -698,4 +703,95 @@ proptest! {
             compiles(&a)?;
         }
     }
+}
+
+// --- M2's documents through the catalog's table ------------------------------------
+//
+// types.md §8.3: the analyser's M2 rules of `create`, `set`, call arguments and
+// `return` went once the catalog's patterns covered them (slots.md §5). The
+// record below was written by those M2 rules, an analysis without signatures,
+// in the commit before they went, and the catalog's table gave every document
+// in it the same diagnostics, program, block types and slot types then. It
+// still must.
+
+/// A document of the record, with what the catalog check said of it.
+struct Recorded {
+    name: String,
+    document: Document,
+    catalog: Vec<b2c_ir::Diagnostic>,
+    unchecked: BTreeSet<b2c_ir::BlockId>,
+}
+
+/// How many generated programs the record holds.
+const RECORD_CASES: usize = 400;
+
+/// The documents of the record: generated programs (both generators, from a
+/// fixed seed), every example and every file of the malicious-project suite
+/// that loads, completed by the catalog as the build completes them.
+fn record_documents() -> Vec<Recorded> {
+    use proptest::strategy::ValueTree;
+    use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
+
+    let mut documents = Vec::new();
+    let rng = TestRng::from_seed(RngAlgorithm::ChaCha, &[0x5e; 32]);
+    let mut runner = TestRunner::new_with_rng(Config::default(), rng);
+    let strategy = prop_oneof![program(), typed_program()];
+    for case in 0..RECORD_CASES {
+        let tree = strategy.new_tree(&mut runner).expect("a generated program");
+        documents.push(Recorded {
+            name: format!("generated {case}"),
+            document: build(tree.current()),
+            catalog: Vec::new(),
+            unchecked: BTreeSet::new(),
+        });
+    }
+    for folder in ["examples", "tests/security/projects"] {
+        for path in common::project_files(folder) {
+            let bytes = std::fs::read(&path).expect("project file");
+            let Ok(loaded) = b2c_model::load(&bytes) else {
+                continue;
+            };
+            let report = b2c_catalog::resolve_report(&loaded, b2c_catalog::core_catalog());
+            documents.push(Recorded {
+                name: format!("{folder}/{}", common::file_name(&path)),
+                document: report.document,
+                catalog: report.diagnostics,
+                unchecked: report.unchecked,
+            });
+        }
+    }
+    documents
+}
+
+/// One line for an analysis: its diagnostic codes, then a hash (64-bit
+/// FNV-1a) of its rendered diagnostics, its program without the items'
+/// catalog headers (which only signatures fill), its block types and its slot
+/// types.
+fn record_line(a: &Analysis) -> String {
+    let program = common::without_headers(a);
+    let text = format!(
+        "{}\n{}\n{:?}\n{:?}",
+        render_all(a),
+        serde_json::to_string(&program).expect("serialise"),
+        a.block_types(),
+        a.slot_types()
+    );
+    let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    });
+    let codes: Vec<&str> = a.diagnostics.iter().map(|d| d.code.0.as_str()).collect();
+    format!("{hash:016x} [{}]", codes.join(" "))
+}
+
+#[test]
+fn m2_documents_analyse_with_the_catalog_table_as_with_m2_rules() {
+    let lines: Vec<String> = record_documents()
+        .into_iter()
+        .map(|recorded| {
+            let analysis =
+                common::analyze_checked(&recorded.document, &recorded.catalog, &recorded.unchecked);
+            format!("{}: {}", recorded.name, record_line(&analysis))
+        })
+        .collect();
+    insta::assert_snapshot!(lines.join("\n"));
 }

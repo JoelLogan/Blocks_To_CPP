@@ -561,7 +561,7 @@ mod tests {
             ]}}]
         }))
         .expect("document");
-        let analysis = crate::analyze(&document);
+        let analysis = crate::analyze_with(&document, b2c_catalog::core_catalog().sigs());
         // One trail node per declaration and one position per block (each
         // `create` also records its VALUE input, with one hidden name).
         assert_eq!(analysis.index.trail.len(), 2 * count);
@@ -602,7 +602,7 @@ mod tests {
         }))
         .expect("document");
         let blocks = 2 * count + 4;
-        let analysis = crate::analyze(&document);
+        let analysis = crate::analyze_with(&document, b2c_catalog::core_catalog().sigs());
         // `kept` declares one name, and hides it in its own starting value.
         assert_eq!(analysis.index.trail.len(), 2);
         assert_eq!(analysis.index.blocks.len(), blocks);

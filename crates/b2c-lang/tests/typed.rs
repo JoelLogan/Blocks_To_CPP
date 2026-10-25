@@ -3,7 +3,8 @@
 //! of library types (comparisons, arithmetic, `B2C-E0313`, `B2C-E0314`),
 //! typed slots (`value_block`'s place, `B2C-E0315`, the four steps, slot
 //! types, unchecked blocks) and the catalog headers of items, with
-//! hand-built signature tables (the catalog fills its own in package 2).
+//! hand-built signature tables (the catalog's own is held to slots.md §5's
+//! patterns by `common::analyse`).
 
 // Test code: unwrap/expect/panic and printing to stderr are fine here.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::print_stderr)]
@@ -359,7 +360,7 @@ fn join_with_id(id: &str, items: Vec<Value>) -> Value {
 #[test]
 fn m2_patterns_go_through_type_block() {
     // With `assign` taken off `set`'s value, a `char` no longer fits a text
-    // variable: the patterns decide, not the M2 rule.
+    // variable: the patterns decide.
     let mut sigs = m2_sigs();
     let mut set_sig = sigs.get("var.set").unwrap().clone();
     set_sig.inputs.get_mut("VALUE").unwrap().assign = false;
@@ -599,6 +600,6 @@ fn item_headers_come_from_the_blocks_lowered_into_them() {
     // A body-only header never reaches `decl`; an option not chosen adds nothing.
     assert_eq!(headers(index("noisy")), (vec!["<string>"], vec!["<iostream>"]));
     // Without signatures, no headers.
-    let plain = run(vec![main(vec![print(vec![num("1")])])]);
+    let plain = analyze_with(&doc(vec![main(vec![print(vec![num("1")])])]), &SigTable::empty());
     assert!(plain.program.modules[0].items[0].headers.is_empty());
 }

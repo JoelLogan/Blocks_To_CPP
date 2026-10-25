@@ -13,11 +13,15 @@
 //!    ([`Lowerer::report_fit`], which goes through `check_conversion`), so
 //!    M2's blocks keep their wording.
 //!
-//! A block without such a signature keeps its M2 rules. Variables are local
-//! to one block: between blocks, a value's type flows up to its parent and
-//! an expected type flows down into a place-typed block only.
+//! M2's `create`, `set`, calls and `return` have such signatures in the
+//! catalog (slots.md §5) and are always lowered this way: one the table does
+//! not know is typed by [`NO_SIGNATURE`], which checks nothing of its values'
+//! types. Any other block without such a signature keeps its own rules.
+//! Variables are local to one block: between blocks, a value's type flows up
+//! to its parent and an expected type flows down into a place-typed block
+//! only.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::diag::Part;
 use b2c_ir::ids::SymbolId;
@@ -162,14 +166,40 @@ pub(super) fn member_type(symbols: &SymbolTable, owner: &Type, sym: &SymbolId) -
         .flatten()
 }
 
+/// The signature of a block that is always typed but that the table does not
+/// know (a table other than the catalog's): no variables and no patterns, so
+/// its parts are lowered and read as usual and nothing of their types is
+/// checked.
+static NO_SIGNATURE: BlockSig = BlockSig {
+    vars: BTreeMap::new(),
+    output: None,
+    fields: BTreeMap::new(),
+    inputs: BTreeMap::new(),
+    order: Vec::new(),
+    place_var: None,
+    members: BTreeMap::new(),
+    symbol_refs: BTreeSet::new(),
+    symbol_decls: BTreeSet::new(),
+    repeated: BTreeSet::new(),
+    headers: Vec::new(),
+    option_headers: BTreeMap::new(),
+};
+
 impl<'d> Lowerer<'d> {
     /// The signature that types the parts of a block of this type (ADR-0018),
     /// if it has one with patterns: a pattern on a part, a `members` field or
-    /// a place-typed output. Every other block keeps its M2 rules.
+    /// a place-typed output. Every other block keeps its own rules.
     pub(super) fn typed_sig(&self, block_type: &str) -> Option<&'d BlockSig> {
         let sigs: &'d b2c_ir::sig::SigTable = self.sigs;
         sigs.get(block_type)
             .filter(|sig| !sig.order.is_empty() || !sig.members.is_empty() || sig.place_var.is_some())
+    }
+
+    /// The signature of a block that is always typed (M2's `create`, `set`,
+    /// calls and `return`): its own, or [`NO_SIGNATURE`] when the table has
+    /// none with patterns.
+    pub(super) fn block_sig(&self, block_type: &str) -> &'d BlockSig {
+        self.typed_sig(block_type).unwrap_or(&NO_SIGNATURE)
     }
 
     /// Whether a block takes its type from its place: its signature's output

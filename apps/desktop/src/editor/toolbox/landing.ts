@@ -9,7 +9,11 @@
  *   another one in its menu while it was in the toolbox) keeps that variable when it is
  *   visible there, and otherwise takes the first variable visible there that it fits, by name; the
  *   value of *set*, while it is still the start value of the old variable's type, becomes the new
- *   type's (./reshape.ts).
+ *   type's (./reshape.ts);
+ * - a value input still empty gets the start value of the type expected there, when its place
+ *   makes that type known (typed slots, docs/plans/m3-contracts/slots.md §6: an empty `return`
+ *   gets `0` in `main`, `0.0` in a function returning `double`; ./reshape.ts
+ *   `landingStartValues`).
  *
  * This runs when the pointer drag that took the block out ends (`B2cBlockDragger.onDragEnd`,
  * ../sync/drag.ts), inside the drag's Blockly event group, so one Undo removes the block together
@@ -30,7 +34,7 @@ import * as Blockly from 'blockly/core';
 import { fitsGenericBlock } from './contents';
 import { firstFreeName, type DefaultNameKind } from './names';
 import type { B2cBlockInfo } from './presets';
-import { reshapeSetValue } from './reshape';
+import { landingStartValues, reshapeSetValue } from './reshape';
 import { symbolsAtConnection, takenNamesAtDrop, type SymbolSource } from './scope';
 
 /** The kind of default name each block that declares something gets. */
@@ -101,9 +105,9 @@ export function noteCreatedFromToolbox(original: Blockly.Block, created: Blockly
     (original.getFieldValue(field) as unknown) === presetRef(info.fields?.[field])
       ? field
       : null;
-  if (defaults.length > 0 || retarget !== null) {
-    ORIGINS.set(created, { group: Blockly.Events.getGroup(), defaults, retarget });
-  }
+  // Every block from the toolbox is noted: its empty value inputs may get start values where it
+  // lands, even when it declares nothing and refers to nothing.
+  ORIGINS.set(created, { group: Blockly.Events.getGroup(), defaults, retarget });
 }
 
 /** The type of symbol `symId` in the latest analysis, or `null` when it does not know it. */
@@ -193,5 +197,8 @@ export function settleDroppedBlock(
   }
   if (origin.retarget !== null) {
     retarget(workspace, block, origin.retarget, source);
+  }
+  for (const change of landingStartValues(block)) {
+    Blockly.Events.fire(change);
   }
 }

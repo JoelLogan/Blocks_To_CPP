@@ -35,14 +35,15 @@ fuzz_target!(|data: &[u8]| {
     let Ok(loaded) = b2c_model::load(data) else {
         return;
     };
-    let (document, resolve_diagnostics) = b2c_catalog::resolve(&loaded, b2c_catalog::core_catalog());
+    let catalog = b2c_catalog::core_catalog();
+    let (document, resolve_diagnostics) = b2c_catalog::resolve(&loaded, catalog);
     // A build stops when resolving fails, but the live preview (spec 06 §6.1)
     // analyses and generates the completed document anyway, so that path
     // must be just as safe.
     let resolved = !b2c_ir::has_errors(&resolve_diagnostics);
-    let analysis = b2c_lang::analyze(&document);
+    let analysis = b2c_lang::analyze_with(&document, catalog.sigs());
     assert!(
-        b2c_lang::analyze(&document) == analysis,
+        b2c_lang::analyze_with(&document, catalog.sigs()) == analysis,
         "analysing the same document twice gave different results"
     );
     let accepted = resolved && !b2c_ir::has_errors(&analysis.diagnostics);

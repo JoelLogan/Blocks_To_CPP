@@ -22,6 +22,9 @@
  * - `b2c:select`: the selection handler, which puts the selected block in the store, with what
  *   the store's subscribers do at once.
  * - `b2c:code-panel`: the code panel taking new code, diagnostics or a highlight.
+ * - `b2c:keyboard-targets`: listing the places a block moved with the keyboard can go
+ *   (src/editor/keyboard/targets.ts `dropTargets`), each free value input typed with typed slots'
+ *   rule (ADR-0018); the `webview.keyboard-list-1000.ms` benchmark reads it.
  *
  * A span that ends with an error or is abandoned (a preview run overtaken by a newer one) is not
  * recorded. Recording is cheap enough to leave on: two clock reads and one entry per span, and
@@ -40,6 +43,7 @@ export const TIMING_SPANS = [
   'b2c:toolbox-refresh',
   'b2c:select',
   'b2c:code-panel',
+  'b2c:keyboard-targets',
 ] as const;
 
 /** The name of a span. */

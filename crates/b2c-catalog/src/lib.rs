@@ -41,7 +41,7 @@
 //! * An absent name or reference field (nothing chosen yet in the editor) is
 //!   left to the analyser (ADR-0012), and [`resolve_report`] lists the blocks
 //!   kept without a check, so the analyser does not repeat the catalog's
-//!   problems (`b2c_lang::analyze_checked`).
+//!   problems (`b2c_lang::analyze_checked_with`).
 //!
 //! Added in milestone M3 (ADR-0017 §5, ADR-0018,
 //! `docs/plans/m3-contracts/types.md` §4):
@@ -251,7 +251,7 @@ pub struct ResolveReport {
     /// definition is broken (`B2C-E0620`; only the first such block carries
     /// the diagnostic). The blocks nested in them were checked. The analyser
     /// does not report the fields and inputs of these blocks again
-    /// (`b2c_lang::analyze_checked`).
+    /// (`b2c_lang::analyze_checked_with`).
     pub unchecked: BTreeSet<BlockId>,
 }
 

@@ -8,7 +8,6 @@
 mod common;
 
 use b2c_ir::diag::Part;
-use b2c_lang::analyze_checked;
 use b2c_model::Document;
 use common::*;
 use serde_json::{Value, json};
@@ -113,13 +112,13 @@ fn blocks_the_catalog_keeps_unchecked_are_not_reported_again() {
     assert_eq!(checked(&doc(vec![main(vec![old])])), ["B2C-E0603 p1"]);
 }
 
-/// Without catalog findings, `analyze_checked` is `analyze`.
+/// Without catalog findings, `analyze_checked_with` is `analyze_with`.
 #[test]
 fn without_catalog_findings_nothing_is_left_out() {
     let mut no_var = ask("x", None);
     no_var.as_object_mut().unwrap().remove("fields");
     let document = doc(vec![main(vec![no_var])]);
-    let plain = b2c_lang::analyze(&document);
+    let plain = analyze(&document);
     let checked = analyze_checked(&document, &[], &std::collections::BTreeSet::new());
     assert_eq!(plain.diagnostics, checked.diagnostics);
     assert_eq!(plain.program, checked.program);

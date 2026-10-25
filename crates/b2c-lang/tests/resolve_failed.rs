@@ -17,7 +17,7 @@ mod common;
 use std::collections::BTreeSet;
 
 use b2c_ir::{BlockId, SymbolId};
-use b2c_lang::{Analysis, analyze};
+use b2c_lang::Analysis;
 use b2c_model::Document;
 use common::*;
 use serde_json::{Value, json};

@@ -120,8 +120,9 @@ pub(crate) fn file<'a>(preview: &'a Value, path: &str) -> Option<&'a str> {
 /// analyse), for comparing with the facade.
 pub(crate) fn native_analysis(text: &str) -> b2c_lang::Analysis {
     let loaded = b2c_model::load(text.as_bytes()).unwrap();
-    let (document, _) = b2c_catalog::resolve(&loaded, b2c_catalog::core_catalog());
-    b2c_lang::analyze(&document)
+    let catalog = b2c_catalog::core_catalog();
+    let (document, _) = b2c_catalog::resolve(&loaded, catalog);
+    b2c_lang::analyze_with(&document, catalog.sigs())
 }
 
 /// An example by file stem.
@@ -143,8 +144,9 @@ pub(crate) fn names(symbols: &Value) -> Vec<String> {
 /// resolve, analyse, generate), for comparing with the facade.
 pub(crate) fn native_generation(text: &str, indent_width: u8) -> b2c_codegen::Generation {
     let loaded = b2c_model::load(text.as_bytes()).unwrap();
-    let (document, _) = b2c_catalog::resolve(&loaded, b2c_catalog::core_catalog());
-    let analysis = b2c_lang::analyze(&document);
+    let catalog = b2c_catalog::core_catalog();
+    let (document, _) = b2c_catalog::resolve(&loaded, catalog);
+    let analysis = b2c_lang::analyze_with(&document, catalog.sigs());
     let options = b2c_codegen::CodegenOptions {
         project_name: document.project.name.clone(),
         app_version: String::from(env!("CARGO_PKG_VERSION")),

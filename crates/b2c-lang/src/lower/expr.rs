@@ -559,15 +559,9 @@ impl Lowerer<'_> {
         let sig = self.resolve_function(callee, &location);
         let count = access::extra_count(block, "argCount", 0, 0);
         let origin = self.origin(&block.id, Part::Whole);
-        let Some(block_sig) = self.typed_sig(&block.block_type) else {
-            let args = (0..count)
-                .map(|i| self.required_input(block, &format!("ARG{i}")))
-                .collect();
-            return Some(self.finish_call(callee, sig, args, origin, as_statement, None));
-        };
         // `ARG` is `param:FUNC` (slots.md §5): each argument expects its
         // parameter's type.
-        let mut typed = self.typed(block_sig);
+        let mut typed = self.typed(self.block_sig(&block.block_type));
         let ret = sig.as_ref().map_or(Type::Error, |sig| sig.ret.clone());
         typed.field("FUNC", PartType::Known(ret));
         if let Some(sig) = &sig {
@@ -590,9 +584,11 @@ impl Lowerer<'_> {
     }
 
     /// Checks a call's arguments against the signature and builds the node.
-    /// With the call block's typing, each argument for a parameter that is
-    /// not editable is checked by its fit (ADR-0018), which gives what the
-    /// M2 rule gave.
+    /// An argument for a parameter that is not editable is checked by its fit
+    /// in the call block's typing (ADR-0018), or, for a call in an expression
+    /// slot (`typing` is `None`; slots get places with W4's slot editor), by
+    /// its conversion to the parameter's type. An argument for an editable
+    /// parameter keeps its own rule (slots.md §3).
     fn finish_call(
         &mut self,
         callee: &SymbolId,
@@ -627,15 +623,17 @@ impl Lowerer<'_> {
                 .error(codes::ARGUMENT_COUNT, origin.location(), message);
         }
         for (i, (arg, param)) in args.iter().zip(&sig.params).enumerate() {
+            if param.mode == PassMode::Editable {
+                self.check_editable_argument(arg, param, &sig.name);
+                continue;
+            }
+            let subject = Subject::Argument {
+                function: sig.name.clone(),
+                param: param.name.clone(),
+            };
             match typing {
-                Some((typed, typing)) if param.mode != PassMode::Editable => {
-                    let subject = Subject::Argument {
-                        function: sig.name.clone(),
-                        param: param.name.clone(),
-                    };
-                    self.report_fit(typed, typing, &format!("ARG{i}"), arg, &subject);
-                }
-                _ => self.check_argument(arg, param, &sig.name),
+                Some((typed, typing)) => self.report_fit(typed, typing, &format!("ARG{i}"), arg, &subject),
+                None => self.check_conversion(arg, &param.ty, &subject),
             }
         }
         let ty = if !as_statement && sig.ret == Type::Void {
@@ -659,15 +657,9 @@ impl Lowerer<'_> {
         }
     }
 
-    fn check_argument(&mut self, arg: &Expr, param: &ParamSig, function: &str) {
-        if param.mode != PassMode::Editable {
-            let subject = Subject::Argument {
-                function: function.to_owned(),
-                param: param.name.clone(),
-            };
-            self.check_conversion(arg, &param.ty, &subject);
-            return;
-        }
+    /// An argument for an editable (`&`) parameter: a changeable variable of
+    /// exactly the parameter's type (`B2C-E0307`).
+    fn check_editable_argument(&mut self, arg: &Expr, param: &ParamSig, function: &str) {
         if arg.ty == Type::Error || param.ty == Type::Error {
             return;
         }
