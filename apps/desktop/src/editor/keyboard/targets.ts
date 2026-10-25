@@ -17,6 +17,7 @@
  * the block is left out, so a move never knocks other blocks loose. The canvas is walked iteratively with a
  * bound, never recursively.
  */
+import { beginSlotGesture, currentSlotCache, setCurrentSlotCache } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
 /** The most places offered; a larger canvas offers the first ones in reading order. */
@@ -177,11 +178,25 @@ type Step =
  * before what is inside it, a statement list's top before its statements, and "after" a block
  * after what is inside it), ending with the canvas. The block's current place is included, so the
  * keyboard can start there.
+ *
+ * The listing is one gesture of typed slots (docs/plans/m3-contracts/slots.md §4.3): it types each
+ * parent once, in a cache that counts the moved block, still connected while the places are
+ * listed, as missing from its current input.
  */
 export function dropTargets(
   block: Blockly.BlockSvg,
   limit: number = MAX_DROP_TARGETS,
 ): DropTarget[] {
+  const outer = currentSlotCache();
+  beginSlotGesture({ absent: block });
+  try {
+    return listTargets(block, limit);
+  } finally {
+    setCurrentSlotCache(outer);
+  }
+}
+
+function listTargets(block: Blockly.BlockSvg, limit: number): DropTarget[] {
   const workspace = block.workspace;
   const from = movingConnection(block);
   const targets: DropTarget[] = [];

@@ -404,6 +404,35 @@ describe('symbol references', () => {
     expect((call.getField('FUNC') as B2cSymbolRefField).menuOptions()).toEqual([['f', 's_f']]);
   });
 
+  it('list only the symbols whose type binds the field’s pattern, and keep a chosen one', () => {
+    const workspace = headlessWorkspace();
+    const block = workspace.newBlock('var.set');
+    fakeSymbols(
+      {
+        [block.id]: [
+          symbol('s_count', 'count'),
+          symbol('s_list', 'marks', 'variable', { type: { 'std::vector': 'int' } }),
+          symbol('s_in', 'input', 'variable', { type: 'std::ifstream' }),
+          symbol('s_odd', 'odd', 'variable', { type: 'not a type' }),
+        ],
+      },
+      { s_in: 'input' },
+    );
+    const field = block.getField('VAR');
+    if (!(field instanceof B2cSymbolRefField)) {
+      throw new Error('no VAR field');
+    }
+    // `set` binds T (class value) from its variable: a file stream is not a value; a type the
+    // editor cannot read is listed.
+    expect(field.menuOptions()).toEqual([
+      ['count', 's_count'],
+      ['marks', 's_list'],
+      ['odd', 's_odd'],
+    ]);
+    field.setRef({ ref: 's_in' });
+    expect(field.menuOptions()[0]).toEqual(['input', 's_in']);
+  });
+
   it('list only what each block may change there (03 §3.6)', () => {
     const scope: readonly SymbolInfo[] = [
       symbol('s_n', 'n'),

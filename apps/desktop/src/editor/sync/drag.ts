@@ -51,7 +51,13 @@
  * and one Undo takes back the drop and all of that. A block the keyboard adds from the toolbox is
  * settled the same way when it is put down ({@link settleBlockDrop}, `keyboard/mover.ts`).
  */
-import { completeWrap, previewedWrap, type WrapPlace } from '@blocks2cpp/blockly-ext';
+import {
+  beginSlotGesture,
+  completeWrap,
+  endSlotGesture,
+  previewedWrap,
+  type WrapPlace,
+} from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
 import './drag.css';
@@ -371,6 +377,9 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
    */
   override onDragStart(e: PointerEvent): void {
     if (this.draggable instanceof Blockly.BlockSvg) {
+      // Typed slots' cache for this drag (slots.md §4.3): made when Blockly starts the drag, which
+      // takes the block out of its input first; dropped when the drag ends.
+      beginSlotGesture();
       const block = this.draggable;
       block.setDragStrategy(this.dragStrategyFor(block));
       const listener = LISTENERS.get(this.workspace);
@@ -414,6 +423,7 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
       }
       this.settleDrop(group);
     } finally {
+      endSlotGesture();
       const listener = LISTENERS.get(this.workspace);
       if (listener !== undefined) {
         tell(() => {

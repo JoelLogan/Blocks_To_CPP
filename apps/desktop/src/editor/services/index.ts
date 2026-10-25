@@ -50,7 +50,7 @@ export function createSymbolServices(deps: {
       names,
       workspace: deps.workspace,
     }),
-    types: createTypeOracle({ preview: deps.preview }),
+    types: createTypeOracle({ preview: deps.preview, core: deps.core, workspace: deps.workspace }),
   };
 }
 

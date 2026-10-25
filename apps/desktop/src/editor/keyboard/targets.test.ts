@@ -158,6 +158,29 @@ describe('the places of a value', () => {
     expect(isStillValid(text, place)).toBe(false);
   });
 
+  it('type the slots of M2’s typed blocks: no text into create int’s value (ADR-0018)', () => {
+    const { block, workspace } = open();
+    const intoDecl = (target: DropTarget) =>
+      target.kind === 'value' && target.owner === block('decl') && target.input === 'VALUE';
+    expect(dropTargets(newBlock(workspace, 'math.number')).some(intoDecl)).toBe(true);
+    expect(dropTargets(newBlock(workspace, 'text.literal')).some(intoDecl)).toBe(false);
+  });
+
+  it('type a value as missing from its own input while its places are listed', () => {
+    const { block, workspace } = open();
+    // A text value already in create int’s value: listing its places types the input without it,
+    // so its own place is refused like any other (it is a type error the analyser reports).
+    const text = newBlock(workspace, 'text.literal');
+    const value = block('decl').getInput('VALUE')?.connection;
+    if (value === null || value === undefined) {
+      throw new Error('no VALUE');
+    }
+    value.connect(text.outputConnection);
+    const places = dropTargets(text);
+    expect(places.some((target) => isCurrentPlace(text, target))).toBe(false);
+    expect(places.at(-1)?.kind).toBe('canvas');
+  });
+
   it('are the places a pointer drag can connect to', () => {
     const { block, workspace } = open();
     const checker = workspace.connectionChecker;

@@ -15,9 +15,13 @@ import {
   B2cSymbolRefField,
   EXPR_SHADOW_TYPE,
   EXPR_VALUE_FIELD,
+  NO_FACTS,
   parseType,
+  type StaticType,
   type SymbolProvider,
+  type TypeFactsTs,
   type TypeOracle,
+  type UserTypeTs,
 } from '@blocks2cpp/blockly-ext';
 import type * as Blockly from 'blockly/core';
 
@@ -145,13 +149,56 @@ function referencedSymbol(block: Blockly.Block): string | null {
   return field instanceof B2cSymbolRefField ? (field.getRef()?.ref ?? null) : null;
 }
 
+/** The facts about user types a preview gives, built once per preview. */
+const FACTS = new WeakMap<PreviewResult, TypeFactsTs>();
+
 /**
- * Static types for the connection checker: the type the latest analysis gave the block, or, for a
- * reference the analysis has not seen yet (a block just dragged out), the type of the symbol it
- * names, read from the wire's term (`parseType`, docs/plans/m3-contracts/types.md §3.1). `null`
- * ("not known", also for anything that does not read as a type) always connects.
+ * What the type rules need to know about the user types of a preview (`b2c_ir::TypeFacts`): each
+ * struct and enum symbol, with the effective *comparable* and *printable* flags the analysis
+ * worked out. One object per preview, so a gesture's cache sees a new preview by its facts.
  */
-export function createTypeOracle(deps: Pick<SymbolServiceDeps, 'preview'>): TypeOracle {
+function factsOf(preview: PreviewResult): TypeFactsTs {
+  let facts = FACTS.get(preview);
+  if (facts === undefined) {
+    const users = new Map<string, UserTypeTs>();
+    for (const symbol of preview.symbols) {
+      if (symbol.kind === 'struct') {
+        users.set(symbol.id, {
+          name: symbol.name,
+          kind: 'struct',
+          comparable: symbol.comparable,
+          printable: symbol.printable,
+        });
+      } else if (symbol.kind === 'enum') {
+        users.set(symbol.id, {
+          name: symbol.name,
+          kind: 'enum',
+          comparable: true,
+          printable: true,
+        });
+      }
+    }
+    facts = { userType: (id) => users.get(id) ?? null };
+    FACTS.set(preview, facts);
+  }
+  return facts;
+}
+
+/** What the type oracle reads: the latest preview, and for scope questions the core and canvas. */
+export type TypeOracleDeps = Pick<SymbolServiceDeps, 'preview'> &
+  Partial<Pick<SymbolServiceDeps, 'core' | 'workspace'>>;
+
+/**
+ * Static types for the connection checker and typed slots (ADR-0018, slots.md §4.3): the type the
+ * latest analysis gave the block, or, for a reference the analysis has not seen yet (a block just
+ * dragged out), the type of the symbol it names, read from the wire's term (`parseType`,
+ * docs/plans/m3-contracts/types.md §3.1); an expression slot's type (`slotTypes`); a symbol;
+ * whether a symbol is visible at a block of the canvas (the editor's scope resolver over the
+ * scope query, as the menus list them); and the facts about user types. `null` ("not known",
+ * also for anything that does not read as a type) always connects.
+ */
+export function createTypeOracle(deps: TypeOracleDeps): TypeOracle {
+  const scope = analysisScope({ core: deps.core ?? (() => null), preview: deps.preview });
   return {
     outputTypeOf(block) {
       const preview = deps.preview();
@@ -171,6 +218,30 @@ export function createTypeOracle(deps: Pick<SymbolServiceDeps, 'preview'>): Type
         return null;
       }
       return parseType(symbol.kind === 'function' ? symbol.returns : symbol.type);
+    },
+    slotTypeOf(blockId, input): StaticType | null {
+      const slots = deps.preview()?.slotTypes;
+      if (slots === undefined || !Object.hasOwn(slots, blockId)) {
+        return null;
+      }
+      const inputs = slots[blockId];
+      return inputs !== undefined && Object.hasOwn(inputs, input) ? parseType(inputs[input]) : null;
+    },
+    symbol(symId) {
+      const preview = deps.preview();
+      return preview === null ? null : (symbolsById(preview).get(symId) ?? null);
+    },
+    visibleAt(symId, block, input) {
+      const workspace = deps.workspace;
+      if (workspace === undefined || block.workspace !== workspace || deps.preview() === null) {
+        // A block in the toolbox's flyout is in no place of the program.
+        return null;
+      }
+      return symbolsAtBlock(workspace, block, input, scope).some((symbol) => symbol.id === symId);
+    },
+    facts() {
+      const preview = deps.preview();
+      return preview === null ? NO_FACTS : factsOf(preview);
     },
   };
 }

@@ -1,0 +1,310 @@
+/**
+ * Typed slots on the canvas (ADR-0018, docs/plans/m3-contracts/slots.md §4.3, §9): the parts read
+ * from real blocks, `candidateFit`, the per-gesture cache, and the connection checker's type rule
+ * on M2's typed inputs (`create`, `set`, call arguments, `return`).
+ */
+import * as Blockly from 'blockly/core';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { registerB2cBlocks } from '../blocks/register';
+import { B2cSymbolRefField } from '../fields/symbol-ref';
+import { installIdGenerator } from '../ids';
+import { hasB2cMutator } from '../blocks/mutators';
+import { registerB2cMutators } from '../mutators/register';
+import type { SymbolInfo, TypeOracle } from '../services';
+import { NO_FACTS, parseType, prim, type TypeJson } from '../types/static-type';
+import { B2C_CHECKER_NAME } from './checker';
+import { setCheckerTypeOracle } from './oracle';
+import {
+  blockTyping,
+  candidateFit,
+  currentSlotCache,
+  setCurrentSlotCache,
+  SlotCache,
+  valueType,
+} from './slots';
+
+let workspace: Blockly.WorkspaceSvg;
+let symbols: Map<string, SymbolInfo>;
+let hidden: Set<string>;
+let oracle: TypeOracle;
+
+function sym(id: string, type: TypeJson, extra: Partial<SymbolInfo> = {}): SymbolInfo {
+  return {
+    id,
+    name: id,
+    kind: 'variable',
+    type,
+    module: 'mod_main',
+    declBlock: 'blk_decl',
+    ...extra,
+  };
+}
+
+beforeAll(() => {
+  installIdGenerator();
+  registerB2cMutators();
+  registerB2cBlocks();
+});
+
+beforeEach(() => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  workspace = Blockly.inject(host, {
+    renderer: 'zelos',
+    sounds: false,
+    plugins: { connectionChecker: B2C_CHECKER_NAME },
+  });
+  symbols = new Map(
+    [
+      sym('s_score', 'int'),
+      sym('s_name', 'std::string'),
+      sym('s_price', 'double'),
+      sym('s_p', 'int', { kind: 'parameter', mode: 'copy' }),
+      sym('s_f', 'double', { kind: 'function', params: ['s_p'], returns: 'double' }),
+    ].map((symbol) => [symbol.id, symbol]),
+  );
+  hidden = new Set();
+  oracle = {
+    outputTypeOf: () => null,
+    symbol: (id) => symbols.get(id) ?? null,
+    visibleAt: (id) => (symbols.has(id) ? !hidden.has(id) : null),
+    facts: () => NO_FACTS,
+  };
+  setCheckerTypeOracle(oracle);
+});
+
+afterEach(() => {
+  setCheckerTypeOracle(null);
+  setCurrentSlotCache(null);
+  workspace.dispose();
+  document.body.replaceChildren();
+});
+
+function block(type: string): Blockly.BlockSvg {
+  const created = workspace.newBlock(type);
+  created.initSvg();
+  created.render();
+  return created;
+}
+
+function number(text: string): Blockly.BlockSvg {
+  const created = block('math.number');
+  created.setFieldValue(text, 'VALUE');
+  return created;
+}
+
+function refer(target: Blockly.Block, field: string, id: string): void {
+  const ref = target.getField(field);
+  if (!(ref instanceof B2cSymbolRefField)) {
+    throw new Error(`${field} is not a reference field`);
+  }
+  ref.setRef({ ref: id });
+}
+
+/** Whether `child` may be dragged into `parent`'s input `name` (the checker's drag rule). */
+function canDrop(child: Blockly.Block, parent: Blockly.Block, name: string): boolean {
+  const to = parent.getInput(name)?.connection;
+  const from = child.outputConnection;
+  if (to === null || to === undefined || from === null) {
+    throw new Error(`no connection for ${name}`);
+  }
+  return workspace.connectionChecker.canConnect(from, to, true, 1e9);
+}
+
+/** Puts `child` into `parent`'s input `name`. */
+function plug(parent: Blockly.Block, name: string, child: Blockly.Block): void {
+  const to = parent.getInput(name)?.connection;
+  if (to === null || to === undefined || child.outputConnection === null) {
+    throw new Error(`no connection for ${name}`);
+  }
+  to.connect(child.outputConnection);
+}
+
+/** Puts `statement` at the top of `parent`'s statement list `name`. */
+function nest(parent: Blockly.Block, name: string, statement: Blockly.Block): void {
+  const to = parent.getInput(name)?.connection;
+  if (to === null || to === undefined || statement.previousConnection === null) {
+    throw new Error(`no statement list ${name}`);
+  }
+  to.connect(statement.previousConnection);
+}
+
+describe('the type rule on M2’s typed inputs', () => {
+  it('refuses text in create [int]’s value, and follows the type field', () => {
+    const create = block('var.declare');
+    create.setFieldValue('int', 'TYPE');
+    expect(canDrop(block('text.literal'), create, 'VALUE')).toBe(false);
+    // int into double and double into int (a narrowing the analyser warns about) are allowed.
+    expect(canDrop(number('1.5'), create, 'VALUE')).toBe(true);
+    create.setFieldValue('double', 'TYPE');
+    expect(canDrop(number('1'), create, 'VALUE')).toBe(true);
+    expect(canDrop(block('text.literal'), create, 'VALUE')).toBe(false);
+    create.setFieldValue('std::string', 'TYPE');
+    expect(canDrop(block('text.literal'), create, 'VALUE')).toBe(true);
+    expect(canDrop(number('1'), create, 'VALUE')).toBe(false);
+    // `auto` takes its type from the value; a type the editor does not know checks nothing.
+    create.setFieldValue('auto', 'TYPE');
+    expect(canDrop(block('text.literal'), create, 'VALUE')).toBe(true);
+    create.setFieldValue('long', 'TYPE');
+    expect(canDrop(block('text.literal'), create, 'VALUE')).toBe(true);
+  });
+
+  it('refuses text in set [score] of an int variable, and allows a char in set of text', () => {
+    const set = block('var.set');
+    refer(set, 'VAR', 's_score');
+    expect(canDrop(block('text.literal'), set, 'VALUE')).toBe(false);
+    expect(canDrop(number('2.5'), set, 'VALUE')).toBe(true);
+    refer(set, 'VAR', 's_name');
+    expect(canDrop(block('text.char'), set, 'VALUE')).toBe(true);
+    expect(canDrop(number('1'), set, 'VALUE')).toBe(false);
+  });
+
+  it('accepts anything in set of a variable out of scope, unknown, or not chosen', () => {
+    const set = block('var.set');
+    refer(set, 'VAR', 's_score');
+    hidden.add('s_score');
+    expect(canDrop(block('text.literal'), set, 'VALUE')).toBe(true);
+    refer(set, 'VAR', 's_gone');
+    expect(canDrop(block('text.literal'), set, 'VALUE')).toBe(true);
+    const empty = block('var.set');
+    expect(canDrop(block('text.literal'), empty, 'VALUE')).toBe(true);
+  });
+
+  it('refuses text in an int parameter’s argument', () => {
+    const call = block('func.call');
+    refer(call, 'FUNC', 's_f');
+    if (!hasB2cMutator(call)) {
+      throw new Error('func.call has no mutator');
+    }
+    call.b2cSetExtra({ argCount: 1 });
+    expect(canDrop(block('text.literal'), call, 'ARG0')).toBe(false);
+    expect(canDrop(number('3'), call, 'ARG0')).toBe(true);
+  });
+
+  it('refuses text in return of a function that returns double, and in main', () => {
+    const define = block('func.define');
+    define.setFieldValue('double', 'RETURNS');
+    const inFunction = block('func.return');
+    nest(define, 'BODY', inFunction);
+    expect(canDrop(block('text.literal'), inFunction, 'VALUE')).toBe(false);
+    expect(canDrop(number('1'), inFunction, 'VALUE')).toBe(true);
+    const main = block('program.main');
+    const inMain = block('func.return');
+    nest(main, 'BODY', inMain);
+    expect(canDrop(block('text.literal'), inMain, 'VALUE')).toBe(false);
+    // Loose on the canvas, the result is not known.
+    expect(canDrop(block('text.literal'), block('func.return'), 'VALUE')).toBe(true);
+  });
+
+  it('connects unknown and erroneous values, and asks the oracle for references', () => {
+    const create = block('var.declare');
+    create.setFieldValue('int', 'TYPE');
+    const getter = block('var.get');
+    expect(canDrop(getter, create, 'VALUE')).toBe(true);
+    const types = new Map<Blockly.Block, TypeJson>([[getter, 'std::string']]);
+    setCheckerTypeOracle({
+      ...oracle,
+      outputTypeOf: (asked) => parseType(types.get(asked) ?? null),
+    });
+    expect(canDrop(getter, create, 'VALUE')).toBe(false);
+    types.set(getter, 'error');
+    expect(canDrop(getter, create, 'VALUE')).toBe(true);
+    types.set(getter, { 'std::vector': 'int' });
+    expect(canDrop(getter, create, 'VALUE')).toBe(false);
+  });
+
+  it('keeps M2’s class rule for inputs without a pattern', () => {
+    const repeat = block('control.repeat');
+    expect(canDrop(block('text.literal'), repeat, 'TIMES')).toBe(false);
+    expect(canDrop(number('2.5'), repeat, 'TIMES')).toBe(true);
+    const ask = block('io.ask');
+    expect(canDrop(number('1'), ask, 'PROMPT')).toBe(false);
+  });
+
+  it('never throws into Blockly when the oracle fails', () => {
+    const set = block('var.set');
+    refer(set, 'VAR', 's_score');
+    setCheckerTypeOracle({
+      outputTypeOf: () => {
+        throw new Error('stale');
+      },
+      symbol: () => {
+        throw new Error('stale');
+      },
+      visibleAt: () => {
+        throw new Error('stale');
+      },
+      facts: () => {
+        throw new Error('stale');
+      },
+    });
+    expect(canDrop(block('text.literal'), set, 'VALUE')).toBe(true);
+  });
+});
+
+describe('typings and candidates', () => {
+  it('type a block from its parts on the canvas', () => {
+    const create = block('var.declare');
+    create.setFieldValue('double', 'TYPE');
+    plug(create, 'VALUE', number('1'));
+    const typing = blockTyping(create, oracle);
+    expect(typing?.inputs.get('VALUE')).toEqual({ expects: prim('double'), fit: 'widening' });
+    expect(typing?.declares.get('NAME')).toEqual(prim('double'));
+    expect(valueType(number('1.5'), oracle)).toEqual(prim('double'));
+    expect(valueType(block('text.join'), oracle)).toEqual(prim('std::string'));
+    expect(blockTyping(block('control.forever'), oracle)?.inputs.size).toBe(0);
+  });
+
+  it('type a candidate in place, whatever the input holds now', () => {
+    const create = block('var.declare');
+    create.setFieldValue('int', 'TYPE');
+    plug(create, 'VALUE', block('text.literal'));
+    expect(candidateFit(create, 'VALUE', number('1'), oracle)).toBe('same');
+    expect(candidateFit(create, 'VALUE', block('text.literal'), oracle)).toBe('invalid');
+    // An `auto` create binds its type from the candidate itself.
+    create.setFieldValue('auto', 'TYPE');
+    expect(candidateFit(create, 'VALUE', block('text.literal'), oracle)).toBe('same');
+  });
+
+  it('count the moved block as absent for a keyboard listing', () => {
+    const set = block('var.set');
+    refer(set, 'VAR', 's_score');
+    const moved = block('text.literal');
+    plug(set, 'VALUE', moved);
+    const cache = new SlotCache(oracle, { absent: moved });
+    expect(candidateFit(set, 'VALUE', moved, oracle, cache)).toBe('invalid');
+    expect(candidateFit(set, 'VALUE', number('7'), oracle, cache)).toBe('same');
+  });
+});
+
+describe('the per-gesture cache', () => {
+  it('types each block once per gesture and starts again with a new preview', () => {
+    const blocks = Array.from({ length: 50 }, () => {
+      const set = block('var.set');
+      refer(set, 'VAR', 's_score');
+      plug(set, 'VALUE', number('1'));
+      return set;
+    });
+    const ask = vi.fn((id: string) => symbols.get(id) ?? null);
+    let facts = { userType: () => null };
+    const counted: TypeOracle = { ...oracle, symbol: ask, facts: () => facts };
+    const cache = new SlotCache(counted);
+    setCurrentSlotCache(cache);
+    expect(currentSlotCache()).toBe(cache);
+    for (let round = 0; round < 3; round += 1) {
+      for (const set of blocks) {
+        expect(blockTyping(set, counted, currentSlotCache())?.inputs.get('VALUE')?.fit).toBe(
+          'same',
+        );
+      }
+    }
+    expect(ask).toHaveBeenCalledTimes(blocks.length);
+    // A new preview brings new facts: the cache starts again.
+    facts = { userType: () => null };
+    blockTyping(blocks[0] ?? block('var.set'), counted, cache);
+    expect(ask).toHaveBeenCalledTimes(blocks.length + 1);
+    setCurrentSlotCache(null);
+    expect(currentSlotCache()).toBeNull();
+  });
+});

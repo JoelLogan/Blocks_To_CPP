@@ -56,6 +56,12 @@ export interface SymbolInfo {
   readonly params?: readonly string[];
   /** Functions: the return type. */
   readonly returns?: TypeJson;
+  /** Structs: the field symbol IDs, in order. */
+  readonly fields?: readonly string[];
+  /** Enums: the enumerator symbol IDs, in order. */
+  readonly values?: readonly string[];
+  /** Fields and enumerators: the symbol ID of the struct or enum they belong to. */
+  readonly owner?: string;
   /**
    * The value type (a function's return type), as the wire writes it: its term (`"int"`,
    * `"std::string"`, `{"std::vector": "int"}`) or `"error"` (docs/plans/m3-contracts/types.md
@@ -95,9 +101,10 @@ export interface SymbolProvider {
  * Static types from the latest analysis, as type objects (`./types`, read from the wire's terms
  * with `parseType`).
  *
- * The four optional methods are typed slots' (ADR-0018, docs/plans/m3-contracts/slots.md §4.3);
- * they become required when the editor's oracle implements them and the connection checker types
- * slots.
+ * The four optional methods are typed slots' (ADR-0018, docs/plans/m3-contracts/slots.md §4.3):
+ * the connection checker, the reference menus and start values read them (`checker/slots.ts`).
+ * The editor's oracle answers all of them; an oracle without them (a test's) answers nothing,
+ * which types every reference and expression slot as unknown, so everything connects there.
  */
 export interface TypeOracle {
   /** The type of the value a reporter or predicate block gives, or null when unknown. */

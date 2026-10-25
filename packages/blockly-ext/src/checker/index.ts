@@ -6,6 +6,17 @@
 export { B2C_CHECKER_NAME, B2cConnectionChecker, registerB2cConnectionChecker } from './checker';
 export { conversionAllowed, staticConversion } from './conversion';
 export { setCheckerTypeOracle } from './oracle';
+export {
+  beginSlotGesture,
+  blockTyping,
+  candidateFit,
+  currentSlotCache,
+  endSlotGesture,
+  setCurrentSlotCache,
+  SlotCache,
+  startValueExpectations,
+  valueType,
+} from './slots';
 export { staticOutputType } from './output-type';
 export {
   B2C_PREVIEWER_NAME,

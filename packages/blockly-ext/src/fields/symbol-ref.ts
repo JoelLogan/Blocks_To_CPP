@@ -9,6 +9,10 @@
  * - The field always shows the current name of the symbol it refers to
  *   ({@link SymbolProvider.nameOf}), so a rename shows at once; a reference whose declaration is
  *   gone shows `missing (sym_…)`. The analyser's diagnostic (B2C-E0201–E0204) explains it.
+ * - A field with a type pattern in its block's signature (ADR-0018, slots.md §4.3) lists only the
+ *   symbols whose type binds the pattern on its own (class and shape), without looking at the
+ *   block's inputs, which are checked against the field and not the reverse. A type the editor
+ *   cannot read, or whose class membership is not known, is listed.
  * - A reference that is out of scope, or no longer of the field's kinds, stays selected and shown
  *   (first in its menu); this field never changes or drops it. (The editor's toolbox gives a
  *   *set* or *change* block just dragged from it another variable when the one it came with is
@@ -19,8 +23,17 @@
  */
 import * as Blockly from 'blockly/core';
 
+import { blockDef } from '../checker/catalog';
 import { isProjectId } from '../ids';
-import { nameOf, symbolsAt, toolboxSymbolGroups, type SymbolInfo } from '../services';
+import {
+  getEditorServices,
+  nameOf,
+  symbolsAt,
+  toolboxSymbolGroups,
+  type SymbolInfo,
+} from '../services';
+import { blockSignature, TypeEnv, type TypePattern } from '../types/pattern';
+import { NO_FACTS, parseType } from '../types/static-type';
 import { visibleInvisibles } from '../text';
 import { isSymbolRefValue, type SymbolRefValue } from './values';
 
@@ -163,6 +176,40 @@ export class B2cSymbolRefField extends Blockly.FieldDropdown {
   }
 
   /**
+   * The field's own type pattern and its block's variables, when the block's signature gives it
+   * one (not a `members` field), or `null`.
+   */
+  private typePattern(): { pattern: TypePattern; env: () => TypeEnv } | null {
+    const block = this.getSourceBlock();
+    const def = block === null ? undefined : blockDef(block.type);
+    const sig = def === undefined ? null : blockSignature(def);
+    const pattern = sig?.fields.get(this.name ?? '') ?? null;
+    if (sig === null || pattern === null || sig.members.has(this.name ?? '')) {
+      return null;
+    }
+    return { pattern, env: () => new TypeEnv(sig) };
+  }
+
+  /** Whether a symbol's type binds the field's pattern on its own (true when not known). */
+  private static fitsPattern(
+    symbol: SymbolInfo,
+    typed: { pattern: TypePattern; env: () => TypeEnv },
+  ): boolean {
+    const type = parseType(symbol.kind === 'function' ? symbol.returns : symbol.type);
+    if (type === null) {
+      return true;
+    }
+    let facts = NO_FACTS;
+    try {
+      facts = getEditorServices().types.facts?.() ?? NO_FACTS;
+    } catch {
+      // Without facts, a user type's membership is not known, and it is listed.
+    }
+    const fit = typed.env().bind(typed.pattern, { kind: 'known', type }, { field: 'F' }, facts);
+    return fit === 'fits' || fit === 'unknown';
+  }
+
+  /**
    * The menu: the matching symbols in scope (for a block in the toolbox's flyout, the module's,
    * with a separator between groups), the current reference first when it is not one of them.
    */
@@ -170,6 +217,7 @@ export class B2cSymbolRefField extends Blockly.FieldDropdown {
     const options: Blockly.MenuOption[] = [];
     const seenNames = new Map<string, number>();
     const current = this.getValue();
+    const typed = this.typePattern();
     let currentListed = false;
     for (const group of this.symbolGroups()) {
       const before = options.length;
@@ -177,7 +225,8 @@ export class B2cSymbolRefField extends Blockly.FieldDropdown {
         if (
           !isProjectId(symbol.id) ||
           typeof symbol.name !== 'string' ||
-          !symbolMatchesKinds(symbol, this.kinds)
+          !symbolMatchesKinds(symbol, this.kinds) ||
+          (typed !== null && !B2cSymbolRefField.fitsPattern(symbol, typed))
         ) {
           continue;
         }

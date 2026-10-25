@@ -1,5 +1,10 @@
-import type { TypeJson } from '@blocks2cpp/b2c-core-wasm';
-import { readExprShadow, type TokenJson } from '@blocks2cpp/blockly-ext';
+import type { SymbolInfo, TypeJson } from '@blocks2cpp/b2c-core-wasm';
+import {
+  NO_FACTS,
+  readExprShadow,
+  setCheckerTypeOracle,
+  type TokenJson,
+} from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -12,7 +17,12 @@ import {
   reshapeSetValue,
   reshapeStartValue,
 } from './reshape';
-import { disposeTestWorkspaces, headlessWorkspace, setUpToolboxBlocks } from './testing';
+import {
+  disposeTestWorkspaces,
+  headlessWorkspace,
+  setUpToolboxBlocks,
+  symbolFixture,
+} from './testing';
 import { startTokensForDeclaredType, startTokensForStaticType } from './values';
 
 beforeAll(() => {
@@ -274,5 +284,122 @@ describe('reshaping the value of set when its variable changes', () => {
     const change = reshapeSetValue(block, 'int', 'char');
     expect(change).toBeInstanceOf(StartValueChange);
     expect(startValue(block)).toEqual([{ chr: 'a' }]);
+  });
+});
+
+describe('start values follow every input’s expected type (slots.md §6)', () => {
+  /** Two functions: `f(int)` and `g(double)`, and `h` taking a list of int. */
+  const SYMBOLS: readonly SymbolInfo[] = [
+    symbolFixture('s_f', 'f', { kind: 'function', params: ['s_a'], returns: 'void', type: 'void' }),
+    symbolFixture('s_g', 'g', { kind: 'function', params: ['s_b'], returns: 'void', type: 'void' }),
+    symbolFixture('s_h', 'h', { kind: 'function', params: ['s_c'], returns: 'void', type: 'void' }),
+    symbolFixture('s_a', 'a', { kind: 'parameter', mode: 'copy', type: 'int' }),
+    symbolFixture('s_b', 'b', { kind: 'parameter', mode: 'copy', type: 'double' }),
+    symbolFixture('s_c', 'c', { kind: 'parameter', mode: 'copy', type: { 'std::vector': 'int' } }),
+  ];
+
+  afterEach(() => {
+    setCheckerTypeOracle(null);
+  });
+
+  /** `f(0)` as *Your functions* gives it, with an oracle that knows the three functions. */
+  function newCall(): { workspace: Blockly.Workspace; block: Blockly.Block } {
+    const byId = new Map(SYMBOLS.map((symbol) => [symbol.id, symbol]));
+    setCheckerTypeOracle({
+      outputTypeOf: () => null,
+      symbol: (id) => byId.get(id) ?? null,
+      facts: () => NO_FACTS,
+    });
+    const workspace = headlessWorkspace();
+    const block = Blockly.serialization.blocks.append(
+      blockState(
+        presetBlock('func.call_stmt', {
+          fields: { FUNC: { ref: 's_f' } },
+          extra: { argCount: 1 },
+          inputs: { ARG0: [{ num: '0' }] },
+        }),
+      ),
+      workspace,
+      { recordUndo: true },
+    );
+    return { workspace, block };
+  }
+
+  function arg(block: Blockly.Block): readonly TokenJson[] | null {
+    const shadow = block.getInputTargetBlock('ARG0');
+    return shadow === null ? null : (readExprShadow(shadow)?.tokens ?? null);
+  }
+
+  it('gives an argument the start value of a changed function’s parameter, in one undo step', async () => {
+    const { workspace, block } = newCall();
+    const stop = installStartValueReshaping(workspace, NO_TYPES);
+    await events();
+    workspace.clearUndo();
+    block.setFieldValue('s_g', 'FUNC');
+    await events();
+    expect(arg(block)).toEqual([{ num: '0.0' }]);
+    expect(workspace.getUndoStack().map((event) => event.type)).toEqual([
+      'change',
+      START_VALUE_EVENT,
+    ]);
+    const change = workspace.getUndoStack().at(-1);
+    expect(change instanceof StartValueChange ? change.input : null).toBe('ARG0');
+    workspace.undo(false);
+    await events();
+    expect(block.getFieldValue('FUNC')).toBe('s_f');
+    expect(arg(block)).toEqual([{ num: '0' }]);
+    workspace.undo(true);
+    await events();
+    expect(arg(block)).toEqual([{ num: '0.0' }]);
+    stop();
+  });
+
+  it('leaves the argument empty for a type without a start value, and undo puts it back', async () => {
+    const { workspace, block } = newCall();
+    const stop = installStartValueReshaping(workspace, NO_TYPES);
+    await events();
+    block.setFieldValue('s_h', 'FUNC');
+    await events();
+    expect(arg(block)).toBeNull();
+    workspace.undo(false);
+    await events();
+    expect(arg(block)).toEqual([{ num: '0' }]);
+    stop();
+  });
+
+  it('keeps a typed value and a function the analysis does not know', async () => {
+    const { workspace, block } = newCall();
+    const stop = installStartValueReshaping(workspace, NO_TYPES);
+    block.getInputTargetBlock('ARG0')?.setFieldValue('7', 'VALUE');
+    await events();
+    block.setFieldValue('s_g', 'FUNC');
+    await events();
+    expect(arg(block)).toEqual([{ num: '7' }]);
+    block.getInputTargetBlock('ARG0')?.setFieldValue('0.0', 'VALUE');
+    await events();
+    block.setFieldValue('s_unknown', 'FUNC');
+    await events();
+    expect(arg(block)).toEqual([{ num: '0.0' }]);
+    stop();
+  });
+
+  it('never changes a start value when a block is connected', async () => {
+    const { workspace, block } = newCall();
+    const stop = installStartValueReshaping(workspace, NO_TYPES);
+    await events();
+    const create = Blockly.serialization.blocks.append(
+      blockState(newVariableBlock('value')),
+      workspace,
+      { recordUndo: true },
+    );
+    const next = create.nextConnection;
+    if (next === null) {
+      throw new Error('create has no next connection');
+    }
+    block.previousConnection?.connect(next);
+    await events();
+    expect(arg(block)).toEqual([{ num: '0' }]);
+    expect(startValue(create)).toEqual([{ num: '0' }]);
+    stop();
   });
 });

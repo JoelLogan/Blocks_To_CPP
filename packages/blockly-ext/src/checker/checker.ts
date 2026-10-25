@@ -7,11 +7,15 @@
  *
  * * **Structure**, always: a hat or definition never goes inside anything; a statement never goes
  *   into a value input; a reporter or predicate never goes into a statement list.
- * * **Types**, while the user drags or moves a block: a value is refused only where the analyser
- *   would report an error (`conversionAllowed` is `invalid`). Unknown and erroneous types always
- *   connect. Connections the program makes (loading a project, undo and redo) never apply the type
- *   rule: Blockly throws when a saved connection is refused, and a project may legitimately hold a
- *   type error that the analyser reports.
+ * * **Types**, while the user drags or moves a block: the parent is typed as if the value were in
+ *   the input (typed slots, ADR-0018: `candidateFit`, ./slots.ts), and the value is refused only
+ *   where the analyser would report an error: a conversion or class error between known types
+ *   (`isFitError`). The input's expected type comes from the parent's signature: `create`'s type,
+ *   `set`'s variable, a call's parameter, a `return`'s function; an input without a pattern checks
+ *   its class as in M2. Unknown and erroneous types always connect. Connections the program makes
+ *   (loading a project, undo and redo, paste) never apply the type rule: Blockly throws when a
+ *   saved connection is refused, and a project may legitimately hold a type error that the
+ *   analyser reports.
  * * **Wrapping**, while the user drags an empty statement C-block with the pointer: dropped on a
  *   statement of a list, it takes the statement's place and wraps it and the statements below it
  *   (./wrap.ts), where Blockly would insert it.
@@ -22,11 +26,11 @@
 import * as Blockly from 'blockly/core';
 
 import type { Shape } from '../generated/catalog';
-import { blockDef, inputDef } from './catalog';
-import { conversionAllowed } from './conversion';
+import type { TypeOracle } from '../services';
+import { isFitError } from '../types/slots';
+import { blockDef } from './catalog';
 import { checkerTypeOracle } from './oracle';
-import { staticOutputType } from './output-type';
-import type { OutputTypeOracle, StaticType } from './types';
+import { candidateFit, currentSlotCache } from './slots';
 import { wrapPlace } from './wrap';
 
 /** Connection kinds as plain numbers (`Connection.type` is a number). */
@@ -59,38 +63,34 @@ function structureAllows(parent: Blockly.Connection, child: Blockly.Connection):
   return true;
 }
 
-/** The static type of the value a block gives, from the catalog or the oracle. */
-function valueType(block: Blockly.Block, oracle: OutputTypeOracle): StaticType | null {
-  const def = blockDef(block.type);
-  if (def !== undefined) {
-    return staticOutputType(block, def, oracle);
-  }
-  try {
-    return oracle.outputTypeOf(block);
-  } catch {
-    return null;
-  }
-}
-
 /** Whether the type rule allows the value of `child` in the value input `parent`. */
 function typeAllows(
   parent: Blockly.Connection,
   child: Blockly.Connection,
-  oracle: OutputTypeOracle,
+  oracle: TypeOracle,
 ): boolean {
   if (parent.type !== INPUT_VALUE) {
     return true;
   }
-  const parentDef = blockDef(parent.getSourceBlock().type);
+  const parentBlock = parent.getSourceBlock();
   const inputName = parent.getParentInput()?.name;
-  if (parentDef === undefined || inputName === undefined) {
+  if (blockDef(parentBlock.type) === undefined || inputName === undefined) {
     return true;
   }
-  const input = inputDef(parentDef, inputName);
-  if (input === undefined) {
+  try {
+    const fit = candidateFit(
+      parentBlock,
+      inputName,
+      child.getSourceBlock(),
+      oracle,
+      currentSlotCache(),
+    );
+    return !isFitError(fit);
+  } catch (error: unknown) {
+    // Typing never throws by design; a failure must never break dragging.
+    console.warn('A connection could not be typed', error);
     return true;
   }
-  return conversionAllowed(valueType(child.getSourceBlock(), oracle), input.check) !== 'invalid';
 }
 
 /**
