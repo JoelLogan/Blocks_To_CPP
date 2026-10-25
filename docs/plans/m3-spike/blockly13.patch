@@ -1,0 +1,930 @@
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index 6eef6f3..3a51fd4 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -22,7 +22,7 @@
+     "tauri": "tauri"
+   },
+   "dependencies": {
+-    "@blockly/continuous-toolbox": "7.0.9",
++    "@blockly/continuous-toolbox": "13.4.0",
+     "@blocks2cpp/b2c-core-wasm": "workspace:*",
+     "@blocks2cpp/blockly-ext": "workspace:*",
+     "@blocks2cpp/ipc-types": "workspace:*",
+@@ -37,7 +37,7 @@
+     "@tauri-apps/api": "2.12.4",
+     "@xterm/addon-fit": "0.10.0",
+     "@xterm/xterm": "5.5.0",
+-    "blockly": "12.5.1",
++    "blockly": "13.4.0",
+     "react": "19.3.1",
+     "react-dom": "19.3.1",
+     "zustand": "5.0.15"
+diff --git a/apps/desktop/src/editor/diagnostics/testing.ts b/apps/desktop/src/editor/diagnostics/testing.ts
+index 6d4b84b..49c116b 100644
+--- a/apps/desktop/src/editor/diagnostics/testing.ts
++++ b/apps/desktop/src/editor/diagnostics/testing.ts
+@@ -99,7 +99,11 @@ function buildBlock(workspace: Blockly.WorkspaceSvg, node: BdmBlock): Blockly.Bl
+       throw new Error(`${node.type} has no input ${name}`);
+     }
+     if ('block' in value) {
+-      connection.connect(buildBlock(workspace, value.block).outputConnection);
++      const output = buildBlock(workspace, value.block).outputConnection;
++      if (output === null) {
++        throw new Error(`${value.block.type} has no output`);
++      }
++      connection.connect(output);
+     } else {
+       connection.setShadowState(
+         exprShadowState(value.expr, value.draft === true, inputCheck(node.type, name), false),
+@@ -110,7 +114,7 @@ function buildBlock(workspace: Blockly.WorkspaceSvg, node: BdmBlock): Blockly.Bl
+     let connection = block.getInput(name)?.connection ?? null;
+     for (const childNode of list) {
+       const child = buildBlock(workspace, childNode);
+-      if (connection === null) {
++      if (connection === null || child.previousConnection === null) {
+         throw new Error(`${childNode.type} cannot go into ${node.type}.${name}`);
+       }
+       connection.connect(child.previousConnection);
+diff --git a/apps/desktop/src/editor/keyboard/flyoutItems.ts b/apps/desktop/src/editor/keyboard/flyoutItems.ts
+index e18c3eb..a97a9f3 100644
+--- a/apps/desktop/src/editor/keyboard/flyoutItems.ts
++++ b/apps/desktop/src/editor/keyboard/flyoutItems.ts
+@@ -68,9 +68,8 @@ export function flyoutLabelKind(button: Blockly.FlyoutButton): FlyoutLabelKind {
+  */
+ export function isFlyoutStop(node: Blockly.IFocusableNode | null): boolean {
+   if (node instanceof Blockly.BlockSvg) {
+-    // Blockly types it as always there, but a statement block has no output connection.
+-    const output = node.outputConnection as Blockly.RenderedConnection | null;
+-    return (output?.targetBlock() ?? null) === null;
++    // A statement block has no output connection (Blockly 13 types it so).
++    return (node.outputConnection?.targetBlock() ?? null) === null;
+   }
+   if (node instanceof Blockly.FlyoutButton) {
+     return !node.isLabel() || flyoutLabelKind(node) !== 'noteLine';
+diff --git a/apps/desktop/src/editor/keyboard/mover.test.ts b/apps/desktop/src/editor/keyboard/mover.test.ts
+index ebf04cb..0d06c58 100644
+--- a/apps/desktop/src/editor/keyboard/mover.test.ts
++++ b/apps/desktop/src/editor/keyboard/mover.test.ts
+@@ -245,7 +245,11 @@ describe('M moves a block', () => {
+     const { block, keyboard, workspace } = open();
+     // `repeat (…) times` after print, and a loose text value: text cannot be a count.
+     const repeat = newBlock(workspace, 'control.repeat');
+-    block('print').nextConnection.connect(repeat.previousConnection);
++    const below = block('print').nextConnection;
++    if (below === null || repeat.previousConnection === null) {
++      throw new Error('print and repeat are statements');
++    }
++    below.connect(repeat.previousConnection);
+     const times = repeat.getInput('TIMES')?.connection;
+     if (!(times instanceof Blockly.RenderedConnection)) {
+       throw new Error('no TIMES input');
+diff --git a/apps/desktop/src/editor/keyboard/navigation.ts b/apps/desktop/src/editor/keyboard/navigation.ts
+index 18e914b..91e57b3 100644
+--- a/apps/desktop/src/editor/keyboard/navigation.ts
++++ b/apps/desktop/src/editor/keyboard/navigation.ts
+@@ -20,6 +20,42 @@ import { flyoutLabelKind, isFlyoutStop } from './flyoutItems';
+ import { blockOfNode } from './keepFocus';
+ import { describeNode, type SymbolNames } from './labels';
+ import { KeyboardMover } from './mover';
++import { B2cBlockDragStrategy } from '../sync/drag';
++
++/** Focuses `node` (Blockly 12's cursor did this in `setCurNode`). */
++function focus(node: Blockly.IFocusableNode): void {
++  Blockly.getFocusManager().focusNode(node);
++}
++
++/**
++ * The next (or previous) stop of the toolbox's blocks after `from`, going round: Blockly 13's
++ * navigator for the flyout, skipping what is not a stop (./flyoutItems.ts). Blockly 12's line
++ * cursor took the predicate itself.
++ */
++function flyoutStep(
++  navigator: Blockly.Navigator,
++  from: Blockly.IFocusableNode,
++  forward: boolean,
++): Blockly.IFocusableNode | null {
++  const loops = navigator.getNavigationLoops();
++  navigator.setNavigationLoops(true);
++  try {
++    let node: Blockly.IFocusableNode | null = from;
++    // Bounded: a navigator that never comes back to `from` or to a stop ends the walk.
++    for (let steps = 0; steps < 10_000; steps++) {
++      node = forward ? navigator.getNextNode(node) : navigator.getPreviousNode(node);
++      if (node === null || node === from) {
++        return null;
++      }
++      if (isFlyoutStop(node)) {
++        return node;
++      }
++    }
++    return null;
++  } finally {
++    navigator.setNavigationLoops(loops);
++  }
++}
+ 
+ /** Where the keyboard focus is, seen from one editor. */
+ export type FocusArea = 'canvas' | 'flyout' | 'toolbox' | 'elsewhere';
+@@ -157,39 +193,39 @@ export class EditorKeyboard {
+       return false;
+     }
+     Blockly.keyboardNavigationController.setIsActive(true);
+-    const cursor = workspace.getCursor();
++    const navigator = workspace.getNavigator();
+     const node = focusedNode();
+     let reached: Blockly.IFocusableNode | null;
+     if (node === null || node === workspace) {
+-      reached = this.firstOrLast(cursor, step, area === 'flyout');
++      reached = this.firstOrLast(navigator, step, area === 'flyout');
+     } else if (area === 'flyout') {
+       // The toolbox's blocks are a list of blocks, buttons, headings and notes: ↓ and ↑ go
+       // through it (round), → does nothing and ← goes back to the categories.
+       if (step === 'in' || step === 'out') {
+         return step === 'out' ? this.focusToolbox() : true;
+       }
+-      reached =
+-        step === 'next'
+-          ? cursor.getNextNode(node, isFlyoutStop, true)
+-          : cursor.getPreviousNode(node, isFlyoutStop, true);
++      reached = flyoutStep(navigator, node, step === 'next');
+       if (reached !== null) {
+-        cursor.setCurNode(reached);
++        focus(reached);
+       }
+     } else {
+       switch (step) {
+         case 'next':
+-          reached = cursor.next();
++          reached = navigator.getNextNode(node);
+           break;
+         case 'previous':
+-          reached = cursor.prev();
++          reached = navigator.getPreviousNode(node);
+           break;
+         case 'in':
+-          reached = cursor.in();
++          reached = navigator.getInNode(node);
+           break;
+         case 'out':
+-          reached = cursor.out();
++          reached = navigator.getOutNode(node);
+           break;
+       }
++      if (reached !== null) {
++        focus(reached);
++      }
+     }
+     if (reached === null && (node === null || node === workspace)) {
+       this.announcer.announce(
+@@ -303,29 +339,37 @@ export class EditorKeyboard {
+    * backwards. Focuses it.
+    */
+   private firstOrLast(
+-    cursor: Blockly.LineCursor,
++    navigator: Blockly.Navigator,
+     step: CursorStep,
+     inFlyout: boolean,
+   ): Blockly.IFocusableNode | null {
+-    const first = cursor.getFirstNode();
++    const first = navigator.getFirstNode();
+     if (first === null) {
+       return null;
+     }
+     if (step === 'next' || step === 'in') {
+-      cursor.setCurNode(first);
++      focus(first);
+       return first;
+     }
+     if (step === 'out') {
+-      const last = cursor.getLastNode() ?? first;
+-      cursor.setCurNode(last);
++      const last = navigator.getLastNode() ?? first;
++      focus(last);
+       return last;
+     }
+     // The block (or flyout item) before the first one, going round: the last one.
+-    cursor.setCurNode(first);
+-    const last = inFlyout ? cursor.getPreviousNode(first, isFlyoutStop, true) : cursor.prev();
+-    if (inFlyout && last !== null) {
+-      cursor.setCurNode(last);
++    let last: Blockly.IFocusableNode | null;
++    if (inFlyout) {
++      last = flyoutStep(navigator, first, false);
++    } else {
++      const loops = navigator.getNavigationLoops();
++      navigator.setNavigationLoops(true);
++      try {
++        last = navigator.getPreviousNode(first);
++      } finally {
++        navigator.setNavigationLoops(loops);
++      }
+     }
++    focus(last ?? first);
+     return last ?? first;
+   }
+ 
+@@ -423,7 +467,8 @@ export class EditorKeyboard {
+     }
+     const group = Blockly.Events.getGroup();
+     try {
+-      added = flyout.createBlock(original);
++      // Blockly 13 copies a flyout block in the drag strategy (Blockly 12: `Flyout.createBlock`).
++      added = new B2cBlockDragStrategy(original).copyFromFlyout();
+     } catch (error: unknown) {
+       console.error('The block could not be added from the toolbox', error);
+       this.announcer.announce('The block could not be added.');
+diff --git a/apps/desktop/src/editor/keyboard/shortcuts.ts b/apps/desktop/src/editor/keyboard/shortcuts.ts
+index e759575..3b4cd7b 100644
+--- a/apps/desktop/src/editor/keyboard/shortcuts.ts
++++ b/apps/desktop/src/editor/keyboard/shortcuts.ts
+@@ -141,8 +141,56 @@ function keyboardShortcuts(): Blockly.ShortcutRegistry.KeyboardShortcut[] {
+   ];
+ }
+ 
++/**
++ * The shortcuts Blockly 12 registered by itself, which stay: Escape, Delete, copy, cut, paste,
++ * undo, redo and the block menu.
++ */
++const BLOCKLY_12_SHORTCUTS: ReadonlySet<string> = new Set([
++  'escape',
++  'delete',
++  'copy',
++  'cut',
++  'paste',
++  'undo',
++  'redo',
++  'menu',
++]);
++
++/** Blockly's own shortcuts taken out while the editor's are registered, with their keys. */
++const setAside: { shortcut: Blockly.ShortcutRegistry.KeyboardShortcut; keyCodes: string[] }[] = [];
++
++/**
++ * Takes out every shortcut Blockly registers by itself beyond Blockly 12's: Blockly 13 adds its own
++ * keyboard navigation (the arrow keys, Enter, Space, `M`, `T` and more) and screen-reader keys,
++ * which take the editor's keys (their registration would throw) and would act on the canvas past
++ * the editing session and the clipboard plugin. They are put back with {@link restoreBlockly}.
++ */
++function setBlocklyAside(): void {
++  const registry = Blockly.ShortcutRegistry.registry;
++  const known = registry.getRegistry();
++  for (const name of Object.values(Blockly.ShortcutItems.names) as string[]) {
++    const shortcut = known[name];
++    if (shortcut === undefined || BLOCKLY_12_SHORTCUTS.has(name)) {
++      continue;
++    }
++    setAside.push({ shortcut, keyCodes: registry.getKeyCodesByShortcutName(name) });
++    registry.unregister(name);
++  }
++}
++
++/** Registers Blockly's shortcuts that {@link setBlocklyAside} took out again. */
++function restoreBlockly(): void {
++  const registry = Blockly.ShortcutRegistry.registry;
++  for (const { shortcut, keyCodes } of setAside.splice(0)) {
++    if (registry.getRegistry()[shortcut.name] === undefined) {
++      registry.register({ ...shortcut, keyCodes, allowCollision: true });
++    }
++  }
++}
++
+ /** Registers the shortcuts; returns their names. */
+ function register(): string[] {
++  setBlocklyAside();
+   const registry = Blockly.ShortcutRegistry.registry;
+   const known = registry.getRegistry();
+   const added: string[] = [];
+@@ -166,6 +214,7 @@ function unregister(names: readonly string[]): void {
+       registry.unregister(name);
+     }
+   }
++  restoreBlockly();
+ }
+ 
+ /**
+diff --git a/apps/desktop/src/editor/keyboard/targets.test.ts b/apps/desktop/src/editor/keyboard/targets.test.ts
+index aa1a780..6c0b0f2 100644
+--- a/apps/desktop/src/editor/keyboard/targets.test.ts
++++ b/apps/desktop/src/editor/keyboard/targets.test.ts
+@@ -67,6 +67,9 @@ describe('the places of a statement', () => {
+       throw new Error('no BODY');
+     }
+     const inner = newBlock(workspace, 'io.print');
++    if (inner.previousConnection === null) {
++      throw new Error('print is a statement');
++    }
+     below.connect(inner.previousConnection);
+ 
+     const places = dropTargets(loop);
+@@ -128,6 +131,9 @@ describe('the places of a value', () => {
+     if (value === null || value === undefined) {
+       throw new Error('no VALUE');
+     }
++    if (sum.outputConnection === null) {
++      throw new Error('the sum is a value');
++    }
+     value.connect(sum.outputConnection);
+     expect(currentConnection(sum)).toBe(value);
+ 
+@@ -140,7 +146,11 @@ describe('the places of a value', () => {
+   it('follow the type rule of a pointer drag: no input the value cannot convert to', () => {
+     const { block, workspace } = open();
+     const repeat = newBlock(workspace, 'control.repeat');
+-    block('print').nextConnection.connect(repeat.previousConnection);
++    const after = block('print').nextConnection;
++    if (after === null || repeat.previousConnection === null) {
++      throw new Error('print and repeat are statements');
++    }
++    after.connect(repeat.previousConnection);
+     const times = repeat.getInput('TIMES')?.connection;
+     if (!(times instanceof Blockly.RenderedConnection)) {
+       throw new Error('no TIMES input');
+diff --git a/apps/desktop/src/editor/sync/drag.test.ts b/apps/desktop/src/editor/sync/drag.test.ts
+index 01e770f..65f5155 100644
+--- a/apps/desktop/src/editor/sync/drag.test.ts
++++ b/apps/desktop/src/editor/sync/drag.test.ts
+@@ -735,7 +735,7 @@ describe.skipIf(core === null)('a drop on a delete area', () => {
+     // A move without a pointer event (a programmatic drag) is never over a delete area.
+     probe.drag(at);
+     expect(probe.radius()).toBe(snapRadius(0.9));
+-    probe.endDrag();
++    probe.endDrag(undefined, Blockly.DragDisposition.COMMIT);
+   });
+ });
+ 
+diff --git a/apps/desktop/src/editor/sync/drag.ts b/apps/desktop/src/editor/sync/drag.ts
+index f68ea2b..07d381c 100644
+--- a/apps/desktop/src/editor/sync/drag.ts
++++ b/apps/desktop/src/editor/sync/drag.ts
+@@ -108,6 +108,32 @@ export function handleBlockDrops(
+   };
+ }
+ 
++/**
++ * Takes note of `created`, a block just copied onto the canvas from `original`, a block of the
++ * toolbox's flyout (the toolbox's `noteCreatedFromToolbox`, ../toolbox/landing.ts).
++ */
++export type ToolboxCopyHandler = (original: Blockly.BlockSvg, created: Blockly.BlockSvg) => void;
++
++const COPY_HANDLERS = new WeakMap<Blockly.WorkspaceSvg, ToolboxCopyHandler>();
++
++/**
++ * Makes `handler` hear of every block copied onto `workspace` from its toolbox's flyout, by a
++ * pointer drag or the keyboard (one handler per workspace; a new one replaces the old). Blockly 12
++ * copied such a block in the flyout's `createBlock`; Blockly 13 copies it in the drag strategy
++ * (`BlockDragStrategy.getTargetBlock`). Returns the function that stops it.
++ */
++export function handleToolboxCopies(
++  workspace: Blockly.WorkspaceSvg,
++  handler: ToolboxCopyHandler,
++): () => void {
++  COPY_HANDLERS.set(workspace, handler);
++  return () => {
++    if (COPY_HANDLERS.get(workspace) === handler) {
++      COPY_HANDLERS.delete(workspace);
++    }
++  };
++}
++
+ /** Calls a listener, so that a failing one never breaks Blockly's drag. */
+ function tell(run: () => void): void {
+   try {
+@@ -283,14 +309,71 @@ export class B2cBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
+    */
+   private readonly preference: number;
+ 
++  /** The reach this strategy was made with, which a copy taken from the toolbox gets too. */
++  private readonly reach: SnapReach;
++
++  /**
++   * Whether the block is a copy just taken from the toolbox's flyout by a pointer drag: its drag
++   * is told to the editing session when it starts, since Blockly 13 makes the copy only then.
++   */
++  private copiedForDrag = false;
++
+   constructor(block: Blockly.BlockSvg, reach: SnapReach = EDITOR_REACH) {
+     super(block);
+     this.canvas = block.workspace;
++    this.reach = reach;
+     this.radiusAt = reach.radius;
+-    // `BlockSvg` types its output as always there; a statement has none (`Block`'s type says so).
+-    const dragged: Blockly.Block = block;
+     this.preference =
+-      dragged.outputConnection === null ? reach.statementPreference : reach.valuePreference;
++      block.outputConnection === null ? reach.statementPreference : reach.valuePreference;
++  }
++
++  /**
++   * Starts the drag. For a copy just taken from the toolbox, the editing session hears of the
++   * drag first, as {@link B2cBlockDragger} tells it of a block already on the canvas.
++   */
++  override startDrag(e?: PointerEvent | KeyboardEvent): Blockly.IDraggable {
++    if (this.copiedForDrag) {
++      this.copiedForDrag = false;
++      tellDragStart(this.canvas, this.block);
++    }
++    return super.startDrag(e);
++  }
++
++  /**
++   * The block the drag moves: Blockly's choice (for a block of the toolbox's flyout, a copy of it
++   * on the canvas, which Blockly 13 makes here; Blockly 12 made it in `Flyout.createBlock`). A copy
++   * gets this strategy's kind and reach, and the toolbox hears of it ({@link handleToolboxCopies}).
++   */
++  protected override getTargetBlock(): Blockly.BlockSvg {
++    const target = super.getTargetBlock();
++    if (target !== this.block && this.block.isInFlyout && !target.isInFlyout) {
++      const strategy = new B2cBlockDragStrategy(target, this.reach);
++      strategy.copiedForDrag = true;
++      target.setDragStrategy(strategy);
++      const handler = COPY_HANDLERS.get(target.workspace);
++      if (handler !== undefined) {
++        const original = this.block.getRootBlock();
++        tell(() => {
++          handler(original, target);
++        });
++      }
++    }
++    return target;
++  }
++
++  /**
++   * Copies this strategy's block, a block of the toolbox's flyout, onto the canvas as a pointer
++   * drag would, without dragging it (the keyboard's add, ../keyboard/navigation.ts).
++   */
++  copyFromFlyout(): Blockly.BlockSvg {
++    const copy = this.getTargetBlock();
++    if (copy === this.block) {
++      throw new Error('The block is not in a flyout');
++    }
++    const strategy = new B2cBlockDragStrategy(copy, this.reach);
++    copy.setDragStrategy(strategy);
++    copy.setDragging(false);
++    return copy;
+   }
+ 
+   /**
+@@ -306,13 +389,13 @@ export class B2cBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
+    * drag, the keyboard's moves, an Escape that cancels the gesture, its disposal) ever sees the
+    * changed value.
+    */
+-  override drag(newLoc: Blockly.utils.Coordinate, e?: PointerEvent): void {
+-    this.overDeleteArea = e !== undefined && isOverDeleteArea(this.canvas, e);
++  override drag(newLoc: Blockly.utils.Coordinate, e?: PointerEvent | KeyboardEvent): void {
++    this.overDeleteArea = e instanceof PointerEvent && isOverDeleteArea(this.canvas, e);
+     const config = Blockly.config;
+     const preference = config.currentConnectionPreference;
+     config.currentConnectionPreference = this.preference;
+     try {
+-      super.drag(newLoc);
++      super.drag(newLoc, e);
+     } finally {
+       config.currentConnectionPreference = preference;
+     }
+@@ -330,6 +413,35 @@ export class B2cBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
+   }
+ }
+ 
++/** Tells the drag listener of `workspace` (if any) that a drag of `block` is about to start. */
++function tellDragStart(workspace: Blockly.WorkspaceSvg, block: Blockly.BlockSvg): void {
++  const listener = LISTENERS.get(workspace);
++  if (listener !== undefined) {
++    tell(() => {
++      listener.onDragStart(block);
++    });
++  }
++}
++
++/**
++ * The canvas a drag of `draggable` is on: for a block of the toolbox's flyout, the canvas it is
++ * copied to. Blockly 13's dragger no longer receives the workspace.
++ */
++function canvasOf(draggable: Blockly.IDraggable): Blockly.WorkspaceSvg {
++  const workspace =
++    'workspace' in draggable && draggable.workspace instanceof Blockly.WorkspaceSvg
++      ? draggable.workspace
++      : (Blockly.getMainWorkspace() as Blockly.WorkspaceSvg);
++  return workspace.isFlyout ? (workspace.targetWorkspace ?? workspace) : workspace;
++}
++
++/** Where on the screen the pointer of `e` is, or `null` for a keyboard drag or none. */
++function pointerPoint(
++  e: PointerEvent | KeyboardEvent | undefined,
++): Blockly.utils.Coordinate | null {
++  return e instanceof PointerEvent ? new Blockly.utils.Coordinate(e.clientX, e.clientY) : null;
++}
++
+ /** The block a drag of `draggable` moves: for a shadow, the first block above it that is not. */
+ function dragRoot(draggable: Blockly.IDraggable): Blockly.IDraggable {
+   let block = draggable instanceof Blockly.BlockSvg ? draggable : null;
+@@ -351,8 +463,12 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
+    * this dragger moves: Blockly's own shadow strategy would pass each move on without its pointer
+    * event, and the strategy needs the event to see a delete area.
+    */
+-  constructor(draggable: Blockly.IDraggable, workspace: Blockly.WorkspaceSvg) {
+-    super(dragRoot(draggable), workspace);
++  /** The canvas the drag is on (for a block of the toolbox's flyout, the one it is copied to). */
++  private readonly canvas: Blockly.WorkspaceSvg;
++
++  constructor(draggable: Blockly.IDraggable) {
++    super(dragRoot(draggable));
++    this.canvas = canvasOf(draggable);
+   }
+ 
+   /**
+@@ -369,19 +485,18 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
+    * reads nothing here, so it does not make the browser lay the page out
+    * (`getBoundingClientRect`) when the page has changed since its last layout.
+    */
+-  override onDragStart(e: PointerEvent): void {
++  override onDragStart(e?: PointerEvent | KeyboardEvent): Blockly.IDraggable {
+     if (this.draggable instanceof Blockly.BlockSvg) {
+       const block = this.draggable;
+       block.setDragStrategy(this.dragStrategyFor(block));
+-      const listener = LISTENERS.get(this.workspace);
+-      if (listener !== undefined) {
+-        tell(() => {
+-          listener.onDragStart(block);
+-        });
++      // A block of the toolbox's flyout is copied when its drag starts (Blockly 13), and the
++      // copy's strategy tells the listener then.
++      if (!block.isInFlyout) {
++        tellDragStart(this.canvas, block);
+       }
+     }
+-    recordDragTargetsIfStale(this.workspace);
+-    super.onDragStart(e);
++    recordDragTargetsIfStale(this.canvas);
++    return super.onDragStart(e);
+   }
+ 
+   /**
+@@ -399,27 +514,54 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
+    * created in the same group (Blockly's gesture starts it first), so one Undo removes the block,
+    * its move, the wrap and what the handler changed.
+    */
+-  override onDragEnd(e: PointerEvent, totalDelta?: Blockly.utils.Coordinate): void {
++  override onDragEnd(
++    e?: PointerEvent | KeyboardEvent,
++    totalDelta?: Blockly.utils.Coordinate,
++  ): void {
+     const group = Blockly.Events.getGroup();
+     try {
+       const root =
+         this.draggable instanceof Blockly.BlockSvg ? this.draggable.getRootBlock() : null;
+-      if (totalDelta !== undefined && root !== null && this.wouldDeleteDraggable(e, root)) {
++      const point = pointerPoint(e);
++      if (
++        totalDelta !== undefined &&
++        root !== null &&
++        point !== null &&
++        this.wouldDeleteDraggable(point, root)
++      ) {
+         this.onDrag(e, totalDelta);
+       }
+-      const wrap = root !== null && !this.shouldReturnToStart(e, root) ? previewedWrap(root) : null;
++      const returns = point !== null && root !== null && this.shouldReturnToStart(point, root);
++      const wrap = root !== null && !returns ? previewedWrap(root) : null;
+       super.onDragEnd(e);
+       if (wrap !== null) {
+         finishWrap(wrap, group);
+       }
+       this.settleDrop(group);
+     } finally {
+-      const listener = LISTENERS.get(this.workspace);
+-      if (listener !== undefined) {
+-        tell(() => {
+-          listener.onDragEnd();
+-        });
+-      }
++      this.tellDragEnd();
++    }
++  }
++
++  /**
++   * Puts the dragged blocks back where they were (Blockly 13 calls it for a drag that is given up,
++   * where Blockly 12 ended it), and tells the listener that the drag has ended.
++   */
++  override onDragRevert(e?: PointerEvent | KeyboardEvent): void {
++    try {
++      super.onDragRevert(e);
++    } finally {
++      this.tellDragEnd();
++    }
++  }
++
++  /** Tells the listener of the canvas that the drag has ended. */
++  private tellDragEnd(): void {
++    const listener = LISTENERS.get(this.canvas);
++    if (listener !== undefined) {
++      tell(() => {
++        listener.onDragEnd();
++      });
+     }
+   }
+ 
+@@ -437,7 +579,7 @@ export class B2cBlockDragger extends Blockly.dragging.Dragger {
+    */
+   private settleDrop(group: string): void {
+     if (this.draggable instanceof Blockly.BlockSvg) {
+-      settleBlockDrop(this.workspace, this.draggable, group);
++      settleBlockDrop(this.canvas, this.draggable, group);
+     }
+   }
+ }
+diff --git a/apps/desktop/src/editor/sync/wrapSweep.test.ts b/apps/desktop/src/editor/sync/wrapSweep.test.ts
+index 1b6daac..bc2ee64 100644
+--- a/apps/desktop/src/editor/sync/wrapSweep.test.ts
++++ b/apps/desktop/src/editor/sync/wrapSweep.test.ts
+@@ -289,7 +289,7 @@ function restoreBlocks(svg: Blockly.WorkspaceSvg): Blockly.BlockSvg {
+     dragged.unplug(false);
+     const prints = PRINTS.map((id) => present(svg.getBlockById(id), id));
+     for (const print of prints) {
+-      if (print.previousConnection.isConnected()) {
++      if (print.previousConnection?.isConnected() === true) {
+         print.previousConnection.disconnect();
+       }
+     }
+diff --git a/apps/desktop/src/editor/toolbox/continuous.ts b/apps/desktop/src/editor/toolbox/continuous.ts
+index 5fb50d9..f6f1f5f 100644
+--- a/apps/desktop/src/editor/toolbox/continuous.ts
++++ b/apps/desktop/src/editor/toolbox/continuous.ts
+@@ -49,7 +49,6 @@ import { timed } from '../../lib/timing';
+ import { keepFlyoutFocus } from '../keyboard/keepFocus';
+ import { prefersReducedMotion } from '../keyboard/motion';
+ import { markDragTargetsStale } from '../sync/dragTargets';
+-import { noteCreatedFromToolbox } from './landing';
+ 
+ /** How long the toolbox waits after the last change before it rebuilds the flyout. */
+ export const CONTINUOUS_REFRESH_DELAY_MS = 100;
+@@ -676,16 +675,6 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
+     workspace.scrollbar?.setY(target);
+   }
+ 
+-  /**
+-   * Creates a block on the canvas from `original`, a block of this flyout (Blockly's), and tells
+-   * the toolbox, which settles a block taken from it where it is dropped (./landing.ts).
+-   */
+-  override createBlock(original: Blockly.BlockSvg): Blockly.BlockSvg {
+-    const block = super.createBlock(original);
+-    noteCreatedFromToolbox(original, block);
+-    return block;
+-  }
+-
+   /**
+    * A recycler of this flyout's own (the base class insists on one): it is never used to create
+    * blocks, so nothing is ever recycled, and Blockly's block inflater stays the default for every
+diff --git a/apps/desktop/src/editor/toolbox/core.test.ts b/apps/desktop/src/editor/toolbox/core.test.ts
+index dc751b2..9d07515 100644
+--- a/apps/desktop/src/editor/toolbox/core.test.ts
++++ b/apps/desktop/src/editor/toolbox/core.test.ts
+@@ -235,7 +235,7 @@ describe.skipIf(core === null)('the toolbox with the compiler core', { timeout:
+     const fresh = workspace.newBlock('io.print');
+     fresh.initSvg();
+     fresh.render();
+-    present(workspace.getBlockById('b003')).nextConnection.connect(
++    present(present(workspace.getBlockById('b003')).nextConnection).connect(
+       present(fresh.previousConnection),
+     );
+     expect(theCore().symbolsInScope(fresh.id, null)).toBeNull();
+@@ -244,7 +244,7 @@ describe.skipIf(core === null)('the toolbox with the compiler core', { timeout:
+     const early = workspace.newBlock('io.print');
+     early.initSvg();
+     early.render();
+-    present(workspace.getBlockById('b002')).nextConnection.connect(
++    present(present(workspace.getBlockById('b002')).nextConnection).connect(
+       present(early.previousConnection),
+     );
+     expect(names(early)).toEqual(['secret']);
+diff --git a/apps/desktop/src/editor/toolbox/plugin.test.ts b/apps/desktop/src/editor/toolbox/plugin.test.ts
+index 0b71996..eda3365 100644
+--- a/apps/desktop/src/editor/toolbox/plugin.test.ts
++++ b/apps/desktop/src/editor/toolbox/plugin.test.ts
+@@ -23,6 +23,7 @@ import { resetAppStore, useAppStore } from '../../app/store';
+ import { documentFixture } from '../../app/testing/fixtures';
+ import { latestTimings, resetTimings } from '../../lib/timing';
+ import { createSymbolServices, installEditorServices, servicesSessionHooks } from '../services';
++import { B2cBlockDragStrategy } from '../sync/drag';
+ import { ICON_CLASS, CATEGORY_CLASS } from './category';
+ import {
+   B2cContinuousFlyout,
+@@ -158,7 +159,7 @@ function addCount(workspace: Blockly.WorkspaceSvg): void {
+     workspace,
+   );
+   const below = workspace.getBlockById('print')?.nextConnection;
+-  if (below === undefined || block.previousConnection === null) {
++  if (below === undefined || below === null || block.previousConnection === null) {
+     throw new Error('no place for count');
+   }
+   below.connect(block.previousConnection);
+@@ -436,7 +437,7 @@ describe('the toolbox plugin with the continuous toolbox', () => {
+     expect(valueOf(set)).toEqual([{ str: '' }]);
+     Blockly.Events.setGroup(true);
+     try {
+-      expect(valueOf(flyout.createBlock(set))).toEqual([{ str: '' }]);
++      expect(valueOf(new B2cBlockDragStrategy(set).copyFromFlyout())).toEqual([{ str: '' }]);
+     } finally {
+       Blockly.Events.setGroup(false);
+     }
+diff --git a/apps/desktop/src/editor/toolbox/plugin.ts b/apps/desktop/src/editor/toolbox/plugin.ts
+index 39256c2..7f58ab0 100644
+--- a/apps/desktop/src/editor/toolbox/plugin.ts
++++ b/apps/desktop/src/editor/toolbox/plugin.ts
+@@ -27,7 +27,7 @@ import { dialogs as appDialogs } from '../../app/dialogs/instance';
+ import type { DialogService, DialogTextOptions } from '../../app/dialogs/service';
+ import type { EditorContext, EditorPlugin } from '../../app/editor-types';
+ import { analysisScope } from '../services/symbols';
+-import { handleBlockDrops } from '../sync/drag';
++import { handleBlockDrops, handleToolboxCopies } from '../sync/drag';
+ import {
+   MAKE_VARIABLE_BUTTON,
+   MY_BLOCKS_CATEGORY,
+@@ -45,7 +45,7 @@ import {
+   type ModuleInfo,
+ } from './contents';
+ import { B2cContinuousToolbox } from './continuous';
+-import { settleDroppedBlock, symbolType } from './landing';
++import { noteCreatedFromToolbox, settleDroppedBlock, symbolType } from './landing';
+ import { makeVariable, type MakeVariableResult } from './makeVariable';
+ import { registerToolboxComponents } from './register';
+ import { installStartValueReshaping } from './reshape';
+@@ -331,6 +331,9 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
+   const stopDrops = handleBlockDrops(workspace, (block) => {
+     settleDroppedBlock(workspace, block, symbols);
+   });
++  // A block copied from the flyout (by a pointer drag or the keyboard) is noted, so that its drop
++  // can settle it (./landing.ts).
++  const stopCopies = handleToolboxCopies(workspace, noteCreatedFromToolbox);
+   const typeOf = (sym: string) => symbolType(symbols, sym);
+   const stopReshaping = installStartValueReshaping(workspace, typeOf);
+   // A type or a variable chosen in a block still in the flyout reshapes its start value there, so
+@@ -369,6 +372,7 @@ function attachToolbox(context: EditorContext, options: ToolboxPluginOptions): (
+     stopReshaping();
+     stopFlyoutReshaping?.();
+     stopDrops();
++    stopCopies();
+     setToolboxSymbols(null);
+     if (toolbox instanceof B2cContinuousToolbox) {
+       toolbox.setContentsKey(null);
+diff --git a/apps/desktop/src/test/setup.ts b/apps/desktop/src/test/setup.ts
+index 6e170d2..f032f49 100644
+--- a/apps/desktop/src/test/setup.ts
++++ b/apps/desktop/src/test/setup.ts
+@@ -13,6 +13,12 @@ import { installEventTargetReceiverShim } from './dom-shims';
+ // The build plugins' tests (vite/*.test.ts) run in Node, which has no document to correct.
+ if (typeof document !== 'undefined') {
+   installEventTargetReceiverShim();
++  // Blockly's English interface text, as the app sets it before it injects a workspace
++  // (src/editor/services/install.ts): Blockly 13's `inject` builds the workspace's ARIA label
++  // from it and fails without.
++  const Blockly = await import('blockly/core');
++  const English = await import('blockly/msg/en');
++  Blockly.setLocale(English as unknown as Record<string, string>);
+ }
+ 
+ afterEach(() => {
+diff --git a/packages/blockly-ext/package.json b/packages/blockly-ext/package.json
+index bceab5d..adf779f 100644
+--- a/packages/blockly-ext/package.json
++++ b/packages/blockly-ext/package.json
+@@ -19,7 +19,7 @@
+   },
+   "dependencies": {
+     "@blocks2cpp/b2c-core-wasm": "workspace:*",
+-    "blockly": "12.5.1"
++    "blockly": "13.4.0"
+   },
+   "devDependencies": {
+     "@eslint/js": "10.0.1",
+diff --git a/packages/blockly-ext/src/blocks/css.ts b/packages/blockly-ext/src/blocks/css.ts
+index e8912d7..0ded903 100644
+--- a/packages/blockly-ext/src/blocks/css.ts
++++ b/packages/blockly-ext/src/blocks/css.ts
+@@ -32,21 +32,21 @@ let registered = false;
+ 
+ /**
+  * Adds the rules once. Before the first workspace is injected they join Blockly's stylesheet;
+- * afterwards (Blockly accepts no more) they go into a `<style>` element of their own.
++ * afterwards they go into a `<style>` element of their own: Blockly 13 keeps rules registered
++ * after it has styled the document (its `<style id="blockly-common-style">`) but never adds them
++ * there.
+  */
+ export function registerB2cCss(): void {
+   if (registered) {
+     return;
+   }
+   registered = true;
+-  try {
++  if (typeof document === 'undefined' || document.getElementById('blockly-common-style') === null) {
+     Blockly.Css.register(CSS);
+-  } catch {
+-    if (typeof document !== 'undefined') {
+-      const style = document.createElement('style');
+-      style.dataset['b2c'] = 'blocks';
+-      style.textContent = CSS;
+-      document.head.append(style);
+-    }
++    return;
+   }
++  const style = document.createElement('style');
++  style.dataset['b2c'] = 'blocks';
++  style.textContent = CSS;
++  document.head.append(style);
+ }
+diff --git a/packages/blockly-ext/src/checker/previewer.ts b/packages/blockly-ext/src/checker/previewer.ts
+index 78fae8a..fcb18c5 100644
+--- a/packages/blockly-ext/src/checker/previewer.ts
++++ b/packages/blockly-ext/src/checker/previewer.ts
+@@ -145,7 +145,7 @@ export class B2cConnectionPreviewer extends Blockly.InsertionMarkerPreviewer {
+     const markerPrevious = marker.previousConnection;
+     const markerMouth = firstMouth(marker);
+     const statements = wrap.wrapped.previousConnection;
+-    if (markerMouth === null || statements === null) {
++    if (markerPrevious === null || markerMouth === null || statements === null) {
+       marker.dispose(false);
+       return null;
+     }
+diff --git a/packages/blockly-ext/src/checker/wrap.test.ts b/packages/blockly-ext/src/checker/wrap.test.ts
+index 543f2ac..20b8f7c 100644
+--- a/packages/blockly-ext/src/checker/wrap.test.ts
++++ b/packages/blockly-ext/src/checker/wrap.test.ts
+@@ -116,6 +116,17 @@ function body(main: Blockly.Block): string {
+   return text(main.getInputTargetBlock('BODY'));
+ }
+ 
++/**
++ * How many insertion previews Blockly draws itself: Blockly 13 draws one for its built-in renderers
++ * as a bare `<g class="blocklyInsertionMarker">` on the canvas, not as a marker block in the list.
++ */
++function blocklyPreviews(): number {
++  return [...workspace.getCanvas().children].filter(
++    (element) =>
++      element.classList.contains('blocklyInsertionMarker') && !element.hasAttribute('data-id'),
++  ).length;
++}
++
+ /** Marks `block` as dragged with the pointer, as Blockly's block drag does. */
+ function drag(block: Blockly.BlockSvg): void {
+   block.setDragging(true);
+@@ -290,9 +301,11 @@ describe('the wrap preview', () => {
+     expect(body(main)).toBe('a b M{c}');
+     // The end of the list: Blockly's insertion preview.
+     previewer.previewConnection(previous(cBlock), next(c));
+-    expect(body(main)).toBe('a b c M{}');
++    expect(body(main)).toBe('a b c');
++    expect(blocklyPreviews()).toBe(1);
+     previewer.previewConnection(previous(cBlock), next(a));
+     expect(body(main)).toBe('a M{b c}');
++    expect(blocklyPreviews()).toBe(0);
+     previewer.dispose();
+     expect(body(main)).toBe('a b c');
+     expect(workspace.getAllBlocks(false).filter((block) => block.isInsertionMarker())).toEqual([]);
+@@ -350,10 +363,12 @@ describe('the wrap preview', () => {
+     // Not dragged with the pointer: Blockly's insertion preview.
+     const previewer = new B2cConnectionPreviewer(cBlock);
+     previewer.previewConnection(previous(cBlock), next(a));
+-    expect(body(main)).toBe('a M{} b c');
++    expect(body(main)).toBe('a b c');
++    expect(blocklyPreviews()).toBe(1);
+     expect(previewer.shownWrap()).toBeNull();
+     previewer.hidePreview();
+     expect(body(main)).toBe('a b c');
++    expect(blocklyPreviews()).toBe(0);
+   });
+ });
+ 
+diff --git a/packages/blockly-ext/src/mutators/rendered.test.ts b/packages/blockly-ext/src/mutators/rendered.test.ts
+index ed7e83e..1fd9b0c 100644
+--- a/packages/blockly-ext/src/mutators/rendered.test.ts
++++ b/packages/blockly-ext/src/mutators/rendered.test.ts
+@@ -102,7 +102,11 @@ describe('removing a part on a rendered block', () => {
+     const literal = workspace.newBlock('text.literal');
+     literal.initSvg();
+     literal.render();
+-    print.getInput('ITEM1')?.connection?.connect(literal.outputConnection);
++    const output = literal.outputConnection;
++    if (output === null) {
++      throw new Error('text.literal has an output');
++    }
++    print.getInput('ITEM1')?.connection?.connect(output);
+     print.render();
+     const before = literal.getRelativeToSurfaceXY();
+     button(print, 'count:remove').showEditor();
+diff --git a/packages/blockly-ext/test/setup.ts b/packages/blockly-ext/test/setup.ts
+index 562bc2a..006056f 100644
+--- a/packages/blockly-ext/test/setup.ts
++++ b/packages/blockly-ext/test/setup.ts
+@@ -1,5 +1,12 @@
+ /** Runs before every test file (vitest.config.ts `setupFiles`). */
++import * as Blockly from 'blockly/core';
++import * as English from 'blockly/msg/en';
++
+ import { installEventTargetReceiverShim } from './dom-shims';
+ 
+ // Without it, `Blockly.inject` fails in happy-dom (see dom-shims.ts).
+ installEventTargetReceiverShim();
++
++// Blockly's English interface text, as the app sets it (apps/desktop/src/editor/services/
++// install.ts). Blockly 13's `inject` builds the workspace's ARIA label from it and fails without.
++Blockly.setLocale(English as unknown as Record<string, string>);
