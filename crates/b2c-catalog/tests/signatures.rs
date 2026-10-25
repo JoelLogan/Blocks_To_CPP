@@ -382,7 +382,10 @@ fn parameters_take_every_type_a_variable_can_hold() {
         (json!("std::ifstream"), "\"std::ifstream\""),
         (json!("auto"), "\"auto\""),
         (json!("long"), "\"long\""),
-        (json!({"std::map": ["int"]}), "an object"),
+        // Not a template (two keys), so the loader leaves it to the
+        // catalog; a template with a list of one argument is the
+        // loader's E0112.
+        (json!({"std::vector": "int", "std::set": "int"}), "an object"),
         (json!(3), "3"),
         (
             json!({"std::vector": "void"}),
