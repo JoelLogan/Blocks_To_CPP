@@ -1,15 +1,71 @@
 /**
- * The editor's copy of the type rules (docs/plans/m3-contracts/types.md §3.2) and of typed slots
- * (slots.md §4.2). Not exported from the package entry while the connection checker still uses
- * the string union of `../checker/types`.
+ * The editor's copy of the type rules (docs/plans/m3-contracts/types.md §3.2), of catalog
+ * signatures (§4) and of typed slots (slots.md §4.2), held to the Rust rules by the shared
+ * fixtures that `b2c-lang` writes (`fixture.json`, `slot-fixture.json`).
  */
-export type {
-  PrimitiveName,
-  StaticConversion,
-  StaticType,
-  TypeClass,
-  TypeFactsTs,
-  TypeFn,
-  UserTypeTs,
+export {
+  applyTypeFn,
+  checkAccepts,
+  ERROR_JSON,
+  ERROR_TYPE,
+  inClass,
+  isTypeClass,
+  LIB_TYPES,
+  libOf,
+  libType,
+  MAX_TYPE_DEPTH,
+  MAX_TYPE_NAMES,
+  NO_FACTS,
+  parseTerm,
+  parseType,
+  prim,
+  sameType,
+  staticAssignment,
+  staticConversion,
+  termFromKey,
+  termJson,
+  termKey,
+  toTypeJson,
+  TYPE_CLASSES,
+  typeFromTerm,
+  typeKey,
+  typeLabel,
+  typeToTerm,
+  type LibTypeInfo,
+  type PrimitiveName,
+  type StaticConversion,
+  type StaticType,
+  type TypeClass,
+  type TypeFactsTs,
+  type TypeFn,
+  type TypeTerm,
+  type UserTypeTs,
 } from './static-type';
-export type { Binder, BlockParts, BlockTyping, PartType, SlotFit } from './slots';
+export {
+  blockSignature,
+  isTypeVar,
+  parsePatternJson,
+  parsePatternText,
+  patternVars,
+  TypeEnv,
+  type BlockSigTs,
+  type Fit,
+  type InputSigTs,
+  type PartName,
+  type Resolution,
+  type SignatureDef,
+  type TypePattern,
+} from './pattern';
+export {
+  inputParts,
+  isFitError,
+  MAX_VARIADIC_PARTS,
+  startTokens,
+  typeBlock,
+  typeBlockSig,
+  type Binder,
+  type BlockParts,
+  type BlockTyping,
+  type PartType,
+  type SlotFit,
+} from './slots';

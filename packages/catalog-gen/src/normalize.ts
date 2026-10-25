@@ -1,6 +1,8 @@
 // Turns the Rust (serde) shapes of catalog.json into the editor's shapes (catalog-types.ts):
 // plural, camelCase names (`field` becomes `fields`), numbers for count defaults (`"1"` becomes
-// 1), null for keys that do not apply to a kind, and parsed friendly labels.
+// 1), null or empty values for keys that do not apply to a kind or that the export leaves out
+// (a block's signature keys, types.md §4.5), the entries of `types` lists as type field values
+// (their keys, types.md §3.2), and parsed friendly labels.
 
 import type {
   BlockDefJson,
@@ -8,22 +10,26 @@ import type {
   FieldDefJson,
   InputDefJson,
   OutputType,
+  PartNameJson,
   PresetJson,
   RepeatJson,
   StatementDefJson,
   TokenJson,
   ToolboxCategoryJson,
   ToolboxEntryJson,
+  TypeEntryJson,
 } from './catalog-types.ts';
 import {
   CatalogJsonError,
   type CatalogJson,
   type RustBlockDef,
   type RustExtraDef,
+  type RustPartName,
   type RustPreset,
   type RustRepeat,
   type RustToken,
   type RustToolboxCategory,
+  type RustTypeJson,
 } from './catalog-json.ts';
 import { labelArgs, parseLabel } from './labels.ts';
 
@@ -32,6 +38,8 @@ export interface Model {
   readonly catalogVersion: string;
   readonly blocks: readonly BlockDefJson[];
   readonly toolbox: readonly ToolboxCategoryJson[];
+  /** The type table (types.md §1.1); empty when the export has none. */
+  readonly types: readonly TypeEntryJson[];
 }
 
 /** Converts the export into the editor's shapes. Block order (by ID) is kept. */
@@ -40,6 +48,7 @@ export function normalize(input: CatalogJson): Model {
     catalogVersion: input.catalogVersion,
     blocks: input.blocks.map((block, index) => blockDef(block, `blocks[${String(index)}]`)),
     toolbox: input.toolbox.category.map(category),
+    types: (input.types ?? []).map((entry) => ({ ...entry })),
   };
 }
 
@@ -60,8 +69,9 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
       name: field.name,
       kind: field.kind,
       options: field.options.map(([label, value]) => [label, value] as const),
-      types: [...field.types],
+      types: field.types.map(typeKey),
       default: field.default,
+      type: field.type ?? null,
     })),
     inputs: block.input.map((input): InputDefJson => ({
       name: input.name,
@@ -69,6 +79,8 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
       optional: input.optional,
       repeat: repeat(input.repeat),
       default: input.default.map(token),
+      type: input.type ?? null,
+      assign: input.assign ?? false,
     })),
     statements: block.statement.map((statement): StatementDefJson => ({
       name: statement.name,
@@ -76,33 +88,47 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
       when: statement.when,
     })),
     extra: block.extra.map((extra, index) => extraDef(extra, `${path}.extra[${String(index)}]`)),
+    typeVars: { ...block.typeVars },
+    order: (block.order ?? []).map(partName),
+    placeVar: block.placeVar ?? null,
+    members: { ...block.members },
+    headers: [...block.headers],
+    optionHeaders: Object.fromEntries(
+      Object.entries(block.optionHeaders ?? {}).map(([field, options]) => [
+        field,
+        Object.fromEntries(
+          Object.entries(options).map(([option, headers]) => [option, [...headers]] as const),
+        ),
+      ]),
+    ),
   };
 }
 
+/**
+ * The output pattern as the catalog writes it (types.md §4.2), checked in Rust; the editor reads
+ * it (blockly-ext `types/pattern.ts`). Only an empty text is refused here.
+ */
 function output(value: string | null, path: string): OutputType | null {
   if (value === null) {
     return null;
   }
-  switch (value) {
-    case 'any':
-    case 'bool':
-    case 'int':
-    case 'double':
-    case 'number':
-    case 'char':
-    case 'string':
-    case 'symbol':
-      return value;
-    // From catalog 1.3.0 the catalog spells the type `std::string` (types.md §3.1); the editor's
-    // M2 checker still names it `string` until it moves to type objects.
-    case 'std::string':
-      return 'string';
-    default:
-      if (value.startsWith('field:')) {
-        return `field:${value.slice('field:'.length)}`;
-      }
-      throw new CatalogJsonError(path, `is not an output type (${JSON.stringify(value)})`);
+  if (value.trim() === '') {
+    throw new CatalogJsonError(path, 'is an empty output type');
   }
+  return value;
+}
+
+function partName(value: RustPartName): PartNameJson {
+  return 'field' in value ? { field: value.field } : { input: value.input };
+}
+
+/**
+ * A `types` entry as a type field's value: a name stays itself, any other term is its key, its
+ * canonical compact JSON (`TypeTerm::key`, types.md §1.2). The reader built each object with one
+ * key and arrays of two or more, so JSON.stringify writes the one canonical spelling.
+ */
+export function typeKey(term: RustTypeJson): string {
+  return typeof term === 'string' ? term : JSON.stringify(term);
 }
 
 function repeat(value: RustRepeat | null): RepeatJson | null {
@@ -111,7 +137,8 @@ function repeat(value: RustRepeat | null): RepeatJson | null {
 
 /** Count defaults are text in the catalog ("1"); the editor gets numbers. */
 function extraDef(extra: RustExtraDef, path: string): ExtraDefJson {
-  const types = [...extra.types];
+  const types = extra.types.map(typeKey);
+  const typeClass = extra.typeClass ?? null;
   switch (extra.kind) {
     case 'count': {
       let countDefault: number | null = null;
@@ -127,6 +154,7 @@ function extraDef(extra: RustExtraDef, path: string): ExtraDefJson {
         max: extra.max,
         default: countDefault,
         types,
+        typeClass,
       };
     }
     case 'flag':
@@ -140,9 +168,18 @@ function extraDef(extra: RustExtraDef, path: string): ExtraDefJson {
         max: null,
         default: extra.default,
         types,
+        typeClass,
       };
     case 'params':
-      return { name: extra.name, kind: 'params', min: null, max: extra.max, default: null, types };
+      return {
+        name: extra.name,
+        kind: 'params',
+        min: null,
+        max: extra.max,
+        default: null,
+        types,
+        typeClass,
+      };
   }
 }
 

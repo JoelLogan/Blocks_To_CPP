@@ -42,13 +42,28 @@ describe('normalize', () => {
           ],
           types: [],
           default: 'while',
+          type: null,
         },
       ],
       inputs: [
-        { name: 'COND', check: 'bool', optional: false, repeat: null, default: [{ kw: 'true' }] },
+        {
+          name: 'COND',
+          check: 'bool',
+          optional: false,
+          repeat: null,
+          default: [{ kw: 'true' }],
+          type: null,
+          assign: false,
+        },
       ],
       statements: [{ name: 'BODY', repeat: null, when: null }],
       extra: [],
+      typeVars: {},
+      order: [],
+      placeVar: null,
+      members: {},
+      headers: [],
+      optionHeaders: {},
     });
   });
 
@@ -59,11 +74,35 @@ describe('normalize', () => {
 
   it('turns count defaults into numbers and drops keys that do not apply', () => {
     expect(block('control.pick').extra).toEqual([
-      { name: 'elseIfCount', kind: 'count', min: 0, max: 32, default: 0, types: [] },
-      { name: 'hasElse', kind: 'flag', min: null, max: null, default: false, types: [] },
+      {
+        name: 'elseIfCount',
+        kind: 'count',
+        min: 0,
+        max: 32,
+        default: 0,
+        types: [],
+        typeClass: null,
+      },
+      {
+        name: 'hasElse',
+        kind: 'flag',
+        min: null,
+        max: null,
+        default: false,
+        types: [],
+        typeClass: null,
+      },
     ]);
     expect(block('functions.make').extra).toEqual([
-      { name: 'params', kind: 'params', min: null, max: 16, default: null, types: ['int'] },
+      {
+        name: 'params',
+        kind: 'params',
+        min: null,
+        max: 16,
+        default: null,
+        types: ['int'],
+        typeClass: null,
+      },
     ]);
     const noDefault = model((c) =>
       c.blocks.push(
@@ -94,21 +133,116 @@ describe('normalize', () => {
     }
   });
 
-  it('keeps every output type and refuses unknown ones', () => {
+  it('keeps every output pattern as the catalog writes it and refuses an empty one', () => {
     expect(block('functions.use').output).toBe('symbol');
     expect(block('text.show').output).toBe('field:TO');
-    for (const output of ['any', 'bool', 'int', 'double', 'number', 'char', 'string']) {
+    // The catalog checked the patterns; `std::string` is spelled as everywhere else (types.md §3.1).
+    for (const output of [
+      'any',
+      'bool',
+      'int',
+      'double',
+      'number',
+      'char',
+      'std::string',
+      'elem(C)',
+    ]) {
       const result = model((c) => c.blocks.push(rustBlock('x.y', { shape: 'reporter', output })));
       expect(result.blocks.at(-1)?.output).toBe(output);
     }
     expect(() =>
-      model((c) => c.blocks.push(rustBlock('x.y', { shape: 'reporter', output: 'float' }))),
-    ).toThrow('blocks[5].output is not an output type ("float")');
-    // Catalog 1.3.0 spells the text type `std::string`; the editor's checker still says `string`.
-    const text = model((c) =>
-      c.blocks.push(rustBlock('x.y', { shape: 'reporter', output: 'std::string' })),
-    );
-    expect(text.blocks.at(-1)?.output).toBe('string');
+      model((c) => c.blocks.push(rustBlock('x.y', { shape: 'reporter', output: ' ' }))),
+    ).toThrow('blocks[5].output is an empty output type');
+  });
+
+  it('carries the signature keys, with empty values where the export leaves them out', () => {
+    const typed = model((c) =>
+      c.blocks.push(
+        rustBlock('coll.item', {
+          shape: 'reporter',
+          output: 'elem(C)',
+          headers: ['<vector>'],
+          typeVars: { C: 'indexable' },
+          field: [
+            {
+              name: 'LIST',
+              kind: 'symbol_ref',
+              options: [],
+              types: [],
+              default: null,
+              type: { kind: 'var', name: 'C' },
+            },
+            {
+              name: 'TYPE',
+              kind: 'type',
+              options: [],
+              types: ['int', { 'std::vector': 'int' }, { 'std::map': ['std::string', 'int'] }],
+              default: 'int',
+            },
+          ],
+          input: [
+            {
+              name: 'INDEX',
+              check: 'any',
+              optional: false,
+              repeat: null,
+              default: [],
+              type: { kind: 'fn', fn: 'index', of: { kind: 'var', name: 'C' } },
+              assign: true,
+            },
+          ],
+          extra: [
+            {
+              name: 'params',
+              kind: 'params',
+              min: 0,
+              max: 16,
+              default: null,
+              types: ['int'],
+              typeClass: 'value',
+            },
+          ],
+          order: [{ field: 'LIST' }, { input: 'INDEX' }],
+          placeVar: null,
+          members: { MEMBER: 'S' },
+          optionHeaders: { FN: { sqrt: ['<cmath>'] } },
+        }),
+      ),
+    ).blocks.at(-1);
+    expect(typed?.typeVars).toEqual({ C: 'indexable' });
+    expect(typed?.order).toEqual([{ field: 'LIST' }, { input: 'INDEX' }]);
+    expect(typed?.members).toEqual({ MEMBER: 'S' });
+    expect(typed?.headers).toEqual(['<vector>']);
+    expect(typed?.optionHeaders).toEqual({ FN: { sqrt: ['<cmath>'] } });
+    expect(typed?.fields[0]?.type).toEqual({ kind: 'var', name: 'C' });
+    // A type list holds type field values: names as they are, templates by their keys.
+    expect(typed?.fields[1]?.types).toEqual([
+      'int',
+      '{"std::vector":"int"}',
+      '{"std::map":["std::string","int"]}',
+    ]);
+    expect(typed?.fields[1]?.type).toBeNull();
+    expect(typed?.inputs[0]?.type).toEqual({
+      kind: 'fn',
+      fn: 'index',
+      of: { kind: 'var', name: 'C' },
+    });
+    expect(typed?.inputs[0]?.assign).toBe(true);
+    expect(typed?.extra[0]?.typeClass).toBe('value');
+  });
+
+  it('generates the type table', () => {
+    const types = model((c) => {
+      c.types = [
+        { name: 'int', arity: 0, label: 'int', header: null },
+        { name: 'std::vector', arity: 1, label: 'list of %1', header: '<vector>' },
+      ];
+    }).types;
+    expect(types).toEqual([
+      { name: 'int', arity: 0, label: 'int', header: null },
+      { name: 'std::vector', arity: 1, label: 'list of %1', header: '<vector>' },
+    ]);
+    expect(model().types).toEqual([]);
   });
 
   it('converts every token kind', () => {

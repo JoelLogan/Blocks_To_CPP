@@ -9,20 +9,89 @@ export type CategoryId =
 /** A block's shape (spec §3.3). */
 export type Shape = 'hat' | 'definition' | 'statement' | 'reporter' | 'predicate';
 
-/** The type class of a value input, for the connection checker (spec §3.5.3). */
-export type TypeClass = 'any' | 'number' | 'integer' | 'bool' | 'text';
+/**
+ * A class of types (`b2c_ir::TypeClass`, docs/plans/m3-contracts/types.md §1.3), as catalog files
+ * write it: what a value input's `check` accepts and what a signature's `typeVars` allow a type
+ * variable to be.
+ */
+export type TypeClass =
+  | 'any'
+  | 'number'
+  | 'integer'
+  | 'bool'
+  | 'text'
+  | 'value'
+  | 'collection'
+  | 'sequence'
+  | 'indexable'
+  | 'insertable'
+  | 'searchable'
+  | 'iterable'
+  | 'keyed'
+  | 'adaptor'
+  | 'listable'
+  | 'sortable'
+  | 'switchable'
+  | 'comparable'
+  | 'printable'
+  | 'struct'
+  | 'enum'
+  | 'input_file'
+  | 'output_file'
+  | 'exception';
 
 /** The kind of a field. */
 export type FieldKind =
   'dropdown' | 'checkbox' | 'text' | 'number' | 'type' | 'symbol_decl' | 'symbol_ref';
 
 /**
- * The type of the value a reporter or predicate gives. `symbol` is the type of the symbol its
- * `symbol_ref` field refers to (from the live analysis); `field:NAME` is the type chosen in its
- * `type` field `NAME`.
+ * The type of the value a reporter or predicate gives: its pattern as catalog files write it
+ * (types.md §4.2), in C++ syntax. M2's values keep their meaning: a type (`bool`, `int`, `double`,
+ * `char`, `std::string`), `any` and `number` (the analyser decides), `symbol` (the type of the
+ * symbol its `symbol_ref` field refers to) and `field:NAME` (the type chosen in its `type` field
+ * `NAME`); milestone M3 adds variables and type functions (`T`, `elem(C)`) and `symbol:NAME`.
  */
-export type OutputType =
-  'any' | 'bool' | 'int' | 'double' | 'number' | 'char' | 'string' | 'symbol' | `field:${string}`;
+export type OutputType = string;
+
+/**
+ * A type as files and the wire write it (types.md §3.1): a name, `{"ref": id}`, or a template
+ * object with one key, its qualified C++ name, whose value is its argument or an array of two or
+ * more.
+ */
+export type TypeJson = string | { readonly [name: string]: TypeJson | readonly TypeJson[] };
+
+/**
+ * A type pattern on a part (types.md §4.2, §4.5), tagged by `kind`: `any` and `number` (M2), a fixed
+ * type, a type variable, a library template over patterns, a type function, and the forms that take
+ * a part's type (`field:`, `symbol`, `param:`, `member:`, `result`).
+ */
+export type TypePatternJson =
+  | { readonly kind: 'any' }
+  | { readonly kind: 'number' }
+  | { readonly kind: 'type'; readonly type: TypeJson }
+  | { readonly kind: 'var'; readonly name: string }
+  | { readonly kind: 'lib'; readonly name: string; readonly args: readonly TypePatternJson[] }
+  | { readonly kind: 'fn'; readonly fn: 'elem' | 'index' | 'key'; readonly of: TypePatternJson }
+  | { readonly kind: 'field'; readonly field: string }
+  | { readonly kind: 'symbol'; readonly field: string | null }
+  | { readonly kind: 'param'; readonly field: string }
+  | { readonly kind: 'member'; readonly field: string }
+  | { readonly kind: 'result' };
+
+/** A part of a block that has a pattern, in catalog order: the order it binds in. */
+export type PartNameJson = { readonly field: string } | { readonly input: string };
+
+/** One entry of the type table (types.md §1.1): a fundamental type, `std::string` or a library type. */
+export interface TypeEntryJson {
+  /** Its JSON name: `int`, `std::string`, `std::vector`. */
+  readonly name: string;
+  /** How many template arguments it takes (0 for a type written as a name). */
+  readonly arity: number;
+  /** Its friendly label, with `%1` and `%2` for the arguments' labels (`list of %1`). */
+  readonly label: string;
+  /** The standard header that declares it, if any. */
+  readonly header: string | null;
+}
 
 /**
  * One part of a friendly label: plain text, the field or input `arg` (from `%NAME`), or the place
@@ -53,10 +122,15 @@ export interface FieldDefJson {
   readonly kind: FieldKind;
   /** Dropdown options as [label, value] pairs. */
   readonly options: readonly (readonly [label: string, value: string])[];
-  /** The type names a `type` field offers. */
+  /**
+   * The types a `type` field offers first, as the field's values: a name stays itself, any other
+   * type is its term's key (canonical compact JSON, types.md §3.2).
+   */
   readonly types: readonly string[];
   /** The default value; a field without one is required. */
   readonly default: string | boolean | null;
+  /** The field's pattern, on `type`, `symbol_ref` and `symbol_decl` fields; `null` for none. */
+  readonly type: TypePatternJson | null;
 }
 
 /** A value-input definition. */
@@ -68,6 +142,10 @@ export interface InputDefJson {
   readonly repeat: RepeatJson | null;
   /** The tokens shown (as a shadow) while the input is empty; none for no default. */
   readonly default: readonly TokenJson[];
+  /** The input's pattern, for each part of a repeated input; `null` for none. */
+  readonly type: TypePatternJson | null;
+  /** `assign = true`: the value is assigned, not used to initialise (`char` fits `std::string`). */
+  readonly assign: boolean;
 }
 
 /** A statement-input definition. */
@@ -88,8 +166,10 @@ export interface ExtraDefJson {
   readonly max: number | null;
   /** A count's or a flag's default. */
   readonly default: number | boolean | null;
-  /** The parameter types (params only). */
+  /** The parameter types (params only), as type field values (see {@link FieldDefJson.types}). */
   readonly types: readonly string[];
+  /** The class of types a parameter row accepts besides its `types` (params only), or `null`. */
+  readonly typeClass: TypeClass | null;
 }
 
 /** A block definition. */
@@ -111,6 +191,18 @@ export interface BlockDefJson {
   readonly inputs: readonly InputDefJson[];
   readonly statements: readonly StatementDefJson[];
   readonly extra: readonly ExtraDefJson[];
+  /** Each type variable and its class (`where`, types.md §4.1). */
+  readonly typeVars: Readonly<Record<string, TypeClass>>;
+  /** The parts that have a pattern, in catalog order: the order they bind in. */
+  readonly order: readonly PartNameJson[];
+  /** The output's variable when no part binds it: the block takes its type from its place. */
+  readonly placeVar: string | null;
+  /** `symbol_ref` fields that list the members of the user type bound to a variable. */
+  readonly members: Readonly<Record<string, string>>;
+  /** The standard headers every form of the block needs (`<iostream>`). */
+  readonly headers: readonly string[];
+  /** The headers a dropdown option adds, by field, then option. */
+  readonly optionHeaders: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
 }
 
 /** Blocks the editor adds to a category for the open project. */
@@ -163,6 +255,12 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     inputs: [],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'control.continue',
@@ -178,6 +276,12 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     inputs: [],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'control.for_range',
@@ -202,7 +306,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'Counts from one number to another, running blocks for each value.',
     output: null,
     fields: [
-      { name: 'VAR', kind: 'symbol_decl', options: [], types: [], default: null },
+      { name: 'VAR', kind: 'symbol_decl', options: [], types: [], default: null, type: null },
       {
         name: 'DIRECTION',
         kind: 'dropdown',
@@ -213,15 +317,46 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         ],
         types: [],
         default: 'to',
+        type: null,
       },
     ],
     inputs: [
-      { name: 'FROM', check: 'integer', optional: false, repeat: null, default: [{ num: '0' }] },
-      { name: 'TO', check: 'integer', optional: false, repeat: null, default: [{ num: '10' }] },
-      { name: 'STEP', check: 'integer', optional: true, repeat: null, default: [] },
+      {
+        name: 'FROM',
+        check: 'integer',
+        optional: false,
+        repeat: null,
+        default: [{ num: '0' }],
+        type: null,
+        assign: false,
+      },
+      {
+        name: 'TO',
+        check: 'integer',
+        optional: false,
+        repeat: null,
+        default: [{ num: '10' }],
+        type: null,
+        assign: false,
+      },
+      {
+        name: 'STEP',
+        check: 'integer',
+        optional: true,
+        repeat: null,
+        default: [],
+        type: null,
+        assign: false,
+      },
     ],
     statements: [{ name: 'BODY', repeat: null, when: null }],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'control.forever',
@@ -237,6 +372,12 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     inputs: [],
     statements: [{ name: 'BODY', repeat: null, when: null }],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'control.if',
@@ -268,6 +409,8 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         optional: false,
         repeat: { count: 'elseIfCount', plus: 1 },
         default: [{ kw: 'true' }],
+        type: null,
+        assign: false,
       },
     ],
     statements: [
@@ -275,9 +418,31 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
       { name: 'ELSE', repeat: null, when: 'hasElse' },
     ],
     extra: [
-      { name: 'elseIfCount', kind: 'count', min: 0, max: 32, default: 0, types: [] },
-      { name: 'hasElse', kind: 'flag', min: null, max: null, default: false, types: [] },
+      {
+        name: 'elseIfCount',
+        kind: 'count',
+        min: 0,
+        max: 32,
+        default: 0,
+        types: [],
+        typeClass: null,
+      },
+      {
+        name: 'hasElse',
+        kind: 'flag',
+        min: null,
+        max: null,
+        default: false,
+        types: [],
+        typeClass: null,
+      },
     ],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'control.repeat',
@@ -291,10 +456,24 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     output: null,
     fields: [],
     inputs: [
-      { name: 'TIMES', check: 'integer', optional: false, repeat: null, default: [{ num: '10' }] },
+      {
+        name: 'TIMES',
+        check: 'integer',
+        optional: false,
+        repeat: null,
+        default: [{ num: '10' }],
+        type: null,
+        assign: false,
+      },
     ],
     statements: [{ name: 'BODY', repeat: null, when: null }],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'control.while',
@@ -316,13 +495,28 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         ],
         types: [],
         default: 'while',
+        type: null,
       },
     ],
     inputs: [
-      { name: 'COND', check: 'bool', optional: false, repeat: null, default: [{ kw: 'true' }] },
+      {
+        name: 'COND',
+        check: 'bool',
+        optional: false,
+        repeat: null,
+        default: [{ kw: 'true' }],
+        type: null,
+        assign: false,
+      },
     ],
     statements: [{ name: 'BODY', repeat: null, when: null }],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'func.call',
@@ -334,7 +528,9 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     statementsNotInLabel: [],
     help: 'Calls a function and uses its result.',
     output: 'symbol',
-    fields: [{ name: 'FUNC', kind: 'symbol_ref', options: [], types: [], default: null }],
+    fields: [
+      { name: 'FUNC', kind: 'symbol_ref', options: [], types: [], default: null, type: null },
+    ],
     inputs: [
       {
         name: 'ARG',
@@ -342,10 +538,20 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         optional: false,
         repeat: { count: 'argCount', plus: 0 },
         default: [],
+        type: { kind: 'param', field: 'FUNC' },
+        assign: false,
       },
     ],
     statements: [],
-    extra: [{ name: 'argCount', kind: 'count', min: 0, max: 16, default: 0, types: [] }],
+    extra: [
+      { name: 'argCount', kind: 'count', min: 0, max: 16, default: 0, types: [], typeClass: null },
+    ],
+    typeVars: {},
+    order: [{ input: 'ARG' }],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'func.call_stmt',
@@ -357,7 +563,9 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     statementsNotInLabel: [],
     help: 'Calls a function.',
     output: null,
-    fields: [{ name: 'FUNC', kind: 'symbol_ref', options: [], types: [], default: null }],
+    fields: [
+      { name: 'FUNC', kind: 'symbol_ref', options: [], types: [], default: null, type: null },
+    ],
     inputs: [
       {
         name: 'ARG',
@@ -365,10 +573,20 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         optional: false,
         repeat: { count: 'argCount', plus: 0 },
         default: [],
+        type: { kind: 'param', field: 'FUNC' },
+        assign: false,
       },
     ],
     statements: [],
-    extra: [{ name: 'argCount', kind: 'count', min: 0, max: 16, default: 0, types: [] }],
+    extra: [
+      { name: 'argCount', kind: 'count', min: 0, max: 16, default: 0, types: [], typeClass: null },
+    ],
+    typeVars: {},
+    order: [{ input: 'ARG' }],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'func.define',
@@ -388,13 +606,14 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'Defines a function: a named group of blocks you can use again.',
     output: null,
     fields: [
-      { name: 'NAME', kind: 'symbol_decl', options: [], types: [], default: null },
+      { name: 'NAME', kind: 'symbol_decl', options: [], types: [], default: null, type: null },
       {
         name: 'RETURNS',
         kind: 'type',
         options: [],
         types: ['void', 'int', 'double', 'bool', 'char', 'std::string'],
         default: 'void',
+        type: null,
       },
     ],
     inputs: [],
@@ -407,8 +626,15 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         max: 16,
         default: null,
         types: ['int', 'double', 'bool', 'char', 'std::string'],
+        typeClass: 'value',
       },
     ],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'func.return',
@@ -421,9 +647,25 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'Leaves the function, giving back a value if the function returns one.',
     output: null,
     fields: [],
-    inputs: [{ name: 'VALUE', check: 'any', optional: true, repeat: null, default: [] }],
+    inputs: [
+      {
+        name: 'VALUE',
+        check: 'any',
+        optional: true,
+        repeat: null,
+        default: [],
+        type: { kind: 'result' },
+        assign: false,
+      },
+    ],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [{ input: 'VALUE' }],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'io.ask',
@@ -444,7 +686,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'Asks the user to type something and stores it in a variable.',
     output: null,
     fields: [
-      { name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null },
+      { name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null, type: null },
       {
         name: 'MODE',
         kind: 'dropdown',
@@ -454,11 +696,28 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         ],
         types: [],
         default: 'keep_asking',
+        type: null,
       },
     ],
-    inputs: [{ name: 'PROMPT', check: 'text', optional: true, repeat: null, default: [] }],
+    inputs: [
+      {
+        name: 'PROMPT',
+        check: 'text',
+        optional: true,
+        repeat: null,
+        default: [],
+        type: null,
+        assign: false,
+      },
+    ],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: ['<iostream>'],
+    optionHeaders: {},
   },
   {
     id: 'io.print',
@@ -493,8 +752,9 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         ],
         types: [],
         default: 'none',
+        type: null,
       },
-      { name: 'NEWLINE', kind: 'checkbox', options: [], types: [], default: true },
+      { name: 'NEWLINE', kind: 'checkbox', options: [], types: [], default: true, type: null },
       {
         name: 'STREAM',
         kind: 'dropdown',
@@ -504,6 +764,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         ],
         types: [],
         default: 'out',
+        type: null,
       },
     ],
     inputs: [
@@ -513,10 +774,20 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         optional: false,
         repeat: { count: 'itemCount', plus: 0 },
         default: [{ str: 'Hello, world!' }],
+        type: null,
+        assign: false,
       },
     ],
     statements: [],
-    extra: [{ name: 'itemCount', kind: 'count', min: 1, max: 32, default: 1, types: [] }],
+    extra: [
+      { name: 'itemCount', kind: 'count', min: 1, max: 32, default: 1, types: [], typeClass: null },
+    ],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: ['<iostream>'],
+    optionHeaders: {},
   },
   {
     id: 'logic.boolean',
@@ -538,11 +809,18 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         ],
         types: [],
         default: 'true',
+        type: null,
       },
     ],
     inputs: [],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'logic.not',
@@ -556,10 +834,24 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     output: 'bool',
     fields: [],
     inputs: [
-      { name: 'A', check: 'bool', optional: false, repeat: null, default: [{ kw: 'true' }] },
+      {
+        name: 'A',
+        check: 'bool',
+        optional: false,
+        repeat: null,
+        default: [{ kw: 'true' }],
+        type: null,
+        assign: false,
+      },
     ],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'logic.operation',
@@ -581,6 +873,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         ],
         types: [],
         default: 'and',
+        type: null,
       },
     ],
     inputs: [
@@ -590,10 +883,20 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         optional: false,
         repeat: { count: 'itemCount', plus: 0 },
         default: [{ kw: 'true' }],
+        type: null,
+        assign: false,
       },
     ],
     statements: [],
-    extra: [{ name: 'itemCount', kind: 'count', min: 2, max: 32, default: 2, types: [] }],
+    extra: [
+      { name: 'itemCount', kind: 'count', min: 2, max: 32, default: 2, types: [], typeClass: null },
+    ],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'logic.ternary',
@@ -614,12 +917,42 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     output: 'any',
     fields: [],
     inputs: [
-      { name: 'COND', check: 'bool', optional: false, repeat: null, default: [{ kw: 'true' }] },
-      { name: 'THEN', check: 'any', optional: false, repeat: null, default: [{ num: '0' }] },
-      { name: 'ELSE', check: 'any', optional: false, repeat: null, default: [{ num: '0' }] },
+      {
+        name: 'COND',
+        check: 'bool',
+        optional: false,
+        repeat: null,
+        default: [{ kw: 'true' }],
+        type: null,
+        assign: false,
+      },
+      {
+        name: 'THEN',
+        check: 'any',
+        optional: false,
+        repeat: null,
+        default: [{ num: '0' }],
+        type: null,
+        assign: false,
+      },
+      {
+        name: 'ELSE',
+        check: 'any',
+        optional: false,
+        repeat: null,
+        default: [{ num: '0' }],
+        type: null,
+        assign: false,
+      },
     ],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'math.arithmetic',
@@ -644,14 +977,37 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         ],
         types: [],
         default: 'add',
+        type: null,
       },
     ],
     inputs: [
-      { name: 'A', check: 'number', optional: false, repeat: null, default: [{ num: '0' }] },
-      { name: 'B', check: 'number', optional: false, repeat: null, default: [{ num: '0' }] },
+      {
+        name: 'A',
+        check: 'number',
+        optional: false,
+        repeat: null,
+        default: [{ num: '0' }],
+        type: null,
+        assign: false,
+      },
+      {
+        name: 'B',
+        check: 'number',
+        optional: false,
+        repeat: null,
+        default: [{ num: '0' }],
+        type: null,
+        assign: false,
+      },
     ],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'math.compare',
@@ -677,14 +1033,37 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         ],
         types: [],
         default: 'lt',
+        type: null,
       },
     ],
     inputs: [
-      { name: 'A', check: 'any', optional: false, repeat: null, default: [{ num: '0' }] },
-      { name: 'B', check: 'any', optional: false, repeat: null, default: [{ num: '0' }] },
+      {
+        name: 'A',
+        check: 'any',
+        optional: false,
+        repeat: null,
+        default: [{ num: '0' }],
+        type: null,
+        assign: false,
+      },
+      {
+        name: 'B',
+        check: 'any',
+        optional: false,
+        repeat: null,
+        default: [{ num: '0' }],
+        type: null,
+        assign: false,
+      },
     ],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'math.convert',
@@ -696,12 +1075,35 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     statementsNotInLabel: [],
     help: 'Converts a number to another number type, e.g. a decimal to a whole number.',
     output: 'field:TO',
-    fields: [{ name: 'TO', kind: 'type', options: [], types: ['int', 'double'], default: 'int' }],
+    fields: [
+      {
+        name: 'TO',
+        kind: 'type',
+        options: [],
+        types: ['int', 'double'],
+        default: 'int',
+        type: null,
+      },
+    ],
     inputs: [
-      { name: 'VALUE', check: 'number', optional: false, repeat: null, default: [{ num: '0' }] },
+      {
+        name: 'VALUE',
+        check: 'number',
+        optional: false,
+        repeat: null,
+        default: [{ num: '0' }],
+        type: null,
+        assign: false,
+      },
     ],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'math.number',
@@ -713,10 +1115,16 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     statementsNotInLabel: [],
     help: 'A number, such as 42 or 3.14.',
     output: 'number',
-    fields: [{ name: 'VALUE', kind: 'number', options: [], types: [], default: '0' }],
+    fields: [{ name: 'VALUE', kind: 'number', options: [], types: [], default: '0', type: null }],
     inputs: [],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'math.random_int',
@@ -730,11 +1138,33 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     output: 'int',
     fields: [],
     inputs: [
-      { name: 'LOW', check: 'integer', optional: false, repeat: null, default: [{ num: '1' }] },
-      { name: 'HIGH', check: 'integer', optional: false, repeat: null, default: [{ num: '6' }] },
+      {
+        name: 'LOW',
+        check: 'integer',
+        optional: false,
+        repeat: null,
+        default: [{ num: '1' }],
+        type: null,
+        assign: false,
+      },
+      {
+        name: 'HIGH',
+        check: 'integer',
+        optional: false,
+        repeat: null,
+        default: [{ num: '6' }],
+        type: null,
+        assign: false,
+      },
     ],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'program.exit',
@@ -751,10 +1181,24 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     output: null,
     fields: [],
     inputs: [
-      { name: 'CODE', check: 'integer', optional: false, repeat: null, default: [{ num: '0' }] },
+      {
+        name: 'CODE',
+        check: 'integer',
+        optional: false,
+        repeat: null,
+        default: [{ num: '0' }],
+        type: null,
+        assign: false,
+      },
     ],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'program.main',
@@ -770,6 +1214,12 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     inputs: [],
     statements: [{ name: 'BODY', repeat: null, when: null }],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'text.char',
@@ -781,10 +1231,16 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     statementsNotInLabel: [],
     help: "A single character, such as 'a'.",
     output: 'char',
-    fields: [{ name: 'VALUE', kind: 'text', options: [], types: [], default: 'a' }],
+    fields: [{ name: 'VALUE', kind: 'text', options: [], types: [], default: 'a', type: null }],
     inputs: [],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'text.join',
@@ -795,7 +1251,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     labelParts: [{ text: 'join' }, { arg: 'ITEM' }, { repeat: true }],
     statementsNotInLabel: [],
     help: 'Joins text and numbers into one piece of text.',
-    output: 'string',
+    output: 'std::string',
     fields: [],
     inputs: [
       {
@@ -804,10 +1260,20 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         optional: false,
         repeat: { count: 'itemCount', plus: 0 },
         default: [{ str: '' }],
+        type: null,
+        assign: false,
       },
     ],
     statements: [],
-    extra: [{ name: 'itemCount', kind: 'count', min: 2, max: 32, default: 2, types: [] }],
+    extra: [
+      { name: 'itemCount', kind: 'count', min: 2, max: 32, default: 2, types: [], typeClass: null },
+    ],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: ['<string>'],
+    optionHeaders: {},
   },
   {
     id: 'text.literal',
@@ -818,11 +1284,17 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     labelParts: [{ text: '"' }, { arg: 'VALUE' }, { text: '"' }],
     statementsNotInLabel: [],
     help: 'A piece of text.',
-    output: 'string',
-    fields: [{ name: 'VALUE', kind: 'text', options: [], types: [], default: '' }],
+    output: 'std::string',
+    fields: [{ name: 'VALUE', kind: 'text', options: [], types: [], default: '', type: null }],
     inputs: [],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'var.change',
@@ -835,7 +1307,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'Adds to a variable (+=); choose down by (-=), times (*=), divided by (/=) or mod (%=) in the menu to subtract, multiply, divide or keep the remainder instead.',
     output: null,
     fields: [
-      { name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null },
+      { name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null, type: null },
       {
         name: 'OP',
         kind: 'dropdown',
@@ -848,13 +1320,28 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         ],
         types: [],
         default: 'add',
+        type: null,
       },
     ],
     inputs: [
-      { name: 'BY', check: 'number', optional: false, repeat: null, default: [{ num: '1' }] },
+      {
+        name: 'BY',
+        check: 'number',
+        optional: false,
+        repeat: null,
+        default: [{ num: '1' }],
+        type: null,
+        assign: false,
+      },
     ],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'var.declare',
@@ -885,13 +1372,37 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         options: [],
         types: ['int', 'double', 'bool', 'char', 'std::string', 'auto'],
         default: 'int',
+        type: { kind: 'var', name: 'T' },
       },
-      { name: 'NAME', kind: 'symbol_decl', options: [], types: [], default: null },
-      { name: 'CONST', kind: 'checkbox', options: [], types: [], default: false },
+      {
+        name: 'NAME',
+        kind: 'symbol_decl',
+        options: [],
+        types: [],
+        default: null,
+        type: { kind: 'var', name: 'T' },
+      },
+      { name: 'CONST', kind: 'checkbox', options: [], types: [], default: false, type: null },
     ],
-    inputs: [{ name: 'VALUE', check: 'any', optional: true, repeat: null, default: [] }],
+    inputs: [
+      {
+        name: 'VALUE',
+        check: 'any',
+        optional: true,
+        repeat: null,
+        default: [],
+        type: { kind: 'var', name: 'T' },
+        assign: false,
+      },
+    ],
     statements: [],
     extra: [],
+    typeVars: { T: 'value' },
+    order: [{ field: 'TYPE' }, { field: 'NAME' }, { input: 'VALUE' }],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'var.get',
@@ -903,10 +1414,18 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     statementsNotInLabel: [],
     help: 'The value of a variable.',
     output: 'symbol',
-    fields: [{ name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null }],
+    fields: [
+      { name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null, type: null },
+    ],
     inputs: [],
     statements: [],
     extra: [],
+    typeVars: {},
+    order: [],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
   {
     id: 'var.set',
@@ -918,10 +1437,35 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     statementsNotInLabel: [],
     help: 'Gives a variable a new value.',
     output: null,
-    fields: [{ name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null }],
-    inputs: [{ name: 'VALUE', check: 'any', optional: false, repeat: null, default: [] }],
+    fields: [
+      {
+        name: 'VAR',
+        kind: 'symbol_ref',
+        options: [],
+        types: [],
+        default: null,
+        type: { kind: 'var', name: 'T' },
+      },
+    ],
+    inputs: [
+      {
+        name: 'VALUE',
+        check: 'any',
+        optional: false,
+        repeat: null,
+        default: [],
+        type: { kind: 'var', name: 'T' },
+        assign: true,
+      },
+    ],
     statements: [],
     extra: [],
+    typeVars: { T: 'value' },
+    order: [{ field: 'VAR' }, { input: 'VALUE' }],
+    placeVar: null,
+    members: {},
+    headers: [],
+    optionHeaders: {},
   },
 ];
 
@@ -1036,4 +1580,32 @@ export const TOOLBOX: readonly ToolboxCategoryJson[] = [
       { block: 'func.return', label: null, preset: null },
     ],
   },
+];
+
+/** The type table (docs/plans/m3-contracts/types.md §1.1): the names a type field may hold. */
+export const TYPE_TABLE: readonly TypeEntryJson[] = [
+  { name: 'void', arity: 0, label: 'void', header: null },
+  { name: 'bool', arity: 0, label: 'bool', header: null },
+  { name: 'char', arity: 0, label: 'char', header: null },
+  { name: 'int', arity: 0, label: 'int', header: null },
+  { name: 'double', arity: 0, label: 'double', header: null },
+  { name: 'std::string', arity: 0, label: 'string', header: '<string>' },
+  { name: 'std::vector', arity: 1, label: 'list of %1', header: '<vector>' },
+  { name: 'std::deque', arity: 1, label: 'deque of %1', header: '<deque>' },
+  { name: 'std::set', arity: 1, label: 'set of %1', header: '<set>' },
+  { name: 'std::map', arity: 2, label: 'map from %1 to %2', header: '<map>' },
+  { name: 'std::queue', arity: 1, label: 'queue of %1', header: '<queue>' },
+  { name: 'std::stack', arity: 1, label: 'stack of %1', header: '<stack>' },
+  { name: 'std::priority_queue', arity: 1, label: 'priority queue of %1', header: '<queue>' },
+  { name: 'std::ifstream', arity: 0, label: 'input file', header: '<fstream>' },
+  { name: 'std::ofstream', arity: 0, label: 'output file', header: '<fstream>' },
+  { name: 'std::exception', arity: 0, label: 'error', header: '<exception>' },
+  { name: 'std::runtime_error', arity: 0, label: 'runtime error', header: '<stdexcept>' },
+  {
+    name: 'std::invalid_argument',
+    arity: 0,
+    label: 'invalid argument error',
+    header: '<stdexcept>',
+  },
+  { name: 'std::out_of_range', arity: 0, label: 'out-of-range error', header: '<stdexcept>' },
 ];

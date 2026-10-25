@@ -168,12 +168,11 @@ function outputText(block: BlockDefJson): string {
       return 'a value of any type';
     case 'number':
       return `${code('int')} or ${code('double')}`;
-    case 'string':
-      return code('std::string');
     case 'bool':
     case 'int':
     case 'double':
     case 'char':
+    case 'std::string':
       return code(output);
     case 'symbol': {
       const reference = block.fields.find((field) => field.kind === 'symbol_ref');
@@ -182,7 +181,9 @@ function outputText(block: BlockDefJson): string {
         : `the type of ${code(reference.name)}`;
     }
     default:
-      return `the type chosen in ${code(output.slice('field:'.length))}`;
+      return output.startsWith('field:')
+        ? `the type chosen in ${code(output.slice('field:'.length))}`
+        : `a value of type ${code(output)}`;
   }
 }
 
@@ -227,6 +228,25 @@ const CHECKS: Readonly<Record<TypeClass, string>> = {
   integer: 'a whole number',
   bool: 'a condition',
   text: 'text',
+  value: 'a value a variable can hold',
+  collection: 'a list, deque, set, queue, stack, priority queue or map',
+  sequence: 'a list or deque',
+  indexable: 'a list, deque or map',
+  insertable: 'a list, deque, set, queue, stack or priority queue',
+  searchable: 'a list, deque, set or map',
+  iterable: 'a list, deque, set or text',
+  keyed: 'a set or map',
+  adaptor: 'a queue, stack or priority queue',
+  listable: 'a list, deque or set',
+  sortable: 'a list or deque of comparable items',
+  switchable: 'a whole number, character or enum',
+  comparable: 'a comparable value',
+  printable: 'a printable value',
+  struct: 'a struct',
+  enum: 'an enum',
+  input_file: 'an input file',
+  output_file: 'an output file',
+  exception: 'an error',
 };
 
 function inputText(input: InputDefJson): string {

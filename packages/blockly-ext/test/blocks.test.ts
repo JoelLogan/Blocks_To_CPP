@@ -224,10 +224,20 @@ describe('blockLayout', () => {
       labelParts: [{ text: 'try' }, { arg: 'BODY' }, { text: 'then' }, { arg: 'MODE' }],
       statementsNotInLabel: ['AFTER'],
       fields: [
-        { name: 'MODE', kind: 'checkbox', options: [], types: [], default: false },
-        { name: 'EXTRA', kind: 'checkbox', options: [], types: [], default: false },
+        { name: 'MODE', kind: 'checkbox', options: [], types: [], default: false, type: null },
+        { name: 'EXTRA', kind: 'checkbox', options: [], types: [], default: false, type: null },
       ],
-      inputs: [{ name: 'LIMIT', check: 'integer', optional: true, repeat: null, default: [] }],
+      inputs: [
+        {
+          name: 'LIMIT',
+          check: 'integer',
+          optional: true,
+          repeat: null,
+          default: [],
+          type: null,
+          assign: false,
+        },
+      ],
       statements: [
         { name: 'BODY', repeat: null, when: null },
         { name: 'AFTER', repeat: null, when: null },

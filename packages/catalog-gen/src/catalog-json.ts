@@ -5,7 +5,7 @@
 // typed values: it checks that every key and value has the shape the generator expects, so a
 // change of the Rust schema fails here, loudly, instead of producing wrong definitions.
 
-import type { CategoryId, DynamicCategory, FieldKind, Shape, TypeClass } from './catalog-types.ts';
+import type { CategoryId, DynamicCategory, FieldKind, Shape } from './catalog-types.ts';
 
 /** The largest catalog.json the generator reads, in bytes. */
 export const MAX_CATALOG_JSON_BYTES = 4 * 1024 * 1024;
@@ -137,7 +137,8 @@ export interface RustFieldDef {
   readonly name: string;
   readonly kind: FieldKind;
   readonly options: readonly (readonly [string, string])[];
-  readonly types: readonly string[];
+  /** The types offered first, as type terms (types.md §4.1). */
+  readonly types: readonly RustTypeJson[];
   readonly default: string | boolean | null;
   /** The field's pattern (`type`), on `type`, `symbol_ref` and `symbol_decl` fields. */
   readonly type?: RustPattern;
@@ -152,7 +153,7 @@ export interface RustRepeat {
 /** `b2c_catalog::InputDef`. */
 export interface RustInputDef {
   readonly name: string;
-  readonly check: TypeClass;
+  readonly check: RustTypeClass;
   readonly optional: boolean;
   readonly repeat: RustRepeat | null;
   readonly default: readonly RustToken[];
@@ -185,7 +186,8 @@ export interface RustExtraDef {
   readonly min: number;
   readonly max: number;
   readonly default: string | boolean | null;
-  readonly types: readonly string[];
+  /** The parameter types, as type terms. */
+  readonly types: readonly RustTypeJson[];
   /** The class of types a parameter row accepts besides its `types` (`type_class`). */
   readonly typeClass?: RustTypeClass;
 }
@@ -231,7 +233,6 @@ export const CATEGORY_IDS: readonly CategoryId[] = [
   'functions',
 ];
 const SHAPES: readonly Shape[] = ['hat', 'definition', 'statement', 'reporter', 'predicate'];
-const TYPE_CLASSES: readonly TypeClass[] = ['any', 'number', 'integer', 'bool', 'text'];
 const RUST_TYPE_CLASSES: readonly RustTypeClass[] = [
   'any',
   'number',
@@ -386,7 +387,7 @@ function fieldDef(value: unknown, path: string): RustFieldDef {
     name: string(o.name, `${path}.name`),
     kind: oneOf(o.kind, `${path}.kind`, FIELD_KINDS),
     options: array(o.options, `${path}.options`, option),
-    types: array(o.types, `${path}.types`, string),
+    types: array(o.types, `${path}.types`, (v, p) => typeJson(v, p, 0)),
     default: nullable(o.default, `${path}.default`, stringOrBoolean),
     ...optional(o.type, `${path}.type`, (v, p) => ({ type: pattern(v, p, 0) })),
   };
@@ -406,7 +407,7 @@ function inputDef(value: unknown, path: string): RustInputDef {
   const o = object(value, path, keys);
   return {
     name: string(o.name, `${path}.name`),
-    check: oneOf(o.check, `${path}.check`, TYPE_CLASSES),
+    check: oneOf(o.check, `${path}.check`, RUST_TYPE_CLASSES),
     optional: boolean(o.optional, `${path}.optional`),
     repeat: nullable(o.repeat, `${path}.repeat`, repeat),
     default: array(o.default, `${path}.default`, token),
@@ -437,7 +438,7 @@ function extraDef(value: unknown, path: string): RustExtraDef {
     min: count(o.min, `${path}.min`),
     max: count(o.max, `${path}.max`),
     default: nullable(o.default, `${path}.default`, stringOrBoolean),
-    types: array(o.types, `${path}.types`, string),
+    types: array(o.types, `${path}.types`, (v, p) => typeJson(v, p, 0)),
     ...optional(o.typeClass, `${path}.typeClass`, (v, p) => ({
       typeClass: oneOf(v, p, RUST_TYPE_CLASSES),
     })),

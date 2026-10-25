@@ -33,6 +33,9 @@ export function catalogTs(model: Model, typesSource: string): string {
     '/** The toolbox categories, in toolbox order. */',
     `export const TOOLBOX: readonly ToolboxCategoryJson[] = ${JSON.stringify(model.toolbox)};`,
     '',
+    '/** The type table (docs/plans/m3-contracts/types.md §1.1): the names a type field may hold. */',
+    `export const TYPE_TABLE: readonly TypeEntryJson[] = ${JSON.stringify(model.types)};`,
+    '',
   ].join('\n');
 }
 

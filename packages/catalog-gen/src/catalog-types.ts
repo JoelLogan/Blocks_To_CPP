@@ -9,20 +9,89 @@ export type CategoryId =
 /** A block's shape (spec §3.3). */
 export type Shape = 'hat' | 'definition' | 'statement' | 'reporter' | 'predicate';
 
-/** The type class of a value input, for the connection checker (spec §3.5.3). */
-export type TypeClass = 'any' | 'number' | 'integer' | 'bool' | 'text';
+/**
+ * A class of types (`b2c_ir::TypeClass`, docs/plans/m3-contracts/types.md §1.3), as catalog files
+ * write it: what a value input's `check` accepts and what a signature's `typeVars` allow a type
+ * variable to be.
+ */
+export type TypeClass =
+  | 'any'
+  | 'number'
+  | 'integer'
+  | 'bool'
+  | 'text'
+  | 'value'
+  | 'collection'
+  | 'sequence'
+  | 'indexable'
+  | 'insertable'
+  | 'searchable'
+  | 'iterable'
+  | 'keyed'
+  | 'adaptor'
+  | 'listable'
+  | 'sortable'
+  | 'switchable'
+  | 'comparable'
+  | 'printable'
+  | 'struct'
+  | 'enum'
+  | 'input_file'
+  | 'output_file'
+  | 'exception';
 
 /** The kind of a field. */
 export type FieldKind =
   'dropdown' | 'checkbox' | 'text' | 'number' | 'type' | 'symbol_decl' | 'symbol_ref';
 
 /**
- * The type of the value a reporter or predicate gives. `symbol` is the type of the symbol its
- * `symbol_ref` field refers to (from the live analysis); `field:NAME` is the type chosen in its
- * `type` field `NAME`.
+ * The type of the value a reporter or predicate gives: its pattern as catalog files write it
+ * (types.md §4.2), in C++ syntax. M2's values keep their meaning: a type (`bool`, `int`, `double`,
+ * `char`, `std::string`), `any` and `number` (the analyser decides), `symbol` (the type of the
+ * symbol its `symbol_ref` field refers to) and `field:NAME` (the type chosen in its `type` field
+ * `NAME`); milestone M3 adds variables and type functions (`T`, `elem(C)`) and `symbol:NAME`.
  */
-export type OutputType =
-  'any' | 'bool' | 'int' | 'double' | 'number' | 'char' | 'string' | 'symbol' | `field:${string}`;
+export type OutputType = string;
+
+/**
+ * A type as files and the wire write it (types.md §3.1): a name, `{"ref": id}`, or a template
+ * object with one key, its qualified C++ name, whose value is its argument or an array of two or
+ * more.
+ */
+export type TypeJson = string | { readonly [name: string]: TypeJson | readonly TypeJson[] };
+
+/**
+ * A type pattern on a part (types.md §4.2, §4.5), tagged by `kind`: `any` and `number` (M2), a fixed
+ * type, a type variable, a library template over patterns, a type function, and the forms that take
+ * a part's type (`field:`, `symbol`, `param:`, `member:`, `result`).
+ */
+export type TypePatternJson =
+  | { readonly kind: 'any' }
+  | { readonly kind: 'number' }
+  | { readonly kind: 'type'; readonly type: TypeJson }
+  | { readonly kind: 'var'; readonly name: string }
+  | { readonly kind: 'lib'; readonly name: string; readonly args: readonly TypePatternJson[] }
+  | { readonly kind: 'fn'; readonly fn: 'elem' | 'index' | 'key'; readonly of: TypePatternJson }
+  | { readonly kind: 'field'; readonly field: string }
+  | { readonly kind: 'symbol'; readonly field: string | null }
+  | { readonly kind: 'param'; readonly field: string }
+  | { readonly kind: 'member'; readonly field: string }
+  | { readonly kind: 'result' };
+
+/** A part of a block that has a pattern, in catalog order: the order it binds in. */
+export type PartNameJson = { readonly field: string } | { readonly input: string };
+
+/** One entry of the type table (types.md §1.1): a fundamental type, `std::string` or a library type. */
+export interface TypeEntryJson {
+  /** Its JSON name: `int`, `std::string`, `std::vector`. */
+  readonly name: string;
+  /** How many template arguments it takes (0 for a type written as a name). */
+  readonly arity: number;
+  /** Its friendly label, with `%1` and `%2` for the arguments' labels (`list of %1`). */
+  readonly label: string;
+  /** The standard header that declares it, if any. */
+  readonly header: string | null;
+}
 
 /**
  * One part of a friendly label: plain text, the field or input `arg` (from `%NAME`), or the place
@@ -53,10 +122,15 @@ export interface FieldDefJson {
   readonly kind: FieldKind;
   /** Dropdown options as [label, value] pairs. */
   readonly options: readonly (readonly [label: string, value: string])[];
-  /** The type names a `type` field offers. */
+  /**
+   * The types a `type` field offers first, as the field's values: a name stays itself, any other
+   * type is its term's key (canonical compact JSON, types.md §3.2).
+   */
   readonly types: readonly string[];
   /** The default value; a field without one is required. */
   readonly default: string | boolean | null;
+  /** The field's pattern, on `type`, `symbol_ref` and `symbol_decl` fields; `null` for none. */
+  readonly type: TypePatternJson | null;
 }
 
 /** A value-input definition. */
@@ -68,6 +142,10 @@ export interface InputDefJson {
   readonly repeat: RepeatJson | null;
   /** The tokens shown (as a shadow) while the input is empty; none for no default. */
   readonly default: readonly TokenJson[];
+  /** The input's pattern, for each part of a repeated input; `null` for none. */
+  readonly type: TypePatternJson | null;
+  /** `assign = true`: the value is assigned, not used to initialise (`char` fits `std::string`). */
+  readonly assign: boolean;
 }
 
 /** A statement-input definition. */
@@ -88,8 +166,10 @@ export interface ExtraDefJson {
   readonly max: number | null;
   /** A count's or a flag's default. */
   readonly default: number | boolean | null;
-  /** The parameter types (params only). */
+  /** The parameter types (params only), as type field values (see {@link FieldDefJson.types}). */
   readonly types: readonly string[];
+  /** The class of types a parameter row accepts besides its `types` (params only), or `null`. */
+  readonly typeClass: TypeClass | null;
 }
 
 /** A block definition. */
@@ -111,6 +191,18 @@ export interface BlockDefJson {
   readonly inputs: readonly InputDefJson[];
   readonly statements: readonly StatementDefJson[];
   readonly extra: readonly ExtraDefJson[];
+  /** Each type variable and its class (`where`, types.md §4.1). */
+  readonly typeVars: Readonly<Record<string, TypeClass>>;
+  /** The parts that have a pattern, in catalog order: the order they bind in. */
+  readonly order: readonly PartNameJson[];
+  /** The output's variable when no part binds it: the block takes its type from its place. */
+  readonly placeVar: string | null;
+  /** `symbol_ref` fields that list the members of the user type bound to a variable. */
+  readonly members: Readonly<Record<string, string>>;
+  /** The standard headers every form of the block needs (`<iostream>`). */
+  readonly headers: readonly string[];
+  /** The headers a dropdown option adds, by field, then option. */
+  readonly optionHeaders: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
 }
 
 /** Blocks the editor adds to a category for the open project. */

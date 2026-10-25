@@ -20,12 +20,21 @@ docs/reference/blocks/*.md                      the block reference
 ```
 
 - `catalog.json` holds the catalog version, every block definition (sorted by
-  ID) and the toolbox, in the Rust (serde) shapes of `b2c-catalog`.
-- `catalog.ts` exports `CATALOG_VERSION`, `BLOCK_DEFS` and `TOOLBOX`, with the
-  types of [`src/catalog-types.ts`](src/catalog-types.ts) copied in, so the
-  module has no imports. The generator renames the Rust keys (`field` becomes
-  `fields`), turns count defaults into numbers and parses each friendly label
-  into text, argument (`%NAME`) and repeat (`…`) parts.
+  ID), the toolbox and the type table, in the Rust (serde) shapes of
+  `b2c-catalog`. Each block also carries what its signature adds
+  ([types.md §4.5](../../docs/plans/m3-contracts/types.md#45-catalogjson)).
+- `catalog.ts` exports `CATALOG_VERSION`, `BLOCK_DEFS`, `TOOLBOX` and
+  `TYPE_TABLE`, with the types of [`src/catalog-types.ts`](src/catalog-types.ts)
+  copied in, so the module has no imports. The generator renames the Rust keys
+  (`field` becomes `fields`), turns count defaults into numbers, parses each
+  friendly label into text, argument (`%NAME`) and repeat (`…`) parts, gives
+  every block its signature keys (`typeVars`, `order`, `placeVar`, `members`,
+  `headers`, `optionHeaders`, and each part's `type` pattern, `assign` and
+  `typeClass`; empty where the export leaves them out) and writes the entries
+  of `types` lists as type field values (a name as it is, a template by its
+  key). The output pattern stays the text the catalog writes; the editor reads
+  it (`packages/blockly-ext/src/types/pattern.ts`), and builds each block's
+  signature from these keys as `b2c-catalog` does.
 - `docs/reference/blocks/` has an index and one page per toolbox category. The
   folder holds generated files only: the generator removes pages it no longer
   writes.

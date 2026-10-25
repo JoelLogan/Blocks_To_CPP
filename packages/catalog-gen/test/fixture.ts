@@ -37,6 +37,7 @@ export function fixture(): {
   catalogVersion: string;
   blocks: object[];
   toolbox: { category: object[] };
+  types?: object[];
 } {
   return {
     catalogVersion: '9.8.7',

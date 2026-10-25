@@ -29,7 +29,7 @@ const INT_MAX = 2147483647n;
 /**
  * The static type of the value `block` gives, where `def` is its catalog definition:
  *
- * * a fixed `output` (`bool`, `int`, `double`, `char`, `string`) is that type;
+ * * a fixed `output` (`bool`, `int`, `double`, `char`, `std::string`) is that type;
  * * `field:NAME` reads the type chosen in field `NAME` (`math.convert`'s `TO`);
  * * `number` comes from the literal text of the block's number field (`math.number`) or from its
  *   operand types (`math.arithmetic`, with `mod` giving a whole number);
@@ -61,8 +61,9 @@ function outputType(
     case 'int':
     case 'double':
     case 'char':
-    case 'string':
       return output;
+    case 'std::string':
+      return 'string';
     case 'symbol':
       return askOracle(oracle, block);
     case 'any':
@@ -70,7 +71,10 @@ function outputType(
     case 'number':
       return numberType(block, def, oracle, depth);
     default:
-      return typeNameToStatic(fieldText(block, output.slice('field:'.length)));
+      // The other patterns of milestone M3 (`T`, `elem(C)`) are typed slots' (../types/slots.ts).
+      return output.startsWith('field:')
+        ? typeNameToStatic(fieldText(block, output.slice('field:'.length)))
+        : null;
   }
 }
 

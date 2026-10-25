@@ -100,7 +100,17 @@ describe('variadicSpec', () => {
     expect(() => variadicSpec(noCount)).toThrow(/count/);
     const badCount: BlockDefJson = {
       ...base,
-      extra: [{ name: 'itemCount', kind: 'count', min: null, max: 3, default: 1, types: [] }],
+      extra: [
+        {
+          name: 'itemCount',
+          kind: 'count',
+          min: null,
+          max: 3,
+          default: 1,
+          types: [],
+          typeClass: null,
+        },
+      ],
     };
     expect(() => variadicSpec(badCount)).toThrow(/minimum/);
     const twoFields: BlockDefJson = {
@@ -140,7 +150,17 @@ describe('paramsSpec', () => {
     expect(() => paramsSpec(def('io.print'))).toThrow(MutatorConfigError);
     const noTypes: BlockDefJson = {
       ...def('func.define'),
-      extra: [{ name: 'params', kind: 'params', min: null, max: 16, default: null, types: [] }],
+      extra: [
+        {
+          name: 'params',
+          kind: 'params',
+          min: null,
+          max: 16,
+          default: null,
+          types: [],
+          typeClass: null,
+        },
+      ],
     };
     expect(() => paramsSpec(noTypes)).toThrow(/types/);
   });

@@ -722,7 +722,14 @@ describe('checkbox fields', () => {
 describe('createCatalogField', () => {
   it('creates a field of the right class for each catalog kind', () => {
     const make = (kind: Parameters<typeof createCatalogField>[0]['kind']) =>
-      createCatalogField({ name: 'F', kind, options: [['A', 'a']], types: ['int'], default: null });
+      createCatalogField({
+        name: 'F',
+        kind,
+        options: [['A', 'a']],
+        types: ['int'],
+        default: null,
+        type: null,
+      });
     expect(make('symbol_decl')).toBeInstanceOf(B2cSymbolDeclField);
     expect(make('symbol_ref')).toBeInstanceOf(B2cSymbolRefField);
     expect(make('type')).toBeInstanceOf(B2cTypeField);

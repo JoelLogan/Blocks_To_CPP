@@ -107,7 +107,22 @@ describe('the generated outputs', () => {
       max: 32,
       default: 1,
       types: [],
+      typeClass: null,
     });
+    // The signatures of M2's typed blocks (slots.md §5) and the type table come through.
+    const declare = byId.get('var.declare');
+    expect(declare?.typeVars).toEqual({ T: 'value' });
+    expect(declare?.order).toEqual([{ field: 'TYPE' }, { field: 'NAME' }, { input: 'VALUE' }]);
+    expect(declare?.fields.find((f) => f.name === 'TYPE')?.type).toEqual({
+      kind: 'var',
+      name: 'T',
+    });
+    expect(byId.get('var.set')?.inputs[0]?.assign).toBe(true);
+    expect(byId.get('func.call')?.inputs[0]?.type).toEqual({ kind: 'param', field: 'FUNC' });
+    expect(byId.get('func.return')?.inputs[0]?.type).toEqual({ kind: 'result' });
+    expect(byId.get('func.define')?.extra[0]?.typeClass).toBe('value');
+    expect(byId.get('io.print')?.headers).toEqual(['<iostream>']);
+    expect(generated.TYPE_TABLE.map((entry) => entry.name)).toContain('std::priority_queue');
     for (const block of generated.BLOCK_DEFS) {
       const value = block.shape === 'reporter' || block.shape === 'predicate';
       expect(block.output !== null, block.id).toBe(value);

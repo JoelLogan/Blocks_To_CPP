@@ -466,6 +466,8 @@ describe('installing the services', () => {
         optional: false,
         repeat: { count: 'itemCount', plus: 0 },
         default: [{ str: 'Hello, world!' }],
+        type: null,
+        assign: false,
       },
       'ITEM1',
     );
@@ -475,7 +477,15 @@ describe('installing the services', () => {
     expect(
       defaultInputShadow(
         block,
-        { name: 'ARG', check: 'any', optional: false, repeat: null, default: [] },
+        {
+          name: 'ARG',
+          check: 'any',
+          optional: false,
+          repeat: null,
+          default: [],
+          type: null,
+          assign: false,
+        },
         'ARG0',
       ),
     ).toBeNull();
