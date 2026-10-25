@@ -39,6 +39,14 @@ pub(super) enum Subject {
     RandomLow,
     /// The upper bound of `random integer`.
     RandomHigh,
+    /// Any other part, by a phrase that starts a sentence ("An item of
+    /// `scores`"), and whether the value is stored (W2's collection blocks).
+    Phrase {
+        /// The phrase.
+        text: String,
+        /// Whether the value is stored, as in [`Subject::Variable`].
+        stores: bool,
+    },
 }
 
 impl Subject {
@@ -46,7 +54,10 @@ impl Subject {
     /// is dropped when it becomes a whole number), rather than being a count,
     /// bound or code that should simply be a whole number.
     fn stores_value(&self) -> bool {
-        matches!(self, Self::Variable(_) | Self::Argument { .. } | Self::Result(_))
+        matches!(
+            self,
+            Self::Variable(_) | Self::Argument { .. } | Self::Result(_) | Self::Phrase { stores: true, .. }
+        )
     }
 
     /// The subject at the start of a sentence.
@@ -65,6 +76,7 @@ impl Subject {
             Self::LoopStep => String::from("The step of the loop"),
             Self::RandomLow => String::from("The lowest random number"),
             Self::RandomHigh => String::from("The highest random number"),
+            Self::Phrase { text, .. } => text.clone(),
         }
     }
 }

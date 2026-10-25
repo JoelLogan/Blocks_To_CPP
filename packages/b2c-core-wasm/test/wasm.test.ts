@@ -38,6 +38,29 @@ const exampleNames = readdirSync(examplesDir)
 
 const exampleText = (name: string) => readFileSync(`${examplesDir}/${name}.b2c`, 'utf8');
 const codes = (diagnostics: Diagnostic[]) => diagnostics.map((d) => d.code);
+
+/** M2's types, as terms (types.md §3.1), with `std::string` spelled out. */
+const M2_TYPES: readonly unknown[] = [
+  'void',
+  'bool',
+  'char',
+  'int',
+  'double',
+  'std::string',
+  'error',
+];
+
+/** Whether a type term is one the examples use: M2's types and lists of them (W2's matrix_sum). */
+function isExampleType(type: unknown): boolean {
+  if (M2_TYPES.includes(type)) {
+    return true;
+  }
+  if (typeof type !== 'object' || type === null) {
+    return false;
+  }
+  const entries = Object.entries(type);
+  return entries.length === 1 && entries[0]?.[0] === 'std::vector' && isExampleType(entries[0][1]);
+}
 /** The SHA-256 of a text's UTF-8 bytes, as 64 lower-case hex digits. */
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 
@@ -137,20 +160,19 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     expect(preview.textHash).toBe(sha256(exampleText(name)));
     // Scope data of the program (the exact values are checked natively and in
     // scope-clipboard.test.ts): static types, and symbols sorted by name.
-    // Types are terms (types.md §3.1): M2's examples use M2's types, with `std::string` spelled out.
-    const types = ['void', 'bool', 'char', 'int', 'double', 'std::string', 'error'];
+    // Types are terms (types.md §3.1): the examples use M2's types and lists of them.
     for (const type of Object.values(preview.blockTypes)) {
-      expect(types).toContain(type);
+      expect(isExampleType(type), JSON.stringify(type)).toBe(true);
     }
     const symbolNames = preview.symbols.map((symbol) => symbol.name);
     expect(symbolNames).toEqual([...symbolNames].sort());
     for (const symbol of preview.symbols) {
-      expect(types).toContain(symbol.type);
+      expect(isExampleType(symbol.type), JSON.stringify(symbol.type)).toBe(true);
     }
     // The type of each expression slot, by block and input (slots.md §4.1).
     for (const inputs of Object.values(preview.slotTypes)) {
       for (const type of Object.values(inputs)) {
-        expect(types).toContain(type);
+        expect(isExampleType(type), JSON.stringify(type)).toBe(true);
       }
     }
   });

@@ -12,6 +12,7 @@ base's on one runner ([A/B runs](#ab-runs)).
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------- |
 | `native.pipeline.preview`                         | criterion: load, resolve, analyse and generate the 1,000-block document natively, as the editor's WebAssembly core runs them                                                                                                                                                           | yes   | N4            |
 | `native.pipeline.{load,resolve,analyze,generate}` | criterion: each stage on its own                                                                                                                                                                                                                                                       | no    |               |
+| `native.pipeline.preview-collections`             | criterion: the same as `preview` on the 1,000-block document made of W2's collection blocks                                                                                                                                                                                            | no    |               |
 | `webview.cold-start`                              | From the WebDriver session request (which starts the app) to the readiness marker: the start page shown, Blockly's workspace injected and the toolbox rendered; 10 starts with fresh profiles that share one web view data folder, after one warm-up start                             | yes   | N2: < 2 s     |
 | `webview.preview-1000.p95`                        | The preview pipeline's task in the app at 1,000 blocks, C++ panel folded: reading the canvas, `update()` in WebAssembly (one load of the document), storing the result; p95 of 10 edits per sample, 10 samples                                                                         | yes   | N4: < 50 ms   |
 | `webview.edit-1000.p95-all`                       | From an edit until the page has finished what it started (Blockly's re-rendering of the edited stack, the preview, the C++ panel's update), C++ panel shown, less the pipeline's 50 ms debounce; p95 of every edit of the run (100 in a nightly run)                                   | yes   | N12           |
@@ -174,6 +175,13 @@ document adds the separate `func.define dragMe`. Both generators check a SHA-256
 compact JSON with sorted keys) against the same constants, so changing one generator without the
 other fails a test (`document.test.ts` here, `cargo test -p b2c-core-wasm --test bench_document`
 there). The Rust test also checks that the documents load and preview with no error.
+
+The native benchmark also has a shape whose units are made of M3's collection blocks (a list
+filled in a counted loop, a _for each_ over it, its length printed and the list sorted; W2,
+[w2.md §1.2](../../../../docs/plans/m3-contracts/w2.md#12-collections-catalogcorecollectionstoml-package-a)),
+measured as `native.pipeline.preview-collections` and reported, not gated. The webview documents keep
+the blocks every catalog since 1.0.0 reads, because an A/B run opens them in the base's build too;
+they gain W2's blocks once every A/B base has them.
 
 ## Running them locally (Linux)
 

@@ -24,6 +24,15 @@
 //!   same way (the second change is a plain *change* by `-1`, not *change
 //!   … down by* 1, whose menu came with catalog 1.2.0): the webview A/B
 //!   runs open the head's documents in the base's build too.
+//! * With `collections` (W2, docs/plans/m3-contracts/w2.md §1.2; native
+//!   only), unit `u` is 8 blocks of the collection blocks instead:
+//!   `std::vector<int> scores_u{};`, a `for (int i_u …)` adding `i_u` to
+//!   it, a `for (const auto& item_u : scores_u)` setting item 0 to
+//!   `item_u`, `print "count u: ", length of scores_u` and `sort scores_u`
+//!   largest first. The document is then format version 2 and names catalog
+//!   1.3.0, which no A/B base before W2 reads, so the webview benchmarks
+//!   (whose documents every catalog since 1.0.0 must read) and the parity
+//!   digests keep the plain shape.
 //! * A filler `f` is `print "filler f"`.
 //! * The drag handle (webview drag benchmark only) is a separate
 //!   `func.define dragMe` at x 800, y 40 holding one print: a top-level
@@ -31,7 +40,8 @@
 //!   program.
 //!
 //! Block IDs are `b<n>` in document order, symbol IDs `s_value_<u>`,
-//! `s_i_<u>` and `s_drag`.
+//! `s_i_<u>` and `s_drag` (`s_scores_<u>`, `s_i_<u>` and `s_item_<u>` with
+//! `collections`).
 
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -53,6 +63,9 @@ pub(crate) struct Shape {
     pub(crate) blocks: usize,
     /// Whether it has the drag handle.
     pub(crate) drag_handle: bool,
+    /// Whether its units are made of the collection blocks (see the module
+    /// comment).
+    pub(crate) collections: bool,
 }
 
 impl Shape {
@@ -191,6 +204,85 @@ fn unit(ids: &mut Ids, unit: usize) -> [Value; 3] {
     [declare, for_loop, report]
 }
 
+/// Collection unit `unit`: 8 blocks in five statements of `main` (see the
+/// module comment). IDs are handed out in document order.
+fn collection_unit(ids: &mut Ids, unit: usize) -> [Value; 5] {
+    let scores = format!("s_scores_{unit}");
+    let counter = format!("s_i_{unit}");
+    let item = format!("s_item_{unit}");
+    let list = || json!({ "ref": scores });
+    let declare = json!({
+        "id": ids.next(),
+        "type": "var.declare",
+        "v": 1,
+        "fields": {
+            "CONST": false,
+            "NAME": { "sym": scores, "name": format!("scores_{unit}") },
+            "TYPE": { "std::vector": "int" },
+        },
+    });
+    let loop_id = ids.next();
+    let fill = json!({
+        "id": loop_id,
+        "type": "control.for_range",
+        "v": 1,
+        "fields": {
+            "DIRECTION": "to",
+            "VAR": { "sym": counter, "name": format!("i_{unit}") },
+        },
+        "inputs": { "FROM": num(0), "TO": num(10) },
+        "statements": { "BODY": [{
+            "id": ids.next(),
+            "type": "coll.add",
+            "v": 1,
+            "fields": { "LIST": list() },
+            "inputs": { "VALUE": { "expr": [{ "ref": counter }] } },
+        }] },
+    });
+    let each_id = ids.next();
+    let each = json!({
+        "id": each_id,
+        "type": "coll.for_each",
+        "v": 1,
+        "fields": {
+            "ITEM": { "sym": item, "name": format!("item_{unit}") },
+            "MODE": "read_only",
+        },
+        "inputs": { "LIST": { "expr": [{ "ref": scores }] } },
+        "statements": { "BODY": [{
+            "id": ids.next(),
+            "type": "coll.set_item",
+            "v": 1,
+            "fields": { "LIST": list() },
+            "inputs": { "INDEX": num(0), "VALUE": { "expr": [{ "ref": item }] } },
+        }] },
+    });
+    let print_id = ids.next();
+    let report = json!({
+        "id": print_id,
+        "type": "io.print",
+        "v": 1,
+        "extra": { "itemCount": 2 },
+        "fields": { "NEWLINE": true, "SEP": "none", "STREAM": "out" },
+        "inputs": {
+            "ITEM0": { "expr": [{ "str": format!("count {unit}: ") }] },
+            "ITEM1": { "block": {
+                "id": ids.next(),
+                "type": "coll.length",
+                "v": 1,
+                "fields": { "LIST": list() },
+            } },
+        },
+    });
+    let sort = json!({
+        "id": ids.next(),
+        "type": "coll.sort",
+        "v": 1,
+        "fields": { "LIST": list(), "ORDER": "descending" },
+    });
+    [declare, fill, each, report, sort]
+}
+
 /// The project settings every generated document has (those of the
 /// examples).
 fn project(blocks: usize) -> Value {
@@ -248,7 +340,11 @@ pub(crate) fn generate(shape: Shape) -> Result<Value, GenerateError> {
     let main_id = ids.next();
     let mut body = Vec::with_capacity(units * 3 + fillers);
     for index in 0..units {
-        body.extend(unit(&mut ids, index));
+        if shape.collections {
+            body.extend(collection_unit(&mut ids, index));
+        } else {
+            body.extend(unit(&mut ids, index));
+        }
     }
     for index in 0..fillers {
         body.push(print(&mut ids, &format!("filler {index}")));
@@ -274,10 +370,17 @@ pub(crate) fn generate(shape: Shape) -> Result<Value, GenerateError> {
             "statements": { "BODY": [print(&mut ids, "drag me")] },
         }));
     }
+    // A collection's type is a template term: format version 2 (types.md
+    // §2.3), with W2's catalog.
+    let (format_version, catalog) = if shape.collections {
+        (2, "1.3.0")
+    } else {
+        (1, "1.0.0")
+    };
     Ok(json!({
         "format": "blocks2cpp/project",
-        "formatVersion": 1,
-        "generator": { "app": "0.1.0", "catalog": "1.0.0" },
+        "formatVersion": format_version,
+        "generator": { "app": "0.1.0", "catalog": catalog },
         "project": project(shape.blocks),
         "modules": [{
             "id": "mod_main",

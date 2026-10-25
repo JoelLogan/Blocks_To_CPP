@@ -4,6 +4,7 @@
  */
 import { isProjectId } from '../ids';
 import { codePointCount, isCleanFieldText } from '../text';
+import { NO_FACTS, termFromKey, typeFromTerm, typeLabel } from '../types/static-type';
 
 /** The registry names of the Blocks2Cpp fields, one per catalog field kind. */
 export const FIELD_TYPE = Object.freeze({
@@ -85,7 +86,16 @@ export function isSymbolRefValue(value: unknown): value is SymbolRefValue {
   );
 }
 
-/** The labels type dropdowns show (docs/spec/03-block-language.md §3.5.2): `std::string` reads `string`. */
+/**
+ * The labels type dropdowns show (docs/spec/03-block-language.md §3.5.2): `std::string` reads
+ * `string`, and a template, stored by its term's key (`{"std::vector":"int"}`), reads as its
+ * friendly label (`list of int`, docs/plans/m3-contracts/types.md §1.1).
+ */
 export function displayTypeName(type: string): string {
+  if (type.startsWith('{')) {
+    const term = termFromKey(type);
+    const parsed = term === null ? null : typeFromTerm(term);
+    return parsed === null ? type : typeLabel(parsed, NO_FACTS, 'friendly');
+  }
   return type === 'std::string' ? 'string' : type;
 }

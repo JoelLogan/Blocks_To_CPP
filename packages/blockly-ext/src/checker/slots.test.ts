@@ -446,3 +446,57 @@ describe('a function’s parameter rows with the registered type field', () => {
     expect(define.b2cGetExtra()).toEqual({ params: [{ ...params[0], type: 'double' }, params[1]] });
   });
 });
+
+describe('a place-typed block (W2’s list of, slots.md §9)', () => {
+  const LIST_OF_INT = '{"std::vector":"int"}';
+
+  beforeEach(() => {
+    symbols.set('s_scores', sym('s_scores', { 'std::vector': 'int' }));
+    symbols.set('s_grid', sym('s_grid', { 'std::vector': { 'std::vector': 'int' } }));
+  });
+
+  it('connects where no place type exists, and is refused in an int place', () => {
+    // print’s items have no pattern: the analyser reports a list without a place (E0315).
+    const print = block('io.print');
+    expect(canDrop(block('coll.list_of'), print, 'ITEM0')).toBe(true);
+    const create = block('var.declare');
+    create.setFieldValue('int', 'TYPE');
+    const list = block('coll.list_of');
+    expect(candidateFit(create, 'VALUE', list, oracle)).toBe('outsideClass');
+    expect(canDrop(list, create, 'VALUE')).toBe(false);
+    // An `auto` create gives no place either.
+    create.setFieldValue('auto', 'TYPE');
+    expect(canDrop(list, create, 'VALUE')).toBe(true);
+    // A list type gives it its place.
+    create.setFieldValue(LIST_OF_INT, 'TYPE');
+    expect(candidateFit(create, 'VALUE', list, oracle)).toBe('same');
+    expect(canDrop(list, create, 'VALUE')).toBe(true);
+    expect(valueType(list, oracle)).toBe('fromPlace');
+  });
+
+  it('types its items from its place, up the chain', () => {
+    const create = block('var.declare');
+    create.setFieldValue(LIST_OF_INT, 'TYPE');
+    const list = block('coll.list_of');
+    plug(create, 'VALUE', list);
+    expect(canDrop(block('text.literal'), list, 'ITEM0')).toBe(false);
+    expect(canDrop(number('1'), list, 'ITEM0')).toBe(true);
+    // A list of lists: the inner list takes its place from the outer one.
+    create.setFieldValue('{"std::vector":{"std::vector":"int"}}', 'TYPE');
+    const inner = block('coll.list_of');
+    expect(canDrop(inner, list, 'ITEM1')).toBe(true);
+    plug(list, 'ITEM1', inner);
+    expect(canDrop(block('text.literal'), inner, 'ITEM0')).toBe(false);
+    expect(canDrop(number('2'), inner, 'ITEM0')).toBe(true);
+  });
+
+  it('fits add’s value as the chosen collection’s item type says', () => {
+    const add = block('coll.add');
+    refer(add, 'LIST', 's_grid');
+    expect(canDrop(block('coll.list_of'), add, 'VALUE')).toBe(true);
+    refer(add, 'LIST', 's_scores');
+    expect(canDrop(block('coll.list_of'), add, 'VALUE')).toBe(false);
+    expect(canDrop(number('3'), add, 'VALUE')).toBe(true);
+    expect(canDrop(block('text.literal'), add, 'VALUE')).toBe(false);
+  });
+});

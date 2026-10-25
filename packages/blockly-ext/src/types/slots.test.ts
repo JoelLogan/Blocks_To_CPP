@@ -189,6 +189,22 @@ describe('the slot fixture', () => {
   it('covers the rules it promises', () => {
     expect(FIXTURE.cases.length).toBeGreaterThanOrEqual(25);
     expect(FIXTURE.catalog.map((block) => block.block)).toEqual([
+      // W2's collections (docs/plans/m3-contracts/w2.md §1.2).
+      'coll.add',
+      'coll.clear',
+      'coll.contains',
+      'coll.for_each',
+      'coll.for_each_pair',
+      'coll.is_empty',
+      'coll.item',
+      'coll.length',
+      'coll.list_of',
+      'coll.next',
+      'coll.remove_at',
+      'coll.remove_next',
+      'coll.remove_value',
+      'coll.set_item',
+      'coll.sort',
       'func.call',
       'func.call_stmt',
       // What it gives back is typed from W2 (docs/plans/m3-contracts/w2.md §1.9).

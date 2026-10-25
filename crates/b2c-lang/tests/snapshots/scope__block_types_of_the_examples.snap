@@ -23,6 +23,13 @@ guessing_game.b2c:
   b001: "int"
 hello_world.b2c:
   (no value blocks)
+matrix_sum.b2c:
+  b015: "std::string"
+  b027: "int"
+  b029: "int"
+  b031: "int"
+  b032: "int"
+  b033: "int"
 max_of_three.b2c:
   (no value blocks)
 primes.b2c:

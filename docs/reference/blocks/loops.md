@@ -14,6 +14,8 @@ Toolbox icon: ↻. Back to [all categories](README.md).
 | `control.forever` (statement) | `forever` | `while (true) { … }` | Repeats blocks forever (use stop or break to leave). | — | `BODY`: blocks. |
 | `control.break` (statement) | `leave loop` | `break;` | Leaves the innermost loop. | — | — |
 | `control.continue` (statement) | `skip to next round` | `continue;` | Skips the rest of this round of the innermost loop. | — | — |
+| `coll.for_each` (statement) | `for each %ITEM in %LIST %MODE` | `for (const auto& %ITEM : %LIST) { … }` | Runs blocks once for each item of a list, deque, set or text, in order. Read-only items can't be changed; a copy can, without changing the collection; an editable item changes the item in the collection. | `ITEM`: the name of the new variable. `MODE`: one of read-only (`read_only`), `copy` or `editable`, default `read_only`. | `LIST`: any value; required. `BODY`: blocks. |
+| `coll.for_each_pair` (statement) | `for each key %KEY value %VALUE in %MAP` | `for (const auto& [%KEY, %VALUE] : %MAP) { … }` | Runs blocks once for each key of a map, smallest key first, with the key and its value. Neither can be changed. | `MAP`: the variable it uses. `KEY`: the name of the new variable. `VALUE`: the name of the new variable. | `BODY`: blocks. |
 
 ## In the toolbox
 
@@ -23,3 +25,5 @@ Toolbox icon: ↻. Back to [all categories](README.md).
 4. `control.forever`
 5. `control.break`
 6. `control.continue`
+7. `coll.for_each`
+8. `coll.for_each_pair`

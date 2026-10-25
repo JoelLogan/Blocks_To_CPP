@@ -2,6 +2,832 @@
   "catalogVersion": "1.3.0",
   "blocks": [
     {
+      "id": "coll.add",
+      "version": 1,
+      "category": "collections",
+      "shape": "statement",
+      "output": null,
+      "typeVars": {
+        "C": "insertable"
+      },
+      "label": {
+        "friendly": "add %VALUE to %LIST",
+        "cpp": "%LIST.push_back(%VALUE);"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Adds a value to a collection: at the end of a list or deque, into a set, or into a queue, stack or priority queue.",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "fn": "elem",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        },
+        {
+          "input": "VALUE"
+        }
+      ]
+    },
+    {
+      "id": "coll.clear",
+      "version": 1,
+      "category": "collections",
+      "shape": "statement",
+      "output": null,
+      "typeVars": {
+        "C": "collection"
+      },
+      "label": {
+        "friendly": "clear %LIST",
+        "cpp": "%LIST.clear();"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Removes every item of a collection.",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        }
+      ]
+    },
+    {
+      "id": "coll.contains",
+      "version": 1,
+      "category": "collections",
+      "shape": "predicate",
+      "output": "bool",
+      "typeVars": {
+        "C": "searchable"
+      },
+      "label": {
+        "friendly": "%LIST contains %VALUE",
+        "cpp": "std::ranges::find(%LIST, %VALUE) != %LIST.end()"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "True when a list, deque or set holds the value, or a map has the key.",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "fn": "key",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        },
+        {
+          "input": "VALUE"
+        }
+      ]
+    },
+    {
+      "id": "coll.for_each",
+      "version": 1,
+      "category": "loops",
+      "shape": "statement",
+      "output": null,
+      "typeVars": {
+        "C": "iterable"
+      },
+      "label": {
+        "friendly": "for each %ITEM in %LIST %MODE",
+        "cpp": "for (const auto& %ITEM : %LIST) { … }"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Runs blocks once for each item of a list, deque, set or text, in order. Read-only items can't be changed; a copy can, without changing the collection; an editable item changes the item in the collection.",
+      "field": [
+        {
+          "name": "ITEM",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "fn": "elem",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        },
+        {
+          "name": "MODE",
+          "kind": "dropdown",
+          "options": [
+            [
+              "read-only",
+              "read_only"
+            ],
+            [
+              "copy",
+              "copy"
+            ],
+            [
+              "editable",
+              "editable"
+            ]
+          ],
+          "types": [],
+          "default": "read_only"
+        }
+      ],
+      "input": [
+        {
+          "name": "LIST",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "statement": [
+        {
+          "name": "BODY",
+          "repeat": null,
+          "when": null
+        }
+      ],
+      "extra": [],
+      "order": [
+        {
+          "field": "ITEM"
+        },
+        {
+          "input": "LIST"
+        }
+      ]
+    },
+    {
+      "id": "coll.for_each_pair",
+      "version": 1,
+      "category": "loops",
+      "shape": "statement",
+      "output": null,
+      "typeVars": {
+        "K": "value",
+        "V": "value"
+      },
+      "label": {
+        "friendly": "for each key %KEY value %VALUE in %MAP",
+        "cpp": "for (const auto& [%KEY, %VALUE] : %MAP) { … }"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Runs blocks once for each key of a map, smallest key first, with the key and its value. Neither can be changed.",
+      "field": [
+        {
+          "name": "MAP",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "args": [
+              {
+                "kind": "var",
+                "name": "K"
+              },
+              {
+                "kind": "var",
+                "name": "V"
+              }
+            ],
+            "kind": "lib",
+            "name": "std::map"
+          }
+        },
+        {
+          "name": "KEY",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "K"
+          }
+        },
+        {
+          "name": "VALUE",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "V"
+          }
+        }
+      ],
+      "input": [],
+      "statement": [
+        {
+          "name": "BODY",
+          "repeat": null,
+          "when": null
+        }
+      ],
+      "extra": [],
+      "order": [
+        {
+          "field": "MAP"
+        },
+        {
+          "field": "KEY"
+        },
+        {
+          "field": "VALUE"
+        }
+      ]
+    },
+    {
+      "id": "coll.is_empty",
+      "version": 1,
+      "category": "collections",
+      "shape": "predicate",
+      "output": "bool",
+      "typeVars": {
+        "C": "collection"
+      },
+      "label": {
+        "friendly": "%LIST is empty",
+        "cpp": "%LIST.empty()"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "True when a collection has no items.",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        }
+      ]
+    },
+    {
+      "id": "coll.item",
+      "version": 1,
+      "category": "collections",
+      "shape": "reporter",
+      "output": "elem(C)",
+      "typeVars": {
+        "C": "indexable"
+      },
+      "label": {
+        "friendly": "item %INDEX of %LIST",
+        "cpp": "%LIST.at(%INDEX)"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The item at a position of a list or deque (the first is at 0), or the value for a key of a map. A position or key the collection does not have stops the program with an out-of-range error.",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "input": [
+        {
+          "name": "INDEX",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "fn": "index",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        },
+        {
+          "input": "INDEX"
+        }
+      ]
+    },
+    {
+      "id": "coll.length",
+      "version": 1,
+      "category": "collections",
+      "shape": "reporter",
+      "output": "int",
+      "typeVars": {
+        "C": "collection"
+      },
+      "label": {
+        "friendly": "length of %LIST",
+        "cpp": "static_cast<int>(%LIST.size())"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "How many items a collection has.",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        }
+      ]
+    },
+    {
+      "id": "coll.list_of",
+      "version": 1,
+      "category": "collections",
+      "shape": "reporter",
+      "output": "C",
+      "typeVars": {
+        "C": "listable"
+      },
+      "label": {
+        "friendly": "list of %ITEM …",
+        "cpp": "{%ITEM, …}"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "A list, deque or set with these items. It takes its type from where it is plugged in, such as the value of a 'create' block whose type is chosen.",
+      "field": [],
+      "input": [
+        {
+          "name": "ITEM",
+          "check": "any",
+          "optional": false,
+          "repeat": {
+            "count": "itemCount",
+            "plus": 0
+          },
+          "default": [],
+          "type": {
+            "fn": "elem",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [
+        {
+          "name": "itemCount",
+          "kind": "count",
+          "min": 0,
+          "max": 32,
+          "default": "2",
+          "types": []
+        }
+      ],
+      "order": [
+        {
+          "input": "ITEM"
+        }
+      ],
+      "placeVar": "C"
+    },
+    {
+      "id": "coll.next",
+      "version": 1,
+      "category": "collections",
+      "shape": "reporter",
+      "output": "elem(C)",
+      "typeVars": {
+        "C": "adaptor"
+      },
+      "label": {
+        "friendly": "next item of %LIST",
+        "cpp": "%LIST.front()"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The item a queue, stack or priority queue gives next: the oldest of a queue, the newest of a stack, the largest of a priority queue. An empty one stops the program (debug builds report it).",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        }
+      ]
+    },
+    {
+      "id": "coll.remove_at",
+      "version": 1,
+      "category": "collections",
+      "shape": "statement",
+      "output": null,
+      "typeVars": {
+        "C": "sequence"
+      },
+      "label": {
+        "friendly": "remove item at %INDEX from %LIST",
+        "cpp": "b2c::remove_at(%LIST, %INDEX);"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Removes the item at a position of a list or deque (the first is at 0); the items after it move up. A position the list does not have stops the program with an out-of-range error.",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "input": [
+        {
+          "name": "INDEX",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "fn": "index",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        },
+        {
+          "input": "INDEX"
+        }
+      ]
+    },
+    {
+      "id": "coll.remove_next",
+      "version": 1,
+      "category": "collections",
+      "shape": "statement",
+      "output": null,
+      "typeVars": {
+        "C": "adaptor"
+      },
+      "label": {
+        "friendly": "remove next from %LIST",
+        "cpp": "%LIST.pop();"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Removes the item a queue, stack or priority queue gives next. An empty one stops the program (debug builds report it).",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        }
+      ]
+    },
+    {
+      "id": "coll.remove_value",
+      "version": 1,
+      "category": "collections",
+      "shape": "statement",
+      "output": null,
+      "typeVars": {
+        "C": "keyed"
+      },
+      "label": {
+        "friendly": "remove %VALUE from %LIST",
+        "cpp": "%LIST.erase(%VALUE);"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Removes a value from a set, or a key and its value from a map. Nothing happens when it is not there.",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "fn": "key",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        },
+        {
+          "input": "VALUE"
+        }
+      ]
+    },
+    {
+      "id": "coll.set_item",
+      "version": 1,
+      "category": "collections",
+      "shape": "statement",
+      "output": null,
+      "typeVars": {
+        "C": "indexable"
+      },
+      "label": {
+        "friendly": "set item %INDEX of %LIST to %VALUE",
+        "cpp": "%LIST.at(%INDEX) = %VALUE;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Changes the item at a position of a list or deque (the first is at 0), or sets the value for a key of a map, adding the key when the map does not have it yet. A position the list does not have stops the program with an out-of-range error.",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "input": [
+        {
+          "name": "INDEX",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "fn": "index",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        },
+        {
+          "name": "VALUE",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "fn": "elem",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          },
+          "assign": true
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        },
+        {
+          "input": "INDEX"
+        },
+        {
+          "input": "VALUE"
+        }
+      ]
+    },
+    {
+      "id": "coll.sort",
+      "version": 1,
+      "category": "collections",
+      "shape": "statement",
+      "output": null,
+      "typeVars": {
+        "C": "sortable"
+      },
+      "label": {
+        "friendly": "sort %LIST %ORDER",
+        "cpp": "std::ranges::sort(%LIST);"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Puts the items of a list or deque in order, smallest or largest first. The items must be comparable.",
+      "field": [
+        {
+          "name": "LIST",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        },
+        {
+          "name": "ORDER",
+          "kind": "dropdown",
+          "options": [
+            [
+              "smallest first",
+              "ascending"
+            ],
+            [
+              "largest first",
+              "descending"
+            ]
+          ],
+          "types": [],
+          "default": "ascending"
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "LIST"
+        }
+      ]
+    },
+    {
       "id": "control.break",
       "version": 1,
       "category": "loops",
@@ -469,7 +1295,16 @@
             "double",
             "bool",
             "char",
-            "std::string"
+            "std::string",
+            {
+              "std::vector": "int"
+            },
+            {
+              "std::vector": "double"
+            },
+            {
+              "std::vector": "std::string"
+            }
           ],
           "typeClass": "value"
         }
@@ -1325,7 +2160,16 @@
             "bool",
             "char",
             "std::string",
-            "auto"
+            "auto",
+            {
+              "std::vector": "int"
+            },
+            {
+              "std::vector": "double"
+            },
+            {
+              "std::vector": "std::string"
+            }
           ],
           "default": "int",
           "type": {
@@ -1643,6 +2487,16 @@
             "block": "control.continue",
             "label": null,
             "preset": null
+          },
+          {
+            "block": "coll.for_each",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.for_each_pair",
+            "label": null,
+            "preset": null
           }
         ]
       },
@@ -1698,7 +2552,73 @@
         "icon": "☰",
         "colour": "collections",
         "dynamic": null,
-        "entry": []
+        "entry": [
+          {
+            "block": "coll.add",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.item",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.set_item",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.length",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.is_empty",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.list_of",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.contains",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.remove_at",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.remove_value",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.clear",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.sort",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.next",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "coll.remove_next",
+            "label": null,
+            "preset": null
+          }
+        ]
       },
       {
         "id": "types",

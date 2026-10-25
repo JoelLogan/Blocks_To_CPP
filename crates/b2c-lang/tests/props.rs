@@ -729,9 +729,28 @@ struct Recorded {
 /// How many generated programs the record holds.
 const RECORD_CASES: usize = 400;
 
+/// Whether a document uses a block that came after M2 (W2's,
+/// [`common::AFTER_M2`]), which M2's rules never saw.
+fn uses_blocks_after_m2(document: &Document) -> bool {
+    fn block(b: &b2c_model::Block) -> bool {
+        common::AFTER_M2
+            .iter()
+            .any(|family| b.block_type.starts_with(family))
+            || b.statements.values().any(|list| list.iter().any(block))
+            || b.inputs
+                .values()
+                .any(|i| matches!(i, b2c_model::Input::Block(nested) if block(&nested.block)))
+    }
+    document
+        .modules
+        .iter()
+        .any(|m| m.workspace.blocks.iter().any(block))
+}
+
 /// The documents of the record: generated programs (both generators, from a
 /// fixed seed), every example and every file of the malicious-project suite
-/// that loads, completed by the catalog as the build completes them.
+/// that loads and uses only M2's blocks, completed by the catalog as the
+/// build completes them.
 fn record_documents() -> Vec<Recorded> {
     use proptest::strategy::ValueTree;
     use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
@@ -756,6 +775,9 @@ fn record_documents() -> Vec<Recorded> {
                 continue;
             };
             let report = b2c_catalog::resolve_report(&loaded, b2c_catalog::core_catalog());
+            if uses_blocks_after_m2(&report.document) {
+                continue;
+            }
             documents.push(Recorded {
                 name: format!("{folder}/{}", common::file_name(&path)),
                 document: report.document,

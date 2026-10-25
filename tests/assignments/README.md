@@ -22,7 +22,7 @@ green one by one as the block projects arrive.
 | [`palindrome`](palindrome/README.md) | strings, reversal | W2 | pending |
 | [`dice_statistics`](dice_statistics/README.md) | random numbers, map | W2 | pending |
 | [`guessing_game`](guessing_game/README.md) | random numbers, input, loops | M2 | green |
-| [`matrix_sum`](matrix_sum/README.md) | list of lists (vector of vectors) | W2 | pending |
+| [`matrix_sum`](matrix_sum/README.md) | list of lists (vector of vectors) | W2 | green |
 | [`input_validation`](input_validation/README.md) | exceptions, text to number | W2 | pending |
 
 When g++ is on `PATH`, every run of the test prints the count, for example

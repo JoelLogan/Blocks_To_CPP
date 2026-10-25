@@ -24,12 +24,13 @@ type = "R"
 default = "void"
 
 # A parameter row offers these types first and takes any type a variable
-# can hold (catalog 1.3.0).
+# can hold (catalog 1.3.0). The lists after M2's types stand in for the type
+# picker until it arrives (docs/plans/m3-contracts/w2.md §1.2).
 [[block.extra]]
 name = "params"
 kind = "params"
 max = 16
-types = ["int", "double", "bool", "char", "std::string"]
+types = ["int", "double", "bool", "char", "std::string", "std::vector<int>", "std::vector<double>", "std::vector<std::string>"]
 type_class = "value"
 
 [[block.statement]]

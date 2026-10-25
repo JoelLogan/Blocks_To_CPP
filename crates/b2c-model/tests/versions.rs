@@ -93,14 +93,27 @@ fn the_constants() {
     assert_eq!(OLDEST_CLIPBOARD_FORMAT_VERSION, 1);
 }
 
+/// Whether a project file holds a template type term (`{"std::vector":
+/// …}`), which only M3's collections write: such a project needs version 2.
+fn has_template(raw: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(raw);
+    b2c_ir::LibType::ALL
+        .iter()
+        .filter(|ty| ty.arity() > 0)
+        .any(|ty| text.contains(&format!("\"{}\": ", ty.cpp_name())))
+}
+
 #[test]
-fn version_1_golden_projects_load_and_save_byte_for_byte() {
+fn golden_projects_load_and_save_byte_for_byte() {
     for path in example_paths() {
         let raw = std::fs::read(&path).unwrap();
         let name = path.display();
         let document = load(&raw).unwrap_or_else(|e| panic!("{name}: {:#?}", e.diagnostics));
-        assert_eq!(document.format_version, 1, "{name}");
-        assert_eq!(required_format_version(&document), 1, "{name}");
+        // M2's examples are version 1; one with a template type (M3's
+        // collections, such as matrix_sum) is version 2.
+        let version = if has_template(&raw) { 2 } else { 1 };
+        assert_eq!(document.format_version, version, "{name}");
+        assert_eq!(required_format_version(&document), version, "{name}");
         assert!(
             to_canonical_json(&document).as_bytes() == raw.as_slice(),
             "{name}"
@@ -112,12 +125,14 @@ fn version_1_golden_projects_load_and_save_byte_for_byte() {
 fn every_m2_project_needs_version_1() {
     let mut loaded = 0;
     for (path, raw) in m2_projects() {
-        // Rejected security projects are checked by `security.rs`.
+        // Rejected security projects are checked by `security.rs`. A
+        // project with a template type (M3's collections) needs version 2.
         if let Ok(document) = load(&raw) {
-            assert_eq!(required_format_version(&document), 1, "{}", path.display());
+            let version = if has_template(&raw) { 2 } else { 1 };
+            assert_eq!(required_format_version(&document), version, "{}", path.display());
             assert_eq!(
                 saved_version(&to_canonical_json(&document)),
-                1,
+                u64::from(version),
                 "{}",
                 path.display()
             );

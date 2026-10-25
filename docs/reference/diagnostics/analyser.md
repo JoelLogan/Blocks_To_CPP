@@ -225,13 +225,20 @@ Codes by area:
   outside the kind of value a block needs (a whole number where a list, a
   set, a queue or a stack is needed), a variable that `ask` can't fill in
   (such as a list), and a block that takes its type from its place plugged
-  in where another kind of value is needed. A list, a struct or another
+  in where another kind of value is needed. A `for each` loop goes through a
+  list, a deque, a set or text, not a map (that is `for each key, value`),
+  and its *editable* mode changes the items of a list or a deque only, and
+  not those of a list of true/false values. A list, a struct or another
   constructed type converts only to the same type. A block the catalog kept
   as it is (`B2C-E0602`, `B2C-E0603`) checks nothing about the values in its
   inputs, and its own value counts as unknown, so neither is reported here.
 * **Example:** `create [int] [age] = ("twelve")`.
 * **Message:** "`age` needs a whole number, but this is text. Text is not
-  turned into a number automatically."
+  turned into a number automatically." / "`ages` is a map from text to int,
+  but this block goes through a list, a deque, a set or text. Use 'for each
+  key, value' for a map." / "The items of a list of true/false values can't
+  be changed one by one in a loop. Choose 'copy', and use 'set item' to
+  change an item."
 * **How to fix:** use a value of the right type. Use `join` to turn numbers
   into text.
 
@@ -320,12 +327,19 @@ Codes by area:
 
 * **Severity:** error
 * **Meaning:** a block changes something that may not change: a constant, the
-  counter of a `for` loop, or a read-only function input.
+  counter of a `for` loop, the item of a `for each` loop in *read-only* mode
+  (or the key or value of `for each key, value`), or a read-only function
+  input. A `for each` loop in *editable* mode changes the items of its
+  collection, so the collection must be a variable that may change.
 * **Example:** `set [max] to (10)` where `max` was created with *const* ticked.
 * **Message:** "`max` was created as a constant, so it can't be changed.
-  Untick 'const' in its 'create' block if it needs to change."
+  Untick 'const' in its 'create' block if it needs to change." / "`score` is
+  read-only: the loop that creates it gives it each item in turn, and the
+  blocks inside can't change it. In a 'for each' loop over a list, choose
+  'copy' to change a copy of each item, or 'editable' to change the items
+  themselves."
 * **How to fix:** untick *const*, use another variable, or change the input's
-  mode.
+  or the loop's mode.
 
 ## B2C-E0309 auto without a starting value
 
@@ -384,7 +398,8 @@ Codes by area:
   *comparable* must have fields whose types are all comparable, or C++
   would delete its comparison operators; that is reported at the tick,
   naming the first field that is not, and the struct then counts as not
-  comparable. Text, numbers, true/false values, enums, structs that are
+  comparable. `contains` compares the items of a list or a deque with the
+  value it looks for, so they must be comparable too. Text, numbers, true/false values, enums, structs that are
   comparable, and lists, deques, sets, maps, queues and stacks of
   comparable values are comparable.
 * **Example:** `create [set of Point] [seen]` where the struct `Point` is not
@@ -393,7 +408,8 @@ Codes by area:
   and `Point` is not. Tick 'comparable' on `Point`, or use a list." /
   "`Team` is ticked 'comparable', but its field `members` holds `Player`,
   which is not comparable. Tick 'comparable' on `Player` too, or untick it
-  here."
+  here." / "To look for an item, the items of `pts` must be comparable, and
+  `Point` is not. Tick comparable on `Point`."
 * **How to fix:** tick *comparable* on the struct (and on the structs its
   fields hold), or use a list, which does not need comparable items.
 
@@ -662,7 +678,8 @@ Codes by area:
 * **Example:** an `if` block whose condition slot is empty, or a `set` block
   with no variable chosen.
 * **Message:** "This block needs a condition." / "Choose a variable in this
-  block." / "`pow` is not one of the choices for this setting."
+  block." / "Choose a collection in this block." / "`pow` is not one of the
+  choices for this setting."
 * **How to fix:** fill in the missing part, or choose the setting again.
 
 ## B2C-E0431 Blocks nested too deeply

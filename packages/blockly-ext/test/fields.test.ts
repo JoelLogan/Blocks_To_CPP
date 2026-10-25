@@ -696,8 +696,20 @@ describe('type fields', () => {
     expect(field.getText()).toBe('string');
     expect(
       field.getOptions(false).map((option) => (Array.isArray(option) ? option[0] : option)),
-    ).toEqual(['int', 'double', 'bool', 'char', 'string', 'auto']);
+    ).toEqual([
+      'int',
+      'double',
+      'bool',
+      'char',
+      'string',
+      'auto',
+      // The lists stand in for the type picker until W4 (w2.md §1.2).
+      'list of int',
+      'list of double',
+      'list of string',
+    ]);
     expect(field.optionValues()).toContain('std::string');
+    expect(field.optionValues()).toContain('{"std::vector":"int"}');
   });
 
   it('keep and show a type that is not on the list (the catalog check reports it)', () => {

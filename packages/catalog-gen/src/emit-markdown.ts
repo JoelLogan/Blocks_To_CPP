@@ -219,7 +219,7 @@ function fieldKindText(field: FieldDefJson, block: BlockDefJson): (name: string)
       // A type field with no listed types offers the module's own types (w2.md §2.1).
       return field.types.length === 0
         ? (name) => `${name}: a type the module defines${defaultText(field)}.`
-        : (name) => `${name}: a type, ${list(field.types.map(code))}${defaultText(field)}.`;
+        : (name) => `${name}: a type, ${list(field.types.map(typeCode))}${defaultText(field)}.`;
     case 'symbol_decl':
       return (name) => `${name}: the name of the new ${kind}.`;
     case 'symbol_ref':
@@ -300,9 +300,9 @@ function extraText(extra: ExtraDefJson): string {
       return `${name}: on or off${value}.`;
     }
     case 'params':
-      return `${name}: up to ${String(extra.max ?? 0)} parameters, each ${list(extra.types.map(code))}.`;
+      return `${name}: up to ${String(extra.max ?? 0)} parameters, each ${list(extra.types.map(typeCode))}.`;
     case 'fields':
-      return `${name}: up to ${String(extra.max ?? 0)} fields, each ${list(extra.types.map(code))}.`;
+      return `${name}: up to ${String(extra.max ?? 0)} fields, each ${list(extra.types.map(typeCode))}.`;
     case 'values':
       return `${name}: up to ${String(extra.max ?? 0)} values, each with its name.`;
   }
@@ -414,6 +414,30 @@ export function code(value: string): string {
   // Every `|` here follows a character other than a backslash (checked above).
   const cell = Array.from(flat, (c) => (c === '|' ? '\\|' : c)).join('');
   return `${fence}${pad}${cell}${pad}${fence}`;
+}
+
+/**
+ * A type field's value as inline code, in C++ syntax: a name stays itself, and a template's key
+ * (canonical compact JSON, `{"std::vector":"int"}`) reads `std::vector<int>`, as the catalog
+ * writes it.
+ */
+export function typeCode(value: string): string {
+  return code(value.startsWith('{') ? termText(JSON.parse(value) as unknown) : value);
+}
+
+/** A type term (docs/plans/m3-contracts/types.md §3.1) in C++ syntax. */
+function termText(term: unknown): string {
+  if (typeof term === 'string') {
+    return term;
+  }
+  if (Array.isArray(term)) {
+    return term.map(termText).join(', ');
+  }
+  if (typeof term === 'object' && term !== null) {
+    const [name, args] = Object.entries(term as Record<string, unknown>)[0] ?? ['?', ''];
+    return name === 'ref' ? String(args) : `${name}<${termText(args)}>`;
+  }
+  return String(term);
 }
 
 function lines(all: readonly string[]): string {
