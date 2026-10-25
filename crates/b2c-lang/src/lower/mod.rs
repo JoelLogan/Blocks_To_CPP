@@ -32,6 +32,7 @@ use crate::Analysis;
 use crate::access::{self, FieldProblem};
 use crate::codes;
 use crate::collect::{self, DeclInfo, DeclKind, DeclStatus, MAX_BLOCK_DEPTH};
+use crate::consts::{self, Constant};
 use crate::flow;
 use crate::messages::{self, Diags, quoted, term_cpp};
 use crate::nesting;
@@ -69,6 +70,7 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
             diagnostics: diags.list,
             index: ScopeIndex::default(),
             slot_types: BTreeMap::new(),
+            constants: BTreeMap::new(),
         };
     };
     let mut lowerer = Lowerer::new(document, first.id.clone(), sigs, unchecked);
@@ -94,6 +96,7 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
         diagnostics: lowerer.diags.list,
         index: lowerer.index,
         slot_types: lowerer.slot_types,
+        constants: lowerer.constants,
     }
 }
 
@@ -205,6 +208,8 @@ struct Lowerer<'d> {
     headers: ItemHeaders,
     /// The static type of each expression slot lowered, by block and input.
     slot_types: BTreeMap<BlockId, BTreeMap<String, Type>>,
+    /// The `const` variables whose value is known (L10).
+    constants: BTreeMap<SymbolId, Constant>,
 }
 
 /// A field part.
@@ -283,6 +288,7 @@ impl<'d> Lowerer<'d> {
             checks: Vec::new(),
             headers: ItemHeaders::default(),
             slot_types: BTreeMap::new(),
+            constants: BTreeMap::new(),
         }
     }
 
@@ -323,6 +329,7 @@ impl<'d> Lowerer<'d> {
                 if let Some(item) = item {
                     if self.check_nesting(&item) {
                         flow::check_item(&item, &self.symbols, &mut self.diags);
+                        consts::check_item(&item, &self.symbols, &mut self.diags, &mut self.constants);
                     }
                     if keep {
                         items.push(item);

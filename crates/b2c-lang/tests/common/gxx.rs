@@ -44,6 +44,18 @@ pub(crate) fn syntax_check(source: &str, warnings_are_errors: bool) -> Result<()
     if warnings_are_errors {
         args.push("-Werror");
     }
+    run_syntax_check(source, args)
+}
+
+/// [`syntax_check`] under another standard (`c++17`, `c++20`), with
+/// `-Wpedantic` too, warnings allowed.
+pub(crate) fn syntax_check_with(source: &str, standard: &str) -> Result<(), String> {
+    let standard = format!("-std={standard}");
+    run_syntax_check(source, vec![standard.as_str(), "-Wall", "-Wextra", "-Wpedantic"])
+}
+
+/// Runs `g++ <args> -fsyntax-only` on `source`, read from standard input.
+fn run_syntax_check(source: &str, mut args: Vec<&str>) -> Result<(), String> {
     args.extend(["-fsyntax-only", "-x", "c++", "-"]);
     let mut child = command("g++")
         .args(&args)
