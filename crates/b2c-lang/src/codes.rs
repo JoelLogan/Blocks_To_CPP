@@ -20,7 +20,8 @@ pub(crate) const OTHER_MODULE: &str = "B2C-E0206";
 pub(crate) const WRONG_KIND: &str = "B2C-E0207";
 /// Two variables or parameters with the same name in one scope.
 pub(crate) const DUPLICATE_NAME: &str = "B2C-E0210";
-/// Two functions with the same name in one module.
+/// Two functions with the same name in one module (from W2: two functions
+/// one call cannot tell apart).
 pub(crate) const DUPLICATE_FUNCTION: &str = "B2C-E0211";
 /// Two declarations with the same symbol ID (a damaged file).
 pub(crate) const DUPLICATE_SYMBOL_ID: &str = "B2C-E0212";
@@ -66,8 +67,15 @@ pub(crate) const DIVISION_BY_ZERO: &str = "B2C-E0316";
 
 // --- Structure and flow (E04xx) --------------------------------------------
 
-/// `break` or `continue` outside a loop.
+/// `break` or `continue` outside a loop, or a `break` whose nearest loop or
+/// switch is a switch (w2.md §2.9).
 pub(crate) const OUTSIDE_LOOP: &str = "B2C-E0401";
+/// *throw the error again* outside a catch part (w2.md §2.5).
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "emitted by W2's error blocks (package B)")
+)]
+pub(crate) const RETHROW_OUTSIDE_CATCH: &str = "B2C-E0402";
 /// A `return` without the value it needs.
 pub(crate) const RETURN_NEEDS_VALUE: &str = "B2C-E0403";
 /// A `return` with a value in a function that gives back nothing.
@@ -78,6 +86,36 @@ pub(crate) const NO_MAIN: &str = "B2C-E0405";
 pub(crate) const MANY_MAINS: &str = "B2C-E0406";
 /// A function that can reach its end without returning a value.
 pub(crate) const MISSING_RETURN: &str = "B2C-E0410";
+/// Structs that hold each other by value (w2.md §2.2).
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "emitted by W2's struct blocks (package C1)")
+)]
+pub(crate) const STRUCT_CYCLE: &str = "B2C-E0420";
+/// Any other cycle of the declaration graph, such as two globals set from
+/// each other (modules.md §4.3).
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "emitted by W2's declaration graph (packages C1, C2)")
+)]
+pub(crate) const DECLARATION_CYCLE: &str = "B2C-E0421";
+/// A value that must be fixed when the program is built is not: a `case`
+/// label, or the condition of *check at compile time* (w2.md §2.9).
+pub(crate) const NOT_CONSTANT: &str = "B2C-E0424";
+/// Two `case` labels of one switch with the same value.
+pub(crate) const DUPLICATE_CASE: &str = "B2C-E0425";
+/// A parameter without a default value after one with a default (w2.md
+/// §2.8).
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "emitted by W2's default arguments (package C2)")
+)]
+pub(crate) const DEFAULT_ORDER: &str = "B2C-E0426";
+/// *go on into the next case* that is not the last block of a case, or is
+/// in the last part of a switch.
+pub(crate) const MISPLACED_FALLTHROUGH: &str = "B2C-E0427";
+/// *check at compile time* whose condition is `false`.
+pub(crate) const CHECK_FAILED: &str = "B2C-E0428";
 /// A block that lacks a value, name or setting the analyser needs.
 pub(crate) const INCOMPLETE_BLOCK: &str = "B2C-E0430";
 /// Blocks nested more deeply than the analyser supports.
@@ -105,6 +143,20 @@ pub(crate) const PARKED: &str = "B2C-W0505";
 /// A decimal division by a constant zero, or a constant decimal calculation
 /// too large for a `double`: the result is infinity or NaN (L10).
 pub(crate) const NOT_FINITE: &str = "B2C-W0506";
+/// A catch part that never runs: an earlier part catches the same error or
+/// a base of it (w2.md §2.5).
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "emitted by W2's error blocks (package B)")
+)]
+pub(crate) const UNREACHABLE_CATCH: &str = "B2C-W0507";
+/// A switch on an enum, without a default part, that has no case for some
+/// of its values (w2.md §2.9).
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "emitted by W2's switch block (package D)")
+)]
+pub(crate) const MISSING_CASES: &str = "B2C-W0508";
 /// Integer division where a decimal result is expected.
 pub(crate) const INTEGER_DIVISION: &str = "B2C-W0510";
 /// `==` or `!=` on decimal numbers.
@@ -153,11 +205,19 @@ pub(crate) const ALL: &[&str] = &[
     NO_PLACE_TYPE,
     DIVISION_BY_ZERO,
     OUTSIDE_LOOP,
+    RETHROW_OUTSIDE_CATCH,
     RETURN_NEEDS_VALUE,
     RETURN_HAS_VALUE,
     NO_MAIN,
     MANY_MAINS,
     MISSING_RETURN,
+    STRUCT_CYCLE,
+    DECLARATION_CYCLE,
+    NOT_CONSTANT,
+    DUPLICATE_CASE,
+    DEFAULT_ORDER,
+    MISPLACED_FALLTHROUGH,
+    CHECK_FAILED,
     INCOMPLETE_BLOCK,
     TOO_DEEP,
     SLOT_SYNTAX,
@@ -169,6 +229,8 @@ pub(crate) const ALL: &[&str] = &[
     USE_BEFORE_ASSIGNMENT,
     PARKED,
     NOT_FINITE,
+    UNREACHABLE_CATCH,
+    MISSING_CASES,
     INTEGER_DIVISION,
     FLOAT_EQUALITY,
     ENDLESS_LOOP,

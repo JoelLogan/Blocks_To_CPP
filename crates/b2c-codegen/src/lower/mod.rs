@@ -19,13 +19,21 @@
 //! statement that cannot be generated becomes `/* error */;`. Nothing here
 //! panics, and recursion stops at [`scan::MAX_DEPTH`].
 
+mod collections;
+mod control;
+mod errors;
 mod expr;
+mod files;
 mod forms;
+mod globals;
 mod scan;
 mod stmt;
 #[cfg(test)]
 mod tests;
+mod text;
 mod typedefs;
+#[cfg(test)]
+mod w2_tests;
 
 use std::collections::BTreeSet;
 
@@ -71,17 +79,23 @@ pub(crate) fn lower_module(program: &Program, module: &Module) -> LoweredModule 
     let mut lowerer = Lowerer::new(program);
     let mut functions = Vec::new();
     let mut mains = Vec::new();
+    let mut types = Vec::new();
     for item in &module.items {
         match &item.kind {
             ItemKind::Main(def) => mains.push(lowerer.main(def, item)),
             ItemKind::Function(def) => functions.extend(lowerer.function(def, item)),
+            // W2's definitions (w2.md §3.2): structs and enums are C1's,
+            // globals C2's, a used header D's.
+            ItemKind::Struct(_) | ItemKind::Enum(_) => types.extend(lowerer.type_item(item)),
+            ItemKind::Global(def) => lowerer.global_item(def, item),
+            ItemKind::UseHeader { header } => lowerer.use_header(*header, item),
         }
     }
     // Definition order never depends on canvas position (spec §6.7).
     functions.sort_by_cached_key(|f| (f.name.clone(), signature_key(f), f.origin.block.clone()));
     mains.sort_by(|a, b| a.origin.block.cmp(&b.origin.block));
     LoweredModule {
-        types: Vec::new(),
+        types,
         functions,
         mains,
         usage: lowerer.usage,

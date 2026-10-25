@@ -13,7 +13,7 @@ use b2c_model::Block;
 use super::convert::{Subject, constant_int};
 use super::expr::is_number_or_bool;
 use super::user_types::Output;
-use super::{ItemCtx, Lowerer, PendingKind, TypeUse, field};
+use super::{Breakable, ItemCtx, Lowerer, PendingKind, TypeUse, field};
 use crate::access;
 use crate::codes;
 use crate::messages::{a_type, quoted};
@@ -57,11 +57,8 @@ impl Lowerer<'_> {
     }
 
     /// A loop body: like [`Self::body`], inside a loop.
-    fn loop_body(&mut self, owner: &Block, joined: bool) -> sast::Block {
-        self.loop_depth += 1;
-        let body = self.body(owner, "BODY", joined);
-        self.loop_depth -= 1;
-        body
+    pub(super) fn loop_body(&mut self, owner: &Block, joined: bool) -> sast::Block {
+        self.within(Breakable::Loop, |lowerer| lowerer.body(owner, "BODY", joined))
     }
 
     fn statement(&mut self, block: &Block) -> Option<Stmt> {
@@ -132,6 +129,22 @@ impl Lowerer<'_> {
                     in_main: matches!(self.item, ItemCtx::Main),
                 }
             }
+            // W2's statements, each lowered by its family's module (w2.md
+            // §3.2), which the packages fill in.
+            "coll.add" | "coll.set_item" | "coll.for_each" | "coll.for_each_pair" | "coll.clear"
+            | "coll.remove_at" | "coll.remove_value" | "coll.remove_next" | "coll.sort" => {
+                return self.collection_statement(block);
+            }
+            "io.decimals" => return self.text_statement(block),
+            "error.try" | "error.throw" | "error.rethrow" => return self.error_statement(block),
+            "type.set_field" => return self.type_statement(block),
+            "control.switch" | "control.do_while" | "control.wait" | "control.fallthrough" => {
+                return self.control_statement(block);
+            }
+            "file.for_each_line" | "file.open" | "file.write" | "program.check" => {
+                return self.file_statement(block);
+            }
+            "var.flip" => return self.global_statement(block),
             _ => return None,
         })
     }
@@ -441,14 +454,23 @@ impl Lowerer<'_> {
         step
     }
 
-    fn jump(&mut self, block: &Block, kind: StmtKind, label: &str) -> StmtKind {
-        if self.loop_depth == 0 {
-            let location = self.loc(&block.id, Part::Whole);
-            self.diags.error(
-                codes::OUTSIDE_LOOP,
-                location,
-                format!("{label} can only be used inside a loop."),
-            );
+    /// *leave loop* and *skip to next round*: `B2C-E0401` outside a loop,
+    /// and for *leave loop* whose nearest loop or switch is a switch, at
+    /// any depth of other blocks between (w2.md §2.9). *skip to next round*
+    /// in a switch inside a loop reaches the loop, as C++'s `continue` does.
+    pub(super) fn jump(&mut self, block: &Block, kind: StmtKind, label: &str) -> StmtKind {
+        let location = self.loc(&block.id, Part::Whole);
+        let in_loop = self.breakable.contains(&Breakable::Loop);
+        let message = match (&kind, self.breakable.last()) {
+            _ if !in_loop => Some(format!("{label} can only be used inside a loop.")),
+            (StmtKind::Break, Some(Breakable::Switch)) => Some(format!(
+                "In C++ {label} here would only leave the switch, not the loop around it. To leave the loop, \
+                 set a variable that the loop checks, or use 'return' in a function."
+            )),
+            _ => None,
+        };
+        if let Some(message) = message {
+            self.diags.error(codes::OUTSIDE_LOOP, location, message);
         }
         kind
     }

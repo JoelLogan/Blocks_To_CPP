@@ -1308,7 +1308,11 @@ isConst: boolean, } | { "kind": "parameter",
 /**
  * How the argument is passed.
  */
-mode: PassMode, } | { "kind": "loopVariable" } | { "kind": "function",
+mode: PassMode, } | { "kind": "loopVariable" } | { "kind": "global",
+/**
+ * Whether it is a constant.
+ */
+isConst: boolean, } | { "kind": "function",
 /**
  * Its parameters' symbol IDs, in order.
  */
@@ -1355,7 +1359,11 @@ isConst: boolean, } | { "kind": "parameter",
 /**
  * How the argument is passed.
  */
-mode: PassMode, } | { "kind": "loopVariable" } | { "kind": "function",
+mode: PassMode, } | { "kind": "loopVariable" } | { "kind": "global",
+/**
+ * Whether it is a constant.
+ */
+isConst: boolean, } | { "kind": "function",
 /**
  * Its parameters' symbol IDs, in order.
  */

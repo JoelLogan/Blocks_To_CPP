@@ -14,7 +14,7 @@ use crate::document::{
 };
 use crate::json::Json;
 use crate::limits::{MAX_BLOCKS, MAX_COORDINATE, MAX_EXPR_TOKENS, MAX_IDENT_LEN, MAX_VARIADIC_PARTS};
-use crate::terms::ROW_KEYS;
+use crate::terms::{DECLARING_ROW_KEYS, ROW_KEYS};
 use crate::text_rules::quote;
 
 /// Every frame colour.
@@ -427,8 +427,8 @@ impl<'a> Decoder<'a> {
     fn extra(&mut self, value: &'a Json) -> Option<BTreeMap<String, serde_json::Value>> {
         self.map(value, |d, key, item| {
             let too_many = d.check_variadic(item);
-            if key == "params" {
-                d.declare_params(item);
+            if DECLARING_ROW_KEYS.contains(&key) {
+                d.declare_rows(item);
             }
             if ROW_KEYS.contains(&key) {
                 d.row_types(item);
@@ -469,10 +469,11 @@ impl<'a> Decoder<'a> {
         true
     }
 
-    /// Function parameter rows (`extra.params`) declare symbols. Their exact
-    /// shape is checked by the catalog; here only the symbol IDs are claimed
-    /// and the names' length is limited.
-    fn declare_params(&mut self, value: &'a Json) {
+    /// Rows that declare symbols: function parameters (`extra.params`),
+    /// struct fields (`extra.fields`) and enum values (`extra.values`). Their
+    /// exact shape is checked by the catalog; here only the symbol IDs are
+    /// claimed and the names' length is limited.
+    fn declare_rows(&mut self, value: &'a Json) {
         let Json::Array(rows) = value else {
             return;
         };

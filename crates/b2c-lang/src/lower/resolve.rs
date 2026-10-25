@@ -216,17 +216,24 @@ impl Lowerer<'_> {
                      so it doesn't exist when the program runs."
                 ),
             ),
-            (DeclStatus::Active, DeclKind::Function) if decl.module != self.module_index => {
+            (DeclStatus::Active, DeclKind::Function | DeclKind::Global)
+                if decl.module != self.module_index =>
+            {
                 let module = self
                     .document
                     .modules
                     .get(decl.module)
                     .map(|m| quoted(&m.name))
                     .unwrap_or_default();
+                let what = if decl.kind == DeclKind::Global {
+                    "a global"
+                } else {
+                    "a function"
+                };
                 (
                     codes::OTHER_MODULE,
                     format!(
-                        "{name} is a function of another module ({module}). Using functions from other modules \
+                        "{name} is {what} of another module ({module}). Using {what}s from other modules \
                          isn't supported yet, so move it into this module."
                     ),
                 )
@@ -237,7 +244,7 @@ impl Lowerer<'_> {
                     "{name} is used before it is created. Move this block below the block that creates {name}."
                 ),
             ),
-            (DeclStatus::Active, DeclKind::Variable | DeclKind::Function) => (
+            (DeclStatus::Active, DeclKind::Variable | DeclKind::Function | DeclKind::Global) => (
                 codes::OUT_OF_SCOPE,
                 format!(
                     "{name} can't be used here: it only exists from the block that creates it to the end of \
@@ -255,6 +262,31 @@ impl Lowerer<'_> {
                 codes::OUT_OF_SCOPE,
                 format!("{name} is the counter of a 'for' loop and only exists inside that loop."),
             ),
+            (DeclStatus::Active, DeclKind::LoopItem) => (
+                codes::OUT_OF_SCOPE,
+                format!("{name} belongs to the loop that creates it and only exists inside that loop."),
+            ),
+            (DeclStatus::Active, DeclKind::CatchVariable) => (
+                codes::OUT_OF_SCOPE,
+                format!("{name} is the error caught by a 'catch' part and only exists inside that part."),
+            ),
+            (DeclStatus::Active, DeclKind::Struct | DeclKind::Enum) => (
+                codes::WRONG_KIND,
+                format!("{name} is a type, not a variable: create a variable of this type and use that."),
+            ),
+            (DeclStatus::Active, DeclKind::Field | DeclKind::Enumerator) => {
+                let (what, owner) = match decl.kind {
+                    DeclKind::Field => ("a field of the struct", "'of'"),
+                    _ => ("a value of the enum", "the enum value block"),
+                };
+                (
+                    codes::WRONG_KIND,
+                    format!(
+                        "{name} is {what} {}, not a variable: use {owner} to get it.",
+                        quoted(decl.owner.as_deref().unwrap_or_default())
+                    ),
+                )
+            }
         };
         let diagnostic =
             b2c_ir::Diagnostic::error(code, b2c_ir::DiagSource::Analyser, location.clone(), message)

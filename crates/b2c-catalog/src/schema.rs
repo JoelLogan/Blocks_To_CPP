@@ -10,6 +10,13 @@
 //! parameter row accepts (`type_class`) and the headers a dropdown option
 //! needs. Patterns are written in C++ syntax and parsed when the file loads,
 //! so a pattern that does not parse makes its file invalid.
+//!
+//! Milestone M3's second wave (`docs/plans/m3-contracts/w2.md` §2.1) adds
+//! the row extras `fields` (a struct's fields) and `values` (an enum's
+//! values) beside `params`, a repeat counted by the rows of a row extra,
+//! repeated fields (`repeat` on a dropdown, checkbox, type or `symbol_decl`
+//! field), a type field filled only from the module (`types = []`) and four
+//! categories.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -106,11 +113,19 @@ pub enum Category {
     Io,
     /// Functions.
     Functions,
+    /// Collections (lists, maps, sets, …).
+    Collections,
+    /// Types: structs and enums.
+    Types,
+    /// Files.
+    Files,
+    /// Errors.
+    Errors,
 }
 
 impl Category {
     /// Every category, in toolbox order (spec §3.7).
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 13] = [
         Self::Program,
         Self::Variables,
         Self::Math,
@@ -120,6 +135,10 @@ impl Category {
         Self::Loops,
         Self::Io,
         Self::Functions,
+        Self::Collections,
+        Self::Types,
+        Self::Files,
+        Self::Errors,
     ];
 
     /// The category's ID as written in catalog files, e.g. `io`.
@@ -134,6 +153,10 @@ impl Category {
             Self::Loops => "loops",
             Self::Io => "io",
             Self::Functions => "functions",
+            Self::Collections => "collections",
+            Self::Types => "types",
+            Self::Files => "files",
+            Self::Errors => "errors",
         }
     }
 }
@@ -241,6 +264,14 @@ pub struct FieldDef {
     /// block (`optionHeaders`).
     #[serde(default, skip_serializing)]
     pub headers: BTreeMap<String, Vec<String>>,
+    /// Repetition controlled by a count or the rows of a row extra, as on an
+    /// input: parts `NAME0`, `NAME1`, …, each with the field's default
+    /// (w2.md §2.1). Only dropdown, checkbox, type and `symbol_decl` fields
+    /// repeat, and a repeated field has no pattern of its own except
+    /// `field:F` on a repeated `symbol_decl`, where `F` is a repeated type
+    /// field with the same repeat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat: Option<Repeat>,
 }
 
 /// A field's default.
@@ -326,11 +357,12 @@ pub struct StatementDef {
     pub when: Option<String>,
 }
 
-/// Repetition: inputs `NAME0` … `NAME{count + plus - 1}`.
+/// Repetition: parts `NAME0` … `NAME{count + plus - 1}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Repeat {
-    /// The `extra` key holding the count.
+    /// The `extra` key holding the count: a `count`, or a row extra
+    /// (`params`, `fields` or `values`), whose rows are counted.
     pub count: String,
     /// Added to the count (e.g. 1 for `if` + `elseIfCount` branches).
     #[serde(default)]
@@ -353,17 +385,17 @@ pub struct ExtraDef {
     /// Minimum (for `count`).
     #[serde(default)]
     pub min: u32,
-    /// Maximum (for `count`; for `params`, the maximum number of rows).
+    /// Maximum (for `count`; for a row extra, the maximum number of rows).
     pub max: u32,
     /// Default (for `count` and `flag`).
     #[serde(default)]
     pub default: Option<FieldDefault>,
-    /// The parameter types a `params` row always offers, in C++ syntax, as a
-    /// type field's `types`.
+    /// The types a `params` or `fields` row always offers, in C++ syntax, as
+    /// a type field's `types`.
     #[serde(default, serialize_with = "serialize_types")]
     pub types: Vec<String>,
-    /// `type_class` (for `params`): the class of types a row also accepts
-    /// besides `types`; `typeClass` in `catalog.json`.
+    /// `type_class` (for `params` and `fields`): the class of types a row
+    /// also accepts besides `types`; `typeClass` in `catalog.json`.
     #[serde(
         default,
         rename(deserialize = "type_class", serialize = "typeClass"),
@@ -383,6 +415,45 @@ pub enum ExtraKind {
     /// Function parameter rows: an array of
     /// `{"sym": SymbolId, "name": String, "type": type term, "mode": "copy"|"editable"|"read_only"}`.
     Params,
+    /// A struct's field rows: an array of
+    /// `{"sym": SymbolId, "name": String, "type": type term}`.
+    Fields,
+    /// An enum's value rows: an array of `{"sym": SymbolId, "name": String}`.
+    Values,
+}
+
+impl ExtraKind {
+    /// Whether the extra holds rows, each declaring a symbol: `params`,
+    /// `fields` or `values`. A row extra must have its kind's name.
+    pub const fn is_rows(self) -> bool {
+        matches!(self, Self::Params | Self::Fields | Self::Values)
+    }
+
+    /// The name a row extra must have (`params`, `fields`, `values`).
+    pub const fn row_name(self) -> Option<&'static str> {
+        match self {
+            Self::Params => Some("params"),
+            Self::Fields => Some("fields"),
+            Self::Values => Some("values"),
+            Self::Count | Self::Flag => None,
+        }
+    }
+
+    /// The keys of a row of this kind, in the order the rows are written.
+    pub const fn row_keys(self) -> &'static [&'static str] {
+        match self {
+            Self::Params => &["sym", "name", "type", "mode"],
+            Self::Fields => &["sym", "name", "type"],
+            Self::Values => &["sym", "name"],
+            Self::Count | Self::Flag => &[],
+        }
+    }
+
+    /// Whether a row of this kind has a `type`, and so `types` and a
+    /// `type_class`.
+    pub const fn has_row_types(self) -> bool {
+        matches!(self, Self::Params | Self::Fields)
+    }
 }
 
 /// `skip_serializing_if` for flags that are off by default.

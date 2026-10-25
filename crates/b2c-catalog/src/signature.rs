@@ -18,7 +18,7 @@ use b2c_model::FieldValue;
 use serde_json::Value;
 
 use crate::definitions;
-use crate::schema::{BlockDef, ExtraDef, ExtraKind, FieldDef, FieldKind, InputDef};
+use crate::schema::{BlockDef, ExtraDef, FieldDef, FieldKind, InputDef};
 
 /// Where a pattern sits in a definition.
 #[derive(Debug, Clone, Copy)]
@@ -49,6 +49,8 @@ pub(crate) fn problems(def: &BlockDef) -> Vec<String> {
     check_headers(def, &mut problems);
     let vars = declared_vars(def, &mut problems);
     check_keys(def, &vars, &mut problems);
+    check_repeated_fields(def, &mut problems);
+    check_module_types(def, &mut problems);
     for (place, pattern) in patterns(def) {
         check_forms(def, place, pattern, true, &vars, &mut problems);
         if let Place::Field(field) = place
@@ -116,10 +118,10 @@ fn check_type_lists(def: &BlockDef, problems: &mut Vec<String>) {
         .field
         .iter()
         .map(|field| (format!("the type field {}", field.name), &field.types));
-    let extras = def
-        .extra
-        .iter()
-        .map(|extra| (format!("params {}", extra.name), &extra.types));
+    let extras = def.extra.iter().map(|extra| {
+        let kind = extra.kind.row_name().unwrap_or("extra");
+        (format!("{kind} {}", extra.name), &extra.types)
+    });
     for (what, types) in fields.chain(extras) {
         for entry in types {
             if listed_type(entry).is_none() {
@@ -225,8 +227,97 @@ fn check_keys(def: &BlockDef, vars: &BTreeMap<TypeVar, TypeClass>, problems: &mu
         }
     }
     for extra in &def.extra {
-        if extra.type_class.is_some() && extra.kind != ExtraKind::Params {
-            problems.push(format!("only params extras have a type_class ({})", extra.name));
+        if extra.type_class.is_some() && !extra.kind.has_row_types() {
+            problems.push(format!(
+                "only params and fields extras have a type_class ({})",
+                extra.name
+            ));
+        }
+    }
+}
+
+/// A repeated field has no pattern of its own, except `field:F` on a
+/// repeated `symbol_decl`, where `F` is a repeated type field with the same
+/// repeat: it declares part `i` with `F`'s part `i` (w2.md §2.1). A part
+/// that is not repeated cannot use `field:F` of a repeated `F`, which has
+/// no one type.
+fn check_repeated_fields(def: &BlockDef, problems: &mut Vec<String>) {
+    let repeated_type = |name: &str| {
+        def.field
+            .iter()
+            .find(|field| field.name == name && field.kind == FieldKind::Type)
+            .and_then(|field| field.repeat.as_ref())
+    };
+    for field in &def.field {
+        let (Some(repeat), Some(pattern)) = (&field.repeat, &field.pattern) else {
+            continue;
+        };
+        let name = &field.name;
+        match (field.kind, pattern) {
+            (FieldKind::SymbolDecl, TypePattern::Field(other)) => match repeated_type(other) {
+                Some(theirs) if theirs == repeat => {}
+                Some(_) => problems.push(format!(
+                    "the repeated field {name} has the type field:{other}, but {other} repeats by another count"
+                )),
+                None => problems.push(format!(
+                    "the repeated field {name} has the type field:{other}, but {other} is not a repeated type field"
+                )),
+            },
+            _ => problems.push(format!(
+                "the repeated field {name} has a type pattern, but a repeated field can only have field:F on a repeated symbol_decl"
+            )),
+        }
+    }
+    let mut uses = Vec::new();
+    for (place, pattern) in patterns(def) {
+        if matches!(place, Place::Field(field) if field.repeat.is_some()) {
+            continue;
+        }
+        field_names(pattern, &mut uses, place);
+    }
+    for (place, other) in uses {
+        if repeated_type(other).is_some() {
+            problems.push(format!(
+                "{} uses field:{other}, but {other} repeats, so only a repeated symbol_decl with the same count can use it",
+                place.describe()
+            ));
+        }
+    }
+}
+
+/// Every `field:NAME` in a pattern, with where the pattern sits.
+fn field_names<'a>(pattern: &'a TypePattern, out: &mut Vec<(Place<'a>, &'a str)>, place: Place<'a>) {
+    match pattern {
+        TypePattern::Field(name) => out.push((place, name)),
+        TypePattern::Lib(_, args) => {
+            for arg in args {
+                field_names(arg, out, place);
+            }
+        }
+        TypePattern::Fn(_, arg) => field_names(arg, out, place),
+        _ => {}
+    }
+}
+
+/// The types of milestone M2 that a type field offers in its `types`.
+const M2_TYPES: [Type; 5] = [Type::Bool, Type::Char, Type::Int, Type::Double, Type::String];
+
+/// A type field with `types = []` offers only the module's user types
+/// (w2.md §2.1, §2.3), so its pattern must be one that no M2 type fits,
+/// such as a `struct` variable: otherwise its menu would hide types it
+/// accepts.
+fn check_module_types(def: &BlockDef, problems: &mut Vec<String>) {
+    for field in &def.field {
+        let (FieldKind::Type, true, Some(pattern)) = (field.kind, field.types.is_empty(), &field.pattern)
+        else {
+            continue;
+        };
+        if let Some(fits) = M2_TYPES.iter().find(|ty| pattern_matches(def, pattern, ty)) {
+            problems.push(format!(
+                "the type field {} lists no types, but its type {pattern} fits {}: list the types it offers",
+                field.name,
+                fits.cpp(&NoFacts)
+            ));
         }
     }
 }
@@ -479,6 +570,12 @@ pub(crate) fn build(def: &BlockDef) -> BlockSig {
             .iter()
             .filter(|input| input.repeat.is_some())
             .map(|input| input.name.clone())
+            .collect(),
+        repeated_fields: def
+            .field
+            .iter()
+            .filter(|field| field.repeat.is_some())
+            .map(|field| field.name.clone())
             .collect(),
         headers: headers(&def.headers),
         option_headers: def
@@ -1055,6 +1152,7 @@ mod tests {
 
     #[test]
     fn rows_accept_their_types_and_their_class() {
+        use crate::schema::ExtraKind;
         use serde_json::json;
         let row = |types: &[&str], class: Option<TypeClass>| ExtraDef {
             name: "params".into(),
@@ -1092,6 +1190,99 @@ mod tests {
         for bad in ["vector", "<Vector>", "<math.h>", "<>", "<a b>", "\"x\""] {
             assert!(!header_fits(bad) && !looks_like_header(bad), "{bad}");
         }
+    }
+
+    /// `error.try`'s shape (w2.md §1.7): a repeated type field `ERROR` and a
+    /// repeated name `NAME` of type `field:ERROR`, both counted by
+    /// `catchCount`, with `extra` added to the definition.
+    fn catches(name_repeat: &str, name_type: &str, more: &str) -> BlockDef {
+        def(&format!(
+            "shape = \"statement\"\n\
+             label = {{ friendly = \"try %TRY catch %ERROR as %NAME %CATCH catch …\", cpp = \"try\" }}\n\
+             [[block.extra]]\nname = \"catchCount\"\nkind = \"count\"\nmin = 1\nmax = 8\ndefault = \"1\"\n\
+             [[block.extra]]\nname = \"otherCount\"\nkind = \"count\"\nmin = 1\nmax = 8\ndefault = \"1\"\n\
+             [[block.field]]\nname = \"ERROR\"\nkind = \"type\"\ntypes = [\"std::exception\", \"std::runtime_error\"]\n\
+             default = \"std::exception\"\nrepeat = {{ count = \"catchCount\" }}\n\
+             [[block.field]]\nname = \"NAME\"\nkind = \"symbol_decl\"\ntype = \"{name_type}\"\nrepeat = {{ count = \"{name_repeat}\" }}\n\
+             [[block.statement]]\nname = \"TRY\"\n\
+             [[block.statement]]\nname = \"CATCH\"\nrepeat = {{ count = \"catchCount\" }}\n{more}"
+        ))
+    }
+
+    #[test]
+    fn a_repeated_name_takes_the_type_of_its_index() {
+        let good = catches("catchCount", "field:ERROR", "");
+        assert_eq!(crate::definitions::check_block(&good), Vec::<String>::new());
+        let sig = build(&good);
+        assert_eq!(
+            sig.repeated_fields,
+            BTreeSet::from(["ERROR".into(), "NAME".into()])
+        );
+        assert_eq!(sig.fields["NAME"], TypePattern::Field("ERROR".into()));
+        assert!(sig.symbol_decls.contains("NAME"));
+        assert_eq!(
+            problems(&catches("otherCount", "field:ERROR", "")),
+            ["the repeated field NAME has the type field:ERROR, but ERROR repeats by another count"]
+        );
+        assert_eq!(
+            problems(&catches("catchCount", "std::string", "")),
+            [
+                "the repeated field NAME has a type pattern, but a repeated field can only have field:F on a repeated symbol_decl"
+            ]
+        );
+        // `field:F` of a field that is not repeated, from a repeated name.
+        let plain = catches(
+            "catchCount",
+            "field:TO",
+            "[[block.field]]\nname = \"TO\"\nkind = \"type\"\ntypes = [\"int\"]\n",
+        );
+        assert_eq!(
+            problems(&plain),
+            ["the repeated field NAME has the type field:TO, but TO is not a repeated type field"]
+        );
+        // A part that is not repeated cannot read a repeated field's type.
+        let single = catches(
+            "catchCount",
+            "field:ERROR",
+            "[[block.field]]\nname = \"ONE\"\nkind = \"symbol_decl\"\ntype = \"field:ERROR\"\n",
+        );
+        assert_eq!(
+            problems(&single),
+            [
+                "the type of field ONE uses field:ERROR, but ERROR repeats, so only a repeated symbol_decl with the same count can use it"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_type_field_without_types_lists_only_user_types() {
+        let new = |class: &str| {
+            def(&format!(
+                "shape = \"reporter\"\noutput = \"S\"\nwhere = {{ S = \"{class}\" }}\n\
+                 label = {{ friendly = \"new %TYPE\", cpp = \"S{{}}\" }}\n\
+                 [[block.field]]\nname = \"TYPE\"\nkind = \"type\"\ntypes = []\ntype = \"S\"\n"
+            ))
+        };
+        let structs = new("struct");
+        assert_eq!(crate::definitions::check_block(&structs), Vec::<String>::new());
+        let field = &structs.field[0];
+        assert_eq!(
+            field_type_fit(
+                &structs,
+                field,
+                &FieldValue::Ref(serde_json::from_value(serde_json::json!({"ref": "sym_Pt"})).unwrap())
+            ),
+            TypeFit::Fits
+        );
+        assert_eq!(field_type_fit(&structs, field, &text("int")), TypeFit::Outside);
+        assert_eq!(
+            problems(&new("value")),
+            ["the type field TYPE lists no types, but its type S fits bool: list the types it offers"]
+        );
+        assert_eq!(
+            problems(&new("text")),
+            ["the type field TYPE lists no types, but its type S fits char: list the types it offers"]
+        );
     }
 
     #[test]

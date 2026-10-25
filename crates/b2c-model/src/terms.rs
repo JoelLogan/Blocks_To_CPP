@@ -18,9 +18,13 @@ use serde_json::Value;
 use crate::document::{Block, FieldValue};
 
 /// The `extra` keys whose rows have a `type` that is a type term
-/// (types.md §2.1): `params`, the parameter rows of a function. The rows of
-/// struct fields and enum values join with the blocks that use them (W2).
-pub(crate) const ROW_KEYS: [&str; 1] = ["params"];
+/// (types.md §2.1): `params`, the parameter rows of a function, and
+/// `fields`, the field rows of a struct (w2.md §2.1).
+pub(crate) const ROW_KEYS: [&str; 2] = ["params", "fields"];
+
+/// The `extra` keys whose rows each declare a symbol in `sym`: the row keys
+/// with a `type`, and `values`, the value rows of an enum (w2.md §2.1).
+pub(crate) const DECLARING_ROW_KEYS: [&str; 3] = ["params", "fields", "values"];
 
 /// Whether `key` names a template: a qualified name (it contains `::`)
 /// that follows the name rule of types.md §2.2, such as `std::vector`.

@@ -15,7 +15,7 @@ use b2c_ir::text::Ident;
 use b2c_ir::types::{LibType, Type};
 
 use super::Lowerer;
-use crate::cast::{CExpr, CStmtKind, CType, RangeBinding};
+use crate::cast::{BindingStyle, CExpr, CStmtKind, CType, RangeBinding};
 
 /// Whether a type's items are found by an `int` position (types.md §1.4,
 /// `index`): a vector, a deque or a string. A map's items are found by key.
@@ -85,6 +85,12 @@ impl Lowerer<'_> {
         };
         let range = self.library_object(range);
         let body = self.scoped_block(body, names.unwrap_or_default());
-        CStmtKind::RangeFor { binding, range, body }
+        CStmtKind::RangeFor {
+            binding,
+            style: BindingStyle::ConstRef,
+            maybe_unused: false,
+            range,
+            body,
+        }
     }
 }

@@ -46,7 +46,7 @@ use serde_json::Value;
 
 use crate::Catalog;
 use crate::codes::{self, Diags};
-use crate::definitions::repeat_index;
+use crate::definitions::{self, repeat_index};
 use crate::migrate::{BLOCK_MIGRATIONS, BlockMigration};
 use crate::resolve::{block_noun, describe_row_type, describe_type, quote, short_name};
 use crate::schema::{BlockDef, ExtraKind, FieldKind};
@@ -792,7 +792,7 @@ fn check_limits(block: &Block) -> Result<(), String> {
 /// stays `B2C-E0607` or `E0614`.
 pub(crate) fn newer_catalog_problem(def: &BlockDef, block: &Block) -> Option<String> {
     let field = block.fields.iter().find_map(|(name, value)| {
-        let Some(field) = def.field.iter().find(|field| &field.name == name) else {
+        let Some(field) = definitions::field_def(def, name) else {
             return Some(format!("the field {}", quote(name)));
         };
         match value {
@@ -856,23 +856,24 @@ pub(crate) fn newer_catalog_problem(def: &BlockDef, block: &Block) -> Option<Str
     ))
 }
 
-/// The first parameter row whose `type` a newer catalog may have added or
-/// allowed, as [`newer_catalog_problem`] names it.
+/// The first parameter or field row whose `type` a newer catalog may have
+/// added or allowed, as [`newer_catalog_problem`] names it.
 fn newer_row_type(def: &BlockDef, block: &Block) -> Option<String> {
     def.extra
         .iter()
-        .filter(|extra| extra.kind == ExtraKind::Params)
+        .filter(|extra| extra.kind.has_row_types())
         .find_map(|extra| {
+            let noun = if extra.kind == ExtraKind::Params {
+                "parameter"
+            } else {
+                "field"
+            };
             let rows = block.extra.get(&extra.name)?.as_array()?;
             rows.iter().enumerate().find_map(|(index, row)| {
                 let ty = row.get("type")?;
-                signature::row_type_fit(extra, ty).may_be_newer().then(|| {
-                    format!(
-                        "the type {} in parameter {}",
-                        describe_row_type(Some(ty)),
-                        index + 1
-                    )
-                })
+                signature::row_type_fit(extra, ty)
+                    .may_be_newer()
+                    .then(|| format!("the type {} in {noun} {}", describe_row_type(Some(ty)), index + 1))
             })
         })
 }

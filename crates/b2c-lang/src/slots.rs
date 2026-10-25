@@ -288,7 +288,16 @@ impl Resolver<'_> {
         let mut declares = BTreeMap::new();
         for (name, pattern) in &sig.fields {
             if sig.symbol_decls.contains(name) {
-                declares.insert(name.clone(), self.expects(pattern, None).unwrap_or(Type::Error));
+                // A repeated field (w2.md §2.1) declares one symbol per part,
+                // each typed with its part's index (`NAME0`, `NAME1`, …).
+                if sig.repeated_fields.contains(name) {
+                    for i in 0..self.parts.count(name).min(MAX_VARIADIC_PARTS) {
+                        let ty = self.expects(pattern, Some(i)).unwrap_or(Type::Error);
+                        declares.insert(format!("{name}{i}"), ty);
+                    }
+                } else {
+                    declares.insert(name.clone(), self.expects(pattern, None).unwrap_or(Type::Error));
+                }
                 continue;
             }
             if sig.members.contains_key(name) {
@@ -447,6 +456,7 @@ mod tests {
         fn count(&self, base: &str) -> usize {
             self.inputs
                 .keys()
+                .chain(self.fields.keys())
                 .filter(|name| {
                     name.strip_prefix(base)
                         .is_some_and(|index| !index.is_empty() && index.bytes().all(|b| b.is_ascii_digit()))
@@ -1174,6 +1184,34 @@ mod tests {
         );
         assert_eq!(typing.fields["LIST"], converts(Conversion::Same));
         assert_eq!(typing.output, Some(Type::Error));
+    }
+
+    /// A repeated `symbol_decl` field (w2.md §2.1) declares one symbol per
+    /// part, typed by the part of `field:` with the same index: *try*'s
+    /// `catch (ERROR{i}) as NAME{i}` parts.
+    #[test]
+    fn a_repeated_symbol_decl_declares_each_part() {
+        let sig = BlockSig {
+            fields: BTreeMap::from([("NAME".into(), pattern("field:ERROR"))]),
+            symbol_decls: names(&["NAME"]),
+            repeated_fields: names(&["ERROR", "NAME"]),
+            ..BlockSig::default()
+        };
+        let runtime = Type::lib(LibType::RuntimeError, Vec::new()).unwrap();
+        let exception = Type::lib(LibType::Exception, Vec::new()).unwrap();
+        let parts = Parts::default()
+            .with_field("ERROR0", known(runtime.clone()))
+            .with_field("ERROR1", known(exception.clone()))
+            .with_field("NAME0", PartType::Unknown)
+            .with_field("NAME1", PartType::Unknown);
+        let typing = type_block(&sig, &parts, None, &Facts);
+        assert_eq!(
+            typing.declares,
+            BTreeMap::from([("NAME0".into(), runtime), ("NAME1".into(), exception)])
+        );
+        // No parts: nothing declared.
+        let typing = type_block(&sig, &Parts::default(), None, &Facts);
+        assert!(typing.declares.is_empty());
     }
 
     // --- Properties ------------------------------------------------------------

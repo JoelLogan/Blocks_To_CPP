@@ -74,6 +74,15 @@ impl Lowerer<'_> {
                 DeclKind::Parameter => "an input of a function",
                 DeclKind::Counter => "the counter of a 'for' loop",
                 DeclKind::Function => "a function",
+                DeclKind::LoopItem => "a variable of a loop",
+                DeclKind::CatchVariable => "the error of a 'catch' part",
+                DeclKind::Global => "a global variable",
+                DeclKind::Field => "a field of a struct",
+                DeclKind::Enumerator => "a value of an enum",
+                // A struct or an enum is a type; one that is not in the table
+                // yet was not declared.
+                DeclKind::Struct => "a struct that could not be created",
+                DeclKind::Enum => "an enum that could not be created",
             };
             let message = format!(
                 "{} is {kind}, not a type: choose a struct or an enum here.",

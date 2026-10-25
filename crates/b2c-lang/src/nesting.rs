@@ -44,7 +44,10 @@ fn statement(stmt: &Stmt, depth: usize) -> Option<&Stmt> {
     bodies.into_iter().find_map(|body| block(body, depth))
 }
 
-fn expr_too_deep(expr: &Expr, depth: usize) -> bool {
+/// Whether an expression at `depth` nests deeper than [`MAX_NESTING`]: also
+/// the values of definitions (a global's starting value, a struct's field
+/// defaults).
+pub(crate) fn expr_too_deep(expr: &Expr, depth: usize) -> bool {
     depth > MAX_NESTING
         || children(expr)
             .into_iter()
@@ -55,23 +58,61 @@ fn expr_too_deep(expr: &Expr, depth: usize) -> bool {
 pub(crate) fn parts(stmt: &Stmt) -> (Vec<&Expr>, Vec<&Block>) {
     match &stmt.kind {
         StmtKind::VarDecl(decl) => (decl.init.iter().collect(), Vec::new()),
-        StmtKind::Assign { value, .. } | StmtKind::CompoundAssign { value, .. } => (vec![value], Vec::new()),
+        StmtKind::Assign { value, .. }
+        | StmtKind::CompoundAssign { value, .. }
+        | StmtKind::Throw { message: value, .. }
+        | StmtKind::SetField { value, .. }
+        | StmtKind::Decimals { digits: value }
+        | StmtKind::Wait { seconds: value }
+        | StmtKind::StaticCheck { cond: value, .. } => (vec![value], Vec::new()),
         StmtKind::If { branches, else_body } => (
             branches.iter().map(|b| &b.cond).collect(),
             branches.iter().map(|b| &b.body).chain(else_body.iter()).collect(),
         ),
-        StmtKind::While { cond, body, .. } => (vec![cond], vec![body]),
+        StmtKind::While { cond, body, .. } | StmtKind::DoWhile { body, cond, .. } => (vec![cond], vec![body]),
         StmtKind::Repeat { count, body } => (vec![count], vec![body]),
         StmtKind::ForRange {
             from, to, step, body, ..
         } => ([from, to].into_iter().chain(step.iter()).collect(), vec![body]),
         StmtKind::Forever { body } => (Vec::new(), vec![body]),
-        StmtKind::Break | StmtKind::Continue => (Vec::new(), Vec::new()),
+        StmtKind::Break
+        | StmtKind::Continue
+        | StmtKind::Rethrow
+        | StmtKind::FallThrough
+        | StmtKind::Flip { .. } => (Vec::new(), Vec::new()),
         StmtKind::Return { value } => (value.iter().collect(), Vec::new()),
         StmtKind::Exit { code, .. } => (code.iter().collect(), Vec::new()),
         StmtKind::Eval { expr } => (vec![expr], Vec::new()),
-        StmtKind::Print { items, .. } => (items.iter().collect(), Vec::new()),
+        StmtKind::Print { items, .. } | StmtKind::WriteFile { items, .. } => {
+            (items.iter().collect(), Vec::new())
+        }
         StmtKind::Ask { prompt, .. } => (prompt.iter().collect(), Vec::new()),
+        StmtKind::Switch {
+            value,
+            cases,
+            default,
+        } => (
+            std::iter::once(value)
+                .chain(cases.iter().map(|case| &case.label))
+                .collect(),
+            cases
+                .iter()
+                .map(|case| &case.body)
+                .chain(default.iter())
+                .collect(),
+        ),
+        StmtKind::RangeFor { range, body, .. } => (vec![range], vec![body]),
+        StmtKind::Try { body, catches } => (
+            Vec::new(),
+            std::iter::once(body)
+                .chain(catches.iter().map(|catch| &catch.body))
+                .collect(),
+        ),
+        StmtKind::FileLines {
+            path, body, failed, ..
+        } => (vec![path], failed.iter().chain(std::iter::once(body)).collect()),
+        StmtKind::OpenFile { path, failed, .. } => (vec![path], failed.iter().collect()),
+        StmtKind::CollectionOp { op, .. } => (op.operands(), Vec::new()),
     }
 }
 

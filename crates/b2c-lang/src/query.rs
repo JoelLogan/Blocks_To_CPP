@@ -48,7 +48,15 @@ use crate::scope::{NodeId, Trail};
 
 /// The top-level blocks that are definitions, which are never parked
 /// (ADR-0012): the lowering lowers them as items, or skips them as a whole.
-const DEFINITION_TYPES: [&str; 2] = ["program.main", "func.define"];
+/// W2's definitions are here before they exist (w2.md §2.13).
+const DEFINITION_TYPES: [&str; 6] = [
+    "program.main",
+    "func.define",
+    "type.struct",
+    "type.enum",
+    "var.global",
+    "program.use_header",
+];
 
 /// What was visible at a recorded position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -429,29 +437,42 @@ fn block_types(program: &Program) -> BTreeMap<BlockId, Type> {
     let mut types = BTreeMap::new();
     let mut stmts: Vec<&Stmt> = Vec::new();
     for item in program.modules.iter().flat_map(|module| &module.items) {
-        let body = match &item.kind {
-            ItemKind::Main(main) => &main.body,
-            ItemKind::Function(function) => &function.body,
+        let (body, values): (Option<&b2c_ir::sast::Block>, Vec<&Expr>) = match &item.kind {
+            ItemKind::Main(main) => (Some(&main.body), Vec::new()),
+            ItemKind::Function(function) => (Some(&function.body), Vec::new()),
+            // A definition's values (W2): a global's starting value, a
+            // struct's field defaults.
+            ItemKind::Global(global) => (None, global.init.iter().collect()),
+            ItemKind::Struct(def) => (None, def.defaults.values().collect()),
+            ItemKind::Enum(_) | ItemKind::UseHeader { .. } => (None, Vec::new()),
         };
-        stmts.extend(body.stmts.iter().rev());
+        if let Some(body) = body {
+            stmts.extend(body.stmts.iter().rev());
+        }
+        record_types(&item.origin.block, values, &mut types);
     }
-    let mut exprs: Vec<&Expr> = Vec::new();
     while let Some(stmt) = stmts.pop() {
         let (values, bodies) = crate::nesting::parts(stmt);
         for body in bodies.into_iter().rev() {
             stmts.extend(body.stmts.iter().rev());
         }
-        exprs.extend(values.into_iter().rev());
-        while let Some(expr) = exprs.pop() {
-            if expr.origin.part == Part::Whole && expr.origin.block != stmt.origin.block {
-                types
-                    .entry(expr.origin.block.clone())
-                    .or_insert_with(|| expr.ty.clone());
-            }
-            exprs.extend(crate::flow::children(expr).into_iter().rev());
-        }
+        record_types(&stmt.origin.block, values, &mut types);
     }
     types
+}
+
+/// Records the type of every value block in `values` and their operands,
+/// except the expressions the block `owner` itself became.
+fn record_types<'p>(owner: &BlockId, values: Vec<&'p Expr>, types: &mut BTreeMap<BlockId, Type>) {
+    let mut exprs: Vec<&'p Expr> = values.into_iter().rev().collect();
+    while let Some(expr) = exprs.pop() {
+        if expr.origin.part == Part::Whole && &expr.origin.block != owner {
+            types
+                .entry(expr.origin.block.clone())
+                .or_insert_with(|| expr.ty.clone());
+        }
+        exprs.extend(crate::flow::children(expr).into_iter().rev());
+    }
 }
 
 #[cfg(test)]
@@ -819,6 +840,7 @@ mod tests {
             .flat_map(|item| match item.kind {
                 ItemKind::Main(main) => main.body.stmts,
                 ItemKind::Function(function) => function.body.stmts,
+                _ => Vec::new(),
             })
             .collect();
         while let Some(stmt) = stmts.pop() {

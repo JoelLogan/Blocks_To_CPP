@@ -409,9 +409,8 @@ fn check_category(category: &ToolboxCategory, catalog: &Catalog) -> Vec<String> 
             }
         }
     }
-    if category.entries.is_empty() && category.dynamic.is_none() {
-        problems.push(String::from("the category has no entries"));
-    }
+    // A category without entries is valid: the editor leaves it out until a
+    // package of milestone M3's second wave fills it (w2.md §2.1).
     if category.entries.len() > MAX_TOOLBOX_ENTRIES {
         problems.push(format!(
             "the category has {} entries, more than the limit of {MAX_TOOLBOX_ENTRIES}",
@@ -500,7 +499,8 @@ fn check_preset(def: &BlockDef, preset: &Preset, problems: &mut Vec<String>) {
                 ));
                 None
             }
-            (ExtraKind::Flag, Some(PresetExtra::Flag(_)) | None) | (ExtraKind::Params, None) => None,
+            (ExtraKind::Flag, Some(PresetExtra::Flag(_)) | None)
+            | (ExtraKind::Params | ExtraKind::Fields | ExtraKind::Values, None) => None,
             (ExtraKind::Flag, Some(PresetExtra::Count(_))) => {
                 problems.push(format!(
                     "the preset value of {} must be true or false",
@@ -508,8 +508,8 @@ fn check_preset(def: &BlockDef, preset: &Preset, problems: &mut Vec<String>) {
                 ));
                 None
             }
-            (ExtraKind::Params, Some(_)) => {
-                problems.push(format!("the parameters {} cannot be preset", extra.name));
+            (ExtraKind::Params | ExtraKind::Fields | ExtraKind::Values, Some(_)) => {
+                problems.push(format!("the rows of {} cannot be preset", extra.name));
                 None
             }
         };
@@ -587,12 +587,29 @@ mod tests {
         let (toolbox, problems) = build(CORE_TOOLBOX, core());
         assert_eq!(problems, []);
         assert_eq!(toolbox, Toolbox::load(CORE_TOOLBOX, core()).unwrap());
+        // The categories in toolbox order: M2's nine, then those of W2's
+        // blocks as the toolbox gains them (w2.md §2.1).
         let ids: Vec<Category> = toolbox.categories.iter().map(|c| c.id).collect();
-        assert_eq!(ids, Category::ALL);
+        assert_eq!(ids[..9], Category::ALL[..9]);
+        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "{ids:?}");
         let reachable = toolbox.reachable_blocks();
         let all: BTreeSet<&str> = core().blocks.keys().map(String::as_str).collect();
         assert_eq!(reachable, all);
-        assert_eq!(reachable.len(), 31);
+    }
+
+    #[test]
+    fn a_category_may_have_no_entries() {
+        let text = "[[category]]\nid = \"program\"\nname = \"Program\"\nicon = \"P\"\ncolour = \"program\"\n\n\
+                    [[category]]\nid = \"errors\"\nname = \"Errors\"\nicon = \"⚠\"\ncolour = \"errors\"\n";
+        let (toolbox, problems) = build(text, &Catalog::new("1.3.0", std::collections::BTreeMap::new()));
+        assert_eq!(problems, []);
+        assert_eq!(toolbox.categories.len(), 2);
+        assert!(
+            toolbox
+                .categories
+                .iter()
+                .all(|category| category.entries.is_empty())
+        );
     }
 
     #[test]

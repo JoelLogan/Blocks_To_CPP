@@ -307,6 +307,10 @@ fn strip_comments(program: &mut Program) {
             match &mut item.kind {
                 b2c_ir::sast::ItemKind::Main(def) => strip(&mut def.body),
                 b2c_ir::sast::ItemKind::Function(def) => strip(&mut def.body),
+                b2c_ir::sast::ItemKind::Struct(_)
+                | b2c_ir::sast::ItemKind::Enum(_)
+                | b2c_ir::sast::ItemKind::Global(_)
+                | b2c_ir::sast::ItemKind::UseHeader { .. } => {}
             }
         }
     }

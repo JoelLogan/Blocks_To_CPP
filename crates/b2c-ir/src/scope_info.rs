@@ -17,9 +17,10 @@
 //! error (`crate::types::term_form`).
 //!
 //! Milestone M3 adds the kinds `struct` (with `fields`, `comparable` and
-//! `printable`), `field` (with `owner`), `enum` (with `values`) and
-//! `enumerator` (with `owner`), and the key `shared`, written only when it
-//! is `true` (ADR-0019). No stage makes them yet.
+//! `printable`), `field` (with `owner`), `enum` (with `values`),
+//! `enumerator` (with `owner`) and `global` (with `isConst`, W2's
+//! `var.global`), and the key `shared`, written only when it is `true`
+//! (ADR-0019). No stage makes them yet.
 
 use serde::{Deserialize, Serialize};
 
@@ -69,8 +70,14 @@ pub enum SymbolInfoKind {
         /// How the argument is passed.
         mode: PassMode,
     },
-    /// The counter of a `for` loop.
+    /// A loop's own variable: the counter of a `for` loop, a read-only *for
+    /// each* item, a map's key and value, a file's line.
     LoopVariable,
+    /// A module-level variable or constant (`var.global`).
+    Global {
+        /// Whether it is a constant.
+        is_const: bool,
+    },
     /// A user function.
     Function {
         /// Its parameters' symbols, in order.
@@ -117,6 +124,7 @@ impl SymbolInfo {
             SymbolKind::Variable { is_const } => SymbolInfoKind::Variable { is_const: *is_const },
             SymbolKind::Parameter { mode } => SymbolInfoKind::Parameter { mode: *mode },
             SymbolKind::LoopVariable => SymbolInfoKind::LoopVariable,
+            SymbolKind::Global { is_const } => SymbolInfoKind::Global { is_const: *is_const },
             SymbolKind::Function { params } => SymbolInfoKind::Function {
                 params: params.clone(),
                 returns: symbol.ty.clone(),
@@ -231,6 +239,18 @@ mod tests {
             &SymbolInfo::new(sym("s_i"), "i", &counter),
             &json!({"id": "s_i", "name": "i", "kind": "loopVariable", "type": "int",
                     "module": "mod_main", "declBlock": "b_for"}),
+        );
+        let global = symbol(
+            "kGravity",
+            SymbolKind::Global { is_const: true },
+            Type::Double,
+            "b_global",
+            field("NAME"),
+        );
+        round_trip(
+            &SymbolInfo::new(sym("s_g"), "kGravity", &global),
+            &json!({"id": "s_g", "name": "kGravity", "kind": "global", "isConst": true, "type": "double",
+                    "module": "mod_main", "declBlock": "b_global"}),
         );
         let function = symbol(
             "area",

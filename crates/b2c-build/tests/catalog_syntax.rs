@@ -43,6 +43,10 @@
 //!   case, and every case's block is in the catalog and in the case's
 //!   program, so a new block without a case fails
 //!   `every_catalog_block_has_a_case`.
+//! * **Case files.** The cases of the blocks of each catalog file
+//!   (`catalog/core/<file>.toml`) live in `catalog_syntax_cases/<file>.rs`,
+//!   each a module with a `cases` function, so that packages adding blocks
+//!   to different catalog files edit different files.
 //! * **Snapshots.** `tests/snapshots/catalog_syntax__<case>.snap` holds the
 //!   code of the case as a C++20 project, with the app version in the banner
 //!   masked so a release changes no snapshot. Where the code of the case as a
@@ -279,6 +283,13 @@ impl Blocks {
         vec![self.main(&[self.print(&nested(&self.plain(kind)))])]
     }
 
+    /// The toolbox's *create* block, declaring `x` as a text with `value`.
+    fn create_text_x(&self, value: &Value) -> Value {
+        let mut create = self.create_x(&json!({ "TYPE": "std::string" }));
+        merge(&mut create, &json!({ "inputs": { "VALUE": value } }));
+        create
+    }
+
     /// `main` with *create* `x`, `step` and a print of `x`.
     fn with_x(&self, step: Value) -> Vec<Value> {
         vec![self.main(&[self.create_x(&json!({})), step, self.print_x()])]
@@ -353,242 +364,70 @@ fn nested(block: &Value) -> Value {
     json!({ "block": block })
 }
 
-/// Every case: one per catalog block, then the curated variants.
+/// Each catalog file's cases, in `catalog_syntax_cases/<file>.rs` (w2.md
+/// §3.1): a block's default case and its curated variants live in the file
+/// named after its catalog file, so packages that add blocks to different
+/// files never edit the same case file.
+#[path = "catalog_syntax_cases/collections.rs"]
+mod collections;
+#[path = "catalog_syntax_cases/control.rs"]
+mod control;
+#[path = "catalog_syntax_cases/errors.rs"]
+mod errors;
+#[path = "catalog_syntax_cases/files.rs"]
+mod files;
+#[path = "catalog_syntax_cases/functions.rs"]
+mod functions;
+#[path = "catalog_syntax_cases/io.rs"]
+mod io;
+#[path = "catalog_syntax_cases/logic.rs"]
+mod logic;
+#[path = "catalog_syntax_cases/math.rs"]
+mod math;
+#[path = "catalog_syntax_cases/program.rs"]
+mod program;
+#[path = "catalog_syntax_cases/text.rs"]
+mod text;
+#[path = "catalog_syntax_cases/types.rs"]
+mod types;
+#[path = "catalog_syntax_cases/variables.rs"]
+mod variables;
+
+/// Every case: each catalog file's, in the order of the files.
 fn cases() -> Vec<Case> {
     let b = Blocks::default();
-    let mut cases = statement_cases(&b);
-    cases.extend(value_cases(&b));
-    cases.extend(variants(&b));
-    cases
+    let files: [fn(&Blocks) -> Vec<Case>; 12] = [
+        collections::cases,
+        control::cases,
+        errors::cases,
+        files::cases,
+        functions::cases,
+        io::cases,
+        logic::cases,
+        math::cases,
+        program::cases,
+        text::cases,
+        types::cases,
+        variables::cases,
+    ];
+    files.iter().flat_map(|file| file(&b)).collect()
 }
 
-/// The hat, the definition and the statements.
-fn statement_cases(b: &Blocks) -> Vec<Case> {
-    let step = |kind: &'static str| Case::new(kind, "the only step of main", vec![b.main(&[b.plain(kind)])]);
-    let in_forever = |kind: &'static str| {
-        let forever = b.block(
-            "control.forever",
-            &json!({ "statements": { "BODY": [b.plain(kind)] } }),
-        );
-        Case::new(
-            kind,
-            "the body of a forever loop, the only step of main",
-            vec![b.main(&[forever])],
-        )
-    };
-    vec![
-        Case::new("program.main", "alone", vec![b.main(&[])]),
-        step("program.exit"),
-        step("control.if"),
-        step("control.while"),
-        step("control.repeat"),
-        Case::new(
-            "control.for_range",
-            "the only step of main, counting with i",
-            vec![b.main(&[b.block(
-                "control.for_range",
-                &json!({ "fields": { "VAR": declaration(I, "i") } }),
-            )])],
-        ),
-        step("control.forever"),
-        in_forever("control.break"),
-        in_forever("control.continue"),
-        Case::new(
-            "func.define",
-            "the void function f, next to an empty main",
-            vec![b.main(&[]), b.define_f(&json!({}))],
-        ),
-        Case::new(
-            "func.call_stmt",
-            "the only step of main, calling the empty void function f",
-            vec![
-                b.main(&[b.block("func.call_stmt", &json!({ "fields": { "FUNC": reference(F) } }))]),
-                b.function("void", &[]),
-            ],
-        ),
-        Case::new(
-            "func.return",
-            "the body of the void function f, next to an empty main",
-            vec![b.main(&[]), b.function("void", &[b.plain("func.return")])],
-        ),
-        step("io.print"),
-        Case::new(
-            "io.ask",
-            "asks for the int x, after create x and before a print of x, in main",
-            b.with_x(b.block("io.ask", &json!({ "fields": { "VAR": reference(X) } }))),
-        ),
-        Case::new(
-            "var.declare",
-            "creates x, before a print of x, in main",
-            vec![b.main(&[b.create_x(&json!({})), b.print_x()])],
-        ),
-        Case::new(
-            "var.set",
-            "sets the int x to 0, after create x and before a print of x, in main",
-            b.with_x(b.block(
-                "var.set",
-                &json!({
-                    "fields": { "VAR": reference(X) },
-                    "inputs": { "VALUE": tokens(&json!([{ "num": "0" }])) },
-                }),
-            )),
-        ),
-        Case::new(
-            "var.change",
-            "changes the int x, after create x and before a print of x, in main",
-            b.with_x(b.block("var.change", &json!({ "fields": { "VAR": reference(X) } }))),
-        ),
-    ]
+/// Where most statement blocks stand.
+const ONLY_STEP: &str = "the only step of main";
+
+/// Where most reporters and predicates stand.
+const PRINTED: &str = "the only item of a print, the only step of main";
+
+/// The default case of the statement block `kind`, as the only step of
+/// `main`.
+fn only_step(b: &Blocks, kind: &'static str) -> Case {
+    Case::new(kind, ONLY_STEP, vec![b.main(&[b.plain(kind)])])
 }
 
-/// The reporters and predicates.
-fn value_cases(b: &Blocks) -> Vec<Case> {
-    const PRINTED: &str = "the only item of a print, the only step of main";
-    let printed = |kind: &'static str| Case::new(kind, PRINTED, b.printed(kind));
-    let return_zero = b.block(
-        "func.return",
-        &json!({ "inputs": { "VALUE": tokens(&json!([{ "num": "0" }])) } }),
-    );
-    vec![
-        Case::new(
-            "func.call",
-            "calls the function f, which returns the int 0, as the only item of a print in main",
-            vec![
-                b.main(&[b.print(&nested(
-                    &b.block("func.call", &json!({ "fields": { "FUNC": reference(F) } })),
-                ))]),
-                b.function("int", &[return_zero]),
-            ],
-        ),
-        printed("logic.boolean"),
-        printed("logic.operation"),
-        printed("logic.not"),
-        printed("logic.ternary"),
-        printed("math.number"),
-        printed("math.arithmetic"),
-        printed("math.compare"),
-        printed("math.random_int"),
-        printed("math.convert"),
-        printed("text.literal"),
-        printed("text.char"),
-        printed("text.join"),
-        Case::new(
-            "var.get",
-            "the int x, printed after create x in main",
-            vec![b.main(&[
-                b.create_x(&json!({})),
-                b.print(&nested(
-                    &b.block("var.get", &json!({ "fields": { "VAR": reference(X) } })),
-                )),
-            ])],
-        ),
-    ]
-}
-
-/// The forms whose headers the code generator chooses (catalog 1.3.0).
-fn variants(b: &Blocks) -> Vec<Case> {
-    let text_x = |value: &Value| {
-        let mut create = b.create_x(&json!({ "TYPE": "std::string" }));
-        merge(&mut create, &json!({ "inputs": { "VALUE": value } }));
-        create
-    };
-    vec![
-        Case::variant(
-            "program.exit",
-            "in-function",
-            "the body of the void function f (std::exit), next to an empty main",
-            vec![b.main(&[]), b.function("void", &[b.plain("program.exit")])],
-        ),
-        Case::variant(
-            "io.ask",
-            "simple",
-            "a simple ask for the int x, after create x and before a print of x, in main",
-            b.with_x(b.block(
-                "io.ask",
-                &json!({ "fields": { "VAR": reference(X), "MODE": "simple" } }),
-            )),
-        ),
-        Case::variant(
-            "io.ask",
-            "text",
-            "asks for the text x, after create x (an empty text) and before a print of x, in main",
-            vec![b.main(&[
-                text_x(&tokens(&json!([{ "str": "" }]))),
-                b.block("io.ask", &json!({ "fields": { "VAR": reference(X) } })),
-                b.print_x(),
-            ])],
-        ),
-        Case::variant(
-            "text.literal",
-            "as-string",
-            "the value of create x, a text, before a print of x, in main",
-            vec![b.main(&[text_x(&nested(&b.plain("text.literal"))), b.print_x()])],
-        ),
-        library_types(b),
-    ]
-}
-
-/// Variables and parameters of library types, from a format-version-2
-/// project: `f` takes a list of `int` read-only and one editable, a map by
-/// copy and one editable, and copies each into the editable one; `main`
-/// creates the four and calls `f`.
-fn library_types(b: &Blocks) -> Case {
-    let list = json!({ "std::vector": "int" });
-    let map = json!({ "std::map": ["std::string", { "std::set": "char" }] });
-    // Without the toolbox's start value 0: a list starts empty.
-    let create = |symbol: &str, name: &str, ty: &Value| {
-        let mut block = b.block(
-            "var.declare",
-            &json!({ "fields": { "TYPE": ty, "NAME": declaration(symbol, name) } }),
-        );
-        block.as_object_mut().unwrap().remove("inputs");
-        block
-    };
-    let row = |symbol: &str, name: &str, ty: &Value, mode: &str| json!({ "sym": symbol, "name": name, "type": ty, "mode": mode });
-    let set = |to: &str, from: &str| {
-        b.block(
-            "var.set",
-            &json!({
-                "fields": { "VAR": reference(to) },
-                "inputs": { "VALUE": tokens(&json!([reference(from)])) },
-            }),
-        )
-    };
-    let define = b.define_f(&json!({
-        "extra": { "params": [
-            row("s_from", "from", &list, "read_only"),
-            row("s_to", "to", &list, "editable"),
-            row("s_names", "names", &map, "copy"),
-            row("s_out", "out", &map, "editable"),
-        ] },
-        "statements": { "BODY": [set("s_to", "s_from"), set("s_out", "s_names")] },
-    }));
-    let args: Map<String, Value> = ["s_a", "s_b", "s_m", "s_n"]
-        .iter()
-        .enumerate()
-        .map(|(index, symbol)| (format!("ARG{index}"), tokens(&json!([reference(symbol)]))))
-        .collect();
-    let call = b.block(
-        "func.call_stmt",
-        &json!({ "fields": { "FUNC": reference(F) }, "extra": { "argCount": 4 }, "inputs": args }),
-    );
-    Case::variant(
-        "var.declare",
-        "library-types",
-        "creates the lists a and b and the maps m and n, and calls f(a, b, m, n), in main; f copies its \
-         read-only list and its copied map into its editable ones (format version 2)",
-        vec![
-            b.main(&[
-                create("s_a", "a", &list),
-                create("s_b", "b", &list),
-                create("s_m", "m", &map),
-                create("s_n", "n", &map),
-                call,
-            ]),
-            define,
-        ],
-    )
-    .with_format_version(2)
+/// The default case of the value block `kind`, as the only item of a print.
+fn only_printed(b: &Blocks, kind: &'static str) -> Case {
+    Case::new(kind, PRINTED, b.printed(kind))
 }
 
 /// The generated project of `case` for `standard`, or what went wrong: any
@@ -672,9 +511,9 @@ fn every_catalog_block_has_a_case() {
     for block in core_catalog().blocks.keys() {
         if !covered.contains(block.as_str()) {
             failures.push(format!(
-                "{block} has no case: add one to statement_cases or value_cases in \
-                 crates/b2c-build/tests/catalog_syntax.rs, placing the block in the smallest program \
-                 that compiles without warnings"
+                "{block} has no case: add one to the file of its catalog file in \
+                 crates/b2c-build/tests/catalog_syntax_cases/, placing the block in the smallest \
+                 program that compiles without warnings"
             ));
         }
     }

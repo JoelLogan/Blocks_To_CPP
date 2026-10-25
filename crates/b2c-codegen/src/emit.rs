@@ -16,8 +16,9 @@ use b2c_ir::source_map::MappedRange;
 use b2c_ir::text::{Comment, Ident};
 
 use crate::cast::{
-    BinOp, CBlock, CCase, CEnum, CExpr, CExprKind, CFunction, CGenerated, CParam, CStmt, CStmtKind, CStruct,
-    CType, CTypeDef, Callee, ForStep, Generated, GeneratedParam, Init, ParamStyle, RangeBinding,
+    BinOp, BindingStyle, CBlock, CCase, CCatch, CEnum, CExpr, CExprKind, CFunction, CGenerated, CGlobal,
+    CParam, CStmt, CStmtKind, CStruct, CType, CTypeDef, Callee, ForStep, Generated, GeneratedParam, Init,
+    ParamStyle, RangeBinding,
 };
 use crate::helpers::{self, Helper};
 use crate::lower::LoweredModule;
@@ -209,6 +210,16 @@ pub(crate) fn stmt_text(stmt: &CStmtKind) -> String {
         p: crate::printer::Printer::new(4),
     };
     emitter.stmt_kind(stmt);
+    emitter.p.finish().0
+}
+
+/// A global's definition printed alone, for unit tests.
+#[cfg(test)]
+pub(crate) fn global_text(global: &CGlobal) -> String {
+    let mut emitter = Emitter {
+        p: crate::printer::Printer::new(4),
+    };
+    emitter.global(global);
     emitter.p.finish().0
 }
 
@@ -468,7 +479,7 @@ impl Emitter {
         self.p.fixed(";");
     }
 
-    /// A declarator's initialiser: ` = value` or `{}`.
+    /// A declarator's initialiser: ` = value`, `{}` or `(args)`.
     fn init(&mut self, init: &Init) {
         match init {
             Init::Value(value) => {
@@ -476,7 +487,40 @@ impl Emitter {
                 self.expr(value);
             }
             Init::Braces => self.p.fixed("{}"),
+            Init::Args(args) => {
+                self.p.fixed("(");
+                self.args(args);
+                self.p.fixed(")");
+            }
         }
+    }
+
+    /// Arguments or items separated by `, `.
+    fn args(&mut self, args: &[CExpr]) {
+        for (index, arg) in args.iter().enumerate() {
+            if index > 0 {
+                self.p.fixed(", ");
+            }
+            self.expr(arg);
+        }
+    }
+
+    /// A global variable or constant (w2.md §2.7), with its comment:
+    /// `constexpr double kGravity = 9.81;`.
+    #[cfg_attr(not(test), allow(dead_code, reason = "printed once W2's globals are lowered"))]
+    pub(crate) fn global(&mut self, global: &CGlobal) {
+        let start = self.p.position();
+        if let Some(comment) = &global.comment {
+            self.p.comment(comment);
+        }
+        self.p.fixed(global.qualifier.prefix());
+        self.ty(&global.ty);
+        self.p.fixed(" ");
+        self.p.ident(&global.name);
+        self.init(&global.init);
+        self.p.fixed(";");
+        self.p.map(start, &global.origin);
+        self.p.newline();
     }
 
     /// `{`, the statements one level deeper, `}`.
@@ -505,6 +549,7 @@ impl Emitter {
     }
 
     /// The statement itself.
+    #[allow(clippy::too_many_lines, reason = "one arm per statement node")]
     fn stmt_kind(&mut self, kind: &CStmtKind) {
         match kind {
             CStmtKind::Decl {
@@ -528,6 +573,14 @@ impl Emitter {
             }
             CStmtKind::Assign { target, op, value } => {
                 self.p.ident(target);
+                self.p.fixed(" ");
+                self.p.fixed(op.token());
+                self.p.fixed(" ");
+                self.expr(value);
+                self.p.fixed(";");
+            }
+            CStmtKind::AssignTo { target, op, value } => {
+                self.expr(target);
                 self.p.fixed(" ");
                 self.p.fixed(op.token());
                 self.p.fixed(" ");
@@ -568,8 +621,42 @@ impl Emitter {
                 self.p.fixed(") ");
                 self.block(body);
             }
-            CStmtKind::RangeFor { binding, range, body } => self.range_for(binding, range, body),
-            CStmtKind::Switch { value, cases } => self.switch(value, cases),
+            CStmtKind::RangeFor {
+                binding,
+                style,
+                maybe_unused,
+                range,
+                body,
+            } => self.range_for(binding, *style, *maybe_unused, range, body),
+            CStmtKind::Switch {
+                value,
+                cases,
+                default,
+            } => self.switch(value, cases, default.as_deref()),
+            CStmtKind::DoWhile { body, cond } => {
+                self.p.fixed("do ");
+                self.block(body);
+                self.p.fixed(" while (");
+                self.expr(cond);
+                self.p.fixed(");");
+            }
+            CStmtKind::Try { body, catches } => self.try_stmt(body, catches),
+            CStmtKind::Throw(value) => {
+                self.p.fixed("throw");
+                if let Some(value) = value {
+                    self.p.fixed(" ");
+                    self.expr(value);
+                }
+                self.p.fixed(";");
+            }
+            CStmtKind::FallThrough => self.p.fixed("[[fallthrough]];"),
+            CStmtKind::StaticAssert { cond, message } => {
+                self.p.fixed("static_assert(");
+                self.expr(cond);
+                self.p.fixed(", ");
+                self.p.str_lit(message);
+                self.p.fixed(");");
+            }
             CStmtKind::Break => self.p.fixed("break;"),
             CStmtKind::Continue => self.p.fixed("continue;"),
             CStmtKind::Return(value) => {
@@ -641,9 +728,22 @@ impl Emitter {
     }
 
     /// `for (const auto& x : range) { … }` or
-    /// `for (const auto& [k, v] : range) { … }`.
-    fn range_for(&mut self, binding: &RangeBinding, range: &CExpr, body: &CBlock) {
-        self.p.fixed("for (const auto& ");
+    /// `for (const auto& [k, v] : range) { … }`, with `auto` or `auto&` for a
+    /// copy or an editable item, and `[[maybe_unused]]` first when the body
+    /// reads none of the names.
+    fn range_for(
+        &mut self,
+        binding: &RangeBinding,
+        style: BindingStyle,
+        maybe_unused: bool,
+        range: &CExpr,
+        body: &CBlock,
+    ) {
+        self.p.fixed("for (");
+        if maybe_unused {
+            self.p.fixed("[[maybe_unused]] ");
+        }
+        self.p.fixed(style.prefix());
         match binding {
             RangeBinding::One(name) => self.p.ident(name),
             RangeBinding::Pair(key, value) => {
@@ -662,9 +762,10 @@ impl Emitter {
         self.block(body);
     }
 
-    /// `switch (value) { … }`: each `case label:` one level deeper than the
-    /// `switch`, and the statements under it one level deeper again.
-    fn switch(&mut self, value: &CExpr, cases: &[CCase]) {
+    /// `switch (value) { … }`: each `case label:` and `default:` one level
+    /// deeper than the `switch`, and the statements under it one level
+    /// deeper again.
+    fn switch(&mut self, value: &CExpr, cases: &[CCase], default: Option<&[CStmt]>) {
         self.p.fixed("switch (");
         self.expr(value);
         self.p.fixed(") {");
@@ -674,16 +775,62 @@ impl Emitter {
             self.p.fixed("case ");
             self.expr(&case.label);
             self.p.fixed(":");
-            self.p.newline();
-            self.p.indent();
-            for stmt in &case.body {
-                self.stmt(stmt);
-                self.p.newline();
-            }
-            self.p.dedent();
+            self.case_body(&case.body);
+        }
+        if let Some(body) = default {
+            self.p.fixed("default:");
+            self.case_body(body);
         }
         self.p.dedent();
         self.p.fixed("}");
+    }
+
+    /// The statements under a `case` or `default` label, one level deeper. A
+    /// body that is one `{ … }` block stays on the label's line:
+    /// `case 1: { … }` (w2.md §2.9).
+    fn case_body(&mut self, body: &[CStmt]) {
+        if let [
+            CStmt {
+                kind: CStmtKind::Block(block),
+                origin,
+                comment: None,
+            },
+        ] = body
+        {
+            let start = self.p.position();
+            self.p.fixed(" ");
+            self.block(block);
+            if let Some(origin) = origin {
+                self.p.map(start, origin);
+            }
+            self.p.newline();
+            return;
+        }
+        self.p.newline();
+        self.p.indent();
+        for stmt in body {
+            self.stmt(stmt);
+            self.p.newline();
+        }
+        self.p.dedent();
+    }
+
+    /// `try { … } catch (const E& e) { … } …`.
+    fn try_stmt(&mut self, body: &CBlock, catches: &[CCatch]) {
+        self.p.fixed("try ");
+        self.block(body);
+        for catch in catches {
+            let start = self.p.position();
+            self.p.fixed(" catch (const ");
+            self.ty(&catch.ty);
+            self.p.fixed("& ");
+            self.p.ident(&catch.name);
+            self.p.fixed(") ");
+            self.block(&catch.body);
+            if let Some(origin) = &catch.origin {
+                self.p.map(start, origin);
+            }
+        }
     }
 
     /// The third clause of a `for` loop.
@@ -704,6 +851,7 @@ impl Emitter {
     }
 
     /// An expression, recording a source-map range for each of its origins.
+    #[allow(clippy::too_many_lines, reason = "one arm per expression node")]
     fn expr(&mut self, expr: &CExpr) {
         let start = self.p.position();
         match &expr.kind {
@@ -738,14 +886,20 @@ impl Emitter {
                 match callee {
                     Callee::User(name) => self.p.ident(name),
                     Callee::Fixed(name) => self.p.fixed(name),
+                    Callee::Template(name, types) => {
+                        self.p.fixed(name);
+                        self.p.fixed("<");
+                        for (index, ty) in types.iter().enumerate() {
+                            if index > 0 {
+                                self.p.fixed(", ");
+                            }
+                            self.ty(ty);
+                        }
+                        self.p.fixed(">");
+                    }
                 }
                 self.p.fixed("(");
-                for (index, arg) in args.iter().enumerate() {
-                    if index > 0 {
-                        self.p.fixed(", ");
-                    }
-                    self.expr(arg);
-                }
+                self.args(args);
                 self.p.fixed(")");
             }
             CExprKind::Cast { ty, value } => {
@@ -777,6 +931,33 @@ impl Emitter {
                 self.qualified(owner);
                 self.p.fixed("::");
                 self.p.ident(value);
+            }
+            CExprKind::Index { object, index } => {
+                self.expr(object);
+                self.p.fixed("[");
+                self.expr(index);
+                self.p.fixed("]");
+            }
+            CExprKind::Braces(items) => {
+                self.p.fixed("{");
+                self.args(items);
+                self.p.fixed("}");
+            }
+            CExprKind::Init { ty, items } => {
+                self.ty(ty);
+                self.p.fixed("{");
+                for (index, (field, value)) in items.iter().enumerate() {
+                    if index > 0 {
+                        self.p.fixed(", ");
+                    }
+                    if let Some(field) = field {
+                        self.p.fixed(".");
+                        self.p.ident(field);
+                        self.p.fixed(" = ");
+                    }
+                    self.expr(value);
+                }
+                self.p.fixed("}");
             }
             CExprKind::Paren(inner) => {
                 self.p.fixed("(");
@@ -826,8 +1007,14 @@ fn flat_width(expr: &CExpr) -> usize {
             let name = match callee {
                 Callee::User(name) => name.as_str().len(),
                 Callee::Fixed(name) => name.len(),
+                Callee::Template(name, types) => {
+                    name.len()
+                        + 2
+                        + types.iter().map(CType::width).sum::<usize>()
+                        + 2 * types.len().saturating_sub(1)
+                }
             };
-            name + 2 + args.iter().map(flat_width).sum::<usize>() + 2 * args.len().saturating_sub(1)
+            name + 2 + list_width(args)
         }
         CExprKind::Cast { ty, value } => "static_cast<>()".len() + ty.width() + flat_width(value),
         CExprKind::Method { object, name, args } => {
@@ -842,9 +1029,25 @@ fn flat_width(expr: &CExpr) -> usize {
         CExprKind::Enumerator { owner, value } => {
             owner.iter().map(|part| part.as_str().len() + 2).sum::<usize>() + value.as_str().len()
         }
+        CExprKind::Index { object, index } => flat_width(object) + 2 + flat_width(index),
+        CExprKind::Braces(items) => 2 + list_width(items),
+        CExprKind::Init { ty, items } => {
+            let fields: usize = items
+                .iter()
+                .map(|(field, value)| {
+                    field.as_ref().map_or(0, |field| field.as_str().len() + 4) + flat_width(value)
+                })
+                .sum();
+            ty.width() + 2 + fields + 2 * items.len().saturating_sub(1)
+        }
         CExprKind::Paren(inner) => 2 + flat_width(inner),
         CExprKind::Error => "0 /* error */".len(),
     }
+}
+
+/// The length of expressions separated by `, `.
+fn list_width(items: &[CExpr]) -> usize {
+    items.iter().map(flat_width).sum::<usize>() + 2 * items.len().saturating_sub(1)
 }
 
 #[cfg(test)]

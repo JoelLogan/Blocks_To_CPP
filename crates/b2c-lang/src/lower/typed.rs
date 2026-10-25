@@ -181,6 +181,7 @@ static NO_SIGNATURE: BlockSig = BlockSig {
     symbol_refs: BTreeSet::new(),
     symbol_decls: BTreeSet::new(),
     repeated: BTreeSet::new(),
+    repeated_fields: BTreeSet::new(),
     headers: Vec::new(),
     option_headers: BTreeMap::new(),
 };

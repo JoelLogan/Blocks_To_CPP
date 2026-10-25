@@ -6,11 +6,18 @@
 //! C++: a variable becomes visible after its `create` block, until the end of
 //! its statement list.
 
+mod collections;
+mod control;
 mod convert;
+mod errors;
 mod expr;
+mod files;
+mod globals;
 mod resolve;
 mod stmt;
+mod text;
 mod typed;
+mod types;
 mod user_types;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -193,7 +200,12 @@ struct Lowerer<'d> {
     module_index: usize,
     module: ModuleId,
     item: ItemCtx,
-    loop_depth: usize,
+    /// The loops and switches around the block being lowered, innermost
+    /// last (w2.md §2.13).
+    breakable: Vec<Breakable>,
+    /// How many catch parts are around the block being lowered: *throw the
+    /// error again* needs one (w2.md §2.5).
+    catch_depth: usize,
     depth: usize,
     too_deep_reported: bool,
     placeholders: usize,
@@ -227,8 +239,8 @@ fn sorted_blocks(module: &b2c_model::Module) -> Vec<&Block> {
 }
 
 /// Block types the analyser lowers as values (`Lowerer::value_block`): the
-/// reporters and predicates of the catalog. A test checks the list against
-/// the catalog's shapes.
+/// reporters and predicates of the catalog, M2's and W2's (w2.md §2.13). A
+/// test checks the list against the catalog's shapes.
 fn is_value_type(block_type: &str) -> bool {
     matches!(
         block_type,
@@ -238,6 +250,12 @@ fn is_value_type(block_type: &str) -> bool {
             | "math.compare"
             | "math.random_int"
             | "math.convert"
+            | "math.fn"
+            | "math.abs"
+            | "math.minmax"
+            | "math.fn2"
+            | "math.clamp"
+            | "math.random_real"
             | "logic.boolean"
             | "logic.operation"
             | "logic.not"
@@ -245,8 +263,44 @@ fn is_value_type(block_type: &str) -> bool {
             | "text.literal"
             | "text.char"
             | "text.join"
+            | "text.length"
+            | "text.letter"
+            | "text.case"
+            | "text.split"
+            | "text.to_number"
+            | "text.as_text"
+            | "text.find"
+            | "text.part"
+            | "text.trim"
+            | "text.replace"
             | "func.call"
+            | "coll.item"
+            | "coll.length"
+            | "coll.is_empty"
+            | "coll.list_of"
+            | "coll.contains"
+            | "coll.next"
+            | "type.new"
+            | "type.field"
+            | "type.enum_value"
+            | "error.message"
+            | "file.read_line"
+            | "file.exists"
     )
+}
+
+/// A statement that *leave loop* (`break`) leaves: a loop, or a switch
+/// (w2.md §2.9). The Lowerer keeps a stack of them, innermost last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Breakable {
+    /// A loop: *leave loop* and *skip to next round* work.
+    Loop,
+    /// A switch: C++'s `break` would leave it, not the loop around it.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "pushed by W2's switch block (package D)")
+    )]
+    Switch,
 }
 
 impl<'d> Lowerer<'d> {
@@ -279,7 +333,8 @@ impl<'d> Lowerer<'d> {
             module_index: 0,
             module,
             item: ItemCtx::Main,
-            loop_depth: 0,
+            breakable: Vec::new(),
+            catch_depth: 0,
             depth: 0,
             too_deep_reported: false,
             placeholders: 0,
@@ -321,6 +376,9 @@ impl<'d> Lowerer<'d> {
                 let (item, keep) = match block.block_type.as_str() {
                     "program.main" => (Some(self.main(block)), chosen_main.as_ref() == Some(&block.id)),
                     "func.define" => (self.function(block), true),
+                    "type.struct" | "type.enum" => (self.type_definition(block), true),
+                    "var.global" => (self.global(block), true),
+                    "program.use_header" => (self.use_header(block), true),
                     _ => {
                         self.report_parked(block);
                         (None, false)
@@ -377,18 +435,33 @@ impl<'d> Lowerer<'d> {
     /// Reports an item that nests too deeply for the later stages (unless
     /// its block nesting was reported already). Returns whether it is fine.
     fn check_nesting(&mut self, item: &Item) -> bool {
-        let body = match &item.kind {
-            ItemKind::Main(main) => &main.body,
-            ItemKind::Function(function) => &function.body,
+        let location = match &item.kind {
+            ItemKind::Main(main) => nesting::too_deep(&main.body).map(|stmt| stmt.origin.location()),
+            ItemKind::Function(function) => {
+                nesting::too_deep(&function.body).map(|stmt| stmt.origin.location())
+            }
+            // A definition's values: a global's starting value, a struct's
+            // field defaults (w2.md §1.9).
+            ItemKind::Global(global) => global
+                .init
+                .iter()
+                .find(|init| nesting::expr_too_deep(init, 0))
+                .map(|init| init.origin.location()),
+            ItemKind::Struct(def) => def
+                .defaults
+                .values()
+                .find(|value| nesting::expr_too_deep(value, 0))
+                .map(|value| value.origin.location()),
+            ItemKind::Enum(_) | ItemKind::UseHeader { .. } => None,
         };
-        let Some(stmt) = nesting::too_deep(body) else {
+        let Some(location) = location else {
             return true;
         };
         if !self.too_deep_reported {
             self.too_deep_reported = true;
             self.diags.error(
                 codes::TOO_DEEP,
-                stmt.origin.location(),
+                location,
                 "The values in this block are nested too deeply, together with the blocks around it, to be \
                  turned into C++. Split them up using variables, or move some of the blocks into a function.",
             );
@@ -449,7 +522,8 @@ impl<'d> Lowerer<'d> {
         self.item = item;
         self.scopes.reset();
         self.pending.clear();
-        self.loop_depth = 0;
+        self.breakable.clear();
+        self.catch_depth = 0;
         self.depth = 0;
         self.too_deep_reported = false;
         self.checks.clear();
@@ -626,6 +700,48 @@ impl<'d> Lowerer<'d> {
             });
         }
         params
+    }
+
+    // --- The Lowerer context of W2 (w2.md §2.13) ---------------------------------
+
+    /// Lowers `lower` inside a loop or a switch: the one way family modules
+    /// push and pop the stack that *leave loop* and *skip to next round*
+    /// read (`jump`).
+    pub(super) fn within<T>(&mut self, kind: Breakable, lower: impl FnOnce(&mut Self) -> T) -> T {
+        self.breakable.push(kind);
+        let lowered = lower(self);
+        self.breakable.pop();
+        lowered
+    }
+
+    /// Lowers `lower` inside a catch part, where *throw the error again*
+    /// may be used, at any depth of other blocks (w2.md §2.5).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "called by W2's error blocks (package B)")
+    )]
+    pub(super) fn in_catch<T>(&mut self, lower: impl FnOnce(&mut Self) -> T) -> T {
+        self.catch_depth += 1;
+        let lowered = lower(self);
+        self.catch_depth -= 1;
+        lowered
+    }
+
+    /// Reports *throw the error again* outside a catch part (`B2C-E0402`).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "called by W2's error blocks (package B)")
+    )]
+    pub(super) fn check_rethrow(&mut self, block: &Block) {
+        if self.catch_depth == 0 {
+            let location = self.loc(&block.id, Part::Whole);
+            self.diags.error(
+                codes::RETHROW_OUTSIDE_CATCH,
+                location,
+                "'throw the error again' can only be used inside a 'catch' part, where there is an error to \
+                 throw again.",
+            );
+        }
     }
 
     // --- Shared helpers ------------------------------------------------------
@@ -997,5 +1113,110 @@ impl<'d> Lowerer<'d> {
 
     fn leave(&mut self) {
         self.depth = self.depth.saturating_sub(1);
+    }
+}
+
+/// The Lowerer context W2's family modules share (w2.md §2.13): the stack of
+/// loops and switches *leave loop* reads, and the depth of catch parts
+/// *throw the error again* reads. The blocks that push them are tested by
+/// their packages.
+#[cfg(test)]
+mod context_tests {
+    use std::collections::BTreeSet;
+
+    use b2c_ir::sast::StmtKind;
+    use b2c_ir::sig::SigTable;
+
+    use super::user_types::tests::{document, module};
+    use super::*;
+
+    fn block(block_type: &str) -> Block {
+        serde_json::from_value(serde_json::json!({"id": "b1", "type": block_type, "v": 1})).expect("block")
+    }
+
+    /// The codes and messages reported so far.
+    fn reported(lowerer: &Lowerer<'_>) -> Vec<(String, String)> {
+        lowerer
+            .diags
+            .list
+            .iter()
+            .map(|d| (d.code.0.clone(), d.message.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn leave_loop_in_a_switch_inside_a_loop_is_reported() {
+        let document = document();
+        let sigs = SigTable::empty();
+        let unchecked = BTreeSet::new();
+        let mut lowerer = Lowerer::new(&document, module(), &sigs, &unchecked);
+        let leave = block("control.break");
+        let skip = block("control.continue");
+
+        // Directly in a loop, and in a loop inside a switch: fine.
+        lowerer.within(Breakable::Loop, |l| {
+            l.jump(&leave, StmtKind::Break, "'leave loop'");
+            l.within(Breakable::Switch, |l| {
+                l.within(Breakable::Loop, |l| {
+                    l.jump(&leave, StmtKind::Break, "'leave loop'")
+                });
+                // *skip to next round* reaches the loop around the switch.
+                l.jump(&skip, StmtKind::Continue, "'skip to next round'");
+            });
+        });
+        assert_eq!(reported(&lowerer), Vec::new());
+
+        // In a switch inside a loop: C++'s `break` would leave the switch.
+        lowerer.within(Breakable::Loop, |l| {
+            l.within(Breakable::Switch, |l| {
+                l.jump(&leave, StmtKind::Break, "'leave loop'")
+            });
+        });
+        // In a switch with no loop around it.
+        lowerer.within(Breakable::Switch, |l| {
+            l.jump(&leave, StmtKind::Break, "'leave loop'")
+        });
+        let expected = vec![
+            (
+                String::from("B2C-E0401"),
+                String::from(
+                    "In C++ 'leave loop' here would only leave the switch, not the loop around it. To leave \
+                     the loop, set a variable that the loop checks, or use 'return' in a function.",
+                ),
+            ),
+            (
+                String::from("B2C-E0401"),
+                String::from("'leave loop' can only be used inside a loop."),
+            ),
+        ];
+        assert_eq!(reported(&lowerer), expected);
+        assert!(lowerer.breakable.is_empty());
+    }
+
+    #[test]
+    fn throw_again_is_reported_outside_a_catch_part() {
+        let document = document();
+        let sigs = SigTable::empty();
+        let unchecked = BTreeSet::new();
+        let mut lowerer = Lowerer::new(&document, module(), &sigs, &unchecked);
+        let rethrow = block("error.rethrow");
+        lowerer.in_catch(|l| {
+            l.check_rethrow(&rethrow);
+            // At any depth of other blocks, and of catch parts.
+            l.within(Breakable::Loop, |l| l.in_catch(|l| l.check_rethrow(&rethrow)));
+        });
+        assert_eq!(reported(&lowerer), Vec::new());
+        assert_eq!(lowerer.catch_depth, 0);
+        lowerer.check_rethrow(&rethrow);
+        assert_eq!(
+            reported(&lowerer),
+            vec![(
+                String::from("B2C-E0402"),
+                String::from(
+                    "'throw the error again' can only be used inside a 'catch' part, where there is an error \
+                     to throw again."
+                ),
+            )]
+        );
     }
 }

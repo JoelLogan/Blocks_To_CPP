@@ -99,6 +99,7 @@ describe('pipeline types', () => {
         case 'function':
           return `${symbol.params.join(',')}->${JSON.stringify(symbol.returns)}`;
         case 'variable':
+        case 'global':
           return String(symbol.isConst);
         case 'loopVariable':
           return 'counter';
@@ -124,6 +125,7 @@ describe('pipeline types', () => {
       | 'variable'
       | 'parameter'
       | 'loopVariable'
+      | 'global'
       | 'function'
       | 'struct'
       | 'field'

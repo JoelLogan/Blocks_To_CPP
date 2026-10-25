@@ -271,7 +271,10 @@ function ofFieldKinds(field: Blockly.Field, symbol: SymbolInfo): boolean {
     case 'assignable':
     case 'numeric':
       return (
-        symbol.kind === 'variable' || symbol.kind === 'parameter' || symbol.kind === 'loopVariable'
+        symbol.kind === 'variable' ||
+        symbol.kind === 'parameter' ||
+        symbol.kind === 'loopVariable' ||
+        symbol.kind === 'global'
       );
     default:
       return true;

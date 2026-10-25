@@ -9,12 +9,20 @@
 //!   every assignment in their body as possibly done before any use, so there
 //!   are no false alarms for values carried from one round to the next.
 //! * A `forever` loop that nothing can leave gets an info note (`I0513`).
+//! * *go on into the next case* must be the last block of a case that is
+//!   not the switch's last part (`E0427`, w2.md §1.6).
+//!
+//! W2's statements follow the same rules (w2.md §2.13): a switch completes
+//! when it has no default part or one of its parts completes, *throw* and
+//! *throw the error again* end their path like `return`, a `do … while`
+//! body runs at least once, and a `try` completes when its `try` part or a
+//! catch part does.
 
 use std::collections::BTreeSet;
 
 use b2c_ir::ids::SymbolId;
 use b2c_ir::sast::{
-    Block, Expr, ExprKind, Item, ItemKind, PassMode, Stmt, StmtKind, SymbolKind, SymbolTable,
+    Block, Expr, ExprKind, Item, ItemKind, PassMode, Stmt, StmtKind, SwitchCase, SymbolKind, SymbolTable,
 };
 use b2c_ir::types::Type;
 
@@ -51,7 +59,22 @@ pub(crate) fn check_item(item: &Item, symbols: &SymbolTable, diags: &mut Diags) 
                     .error(codes::MISSING_RETURN, item.origin.location(), message);
             }
         }
+        // A definition has no statements; its values are checked where
+        // they are lowered.
+        ItemKind::Struct(_) | ItemKind::Enum(_) | ItemKind::Global(_) | ItemKind::UseHeader { .. } => {}
     }
+}
+
+/// Where *go on into the next case* may stand in a statement list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FallThrough {
+    /// Nowhere: the list is not a part of a switch.
+    Never,
+    /// As the last statement: the list is a case that another part follows.
+    Last,
+    /// Nowhere, and as its last statement it is told so: the list is the
+    /// switch's last part.
+    LastPart,
 }
 
 /// Definite-assignment state for scalar variables created without a value.
@@ -159,8 +182,18 @@ struct Flow<'a> {
 impl Flow<'_> {
     /// Checks a statement list; returns whether control can reach its end.
     fn list(&mut self, block: &Block, state: &mut State) -> bool {
+        self.list_in(block, state, FallThrough::Never)
+    }
+
+    /// [`Self::list`] for a list where *go on into the next case* may stand
+    /// as `fall_through` says.
+    fn list_in(&mut self, block: &Block, state: &mut State, fall_through: FallThrough) -> bool {
         let mut completes = true;
-        for stmt in &block.stmts {
+        let last = block.stmts.len().saturating_sub(1);
+        for (index, stmt) in block.stmts.iter().enumerate() {
+            if matches!(stmt.kind, StmtKind::FallThrough) {
+                self.check_fall_through(stmt, fall_through, index == last);
+            }
             if !completes {
                 self.diags.warning(
                     codes::UNREACHABLE,
@@ -177,6 +210,7 @@ impl Flow<'_> {
     }
 
     /// Checks a statement; returns whether it can complete normally.
+    #[allow(clippy::too_many_lines, reason = "one arm per statement")]
     fn stmt(&mut self, stmt: &Stmt, state: &mut State) -> bool {
         match &stmt.kind {
             StmtKind::VarDecl(decl) => {
@@ -252,11 +286,14 @@ impl Flow<'_> {
                 }
                 false
             }
-            StmtKind::Eval { expr } => {
-                self.uses(expr, state);
+            StmtKind::Eval { expr: value }
+            | StmtKind::SetField { value, .. }
+            | StmtKind::Decimals { digits: value }
+            | StmtKind::Wait { seconds: value } => {
+                self.uses(value, state);
                 true
             }
-            StmtKind::Print { items, .. } => {
+            StmtKind::Print { items, .. } | StmtKind::WriteFile { items, .. } => {
                 for item in items {
                     self.uses(item, state);
                 }
@@ -269,7 +306,132 @@ impl Flow<'_> {
                 state.assign(target);
                 true
             }
+            StmtKind::Switch {
+                value,
+                cases,
+                default,
+            } => self.switch(value, cases, default.as_ref(), state),
+            StmtKind::DoWhile { body, cond, until } => {
+                // The body runs at least once, so what it assigns stays
+                // assigned after the loop.
+                self.enter_loop(body, state);
+                self.loop_depth += 1;
+                let reaches_cond = self.list(body, state) || contains_continue(body);
+                self.loop_depth -= 1;
+                self.uses(cond, state);
+                let endless = matches!(cond.kind, ExprKind::Bool(value) if value != *until);
+                (reaches_cond && !endless) || contains_break(body)
+            }
+            StmtKind::RangeFor { range, body, .. } => {
+                self.uses(range, state);
+                self.enter_loop(body, state);
+                self.loop_body(body, state);
+                true
+            }
+            StmtKind::Try { body, catches } => {
+                let parts: Vec<&Block> = std::iter::once(body)
+                    .chain(catches.iter().map(|c| &c.body))
+                    .collect();
+                self.branches(&parts, false, state)
+            }
+            StmtKind::Throw { message, .. } => {
+                self.uses(message, state);
+                false
+            }
+            StmtKind::Rethrow => false,
+            StmtKind::FallThrough | StmtKind::StaticCheck { .. } => true,
+            StmtKind::FileLines {
+                path, body, failed, ..
+            } => {
+                self.uses(path, state);
+                if let Some(failed) = failed {
+                    self.branches(&[failed], true, state);
+                }
+                self.enter_loop(body, state);
+                self.loop_body(body, state);
+                true
+            }
+            StmtKind::OpenFile { path, failed, .. } => {
+                self.uses(path, state);
+                if let Some(failed) = failed {
+                    self.branches(&[failed], true, state);
+                }
+                true
+            }
+            StmtKind::CollectionOp { op, .. } => {
+                for value in op.operands() {
+                    self.uses(value, state);
+                }
+                true
+            }
+            StmtKind::Flip { target } => {
+                self.read(target, stmt, state);
+                true
+            }
         }
+    }
+
+    /// Parts of which one runs, or none when `may_skip`: each is checked from
+    /// the state before them, and afterwards the state holds what any of
+    /// them assigned. Returns whether control can get past them.
+    fn branches(&mut self, parts: &[&Block], may_skip: bool, state: &mut State) -> bool {
+        let mut completes = may_skip;
+        let mut added = Vec::new();
+        for part in parts {
+            let mark = state.mark();
+            completes |= self.list(part, state);
+            added.extend(state.undo(mark));
+        }
+        state.apply(added);
+        completes
+    }
+
+    /// A switch (w2.md §2.9): one part runs, or none without a default
+    /// part. A part that ends with *go on into the next case* goes on into
+    /// the next part, whose own end then counts.
+    fn switch(
+        &mut self,
+        value: &Expr,
+        cases: &[SwitchCase],
+        default: Option<&Block>,
+        state: &mut State,
+    ) -> bool {
+        self.uses(value, state);
+        let parts: Vec<&Block> = cases.iter().map(|case| &case.body).chain(default).collect();
+        let mut completes = default.is_none();
+        let mut added = Vec::new();
+        for (index, part) in parts.iter().enumerate() {
+            let last_part = index + 1 == parts.len();
+            let fall_through = if last_part {
+                FallThrough::LastPart
+            } else {
+                FallThrough::Last
+            };
+            let mark = state.mark();
+            let part_completes = self.list_in(part, state, fall_through);
+            added.extend(state.undo(mark));
+            let falls_on = matches!(part.stmts.last().map(|s| &s.kind), Some(StmtKind::FallThrough));
+            completes |= part_completes && (!falls_on || last_part);
+        }
+        state.apply(added);
+        completes
+    }
+
+    /// `B2C-E0427` for *go on into the next case* where it may not stand.
+    fn check_fall_through(&mut self, stmt: &Stmt, fall_through: FallThrough, is_last: bool) {
+        let message = match (fall_through, is_last) {
+            (FallThrough::Last, true) => return,
+            (FallThrough::LastPart, true) => {
+                "'go on into the next case' can't be used in the last part of a switch: there is no next case \
+                 to go on into. Remove it."
+            }
+            _ => {
+                "'go on into the next case' must be the last block of a case, directly in the case (not \
+                 inside another block). Move it to the end of the case."
+            }
+        };
+        self.diags
+            .error(codes::MISPLACED_FALLTHROUGH, stmt.origin.location(), message);
     }
 
     fn if_else(
@@ -318,6 +480,7 @@ impl Flow<'_> {
     }
 
     /// Every variable a block may assign.
+    #[allow(clippy::too_many_lines, reason = "one arm per statement")]
     fn assignments(&self, block: &Block, out: &mut BTreeSet<SymbolId>) {
         for stmt in &block.stmts {
             match &stmt.kind {
@@ -325,7 +488,7 @@ impl Flow<'_> {
                     out.insert(target.clone());
                     self.editable_args(value, out);
                 }
-                StmtKind::Ask { target, .. } => {
+                StmtKind::Ask { target, .. } | StmtKind::Flip { target } => {
                     out.insert(target.clone());
                 }
                 StmtKind::If { branches, else_body } => {
@@ -341,13 +504,65 @@ impl Flow<'_> {
                 | StmtKind::Repeat { body, .. }
                 | StmtKind::ForRange { body, .. }
                 | StmtKind::Forever { body } => self.assignments(body, out),
+                StmtKind::DoWhile { body, cond, .. } => {
+                    self.assignments(body, out);
+                    self.editable_args(cond, out);
+                }
+                StmtKind::RangeFor { range, body, .. } => {
+                    self.editable_args(range, out);
+                    self.assignments(body, out);
+                }
+                StmtKind::Switch {
+                    value,
+                    cases,
+                    default,
+                } => {
+                    self.editable_args(value, out);
+                    for case in cases {
+                        self.assignments(&case.body, out);
+                    }
+                    if let Some(body) = default {
+                        self.assignments(body, out);
+                    }
+                }
+                StmtKind::Try { body, catches } => {
+                    self.assignments(body, out);
+                    for catch in catches {
+                        self.assignments(&catch.body, out);
+                    }
+                }
+                StmtKind::FileLines {
+                    path, body, failed, ..
+                } => {
+                    self.editable_args(path, out);
+                    self.assignments(body, out);
+                    if let Some(failed) = failed {
+                        self.assignments(failed, out);
+                    }
+                }
+                StmtKind::OpenFile { path, failed, .. } => {
+                    self.editable_args(path, out);
+                    if let Some(failed) = failed {
+                        self.assignments(failed, out);
+                    }
+                }
+                StmtKind::Throw { message: value, .. }
+                | StmtKind::SetField { value, .. }
+                | StmtKind::Decimals { digits: value }
+                | StmtKind::Wait { seconds: value }
+                | StmtKind::StaticCheck { cond: value, .. } => self.editable_args(value, out),
+                StmtKind::CollectionOp { op, .. } => {
+                    for value in op.operands() {
+                        self.editable_args(value, out);
+                    }
+                }
                 StmtKind::Eval { expr } => self.editable_args(expr, out),
                 StmtKind::VarDecl(decl) => {
                     if let Some(init) = &decl.init {
                         self.editable_args(init, out);
                     }
                 }
-                StmtKind::Print { items, .. } => {
+                StmtKind::Print { items, .. } | StmtKind::WriteFile { items, .. } => {
                     for item in items {
                         self.editable_args(item, out);
                     }
@@ -361,19 +576,28 @@ impl Flow<'_> {
                 StmtKind::Return { value: None }
                 | StmtKind::Exit { code: None, .. }
                 | StmtKind::Break
-                | StmtKind::Continue => {}
+                | StmtKind::Continue
+                | StmtKind::Rethrow
+                | StmtKind::FallThrough => {}
             }
         }
     }
 
-    /// Variables passed to editable parameters inside an expression.
+    /// Variables passed to editable parameters inside an expression, and
+    /// the lines *read line from … into* reads into.
     fn editable_args(&self, expr: &Expr, out: &mut BTreeSet<SymbolId>) {
-        if let ExprKind::Call { function, args } = &expr.kind {
-            for (i, arg) in args.iter().enumerate() {
-                if let (ExprKind::Var(sym), true) = (&arg.kind, self.is_editable(function, i)) {
-                    out.insert(sym.clone());
+        match &expr.kind {
+            ExprKind::Call { function, args } => {
+                for (i, arg) in args.iter().enumerate() {
+                    if let (ExprKind::Var(sym), true) = (&arg.kind, self.is_editable(function, i)) {
+                        out.insert(sym.clone());
+                    }
                 }
             }
+            ExprKind::ReadLine { line, .. } => {
+                out.insert(line.clone());
+            }
+            _ => {}
         }
         for child in children(expr) {
             self.editable_args(child, out);
@@ -414,6 +638,7 @@ impl Flow<'_> {
                     state.assign(sym);
                 }
             }
+            ExprKind::ReadLine { line, .. } => state.assign(line),
             _ => {
                 for child in children(expr) {
                     self.uses(child, state);
@@ -479,48 +704,63 @@ impl Flow<'_> {
 
 /// The direct sub-expressions of an expression.
 pub(crate) fn children(expr: &Expr) -> Vec<&Expr> {
-    match &expr.kind {
-        ExprKind::Int(_)
-        | ExprKind::Float(_)
-        | ExprKind::Bool(_)
-        | ExprKind::Str(_)
-        | ExprKind::Char(_)
-        | ExprKind::Var(_) => Vec::new(),
-        ExprKind::Unary { operand, .. } => vec![operand],
-        ExprKind::Binary { lhs, rhs, .. } => vec![lhs, rhs],
-        ExprKind::Conditional {
-            cond,
-            then_value,
-            else_value,
-        } => vec![cond, then_value, else_value],
-        ExprKind::Call { args, .. } | ExprKind::Join(args) => args.iter().collect(),
-        ExprKind::RandomInt { low, high } => vec![low, high],
-        ExprKind::Convert { value, .. } => vec![value],
+    expr.kind.children()
+}
+
+/// The statement lists of a statement that are not a loop's body or a
+/// switch's parts: what a `break` or `continue` there jumps out of is the
+/// loop around the statement.
+fn plain_lists(stmt: &Stmt) -> Vec<&Block> {
+    match &stmt.kind {
+        StmtKind::If { branches, else_body } => {
+            branches.iter().map(|b| &b.body).chain(else_body.iter()).collect()
+        }
+        StmtKind::Try { body, catches } => std::iter::once(body)
+            .chain(catches.iter().map(|c| &c.body))
+            .collect(),
+        StmtKind::FileLines { failed, .. } | StmtKind::OpenFile { failed, .. } => failed.iter().collect(),
+        _ => Vec::new(),
     }
 }
 
-/// Whether a loop body has a `break` that leaves this loop (not an inner one).
+/// Whether a loop body has a `break` that leaves this loop (not an inner
+/// loop, and not from a switch, where it is `B2C-E0401`).
 fn contains_break(body: &Block) -> bool {
     body.stmts.iter().any(|stmt| match &stmt.kind {
         StmtKind::Break => true,
-        StmtKind::If { branches, else_body } => {
-            branches.iter().any(|b| contains_break(&b.body)) || else_body.as_ref().is_some_and(contains_break)
-        }
-        _ => false,
+        _ => plain_lists(stmt).into_iter().any(contains_break),
     })
 }
 
-/// Whether a block has a `return` or `stop program` anywhere inside.
+/// Whether a loop body has a `continue` of this loop, also from a switch.
+fn contains_continue(body: &Block) -> bool {
+    body.stmts.iter().any(|stmt| match &stmt.kind {
+        StmtKind::Continue => true,
+        StmtKind::Switch { cases, default, .. } => {
+            cases.iter().any(|case| contains_continue(&case.body))
+                || default.as_ref().is_some_and(contains_continue)
+        }
+        _ => plain_lists(stmt).into_iter().any(contains_continue),
+    })
+}
+
+/// Whether a block has a `return`, `stop program`, *throw* or *throw the
+/// error again* anywhere inside.
 fn contains_exit(body: &Block) -> bool {
     body.stmts.iter().any(|stmt| match &stmt.kind {
-        StmtKind::Return { .. } | StmtKind::Exit { .. } => true,
-        StmtKind::If { branches, else_body } => {
-            branches.iter().any(|b| contains_exit(&b.body)) || else_body.as_ref().is_some_and(contains_exit)
-        }
+        StmtKind::Return { .. } | StmtKind::Exit { .. } | StmtKind::Throw { .. } | StmtKind::Rethrow => true,
         StmtKind::While { body, .. }
         | StmtKind::Repeat { body, .. }
         | StmtKind::ForRange { body, .. }
-        | StmtKind::Forever { body } => contains_exit(body),
-        _ => false,
+        | StmtKind::Forever { body }
+        | StmtKind::DoWhile { body, .. }
+        | StmtKind::RangeFor { body, .. } => contains_exit(body),
+        StmtKind::FileLines { body, failed, .. } => {
+            contains_exit(body) || failed.as_ref().is_some_and(contains_exit)
+        }
+        StmtKind::Switch { cases, default, .. } => {
+            cases.iter().any(|case| contains_exit(&case.body)) || default.as_ref().is_some_and(contains_exit)
+        }
+        _ => plain_lists(stmt).into_iter().any(contains_exit),
     })
 }

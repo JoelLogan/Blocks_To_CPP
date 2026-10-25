@@ -17,13 +17,13 @@
 use std::collections::BTreeSet;
 
 use b2c_ir::ids::SymbolId;
-use b2c_ir::sast::{CppStandard, SymbolKind};
+use b2c_ir::sast::{CppStandard, Expr, Item, StmtKind, SymbolKind};
 use b2c_ir::text::{Ident, StrLit};
 
 use super::{Lowerer, name_expr, scan};
 use crate::cast::{
     BinOp, CBlock, CCase, CEnum, CExpr, CExprKind, CField, CGenerated, CStmt, CStmtKind, CStruct, CType,
-    Generated, Init,
+    CTypeDef, Generated, Init,
 };
 
 /// The six comparisons a comparable struct gets in C++17, in the order they
@@ -46,6 +46,31 @@ fn returning(value: CExpr) -> CBlock {
 }
 
 impl Lowerer<'_> {
+    /// A struct or enum item (`type.struct`, `type.enum`; w2.md §1.5): its
+    /// definition with the functions its ticks and uses promise, between
+    /// `start_item` and `finish_item`. Package C1 fills this in; until then
+    /// the item prints nothing, and no analysis makes one.
+    #[allow(clippy::unused_self, reason = "a stub until package C1 lowers the items")]
+    pub(super) fn type_item(&mut self, item: &Item) -> Option<CTypeDef> {
+        let _ = item;
+        None
+    }
+
+    /// *set … of … to* (`StmtKind::SetField`). Package C1 fills this in.
+    #[allow(clippy::unused_self, reason = "a stub until package C1 lowers the blocks")]
+    pub(super) fn type_stmt(&mut self, kind: &StmtKind) -> CStmtKind {
+        let _ = kind;
+        CStmtKind::Error
+    }
+
+    /// A struct's field, a new struct value or an enum value. Package C1
+    /// fills this in.
+    #[allow(clippy::unused_self, reason = "a stub until package C1 lowers the blocks")]
+    pub(super) fn type_expr(&mut self, expr: &Expr) -> CExpr {
+        let _ = expr;
+        CExpr::error()
+    }
+
     /// Every name in the program, which a generated function's parameters
     /// avoid: none of them then hides a field or a global (`-Wshadow`).
     fn program_names(&self) -> BTreeSet<String> {
@@ -268,6 +293,7 @@ fn enum_function(
         stmts.push(CStmt::new(CStmtKind::Switch {
             value: name_expr(value.clone()),
             cases,
+            default: None,
         }));
     }
     stmts.push(CStmt::new(CStmtKind::Return(Some(result(None)))));
