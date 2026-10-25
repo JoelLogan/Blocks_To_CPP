@@ -92,7 +92,7 @@ describe('Root', () => {
       'build its WebAssembly core again and then the app',
     );
     expect(screen.getByTestId('startup-details').textContent).toBe(
-      "Technical details: the window's compiler core has block catalog 1.1.0, the program behind it has block catalog 1.2.0.",
+      "Technical details: the window's compiler core has block catalog 1.1.0, the program behind it has block catalog 1.3.0.",
     );
     expect(screen.queryByText('the main window')).toBeNull();
     await expectNoAxeViolations(container);
