@@ -12,6 +12,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use b2c_ir::types::TypeTerm;
 use b2c_ir::{BlockId, SymbolId};
 use b2c_model::{
     Block, BlockComment, BlockInput, Clipboard, ClipboardRef, ExprInput, FieldValue, IdKind, IdSource, Input,
@@ -56,6 +57,19 @@ fn placeholder_symbol() -> SymbolId {
     SymbolId::new("placeholder").unwrap()
 }
 
+/// A template type term whose references pick from the same pool.
+fn template() -> impl Strategy<Value = TypeTerm> {
+    let arg = prop_oneof![
+        Just(TypeTerm::name("int").unwrap()),
+        symbol_ref().prop_map(TypeTerm::Ref),
+    ];
+    (
+        prop::sample::select(vec!["std::vector", "std::map", "std::set"]),
+        vec(arg, 1..3),
+    )
+        .prop_map(|(name, args)| TypeTerm::app(name, args).unwrap())
+}
+
 fn field_value() -> impl Strategy<Value = FieldValue> {
     prop_oneof![
         any::<bool>().prop_map(FieldValue::Bool),
@@ -65,6 +79,7 @@ fn field_value() -> impl Strategy<Value = FieldValue> {
             name
         })),
         symbol_ref().prop_map(|target| FieldValue::Ref(SymbolRef { target })),
+        template().prop_map(FieldValue::Type),
     ]
 }
 
@@ -212,6 +227,10 @@ fn ref_kind() -> impl Strategy<Value = RefKind> {
         RefKind::Parameter,
         RefKind::LoopVariable,
         RefKind::Function,
+        RefKind::Struct,
+        RefKind::Enum,
+        RefKind::Field,
+        RefKind::Enumerator,
     ])
 }
 
@@ -276,14 +295,16 @@ fn declared(block: &Block) -> Vec<SymbolId> {
     out
 }
 
-/// References of one block: fields, then tokens.
+/// References of one block: fields (references and type terms), then
+/// tokens.
 fn referenced(block: &Block) -> Vec<SymbolId> {
     let mut out: Vec<SymbolId> = block
         .fields
         .values()
-        .filter_map(|v| match v {
-            FieldValue::Ref(r) => Some(r.target.clone()),
-            _ => None,
+        .flat_map(|v| match v {
+            FieldValue::Ref(r) => vec![r.target.clone()],
+            FieldValue::Type(term) => term.refs().cloned().collect(),
+            _ => Vec::new(),
         })
         .collect();
     for input in block.inputs.values() {

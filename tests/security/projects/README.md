@@ -49,6 +49,7 @@ rest of the project valid, so that the file tests one thing.
 | `compiler-flags.b2c` | T2 | Compiler flags and include paths in `build` (ADR-0005: not part of the format) | `B2C-E0110` | — |  |
 | `constructor-key.b2c` | T6 | A `constructor.prototype` chain in a block's fields | `B2C-E0127` | — |  |
 | `control-char-in-key.b2c` | T4 | A control character in a field name | `B2C-E0125` | — |  |
+| `damaged-declaration.b2c` | T1 | A declaration with a misspelt key (`{"sm": …, "name": …}`), which must not be read as a template type called `sm` | `B2C-E0110`, `B2C-E0111` | — | A one-key object is a template only when its key is a qualified name (types.md §2.2) |
 | `deep-block-nesting.b2c` | T5 | 60 loops nested inside each other (more than 128 JSON levels) | `B2C-E0104` | — |  |
 | `deep-expression.b2c` | T5 | 255 nested parentheses in one slot (within the token limit) | accepted | clean | The expression parser stops at depth 64 |
 | `deep-nesting.b2c` | T5 | 5,000 nested lists (stack exhaustion) | `B2C-E0104` | — |  |
@@ -99,7 +100,7 @@ rest of the project valid, so that the file tests one thing.
 | `newer-app-compiler-flags.b2c` | T2 | Compiler flags and include paths in `build` of a file that claims a far newer Blocks2Cpp (`generator.app` beyond 64 bits): refused as made with a newer version, never loaded | `B2C-E0108` | — | The message names no version from the file ([ADR-0013](../../../docs/adr/0013-additive-format-keys.md)) |
 | `newer-app-unknown-keys.b2c` | T1 | Keys this version does not know (`options.usingNamespaceStd`, `lints`) in a file a newer Blocks2Cpp saved (`generator.app` 9.0.0) | `B2C-E0108` | — | The message names no version from the file ([ADR-0013](../../../docs/adr/0013-additive-format-keys.md)) |
 | `newer-block-version.b2c` | T1 | A block from a newer catalog version | accepted | `B2C-E0602` |  |
-| `newer-format-version.b2c` | T1 | A project from a newer Blocks2Cpp (never half-loaded) | `B2C-E0108` | — |  |
+| `newer-format-version.b2c` | T1 | A project in format version 3, newer than this version reads, from a newer Blocks2Cpp (never half-loaded) | `B2C-E0108` | — |  |
 | `nul-in-name.b2c` | T4 | A NUL character in a variable name (C strings end there) | `B2C-E0124` | — |  |
 | `nul-in-string-literal.b2c` | T4 | A NUL character in a string literal | `B2C-E0124` | — |  |
 | `older-format-version.b2c` | T1 | A format version that never existed | `B2C-E0109` | — |  |
@@ -124,6 +125,15 @@ rest of the project valid, so that the file tests one thing.
 | `too-many-parameters.b2c` | T5 | 17 parameters where the catalog allows 16 | accepted | `B2C-E0613` |  |
 | `too-many-tokens.b2c` | T5 | An expression slot with 513 tokens | `B2C-E0122` | — |  |
 | `trailing-data.b2c` | T5 | A second project appended after the first | `B2C-E0103` | — |  |
+| `type-term-bidi-in-name.b2c` | T4 | A right-to-left override (U+202E) in a type name inside a template (`{"std::vector": "in\u202et"}`) | `B2C-E0126` | — |  |
+| `type-term-bidi-in-template.b2c` | T4 | A right-to-left override in a template's name, which is then no qualified name: the object is read as a damaged declaration | `B2C-E0110`, `B2C-E0111` | — | The message shows the character as `\u{202E}` |
+| `type-term-injection.b2c` | T3 | C++ code in a type name inside a template | `B2C-E0112` | — | Names in type terms follow the name rule; the catalog looks every name up in its tables (08 §8.4) |
+| `type-term-one-element-list.b2c` | T1 | A template whose one argument is written as a one-element list, a second spelling of the same type | `B2C-E0112` | — | Each type has one spelling (types.md §2.1) |
+| `type-term-proto-key.b2c` | T6 | A `__proto__` key inside a template type | `B2C-E0127` | — |  |
+| `type-term-ref-injection.b2c` | T7 | Markup in the symbol ID of a user type inside a template | `B2C-E0113` | — |  |
+| `type-term-row-too-deep.b2c` | T5 | The same 100 levels in the `type` of a parameter row | `B2C-E0140` | — |  |
+| `type-term-too-deep.b2c` | T5 | A type field with 100 nested `std::vector` templates (within the JSON depth limit) | `B2C-E0140` | — | Counted before the term is read, so a type walk is never deeper than 8 levels |
+| `type-term-too-wide.b2c` | T5 | A template with 40 arguments (41 names) | `B2C-E0140` | — |  |
 | `utf16.b2c` | T5 | The project saved as UTF-16 | `B2C-E0102` | — |  |
 | `utf8-bom.b2c` | T5 | A UTF-8 byte order mark | `B2C-E0102` | — |  |
 | `working-directory-path.b2c` | T9 | A path instead of a working-directory choice | `B2C-E0112` | — |  |

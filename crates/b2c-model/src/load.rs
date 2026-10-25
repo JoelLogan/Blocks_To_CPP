@@ -5,11 +5,13 @@
 //! * Parse JSON rejecting duplicate keys anywhere and nesting deeper than
 //!   [`crate::limits::MAX_JSON_DEPTH`], then decode into [`crate::Document`]
 //!   with unknown keys rejected (except inside `"x-ext"`).
-//! * Check `format == FORMAT_TAG`; refuse newer `formatVersion`s with a clear
-//!   message; migrate older ones (none exist yet for version 1). A key this
-//!   version does not know, in a file a newer app saved (`generator.app`),
-//!   is reported as made with a newer version (ADR-0013). Messages never name
-//!   a version taken from the file.
+//! * Check `format == FORMAT_TAG`; refuse a `formatVersion` newer than
+//!   [`crate::MAX_FORMAT_VERSION`] with a clear message; load the versions
+//!   from [`crate::OLDEST_UNMIGRATED_VERSION`] up without a migration step
+//!   (they differ only by added keys, ADR-0013), and migrate older ones
+//!   (none exist). A key this version does not know, in a file a newer app
+//!   saved (`generator.app`), is reported as made with a newer version
+//!   (ADR-0013). Messages never name a version taken from the file.
 //! * Enforce every limit in [`crate::limits`], unique block/module/symbol IDs,
 //!   module-name rules, and the text rules: valid UTF-8, no NUL, no C0 controls
 //!   other than tab and newline, no Unicode bidi controls, in every string.
@@ -21,7 +23,8 @@
 //!
 //! 1. size limit, UTF-8 and byte-order-mark check;
 //! 2. JSON parsing ([`crate::json`]): syntax, depth, value count, duplicates;
-//! 3. the header: `format` and `formatVersion`, then migrations
+//! 3. the header: `format` and `formatVersion`, then migrations for a
+//!    version older than [`crate::OLDEST_UNMIGRATED_VERSION`]
 //!    ([`crate::migrate`]);
 //! 4. decoding with every other rule ([`crate::decode`]), which reports all
 //!    problems it finds.
@@ -34,8 +37,8 @@ use crate::json::{self, ErrorKind, Json};
 use crate::limits::{MAX_FILE_BYTES, MAX_JSON_DEPTH};
 use crate::migrate::{self, MigrationError};
 use crate::text_rules::quote;
-use crate::version::{APP_VERSION, is_newer};
-use crate::{CURRENT_FORMAT_VERSION, Document, FORMAT_TAG};
+use crate::version::{APP_VERSION, MAX_FORMAT_VERSION, OLDEST_UNMIGRATED_VERSION, is_newer};
+use crate::{Document, FORMAT_TAG};
 
 /// Why a project file or a clipboard payload could not be loaded.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -228,7 +231,9 @@ fn made_by_newer_app(root: &Json) -> bool {
     }
 }
 
-/// Step 3: `format`, `formatVersion` and migrations.
+/// Step 3: `format`, `formatVersion` and migrations: a version newer than
+/// [`MAX_FORMAT_VERSION`] is refused, one from [`OLDEST_UNMIGRATED_VERSION`]
+/// up loads as it is, and only an older one runs the migration chain.
 fn check_header(root: Json) -> Result<Json, LoadError> {
     let Json::Object(_) = root else {
         return Err(LoadError::single(
@@ -278,10 +283,10 @@ fn check_header(root: Json) -> Result<Json, LoadError> {
             ),
         ));
     };
-    // Any whole number above the current version is a newer format, even
+    // Any whole number above the newest version is a newer format, even
     // one beyond 32 bits (spec §5.7). The message names no version taken
     // from the file (ADR-0013).
-    if version > u64::from(CURRENT_FORMAT_VERSION) {
+    if version > u64::from(MAX_FORMAT_VERSION) {
         return Err(LoadError::single(
             codes::NEWER_FORMAT,
             String::from(
@@ -290,8 +295,12 @@ fn check_header(root: Json) -> Result<Json, LoadError> {
             ),
         ));
     }
-    // At most `CURRENT_FORMAT_VERSION` now, so it fits.
-    let version = u32::try_from(version).unwrap_or(CURRENT_FORMAT_VERSION);
+    // At most `MAX_FORMAT_VERSION` now, so it fits.
+    let version = u32::try_from(version).unwrap_or(MAX_FORMAT_VERSION);
+    if version >= OLDEST_UNMIGRATED_VERSION {
+        // Versions from here up differ only by added keys: nothing to migrate.
+        return Ok(root);
+    }
     migrate::upgrade(root, version).map_err(|error| {
         let message = match error {
             MigrationError::NoPath { from } => format!(
@@ -394,7 +403,7 @@ mod tests {
         // saved it nor its format.
         for text in [
             &br#"{"format": "blocks2cpp/project", "formatVersion": 7, "generator": {"app": "3.1.0", "catalog": "2.0.0"}, "anything": "goes"}"#[..],
-            br#"{"format": "blocks2cpp/project", "formatVersion": 2, "generator": {"app": "<b>evil</b>"}}"#,
+            br#"{"format": "blocks2cpp/project", "formatVersion": 3, "generator": {"app": "<b>evil</b>"}}"#,
             // A whole number beyond 32 bits is a newer format too, not "no
             // valid formatVersion".
             br#"{"format": "blocks2cpp/project", "formatVersion": 4294967296}"#,

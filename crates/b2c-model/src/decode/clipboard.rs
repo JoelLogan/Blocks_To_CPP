@@ -16,13 +16,19 @@ use crate::text_rules::quote;
 const CLIPBOARD_KEYS: [&str; 5] = ["format", "formatVersion", "catalog", "blocks", "refs"];
 
 /// The reference kinds a payload may record, in declaration order: those of
-/// clipboard format version 1. The kinds of user types join them with
-/// version 2 (types.md §2.4).
-pub(crate) const REF_KINDS: [RefKind; 4] = [
+/// clipboard format version 1, then the kinds of user types and their
+/// members that version 2 adds (types.md §2.4). A reader takes every kind
+/// in every version it reads; the writer writes version 2 when a payload
+/// uses one of the new kinds.
+pub(crate) const REF_KINDS: [RefKind; 8] = [
     RefKind::Variable,
     RefKind::Parameter,
     RefKind::LoopVariable,
     RefKind::Function,
+    RefKind::Struct,
+    RefKind::Enum,
+    RefKind::Field,
+    RefKind::Enumerator,
 ];
 
 impl<'a> Decoder<'a> {
@@ -131,7 +137,6 @@ mod tests {
             RefKind::Parameter => 1,
             RefKind::LoopVariable => 2,
             RefKind::Function => 3,
-            // Not read before clipboard format version 2.
             RefKind::Struct => 4,
             RefKind::Enum => 5,
             RefKind::Field => 6,
@@ -144,9 +149,11 @@ mod tests {
         for (i, kind) in REF_KINDS.iter().enumerate() {
             assert_eq!(index_of_kind(*kind), i);
         }
+        assert_eq!(REF_KINDS.len(), 8);
         assert_eq!(
             serde_name(&RefKind::LoopVariable).as_deref(),
             Some("loopVariable")
         );
+        assert_eq!(serde_name(&RefKind::Enumerator).as_deref(), Some("enumerator"));
     }
 }

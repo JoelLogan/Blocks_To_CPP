@@ -1,6 +1,6 @@
 {
   "format": "blocks2cpp/project",
-  "formatVersion": 2,
+  "formatVersion": 3,
   "generator": {
     "app": "0.1.0",
     "catalog": "1.0.0"

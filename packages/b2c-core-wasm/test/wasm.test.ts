@@ -12,10 +12,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { CoreWasm, Diagnostic } from '../src/index';
 import {
   CoreError,
-  CURRENT_FORMAT_VERSION,
   initCore,
   initCoreFromBytes,
   MAX_DOCUMENT_BYTES,
+  MAX_FORMAT_VERSION,
   resetCore,
 } from '../src/index';
 
@@ -90,7 +90,7 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     expect(version).toEqual({
       app: expect.stringMatching(/^\d+\.\d+\.\d+/) as unknown,
       catalog: '1.2.0',
-      formatVersion: CURRENT_FORMAT_VERSION,
+      formatVersion: MAX_FORMAT_VERSION,
       sourceMapVersion: 1,
     });
   });

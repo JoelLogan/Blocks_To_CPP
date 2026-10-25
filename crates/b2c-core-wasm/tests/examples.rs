@@ -30,9 +30,10 @@ fn version_reports_the_crate_versions() {
     assert_eq!(
         version,
         format!(
-            r#"{{"app":"{}","catalog":"{}","formatVersion":1,"sourceMapVersion":1}}"#,
+            r#"{{"app":"{}","catalog":"{}","formatVersion":{},"sourceMapVersion":1}}"#,
             env!("CARGO_PKG_VERSION"),
-            b2c_catalog::CATALOG_VERSION
+            b2c_catalog::CATALOG_VERSION,
+            b2c_model::MAX_FORMAT_VERSION
         )
     );
 }

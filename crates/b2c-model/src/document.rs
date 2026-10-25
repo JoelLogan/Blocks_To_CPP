@@ -15,9 +15,6 @@ use serde::{Deserialize, Serialize};
 /// The value of the top-level `"format"` key.
 pub const FORMAT_TAG: &str = "blocks2cpp/project";
 
-/// The project format version this build reads and writes.
-pub const CURRENT_FORMAT_VERSION: u32 = 1;
-
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_false(value: &bool) -> bool {
     !*value
@@ -33,7 +30,10 @@ fn default_true() -> bool {
 pub struct Document {
     /// Always [`FORMAT_TAG`].
     pub format: String,
-    /// File format version (see [`CURRENT_FORMAT_VERSION`]).
+    /// File format version, as read (up to [`crate::MAX_FORMAT_VERSION`]).
+    /// The canonical writer writes [`crate::required_format_version`]
+    /// instead: the lowest version whose keys cover the document
+    /// (ADR-0013).
     pub format_version: u32,
     /// What wrote the file.
     pub generator: Generator,
@@ -433,7 +433,9 @@ pub struct Block {
     /// Mutator state (variadic counts, parameter rows), validated against the
     /// catalog's schema for the block type. Free-form data: a loaded
     /// document's numbers here are within ±[`crate::limits::MAX_SAFE_INTEGER`]
-    /// and whole ones are integers (spec §5.6).
+    /// and whole ones are integers (spec §5.6). The `type` of a row of
+    /// `params` is a type term in JSON (types.md §2.1): the loader checks a
+    /// reference or a template there like one in a type field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extra: BTreeMap<String, serde_json::Value>,
     /// Field values.
@@ -454,6 +456,17 @@ pub struct Block {
     /// the catalog by `b2c-catalog`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stack: Vec<Block>,
+}
+
+impl Block {
+    /// The references in this block's type terms (not its children's), in
+    /// order: in templates in its fields, then in the `type` of its rows of
+    /// `extra` (`params`), read as the loader reads them (types.md §2.2). A
+    /// user type held directly in a field is a [`FieldValue::Ref`] and is
+    /// not listed.
+    pub fn type_term_refs(&self) -> Vec<SymbolId> {
+        crate::terms::refs(self)
+    }
 }
 
 /// A block comment.
@@ -479,10 +492,12 @@ pub enum FieldValue {
     Decl(SymbolDecl),
     /// References a symbol: `{"ref": "sym_x"}`; in a type field, a user type.
     Ref(SymbolRef),
-    /// A type field holding a template term: `{"std::vector": "int"}`
-    /// (format version 2, types.md §2). A type field holding a name stays
-    /// [`FieldValue::Text`], and one holding a user type
-    /// [`FieldValue::Ref`]. The loader does not produce it yet.
+    /// A type field holding a template term: `{"std::vector": "int"}`,
+    /// `{"std::map": ["int", {"ref": "sym_Pt"}]}` (format version 2,
+    /// types.md §2). Always a [`TypeTerm::App`]: a type field holding a
+    /// name stays [`FieldValue::Text`], and one holding a user type
+    /// [`FieldValue::Ref`]. The loader checks its shape and limits; the
+    /// catalog checks its names and the analyser its references.
     Type(TypeTerm),
 }
 

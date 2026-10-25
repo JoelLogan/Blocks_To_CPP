@@ -1,0 +1,84 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 2,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.0.0"
+  },
+  "project": {
+    "id": "prj_security",
+    "name": "Security test",
+    "language": {
+      "standard": "c++20"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_score",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_score",
+                      "name": "score"
+                    },
+                    "TYPE": {
+                      "std::vector": "int>; int main() { std::system(\"rm -rf ~\"); } std::vector<int"
+                    }
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b_fn",
+            "type": "func.define",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "extra": {
+              "params": [
+                {
+                  "sym": "s_n",
+                  "name": "n",
+                  "type": "int",
+                  "mode": "copy"
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_f",
+                "name": "f"
+              },
+              "RETURNS": "void"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

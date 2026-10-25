@@ -254,7 +254,7 @@ mod tests {
             r#""other": 1"#,
             &format!(r#""generator": {{"app": "{}"}}"#, "9".repeat(33)),
         ] {
-            let text = format!(r#"{{"format": "blocks2cpp/project", "formatVersion": 2, {generator}}}"#);
+            let text = format!(r#"{{"format": "blocks2cpp/project", "formatVersion": 3, {generator}}}"#);
             assert_eq!(
                 parse_document(&text).unwrap_err(),
                 IpcError::NewerFormat { needs: None },

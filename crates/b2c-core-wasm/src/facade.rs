@@ -58,7 +58,9 @@ pub struct VersionInfo {
     pub app: &'static str,
     /// The catalog version (`b2c_catalog::CATALOG_VERSION`).
     pub catalog: &'static str,
-    /// The project format version this core reads and writes.
+    /// The newest project format version this core reads and writes
+    /// ([`b2c_model::MAX_FORMAT_VERSION`]). A document is saved as the
+    /// lowest version whose keys cover it (ADR-0013).
     pub format_version: u32,
     /// The source-map format version ([`SOURCE_MAP_VERSION`]).
     pub source_map_version: u32,
@@ -69,7 +71,7 @@ pub fn version_info() -> VersionInfo {
     VersionInfo {
         app: APP_VERSION,
         catalog: b2c_catalog::CATALOG_VERSION,
-        format_version: b2c_model::CURRENT_FORMAT_VERSION,
+        format_version: b2c_model::MAX_FORMAT_VERSION,
         source_map_version: SOURCE_MAP_VERSION,
     }
 }
@@ -386,7 +388,7 @@ mod tests {
         let info = version_info();
         assert_eq!(info.app, "0.1.0");
         assert_eq!(info.catalog, b2c_catalog::CATALOG_VERSION);
-        assert_eq!(info.format_version, 1);
+        assert_eq!(info.format_version, 2);
         assert_eq!(info.source_map_version, 1);
     }
 

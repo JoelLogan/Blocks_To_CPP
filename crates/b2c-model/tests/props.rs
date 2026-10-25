@@ -12,13 +12,15 @@
 use std::collections::BTreeMap;
 
 use b2c_ir::sast::CppStandard;
+use b2c_ir::types::TypeTerm;
 use b2c_ir::{BlockId, ModuleId, ProjectId, SymbolId};
 use b2c_model::limits::MAX_SAFE_INTEGER;
 use b2c_model::{
     Block, BlockComment, BlockInput, BuildConfiguration, BuildSettings, Configurations, Define, DefineValue,
     Document, ExprInput, FieldValue, FormattingStyle, Frame, FrameColor, Generator, Input, Language, Module,
     Note, Optimization, PackRef, Project, ProjectOptions, RunSettings, Sanitizer, SymbolDecl, SymbolRef,
-    Token, Viewport, WarningLevel, WorkingDirectory, Workspace, content_hash, load, to_canonical_json,
+    Token, Viewport, WarningLevel, WorkingDirectory, Workspace, content_hash, load, required_format_version,
+    to_canonical_json,
 };
 use proptest::collection::{btree_map, vec};
 use proptest::option;
@@ -79,6 +81,49 @@ fn token() -> impl Strategy<Value = Token> {
     ]
 }
 
+/// A name that follows the name rule of type terms (types.md §2.2).
+fn type_name() -> impl Strategy<Value = TypeTerm> {
+    prop_oneof![
+        prop::sample::select(vec![
+            "int",
+            "double",
+            "std::string",
+            "auto",
+            "unsigned int",
+            "std::ifstream"
+        ])
+        .prop_map(String::from),
+        "[A-Za-z_][A-Za-z0-9_]{0,8}(::[A-Za-z_][A-Za-z0-9_]{0,8}){0,2}",
+    ]
+    .prop_map(|name| TypeTerm::name(&name).unwrap())
+}
+
+/// A template name: a qualified name.
+fn template_name() -> impl Strategy<Value = &'static str> {
+    prop::sample::select(vec![
+        "std::vector",
+        "std::map",
+        "std::set",
+        "std::queue",
+        "lib::pair",
+    ])
+}
+
+/// A type term within the limits: a name, a reference or a template.
+fn type_term() -> impl Strategy<Value = TypeTerm> {
+    let leaf = prop_oneof![type_name(), symbol_ref().prop_map(TypeTerm::Ref)];
+    leaf.prop_recursive(4, 16, 3, |inner| {
+        (template_name(), vec(inner, 1..4))
+            .prop_filter_map("within the limits", |(name, args)| TypeTerm::app(name, args).ok())
+    })
+}
+
+/// A template type term, as a type field holds one.
+fn template() -> impl Strategy<Value = TypeTerm> {
+    (template_name(), vec(type_term(), 1..3))
+        .prop_filter_map("within the limits", |(name, args)| TypeTerm::app(name, args).ok())
+}
+
 fn field_value() -> impl Strategy<Value = FieldValue> {
     prop_oneof![
         any::<bool>().prop_map(FieldValue::Bool),
@@ -88,7 +133,20 @@ fn field_value() -> impl Strategy<Value = FieldValue> {
             name,
         })),
         symbol_ref().prop_map(|target| FieldValue::Ref(SymbolRef { target })),
+        template().prop_map(FieldValue::Type),
     ]
+}
+
+/// Parameter rows whose `type` is a type term (without symbols, which
+/// would need numbering).
+fn params() -> impl Strategy<Value = Value> {
+    vec((text(), type_term()), 1..3).prop_map(|rows| {
+        Value::Array(
+            rows.into_iter()
+                .map(|(name, ty)| serde_json::json!({"name": name, "type": ty, "mode": "copy"}))
+                .collect(),
+        )
+    })
 }
 
 /// A finite `f64` as a JSON number.
@@ -172,25 +230,30 @@ fn leaf_block() -> impl Strategy<Value = Block> {
             any::<bool>(),
             option::of(comment()),
         ),
-        btree_map(key(), free_json(true), 0..3),
+        (btree_map(key(), free_json(true), 0..3), option::of(params())),
         btree_map(key(), field_value(), 0..3),
         btree_map(key(), input(), 0..3),
     )
         .prop_map(
-            |((block_type, v, collapsed, disabled, comment), extra, fields, inputs)| Block {
-                id: placeholder_block_id(),
-                block_type,
-                v,
-                x: None,
-                y: None,
-                collapsed,
-                disabled,
-                comment,
-                extra,
-                fields,
-                inputs,
-                statements: BTreeMap::new(),
-                stack: Vec::new(),
+            |((block_type, v, collapsed, disabled, comment), (mut extra, params), fields, inputs)| {
+                if let Some(params) = params {
+                    extra.insert("params".into(), params);
+                }
+                Block {
+                    id: placeholder_block_id(),
+                    block_type,
+                    v,
+                    x: None,
+                    y: None,
+                    collapsed,
+                    disabled,
+                    comment,
+                    extra,
+                    fields,
+                    inputs,
+                    statements: BTreeMap::new(),
+                    stack: Vec::new(),
+                }
             },
         )
 }
@@ -484,14 +547,17 @@ fn document() -> impl Strategy<Value = Document> {
                     }
                 })
                 .collect();
-            Document {
+            let mut document = Document {
                 format: b2c_model::FORMAT_TAG.to_owned(),
-                format_version: b2c_model::CURRENT_FORMAT_VERSION,
+                format_version: 1,
                 generator: Generator { app, catalog },
                 project,
                 modules,
                 ext,
-            }
+            };
+            // The version the writer writes, so the document round-trips.
+            document.format_version = required_format_version(&document);
+            document
         })
 }
 

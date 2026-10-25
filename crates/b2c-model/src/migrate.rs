@@ -1,12 +1,18 @@
 //! Format migrations (spec §5.7): a chain of pure functions, each upgrading
 //! a parsed file from format version `n` to `n + 1`.
 //!
+//! Migrations are for changes of meaning only (ADR-0013): versions that only
+//! add keys load as they are. So the chain runs only for a version older
+//! than [`crate::OLDEST_UNMIGRATED_VERSION`], and only up to it; a future
+//! change of meaning raises that version and adds its steps (identity steps
+//! for the purely additive versions in between).
+//!
 //! Migrations work on the parsed JSON tree, not on [`crate::Document`]: an
 //! older file does not fit the current types (keys may have been renamed or
 //! restructured), so it is upgraded first and then decoded and validated
-//! exactly like a current file. Version 1 is the first format, so the chain
-//! is empty for now; the tests below exercise the machinery with a
-//! synthetic chain.
+//! exactly like a current file. Version 1 is the first format and no
+//! version has changed a meaning yet, so the chain is empty; the tests below
+//! exercise the machinery with a synthetic chain.
 
 use crate::json::Json;
 
@@ -70,12 +76,13 @@ pub(crate) fn run_chain(
     Ok(root)
 }
 
-/// Upgrades a file of version `from` to [`crate::CURRENT_FORMAT_VERSION`].
+/// Upgrades a file of version `from`, older than
+/// [`crate::OLDEST_UNMIGRATED_VERSION`], to that version.
 ///
 /// # Errors
 /// See [`run_chain`].
 pub(crate) fn upgrade(root: Json, from: u32) -> Result<Json, MigrationError> {
-    run_chain(root, from, crate::CURRENT_FORMAT_VERSION, MIGRATIONS)
+    run_chain(root, from, crate::OLDEST_UNMIGRATED_VERSION, MIGRATIONS)
 }
 
 #[cfg(test)]
@@ -174,15 +181,15 @@ mod tests {
 
     #[test]
     fn shipped_chain_is_consistent() {
-        // Every shipped step reads an older version than the current one,
-        // and there is exactly one step per version.
+        // Every shipped step reads a version older than the oldest that
+        // loads without one, and there is exactly one step per version.
         for (index, step) in MIGRATIONS.iter().enumerate() {
-            assert!(step.from < crate::CURRENT_FORMAT_VERSION);
+            assert!(step.from < crate::OLDEST_UNMIGRATED_VERSION);
             assert!(MIGRATIONS.iter().skip(index + 1).all(|s| s.from != step.from));
         }
         let current = json(r#"{"formatVersion":1}"#);
         assert_eq!(
-            upgrade(current.clone(), crate::CURRENT_FORMAT_VERSION),
+            upgrade(current.clone(), crate::OLDEST_UNMIGRATED_VERSION),
             Ok(current.clone())
         );
         assert_eq!(upgrade(current, 0), Err(MigrationError::NoPath { from: 0 }));

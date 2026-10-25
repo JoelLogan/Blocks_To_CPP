@@ -225,10 +225,12 @@ struct Header {
 }
 
 /// The `formatVersion` of a file that loaded, when it is older than the
-/// current one (it was migrated in memory).
+/// oldest version that loads without a migration step (it was migrated in
+/// memory). Newer versions up to `MAX_FORMAT_VERSION` only add keys, so a
+/// file of one of them was not migrated (05 §5.7, ADR-0013).
 fn migrated_from(bytes: &[u8]) -> Option<u32> {
     let header: Header = serde_json::from_slice(bytes).ok()?;
-    (header.format_version < b2c_model::CURRENT_FORMAT_VERSION).then_some(header.format_version)
+    (header.format_version < b2c_model::OLDEST_UNMIGRATED_VERSION).then_some(header.format_version)
 }
 
 /// Loads project bytes read from a file, with the IPC errors of
@@ -723,6 +725,7 @@ mod tests {
     #[test]
     fn migrated_versions_are_older_ones_only() {
         assert_eq!(migrated_from(br#"{"formatVersion": 1, "x": [1]}"#), None);
+        assert_eq!(migrated_from(br#"{"formatVersion": 2}"#), None);
         assert_eq!(migrated_from(br#"{"formatVersion": 0}"#), Some(0));
         assert_eq!(migrated_from(br#"{"formatVersion": 7}"#), None);
         assert_eq!(migrated_from(b"not json"), None);
