@@ -5,7 +5,13 @@
 // typed values: it checks that every key and value has the shape the generator expects, so a
 // change of the Rust schema fails here, loudly, instead of producing wrong definitions.
 
-import type { CategoryId, DynamicCategory, FieldKind, Shape } from './catalog-types.ts';
+import type {
+  CategoryId,
+  DynamicCategory,
+  FieldKind,
+  RowExtraKind,
+  Shape,
+} from './catalog-types.ts';
 
 /** The largest catalog.json the generator reads, in bytes. */
 export const MAX_CATALOG_JSON_BYTES = 4 * 1024 * 1024;
@@ -142,6 +148,11 @@ export interface RustFieldDef {
   readonly default: string | boolean | null;
   /** The field's pattern (`type`), on `type`, `symbol_ref` and `symbol_decl` fields. */
   readonly type?: RustPattern;
+  /**
+   * A repeated field (w2.md §2.1), parts `NAME0`, `NAME1`, …; absent or `null` for a field shown
+   * once (the export may leave the key out while it is empty).
+   */
+  readonly repeat?: RustRepeat | null;
 }
 
 /** `b2c_catalog::Repeat`. */
@@ -179,16 +190,19 @@ export interface RustStatementDef {
   readonly when: string | null;
 }
 
-/** `b2c_catalog::ExtraDef`. Count defaults are written as text, such as `"1"`. */
+/**
+ * `b2c_catalog::ExtraDef`. Count defaults are written as text, such as `"1"`. The row extras
+ * `params`, `fields` and `values` (w2.md §2.1) are written like `params`.
+ */
 export interface RustExtraDef {
   readonly name: string;
-  readonly kind: 'count' | 'flag' | 'params';
+  readonly kind: 'count' | 'flag' | RowExtraKind;
   readonly min: number;
   readonly max: number;
   readonly default: string | boolean | null;
-  /** The parameter types, as type terms. */
+  /** The types a row offers (`params` and `fields`), as type terms. */
   readonly types: readonly RustTypeJson[];
-  /** The class of types a parameter row accepts besides its `types` (`type_class`). */
+  /** The class of types a row accepts besides its `types` (`type_class`). */
   readonly typeClass?: RustTypeClass;
 }
 
@@ -231,6 +245,10 @@ export const CATEGORY_IDS: readonly CategoryId[] = [
   'loops',
   'io',
   'functions',
+  'collections',
+  'types',
+  'files',
+  'errors',
 ];
 const SHAPES: readonly Shape[] = ['hat', 'definition', 'statement', 'reporter', 'predicate'];
 const RUST_TYPE_CLASSES: readonly RustTypeClass[] = [
@@ -285,8 +303,9 @@ const FIELD_KINDS: readonly FieldKind[] = [
   'type',
   'symbol_decl',
   'symbol_ref',
+  'header',
 ];
-const EXTRA_KINDS = ['count', 'flag', 'params'] as const;
+const EXTRA_KINDS = ['count', 'flag', 'params', 'fields', 'values'] as const;
 const TOKEN_KINDS: readonly TokenKind[] = ['num', 'str', 'chr', 'ref', 'op', 'kw', 'text'];
 const DYNAMIC_KINDS: readonly DynamicCategory[] = ['variables', 'functions'];
 
@@ -382,7 +401,8 @@ function blockDef(value: unknown, path: string): RustBlockDef {
 }
 
 function fieldDef(value: unknown, path: string): RustFieldDef {
-  const o = object(value, path, ['name', 'kind', 'options', 'types', 'default', 'type']);
+  const keys = ['name', 'kind', 'options', 'types', 'default', 'type', 'repeat'] as const;
+  const o = object(value, path, keys);
   return {
     name: string(o.name, `${path}.name`),
     kind: oneOf(o.kind, `${path}.kind`, FIELD_KINDS),
@@ -390,6 +410,7 @@ function fieldDef(value: unknown, path: string): RustFieldDef {
     types: array(o.types, `${path}.types`, (v, p) => typeJson(v, p, 0)),
     default: nullable(o.default, `${path}.default`, stringOrBoolean),
     ...optional(o.type, `${path}.type`, (v, p) => ({ type: pattern(v, p, 0) })),
+    ...optional(o.repeat, `${path}.repeat`, (v, p) => ({ repeat: nullable(v, p, repeat) })),
   };
 }
 

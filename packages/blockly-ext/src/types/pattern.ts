@@ -41,7 +41,12 @@ export type TypePattern =
   | { readonly kind: 'lib'; readonly name: string; readonly args: readonly TypePattern[] }
   /** A type function: `elem(C)`. */
   | { readonly kind: 'fn'; readonly fn: TypeFn; readonly of: TypePattern }
-  /** `field:NAME` (M2): the type chosen in the type field `NAME`. */
+  /**
+   * `field:NAME` (M2): the type chosen in the type field `NAME`. On a repeated `symbol_decl` field
+   * whose `NAME` is a repeated type field with the same count, the type chosen in `NAME`'s part of
+   * the same index (docs/plans/m3-contracts/w2.md §2.1: a catch part's variable takes its type
+   * from that part's error type).
+   */
   | { readonly kind: 'field'; readonly field: string }
   /** `symbol` (M2, `field` null until the signature names it) or `symbol:NAME`. */
   | { readonly kind: 'symbol'; readonly field: string | null }
@@ -308,7 +313,14 @@ export interface BlockSigTs {
   readonly members: ReadonlyMap<string, string>;
   readonly symbolRefs: ReadonlySet<string>;
   readonly symbolDecls: ReadonlySet<string>;
+  /** The inputs with a `repeat`, by their base names. */
   readonly repeated: ReadonlySet<string>;
+  /**
+   * The fields with a `repeat` (w2.md §2.1, `repeated_fields` in sig.rs), with or without a
+   * pattern: `field:F` on a repeated field reads `F`'s part of the same index, and a repeated
+   * `symbol_decl` declares one symbol per part.
+   */
+  readonly repeatedFields: ReadonlySet<string>;
 }
 
 /**
@@ -325,6 +337,8 @@ export interface SignatureDef {
     readonly name: string;
     readonly kind: string;
     readonly type: TypePatternJson | null;
+    /** A repeated field (w2.md §2.1); absent or `null` for one shown once. */
+    readonly repeat?: unknown;
   }[];
   readonly inputs: readonly {
     readonly name: string;
@@ -358,7 +372,8 @@ const SIGNATURES = new WeakMap<SignatureDef, BlockSigTs | null>();
 /**
  * The signature of a catalog definition, built as `b2c-catalog`'s `build()` builds it: `symbolRefs`
  * and `symbolDecls` are the `symbol_ref` and `symbol_decl` fields that have a pattern, `repeated`
- * the inputs with a `repeat`, and M2's `symbol` names the block's one `symbol_ref` field. Kept per
+ * and `repeatedFields` the inputs and the fields with a `repeat`, and M2's `symbol` names the
+ * block's one `symbol_ref` field. Kept per
  * definition object. `null` when a pattern or a class does not read (the catalog checked them, so
  * only a damaged definition gets here): the block then keeps the M2 rules.
  */
@@ -394,7 +409,11 @@ function buildSignature(def: SignatureDef): BlockSigTs | null {
   const fields = new Map<string, TypePattern>();
   const symbolRefs = new Set<string>();
   const symbolDecls = new Set<string>();
+  const repeatedFields = new Set<string>();
   for (const field of def.fields) {
+    if (field.repeat !== null && field.repeat !== undefined) {
+      repeatedFields.add(field.name);
+    }
     if (field.type === null) {
       continue;
     }
@@ -448,6 +467,7 @@ function buildSignature(def: SignatureDef): BlockSigTs | null {
     symbolRefs,
     symbolDecls,
     repeated,
+    repeatedFields,
   };
 }
 
@@ -485,15 +505,21 @@ export class TypeEnv {
   private readonly classes: ReadonlyMap<string, TypeClass>;
   private readonly placeVar: string | null;
   private readonly members: ReadonlyMap<string, string>;
+  /** The repeated fields, whose parts `field:` reads by index. */
+  private readonly repeatedFields: ReadonlySet<string>;
   /** Each bound variable, its type and its binder (`null`: the place). */
   private readonly bound = new Map<string, { type: StaticType; by: PartName | null }>();
   /** Unbound variables that an empty part could have bound. */
   private readonly empty = new Set<string>();
 
-  constructor(sig: Pick<BlockSigTs, 'vars' | 'placeVar' | 'members'>) {
+  constructor(
+    sig: Pick<BlockSigTs, 'vars' | 'placeVar' | 'members'> &
+      Partial<Pick<BlockSigTs, 'repeatedFields'>>,
+  ) {
     this.classes = sig.vars;
     this.placeVar = sig.placeVar;
     this.members = sig.members;
+    this.repeatedFields = sig.repeatedFields ?? new Set();
   }
 
   /**
@@ -552,7 +578,10 @@ export class TypeEnv {
     return member === false ? 'outsideClass' : 'unknown';
   }
 
-  /** Resolves a pattern against what is bound; `index` is the part's index for `param:` and `member:`. */
+  /**
+   * Resolves a pattern against what is bound; `index` is the part's index for `param:`, `member:`
+   * and a `field:` that names a repeated field.
+   */
   resolve(pattern: TypePattern, parts: BlockParts, index: number | null): Resolution {
     const known = (part: PartType): Resolution =>
       part.kind === 'known' ? resolved(part.type) : MISSING;
@@ -600,8 +629,13 @@ export class TypeEnv {
         const type = applyTypeFn(pattern.fn, r.type);
         return type === null ? MISSING : resolved(type);
       }
-      case 'field':
-        return known(parts.field(pattern.field));
+      case 'field': {
+        if (!this.repeatedFields.has(pattern.field)) {
+          return known(parts.field(pattern.field));
+        }
+        // A repeated field's part of the same index (w2.md §2.1).
+        return index === null ? MISSING : known(parts.field(`${pattern.field}${String(index)}`));
+      }
       case 'symbol': {
         if (pattern.field === null) {
           return MISSING;

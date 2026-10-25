@@ -19,7 +19,7 @@ export {
 } from './symbol-ref';
 export { B2cTextField, type TextFieldConfig } from './text';
 export { B2cTextInputBase, MAX_FIELD_DISPLAY_CHARS, type TextEntryConfig } from './text-input-base';
-export { B2cTypeField, type TypeFieldConfig } from './type';
+export { B2cTypeField, NO_TYPE_LABEL, type TypeFieldConfig } from './type';
 export {
   FIELD_TYPE,
   MAX_NAME_CHARS,

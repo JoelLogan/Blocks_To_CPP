@@ -12,6 +12,7 @@ import {
   B2cTypeField,
   DEFAULT_EDITOR_SERVICES,
   FIELD_TYPE,
+  NO_TYPE_LABEL,
   catalogBlock,
   createCatalogField,
   readB2cField,
@@ -220,6 +221,23 @@ describe('every field kind', () => {
     expect(() => Blockly.fieldRegistry.fromJson({ type: FIELD_TYPE.type, types: 'int' })).toThrow(
       TypeError,
     );
+  });
+
+  it('let a type field list no types until the module gives some (w2.md §2.1)', () => {
+    const field = Blockly.fieldRegistry.fromJson({ type: FIELD_TYPE.type, types: [] });
+    expect(field).toBeInstanceOf(B2cTypeField);
+    if (!(field instanceof B2cTypeField)) {
+      return;
+    }
+    expect(field.listsTypes).toBe(false);
+    expect(field.getText()).toBe(NO_TYPE_LABEL);
+    // Nothing chosen: no value for the project file.
+    expect(readB2cField(field)).toBeNull();
+    expect(writeB2cField(field, { ref: 'sym_student' })).toBe(true);
+    expect(readB2cField(field)).toEqual({ ref: 'sym_student' });
+    // A field that lists types keeps every value, also the empty text.
+    const listed = new B2cTypeField(['int'], '');
+    expect(listed.hasType()).toBe(true);
   });
 
   it('start with the catalog defaults', () => {
@@ -783,6 +801,7 @@ describe('createCatalogField', () => {
         types: ['int'],
         default: null,
         type: null,
+        repeat: null,
       });
     expect(make('symbol_decl')).toBeInstanceOf(B2cSymbolDeclField);
     expect(make('symbol_ref')).toBeInstanceOf(B2cSymbolRefField);
@@ -791,5 +810,7 @@ describe('createCatalogField', () => {
     expect(make('text')).toBeInstanceOf(B2cTextField);
     expect(make('dropdown')).toBeInstanceOf(B2cDropdownField);
     expect(make('checkbox')).toBeInstanceOf(B2cCheckboxField);
+    // A header field (types.md §5.4) holds the header's text.
+    expect(make('header')).toBeInstanceOf(B2cTextField);
   });
 });

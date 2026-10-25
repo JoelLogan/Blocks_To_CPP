@@ -43,6 +43,7 @@ describe('normalize', () => {
           types: [],
           default: 'while',
           type: null,
+          repeat: null,
         },
       ],
       inputs: [
@@ -112,6 +113,157 @@ describe('normalize', () => {
       ),
     );
     expect(noDefault.blocks.at(-1)?.extra[0]?.default).toBeNull();
+  });
+
+  it('reads the row extras, repeated fields and header fields of milestone M3 (w2.md §2.1)', () => {
+    const rows = model((c) =>
+      c.blocks.push(
+        rustBlock('type.struct', {
+          category: 'types',
+          shape: 'definition',
+          label: { friendly: 'struct %NAME has …', cpp: 'struct %NAME { … };' },
+          field: [{ name: 'NAME', kind: 'symbol_decl', options: [], types: [], default: null }],
+          input: [
+            {
+              name: 'DEFAULT',
+              check: 'any',
+              optional: true,
+              repeat: { count: 'fields', plus: 0 },
+              default: [],
+            },
+          ],
+          extra: [
+            {
+              name: 'fields',
+              kind: 'fields',
+              min: 0,
+              max: 64,
+              default: null,
+              types: ['int', { 'std::vector': 'int' }],
+              typeClass: 'value',
+            },
+          ],
+        }),
+        rustBlock('type.enum', {
+          category: 'types',
+          shape: 'definition',
+          extra: [{ name: 'values', kind: 'values', min: 0, max: 64, default: null, types: [] }],
+        }),
+        rustBlock('error.try', {
+          category: 'errors',
+          label: { friendly: 'try %TRY catch %ERROR as %NAME %CATCH catch …', cpp: 'try' },
+          field: [
+            {
+              name: 'ERROR',
+              kind: 'type',
+              options: [],
+              types: ['std::exception', 'std::runtime_error'],
+              default: 'std::exception',
+              repeat: { count: 'catchCount', plus: 0 },
+            },
+            {
+              name: 'NAME',
+              kind: 'symbol_decl',
+              options: [],
+              types: [],
+              default: null,
+              type: { kind: 'field', field: 'ERROR' },
+              repeat: { count: 'catchCount', plus: 0 },
+            },
+            {
+              name: 'SHARED',
+              kind: 'checkbox',
+              options: [],
+              types: [],
+              default: false,
+              repeat: null,
+            },
+          ],
+          statement: [
+            { name: 'TRY', repeat: null, when: null },
+            { name: 'CATCH', repeat: { count: 'catchCount', plus: 0 }, when: null },
+          ],
+          extra: [{ name: 'catchCount', kind: 'count', min: 1, max: 8, default: '1', types: [] }],
+        }),
+        rustBlock('program.use_header', {
+          category: 'program',
+          shape: 'definition',
+          field: [{ name: 'HEADER', kind: 'header', options: [], types: [], default: '<cmath>' }],
+        }),
+      ),
+    );
+    const find = (id: string) => rows.blocks.find((b) => b.id === id);
+    expect(find('type.struct')?.category).toBe('types');
+    expect(find('type.struct')?.extra).toEqual([
+      {
+        name: 'fields',
+        kind: 'fields',
+        min: null,
+        max: 64,
+        default: null,
+        types: ['int', '{"std::vector":"int"}'],
+        typeClass: 'value',
+      },
+    ]);
+    expect(find('type.struct')?.inputs[0]?.repeat).toEqual({ count: 'fields', plus: 0 });
+    expect(find('type.enum')?.extra).toEqual([
+      {
+        name: 'values',
+        kind: 'values',
+        min: null,
+        max: 64,
+        default: null,
+        types: [],
+        typeClass: null,
+      },
+    ]);
+    const tryBlock = find('error.try');
+    expect(tryBlock?.category).toBe('errors');
+    expect(tryBlock?.fields.map((field) => [field.name, field.repeat])).toEqual([
+      ['ERROR', { count: 'catchCount', plus: 0 }],
+      ['NAME', { count: 'catchCount', plus: 0 }],
+      ['SHARED', null],
+    ]);
+    expect(tryBlock?.fields[1]?.type).toEqual({ kind: 'field', field: 'ERROR' });
+    expect(tryBlock?.labelParts).toEqual([
+      { text: 'try' },
+      { arg: 'TRY' },
+      { text: 'catch' },
+      { arg: 'ERROR' },
+      { text: 'as' },
+      { arg: 'NAME' },
+      { arg: 'CATCH' },
+      { text: 'catch' },
+      { repeat: true },
+    ]);
+    expect(find('program.use_header')?.fields[0]).toMatchObject({
+      kind: 'header',
+      default: '<cmath>',
+      repeat: null,
+    });
+  });
+
+  it('reads the categories W2 adds, also without entries', () => {
+    const categories = model((c) => {
+      for (const id of ['collections', 'types', 'files', 'errors']) {
+        c.toolbox.category.push({
+          id,
+          name: id,
+          icon: '?',
+          colour: id,
+          dynamic: null,
+          entry: [],
+        });
+      }
+    });
+    expect(categories.toolbox.slice(-4).map((category) => [category.id, category.entries])).toEqual(
+      [
+        ['collections', []],
+        ['types', []],
+        ['files', []],
+        ['errors', []],
+      ],
+    );
   });
 
   it('refuses defaults it cannot convert', () => {

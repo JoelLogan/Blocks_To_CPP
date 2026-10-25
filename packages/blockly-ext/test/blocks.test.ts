@@ -12,6 +12,7 @@ import {
   MUTATOR_NAME,
   PLACEHOLDER_TYPE,
   REPEAT_ANCHOR,
+  SHARED_FIELD,
   ZELOS_OUTPUT_SHAPE,
   B2cSymbolRefField,
   B2cTextField,
@@ -30,6 +31,7 @@ import {
   type BlockDefJson,
   type LayoutInput,
 } from '../src';
+import { w2Def } from '../src/mutators/w2-fixtures';
 import { headlessWorkspace, renderedBlock, renderedWorkspace, setUpBlocks } from './helpers';
 
 beforeEach(() => {
@@ -39,7 +41,10 @@ beforeEach(() => {
 /** The layout as `kind:name[items]` strings, for readable expectations. */
 function describeLayout(def: BlockDefJson): string[] {
   return blockLayout(def).inputs.map((input: LayoutInput) => {
-    const items = input.items.map((item) => (item.kind === 'label' ? `"${item.text}"` : item.name));
+    const items = input.items.map((item) => {
+      const text = item.kind === 'label' ? `"${item.text}"` : item.name;
+      return item.hidden === true ? `(${text})` : text;
+    });
     return `${input.kind}:${input.name}[${items.join(' ')}]`;
   });
 }
@@ -146,17 +151,48 @@ describe('registerB2cBlocks', () => {
 });
 
 describe('the catalog tables of this package', () => {
-  it('name a mutator for exactly the blocks with repeated or optional parts', () => {
-    const needsMutator = BLOCK_DEFS.filter(
-      (blockDef) =>
-        blockDef.extra.length > 0 ||
-        blockDef.inputs.some((input) => input.repeat !== null) ||
-        blockDef.statements.some(
-          (statement) => statement.repeat !== null || statement.when !== null,
-        ),
-    ).map((blockDef) => blockDef.id);
-    expect(Object.keys(MUTATOR_FOR_BLOCK).sort()).toEqual(needsMutator.sort());
+  // Until W2's integration step restores exact equality (docs/plans/m3-contracts/w2.md §2.13,
+  // §5.3), the table may name blocks the catalog does not have yet: every catalog block that needs
+  // a mutator has one, and every catalog block named needs one.
+  it('name a mutator for every catalog block with repeated or optional parts, and no other', () => {
+    const needsMutator = new Set(
+      BLOCK_DEFS.filter(
+        (blockDef) =>
+          blockDef.extra.length > 0 ||
+          blockDef.inputs.some((input) => input.repeat !== null) ||
+          blockDef.fields.some((field) => field.repeat !== null) ||
+          blockDef.statements.some(
+            (statement) => statement.repeat !== null || statement.when !== null,
+          ),
+      ).map((blockDef) => blockDef.id),
+    );
+    for (const id of needsMutator) {
+      expect(MUTATOR_FOR_BLOCK[id], id).toBeDefined();
+    }
+    for (const id of Object.keys(MUTATOR_FOR_BLOCK)) {
+      if (catalogBlock(id) !== undefined) {
+        expect(needsMutator.has(id), id).toBe(true);
+      }
+    }
     expect(new Set(Object.values(MUTATOR_FOR_BLOCK))).toEqual(new Set(Object.values(MUTATOR_NAME)));
+  });
+
+  it('name the mutators of W2’s blocks before the catalog has them (w2.md §2.13)', () => {
+    expect(MUTATOR_FOR_BLOCK['coll.list_of']).toBe(MUTATOR_NAME.items);
+    expect(MUTATOR_FOR_BLOCK['file.write']).toBe(MUTATOR_NAME.items);
+    for (const id of ['control.switch', 'error.try', 'file.for_each_line', 'file.open']) {
+      expect(MUTATOR_FOR_BLOCK[id], id).toBe(MUTATOR_NAME.if);
+    }
+    expect(MUTATOR_FOR_BLOCK['type.new']).toBe(MUTATOR_NAME.callArgs);
+    expect(MUTATOR_FOR_BLOCK['type.struct']).toBe(MUTATOR_NAME.params);
+    expect(MUTATOR_FOR_BLOCK['type.enum']).toBe(MUTATOR_NAME.params);
+  });
+
+  it('give the reference fields of W2’s blocks their kinds (w2.md §2.13)', () => {
+    expect(CATALOG_FIELD_OPTIONS['coll.add']?.['LIST']?.kinds).toBe('assignable');
+    expect(CATALOG_FIELD_OPTIONS['coll.item']?.['LIST']?.kinds).toBe('variables');
+    expect(CATALOG_FIELD_OPTIONS['type.enum_value']?.['ENUM']?.kinds).toBe('enums');
+    expect(CATALOG_FIELD_OPTIONS['var.flip']?.['VAR']?.kinds).toBe('assignable');
   });
 
   it('give every symbol reference field its kinds', () => {
@@ -224,8 +260,24 @@ describe('blockLayout', () => {
       labelParts: [{ text: 'try' }, { arg: 'BODY' }, { text: 'then' }, { arg: 'MODE' }],
       statementsNotInLabel: ['AFTER'],
       fields: [
-        { name: 'MODE', kind: 'checkbox', options: [], types: [], default: false, type: null },
-        { name: 'EXTRA', kind: 'checkbox', options: [], types: [], default: false, type: null },
+        {
+          name: 'MODE',
+          kind: 'checkbox',
+          options: [],
+          types: [],
+          default: false,
+          type: null,
+          repeat: null,
+        },
+        {
+          name: 'EXTRA',
+          kind: 'checkbox',
+          options: [],
+          types: [],
+          default: false,
+          type: null,
+          repeat: null,
+        },
       ],
       inputs: [
         {
@@ -248,6 +300,52 @@ describe('blockLayout', () => {
       'value:LIMIT["then" MODE EXTRA]',
       'statement:AFTER[]',
     ]);
+  });
+
+  it('leaves repeated fields to the mutator and hides SHARED with its words (w2.md §2.1)', () => {
+    expect(describeLayout(w2Def('error.try'))).toEqual([
+      'statement:TRY["try"]',
+      `anchor:${REPEAT_ANCHOR}[]`,
+    ]);
+    expect(blockLayout(w2Def('error.try')).mutatorParts).toEqual(['CATCH', 'ERROR', 'NAME']);
+    expect(describeLayout(w2Def('type.struct'))).toEqual([
+      'dummy:b2c_row0["struct" NAME]',
+      `anchor:${REPEAT_ANCHOR}[]`,
+      'dummy:b2c_row1["comparable" COMPARABLE "printable" PRINTABLE ("share with other modules") (SHARED)]',
+    ]);
+    // A SHARED field the label leaves out is hidden too.
+    const unlabelled: BlockDefJson = {
+      ...w2Def('type.enum'),
+      labelParts: [{ text: 'enum' }, { arg: 'NAME' }, { text: 'values' }, { repeat: true }],
+    };
+    expect(describeLayout(unlabelled)).toEqual([
+      'dummy:b2c_row0["enum" NAME]',
+      `anchor:${REPEAT_ANCHOR}[]`,
+      'dummy:b2c_row1[(SHARED)]',
+    ]);
+  });
+
+  it('creates the hidden SHARED field with its value but does not show it', () => {
+    const struct: BlockDefJson = { ...w2Def('type.struct'), id: 'test.struct_shared' };
+    Blockly.Blocks['test.struct_shared'] = blockDefinition(struct);
+    try {
+      const block = headlessWorkspace().newBlock(struct.id);
+      const shared = block.getField(SHARED_FIELD);
+      expect(shared).not.toBeNull();
+      expect(shared?.isVisible()).toBe(false);
+      expect(shared?.getValue()).toBe('FALSE');
+      const row = block.inputList.find(
+        (input) => shared !== null && input.fieldRow.includes(shared),
+      );
+      const words = row?.fieldRow.filter(
+        (field) =>
+          field instanceof Blockly.FieldLabel && field.getText() === 'share with other modules',
+      );
+      expect(words?.map((field) => field.isVisible())).toEqual([false]);
+      expect(block.getField('COMPARABLE')?.isVisible()).toBe(true);
+    } finally {
+      Reflect.deleteProperty(Blockly.Blocks, 'test.struct_shared');
+    }
   });
 
   it('shows the words of the label next to the fields they name, on the created block', () => {
@@ -283,8 +381,13 @@ describe('blockLayout', () => {
       const fields = layout.inputs.flatMap((input) =>
         input.items.flatMap((item) => (item.kind === 'field' ? [item.name] : [])),
       );
-      expect(fields.sort()).toEqual(blockDef.fields.map((field) => field.name).sort());
       const owned = new Set(layout.mutatorParts);
+      expect(fields.sort()).toEqual(
+        blockDef.fields
+          .map((field) => field.name)
+          .filter((name) => !owned.has(name))
+          .sort(),
+      );
       const fixedInputs = [
         ...blockDef.inputs.map((input) => input.name),
         ...blockDef.statements.map((s) => s.name),

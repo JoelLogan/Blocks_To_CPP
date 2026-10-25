@@ -129,6 +129,7 @@ describe('fields from the registry', () => {
         types: [],
         default: 'or',
         type: null,
+        repeat: null,
       });
       expect(field).toBeInstanceOf(Blockly.FieldDropdown);
       expect(field).not.toBeInstanceOf(Refusing);

@@ -45,9 +45,11 @@ import { isSymbolRefValue, type SymbolRefValue } from './values';
  * - `numeric`: the assignable ones holding a whole number, a decimal number or a character, or of
  *   a type the analysis could not tell (change, the update operators): text cannot be counted with
  *   (B2C-E0302) and true/false only with a warning (B2C-W0519);
- * - `functions`: functions (calls).
+ * - `functions`: functions (calls);
+ * - `enums`: enum definitions, not variables of an enum type (*enum value*'s `ENUM`,
+ *   docs/plans/m3-contracts/w2.md §2.3).
  */
-export type SymbolRefKinds = 'variables' | 'assignable' | 'numeric' | 'functions';
+export type SymbolRefKinds = 'variables' | 'assignable' | 'numeric' | 'functions' | 'enums';
 
 /** Options of a reference field. */
 export interface SymbolRefFieldConfig {
@@ -59,7 +61,31 @@ export interface SymbolRefFieldConfig {
   readonly ariaLabel?: string;
 }
 
-const KINDS: readonly SymbolRefKinds[] = ['variables', 'assignable', 'numeric', 'functions'];
+const KINDS: readonly SymbolRefKinds[] = [
+  'variables',
+  'assignable',
+  'numeric',
+  'functions',
+  'enums',
+];
+
+/** What the open menu is called, by kinds. */
+const MENU_LABELS: Readonly<Record<SymbolRefKinds, string>> = {
+  variables: 'Variables in scope',
+  assignable: 'Variables in scope',
+  numeric: 'Variables in scope',
+  functions: 'Functions in scope',
+  enums: 'Enums',
+};
+
+/** What the menu shows when there is nothing to choose, by kinds. */
+const EMPTY_LABELS: Readonly<Record<SymbolRefKinds, string>> = {
+  variables: 'no variables here',
+  assignable: 'no variables here',
+  numeric: 'no variables here',
+  functions: 'no functions yet',
+  enums: 'no enums yet',
+};
 
 /** The value types `change` and the update operators work on (`error`: not known). */
 const NUMERIC_TYPES: ReadonlySet<string> = new Set(['int', 'double', 'char', 'error']);
@@ -86,6 +112,8 @@ export function symbolMatchesKinds(symbol: SymbolInfo, kinds: SymbolRefKinds): b
   switch (kinds) {
     case 'functions':
       return symbol.kind === 'function';
+    case 'enums':
+      return symbol.kind === 'enum';
     case 'assignable':
       return isAssignable(symbol);
     case 'numeric':
@@ -117,9 +145,7 @@ export class B2cSymbolRefField extends Blockly.FieldDropdown {
     super(Blockly.Field.SKIP_SETUP);
     this.kinds =
       config?.kinds !== undefined && KINDS.includes(config.kinds) ? config.kinds : 'variables';
-    this.menuLabel =
-      config?.ariaLabel ??
-      (this.kinds === 'functions' ? 'Functions in scope' : 'Variables in scope');
+    this.menuLabel = config?.ariaLabel ?? MENU_LABELS[this.kinds];
     this.maxDisplayLength = 40;
     // The generator runs again each time the menu opens, so the list is always current.
     this.setOptions(function (this: Blockly.FieldDropdown): Blockly.MenuOption[] {
@@ -244,10 +270,7 @@ export class B2cSymbolRefField extends Blockly.FieldDropdown {
       options.unshift([this.labelFor(current), current]);
     }
     if (options.length === 0) {
-      options.push([
-        this.kinds === 'functions' ? 'no functions yet' : 'no variables here',
-        NOTHING,
-      ]);
+      options.push([EMPTY_LABELS[this.kinds], NOTHING]);
     }
     return options;
   }

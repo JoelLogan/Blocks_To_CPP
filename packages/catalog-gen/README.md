@@ -30,13 +30,19 @@ docs/reference/blocks/*.md                      the block reference
   friendly label into text, argument (`%NAME`) and repeat (`…`) parts, gives
   every block its signature keys (`typeVars`, `order`, `placeVar`, `members`,
   `headers`, `optionHeaders`, and each part's `type` pattern, `assign` and
-  `typeClass`; empty where the export leaves them out) and writes the entries
-  of `types` lists as type field values (a name as it is, a template by its
-  key). The output pattern stays the text the catalog writes; the editor reads
+  `typeClass`; empty where the export leaves them out), gives every field its
+  `repeat` (`null` for a field shown once) and writes the entries of `types`
+  lists as type field values (a name as it is, a template by its key). The
+  keys of milestone M3's wave W2
+  ([w2.md §2.1](../../docs/plans/m3-contracts/w2.md#21-catalog-schema-additions-p0))
+  are read too: the row extras `fields` and `values` beside `params`, repeated
+  fields, a repeat counted by a row extra, `header` fields and the categories
+  `collections`, `types`, `files` and `errors`. The output pattern stays the text the catalog writes; the editor reads
   it (`packages/blockly-ext/src/types/pattern.ts`), and builds each block's
   signature from these keys as `b2c-catalog` does.
-- `docs/reference/blocks/` has an index and one page per toolbox category. The
-  folder holds generated files only: the generator removes pages it no longer
+- `docs/reference/blocks/` has an index and one page per toolbox category
+  that has blocks (or that the editor fills, such as Variables). The folder
+  holds generated files only: the generator removes pages it no longer
   writes.
 
 All validation stays in Rust. The generator never reads TOML; it only checks

@@ -46,6 +46,18 @@ export interface ParamRow {
 }
 
 /**
+ * One row of any row extra (docs/plans/m3-contracts/w2.md §2.1), as the rows mutator keeps it: a
+ * `params` row has a type and a mode, a `fields` row a type (`mode` `null`), a `values` row neither.
+ * A type is kept by its key, as type fields keep one.
+ */
+export interface RowState {
+  sym: string;
+  name: string;
+  type: string | null;
+  mode: ParamMode | null;
+}
+
+/**
  * A block with one of the b2c mutators. Its mutation state is exactly the BDM `extra` of the block
  * (05 §5.4): counts as numbers, flags as booleans, `params` as an array of rows.
  */

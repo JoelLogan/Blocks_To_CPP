@@ -64,6 +64,7 @@ export {
   ERROR_JSON,
   ERROR_TYPE,
   inClass,
+  fieldParts,
   inputParts,
   isFitError,
   isTypeClass,

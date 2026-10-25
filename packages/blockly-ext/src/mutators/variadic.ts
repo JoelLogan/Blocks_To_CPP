@@ -11,6 +11,18 @@
  * When the definition gains or loses a parameter, the call offers only the button that brings it
  * back in line. Calls in the toolbox show none: the toolbox builds them from the analysis with one
  * argument per parameter, and blocks there cannot be edited.
+ *
+ * Milestone M3's wave W2 (docs/plans/m3-contracts/w2.md §2.1) adds:
+ *
+ * - call arguments named by a struct: on a block whose call arguments follow a `type` field (*new
+ *   … with*'s `TYPE`) instead of a function reference, the struct's fields label the parts and
+ *   set how many there are, as a function's parameters do for a call;
+ * - repeated fields (`ERROR0`, `NAME0` of *try*): each copy's fields are created with the copy, in
+ *   front of its next input (or on a row `B2C_FIELDS<copy>` of their own), and keep their values
+ *   while their copy is removed, so adding it again or undoing brings back the same values (a
+ *   declaration its symbol ID). A new declaration gets a fresh symbol ID and the editor's default
+ *   name (the `declName` hook);
+ * - flag-only branches: a spec without a count has only its flag-gated statements.
  */
 import * as Blockly from 'blockly/core';
 
@@ -24,7 +36,7 @@ import {
   type MutatorController,
   type RowItem,
 } from './controller';
-import { createJoinField } from './fields';
+import { createJoinField, createMemberField } from './fields';
 import { mutatorHooks } from './hooks';
 import { displayName, MirrorLabel } from './labels';
 import { placeParts, REGISTRATION_ANCHOR, removePart, restoreShadow, silently } from './parts';
@@ -36,6 +48,7 @@ import {
   writeVariadicExtra,
 } from './state';
 import { B2C_MUTATOR_CALL_ARGS, type B2cMutatorName } from './types';
+import { termFromKey } from '../types/static-type';
 
 /** The dummy input holding the mutator's buttons. */
 export const BUTTONS_INPUT = 'B2C_BUTTONS';
@@ -43,6 +56,11 @@ export const BUTTONS_INPUT = 'B2C_BUTTONS';
 export const JOIN_INPUT = 'B2C_JOIN';
 /** The prefix of the label field naming a call argument (`B2C_LABEL_ARG0`). */
 export const ARG_LABEL_PREFIX = 'B2C_LABEL_';
+/**
+ * The prefix of the dummy input holding a copy's repeated fields when no input of the copy follows
+ * them (`B2C_FIELDS0`, w2.md §2.1).
+ */
+export const FIELDS_INPUT_PREFIX = 'B2C_FIELDS';
 
 /** A symbol reference field's value: `{ref}` (a `b2c_symbol_ref`), or the ID as plain text. */
 function refOf(value: unknown): string | null {
@@ -57,8 +75,18 @@ function refOf(value: unknown): string | null {
 }
 
 /**
- * The parameter names of the function a call names (`null` for a name that is not known), or
- * `null` when the function is not known.
+ * The struct a type field's value names (a `{"ref": id}` term, by its key), or `null` for a
+ * fundamental type, a template or nothing.
+ */
+function structRefOf(value: unknown): string | null {
+  const term = typeof value === 'string' && value.startsWith('{') ? termFromKey(value) : null;
+  return term?.kind === 'ref' ? term.id : null;
+}
+
+/**
+ * The parameter names of the function a call names, or the field names of the struct a *new …
+ * with* names (`null` for a name that is not known), or `null` when that function or struct is not
+ * known.
  */
 type CalledParameters = readonly (string | null)[] | null;
 
@@ -72,8 +100,15 @@ export class VariadicController implements MutatorController {
   private readonly block: Blockly.Block;
   private readonly spec: VariadicSpec;
   private readonly mutator: B2cMutatorName;
-  /** The name of the field whose symbol labels the arguments (`FUNC`), for call arguments. */
+  /**
+   * The name of the field whose symbol labels the arguments, for call arguments: a function
+   * reference (`FUNC`), or a type field naming a struct (`TYPE`, w2.md §2.1).
+   */
   private readonly refField: string | null;
+  /** Whether {@link refField} names a struct (a `type` field) rather than a function. */
+  private readonly refIsStruct: boolean;
+  /** The saved states of the repeated fields of removed copies, by part name (`NAME1`). */
+  private readonly fieldStates = new Map<string, unknown>();
   private state: VariadicState;
   /** Shadow states of removed value parts, by input name. */
   private readonly shadows = new Map<string, Blockly.serialization.blocks.State>();
@@ -84,12 +119,14 @@ export class VariadicController implements MutatorController {
     this.block = block;
     this.spec = spec;
     this.mutator = mutator;
-    this.refField =
-      mutator === B2C_MUTATOR_CALL_ARGS
-        ? (blockDef(block.type)?.fields.find((field) => field.kind === 'symbol_ref')?.name ?? null)
-        : null;
+    const fields = blockDef(block.type)?.fields ?? [];
+    const reference = fields.find((field) => field.kind === 'symbol_ref');
+    const typed = fields.find((field) => field.kind === 'type');
+    const ref = mutator === B2C_MUTATOR_CALL_ARGS ? (reference ?? typed ?? null) : null;
+    this.refField = ref?.name ?? null;
+    this.refIsStruct = ref?.kind === 'type';
     this.state = {
-      count: spec.count.default,
+      count: spec.count?.default ?? 0,
       flags: new Map(spec.flags.map((flag) => [flag.name, flag.default])),
     };
     this.joinInput = this.setUpJoinField();
@@ -119,21 +156,45 @@ export class VariadicController implements MutatorController {
 
   private isPartName(name: string): boolean {
     return (
-      this.spec.members.some((member) => partIndex(name, member.name) !== null) ||
+      this.spec.members.some(
+        (member) => member.kind !== 'field' && partIndex(name, member.name) !== null,
+      ) ||
+      (this.trailingFields().length > 0 && partIndex(name, FIELDS_INPUT_PREFIX) !== null) ||
       this.spec.gated.some((gated) => gated.name === name)
     );
+  }
+
+  /** The repeated fields after the last input of a copy: shown on a row of their own. */
+  private trailingFields(): MemberSpec[] {
+    const members = this.spec.members;
+    let last = -1;
+    members.forEach((member, index) => {
+      if (member.kind !== 'field') {
+        last = index;
+      }
+    });
+    return members.slice(last + 1);
+  }
+
+  /** The inputs of one copy, in order: its inputs and, if it has trailing fields, their row. */
+  private copyInputs(copy: number): string[] {
+    const names = this.spec.members
+      .filter((member) => member.kind !== 'field')
+      .map((member) => `${member.name}${String(copy)}`);
+    if (this.trailingFields().length > 0) {
+      names.push(`${FIELDS_INPUT_PREFIX}${String(copy)}`);
+    }
+    return names;
   }
 
   private readonly isOwned = (input: Blockly.Input): boolean =>
     input === this.joinInput || input.name === BUTTONS_INPUT || this.isPartName(input.name);
 
-  /** The value and statement parts `state` has, in block order. */
+  /** The value and statement parts `state` has (with rows of fields), in block order. */
   private wantedParts(state: VariadicState): string[] {
     const names: string[] = [];
     for (let copy = 0; copy < this.copies(state); copy += 1) {
-      for (const member of this.spec.members) {
-        names.push(`${member.name}${String(copy)}`);
-      }
+      names.push(...this.copyInputs(copy));
     }
     for (const gated of this.spec.gated) {
       if (state.flags.get(gated.flag) === true) {
@@ -154,8 +215,8 @@ export class VariadicController implements MutatorController {
     };
     const copies = this.copies(this.state);
     for (let copy = 0; copy < copies; copy += 1) {
-      for (const member of this.spec.members) {
-        push(`${member.name}${String(copy)}`);
+      for (const name of this.copyInputs(copy)) {
+        push(name);
       }
       if (copy === 0 && this.joinInput !== null) {
         inputs.push(this.joinInput);
@@ -178,6 +239,7 @@ export class VariadicController implements MutatorController {
     const wanted = new Set(this.wantedParts(next));
     for (const input of [...this.block.inputList]) {
       if (this.isPartName(input.name) && !wanted.has(input.name)) {
+        this.saveFieldStates(input);
         removePart(this.block, input.name, this.shadows);
       }
     }
@@ -193,15 +255,99 @@ export class VariadicController implements MutatorController {
     placeParts(this.block, this.order(buttons), this.isOwned, this.spec.anchorArgs);
   }
 
-  /** The member and copy a part name stands for. */
-  private memberOf(name: string): { member: MemberSpec; position: number; copy: number } | null {
-    for (const [position, member] of this.spec.members.entries()) {
-      const copy = partIndex(name, member.name);
+  /**
+   * The member and copy an input name stands for, with the repeated fields shown in front of it:
+   * a value or statement member, or (`member` `null`) the row of a copy's trailing fields.
+   */
+  private memberOf(name: string): {
+    member: MemberSpec | null;
+    position: number;
+    copy: number;
+    fields: MemberSpec[];
+  } | null {
+    const members = this.spec.members;
+    const fieldsRow = partIndex(name, FIELDS_INPUT_PREFIX);
+    if (fieldsRow !== null) {
+      const fields = this.trailingFields();
+      return { member: null, position: members.length - fields.length, copy: fieldsRow, fields };
+    }
+    for (const [position, member] of members.entries()) {
+      const copy = member.kind === 'field' ? null : partIndex(name, member.name);
       if (copy !== null) {
-        return { member, position, copy };
+        // The repeated fields between the previous input of the copy and this one.
+        let first = position;
+        while (first > 0 && members[first - 1]?.kind === 'field') {
+          first -= 1;
+        }
+        return { member, position: first, copy, fields: members.slice(first, position) };
       }
     }
     return null;
+  }
+
+  /** Keeps the states of the repeated fields an input holds, before it is removed. */
+  private saveFieldStates(input: Blockly.Input): void {
+    for (const field of input.fieldRow) {
+      const name = field.name;
+      if (name === undefined || !this.isFieldPart(name)) {
+        continue;
+      }
+      try {
+        this.fieldStates.set(name, field.saveState());
+      } catch {
+        this.fieldStates.delete(name);
+      }
+    }
+  }
+
+  /**
+   * The declaration a new part of a repeated declaration field starts with: a fresh symbol ID and
+   * the editor's default name (the `declName` hook), else the field's name in lower case. Other
+   * fields need none (`declares` false gives an empty one, never used).
+   */
+  private newDecl(declares: boolean, field: string): { sym: string; name: string } {
+    if (!declares) {
+      return { sym: '', name: '' };
+    }
+    const hooks = mutatorHooks();
+    let name: string | null;
+    try {
+      name = hooks.declName?.(this.block, field) ?? null;
+    } catch {
+      // A failing hook must not break the block: the mutators' own name stands in.
+      name = null;
+    }
+    return { sym: hooks.newSymbolId(), name: name ?? field.toLowerCase() };
+  }
+
+  /** Whether `name` is a part of one of the repeated fields (`NAME1`). */
+  private isFieldPart(name: string): boolean {
+    return this.spec.members.some(
+      (member) => member.kind === 'field' && partIndex(name, member.name) !== null,
+    );
+  }
+
+  /**
+   * A part of a repeated field: its kept state when its copy comes back, otherwise the catalog
+   * default (a declaration with a fresh symbol ID and the editor's default name). Its value is set
+   * before it is attached, so creating it fires no event.
+   */
+  private createFieldPart(member: MemberSpec, name: string): Blockly.Field | null {
+    const def = member.field;
+    if (def === null) {
+      return null;
+    }
+    const field = createMemberField(def, this.newDecl(def.kind === 'symbol_decl', def.name));
+    const kept = this.fieldStates.get(name);
+    this.fieldStates.delete(name);
+    if (kept !== undefined) {
+      try {
+        field.loadState(kept);
+      } catch {
+        // A state the field cannot take back: it keeps its default.
+      }
+    }
+    return field;
   }
 
   private createPart(name: string): void {
@@ -217,11 +363,13 @@ export class VariadicController implements MutatorController {
     if (found === null) {
       return;
     }
-    const { member, position, copy } = found;
+    const { member, position, copy, fields } = found;
     const input =
-      member.kind === 'value'
-        ? this.block.appendValueInput(name)
-        : this.block.appendStatementInput(name);
+      member === null
+        ? this.block.appendDummyInput(name)
+        : member.kind === 'value'
+          ? this.block.appendValueInput(name)
+          : this.block.appendStatementInput(name);
     if (position === 0 && copy === 0) {
       for (const text of this.spec.groupLeading) {
         input.appendField(new Blockly.FieldLabel(text));
@@ -235,6 +383,19 @@ export class VariadicController implements MutatorController {
       if (joinField !== null && (this.joinInput === null || copy >= 2)) {
         input.appendField(new MirrorLabel(joinField.name));
       }
+    }
+    for (const fieldMember of fields) {
+      for (const text of fieldMember.leading) {
+        input.appendField(new Blockly.FieldLabel(text));
+      }
+      const part = `${fieldMember.name}${String(copy)}`;
+      const field = this.createFieldPart(fieldMember, part);
+      if (field !== null) {
+        input.appendField(field, part);
+      }
+    }
+    if (member === null) {
+      return;
     }
     for (const text of member.leading) {
       input.appendField(new Blockly.FieldLabel(text));
@@ -302,28 +463,40 @@ export class VariadicController implements MutatorController {
   /**
    * The parameters of the called function as the latest analysis knows them (their names, `null`
    * for a name that is not known), or `null` when the function is not known: nothing is chosen,
-   * the reference is missing or not a function, or the analysis has not seen the block yet. Always
-   * `null` for the other mutators.
+   * the reference is missing or not a function, or the analysis has not seen the block yet. For a
+   * block whose arguments follow a struct (*new … with*), the struct's fields, in the same way.
+   * Always `null` for the other mutators.
    *
-   * The editor's `functionParams` answers without a scope query when it has one; otherwise the
-   * function is looked up among the symbols visible at the block.
+   * The editor's `functionParams` (`structFields`) answers without a scope query when it has one;
+   * otherwise the function (struct) is looked up among the symbols visible at the block.
    */
   private calledParameters(): CalledParameters {
     const symbols = mutatorHooks().symbols;
     if (symbols === null || this.refField === null) {
       return null;
     }
-    const ref = refOf(this.block.getField(this.refField)?.getValue());
+    const value: unknown = this.block.getField(this.refField)?.getValue();
+    const ref = this.refIsStruct ? structRefOf(value) : refOf(value);
     if (ref === null) {
       return null;
     }
     try {
-      const params =
-        symbols.functionParams === undefined
-          ? symbols
-              .symbolsAt(this.block.id, null)
-              .find((symbol) => symbol.id === ref && symbol.kind === 'function')?.params
-          : symbols.functionParams(this.block.id, ref);
+      let params: readonly string[] | null | undefined;
+      if (this.refIsStruct) {
+        params =
+          symbols.structFields === undefined
+            ? symbols
+                .symbolsAt(this.block.id, null)
+                .find((symbol) => symbol.id === ref && symbol.kind === 'struct')?.fields
+            : symbols.structFields(this.block.id, ref);
+      } else {
+        params =
+          symbols.functionParams === undefined
+            ? symbols
+                .symbolsAt(this.block.id, null)
+                .find((symbol) => symbol.id === ref && symbol.kind === 'function')?.params
+            : symbols.functionParams(this.block.id, ref);
+      }
       return params === undefined || params === null
         ? null
         : params.map((param) => symbols.nameOf(param));
@@ -367,9 +540,12 @@ export class VariadicController implements MutatorController {
       const words = quoted(this.spec.joinTexts);
       return { add: `Add ${words}`, remove: `Remove the last ${words}` };
     }
-    return this.mutator === B2C_MUTATOR_CALL_ARGS
-      ? { add: 'Add an argument', remove: 'Remove the last argument' }
-      : { add: 'Add an input', remove: 'Remove the last input' };
+    if (this.mutator === B2C_MUTATOR_CALL_ARGS) {
+      return this.refIsStruct
+        ? { add: 'Add a field value', remove: 'Remove the last field value' }
+        : { add: 'Add an argument', remove: 'Remove the last argument' };
+    }
+    return { add: 'Add an input', remove: 'Remove the last input' };
   }
 
   /**
@@ -381,6 +557,10 @@ export class VariadicController implements MutatorController {
     readonly add: boolean;
   } {
     const { count } = this.state;
+    if (this.spec.count === null) {
+      // Flag-only branches: no count to change.
+      return { remove: false, add: false };
+    }
     const max = Math.min(this.spec.count.max, MAX_VARIADIC_PARTS);
     let remove = count > this.spec.count.min && count > 0;
     let add = count < max;
@@ -489,11 +669,13 @@ export class VariadicController implements MutatorController {
 
   private changeCount(delta: 1 | -1, key: string): void {
     const { count, flags } = this.state;
+    const spec = this.spec.count;
+    if (spec === null) {
+      return;
+    }
     const next = count + delta;
     const allowed =
-      delta > 0
-        ? next <= Math.min(this.spec.count.max, MAX_VARIADIC_PARTS)
-        : next >= this.spec.count.min && next >= 0;
+      delta > 0 ? next <= Math.min(spec.max, MAX_VARIADIC_PARTS) : next >= spec.min && next >= 0;
     if (allowed) {
       this.change(key, { count: next, flags });
     }

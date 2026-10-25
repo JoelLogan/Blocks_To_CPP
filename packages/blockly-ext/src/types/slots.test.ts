@@ -66,6 +66,8 @@ interface RustDefJson {
     readonly name: string;
     readonly kind: string;
     readonly type?: TypePatternJson | null;
+    /** A repeated field (docs/plans/m3-contracts/w2.md §2.1). */
+    readonly repeat?: unknown;
   }[];
   readonly input: readonly {
     readonly name: string;
@@ -101,6 +103,7 @@ function signatureDef(def: RustDefJson): SignatureDef {
       name: field.name,
       kind: field.kind,
       type: field.type ?? null,
+      repeat: field.repeat ?? null,
     })),
     inputs: def.input.map((input) => ({
       name: input.name,
@@ -316,5 +319,81 @@ describe('pattern text', () => {
       expect(parsePatternText(text), text).toBeNull();
     }
     expect(parsePatternText(`${'elem('.repeat(8)}C${')'.repeat(8)}`)).not.toBeNull();
+  });
+});
+
+describe('repeated fields (w2.md §2.1)', () => {
+  // *try*'s catch parts: `ERROR` a repeated type field, `NAME` a repeated declaration typed
+  // `field:ERROR`, so each catch variable has the type of its own part's error.
+  const tryDef: SignatureDef = {
+    output: null,
+    typeVars: {},
+    order: [{ field: 'ERROR' }, { field: 'NAME' }],
+    placeVar: null,
+    members: {},
+    fields: [
+      { name: 'ERROR', kind: 'type', type: null, repeat: { count: 'catchCount', plus: 0 } },
+      {
+        name: 'NAME',
+        kind: 'symbol_decl',
+        type: { kind: 'field', field: 'ERROR' },
+        repeat: { count: 'catchCount', plus: 0 },
+      },
+    ],
+    inputs: [],
+  };
+  const errorType = (name: string): StaticType => {
+    const parsed = parseType(name);
+    if (parsed === null) {
+      throw new Error(name);
+    }
+    return parsed;
+  };
+
+  it('declare each part with the type of the same part of the field it names', () => {
+    const errors: Readonly<Record<string, string>> = {
+      ERROR0: 'std::invalid_argument',
+      ERROR1: 'std::runtime_error',
+    };
+    const typing = typeBlock(
+      tryDef,
+      {
+        field: (name) =>
+          Object.hasOwn(errors, name)
+            ? { kind: 'known', type: errorType(errors[name] ?? '') }
+            : EMPTY,
+        input: () => EMPTY,
+        count: (base) => (base === 'ERROR' || base === 'NAME' ? 2 : 0),
+        param: () => EMPTY,
+        member: () => EMPTY,
+        chosenMember: () => UNKNOWN,
+        result: () => EMPTY,
+      },
+      null,
+      facts(''),
+    );
+    expect(typingJson(typing)).toMatchObject({
+      declares: { NAME0: 'std::invalid_argument', NAME1: 'std::runtime_error' },
+    });
+    expect(blockSignature(tryDef)?.repeatedFields).toEqual(new Set(['ERROR', 'NAME']));
+    expect(blockSignature(tryDef)?.repeated).toEqual(new Set());
+  });
+
+  it('declare an error type for a part whose field part is empty', () => {
+    const typing = typeBlock(
+      tryDef,
+      {
+        field: () => EMPTY,
+        input: () => EMPTY,
+        count: () => 1,
+        param: () => EMPTY,
+        member: () => EMPTY,
+        chosenMember: () => UNKNOWN,
+        result: () => EMPTY,
+      },
+      null,
+      facts(''),
+    );
+    expect(typingJson(typing)).toMatchObject({ declares: { NAME0: 'error' } });
   });
 });

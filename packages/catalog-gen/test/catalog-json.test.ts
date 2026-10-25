@@ -178,6 +178,25 @@ describe('readCatalogJson', () => {
       'statement[0].repeat.plus should be a whole number',
     ],
     [
+      'a bad field repeat',
+      (c) =>
+        c.blocks.push(
+          rustBlock('x.y', {
+            field: [
+              {
+                name: 'A',
+                kind: 'checkbox',
+                options: [],
+                types: [],
+                default: false,
+                repeat: { count: 'n' },
+              },
+            ],
+          }),
+        ),
+      'field[0].repeat.plus should be a whole number',
+    ],
+    [
       'a bad extra kind',
       (c) =>
         c.blocks.push(

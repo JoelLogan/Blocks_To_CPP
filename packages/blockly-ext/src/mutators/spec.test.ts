@@ -137,12 +137,14 @@ describe('paramsSpec', () => {
     const spec = paramsSpec(def('func.define'));
     expect(spec).toEqual({
       kind: 'params',
+      rowKind: 'params',
       blockType: 'func.define',
       groupLeading: ['with'],
       name: 'params',
       max: 16,
       types: ['int', 'double', 'bool', 'char', 'std::string'],
       typeClass: 'value',
+      rowInputs: [],
       anchorArgs: ['RETURNS', 'BODY'],
     });
   });

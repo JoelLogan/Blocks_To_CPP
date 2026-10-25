@@ -2,9 +2,25 @@
 // §3.11.1). The generator copies this file into packages/blockly-ext/src/generated/catalog.ts, so
 // the generated module is self-contained; it must not import anything.
 
-/** A toolbox category, in toolbox order (spec §3.7). */
+/**
+ * A toolbox category, in toolbox order (spec §3.7). Milestone M3's wave W2 adds `collections`,
+ * `types`, `files` and `errors` (docs/plans/m3-contracts/w2.md §2.1); a category may have no
+ * entries yet, and the editor does not show it then.
+ */
 export type CategoryId =
-  'program' | 'variables' | 'math' | 'logic' | 'text' | 'control' | 'loops' | 'io' | 'functions';
+  | 'program'
+  | 'variables'
+  | 'math'
+  | 'logic'
+  | 'text'
+  | 'control'
+  | 'loops'
+  | 'io'
+  | 'functions'
+  | 'collections'
+  | 'types'
+  | 'files'
+  | 'errors';
 
 /** A block's shape (spec §3.3). */
 export type Shape = 'hat' | 'definition' | 'statement' | 'reporter' | 'predicate';
@@ -40,9 +56,12 @@ export type TypeClass =
   | 'output_file'
   | 'exception';
 
-/** The kind of a field. */
+/**
+ * The kind of a field. `header` (types.md §5.4) holds a standard header from the header table as
+ * its text, such as `<cmath>`.
+ */
 export type FieldKind =
-  'dropdown' | 'checkbox' | 'text' | 'number' | 'type' | 'symbol_decl' | 'symbol_ref';
+  'dropdown' | 'checkbox' | 'text' | 'number' | 'type' | 'symbol_decl' | 'symbol_ref' | 'header';
 
 /**
  * The type of the value a reporter or predicate gives: its pattern as catalog files write it
@@ -110,7 +129,10 @@ export type TokenJson =
   | { readonly kw: string }
   | { readonly text: string };
 
-/** Repetition: parts `NAME0` to `NAME{count + plus - 1}`, where `count` is an `extra` key. */
+/**
+ * Repetition: parts `NAME0` to `NAME{count + plus - 1}`, where `count` is an `extra` key: a count,
+ * or a row extra (`params`, `fields`), whose number of rows is the count (w2.md §2.1).
+ */
 export interface RepeatJson {
   readonly count: string;
   readonly plus: number;
@@ -131,6 +153,11 @@ export interface FieldDefJson {
   readonly default: string | boolean | null;
   /** The field's pattern, on `type`, `symbol_ref` and `symbol_decl` fields; `null` for none. */
   readonly type: TypePatternJson | null;
+  /**
+   * A repeated field (w2.md §2.1): parts `NAME0`, `NAME1`, …, each with the field's default, drawn
+   * by the block's mutator as members of its repeated group; `null` for a field shown once.
+   */
+  readonly repeat: RepeatJson | null;
 }
 
 /** A value-input definition. */
@@ -156,19 +183,32 @@ export interface StatementDefJson {
   readonly when: string | null;
 }
 
+/**
+ * The kinds of row extras (w2.md §2.1): arrays of rows, each declaring a symbol. `params` rows are
+ * `{sym, name, type, mode}` (a function's parameters), `fields` rows `{sym, name, type}` (a
+ * struct's fields) and `values` rows `{sym, name}` (an enum's values). A row extra has the name of
+ * its kind.
+ */
+export type RowExtraKind = 'params' | 'fields' | 'values';
+
 /** A mutator-state (`extra`) key definition. */
 export interface ExtraDefJson {
   readonly name: string;
-  readonly kind: 'count' | 'flag' | 'params';
+  readonly kind: 'count' | 'flag' | RowExtraKind;
   /** The smallest count (counts only). */
   readonly min: number | null;
-  /** The largest count, or the most parameter rows (counts and params). */
+  /** The largest count, or the most rows (counts and row extras). */
   readonly max: number | null;
   /** A count's or a flag's default. */
   readonly default: number | boolean | null;
-  /** The parameter types (params only), as type field values (see {@link FieldDefJson.types}). */
+  /**
+   * The types a row offers (`params` and `fields` rows), as type field values (see
+   * {@link FieldDefJson.types}).
+   */
   readonly types: readonly string[];
-  /** The class of types a parameter row accepts besides its `types` (params only), or `null`. */
+  /**
+   * The class of types a row accepts besides its `types` (`params` and `fields` rows), or `null`.
+   */
   readonly typeClass: TypeClass | null;
 }
 

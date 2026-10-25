@@ -9,6 +9,7 @@ export { B2C_CSS_CLASS, registerB2cCss } from './css';
 export {
   blockLayout,
   rowName,
+  SHARED_FIELD,
   type BlockLayout,
   type LayoutInput,
   type LayoutItem,

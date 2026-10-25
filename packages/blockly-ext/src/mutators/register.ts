@@ -9,7 +9,7 @@ import type { BlockDefJson } from '../generated/catalog';
 import { attachController, controllerOf, type MutatorController } from './controller';
 import { MutatorConfigError, MutatorStateError } from './errors';
 import { ParamsController } from './params';
-import { paramsSpec, type ParamsSpec, variadicSpec, type VariadicSpec } from './spec';
+import { rowsSpec, type RowsSpec, variadicSpec, type VariadicSpec } from './spec';
 import {
   B2C_MUTATOR_CALL_ARGS,
   B2C_MUTATOR_IF,
@@ -22,7 +22,7 @@ import {
 import { VariadicController } from './variadic';
 
 const VARIADIC_SPECS = new Map<string, VariadicSpec>();
-const PARAMS_SPECS = new Map<string, ParamsSpec>();
+const ROWS_SPECS = new Map<string, RowsSpec>();
 
 /** The variadic spec of `def` for `mutator`, checked against what that mutator expects. */
 function checkedVariadicSpec(def: BlockDefJson, mutator: B2cMutatorName): VariadicSpec {
@@ -43,24 +43,26 @@ function checkedVariadicSpec(def: BlockDefJson, mutator: B2cMutatorName): Variad
   }
   if (
     mutator === B2C_MUTATOR_CALL_ARGS &&
-    !def.fields.some((field) => field.kind === 'symbol_ref')
+    !def.fields.some((field) => field.kind === 'symbol_ref' || field.kind === 'type')
   ) {
+    // Call arguments follow a function reference, or a type field naming a struct (w2.md §2.1).
     throw new MutatorConfigError(
       def.id,
-      `${def.id}: ${mutator} needs the field naming the function.`,
+      `${def.id}: ${mutator} needs the field naming the function or the struct.`,
     );
   }
   VARIADIC_SPECS.set(key, spec);
   return spec;
 }
 
-function checkedParamsSpec(def: BlockDefJson): ParamsSpec {
-  const cached = PARAMS_SPECS.get(def.id);
+/** The rows spec of `def`: `params`, `fields` or `values` rows (w2.md §2.1). */
+function checkedRowsSpec(def: BlockDefJson): RowsSpec {
+  const cached = ROWS_SPECS.get(def.id);
   if (cached !== undefined) {
     return cached;
   }
-  const spec = paramsSpec(def);
-  PARAMS_SPECS.set(def.id, spec);
+  const spec = rowsSpec(def);
+  ROWS_SPECS.set(def.id, spec);
   return spec;
 }
 
@@ -74,7 +76,7 @@ function createController(block: Blockly.Block, mutator: B2cMutatorName): Mutato
   }
   switch (mutator) {
     case B2C_MUTATOR_PARAMS:
-      return new ParamsController(block, checkedParamsSpec(def));
+      return new ParamsController(block, checkedRowsSpec(def));
     case B2C_MUTATOR_ITEMS:
     case B2C_MUTATOR_IF:
     case B2C_MUTATOR_CALL_ARGS:

@@ -66,6 +66,10 @@ export function createCatalogField(
       return new B2cNumberField(textDefault ?? '0');
     case 'text':
       return new B2cTextField(textDefault ?? '', { singleChar: options.singleChar === true });
+    case 'header':
+      // A standard header as its text (types.md §5.4); the catalog checks it against the header
+      // table (B2C-E0607).
+      return new B2cTextField(textDefault ?? '');
     case 'dropdown':
       return new B2cDropdownField(def.options, textDefault);
     case 'checkbox':

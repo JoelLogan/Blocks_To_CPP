@@ -31,13 +31,16 @@ const TABLE_HEADER = [
   '| --- | --- | --- | --- | --- | --- |',
 ];
 
-/** The reference's files, by file name, in a fixed order: README.md first. */
+/**
+ * The reference's files, by file name, in a fixed order: README.md first. A category without
+ * blocks that the editor does not fill (one of W2's before its blocks exist, w2.md §2.1) gets no
+ * page, as the editor does not show it.
+ */
 export function blockReference(model: Model): Map<string, string> {
   const files = new Map<string, string>();
-  const pages = model.toolbox.map((category) => ({
-    category,
-    blocks: blocksOf(category, model.blocks),
-  }));
+  const pages = model.toolbox
+    .map((category) => ({ category, blocks: blocksOf(category, model.blocks) }))
+    .filter(({ category, blocks }) => blocks.length > 0 || category.dynamic !== null);
   const listed = pages.reduce((sum, page) => sum + page.blocks.length, 0);
   if (listed !== model.blocks.length) {
     throw new Error(
@@ -188,29 +191,49 @@ function outputText(block: BlockDefJson): string {
 }
 
 function fieldText(field: FieldDefJson, block: BlockDefJson): string {
-  const name = code(field.name);
+  const name = field.repeat === null ? code(field.name) : partNames(field.name, field.repeat);
+  const what = fieldKindText(field, block);
+  return field.repeat === null
+    ? what(name)
+    : what(name).replace(/\.$/u, `${repeatText(field.repeat)}.`);
+}
+
+/** What a field holds, as a sentence about `name`. */
+function fieldKindText(field: FieldDefJson, block: BlockDefJson): (name: string) => string {
+  const kind = DECLARED_KIND[block.category] ?? 'variable';
   switch (field.kind) {
     case 'dropdown': {
       // The label as shown, with the stored value when it differs.
       const options = field.options.map(([label, value]) =>
         label === value ? code(value) : `${text(label)} (${code(value)})`,
       );
-      return `${name}: one of ${list(options)}${defaultText(field)}.`;
+      return (name) => `${name}: one of ${list(options)}${defaultText(field)}.`;
     }
     case 'checkbox':
-      return `${name}: on or off${defaultText(field)}.`;
+      return (name) => `${name}: on or off${defaultText(field)}.`;
     case 'text':
-      return `${name}: text${defaultText(field)}.`;
+      return (name) => `${name}: text${defaultText(field)}.`;
     case 'number':
-      return `${name}: a number${defaultText(field)}.`;
+      return (name) => `${name}: a number${defaultText(field)}.`;
     case 'type':
-      return `${name}: a type, ${list(field.types.map(code))}${defaultText(field)}.`;
+      // A type field with no listed types offers the module's own types (w2.md §2.1).
+      return field.types.length === 0
+        ? (name) => `${name}: a type the module defines${defaultText(field)}.`
+        : (name) => `${name}: a type, ${list(field.types.map(code))}${defaultText(field)}.`;
     case 'symbol_decl':
-      return `${name}: the name of the new ${block.category === 'functions' ? 'function' : 'variable'}.`;
+      return (name) => `${name}: the name of the new ${kind}.`;
     case 'symbol_ref':
-      return `${name}: the ${block.category === 'functions' ? 'function' : 'variable'} it uses.`;
+      return (name) => `${name}: the ${kind} it uses.`;
+    case 'header':
+      return (name) => `${name}: a standard header${defaultText(field)}.`;
   }
 }
+
+/** What a declaration or a reference names, by category (a variable elsewhere). */
+const DECLARED_KIND: Readonly<Partial<Record<BlockDefJson['category'], string>>> = {
+  functions: 'function',
+  types: 'type or member',
+};
 
 function defaultText(field: FieldDefJson): string {
   if (field.default === null) {
@@ -278,6 +301,10 @@ function extraText(extra: ExtraDefJson): string {
     }
     case 'params':
       return `${name}: up to ${String(extra.max ?? 0)} parameters, each ${list(extra.types.map(code))}.`;
+    case 'fields':
+      return `${name}: up to ${String(extra.max ?? 0)} fields, each ${list(extra.types.map(code))}.`;
+    case 'values':
+      return `${name}: up to ${String(extra.max ?? 0)} values, each with its name.`;
   }
 }
 

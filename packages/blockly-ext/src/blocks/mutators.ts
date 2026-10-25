@@ -16,14 +16,23 @@ export const MUTATOR_NAME = Object.freeze({
   if: 'b2c_mutator_if',
   /** Call arguments: func.call, func.call_stmt (`argCount`). */
   callArgs: 'b2c_mutator_call_args',
-  /** Parameter rows: func.define (`params`). */
+  /** Rows: func.define (`params`), type.struct (`fields`), type.enum (`values`). */
   params: 'b2c_mutator_params',
 } as const);
 
 /** A mutator extension name. */
 export type MutatorName = (typeof MUTATOR_NAME)[keyof typeof MUTATOR_NAME];
 
-/** The mutator of each catalog block that has repeated or optional parts. */
+/**
+ * The mutator of each catalog block that has repeated or optional parts.
+ *
+ * The blocks of milestone M3's wave W2 are listed before the catalog has them
+ * (docs/plans/m3-contracts/w2.md §2.13), so the packages that add them never edit this table; an
+ * entry for a block the catalog does not have is never read. *if*'s mutator also draws *switch*'s
+ * cases, *try*'s catch parts (with their repeated fields) and the file blocks' flag-only *if it
+ * can't be opened*; the call-arguments mutator draws *new … with*'s parts, named by its struct;
+ * the parameter mutator draws a struct's `fields` rows and an enum's `values` rows.
+ */
 export const MUTATOR_FOR_BLOCK: Readonly<Record<string, MutatorName>> = Object.freeze({
   'io.print': MUTATOR_NAME.items,
   'text.join': MUTATOR_NAME.items,
@@ -32,6 +41,16 @@ export const MUTATOR_FOR_BLOCK: Readonly<Record<string, MutatorName>> = Object.f
   'func.call': MUTATOR_NAME.callArgs,
   'func.call_stmt': MUTATOR_NAME.callArgs,
   'func.define': MUTATOR_NAME.params,
+  // W2 (w2.md §2.13).
+  'coll.list_of': MUTATOR_NAME.items,
+  'file.write': MUTATOR_NAME.items,
+  'control.switch': MUTATOR_NAME.if,
+  'error.try': MUTATOR_NAME.if,
+  'file.for_each_line': MUTATOR_NAME.if,
+  'file.open': MUTATOR_NAME.if,
+  'type.new': MUTATOR_NAME.callArgs,
+  'type.struct': MUTATOR_NAME.params,
+  'type.enum': MUTATOR_NAME.params,
 });
 
 /**

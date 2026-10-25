@@ -141,3 +141,47 @@ export function createJoinField(def: FieldDefJson): Blockly.Field {
   const value = typeof def.default === 'string' ? def.default : (def.options[0]?.[1] ?? '');
   return createDropdownField(def.options, value, 'Operator');
 }
+
+/** The kinds of field that may be repeated (docs/plans/m3-contracts/w2.md §2.1). */
+export const REPEATABLE_FIELD_KINDS: readonly FieldDefJson['kind'][] = [
+  'dropdown',
+  'checkbox',
+  'type',
+  'symbol_decl',
+];
+
+/**
+ * A part of a repeated field (w2.md §2.1), holding the field's catalog default: a dropdown, a
+ * checkbox, a type (`b2c_type`, which may list no types) or, for a declaration, the symbol `decl`.
+ * Built-in fields stand in where the blockly-ext names are not registered.
+ */
+export function createMemberField(def: FieldDefJson, decl: Decl): Blockly.Field {
+  const text = typeof def.default === 'string' ? def.default : null;
+  switch (def.kind) {
+    case 'symbol_decl':
+      return createNameField(decl.sym, decl.name).field;
+    case 'checkbox':
+      return (
+        fromRegistry('b2c_checkbox', { value: def.default === true }) ??
+        new Blockly.FieldCheckbox(def.default === true)
+      );
+    case 'type': {
+      const field =
+        fromRegistry('b2c_type', {
+          types: [...def.types],
+          ...(text === null ? {} : { value: text }),
+        }) ??
+        new Blockly.FieldDropdown(
+          def.types.length === 0
+            ? [['', '']]
+            : def.types.map((type): [string, string] => [friendlyTypeName(type), type]),
+        );
+      if (text !== null) {
+        field.setValue(text);
+      }
+      return field;
+    }
+    default:
+      return createDropdownField(def.options, text ?? def.options[0]?.[1] ?? '', 'Choice');
+  }
+}
