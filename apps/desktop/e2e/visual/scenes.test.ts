@@ -26,12 +26,17 @@ import {
   WINDOW_AREA,
 } from './scenes';
 
-/** The categories of catalog/toolbox.toml, in order: each `[[category]]`'s `id` and `name`. */
+/**
+ * The categories of catalog/toolbox.toml that the editor shows, in order: each `[[category]]`'s
+ * `id` and `name`. A category without entries that is not dynamic (one of W2's until its package
+ * adds blocks, docs/plans/m3-contracts/w2.md §2.1) is not shown, so it has no scene.
+ */
 function catalogCategories(): { id: string; name: string }[] {
   const text = readFileSync(path.join(REPOSITORY_ROOT, 'catalog', 'toolbox.toml'), 'utf8');
   return text
     .split(/^\[\[category\]\]\s*$/m)
     .slice(1)
+    .filter((part) => /^\[\[category\.entry\]\]\s*$/m.test(part) || /^dynamic = /m.test(part))
     .map((part) => {
       const head = part.split(/^\[\[/m)[0] ?? '';
       const id = /^id = "([^"]+)"$/m.exec(head)?.[1];

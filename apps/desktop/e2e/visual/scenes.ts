@@ -92,7 +92,11 @@ export interface ToolboxCategory {
   readonly name: string;
 }
 
-/** The toolbox categories, in toolbox order; scenes.test.ts checks them against the catalog. */
+/**
+ * The toolbox categories the editor shows, in toolbox order; scenes.test.ts checks them against the
+ * catalog. A W2 category joins once its package gives it blocks (docs/plans/m3-contracts/w2.md
+ * §2.1); its new scene passes with a warning until its baselines are committed (README.md).
+ */
 export const TOOLBOX_CATEGORIES: readonly ToolboxCategory[] = [
   { id: 'program', name: 'Program' },
   { id: 'variables', name: 'Variables' },
