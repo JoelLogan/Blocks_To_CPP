@@ -253,7 +253,7 @@ fn is_value_type(block_type: &str) -> bool {
             | "math.fn"
             | "math.abs"
             | "math.minmax"
-            | "math.fn2"
+            | "math.fn_two"
             | "math.clamp"
             | "math.random_real"
             | "logic.boolean"

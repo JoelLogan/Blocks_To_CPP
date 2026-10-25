@@ -26,6 +26,16 @@ import { documentFixture, projectFixture } from '../../app/testing/fixtures';
 import { registerToolboxComponents, toolboxInjectOptions } from './register';
 import type { SymbolSource } from './scope';
 
+/**
+ * The test timeout of the test files whose tests show the continuous toolbox's flyout several
+ * times (`vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS })` after their imports). The flyout
+ * draws every block of the catalog: W2's text, math and error blocks took it from 26 to 47 blocks
+ * and one showing in happy-dom from 0.40 s to 1.09 s, so the slowest test of each of these files
+ * went from 1.3–2.9 s to 3.1–8.1 s in the suite with two workers, past Vitest's default of 5 s,
+ * and each W2 category adds more.
+ */
+export const FLYOUT_TEST_TIMEOUT_MS = 20_000;
+
 /** Registers the ID generator, the mutators, every block type and the toolbox's classes. */
 export function setUpToolboxBlocks(): void {
   installIdGenerator();

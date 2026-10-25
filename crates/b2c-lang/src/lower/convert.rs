@@ -39,6 +39,10 @@ pub(super) enum Subject {
     RandomLow,
     /// The upper bound of `random integer`.
     RandomHigh,
+    /// A part of one of W2's blocks, by the phrase that starts a sentence
+    /// about it (`The position in 'letter of'`); like a count, it is not
+    /// stored.
+    Part(String),
 }
 
 impl Subject {
@@ -65,6 +69,7 @@ impl Subject {
             Self::LoopStep => String::from("The step of the loop"),
             Self::RandomLow => String::from("The lowest random number"),
             Self::RandomHigh => String::from("The highest random number"),
+            Self::Part(phrase) => phrase.clone(),
         }
     }
 }

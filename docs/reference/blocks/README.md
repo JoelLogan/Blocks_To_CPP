@@ -12,13 +12,14 @@ Catalog version: 1.3.0.
 | --- | --- | --- |
 | [Program](program.md) | ▶ | 2 |
 | [Variables](variables.md) | 𝑥 | 4 |
-| [Math](math.md) | ∑ | 5 |
+| [Math](math.md) | ∑ | 11 |
 | [Logic](logic.md) | ◇ | 4 |
-| [Text](text.md) | “ ” | 3 |
+| [Text](text.md) | “ ” | 13 |
 | [Control](control.md) | ⑂ | 1 |
 | [Loops](loops.md) | ↻ | 6 |
-| [Input / Output](io.md) | ⌨ | 2 |
+| [Input / Output](io.md) | ⌨ | 3 |
 | [Functions](functions.md) | ƒ | 4 |
+| [Errors](errors.md) | ⚠ | 4 |
 
 ## How to read the tables
 

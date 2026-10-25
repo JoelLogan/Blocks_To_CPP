@@ -189,11 +189,26 @@ describe('the slot fixture', () => {
   it('covers the rules it promises', () => {
     expect(FIXTURE.cases.length).toBeGreaterThanOrEqual(25);
     expect(FIXTURE.catalog.map((block) => block.block)).toEqual([
+      // W2's errors, text, input and output and math (w2.md §1.3, §1.4, §1.7).
+      'error.message',
+      'error.throw',
+      'error.try',
       'func.call',
       'func.call_stmt',
       // What it gives back is typed from W2 (docs/plans/m3-contracts/w2.md §1.9).
       'func.define',
       'func.return',
+      'io.decimals',
+      'math.random_real',
+      'text.case',
+      'text.find',
+      'text.length',
+      'text.letter',
+      'text.part',
+      'text.replace',
+      'text.split',
+      'text.to_number',
+      'text.trim',
       'var.declare',
       'var.set',
     ]);

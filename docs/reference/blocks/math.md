@@ -13,6 +13,12 @@ Toolbox icon: ∑. Back to [all categories](README.md).
 | `math.compare` (predicate, gives `bool`) | `%A %OP %B` | `%A %OP %B` | Compares two values. | `OP`: one of \< (`lt`), ≤ (`le`), \> (`gt`), ≥ (`ge`), = (`eq`) or ≠ (`ne`), default `lt`. | `A`: any value; default `0`. `B`: any value; default `0`. |
 | `math.random_int` (reporter, gives `int`) | `random integer from %LOW to %HIGH` | `b2c::random_int(%LOW, %HIGH)` | A random whole number between the two values, including both. | — | `LOW`: a whole number; default `1`. `HIGH`: a whole number; default `6`. |
 | `math.convert` (reporter, gives the type chosen in `TO`) | `%VALUE as %TO` | `static_cast<%TO>(%VALUE)` | Converts a number to another number type, e.g. a decimal to a whole number. | `TO`: a type, `int` or `double`, default `int`. | `VALUE`: a number; default `0`. |
+| `math.fn` (reporter, gives `double`) | `%FN of %VALUE` | `std::round(%VALUE)` | A function of a number: rounding, roots, powers of e, logarithms, and the angle functions, whose angles are in radians. The result is a decimal number. | `FN`: one of round down (`floor`), round up (`ceil`), `round`, square root (`sqrt`), cube root (`cbrt`), e to the power (`exp`), natural log (`log`), log base 10 (`log10`), `sin`, `cos`, `tan`, `asin`, `acos` or `atan`, default `round`. | `VALUE`: a number; default `2.5`. |
+| `math.abs` (reporter, gives `int` or `double`) | `absolute value of %VALUE` | `std::abs(%VALUE)` | The number without its minus sign. | — | `VALUE`: a number; default `-3`. |
+| `math.minmax` (reporter, gives `int` or `double`) | `%FN of %A and %B` | `std::max(%A, %B)` | The larger or the smaller of two numbers. | `FN`: one of larger (`max`) or smaller (`min`), default `max`. | `A`: a number; default `3`. `B`: a number; default `7`. |
+| `math.fn_two` (reporter, gives `double`) | `%FN of %A and %B` | `std::pow(%A, %B)` | A function of two numbers: the first to the power of the second; the angle, in radians, of the point whose y is the first and whose x is the second; or the long side of a right-angled triangle whose other sides are the two. | `FN`: one of power (`pow`), `atan2` or hypotenuse (`hypot`), default `pow`. | `A`: a number; default `2`. `B`: a number; default `10`. |
+| `math.clamp` (reporter, gives `int` or `double`) | `%VALUE kept between %LOW and %HIGH` | `std::clamp(%VALUE, %LOW, %HIGH)` | The number if it is between the two limits, otherwise the nearer limit. The lower limit must not be above the higher one: a debug build stops the program then. | — | `VALUE`: a number; default `15`. `LOW`: a number; default `0`. `HIGH`: a number; default `10`. |
+| `math.random_real` (reporter, gives `double`) | `random decimal from %LOW to %HIGH` | `b2c::random_real(%LOW, %HIGH)` | A random decimal number between the two values. | — | `LOW`: a number; default `0.0`. `HIGH`: a number; default `1.0`. |
 
 ## In the toolbox
 
@@ -21,3 +27,9 @@ Toolbox icon: ∑. Back to [all categories](README.md).
 3. `math.compare`
 4. `math.random_int`
 5. `math.convert`
+6. `math.fn`
+7. `math.abs`
+8. `math.minmax`
+9. `math.fn_two`
+10. `math.clamp`
+11. `math.random_real`

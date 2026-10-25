@@ -238,7 +238,13 @@ fn a_parked_block_with_nothing_chosen_yet_is_only_a_warning() {
             continue;
         };
         seen += 1;
-        let missing = format!("B2C-E0430 {}", field.name);
+        // A repeated field (w2.md §2.1) is reported at its first part.
+        let part = if field.repeat.is_some() {
+            format!("{}0", field.name)
+        } else {
+            field.name.clone()
+        };
+        let missing = format!("B2C-E0430 {part}");
         let mut block = json!({"id": "p1", "type": def.id, "v": def.version, "x": 400, "y": 40});
         // A value for every input without a default (the `set` of the
         // Variables category comes with one).

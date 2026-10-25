@@ -10,6 +10,10 @@ import { createToolboxPlugin } from '../toolbox/plugin';
 import { MOVING_CLASS } from './mover';
 import { MOVE_KEYS_HINT } from './plugin';
 import { eventsDelivered, focused, type KeyboardEditor, keyboardEditor, press } from './testing';
+import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
+
+// Each test here shows the toolbox's flyout of every catalog block (toolbox/testing.ts).
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 let editor: KeyboardEditor | null = null;
 

@@ -23,6 +23,10 @@ import { attachReducedMotion, prefersReducedMotion, REDUCED_MOTION_QUERY } from 
 import { keyboardPlugin } from './plugin';
 import { KEYBOARD_SHORTCUT_NAMES } from './shortcuts';
 import { eventsDelivered, type KeyboardEditor, keyboardEditor, press } from './testing';
+import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
+
+// Each test here shows the toolbox's flyout of every catalog block (toolbox/testing.ts).
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 let editors: KeyboardEditor[] = [];
 

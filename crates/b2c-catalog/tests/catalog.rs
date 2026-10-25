@@ -52,6 +52,7 @@ fn only_hats_and_definitions_are_top_level() {
 #[test]
 fn value_blocks_declare_their_output_type() {
     let expected: BTreeMap<&str, &str> = [
+        ("error.message", "std::string"),
         ("func.call", "symbol"),
         ("logic.boolean", "bool"),
         ("logic.not", "bool"),
@@ -59,12 +60,28 @@ fn value_blocks_declare_their_output_type() {
         ("logic.ternary", "any"),
         ("math.arithmetic", "number"),
         ("math.compare", "bool"),
+        ("math.abs", "number"),
+        ("math.clamp", "number"),
         ("math.convert", "field:TO"),
+        ("math.fn", "double"),
+        ("math.fn_two", "double"),
+        ("math.minmax", "number"),
         ("math.number", "number"),
         ("math.random_int", "int"),
+        ("math.random_real", "double"),
+        ("text.as_text", "std::string"),
+        ("text.case", "std::string"),
         ("text.char", "char"),
+        ("text.find", "bool"),
         ("text.join", "std::string"),
+        ("text.length", "int"),
+        ("text.letter", "char"),
         ("text.literal", "std::string"),
+        ("text.part", "std::string"),
+        ("text.replace", "std::string"),
+        ("text.split", "std::vector<std::string>"),
+        ("text.to_number", "field:TO"),
+        ("text.trim", "std::string"),
         ("var.get", "symbol"),
     ]
     .into_iter()

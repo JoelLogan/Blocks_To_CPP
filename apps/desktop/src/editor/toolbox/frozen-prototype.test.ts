@@ -10,7 +10,12 @@
  * build instead, which the end-to-end tests run frozen. Vitest runs each test file in its own
  * isolated environment, so the freeze does not leak into other files.
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+
+// Each test here shows the toolbox's flyout of every catalog block: toolbox/testing.ts's
+// FLYOUT_TEST_TIMEOUT_MS, written out, since importing that module would load the toolbox before
+// the prototypes are frozen.
+vi.setConfig({ testTimeout: 20_000 });
 
 beforeAll(async () => {
   await import('blockly/core');

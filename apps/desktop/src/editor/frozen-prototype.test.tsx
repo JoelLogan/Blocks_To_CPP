@@ -11,6 +11,11 @@
 import { act, render } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+// Each test here shows the toolbox's flyout of every catalog block: toolbox/testing.ts's
+// FLYOUT_TEST_TIMEOUT_MS, written out, since importing that module would load the toolbox before
+// the prototypes are frozen.
+vi.setConfig({ testTimeout: 20_000 });
+
 beforeAll(async () => {
   await import('blockly/core');
   await import('blockly/msg/en');

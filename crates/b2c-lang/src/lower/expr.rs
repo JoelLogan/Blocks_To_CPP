@@ -276,7 +276,7 @@ impl Lowerer<'_> {
             | "coll.next" => self.collection_value(block, origin),
             "text.length" | "text.letter" | "text.case" | "text.split" | "text.to_number"
             | "text.as_text" | "text.find" | "text.part" | "text.trim" | "text.replace" | "math.fn"
-            | "math.abs" | "math.minmax" | "math.fn2" | "math.clamp" | "math.random_real" => {
+            | "math.abs" | "math.minmax" | "math.fn_two" | "math.clamp" | "math.random_real" => {
                 self.text_value(block, origin)
             }
             "type.new" | "type.field" | "type.enum_value" => self.type_value(block, origin),

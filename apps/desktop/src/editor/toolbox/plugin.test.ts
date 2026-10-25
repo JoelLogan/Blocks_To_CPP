@@ -40,6 +40,7 @@ import { argLabelField } from './inflater';
 import type { MakeVariableResult } from './makeVariable';
 import { analysisSymbolSource, createToolboxPlugin } from './plugin';
 import {
+  FLYOUT_TEST_TIMEOUT_MS,
   disposeTestWorkspaces,
   editorContext,
   fakeCore,
@@ -50,6 +51,9 @@ import {
   storeAnalysis,
   symbolFixture,
 } from './testing';
+
+// Each test here shows the flyout of every catalog block (FLYOUT_TEST_TIMEOUT_MS).
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 beforeAll(() => {
   setUpToolboxBlocks();

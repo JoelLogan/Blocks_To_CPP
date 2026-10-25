@@ -67,3 +67,21 @@ default = "keep_asking"
 name = "PROMPT"
 check = "text"
 optional = true
+
+# Milestone M3's second wave (docs/plans/m3-contracts/w2.md §1.4).
+
+[[block]]
+id = "io.decimals"
+version = 1
+category = "io"
+shape = "statement"
+label = { friendly = "show numbers with %DIGITS decimal places", cpp = "std::cout << std::fixed << std::setprecision(%DIGITS);" }
+lowering = "builtin"
+headers = ["<iomanip>", "<iostream>"]
+help = "From here on, prints every decimal number with this many digits after the decimal point, also in join and as text. Whole numbers are not changed."
+
+[[block.input]]
+name = "DIGITS"
+check = "integer"
+type = "int"
+default = [{ num = "2" }]

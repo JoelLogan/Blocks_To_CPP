@@ -427,8 +427,9 @@ fn bad_entries_and_categories_are_rejected() {
     };
     let cases: Vec<(Change, &str)> = vec![
         (
-            Box::new(added_to(Category::Math, |e| e.block = "math.nope".into())),
-            "category math, entry 6: the catalog has no block \"math.nope\"",
+            // Logic, whose entries no W2 package adds to (w2.md §3.3).
+            Box::new(added_to(Category::Logic, |e| e.block = "logic.nope".into())),
+            "category logic, entry 5: the catalog has no block \"logic.nope\"",
         ),
         (
             Box::new(added_to(Category::Math, |e| e.block = "logic.not".into())),
@@ -487,10 +488,10 @@ fn bad_entries_and_categories_are_rejected() {
         ),
         (
             Box::new(|t: &mut Toolbox| {
-                let copy = category(t, Category::Math).entries[0].clone();
-                category(t, Category::Math).entries.push(copy);
+                let copy = category(t, Category::Logic).entries[0].clone();
+                category(t, Category::Logic).entries.push(copy);
             }),
-            "category math, entry 6: the block math.number already has an entry (category math, \
+            "category logic, entry 5: the block logic.operation already has an entry (category logic, \
              entry 1)",
         ),
     ];
@@ -502,13 +503,14 @@ fn bad_entries_and_categories_are_rejected() {
     // A category without entries is valid (the editor does not show it;
     // w2.md §2.1), but removing the entries leaves their blocks
     // unreachable.
-    let messages = messages_after(|t| category(t, Category::Text).entries.clear());
+    let messages = messages_after(|t| category(t, Category::Logic).entries.clear());
     assert_eq!(
         messages,
         [
-            "the block text.char is not in the toolbox: add an entry for it",
-            "the block text.join is not in the toolbox: add an entry for it",
-            "the block text.literal is not in the toolbox: add an entry for it",
+            "the block logic.boolean is not in the toolbox: add an entry for it",
+            "the block logic.not is not in the toolbox: add an entry for it",
+            "the block logic.operation is not in the toolbox: add an entry for it",
+            "the block logic.ternary is not in the toolbox: add an entry for it",
         ]
     );
     // Without its dynamic kind, the Variables category no longer reaches
