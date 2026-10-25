@@ -97,6 +97,14 @@ export interface SymbolProvider {
    * {@link symbolsAt}, one scope query per call block whenever the labels are refreshed.
    */
   functionParams?(blockId: string, funcId: string): readonly string[] | null;
+  /**
+   * Optional: the field symbol IDs, in row order, of the struct `structId` that a *new … with*
+   * block `blockId` names, or null when it names no such struct (docs/plans/m3-contracts/w2.md
+   * §2.1). The call-argument mutator labels that block's parts with it, as it labels a call's
+   * arguments with {@link functionParams}; without it, the struct is looked up with
+   * {@link symbolsAt}.
+   */
+  structFields?(blockId: string, structId: string): readonly string[] | null;
 }
 
 /**

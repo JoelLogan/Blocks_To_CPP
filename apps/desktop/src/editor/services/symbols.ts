@@ -184,8 +184,35 @@ function factsOf(preview: PreviewResult): TypeFactsTs {
   return facts;
 }
 
-/** The blocks that declare names into their own statement lists or bodies. */
-const DECLARING = new Set(['var.declare', 'control.for_range', 'func.define']);
+/**
+ * The blocks that declare names into their own statement lists or bodies, or into the list they
+ * are in after themselves, and when they do (`null`: always). W2's are listed before the catalog
+ * has them (docs/plans/m3-contracts/w2.md §2.13): *for each* (its item, a map's key and value),
+ * the file loop (its line), *open file* (its file, after it), *try* (each catch part's error), and
+ * *when program starts* while it has its arguments (`args`, W2's package C2).
+ */
+const DECLARING: ReadonlyMap<string, ((block: Blockly.Block) => boolean) | null> = new Map([
+  ['var.declare', null],
+  ['control.for_range', null],
+  ['func.define', null],
+  ['coll.for_each', null],
+  ['coll.for_each_pair', null],
+  ['file.for_each_line', null],
+  ['file.open', null],
+  ['error.try', null],
+  ['program.main', (block: Blockly.Block) => isTicked(block.getField('ARGS')?.getValue())],
+]);
+
+/** Whether a checkbox field's value is ticked. */
+function isTicked(value: unknown): boolean {
+  return value === true || value === 'TRUE';
+}
+
+/** Whether a block declares names, so that it may hide one (see {@link DECLARING}). */
+export function isDeclaringBlock(block: Blockly.Block): boolean {
+  const when = DECLARING.get(block.type);
+  return when !== undefined && (when === null || when(block));
+}
 
 /** The most statements and levels {@link declaredAbove} walks before it asks the core instead. */
 const MAX_WALK = 10_000;
@@ -245,7 +272,7 @@ function declaredAbove(
   const names = namesByBlock(preview);
   // A declaring block the preview has not seen may declare anything.
   const mayHide = (other: Blockly.Block): boolean =>
-    DECLARING.has(other.type) && (names.get(other.id)?.has(symbol.name) ?? true);
+    isDeclaringBlock(other) && (names.get(other.id)?.has(symbol.name) ?? true);
   if (mayHide(block)) {
     // A `create` hides its own name while it is being created, a loop or a function its own.
     return false;

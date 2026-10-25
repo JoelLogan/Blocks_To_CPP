@@ -5,8 +5,12 @@
  *
  * The colours are chosen so that, in both themes, white block text has a contrast of at least
  * 4.5:1 (WCAG 2.2 AA for normal text) and blocks stand out from the canvas by at least 3:1 (non-text
- * contrast). The hues are spread evenly (OKLCH hue 10° to 330° in 40° steps) at one lightness per
- * theme. test/theme.test.ts checks all of this.
+ * contrast). The nine categories of milestone M2 have hues spread evenly (OKLCH hue 10° to 330° in
+ * 40° steps) at one lightness per theme (0.50 light, 0.55 dark); the four that milestone M3's wave
+ * W2 adds (docs/plans/m3-contracts/w2.md §2.1) sit halfway between them, 80° apart from each other
+ * (Errors 30°, Types 110°, Files 190°, Collections 270°), at the same lightness and the largest
+ * chroma up to 0.2 that sRGB holds, so M2's colours stay as they were. test/theme.test.ts checks
+ * all of this.
  */
 import type { CategoryId } from '../generated/catalog';
 
@@ -28,6 +32,10 @@ export const CATEGORY_STYLE: Readonly<Record<CategoryId, CategoryStyle>> = Objec
   loops: { colour: { light: '#0465af', dark: '#0574c7' }, icon: '↻' },
   io: { colour: { light: '#6741ca', dark: '#7552db' }, icon: '⌨' },
   functions: { colour: { light: '#b80049', dark: '#ca2356' }, icon: 'ƒ' },
+  collections: { colour: { light: '#3b51d3', dark: '#4761e4' }, icon: '☰' },
+  types: { colour: { light: '#686800', dark: '#767700' }, icon: '◆' },
+  files: { colour: { light: '#00736e', dark: '#00837e' }, icon: '🗎' },
+  errors: { colour: { light: '#ba0d01', dark: '#cc2a1b' }, icon: '⚠' },
 });
 
 /** The categories in toolbox order (docs/spec/03-block-language.md §3.7). */
@@ -41,6 +49,10 @@ export const CATEGORY_IDS: readonly CategoryId[] = Object.freeze([
   'loops',
   'io',
   'functions',
+  'collections',
+  'types',
+  'files',
+  'errors',
 ]);
 
 /**

@@ -32,45 +32,55 @@ import {
 import type * as Blockly from 'blockly/core';
 
 import { withoutEvents } from './bdmToWorkspace';
-import { renamedTypeJson, renameInTrees, treeBlockIds, treeDecls } from './bdmTree';
-import { blockDefOf } from './catalog';
+import { ROW_EXTRA_KEYS, renamedTypeJson, renameInTrees, treeBlockIds, treeDecls } from './bdmTree';
+import { blockDefOf, catalogFieldsOf } from './catalog';
 import { MAX_REMAP_MEMO } from './limits';
 import { placeholderNode, replacePlaceholderNode } from './placeholders';
 import { allBlocks, descendantsOf } from './traverse';
 
-/** The `params` rows of a block's `extra`, or `null`. */
-function paramRows(block: Blockly.Block): Record<string, unknown>[] | null {
+/**
+ * The rows of a block's row extras (`params`, `fields`, `values`, docs/plans/m3-contracts/w2.md
+ * §2.1), by key, for the keys the block has.
+ */
+function extraRows(block: Blockly.Block): Map<string, Record<string, unknown>[]> {
+  const found = new Map<string, Record<string, unknown>[]>();
   if (!hasB2cMutator(block)) {
-    return null;
+    return found;
   }
-  const rows: unknown = block.b2cGetExtra()['params'];
-  if (!Array.isArray(rows)) {
-    return null;
+  const extra = block.b2cGetExtra();
+  for (const key of ROW_EXTRA_KEYS) {
+    const rows: unknown = extra[key];
+    if (Array.isArray(rows)) {
+      found.set(
+        key,
+        rows.filter(
+          (row): row is Record<string, unknown> => typeof row === 'object' && row !== null,
+        ),
+      );
+    }
   }
-  return rows.filter(
-    (row): row is Record<string, unknown> => typeof row === 'object' && row !== null,
-  );
+  return found;
 }
 
-/** The catalog declaration fields of a block (not the parameter rows' name fields). */
+/**
+ * The catalog declaration fields of a block, the parts of a repeated one included (not the rows'
+ * name fields).
+ */
 function declFields(block: Blockly.Block): B2cSymbolDeclField[] {
   const def = blockDefOf(block.type);
   if (def === null) {
     return [];
   }
   const fields: B2cSymbolDeclField[] = [];
-  for (const definition of def.fields) {
-    if (definition.kind === 'symbol_decl') {
-      const field = block.getField(definition.name);
-      if (field instanceof B2cSymbolDeclField) {
-        fields.push(field);
-      }
+  for (const { def: definition, field } of catalogFieldsOf(block, def)) {
+    if (definition.kind === 'symbol_decl' && field instanceof B2cSymbolDeclField) {
+      fields.push(field);
     }
   }
   return fields;
 }
 
-/** The symbol IDs a block declares: its declaration fields, its parameters, or a placeholder's. */
+/** The symbol IDs a block declares: its declaration fields, its rows, or a placeholder's. */
 export function declaredSyms(block: Blockly.Block): string[] {
   const kept = placeholderNode(block);
   if (kept !== null) {
@@ -83,10 +93,12 @@ export function declaredSyms(block: Blockly.Block): string[] {
       syms.push(sym);
     }
   }
-  for (const row of paramRows(block) ?? []) {
-    const sym = row['sym'];
-    if (typeof sym === 'string') {
-      syms.push(sym);
+  for (const rows of extraRows(block).values()) {
+    for (const row of rows) {
+      const sym = row['sym'];
+      if (typeof sym === 'string') {
+        syms.push(sym);
+      }
     }
   }
   return syms;
@@ -203,7 +215,6 @@ export function renameInBlock(
       }
     }
   }
-  const rows = paramRows(block);
   const renamedRow = (row: Record<string, unknown>): Record<string, unknown> => {
     const sym = syms.get(String(row['sym']));
     const type = renamedTypeJson(row['type'], syms);
@@ -211,12 +222,17 @@ export function renameInBlock(
       ? row
       : { ...row, ...(sym === undefined ? {} : { sym }), ...(type === null ? {} : { type }) };
   };
-  if (rows !== null && hasB2cMutator(block) && rows.some((row) => renamedRow(row) !== row)) {
-    const params = rows.map(renamedRow);
+  const renamedRows: Record<string, Record<string, unknown>[]> = {};
+  for (const [key, rows] of extraRows(block)) {
+    if (rows.some((row) => renamedRow(row) !== row)) {
+      renamedRows[key] = rows.map(renamedRow);
+    }
+  }
+  if (Object.keys(renamedRows).length > 0 && hasB2cMutator(block)) {
     try {
-      block.b2cSetExtra({ ...block.b2cGetExtra(), params });
+      block.b2cSetExtra({ ...block.b2cGetExtra(), ...renamedRows });
     } catch (error: unknown) {
-      console.error('The parameters of a copied function could not be renamed', error);
+      console.error('The rows of a copied definition could not be renamed', error);
     }
   }
   if (block.isShadow() && isExprShadowType(block.type)) {

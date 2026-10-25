@@ -35,7 +35,10 @@ function blockColours(mode: ThemeMode): [string, string][] {
 
 describe('category styles', () => {
   it('cover every toolbox category, in toolbox order, with the toolbox icons', () => {
-    expect(CATEGORY_IDS).toEqual(TOOLBOX.map((category) => category.id));
+    // The toolbox may not have W2's categories yet (catalog/toolbox.toml gains them with the
+    // catalog's schema, w2.md §2.1); the ones it has come in this order.
+    const toolboxIds = TOOLBOX.map((category) => category.id);
+    expect(CATEGORY_IDS.filter((id) => toolboxIds.includes(id))).toEqual(toolboxIds);
     for (const category of TOOLBOX) {
       expect(CATEGORY_STYLE[category.id].icon).toBe(category.icon);
     }
@@ -49,6 +52,10 @@ describe('category styles', () => {
       '↻',
       '⌨',
       'ƒ',
+      '☰',
+      '◆',
+      '🗎',
+      '⚠',
     ]);
   });
 
@@ -68,8 +75,13 @@ describe('category styles', () => {
     }
   });
 
-  it.each(MODES)('are nine different colours in the %s theme', (mode) => {
-    expect(new Set(CATEGORY_IDS.map((id) => CATEGORY_STYLE[id].colour[mode])).size).toBe(9);
+  it.each(MODES)('are thirteen different colours in the %s theme', (mode) => {
+    expect(new Set(CATEGORY_IDS.map((id) => CATEGORY_STYLE[id].colour[mode])).size).toBe(13);
+  });
+
+  it('keep the colours of milestone M2', () => {
+    expect(CATEGORY_STYLE.program.colour).toEqual({ light: '#7a6001', dark: '#8b6e01' });
+    expect(CATEGORY_STYLE.functions.colour).toEqual({ light: '#b80049', dark: '#ca2356' });
   });
 });
 

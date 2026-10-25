@@ -21,7 +21,7 @@
  */
 import type * as Blockly from 'blockly/core';
 
-import { blockDef, partIndex } from './catalog';
+import { blockDef, fieldDef, partIndex } from './catalog';
 import type { BlockDefJson, InputDefJson, TokenJson } from '../generated/catalog';
 import { readExprShadow } from '../shadows/state';
 import type { SymbolInfo, TypeOracle } from '../services';
@@ -267,6 +267,8 @@ function ofFieldKinds(field: Blockly.Field, symbol: SymbolInfo): boolean {
   switch (kinds) {
     case 'functions':
       return symbol.kind === 'function';
+    case 'enums':
+      return symbol.kind === 'enum';
     case 'variables':
     case 'assignable':
     case 'numeric':
@@ -354,7 +356,7 @@ class CanvasParts implements BlockParts {
 
   private readField(name: string): PartType {
     const field = this.block.getField(name);
-    const definition = this.def.fields.find((candidate) => candidate.name === name);
+    const definition = fieldDef(this.def, name);
     if (field === null || definition === undefined) {
       return EMPTY;
     }
@@ -448,10 +450,22 @@ class CanvasParts implements BlockParts {
 
   count(base: string): number {
     let count = 0;
+    const repeatedField = this.def.fields.some(
+      (field) => field.name === base && field.repeat !== null,
+    );
     for (const input of this.block.inputList) {
       const index = partIndex(input.name, base);
       if (index !== null) {
         count = Math.max(count, index + 1);
+      }
+      if (repeatedField) {
+        // A repeated field's parts sit in the inputs of its group (w2.md §2.1).
+        for (const field of input.fieldRow) {
+          const fieldIndex = field.name === undefined ? null : partIndex(field.name, base);
+          if (fieldIndex !== null) {
+            count = Math.max(count, fieldIndex + 1);
+          }
+        }
       }
     }
     return count;

@@ -1,7 +1,17 @@
-import { NAME_ENTRY_PATTERN } from '@blocks2cpp/blockly-ext';
+import { BLOCK_DEFS, NAME_ENTRY_PATTERN } from '@blocks2cpp/blockly-ext';
+import type * as Blockly from 'blockly/core';
 import { describe, expect, it } from 'vitest';
 
-import { candidateName, firstFreeName, type DefaultNameKind } from './names';
+import { defaultDeclName } from '../services/install';
+import {
+  candidateName,
+  DEFAULT_NAME_KINDS,
+  defaultNameKind,
+  firstFreeName,
+  NAME_SCOPES,
+  ROW_NAME_KINDS,
+  type DefaultNameKind,
+} from './names';
 
 describe('default names (03 §3.6)', () => {
   it('counts value, value2, value3, … for a new variable', () => {
@@ -47,7 +57,7 @@ describe('default names (03 §3.6)', () => {
   });
 
   it('always finds a free, valid name, however many are taken', () => {
-    for (const kind of ['variable', 'loop', 'function'] as DefaultNameKind[]) {
+    for (const kind of Object.keys(NAME_SCOPES) as DefaultNameKind[]) {
       const taken = new Set<string>();
       for (let round = 0; round < 300; round += 1) {
         const name = firstFreeName(kind, taken);
@@ -57,5 +67,55 @@ describe('default names (03 §3.6)', () => {
         taken.add(name);
       }
     }
+  });
+});
+
+describe('the default names of declarations (w2.md §2.13)', () => {
+  it('give every catalog block with a declaration field a default name', () => {
+    for (const def of BLOCK_DEFS) {
+      for (const field of def.fields) {
+        if (field.kind === 'symbol_decl') {
+          expect(defaultNameKind(def.id, field.name), `${def.id}.${field.name}`).toBeDefined();
+        }
+      }
+    }
+  });
+
+  it('name W2’s declarations before the catalog has them', () => {
+    const first = (block: string, field: string): string | null => {
+      const kind = defaultNameKind(block, field);
+      return kind === undefined ? null : candidateName(kind, 0);
+    };
+    expect(first('coll.for_each', 'ITEM')).toBe('item');
+    expect(first('coll.for_each_pair', 'KEY')).toBe('key');
+    expect(first('coll.for_each_pair', 'VALUE')).toBe('value');
+    expect(first('file.for_each_line', 'LINE')).toBe('line');
+    expect(first('file.open', 'FILE')).toBe('file');
+    expect(first('error.try', 'NAME')).toBe('e');
+    expect(first('type.struct', 'NAME')).toBe('MyStruct');
+    expect(first('type.enum', 'NAME')).toBe('MyEnum');
+    expect(first('var.global', 'NAME')).toBe('value');
+    expect(first('program.main', 'ARGV')).toBe('args');
+    expect(first('var.declare', 'TYPE')).toBeNull();
+    expect(candidateName(ROW_NAME_KINDS['fields'] ?? 'variable', 1)).toBe('field2');
+    expect(candidateName(ROW_NAME_KINDS['values'] ?? 'variable', 0)).toBe('Value');
+  });
+
+  it('keep the names and scopes of milestone M2', () => {
+    expect(DEFAULT_NAME_KINDS['var.declare']).toEqual({ NAME: 'variable' });
+    expect(DEFAULT_NAME_KINDS['control.for_range']).toEqual({ VAR: 'loop' });
+    expect(DEFAULT_NAME_KINDS['func.define']).toEqual({ NAME: 'function' });
+    expect([NAME_SCOPES.variable, NAME_SCOPES.loop, NAME_SCOPES.function]).toEqual([
+      'list',
+      'body',
+      'function',
+    ]);
+  });
+
+  it('name the new parts of a repeated declaration through the mutators’ hook', () => {
+    // The hook reads only the block's type.
+    const block = { type: 'error.try' } as Blockly.Block;
+    expect(defaultDeclName(block, 'NAME')).toBe('e');
+    expect(defaultDeclName(block, 'OTHER')).toBeNull();
   });
 });

@@ -2,7 +2,12 @@
  * Lookups into the generated catalog (packages/blockly-ext/src/generated/catalog.ts) for the
  * connection checker and the mutators.
  */
-import { BLOCK_DEFS, type BlockDefJson, type InputDefJson } from '../generated/catalog';
+import {
+  BLOCK_DEFS,
+  type BlockDefJson,
+  type FieldDefJson,
+  type InputDefJson,
+} from '../generated/catalog';
 
 const DEFS_BY_ID: ReadonlyMap<string, BlockDefJson> = new Map(
   BLOCK_DEFS.map((def) => [def.id, def]),
@@ -35,5 +40,15 @@ export function partIndex(name: string, base: string): number | null {
 export function inputDef(def: BlockDefJson, name: string): InputDefJson | undefined {
   return def.inputs.find((input) =>
     input.repeat === null ? input.name === name : partIndex(name, input.name) !== null,
+  );
+}
+
+/**
+ * The definition of the field `name` of a block: a field shown once by its name, a repeated one
+ * (docs/plans/m3-contracts/w2.md §2.1) by its numbered name (`ERROR0`, `ERROR1`, …).
+ */
+export function fieldDef(def: BlockDefJson, name: string): FieldDefJson | undefined {
+  return def.fields.find((field) =>
+    field.repeat === null ? field.name === name : partIndex(name, field.name) !== null,
   );
 }

@@ -19,14 +19,32 @@
  * | `control.if` | `if %COND then %DO else if … else %ELSE` | all of it |
  * | `func.call` | `%FUNC %ARG …` | `%ARG …` |
  * | `func.define` | `define %NAME with … returns %RETURNS` | `with …` |
+ * | `control.switch` (W2) | `switch on %VALUE case %CASE %DO case … default %DEFAULT` | `case %CASE %DO case … default %DEFAULT` |
+ * | `error.try` (W2) | `try %TRY catch %ERROR as %NAME %CATCH catch …` | `catch %ERROR as %NAME %CATCH catch …` |
+ * | `file.for_each_line` (W2) | `for each line %LINE in file %PATH %BODY if it can't be opened %FAILED` | `if it can't be opened %FAILED` |
  *
  * Inside the region, the words before it are shown before the first copy of the group, the text
  * before a repeated part before every copy of it (`then` before each `DO`), the parts between the
  * last repeated part and `…` join one copy to the next (`else if`; `OP` between the items of
- * `logic.operation`), and the text before a flag-gated statement with it (`else`). A field that
- * joins copies (`OP`) is shown once, between the first two copies, and repeated as plain text
- * between later ones; when registration has already drawn it alone in an input, the mutator moves
- * that input there, and otherwise it creates the field itself.
+ * `logic.operation`), and the text before a flag-gated statement with it (`else`). So the second
+ * copy of *switch*'s group reads *case* again and the second of *try*'s *catch* again
+ * (docs/plans/m3-contracts/w2.md §2.1, *Joining words*). A field that joins copies (`OP`) is shown
+ * once, between the first two copies, and repeated as plain text between later ones; when
+ * registration has already drawn it alone in an input, the mutator moves that input there, and
+ * otherwise it creates the field itself.
+ *
+ * Milestone M3's wave W2 adds three things (w2.md §2.1):
+ *
+ * - **Repeated fields** are members of the group like repeated inputs (`ERROR`, `NAME` of
+ *   *try*): each copy's fields are shown, with the words before them, in front of the copy's next
+ *   input (`catch [error] as [e]` in front of the mouth `CATCH1`), or on a row of their own when
+ *   no input of the copy follows them.
+ * - **Flag-only branches**: a block with flag-gated statements and no repeated group (no `…`, the
+ *   file blocks' *if it can't be opened*) has a variadic spec without a count; the words before
+ *   its first gated statement go with that statement.
+ * - **Rows**: the parameter mutator's spec ({@link RowsSpec}) serves the three row extras,
+ *   `params`, `fields` and `values`, with the repeated value inputs counted by the rows
+ *   (`DEFAULT`, `repeat = { count = "params" }`), one per row.
  */
 import type {
   BlockDefJson,
@@ -34,8 +52,10 @@ import type {
   FieldDefJson,
   InputDefJson,
   LabelPart,
+  RowExtraKind,
 } from '../generated/catalog';
 import { MutatorConfigError } from './errors';
+import { REPEATABLE_FIELD_KINDS } from './fields';
 
 /** Indices into `labelParts`, both inclusive. */
 export interface LabelRegion {
@@ -43,14 +63,16 @@ export interface LabelRegion {
   readonly end: number;
 }
 
-/** A repeated input or statement: copies `NAME0` to `NAME{count + plus - 1}`. */
+/** A repeated input, statement or field: copies `NAME0` to `NAME{count + plus - 1}`. */
 export interface MemberSpec {
   readonly name: string;
-  readonly kind: 'value' | 'statement';
+  readonly kind: 'value' | 'statement' | 'field';
   /** Text shown before every copy. */
   readonly leading: readonly string[];
   /** The input definition, for value inputs. */
   readonly input: InputDefJson | null;
+  /** The field definition, for repeated fields (w2.md §2.1). */
+  readonly field: FieldDefJson | null;
 }
 
 /** A statement input that exists while a flag is set (`ELSE` while `hasElse`). */
@@ -81,8 +103,11 @@ export interface VariadicSpec {
   readonly blockType: string;
   /** The label words right before the region, shown before the first copy (`print`, `if`). */
   readonly groupLeading: readonly string[];
-  /** The count that sets how many copies of the members there are. */
-  readonly count: CountSpec;
+  /**
+   * The count that sets how many copies of the members there are; `null` for flag-only branches
+   * (no repeated group, no members, w2.md §2.1).
+   */
+  readonly count: CountSpec | null;
   /** Copies = count + plus (`control.if` always has its first branch). */
   readonly plus: number;
   readonly members: readonly MemberSpec[];
@@ -96,24 +121,46 @@ export interface VariadicSpec {
   readonly anchorArgs: readonly string[];
 }
 
-/** The parts the parameter mutator manages. */
-export interface ParamsSpec {
+/**
+ * The rows of a row extra (w2.md §2.1): `params` rows `{sym, name, type, mode}` (a function's
+ * parameters), `fields` rows `{sym, name, type}` (a struct's fields) and `values` rows `{sym, name}`
+ * (an enum's values).
+ */
+export type RowKind = RowExtraKind;
+
+/** The parts the rows mutator (`b2c_mutator_params`) manages. */
+export interface RowsSpec {
   readonly kind: 'params';
+  /** Which row extra: `params`, `fields` or `values`. */
+  readonly rowKind: RowKind;
   readonly blockType: string;
-  /** The label words right before the rows (`with`). */
+  /** The label words right before the rows (`with`, `has`, `values`). */
   readonly groupLeading: readonly string[];
-  /** The `params` extra key. */
+  /** The row extra's key, which is its kind's name. */
   readonly name: string;
   /** The most rows. */
   readonly max: number;
-  /** The parameter types, in menu order. */
+  /** The types a row offers, in menu order (none for `values` rows). */
   readonly types: readonly string[];
   /**
    * The class of the other types a row may have, as a type term (a template, a user type); catalog
    * 1.3.0 gives `func.define` the `value` class. `null`: the listed names only.
    */
   readonly typeClass: ExtraDefJson['typeClass'];
+  /**
+   * The repeated value inputs counted by the rows (`repeat = { count = "params" }`), one part per
+   * row, drawn at the end of each row (`DEFAULT`, W2's package C2).
+   */
+  readonly rowInputs: readonly InputDefJson[];
   readonly anchorArgs: readonly string[];
+}
+
+/** The spec of the parameter rows of `func.define`: a {@link RowsSpec} of kind `params`. */
+export type ParamsSpec = RowsSpec;
+
+/** Whether an extra kind is a row extra. */
+export function isRowKind(kind: ExtraDefJson['kind']): kind is RowKind {
+  return kind === 'params' || kind === 'fields' || kind === 'values';
 }
 
 function isRepeat(part: LabelPart): part is { readonly repeat: true } {
@@ -128,12 +175,20 @@ function textOf(part: LabelPart): string | null {
   return 'text' in part ? part.text : null;
 }
 
-/** The names of the repeated inputs and statements and of the flag-gated statements. */
+/**
+ * The names of the repeated inputs, statements and fields and of the flag-gated statements, but
+ * not the inputs counted by a row extra (the rows mutator draws those in its rows).
+ */
 function variableArgs(def: BlockDefJson): Set<string> {
   const names = new Set<string>();
   for (const input of def.inputs) {
-    if (input.repeat !== null) {
+    if (input.repeat !== null && !isRowCounted(def, input)) {
       names.add(input.name);
+    }
+  }
+  for (const field of def.fields) {
+    if (field.repeat !== null) {
+      names.add(field.name);
     }
   }
   for (const statement of def.statements) {
@@ -142,6 +197,12 @@ function variableArgs(def: BlockDefJson): Set<string> {
     }
   }
   return names;
+}
+
+/** Whether a repeated input is counted by a row extra (one part per row). */
+function isRowCounted(def: BlockDefJson, input: InputDefJson): boolean {
+  const count = input.repeat?.count;
+  return def.extra.some((extra) => extra.name === count && isRowKind(extra.kind));
 }
 
 /** The region without the label words before it: from the first variable part to the last. */
@@ -212,17 +273,24 @@ function countSpec(def: BlockDefJson, extra: ExtraDefJson | undefined): CountSpe
   return { name: extra.name, min, max, default: value };
 }
 
-/** The spec of a variadic block (items, *if* or call arguments). */
+/**
+ * The spec of a variadic block (items, *if* or call arguments), or of a block with flag-only
+ * branches (w2.md §2.1).
+ */
 export function variadicSpec(def: BlockDefJson): VariadicSpec {
   const region = coreRegion(def);
   const marker = def.labelParts.findIndex(isRepeat);
+  if (region !== null && marker === -1) {
+    return flagOnlySpec(def, region);
+  }
   if (region === null || marker === -1) {
     return fail(def, 'the label has no repeated group (…)');
   }
   const inputs = new Map(def.inputs.map((input) => [input.name, input]));
   const statements = new Map(def.statements.map((statement) => [statement.name, statement]));
+  const fields = new Map(def.fields.map((field) => [field.name, field]));
   const repeatOf = (name: string): { count: string; plus: number } | null =>
-    inputs.get(name)?.repeat ?? statements.get(name)?.repeat ?? null;
+    inputs.get(name)?.repeat ?? statements.get(name)?.repeat ?? fields.get(name)?.repeat ?? null;
 
   const regionParts = def.labelParts.slice(region.start, region.end + 1);
   const markerAt = marker - region.start;
@@ -260,11 +328,16 @@ export function variadicSpec(def: BlockDefJson): VariadicSpec {
       }
       repeat = memberRepeat;
       const input = inputs.get(arg) ?? null;
+      const field = input === null ? (fields.get(arg) ?? null) : null;
+      if (field !== null && !REPEATABLE_FIELD_KINDS.includes(field.kind)) {
+        fail(def, `${arg} is a ${field.kind} field, which cannot be repeated`);
+      }
       members.push({
         name: arg,
-        kind: input === null ? 'statement' : 'value',
+        kind: input !== null ? 'value' : field !== null ? 'field' : 'statement',
         leading: pending,
         input,
+        field,
       });
       pending = [];
     } else if (arg !== null && index < markerAt) {
@@ -286,24 +359,18 @@ export function variadicSpec(def: BlockDefJson): VariadicSpec {
   }
 
   if (repeat === null) {
-    return fail(def, 'the repeated group names no repeated input or statement');
+    return fail(def, 'the repeated group names no repeated input, statement or field');
+  }
+  if (members.every((member) => member.kind === 'field')) {
+    fail(def, 'a repeated group needs a repeated input or statement besides its fields');
   }
   const countName = repeat.count;
   const count = countSpec(
     def,
     def.extra.find((extra) => extra.name === countName),
   );
-  const flags: FlagSpec[] = def.extra
-    .filter((extra) => extra.kind === 'flag')
-    .map((extra) => ({ name: extra.name, default: extra.default === true }));
-  for (const part of gated) {
-    if (!flags.some((flag) => flag.name === part.flag)) {
-      fail(def, `${part.name} depends on ${part.flag}, which is not a flag extra`);
-    }
-  }
-  if (def.extra.some((extra) => extra.kind === 'params')) {
-    fail(def, 'a variadic mutator cannot also manage parameters');
-  }
+  const flags = flagSpecs(def);
+  checkGated(def, gated, flags);
   return {
     kind: 'variadic',
     blockType: def.id,
@@ -319,28 +386,112 @@ export function variadicSpec(def: BlockDefJson): VariadicSpec {
   };
 }
 
-/** The spec of a block with parameter rows (`func.define`). */
-export function paramsSpec(def: BlockDefJson): ParamsSpec {
-  const params = def.extra.filter((extra) => extra.kind === 'params');
-  const [extra] = params;
-  const region = coreRegion(def);
-  if (params.length !== 1 || extra === undefined) {
-    return fail(def, 'the parameter mutator needs exactly one params extra');
+/** The flag extras of a block, in catalog order. */
+function flagSpecs(def: BlockDefJson): FlagSpec[] {
+  return def.extra
+    .filter((extra) => extra.kind === 'flag')
+    .map((extra) => ({ name: extra.name, default: extra.default === true }));
+}
+
+/** Every gated statement depends on a flag extra, and a variadic block has no row extra. */
+function checkGated(
+  def: BlockDefJson,
+  gated: readonly GatedSpec[],
+  flags: readonly FlagSpec[],
+): void {
+  for (const part of gated) {
+    if (!flags.some((flag) => flag.name === part.flag)) {
+      fail(def, `${part.name} depends on ${part.flag}, which is not a flag extra`);
+    }
   }
-  if (extra.max === null || extra.types.length === 0) {
-    return fail(def, 'the params extra needs types and a maximum');
+  if (def.extra.some((extra) => isRowKind(extra.kind))) {
+    fail(def, 'a variadic mutator cannot also manage rows');
+  }
+}
+
+/**
+ * The spec of a block with flag-gated statements and no repeated group (w2.md §2.1, *Flag-only
+ * branches*): the region holds only gated statements and words, and the words before the region
+ * go with its first gated statement (`if it can't be opened` with `FAILED`).
+ */
+function flagOnlySpec(def: BlockDefJson, region: LabelRegion): VariadicSpec {
+  const statements = new Map(def.statements.map((statement) => [statement.name, statement]));
+  const gated: GatedSpec[] = [];
+  let pending: string[] = wordsBefore(def, region);
+  for (const part of def.labelParts.slice(region.start, region.end + 1)) {
+    const text = textOf(part);
+    const arg = argOf(part);
+    if (text !== null) {
+      pending.push(text);
+    } else if (arg !== null) {
+      const when = statements.get(arg)?.when ?? null;
+      if (when === null) {
+        return fail(def, `${arg} sits between flag-gated statements but is not one`);
+      }
+      gated.push({ name: arg, flag: when, leading: pending });
+      pending = [];
+    }
+  }
+  const flags = flagSpecs(def);
+  checkGated(def, gated, flags);
+  return {
+    kind: 'variadic',
+    blockType: def.id,
+    groupLeading: [],
+    count: null,
+    plus: 0,
+    members: [],
+    joinTexts: [],
+    joinField: null,
+    flags,
+    gated,
+    anchorArgs: anchorArgs(def, region),
+  };
+}
+
+/**
+ * The spec of a block with rows (w2.md §2.1): `func.define`'s `params`, a struct's `fields`, an
+ * enum's `values`. The label marks the rows with `…`; the only other variable parts it may name
+ * are the inputs counted by the rows.
+ */
+export function rowsSpec(def: BlockDefJson): RowsSpec {
+  const rows = def.extra.filter((extra) => isRowKind(extra.kind));
+  const [extra] = rows;
+  const region = coreRegion(def);
+  if (rows.length !== 1 || extra === undefined || !isRowKind(extra.kind)) {
+    return fail(def, 'the rows mutator needs exactly one row extra (params, fields or values)');
+  }
+  if (extra.name !== extra.kind) {
+    return fail(def, `the row extra ${extra.name} must be named ${extra.kind}`);
+  }
+  if (extra.max === null || (extra.kind !== 'values' && extra.types.length === 0)) {
+    return fail(def, `the ${extra.kind} extra needs its types and a maximum`);
   }
   if (def.extra.length !== 1 || region === null || region.start !== region.end) {
-    return fail(def, 'the parameter mutator needs a label with … and no other variable part');
+    return fail(def, 'the rows mutator needs a label with … and no other variable part');
   }
+  const rowInputs = def.inputs.filter((input) => input.repeat?.count === extra.name);
   return {
     kind: 'params',
+    rowKind: extra.kind,
     blockType: def.id,
     groupLeading: wordsBefore(def, region),
     name: extra.name,
     max: extra.max,
     types: extra.types,
     typeClass: extra.typeClass,
-    anchorArgs: anchorArgs(def, region),
+    rowInputs,
+    anchorArgs: anchorArgs(def, region).filter(
+      (arg) => !rowInputs.some((input) => input.name === arg),
+    ),
   };
+}
+
+/** The spec of a block with parameter rows (`func.define`): {@link rowsSpec} of kind `params`. */
+export function paramsSpec(def: BlockDefJson): ParamsSpec {
+  const spec = rowsSpec(def);
+  if (spec.rowKind !== 'params') {
+    return fail(def, 'the parameter mutator needs a params extra');
+  }
+  return spec;
 }

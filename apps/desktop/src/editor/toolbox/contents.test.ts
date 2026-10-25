@@ -21,6 +21,7 @@ import {
   dynamicContentsKey,
   functionsContents,
   initialToolboxDefinition,
+  isShownCategory,
   moduleHeading,
   moreVariablesNote,
   newVariableBlock,
@@ -208,8 +209,9 @@ describe('the toolbox definition', () => {
       'Input / Output',
       'Functions',
     ]);
+    const shown = TOOLBOX.filter(isShownCategory);
     for (const [index, category] of categories.entries()) {
-      const id = TOOLBOX[index]?.id;
+      const id = shown[index]?.id;
       expect(category.kind).toBe(B2C_CATEGORY_KIND);
       expect(category.categorystyle).toBe(`b2c_${String(id)}`);
       expect(categoryOfDefinition(category)).toBe(id);
@@ -232,7 +234,28 @@ describe('the toolbox definition', () => {
   it('starts with static categories only, so a workspace can be injected with it', () => {
     const initial = initialToolboxDefinition();
     expect(initial.contents.some((item) => 'custom' in item)).toBe(false);
-    expect(initial.contents).toHaveLength(TOOLBOX.length);
+    expect(initial.contents).toHaveLength(TOOLBOX.filter(isShownCategory).length);
+  });
+
+  it('leaves out a category without entries that the editor does not build (w2.md §2.1)', () => {
+    const empty = {
+      id: 'errors',
+      name: 'Errors',
+      icon: '⚠',
+      colour: 'errors',
+      dynamic: null,
+      entries: [],
+    } as const;
+    expect(isShownCategory(empty)).toBe(false);
+    expect(
+      isShownCategory({ ...empty, entries: [{ block: 'x', label: null, preset: null }] }),
+    ).toBe(true);
+    // The editor builds Program, Variables and Functions, also while their entries are empty.
+    expect(isShownCategory({ ...empty, id: 'program' })).toBe(true);
+    expect(isShownCategory({ ...empty, id: 'variables', dynamic: 'variables' })).toBe(true);
+    expect(toolboxDefinition().contents.map((item) => categoryOfDefinition(item))).toEqual(
+      TOOLBOX.filter(isShownCategory).map((category) => category.id),
+    );
   });
 
   it('finds no category key in definitions that are not ours', () => {

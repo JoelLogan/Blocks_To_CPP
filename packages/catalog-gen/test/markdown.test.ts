@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { readCatalogJson } from '../src/catalog-json.ts';
 import { blockReference, code, text, tokenText } from '../src/emit-markdown.ts';
 import { normalize } from '../src/normalize.ts';
-import { fixture, fixtureText } from './fixture.ts';
+import { fixture, fixtureText, rustBlock } from './fixture.ts';
 
 describe('blockReference', () => {
   it('writes an index and one page per toolbox category', () => {
@@ -24,6 +24,75 @@ describe('blockReference', () => {
     catalog.toolbox.category.pop();
     const model = normalize(readCatalogJson(JSON.stringify(catalog)));
     expect(() => blockReference(model)).toThrow('the toolbox categories cover 3 of 5 blocks');
+  });
+
+  it('writes no page for a category without blocks (w2.md §2.1)', () => {
+    const catalog = fixture();
+    catalog.toolbox.category.push({
+      id: 'errors',
+      name: 'Errors',
+      icon: '⚠',
+      colour: 'errors',
+      dynamic: null,
+      entry: [],
+    });
+    const files = blockReference(normalize(readCatalogJson(JSON.stringify(catalog))));
+    expect(files.has('errors.md')).toBe(false);
+    expect(files.get('README.md')).not.toContain('Errors');
+  });
+
+  it('describes repeated fields, row extras and header fields', () => {
+    const catalog = fixture();
+    catalog.blocks.push(
+      rustBlock('errors.try', {
+        category: 'errors',
+        label: { friendly: 'try %TRY catch %ERROR as %NAME %CATCH catch …', cpp: 'try' },
+        field: [
+          {
+            name: 'ERROR',
+            kind: 'type',
+            options: [],
+            types: ['std::exception'],
+            default: 'std::exception',
+            repeat: { count: 'catchCount', plus: 0 },
+          },
+          {
+            name: 'NAME',
+            kind: 'symbol_decl',
+            options: [],
+            types: [],
+            default: null,
+            repeat: { count: 'catchCount', plus: 0 },
+          },
+          { name: 'HEADER', kind: 'header', options: [], types: [], default: '<cmath>' },
+          { name: 'TYPE', kind: 'type', options: [], types: [], default: null },
+        ],
+        statement: [{ name: 'TRY', repeat: null, when: null }],
+        extra: [
+          { name: 'catchCount', kind: 'count', min: 1, max: 8, default: '1', types: [] },
+          { name: 'fields', kind: 'fields', min: 0, max: 64, default: null, types: ['int'] },
+          { name: 'values', kind: 'values', min: 0, max: 64, default: null, types: [] },
+        ],
+      }),
+    );
+    catalog.toolbox.category.push({
+      id: 'errors',
+      name: 'Errors',
+      icon: '⚠',
+      colour: 'errors',
+      dynamic: null,
+      entry: [{ block: 'errors.try', label: null, preset: null }],
+    });
+    const page =
+      blockReference(normalize(readCatalogJson(JSON.stringify(catalog)))).get('errors.md') ?? '';
+    expect(page).toContain(
+      '`ERROR0`, `ERROR1`, …: a type, `std::exception`, default `std::exception`, one for each of `catchCount`.',
+    );
+    expect(page).toContain('`NAME0`, `NAME1`, …: the name of the new variable, one for each of');
+    expect(page).toContain('`HEADER`: a standard header, default `<cmath>`.');
+    expect(page).toContain('`TYPE`: a type the module defines, required.');
+    expect(page).toContain('Setting `fields`: up to 64 fields, each `int`.');
+    expect(page).toContain('Setting `values`: up to 64 values, each with its name.');
   });
 
   it('describes a dynamic Variables category', () => {

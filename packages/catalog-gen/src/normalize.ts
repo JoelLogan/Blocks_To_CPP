@@ -1,8 +1,8 @@
 // Turns the Rust (serde) shapes of catalog.json into the editor's shapes (catalog-types.ts):
 // plural, camelCase names (`field` becomes `fields`), numbers for count defaults (`"1"` becomes
 // 1), null or empty values for keys that do not apply to a kind or that the export leaves out
-// (a block's signature keys, types.md §4.5), the entries of `types` lists as type field values
-// (their keys, types.md §3.2), and parsed friendly labels.
+// (a block's signature keys, types.md §4.5, and a field's `repeat`, w2.md §2.1), the entries of
+// `types` lists as type field values (their keys, types.md §3.2), and parsed friendly labels.
 
 import type {
   BlockDefJson,
@@ -72,6 +72,7 @@ function blockDef(block: RustBlockDef, path: string): BlockDefJson {
       types: field.types.map(typeKey),
       default: field.default,
       type: field.type ?? null,
+      repeat: repeat(field.repeat ?? null),
     })),
     inputs: block.input.map((input): InputDefJson => ({
       name: input.name,
@@ -171,9 +172,11 @@ function extraDef(extra: RustExtraDef, path: string): ExtraDefJson {
         typeClass,
       };
     case 'params':
+    case 'fields':
+    case 'values':
       return {
         name: extra.name,
-        kind: 'params',
+        kind: extra.kind,
         min: null,
         max: extra.max,
         default: null,

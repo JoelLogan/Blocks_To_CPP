@@ -11,19 +11,29 @@
  *   it; what is left at the end goes on a dummy input;
  * - fields and value inputs the label does not mention follow at the end, then the statement inputs
  *   the label does not mention (`statementsNotInLabel`);
- * - repeated inputs and statements, and statements that exist only while an `extra` flag is set,
- *   belong to the block's mutator. Where such a group starts, an empty dummy input named
- *   {@link REPEAT_ANCHOR} marks the place. The label text in front of a mutator part (for example
- *   `print` before `ITEM0`, or `else if`) is the mutator's to show, as are the label words between
- *   the parts of a group; the group ends at the template's `…`.
+ * - repeated inputs, statements and fields (docs/plans/m3-contracts/w2.md §2.1), and statements
+ *   that exist only while an `extra` flag is set, belong to the block's mutator. Where such a group
+ *   starts, an empty dummy input named {@link REPEAT_ANCHOR} marks the place. The label text in
+ *   front of a mutator part (for example `print` before `ITEM0`, or `else if`) is the mutator's to
+ *   show, as are the label words between the parts of a group; the group ends at the template's
+ *   `…`;
+ * - a field named {@link SHARED_FIELD} and the label words right before it (back to the previous
+ *   field or input) are hidden: the block keeps the field's value, but W2 does not show it, as
+ *   multi-module projects, where it means something, come with W3 (w2.md §2.1, modules.md §7.1).
  */
 import type { BlockDefJson } from '../generated/catalog';
 import { REPEAT_ANCHOR } from './mutators';
 
-/** One item in a row: a fixed label or a catalog field. */
+/**
+ * One item in a row: a fixed label or a catalog field. A `hidden` item is created but not shown
+ * (the {@link SHARED_FIELD} field and its words).
+ */
 export type LayoutItem =
-  | { readonly kind: 'label'; readonly text: string }
-  | { readonly kind: 'field'; readonly name: string };
+  | { readonly kind: 'label'; readonly text: string; readonly hidden?: true }
+  | { readonly kind: 'field'; readonly name: string; readonly hidden?: true };
+
+/** The field a definition shares with other modules by (modules.md §7.1), hidden until W3. */
+export const SHARED_FIELD = 'SHARED';
 
 /** One Blockly input of a block. */
 export interface LayoutInput {
@@ -38,7 +48,10 @@ export interface LayoutInput {
 /** A block's layout. */
 export interface BlockLayout {
   readonly inputs: readonly LayoutInput[];
-  /** The inputs and statements the block's mutator creates (catalog base names, such as `ITEM`). */
+  /**
+   * The inputs, statements and fields the block's mutator creates (catalog base names, such as
+   * `ITEM`).
+   */
   readonly mutatorParts: readonly string[];
 }
 
@@ -57,6 +70,7 @@ export function blockLayout(def: BlockDefJson): BlockLayout {
     ...def.statements
       .filter((statement) => statement.repeat !== null || statement.when !== null)
       .map((statement) => statement.name),
+    ...def.fields.filter((field) => field.repeat !== null).map((field) => field.name),
   ]);
 
   const inputs: LayoutInput[] = [];
@@ -102,6 +116,16 @@ export function blockLayout(def: BlockDefJson): BlockLayout {
           openGroup();
         }
         inGroup = true;
+      } else if (name === SHARED_FIELD && fieldNames.has(name)) {
+        // The words before it go with it (back to the previous field or input).
+        for (let index = pending.length - 1; index >= 0; index -= 1) {
+          const item = pending[index];
+          if (item?.kind !== 'label') {
+            break;
+          }
+          pending[index] = { ...item, hidden: true };
+        }
+        pending.push({ kind: 'field', name, hidden: true });
       } else if (fieldNames.has(name)) {
         pending.push({ kind: 'field', name });
       } else if (valueInputs.has(name)) {
@@ -117,8 +141,12 @@ export function blockLayout(def: BlockDefJson): BlockLayout {
   }
 
   for (const field of def.fields) {
-    if (!mentioned.has(field.name)) {
-      pending.push({ kind: 'field', name: field.name });
+    if (!mentioned.has(field.name) && !mutatorParts.has(field.name)) {
+      pending.push(
+        field.name === SHARED_FIELD
+          ? { kind: 'field', name: field.name, hidden: true }
+          : { kind: 'field', name: field.name },
+      );
     }
   }
   for (const input of def.inputs) {

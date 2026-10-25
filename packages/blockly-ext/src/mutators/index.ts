@@ -6,14 +6,15 @@ export { MutatorButton } from './buttons';
 export { MutatorConfigError, MutatorStateError, type MutatorStateProblem } from './errors';
 export {
   configureMutators,
+  type DeclNameFactory,
   type InputShadowFactory,
   type MutatorHooks,
   type MutatorSymbolInfo,
   type MutatorSymbols,
 } from './hooks';
 export { isB2cMutatorBlock, refreshMutatorLabels, registerB2cMutators } from './register';
-export { type LabelRegion, mutatorLabelRegion } from './spec';
-export { MAX_VARIADIC_PARTS } from './state';
+export { isRowKind, type LabelRegion, mutatorLabelRegion, type RowKind } from './spec';
+export { MAX_VARIADIC_PARTS, ROW_KEYS } from './state';
 export {
   B2C_MUTATOR_CALL_ARGS,
   B2C_MUTATOR_IF,
@@ -25,4 +26,5 @@ export {
   PARAM_MODES,
   type ParamMode,
   type ParamRow,
+  type RowState,
 } from './types';

@@ -98,15 +98,21 @@ function appendItem(
   item: LayoutItem,
 ): void {
   if (item.kind === 'label') {
-    input.appendField(new Blockly.FieldLabel(item.text));
+    const label = new Blockly.FieldLabel(item.text);
+    input.appendField(label);
+    if (item.hidden === true) {
+      label.setVisible(false);
+    }
     return;
   }
   const fieldDef = def.fields.find((field) => field.name === item.name);
   if (fieldDef === undefined) {
     throw new BlockRegistrationError(`The block ${def.id} has no field ${item.name}.`);
   }
-  input.appendField(
-    createCatalogField(fieldDef, catalogFieldOptions(block.type, fieldDef.name)),
-    fieldDef.name,
-  );
+  const field = createCatalogField(fieldDef, catalogFieldOptions(block.type, fieldDef.name));
+  input.appendField(field, fieldDef.name);
+  if (item.hidden === true) {
+    // Kept with its value, not shown (the SHARED field, w2.md §2.1).
+    field.setVisible(false);
+  }
 }

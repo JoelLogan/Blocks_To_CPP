@@ -58,6 +58,7 @@ export {
   type TypePattern,
 } from './pattern';
 export {
+  fieldParts,
   inputParts,
   isFitError,
   MAX_VARIADIC_PARTS,

@@ -4,6 +4,7 @@
  * connection checker's type oracle (wave-2 seams of blockly-ext).
  */
 import {
+  type DeclNameFactory,
   type DialogService as FieldDialogService,
   type EditorServices,
   exprShadowState,
@@ -23,6 +24,7 @@ import * as Blockly from 'blockly/core';
 import * as English from 'blockly/msg/en';
 
 import type { DialogService as AppDialogService } from '../../app/dialogs/service';
+import { candidateName, defaultNameKind } from '../toolbox/names';
 
 let registered = false;
 
@@ -51,6 +53,16 @@ export function registerEditorBlocks(): void {
  */
 export const defaultInputShadow: InputShadowFactory = (_block, input) =>
   input.default.length > 0 ? exprShadowState(input.default, false, input.check, true) : null;
+
+/**
+ * The name a new part of a repeated declaration field starts with (a second catch part's `e`,
+ * docs/plans/m3-contracts/w2.md §2.1): the first default name of its kind (../toolbox/names.ts),
+ * or nothing for a field without one.
+ */
+export const defaultDeclName: DeclNameFactory = (block, field) => {
+  const kind = defaultNameKind(block.type, field);
+  return kind === undefined ? null : candidateName(kind, 0);
+};
 
 /** The fields' dialogs, shown by the app's accessible dialogs (never `window.prompt`). */
 export function fieldDialogs(dialogs: AppDialogService): FieldDialogService {
@@ -84,11 +96,12 @@ export function installEditorServices(services: EditorServiceSet): () => void {
     symbols: services.symbols,
     inputShadow: defaultInputShadow,
     newSymbolId: () => newId('sym'),
+    declName: defaultDeclName,
   });
   setCheckerTypeOracle(services.types);
   return () => {
     resetEditorServices();
-    configureMutators({ symbols: null, inputShadow: null, newSymbolId: null });
+    configureMutators({ symbols: null, inputShadow: null, newSymbolId: null, declName: null });
     setCheckerTypeOracle(null);
   };
 }

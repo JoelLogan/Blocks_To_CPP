@@ -2,9 +2,25 @@
 // crates/b2c-catalog/tests/export.rs exports from the validated catalog in catalog/.
 // Do not edit: change catalog/ and regenerate (see packages/catalog-gen/README.md).
 
-/** A toolbox category, in toolbox order (spec §3.7). */
+/**
+ * A toolbox category, in toolbox order (spec §3.7). Milestone M3's wave W2 adds `collections`,
+ * `types`, `files` and `errors` (docs/plans/m3-contracts/w2.md §2.1); a category may have no
+ * entries yet, and the editor does not show it then.
+ */
 export type CategoryId =
-  'program' | 'variables' | 'math' | 'logic' | 'text' | 'control' | 'loops' | 'io' | 'functions';
+  | 'program'
+  | 'variables'
+  | 'math'
+  | 'logic'
+  | 'text'
+  | 'control'
+  | 'loops'
+  | 'io'
+  | 'functions'
+  | 'collections'
+  | 'types'
+  | 'files'
+  | 'errors';
 
 /** A block's shape (spec §3.3). */
 export type Shape = 'hat' | 'definition' | 'statement' | 'reporter' | 'predicate';
@@ -40,9 +56,12 @@ export type TypeClass =
   | 'output_file'
   | 'exception';
 
-/** The kind of a field. */
+/**
+ * The kind of a field. `header` (types.md §5.4) holds a standard header from the header table as
+ * its text, such as `<cmath>`.
+ */
 export type FieldKind =
-  'dropdown' | 'checkbox' | 'text' | 'number' | 'type' | 'symbol_decl' | 'symbol_ref';
+  'dropdown' | 'checkbox' | 'text' | 'number' | 'type' | 'symbol_decl' | 'symbol_ref' | 'header';
 
 /**
  * The type of the value a reporter or predicate gives: its pattern as catalog files write it
@@ -110,7 +129,10 @@ export type TokenJson =
   | { readonly kw: string }
   | { readonly text: string };
 
-/** Repetition: parts `NAME0` to `NAME{count + plus - 1}`, where `count` is an `extra` key. */
+/**
+ * Repetition: parts `NAME0` to `NAME{count + plus - 1}`, where `count` is an `extra` key: a count,
+ * or a row extra (`params`, `fields`), whose number of rows is the count (w2.md §2.1).
+ */
 export interface RepeatJson {
   readonly count: string;
   readonly plus: number;
@@ -131,6 +153,11 @@ export interface FieldDefJson {
   readonly default: string | boolean | null;
   /** The field's pattern, on `type`, `symbol_ref` and `symbol_decl` fields; `null` for none. */
   readonly type: TypePatternJson | null;
+  /**
+   * A repeated field (w2.md §2.1): parts `NAME0`, `NAME1`, …, each with the field's default, drawn
+   * by the block's mutator as members of its repeated group; `null` for a field shown once.
+   */
+  readonly repeat: RepeatJson | null;
 }
 
 /** A value-input definition. */
@@ -156,19 +183,32 @@ export interface StatementDefJson {
   readonly when: string | null;
 }
 
+/**
+ * The kinds of row extras (w2.md §2.1): arrays of rows, each declaring a symbol. `params` rows are
+ * `{sym, name, type, mode}` (a function's parameters), `fields` rows `{sym, name, type}` (a
+ * struct's fields) and `values` rows `{sym, name}` (an enum's values). A row extra has the name of
+ * its kind.
+ */
+export type RowExtraKind = 'params' | 'fields' | 'values';
+
 /** A mutator-state (`extra`) key definition. */
 export interface ExtraDefJson {
   readonly name: string;
-  readonly kind: 'count' | 'flag' | 'params';
+  readonly kind: 'count' | 'flag' | RowExtraKind;
   /** The smallest count (counts only). */
   readonly min: number | null;
-  /** The largest count, or the most parameter rows (counts and params). */
+  /** The largest count, or the most rows (counts and row extras). */
   readonly max: number | null;
   /** A count's or a flag's default. */
   readonly default: number | boolean | null;
-  /** The parameter types (params only), as type field values (see {@link FieldDefJson.types}). */
+  /**
+   * The types a row offers (`params` and `fields` rows), as type field values (see
+   * {@link FieldDefJson.types}).
+   */
   readonly types: readonly string[];
-  /** The class of types a parameter row accepts besides its `types` (params only), or `null`. */
+  /**
+   * The class of types a row accepts besides its `types` (`params` and `fields` rows), or `null`.
+   */
   readonly typeClass: TypeClass | null;
 }
 
@@ -306,7 +346,15 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'Counts from one number to another, running blocks for each value.',
     output: null,
     fields: [
-      { name: 'VAR', kind: 'symbol_decl', options: [], types: [], default: null, type: null },
+      {
+        name: 'VAR',
+        kind: 'symbol_decl',
+        options: [],
+        types: [],
+        default: null,
+        type: null,
+        repeat: null,
+      },
       {
         name: 'DIRECTION',
         kind: 'dropdown',
@@ -318,6 +366,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: 'to',
         type: null,
+        repeat: null,
       },
     ],
     inputs: [
@@ -496,6 +545,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: 'while',
         type: null,
+        repeat: null,
       },
     ],
     inputs: [
@@ -529,7 +579,15 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'Calls a function and uses its result.',
     output: 'symbol',
     fields: [
-      { name: 'FUNC', kind: 'symbol_ref', options: [], types: [], default: null, type: null },
+      {
+        name: 'FUNC',
+        kind: 'symbol_ref',
+        options: [],
+        types: [],
+        default: null,
+        type: null,
+        repeat: null,
+      },
     ],
     inputs: [
       {
@@ -564,7 +622,15 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'Calls a function.',
     output: null,
     fields: [
-      { name: 'FUNC', kind: 'symbol_ref', options: [], types: [], default: null, type: null },
+      {
+        name: 'FUNC',
+        kind: 'symbol_ref',
+        options: [],
+        types: [],
+        default: null,
+        type: null,
+        repeat: null,
+      },
     ],
     inputs: [
       {
@@ -606,7 +672,15 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'Defines a function: a named group of blocks you can use again.',
     output: null,
     fields: [
-      { name: 'NAME', kind: 'symbol_decl', options: [], types: [], default: null, type: null },
+      {
+        name: 'NAME',
+        kind: 'symbol_decl',
+        options: [],
+        types: [],
+        default: null,
+        type: null,
+        repeat: null,
+      },
       {
         name: 'RETURNS',
         kind: 'type',
@@ -614,6 +688,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: ['void', 'int', 'double', 'bool', 'char', 'std::string'],
         default: 'void',
         type: { kind: 'var', name: 'R' },
+        repeat: null,
       },
     ],
     inputs: [],
@@ -686,7 +761,15 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'Asks the user to type something and stores it in a variable.',
     output: null,
     fields: [
-      { name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null, type: null },
+      {
+        name: 'VAR',
+        kind: 'symbol_ref',
+        options: [],
+        types: [],
+        default: null,
+        type: null,
+        repeat: null,
+      },
       {
         name: 'MODE',
         kind: 'dropdown',
@@ -697,6 +780,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: 'keep_asking',
         type: null,
+        repeat: null,
       },
     ],
     inputs: [
@@ -753,8 +837,17 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: 'none',
         type: null,
+        repeat: null,
       },
-      { name: 'NEWLINE', kind: 'checkbox', options: [], types: [], default: true, type: null },
+      {
+        name: 'NEWLINE',
+        kind: 'checkbox',
+        options: [],
+        types: [],
+        default: true,
+        type: null,
+        repeat: null,
+      },
       {
         name: 'STREAM',
         kind: 'dropdown',
@@ -765,6 +858,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: 'out',
         type: null,
+        repeat: null,
       },
     ],
     inputs: [
@@ -810,6 +904,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: 'true',
         type: null,
+        repeat: null,
       },
     ],
     inputs: [],
@@ -874,6 +969,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: 'and',
         type: null,
+        repeat: null,
       },
     ],
     inputs: [
@@ -978,6 +1074,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: 'add',
         type: null,
+        repeat: null,
       },
     ],
     inputs: [
@@ -1034,6 +1131,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: 'lt',
         type: null,
+        repeat: null,
       },
     ],
     inputs: [
@@ -1083,6 +1181,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: ['int', 'double'],
         default: 'int',
         type: null,
+        repeat: null,
       },
     ],
     inputs: [
@@ -1115,7 +1214,17 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     statementsNotInLabel: [],
     help: 'A number, such as 42 or 3.14.',
     output: 'number',
-    fields: [{ name: 'VALUE', kind: 'number', options: [], types: [], default: '0', type: null }],
+    fields: [
+      {
+        name: 'VALUE',
+        kind: 'number',
+        options: [],
+        types: [],
+        default: '0',
+        type: null,
+        repeat: null,
+      },
+    ],
     inputs: [],
     statements: [],
     extra: [],
@@ -1231,7 +1340,17 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     statementsNotInLabel: [],
     help: "A single character, such as 'a'.",
     output: 'char',
-    fields: [{ name: 'VALUE', kind: 'text', options: [], types: [], default: 'a', type: null }],
+    fields: [
+      {
+        name: 'VALUE',
+        kind: 'text',
+        options: [],
+        types: [],
+        default: 'a',
+        type: null,
+        repeat: null,
+      },
+    ],
     inputs: [],
     statements: [],
     extra: [],
@@ -1285,7 +1404,17 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     statementsNotInLabel: [],
     help: 'A piece of text.',
     output: 'std::string',
-    fields: [{ name: 'VALUE', kind: 'text', options: [], types: [], default: '', type: null }],
+    fields: [
+      {
+        name: 'VALUE',
+        kind: 'text',
+        options: [],
+        types: [],
+        default: '',
+        type: null,
+        repeat: null,
+      },
+    ],
     inputs: [],
     statements: [],
     extra: [],
@@ -1307,7 +1436,15 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'Adds to a variable (+=); choose down by (-=), times (*=), divided by (/=) or mod (%=) in the menu to subtract, multiply, divide or keep the remainder instead.',
     output: null,
     fields: [
-      { name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null, type: null },
+      {
+        name: 'VAR',
+        kind: 'symbol_ref',
+        options: [],
+        types: [],
+        default: null,
+        type: null,
+        repeat: null,
+      },
       {
         name: 'OP',
         kind: 'dropdown',
@@ -1321,6 +1458,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: 'add',
         type: null,
+        repeat: null,
       },
     ],
     inputs: [
@@ -1373,6 +1511,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: ['int', 'double', 'bool', 'char', 'std::string', 'auto'],
         default: 'int',
         type: { kind: 'var', name: 'T' },
+        repeat: null,
       },
       {
         name: 'NAME',
@@ -1381,8 +1520,17 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: null,
         type: { kind: 'var', name: 'T' },
+        repeat: null,
       },
-      { name: 'CONST', kind: 'checkbox', options: [], types: [], default: false, type: null },
+      {
+        name: 'CONST',
+        kind: 'checkbox',
+        options: [],
+        types: [],
+        default: false,
+        type: null,
+        repeat: null,
+      },
     ],
     inputs: [
       {
@@ -1415,7 +1563,15 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     help: 'The value of a variable.',
     output: 'symbol',
     fields: [
-      { name: 'VAR', kind: 'symbol_ref', options: [], types: [], default: null, type: null },
+      {
+        name: 'VAR',
+        kind: 'symbol_ref',
+        options: [],
+        types: [],
+        default: null,
+        type: null,
+        repeat: null,
+      },
     ],
     inputs: [],
     statements: [],
@@ -1445,6 +1601,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
         types: [],
         default: null,
         type: { kind: 'var', name: 'T' },
+        repeat: null,
       },
     ],
     inputs: [

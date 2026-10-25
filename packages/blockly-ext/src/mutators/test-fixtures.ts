@@ -20,7 +20,12 @@ import {
   type B2cMutatorName,
 } from './types';
 
-/** The mutator of each catalog block with variable parts (as block registration maps them). */
+/**
+ * The mutator of each catalog block with variable parts (as block registration maps them). The
+ * blocks of milestone M3's wave W2 are listed before the catalog has them
+ * (docs/plans/m3-contracts/w2.md §2.13); an entry for a block the catalog does not have is never
+ * read.
+ */
 export const TEST_MUTATOR_FOR_BLOCK: Readonly<Record<string, B2cMutatorName>> = {
   'io.print': B2C_MUTATOR_ITEMS,
   'text.join': B2C_MUTATOR_ITEMS,
@@ -29,6 +34,16 @@ export const TEST_MUTATOR_FOR_BLOCK: Readonly<Record<string, B2cMutatorName>> = 
   'func.call': B2C_MUTATOR_CALL_ARGS,
   'func.call_stmt': B2C_MUTATOR_CALL_ARGS,
   'func.define': B2C_MUTATOR_PARAMS,
+  // W2 (w2.md §2.13).
+  'coll.list_of': B2C_MUTATOR_ITEMS,
+  'file.write': B2C_MUTATOR_ITEMS,
+  'control.switch': B2C_MUTATOR_IF,
+  'error.try': B2C_MUTATOR_IF,
+  'file.for_each_line': B2C_MUTATOR_IF,
+  'file.open': B2C_MUTATOR_IF,
+  'type.new': B2C_MUTATOR_CALL_ARGS,
+  'type.struct': B2C_MUTATOR_PARAMS,
+  'type.enum': B2C_MUTATOR_PARAMS,
 };
 
 /** A field holding any value, such as `{ref}` or `{sym, name}`. */
@@ -58,6 +73,7 @@ function layout(def: BlockDefJson, withAnchor: boolean): TestInput[] {
     ...def.statements
       .filter((statement) => statement.repeat !== null || statement.when !== null)
       .map((statement) => statement.name),
+    ...def.fields.filter((field) => field.repeat !== null).map((field) => field.name),
   ]);
   const inputs: TestInput[] = [];
   const mentioned = new Set<string>();
@@ -113,7 +129,7 @@ function layout(def: BlockDefJson, withAnchor: boolean): TestInput[] {
     }
   }
   for (const field of def.fields) {
-    if (!mentioned.has(field.name)) {
+    if (!mentioned.has(field.name) && !variable.has(field.name)) {
       pending.push({ field });
     }
   }
@@ -140,11 +156,15 @@ function testField(def: FieldDefJson): Blockly.Field {
     case 'dropdown':
       return dropdown(def.options.map(([label, value]) => [label, value]));
     case 'type':
-      return dropdown(def.types.map((type) => [type, type]));
+      // A type field may list no types (w2.md §2.1): any value (a user type's key) stands in.
+      return def.types.length === 0
+        ? new ValueField('')
+        : dropdown(def.types.map((type) => [type, type]));
     case 'checkbox':
       return new Blockly.FieldCheckbox(def.default === true);
     case 'text':
     case 'number':
+    case 'header':
       return new Blockly.FieldTextInput(text ?? '');
     case 'symbol_decl':
     case 'symbol_ref':

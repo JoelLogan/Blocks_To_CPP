@@ -27,6 +27,10 @@ import { isSymbolDeclValue, isSymbolRefValue, type B2cFieldValue } from './value
  */
 export function readB2cField(field: Blockly.Field): B2cFieldValue | null {
   if (field instanceof B2cTypeField) {
+    if (!field.hasType()) {
+      // A field that lists no types, with nothing chosen yet (w2.md §2.1).
+      return null;
+    }
     const value = field.getValue();
     if (!value?.startsWith('{')) {
       return value;

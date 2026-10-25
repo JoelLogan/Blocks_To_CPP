@@ -19,8 +19,8 @@ import {
   type TypeJson,
 } from '../types/static-type';
 import { MutatorStateError } from './errors';
-import type { CountSpec, FlagSpec, ParamsSpec, VariadicSpec } from './spec';
-import { PARAM_MODES, type ParamMode, type ParamRow } from './types';
+import type { CountSpec, FlagSpec, ParamsSpec, RowsSpec, VariadicSpec } from './spec';
+import { PARAM_MODES, type ParamMode, type ParamRow, type RowState } from './types';
 
 /** The most parts one block may have: the project-file limit of 05 §5.6. */
 export const MAX_VARIADIC_PARTS = 64;
@@ -110,31 +110,50 @@ function readFlag(extra: Record<string, unknown>, spec: FlagSpec): boolean {
   return value;
 }
 
-/** Reads the count and flags of a variadic block; absent keys take their catalog defaults. */
+/**
+ * Reads the count and flags of a variadic block; absent keys take their catalog defaults. A block
+ * with flag-only branches (no count, w2.md §2.1) has the count 0.
+ */
 export function readVariadicExtra(spec: VariadicSpec, extra: unknown): VariadicState {
-  const record = checkKeys(extra, [spec.count.name, ...spec.flags.map((flag) => flag.name)]);
-  const count = readCount(record, spec.count);
+  const countKeys = spec.count === null ? [] : [spec.count.name];
+  const record = checkKeys(extra, [...countKeys, ...spec.flags.map((flag) => flag.name)]);
+  const count = spec.count === null ? 0 : readCount(record, spec.count);
   const flags = new Map(spec.flags.map((flag) => [flag.name, readFlag(record, flag)]));
   return { count, flags };
 }
 
-/** The `extra` of a variadic block: its count, then its flags, in catalog order. */
+/** The `extra` of a variadic block: its count (if it has one), then its flags, in catalog order. */
 export function writeVariadicExtra(
   spec: VariadicSpec,
   state: VariadicState,
 ): Record<string, unknown> {
-  const extra: Record<string, unknown> = { [spec.count.name]: state.count };
+  const extra: Record<string, unknown> =
+    spec.count === null ? {} : { [spec.count.name]: state.count };
   for (const flag of spec.flags) {
     extra[flag.name] = state.flags.get(flag.name) ?? flag.default;
   }
   return extra;
 }
 
-function badRow(spec: ParamsSpec, index: number, detail: string): MutatorStateError {
+/** What one row of each row extra is called in messages. */
+const ROW_NOUN: Readonly<Record<RowsSpec['rowKind'], string>> = Object.freeze({
+  params: 'Parameter',
+  fields: 'Field',
+  values: 'Value',
+});
+
+/** The keys of one row of each row extra (w2.md §2.1), in the order project files write them. */
+export const ROW_KEYS: Readonly<Record<RowsSpec['rowKind'], readonly string[]>> = Object.freeze({
+  params: ['sym', 'name', 'type', 'mode'],
+  fields: ['sym', 'name', 'type'],
+  values: ['sym', 'name'],
+});
+
+function badRow(spec: RowsSpec, index: number, detail: string): MutatorStateError {
   return new MutatorStateError(
     'badParamRow',
     spec.name,
-    `Parameter ${String(index + 1)} ${detail}.`,
+    `${ROW_NOUN[spec.rowKind]} ${String(index + 1)} ${detail}.`,
   );
 }
 
@@ -152,33 +171,54 @@ export function isShowableName(name: string): boolean {
   );
 }
 
-function readRow(spec: ParamsSpec, row: unknown, index: number): ParamRow {
+/** Reads one row of any row extra: the keys its kind has, each checked. */
+function readRowState(spec: RowsSpec, row: unknown, index: number): RowState {
   if (!isPlainObject(row)) {
     throw badRow(spec, index, 'is not an object');
   }
+  const keys = ROW_KEYS[spec.rowKind];
   for (const key of Object.keys(row)) {
-    if (key !== 'sym' && key !== 'name' && key !== 'type' && key !== 'mode') {
+    if (!keys.includes(key)) {
       throw badRow(spec, index, `has an unknown key "${key}"`);
     }
   }
   const sym = own(row, 'sym');
   const name = own(row, 'name');
-  const type = own(row, 'type');
-  const mode = own(row, 'mode');
   if (typeof sym !== 'string' || !SYMBOL_ID.test(sym)) {
     throw badRow(spec, index, 'needs a valid symbol ID in "sym"');
   }
   if (typeof name !== 'string' || !isShowableName(name)) {
     throw badRow(spec, index, `needs a name of at most ${String(MAX_PARAM_NAME_CHARS)} characters`);
   }
-  const key = rowTypeKey(spec, type);
-  if (key === null) {
-    throw badRow(spec, index, 'has a type parameters cannot have');
+  let type: string | null = null;
+  if (keys.includes('type')) {
+    type = rowTypeKey(spec, own(row, 'type'));
+    if (type === null) {
+      throw badRow(
+        spec,
+        index,
+        `has a type ${spec.rowKind === 'params' ? 'parameters' : 'fields'} cannot have`,
+      );
+    }
   }
-  if (!isParamMode(mode)) {
-    throw badRow(spec, index, 'has an unknown mode');
+  let mode: ParamMode | null = null;
+  if (keys.includes('mode')) {
+    const value = own(row, 'mode');
+    if (!isParamMode(value)) {
+      throw badRow(spec, index, 'has an unknown mode');
+    }
+    mode = value;
   }
-  return { sym, name, type: key, mode };
+  return { sym, name, type, mode };
+}
+
+function readRow(spec: ParamsSpec, row: unknown, index: number): ParamRow {
+  const { sym, name, type, mode } = readRowState(spec, row, index);
+  if (type === null || mode === null) {
+    // Only a `params` spec reads parameter rows (see readParamsExtra).
+    throw badRow(spec, index, 'is not a parameter row');
+  }
+  return { sym, name, type, mode };
 }
 
 /**
@@ -210,19 +250,45 @@ export function rowTypeJson(key: string): TypeJson {
   return term === null ? key : termJson(term);
 }
 
-/** Reads the parameter rows of a block; an absent `params` is no rows. */
-export function readParamsExtra(spec: ParamsSpec, extra: unknown): ParamRow[] {
+/** The rows of a row extra as an array, checked against the limit; an absent key is no rows. */
+function rowList(spec: RowsSpec, extra: unknown): unknown[] {
   const record = checkKeys(extra, [spec.name]);
   const rows = own(record, spec.name);
   if (rows === undefined) {
     return [];
   }
   if (!Array.isArray(rows) || rows.length > MAX_VARIADIC_PARTS) {
+    const noun = spec.rowKind === 'params' ? 'parameters' : spec.rowKind;
     throw new MutatorStateError(
       'badParams',
       spec.name,
-      `The setting "${spec.name}" must be a list of at most ${String(MAX_VARIADIC_PARTS)} parameters.`,
+      `The setting "${spec.name}" must be a list of at most ${String(MAX_VARIADIC_PARTS)} ${noun}.`,
     );
   }
-  return rows.map((row: unknown, index) => readRow(spec, row, index));
+  return rows;
+}
+
+/** Reads the parameter rows of a block (a `params` spec); an absent `params` is no rows. */
+export function readParamsExtra(spec: ParamsSpec, extra: unknown): ParamRow[] {
+  return rowList(spec, extra).map((row: unknown, index) => readRow(spec, row, index));
+}
+
+/**
+ * Reads the rows of any row extra (w2.md §2.1): `params` rows with their type and mode, `fields`
+ * rows with their type, `values` rows with neither (`null`). An absent key is no rows.
+ */
+export function readRowsExtra(spec: RowsSpec, extra: unknown): RowState[] {
+  return rowList(spec, extra).map((row: unknown, index) => readRowState(spec, row, index));
+}
+
+/** One row as a project file writes it: only the keys its kind has, types as terms. */
+export function writeRow(spec: RowsSpec, row: RowState): Record<string, unknown> {
+  const out: Record<string, unknown> = { sym: row.sym, name: row.name };
+  if (spec.rowKind !== 'values' && row.type !== null) {
+    out['type'] = rowTypeJson(row.type);
+  }
+  if (spec.rowKind === 'params' && row.mode !== null) {
+    out['mode'] = row.mode;
+  }
+  return out;
 }

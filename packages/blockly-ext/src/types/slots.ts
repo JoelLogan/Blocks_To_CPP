@@ -42,11 +42,14 @@ export type PartType =
   /** Not known to the editor (something the analysis has not seen). */
   | { readonly kind: 'unknown' };
 
-/** The parts of the block being typed. A repeated input is asked part by part (`ITEM2`). */
+/**
+ * The parts of the block being typed. A repeated input is asked part by part (`ITEM2`), and so is
+ * a repeated field (`ERROR1`, docs/plans/m3-contracts/w2.md §2.1).
+ */
 export interface BlockParts {
   field(name: string): PartType;
   input(part: string): PartType;
-  /** How many parts the repeated input `base` has now. */
+  /** How many parts the repeated input or field `base` has now. */
   count(base: string): number;
   /** `param:F`: parameter `index` of the function chosen in field `field`. */
   param(field: string, index: number): PartType;
@@ -76,9 +79,9 @@ export interface BlockTyping {
     string,
     { readonly expects: StaticType | null; readonly fit: SlotFit }
   >;
-  /** Every `type` and `symbol_ref` field that has a pattern or `members`. */
+  /** Every `type` and `symbol_ref` field that has a pattern or `members` (a repeated one by part). */
   readonly fields: ReadonlyMap<string, SlotFit>;
-  /** What each `symbol_decl` field with a pattern declares. */
+  /** What each `symbol_decl` field with a pattern declares (a repeated one by part, `NAME1`). */
   readonly declares: ReadonlyMap<string, StaticType>;
   /** The block's value type; null for `any` and `number` outputs, which keep their M2 rules. */
   readonly output: StaticType | null;
@@ -217,6 +220,24 @@ export function inputParts(
   return [[base, null]];
 }
 
+/**
+ * The parts of the field `base`: the field itself, or each part of a repeated field with its index
+ * (w2.md §2.1).
+ */
+export function fieldParts(
+  sig: BlockSigTs,
+  parts: BlockParts,
+  base: string,
+): (readonly [part: string, index: number | null])[] {
+  if (!sig.repeatedFields.has(base)) {
+    return [[base, null]];
+  }
+  return Array.from(
+    { length: Math.min(safeCount(parts, base), MAX_VARIADIC_PARTS) },
+    (_, i) => [`${base}${String(i)}`, i] as const,
+  );
+}
+
 function safeCount(parts: BlockParts, base: string): number {
   const count = parts.count(base);
   return Number.isSafeInteger(count) && count > 0 ? count : 0;
@@ -241,12 +262,13 @@ function bindParts(
     if (!('field' in part)) {
       continue;
     }
-    const name = part.field;
-    const pattern = sig.fields.get(name);
-    if (pattern === undefined || sig.symbolDecls.has(name) || sig.members.has(name)) {
+    const pattern = sig.fields.get(part.field);
+    if (pattern === undefined || sig.symbolDecls.has(part.field) || sig.members.has(part.field)) {
       continue;
     }
-    record(name, env.bind(pattern, parts.field(name), { field: name }, facts));
+    for (const [name] of fieldParts(sig, parts, part.field)) {
+      record(name, env.bind(pattern, parts.field(name), { field: name }, facts));
+    }
   }
   for (const part of sig.order) {
     if (!('input' in part)) {
@@ -341,38 +363,37 @@ class Resolver {
   fields(sig: BlockSigTs): { fields: Map<string, SlotFit>; declares: Map<string, StaticType> } {
     const fields = new Map<string, SlotFit>();
     const declares = new Map<string, StaticType>();
-    for (const name of [...sig.fields.keys()].sort()) {
-      const pattern = sig.fields.get(name);
-      if (pattern === undefined) {
+    for (const base of [...sig.fields.keys()].sort()) {
+      const pattern = sig.fields.get(base);
+      if (pattern === undefined || sig.members.has(base)) {
         continue;
       }
-      if (sig.symbolDecls.has(name)) {
-        declares.set(name, this.expects(pattern, null) ?? ERROR_TYPE);
-        continue;
-      }
-      if (sig.members.has(name)) {
-        continue;
-      }
-      const type = knownType(this.parts.field(name));
-      let fit: SlotFit;
-      if (type === null) {
-        fit = 'unknown';
-      } else {
-        const failure = this.failed.get(name);
-        if (failure !== undefined) {
-          fit = failure;
-        } else if (sig.symbolRefs.has(name)) {
-          // An earlier part bound the variable to another type: a reference is never converted.
-          const expected = this.expects(pattern, null);
-          fit =
-            expected !== null && expected.kind !== 'error' && !sameType(expected, type)
-              ? 'invalid'
-              : 'same';
-        } else {
-          fit = 'same';
+      for (const [name, index] of fieldParts(sig, this.parts, base)) {
+        if (sig.symbolDecls.has(base)) {
+          declares.set(name, this.expects(pattern, index) ?? ERROR_TYPE);
+          continue;
         }
+        const type = knownType(this.parts.field(name));
+        let fit: SlotFit;
+        if (type === null) {
+          fit = 'unknown';
+        } else {
+          const failure = this.failed.get(name);
+          if (failure !== undefined) {
+            fit = failure;
+          } else if (sig.symbolRefs.has(base)) {
+            // An earlier part bound the variable to another type: a reference is never converted.
+            const expected = this.expects(pattern, index);
+            fit =
+              expected !== null && expected.kind !== 'error' && !sameType(expected, type)
+                ? 'invalid'
+                : 'same';
+          } else {
+            fit = 'same';
+          }
+        }
+        fields.set(name, fit);
       }
-      fields.set(name, fit);
     }
     for (const [name, variable] of [...sig.members].sort(([a], [b]) =>
       a < b ? -1 : a > b ? 1 : 0,
