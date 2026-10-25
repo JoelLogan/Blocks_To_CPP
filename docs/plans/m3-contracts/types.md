@@ -922,7 +922,7 @@ pub struct ItemHeaders {
 | a comparable struct, C++17 | six hidden friends on `std::tie` | `<tuple>` |
 | a printable struct | a hidden-friend `operator<<` | `<ostream>` |
 | an enum that is printed or written | `operator<<` with each enumerator's name | `<ostream>` |
-| an enum that is joined | `to_string(Color)` | `<string>` |
+| an enum that is joined | `to_string(Color)`, called as `::to_string(c)` (a variable named `to_string` would hide an unqualified call) | `<string>` |
 | a helper it calls | as in M2 | the helper's |
 
 **Formats W1 chose where nothing was specified**, to review with W2's

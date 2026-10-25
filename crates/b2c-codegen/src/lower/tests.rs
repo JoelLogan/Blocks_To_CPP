@@ -742,6 +742,9 @@ fn forms_program(standard: CppStandard) -> String {
     let e = sast.var("e", Type::Named(empty.clone()));
     let f = sast.var("f", Type::Named(empty.clone()));
     let i = sast.var("i", Type::Int);
+    // A variable named like the enum's generated function: the join below
+    // still calls the function (`::to_string(c)`).
+    let hiding = sast.var("to_string", Type::Int);
     let label = sast.var("label", Type::String);
     let name = sast.var("name", Type::String);
     let age = sast.var("age", Type::Int);
@@ -794,7 +797,8 @@ fn forms_program(standard: CppStandard) -> String {
         .chain([&ages, &points, &scores, &p, &q, &s, &c, &e, &f])
         .map(|id| declare(id, None))
         .collect();
-    main_body.push(declare(&i, Some(int("0"))));
+    main_body.push(declare(&hiding, Some(int("0"))));
+    main_body.push(declare(&i, Some(sast.get(&hiding))));
     main_body.push(declare(&label, None));
     for (lhs, rhs) in [(&p, &q), (&e, &f)] {
         let comparisons = [Op::Eq, Op::Ne, Op::Lt, Op::Gt, Op::Le, Op::Ge]
