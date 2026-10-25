@@ -359,6 +359,40 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn the_text_of_a_text_operation_is_used_as_it_is() {
+        // `b2c::to_lower(s)` and `s.substr(…)` are `std::string` objects
+        // already, so neither a join nor a member call wraps them in
+        // `std::string(…)` again, as it does a text literal.
+        let program = program(CppStandard::Cpp20, &[("s", Type::String)]);
+        let s = || var("s", Type::String);
+        let lower = || call(TextOp::ToLower, vec![s()], Type::String);
+        let letter_of = |text: Expr| {
+            expr(
+                ExprKind::Letter {
+                    text: Box::new(text),
+                    index: Box::new(int("0")),
+                },
+                Type::Char,
+            )
+        };
+        let part = call(TextOp::Part, vec![s(), int("1"), int("3")], Type::String);
+        for (value, expected) in [
+            (letter_of(lower()), "b2c::to_lower(s).at(0)"),
+            (
+                expr(ExprKind::Join(vec![lower(), text("!")]), Type::String),
+                r#"b2c::to_lower(s) + "!""#,
+            ),
+            (
+                expr(ExprKind::Join(vec![part, text("!")]), Type::String),
+                r#"s.substr(1, 3) + "!""#,
+            ),
+            (letter_of(text("abc")), r#"std::string("abc").at(0)"#),
+        ] {
+            assert_eq!(printed(&program, &value).0, expected);
+        }
+    }
+
+    #[test]
     fn starts_and_ends_with_are_helpers_in_cpp17() {
         let program = program(CppStandard::Cpp17, &[("s", Type::String)]);
         let mut lowerer = lowerer(&program);
