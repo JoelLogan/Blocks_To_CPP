@@ -78,13 +78,24 @@ pub fn exported_conversion_table() -> Vec<ConversionRow> {
         .collect()
 }
 
-/// The functions of one module: what is visible everywhere in it, sorted by
-/// name, then ID.
-fn module_functions(analysis: &Analysis, module: &ModuleId) -> Vec<SymbolInfo> {
-    analysis
-        .symbol_infos()
+/// What is visible everywhere in one module, from every symbol of the
+/// program (sorted by name, then ID): its functions, structs and enums, with
+/// the fields and enumerators of those structs and enums, which blocks refer
+/// to through their type (types.md §2.4), as the scope query lists them.
+fn module_wide(symbols: Vec<SymbolInfo>, module: &ModuleId) -> Vec<SymbolInfo> {
+    symbols
         .into_iter()
-        .filter(|info| info.module == *module && matches!(info.kind, SymbolInfoKind::Function { .. }))
+        .filter(|info| {
+            info.module == *module
+                && matches!(
+                    info.kind,
+                    SymbolInfoKind::Function { .. }
+                        | SymbolInfoKind::Struct { .. }
+                        | SymbolInfoKind::Enum { .. }
+                        | SymbolInfoKind::Field { .. }
+                        | SymbolInfoKind::Enumerator { .. }
+                )
+        })
         .collect()
 }
 
@@ -103,8 +114,10 @@ fn module_functions(analysis: &Analysis, module: &ModuleId) -> Vec<SymbolInfo> {
 /// So a paste into or after a parked block has the parked scope too, and a
 /// paste into or after a block inside a disabled statement has that
 /// statement's scope. A block the scope query has no answer for (one nested
-/// too deeply) sees the module's functions, which are visible everywhere in
-/// it.
+/// too deeply) sees what is visible everywhere in the module: its functions
+/// and user types, with their members. Every answer lists each struct and
+/// enum with its fields or enumerators, which carry their owner, so a pasted
+/// member binds through its owner (`crate::clipboard`).
 pub(crate) fn visible_at(
     analysis: &Analysis,
     module: &ModuleId,
@@ -118,7 +131,7 @@ pub(crate) fn visible_at(
         Some(input) => analysis.scope_at(block, Some(input)),
         None => analysis.scope_after(block),
     };
-    answer.unwrap_or_else(|| module_functions(analysis, module))
+    answer.unwrap_or_else(|| module_wide(analysis.symbol_infos(), module))
 }
 
 /// Finds a block by ID in one module's canvas (any depth, stacks included).
@@ -181,6 +194,70 @@ mod tests {
             serde_json::to_value(int_to_double).unwrap(),
             serde_json::json!({"from": "int", "to": "double", "conversion": "widening"})
         );
+    }
+
+    #[test]
+    fn module_wide_symbols_are_definitions_and_members() {
+        let module = ModuleId::new("m").unwrap();
+        let other = ModuleId::new("other").unwrap();
+        let info = |id: &str, kind: SymbolInfoKind, module: &ModuleId| SymbolInfo {
+            id: b2c_ir::SymbolId::new(id).unwrap(),
+            name: id.to_owned(),
+            kind,
+            ty: Type::Int,
+            module: module.clone(),
+            decl_block: BlockId::new("b").unwrap(),
+            shared: false,
+        };
+        let owner = b2c_ir::SymbolId::new("s_pt").unwrap();
+        let symbols = vec![
+            info(
+                "e_red",
+                SymbolInfoKind::Enumerator { owner: owner.clone() },
+                &module,
+            ),
+            info(
+                "f_area",
+                SymbolInfoKind::Function {
+                    params: Vec::new(),
+                    returns: Type::Int,
+                },
+                &module,
+            ),
+            info(
+                "f_far",
+                SymbolInfoKind::Function {
+                    params: Vec::new(),
+                    returns: Type::Int,
+                },
+                &other,
+            ),
+            info("f_x", SymbolInfoKind::Field { owner }, &module),
+            info("s_col", SymbolInfoKind::Enum { values: Vec::new() }, &module),
+            info("s_i", SymbolInfoKind::LoopVariable, &module),
+            info(
+                "s_pt",
+                SymbolInfoKind::Struct {
+                    fields: Vec::new(),
+                    comparable: false,
+                    printable: false,
+                },
+                &module,
+            ),
+            info("s_x", SymbolInfoKind::Variable { is_const: false }, &module),
+            info(
+                "p_n",
+                SymbolInfoKind::Parameter {
+                    mode: b2c_ir::sast::PassMode::Copy,
+                },
+                &module,
+            ),
+        ];
+        let ids: Vec<String> = module_wide(symbols, &module)
+            .iter()
+            .map(|info| info.id.to_string())
+            .collect();
+        assert_eq!(ids, ["e_red", "f_area", "f_x", "s_col", "s_pt"]);
     }
 
     #[test]

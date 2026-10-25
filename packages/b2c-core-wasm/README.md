@@ -80,7 +80,8 @@ what the editor still shows.
 `conversionTable()` lets the connection checker refuse exactly the connections the analyser would
 report (`invalid`). The core's table covers every pair of the sample types of the shared type
 fixture (`packages/blockly-ext/src/types/fixture.json`); until the switch to the term form, the
-export returns the 49 pairs of M2's seven types.
+export returns the 49 pairs of M2's seven types. The scope query also lists the fields and
+enumerators of each struct and enum it lists (milestone M3), each with its `owner`.
 
 ### Clipboard
 

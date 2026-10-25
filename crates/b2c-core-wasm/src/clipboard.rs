@@ -33,7 +33,10 @@
 //!   belongs to at the target), the member keeps its ID; when it is another
 //!   type, the member binds to that type's member of the same name;
 //!   otherwise it is unresolved. Members are found among the visible
-//!   symbols, with their owner.
+//!   symbols: the scope query lists the fields and enumerators of each
+//!   struct and enum it lists, with their owner
+//!   (`b2c_lang::Analysis::scope_at`), and so does the fallback for a block
+//!   it has no answer for (`crate::scope`).
 //!
 //! The blocks that declare structs and enums come with wave W2; until then
 //! no document declares them, so no payload records them, but a payload

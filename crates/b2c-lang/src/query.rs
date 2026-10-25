@@ -26,6 +26,11 @@
 //! Each of these walks is iterative and stops at [`MAX_BLOCK_DEPTH`], like the
 //! lowering, so a block nested too deeply anywhere gives no answer.
 //!
+//! The answer also lists the fields of each struct and the enumerators of
+//! each enum it lists, with their owner (types.md §2.4): blocks refer to
+//! them through their type, and a paste binds them through it. No name
+//! hides them, and they hide no name.
+//!
 //! [`Scopes`]: crate::scope::Scopes
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,7 +38,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use b2c_ir::diag::Part;
 use b2c_ir::ids::{BlockId, ModuleId, SymbolId};
 use b2c_ir::sast::{Expr, ItemKind, Program, Stmt, SymbolKind};
-use b2c_ir::scope_info::SymbolInfo;
+use b2c_ir::scope_info::{SymbolInfo, SymbolInfoKind};
 use b2c_ir::types::Type;
 use b2c_model::{Block, Document, Input};
 
@@ -264,6 +269,11 @@ impl Analysis {
     /// declarations in disabled blocks, functions of other modules and
     /// functions hidden by a local name.
     ///
+    /// With a struct or an enum, the answer lists its fields or enumerators
+    /// too (`field` and `enumerator` records, with their `owner`): blocks
+    /// refer to them through their type, so no local name hides them, and
+    /// they hide nothing.
+    ///
     /// Blocks the analyser does not lower answer too, with any `input`:
     ///
     /// * A disabled block in a statement list or value input the analyser
@@ -294,7 +304,7 @@ impl Analysis {
     /// empty list means that nothing is visible there.
     pub fn scope_at(&self, block: &BlockId, input: Option<&str>) -> Option<Vec<SymbolInfo>> {
         let point = self.index.point(block, input)?;
-        Some(self.infos(self.index.visible(point)))
+        Some(self.infos(self.with_members(self.index.visible(point))))
     }
 
     /// What is visible **directly after** a block in its statement list,
@@ -317,7 +327,9 @@ impl Analysis {
             })
             .map(|(id, _)| id);
         if let Some(own) = created.and_then(|id| self.infos(vec![id]).pop()) {
-            visible.retain(|info| info.name != own.name);
+            // The new variable hides what has its name, but not the members
+            // of a type, which are reached through the type.
+            visible.retain(|info| info.name != own.name || is_member(info));
             visible.push(own);
             visible.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
         }
@@ -334,7 +346,7 @@ impl Analysis {
     /// [`Self::symbols_in_scope`].
     pub fn parked_scope(&self, module: &ModuleId) -> Vec<SymbolInfo> {
         match self.program.modules.iter().position(|m| m.id == *module) {
-            Some(index) => self.infos(self.index.visible(self.index.parked_point(index))),
+            Some(index) => self.infos(self.with_members(self.index.visible(self.index.parked_point(index)))),
             None => Vec::new(),
         }
     }
@@ -352,6 +364,29 @@ impl Analysis {
     /// `when program starts`) are not either.
     pub fn block_types(&self) -> BTreeMap<BlockId, Type> {
         block_types(&self.program)
+    }
+
+    /// These symbols, each struct and enum among them followed by its fields
+    /// or enumerators: those of its members that the table has as members of
+    /// it (types.md §2.4).
+    fn with_members<'a>(&'a self, ids: Vec<&'a SymbolId>) -> Vec<&'a SymbolId> {
+        let symbols = &self.program.symbols;
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            out.push(id);
+            let members = match symbols.get(id).map(|symbol| &symbol.kind) {
+                Some(SymbolKind::Struct { fields, .. }) => fields.as_slice(),
+                Some(SymbolKind::Enum { values }) => values.as_slice(),
+                _ => &[],
+            };
+            out.extend(members.iter().filter(|member| {
+                matches!(
+                    symbols.get(member).map(|symbol| &symbol.kind),
+                    Some(SymbolKind::Field { owner } | SymbolKind::Enumerator { owner }) if owner == id
+                )
+            }));
+        }
+        out
     }
 
     /// The records of these symbols (each once, unknown ones skipped), sorted.
@@ -373,6 +408,14 @@ impl Analysis {
         infos.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
         infos
     }
+}
+
+/// Whether a record is a field or an enumerator: a member of a user type.
+fn is_member(info: &SymbolInfo) -> bool {
+    matches!(
+        info.kind,
+        SymbolInfoKind::Field { .. } | SymbolInfoKind::Enumerator { .. }
+    )
 }
 
 /// The type of every value block in a program (see [`Analysis::block_types`]).
@@ -592,6 +635,134 @@ mod tests {
         };
         let looped = &document.modules[0].workspace.blocks[0].statements["BODY"][1];
         assert_eq!(index.record_tree(looped, point, 1), count + 1);
+    }
+
+    /// A table with a struct `Point` (fields `x` and `y`, and a field of
+    /// another struct listed by mistake), an enum `Color` (`Red`), a function
+    /// `area`, the locals `x` and `Point`, and the `y` that `b1` creates.
+    fn user_types_table(module: &ModuleId) -> b2c_ir::sast::SymbolTable {
+        let symbol = |name: &str, kind: SymbolKind, ty: Type| b2c_ir::sast::Symbol {
+            name: b2c_ir::text::Ident::new(name).expect("name"),
+            kind,
+            ty,
+            origin: Origin::whole(module.clone(), block("b_types")),
+        };
+        let variable = |name: &str, block: &str| {
+            let mut local = symbol(name, SymbolKind::Variable { is_const: false }, Type::Int);
+            local.origin.block = self::block(block);
+            local
+        };
+        let field =
+            |name: &str, owner: &str| symbol(name, SymbolKind::Field { owner: sym(owner) }, Type::Double);
+        let point = SymbolKind::Struct {
+            fields: vec![sym("f_x"), sym("f_y"), sym("f_stray")],
+            comparable: true,
+            printable: false,
+        };
+        let color = SymbolKind::Enum {
+            values: vec![sym("e_red")],
+        };
+        let red = SymbolKind::Enumerator { owner: sym("s_col") };
+        let area = SymbolKind::Function { params: Vec::new() };
+        let mut table = b2c_ir::sast::SymbolTable::default();
+        for (id, entry) in [
+            ("s_x", variable("x", "b0")),
+            ("s_local_pt", variable("Point", "b2")),
+            ("s_y", variable("y", "b1")),
+            ("s_pt", symbol("Point", point, Type::Named(sym("s_pt")))),
+            ("f_x", field("x", "s_pt")),
+            ("f_y", field("y", "s_pt")),
+            ("f_stray", field("stray", "s_other")),
+            ("s_col", symbol("Color", color, Type::Named(sym("s_col")))),
+            ("e_red", symbol("Red", red, Type::Named(sym("s_col")))),
+            ("f_area", symbol("area", area, Type::Double)),
+        ] {
+            table.symbols.insert(sym(id), entry);
+        }
+        table
+    }
+
+    /// An analysis with [`user_types_table`]: the user types and `area` are
+    /// visible everywhere in module `m`, as wave W2's definitions will be;
+    /// `b1` sees the local `x`, and `b2`, in an inner list, also a local
+    /// `Point` that hides the struct.
+    fn with_user_types() -> Analysis {
+        let module = ModuleId::new("m").expect("id");
+        let table = user_types_table(&module);
+        let mut index = ScopeIndex::default();
+        let outer = Point {
+            node: Some(0),
+            module: 0,
+        };
+        index.record_block(&block("b1"), outer);
+        index.record_block(
+            &block("b2"),
+            Point {
+                node: Some(1),
+                module: 0,
+            },
+        );
+        index.record_main_end(outer);
+        let (pt, col, area) = (sym("s_pt"), sym("s_col"), sym("f_area"));
+        index.finish(
+            vec![
+                node(None, "x", Some("s_x")),
+                node(Some(0), "Point", Some("s_local_pt")),
+            ],
+            1,
+            [(0, "Point", &pt), (0, "Color", &col), (0, "area", &area)],
+        );
+        Analysis {
+            program: Program {
+                standard: b2c_ir::sast::CppStandard::Cpp20,
+                modules: vec![b2c_ir::sast::Module {
+                    id: module,
+                    name: String::from("main"),
+                    items: Vec::new(),
+                }],
+                symbols: table,
+                layout: b2c_ir::layout::Layout::default(),
+            },
+            diagnostics: Vec::new(),
+            index,
+            slot_types: BTreeMap::new(),
+        }
+    }
+
+    fn listed(infos: &[SymbolInfo]) -> Vec<String> {
+        infos.iter().map(|info| info.id.to_string()).collect()
+    }
+
+    /// The clipboard binds a pasted field or enumerator through its owner
+    /// (types.md §2.4), so the scope query lists each visible struct's and
+    /// enum's members, with their owner.
+    #[test]
+    fn user_types_come_with_their_members() {
+        let analysis = with_user_types();
+        let at = analysis.scope_at(&block("b1"), None).expect("an answer");
+        // Sorted by name: `x` the field and `x` the local, by ID.
+        assert_eq!(
+            listed(&at),
+            ["s_col", "s_pt", "e_red", "f_area", "f_x", "s_x", "f_y"]
+        );
+        let field = at.iter().find(|info| info.id == sym("f_x")).expect("the field");
+        assert_eq!(field.kind, SymbolInfoKind::Field { owner: sym("s_pt") });
+        let red = at.iter().find(|info| info.id == sym("e_red")).expect("the value");
+        assert_eq!(red.kind, SymbolInfoKind::Enumerator { owner: sym("s_col") });
+        // A local `Point` hides the struct, and so its fields; not the enum.
+        let inner = analysis.scope_at(&block("b2"), Some("BODY")).expect("an answer");
+        assert_eq!(listed(&inner), ["s_col", "s_local_pt", "e_red", "f_area", "s_x"]);
+        // After `create y`: the new `y` hides nothing of `Point`.
+        let after = analysis.scope_after(&block("b1")).expect("an answer");
+        assert_eq!(
+            listed(&after),
+            ["s_col", "s_pt", "e_red", "f_area", "f_x", "s_x", "f_y", "s_y"]
+        );
+        // The parked scope, which a paste on the canvas binds with.
+        let parked = analysis.parked_scope(&ModuleId::new("m").expect("id"));
+        assert_eq!(listed(&parked), listed(&at));
+        // Every symbol, members included, is in the program's list once.
+        assert_eq!(analysis.symbol_infos().len(), 10);
     }
 
     #[test]
