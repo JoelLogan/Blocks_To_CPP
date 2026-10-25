@@ -284,6 +284,66 @@ describe('a set or change block dropped from the toolbox', () => {
   });
 });
 
+describe('a return dropped from the toolbox (typed slots, slots.md §6)', () => {
+  /** A `return` with an empty value, as the toolbox offers it. */
+  const returnBlock = (): B2cBlockInfo => presetBlock('func.return', {});
+
+  it('gets the start value of what its place returns', () => {
+    const workspace = canvas();
+    const inMain = takeOut(workspace, returnBlock());
+    place(workspace, inMain, 'print');
+    drop(workspace, inMain);
+    expect(valueOf(inMain)).toEqual([{ num: '0' }]);
+
+    get(workspace, 'fn').setFieldValue('double', 'RETURNS');
+    const inFunction = takeOut(workspace, returnBlock());
+    place(workspace, inFunction, 'fn');
+    drop(workspace, inFunction);
+    expect(valueOf(inFunction)).toEqual([{ num: '0.0' }]);
+  });
+
+  it('stays empty where nothing is returned or the place is not known', () => {
+    const workspace = canvas();
+    get(workspace, 'fn').setFieldValue('void', 'RETURNS');
+    const inVoid = takeOut(workspace, returnBlock());
+    place(workspace, inVoid, 'fn');
+    drop(workspace, inVoid);
+    expect(valueOf(inVoid)).toBeNull();
+
+    const loose = takeOut(workspace, returnBlock());
+    drop(workspace, loose);
+    expect(valueOf(loose)).toBeNull();
+  });
+
+  it('keeps a value it already has, and is one undo step with the drop', async () => {
+    const workspace = canvas();
+    await events();
+    workspace.clearUndo();
+    const given = takeOut(
+      workspace,
+      presetBlock('func.return', { inputs: { VALUE: [{ num: '7' }] } }),
+    );
+    place(workspace, given, 'fn');
+    drop(workspace, given);
+    expect(valueOf(given)).toEqual([{ num: '7' }]);
+    await events();
+    workspace.clearUndo();
+
+    const filled = takeOut(workspace, returnBlock());
+    place(workspace, filled, 'print');
+    drop(workspace, filled);
+    await events();
+    await events();
+    expect(valueOf(filled)).toEqual([{ num: '0' }]);
+    const groups = new Set(workspace.getUndoStack().map((event) => event.group));
+    expect(groups.size).toBe(1);
+    workspace.undo(false);
+    await events();
+    expect(workspace.getBlockById(filled.id)).toBeNull();
+    expect(get(workspace, 'print').getNextBlock()).toBeNull();
+  });
+});
+
 describe('blocks that keep their variable', () => {
   it('a getter, wherever it is dropped', () => {
     const workspace = canvas();

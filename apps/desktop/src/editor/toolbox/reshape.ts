@@ -22,6 +22,10 @@
  * gets the new type's start value while it still holds exactly the old type's, or is left empty
  * when the new type has none (a list, in M3), so an argument's start value follows a changed
  * function. `create` and *set* keep the M2 rules above, which give the same start values.
+ *
+ * Where a block from the toolbox lands (./landing.ts), the same rule runs with its place
+ * ({@link landingStartValues}): the place is where `return`'s expected type, the result of the
+ * function it is in, first becomes known, so an empty `return` value gets its start value there.
  */
 import type { TypeJson } from '@blocks2cpp/b2c-core-wasm';
 import {
@@ -202,6 +206,32 @@ export function reshapeExpectedValues(
     if (change !== null) {
       changes.push(change);
     }
+  }
+  return changes;
+}
+
+/**
+ * Typed slots' rule where a block from the toolbox lands (slots.md §6): its place gives what the
+ * toolbox could not know (`return`'s expected type is the result of the function it lands in,
+ * `int` in `main`), so each value input still empty there gets the start value of its expected
+ * type, when that type is known and has one (`return` in a function returning `double` gets
+ * `0.0`). A value, a block, a draft, an unknown or erroneous type (a `return` in a `void`
+ * function or loose on the canvas) and a type without a start value (a list) are left alone.
+ * Returns the events describing the changes, for the caller to fire in the drop's group.
+ */
+export function landingStartValues(block: Blockly.Block): StartValueChange[] {
+  const changes: StartValueChange[] = [];
+  for (const [input, expects] of startValueExpectations(block)) {
+    if (expects === null || expects.kind === 'error') {
+      continue;
+    }
+    const tokens = startTokens(expects);
+    const value = startValueOf(block, input);
+    if (tokens === null || value === null || value.tokens.length > 0) {
+      continue;
+    }
+    setStartValue(block, value.connection, tokens, input);
+    changes.push(new StartValueChange(block, [], tokens, input));
   }
   return changes;
 }
