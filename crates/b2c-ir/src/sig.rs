@@ -1105,6 +1105,19 @@ mod tests {
             ),
             Fit::BadShape
         );
+        // And when it does, the other argument binds.
+        let mut env = TypeEnv::new(&sig(&[("V", TypeClass::Value)]));
+        let map = Type::lib(LibType::Map, vec![Type::String, Type::Int]).unwrap();
+        assert_eq!(
+            env.bind(
+                &pattern("std::map<std::string, V>"),
+                &PartType::Known(map),
+                input("M"),
+                &Facts
+            ),
+            Fit::Fits
+        );
+        assert_eq!(env.get(&var("V")).map(|(ty, _)| ty), Some(&Type::Int));
 
         // A repeated variable must be bound to the same type within a pattern.
         let mut env = TypeEnv::new(&sig(&[("T", TypeClass::Value)]));

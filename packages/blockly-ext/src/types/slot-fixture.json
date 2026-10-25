@@ -1245,6 +1245,339 @@
     },
     {
       "facts": "known",
+      "name": "a type function that does not apply to its binder's type is missing, not open",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "LIST": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "inputs": {
+          "INDEX": {
+            "kind": "known",
+            "type": "std::string"
+          },
+          "KEY": {
+            "kind": "known",
+            "type": "std::string"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "elem of a value",
+      "typing": {
+        "bound": {
+          "C": {
+            "binder": {
+              "kind": "field",
+              "name": "LIST"
+            },
+            "type": "int"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "LIST": "same"
+        },
+        "inputs": {
+          "INDEX": {
+            "expects": "error",
+            "fit": "same"
+          },
+          "KEY": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": "error",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a map's element, index and key",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "LIST": {
+            "kind": "known",
+            "type": {
+              "std::map": [
+                "std::string",
+                "int"
+              ]
+            }
+          }
+        },
+        "inputs": {
+          "INDEX": {
+            "kind": "known",
+            "type": "int"
+          },
+          "KEY": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "elem of a value",
+      "typing": {
+        "bound": {
+          "C": {
+            "binder": {
+              "kind": "field",
+              "name": "LIST"
+            },
+            "type": {
+              "std::map": [
+                "std::string",
+                "int"
+              ]
+            }
+          }
+        },
+        "declares": {},
+        "fields": {
+          "LIST": "same"
+        },
+        "inputs": {
+          "INDEX": {
+            "expects": "std::string",
+            "fit": "invalid"
+          },
+          "KEY": {
+            "expects": "std::string",
+            "fit": "invalid"
+          }
+        },
+        "output": "int",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a template with a missing and an open argument is missing",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "KEY": {
+            "kind": "empty"
+          }
+        },
+        "inputs": {
+          "VALUE": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "map from a key",
+      "typing": {
+        "bound": {},
+        "declares": {},
+        "fields": {
+          "KEY": "unknown"
+        },
+        "inputs": {
+          "VALUE": {
+            "expects": "error",
+            "fit": "same"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "a template with a bound and an open argument is open",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "KEY": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "inputs": {
+          "VALUE": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "map from a key",
+      "typing": {
+        "bound": {
+          "K": {
+            "binder": {
+              "kind": "field",
+              "name": "KEY"
+            },
+            "type": "int"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "KEY": "same"
+        },
+        "inputs": {
+          "VALUE": {
+            "expects": null,
+            "fit": "unknown"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "one variable bound to two types in one template is a bad shape",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "MAP": {
+            "kind": "known",
+            "type": {
+              "std::map": [
+                "int",
+                "std::string"
+              ]
+            }
+          }
+        },
+        "inputs": {},
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "same keys",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "field",
+              "name": "MAP"
+            },
+            "type": "error"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "MAP": "invalid"
+        },
+        "inputs": {},
+        "output": "error",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "one variable bound twice to the same type",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "MAP": {
+            "kind": "known",
+            "type": {
+              "std::map": [
+                "int",
+                "int"
+              ]
+            }
+          }
+        },
+        "inputs": {},
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "same keys",
+      "typing": {
+        "bound": {
+          "T": {
+            "binder": {
+              "kind": "field",
+              "name": "MAP"
+            },
+            "type": "int"
+          }
+        },
+        "declares": {},
+        "fields": {
+          "MAP": "same"
+        },
+        "inputs": {},
+        "output": "int",
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
+      "name": "field: the type of a field",
+      "parts": {
+        "chosenMembers": {},
+        "counts": {},
+        "fields": {
+          "TYPE": {
+            "kind": "known",
+            "type": "double"
+          }
+        },
+        "inputs": {
+          "VALUE": {
+            "kind": "known",
+            "type": "int"
+          }
+        },
+        "members": {},
+        "params": {},
+        "result": null
+      },
+      "place": null,
+      "sig": "typed by a field",
+      "typing": {
+        "bound": {},
+        "declares": {},
+        "fields": {},
+        "inputs": {
+          "VALUE": {
+            "expects": "double",
+            "fit": "widening"
+          }
+        },
+        "output": null,
+        "place": "unknown"
+      }
+    },
+    {
+      "facts": "known",
       "name": "checks: bool, integer and number by conversion, the others by membership",
       "parts": {
         "chosenMembers": {},
@@ -21843,6 +22176,73 @@
         "T": "value"
       }
     },
+    "elem of a value": {
+      "field": [
+        {
+          "kind": "symbol_ref",
+          "name": "LIST",
+          "type": {
+            "kind": "var",
+            "name": "C"
+          }
+        }
+      ],
+      "id": "elem of a value",
+      "input": [
+        {
+          "assign": false,
+          "check": "any",
+          "name": "INDEX",
+          "repeat": null,
+          "type": {
+            "fn": "index",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        },
+        {
+          "assign": false,
+          "check": "any",
+          "name": "KEY",
+          "repeat": null,
+          "type": {
+            "fn": "key",
+            "kind": "fn",
+            "of": {
+              "kind": "var",
+              "name": "C"
+            }
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "field": "LIST"
+        },
+        {
+          "input": "INDEX"
+        },
+        {
+          "input": "KEY"
+        }
+      ],
+      "output": {
+        "fn": "elem",
+        "kind": "fn",
+        "of": {
+          "kind": "var",
+          "name": "C"
+        }
+      },
+      "placeVar": null,
+      "typeVars": {
+        "C": "value"
+      }
+    },
     "item of": {
       "field": [
         {
@@ -21928,6 +22328,56 @@
       "placeVar": "C",
       "typeVars": {
         "C": "listable"
+      }
+    },
+    "map from a key": {
+      "field": [
+        {
+          "kind": "type",
+          "name": "KEY",
+          "type": {
+            "kind": "var",
+            "name": "K"
+          }
+        }
+      ],
+      "id": "map from a key",
+      "input": [
+        {
+          "assign": true,
+          "check": "any",
+          "name": "VALUE",
+          "repeat": null,
+          "type": {
+            "args": [
+              {
+                "kind": "var",
+                "name": "K"
+              },
+              {
+                "kind": "var",
+                "name": "V"
+              }
+            ],
+            "kind": "lib",
+            "name": "std::map"
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "field": "KEY"
+        },
+        {
+          "input": "VALUE"
+        }
+      ],
+      "output": null,
+      "placeVar": null,
+      "typeVars": {
+        "K": "comparable",
+        "V": "any"
       }
     },
     "member": {
@@ -22032,6 +22482,44 @@
       "output": null,
       "placeVar": null,
       "typeVars": {}
+    },
+    "same keys": {
+      "field": [
+        {
+          "kind": "symbol_ref",
+          "name": "MAP",
+          "type": {
+            "args": [
+              {
+                "kind": "var",
+                "name": "T"
+              },
+              {
+                "kind": "var",
+                "name": "T"
+              }
+            ],
+            "kind": "lib",
+            "name": "std::map"
+          }
+        }
+      ],
+      "id": "same keys",
+      "input": [],
+      "members": {},
+      "order": [
+        {
+          "field": "MAP"
+        }
+      ],
+      "output": {
+        "kind": "var",
+        "name": "T"
+      },
+      "placeVar": null,
+      "typeVars": {
+        "T": "comparable"
+      }
     },
     "set": {
       "field": [
@@ -22215,6 +22703,31 @@
       "typeVars": {
         "T": "number"
       }
+    },
+    "typed by a field": {
+      "field": [],
+      "id": "typed by a field",
+      "input": [
+        {
+          "assign": false,
+          "check": "any",
+          "name": "VALUE",
+          "repeat": null,
+          "type": {
+            "field": "TYPE",
+            "kind": "field"
+          }
+        }
+      ],
+      "members": {},
+      "order": [
+        {
+          "input": "VALUE"
+        }
+      ],
+      "output": null,
+      "placeVar": null,
+      "typeVars": {}
     }
   }
 }

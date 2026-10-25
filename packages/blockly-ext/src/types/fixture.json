@@ -9211,6 +9211,3198 @@
       "vars": {
         "T": "struct"
       }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "void",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "bool",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "char",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "int",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "double",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::string",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "fits",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "error",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::vector": "int"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::vector": "double"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::vector": "std::string"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::vector": {
+          "std::vector": "int"
+        }
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::deque": "char"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::set": "int"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::set": "std::string"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::map": [
+          "std::string",
+          "int"
+        ]
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::map": [
+          "int",
+          {
+            "std::vector": "double"
+          }
+        ]
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::queue": "int"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::stack": "std::string"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::priority_queue": "double"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::ifstream",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::ofstream",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::exception",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::runtime_error",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::invalid_argument",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::out_of_range",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "ref": "sym_Point"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "ref": "sym_Color"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::vector": {
+          "ref": "sym_Point"
+        }
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "void",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "bool",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "char",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "int",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "double",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::string",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "fits",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "error",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::vector": "int"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::vector": "double"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::vector": "std::string"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::vector": {
+          "std::vector": "int"
+        }
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::deque": "char"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::set": "int"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::set": "std::string"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::map": [
+          "std::string",
+          "int"
+        ]
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::map": [
+          "int",
+          {
+            "std::vector": "double"
+          }
+        ]
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::queue": "int"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::stack": "std::string"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::priority_queue": "double"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::ifstream",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::ofstream",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::exception",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::runtime_error",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::invalid_argument",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": "std::out_of_range",
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "ref": "sym_Point"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "ref": "sym_Color"
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "T": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "var",
+            "name": "T"
+          },
+          {
+            "kind": "var",
+            "name": "T"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {
+        "std::vector<T>": "error"
+      },
+      "type": {
+        "std::vector": {
+          "ref": "sym_Point"
+        }
+      },
+      "vars": {
+        "T": "comparable"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "void",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "bool",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "char",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "int",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "double",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::string",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "fits",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "error",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::vector": "int"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::vector": "double"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::vector": "std::string"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::vector": {
+          "std::vector": "int"
+        }
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::deque": "char"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::set": "int"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::set": "std::string"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "int"
+      },
+      "facts": "known",
+      "fit": "fits",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::map": [
+          "std::string",
+          "int"
+        ]
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::map": [
+          "int",
+          {
+            "std::vector": "double"
+          }
+        ]
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::queue": "int"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::stack": "std::string"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::priority_queue": "double"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::ifstream",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::ofstream",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::exception",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::runtime_error",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::invalid_argument",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::out_of_range",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "ref": "sym_Point"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "ref": "sym_Color"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "known",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::vector": {
+          "ref": "sym_Point"
+        }
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "void",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "bool",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "char",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "int",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "double",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::string",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "fits",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "error",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::vector": "int"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::vector": "double"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::vector": "std::string"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::vector": {
+          "std::vector": "int"
+        }
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::deque": "char"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::set": "int"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::set": "std::string"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "int"
+      },
+      "facts": "partial",
+      "fit": "fits",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::map": [
+          "std::string",
+          "int"
+        ]
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::map": [
+          "int",
+          {
+            "std::vector": "double"
+          }
+        ]
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::queue": "int"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::stack": "std::string"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::priority_queue": "double"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::ifstream",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::ofstream",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::exception",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::runtime_error",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::invalid_argument",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": "std::out_of_range",
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "ref": "sym_Point"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "ref": "sym_Color"
+      },
+      "vars": {
+        "V": "any"
+      }
+    },
+    {
+      "bound": {
+        "V": "error"
+      },
+      "facts": "partial",
+      "fit": "badShape",
+      "pattern": {
+        "args": [
+          {
+            "kind": "type",
+            "type": "std::string"
+          },
+          {
+            "kind": "var",
+            "name": "V"
+          }
+        ],
+        "kind": "lib",
+        "name": "std::map"
+      },
+      "resolved": {},
+      "type": {
+        "std::vector": {
+          "ref": "sym_Point"
+        }
+      },
+      "vars": {
+        "V": "any"
+      }
     }
   ],
   "checks": {

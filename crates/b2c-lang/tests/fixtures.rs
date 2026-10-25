@@ -342,7 +342,7 @@ impl BlockParts for NoParts {
 /// classes, and what binding each sample type gives, with the type
 /// functions resolved over the bound variable.
 fn bindings(samples: &[Type], facts: &[(&'static str, Facts)]) -> Vec<Value> {
-    let patterns: [(&str, &[(&str, TypeClass)]); 6] = [
+    let patterns: [(&str, &[(&str, TypeClass)]); 8] = [
         ("T", &[("T", TypeClass::Value)]),
         ("C", &[("C", TypeClass::Indexable)]),
         ("T", &[("T", TypeClass::Integer)]),
@@ -352,6 +352,10 @@ fn bindings(samples: &[Type], facts: &[(&'static str, Facts)]) -> Vec<Value> {
             &[("K", TypeClass::Comparable), ("V", TypeClass::Any)],
         ),
         ("std::set<T>", &[("T", TypeClass::Struct)]),
+        // A variable twice in one pattern: a map of two types is a bad shape.
+        ("std::map<T, T>", &[("T", TypeClass::Comparable)]),
+        // A fixed argument must be the same type.
+        ("std::map<std::string, V>", &[("V", TypeClass::Any)]),
     ];
     let derived = [
         "elem(C)",
@@ -716,6 +720,66 @@ fn hand_written_sigs() -> Vec<(&'static str, BlockSig)> {
             },
         ),
         (
+            "elem of a value",
+            BlockSig {
+                vars: BTreeMap::from([(var("C"), TypeClass::Value)]),
+                output: Some(pattern("elem(C)")),
+                fields: BTreeMap::from([(String::from("LIST"), pattern("C"))]),
+                inputs: BTreeMap::from([
+                    (
+                        String::from("INDEX"),
+                        input_sig(TypeClass::Any, Some("index(C)"), false),
+                    ),
+                    (
+                        String::from("KEY"),
+                        input_sig(TypeClass::Any, Some("key(C)"), false),
+                    ),
+                ]),
+                order: vec![
+                    PartName::Field("LIST".into()),
+                    PartName::Input("INDEX".into()),
+                    PartName::Input("KEY".into()),
+                ],
+                symbol_refs: [String::from("LIST")].into(),
+                ..BlockSig::default()
+            },
+        ),
+        (
+            "map from a key",
+            BlockSig {
+                vars: BTreeMap::from([(var("K"), TypeClass::Comparable), (var("V"), TypeClass::Any)]),
+                fields: BTreeMap::from([(String::from("KEY"), pattern("K"))]),
+                inputs: BTreeMap::from([(
+                    String::from("VALUE"),
+                    input_sig(TypeClass::Any, Some("std::map<K, V>"), true),
+                )]),
+                order: vec![PartName::Field("KEY".into()), PartName::Input("VALUE".into())],
+                ..BlockSig::default()
+            },
+        ),
+        (
+            "same keys",
+            BlockSig {
+                vars: BTreeMap::from([(var("T"), TypeClass::Comparable)]),
+                output: Some(pattern("T")),
+                fields: BTreeMap::from([(String::from("MAP"), pattern("std::map<T, T>"))]),
+                order: vec![PartName::Field("MAP".into())],
+                symbol_refs: [String::from("MAP")].into(),
+                ..BlockSig::default()
+            },
+        ),
+        (
+            "typed by a field",
+            BlockSig {
+                inputs: BTreeMap::from([(
+                    String::from("VALUE"),
+                    input_sig(TypeClass::Any, Some("field:TYPE"), false),
+                )]),
+                order: vec![PartName::Input("VALUE".into())],
+                ..BlockSig::default()
+            },
+        ),
+        (
             "checks",
             BlockSig {
                 inputs: BTreeMap::from([
@@ -1001,6 +1065,76 @@ fn hand_written_cases() -> Vec<Case> {
             .field("OBJ", known(point)),
             None,
             "partial",
+        ),
+        case(
+            "a type function that does not apply to its binder's type is missing, not open",
+            "elem of a value",
+            Parts::default()
+                .field("LIST", known(Type::Int))
+                .input("INDEX", known(Type::String))
+                .input("KEY", known(Type::String)),
+            None,
+            "known",
+        ),
+        case(
+            "a map's element, index and key",
+            "elem of a value",
+            Parts::default()
+                .field(
+                    "LIST",
+                    known(Type::lib(LibType::Map, vec![Type::String, Type::Int]).unwrap()),
+                )
+                .input("INDEX", known(Type::Int))
+                .input("KEY", known(Type::Int)),
+            None,
+            "known",
+        ),
+        case(
+            "a template with a missing and an open argument is missing",
+            "map from a key",
+            Parts::default()
+                .field("KEY", PartType::Empty)
+                .input("VALUE", known(Type::Int)),
+            None,
+            "known",
+        ),
+        case(
+            "a template with a bound and an open argument is open",
+            "map from a key",
+            Parts::default()
+                .field("KEY", known(Type::Int))
+                .input("VALUE", known(Type::Int)),
+            None,
+            "known",
+        ),
+        case(
+            "one variable bound to two types in one template is a bad shape",
+            "same keys",
+            Parts::default().field(
+                "MAP",
+                known(Type::lib(LibType::Map, vec![Type::Int, Type::String]).unwrap()),
+            ),
+            None,
+            "known",
+        ),
+        case(
+            "one variable bound twice to the same type",
+            "same keys",
+            Parts::default().field(
+                "MAP",
+                known(Type::lib(LibType::Map, vec![Type::Int, Type::Int]).unwrap()),
+            ),
+            None,
+            "known",
+        ),
+        case(
+            "field: the type of a field",
+            "typed by a field",
+            Parts::default()
+                .field("TYPE", known(Type::Double))
+                .input("VALUE", known(Type::Int)),
+            None,
+            "known",
         ),
         case(
             "checks: bool, integer and number by conversion, the others by membership",

@@ -227,6 +227,10 @@ describe('parseType', () => {
     }
     expect(parseType(deep)).not.toBeNull();
     expect(parseType({ 'std::vector': deep })).toBeNull();
+    // The term reader keeps the limit itself, before any name is looked up.
+    expect(parseTerm(deep)).not.toBeNull();
+    expect(parseTerm({ 'std::vector': deep })).toBeNull();
+    expect(parseTerm({ 'no::such': deep })).toBeNull();
     // A full tree of maps four levels deep has 31 names.
     const tree = (levels: number): TypeJson =>
       levels === 0 ? 'int' : { 'std::map': [tree(levels - 1), tree(levels - 1)] };
