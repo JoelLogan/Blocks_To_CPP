@@ -186,8 +186,9 @@ In a multi-module project (a single-module project behaves as today):
   value is a constant expression is one after its definition, which the
   declaration graph prints first (§4.1). Another module sees only its
   `extern` declaration, so there only a `constexpr` constant is a constant
-  expression (an array size, a `case` label). W2's constant evaluation
-  (L10) applies this, with its own codes.
+  expression (an array size, a `case` label). L10's constant evaluation
+  (W1, [types.md §11.2](types.md#112-l10-constant-folding)) gives the
+  values and `constant_expression`; W2 and W3 apply this rule with it.
 * **Toolbox.** *Your functions*
   ([04 §4.2](../../spec/04-user-interface.md#42-toolbox)) shows the module's
   own functions, then each other module's shared functions that are not

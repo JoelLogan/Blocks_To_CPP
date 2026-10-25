@@ -237,13 +237,16 @@ The same allocation as ADR-0017 §7:
 | `B2C-E0213`, `E0214`, `E0221` | `::name` reach (06 §6.14.7); shared header part names a non-shared definition; module name starts with `b2c` | spec; ADR-0019 | W3 |
 | `B2C-E0313`, `E0314` | not comparable; not printable | ADR-0017 | W1 |
 | `B2C-E0315` | no type from its place | ADR-0018 | W1 |
+| `B2C-E0316` | whole-number division or `mod` by a constant zero | L10 (types.md §11.2) | W1 |
 | `B2C-E0420`, `E0421` | declaration cycles (06 §6.7) | spec | W2 |
 | `B2C-E0422`, `E0423` | header cycle; cross-module initialisation order | ADR-0019 | W3 |
+| `B2C-W0506` | a decimal result that is infinity or NaN | L10 (types.md §11.2) | W1 |
 
-`E0206`, `E0207` and `E0301` are reused with new text; the next free codes are
-`E0141`, `E0219`, `E0222`, `E0316` and `E0424`. `E0315` lands in W1 with
-`value_block`'s place and its reference entry: `codes.rs`'s sync test wants
-an entry for every code defined, though no W1 block reaches it.
+`E0206`, `E0207`, `E0301`, `E0303` (L16) and `E0517` (L10) are reused with new
+text; the next free codes are `E0141`, `E0219`, `E0222` and `E0424`. `E0315`
+lands in W1 with `value_block`'s place and its reference entry: `codes.rs`'s
+sync test wants an entry for every code defined, though no W1 block reaches
+it.
 
 This ADR changes no format: its catalog keys ride in catalog 1.3.0 with
 ADR-0017's, and `update()`'s JSON gains `slotTypes`, the core and the editor

@@ -19460,7 +19460,7 @@
         "A": "char",
         "B": "std::string"
       },
-      "type": "error"
+      "type": "std::string"
     },
     {
       "block": "math.arithmetic",
@@ -19574,7 +19574,7 @@
         "A": "std::string",
         "B": "char"
       },
-      "type": "error"
+      "type": "std::string"
     },
     {
       "block": "math.arithmetic",
@@ -19596,7 +19596,7 @@
         "A": "std::string",
         "B": "std::string"
       },
-      "type": "error"
+      "type": "std::string"
     },
     {
       "block": "math.arithmetic",

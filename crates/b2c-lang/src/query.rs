@@ -726,6 +726,7 @@ mod tests {
             diagnostics: Vec::new(),
             index,
             slot_types: BTreeMap::new(),
+            constants: BTreeMap::new(),
         }
     }
 

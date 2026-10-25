@@ -27,9 +27,9 @@ Codes by area:
 | Codes | Area |
 |-------|------|
 | `B2C-E02xx` | Names and scopes |
-| `B2C-E03xx` | Types and conversions |
+| `B2C-E03xx` | Types and conversions, and division by zero (`B2C-E0316`) |
 | `B2C-E04xx` | Structure, flow and expression slots |
-| `B2C-W05xx`, `B2C-I05xx`, `B2C-E0517` | Lints and literal overflow |
+| `B2C-W05xx`, `B2C-I05xx`, `B2C-E0517` | Lints, and numbers too large (literals and worked-out calculations) |
 
 ## B2C-E0201 Not declared
 
@@ -254,12 +254,21 @@ Codes by area:
 ## B2C-E0303 Text added with +
 
 * **Severity:** error
-* **Meaning:** `+` is used with text. In C++, `"a" + "b"` does not compile and
-  `text + number` does something unexpected, so Blocks2Cpp joins text with the
-  `join` block instead.
-* **Example:** `"Score: " + score` typed in a slot.
-* **Message:** "Text can't be added with +. Use the 'join' block to put text
-  and other values together."
+* **Meaning:** `+` is used with text and a value that is not text or a
+  character. In C++, `+` joins a `std::string` with another `std::string`,
+  with quoted text or with a character, in either order, and Blocks2Cpp
+  accepts exactly that (`name + "!"`, `'(' + name`, `"Hi " + name`; two
+  pieces of quoted text are joined too, and the generated C++ then turns the
+  first one into a `std::string`, as in `std::string("a") + "b"`). Text and a
+  number or a true/false value do not join with `+`: `name + 1` does not
+  compile, and `"Score: " + 1` compiles but does something else entirely, so
+  the `join` block is needed. Two characters are not text: `'a' + 'b'` adds
+  their codes as whole numbers, as in C++.
+* **Example:** `"Score: " + score` typed in a slot, where `score` is a whole
+  number.
+* **Message:** "Text can't be added to a whole number with +: + joins text
+  only with text or a character. Use the 'join' block to put text and other
+  values together."
 * **How to fix:** use `join ("Score: ") (score)`.
 
 ## B2C-E0304 mod with decimal numbers
@@ -417,6 +426,27 @@ Codes by area:
   known, such as the value of a 'create' block with a chosen type."
 * **How to fix:** choose a type in the `create` block, or store the value in
   a variable of a known type first.
+
+## B2C-E0316 Division by zero
+
+* **Severity:** error
+* **Meaning:** a whole number is divided by zero, or `mod` takes the
+  remainder of a division by zero, and the value divided by is always 0: a
+  literal `0`, a calculation the analyser works out to 0, or a constant
+  whose value is 0. The program would stop with a crash there (C++ leaves
+  the result undefined). Also reported for `change [x] divided by (0)` and
+  `change [x] mod (0)` on a whole-number or character variable. A division in
+  a part of an expression that never runs is not reported: the right side of
+  `false and …` or `true or …`, and the value of `if <true> then (…) else
+  (…)` that is not chosen. Dividing a decimal number by zero is `B2C-W0506`.
+* **Example:** `create [int] [share] = (total / 0)`, or `(10) mod (zero)`
+  where `zero` is a constant created as 0.
+* **Message:** "This divides a whole number by zero: the value it divides by
+  is always 0. That stops the program with a crash. Check the value you
+  divide by." For `mod`: "This works out the remainder ('mod') of a division
+  by zero: …"
+* **How to fix:** divide by the value you meant; check that a divisor is not
+  0 with an `if` block before dividing.
 
 ## B2C-E0401 Outside a loop
 
@@ -668,6 +698,26 @@ Codes by area:
   into an input), delete it, or disable it to keep it parked without a
   warning.
 
+## B2C-W0506 Decimal result is infinity or not a number
+
+* **Severity:** warning
+* **Meaning:** a decimal number is divided by a value that is always 0, or a
+  calculation of decimal numbers that the analyser works out is too large
+  for a `double` (more than about 1.8 × 10³⁰⁸). C++ follows IEEE 754 there:
+  the result is infinity (`inf`), or not a number (`nan`) for 0 / 0, and the
+  program goes on with it. That is legal, but hardly ever meant. Also
+  reported for `change [x] divided by (0)` on a decimal variable. As for
+  `B2C-E0316`, a part of an expression that never runs is not reported.
+* **Example:** `create [double] [average] = (total / 0.0)`, or `(1e308) ×
+  (10)`.
+* **Message:** "This divides by zero: the value it divides by is always 0, so
+  the result is infinity or 'nan' (not a number) instead of a number you can
+  use. Check the value you divide by." / "This calculation gives a result too
+  large for a decimal number (the largest is about 1.8e308), so it becomes
+  infinity. Check the values."
+* **How to fix:** divide by the value you meant, or check it with an `if`
+  block first.
+
 ## B2C-W0510 Whole-number division where a decimal is expected
 
 * **Severity:** warning
@@ -709,16 +759,28 @@ Codes by area:
 
 * **Severity:** error
 * **Meaning:** a number does not fit its type: whole numbers (`int`) go from
-  -2147483648 to 2147483647, and decimal numbers up to about 1.8 × 10³⁰⁸.
+  -2147483648 to 2147483647 (`int` is 32 bits on every system Blocks2Cpp
+  supports), and decimal numbers up to about 1.8 × 10³⁰⁸.
   (`-2147483648` itself is fine; it is generated as `-2147483647 - 1`,
   because C++ reads it as a minus sign applied to 2147483648, which is too
-  large.)
-* **Example:** `create [int] [big] = (3000000000)`.
+  large.) Also reported for a calculation of whole numbers that the analyser
+  works out (from numbers, constants and the math and logic blocks) whose
+  result does not fit, such as `2147483647 + 1` or `65536 × 65536`, and for
+  `(x) as [int]` of a decimal number the analyser works out that does not
+  fit: C++ leaves the result undefined (g++ usually wraps it round to a
+  wrong number). A part of an expression that never runs is not reported, as
+  for `B2C-E0316`.
+* **Example:** `create [int] [big] = (3000000000)`, or `(2147483647) + (1)`.
 * **Message:** "`3000000000` is too large for a whole number (the largest is
   2147483647). Write it as a decimal number, such as 3000000000.0, if you
   need it." Below the smallest whole number: "`-3000000000` is too small for
-  a whole number (the smallest is -2147483648). …"
-* **How to fix:** use a smaller number, or a decimal number.
+  a whole number (the smallest is -2147483648). …" For a calculation: "This
+  calculation gives 2147483648, which is too large for a whole number (the
+  largest is 2147483647), so C++ gives an unpredictable result. Use smaller
+  values, or decimal numbers." For a conversion: "This turns 10000000000
+  into a whole number, but it does not fit in one (whole numbers go from
+  -2147483648 to 2147483647), so C++ gives an unpredictable result. …"
+* **How to fix:** use smaller numbers, or decimal numbers.
 
 ## B2C-W0518 Value may lose information
 

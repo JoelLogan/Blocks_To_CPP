@@ -712,7 +712,11 @@ proptest! {
 // record below was written by those M2 rules, an analysis without signatures,
 // in the commit before they went, and the catalog's table gave every document
 // in it the same diagnostics, program, block types and slot types then. It
-// still must.
+// still must, apart from rules changed on purpose since. L16 (types.md §11.1)
+// joins text with `+` and words `B2C-E0303` anew, which changed the lines of
+// the 11 generated programs that have an `E0303`: two of them lose one, and
+// one of those two reports the joined text where a `bool` is needed as a
+// `B2C-E0301` instead. L10's constant folding (§11.2) changed none of it.
 
 /// A document of the record, with what the catalog check said of it.
 struct Recorded {

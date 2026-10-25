@@ -186,13 +186,20 @@ impl Lowerer<'_> {
     }
 
     /// Desugars a binary operation. When text is joined with `+` or compared
-    /// and neither side is a `std::string` object (e.g. two literals), the left
-    /// side becomes one, so C++ does not add or compare pointers.
+    /// and neither side is a `std::string` object (two literals, or a literal
+    /// and a character), the left side becomes one, so C++ does not add or
+    /// compare pointers: `std::string("a") + "b"`, `std::string(1, 'c') +
+    /// "a"` (types.md §11.1). A side that is already a `std::string` object
+    /// keeps the C++ as the user wrote it: `name + "!"`, `'(' + name`.
     fn binary(&mut self, op: BinaryOp, lhs: &Expr, rhs: &Expr, ty: &Type) -> CExpr {
         let mut left = self.expr(lhs);
         let right = self.expr(rhs);
-        let text_op = (op == BinaryOp::Add && *ty == Type::String)
-            || (is_comparison(op) && lhs.ty == Type::String && rhs.ty == Type::String);
+        let joins = op == BinaryOp::Add && *ty == Type::String;
+        if joins {
+            // `std::string`'s `operator+` (the value's type's header, §5.2).
+            self.include("<string>");
+        }
+        let text_op = joins || (is_comparison(op) && lhs.ty == Type::String && rhs.ty == Type::String);
         if text_op && !is_std_string(lhs) && !is_std_string(rhs) {
             left = self.std_string_of(lhs, left);
         }

@@ -67,18 +67,73 @@ fn arithmetic_types() {
 }
 
 #[test]
-fn text_with_plus_suggests_join() {
-    let a = check("std::string", "s + s");
-    let d = only(&a, "B2C-E0303");
-    assert!(d.message.contains("'join' block"), "{}", d.message);
-    expect("std::string", "s + 1", &["B2C-E0303"]);
-    expect("std::string", "\"a\" + \"b\"", &["B2C-E0303"]);
+fn plus_joins_text_with_text_or_a_character() {
+    // L16 (types.md §11.1): `std::string` with `std::string` or `char`, in
+    // either order, quoted text included, gives text.
+    for src in [
+        "s + s",
+        "s + \"!\"",
+        "\"Hi \" + s",
+        "s + c",
+        "c + s",
+        "s + 'x'",
+        "'(' + s",
+        "\"a\" + \"b\"",
+        "\"a\" + 'b'",
+        "'b' + \"a\"",
+        "\"<\" + s + '>'",
+        "\"a\" + \"b\" + \"c\"",
+        "(b ? \"x\" : \"yy\") + \"z\"",
+    ] {
+        assert_eq!(type_of(src), Type::String, "{src}");
+        expect("std::string", src, &[]);
+    }
+    // Two characters are numbers, as in C++.
+    assert_eq!(type_of("c + c"), Type::Int);
+    assert_eq!(type_of("'a' + 'b'"), Type::Int);
     // Blocks too.
     let mut body = vars();
     body.push(declare(
         "std::string",
         "r",
         Some(arith("add", get("s"), text("!"))),
+    ));
+    body.push(declare(
+        "std::string",
+        "t",
+        Some(arith("add", chr("("), get("s"))),
+    ));
+    assert_clean(&run_main(body));
+}
+
+#[test]
+fn text_with_anything_else_suggests_join() {
+    let a = check("std::string", "s + 1");
+    let d = only(&a, "B2C-E0303");
+    assert_eq!(
+        d.message,
+        "Text can't be added to a whole number with +: + joins text only with text or a character. Use the \
+         'join' block to put text and other values together."
+    );
+    for src in [
+        "\"a\" + 1",
+        "s + d",
+        "b + s",
+        "1 + \"a\" + s",
+        "\"a\" + \"b\" + 1",
+        "s + i + s",
+    ] {
+        expect("std::string", src, &["B2C-E0303"]);
+    }
+    // Other operators on text stay `B2C-E0302`.
+    expect("std::string", "s - \"a\"", &["B2C-E0302"]);
+    expect("std::string", "s * c", &["B2C-E0302"]);
+    // Blocks too.
+    let mut body = vars();
+    body.push(declare(
+        "std::string",
+        "r",
+        Some(arith("add", get("s"), num("1"))),
     ));
     assert_codes(&run_main(body), &["B2C-E0303"]);
 }

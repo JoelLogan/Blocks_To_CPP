@@ -19,7 +19,9 @@ use crate::codes;
 use crate::messages::{a_type, quoted, shown};
 use crate::parser::{self, ParseError, ParseErrorKind, Syntax, SyntaxKind};
 use crate::slots::BlockTyping;
-use crate::typing::{OpClass, arithmetic_result, conditional_result, op_class, op_symbol, op_verb};
+use crate::typing::{
+    OpClass, arithmetic_result, conditional_result, joins_text, op_class, op_symbol, op_verb,
+};
 
 /// A placeholder for an expression that has an error (already reported).
 pub(super) fn error_expr(origin: Origin) -> Expr {
@@ -1000,10 +1002,16 @@ impl Lowerer<'_> {
             }
         }
         match op_class(op) {
+            // Text and text, or text and a character, join (L16).
+            OpClass::Arithmetic if op == BinaryOp::Add && joins_text(l, r) => Type::String,
             OpClass::Arithmetic if text => {
                 if op == BinaryOp::Add {
-                    let message = "Text can't be added with +. Use the 'join' block to put text and other values \
-                                   together.";
+                    let other = if *l == Type::String { r } else { l };
+                    let message = format!(
+                        "Text can't be added to {} with +: + joins text only with text or a character. Use the \
+                         'join' block to put text and other values together.",
+                        a_type(other, &self.symbols)
+                    );
                     self.diags.error(codes::TEXT_PLUS, location, message);
                 } else {
                     let message = format!(

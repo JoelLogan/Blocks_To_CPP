@@ -29,8 +29,13 @@
 //! 2. **Lower** blocks to the SAST in program order, with C++ block scoping:
 //!    references are bound to symbols and every expression is typed.
 //! 3. **Flow** checks on each finished item: missing `return`, unreachable
-//!    blocks, variables used before they get a value, endless loops. An item
-//!    that nests too deeply for the later stages is reported instead.
+//!    blocks, variables used before they get a value, endless loops. Then
+//!    **constant folding** (L10, types.md §11.2): the value of every
+//!    expression built from literals, constants and the operator blocks is
+//!    worked out with C++'s semantics, which reports a whole-number division
+//!    by a constant zero, an `int` calculation that does not fit and a
+//!    decimal result that is infinite, and gives [`Analysis::constants`].
+//!    An item that nests too deeply for the later stages is reported instead.
 //!
 //! Blocks whose catalog signature has type patterns (ADR-0017 §5,
 //! `b2c_ir::sig`) are typed by [`type_block`], the one-pass rule of typed
@@ -57,6 +62,7 @@
 mod access;
 mod codes;
 mod collect;
+mod consts;
 mod flow;
 mod lower;
 mod messages;
@@ -71,9 +77,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::sast::Program;
 use b2c_ir::sig::SigTable;
-use b2c_ir::{BlockId, DiagSource, Diagnostic, Part, Severity, Type};
+use b2c_ir::{BlockId, DiagSource, Diagnostic, Part, Severity, SymbolId, Type};
 use b2c_model::Document;
 
+pub use consts::{ConstValue, Constant, constant_value};
 pub use slots::{Binder, BlockTyping, InputTyping, SlotFit, type_block};
 pub use typing::{Conversion, assignment, check_accepts, conversion};
 
@@ -89,6 +96,9 @@ pub struct Analysis {
     /// The static type of each expression slot lowered, for
     /// [`Analysis::slot_types`].
     slot_types: BTreeMap<BlockId, BTreeMap<String, Type>>,
+    /// The `const` variables whose value is known, for
+    /// [`Analysis::constants`].
+    constants: BTreeMap<SymbolId, Constant>,
 }
 
 impl Analysis {
@@ -97,6 +107,15 @@ impl Analysis {
     /// [`Analysis::block_types`].
     pub fn slot_types(&self) -> BTreeMap<BlockId, BTreeMap<String, Type>> {
         self.slot_types.clone()
+    }
+
+    /// Every `const` variable whose starting value the analyser worked out
+    /// (L10, types.md §11.2), by symbol: its value, of the variable's type,
+    /// and whether the starting value is a C++ constant expression, so that
+    /// C++ sets the variable before any code runs. [`constant_value`] works
+    /// out the value of any expression against this table.
+    pub fn constants(&self) -> &BTreeMap<SymbolId, Constant> {
+        &self.constants
     }
 }
 

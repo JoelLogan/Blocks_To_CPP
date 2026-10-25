@@ -1,7 +1,9 @@
 # M3 contracts: types, catalog signatures and headers
 
 The exact shapes behind [ADR-0017](../../adr/0017-open-type-representation.md)
-(L14 types, L17 catalog signatures, L8 headers). The ADR holds the decisions
+(L14 types, L17 catalog signatures, L8 headers), and the two last language
+foundations of W1, L16 (`+` on text) and L10 (constant folding), in §11.
+The ADR holds the decisions
 and their reasons; this file holds what W1's packages build against: the
 Rust and TypeScript signatures, the tables, the grammar, the file shapes,
 the messages, the W1 plan, the test list and the spec changes. Typed slots
@@ -888,15 +890,19 @@ The same allocation stands in ADR-0017, ADR-0018 and here.
 | `B2C-E0313` | not comparable | ADR-0017 | W1 |
 | `B2C-E0314` | not printable | ADR-0017 | W1 |
 | `B2C-E0315` | no type from its place | ADR-0018 | W1 |
+| `B2C-E0316` | whole-number division or `mod` by a constant zero | L10 (§11.2) | W1 |
 | `B2C-E0420`, `B2C-E0421` | declaration cycles (06 §6.7) | spec | W2 (structs) |
 | `B2C-E0422` | modules' headers form a cycle | ADR-0019 | W3 |
 | `B2C-E0423` | cross-module initialisation order | ADR-0019 | W3 |
+| `B2C-W0506` | a decimal result that is infinity or NaN (division by a constant zero, a constant calculation too large) | L10 (§11.2) | W1 |
 
 * **Reused with new text:** `E0206` (ADR-0019's new meaning), `E0207`
   (ADR-0018: a member the type does not have; ADR-0017: a reference to a
   user type of a kind the class does not hold), `E0301` (ADR-0017 and
-  ADR-0018: class messages).
-* **Next free:** `E0141`, `E0219`, `E0222`, `E0316`, `E0424`.
+  ADR-0018: class messages), `E0303` (L16: only text with what is not text
+  or a character) and `E0517` (L10: also a constant `int` calculation or
+  conversion that does not fit).
+* **Next free:** `E0141`, `E0219`, `E0222`, `E0424`; `W0507` to `W0509`.
 * Each code gets its reference entry in `docs/reference/diagnostics/` in the
   pull request that first defines it, which `tools/check-diagnostics-docs.py`
   and `codes.rs:183-201` enforce. So `E0313`, `E0314` and `E0315` land in W1
@@ -1115,3 +1121,186 @@ marked *with 0018*: W1 edits them once, for both.
 | [06 §6.10](../../spec/06-compiler-pipeline.md#610-includes-and-support-helpers) | where includes come from (§5), the header table, `ItemHeaders`; ADR-0019 adds the per-file placement in W3 | W1 |
 | [08 §8.4.5](../../spec/08-security.md#845-expression-slots-and-templates) | type terms and headers | W1 |
 | [09 §9.2](../../spec/09-quality-and-delivery.md#92-testing-strategy) | the shared type fixture, kept fresh like `catalog.json`; *with 0018* | W1 |
+| [03 §3.4](../../spec/03-block-language.md#34-expression-slots), [§3.7.3](../../spec/03-block-language.md#373-math-and-logic), [§3.7.4](../../spec/03-block-language.md#374-text) | `+` joins text with text or a character (§11.1); the analyser lints of §3.7.3 gain division by a constant zero, constant overflow and infinite decimal results (§11.2) | W1 |
+| [06 §6.6](../../spec/06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints) | arithmetic on text (§11.1); constant folding after the flow checks, `E0316`, `W0506`, `E0517` for constant calculations (§11.2) | W1 |
+| [08 §8.4.4](../../spec/08-security.md#844-numbers) | `E0517` also covers a constant calculation that does not fit (§11.2) | W1 |
+
+## 11. Text with `+` and constant folding (L16, L10)
+
+### 11.1 L16: `text + "x"` where C++ allows it
+
+**The rule** (`typing.rs` `joins_text`, `lower/expr.rs` `binary_type`). `a +
+b` where one side is `std::string` and the other `std::string` or `char`
+(the class `text`, §1.3), in either order, joins text and has the type
+`std::string`. That is exactly what `std::string`'s `operator+` takes.
+Everything else keeps its M2 rule:
+
+* text with a number, a `bool`, `void`, a library or a user type is
+  `E0303` (new text below): `name + 1` does not compile, and `"x" + 1`
+  compiles as pointer arithmetic;
+* `-`, `*`, `/` and `%` on text stay `E0302`;
+* two `char`s add as `int`s, as in C++ (`'a' + 'b'` is 195);
+* comparisons do not change (§1.6).
+
+The rule reads types only, as every other rule and the editor's checker
+do. Quoted text has the type `std::string`, as it has for comparisons, where
+M2 already accepts `"abc" < "abd"` and prints `std::string("abc") < "abd"`
+(`crates/b2c-lang/tests/compile.rs`). The same printing makes `"a" + "b"`
+mean what the expression says, and the code panel shows the student the C++
+it needs. Refusing two quoted texts would make the rule depend on how a
+value is written, which the editor cannot see in an operand's type.
+
+**The C++ forms** (codegen `lower/expr.rs` `binary`, the rule M2 used for
+comparisons):
+
+| Operands | C++ |
+| --- | --- |
+| a `std::string` object on either side: a variable, a call, a *join*, a `+` of text, a `?:` with one such value | as written: `name + "!"`, `"Hi " + name`, `name + mark`, `'(' + name`, `name + (flag ? 'y' : 'n')` |
+| no object: two quoted texts, quoted text and a character, a `?:` of quoted texts | the left side made one: `std::string("a") + "b"`, `std::string("a") + 'b'`, `std::string(1, 'b') + "a"`, `std::string(flag ? "x" : "yy") + "z"` |
+
+A chain needs it once: `std::string("a") + "b" + "c"`. The joining `+`
+adds `<string>` (§5.2, an operator on a value). Every form compiles with g++
+11 and 14, C++17 and C++20, `-Wall -Wextra -Wpedantic -Wshadow -Wconversion
+-Werror`, and prints the joined text. Without the conversion, `"a" + "b"`
+does not compile, and `"a" + 'b'`, `'b' + "a"` and `"a" + 1` compile
+without a warning as pointer arithmetic.
+
+**The editor.** `math.arithmetic` keeps `check = "number"` on `A` and `B`,
+so the catalog does not change: in blocks, text is joined with *join*, whose
+C++ label already shows `+`, and a text block offered to an operator block
+whose menu is mostly `−`, `×`, `÷` and *mod* would mostly lead to errors. `+`
+on text comes from typed expressions (slots, M3's slot editor and Quick
+Insert) and from files, and there the analyser and the editor agree: a
+slot's type comes from `slotTypes`, and `staticOutputType` gives a
+`math.arithmetic` with `OP = add` and text operands `std::string`
+(`checker/output-type.ts` `arithmeticType`); an operand it does not know
+yet gives "not known". The slot fixture's `outputs` (§9) hold
+`math.arithmetic` over every pair of the six operand types, so the three
+joining pairs are checked against the analyser.
+
+**Codes and messages.** `E0303` keeps its code with new text, naming the
+other side: *"Text can't be added to a whole number with +: + joins text
+only with text or a character. Use the 'join' block to put text and other
+values together."*
+
+**Tests.** `b2c-lang`: `joins_text` by table; every form above and
+`"a" + "b" + "c"` types as `std::string` with no diagnostic, in slots and in
+blocks; `'a' + 'b'` is `int`; text with a number, a `bool` or a decimal is
+`E0303` with the text above; `s - "a"` stays `E0302`; the diagnostics
+tour's message; a program with every form compiles (`tests/compile.rs`).
+`b2c-codegen` (`tests/it/text_plus.rs`): the printed form of each, `<string>`,
+`-fsyntax-only` under C++17 and C++20 with the strict warnings, and the
+built program's output. TypeScript: `arithmeticType` for each operand pair,
+`OP`, quoted text and an unknown operand; the regenerated slot fixture.
+
+### 11.2 L10: constant folding
+
+**What folds** (`crates/b2c-lang/src/consts.rs`). Every expression of type
+`bool`, `char`, `int` or `double` built from number, `true`/`false` and
+character literals; `const` variables whose starting value folds (the
+*create … constant* block, and in W2 `const` and `constexpr` globals through
+the same table); the signs `-` and `+` and `not`; `+ − × ÷ mod`; the six
+comparisons; `and` and `or`; the conditional value; and *convert* (`as
+int`, `as double`). Blocks and slots fold alike. Calls, *random*, text,
+*join*, parameters, loop counters and variables that are not `const` do not
+fold.
+
+**Semantics**: C++'s, the same on every target Blocks2Cpp supports. `int` is
+32-bit two's complement (LP64 on Linux and macOS, LLP64 on Windows;
+`static_assert(sizeof(int) == 4)` holds with g++ 11 and 14), `double` is
+IEEE 754 binary64.
+
+* The usual arithmetic conversions: `bool` and `char` become `int`; with a
+  `double` on one side, both are `double`.
+* `int` arithmetic is exact, and a result outside `int` is reported, not
+  wrapped: C++ leaves it undefined (g++ warns `-Woverflow` and wraps in
+  practice). `/` and `%` truncate towards zero. The smallest `int` divided
+  by -1, its `mod` -1 and its negation overflow.
+* `double` arithmetic is IEEE 754. A result that is infinity or NaN is
+  reported and does not fold further.
+* Conversions: `double` to `int` truncates, and a value outside `int` is
+  reported for *convert* (C++ leaves it undefined; g++ says nothing). An
+  `int` becomes a `char` only from 0 to 127; anything else is no constant
+  and is not reported, since `B2C-W0518` already warns and the value depends
+  on whether the target's `char` is signed. The implicit conversion to a
+  `const` variable's type follows the same rules and is never reported.
+* `&&`, `||` and `?:` follow C++'s order of evaluation, and an operand C++
+  does not evaluate is not checked: the right side of `&&` and `||` when the
+  left side is a constant that decides, and the value of `?:` that a
+  constant condition does not choose (g++ does not warn there either).
+  `false && x` folds to `false`; `x > 0 || true` does not fold.
+* Statements are all checked, also under `if <false>` (`W0502` is the lint
+  for code that cannot run).
+* One mistake, one report: a reported part is no constant further up, and
+  an expression of type `Error` never folds.
+* It runs on each item after the flow checks (`lower/mod.rs`), once its
+  nesting is known to be within the limits, which bounds the recursion.
+
+**Codes and messages.**
+
+| Code | Severity | When | Why |
+| --- | --- | --- | --- |
+| `B2C-E0316` | error | a whole-number `/` or `mod`, also *change … divided by* and *mod*, whose divisor is a constant 0, also when the other side is not constant | the program crashes there (`SIGFPE`; C++ leaves it undefined, g++ only warns `-Wdiv-by-zero`); the free code of the types group |
+| `B2C-E0517` (reused) | error | a constant `int` calculation whose result does not fit; *convert* of a constant `double` that does not fit an `int` | the fault of a literal that does not fit (03 §3.7.3: "possible overflow of a literal into its target type (which is an error)"); one code for one idea |
+| `B2C-W0506` | warning | a `double` division (also *change … divided by*, and an `int` divided by `0.0`) whose divisor is a constant 0; a constant `double` calculation too large | IEEE 754 defines the result (infinity or NaN), so it is not an `E` code (06 §6.6), but it is hardly ever meant; a lint level can raise it; the first free code of `W05xx` |
+
+* `E0316`: *"This divides a whole number by zero: the value it divides by
+  is always 0. That stops the program with a crash. Check the value you
+  divide by."*; for `mod`: *"This works out the remainder ('mod') of a
+  division by zero: …"*
+* `E0517`: *"This calculation gives 2147483648, which is too large for a
+  whole number (the largest is 2147483647), so C++ gives an unpredictable
+  result. Use smaller values, or decimal numbers."* (*too small … the
+  smallest is -2147483648* below); the smallest `int`'s `mod` -1 says why;
+  *convert*: *"This turns 10000000000 into a whole number, but it does not
+  fit in one (whole numbers go from -2147483648 to 2147483647), so C++ gives
+  an unpredictable result. Use smaller values, or keep it a decimal
+  number."*
+* `W0506`: *"This divides by zero: the value it divides by is always 0, so
+  the result is infinity or 'nan' (not a number) instead of a number you can
+  use. Check the value you divide by."* / *"This calculation gives a result
+  too large for a decimal number (the largest is about 1.8e308), so it
+  becomes infinity. Check the values."*
+
+**What it exposes** (for ADR-0019's rule, modules.md §4.4, and for W2):
+
+```rust
+// b2c_lang
+pub enum ConstValue { Bool(bool), Char(u8), Int(i32), Double(f64) } // a char is ASCII, a double finite
+impl ConstValue { pub fn ty(self) -> Type; }
+pub struct Constant {
+    pub value: ConstValue,
+    /// An expression: whether C++ counts it as a constant expression. A `const`
+    /// variable: whether its starting value is one (constant initialisation).
+    pub constant_expression: bool,
+}
+/// "This expression is a constant of type `value.ty()` with value `value`."
+pub fn constant_value(expr: &Expr, constants: &BTreeMap<SymbolId, Constant>) -> Option<Constant>;
+impl Analysis { pub fn constants(&self) -> &BTreeMap<SymbolId, Constant>; } // every const variable that folds
+```
+
+`constant_expression` differs from folding only where C++ does: reading a
+`const` variable is a constant expression only for `bool`, `char` and `int`
+(\[expr.const\]; for a `const double`, g++ says *"the value of 'half' is not
+usable in a constant expression"*), so `const double b = half * 2` folds to
+1.0 with `constant_expression` false. W3's `E0423` exempts a `const`
+constant whose `constant_expression` is true: C++ sets it before any code
+runs. W2's `constexpr` constants and `switch` case labels (§1.5) need
+`constant_expression`; their codes are W2's.
+
+**The editor** changes nothing: the reports come with the analysis.
+
+**Tests** (`crates/b2c-lang/tests/consts.rs`, unit tests in `consts.rs`):
+each report in slots, blocks and *change* blocks, with its text and
+severity; the cases that are not reported (not constant, not zero, in
+range, the smallest `int`, operands C++ does not evaluate); values by C++
+rules (truncation, signs of `%`, conversion to the variable's type, `char`
+only in ASCII); `constant_expression` for an `int`, a `const double` read
+and a literal `double`; `constant_value` agrees with the table; no M2
+example reports anything new (the golden C++ is unchanged). A property test
+compares the analyser with a reference evaluator in exact `i128` and `f64`
+arithmetic on random expressions over literals, a constant, a `const
+double` and a variable that is not constant: the same reports (none when
+nothing constant is at fault) and the same value and `constant_expression`.
+400 random constant expressions are compiled with g++ as `constexpr`
+values with a `static_assert` of the folded value, under C++17 and C++20.

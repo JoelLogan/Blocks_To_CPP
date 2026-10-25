@@ -61,6 +61,8 @@ pub(crate) const NOT_COMPARABLE: &str = "B2C-E0313";
 pub(crate) const NOT_PRINTABLE: &str = "B2C-E0314";
 /// A block that takes its type from its place, in a place that gives none.
 pub(crate) const NO_PLACE_TYPE: &str = "B2C-E0315";
+/// A whole-number division or `mod` by a constant zero (L10).
+pub(crate) const DIVISION_BY_ZERO: &str = "B2C-E0316";
 
 // --- Structure and flow (E04xx) --------------------------------------------
 
@@ -100,13 +102,17 @@ pub(crate) const USE_BEFORE_ASSIGNMENT: &str = "B2C-W0503";
 /// A block left on the canvas outside `when program starts` and every
 /// function: parked, so it does not run (ADR-0012).
 pub(crate) const PARKED: &str = "B2C-W0505";
+/// A decimal division by a constant zero, or a constant decimal calculation
+/// too large for a `double`: the result is infinity or NaN (L10).
+pub(crate) const NOT_FINITE: &str = "B2C-W0506";
 /// Integer division where a decimal result is expected.
 pub(crate) const INTEGER_DIVISION: &str = "B2C-W0510";
 /// `==` or `!=` on decimal numbers.
 pub(crate) const FLOAT_EQUALITY: &str = "B2C-W0511";
 /// A `forever` loop that nothing can leave.
 pub(crate) const ENDLESS_LOOP: &str = "B2C-I0513";
-/// A numeric literal that does not fit its type.
+/// A numeric literal that does not fit its type, or a constant whole-number
+/// calculation or conversion whose result does not fit an `int` (L10).
 pub(crate) const LITERAL_OVERFLOW: &str = "B2C-E0517";
 /// A conversion that can lose information.
 pub(crate) const NARROWING: &str = "B2C-W0518";
@@ -145,6 +151,7 @@ pub(crate) const ALL: &[&str] = &[
     NOT_COMPARABLE,
     NOT_PRINTABLE,
     NO_PLACE_TYPE,
+    DIVISION_BY_ZERO,
     OUTSIDE_LOOP,
     RETURN_NEEDS_VALUE,
     RETURN_HAS_VALUE,
@@ -161,6 +168,7 @@ pub(crate) const ALL: &[&str] = &[
     UNREACHABLE,
     USE_BEFORE_ASSIGNMENT,
     PARKED,
+    NOT_FINITE,
     INTEGER_DIVISION,
     FLOAT_EQUALITY,
     ENDLESS_LOOP,
