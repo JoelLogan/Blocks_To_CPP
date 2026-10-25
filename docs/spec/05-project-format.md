@@ -93,9 +93,11 @@ that changes the content hash.
 
 `options.usingNamespaceStd` (*Textbook style*: `using namespace std;` in
 every generated `.cpp`, [06 §6.14](06-compiler-pipeline.md#614-standard-names-and-using-namespace))
-comes in M3; a file that sets it has `formatVersion` 2 or higher (§5.7). It
-is `false` when absent and is written only when `true`, like
-`language.gnuExtensions`, so files that do not use it are unchanged.
+comes later in M3; until then it is an unknown key (`B2C-E0110`). A file
+that sets it has `formatVersion` 2 or higher (§5.7), like a file that holds
+a template type (§5.4). It is `false` when absent and is written only when
+`true`, like `language.gnuExtensions`, so files that do not use it are
+unchanged.
 
 `project.lints` (M5; `formatVersion` 3 or higher) sets lint levels for
 everyone who opens the project
@@ -158,10 +160,51 @@ escaped by the emitter), which become `-D` arguments built by the backend.
 | `x`, `y` | Present only on top-level blocks (integers, clamped to ±10⁷). |
 | `collapsed`, `disabled` | Written only when `true`. `disabled` means the user disabled the block (Blockly's *manually disabled* reason); Blockly's other reasons for disabling a block are never saved. |
 | `stack` | Only on a top-level *statement* block: the statement blocks attached below it on the canvas, in order (see *Loose blocks* below). |
-| `fields` | Field values: strings, numbers, booleans or symbol declarations (`{"sym": "sym_x", "name": "score"}`). Each value is validated against the catalog field kind. |
+| `fields` | Field values: strings, numbers, booleans, symbol declarations (`{"sym": "sym_x", "name": "score"}`), symbol references (`{"ref": "sym_x"}`) or type terms (below). Each value is validated against the catalog field kind. |
 | `inputs` | Value inputs: either `{"block": …}` (a nested reporter) or `{"expr": [tokens]}` (an expression slot, [03 §3.4](03-block-language.md#34-expression-slots)). An absent input means the catalog default (shadow). |
 | `statements` | Statement inputs as **arrays** of blocks. |
 | `extra` | Mutator state (variadic counts, ⊕ parts), validated against the catalog's schema for that block. |
+
+**Type terms.** A type field, and the `type` of each row of a function's
+`params` in `extra`, hold a type as a *term*
+([ADR-0017](../adr/0017-open-type-representation.md)):
+
+```json
+"TYPE": "int"
+"TYPE": {"ref": "sym_Pt12"}
+"TYPE": {"std::vector": {"std::vector": "int"}}
+"TYPE": {"std::map": ["std::string", {"std::vector": {"ref": "sym_Pt12"}}]}
+```
+
+* A name is text: a primitive, `std::string`, a library type without
+  arguments (`std::ifstream`), or `auto` and `void` where the field allows
+  them. A name is 1 to 64 ASCII characters: identifiers joined by `::` or
+  single spaces.
+* A user struct or enum is a reference, `{"ref": "<symbol id>"}`.
+* A template is an object with exactly one key, its qualified C++ name,
+  whose value is its one argument or an array of its two or more arguments.
+  One argument is never an array and an empty array is never written, so
+  each type has one spelling.
+* An object in a field is read in this order: with the key `ref`, a
+  reference; with exactly one key that is a qualified name (it contains
+  `::`), a template; otherwise a symbol declaration, so a damaged
+  declaration keeps its own code (`B2C-E0110`, or `E0108` from a newer
+  app).
+* A wrong shape (an argument array of one or none, a number, `null`, a bad
+  name) is `B2C-E0112`, an invalid ID `B2C-E0113` and a reserved key
+  `B2C-E0127`. In a `params` row, a value that is neither text, a reference
+  nor a template is left to the catalog (`B2C-E0614`). Which types a field
+  or row takes is the catalog's check
+  ([06 §6.3](06-compiler-pipeline.md#63-stage--resolve-catalog)), and the
+  struct or enum a reference names is the analyser's (`B2C-E0201`,
+  `B2C-E0207`).
+* Terms are content: they are hashed like any other field (§5.11), and
+  they are not part of the security summary
+  ([08 §8.3.1](08-security.md#831-how-trust-is-decided)).
+
+Every M2 type is a name, so M2 files, their content hashes and their
+version (1) are unchanged. A file that holds a template has `formatVersion`
+2 (§5.7).
 
 **Statement sequences are arrays, not linked `next` pointers.** Blockly's
 native JSON chains statements through nested `next` objects, so a 500-line
@@ -224,6 +267,7 @@ pastes and IPC payloads alike:
 | String field length | 64 KiB (Raw C++: 256 KiB) | |
 | Identifier length | 64 | |
 | Variadic parts per block | 64 | |
+| Type term size | 8 levels of templates, 32 names and references | Counted before anything else in the term is read; no real program needs more (`B2C-E0140`, §5.4) |
 | Numeric coordinates | ±10⁷ | |
 | Define `int` values | ±(2⁵³ − 1) | The editor holds the document as JavaScript numbers, which keep whole numbers only up to this size exactly (`B2C-E0112`) |
 | Numbers in `extra` and `x-ext` | ±(2⁵³ − 1) | As above; every larger float is a whole number too (`B2C-E0112`) |
@@ -263,14 +307,22 @@ Further rules:
 * `formatVersion` is an integer: the lowest version whose keys cover the
   file ([ADR-0013](../adr/0013-additive-format-keys.md)). Each version only
   adds keys and never changes the meaning of earlier ones: version 2 adds
-  `options.usingNamespaceStd` (M3), version 3 adds `project.lints` (M5), and
-  each later key gets the next number. The writer computes the version from
-  the keys present, so a file that uses no newer key keeps its version and
-  still opens in older apps.
+  template type terms (§5.4) and `options.usingNamespaceStd` (M3), version 3
+  adds `project.lints` (M5), and each later key gets the next number. The
+  writer computes the version from the content, not from the number the
+  file was read with: a file that uses no newer key keeps its version and
+  still opens in older apps, a version 2 file that no longer holds a
+  template is saved as version 1, and a version 1 file given one is saved
+  as version 2.
+* Versions 1 and 2 load as they are, with no migration step: every version
+  from the oldest that needs no migration (1) up to the newest this app
+  reads (2) differs only by added keys.
 * Only a change to the meaning or shape of an existing key needs a migration
   `v(n) → v(n+1)`. `b2c-model` contains the chain of these pure migrations,
-  each with golden-file tests, and `migratedFrom` reports only such
-  migrations.
+  each with golden-file tests; it runs only for a version older than 1, and
+  only up to 1. A future change of meaning raises that version and adds its
+  steps. `migratedFrom` (02 §2.5.2) reports only such migrations, so a
+  version 1 or 2 file opens with `migratedFrom` null.
 * On load: if `formatVersion` is newer than supported, refuse with *"This
   project was made with a newer version of Blocks2Cpp"* (`B2C-E0108`). If it
   is older, migrate in memory, and save in the new format only after the
@@ -592,8 +644,13 @@ and a custom `application/x-blocks2cpp+json` payload:
 
 `refs` records the qualified name and kind of each symbol that the copied
 blocks refer to but do not declare. `kind` is `variable`, `parameter`,
-`loopVariable` or `function`. A copied stack of statements is one block with
-`stack` (§5.4).
+`loopVariable`, `function`, `struct`, `enum`, `field` or `enumerator`. A
+copied stack of statements is one block with `stack` (§5.4).
+
+`formatVersion` follows the rule of §5.7: a payload is written as version 2
+when it holds a template type term (§5.4) or a `refs` entry of the kinds
+`struct`, `enum`, `field` or `enumerator`, and as version 1 otherwise.
+Readers accept versions 1 and 2.
 
 Copied blocks have no `x` or `y`, because a paste places blocks at the
 target: `clipboard_make` writes none. `load_clipboard` accepts `x`/`y` on a
@@ -620,7 +677,8 @@ includes Raw C++ – review before running."*
   `b2c_model::load_clipboard`, which uses the same strict JSON parser, limits,
   text rules and block decoder as `load`, with the same `B2C-E01xx` codes. A
   payload whose `format` is not `blocks2cpp/clipboard` is refused
-  (`B2C-E0138`), and a newer `formatVersion` gives `B2C-E0108`.
+  (`B2C-E0138`), a newer `formatVersion` gives `B2C-E0108`, and one older
+  than 1 gives `B2C-E0109`.
 * Fresh block and symbol IDs come from a seeded generator in Rust
   (`SeededIds`): the frontend passes 256 random bits from
   `crypto.getRandomValues`, so the WASM core itself uses no randomness. IDs
@@ -639,7 +697,16 @@ includes Raw C++ – review before running."*
   finds no match (or several) stays a reference and gets `B2C-E0201`,
   naming the original symbol.
 * Until namespaces arrive (M3), a qualified name is the plain name for
-  variables, parameters and loop variables, and `::name` for functions.
+  variables, parameters and loop variables, and `::name` for functions,
+  structs and enums. A field or enumerator is recorded with its owner's
+  name in front of its own (`::Student::mark`, `::Action::Deposit`) and is
+  bound again through its owner: the owner binds by name and kind as a
+  struct or enum does; when it is the member's own owner at the target, the
+  member keeps its ID, and when it bound to another type, the member binds
+  to that type's member of the same name; otherwise the member is
+  unresolved. The scope query lists each visible struct's fields and each
+  visible enum's enumerators, with their owner, for this
+  ([06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes)).
 * A paste target is the canvas, the start of a statement list or a value
   input, or the position directly after a block; scope is evaluated there
   ([06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes)). A paste

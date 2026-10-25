@@ -281,13 +281,27 @@ commands.
   ([07 §7.9](07-toolchain-build-run.md#79-command-line-interface)); their
   field names are single words, so they fit the convention. `SymbolInfo` has
   one shape in WASM and IPC ([06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes)),
-  and its parameter mode keeps the value `read_only`. `b2c_ipc::diag` and
-  `b2c_ipc::pipeline` hold copies of these shared `b2c-ir` types
-  (`Diagnostic`, `GeneratedFile`, `FileKind`, `SourceMap`, `FileMap`,
-  `MappedRange`, `Position`, `StaticType`, `SymbolInfo`, `SymbolInfoKind` and
-  `PassMode`) whose JSON is byte-identical to theirs, which tests check, so
-  `packages/ipc-types` declares them for every frontend package, including
-  the shapes the WASM core returns, even before a command carries them.
+  and its parameter mode keeps the value `read_only`. A static type crosses
+  as `TypeJson`: its type term as files write it
+  ([05 §5.4](05-project-format.md#54-block-nodes)), such as `"int"`,
+  `"std::string"`, `{"std::vector": "int"}` or `{"ref": "sym_x"}` for a
+  struct or enum, or `"error"` for the type of an expression that already
+  has an error. `SymbolInfo`'s `type` and a function's `returns`,
+  `update()`'s `blockTypes` and `slotTypes` and the conversion table use it;
+  text is `"std::string"` everywhere. `SymbolInfoKind` also has the kinds
+  `struct` (its `fields`, `comparable` and `printable`), `enum` (its
+  `values`), `field` and `enumerator` (each with its `owner`).
+  `GeneratedFile` and `FileMap` have an optional `module` key and
+  `SymbolInfo` an optional `shared` key
+  ([ADR-0019](../adr/0019-multi-module-header-split.md)), each left out while
+  unset, as it is until multi-module projects (M3) set them.
+  `b2c_ipc::diag` and `b2c_ipc::pipeline` hold copies of these shared
+  `b2c-ir` types (`Diagnostic`, `GeneratedFile`, `FileKind`, `SourceMap`,
+  `FileMap`, `MappedRange`, `Position`, `Type` as `TypeJson`, `SymbolInfo`,
+  `SymbolInfoKind` and `PassMode`) whose JSON is byte-identical to theirs,
+  which tests check, so `packages/ipc-types` declares them for every
+  frontend package, including the shapes the WASM core returns, even before
+  a command carries them.
 * **Dialogs.** A command that shows a native dialog returns
   `{ status: "cancelled" }` or `{ status: "ok", … }`. A cancel is not an error.
 * **No paths in requests.** No request carries a filesystem path. Paths come
@@ -307,7 +321,7 @@ separately.
 | `app_subscribe` | none; channel `onEvent` | `{}` | The channel for app events (§2.5.3). Called once at startup; a later call replaces the channel. |
 | `app_quit` | `{}` | `{}` | Shuts down (§2.6) and exits. |
 | `project_new` | `{ template }` | `{ handle, document, trust }` | `template` is `empty` or `helloWorld`, bundled in the binary. The handle has no path and is trusted (`createdHere`). |
-| `project_open_dialog` | `{}` | cancelled, or `{ handle, document, trust, fileName, migratedFrom, blocksUpgraded }` | Native open dialog **in the backend**, filtered to `*.b2c`. `migratedFrom` is the file's older `formatVersion`, or `null`. `blocksUpgraded` is true when [05 §5.7](05-project-format.md#57-versioning-and-migration) upgraded a block in memory. |
+| `project_open_dialog` | `{}` | cancelled, or `{ handle, document, trust, fileName, migratedFrom, blocksUpgraded }` | Native open dialog **in the backend**, filtered to `*.b2c`. `migratedFrom` is the file's `formatVersion` when opening it ran a migration step (a version older than the oldest that loads as it is, [05 §5.7](05-project-format.md#57-versioning-and-migration)), or `null`, as for every version 1 or 2 file. `blocksUpgraded` is true when [05 §5.7](05-project-format.md#57-versioning-and-migration) upgraded a block in memory. |
 | `project_open_recent` | `{ recentId }` | `{ handle, document, trust, fileName, migratedFrom, blocksUpgraded }` | A file that no longer exists gives `notFound` and stays in the list. `blocksUpgraded` is true when 05 §5.7 upgraded a block in memory. |
 | `project_reload` | `{ handle }` | `{ document, trust, migratedFrom, blocksUpgraded }` | Reads the bound file again after an outside change; trust is evaluated again. The unsaved changes are discarded, and so is their recovery snapshot. `blocksUpgraded` is true when 05 §5.7 upgraded a block in memory. |
 | `project_save` | `{ handle, document }` | `{ savedAt, hash }` | Atomic write, only to the path bound to `handle` ([05 §5.10](05-project-format.md#510-saving-and-recovery)). |

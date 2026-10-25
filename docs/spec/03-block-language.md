@@ -68,6 +68,25 @@ Connection compatibility is enforced by a custom Blockly `ConnectionChecker`
 backed by the type system ([§3.5](#35-types)). Shapes stop structurally
 invalid programs, and types stop most semantic errors.
 
+**Typed slots** ([ADR-0018](../adr/0018-slot-typing.md)). For a value
+dragged or moved with the keyboard towards an input, the checker types the
+parent block as if the value were already there, with the block's catalog
+signature ([§3.11.1](#3111-catalog-format)) and the types the last analysis
+knows, and refuses the drop only when the value certainly cannot fit: a
+conversion or class error between known types, such as text into
+`create [int]`, into `set` of an `int` variable, into an `int` parameter's
+argument, or into `return` under *when program starts* or in a function
+that returns a number. Unknown and erroneous types, a narrowing (`double`
+into `int`), a mix of `bool` and numbers, and a block that takes its type
+from a place that gives none all connect, and the analyser reports what is
+wrong. The keyboard mover offers no place the checker would refuse, and
+lists places with the moved block counted as absent from its current
+input. Loading, undo, redo and paste are never checked. A parked block's
+slots are typed from its own parts, so a wrong drop into a parked parent is
+refused although parked blocks are not analysed. What only the analysis
+knows is one preview old, as for every editor answer; a refusal in that
+window ends with the next preview and never changes the document.
+
 **Placing blocks.** A dragged block snaps to the nearest place that accepts it
 when its connection is within about 44 screen pixels of that place, and never
 less than 48 or more than 96 canvas units away, so a place is as easy to hit
@@ -190,6 +209,14 @@ a unary operator; the literal itself (`NumLit`) never carries a sign. The
 file keeps numbers as typed; the generated C++ prints them in canonical form
 ([08 §8.4.4](08-security.md#844-numbers)).
 
+**Text with `+`.** `+` joins text with text or a character, in either
+order, as C++'s `std::string` does: `name + "!"`, `'(' + name` and
+`"a" + "b"` are text. When neither side is a `std::string` object, the
+generated code makes the left one so (`std::string("a") + "b"`), since two
+quoted texts cannot be added in C++. Text with a number is `B2C-E0303`: the
+*join* block puts text and numbers together
+([§3.7.4](#374-text)).
+
 **Expand / collapse.** Right-click → *Expand into blocks* converts the parsed
 expression into nested operator/value blocks. *Collapse to text* does the
 reverse whenever the block subtree is expressible in slot syntax. This lets
@@ -207,7 +234,10 @@ a `{"block": …}` input:
 * any other token list is shown read-only, as text, and is kept unchanged;
 * an input that is absent from the file stays absent until the user edits it.
 
-A value the user edits is saved as a single-token `expr`.
+A value the user edits is saved as a single-token `expr`. The start value an
+empty input gets (from the toolbox, on landing or when a field of its block
+changes) follows the type the input expects
+([04 §4.2](04-user-interface.md#42-toolbox)).
 
 ## 3.5 Types
 
@@ -239,7 +269,7 @@ and block labels read. Both modes generate identical code.
 | Friendly | C++ |
 | ---------- | ----- |
 | `list of int` | `std::vector<int>` |
-| `map from string to number` | `std::map<std::string, double>` |
+| `map from string to double` | `std::map<std::string, double>` |
 | `print (x)` | `std::cout << (x)` |
 | `add (x) to [v]` | `v.push_back(x)` |
 | `read-only reference to Player` | `const Player&` |
@@ -247,7 +277,14 @@ and block labels read. Both modes generate identical code.
 **In M2** only the Friendly labels exist; the C++ mode arrives in M3. Type
 dropdowns show `int`, `double`, `bool`, `char`, `string` and `auto`, with
 `std::string` displayed as `string`. The stored values are the catalog's type
-names (`std::string`), so files do not change when the C++ mode arrives.
+names (`std::string`), so files do not change when the C++ mode arrives. A
+constructed type or a struct or enum is stored as its type term
+([05 §5.4](05-project-format.md#54-block-nodes)), and in the editor a type
+field's value is the term's key: a name stays as it is (`int`,
+`std::string`), and any other term is its compact JSON
+(`{"std::vector":"int"}`, `{"ref":"sym_x"}`). A block whose type field holds
+such a type, read from a file, loads as itself; the type picker that offers
+them comes later in M3.
 
 ### 3.5.3 Type checking model (gradual)
 
@@ -255,11 +292,23 @@ The analyser implements a **gradual** type system that approximates C++:
 
 * **Known types** (fundamental types, library-pack types with metadata, user
   types) are checked: implicit numeric conversions, derived-to-base, `const`
-  correctness, simplified overload resolution, and unification of generic
-  parameters (`std::vector<T>` with `T = Student`).
+  correctness, simplified overload resolution, and the one-pass typing of
+  blocks with catalog patterns ([ADR-0018](../adr/0018-slot-typing.md)):
+  each type variable takes the type of the first part, in catalog order,
+  that gives one (`T = Student` from a list of `Student`), a later part that
+  disagrees is the mismatch, and a block such as `list of` takes its type
+  from its place. There is no backtracking, and the editor's copy of the
+  rule gives the analyser's answers.
+* **Library and user types** (lists, maps, sets, structs, enums, …) convert
+  only to the same type: a list of `int` is not a list of `double`.
+  **Classes** name sets of types for catalog patterns and checks (`value`,
+  what a variable can hold; `comparable`; `printable`; `collection`; …;
+  [06 §6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints)).
+  A value outside its input's class is an error (`B2C-E0301`).
 * **Opaque types** (from Raw C++ or `auto` deduced from opaque expressions) are
   compatible with everything. Checking is deferred to g++, whose errors are
-  still mapped back to blocks.
+  still mapped back to blocks. So is a type the editor does not know yet,
+  and the type of a part that already has an error.
 * **Errors are reported only when certain.** A false positive blocks the user,
   so ambiguity becomes a warning or is deferred to g++.
 * **Narrowing** (e.g. `double` → `int`) is allowed with a warning and a quick
@@ -288,8 +337,12 @@ The analyser implements a **gradual** type system that approximates C++:
   change a variable (*set*, *change* and *ask*) list only what may be
   changed there: they leave out constants, a `for` loop's counter inside its
   loop and read-only parameters, and *change*, whatever its operator, also
-  leaves out text and true/false variables. A reference already chosen
-  stays shown. Any other type mismatch is left to the analyser. The editor
+  leaves out text and true/false variables. A reference field with a type
+  pattern ([§3.11.1](#3111-catalog-format)) lists only the symbols whose type
+  fits the pattern on its own (*add … to* lists the lists, sets, queues and
+  stacks), whatever the block's inputs hold, which are checked against the
+  reference and not the reverse. A reference already chosen stays shown.
+  Any other type mismatch is left to the analyser. The editor
   gets these lists from the scope query of
   [06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes).
   A parked block's dropdowns list what is visible at the end of `main`'s
@@ -366,8 +419,12 @@ comparison, *random integer*, *as int/double*; and/or/not, true/false,
 conditional value; text, character, *join*; *if/else if/else*; *repeat*,
 *repeat while/until*, *for*, *forever*, *leave loop*, *skip to next round*;
 *print*, *ask*; *define* (copy, editable and read-only parameters; a
-read-only number, character or true/false is passed by value), *return*,
-calls; *when program starts*, *stop program*.
+read-only number, character, true/false or enum is passed by value, and any
+other type as `const T&`), *return*, calls; *when program starts*, *stop
+program*. *create* and a function's parameters take every type a variable
+can hold, such as a list of numbers (stored as a type term,
+[05 §5.4](05-project-format.md#54-block-nodes)); their menus offer M2's
+types until the type picker arrives.
 
 ### 3.7.1 Program
 
@@ -383,7 +440,7 @@ A project has exactly one `main`; a second one is an analyser error.
 
 | Block | Generates |
 | ------- | ----------- |
-| `create [int ▾] variable [score] = (0) constant ☐` | `int score = 0;` (`const int` when ticked; the ⚙ popover with `constexpr` and `static` replaces the checkbox in M3 as a compatible change) |
+| `create [int ▾] variable [score] = (0) constant ☐` | `int score = 0;` (`const int` when ticked; the ⚙ popover with `constexpr` and `static` replaces the checkbox in M3 as a compatible change). The type is any type a variable can hold; without a value, a list is created empty: `std::vector<int> scores{};` |
 | `create [auto ▾] [a], [b] ⊕ from (pairValue)` | `auto [a, b] = pairValue;` (structured binding) |
 | `set [score ▾] to (expr)` | `score = expr;` |
 | `change [score ▾] [by ▾] (1)` | `score += 1;` (`++score;` for *by* the literal 1); the menu also gives *down by* (`-=`), *times* (`*=`), *divided by* (`/=`) and *mod* (`%=`), and, with *Show advanced blocks* (M3), the bitwise forms `&=`, `\|=`, `^=`, `<<=` and `>>=`. In C++ label mode every option shows its operator. For number and character variables |
@@ -398,7 +455,7 @@ and one *change* block whose menu chooses the variable
 
 | Block | Generates | Notes |
 | ------- | ----------- | ------- |
-| `(a) [+ ▾] (b)` | `a + b` | `+ − × ÷ mod` → `+ - * / %`. Parentheses inserted only when precedence requires. |
+| `(a) [+ ▾] (b)` | `a + b` | `+ − × ÷ mod` → `+ - * / %`. Parentheses inserted only when precedence requires. The block takes numbers; in a typed expression `+` also joins text with text or a character, giving text ([§3.4](#34-expression-slots)). |
 | `(a) [< ▾] (b)` | `a < b` | |
 | `<a> [and ▾] <b> ⊕` | `a && b && c` | Variadic |
 | `not <a>` | `!a` | |
@@ -412,7 +469,14 @@ and one *change* block whose menu chooses the variable
 **Analyser lints in this area:** integer division assigned to a floating-point
 variable ("did you mean `7.0 / 2`?"), `==` on floating-point values, signed vs
 unsigned comparison, and possible overflow of a literal into its target type
-(which is an error).
+(which is an error). The analyser also works out every constant calculation
+(literals, constants, operators, *convert*) with C++'s rules: a whole-number
+division or *mod* by a value that is always 0 is an error (`B2C-E0316`: the
+program would crash), a constant whole-number calculation or *as int* that
+does not fit an `int` is an error like a literal that does not fit
+(`B2C-E0517`, `2147483647 + 1`), and a decimal division by a constant 0 or a
+constant decimal result too large gives infinity or NaN, a warning
+(`B2C-W0506`).
 
 ### 3.7.4 Text
 
@@ -422,12 +486,18 @@ unsigned comparison, and possible overflow of a literal into its target type
 | `character 'a'` | `'a'` (one ASCII character; use text for anything else) |
 | `join (a) (b) ⊕` | Idiomatic per part: `std::string(a) + b`, `+ std::to_string(n)` for whole numbers and `+ b2c::to_text(x)` for decimal numbers, which writes the number exactly as `print` would, `+ std::string(1, c)`; `std::format` when the *formatting style* setting is `format` and the toolchain supports it |
 | `format ("{} scored {}") with (name) (score) ⊕` | `std::format("{} scored {}", name, score)` (C++20 with GCC 13+; otherwise an `std::ostringstream` helper) |
-| `length of (s)` | `s.size()` |
-| `letter (i) of (s)` | `s.at(i)` |
+| `length of (s)` | `static_cast<int>(s.size())` |
+| `letter (i) of (s)` | `s.at(static_cast<std::size_t>(i))` |
 | `part of (s) from (i) length (n)` | `s.substr(i, n)` |
 | `(s) [contains ▾] (t)` | `s.find(t) != std::string::npos` (or `s.contains(t)` under C++23); also starts with / ends with |
 | `[uppercase ▾] (s)` / `trim (s)` / `split (s) by (",")` | Support helpers |
 | `replace all (a) with (b) in (s)` | Support helper |
+
+In a typed expression, `+` joins text with text or a character, in either
+order, as C++ does (`"Hi " + name`, `name + '!'`). When neither side is a
+`std::string` object, the left side is made one: `std::string("a") + "b"`,
+`std::string(1, 'b') + "a"`. Text with a number needs *join*
+(`B2C-E0303`).
 
 ### 3.7.5 Control and Loops
 
@@ -459,7 +529,7 @@ unsigned comparison, and possible overflow of a literal into its target type
 
 | Block | Generates |
 | ------- | ----------- |
-| `define [greet] with ([string] name [read-only ▾]) ([int] times = (1)) ⊕ returns [nothing ▾] { }` | `void greet(const std::string& name, int times = 1) { }`. Parameter pass modes: *copy*, *editable* (`&`), *read-only* (`const&`), *moved* (`&&`). |
+| `define [greet] with ([string] name [read-only ▾]) ([int] times = (1)) ⊕ returns [nothing ▾] { }` | `void greet(const std::string& name, int times = 1) { }`. Parameter pass modes: *copy*, *editable* (`&`), *read-only* (`const&`; a number, character, `bool` or enum by value), *moved* (`&&`). A parameter takes every type a variable can hold. |
 | *(auto-generated, under Your functions)* `greet (name: "Ada") (times: 3)` | `greet("Ada", 3);` A statement block when the result is `void`, a reporter otherwise. A reporter can be used as a statement via *ignore result*. |
 | `return (value)` | `return value;` |
 | `function ([auto] x) ⊕ capturing [nothing ▾] returns [auto] { }` | `[](auto x) { … }`. Capture options: nothing, everything by reference `[&]`, everything by copy `[=]`, or chosen variables. |
@@ -479,20 +549,31 @@ type supports.
 
 | Block | vector / deque | set | map | queue / stack / priority_queue |
 | ------- | ---------------- | ----- | ----- | -------------------------------- |
-| `add (x) to [c]` | `c.push_back(x)` | `c.insert(x)` | — (use `set key`) | `c.push(x)` |
-| `item (i) of [c]` | `c.at(i)` | — | `c.at(k)` | `c.front()` / `c.top()` |
-| `set item (i) of [c] to (x)` | `c.at(i) = x` | — | `c[k] = x` | — |
-| `remove item (i) from [c]` | `c.erase(c.begin() + i)` | `c.erase(x)` | `c.erase(k)` | `c.pop()` |
-| `length of [c]` | `c.size()` | `c.size()` | `c.size()` | `c.size()` |
+| `add (x) to [c]` | `c.push_back(x)` | `c.insert(x)` | — (use `set item`) | `c.push(x)` |
+| `item (i) of [c]` | `c.at(static_cast<std::size_t>(i))` | — | `c.at(k)` | — |
+| `next item of [c]` | — | — | — | `c.front()` / `c.top()` |
+| `set item (i) of [c] to (x)` | `c.at(static_cast<std::size_t>(i)) = x` | — | `c[k] = x` | — |
+| `remove item at (i) from [c]` | `c.erase(c.begin() + i)` | — | — | — |
+| `remove (x) from [c]` | — | `c.erase(x)` | `c.erase(k)` | — |
+| `remove next from [c]` | — | — | — | `c.pop()` |
+| `length of [c]` | `static_cast<int>(c.size())` | ← | ← | ← |
 | `[c] contains (x)` | `std::ranges::find(c, x) != c.end()` (C++20) | `c.contains(x)` (C++20) | `c.contains(k)` | — |
 | `[c] is empty` | `c.empty()` | ← | ← | ← |
 | `clear [c]` | `c.clear()` | ← | ← | (helper) |
 | `sort [c] [ascending ▾] ⊕ by (lambda)` | `std::ranges::sort(c)` / `std::ranges::sort(c, std::greater{})` / with comparator | — | — | — |
-| `list of (a) (b) (c) ⊕` | `{a, b, c}` initialiser (type from context) | ← | `{{k, v}, …}` | — |
+| `list of (a) (b) (c) ⊕` | `{a, b, c}` initialiser (type from context) | ← | — | — |
+
+A map is filled with *set item … of*, and its pairs are visited with *for
+each key, value* ([§3.7.5](#375-control-and-loops)); a map form of *list of*
+waits until pairs exist (after M3).
 
 Indexing is bounds-checked (`.at()`) by default. A block context-menu option,
 *fast unchecked access*, switches to `[]`. Indexing is always zero-based, as
-in C++, and tooltips say so.
+in C++, and tooltips say so. Sizes and indexes are `int`, as M3 has no
+unsigned types, so the generated code casts them
+(`static_cast<int>(c.size())`, `c.at(static_cast<std::size_t>(i))`; a
+non-negative literal index stays as written) and compiles clean at every
+warning level.
 
 **Generic member block.** `[expr ▾] . [member ▾] (args…)` lists the fields
 and methods of the expression's static type, taken from user types and
@@ -704,21 +785,95 @@ category = "math"
 shape    = "reporter"
 output   = "int"                       # required for reporters and predicates
 label    = { friendly = "random integer from %LOW to %HIGH", cpp = "b2c::random_int(%LOW, %HIGH)" }
-lowering = "builtin"
-headers  = ["<random>"]
+lowering = "builtin"                   # no headers: the helper brings its own
 help     = "A random whole number between the two values, including both."
+
+# catalog/core/variables.toml (excerpt)
+[[block]]
+id    = "var.declare"
+where = { T = "value" }                # each type variable and its class
+
+[[block.field]]
+name  = "TYPE"
+kind  = "type"
+types = ["int", "double", "bool", "char", "std::string", "auto"]  # the menu's first choices
+type  = "T"                            # binds T; also takes every other type in T's class
+
+[[block.field]]
+name = "NAME"
+kind = "symbol_decl"
+type = "T"                             # declares the variable with T
+
+[[block.input]]
+name  = "VALUE"
+check = "any"
+type  = "T"                            # converts to T
 ```
 
 * **Tables and keys.** `[[block]]` has `id`, `version`, `category`, `shape`
   (`hat`, `definition`, `statement`, `reporter`, `predicate`), `label`,
-  `lowering`, `headers`, `help` and `output`. `[[block.field]]` declares
-  fields (`dropdown`, `checkbox`, `text`, `number`, `type`, `symbol_decl`,
-  `symbol_ref`); `[[block.input]]` value inputs (a `check` type class of
-  `any`, `number`, `integer`, `bool` or `text`, `optional`, `repeat` and
-  `default` tokens); `[[block.statement]]` statement inputs (`repeat`, and
-  `when` for an input present only while an `extra` flag is set); and
-  `[[block.extra]]` the mutator state (`count`, `flag` or `params`). Unknown
-  keys are errors.
+  `lowering`, `headers`, `help`, `output` and `where`. `[[block.field]]`
+  declares fields (`dropdown`, `checkbox`, `text`, `number`, `type`,
+  `symbol_decl`, `symbol_ref`, `header`), with a `type` pattern on `type`,
+  `symbol_ref` and `symbol_decl` fields, `members` on a `symbol_ref`, and
+  per-option `headers` on a dropdown; `[[block.input]]` value inputs (a
+  `check` type class, `optional`, `repeat`, `default` tokens, a `type`
+  pattern and `assign`); `[[block.statement]]` statement inputs (`repeat`,
+  and `when` for an input present only while an `extra` flag is set); and
+  `[[block.extra]]` the mutator state (`count`, `flag` or `params`; a
+  `params` row takes its `types` and its `type_class`). Unknown keys are
+  errors.
+* **Signatures** ([ADR-0017](../adr/0017-open-type-representation.md),
+  [ADR-0018](../adr/0018-slot-typing.md)). `where` names each type variable
+  (a capital letter and an optional digit: `T`, `K`, `C`, `T2`) and its
+  class. A pattern is `any` or `number` (M2's meanings), a variable, a
+  type in C++ syntax (`int`, `std::string`, `std::vector<T>`), a type
+  function of a pattern (`elem(C)`, what one item is; `index(C)`, what
+  *item* takes; `key(C)`, what *contains* looks for), `field:NAME` (the type
+  chosen in that field), `symbol` or `symbol:NAME` (the type of the chosen
+  symbol), `param:NAME` (a call's argument: the matching parameter of the
+  function in that field), `member:NAME` (the matching field of the struct in
+  that field) or `result` (what a `return` gives back where it is); at most
+  128 bytes and 8 levels. A block is typed in one pass: each variable is
+  bound by the first part, in catalog order (a repeated input part by
+  part), whose type is known; `auto`, an empty part and a value typed from
+  its place bind nothing, and an unknown or wrong part binds the variable to
+  an error, so nothing that depends on it is checked. A block whose output
+  is a variable that no part binds takes its type from its **place**: the
+  type its input expects (`B2C-E0315` where the place gives none). Each part
+  is then checked against its resolved pattern: an input by the conversion
+  rule (with `assign = true`, by assignment, so a `char` also fits a
+  `std::string`, as `s = 'a'` does in C++) and by its `check` class, a
+  reference by its exact type, a type field by its class; a pattern that
+  does not resolve accepts what its class accepts. A type field takes the
+  types of its list and every other type its pattern allows (`create` and a
+  function's parameters take every type a variable can hold), and an
+  `assign` input or a `members` field never binds.
+* **How `check` accepts a value.** In `where`, a class is membership. In an
+  input's `check`, `bool`, `integer` and `number` keep their M2 meaning,
+  *converts without being invalid*, so a decimal count is only the warning
+  `W0518`; `any` accepts every type but `void`; every other class is
+  membership. A value outside the input's class is `B2C-E0301`. A block the
+  catalog kept without a check (unknown, from a newer catalog, too old to
+  upgrade) checks nothing at its inputs, and its value has an unknown type.
+* **Checked when the catalog loads.** Each variable is declared once with a
+  known class and used; every variable of `output` is bound by a part that
+  must be filled, unless the block takes its type from its place; each
+  pattern parses, names known types with the right number of arguments and
+  sits on a part that may have it; `members` names a struct or enum
+  variable; an input whose pattern is not one fixed type has no `default`
+  (the editor gives it a start value instead); a predicate's output is
+  `bool`; and every header is in the header table. A broken definition is
+  `B2C-E0620`. The catalog then builds each block's signature, which the
+  analyser and the editor read
+  ([06 §6.3](06-compiler-pipeline.md#63-stage--resolve-catalog)).
+* **Headers.** A block's `headers` lists the standard headers every form of
+  it needs, and a dropdown's `headers` adds those of a chosen option; the
+  forms the generator chooses bring their own
+  ([06 §6.10](06-compiler-pipeline.md#610-includes-and-support-helpers)). A
+  `header` field takes a header name. Every header comes from the closed
+  table of the C++ standard library's headers, and every catalog header is
+  emitted.
 * **Label templates.** In both labels, `%NAME` marks where the field or input
   `NAME` goes, and a bare `…` marks where a repeated group continues: the
   repeated inputs (`ITEM0`, `ITEM1`, …) or the repeated parts of a block such
@@ -738,15 +893,19 @@ help     = "A random whole number between the two values, including both."
   ([04 §4.4](04-user-interface.md#44-diagnostics-ux)). An optional `short`
   key for a shorter name is left for the localisation work of M5.
 * **Output types.** `output` is required for `reporter` and `predicate`
-  shapes and forbidden for the others. Its values are `any`, `bool`, `int`,
-  `double`, `number`, `char`, `string`, `symbol` and `field:<NAME>`.
+  shapes and forbidden for the others. It is a pattern: M2's values are
+  `any`, `bool`, `int`, `double`, `number`, `char`, `std::string`, `symbol`
+  and `field:<NAME>`, and text is spelled `std::string` here as everywhere.
   `symbol` means the type of the referenced symbol (`var.get`: the variable's
   type; `func.call`: the function's return type), which the editor takes from
   the live analysis ([06 §6.5](06-compiler-pipeline.md#65-stage--names-and-scopes)).
   `field:<NAME>` means the type chosen in field `NAME` (`math.convert`'s
   `TO`). The editor's connection checker refuses a connection only when the
-  analyser's conversion rule says the value cannot convert at all; unknown and
-  erroneous types always connect, and the analyser reports the problem.
+  value certainly cannot fit ([§3.3](#33-block-shapes)); unknown and
+  erroneous types always connect, and the analyser reports the problem. The
+  editor applies the same rules through a TypeScript copy held to the
+  analyser by two committed fixtures
+  ([09 §9.2](09-quality-and-delivery.md#92-testing-strategy)).
 * **Toolbox.** `catalog/toolbox.toml` lists the toolbox categories in the
   order of §3.7 (in M2: Program, Variables, Math, Logic, Text, Control, Loops,
   Input / Output and Functions). Each category has a name, an icon, a colour
@@ -772,7 +931,15 @@ help     = "A random whole number between the two values, including both."
   (`packages/blockly-ext/src/generated/catalog.ts`, with each friendly label
   pre-parsed into text, argument and repeat parts) and the block reference in
   `docs/reference/blocks/`. Both outputs and the JSON are committed, and CI
-  fails when any of them is stale.
+  fails when any of them is stale. The JSON has a `types` section (the
+  primitives and library types, with their arity, label and header), and
+  each block its signature keys: `typeVars` (`where`), `output` as the
+  pattern's text, `order` (the parts with a pattern, in catalog order),
+  `placeVar`, `members`, `headers` and `optionHeaders`; each part's `type`
+  as tagged JSON (`{"kind": "var", "name": "T"}`), an input's `assign` and a
+  row's `typeClass`. Each key is left out while empty. Which fields are
+  references or declarations and which inputs repeat, the editor reads from
+  the definitions themselves.
 
 ### 3.11.2 Template lowering (library blocks)
 
@@ -791,10 +958,10 @@ requires = { standard = "c++20" }
 template = "std::ranges::reverse({list});"
 
 [[block.input]]
-name = "list"
-kind = "value"
-type = "range<T>"
-mode = "lvalue"            # must be a variable/member path, see rule 2 below
+name  = "list"
+kind  = "value"
+type  = "R"                # with where = { R = "iterable" } on the block
+mode  = "lvalue"           # must be a variable/member path, see rule 2 below
 ```
 
 Template rules, enforced when a pack is loaded and again at expansion:
@@ -829,14 +996,19 @@ User-installed packs are **code** and are subject to workspace trust
 Block IDs are stable and never reused. **Compatible** changes (a field,
 `extra` key or input with a default; a dropdown option; label, help or
 colour text) keep `version` and raise `generator.catalog`'s minor version.
-The catalog is 1.1.0 since M2's labels name every field, and 1.2.0 since
-*change* (`var.change`) has its operator menu `OP`. A file that leaves
+A new type, a type field or parameter row that takes more types, and a
+new header in the table are compatible changes too. The catalog is 1.1.0
+since M2's labels name every field, 1.2.0 since *change* (`var.change`) has
+its operator menu `OP`, and 1.3.0 since M3's type signatures, header table
+and wider type fields (every catalog change up to the M3 release ships as
+1.3.0). A file that leaves
 the new key out loads with the default, and the editor keeps leaving it out
 while the block keeps that default; blocks a newer editor creates write it.
 When a document or clipboard payload names a `generator.catalog` newer than
-this app's, a block with an unknown field, input, `extra` key or option is
-reported as made by a newer catalog (`B2C-E0602`, not `E0605`), shown as a
-placeholder and kept unchanged on save.
+this app's, a block with an unknown field, input, `extra` key or option, or
+a type or header this app does not know or does not allow there, is
+reported as made by a newer catalog (`B2C-E0602`, not `E0605`, `E0607` or
+`E0614`), shown as a placeholder and kept unchanged on save.
 
 **Breaking** changes raise `version` and ship a migration (a pure BDM → BDM
 function). **Merging or retiring a block type** ships a *replacement* from

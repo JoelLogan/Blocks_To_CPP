@@ -169,12 +169,23 @@
   `catalog/toolbox.toml` ([03 §3.11.1](03-block-language.md#3111-catalog-format)).
   Entries can carry **presets** that fill in values (a new `int` starting at
   `0`; *ask* with `"Your answer: "`). A new variable's start value follows
-  its type (`0`, `0.0`, `true`, `'a'`, `""`), and so does the value of *set*
-  when another variable is chosen in it while the value is still a start
-  value, in the toolbox as on the canvas (a *set* taken out after its
-  variable was chosen in the toolbox keeps that variable and its value); a
-  call from *Your functions* comes with a default argument of each
-  parameter's type. A block whose forms differ only by a dropdown or ⊕ part
+  its type (`0`, `0.0`, `true`, `'a'`, `""`; a list, map, struct or enum has
+  none, so its value input stays empty). Start values follow the type each
+  value input expects ([ADR-0018](../adr/0018-slot-typing.md)): when a type
+  or reference field of a block is changed, in the toolbox as on the
+  canvas, each value input whose expected type changed and that still holds
+  the old type's start value gets the new type's, in the same undo step
+  (the value of *set* when another variable is chosen in it, a call's
+  arguments when another function is chosen); a type without one leaves the
+  input empty, and a value the user typed, a block and an unknown type are
+  left alone. A *set* taken out after its variable was chosen in the toolbox
+  keeps that variable and its value. A call from *Your functions* comes
+  with a default argument of each parameter's type. A block that lands from
+  the toolbox with an empty value input gets the start value of the type
+  its place expects, when that is known, in the drop's undo step: a
+  `return` gets `0` under *when program starts* and `0.0` in a function
+  that returns `double`, and nothing in a function that returns nothing or
+  on the canvas. A block whose forms differ only by a dropdown or ⊕ part
   appears once
   ([03 §3.1](03-block-language.md#31-design-philosophy-few-blocks-much-power)).
 
@@ -428,8 +439,11 @@ core focus manager, cursor and shortcut registry (the maintained
 drag blocks past the editing session and write HTML with `innerHTML`). The
 arrow keys move between blocks and their fields and inputs, `Enter` edits a
 field, `M` picks a block up so the arrow keys choose where it goes (the
-places a pointer drag could drop it, type rule included; `Enter` puts it
-there, `Escape` cancels; an empty C-block goes between two statements
+places a pointer drag could drop it, type rule included, with the block
+typed as if it were already in each place and counted as absent from the
+input it leaves, so a place it cannot fit is never offered,
+[03 §3.3](03-block-language.md#33-block-shapes); `Enter` puts it there,
+`Escape` cancels; an empty C-block goes between two statements
 where a pointer drag would wrap them, since wrapping
 ([03 §3.3](03-block-language.md#33-block-shapes)) comes to the keyboard
 with the non-drag alternatives in M5), `T` opens the toolbox, whose

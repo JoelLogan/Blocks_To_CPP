@@ -78,7 +78,7 @@
 | Level | Tooling | Scope / oracle |
 | ------- | --------- | ---------------- |
 | **Unit** | `cargo nextest`, Vitest | Every module. Encoders, parsers and validators aim for 100% branch coverage. |
-| **Snapshot** | `insta` | Generated C++ for every catalog block in its default configuration, plus curated variants. Each snapshot is also compiled with `-fsyntax-only`. |
+| **Snapshot** | `insta` | Generated C++ for every catalog block in its default configuration, plus curated variants (the forms whose headers the generator chooses). Each snapshot is also compiled with `-fsyntax-only` under C++17 and C++20 with the *strict* warnings as errors. |
 | **Golden end-to-end** | `b2c` CLI | `examples/*.b2c` → generate → compile → run with an stdin fixture → compare stdout, stderr and exit code with `tests/golden/`. Matrix: GCC 11, 13 and 15 on Linux (containers), MSYS2 UCRT64 GCC on Windows. |
 | **Property-based** | `proptest` | (a) String-literal round trip: arbitrary text → program prints exactly those bytes. (b) **Differential "no generator bugs" oracle**: random well-typed block programs from a BDM generator; if the analyser reports no errors, g++ must accept the output. (c) Determinism: generate twice, and with shuffled top-level order → identical bytes. (d) BDM → Blockly → BDM round trip is the identity. |
 | **Fuzzing** | `cargo-fuzz` (libFuzzer) | BDM parser, expression parser, type parser, catalog/pack loader, SARIF/JSON/text diagnostics parsers, GDB/MI parser, event-channel parser, comment/string encoders |
@@ -88,7 +88,7 @@
 | **Visual diff** | WebDriver screenshots + pixelmatch | The canvas with a known project on both systems |
 | **Chrome visual diff** | WebDriver screenshots + pixelmatch | In the smallest window (800×560): the whole window, the open main menu over the editor, the toolbar's Debug/Release drop-down closed and hovered, the toolbox after each category, the console after two runs (scrolled up, and at the bottom panel's tallest); light on both systems, dark on Linux (Windows dark with the Appearance setting, M3) |
 | **Security regression** | Custom harness | `tests/security/projects/*.b2c` with asserted outcomes ([08 §8.12](08-security.md#812-threat-summary)) |
-| **Performance** | `criterion` + scripted workspace benchmarks | Codegen p95 at 1k blocks, edits and selections at 1k blocks, drag frame time at 5k blocks, cold start; the longest main-thread task of every E2E flow (reported). More than 10% regression fails CI on the nightly benchmark job and on a pull request's A/B job. |
+| **Performance** | `criterion` + scripted workspace benchmarks | Codegen p95 at 1k blocks, edits and selections at 1k blocks, drag frame time at 5k blocks, cold start; typed drags and the keyboard mover's listing at 1k blocks and the longest main-thread task of every E2E flow (reported). More than 10% regression fails CI on the nightly benchmark job and on a pull request's A/B job. |
 | **Manual** | Per milestone | Screen readers (NVDA on Windows, Orca on Linux), high-contrast themes, real-world toolchain matrix (WinLibs, TDM, Scoop, Strawberry, distro GCCs), and sessions with first-time users where an exit criterion needs them; protocols and results in [`docs/manual-tests/`](../manual-tests/README.md) |
 
 **Coverage gates:** core compiler crates ≥ 90% lines, all Rust ≥ 80%, and
@@ -105,6 +105,54 @@ Details of each level as M2 sets them up:
   workflows need no permission to write to pull requests. Tests that start
   our own binaries pass `LLVM_PROFILE_FILE` on explicitly, so those runs are
   counted.
+* **The catalog snapshot test** (`crates/b2c-build/tests/catalog_syntax.rs`)
+  generates C++ for every core catalog block in its default configuration,
+  as the toolbox gives it (the entry's preset, the catalog's defaults and
+  shadows; the editor's own choices only for names, the chosen variable or
+  function, *set*'s start value and a new *define*'s empty parameter list),
+  each in the smallest program that passes the analyser and g++, and for
+  curated variants: *stop program* in a function, a simple *ask*, an *ask*
+  for text and a literal used as a `std::string`. It runs the whole front end
+  (`run_frontend`), as the build does, and snapshots each case with `insta`
+  (the app version masked; a `<case>@c++17` snapshot only where the C++17
+  code differs). All cases are compiled with `g++ -fsyntax-only`, one
+  invocation per standard, under C++17 and C++20 with a debug build's flags
+  at the *strict* warning level and `-Werror`. A catalog block without a
+  case fails the test. It is skipped without g++ unless `B2C_REQUIRE_GXX` is
+  set, and runs in the Linux (GCC 13), GCC 11, GCC 15 and Windows (MSYS2)
+  test jobs.
+* **Types and typed slots.** The editor's TypeScript copies of the type rules
+  and of typed slots are held to the analyser by two committed fixtures,
+  `packages/blockly-ext/src/types/fixture.json` (the sample types, their
+  keys, labels, C++ spellings, conversions, classes, type functions and
+  pattern bindings) and `slot-fixture.json` (cases for every rule of the
+  one-pass typing, a seeded sample of each catalog block with a pattern,
+  and the analyser's value types of the blocks whose output is `any` or
+  `number`). `crates/b2c-lang/tests/fixtures.rs` writes them and fails when
+  they are stale, as for `catalog.json`
+  (`B2C_UPDATE_TYPE_FIXTURES=1 cargo test -p b2c-lang --test fixtures`);
+  `blockly-ext`'s Vitest suites check every case, and the desktop's
+  integration test compares the core's conversion table with the
+  TypeScript rule on every row. The analyser's tests run every document
+  with the catalog's signatures and with M2 blocks' patterns written out by
+  hand, and compare the results. A recorded snapshot
+  (`m2_documents_analyse_with_the_catalog_table_as_with_m2_rules` in
+  `crates/b2c-lang/tests/props.rs`) holds the catalog's table to what M2's
+  own rules gave on 400 generated programs, every example and every
+  malicious project that loads, apart from rules changed on purpose since
+  (`+` on text). The no-false-refusal test
+  (`apps/desktop/src/editor/sync/noFalseRefusal.test.ts`, with the real
+  core) samples value blocks and inputs in every example, and each drop the
+  editor refuses must give an analyser error at the moved block or its
+  parent once made; a refused drop into a parked parent must give one once
+  the parent is attached. Codegen's forms test compiles a program with every
+  sample value type, a comparable struct in a set and a map, a printable
+  struct, an enum printed and joined, an index and a size compared with an
+  `int`, with the *strict* warnings under C++17 and C++20, with the `g++` on
+  `PATH` and every `/usr/bin/g++-N`, then runs it. Constant folding is
+  compared with a reference evaluator on random expressions, and 400 random
+  constant expressions are compiled with g++ as `constexpr` values with a
+  `static_assert` of each folded value.
 * **Fuzzing.** The targets also cover the clipboard loader, the sanitizer
   report scanner and every diagnostics parser entry point. No target performs
   I/O; they call only pure parsing functions, so `fuzz/` may depend on
@@ -156,8 +204,11 @@ Details of each level as M2 sets them up:
   toolbox while a place is previewed, also without a last move, a drop on
   the trash can undone with `Ctrl+Z`, *Show all blocks* keeping the zoom,
   and an empty *if* wrapping statements of `main`, undone and redone, at
-  three zoom levels), and a build and a run with input. Both run in the
-  pull request E2E job on both systems; the security tests of
+  three zoom levels), typed slots (a text value refused by `create [int]`
+  and accepted by `create [string]`, a start value swapped by a type change
+  and restored in one undo step, a wrong argument refused by a drag and not
+  offered by the keyboard mover), and a build and a run with input. Both
+  run in the pull request E2E job on both systems; the security tests of
   [08 §8.13](08-security.md#813-continuous-security-process) run nightly.
   Typing in expression slots and Quick Insert are M3 features and are not
   tested in M2. *Without reading docs* is checked by a manual usability
@@ -246,11 +297,13 @@ Details of each level as M2 sets them up:
     page, from the window's readiness until the test ends); the report never
     fails a test.
   * The app measures its preview pipeline and each of its phases, each
-    rebuild of the toolbox's flyout, the selection handler and the code
-    panel's update as User Timing spans (`b2c:…`); nothing in the app shows
-    them. The long-task recorder names the spans that overlap each task it
-    keeps, and the benchmarks report each span's time per edit or click
-    beside their metrics; the E2E hook gives each span's latest duration.
+    rebuild of the toolbox's flyout, the selection handler, the code
+    panel's update and the keyboard mover's listing of places
+    (`b2c:keyboard-targets`) as User Timing spans (`b2c:…`); nothing in the
+    app shows them. The long-task recorder names the spans that overlap
+    each task it keeps, and the benchmarks report each span's time per edit
+    or click beside their metrics; the E2E hook gives each span's latest
+    duration.
   * A change expected to alter a gated metric runs the A/B benchmark job on
     its pull request (`bench-ab-pr.yml`): the head (the pull request merged
     into its base branch) and the base (that branch) are built and measured
@@ -286,6 +339,15 @@ Details of each level as M2 sets them up:
     base build cannot run, or that fails on the base, is left out without
     failing the job, and the summary then ends "Not conclusive" for it: such
     a run does not count for the rule.
+  * Typed slots have two benchmarks at 1,000 blocks: the frame times of a
+    number block dragged slowly down a column of 200 `create` blocks of
+    alternating types, so that every move asks about typed slots
+    (`webview.drag-typed-1000.frame-p95-all`, the p95 over every frame,
+    reported; it is to be gated once it has 5 baselines, as the pooled drag
+    metric was), and the time to list the keyboard mover's places for a
+    number block (`webview.keyboard-list-1000.ms`, reported, against N12's
+    100 ms). A base build without the `b2c:keyboard-targets` span skips the
+    listing in an A/B run, with a note.
   * M2 gates regressions. Absolute interaction budgets on small programs are
     reported in M2 and gated from M3 once the toolbox refreshes per section.
     Meeting N2–N4 and N12 ([01 §1.4](01-overview.md#14-goals)) at

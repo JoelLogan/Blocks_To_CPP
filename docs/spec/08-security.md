@@ -281,7 +281,9 @@ longer exist, and `-trigraphs` is on the extra-flags denylist.
 
 `NumLit` accepts only the C++ literal grammar (decimal, `0x`, `0b`, octal with
 an explicit dropdown; digit separators `'`; suffixes `u`, `l`, `ll`, `z`, `f`).
-It is range-checked against the target type; overflow is error `E0517`.
+It is range-checked against the target type; overflow is error `E0517`, and
+so is a constant calculation or *convert* to `int` whose result does not fit
+([06 §6.6](06-compiler-pipeline.md#66-stage--types-flow-checks-and-lints)).
 `inf`/`nan` are emitted as `std::numeric_limits<T>::infinity()` /
 `quiet_NaN()`. The printed form is normalised; it is not the user's raw text.
 
@@ -295,6 +297,20 @@ It is range-checked against the target type; overflow is error `E0517`.
   comments, balanced brackets, no `;` in expression templates. Holes receive
   only emitted sub-expressions, parenthesised by precedence
   ([03 §3.11.2](03-block-language.md#3112-template-lowering-library-blocks)).
+* **Type terms** in files and clipboard payloads
+  ([05 §5.4](05-project-format.md#54-block-nodes)) are data, never text: a
+  term is measured first (8 levels, 32 names, `B2C-E0140`), its names follow
+  the name rule (1 to 64 ASCII letters, digits and `_`, joined by `::` or
+  single spaces) and are looked up in closed type tables, and a reference
+  must name a declared struct or enum. The C++ type is composed from the
+  generator's tables and validated identifiers
+  ([06 §6.8.2](06-compiler-pipeline.md#682-typed-text-parse-dont-validate)),
+  so no text of a term reaches the output.
+* **Headers** come only from the closed table of standard headers
+  ([06 §6.10](06-compiler-pipeline.md#610-includes-and-support-helpers)):
+  a block's `headers`, a dropdown option's headers and a `header` field's
+  value are checked against it, so no path or other text can reach an
+  `#include`.
 
 ### 8.4.6 Raw C++ and hidden-text defences
 
@@ -641,9 +657,12 @@ check it.
 **Malicious-project regression suite:** `tests/security/projects/` holds a
 crafted `.b2c` file for **every** threat above that a file can express:
 injection strings, comment splices, bidi text, deep nesting, duplicate keys,
-oversized numbers, Windows device names, prototype-pollution keys, and
-template abuse in packs. Each has an asserted outcome (rejected, or emitted
-safely), and the suite runs on every PR.
+oversized numbers, Windows device names, prototype-pollution keys, type
+terms that are too deep or too wide or carry injected or bidi text,
+prototype keys or a list where one argument belongs, a damaged declaration
+that must not read as a type, and template abuse in packs. Each has an
+asserted outcome (rejected, or emitted safely), and the suite runs on every
+PR. `tests/security/clipboard/` does the same for clipboard payloads.
 
 ## 8.13 Continuous security process
 

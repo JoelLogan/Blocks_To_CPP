@@ -79,8 +79,15 @@ every example at indent widths 2 and 4.
   or `B2C-E0108` (*made with a newer version*) when the file's
   `generator.app` is newer than this app
   ([05 §5.7](05-project-format.md#57-versioning-and-migration)).
+* Type terms in type fields and parameter rows
+  ([05 §5.4](05-project-format.md#54-block-nodes)) are measured first (at
+  most 8 levels of templates and 32 names, `B2C-E0140`), then decoded into
+  names, references and templates with one spelling each.
 * Format migrations (the `formatVersion` chain) run on the parsed JSON tree
-  before decoding, because an older file may not fit the current types. The
+  before decoding, because an older file may not fit the current types. They
+  run only for a file older than version 1; versions 1 and 2 differ only by
+  added keys and load as they are
+  ([05 §5.7](05-project-format.md#57-versioning-and-migration)). The
   upgraded tree then goes through the full decoder and validation.
 * Output: `Document`, plus load diagnostics (`B2C-E01xx`).
 
@@ -96,9 +103,19 @@ every example at indent widths 2 and 4.
   "missing block" (shown greyed out with a *Missing pack: X* badge, and
   preserved on save) plus diagnostic `B2C-E0601`.
 * Fields are validated against their kinds: dropdown values must be one of the
-  options, type fields one of the block's types, checkboxes must be
+  options; a type field takes the types of its list and, when it has a type
+  pattern, every type of its variable's class (so `create` takes every type
+  a variable can hold, but not a file, an error or `void`;
+  [03 §3.11.1](03-block-language.md#3111-catalog-format)); a `header` field
+  takes a header of the closed header table (§6.10); checkboxes must be
   booleans, number fields hold non-empty text, and declarations have the
-  `{sym, name}` shape. Whether a number is a valid literal in range (`E0310`,
+  `{sym, name}` shape. A function parameter's type is checked against the
+  row's listed types and its class the same way (`B2C-E0614`). A struct or
+  enum (`{"ref": …}`) always passes this stage: the analyser checks it
+  (`B2C-E0201`, `E0207`). A type or header that this catalog does not know,
+  or does not allow there, in a file from a newer catalog is `B2C-E0602`,
+  and the block is kept as it is; one that no catalog could have written is
+  `E0607` or `E0614`. Whether a number is a valid literal in range (`E0310`,
   `E0517`) and a name a valid identifier (`E0220`) is checked when lowering.
   An absent name or reference field is how the editor saves a block in which
   nothing is chosen yet, so it is not a catalog problem: lowering reports it
@@ -107,6 +124,14 @@ every example at indent widths 2 and 4.
   ([ADR-0012](../adr/0012-parked-blocks.md)).
 * `extra` (mutator state) is validated against the block's declared schema,
   and the ⊕ counts must match the inputs present.
+* The catalog builds each block's **signature** when it loads
+  (`Catalog::sigs()`: its type variables, the patterns of its parts in
+  catalog order, its output and its headers;
+  [03 §3.11.1](03-block-language.md#3111-catalog-format)) and checks the
+  patterns then. The analyser takes the table as an argument
+  (`b2c_lang::analyze_with`, and `analyze_checked_with` for a document the
+  catalog checked), so `b2c-lang` reads the catalog's contract without
+  depending on `b2c-catalog`.
 
 ## 6.4 Stage ③ Lowering to the Semantic AST
 
@@ -149,6 +174,26 @@ enum Expr {
   `-2147483648` becomes `-2147483647 - 1`.
 * **Library-pack blocks** lower to `Template` nodes that hold the parsed
   template and their argument `Expr`s ([03 §3.11.2](03-block-language.md#3112-template-lowering-library-blocks)).
+* **Typed blocks.** A block whose signature has patterns is typed in one
+  pass ([ADR-0018](../adr/0018-slot-typing.md), §6.6 *Inference*): its
+  fields are read and its value inputs lowered in catalog order, then its
+  type variables are bound and each part is checked against what it
+  expects, with the existing messages. `create`, `set`, call arguments and
+  `return` have no other rule. An argument for an editable (`&`) parameter
+  keeps its own rule (a changeable variable of exactly the parameter's type,
+  `E0307`), and a call inside a typed expression keeps its conversion check.
+  A value input that holds a *place-typed* block (one whose type comes from
+  where it is) is lowered after its siblings, with the type the input
+  expects passed down as its place; without a place it is `B2C-E0315`, and
+  with a place outside its class `E0301`. Lowering it later moves no
+  position in the scope index.
+* **Blocks the catalog kept unchecked** (`E0601`–`E0603`, `E0620`) are
+  lowered too, but check nothing at their parts, and their value has type
+  `Error`, so neither they nor their parents report their parts again.
+* **Catalog headers.** Each item collects the catalog headers of the blocks
+  lowered into it (enabled and attached), with the chosen options' headers,
+  split by where the block's code is printed: the declaration (a signature,
+  a default argument) or the definition (a body, an initialiser) (§6.10).
 * **Disabled blocks** are dropped here, though their symbols are still
   declared for diagnostics.
 * **Parked blocks** (top-level statements, reporters and predicates with
@@ -205,6 +250,11 @@ left to the analyser
   editor's own fallback picks the same one. A `when program
   starts` or function definition that the analyser skips (a disabled one),
   and every block in it, answers with the module's functions.
+* An answer that lists a struct or enum also lists its fields or its
+  enumerators, each with its `owner`. No local name hides a member and a
+  member hides nothing, so a field may share a name with a variable. Paste
+  binds a copied member through its owner
+  ([05 §5.12](05-project-format.md#512-clipboard-format)).
 * An unknown block, or one nested too deeply, gives an empty list. The
   result is sorted by name, then by ID. Every walk that records these
   answers is iterative and stops at the analyser's depth limit, and the
@@ -221,15 +271,21 @@ left to the analyser
   hides any other symbol with its name), and `parked_scope(module)` is what
   a block placed on the module's canvas sees. Paste re-binding uses them
   ([05 §5.12](05-project-format.md#512-clipboard-format)).
-* `symbol_infos()` lists every symbol, and `block_types()` gives the static
-  type of each value block, which the editor's connection checker uses
-  together with `conversion(from, to)`, the analyser's own conversion rule
-  (`same`, `widening`, `narrowing`, `boolNumber` or `invalid`). That rule
-  covers initialising a variable, passing an argument and returning a value.
-  `set` (assignment) also accepts a `char` for a `std::string` variable, as
-  C++ does, although `conversion` calls that `invalid`; `change by` has rules
-  of its own; and an input with a catalog check class (such as `ask`'s `text`
-  prompt) follows that class.
+* `symbol_infos()` lists every symbol, `block_types()` gives the static
+  type of each value block, and `slot_types()` the static type of each
+  expression slot that was lowered, by block and input. `update()` returns
+  them as `blockTypes` and `slotTypes` (always present; `{}` when nothing
+  loads). The editor's connection checker uses them together with
+  `conversion(from, to)`, the analyser's own conversion rule (`same`,
+  `widening`, `narrowing`, `boolNumber` or `invalid`), which the WASM core
+  exports as a table over a fixed list of sample types: M2's seven, then
+  library and user types. That rule covers initialising a variable, passing
+  an argument and returning a value, and a library or user type converts
+  only to the same type. An input the catalog marks `assign` (`set`'s value)
+  also accepts a `char` for a `std::string`, as C++ does, although
+  `conversion` calls that `invalid`; `change by` has rules of its own; and an
+  input with a catalog check class (such as `ask`'s `text` prompt) follows
+  that class.
 
 `SymbolInfo` lives in `b2c-ir`, and its JSON is the same everywhere (WASM, IPC
 and tests):
@@ -240,28 +296,84 @@ and tests):
 ```
 
 `kind` is `variable` (with `isConst`), `parameter` (with `mode`: `copy`,
-`editable` or `read_only`), `loopVariable`, or `function` (with `params`, the
-parameter symbol IDs, and `returns`, a type). Types are `void`, `bool`,
-`char`, `int`, `double`, `string` or `error`. The WASM core answers scope
+`editable` or `read_only`), `loopVariable`, `function` (with `params`, the
+parameter symbol IDs, and `returns`, a type), `struct` (with `fields`, the
+field symbol IDs, and `comparable` and `printable`: ticked, and every
+field's type is comparable or printable), `enum` (with `values`, the
+enumerator symbol IDs), `field` or `enumerator` (each with `owner`, its
+struct's or enum's symbol ID). A type is written as its type term
+([02 §2.5.1](02-architecture.md#251-requests-and-responses)): `"int"`,
+`"std::string"`, `{"std::vector": "int"}`, `{"ref": "sym_x"}`, or
+`"error"`. A struct's or enum's type is the type itself, an enumerator's is
+its enum, and a field's is its declared type. The WASM core answers scope
 queries from the analysis cached by its last preview.
 
 ## 6.6 Stage ⑤ Types, flow checks and lints
 
-* **Types:**
+* **Types** ([ADR-0017](../adr/0017-open-type-representation.md)):
 
   ```rust
   enum Type {
-      Void, Bool, Char(CharKind), Int(IntKind), Float(FloatKind), String, StringView,
-      Named(TypeId), Generic(TypeId, Vec<Type>), Param(TypeParamId),
-      Pointer(Box<Type>, Cv), Ref(Box<Type>, RefKind, Cv), Function(FnSig), Auto, Opaque,
+      Void, Bool, Char, Int, Double, String,
+      Lib(LibApp),      // a standard-library type and its arguments: std::vector<int>, std::map<K, V>
+      Named(SymbolId),  // a user struct or enum, by the symbol of its definition
+      Error,            // an expression that already has an error; fits everything
   }
   ```
 
-* **Inference:** `auto` declarations take the initialiser type. Generic
-  library signatures unify (`std::vector<T>::push_back(const T&)`).
+  A type is at most 24 bytes and a clone never copies its arguments; at most
+  8 levels and 32 names. Type parameters, pointers, references, function
+  types and the opaque type of Raw C++ (`Param`, `Pointer`, `Ref`,
+  `Function`, `Opaque`) come with the blocks that need them (M4).
+* **Classes** name sets of types for catalog patterns and checks: M2's
+  `any`, `number`, `integer`, `bool` and `text`, and `value` (what a
+  variable can hold), `collection`, `sequence`, `indexable`, `insertable`,
+  `searchable`, `keyed`, `adaptor`, `listable`, `sortable`, `iterable`,
+  `switchable`, `comparable`, `printable`, `struct`, `enum`, `input_file`,
+  `output_file` and `exception`. `Error` is in every class; a user type the
+  analysis does not know is neither in nor out, so nothing is reported.
+* **Inference:** `auto` declarations take the initialiser type. A block with
+  a signature is typed in one pass
+  ([ADR-0018](../adr/0018-slot-typing.md)): each type variable is bound by
+  the first part, in catalog order, whose type is known; a later part that
+  disagrees is the mismatch, never the earlier one; a place-typed block
+  takes the type its place expects. A part whose type is unknown or
+  `Error` binds its variable to `Error`, so nothing that depends on it is
+  reported. There is no backtracking, and the work is linear in the block's
+  parts.
 * **Conversions:** follow the C++ standard conversion rules for built-ins.
-  User conversions (constructors / conversion operators) are considered when
-  known. `Opaque` is compatible with everything (deferring to g++).
+  A library or user type converts only to the same type. User conversions
+  (constructors / conversion operators) are considered when known. `Opaque`
+  is compatible with everything (deferring to g++).
+* **Operators.** Comparisons of numbers and `bool`s follow M2's rules
+  (`W0519` for a `bool` with a number, `W0511` for `==` on decimals), text
+  compares with text, and text with anything else is `E0302`; any other two
+  operands must have one type, and that type must be comparable, else
+  `E0302`. Arithmetic, the signs and *change by* take numbers (a `bool`
+  counts as one, with a warning); `+` also joins text with text or a
+  character, in either order, giving text, as C++'s `std::string` does, and
+  text with anything else is `E0303`. `and`, `or` and `not` take `bool`s or
+  numbers. Any other operand, such as a list or a struct, is `E0302`.
+* **Requirements.** The items of a set or priority queue and the keys of a
+  map must be comparable: `B2C-E0313` where the type is written. *print* and
+  *join* need printable values (`B2C-E0314`). A struct ticked *comparable*
+  or *printable* with a field that is not is `E0313` or `E0314` at the tick,
+  naming the field, and counts as neither.
+* **Constant folding** runs on each item after the flow checks: the
+  analyser works out every expression built from literals, `const`
+  variables whose starting value it knows, the signs, `not`, arithmetic,
+  comparisons, `and`, `or`, the conditional value and *convert*, with C++'s
+  semantics on every supported target (32-bit `int`, IEEE 754 `double`). A
+  whole-number division or `mod` by a constant 0 is `B2C-E0316`, a constant
+  `int` calculation or a *convert* to `int` that does not fit is `E0517`
+  (the code of a literal that does not fit), and a decimal division by a
+  constant 0 or a constant decimal result too large is `W0506`. An operand
+  that C++ does not evaluate (after a constant left side of `&&` or `||`
+  that decides, the branch of `?:` a constant condition does not choose) is
+  not checked, and a part that was reported is no constant further up.
+  `Analysis::constants()` gives the value of each `const` variable that
+  folds, with whether C++ counts its starting value as a constant
+  expression, and `constant_value()` evaluates any expression.
 * **Overloads:** simplified resolution (exact → promotion → conversion). When
   the result is ambiguous, we emit nothing and let g++ decide.
 * **Flow checks:** missing `return` on some path (`E0410`), `break`/`continue`
@@ -274,7 +386,9 @@ queries from the analysis cached by its last preview.
   raw `new` without a matching owner (`W0515`), capturing locals by
   reference in a detached context (`W0516`), and the name-spelling notes of
   [§6.14](#614-standard-names-and-using-namespace) (`I0523`, `I0524`,
-  `W0525`). Literal overflow (`E0517`) is an error. The diagnostics
+  `W0525`), and a decimal result that is infinity or NaN (`W0506`). Literal
+  and constant overflow (`E0517`) and whole-number division by a constant
+  zero (`E0316`) are errors. The diagnostics
   reference in `docs/reference/diagnostics/` is the normative list of the
   codes that are reported (§6.12).
 * **Lint levels.** Every analyser warning and info code (`W05xx` and
@@ -298,7 +412,8 @@ queries from the analysis cached by its last preview.
   ([05 §5.11](05-project-format.md#511-content-hash)).
 * **Errors (`E` codes) cannot be turned off or lowered.** An `E` code means
   that g++ would reject the generated code or that the code would not mean
-  what the blocks say. That includes literal overflow (`E0517`) and the
+  what the blocks say. That includes literal and constant overflow
+  (`E0517`), whole-number division by a constant zero (`E0316`) and the
   name-spelling errors of [§6.14](#614-standard-names-and-using-namespace)
   (`E0213`, `E0215`–`E0218` and `E0514`). A `W` or `I` code raised to `error`
   can be lowered again, and the machine value still wins.
@@ -391,6 +506,23 @@ construct concrete. For example:
   enums with auto-generated `operator<<`).
 * `ForEachLine` → `std::ifstream` declaration + `if (!stream)` branch + `while
   (std::getline(...))`.
+* Sizes and indexes are `int` in blocks, so the generated code casts them
+  and compiles clean at every warning level: a size is
+  `static_cast<int>(c.size())`, and an `int` index into a vector, deque or
+  text is `c.at(static_cast<std::size_t>(i))` (a non-negative literal index
+  stays as written; a map's key is never cast). *for each* is a range-`for`
+  over `const auto&`, and `const auto& [key, value]` over a map.
+* A struct definition gets the operators its ticks promise: a comparable
+  struct the defaulted `auto operator<=>(const S&) const = default;` in
+  C++20 and six hidden-friend comparisons built on `std::tie` in C++17; a
+  printable struct a hidden-friend `operator<<` that prints
+  `Point{x: 1, y: 2}` (a `bool` field as `true` or `false`). An enum that is
+  printed or written gets an `operator<<` (a `switch` over its values), and
+  one that is joined a `to_string`. The struct and enum blocks that reach
+  these come later in M3.
+* A read-only parameter of any type that is not a scalar (text, a library
+  type, a struct) is `const T&`; numbers, characters, `bool`s and enums are
+  passed by value.
 * Precedence is resolved here. `Binary` nodes get parentheses only where C++
   precedence/associativity requires them, plus a short whitelist of clarity
   parentheses (`a & b == c` style traps, mixed `&&`/`||`).
@@ -417,6 +549,13 @@ pub struct Comment(Box<str>);
 /// catalog template; carries its origin so the source map can flag it.
 pub struct RawCode { text: Box<str>, origin: Origin, provenance: RawProvenance }
 ```
+
+Types reach the output the same way: a C++ type (`CType`) is composed only
+of the generator's own tables (the primitives, `std::size_t`, the library
+types such as `std::vector` and `std::map`) and the `Ident`s of user structs
+and enums, and every header is a `Header` from the closed header table
+(§6.10). A type term from a file never becomes text: its names are looked up
+in those tables first, and a reference resolves to a declared symbol.
 
 The emitter's write functions accept only these types or `&'static str`
 text chosen by the generator, so no runtime string reaches the output except
@@ -486,12 +625,36 @@ statement (with its comment lines and nested bodies) and expression has one.
 
 ## 6.10 Includes and support helpers
 
-* Each catalog entry and each type in pack metadata declares its required
-  headers. The emitter collects the headers of all **used** constructs
-  (including those implied by types, e.g. `std::vector` → `<vector>`), then
-  deduplicates and sorts them. There are no transitive-include assumptions:
-  if `std::string` is used, `<string>` is included even when `<iostream>`
-  happens to pull it in.
+* Every header is a `Header` from one closed table: the C++ standard
+  library's headers from C++17 to C++26 in their `<cxxx>` forms, each with
+  the first standard that has it. Headers come from three places:
+  * **the catalog:** the `headers` of each block, of a dropdown's chosen
+    option, and the value of a `header` field
+    ([03 §3.11.1](03-block-language.md#3111-catalog-format)), checked
+    against the table when the catalog loads. A block lists only the headers
+    every form of it needs. The analyser records the headers of the enabled,
+    attached blocks it lowers into an item by where their code is printed
+    (`ItemHeaders`): `decl` for blocks printed with the declaration (a
+    signature, a default argument), `body` for blocks printed only with the
+    definition (a function body, an initialiser), so a header the body alone
+    needs never reaches `decl`;
+  * **the types the code names:** `std::vector` → `<vector>`, `std::string`
+    → `<string>`, and those of a value whose library members or operators
+    are used;
+  * **the forms codegen chooses:** `<cstddef>` for an index cast,
+    `<cstdlib>` for `std::exit` outside `main`, `<limits>` for the simple
+    *ask* of a number and `<string>` for one of text, `<compare>` (C++20)
+    or `<tuple>` (C++17) for a comparable struct, `<ostream>` for a
+    generated `operator<<`, `<string>` for an enum's `to_string` and for
+    `+` joining text, and the helpers' own headers.
+
+  The emitter collects the headers of all **used** constructs, then
+  deduplicates and sorts them. An item's `decl` headers go into the file
+  that prints its declaration and its `body` headers into the file that
+  prints its definition: in a single-module project, both are the module's
+  `.cpp`. Library-pack types declare their headers in the pack's metadata.
+  There are no transitive-include assumptions: if `std::string` is used,
+  `<string>` is included even when `<iostream>` happens to pull it in.
 * Helpers are selected by usage, together with their own header dependencies,
   and emitted per [03 §3.9](03-block-language.md#39-support-helpers).
 * Feature gating: constructs that need a newer standard or library feature
@@ -546,7 +709,7 @@ pub struct Diagnostic {
 | ------------ | ------ |
 | `E01xx` | Loading / format / migration |
 | `E02xx` | Names and scopes |
-| `E03xx` | Types and conversions |
+| `E03xx` | Types and conversions, and division by a constant zero (`E0316`) |
 | `E04xx` | Structure and flow |
 | `E05xx`, `W05xx`, `I05xx` | Flow checks and lints |
 | `E06xx` | Catalog and packs |

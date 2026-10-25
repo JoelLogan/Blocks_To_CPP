@@ -253,7 +253,8 @@ the getting-started guide describe the polished editor.
 * Quick fixes on diagnostics, applied as one undo step. *Copy bug report* for
   suspected generator bugs. Feature gating by C++ standard and toolchain
   capability, with fallbacks. A snapshot test of every catalog block's
-  default C++, compiled with `-fsyntax-only`.
+  default C++, compiled with `-fsyntax-only` (done 2026-10-25,
+  [09 §9.2](09-quality-and-delivery.md#92-testing-strategy)).
 * `switch` (with fall-through), `do … while`, `wait`, *with arguments* on
   *when program starts* (a checkbox, not a second block), overloads, default
   arguments and the *moved* parameter mode. Type-specific variable
@@ -262,7 +263,9 @@ the getting-started guide describe the polished editor.
 * The type and slot foundations: an open type representation, typed slots,
   catalog schema extensions (including the catalog's `headers`),
   `text + "x"` where C++ allows it, and constant folding for overflow and
-  division by zero.
+  division by zero (done 2026-10-25: [ADR-0017](../adr/0017-open-type-representation.md),
+  [ADR-0018](../adr/0018-slot-typing.md), project format version 2 and
+  catalog 1.3.0; the blocks that use them come next).
 * From the M2 polish wave (owner's decisions of 2026-10-10):
   * the live preview in a Web Worker (ADR-0016, after a single `update()`
     export), with a compact source map and a C++ panel that pauses while
