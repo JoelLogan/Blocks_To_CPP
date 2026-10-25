@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 
 use b2c_ir::diag::{DiagSource, Diagnostic, Location};
 use b2c_ir::text::is_invisible;
-use b2c_ir::types::{LibType, Type, TypeClass, TypeFacts};
+use b2c_ir::types::{LibType, Type, TypeClass, TypeFacts, TypeTerm};
 
 /// Longest user text shown in a message, in characters.
 const MAX_SHOWN_CHARS: usize = 40;
@@ -62,6 +62,34 @@ pub(crate) fn a_type(ty: &Type, facts: &dyn TypeFacts) -> String {
             None => String::from("a value of an unknown type"),
         },
         Type::Error => String::from("an unknown value"),
+    }
+}
+
+/// A type term as C++ writes it, for a message about a term that is not a
+/// type the block can use (`std::vector<std::ofstream>`): names as they are,
+/// templates with their arguments in angle brackets, and user types by their
+/// name (`?` for one the facts do not know). The caller quotes it.
+pub(crate) fn term_cpp(term: &TypeTerm, facts: &dyn TypeFacts) -> String {
+    let mut out = String::new();
+    write_term_cpp(&mut out, term, facts);
+    out
+}
+
+fn write_term_cpp(out: &mut String, term: &TypeTerm, facts: &dyn TypeFacts) {
+    match term {
+        TypeTerm::Name(name) => out.push_str(name),
+        TypeTerm::Ref(id) => out.push_str(facts.user_type(id).map_or("?", |user| user.name)),
+        TypeTerm::App(name, args) => {
+            out.push_str(name);
+            out.push('<');
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                write_term_cpp(out, arg, facts);
+            }
+            out.push('>');
+        }
     }
 }
 
@@ -317,6 +345,23 @@ mod tests {
             let phrase = a_class(class);
             assert!(phrase.starts_with("a ") || phrase.starts_with("an ") || phrase.starts_with("text"));
         }
+    }
+
+    #[test]
+    fn terms_are_shown_as_cpp_writes_them() {
+        let term = |json: serde_json::Value| serde_json::from_value::<TypeTerm>(json).expect("term");
+        assert_eq!(term_cpp(&term(serde_json::json!("float")), &Facts), "float");
+        assert_eq!(
+            term_cpp(&term(serde_json::json!({"std::vector": "std::ofstream"})), &Facts),
+            "std::vector<std::ofstream>"
+        );
+        assert_eq!(
+            term_cpp(
+                &term(serde_json::json!({"std::map": [{"ref": "sym_Point"}, {"ref": "sym_Gone"}]})),
+                &Facts
+            ),
+            "std::map<Point, ?>"
+        );
     }
 
     #[test]

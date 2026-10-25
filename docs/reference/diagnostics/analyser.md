@@ -38,13 +38,17 @@ Codes by area:
   declared nowhere in the project. This happens when the block that created
   it was deleted, or when a project file was edited by hand. Pasting reports
   it too, for a pasted block that refers to a variable or function with no
-  match where it was pasted; the message then names the original.
+  match where it was pasted; the message then names the original. A type
+  setting or a function input's type that names a struct or enum that was
+  deleted gets it too, at that setting.
 * **Example:** the `create [int] [score]` block was deleted, but
   `print (score)` still refers to it.
 * **Message:** "This refers to a variable or function that doesn't exist (any
-  more). Choose another one, or create it again."
+  more). Choose another one, or create it again." / "This type refers to a
+  struct or enum that doesn't exist (any more). Choose another type."
 * **How to fix:** pick another variable in the block's dropdown, or create the
-  variable again with a `create variable` block.
+  variable again with a `create variable` block; for a type, choose another
+  type.
 
 ## B2C-E0202 Used before it is created
 
@@ -222,7 +226,9 @@ Codes by area:
   set, a queue or a stack is needed), a variable that `ask` can't fill in
   (such as a list), and a block that takes its type from its place plugged
   in where another kind of value is needed. A list, a struct or another
-  constructed type converts only to the same type.
+  constructed type converts only to the same type. A block the catalog kept
+  as it is (`B2C-E0602`, `B2C-E0603`) checks nothing about the values in its
+  inputs, and its own value counts as unknown, so neither is reported here.
 * **Example:** `create [int] [age] = ("twelve")`.
 * **Message:** "`age` needs a whole number, but this is text. Text is not
   turned into a number automatically."
@@ -492,8 +498,11 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** a block lacks something the analyser needs: a value in a value
   input, a name, a chosen variable or function, or a valid setting (type,
-  dropdown choice, checkbox, function input row). Also reported when the
-  block in a value input is disabled. A block from the toolbox in which
+  dropdown choice, checkbox, function input row). A type setting or a
+  function input's type must be one a variable can hold, so a file or an
+  error type is refused there, and `nothing` (void) is allowed only as what a
+  function gives back. Also reported when the block in a value input is
+  disabled. A block from the toolbox in which
   nothing is chosen yet gets it once it is attached; left loose or disabled,
   it gets nothing ([ADR-0012](../../adr/0012-parked-blocks.md)). A field or
   input the block catalog already reported (`B2C-E06xx`), and the fields

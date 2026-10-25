@@ -495,9 +495,10 @@ impl Lowerer<'_> {
             &[("int", Type::Int), ("double", Type::Double)],
         );
         let value = self.required_input(block, "VALUE");
-        let is_number = is_number_or_bool(&value.ty, &self.symbols);
-        if !self.checking() || value.ty == Type::Error {
-        } else if is_number == Some(false) {
+        // Only numbers (and `bool`s) convert; a value already in error, or
+        // one of an unchecked block, is not checked again.
+        let checked = self.checking() && value.ty != Type::Error;
+        if checked && is_number_or_bool(&value.ty, &self.symbols) == Some(false) {
             let message = format!(
                 "Only numbers can be converted to {}, but this is {}.",
                 a_type(&to, &self.symbols),
@@ -505,7 +506,7 @@ impl Lowerer<'_> {
             );
             self.diags
                 .error(codes::CONVERSION, value.origin.location(), message);
-        } else if value.ty == Type::Bool {
+        } else if checked && value.ty == Type::Bool {
             let message = format!(
                 "This converts a true/false value to {}: true becomes 1 and false becomes 0. Is that what you \
                  meant?",
@@ -513,7 +514,7 @@ impl Lowerer<'_> {
             );
             self.diags
                 .warning(codes::BOOL_NUMBER, value.origin.location(), message);
-        } else if to == Type::Double {
+        } else if checked && to == Type::Double {
             self.warn_integer_division(&value);
         }
         Expr {

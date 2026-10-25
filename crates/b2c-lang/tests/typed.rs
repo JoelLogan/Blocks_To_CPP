@@ -112,7 +112,7 @@ fn types_a_variable_cannot_hold_are_refused() {
         found,
         [
             "`std::ifstream` is not a type this block can use.",
-            "`{\"std::vector\":\"std::ofstream\"}` is not a type this block can use.",
+            "`std::vector<std::ofstream>` is not a type this block can use.",
             "A variable can't have the type 'nothing' (void). Choose another type.",
             "`float` is not a type this block can use.",
         ]

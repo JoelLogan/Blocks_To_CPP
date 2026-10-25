@@ -33,7 +33,7 @@ use crate::access::{self, FieldProblem};
 use crate::codes;
 use crate::collect::{self, DeclInfo, DeclKind, DeclStatus, MAX_BLOCK_DEPTH};
 use crate::flow;
-use crate::messages::{self, Diags, quoted};
+use crate::messages::{self, Diags, quoted, term_cpp};
 use crate::nesting;
 use crate::query::{Point, ScopeIndex};
 use crate::scope::{HideMark, ListKey, PARAMS_LIST, Scopes};
@@ -853,7 +853,7 @@ impl<'d> Lowerer<'d> {
             }
             Ok(_) | Err(_) => {}
         }
-        let shown = quoted(&term.key());
+        let shown = quoted(&term_cpp(term, &self.symbols));
         let message = if used == TypeUse::Parameter {
             format!("{shown} is not a type that a function input can have.")
         } else {
