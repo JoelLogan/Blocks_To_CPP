@@ -150,9 +150,10 @@ Details of each level as M2 sets them up:
   struct, an enum printed and joined, an index and a size compared with an
   `int`, with the *strict* warnings under C++17 and C++20, with the `g++` on
   `PATH` and every `/usr/bin/g++-N`, then runs it. Constant folding is
-  compared with a reference evaluator on random expressions, and 400 random
-  constant expressions are compiled with g++ as `constexpr` values with a
-  `static_assert` of each folded value.
+  compared with a reference evaluator on random expressions, and for 400
+  random constant expressions the analyser's value must equal the
+  reference's, and g++ compiles each as a `constexpr` value with a
+  `static_assert` of the analyser's value.
 * **Fuzzing.** The targets also cover the clipboard loader, the sanitizer
   report scanner and every diagnostics parser entry point. No target performs
   I/O; they call only pure parsing functions, so `fuzz/` may depend on

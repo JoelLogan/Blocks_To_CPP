@@ -1414,5 +1414,7 @@ compares the analyser with a reference evaluator in exact `i128` and `f64`
 arithmetic on random expressions over literals, a constant, a `const
 double` and a variable that is not constant: the same reports (none when
 nothing constant is at fault) and the same value and `constant_expression`.
-400 random constant expressions are compiled with g++ as `constexpr`
-values with a `static_assert` of the folded value, under C++17 and C++20.
+For 400 random constant expressions the analyser must record the
+reference's value and `constant_expression`, and g++ compiles each as a
+`constexpr` value with a `static_assert` of the analyser's value, under
+C++17 and C++20.

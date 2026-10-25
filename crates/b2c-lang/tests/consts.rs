@@ -407,6 +407,16 @@ fn constants_record_whether_cpp_sees_a_constant_expression() {
         declare_const("int", "d", e("x + 1")),
         declare("int", "e", Some(e("3"))),
         declare_const("auto", "f", e("three > 1")),
+        // `?:`, `&&` and `||` are constant expressions only when every part
+        // C++ evaluates is.
+        declare_const("double", "g", e("three > 1 ? half : 2.0")),
+        declare_const("bool", "h", e("half > 0.25 && three == 3")),
+        declare_const("bool", "i", e("half < 0.25 || three != 3")),
+        declare_const("int", "j", e("true ? three : 4")),
+        // The sign `+` keeps the value (promoted) and what C++ sees.
+        declare_const("double", "k", e("+half")),
+        declare_const("int", "l", e("+'a'")),
+        declare_const("int", "m", e("half > 0.25 ? 4 : 5")),
     ]);
     let get = |name: &str| constant(&a, name);
     assert_eq!(
@@ -432,6 +442,24 @@ fn constants_record_whether_cpp_sees_a_constant_expression() {
         })
     );
     assert_eq!(get("three").map(|c| c.constant_expression), Some(true));
+    for (name, value, constant_expression) in [
+        ("g", ConstValue::Double(0.5), false),
+        ("h", ConstValue::Bool(true), false),
+        ("i", ConstValue::Bool(false), false),
+        ("j", ConstValue::Int(3), true),
+        ("k", ConstValue::Double(0.5), false),
+        ("l", ConstValue::Int(97), true),
+        ("m", ConstValue::Int(4), false),
+    ] {
+        assert_eq!(
+            get(name),
+            Some(Constant {
+                value,
+                constant_expression
+            }),
+            "{name}"
+        );
+    }
     assert_eq!(get("d"), None, "not constant");
     assert_eq!(get("e"), None, "not `const`");
     assert_eq!(get("f").map(|c| c.value), Some(ConstValue::Bool(true)));
@@ -787,8 +815,9 @@ proptest! {
 }
 
 /// Random expressions whose value the reference evaluator works out with no
-/// report and that use no variable: g++ must accept each as a `constexpr`
-/// with the same value, under C++17 and C++20 (`static_assert`).
+/// report and that use no variable: the analyser must record the same value
+/// and `constant_expression`, and g++ must accept each as a `constexpr` with
+/// the analyser's value, under C++17 and C++20 (`static_assert`).
 #[test]
 fn folded_values_agree_with_gxx() {
     let mut runner = TestRunner::new_with_rng(
@@ -806,7 +835,12 @@ fn folded_values_agree_with_gxx() {
         if src.contains('x') || src.contains("half") || !reference.codes.is_empty() {
             continue;
         }
-        let Some((value, _)) = known else { continue };
+        let Some(known) = known else { continue };
+        // The analyser's value, which g++ then checks.
+        let a = folded(ty, &src);
+        let recorded = constant(&a, "r").map(|c| (c.value, c.constant_expression));
+        assert_eq!(recorded, Some(known), "{src}\n{}", render_all(&a));
+        let Some((value, _)) = recorded else { continue };
         let value = match value {
             ConstValue::Int(v) if v == i32::MIN => String::from("(-2147483647 - 1)"),
             ConstValue::Int(v) => v.to_string(),
