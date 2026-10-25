@@ -184,6 +184,128 @@ function factsOf(preview: PreviewResult): TypeFactsTs {
   return facts;
 }
 
+/** The blocks that declare names into their own statement lists or bodies. */
+const DECLARING = new Set(['var.declare', 'control.for_range', 'func.define']);
+
+/** The most statements and levels {@link declaredAbove} walks before it asks the core instead. */
+const MAX_WALK = 10_000;
+
+/** The names each block of a preview declares (its symbols by declaring block), built once per preview. */
+const NAMES_BY_BLOCK = new WeakMap<PreviewResult, ReadonlyMap<string, ReadonlySet<string>>>();
+
+function namesByBlock(preview: PreviewResult): ReadonlyMap<string, ReadonlySet<string>> {
+  let map = NAMES_BY_BLOCK.get(preview);
+  if (map === undefined) {
+    const names = new Map<string, Set<string>>();
+    for (const symbol of preview.symbols) {
+      let set = names.get(symbol.declBlock);
+      if (set === undefined) {
+        set = new Set();
+        names.set(symbol.declBlock, set);
+      }
+      set.add(symbol.name);
+    }
+    map = names;
+    NAMES_BY_BLOCK.set(preview, map);
+  }
+  return map;
+}
+
+/**
+ * Whether the canvas makes the variable `symbol` visible at `block` for certain, without asking the
+ * core (slots.md §4.3, *Speed*: the connection checker asks this for every place it types): its
+ * `create` block is enabled, under *when program starts* or a function, and comes before `block`
+ * in a statement list that holds `block` (or one of the statements `block` is in), and nothing on
+ * the way back from `block` to it may declare the same name (a `create` before, a loop or a
+ * function `block` is in, or `block` itself), which could hide it. `false` means "not known this
+ * way": the scope query answers then. A value inside the `create`'s own starting value is never
+ * found, since the name is hidden there.
+ */
+function declaredAbove(
+  workspace: Blockly.Workspace,
+  block: Blockly.Block,
+  symbol: SymbolInfo,
+  preview: PreviewResult,
+): boolean {
+  if (symbol.kind !== 'variable') {
+    return false;
+  }
+  const declaration = workspace.getBlockById(symbol.declBlock);
+  if (
+    declaration?.type !== 'var.declare' ||
+    !declaration.isEnabled() ||
+    declaration.getInheritedDisabled()
+  ) {
+    return false;
+  }
+  const root = declaration.getRootBlock().type;
+  if (root !== 'program.main' && root !== 'func.define') {
+    return false;
+  }
+  const names = namesByBlock(preview);
+  // A declaring block the preview has not seen may declare anything.
+  const mayHide = (other: Blockly.Block): boolean =>
+    DECLARING.has(other.type) && (names.get(other.id)?.has(symbol.name) ?? true);
+  if (mayHide(block)) {
+    // A `create` hides its own name while it is being created, a loop or a function its own.
+    return false;
+  }
+  let current = block;
+  for (let steps = 0; steps < MAX_WALK; steps += 1) {
+    const previous = current.getPreviousBlock();
+    if (previous !== null && previous.getNextBlock() === current) {
+      // The statement before `current` in its list.
+      if (previous === declaration) {
+        return true;
+      }
+      if (mayHide(previous)) {
+        return false;
+      }
+      current = previous;
+      continue;
+    }
+    // The first statement of a body, or a value in an input: on to the block that holds it.
+    const parent = current.getParent();
+    if (parent === null || mayHide(parent)) {
+      return false;
+    }
+    current = parent;
+  }
+  return false;
+}
+
+/**
+ * `source` with each scope query's answer kept until the preview or the core changes: the core
+ * answers from the analysis of the last update, so a query's answer is the same until the next one.
+ * The connection checker asks whether a symbol is visible at a block for each candidate place it
+ * types (slots.md §4.3, *Speed*), and each query serialises every visible symbol.
+ */
+function rememberedScope(
+  source: SymbolSource,
+  deps: Pick<SymbolServiceDeps, 'core' | 'preview'>,
+): SymbolSource {
+  let core: CoreWasm | null = null;
+  let preview: PreviewResult | null = null;
+  const answers = new Map<string, readonly SymbolInfo[] | null>();
+  return {
+    symbolsAt(blockId, input) {
+      const nowCore = deps.core();
+      const nowPreview = deps.preview();
+      if (nowCore !== core || nowPreview !== preview) {
+        core = nowCore;
+        preview = nowPreview;
+        answers.clear();
+      }
+      const key = `${blockId}\u0000${input ?? ''}`;
+      if (!answers.has(key)) {
+        answers.set(key, source.symbolsAt(blockId, input));
+      }
+      return answers.get(key) ?? null;
+    },
+    allSymbols: () => source.allSymbols(),
+  };
+}
+
 /** What the type oracle reads: the latest preview, and for scope questions the core and canvas. */
 export type TypeOracleDeps = Pick<SymbolServiceDeps, 'preview'> &
   Partial<Pick<SymbolServiceDeps, 'core' | 'workspace'>>;
@@ -198,7 +320,13 @@ export type TypeOracleDeps = Pick<SymbolServiceDeps, 'preview'> &
  * also for anything that does not read as a type) always connects.
  */
 export function createTypeOracle(deps: TypeOracleDeps): TypeOracle {
-  const scope = analysisScope({ core: deps.core ?? (() => null), preview: deps.preview });
+  const scope = rememberedScope(
+    analysisScope({ core: deps.core ?? (() => null), preview: deps.preview }),
+    {
+      core: deps.core ?? (() => null),
+      preview: deps.preview,
+    },
+  );
   return {
     outputTypeOf(block) {
       const preview = deps.preview();
@@ -233,9 +361,14 @@ export function createTypeOracle(deps: TypeOracleDeps): TypeOracle {
     },
     visibleAt(symId, block, input) {
       const workspace = deps.workspace;
-      if (workspace === undefined || block.workspace !== workspace || deps.preview() === null) {
+      const preview = deps.preview();
+      if (workspace === undefined || block.workspace !== workspace || preview === null) {
         // A block in the toolbox's flyout is in no place of the program.
         return null;
+      }
+      const symbol = symbolsById(preview).get(symId);
+      if (symbol !== undefined && declaredAbove(workspace, block, symbol, preview)) {
+        return true;
       }
       return symbolsAtBlock(workspace, block, input, scope).some((symbol) => symbol.id === symId);
     },

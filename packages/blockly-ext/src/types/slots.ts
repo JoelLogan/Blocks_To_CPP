@@ -149,12 +149,17 @@ export function typeBlock(
   return sig === null ? UNTYPED : typeBlockSig(sig, parts, place, facts);
 }
 
-/** {@link typeBlock} for a signature already built. */
+/**
+ * {@link typeBlock} for a signature already built. With `only`, `inputs` holds that input part
+ * alone, and no other input is read unless it binds a variable (the editor's checker asks about one
+ * candidate's input; the result is otherwise the same).
+ */
 export function typeBlockSig(
   sig: BlockSigTs,
   parts: BlockParts,
   place: StaticType | null,
   facts: TypeFactsTs,
+  only?: string,
 ): BlockTyping {
   const env = new TypeEnv(sig);
   const failed = bindParts(sig, parts, facts, env);
@@ -190,7 +195,7 @@ export function typeBlockSig(
           : { kind: 'input', name: by.input };
     bound.set(name, { type: entry.type, binder });
   }
-  return { bound, inputs: resolver.inputs(sig), fields, declares, output, place: placeFit };
+  return { bound, inputs: resolver.inputs(sig, only), fields, declares, output, place: placeFit };
 }
 
 /**
@@ -296,14 +301,20 @@ class Resolver {
     }
   }
 
-  inputs(sig: BlockSigTs): Map<string, { expects: StaticType | null; fit: SlotFit }> {
+  inputs(
+    sig: BlockSigTs,
+    only?: string,
+  ): Map<string, { expects: StaticType | null; fit: SlotFit }> {
     const inputs = new Map<string, { expects: StaticType | null; fit: SlotFit }>();
     for (const base of [...sig.inputs.keys()].sort()) {
       const input = sig.inputs.get(base);
-      if (input === undefined) {
+      if (input === undefined || (only !== undefined && !only.startsWith(base))) {
         continue;
       }
       for (const [part, index] of inputParts(sig, this.parts, base)) {
+        if (only !== undefined && part !== only) {
+          continue;
+        }
         const expects = input.pattern === null ? null : this.expects(input.pattern, index);
         const type = knownType(this.parts.input(part));
         const fit: SlotFit =

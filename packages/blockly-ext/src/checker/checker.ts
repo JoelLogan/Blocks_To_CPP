@@ -10,7 +10,8 @@
  * * **Types**, while the user drags or moves a block: the parent is typed as if the value were in
  *   the input (typed slots, ADR-0018: `candidateFit`, ./slots.ts), and the value is refused only
  *   where the analyser would report an error: a conversion or class error between known types
- *   (`isFitError`). The input's expected type comes from the parent's signature: `create`'s type,
+ *   (`isFitError`, asked through `candidateRefused`, which asks about scopes only to confirm a
+ *   refusal). The input's expected type comes from the parent's signature: `create`'s type,
  *   `set`'s variable, a call's parameter, a `return`'s function; an input without a pattern checks
  *   its class as in M2. Unknown and erroneous types always connect. Connections the program makes
  *   (loading a project, undo and redo, paste) never apply the type rule: Blockly throws when a
@@ -27,10 +28,9 @@ import * as Blockly from 'blockly/core';
 
 import type { Shape } from '../generated/catalog';
 import type { TypeOracle } from '../services';
-import { isFitError } from '../types/slots';
 import { blockDef } from './catalog';
 import { checkerTypeOracle } from './oracle';
-import { candidateFit, currentSlotCache } from './slots';
+import { candidateRefused, currentSlotCache } from './slots';
 import { wrapPlace } from './wrap';
 
 /** Connection kinds as plain numbers (`Connection.type` is a number). */
@@ -78,14 +78,13 @@ function typeAllows(
     return true;
   }
   try {
-    const fit = candidateFit(
+    return !candidateRefused(
       parentBlock,
       inputName,
       child.getSourceBlock(),
       oracle,
       currentSlotCache(),
     );
-    return !isFitError(fit);
   } catch (error: unknown) {
     // Typing never throws by design; a failure must never break dragging.
     console.warn('A connection could not be typed', error);

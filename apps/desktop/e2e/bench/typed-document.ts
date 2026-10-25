@@ -6,8 +6,10 @@
  * Shape:
  * - `program.main` (`b0`, at x 40, y 40) holds {@link TYPED_CREATES} `create` blocks of
  *   alternating types, `int t_k = 0` for even `k` and `string t_k = ""` for odd `k` (each a typed
- *   value input, half of which a number fits), then prints (`print "filler f"`) up to the block
- *   count;
+ *   value input, half of which a number fits), then up to the block count, by turns, `set` of a
+ *   variable to its start value (a value input typed by the variable, which the checker types
+ *   with the variable's scope) and a print of a variable (an input without a pattern, holding a
+ *   reference), for filler `f` the variable `t_(f mod 200)`;
  * - the moved block is a loose `math.number` (`1`) at x {@link NUMBER_X}, y {@link NUMBER_Y},
  *   right of the column's top, far enough from it not to connect where it lies.
  *
@@ -97,14 +99,27 @@ export function generateTypedDocument(): Json {
   }
   const fillers = TYPED_BLOCKS - 2 - TYPED_CREATES;
   for (let f = 0; f < fillers; f += 1) {
-    body.push({
-      id: `b${String(TYPED_CREATES + 1 + f)}`,
-      type: 'io.print',
-      v: 1,
-      extra: { itemCount: 1 },
-      fields: { NEWLINE: true, SEP: 'none', STREAM: 'out' },
-      inputs: { ITEM0: { expr: [{ str: `filler ${String(f)}` }] } },
-    });
+    const k = f % TYPED_CREATES;
+    const id = `b${String(TYPED_CREATES + 1 + f)}`;
+    const ref = { ref: `s_t_${String(k)}` };
+    body.push(
+      f % 2 === 0
+        ? {
+            id,
+            type: 'var.set',
+            v: 1,
+            fields: { VAR: ref },
+            inputs: { VALUE: { expr: [k % 2 === 0 ? { num: '0' } : { str: '' }] } },
+          }
+        : {
+            id,
+            type: 'io.print',
+            v: 1,
+            extra: { itemCount: 1 },
+            fields: { NEWLINE: true, SEP: 'none', STREAM: 'out' },
+            inputs: { ITEM0: { expr: [ref] } },
+          },
+    );
   }
   return {
     format: 'blocks2cpp/project',

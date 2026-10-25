@@ -13,11 +13,13 @@ import { hasB2cMutator } from '../blocks/mutators';
 import { registerB2cMutators } from '../mutators/register';
 import type { SymbolInfo, TypeOracle } from '../services';
 import { NO_FACTS, parseType, prim, type TypeJson } from '../types/static-type';
+import { exprShadowState } from '../shadows/state';
 import { B2C_CHECKER_NAME } from './checker';
 import { setCheckerTypeOracle } from './oracle';
 import {
   blockTyping,
   candidateFit,
+  candidateRefused,
   currentSlotCache,
   setCurrentSlotCache,
   SlotCache,
@@ -306,5 +308,95 @@ describe('the per-gesture cache', () => {
     expect(ask).toHaveBeenCalledTimes(blocks.length + 1);
     setCurrentSlotCache(null);
     expect(currentSlotCache()).toBeNull();
+  });
+});
+
+describe('what a candidate’s fit asks (slots.md §4.3, Speed)', () => {
+  it('types no parent and asks about no symbol for an input without a pattern', () => {
+    // print [score] [ ]: the reference in the first item is not read for the second.
+    const print = block('io.print') as Blockly.BlockSvg & {
+      b2cSetExtra(extra: unknown): void;
+    };
+    print.b2cSetExtra({ itemCount: 2 });
+    print
+      .getInput('ITEM0')
+      ?.connection?.setShadowState(exprShadowState([{ ref: 's_score' }], false, 'any', false));
+    const visibleAt = vi.fn(
+      (id: string, at: Blockly.Block, input: string | null) =>
+        oracle.visibleAt?.(id, at, input) ?? null,
+    );
+    const counted: TypeOracle = { ...oracle, visibleAt };
+    const repeat = block('control.repeat');
+    expect(candidateFit(print, 'ITEM1', number('1'), counted)).toBe('unknown');
+    expect(candidateFit(repeat, 'TIMES', block('text.literal'), counted)).toBe('outsideClass');
+    expect(candidateFit(repeat, 'TIMES', number('2'), counted)).toBe('unknown');
+    expect(visibleAt).not.toHaveBeenCalled();
+    // The same answers as typing the parent with the candidate in place.
+    plug(repeat, 'TIMES', block('text.literal'));
+    expect(blockTyping(repeat, oracle)?.inputs.get('TIMES')?.fit).toBe('outsideClass');
+    plug(print, 'ITEM1', number('1'));
+    expect(blockTyping(print, oracle)?.inputs.get('ITEM1')?.fit).toBe('unknown');
+    // A disabled candidate counts as empty.
+    const disabled = block('text.literal');
+    disabled.setDisabledReason(true, 'test');
+    expect(candidateFit(repeat, 'TIMES', disabled, counted)).toBe('unknown');
+    // An input part the block does not have is typed as before.
+    expect(candidateFit(print, 'ITEM9', number('1'), counted)).toBe('unknown');
+  });
+
+  it('asks each visibility once per gesture, and keeps each fit', () => {
+    const sets = Array.from({ length: 5 }, () => {
+      const set = block('var.set');
+      refer(set, 'VAR', 's_name');
+      return set;
+    });
+    const visibleAt = vi.fn(
+      (id: string, at: Blockly.Block, input: string | null) =>
+        oracle.visibleAt?.(id, at, input) ?? null,
+    );
+    const counted: TypeOracle = { ...oracle, visibleAt };
+    const cache = new SlotCache(counted);
+    const candidate = number('1');
+    for (let round = 0; round < 3; round += 1) {
+      for (const set of sets) {
+        expect(candidateFit(set, 'VALUE', candidate, counted, cache)).toBe('invalid');
+      }
+    }
+    expect(visibleAt).toHaveBeenCalledTimes(sets.length);
+  });
+
+  it('asks about scopes only to confirm a refusal, with the same answer as the fit', () => {
+    const name = block('var.set');
+    refer(name, 'VAR', 's_name');
+    const score = block('var.set');
+    refer(score, 'VAR', 's_score');
+    const visibleAt = vi.fn(
+      (id: string, at: Blockly.Block, input: string | null) =>
+        oracle.visibleAt?.(id, at, input) ?? null,
+    );
+    const counted: TypeOracle = { ...oracle, visibleAt };
+    const candidate = number('1');
+    // A number fits the int variable: nothing is asked.
+    expect(candidateRefused(score, 'VALUE', candidate, counted)).toBe(false);
+    expect(visibleAt).not.toHaveBeenCalled();
+    // Into the text variable it would be refused: the refusal is confirmed.
+    expect(candidateRefused(name, 'VALUE', candidate, counted)).toBe(true);
+    expect(visibleAt).toHaveBeenCalledTimes(1);
+    // Out of scope, the variable's type is not known, and the number connects.
+    hidden.add('s_name');
+    expect(candidateRefused(name, 'VALUE', candidate, counted)).toBe(false);
+    expect(candidateFit(name, 'VALUE', candidate, counted)).not.toBe('invalid');
+    hidden.clear();
+    for (const [parent, child] of [
+      [name, candidate],
+      [score, candidate],
+      [name, block('text.literal')],
+      [score, block('text.literal')],
+    ] as const) {
+      expect(candidateRefused(parent, 'VALUE', child, oracle)).toBe(
+        candidateFit(parent, 'VALUE', child, oracle) === 'invalid' ||
+          candidateFit(parent, 'VALUE', child, oracle) === 'outsideClass',
+      );
+    }
   });
 });

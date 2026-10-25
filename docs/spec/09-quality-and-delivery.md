@@ -348,7 +348,8 @@ Details of each level as M2 sets them up:
     a run does not count for the rule.
   * Typed slots have two benchmarks at 1,000 blocks: the frame times of a
     number block dragged slowly down a column of 200 `create` blocks of
-    alternating types, so that every move asks about typed slots
+    alternating types, in a module whose other blocks set and print those
+    variables, so that every move asks about typed slots
     (`webview.drag-typed-1000.frame-p95-all`, the p95 over every frame,
     reported; it is to be gated once it has 5 baselines, as the pooled drag
     metric was), and the time to list the keyboard mover's places for a

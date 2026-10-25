@@ -424,13 +424,35 @@ slot's tooltip (03 §3.4, [04 §4.4](../../spec/04-user-interface.md#44-diagnost
 **Speed.** Blockly 12.5.1 asks only about connections within the snap
 radius, after its own distance check (`ConnectionDB.searchForClosest`;
 `checker.ts:132-140`), so a pointer move types a few nearby parents. The
-cache keeps each block's typing and value type for one gesture; under
-ADR-0016 §5 no preview is applied during a drag, so its answers stay
-valid, and it notes the preview it was made from and starts again if that
-changes. Types parsed from a preview are kept per preview object, as
-`symbolsById` keeps symbols (`services/symbols.ts:41-51`). Outside a
-gesture, a typing is computed when something asks (a menu, a tooltip, a
-start value), for one block.
+cache keeps each block's typing and value type, each candidate's fit and
+each visibility answer for one gesture; under ADR-0016 §5 no preview is
+applied during a drag, so its answers stay valid, and it notes the preview
+it was made from and starts again if that changes. Types parsed from a
+preview are kept per preview object, as `symbolsById` keeps symbols
+(`services/symbols.ts`). Outside a gesture, a typing is computed when
+something asks (a menu, a tooltip, a start value), for one block.
+
+A candidate's fit types only what it needs, since a scope query (the
+core's `symbolsInScope`, which serialises every visible symbol) costs
+about 50 µs with 10 visible variables and 0.9 ms with 300:
+
+* in an input without a pattern (`print`'s items, `repeat`'s count), the
+  candidate's class alone (`checkAccepts`), as M2's checker did: no typing
+  of the parent and no query;
+* in a patterned input, the parent's binding parts and that input, not
+  its other inputs (`typeBlockSig`'s `only`);
+* the checker asks `candidateRefused`, which works the fit out first as if
+  every reference were visible and asks about scopes only to confirm a
+  refusal (a reference that is not visible is `unknown`, which can only
+  turn a refusal into a fit);
+* the oracle answers "visible" for a variable whose `create` comes before
+  the block in a statement list holding it, with nothing on the way that
+  could hide its name, without a query; and keeps each query's answer
+  until the next preview.
+
+On a 1,000-block module of 100 `create` and 898 `set` blocks (100
+variables), one keyboard listing's typed checks went from 271 ms and 898
+queries to about 25 ms and none (W1 review, finding ED-1).
 
 ## 5. M2 blocks' patterns in W1
 
@@ -508,7 +530,9 @@ sampled no-false-refusal test (§9) do.
 
 * `webview.drag-typed-1000.frame-p95-all` (new in W1): a number block
   dragged slowly down a column of 200 `create` blocks of alternating types
-  in a 1,000-block module, so that every move asks about typed slots;
+  in a 1,000-block module (the rest `set` of those variables and prints of
+  them, by turns, so the checker meets references), so that every move
+  asks about typed slots;
   reported until it has 5 baselines, then gated, as D20's pooled metric was
   (a later change to `typed-slots-metrics.ts` and the benchmarks' README).
 * `webview.keyboard-list-1000.ms` (new in W1, reported): the time to list

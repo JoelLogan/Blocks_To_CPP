@@ -136,8 +136,10 @@ the C++ appeared or after it, which the spans alone do not.
 - **Typed slots** ([`typed-slots.bench.e2e.ts`](typed-slots.bench.e2e.ts), M3's first wave, from
   [slots.md §8](../../../../docs/plans/m3-contracts/slots.md#8-benchmarks)): its document
   ([`typed-document.ts`](typed-document.ts)) has `main` with 200 `create` blocks of alternating
-  types (`int t_k = 0`, `string t_k = ""`) and prints up to 1,000 blocks, and a loose number block
-  beside the column. The number block is dragged with real pointer input down the column, its
+  types (`int t_k = 0`, `string t_k = ""`), then up to 1,000 blocks `set` of those variables and
+  prints of them by turns (so the keyboard listing types inputs whose variable's scope matters,
+  and inputs without a pattern that hold a reference), and a loose number block beside the
+  column. The number block is dragged with real pointer input down the column, its
   output connection passing over each value input on screen in turn, so that every pointer move
   asks the connection checker about a typed slot (which refuses it for the `string` ones), and
   back to where it lay, where it is let go and must still lie loose; the frame times of the timed

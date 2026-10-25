@@ -78,7 +78,27 @@ describe('the typed-slots document', () => {
     const body = at(top, 0, 'statements', 'BODY');
     expect(at(body, 0, 'id')).toBe(createId(0));
     expect(at(body, TYPED_CREATES - 1, 'id')).toBe(createId(TYPED_CREATES - 1));
-    expect(at(body, TYPED_CREATES, 'type')).toBe('io.print');
+    expect(at(body, TYPED_CREATES, 'type')).toBe('var.set');
+    expect(at(body, TYPED_CREATES + 1, 'type')).toBe('io.print');
+  });
+
+  it('sets and prints the variables after the column, by turns', () => {
+    const body = at(generateTypedDocument(), 'modules', 0, 'workspace', 'blocks', 0, 'statements');
+    for (const f of [0, 1, 2, 3, 201, TYPED_BLOCKS - 3 - TYPED_CREATES]) {
+      const filler = at(body, 'BODY', TYPED_CREATES + f);
+      const k = f % TYPED_CREATES;
+      const ref = { ref: `s_t_${String(k)}` };
+      if (f % 2 === 0) {
+        expect(at(filler, 'type')).toBe('var.set');
+        expect(at(filler, 'fields', 'VAR')).toEqual(ref);
+        expect(at(filler, 'inputs', 'VALUE', 'expr', 0)).toEqual(
+          k % 2 === 0 ? { num: '0' } : { str: '' },
+        );
+      } else {
+        expect(at(filler, 'type')).toBe('io.print');
+        expect(at(filler, 'inputs', 'ITEM0', 'expr', 0)).toEqual(ref);
+      }
+    }
   });
 
   it('alternates whole numbers and text, each with its start value', () => {

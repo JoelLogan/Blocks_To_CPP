@@ -10,6 +10,7 @@ export {
   beginSlotGesture,
   blockTyping,
   candidateFit,
+  candidateRefused,
   currentSlotCache,
   endSlotGesture,
   setCurrentSlotCache,

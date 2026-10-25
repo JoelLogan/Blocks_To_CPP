@@ -9,10 +9,15 @@
  * cannot answer is `unknown`, which binds `error` and fits everything. Nothing here throws into
  * Blockly: an oracle that fails answers nothing.
  *
- * A gesture (a pointer drag, a keyboard move's listing) keeps each block's typing and value type
- * in a {@link SlotCache}; the dragger and the keyboard mover set and clear it
- * ({@link setCurrentSlotCache}). Outside a gesture, a typing is computed when something asks, for
- * one block.
+ * A gesture (a pointer drag, a keyboard move's listing) keeps each block's typing and value type,
+ * each candidate's fit and each visibility answer in a {@link SlotCache}; the dragger and the
+ * keyboard mover set and clear it ({@link setCurrentSlotCache}). Outside a gesture, a typing is
+ * computed when something asks, for one block.
+ *
+ * A candidate's fit types only what it needs (slots.md §4.3, *Speed*): in an input without a type
+ * pattern, the candidate's class alone (`checkAccepts`), as M2's checker did, without typing the
+ * parent or asking about any symbol; in a patterned input, the parent's binding parts and that
+ * input, not its other inputs.
  */
 import type * as Blockly from 'blockly/core';
 
@@ -25,11 +30,14 @@ import {
   type BlockParts,
   type BlockTyping,
   inputParts,
+  isFitError,
+  MAX_VARIADIC_PARTS,
   type PartType,
   type SlotFit,
   typeBlockSig,
 } from '../types/slots';
 import {
+  checkAccepts,
   ERROR_TYPE,
   NO_FACTS,
   parseType,
@@ -73,7 +81,10 @@ function ask<T>(call: () => T, fallback: T): T {
   }
 }
 
-/** Each block's typing and value type, for one gesture (slots.md §4.3). */
+/**
+ * Each block's typing and value type, each candidate's fit and each visibility answer, for one
+ * gesture (slots.md §4.3): the blocks a gesture types do not move while it lasts.
+ */
 export class SlotCache {
   readonly oracle: TypeOracle;
   /** A block that counts as missing from its input (the block a keyboard move lists places for). */
@@ -82,6 +93,10 @@ export class SlotCache {
   private factsSeen: TypeFactsTs;
   private readonly typings = new Map<Blockly.Block, BlockTyping | null>();
   private readonly values = new Map<Blockly.Block, StaticType | 'fromPlace' | null>();
+  /** Fits by parent, then input, then candidate. */
+  private readonly fits = new Map<Blockly.Block, Map<string, Map<Blockly.Block, SlotFit>>>();
+  /** Visibility answers by block, then `symbol` NUL `input`. */
+  private readonly visible = new Map<Blockly.Block, Map<string, boolean | null>>();
 
   constructor(oracle: TypeOracle, options: { readonly absent?: Blockly.Block } = {}) {
     this.oracle = oracle;
@@ -96,8 +111,50 @@ export class SlotCache {
       this.factsSeen = facts;
       this.typings.clear();
       this.values.clear();
+      this.fits.clear();
+      this.visible.clear();
     }
     return facts;
+  }
+
+  /** @internal */
+  fit(parent: Blockly.Block, input: string, child: Blockly.Block, make: () => SlotFit): SlotFit {
+    this.facts();
+    let byInput = this.fits.get(parent);
+    if (byInput === undefined) {
+      byInput = new Map();
+      this.fits.set(parent, byInput);
+    }
+    let byChild = byInput.get(input);
+    if (byChild === undefined) {
+      byChild = new Map();
+      byInput.set(input, byChild);
+    }
+    let fit = byChild.get(child);
+    if (fit === undefined) {
+      fit = make();
+      byChild.set(child, fit);
+    }
+    return fit;
+  }
+
+  /** @internal */
+  visibleAt(
+    symbol: string,
+    block: Blockly.Block,
+    input: string | null,
+    make: () => boolean | null,
+  ): boolean | null {
+    let byKey = this.visible.get(block);
+    if (byKey === undefined) {
+      byKey = new Map();
+      this.visible.set(block, byKey);
+    }
+    const key = `${symbol}\u0000${input ?? ''}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, make());
+    }
+    return byKey.get(key) ?? null;
   }
 
   /** @internal */
@@ -145,6 +202,8 @@ interface Context {
   readonly cache: SlotCache | null;
   readonly facts: TypeFactsTs;
   readonly absent: Blockly.Block | null;
+  /** Every reference counts as visible, without asking ({@link candidateRefused}). */
+  readonly assumeVisible?: boolean;
 }
 
 function context(oracle: TypeOracle, cache: SlotCache | null | undefined): Context {
@@ -176,6 +235,21 @@ function symbolOf(ctx: Context, id: string | null): SymbolInfo | null {
     return null;
   }
   return ask(() => ctx.oracle.symbol?.(id) ?? null, null);
+}
+
+/** Whether the analysis says `id` is visible at `block` (in `input`); `null` when not known. */
+function visibleAt(
+  ctx: Context,
+  id: string,
+  block: Blockly.Block,
+  input: string | null,
+): boolean | null {
+  if (ctx.assumeVisible === true) {
+    return true;
+  }
+  const make = (): boolean | null =>
+    ask(() => ctx.oracle.visibleAt?.(id, block, input) ?? null, null);
+  return ctx.cache === null ? make() : ctx.cache.visibleAt(id, block, input, make);
 }
 
 /** A symbol's type as a part (`known`), or `unknown` when it does not read. */
@@ -314,8 +388,7 @@ class CanvasParts implements BlockParts {
     if (symbol === null || !ofFieldKinds(field, symbol)) {
       return UNKNOWN;
     }
-    const visible = ask(() => this.ctx.oracle.visibleAt?.(id, this.block, null) ?? null, null);
-    return visible === true ? symbolType(symbol) : UNKNOWN;
+    return visibleAt(this.ctx, id, this.block, null) === true ? symbolType(symbol) : UNKNOWN;
   }
 
   input(part: string): PartType {
@@ -362,11 +435,9 @@ class CanvasParts implements BlockParts {
       if (symbol === null) {
         return UNKNOWN;
       }
-      const visible = ask(
-        () => this.ctx.oracle.visibleAt?.(only.ref, this.block, part) ?? null,
-        null,
-      );
-      return visible === true ? symbolType(symbol) : UNKNOWN;
+      return visibleAt(this.ctx, only.ref, this.block, part) === true
+        ? symbolType(symbol)
+        : UNKNOWN;
     }
     const slot = ask(() => this.ctx.oracle.slotTypeOf?.(this.block.id, part) ?? null, null);
     return slot === null ? UNKNOWN : known(slot);
@@ -465,19 +536,23 @@ function blockPart(block: Blockly.Block, ctx: Context): PartType {
   return value === null ? UNKNOWN : known(value);
 }
 
-/** The typing of a block from its parts now, with some inputs overridden. */
+/**
+ * The typing of a block from its parts now, with some inputs overridden; with `only`, of that
+ * input part alone (the others are left out of `inputs`, and not read unless they bind).
+ */
 function typeWith(
   block: Blockly.Block,
   ctx: Context,
   overrides: ReadonlyMap<string, PartType>,
   place: StaticType | null,
+  only?: string,
 ): BlockTyping | null {
   const signature = signatureOf(block);
   if (signature === null) {
     return null;
   }
   const parts = new CanvasParts(block, signature.def, ctx, overrides);
-  return ask(() => typeBlockSig(signature.sig, parts, place, ctx.facts), null);
+  return ask(() => typeBlockSig(signature.sig, parts, place, ctx.facts, only), null);
 }
 
 /** The value type of a block: its signature's output, M2's rules, or the oracle. */
@@ -559,16 +634,91 @@ export function candidateFit(
   cache?: SlotCache | null,
 ): SlotFit {
   const ctx = context(oracle, cache);
+  const make = (): SlotFit => fitIn(parent, input, child, ctx);
+  return ctx.cache === null ? make() : ctx.cache.fit(parent, input, child, make);
+}
+
+/**
+ * Whether the connection checker refuses `child` in `parent`'s value input `input`: whether
+ * {@link candidateFit} is a fit error ({@link isFitError}), worked out with fewer scope queries.
+ * The fit is first worked out as if every reference were visible where it is, which asks nothing;
+ * only when that refuses is it worked out again with the analysis's answers. That gives the same
+ * answer: a reference that is not visible is `unknown`, which binds `error` and fits everything,
+ * so it can only turn a refusal into a fit, never a fit into a refusal.
+ */
+export function candidateRefused(
+  parent: Blockly.Block,
+  input: string,
+  child: Blockly.Block,
+  oracle: TypeOracle,
+  cache?: SlotCache | null,
+): boolean {
+  const ctx = context(oracle, cache);
+  const make = (): SlotFit => {
+    // Without the cache: what it keeps holds the analysis's answers.
+    const optimistic = fitIn(parent, input, child, { ...ctx, cache: null, assumeVisible: true });
+    return isFitError(optimistic) ? fitIn(parent, input, child, ctx) : optimistic;
+  };
+  const fit =
+    ctx.cache === null ? make() : ctx.cache.fit(parent, `${input}\u0000refused`, child, make);
+  return isFitError(fit);
+}
+
+/** {@link candidateFit} without the cache of fits. */
+function fitIn(parent: Blockly.Block, input: string, child: Blockly.Block, ctx: Context): SlotFit {
+  const placeTyped = isPlaceTyped(child);
+  if (!placeTyped) {
+    const plain = patternlessFit(parent, input, child, ctx);
+    if (plain !== null) {
+      return plain;
+    }
+  }
   const parentPlace = isPlaceTyped(parent) ? placeOf(parent, ctx, 0) : null;
-  if (isPlaceTyped(child)) {
-    const typing = typeWith(parent, ctx, new Map([[input, FROM_PLACE]]), parentPlace);
+  if (placeTyped) {
+    const typing = typeWith(parent, ctx, new Map([[input, FROM_PLACE]]), parentPlace, input);
     const expects = typing?.inputs.get(input)?.expects ?? null;
     const own = typeWith(child, ctx, new Map(), expects);
     return own?.place ?? 'unknown';
   }
   const part = child.isEnabled() ? blockPart(child, ctx) : EMPTY;
-  const typing = typeWith(parent, ctx, new Map([[input, part]]), parentPlace);
+  const typing = typeWith(parent, ctx, new Map([[input, part]]), parentPlace, input);
   return typing?.inputs.get(input)?.fit ?? 'unknown';
+}
+
+/**
+ * The fit of a candidate in an input part without a type pattern, which is what typing the parent
+ * would give without typing it: nothing binds or resolves there, so the fit is `outsideClass` when
+ * the input's class refuses the candidate's type and `unknown` otherwise. `null` when the input
+ * has a pattern, or is not a part the parent's typing lists, so the parent is typed.
+ */
+function patternlessFit(
+  parent: Blockly.Block,
+  input: string,
+  child: Blockly.Block,
+  ctx: Context,
+): SlotFit | null {
+  const signature = signatureOf(parent);
+  if (signature === null) {
+    return 'unknown';
+  }
+  const definition = inputDefOf(signature.def, input);
+  const sig = definition === undefined ? undefined : signature.sig.inputs.get(definition.name);
+  if (definition === undefined || sig?.pattern !== null) {
+    return null;
+  }
+  if (definition.repeat !== null || signature.sig.repeated.has(definition.name)) {
+    // Typing lists the parts the block has, up to the most a repeated input may have.
+    const index = partIndex(input, definition.name);
+    if (index === null || index >= MAX_VARIADIC_PARTS || parent.getInput(input) === null) {
+      return null;
+    }
+  }
+  const part = child.isEnabled() ? blockPart(child, ctx) : EMPTY;
+  const type = part.kind === 'known' && part.type.kind !== 'error' ? part.type : null;
+  if (type === null || sig.check === null) {
+    return 'unknown';
+  }
+  return checkAccepts(sig.check, type, ctx.facts) === false ? 'outsideClass' : 'unknown';
 }
 
 /**

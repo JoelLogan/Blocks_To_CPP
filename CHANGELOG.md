@@ -420,7 +420,11 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   `types` section and each block's signature keys.
 - Typed slots (ADR-0018): a block with catalog patterns is typed in one
   pass, by the same rule in the analyser and in the editor's TypeScript
-  copy, which two committed fixtures hold to it. The preview gives the
+  copy, which two committed fixtures hold to it. A drag or keyboard listing
+  types only what a candidate's fit needs: an input without a pattern
+  checks the candidate's class alone, as in M2, and scopes are asked about
+  only to confirm a refusal, answered from the canvas for a variable
+  created above, and kept until the next preview. The preview gives the
   editor `slotTypes`, the type of each expression slot; the IPC types
   describe static types as type terms (`TypeJson`) and know the symbols of
   structs, enums, fields and enumerators; and the scope query lists the
@@ -443,8 +447,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   that the catalog's table is held to, and codegen's new forms compiled
   with every installed g++.
 - Reported benchmarks `webview.drag-typed-1000.frame-p95-all` (typed drags at
-  1,000 blocks) and `webview.keyboard-list-1000.ms` (the keyboard mover's
-  listing), and the User Timing span `b2c:keyboard-targets`.
+  1,000 blocks, in a module that also sets and prints its variables) and
+  `webview.keyboard-list-1000.ms` (the keyboard mover's listing), and the
+  User Timing span `b2c:keyboard-targets`.
 
 ### Changed
 
