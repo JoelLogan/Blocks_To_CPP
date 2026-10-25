@@ -23,7 +23,7 @@ green one by one as the block projects arrive.
 | [`dice_statistics`](dice_statistics/README.md) | random numbers, map | W2 | pending |
 | [`guessing_game`](guessing_game/README.md) | random numbers, input, loops | M2 | green |
 | [`matrix_sum`](matrix_sum/README.md) | list of lists (vector of vectors) | W2 | pending |
-| [`input_validation`](input_validation/README.md) | exceptions, text to number | W2 | pending |
+| [`input_validation`](input_validation/README.md) | exceptions, text to number | W2 | green |
 
 When g++ is on `PATH`, every run of the test prints the count, for example
 `M3 assignments: 1 of 10 green`.

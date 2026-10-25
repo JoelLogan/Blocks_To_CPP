@@ -23,6 +23,11 @@ guessing_game.b2c:
   b001: "int"
 hello_world.b2c:
   (no value blocks)
+input_validation.b2c:
+  b003: "int"
+  b008: "std::string"
+  b020: "int"
+  b025: "std::string"
 max_of_three.b2c:
   (no value blocks)
 primes.b2c:
