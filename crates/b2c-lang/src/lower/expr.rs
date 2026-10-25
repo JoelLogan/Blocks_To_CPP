@@ -5,16 +5,20 @@
 use b2c_ir::diag::{Location, Part};
 use b2c_ir::ids::{BlockId, SymbolId};
 use b2c_ir::sast::{BinaryOp, Expr, ExprKind, Origin, PassMode, UnaryOp};
+use b2c_ir::sig::PartType;
 use b2c_ir::text::{CharLit, NumError, NumLit, NumType, StrLit};
-use b2c_ir::types::Type;
+use b2c_ir::types::{Type, TypeClass};
 use b2c_model::{Block, ExprInput, Input, Token};
 
 use super::convert::Subject;
+use super::typed::Typed;
+use super::user_types::Output;
 use super::{FuncSig, Lowerer, ParamSig, field};
 use crate::access;
 use crate::codes;
 use crate::messages::{a_type, quoted, shown};
 use crate::parser::{self, ParseError, ParseErrorKind, Syntax, SyntaxKind};
+use crate::slots::BlockTyping;
 use crate::typing::{OpClass, arithmetic_result, conditional_result, op_class, op_symbol, op_verb};
 
 /// A placeholder for an expression that has an error (already reported).
@@ -123,7 +127,12 @@ struct Slot<'s> {
 impl Lowerer<'_> {
     // --- Inputs ----------------------------------------------------------------
 
+    /// The value of an input. A block in it is lowered without a place
+    /// (blocks without a signature give their inputs none), or with
+    /// `Error` when the catalog kept `block` unchecked, so that a
+    /// place-typed value reports nothing there either.
     fn input_value(&mut self, block: &Block, name: &str) -> InputValue {
+        let place = (!self.checking()).then_some(Type::Error);
         match access::input(block, name) {
             None => InputValue::Absent,
             Some(Input::Block(nested)) if nested.block.disabled => {
@@ -131,7 +140,7 @@ impl Lowerer<'_> {
                 self.record_skipped(&nested.block);
                 InputValue::DisabledBlock
             }
-            Some(Input::Block(nested)) => InputValue::Value(self.value_block(&nested.block)),
+            Some(Input::Block(nested)) => InputValue::Value(self.value_block(&nested.block, place.as_ref())),
             Some(Input::Expr(slot)) if slot.expr.is_empty() => InputValue::Absent,
             Some(Input::Expr(slot)) => InputValue::Value(self.slot(&block.id, name, slot)),
         }
@@ -140,11 +149,21 @@ impl Lowerer<'_> {
     /// The value of a required input; reports and returns a placeholder when
     /// it is missing.
     pub(super) fn required_input(&mut self, block: &Block, name: &str) -> Expr {
-        let part = Part::Input {
-            name: name.to_owned(),
-        };
+        self.required_value(block, name).unwrap_or_else(|()| {
+            error_expr(self.origin(
+                &block.id,
+                Part::Input {
+                    name: name.to_owned(),
+                },
+            ))
+        })
+    }
+
+    /// The value of a required input; `Err` after reporting when it is
+    /// absent, empty or disabled.
+    pub(super) fn required_value(&mut self, block: &Block, name: &str) -> Result<Expr, ()> {
         let message = match self.input_value(block, name) {
-            InputValue::Value(value) => return value,
+            InputValue::Value(value) => return Ok(value),
             InputValue::Absent => format!("This block needs {}.", input_label(name)),
             InputValue::DisabledBlock => {
                 format!(
@@ -153,9 +172,14 @@ impl Lowerer<'_> {
                 )
             }
         };
-        let location = self.loc(&block.id, part.clone());
+        let location = self.loc(
+            &block.id,
+            Part::Input {
+                name: name.to_owned(),
+            },
+        );
         self.incomplete(location, message);
-        error_expr(self.origin(&block.id, part))
+        Err(())
     }
 
     /// The value of an optional input (`None` when absent or disabled).
@@ -170,13 +194,37 @@ impl Lowerer<'_> {
 
     /// Lowers a reporter block. Unknown types and statement blocks in a value
     /// input give a placeholder: the catalog check reports them.
-    pub(super) fn value_block(&mut self, block: &Block) -> Expr {
+    ///
+    /// `place` is the type its place expects, which only a place-typed block
+    /// reads (slots.md §3): one without a place has type `Error` and is
+    /// `B2C-E0315`, one whose place is outside its class has type `Error`
+    /// and is `B2C-E0301`, and one whose place is `Error` has type `Error`.
+    /// A block the catalog kept unchecked has type `Error`, so that nothing
+    /// is checked against it.
+    pub(super) fn value_block(&mut self, block: &Block, place: Option<&Type>) -> Expr {
         let origin = self.origin(&block.id, Part::Whole);
         if !self.enter(block) {
             return error_expr(origin);
         }
         self.record_block(&block.id);
-        let expr = match block.block_type.as_str() {
+        self.begin_block(block);
+        let mut expr = self.value_kind(block, origin);
+        if let Some(sig) = self.sigs.get(&block.block_type)
+            && sig.place_var.is_some()
+        {
+            expr.ty = self.place_type(block, sig, place);
+        }
+        if !self.checking() {
+            expr.ty = Type::Error;
+        }
+        self.end_block();
+        self.leave();
+        expr
+    }
+
+    /// The node of a reporter block.
+    fn value_kind(&mut self, block: &Block, origin: Origin) -> Expr {
+        match block.block_type.as_str() {
             "var.get" => self.var_get(block, origin),
             "math.number" => self.number_block(block, origin),
             "math.arithmetic" | "math.compare" => self.operator_block(block, origin),
@@ -205,9 +253,12 @@ impl Lowerer<'_> {
             "text.char" => self.text_block(block, origin, true),
             "text.join" => {
                 let count = access::extra_count(block, "itemCount", 2, 2);
-                let items = (0..count)
+                let items: Vec<Expr> = (0..count)
                     .map(|i| self.required_input(block, &format!("ITEM{i}")))
                     .collect();
+                for item in &items {
+                    self.check_printable(item, Output::Joined);
+                }
                 Expr {
                     kind: ExprKind::Join(items),
                     ty: Type::String,
@@ -218,9 +269,7 @@ impl Lowerer<'_> {
                 .call_block(block, false)
                 .unwrap_or_else(|| error_expr(origin)),
             _ => error_expr(origin),
-        };
-        self.leave();
-        expr
+        }
     }
 
     fn var_get(&mut self, block: &Block, origin: Origin) -> Expr {
@@ -446,10 +495,13 @@ impl Lowerer<'_> {
             &[("int", Type::Int), ("double", Type::Double)],
         );
         let value = self.required_input(block, "VALUE");
-        if value.ty == Type::String {
+        let is_number = is_number_or_bool(&value.ty, &self.symbols);
+        if !self.checking() || value.ty == Type::Error {
+        } else if is_number == Some(false) {
             let message = format!(
-                "Only numbers can be converted to {}, but this is text.",
-                a_type(&to)
+                "Only numbers can be converted to {}, but this is {}.",
+                a_type(&to, &self.symbols),
+                a_type(&value.ty, &self.symbols)
             );
             self.diags
                 .error(codes::CONVERSION, value.origin.location(), message);
@@ -457,7 +509,7 @@ impl Lowerer<'_> {
             let message = format!(
                 "This converts a true/false value to {}: true becomes 1 and false becomes 0. Is that what you \
                  meant?",
-                a_type(&to)
+                a_type(&to, &self.symbols)
             );
             self.diags
                 .warning(codes::BOOL_NUMBER, value.origin.location(), message);
@@ -505,14 +557,41 @@ impl Lowerer<'_> {
         };
         let sig = self.resolve_function(callee, &location);
         let count = access::extra_count(block, "argCount", 0, 0);
-        let args = (0..count)
-            .map(|i| self.required_input(block, &format!("ARG{i}")))
-            .collect();
         let origin = self.origin(&block.id, Part::Whole);
-        Some(self.finish_call(callee, sig, args, origin, as_statement))
+        let Some(block_sig) = self.typed_sig(&block.block_type) else {
+            let args = (0..count)
+                .map(|i| self.required_input(block, &format!("ARG{i}")))
+                .collect();
+            return Some(self.finish_call(callee, sig, args, origin, as_statement, None));
+        };
+        // `ARG` is `param:FUNC` (slots.md §5): each argument expects its
+        // parameter's type.
+        let mut typed = self.typed(block_sig);
+        let ret = sig.as_ref().map_or(Type::Error, |sig| sig.ret.clone());
+        typed.field("FUNC", PartType::Known(ret));
+        if let Some(sig) = &sig {
+            typed.params("FUNC", sig.params.iter().map(|param| param.ty.clone()).collect());
+        }
+        typed.count("ARG", count);
+        for i in 0..count {
+            self.typed_input(block, &mut typed, &format!("ARG{i}"), true);
+        }
+        let typing = self.type_parts(block, &mut typed, None);
+        let args = (0..count)
+            .map(|i| {
+                let part = format!("ARG{i}");
+                typed
+                    .take(&part)
+                    .unwrap_or_else(|| error_expr(self.origin(&block.id, Part::Input { name: part })))
+            })
+            .collect();
+        Some(self.finish_call(callee, sig, args, origin, as_statement, Some((&typed, &typing))))
     }
 
     /// Checks a call's arguments against the signature and builds the node.
+    /// With the call block's typing, each argument for a parameter that is
+    /// not editable is checked by its fit (ADR-0018), which gives what the
+    /// M2 rule gave.
     fn finish_call(
         &mut self,
         callee: &SymbolId,
@@ -520,6 +599,7 @@ impl Lowerer<'_> {
         args: Vec<Expr>,
         origin: Origin,
         as_statement: bool,
+        typing: Option<(&Typed<'_>, &BlockTyping)>,
     ) -> Expr {
         let Some(sig) = sig else {
             return Expr {
@@ -545,8 +625,17 @@ impl Lowerer<'_> {
             self.diags
                 .error(codes::ARGUMENT_COUNT, origin.location(), message);
         }
-        for (arg, param) in args.iter().zip(&sig.params) {
-            self.check_argument(arg, param, &sig.name);
+        for (i, (arg, param)) in args.iter().zip(&sig.params).enumerate() {
+            match typing {
+                Some((typed, typing)) if param.mode != PassMode::Editable => {
+                    let subject = Subject::Argument {
+                        function: sig.name.clone(),
+                        param: param.name.clone(),
+                    };
+                    self.report_fit(typed, typing, &format!("ARG{i}"), arg, &subject);
+                }
+                _ => self.check_argument(arg, param, &sig.name),
+            }
         }
         let ty = if !as_statement && sig.ret == Type::Void {
             let message = format!(
@@ -596,9 +685,9 @@ impl Lowerer<'_> {
                 } else if arg.ty != param.ty {
                     format!(
                         "{subject}, so it needs a variable that holds {}, but {} holds {}.",
-                        a_type(&param.ty),
+                        a_type(&param.ty, &self.symbols),
                         self.name_of(sym),
-                        a_type(&arg.ty)
+                        a_type(&arg.ty, &self.symbols)
                     )
                 } else {
                     return;
@@ -621,13 +710,19 @@ impl Lowerer<'_> {
             input,
             tokens: &slot.expr,
         };
-        match parser::parse(&slot.expr, slot.draft) {
+        let expr = match parser::parse(&slot.expr, slot.draft) {
             Ok(tree) => self.syntax(&tree, &ctx),
             Err(error) => {
                 self.report_parse_error(&error, &ctx);
                 error_expr(self.slot_origin(&ctx, 0, ctx.tokens.len()))
             }
-        }
+        };
+        // For the editor (slots.md §3): the type of each slot lowered.
+        self.slot_types
+            .entry(block.clone())
+            .or_default()
+            .insert(input.to_owned(), expr.ty.clone());
+        expr
     }
 
     fn slot_origin(&self, ctx: &Slot<'_>, start: usize, end: usize) -> Origin {
@@ -668,7 +763,7 @@ impl Lowerer<'_> {
                 let location = self.slot_origin(ctx, tree.start, tree.start + 1).location();
                 let sig = self.resolve_function(callee, &location);
                 let args = args.iter().map(|arg| self.syntax(arg, ctx)).collect();
-                self.finish_call(callee, sig, args, origin, false)
+                self.finish_call(callee, sig, args, origin, false, None)
             }
             SyntaxKind::Unary { op, operand } => {
                 if let (UnaryOp::Neg, SyntaxKind::Number(text)) = (op, &operand.kind)
@@ -795,6 +890,24 @@ impl Lowerer<'_> {
         let location = origin.location();
         let ty = match (op, &operand.ty) {
             (_, Type::Error) => Type::Error,
+            (_, other) if *other != Type::String && is_number_or_bool(other, &self.symbols) != Some(true) => {
+                // A list, a stream, a struct, …: C++ has no such operator.
+                // A user type the facts do not know is left alone.
+                if is_number_or_bool(other, &self.symbols) == Some(false) {
+                    let message = match op {
+                        UnaryOp::Not => format!(
+                            "'not' needs a true/false value, but this is {}.",
+                            a_type(other, &self.symbols)
+                        ),
+                        UnaryOp::Neg | UnaryOp::Plus => format!(
+                            "The + and - signs only work with numbers, but this is {}.",
+                            a_type(other, &self.symbols)
+                        ),
+                    };
+                    self.diags.error(codes::BAD_OPERANDS, location, message);
+                }
+                Type::Error
+            }
             (UnaryOp::Neg | UnaryOp::Plus, Type::String) => {
                 self.diags.error(
                     codes::BAD_OPERANDS,
@@ -825,7 +938,7 @@ impl Lowerer<'_> {
                 let message = format!(
                     "'not' needs a true/false value, but this is {}: 0 counts as false and anything else as \
                      true. Use a comparison such as 'x = 0' to make this clear.",
-                    a_type(&operand.ty)
+                    a_type(&operand.ty, &self.symbols)
                 );
                 self.diags.warning(codes::BOOL_NUMBER, location, message);
                 Type::Bool
@@ -863,6 +976,36 @@ impl Lowerer<'_> {
         }
         let location = origin.location();
         let text = *l == Type::String || *r == Type::String;
+        let numbers = (
+            is_number_or_bool(l, &self.symbols),
+            is_number_or_bool(r, &self.symbols),
+        );
+        if !text && matches!(op_class(op), OpClass::Arithmetic | OpClass::Remainder) {
+            // Arithmetic needs numbers (or `bool`s) by name (types.md §1.6).
+            match numbers {
+                (Some(true), Some(true)) => {}
+                (Some(false), _) | (_, Some(false)) => {
+                    let other = if numbers.0 == Some(false) { l } else { r };
+                    let message = if op_class(op) == OpClass::Remainder {
+                        format!(
+                            "'mod' only works with whole numbers, not {}.",
+                            a_type(other, &self.symbols)
+                        )
+                    } else {
+                        format!(
+                            "Can't {} {}: {} only works with numbers.",
+                            op_verb(op),
+                            a_type(other, &self.symbols),
+                            op_symbol(op)
+                        )
+                    };
+                    self.diags.error(codes::BAD_OPERANDS, location, message);
+                    return Type::Error;
+                }
+                // A user type the facts do not know: nothing is certain.
+                _ => return Type::Error,
+            }
+        }
         match op_class(op) {
             OpClass::Arithmetic if text => {
                 if op == BinaryOp::Add {
@@ -906,7 +1049,7 @@ impl Lowerer<'_> {
                 self.warn_bool_arithmetic(l, r, &location);
                 Type::Int
             }
-            OpClass::Ordering | OpClass::Equality => self.comparison_type(op, l, r, location),
+            OpClass::Ordering | OpClass::Equality => self.comparison_type(op, l, r, numbers, location),
             OpClass::Logical => self.logical_type(lhs, rhs),
         }
     }
@@ -921,14 +1064,51 @@ impl Lowerer<'_> {
         }
     }
 
-    fn comparison_type(&mut self, op: BinaryOp, l: &Type, r: &Type, location: Location) -> Type {
-        match (l, r) {
-            (Type::String, Type::String) => Type::Bool,
-            (Type::String, other) | (other, Type::String) => {
-                let message = format!("Can't compare text with {}.", a_type(other));
-                self.diags.error(codes::BAD_OPERANDS, location, message);
-                Type::Error
+    /// Comparisons (types.md §1.6), in this order: numbers and `bool`s as in
+    /// M2; text with text; text with anything else is `B2C-E0302`; any
+    /// other pair must be one type that is `comparable`, else `B2C-E0302`.
+    fn comparison_type(
+        &mut self,
+        op: BinaryOp,
+        l: &Type,
+        r: &Type,
+        numbers: (Option<bool>, Option<bool>),
+        location: Location,
+    ) -> Type {
+        if numbers != (Some(true), Some(true)) {
+            match (l, r) {
+                (Type::String, Type::String) => return Type::Bool,
+                (Type::String, other) | (other, Type::String) => {
+                    let message = format!("Can't compare text with {}.", a_type(other, &self.symbols));
+                    self.diags.error(codes::BAD_OPERANDS, location, message);
+                    return Type::Error;
+                }
+                _ => {}
             }
+            let comparable = l.is_in(TypeClass::Comparable, &self.symbols);
+            if l == r && comparable != Some(false) {
+                return Type::Bool;
+            }
+            if numbers.0.is_none() || numbers.1.is_none() {
+                // A user type the facts do not know: nothing is certain.
+                return Type::Error;
+            }
+            let message = if l == r {
+                format!(
+                    "Values of this type can't be compared: {} isn't comparable.",
+                    self.type_name(l)
+                )
+            } else {
+                format!(
+                    "Can't compare {} with {}.",
+                    a_type(l, &self.symbols),
+                    a_type(r, &self.symbols)
+                )
+            };
+            self.diags.error(codes::BAD_OPERANDS, location, message);
+            return Type::Error;
+        }
+        match (l, r) {
             (Type::Bool, Type::Bool) if op_class(op) == OpClass::Equality => Type::Bool,
             (Type::Bool, _) | (_, Type::Bool) => {
                 let message = if op_class(op) == OpClass::Equality {
@@ -969,11 +1149,22 @@ impl Lowerer<'_> {
                     let message = format!(
                         "'and' and 'or' need true/false values, but this is {}: 0 counts as false and anything \
                          else as true. Use a comparison such as 'x ≠ 0' to make this clear.",
-                        a_type(&side.ty)
+                        a_type(&side.ty, &self.symbols)
                     );
                     self.diags.warning(codes::BOOL_NUMBER, location, message);
                 }
-                _ => {}
+                Type::Bool | Type::Error => {}
+                Type::Void | Type::Lib(_) | Type::Named(_) => {
+                    // A list, a stream, a struct, …: not a condition.
+                    if is_number_or_bool(&side.ty, &self.symbols) == Some(false) {
+                        let message = format!(
+                            "'and' and 'or' need true/false values, but this is {}.",
+                            a_type(&side.ty, &self.symbols)
+                        );
+                        self.diags.error(codes::BAD_OPERANDS, location, message);
+                    }
+                    ok = false;
+                }
             }
         }
         if ok { Type::Bool } else { Type::Error }
@@ -995,8 +1186,8 @@ impl Lowerer<'_> {
         } else {
             let message = format!(
                 "Both choices must be the same kind of value, but one is {} and the other is {}.",
-                a_type(&then_value.ty),
-                a_type(&else_value.ty)
+                a_type(&then_value.ty, &self.symbols),
+                a_type(&else_value.ty, &self.symbols)
             );
             self.diags.error(codes::BRANCH_TYPES, origin.location(), message);
             Type::Error
@@ -1007,6 +1198,19 @@ impl Lowerer<'_> {
             else_value: Box::new(else_value),
         };
         Expr { kind, ty, origin }
+    }
+}
+
+/// Whether a type is in `number` or `bool` (types.md §1.3), what arithmetic
+/// and M2's comparisons take: `None` for a user type the facts do not know.
+pub(super) fn is_number_or_bool(ty: &Type, facts: &dyn b2c_ir::types::TypeFacts) -> Option<bool> {
+    match (
+        ty.is_in(TypeClass::Number, facts),
+        ty.is_in(TypeClass::Bool, facts),
+    ) {
+        (Some(true), _) | (_, Some(true)) => Some(true),
+        (Some(false), Some(false)) => Some(false),
+        _ => None,
     }
 }
 

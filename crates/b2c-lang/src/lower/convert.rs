@@ -90,7 +90,10 @@ impl Lowerer<'_> {
     pub(super) fn check_conversion(&mut self, value: &Expr, target: &Type, subject: &Subject) {
         let location = value.origin.location();
         let phrase = subject.phrase();
-        let (want, have) = (a_type(target), a_type(&value.ty));
+        if !self.checking() {
+            return;
+        }
+        let (want, have) = (a_type(target, &self.symbols), a_type(&value.ty, &self.symbols));
         match conversion(&value.ty, target) {
             Conversion::Same | Conversion::Widening => {}
             Conversion::Narrowing => {

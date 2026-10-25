@@ -115,8 +115,64 @@ pub fn type_block(
     facts: &dyn TypeFacts,
 ) -> BlockTyping {
     let mut env = TypeEnv::new(sig);
-    // The binding failures of the parts, by part name.
-    let mut failed: BTreeMap<String, SlotFit> = BTreeMap::new();
+    // Steps 1 and 2.
+    let failed = bind_parts(sig, parts, facts, &mut env);
+
+    // Step 3: the place.
+    let place_fit = match (&sig.place_var, place) {
+        (Some(var), Some(place)) if env.get(var).is_none() => match env.bind_place(Some(place), facts) {
+            Fit::OutsideClass => SlotFit::OutsideClass,
+            Fit::Fits if *place != Type::Error => SlotFit::Converts(Conversion::Same),
+            Fit::Fits | Fit::Unknown | Fit::BadShape => SlotFit::Unknown,
+        },
+        _ => SlotFit::Unknown,
+    };
+
+    // Step 4: resolve and check.
+    let resolver = Resolver {
+        env: &env,
+        parts,
+        failed: &failed,
+        facts,
+    };
+    let (fields, declares) = resolver.fields(sig);
+    let output = match &sig.output {
+        None | Some(TypePattern::Any | TypePattern::Number) => None,
+        Some(pattern) => Some(resolver.expects(pattern, None).unwrap_or(Type::Error)),
+    };
+    let bound = sig
+        .vars
+        .keys()
+        .filter_map(|var| {
+            let (ty, by) = env.get(var)?;
+            let binder = match by {
+                None => Binder::Place,
+                Some(PartName::Field(name)) => Binder::Field(name.clone()),
+                Some(PartName::Input(name)) => Binder::Input(name.clone()),
+            };
+            Some((var.clone(), (ty.clone(), binder)))
+        })
+        .collect();
+    BlockTyping {
+        bound,
+        inputs: resolver.inputs(sig),
+        fields,
+        declares,
+        output,
+        place: place_fit,
+    }
+}
+
+/// Steps 1 and 2: binds the variables from the fields, then from the value
+/// inputs, each in catalog order. Returns the binding failures by part
+/// name.
+fn bind_parts(
+    sig: &BlockSig,
+    parts: &dyn BlockParts,
+    facts: &dyn TypeFacts,
+    env: &mut TypeEnv,
+) -> BTreeMap<String, SlotFit> {
+    let mut failed = BTreeMap::new();
     let mut record = |part: &str, fit: Fit| {
         let fit = match fit {
             Fit::OutsideClass => SlotFit::OutsideClass,
@@ -125,8 +181,6 @@ pub fn type_block(
         };
         failed.insert(part.to_owned(), fit);
     };
-
-    // Step 1: fields.
     for name in sig.order.iter().filter_map(|part| match part {
         PartName::Field(name) => Some(name),
         PartName::Input(_) => None,
@@ -140,8 +194,6 @@ pub fn type_block(
         let fit = env.bind(pattern, &parts.field(name), PartName::Field(name.clone()), facts);
         record(name, fit);
     }
-
-    // Step 2: value inputs.
     for base in sig.order.iter().filter_map(|part| match part {
         PartName::Input(name) => Some(name),
         PartName::Field(_) => None,
@@ -159,122 +211,117 @@ pub fn type_block(
             record(&part, fit);
         }
     }
+    failed
+}
 
-    // Step 3: the place.
-    let place_fit = match (&sig.place_var, place) {
-        (Some(var), Some(place)) if env.get(var).is_none() => match env.bind_place(Some(place), facts) {
-            Fit::OutsideClass => SlotFit::OutsideClass,
-            Fit::Fits if *place != Type::Error => SlotFit::Converts(Conversion::Same),
-            Fit::Fits | Fit::Unknown | Fit::BadShape => SlotFit::Unknown,
-        },
-        _ => SlotFit::Unknown,
-    };
+/// Step 4: what each part expects and how it fits, once every variable that
+/// can be bound is.
+struct Resolver<'a> {
+    env: &'a TypeEnv,
+    parts: &'a dyn BlockParts,
+    failed: &'a BTreeMap<String, SlotFit>,
+    facts: &'a dyn TypeFacts,
+}
 
-    // Step 4: resolve and check.
-    let resolved = |pattern: &TypePattern, index: Option<usize>| match env.resolve(pattern, parts, index) {
-        Resolution::Type(ty) => Some(ty),
-        Resolution::Missing => Some(Type::Error),
-        Resolution::Open => None,
-    };
+impl Resolver<'_> {
+    /// A resolved pattern: `Some(t)` for `Type(t)`, `Some(Error)` for
+    /// `Missing`, `None` for `Open`.
+    fn expects(&self, pattern: &TypePattern, index: Option<usize>) -> Option<Type> {
+        match self.env.resolve(pattern, self.parts, index) {
+            Resolution::Type(ty) => Some(ty),
+            Resolution::Missing => Some(Type::Error),
+            Resolution::Open => None,
+        }
+    }
 
-    let mut inputs = BTreeMap::new();
-    for (base, input) in &sig.inputs {
-        for (part, index) in input_parts(sig, parts, base) {
-            let expects = input
-                .pattern
-                .as_ref()
-                .and_then(|pattern| resolved(pattern, index));
-            let fit = match known(&parts.input(&part)) {
-                None => SlotFit::Unknown,
-                Some(ty) => match failed.get(&part) {
-                    Some(failure) => *failure,
-                    None => match check_accepts(input.check, &ty, facts) {
-                        Some(false) => SlotFit::OutsideClass,
-                        None => SlotFit::Unknown,
-                        Some(true) => match &expects {
-                            None => SlotFit::Unknown,
-                            Some(expects) => {
-                                let conversion = if input.assign {
-                                    assignment(&ty, expects)
-                                } else {
-                                    conversion(&ty, expects)
-                                };
-                                if conversion.is_error() {
-                                    SlotFit::Invalid
-                                } else {
-                                    SlotFit::Converts(conversion)
-                                }
-                            }
-                        },
+    /// Every value input part's expectation and fit.
+    fn inputs(&self, sig: &BlockSig) -> BTreeMap<String, InputTyping> {
+        let mut inputs = BTreeMap::new();
+        for (base, input) in &sig.inputs {
+            for (part, index) in input_parts(sig, self.parts, base) {
+                let expects = input
+                    .pattern
+                    .as_ref()
+                    .and_then(|pattern| self.expects(pattern, index));
+                let fit = match known(&self.parts.input(&part)) {
+                    None => SlotFit::Unknown,
+                    Some(ty) => match self.failed.get(&part) {
+                        Some(failure) => *failure,
+                        None => self.input_fit(input, &ty, expects.as_ref()),
                     },
-                },
-            };
-            inputs.insert(part, InputTyping { expects, fit });
+                };
+                inputs.insert(part, InputTyping { expects, fit });
+            }
         }
+        inputs
     }
 
-    let mut fields = BTreeMap::new();
-    let mut declares = BTreeMap::new();
-    for (name, pattern) in &sig.fields {
-        if sig.symbol_decls.contains(name) {
-            declares.insert(name.clone(), resolved(pattern, None).unwrap_or(Type::Error));
-            continue;
-        }
-        if sig.members.contains_key(name) {
-            continue;
-        }
-        let fit = match known(&parts.field(name)) {
+    /// How a value of a known type fits an input that did not fail to bind:
+    /// its `check` class, then the conversion (or assignment) to what it
+    /// expects.
+    fn input_fit(&self, input: &InputSig, ty: &Type, expects: Option<&Type>) -> SlotFit {
+        match check_accepts(input.check, ty, self.facts) {
+            Some(false) => SlotFit::OutsideClass,
             None => SlotFit::Unknown,
-            Some(ty) => match failed.get(name) {
-                Some(failure) => *failure,
-                None if sig.symbol_refs.contains(name) => match resolved(pattern, None) {
-                    // An earlier part bound the variable to another type: a
-                    // reference is never converted.
-                    Some(expected) if expected != Type::Error && expected != ty => SlotFit::Invalid,
-                    _ => SlotFit::Converts(Conversion::Same),
-                },
-                None => SlotFit::Converts(Conversion::Same),
-            },
-        };
-        fields.insert(name.clone(), fit);
-    }
-    for (name, var) in &sig.members {
-        let fit = match env.get(var) {
-            Some((owner, _)) if *owner != Type::Error => match known(&parts.chosen_member(name, owner)) {
-                Some(_) => SlotFit::Converts(Conversion::Same),
+            Some(true) => match expects {
                 None => SlotFit::Unknown,
+                Some(expects) => {
+                    let conversion = if input.assign {
+                        assignment(ty, expects)
+                    } else {
+                        conversion(ty, expects)
+                    };
+                    if conversion.is_error() {
+                        SlotFit::Invalid
+                    } else {
+                        SlotFit::Converts(conversion)
+                    }
+                }
             },
-            _ => SlotFit::Unknown,
-        };
-        fields.insert(name.clone(), fit);
+        }
     }
 
-    let output = match &sig.output {
-        None | Some(TypePattern::Any | TypePattern::Number) => None,
-        Some(pattern) => Some(resolved(pattern, None).unwrap_or(Type::Error)),
-    };
-
-    let bound = sig
-        .vars
-        .keys()
-        .filter_map(|var| {
-            let (ty, by) = env.get(var)?;
-            let binder = match by {
-                None => Binder::Place,
-                Some(PartName::Field(name)) => Binder::Field(name.clone()),
-                Some(PartName::Input(name)) => Binder::Input(name.clone()),
+    /// The fit of every `type` and `symbol_ref` field with a pattern or
+    /// `members`, and what each `symbol_decl` field with a pattern declares.
+    fn fields(&self, sig: &BlockSig) -> (BTreeMap<String, SlotFit>, BTreeMap<String, Type>) {
+        let mut fields = BTreeMap::new();
+        let mut declares = BTreeMap::new();
+        for (name, pattern) in &sig.fields {
+            if sig.symbol_decls.contains(name) {
+                declares.insert(name.clone(), self.expects(pattern, None).unwrap_or(Type::Error));
+                continue;
+            }
+            if sig.members.contains_key(name) {
+                continue;
+            }
+            let fit = match known(&self.parts.field(name)) {
+                None => SlotFit::Unknown,
+                Some(ty) => match self.failed.get(name) {
+                    Some(failure) => *failure,
+                    None if sig.symbol_refs.contains(name) => match self.expects(pattern, None) {
+                        // An earlier part bound the variable to another type:
+                        // a reference is never converted.
+                        Some(expected) if expected != Type::Error && expected != ty => SlotFit::Invalid,
+                        _ => SlotFit::Converts(Conversion::Same),
+                    },
+                    None => SlotFit::Converts(Conversion::Same),
+                },
             };
-            Some((var.clone(), (ty.clone(), binder)))
-        })
-        .collect();
-
-    BlockTyping {
-        bound,
-        inputs,
-        fields,
-        declares,
-        output,
-        place: place_fit,
+            fields.insert(name.clone(), fit);
+        }
+        for (name, var) in &sig.members {
+            let fit = match self.env.get(var) {
+                Some((owner, _)) if *owner != Type::Error => {
+                    match known(&self.parts.chosen_member(name, owner)) {
+                        Some(_) => SlotFit::Converts(Conversion::Same),
+                        None => SlotFit::Unknown,
+                    }
+                }
+                _ => SlotFit::Unknown,
+            };
+            fields.insert(name.clone(), fit);
+        }
+        (fields, declares)
     }
 }
 

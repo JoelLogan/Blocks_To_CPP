@@ -5,7 +5,7 @@
 
 mod common;
 
-use b2c_lang::{Analysis, analyze};
+use b2c_lang::Analysis;
 use common::*;
 use serde_json::json;
 
@@ -144,8 +144,8 @@ fn typed_negative_numbers_cpp() {
 #[test]
 fn analysis_is_deterministic() {
     let blocks = guessing_game();
-    let first = analyze(&doc(blocks.clone()));
-    let second = analyze(&doc(blocks));
+    let first = analyse(&doc(blocks.clone()));
+    let second = analyse(&doc(blocks));
     assert_eq!(first, second);
     assert_eq!(snapshot(&first), snapshot(&second));
 }

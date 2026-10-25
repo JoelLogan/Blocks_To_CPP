@@ -53,6 +53,14 @@ pub(crate) const BAD_NUMBER: &str = "B2C-E0310";
 pub(crate) const BRANCH_TYPES: &str = "B2C-E0311";
 /// Text or a character value that cannot be used as a literal.
 pub(crate) const BAD_LITERAL: &str = "B2C-E0312";
+/// A type that must be comparable is not: a set's or a priority queue's
+/// items, a map's keys, or a field of a struct ticked *comparable*.
+pub(crate) const NOT_COMPARABLE: &str = "B2C-E0313";
+/// A value that must be printable is not (*print*, *join*), or a field of a
+/// struct ticked *printable*.
+pub(crate) const NOT_PRINTABLE: &str = "B2C-E0314";
+/// A block that takes its type from its place, in a place that gives none.
+pub(crate) const NO_PLACE_TYPE: &str = "B2C-E0315";
 
 // --- Structure and flow (E04xx) --------------------------------------------
 
@@ -134,6 +142,9 @@ pub(crate) const ALL: &[&str] = &[
     BAD_NUMBER,
     BRANCH_TYPES,
     BAD_LITERAL,
+    NOT_COMPARABLE,
+    NOT_PRINTABLE,
+    NO_PLACE_TYPE,
     OUTSIDE_LOOP,
     RETURN_NEEDS_VALUE,
     RETURN_HAS_VALUE,

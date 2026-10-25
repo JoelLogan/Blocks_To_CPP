@@ -10,20 +10,23 @@ mod convert;
 mod expr;
 mod resolve;
 mod stmt;
+mod typed;
+mod user_types;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::diag::{Location, Part};
-use b2c_ir::headers::ItemHeaders;
+use b2c_ir::headers::{Header, ItemHeaders};
 use b2c_ir::ids::{BlockId, ModuleId, SymbolId};
 use b2c_ir::layout::Layout;
 use b2c_ir::sast::{
     FunctionDef, Item, ItemKind, MainDef, Module, Origin, Param, PassMode, Program, Symbol, SymbolKind,
     SymbolTable,
 };
+use b2c_ir::sig::SigTable;
 use b2c_ir::text::{Comment, Ident, IdentError};
-use b2c_ir::types::Type;
-use b2c_model::{Block, Document};
+use b2c_ir::types::{Type, TypeClass, TypeTerm};
+use b2c_model::{Block, Document, FieldValue};
 
 use crate::Analysis;
 use crate::access::{self, FieldProblem};
@@ -47,8 +50,10 @@ const STD_TEXT_FUNCTIONS: &[&str] = &[
 /// Message for a project without a `when program starts` block.
 const NO_MAIN_MESSAGE: &str = "Add a 'when program starts' block: every program begins there.";
 
-/// Analyses a document (see [`crate::analyze`]).
-pub(crate) fn run(document: &Document) -> Analysis {
+/// Analyses a document (see [`crate::analyze_with`]) with the catalog's
+/// signatures; `unchecked` is the blocks the catalog kept as they were
+/// without a check (see [`crate::analyze_checked_with`]).
+pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<BlockId>) -> Analysis {
     let standard = document.project.language.standard;
     let Some(first) = document.modules.first() else {
         let mut diags = Diags::default();
@@ -66,7 +71,7 @@ pub(crate) fn run(document: &Document) -> Analysis {
             slot_types: BTreeMap::new(),
         };
     };
-    let mut lowerer = Lowerer::new(document, first.id.clone());
+    let mut lowerer = Lowerer::new(document, first.id.clone(), sigs, unchecked);
     let modules = lowerer.program();
     // Parked blocks and skipped definitions answer the scope query too; the
     // parked scope is known once every `main` is lowered.
@@ -88,7 +93,7 @@ pub(crate) fn run(document: &Document) -> Analysis {
         },
         diagnostics: lowerer.diags.list,
         index: lowerer.index,
-        slot_types: BTreeMap::new(),
+        slot_types: lowerer.slot_types,
     }
 }
 
@@ -119,6 +124,18 @@ struct ParamSig {
     /// the signature with an unknown type, so that calls are not reported
     /// again, but is left out of the program.
     declared: bool,
+}
+
+/// How a type field or a parameter row's type is used, for its checks and
+/// messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypeUse {
+    /// A variable's type (`create`).
+    Variable,
+    /// What a function gives back: also `void`.
+    Result,
+    /// A function input's type.
+    Parameter,
 }
 
 /// What kind of item is being lowered.
@@ -177,6 +194,17 @@ struct Lowerer<'d> {
     depth: usize,
     too_deep_reported: bool,
     placeholders: usize,
+    /// The catalog's signatures (ADR-0017 §5, ADR-0018).
+    sigs: &'d SigTable,
+    /// The blocks the catalog kept as they were without a check.
+    unchecked: &'d BTreeSet<BlockId>,
+    /// For each block being lowered, innermost last, whether its parts are
+    /// checked: not for a block the catalog kept unchecked.
+    checks: Vec<bool>,
+    /// The catalog headers of the item being lowered (types.md §5.1).
+    headers: ItemHeaders,
+    /// The static type of each expression slot lowered, by block and input.
+    slot_types: BTreeMap<BlockId, BTreeMap<String, Type>>,
 }
 
 /// A field part.
@@ -217,7 +245,12 @@ fn is_value_type(block_type: &str) -> bool {
 }
 
 impl<'d> Lowerer<'d> {
-    fn new(document: &'d Document, module: ModuleId) -> Self {
+    fn new(
+        document: &'d Document,
+        module: ModuleId,
+        sigs: &'d SigTable,
+        unchecked: &'d BTreeSet<BlockId>,
+    ) -> Self {
         let decls = collect::collect(document);
         let mut module_functions = vec![BTreeMap::new(); document.modules.len()];
         for (sym, decl) in &decls {
@@ -245,6 +278,11 @@ impl<'d> Lowerer<'d> {
             depth: 0,
             too_deep_reported: false,
             placeholders: 0,
+            sigs,
+            unchecked,
+            checks: Vec::new(),
+            headers: ItemHeaders::default(),
+            slot_types: BTreeMap::new(),
         }
     }
 
@@ -263,6 +301,8 @@ impl<'d> Lowerer<'d> {
                 }
             }
         }
+        // Struct flags are known before any body is lowered (types.md §1.6).
+        self.settle_ticks();
         let chosen_main = self.check_mains();
         let mut modules = Vec::with_capacity(document.modules.len());
         for (index, module) in document.modules.iter().enumerate() {
@@ -399,11 +439,14 @@ impl<'d> Lowerer<'d> {
         self.loop_depth = 0;
         self.depth = 0;
         self.too_deep_reported = false;
+        self.checks.clear();
+        self.headers = ItemHeaders::default();
     }
 
     fn main(&mut self, block: &Block) -> Item {
         self.begin_item(ItemCtx::Main);
         self.record_block(&block.id);
+        self.add_headers(block, true);
         let (body, end) = self.body_and_end(block, "BODY", false);
         // What parked blocks see (06 §6.5).
         self.index.record_main_end(end);
@@ -411,7 +454,7 @@ impl<'d> Lowerer<'d> {
             kind: ItemKind::Main(MainDef { body }),
             origin: self.origin(&block.id, Part::Whole),
             comment: self.comment(block),
-            headers: ItemHeaders::default(),
+            headers: std::mem::take(&mut self.headers),
             shared: false,
         }
     }
@@ -424,6 +467,7 @@ impl<'d> Lowerer<'d> {
             ret: sig.ret.clone(),
         });
         self.record_block(&block.id);
+        self.add_headers(block, true);
         self.scopes.push(ListKey::new(&block.id, PARAMS_LIST), false);
         for param in &sig.params {
             self.scopes.declare(&param.name, &param.sym);
@@ -449,7 +493,7 @@ impl<'d> Lowerer<'d> {
             }),
             origin: self.origin(&block.id, Part::Whole),
             comment: self.comment(block),
-            headers: ItemHeaders::default(),
+            headers: std::mem::take(&mut self.headers),
             shared: false,
         })
     }
@@ -462,7 +506,7 @@ impl<'d> Lowerer<'d> {
             return;
         };
         let ident = self.ident(&decl.name, &name_loc, true);
-        let ret = self.type_setting(block, "RETURNS", "void", true);
+        let ret = self.type_setting(block, "RETURNS", "void", TypeUse::Result);
         if let Some(other) = names.get(&decl.name).cloned() {
             let place = match self.decls.get(&other).map(|d| d.module) {
                 Some(module) if module != self.module_index => {
@@ -523,11 +567,14 @@ impl<'d> Lowerer<'d> {
                 continue;
             };
             let ident = self.ident(&row.name, &loc, false);
-            let ty = row.ty.unwrap_or_else(|text| {
-                let message = format!("{} is not a type that a function input can have.", quoted(&text));
-                self.incomplete(loc.clone(), message);
-                Type::Error
-            });
+            let ty = match row.ty {
+                Ok(term) => self.type_of_term(&term, &loc, TypeUse::Parameter),
+                Err(text) => {
+                    let message = format!("{} is not a type that a function input can have.", quoted(&text));
+                    self.incomplete(loc.clone(), message);
+                    Type::Error
+                }
+            };
             let mode = row.mode.unwrap_or_else(|text| {
                 let message = format!("{} is not a way of passing a function input.", quoted(&text));
                 self.incomplete(loc.clone(), message);
@@ -752,37 +799,111 @@ impl<'d> Lowerer<'d> {
         }
     }
 
-    /// A type field (`int`, `std::string`, …) as a type.
-    #[allow(
-        deprecated,
-        reason = "M2's type fields, until the analyser reads type terms (types.md §8.2)"
-    )]
-    fn type_setting(&mut self, block: &Block, name: &str, default: &str, allow_void: bool) -> Type {
+    /// A type field as a type (types.md §2.1): a name (`int`,
+    /// `std::string`), a template (`{"std::vector": "int"}`) or a user type
+    /// (`{"ref": id}`); `default` when absent.
+    fn type_setting(&mut self, block: &Block, name: &str, default: &str, used: TypeUse) -> Type {
         let location = self.loc(&block.id, field(name));
-        let Ok(text) = access::text_field(block, name, Some(default)) else {
+        let term = match block.fields.get(name) {
+            None => TypeTerm::name(default).ok(),
+            Some(FieldValue::Text(text)) => {
+                let Ok(term) = TypeTerm::name(text) else {
+                    let message = format!("{} is not a type this block can use.", quoted(text));
+                    self.incomplete(location, message);
+                    return Type::Error;
+                };
+                Some(term)
+            }
+            Some(value) => value.type_term(),
+        };
+        let Some(term) = term else {
             self.incomplete(
                 location,
                 "The type setting of this block is damaged. Choose a type again.",
             );
             return Type::Error;
         };
-        match Type::from_field(text) {
-            Some(Type::Void) if !allow_void => {
-                self.incomplete(
-                    location,
-                    "A variable can't have the type 'nothing' (void). Choose another type.",
-                );
-                Type::Error
-            }
-            Some(ty) => ty,
-            None => {
-                self.incomplete(
-                    location,
-                    format!("{} is not a type this block can use.", quoted(text)),
-                );
-                Type::Error
+        self.type_of_term(&term, &location, used)
+    }
+
+    /// Looks a type term up (types.md §2.2): its references must name user
+    /// types (`B2C-E0201`, `B2C-E0207`), and its names known types of the
+    /// class `value` (`B2C-E0430` otherwise, which the catalog's own report
+    /// of the field replaces), `void` only for a result. The elements of
+    /// sets and priority queues and the keys of maps must be comparable
+    /// (`B2C-E0313`).
+    fn type_of_term(&mut self, term: &TypeTerm, location: &Location, used: TypeUse) -> Type {
+        for id in term.refs() {
+            if !self.check_type_reference(id, location) {
+                return Type::Error;
             }
         }
+        match Type::from_term(term) {
+            Ok(Type::Void) if used == TypeUse::Result => return Type::Void,
+            Ok(Type::Void) if used == TypeUse::Variable => {
+                self.incomplete(
+                    location.clone(),
+                    "A variable can't have the type 'nothing' (void). Choose another type.",
+                );
+                return Type::Error;
+            }
+            Ok(ty) if ty.is_in(TypeClass::Value, &self.symbols) != Some(false) => {
+                self.check_requirements(&ty, location);
+                return ty;
+            }
+            Ok(_) | Err(_) => {}
+        }
+        let shown = quoted(&term.key());
+        let message = if used == TypeUse::Parameter {
+            format!("{shown} is not a type that a function input can have.")
+        } else {
+            format!("{shown} is not a type this block can use.")
+        };
+        self.incomplete(location.clone(), message);
+        Type::Error
+    }
+
+    /// Adds the catalog headers of a block that is lowered, with those of
+    /// its chosen options, to the item (types.md §5.1): to `decl` for the
+    /// block that is printed with the declaration (the definition's own
+    /// block), to `body` for every block printed only with the definition.
+    fn add_headers(&mut self, block: &Block, decl: bool) {
+        let Some(sig) = self.sigs.get(&block.block_type) else {
+            return;
+        };
+        let options =
+            sig.option_headers
+                .iter()
+                .filter_map(|(field, options)| match block.fields.get(field) {
+                    Some(FieldValue::Text(chosen)) => options.get(chosen),
+                    _ => None,
+                });
+        let headers: Vec<Header> = sig.headers.iter().chain(options.flatten()).copied().collect();
+        let part = if decl {
+            &mut self.headers.decl
+        } else {
+            &mut self.headers.body
+        };
+        part.extend(headers);
+    }
+
+    /// Starts lowering a block of a statement list or a value input: its
+    /// headers count, and its parts are checked unless the catalog kept it
+    /// unchecked.
+    fn begin_block(&mut self, block: &Block) {
+        self.checks.push(!self.unchecked.contains(&block.id));
+        self.add_headers(block, false);
+    }
+
+    /// Ends what [`Self::begin_block`] started.
+    fn end_block(&mut self) {
+        self.checks.pop();
+    }
+
+    /// Whether the parts of the block being lowered are checked: not those
+    /// of a block the catalog kept unchecked (ADR-0018 §3).
+    fn checking(&self) -> bool {
+        self.checks.last().copied().unwrap_or(true)
     }
 
     /// A dropdown field mapped to a value; `default` when absent.

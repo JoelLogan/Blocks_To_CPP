@@ -8,7 +8,7 @@
 
 use b2c_ir::ids::SymbolId;
 use b2c_ir::sast::PassMode;
-use b2c_ir::types::Type;
+use b2c_ir::types::TypeTerm;
 use b2c_model::limits::MAX_VARIADIC_PARTS;
 use b2c_model::{Block, FieldValue, Input, SymbolDecl};
 use serde_json::Value;
@@ -97,8 +97,9 @@ pub(crate) struct ParamRow {
     pub(crate) sym: SymbolId,
     /// The user's name for it (not yet validated as an identifier).
     pub(crate) name: String,
-    /// Its type, or the unusable type text.
-    pub(crate) ty: Result<Type, String>,
+    /// Its type as written (a term the analyser looks up), or the unusable
+    /// value as text.
+    pub(crate) ty: Result<TypeTerm, String>,
     /// How it is passed, or the unusable mode text.
     pub(crate) mode: Result<PassMode, String>,
 }
@@ -112,10 +113,6 @@ pub(crate) fn param_rows(block: &Block) -> Vec<Result<ParamRow, ()>> {
     rows.iter().take(MAX_VARIADIC_PARTS).map(param_row).collect()
 }
 
-#[allow(
-    deprecated,
-    reason = "M2's parameter types, until the analyser reads type terms (types.md §8.2)"
-)]
 fn param_row(row: &Value) -> Result<ParamRow, ()> {
     let Value::Object(map) = row else {
         return Err(());
@@ -123,11 +120,10 @@ fn param_row(row: &Value) -> Result<ParamRow, ()> {
     let text = |key: &str| map.get(key).and_then(Value::as_str);
     let sym = text("sym").and_then(|s| SymbolId::new(s).ok()).ok_or(())?;
     let name = text("name").ok_or(())?.to_owned();
-    let ty = match text("type") {
-        Some(t) => match Type::from_field(t) {
-            Some(Type::Void) | None => Err(t.to_owned()),
-            Some(ty) => Ok(ty),
-        },
+    // A name, a template or a user type, as in a type field (types.md §2.1).
+    let ty = match map.get("type") {
+        Some(value) => serde_json::from_value::<TypeTerm>(value.clone())
+            .map_err(|_| value.as_str().map_or_else(|| value.to_string(), str::to_owned)),
         None => Err(String::new()),
     };
     let mode = match text("mode") {
@@ -239,7 +235,7 @@ mod tests {
             json!({"id": "f", "type": "func.define", "v": 1, "extra": {"params": [
                 {"sym": "p1", "name": "a", "type": "int", "mode": "editable"},
                 {"sym": "p2", "name": "b", "type": "void"},
-                {"sym": "p3", "name": "c", "type": "int", "mode": "moved"},
+                {"sym": "p3", "name": "c", "type": {"std::vector": "int"}, "mode": "moved"},
                 {"sym": "bad-id", "name": "d", "type": "int"},
                 {"name": "e"},
                 42
@@ -248,12 +244,15 @@ mod tests {
         let rows = param_rows(&b);
         assert_eq!(rows.len(), 6);
         let first = rows[0].as_ref().expect("row");
-        assert_eq!(first.ty, Ok(Type::Int));
+        assert_eq!(first.ty, TypeTerm::name("int").map_err(|_| String::new()));
         assert_eq!(first.mode, Ok(PassMode::Editable));
         let second = rows[1].as_ref().expect("row");
-        assert_eq!(second.ty, Err(String::from("void")));
+        // `void` is a term; the analyser refuses it as a parameter's type.
+        assert_eq!(second.ty, TypeTerm::name("void").map_err(|_| String::new()));
         assert_eq!(second.mode, Ok(PassMode::Copy));
-        assert_eq!(rows[2].as_ref().expect("row").mode, Err(String::from("moved")));
+        let third = rows[2].as_ref().expect("row");
+        assert_eq!(third.mode, Err(String::from("moved")));
+        assert!(matches!(third.ty, Ok(TypeTerm::App(..))));
         assert!(rows[3].is_err() && rows[4].is_err() && rows[5].is_err());
     }
 

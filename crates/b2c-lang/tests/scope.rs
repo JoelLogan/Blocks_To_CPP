@@ -18,7 +18,7 @@ use std::fmt::Write as _;
 use b2c_ir::diag::Severity;
 use b2c_ir::sast::PassMode;
 use b2c_ir::{BlockId, ModuleId, SymbolId, SymbolInfo, SymbolInfoKind, Type};
-use b2c_lang::{Analysis, Conversion, analyze, conversion};
+use b2c_lang::{Analysis, Conversion, conversion};
 use b2c_model::{Document, FieldValue, Input, Token};
 use common::*;
 use proptest::prelude::*;
@@ -202,7 +202,7 @@ fn functions_are_visible_everywhere_in_their_module() {
     let ids = [&in_main, &in_first, &in_last, &in_other_module].map(id_of);
     let mut off = func("off", "void", &[], vec![]);
     off["disabled"] = json!(true);
-    let a = analyze(&doc_modules(vec![
+    let a = analyse(&doc_modules(vec![
         (
             "main",
             vec![
@@ -508,7 +508,7 @@ fn without_main_parked_blocks_see_their_modules_functions() {
             Some(block) => first.push(block),
             None => {}
         }
-        let a = analyze(&doc_modules(vec![("main", first), ("other", second)]));
+        let a = analyse(&doc_modules(vec![("main", first), ("other", second)]));
         let second_expected: &[&str] = if case == 2 { &["h", "x"] } else { &["h"] };
         assert_eq!(visible(&a, &ids[0], None), ["f", "g"], "case {case}");
         assert_eq!(visible(&a, &ids[1], None), second_expected, "case {case}");
@@ -673,7 +673,7 @@ fn unknown_blocks_give_nothing() {
         "modules": []
     }))
     .expect("document");
-    let a = analyze(&empty);
+    let a = analyse(&empty);
     assert!(a.symbols_in_scope(&block("main"), None).is_empty());
     assert_eq!(a.scope_at(&block("main"), None), None);
     assert!(a.parked_scope(&ModuleId::new("m").unwrap()).is_empty());
@@ -764,7 +764,7 @@ fn a_disabled_value_answers_where_an_enabled_one_would() {
 
 #[test]
 fn every_module_has_its_parked_scope() {
-    let a = analyze(&doc_modules(vec![
+    let a = analyse(&doc_modules(vec![
         (
             "main",
             vec![
@@ -834,7 +834,7 @@ fn the_place_of_a_new_block_is_known_before_it_is_analysed() {
         let name = file_name(&path);
         let text = std::fs::read_to_string(&path).unwrap();
         let original: Value = serde_json::from_str(&text).unwrap();
-        let before = analyze(&resolved(text.as_bytes(), &name));
+        let before = analyse(&resolved(text.as_bytes(), &name));
         let mut lists = Vec::new();
         statement_lists(&original, &mut lists);
         for (owner, list, items) in lists {
@@ -850,7 +850,7 @@ fn the_place_of_a_new_block_is_known_before_it_is_analysed() {
                     .as_array_mut()
                     .unwrap()
                     .insert(at, inserted);
-                let after = analyze(&resolved(edited.to_string().as_bytes(), &name));
+                let after = analyse(&resolved(edited.to_string().as_bytes(), &name));
                 assert_eq!(
                     after.scope_at(&block("new_block"), None),
                     expected,
@@ -935,7 +935,7 @@ fn symbol_infos_lists_the_program_and_nothing_else() {
 
 #[test]
 fn guessing_game_offers_what_each_block_can_use() {
-    let a = analyze(&resolved_example("guessing_game.b2c"));
+    let a = analyse(&resolved_example("guessing_game.b2c"));
     assert!(a.diagnostics.is_empty(), "{}", render_all(&a));
     // b005 is the `ask` inside the loop, b002 creates `secret` (the first block).
     assert_eq!(visible(&a, "b005", None), ["guess", "secret"]);
@@ -988,7 +988,7 @@ fn references(document: &Document) -> Vec<(BlockId, String, SymbolId)> {
 fn every_reference_in_the_examples_is_offered_where_it_is() {
     let mut total = 0;
     for (name, document) in resolved_examples() {
-        let a = analyze(&document);
+        let a = analyse(&document);
         assert!(
             !a.diagnostics.iter().any(|d| d.severity == Severity::Error),
             "{name}: {}",
@@ -1021,7 +1021,7 @@ fn every_reference_in_the_examples_is_offered_where_it_is() {
 fn block_types_of_the_examples() {
     let mut text = String::new();
     for (name, document) in resolved_examples() {
-        let a = analyze(&document);
+        let a = analyse(&document);
         let types = a.block_types();
         writeln!(text, "{name}:").expect("write");
         if types.is_empty() {
@@ -1092,7 +1092,7 @@ fn block_types_cover_every_reporter() {
             vec![ret(Some(e("n / 2.0")))],
         ),
     ]);
-    let types = analyze(&document).block_types();
+    let types = analyse(&document).block_types();
     for (block_id, ty) in &expected {
         assert_eq!(types.get(&block(block_id)), Some(ty), "{block_id}");
     }
@@ -1542,7 +1542,7 @@ const NAME_ERRORS: [&str; 7] = [
 ];
 
 fn analyse_text(text: &str) -> Analysis {
-    analyze(&serde_json::from_str::<Document>(text).expect("generated document"))
+    analyse(&serde_json::from_str::<Document>(text).expect("generated document"))
 }
 
 /// The project text with the block `id` enabled.

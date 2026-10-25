@@ -135,7 +135,11 @@ Codes by area:
 
 * **Severity:** error
 * **Meaning:** a function is used as a value without calling it, a variable is
-  called like a function, or a block tries to change a function.
+  called like a function, or a block tries to change a function. Also a type
+  that refers to a symbol that is not a struct or an enum (a variable chosen
+  as a type), a struct or enum of a kind the block does not take, and a
+  member that the chosen struct or enum does not have ("`speed` is not a
+  field of `Student`.").
 * **Example:** typing `area * 2` in a slot, where `area` is a function.
 * **Message:** "`area` is a function, not a value. To run it and use its
   result, call it: use its call block or write area() in an expression."
@@ -213,7 +217,12 @@ Codes by area:
   where text is needed, a question for `ask` that is not text, or a `convert`
   block given text. A character is not text either, except that `set` can
   give a text variable a single character (`s = 'a';` is valid C++, while a
-  text variable can't *start* with a character value).
+  text variable can't *start* with a character value). It is also a value
+  outside the kind of value a block needs (a whole number where a list, a
+  set, a queue or a stack is needed), a variable that `ask` can't fill in
+  (such as a list), and a block that takes its type from its place plugged
+  in where another kind of value is needed. A list, a struct or another
+  constructed type converts only to the same type.
 * **Example:** `create [int] [age] = ("twelve")`.
 * **Message:** "`age` needs a whole number, but this is text. Text is not
   turned into a number automatically."
@@ -225,7 +234,12 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** an operator does not work with these values: arithmetic or
   `mod` on text, comparing text with a number or character, `and`/`or`/`not`
-  on text, or `change by` on a text variable.
+  on text, or `change by` on a text variable. Arithmetic, the signs and
+  `change by` need numbers (or true/false values), and `and`, `or` and `not`
+  true/false values (or numbers), so a list or a struct is refused there
+  too. Two values that are not numbers, true/false values or text can be
+  compared only when they have the same type and that type is comparable
+  (see `B2C-E0313`): "Can't compare a list of int with a list of double."
 * **Example:** `(name) - (1)` where `name` is text.
 * **Message:** "Can't subtract text: - only works with numbers."
 * **How to fix:** use values of the right type, or a block meant for text
@@ -343,6 +357,60 @@ Codes by area:
   plain ASCII character; use text for 'é'."
 * **How to fix:** use a text value for anything other than one ASCII
   character.
+
+## B2C-E0313 Not comparable
+
+* **Severity:** error
+* **Meaning:** a type that must be comparable is not. A set and a priority
+  queue keep their items in order, and a map its keys, so they must be
+  comparable: the variable could be declared, but every insert, lookup or
+  ordering would fail to compile, so the type is reported where it is
+  written (the type setting, or a function input's type). A struct ticked
+  *comparable* must have fields whose types are all comparable, or C++
+  would delete its comparison operators; that is reported at the tick,
+  naming the first field that is not, and the struct then counts as not
+  comparable. Text, numbers, true/false values, enums, structs that are
+  comparable, and lists, deques, sets, maps, queues and stacks of
+  comparable values are comparable.
+* **Example:** `create [set of Point] [seen]` where the struct `Point` is not
+  ticked *comparable*.
+* **Message:** "A set keeps its items in order, so they must be comparable,
+  and `Point` is not. Tick 'comparable' on `Point`, or use a list." /
+  "`Team` is ticked 'comparable', but its field `members` holds `Player`,
+  which is not comparable. Tick 'comparable' on `Player` too, or untick it
+  here."
+* **How to fix:** tick *comparable* on the struct (and on the structs its
+  fields hold), or use a list, which does not need comparable items.
+
+## B2C-E0314 Not printable
+
+* **Severity:** error
+* **Meaning:** a value that `print` or `join` must turn into text cannot be:
+  a list, a deque, a set, a map, a queue, a stack or a priority queue (they
+  are printed item by item), a file, an error, or a struct not ticked
+  *printable*. A struct ticked *printable* must have fields whose types are
+  all printable; that is reported at the tick, naming the first field that
+  is not.
+* **Example:** `print (scores)` where `scores` is a list of int.
+* **Message:** "A list can't be printed in one go. Use 'for each' to go
+  through its items." / "`Point` can't be printed. Tick 'printable' on
+  `Point`, or use its fields one by one."
+* **How to fix:** print the items with `for each`, print a struct's fields
+  one by one, or tick *printable* on the struct.
+
+## B2C-E0315 No type from its place
+
+* **Severity:** error
+* **Meaning:** a block that takes its type from the place it is plugged into
+  (such as `list of`, whose items' type comes from the variable it is stored
+  in) is plugged in where nothing says which type it should have: in
+  `print`, in a `create` block whose type is `auto`, or in `for each`.
+* **Example:** `create [auto] [scores] = (list of (1) (2))`.
+* **Message:** "This block takes its type from where it is plugged in, but
+  nothing there says which type it should have. Plug it in where the type is
+  known, such as the value of a 'create' block with a chosen type."
+* **How to fix:** choose a type in the `create` block, or store the value in
+  a variable of a known type first.
 
 ## B2C-E0401 Outside a loop
 

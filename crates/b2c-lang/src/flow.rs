@@ -45,7 +45,7 @@ pub(crate) fn check_item(item: &Item, symbols: &SymbolTable, diags: &mut Diags) 
                     "{} must give back {}, but it can reach its end without a 'return' block. Add a 'return' \
                      block at the end (or on every path).",
                     quoted(&name),
-                    a_type(&function.ret)
+                    a_type(&function.ret, symbols)
                 );
                 flow.diags
                     .error(codes::MISSING_RETURN, item.origin.location(), message);

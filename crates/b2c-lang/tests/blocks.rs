@@ -11,7 +11,7 @@ use b2c_ir::sast::{
     PrintSeparator, RangeDirection, Stmt, StmtKind, SymbolKind, UnaryOp,
 };
 use b2c_ir::types::Type;
-use b2c_lang::{Analysis, analyze};
+use b2c_lang::Analysis;
 use common::*;
 use serde_json::json;
 
@@ -668,7 +668,7 @@ fn modules_and_items_in_order() {
         ),
         ("util", vec![func("helper", "void", &[], vec![])]),
     ]);
-    let a = analyze(&d);
+    let a = analyse(&d);
     assert_clean(&a);
     let names: Vec<&str> = a.program.modules.iter().map(|m| m.name.as_str()).collect();
     assert_eq!(names, ["main", "util"]);
@@ -685,5 +685,5 @@ fn modules_and_items_in_order() {
 fn standard_comes_from_the_project() {
     let mut d = doc(vec![main(vec![])]);
     d.project.language.standard = CppStandard::Cpp17;
-    assert_eq!(analyze(&d).program.standard, CppStandard::Cpp17);
+    assert_eq!(analyse(&d).program.standard, CppStandard::Cpp17);
 }

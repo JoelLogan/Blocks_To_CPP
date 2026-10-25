@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 
 use b2c_ir::diag::{DiagSource, Diagnostic, Location};
 use b2c_ir::text::is_invisible;
-use b2c_ir::types::Type;
+use b2c_ir::types::{LibType, Type, TypeClass, TypeFacts};
 
 /// Longest user text shown in a message, in characters.
 const MAX_SHOWN_CHARS: usize = 40;
@@ -40,20 +40,124 @@ pub(crate) fn quoted(name: &str) -> String {
     }
 }
 
-/// A type with its article, for messages: "a whole number", "text", …
-pub(crate) fn a_type(ty: &Type) -> &'static str {
+/// A type with its article, for messages (types.md §1.7): the fundamental
+/// types and text keep their M2 phrases ("a whole number", "text"), library
+/// types are named by their friendly label, as the type field shows them ("a
+/// list of int", "a map from string to list of int"), and user types by their
+/// name ("a `Student`").
+pub(crate) fn a_type(ty: &Type, facts: &dyn TypeFacts) -> String {
     match ty {
-        Type::Void => "nothing",
-        Type::Bool => "a true/false value",
-        Type::Char => "a character",
-        Type::Int => "a whole number",
-        Type::Double => "a decimal number",
-        Type::String => "text",
-        // No stage produces library or user types before the analyser names
-        // them by their labels (types.md §1.7).
-        Type::Lib(_) | Type::Named(_) => "a value of another type",
-        Type::Error => "an unknown value",
+        Type::Void => String::from("nothing"),
+        Type::Bool => String::from("a true/false value"),
+        Type::Char => String::from("a character"),
+        Type::Int => String::from("a whole number"),
+        Type::Double => String::from("a decimal number"),
+        Type::String => String::from("text"),
+        Type::Lib(_) => {
+            let label = ty.label(facts).to_string();
+            format!("{} {label}", article(&label))
+        }
+        Type::Named(id) => match facts.user_type(id) {
+            Some(user) => format!("{} {}", article(user.name), quoted(user.name)),
+            None => String::from("a value of an unknown type"),
+        },
+        Type::Error => String::from("an unknown value"),
     }
+}
+
+/// "an" before a word that starts with a vowel, "a" otherwise.
+pub(crate) fn article(word: &str) -> &'static str {
+    match word.chars().next().map(|c| c.to_ascii_lowercase()) {
+        Some('a' | 'e' | 'i' | 'o' | 'u') => "an",
+        _ => "a",
+    }
+}
+
+/// What a library type is called on its own, without its arguments: "list",
+/// "priority queue", "input file", …
+pub(crate) fn lib_noun(ty: LibType) -> &'static str {
+    match ty {
+        LibType::Vector => "list",
+        LibType::Deque => "deque",
+        LibType::Set => "set",
+        LibType::Map => "map",
+        LibType::Queue => "queue",
+        LibType::Stack => "stack",
+        LibType::PriorityQueue => "priority queue",
+        LibType::IfStream => "input file",
+        LibType::OfStream => "output file",
+        LibType::Exception => "error",
+        LibType::RuntimeError => "runtime error",
+        LibType::InvalidArgument => "invalid argument error",
+        LibType::OutOfRange => "out-of-range error",
+    }
+}
+
+/// The types of a class with their article, for messages: "a list, a deque
+/// or a set" (types.md §1.3, §1.7).
+pub(crate) fn a_class(class: TypeClass) -> &'static str {
+    match class {
+        TypeClass::Any => "a value",
+        TypeClass::Number => "a number",
+        TypeClass::Integer => "a whole number",
+        TypeClass::Bool => "a true/false value",
+        TypeClass::Text => "text or a character",
+        TypeClass::Value => "a value that a variable can hold",
+        TypeClass::Collection => "a list, a deque, a set, a map, a queue, a stack or a priority queue",
+        TypeClass::Sequence => "a list or a deque",
+        TypeClass::Indexable => "a list, a deque or a map",
+        TypeClass::Insertable => "a list, a deque, a set, a queue, a stack or a priority queue",
+        TypeClass::Searchable => "a list, a deque, a set or a map",
+        TypeClass::Iterable => "a list, a deque, a set or text",
+        TypeClass::Keyed => "a set or a map",
+        TypeClass::Adaptor => "a queue, a stack or a priority queue",
+        TypeClass::Listable => "a list, a deque or a set",
+        TypeClass::Sortable => "a list or a deque of values that can be compared",
+        TypeClass::Switchable => "a whole number, a character or an enum",
+        TypeClass::Comparable => "a value that can be compared",
+        TypeClass::Printable => "a value that can be printed",
+        TypeClass::Struct => "a struct",
+        TypeClass::Enum => "an enum",
+        TypeClass::InputFile => "an input file",
+        TypeClass::OutputFile => "an output file",
+        TypeClass::Exception => "an error",
+    }
+}
+
+/// The first user type (struct or enum) in `ty` that the class `class` does
+/// not hold and whose tick would put `ty` in it, for a hint such as "Tick
+/// comparable on `Point`". Only containers whose comparability is their
+/// arguments' are looked into (types.md §1.3); nothing makes a container
+/// printable.
+pub(crate) fn culprit<'f>(ty: &Type, class: TypeClass, facts: &'f dyn TypeFacts) -> Option<&'f str> {
+    let mut stack = vec![ty];
+    while let Some(ty) = stack.pop() {
+        match ty {
+            Type::Named(id) => {
+                if let Some(user) = facts.user_type(id)
+                    && ty.is_in(class, facts) == Some(false)
+                {
+                    return Some(user.name);
+                }
+            }
+            Type::Lib(app)
+                if class == TypeClass::Comparable
+                    && matches!(
+                        app.ty(),
+                        LibType::Vector
+                            | LibType::Deque
+                            | LibType::Set
+                            | LibType::Map
+                            | LibType::Queue
+                            | LibType::Stack
+                    ) =>
+            {
+                stack.extend(app.args().iter().rev());
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// The message of `B2C-W0505` on the head of a parked stack (ADR-0012): a
@@ -148,12 +252,80 @@ mod tests {
 
     #[test]
     fn articles() {
-        assert_eq!(a_type(&Type::Int), "a whole number");
-        assert_eq!(a_type(&Type::String), "text");
-        assert_eq!(a_type(&Type::Void), "nothing");
-        assert_eq!(a_type(&Type::Error), "an unknown value");
-        assert_eq!(a_type(&Type::Bool), "a true/false value");
-        assert_eq!(a_type(&Type::Char), "a character");
-        assert_eq!(a_type(&Type::Double), "a decimal number");
+        use b2c_ir::types::NoFacts;
+        let facts = &NoFacts;
+        assert_eq!(a_type(&Type::Int, facts), "a whole number");
+        assert_eq!(a_type(&Type::String, facts), "text");
+        assert_eq!(a_type(&Type::Void, facts), "nothing");
+        assert_eq!(a_type(&Type::Error, facts), "an unknown value");
+        assert_eq!(a_type(&Type::Bool, facts), "a true/false value");
+        assert_eq!(a_type(&Type::Char, facts), "a character");
+        assert_eq!(a_type(&Type::Double, facts), "a decimal number");
+    }
+
+    /// Facts that know a struct `sym_Point` (not comparable) and an enum
+    /// `sym_Item`.
+    struct Facts;
+
+    impl TypeFacts for Facts {
+        fn user_type(&self, id: &b2c_ir::ids::SymbolId) -> Option<b2c_ir::types::UserType<'_>> {
+            use b2c_ir::types::{UserKind, UserType};
+            match id.as_str() {
+                "sym_Point" => Some(UserType {
+                    name: "Point",
+                    kind: UserKind::Struct,
+                    comparable: false,
+                    printable: true,
+                }),
+                "sym_Item" => Some(UserType {
+                    name: "Item",
+                    kind: UserKind::Enum,
+                    comparable: true,
+                    printable: true,
+                }),
+                _ => None,
+            }
+        }
+    }
+
+    fn named(id: &str) -> Type {
+        Type::Named(b2c_ir::ids::SymbolId::new(id).expect("id"))
+    }
+
+    fn lib(ty: LibType, args: Vec<Type>) -> Type {
+        Type::lib(ty, args).expect("type")
+    }
+
+    #[test]
+    fn constructed_and_user_types_are_named_by_their_labels() {
+        let list = lib(LibType::Vector, vec![Type::Int]);
+        assert_eq!(a_type(&list, &Facts), "a list of int");
+        let map = lib(LibType::Map, vec![Type::String, list.clone()]);
+        assert_eq!(a_type(&map, &Facts), "a map from string to list of int");
+        assert_eq!(a_type(&lib(LibType::IfStream, vec![]), &Facts), "an input file");
+        assert_eq!(
+            a_type(&lib(LibType::OutOfRange, vec![]), &Facts),
+            "an out-of-range error"
+        );
+        assert_eq!(a_type(&named("sym_Point"), &Facts), "a `Point`");
+        assert_eq!(a_type(&named("sym_Item"), &Facts), "an `Item`");
+        assert_eq!(a_type(&named("sym_Gone"), &Facts), "a value of an unknown type");
+        for ty in LibType::ALL {
+            assert!(!lib_noun(ty).is_empty());
+        }
+        for class in TypeClass::ALL {
+            let phrase = a_class(class);
+            assert!(phrase.starts_with("a ") || phrase.starts_with("an ") || phrase.starts_with("text"));
+        }
+    }
+
+    #[test]
+    fn culprits_are_the_user_types_a_class_does_not_hold() {
+        let points = lib(LibType::Vector, vec![named("sym_Point")]);
+        assert_eq!(culprit(&points, TypeClass::Comparable, &Facts), Some("Point"));
+        assert_eq!(culprit(&points, TypeClass::Printable, &Facts), None);
+        let items = lib(LibType::Set, vec![named("sym_Item")]);
+        assert_eq!(culprit(&items, TypeClass::Comparable, &Facts), None);
+        assert_eq!(culprit(&named("sym_Gone"), TypeClass::Comparable, &Facts), None);
     }
 }

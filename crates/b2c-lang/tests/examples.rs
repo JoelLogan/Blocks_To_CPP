@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use b2c_codegen::{CodegenOptions, generate};
 use b2c_ir::diag::Severity;
 use b2c_ir::source_map::FileKind;
-use b2c_lang::{Analysis, analyze};
+use b2c_lang::Analysis;
 use b2c_model::Document;
 use serde_json::Value;
 
@@ -232,7 +232,7 @@ fn defaults_follow_the_catalog() {
 fn examples_analyse_without_errors_or_warnings() {
     let mut problems = Vec::new();
     for (name, document) in examples() {
-        let analysis = analyze(&document);
+        let analysis = common::analyse(&document);
         if !analysis.diagnostics.is_empty() {
             problems.push(format!("{name}:\n{}", render(&analysis)));
         }
@@ -249,7 +249,7 @@ fn examples_analyse_without_errors_or_warnings() {
         assert_eq!(analysis.program.modules.len(), document.modules.len(), "{name}");
         // Analysing twice gives the same result.
         assert_eq!(
-            analyze(&document),
+            common::analyse(&document),
             analysis,
             "{name}: analysis is not deterministic"
         );
@@ -267,7 +267,7 @@ fn examples_generate_cpp_that_compiles() {
         return;
     }
     for (name, document) in examples() {
-        let analysis = analyze(&document);
+        let analysis = common::analyse(&document);
         let options = CodegenOptions {
             project_name: document.project.name.clone(),
             ..CodegenOptions::default()

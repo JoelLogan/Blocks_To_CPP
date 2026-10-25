@@ -6,11 +6,14 @@ use b2c_ir::sast::{
     self, AskMode, CompoundOp, Expr, IfBranch, OutputStream, PrintSeparator, RangeDirection, Stmt, StmtKind,
     Symbol, SymbolKind, VarDecl,
 };
+use b2c_ir::sig::PartType;
 use b2c_ir::types::Type;
 use b2c_model::Block;
 
 use super::convert::{Subject, constant_int};
-use super::{ItemCtx, Lowerer, PendingKind, field};
+use super::expr::is_number_or_bool;
+use super::user_types::Output;
+use super::{ItemCtx, Lowerer, PendingKind, TypeUse, field};
 use crate::access;
 use crate::codes;
 use crate::messages::{a_type, quoted};
@@ -66,7 +69,9 @@ impl Lowerer<'_> {
             return None;
         }
         self.record_block(&block.id);
+        self.begin_block(block);
         let kind = self.statement_kind(block);
+        self.end_block();
         self.leave();
         let kind = kind?;
         let origin = self.origin(&block.id, Part::Whole);
@@ -139,7 +144,7 @@ impl Lowerer<'_> {
         let declared = if written_auto {
             None
         } else {
-            Some(self.type_setting(block, "TYPE", "int", false))
+            Some(self.type_setting(block, "TYPE", "int", TypeUse::Variable))
         };
         let is_const = self.checkbox(block, "CONST", false);
         let Ok(decl) = decl else {
@@ -152,15 +157,32 @@ impl Lowerer<'_> {
         let kind = PendingKind::Initialiser(declared.clone());
         self.push_pending(&decl.name, &decl.sym, kind);
         self.record_input(&block.id, "VALUE");
-        let init = self.optional_input(block, "VALUE");
-        self.pop_pending();
-        let ty = match (declared, &init) {
-            (Some(ty), Some(value)) => {
-                self.check_conversion(value, &ty, &Subject::Variable(decl.name.clone()));
-                ty
+        let subject = Subject::Variable(decl.name.clone());
+        let (init, typed_ty) = if let Some(sig) = self.typed_sig(&block.block_type) {
+            // `where = { T = "value" }`, and `T` on `TYPE`, `NAME` and
+            // `VALUE` (slots.md §5): the type or the value binds `T`.
+            let mut typed = self.typed(sig);
+            typed.field("TYPE", declared.clone().map_or(PartType::Auto, PartType::Known));
+            self.typed_input(block, &mut typed, "VALUE", false);
+            let typing = self.type_parts(block, &mut typed, None);
+            let init = typed.take("VALUE");
+            self.pop_pending();
+            self.report_field_fit(block, &typed, &typing, "TYPE");
+            if let Some(value) = &init {
+                self.report_fit(&typed, &typing, "VALUE", value, &subject);
             }
-            (Some(ty), None) => ty,
-            (None, Some(value)) => value.ty.clone(),
+            (init, typing.declares.get("NAME").cloned())
+        } else {
+            let init = self.optional_input(block, "VALUE");
+            self.pop_pending();
+            if let (Some(ty), Some(value)) = (&declared, &init) {
+                self.check_conversion(value, ty, &subject);
+            }
+            (init, None)
+        };
+        let ty = match (declared, &init) {
+            (Some(ty), _) => typed_ty.unwrap_or(ty),
+            (None, Some(value)) => typed_ty.unwrap_or_else(|| value.ty.clone()),
             (None, None) => {
                 let message = format!(
                     "{} has the type 'auto', so it needs a starting value to take its type from. Give it a \
@@ -222,13 +244,40 @@ impl Lowerer<'_> {
 
     fn set(&mut self, block: &Block) -> Option<StmtKind> {
         let target = self.target(block);
-        let value = self.required_input(block, "VALUE");
-        let (sym, ty) = target?;
-        // `std::string` can be assigned a single `char` (`s = 'a';`), although
-        // it can't be initialised with one, so this is fine for `set`.
-        if let Some(ty) = ty.filter(|ty| !(*ty == Type::String && value.ty == Type::Char)) {
-            self.check_conversion(&value, &ty, &Subject::Variable(self.raw_name(&sym)));
-        }
+        let Some(sig) = self.typed_sig(&block.block_type) else {
+            let value = self.required_input(block, "VALUE");
+            let (sym, ty) = target?;
+            // `std::string` can be assigned a single `char` (`s = 'a';`),
+            // although it can't be initialised with one, so this is fine for
+            // `set`.
+            if let Some(ty) = ty.filter(|ty| !(*ty == Type::String && value.ty == Type::Char)) {
+                self.check_conversion(&value, &ty, &Subject::Variable(self.raw_name(&sym)));
+            }
+            return Some(StmtKind::Assign { target: sym, value });
+        };
+        // `where = { T = "value" }`, `T` on `VAR` and `VALUE`, and `assign`
+        // on `VALUE` (slots.md §5): the variable binds `T`, the value is
+        // assigned, so a `char` also fits a `std::string`.
+        let mut typed = self.typed(sig);
+        let var = match &target {
+            None => PartType::Empty,
+            Some((_, ty)) => PartType::Known(ty.clone().unwrap_or(Type::Error)),
+        };
+        typed.field("VAR", var);
+        self.typed_input(block, &mut typed, "VALUE", true);
+        let typing = self.type_parts(block, &mut typed, None);
+        let value = typed.take("VALUE").unwrap_or_else(|| {
+            super::expr::error_expr(self.origin(
+                &block.id,
+                Part::Input {
+                    name: String::from("VALUE"),
+                },
+            ))
+        });
+        let (sym, _) = target?;
+        self.report_field_fit(block, &typed, &typing, "VAR");
+        let subject = Subject::Variable(self.raw_name(&sym));
+        self.report_fit(&typed, &typing, "VALUE", &value, &subject);
         Some(StmtKind::Assign { target: sym, value })
     }
 
@@ -236,7 +285,7 @@ impl Lowerer<'_> {
         let target = self.target(block);
         let value = self.required_input(block, input);
         let (sym, ty) = target?;
-        if let Some(ty) = ty {
+        if let Some(ty) = ty.filter(|_| self.checking()) {
             self.check_compound(block, &sym, &ty, op, &value);
         }
         Some(StmtKind::CompoundAssign {
@@ -263,6 +312,17 @@ impl Lowerer<'_> {
                 self.diags.error(codes::BAD_OPERANDS, location, message);
                 return;
             }
+            _ if is_number_or_bool(target, &self.symbols) != Some(true) => {
+                // A list, a struct, …: C++ has no `+=` for it.
+                if is_number_or_bool(target, &self.symbols) == Some(false) {
+                    let message = format!(
+                        "{name} holds {}, so it can't be changed by a number.",
+                        a_type(target, &self.symbols)
+                    );
+                    self.diags.error(codes::BAD_OPERANDS, location, message);
+                }
+                return;
+            }
             Type::Bool => {
                 let message =
                     format!("{name} is a true/false value; changing it by a number treats it as 1 or 0.");
@@ -279,6 +339,16 @@ impl Lowerer<'_> {
                 );
                 return;
             }
+            _ if is_number_or_bool(&value.ty, &self.symbols) != Some(true) => {
+                if is_number_or_bool(&value.ty, &self.symbols) == Some(false) {
+                    let message = format!(
+                        "The amount must be a number, but this is {}.",
+                        a_type(&value.ty, &self.symbols)
+                    );
+                    self.diags.error(codes::CONVERSION, value_loc, message);
+                }
+                return;
+            }
             Type::Bool => {
                 let message = "This is a true/false value, used as a number (1 or 0).";
                 self.diags.warning(codes::BOOL_NUMBER, value_loc.clone(), message);
@@ -293,7 +363,7 @@ impl Lowerer<'_> {
             let message = format!(
                 "{name} is {}, so the part after the decimal point of the result will be dropped. Use the \
                  'convert' block to show that this is intended.",
-                a_type(target)
+                a_type(target, &self.symbols)
             );
             self.diags.warning(codes::NARROWING, value_loc, message);
         } else if *target == Type::Double {
@@ -417,9 +487,12 @@ impl Lowerer<'_> {
             &[("out", OutputStream::Out), ("err", OutputStream::Err)],
         );
         let count = access::extra_count(block, "itemCount", 1, 1);
-        let items = (0..count)
+        let items: Vec<Expr> = (0..count)
             .map(|i| self.required_input(block, &format!("ITEM{i}")))
             .collect();
+        for item in &items {
+            self.check_printable(item, Output::Printed);
+        }
         StmtKind::Print {
             items,
             separator,
@@ -434,21 +507,49 @@ impl Lowerer<'_> {
         let mode = self.choice(block, "MODE", AskMode::KeepAsking, &modes);
         let prompt = self.optional_input(block, "PROMPT");
         if let Some(prompt) = &prompt
+            && self.checking()
             && !matches!(prompt.ty, Type::String | Type::Char | Type::Error)
         {
             let message = format!(
                 "The question to ask must be text, but this is {}. Use the 'join' block to turn it into text.",
-                a_type(&prompt.ty)
+                a_type(&prompt.ty, &self.symbols)
             );
             self.diags
                 .error(codes::CONVERSION, prompt.origin.location(), message);
         }
-        let (target, _) = target?;
+        let (target, ty) = target?;
+        // What `std::cin >>` can read into: a number, a `bool`, a character
+        // or text, never a container, a stream or a struct.
+        if let Some(ty) = ty
+            && self.checking()
+            && ty != Type::String
+            && is_number_or_bool(&ty, &self.symbols) == Some(false)
+        {
+            let message = format!(
+                "{} holds {}, but 'ask' can only fill in a number, a character, text or a true/false value.",
+                self.name_of(&target),
+                a_type(&ty, &self.symbols)
+            );
+            let location = self.loc(&block.id, field("VAR"));
+            self.diags.error(codes::CONVERSION, location, message);
+        }
         Some(StmtKind::Ask { prompt, target, mode })
     }
 
     fn return_value(&mut self, block: &Block) -> StmtKind {
-        let value = self.optional_input(block, "VALUE");
+        // `VALUE` is `result` (slots.md §5): it expects what the function
+        // gives back, `int` in `main`, and anything for a `void` function.
+        let typed_value = self.typed_sig(&block.block_type).map(|sig| {
+            let mut typed = self.typed(sig);
+            self.typed_input(block, &mut typed, "VALUE", false);
+            let typing = self.type_parts(block, &mut typed, None);
+            let value = typed.take("VALUE");
+            (typed, typing, value)
+        });
+        let (value, typing) = match typed_value {
+            Some((typed, typing, value)) => (value, Some((typed, typing))),
+            None => (self.optional_input(block, "VALUE"), None),
+        };
         let location = self.loc(&block.id, Part::Whole);
         match (self.item.clone(), &value) {
             (ItemCtx::Main, None) => self.diags.error(
@@ -457,7 +558,10 @@ impl Lowerer<'_> {
                 "In 'when program starts', 'return' needs an exit code (0 means success). You can also use \
                  'stop program with exit code'.",
             ),
-            (ItemCtx::Main, Some(value)) => self.check_conversion(value, &Type::Int, &Subject::ExitCode),
+            (ItemCtx::Main, Some(value)) => match &typing {
+                Some((typed, typing)) => self.report_fit(typed, typing, "VALUE", value, &Subject::ExitCode),
+                None => self.check_conversion(value, &Type::Int, &Subject::ExitCode),
+            },
             (
                 ItemCtx::Function {
                     name,
@@ -484,13 +588,16 @@ impl Lowerer<'_> {
                 let message = format!(
                     "{} must give back {}, so this 'return' needs a value.",
                     quoted(&name),
-                    a_type(&ret)
+                    a_type(&ret, &self.symbols)
                 );
                 self.diags.error(codes::RETURN_NEEDS_VALUE, location, message);
             }
-            (ItemCtx::Function { name, ret }, Some(value)) => {
-                self.check_conversion(value, &ret, &Subject::Result(name));
-            }
+            (ItemCtx::Function { name, ret }, Some(value)) => match &typing {
+                Some((typed, typing)) => {
+                    self.report_fit(typed, typing, "VALUE", value, &Subject::Result(name));
+                }
+                None => self.check_conversion(value, &ret, &Subject::Result(name)),
+            },
         }
         StmtKind::Return { value }
     }

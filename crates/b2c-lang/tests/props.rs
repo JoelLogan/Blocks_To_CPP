@@ -13,7 +13,7 @@ mod common;
 use b2c_codegen::{CodegenOptions, generate};
 use b2c_ir::diag::{DiagSource, Part, Severity};
 use b2c_ir::source_map::FileKind;
-use b2c_lang::{Analysis, analyze};
+use b2c_lang::{Analysis, analyze, analyze_with};
 use b2c_model::Document;
 use common::{doc, render_all};
 use proptest::prelude::*;
@@ -363,6 +363,10 @@ fn has_unchecked_blocks(document: &Document) -> bool {
 fn check_invariants(document: &Document, a: &Analysis) -> Result<(), TestCaseError> {
     // Deterministic.
     prop_assert_eq!(&analyze(document), a);
+    // M2's blocks give the same through their patterns (ADR-0018).
+    let typed = analyze_with(document, &common::m2_sigs());
+    prop_assert_eq!(render_all(&typed), render_all(a));
+    prop_assert!(&typed == a, "M2's patterns change the analysis");
     // Every diagnostic is ours, and slot ranges are well formed.
     for d in &a.diagnostics {
         prop_assert_eq!(d.source, DiagSource::Analyser);
