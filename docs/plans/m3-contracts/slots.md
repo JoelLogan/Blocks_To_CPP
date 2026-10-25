@@ -412,7 +412,9 @@ whose type binds that pattern on its own (class and shape: *add … to* lists
 the lists, sets, queues and stacks; *item … of* the lists and maps), without
 looking at the block's inputs, which are checked against the field and not
 the reverse. A `members` field lists the members of its variable's type, and
-nothing while the variable is unbound. A reference already chosen stays
+nothing while the variable is unbound: left for W2, whose struct blocks
+bring the first `members` field (W1 lists the plain scope there, as M2
+did; the review of W1 found it, finding TD-3). A reference already chosen stays
 shown (`packages/blockly-ext/src/fields/symbol-ref.ts:12-14`). Type fields
 offer the types their pattern allows. M2's `kinds` filters stay for M2's
 blocks.
@@ -625,13 +627,16 @@ green rule): `slots.rs`'s API and its test tables, with a body that answers
   unknown type and `error` connect; `set [score] to (…)` with `score` out of
   scope accepts text; a candidate is typed in place (dropping into the
   binding input of a two-input block with another value already there); a
-  place-typed block connects where no place type exists and is refused in an
-  `int` place; M2's `any`, `number` and `field:` outputs behave as before.
+  disabled candidate counts as empty and connects; M2's `any`, `number` and
+  `field:` outputs behave as before. Left for W2, which brings the first
+  place-typed block and the first `members` field: a place-typed block
+  connects where no place type exists and is refused in an `int` place, and
+  `chosenMember` refuses a field of another struct.
 * Gestures: the keyboard listing treats the moved block as absent from its
   input; a faded block counts in its own input for other candidates and is
   replaced only for its own.
 * Menus: a reference field with a pattern lists only symbols that fit, and
-  keeps a chosen one that no longer does; a `members` field lists the
+  keeps a chosen one that no longer does. W2: a `members` field lists the
   members of the bound type, and nothing while it is unbound.
 * Start values: `int` to `double` swaps `0` for `0.0` (M2's test stays);
   `int` to a list removes `0`; a typed value is kept; undo and redo restore
@@ -668,7 +673,7 @@ W2, W4 and W5 rows wait for their work.
 | [03 §3.3](../../spec/03-block-language.md#33-block-shapes) | the checker compares a value with its input's expected type; a parked block's slots are typed from its own parts until M3-4, then from the analysis | W1 |
 | [03 §3.4](../../spec/03-block-language.md#34-expression-slots) | brace lists where a place gives the type, a call's arguments being places; the start value of an expression shadow follows its input's expected type; literal suffixes do not come in M3 | W4 (braces), W1 (start values) |
 | [03 §3.5.3](../../spec/03-block-language.md#353-type-checking-model-gradual) | "unification of generic parameters" becomes the one-pass rule and its limits | W1 |
-| [03 §3.6](../../spec/03-block-language.md#36-symbols-and-scoping) | reference menus filtered by the field's pattern; `members` menus | W1 |
+| [03 §3.6](../../spec/03-block-language.md#36-symbols-and-scoping) | reference menus filtered by the field's pattern (W1); `members` menus (W2, with the first `members` field) | W1, W2 |
 | [03 §3.7.8](../../spec/03-block-language.md#378-collections) | `list of` takes its type from its place (`E0315` without one, also in *for each*); casts inside braces | W2 |
 | [03 §3.7.9](../../spec/03-block-language.md#379-types-structs-classes-enums) | `new … with` slots from the struct's fields (`member:`) | W2 |
 | [03 §3.11.1](../../spec/03-block-language.md#3111-catalog-format) | place-typed outputs; how `check` accepts a value; the catalog order of parts (with ADR-0017's keys) | W1 |

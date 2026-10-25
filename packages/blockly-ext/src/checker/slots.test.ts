@@ -269,6 +269,33 @@ describe('typings and candidates', () => {
     expect(candidateFit(create, 'VALUE', block('text.literal'), oracle)).toBe('same');
   });
 
+  it('count a disabled candidate as empty, as the analyser does', () => {
+    const create = block('var.declare');
+    create.setFieldValue('int', 'TYPE');
+    const literal = block('text.literal');
+    expect(candidateFit(create, 'VALUE', literal, oracle)).toBe('invalid');
+    literal.setDisabledReason(true, 'test');
+    expect(candidateFit(create, 'VALUE', literal, oracle)).toBe('unknown');
+    expect(canDrop(literal, create, 'VALUE')).toBe(true);
+  });
+
+  it('read an expression shadow: a literal’s type, a visible reference’s type', () => {
+    const create = block('var.declare');
+    create.setFieldValue('int', 'TYPE');
+    const fitOf = (tokens: Parameters<typeof exprShadowState>[0]): unknown => {
+      create
+        .getInput('VALUE')
+        ?.connection?.setShadowState(exprShadowState(tokens, false, 'any', false));
+      return blockTyping(create, oracle)?.inputs.get('VALUE')?.fit;
+    };
+    expect(fitOf([{ str: 'x' }])).toBe('invalid');
+    expect(fitOf([{ num: '2' }])).toBe('same');
+    expect(fitOf([{ ref: 's_name' }])).toBe('invalid');
+    // A reference the analysis does not see there is not known.
+    hidden.add('s_name');
+    expect(fitOf([{ ref: 's_name' }])).toBe('unknown');
+  });
+
   it('count the moved block as absent for a keyboard listing', () => {
     const set = block('var.set');
     refer(set, 'VAR', 's_score');
