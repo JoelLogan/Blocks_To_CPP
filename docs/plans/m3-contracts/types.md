@@ -272,7 +272,10 @@ the rows that change in the spec are marked *changed*.
 * **Arithmetic** needs operands in `number` or `bool` (membership), checked
   explicitly instead of "not text" (`lower/expr.rs:865-889`,
   `typing.rs:122-129`); text keeps its M2 messages, anything else is
-  `E0302`.
+  `E0302`. W1 applies the same to the other places where g++ refuses a list
+  or a struct: `and`, `or`, `not` and the signs `-` and `+` on one are
+  `E0302`, *change by* on one is `E0302`, and *ask* into a list or struct
+  variable is `E0301`.
 * **Requirements.** The element of `std::set` and `std::priority_queue` and
   the key of `std::map` must be `comparable`: `E0313` where the type is
   written (the type field, the row). Declaring such a set compiles, but
@@ -285,7 +288,10 @@ the rows that change in the spec are marked *changed*.
   field fails to compile on g++ 11 to 14) or finds no `operator<<` for a
   list field. `UserType`'s flags are worked out when the analyser declares
   the structs; a struct reached again while its flags are worked out counts
-  as not comparable and not printable.
+  as not comparable and not printable. The ticks are the struct block's
+  checkbox fields `COMPARABLE` and `PRINTABLE`, where the diagnostics are
+  reported (`crates/b2c-lang/src/lower/user_types.rs`); W2's struct block
+  uses these names, or `b2c-lang` changes with it.
 * **Generated operators** (codegen, §5.2): a comparable struct gets the
   defaulted `auto operator<=>(const S&) const = default;` in C++20, and six
   hidden friends (`==`, `!=`, `<`, `>`, `<=`, `>=`, built on `std::tie`) in
@@ -341,7 +347,9 @@ takes the facts.
 * **Upgrades.** M2 projects need none: their types are valid terms, their
   version stays 1, and opening them marks nothing as changed. A block
   migration that rewrites a type keeps its references and may not deepen the
-  term: under ADR-0015 that counts as adding nesting.
+  term: under ADR-0015 that counts as adding nesting. No migration rewrites
+  a type yet, so `b2c-catalog`'s `upgrade.rs` does not check this; the
+  first one that does adds the check.
 
 ### 2.2 The decoder
 
@@ -363,13 +371,20 @@ takes the facts.
   spaces. A template's key follows the same rule and must be qualified.
 * **Limits.** At most `Type::MAX_DEPTH` (8) levels of templates and
   `Type::MAX_NAMES` (32) names and references in one term, else `B2C-E0140`.
-  Both sit within the JSON depth limit of 128, so they add no new resource
-  bound; they keep every type walk shallow.
+  Depth counts template levels only (a name or a reference has depth 0,
+  `{"std::vector": "int"}` depth 1); every name, reference and template
+  name counts towards the 32. The term is counted before anything else in
+  it is read, and the count stops one past either limit, so an oversized
+  term gives this one diagnostic. Both sit within the JSON depth limit of
+  128, so they add no new resource bound; they keep every type walk
+  shallow.
 * **Errors.** A wrong shape (a one-element or empty array, a number, a
-  nested `null`) is `E0112`, an invalid ID `E0113`, a reserved key `E0127`,
-  as for other values.
+  nested `null`) and a name that breaks the name rule are `E0112`, an
+  invalid ID `E0113`, a reserved key `E0127`, as for other values.
 * The decoder checks the `type` of the rows of the known row keys the same
-  way and keeps `extra` as JSON.
+  way when it is a reference or a template, and keeps `extra` as JSON. Any
+  other shape there (an object of another form, a number) is left to the
+  catalog's `E0614`, so a damaged M2 file keeps its outcome.
 * The catalog checks names (`E0607` in a field, `E0614` in a row, `E0602`
   from a newer catalog); the analyser checks references (`E0201` for a
   missing symbol, `E0207` for one that is not a user type of a kind the
@@ -386,10 +401,19 @@ pub const MAX_FORMAT_VERSION: u32 = 2;
 /// `MAX_FORMAT_VERSION` differ only by added keys (ADR-0013).
 pub const OLDEST_UNMIGRATED_VERSION: u32 = 1;
 /// The lowest format version whose keys cover the document (ADR-0013): 2 when it
-/// sets `options.usingNamespaceStd` or holds a template term (in a field or in the
-/// `type` of an `extra` row), else 1.
+/// holds a template term (in a field or in the `type` of an `extra` row), else 1.
 pub fn required_format_version(document: &Document) -> u32;
 ```
+
+* ***Textbook style* is not in W1.** `ProjectOptions` has no
+  `usingNamespaceStd` key, so a file that sets it is still `E0110` (a test
+  pins this): accepting the key before codegen honours it would let a file
+  ask for something that is silently dropped. Whoever adds the key adds it
+  to `required_format_version` in the same change.
+* **The declared version is not checked against the content.** A version 1
+  file that holds a template loads, and is saved as version 2; a version 2
+  file that holds none is saved as version 1. The clipboard reads the same
+  way (§2.4).
 
 * **Loading** (`crates/b2c-model/src/load.rs:284-305`): a version above
   `MAX_FORMAT_VERSION` is `E0108`, as now. A version from
@@ -432,6 +456,14 @@ pub fn required_format_version(document: &Document) -> u32;
   * a field or enumerator keeps its ID when its owner is the same symbol at
     the target; when the owner was bound to another type, it binds to that
     type's member of the same name; otherwise it is unresolved.
+* **What binding reads.** The scope query lists, with each struct or enum
+  it lists, that type's fields or enumerators, each with its `owner`
+  (`b2c_lang::Analysis::scope_at`, `scope_after` and the parked scope, still
+  sorted by name, then ID; no local name hides a member, and a member hides
+  nothing), and `b2c-core-wasm`'s fallback, for a target the query has no
+  answer for, lists the module's functions, structs, enums and their
+  members. No W1 block declares a struct, so recording is not exercised
+  before W2; binding is unit-tested.
 * **Walkers.** Paste renames the references inside terms with the other
   references (`ids.rs:316-353`), and `outside_refs` (`ids.rs:231-252`)
   lists them.
@@ -569,8 +601,10 @@ members = "S"                         # lists the fields of the struct bound to 
 * **What a type field accepts:** its `types` (always; `auto` and `void` only
   from there) and, when it has a `type` pattern, every type the pattern
   matches within its variables' classes. A row key accepts its `types` and
-  its `type_class`. `math.convert`'s `TO`, with `types` and no pattern,
-  stays as it is.
+  its `type_class` (`func.define`'s `params` have `type_class = "value"`).
+  `math.convert`'s `TO`, with `types` and no pattern, stays as it is, and so
+  does `func.define`'s `RETURNS`: a function's result type is not widened
+  in W1.
 * `assign = true` on a value input: the value is assigned, not used to
   initialise, so a `char` also fits a `std::string`, as C++ allows
   (`s = 'a';` compiles, `std::string s = 'a';` does not;
@@ -665,6 +699,14 @@ pattern = "any"                                  (* the analyser decides; M2 *)
 * every header is in the header table (§5), and per-option header keys are
   option values of that dropdown.
 
+W1 added these checks, which the rules above need to be well defined:
+`assign` needs a pattern; a `members` field has no `type`; a type field's
+pattern is made only of types, variables and templates, so the set of
+types it offers is known; `number` is only a whole output, and `any` is
+never nested; the entries of `types` use the canonical C++ spelling; and a
+repeated input whose count can be 0 counts as optional for rule 3. A
+definition that fails any check is `E0620` and gets no signature.
+
 The category list (`schema.rs:65-84`) grows with W2's categories.
 
 ### 4.4 The Rust contract
@@ -703,6 +745,13 @@ pub struct BlockSig {
     pub place_var: Option<TypeVar>,
     /// `symbol_ref` fields that list the members of the user type bound to a variable.
     pub members: BTreeMap<String, TypeVar>,
+    /// The fields of `fields` that are `symbol_ref` fields (a reference is never converted).
+    pub symbol_refs: BTreeSet<String>,
+    /// The fields of `fields` that are `symbol_decl` fields (they declare and never bind);
+    /// the others are `type` fields.
+    pub symbol_decls: BTreeSet<String>,
+    /// The inputs of `inputs` that are repeated (`ITEM0`, `ITEM1`, …).
+    pub repeated: BTreeSet<String>,
     pub headers: Vec<Header>,
     pub option_headers: BTreeMap<String, BTreeMap<String, Vec<Header>>>, // field, option
 }
@@ -769,8 +818,20 @@ impl TypeEnv {
 }
 ```
 
+* `symbol_refs`, `symbol_decls` and `repeated` tell the kinds of parts apart
+  for slots.md §2, which treats them differently; the catalog fills them
+  from each definition (`symbol_ref` and `symbol_decl` fields with a `type`,
+  inputs with a `repeat`). Without `repeated`, an input whose parts are
+  counted is still read as repeated; the two field sets have no such
+  fallback.
 * `b2c_catalog::Catalog::sigs(&self) -> &SigTable`, built when the catalog
-  loads.
+  loads, by `Catalog::new` (the table is a private field, so a `Catalog` is
+  no longer built with a struct literal). A catalog whose `blocks` are
+  edited afterwards keeps its old signatures, and a broken definition gets
+  none.
+* `SigTable::empty()` stays for tests that build tables by hand. With a
+  table that lacks their signatures, `create`, `set`, calls and `return`
+  check nothing of their values' types: their M2 rules are gone (§8.3).
 * `b2c_lang::analyze_with(document, &SigTable)` and
   `analyze_checked_with(document, catalog, unchecked, &SigTable)` take the
   table (`crates/b2c-lang/src/lib.rs:79`, `:104-108` today), so `b2c-lang`
@@ -792,7 +853,15 @@ impl TypeEnv {
   `{"kind": "result"}`, …); per input `assign`; per row `typeClass`.
 
 `order` carries the catalog order, so both copies bind in the same order.
-The generated `catalog.ts` and the block reference follow.
+The generated `catalog.ts` and the block reference follow. `catalog.json`
+does not export `symbol_refs`, `symbol_decls` and `repeated`: the editor's
+copy works them out from each definition as `b2c-catalog` does. A tagged
+pattern's keys come out in alphabetical order
+(`{"field": "FUNC", "kind": "param"}`), and `types` lists are type terms
+(the same strings as before for names). `catalog-gen` generates the
+signature keys into the editor's definitions, with the type table
+(`TYPE_TABLE`) and the classes; `output` is the pattern's text
+(`std::string`).
 
 ## 5. Headers (`crates/b2c-ir/src/headers.rs`, codegen)
 
@@ -833,8 +902,11 @@ pub struct ItemHeaders {
   with the user type's qualified `Ident`s, and loses `Copy`; the printer
   composes `&'static str` names and `Ident`s and spells `std::` names by
   [06 §6.14.5](../../spec/06-compiler-pipeline.md#6145-spelling-standard-names).
-  A read-only parameter is `const T&` for every type that is not a scalar
-  (`lower/mod.rs:210`).
+  It also gains `Size` (`std::size_t`, `<cstddef>`). A user type whose
+  symbol is missing or is not a struct or enum prints as `CType::Error`. A
+  read-only parameter is `const T&` for every type that is not a scalar
+  (`lower/mod.rs:210`); an enum is a scalar and is passed by value, and an
+  `Error`-typed parameter keeps M2's by-value form.
 
 ### 5.2 Forms codegen chooses, with their headers
 
@@ -853,6 +925,24 @@ pub struct ItemHeaders {
 | an enum that is joined | `to_string(Color)` | `<string>` |
 | a helper it calls | as in M2 | the helper's |
 
+**Formats W1 chose where nothing was specified**, to review with W2's
+struct and enum blocks and their `@c++17` snapshots:
+
+* a printable struct prints as `Point{x: 1, y: 2}`, a `bool` field as
+  `true` or `false`;
+* an enum's `operator<<` is a `switch` over its enumerators, then a final
+  `return`;
+* a C++17 comparison longer than 100 columns wraps before its operator;
+* a comparable struct with no fields gets friends that return a constant,
+  with unnamed parameters and no `<tuple>`;
+* a struct's fields are `T name{};` until W2 passes default values;
+* `repeat until` inverts `==` and `!=` of library and user types too.
+
+The forms of this table exist in `b2c-codegen` (`lower/forms.rs`,
+`lower/typedefs.rs`) but no W1 block reaches them: the SAST has no node for
+indexing, sizes, *for each*, structs or enums before W2, which calls
+`element_at`, `size_of`, `range_for`, `struct_def` and `enum_def`.
+
 Hidden friends are defined in the class, so they are inline and fit in a
 shared header (ADR-0019). With `int` indexes, `-Wsign-conversion` (the
 *strict* level) warns on `v.at(i)`, and `-Wsign-compare` (from `-Wall`) on
@@ -863,9 +953,11 @@ shared header (ADR-0019). With `int` indexes, `-Wsign-conversion` (the
 
 `text.literal` (`catalog/core/text.toml:11`), `program.exit`
 (`program.toml:22`), `math.random_int` (`math.toml:78`) and `io.ask` lose
-the headers only some of their forms need, which codegen adds (§5.2). The
-catalog's headers are then a subset of what codegen emits for every core
-block, so the golden files stay byte-identical.
+the headers only some of their forms need, which codegen adds (§5.2):
+`text.literal`, `program.exit` and `math.random_int` list none (the
+helper brings `<random>`), and `io.ask` keeps `<iostream>`, which every form
+needs. The catalog's headers are then a subset of what codegen emits for
+every core block, so the golden files stay byte-identical.
 
 ### 5.4 `use header`
 
@@ -924,6 +1016,11 @@ The same plan stands in ADR-0017, ADR-0018 and here.
 | worker protocol, scope index | 1, internal | ADR-0016 |
 
 ## 8. W1 plan
+
+**Done** (2026-10-25, `de24f49` to `209b75e`; [next steps
+§3.4](../next-steps.md#34-waves)). The plan below is kept as the record of
+how W1 was cut; where the code went another way, §1 to §7 say what it
+does.
 
 ### 8.1 The contracts pull request
 
@@ -1061,12 +1158,16 @@ table. Every golden file stays byte-identical and every snapshot as it was.
 * `b2c-ipc`, `b2c-core-wasm`: the mirror test for `TypeJson`;
   `conversion_table` over the samples; `SymbolInfo` with `std::string`.
 * A program compiles with `-fsyntax-only` under C++17 and C++20 with the
-  *strict* warnings, on GCC 11 and GCC 15 in CI (with W1's catalog snapshot
-  test): a variable of every sample value type; a comparable struct used
-  with all six comparison operators (which needs `<compare>` in C++20 and
-  the hidden friends in C++17); a `std::set` and a `std::map` keyed by it;
-  a printable struct and an enum printed and joined; an indexed access and
-  a size compared with an `int`.
+  *strict* warnings, on GCC 11 and GCC 15 in CI: a variable of every sample
+  value type; a comparable struct used with all six comparison operators
+  (which needs `<compare>` in C++20 and the hidden friends in C++17); a
+  `std::set` and a `std::map` keyed by it; a printable struct and an enum
+  printed and joined; an indexed access and a size compared with an `int`.
+  `b2c-codegen`'s `the_forms_program_compiles_clean_and_runs_on_every_gxx`
+  (`src/lower/tests.rs`) does this with the `g++` on `PATH` and every
+  `/usr/bin/g++-N`, and runs the program; the GCC 11 and 15 container jobs
+  run it with W1's catalog snapshot test
+  (`crates/b2c-build/tests/catalog_syntax.rs`).
 
 **TypeScript (Vitest).**
 
@@ -1096,7 +1197,10 @@ workspaces and runs the A/B job.
 ## 10. Spec sections to change
 
 The wave that changes each section. Sections that ADR-0018 also changes are
-marked *with 0018*: W1 edits them once, for both.
+marked *with 0018*: W1 edits them once, for both. The W1 rows were applied
+at the end of W1 (2026-10-25), with 03 §3.7.4's *length of* and *letter of*
+casts and 09 §9.2's catalog snapshot test; the W2 and W4 rows wait for
+their blocks.
 
 | Section | Change | Wave |
 | --- | --- | --- |

@@ -201,6 +201,10 @@ resolving; `type_block` adds the checks.
   not in the scope. A symbol that is not one of them is `E0207` (*"`speed`
   is not a field of `Student`."*). When the variable is unbound or `Error`,
   nothing more is said.
+* **No signature, no check.** Since the integration step (types.md §8.3)
+  `create`, `set`, call arguments and `return` have no M2 rules left: with a
+  table that lacks their signatures (`SigTable::empty()`, hand-built tables
+  in tests), they check nothing of their values' types.
 * **Blocks the catalog kept unchecked** (made by a newer catalog, unknown,
   too old to upgrade): `analyze_checked_with` passes the `unchecked` set
   into lowering, so an unchecked block's value is `Error` and an unchecked
@@ -304,7 +308,11 @@ export interface BlockTyping {
   readonly place: SlotFit;
 }
 
-export function typeBlock(def: BlockDefJson, parts: BlockParts, place: StaticType | null, facts: TypeFactsTs): BlockTyping;
+/** `def` is the part of a catalog definition that holds its signature keys (`SignatureDef`);
+ *  the signature built from it is kept per definition. */
+export function typeBlock(def: SignatureDef, parts: BlockParts, place: StaticType | null, facts: TypeFactsTs): BlockTyping;
+/** The same for a signature already built (`blockSignature(def)`). */
+export function typeBlockSig(sig: BlockSigTs, parts: BlockParts, place: StaticType | null, facts: TypeFactsTs): BlockTyping;
 /** `invalid` and `outsideClass`. */
 export function isFitError(fit: SlotFit): boolean;
 /** Start values (§6); null for a type that has none. */
@@ -314,19 +322,19 @@ export function startTokens(type: StaticType): readonly TokenJson[] | null;
 ### 4.3 The oracle and the Blockly side
 
 ```ts
-// packages/blockly-ext/src/services.ts: TypeOracle gains four methods
+// packages/blockly-ext/src/services.ts: TypeOracle gains four optional methods
 export interface TypeOracle {
   /** As in M2: the analysis's type of a value block, then the type of the symbol it names. */
   outputTypeOf(block: Blockly.Block): StaticType | null;
   /** The analysis's type of an expression slot (`slotTypes`), or null. */
-  slotTypeOf(blockId: string, input: string): StaticType | null;
+  slotTypeOf?(blockId: string, input: string): StaticType | null;
   /** A symbol of the latest analysis, or null. */
-  symbol(symId: string): SymbolInfo | null;
+  symbol?(symId: string): SymbolInfo | null;
   /** Whether the symbol is visible at the block (and input): the scope index of ADR-0016 §4, or
    *  for a block the index lacks, its place (`toolbox/scope.ts:239-272`). Null when not known. */
-  visibleAt(symId: string, block: Blockly.Block, input: string | null): boolean | null;
+  visibleAt?(symId: string, block: Blockly.Block, input: string | null): boolean | null;
   /** What the type rules need to know about user types, from the latest analysis. */
-  facts(): TypeFactsTs;
+  facts?(): TypeFactsTs;
 }
 
 // packages/blockly-ext/src/checker/slots.ts (new)
@@ -343,7 +351,16 @@ export function candidateFit(parent: Blockly.Block, input: string, child: Blockl
 /** The running gesture's cache, which the dragger and the keyboard mover set and clear. */
 export function currentSlotCache(): SlotCache | null;
 export function setCurrentSlotCache(cache: SlotCache | null): void;
+/** Starts the gesture's cache with the checker's oracle; `endSlotGesture` drops it. */
+export function beginSlotGesture(options?: { readonly absent?: Blockly.Block }): SlotCache;
+export function endSlotGesture(): void;
 ```
+
+The editor's oracle (`apps/desktop/src/editor/services/symbols.ts`) answers
+all four new methods. They are optional so that an oracle without them, a
+test's, stays valid: it answers nothing, which types every reference and
+expression slot as unknown, so everything connects there. Every call into
+the oracle is guarded, and a failure answers unknown.
 
 **Parts read from the canvas:**
 
@@ -449,7 +466,18 @@ get no pattern. Their SAST and diagnostic snapshots must not change.
   the input left empty. A value the user typed, a block, a draft and an
   unknown type are left alone. A connection never triggers this.
 * **On landing** (`toolbox/landing.ts`), the same rule runs with the
-  `expects` of the block's place, where `result` first becomes known.
+  `expects` of the block's place, where `result` first becomes known: a
+  value input still empty gets the start value of the type its place
+  expects, when known (`return` gets `0` in `main` and `0.0` in a function
+  returning `double`; nothing in a `void` function or loose), in the drop's
+  undo step (`landingStartValues` in `toolbox/reshape.ts`).
+* **What W1 left as in M2.** Start values in the toolbox, when the flyout
+  block is built, are still M2's (call arguments only); with M2's blocks
+  only `return` lacks one, and landing fills it. `create`'s `TYPE` and
+  `set`'s `VAR` keep their own M2 code in `toolbox/reshape.ts`, which gives
+  the same results as the rule above. Start values read a reference's type
+  whether or not the symbol is visible there (M2's behaviour), unlike the
+  checker, which reads `visibleAt`.
 * **Events.** Each replacement is one `StartValueChange`
   (`toolbox/reshape.ts:67-108`) in the group of the change that caused it.
   The event gains the input's name, since `run()` and `startValueOf()` read
@@ -481,10 +509,13 @@ sampled no-false-refusal test (§9) do.
 * `webview.drag-typed-1000.frame-p95-all` (new in W1): a number block
   dragged slowly down a column of 200 `create` blocks of alternating types
   in a 1,000-block module, so that every move asks about typed slots;
-  reported until it has 5 baselines, then gated, as D20's pooled metric was.
+  reported until it has 5 baselines, then gated, as D20's pooled metric was
+  (a later change to `typed-slots-metrics.ts` and the benchmarks' README).
 * `webview.keyboard-list-1000.ms` (new in W1, reported): the time to list
   the keyboard mover's targets for a number block in the same workspace,
-  against N12's 100 ms at 1,000 blocks.
+  against N12's 100 ms at 1,000 blocks, read from the User Timing span
+  `b2c:keyboard-targets`. An A/B base build without the span skips the
+  listing with a note and still measures the drag.
 * `webview.drag-5000.frame-p95-all` stays gated; it drags a definition across
   empty canvas and never previews a place
   (`docs/plans/m2-polish-plan.md:1097`), so it does not see typed slots.
@@ -496,6 +527,9 @@ sampled no-false-refusal test (§9) do.
   a typing.
 
 ## 9. W1 plan and tests
+
+**Done** in W1 (types.md §8), with the benchmarks and the E2E flows; §6
+says what start values still do as in M2.
 
 **Contracts** (in the contracts pull request, types.md §8.1, under its
 green rule): `slots.rs`'s API and its test tables, with a body that answers
@@ -602,7 +636,8 @@ does not offer that place.
 ## 10. Spec sections to change
 
 Sections that ADR-0017 also changes are edited once in W1 for both
-(types.md §10).
+(types.md §10). The W1 rows were applied at the end of W1 (2026-10-25); the
+W2, W4 and W5 rows wait for their work.
 
 | Section | Change | Wave |
 | --- | --- | --- |

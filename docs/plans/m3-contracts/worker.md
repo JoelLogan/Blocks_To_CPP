@@ -294,8 +294,13 @@ export function serveCoreWorker(
   `null`; walk the trail
   from that node, each name counting once and adding its symbol if it has
   one, following a parent only when it is smaller than the node; then the
-  module's functions whose names were not seen; each symbol once, in the
-  order of the update's `symbols` (which Rust sorted by name, then ID).
+  module's functions whose names were not seen; then, for each struct and
+  enum found, its fields or enumerators (each `SymbolInfo` of kind `field`
+  or `enumerator` whose `owner` it is), which no name hides and which hide
+  nothing, as `Analysis::with_members` adds them (`query.rs`, since W1); each
+  symbol once, in the order of the update's `symbols` (which Rust sorted by
+  name, then ID). Without the members, the fixture test against
+  `scope_at` fails once W2 declares structs and enums.
   `symbolsAfter` adds the variable the block declares, as `scope_after` does
   (`query.rs:308-326`; the editor's `toolbox/scope.ts:153-173` already does
   the same). `parkedScope` walks from the module's `parked` node, or lists

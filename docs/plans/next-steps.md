@@ -1,9 +1,9 @@
 # Next steps: closing M2, then M3
 
 Status: plan, 2026-10-15; updated 2026-10-24 with the owner's decisions,
-and on 2026-10-25: M2 is merged into `main`, and M3 has begun at the
-owner's word (Part 2, §3.6). Part 1 is what remains of M2, almost all of
-it the owner's. Part 2 is the plan for M3.
+and on 2026-10-25: M2 is merged into `main`, M3 has begun at the owner's
+word (Part 2, §3.6), and its wave W1 is done (§3.7). Part 1 is what remains
+of M2, almost all of it the owner's. Part 2 is the plan for M3.
 
 ## 1. Where M2 stands
 
@@ -164,9 +164,9 @@ From the roadmap, grouped by where the work lands:
   that follows `BUILDING.md` in Debian 12 and 13 containers (M3-7), the
   skipped-lines marker on Windows (RD-15).
 - **Quality and security:** a snapshot test of every catalog block's default
-  C++ compiled with `-fsyntax-only`; the M3 threat-model review (the
-  worker's CSP and scope index, files and paths a program may touch, the
-  Trusted Types table of the security specs); an npm licence gate
+  C++ compiled with `-fsyntax-only` (done in W1); the M3 threat-model review
+  (the worker's CSP and scope index, files and paths a program may touch,
+  the Trusted Types table of the security specs); an npm licence gate
   (TM-M2-6); the toolchain matrix cells deferred from M2.
 
 ### 3.3 Decisions before M3 starts
@@ -199,7 +199,7 @@ pushed.
 | Wave | Content                                                                                                                                                                                                                                                  | Depends on                     | Size |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---- |
 | W0   | Decisions above; ADR-0016 (Worker) and ADRs for the type representation (L14), slot typing (L15) and the header split (L18); the catalog schema extension (L17); the M3-D1 assignments as acceptance tests checked against reference solutions; the Blockly 13 / xterm 6.1 spike. Done 2026-10-25 (§3.6) | — | M    |
-| W1   | Foundations from [the contracts](m3-contracts/types.md): L14, L15, L17 with `headers` (L8), L16, L10, and ADR-0019's IR types (no output change); the catalog snapshot test | W0 ADRs | XL   |
+| W1   | Foundations from [the contracts](m3-contracts/types.md): L14, L15, L17 with `headers` (L8), L16, L10, and ADR-0019's IR types (no output change); the catalog snapshot test. Done 2026-10-25 (§3.7) | W0 ADRs | XL   |
 | W2   | Language blocks needed by the assignments: collections, strings, structs, enums, files, errors, random, time, globals, constants, math, conversions, `switch`, `do … while`, overloads, default arguments, M3-8                                          | W1                             | XL   |
 | W3   | Projects, build, run: multi-module (L18) in two parts (functions across modules after W1; structs, enums, globals and constants after W2's definition blocks; the per-unit object cache if-time), CMake/Make export, project settings dialog, run options, close-input, S7-5, S7-7, S7-8 | W1; W2 for the second part | L    |
 | W4   | Editor: type picker, Quick Insert, toolbox search, expert mode, quick fixes, _Copy bug report_, feature gating, friendly g++ messages, Appearance (F-1, U14d)                                                                                            | W1, W2 for the blocks it shows | L    |
@@ -225,8 +225,9 @@ need no new blocks (expert mode, toolbox search, Appearance).
 - **Windows behaviour** of close-input (ConPTY), the external terminal and
   file paths: each gets a Windows E2E flow from the start, not at the end.
 - **Generated C++ correctness** across GCC 11 to 15: the `-fsyntax-only`
-  snapshot test runs in CI on GCC 11, 13 and 15, and the every-g++ build
-  test added in M2 covers the local side-by-side compilers.
+  snapshot test (in place since W1) runs in CI on GCC 11, 13 and 15 and on
+  MSYS2, and the every-g++ build test added in M2 covers the local
+  side-by-side compilers, as W1's test of codegen's new forms does.
 
 ### 3.6 First steps once M3 is approved
 
@@ -256,3 +257,59 @@ need no new blocks (expert mode, toolbox search, Appearance).
    16.7 % slower), so under M3-D7 the upgrade waits until after M3; xterm
    6.1 has no stable release yet.
 5. Then W1, with the plan's must-have and if-time sets agreed.
+
+### 3.7 W1: done, and what the owner decides
+
+**Done** on 2026-10-25, on `ccr-01f82d9b-v70u20` up to `209b75e`: the
+contracts (`de24f49`); seven packages from parallel worktrees, merged in
+turn: type terms with format version 2 and clipboard version 2
+(`426bf7b`), the catalog's signatures, header table and catalog 1.3.0
+(`d6ecfac`), library and user types in codegen (`92af516`), M3's types and
+typed slots in the analyser (`75c9d19`, with `3fdec18` and `d11598f`), the
+IPC types, `slotTypes` and the scope query's members (`c2c9521`, `ed93c3e`,
+`010de7f`), the editor's copy of the rules with the wire switch (`8af978a`,
+`01ea173`, `f613fee`, `163ffaa`) and the catalog snapshot test (`92ddb7a`);
+then the integration step of types.md §8.3, with start values on landing,
+the typed-slots E2E flow and benchmarks (`8da4f27`), and L16 and L10
+(`209b75e`). The golden C++ is byte-identical across the wave. The
+specification, the changelog and the contracts were brought up to date
+after it; the contracts now describe the code W2 and W3 build on. Left for
+the next waves: Windows E2E and GCC 15 run in CI on the next push;
+`webview.drag-typed-1000.frame-p95-all` is gated once it has 5 baselines;
+_Textbook style_ brings its own format-version check; and W2 gives each new
+block a case in the catalog snapshot test.
+
+**For the owner to confirm** (each ADR's last section has the points in
+full):
+
+- **ADR-0016** (W5): 1, every module previews in the worker; 2, copy and
+  paste reuse the applied preview, decided after the spike's measurement;
+  3, `canonical` stays on the main thread; 4, a worker that fails for good
+  falls back with a log entry and no banner; 5, N4 moves to `update-p95`.
+- **ADR-0017** (in W1's code): 1, format version 2 holds _Textbook style_
+  and type terms, and versions without a change of meaning load without a
+  migration; 2, `std::string` on the wire too; 3, no unsigned or sized
+  integers, with codegen's casts; 4, streams and errors only as types of
+  declared symbols; 5, catalog `headers` emitted, four core blocks losing
+  some; 6, at most 8 levels and 32 names; 7, the changed collection rows of
+  03 §3.7.8; 8, ticked structs need qualifying fields, and C++17 gets six
+  comparison operators.
+- **ADR-0018** (in W1's code): 1, a TypeScript copy held to Rust by a
+  fixture; 2, `list of` and `{…}` typed only from their place (`E0315`
+  without one); 3, **the editor now refuses drops M2 allowed** (text into
+  `create [int]`, an `int` argument, `return` in `main`); declining it is
+  one change, `typeAllows` in `checker.ts`; 4, brace items cast rather than
+  refused; 5, start values change only on a field change or a landing; 6,
+  parked blocks' slots typed from their own parts.
+- **ADR-0019** (W3): 1, new definitions start unshared; 2, includes follow
+  use, `use header of module` if-time; 3, `#pragma once`; 4, the object
+  cache if-time; 5, a module name starting with `b2c` is an analyser error;
+  6, a module's own name hides another module's shared name.
+- **L16 and L10** (in W1's code): two quoted texts are joined
+  (`std::string("a") + "b"`) rather than refused; `math.arithmetic` keeps
+  `check = "number"`, so text blocks still do not snap into `+`;
+  `B2C-E0517` is reused for constant calculations, and `B2C-W0506` is the
+  first free `W05xx` code. Also the integration step's choice: a table
+  without the four blocks' signatures checks nothing of their values'
+  types. Codegen's unspecified formats (a struct printed as
+  `Point{x: 1, y: 2}`, an enum's `switch`) are reviewed with W2's blocks.

@@ -630,7 +630,7 @@ From the plan of types.md §7:
 
 | Wave | Items | Needs |
 | --- | --- | --- |
-| W1 | §1: `b2c-ir` types with defaults, `is_device_name` with both callers switched (no behaviour change), the `b2c-ipc` mirrors, `ipc-types` regenerated | — |
+| W1 (done) | §1: `b2c-ir` types with defaults, `is_device_name` with both callers switched (no behaviour change), the `b2c-ipc` mirrors, `ipc-types` regenerated | — |
 | W2 | the declaration graph (§4.1, §4.2) with `E0420` and `E0421` in `b2c-lang`, filling `source_order`; codegen printing in that order; the `SHARED` field on the new definition blocks (never shown yet) | W1 |
 | W3, first part | functions-only multi-module: `SHARED` on `func.define`, visibility and precedence, `E0206`, `E0213`, `E0214` for function signatures, `E0221`, headers and includes for functions, `b2c_support.hpp`, `gen/` pruning, the build's steps and de-duplication, `FileMap::module`, the module tabs, the C++ tab | W1 |
 | W3, second part | structs, enums, globals and constants across modules: the rest of §3.2 and §3.3, `E0214` for fields and constants, `E0422`, `E0423`, the `shapes.b2c` golden; export (§8) | W2's definition blocks and graph |
