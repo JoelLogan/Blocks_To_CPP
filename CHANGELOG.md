@@ -384,6 +384,62 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   test and this one share one run check, which runs each program in a copy
   of its folder and fails if the program changes anything there.
 
+- A _return_ dropped from the toolbox gets the start value of what its
+  function gives back: `0` in _when program starts_, `0.0` in a function
+  that returns `double`, nothing in one that returns nothing.
+- Project format version 2 (M3's open types, ADR-0017): a type field or a
+  function parameter can hold a library template or a struct or enum as a
+  type term, such as `{"std::map": ["std::string", "int"]}` or
+  `{"ref": "sym_x"}`. Versions 1 and 2 open without a migration step, and a
+  file is saved as the oldest version that holds it, so M2 projects stay
+  version 1, byte for byte; version 3 or newer is refused (`B2C-E0108`).
+  New `B2C-E0140`: a type more than 8 levels deep or with more than 32
+  names; `B2C-E0112` covers malformed type terms.
+- Clipboard format version 2: template types, and structs, enums, fields
+  and enumerators in `refs`. A field or enumerator is recorded with its
+  owner (`::Student::mark`) and bound again through it when pasted. Readers
+  accept versions 1 and 2.
+- New analyser codes for M3's types, ready for the struct, enum and
+  collection blocks that come next: `B2C-E0313` (not comparable: the items
+  of a set or priority queue, the keys of a map, a field of a struct ticked
+  _comparable_), `B2C-E0314` (not printable: _print_, _join_, a field of a
+  struct ticked _printable_) and `B2C-E0315` (a block that takes its type
+  from its place, in a place that gives none).
+- Constant folding: the analyser works out every constant calculation with
+  C++'s rules. New error `B2C-E0316`: a whole-number division or _mod_ by a
+  value that is always 0 (also _change … divided by_ and _mod_). New
+  warning `B2C-W0506`: a decimal division by a constant 0, or a constant
+  decimal result too large, gives infinity or NaN.
+- Block catalog 1.3.0: type signatures (`where`, `type` patterns, `assign`,
+  `members`, `type_class`), a closed table of standard headers with the
+  `header` field kind and per-option headers, and in `catalog.json` a
+  `types` section and each block's signature keys.
+- Typed slots (ADR-0018): a block with catalog patterns is typed in one
+  pass, by the same rule in the analyser and in the editor's TypeScript
+  copy, which two committed fixtures hold to it. The preview gives the
+  editor `slotTypes`, the type of each expression slot; the IPC types
+  describe static types as type terms (`TypeJson`) and know the symbols of
+  structs, enums, fields and enumerators; and the scope query lists the
+  fields and enumerators of the structs and enums it lists.
+- C++ generation for library and user types: nested library types, structs,
+  enums and `std::size_t`; read-only parameters of text, library types and
+  structs as `const T&`; catalog headers recorded per item part; and the
+  forms the next blocks need (an index cast to `std::size_t`, a size as
+  `int`, range-`for`, struct comparisons in C++17 and C++20, struct and enum
+  printing), which no block reaches yet.
+- Tests: the catalog snapshot test generates C++ for every core block in its
+  default configuration and for four curated variants, through the whole
+  front end, snapshots it and compiles it with `g++ -fsyntax-only` under
+  C++17 and C++20 with the strict warnings as errors (GCC 11, 13, 15 and
+  MSYS2 in CI); a block without a case fails it. Also a no-false-refusal
+  test of the editor's checker with the real core (parked parents
+  included), the E2E flow `typed-slots`, a record of what M2's rules gave
+  that the catalog's table is held to, and codegen's new forms compiled
+  with every installed g++.
+- Reported benchmarks `webview.drag-typed-1000.frame-p95-all` (typed drags at
+  1,000 blocks) and `webview.keyboard-list-1000.ms` (the keyboard mover's
+  listing), and the User Timing span `b2c:keyboard-targets`.
+
 ### Changed
 
 - The specification gains goal N12 (interaction latency, met in M5); N4 is
@@ -652,12 +708,67 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   name, with hidden or reordering characters shown as placeholders (08
   §8.5).
 
+- The editor refuses some drops that M2 allowed and the analyser then
+  reported: text into `create [int]`, into _set_ of an `int` variable, into
+  an `int` parameter's argument, and into _return_ in _when program starts_
+  or in a function that returns a number. The keyboard mover does not offer
+  those places either. Unknown types, narrowing and a mix of true/false
+  values and numbers still connect (ADR-0018, its owner point 3 still to be
+  confirmed).
+- `+` joins text with text or a character, in either order, as C++ does
+  (`"Hi " + name`, `name + '!'`); two quoted texts are generated as
+  `std::string("a") + "b"`. Text with a number still needs _join_
+  (`B2C-E0303`, with a new message). The `+` block itself still takes
+  numbers.
+- Start values follow the type each value input expects when a type or
+  reference field changes: a call's arguments follow a newly chosen
+  function, and a type without a start value leaves the input empty.
+- A block whose type field holds a template or a struct or enum loads as
+  itself (format version 2), not as a placeholder.
+- The analyser types M2's _create_, _set_, call arguments and _return_ by
+  their catalog patterns alone. Library and user types convert only to the
+  same type; arithmetic, the signs and _change by_ need numbers, _and_,
+  _or_ and _not_ true/false values or numbers, and two other values compare
+  only when they have one comparable type (`B2C-E0302`). The examples,
+  their golden C++ and the malicious-project suite analyse as before. `+` on
+  text changes some results: of 400 recorded generated programs, 2 no
+  longer report `B2C-E0303` (one reports `B2C-E0301` instead), and the 9
+  others that report it get its new message. A constant whole-number
+  calculation or
+  _as int_ that does not fit an `int` is `B2C-E0517`, like a literal
+  (`2147483647 + 1`).
+- `B2C-E0201` also covers a type that names a deleted struct or enum,
+  `E0207` a user type of the wrong kind and a member the struct or enum
+  lacks, `E0301` a value outside its input's class and _ask_ into a list or
+  struct variable, `E0430` a type setting a variable can't hold, and `E0602`
+  a type or header from a newer catalog; the `E0607` and `E0614` messages
+  end "…, or another type a variable can hold." Messages name library and
+  user types by their friendly labels (`a list of int`).
+- The catalog's _create_, _set_, call arguments, _return_ and function
+  parameters take every type a variable can hold; text outputs are spelled
+  `std::string`; the text literal, _stop program_ and _random integer_ list
+  no headers and _ask_ only `<iostream>`, since the generator adds what each
+  form needs.
+- The editor and the core exchange static types as type terms: text is
+  `"std::string"` and library and user types are their terms in
+  `blockTypes`, `slotTypes`, `SymbolInfo` and the conversion table, which
+  covers every pair of the sample types. Project files and clipboard
+  payloads are unchanged. `catalog-gen`'s definitions carry the signature
+  keys and `TYPE_TABLE`, with `output` as the catalog's pattern text.
+- `@blocks2cpp/b2c-core-wasm` exports `MAX_FORMAT_VERSION` (2) instead of
+  `CURRENT_FORMAT_VERSION`, and `version()` reports catalog 1.3.0 and format
+  version 2; `@blocks2cpp/ipc-types` declares `TypeJson` instead of
+  `StaticType`.
+
 ### Removed
 
 - The separate update block (`[score ▾] [*= ▾] (2)`, `var.update`) is
   retired. Projects that use it open with the _change_ block in its place,
   with the same operator, value and C++. The project is marked changed, and
   saving keeps the original as `.b2c.bak`. `b2c migrate` rewrites such files.
+- `Type::cpp_name`, `friendly_name`, `from_field`, `is_numeric` and `header`,
+  and `b2c_lang::analyze` and `analyze_checked`: use `analyze_with` and
+  `analyze_checked_with` with `Catalog::sigs()`.
 
 ### Fixed
 
