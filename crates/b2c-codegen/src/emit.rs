@@ -5,16 +5,19 @@
 //! separated by exactly one empty line. A stream statement (`std::cout << …`)
 //! longer than [`LINE_WIDTH`] continues on the next lines, each continuation
 //! starting with `<<` under the first one. Order within a source file: header
-//! comment, includes, support helpers, forward declarations, function
-//! definitions (sorted by name), `main`.
+//! comment, includes, support helpers, user types with their generated
+//! functions, forward declarations, function definitions (sorted by name),
+//! `main`.
 
 use std::collections::BTreeSet;
 
+use b2c_ir::headers::Header;
 use b2c_ir::source_map::MappedRange;
-use b2c_ir::text::Comment;
+use b2c_ir::text::{Comment, Ident};
 
 use crate::cast::{
-    BinOp, CBlock, CExpr, CExprKind, CFunction, CParam, CStmt, CStmtKind, Callee, ForStep, Init, ParamStyle,
+    BinOp, CBlock, CCase, CEnum, CExpr, CExprKind, CFunction, CGenerated, CParam, CStmt, CStmtKind, CStruct,
+    CType, CTypeDef, Callee, ForStep, Generated, GeneratedParam, Init, ParamStyle, RangeBinding,
 };
 use crate::helpers::{self, Helper};
 use crate::lower::LoweredModule;
@@ -79,17 +82,24 @@ fn file_header(p: &mut crate::printer::Printer, options: &CodegenOptions, subjec
     }
 }
 
-/// Writes `#include <…>` lines.
-fn includes(p: &mut crate::printer::Printer, headers: &BTreeSet<&'static str>) {
+/// Writes `#include <…>` lines, sorted.
+fn includes(p: &mut crate::printer::Printer, headers: &BTreeSet<Header>) {
     if headers.is_empty() {
         return;
     }
     p.section();
     for header in headers {
         p.fixed("#include ");
-        p.fixed(header);
+        p.fixed(header.as_str());
         p.newline();
     }
+}
+
+/// The standard headers the given helpers' code needs.
+fn helper_headers<'a>(used: impl IntoIterator<Item = &'a Helper>) -> impl Iterator<Item = Header> {
+    used.into_iter()
+        .flat_map(|helper| helper.headers())
+        .filter_map(|name| Header::standard(name))
 }
 
 /// Writes the bodies of the given helpers inside `namespace b2c`.
@@ -123,7 +133,7 @@ pub(crate) fn source_file(module: &LoweredModule, module_name: &str, options: &C
     let inline = options.helper_placement == HelperPlacement::Inline;
     let mut headers = module.usage.includes.clone();
     if inline {
-        headers.extend(helpers_used.iter().flat_map(|h| h.headers()));
+        headers.extend(helper_headers(helpers_used));
     }
     includes(&mut p, &headers);
     if !helpers_used.is_empty() {
@@ -140,6 +150,10 @@ pub(crate) fn source_file(module: &LoweredModule, module_name: &str, options: &C
         }
     }
     let mut emitter = Emitter { p };
+    for def in &module.types {
+        emitter.p.section();
+        emitter.type_def(def);
+    }
     if !module.functions.is_empty() {
         emitter.p.section();
         for function in &module.functions {
@@ -166,7 +180,7 @@ pub(crate) fn support_header(used: &BTreeSet<Helper>, options: &CodegenOptions) 
     p.section();
     p.fixed("#pragma once");
     p.newline();
-    let headers = used.iter().flat_map(|h| h.headers()).copied().collect();
+    let headers = helper_headers(used).collect();
     includes(&mut p, &headers);
     p.section();
     helper_namespace(&mut p, used);
@@ -178,10 +192,73 @@ struct Emitter {
     p: crate::printer::Printer,
 }
 
+/// An expression printed alone, for unit tests.
+#[cfg(test)]
+pub(crate) fn expr_text(expr: &CExpr) -> String {
+    let mut emitter = Emitter {
+        p: crate::printer::Printer::new(4),
+    };
+    emitter.expr(expr);
+    emitter.p.finish().0
+}
+
+/// A statement printed alone, for unit tests.
+#[cfg(test)]
+pub(crate) fn stmt_text(stmt: &CStmtKind) -> String {
+    let mut emitter = Emitter {
+        p: crate::printer::Printer::new(4),
+    };
+    emitter.stmt_kind(stmt);
+    emitter.p.finish().0
+}
+
+/// A user type's definition printed alone, for unit tests.
+#[cfg(test)]
+pub(crate) fn type_def_text(def: &CTypeDef) -> String {
+    let mut emitter = Emitter {
+        p: crate::printer::Printer::new(4),
+    };
+    emitter.type_def(def);
+    emitter.p.finish().0
+}
+
 impl Emitter {
+    /// A type: keywords and library names as generator text, user types as
+    /// identifiers joined by `::`, template arguments in `<…>` separated by
+    /// `, ` (`std::map<std::string, std::vector<int>>`).
+    fn ty(&mut self, ty: &CType) {
+        match ty {
+            CType::Lib(lib, args) => {
+                self.p.fixed(lib.cpp_name());
+                if !args.is_empty() {
+                    self.p.fixed("<");
+                    for (index, arg) in args.iter().enumerate() {
+                        if index > 0 {
+                            self.p.fixed(", ");
+                        }
+                        self.ty(arg);
+                    }
+                    self.p.fixed(">");
+                }
+            }
+            CType::Named(path) => self.qualified(path),
+            other => self.p.fixed(other.keyword().unwrap_or("int /* error */")),
+        }
+    }
+
+    /// Identifiers joined by `::`.
+    fn qualified(&mut self, path: &[Ident]) {
+        for (index, part) in path.iter().enumerate() {
+            if index > 0 {
+                self.p.fixed("::");
+            }
+            self.p.ident(part);
+        }
+    }
+
     /// `ret name(params)`.
     fn signature(&mut self, function: &CFunction) {
-        self.p.fixed(function.ret.spelling());
+        self.ty(&function.ret);
         self.p.fixed(" ");
         self.p.ident(&function.name);
         self.p.fixed("(");
@@ -200,7 +277,7 @@ impl Emitter {
         if param.style == ParamStyle::ConstRef {
             self.p.fixed("const ");
         }
-        self.p.fixed(param.ty.spelling());
+        self.ty(&param.ty);
         if param.style != ParamStyle::Value {
             self.p.fixed("&");
         }
@@ -229,6 +306,177 @@ impl Emitter {
         self.block(&function.body);
         self.p.map(start, &function.origin);
         self.p.newline();
+    }
+
+    /// A user type's definition and the free functions generated for it.
+    fn type_def(&mut self, def: &CTypeDef) {
+        match def {
+            CTypeDef::Struct(def) => self.struct_def(def),
+            CTypeDef::Enum(def) => self.enum_def(def),
+        }
+    }
+
+    /// `struct S { fields; operators };`. The fields, the defaulted `<=>`
+    /// and each hidden friend are separated by an empty line.
+    fn struct_def(&mut self, def: &CStruct) {
+        let start = self.p.position();
+        if let Some(comment) = &def.comment {
+            self.p.comment(comment);
+        }
+        self.p.fixed("struct ");
+        self.p.ident(&def.name);
+        self.p.fixed(" {");
+        self.p.newline();
+        self.p.indent();
+        for field in &def.fields {
+            let field_start = self.p.position();
+            self.ty(&field.ty);
+            self.p.fixed(" ");
+            self.p.ident(&field.name);
+            self.init(&field.init);
+            self.p.fixed(";");
+            self.p.map(field_start, &field.origin);
+            self.p.newline();
+        }
+        // No empty line right after the opening brace.
+        let mut separate = !def.fields.is_empty();
+        if def.defaulted_compare {
+            if separate {
+                self.p.section();
+            }
+            separate = true;
+            self.p.fixed("auto operator<=>(const ");
+            self.p.ident(&def.name);
+            self.p.fixed("&) const = default;");
+            self.p.newline();
+        }
+        for friend in &def.friends {
+            if separate {
+                self.p.section();
+            }
+            separate = true;
+            self.generated(friend, &def.name);
+        }
+        self.p.dedent();
+        self.p.fixed("};");
+        self.p.map(start, &def.origin);
+        self.p.newline();
+    }
+
+    /// `enum class E { A, B };`, then its generated functions, each in a
+    /// section of its own.
+    fn enum_def(&mut self, def: &CEnum) {
+        let start = self.p.position();
+        if let Some(comment) = &def.comment {
+            self.p.comment(comment);
+        }
+        self.p.fixed("enum class ");
+        self.p.ident(&def.name);
+        self.p.fixed(" {");
+        for (index, value) in def.values.iter().enumerate() {
+            self.p.fixed(if index == 0 { " " } else { ", " });
+            self.p.ident(value);
+        }
+        self.p.fixed(if def.values.is_empty() { "};" } else { " };" });
+        self.p.map(start, &def.origin);
+        self.p.newline();
+        for function in &def.functions {
+            self.p.section();
+            self.generated(function, &def.name);
+        }
+    }
+
+    /// A function generated for the user type `owner`, with its body:
+    /// `friend bool operator==(const S& lhs, const S& rhs) { … }`.
+    fn generated(&mut self, function: &CGenerated, owner: &Ident) {
+        if function.kind.is_friend() {
+            self.p.fixed("friend ");
+        }
+        self.p.fixed(function.kind.ret());
+        self.p.fixed(" ");
+        let (prefix, name) = function.kind.name();
+        if let Some(prefix) = prefix {
+            self.p.fixed(prefix);
+        }
+        self.p.fixed(name);
+        self.p.fixed("(");
+        for (index, kind) in function.kind.params().iter().enumerate() {
+            if index > 0 {
+                self.p.fixed(", ");
+            }
+            match kind {
+                GeneratedParam::Stream => self.p.fixed("std::ostream&"),
+                GeneratedParam::ConstRef => {
+                    self.p.fixed("const ");
+                    self.p.ident(owner);
+                    self.p.fixed("&");
+                }
+                GeneratedParam::Value => self.p.ident(owner),
+            }
+            if let Some(Some(name)) = function.params.get(index) {
+                self.p.fixed(" ");
+                self.p.ident(name);
+            }
+        }
+        self.p.fixed(") ");
+        match (function.kind, function.body.stmts.as_slice()) {
+            (
+                Generated::Compare(_),
+                [
+                    CStmt {
+                        kind: CStmtKind::Return(Some(value)),
+                        ..
+                    },
+                ],
+            ) => {
+                self.p.fixed("{");
+                self.p.newline();
+                self.p.indent();
+                self.return_comparison(value);
+                self.p.newline();
+                self.p.dedent();
+                self.p.fixed("}");
+            }
+            _ => self.block(&function.body),
+        }
+        self.p.newline();
+    }
+
+    /// `return a == b;` for a generated comparison. When the line would be
+    /// longer than [`LINE_WIDTH`], the operator starts the next line, under
+    /// the left operand:
+    ///
+    /// ```text
+    /// return std::tie(lhs.name, lhs.mark)
+    ///        == std::tie(rhs.name, rhs.mark);
+    /// ```
+    fn return_comparison(&mut self, value: &CExpr) {
+        self.p.fixed("return ");
+        let column = self.p.position().column;
+        // The columns used so far, the value and the `;`.
+        let width = column as usize - 1 + flat_width(value) + 1;
+        match &value.kind {
+            CExprKind::Binary { op, lhs, rhs } if width > LINE_WIDTH => {
+                self.expr(lhs);
+                self.p.newline_aligned(column);
+                self.p.fixed(op.token());
+                self.p.fixed(" ");
+                self.expr(rhs);
+            }
+            _ => self.expr(value),
+        }
+        self.p.fixed(";");
+    }
+
+    /// A declarator's initialiser: ` = value` or `{}`.
+    fn init(&mut self, init: &Init) {
+        match init {
+            Init::Value(value) => {
+                self.p.fixed(" = ");
+                self.expr(value);
+            }
+            Init::Braces => self.p.fixed("{}"),
+        }
     }
 
     /// `{`, the statements one level deeper, `}`.
@@ -268,16 +516,10 @@ impl Emitter {
                 if *is_const {
                     self.p.fixed("const ");
                 }
-                self.p.fixed(ty.spelling());
+                self.ty(ty);
                 self.p.fixed(" ");
                 self.p.ident(name);
-                match init {
-                    Init::Value(value) => {
-                        self.p.fixed(" = ");
-                        self.expr(value);
-                    }
-                    Init::Braces => self.p.fixed("{}"),
-                }
+                self.init(init);
                 self.p.fixed(";");
             }
             CStmtKind::Expr(expr) => {
@@ -312,7 +554,7 @@ impl Emitter {
                 body,
             } => {
                 self.p.fixed("for (");
-                self.p.fixed(ty.spelling());
+                self.ty(ty);
                 for (index, decl) in decls.iter().enumerate() {
                     self.p.fixed(if index == 0 { " " } else { ", " });
                     self.p.ident(&decl.name);
@@ -326,6 +568,8 @@ impl Emitter {
                 self.p.fixed(") ");
                 self.block(body);
             }
+            CStmtKind::RangeFor { binding, range, body } => self.range_for(binding, range, body),
+            CStmtKind::Switch { value, cases } => self.switch(value, cases),
             CStmtKind::Break => self.p.fixed("break;"),
             CStmtKind::Continue => self.p.fixed("continue;"),
             CStmtKind::Return(value) => {
@@ -396,6 +640,52 @@ impl Emitter {
         }
     }
 
+    /// `for (const auto& x : range) { … }` or
+    /// `for (const auto& [k, v] : range) { … }`.
+    fn range_for(&mut self, binding: &RangeBinding, range: &CExpr, body: &CBlock) {
+        self.p.fixed("for (const auto& ");
+        match binding {
+            RangeBinding::One(name) => self.p.ident(name),
+            RangeBinding::Pair(key, value) => {
+                self.p.fixed("[");
+                self.p.ident(key);
+                self.p.fixed(", ");
+                self.p.ident(value);
+                self.p.fixed("]");
+            }
+        }
+        // ` : ` keeps a range that starts with `::` from lexing as `:::`
+        // (spec §6.8.3).
+        self.p.fixed(" : ");
+        self.expr(range);
+        self.p.fixed(") ");
+        self.block(body);
+    }
+
+    /// `switch (value) { … }`: each `case label:` one level deeper than the
+    /// `switch`, and the statements under it one level deeper again.
+    fn switch(&mut self, value: &CExpr, cases: &[CCase]) {
+        self.p.fixed("switch (");
+        self.expr(value);
+        self.p.fixed(") {");
+        self.p.newline();
+        self.p.indent();
+        for case in cases {
+            self.p.fixed("case ");
+            self.expr(&case.label);
+            self.p.fixed(":");
+            self.p.newline();
+            self.p.indent();
+            for stmt in &case.body {
+                self.stmt(stmt);
+                self.p.newline();
+            }
+            self.p.dedent();
+        }
+        self.p.dedent();
+        self.p.fixed("}");
+    }
+
     /// The third clause of a `for` loop.
     fn for_step(&mut self, step: &ForStep) {
         match step {
@@ -460,10 +750,33 @@ impl Emitter {
             }
             CExprKind::Cast { ty, value } => {
                 self.p.fixed("static_cast<");
-                self.p.fixed(ty.spelling());
+                self.ty(ty);
                 self.p.fixed(">(");
                 self.expr(value);
                 self.p.fixed(")");
+            }
+            CExprKind::Method { object, name, args } => {
+                self.expr(object);
+                self.p.fixed(".");
+                self.p.fixed(name);
+                self.p.fixed("(");
+                for (index, arg) in args.iter().enumerate() {
+                    if index > 0 {
+                        self.p.fixed(", ");
+                    }
+                    self.expr(arg);
+                }
+                self.p.fixed(")");
+            }
+            CExprKind::Field { object, field } => {
+                self.expr(object);
+                self.p.fixed(".");
+                self.p.ident(field);
+            }
+            CExprKind::Enumerator { owner, value } => {
+                self.qualified(owner);
+                self.p.fixed("::");
+                self.p.ident(value);
             }
             CExprKind::Paren(inner) => {
                 self.p.fixed("(");
@@ -516,7 +829,19 @@ fn flat_width(expr: &CExpr) -> usize {
             };
             name + 2 + args.iter().map(flat_width).sum::<usize>() + 2 * args.len().saturating_sub(1)
         }
-        CExprKind::Cast { ty, value } => "static_cast<>()".len() + ty.spelling().len() + flat_width(value),
+        CExprKind::Cast { ty, value } => "static_cast<>()".len() + ty.width() + flat_width(value),
+        CExprKind::Method { object, name, args } => {
+            flat_width(object)
+                + 1
+                + name.len()
+                + 2
+                + args.iter().map(flat_width).sum::<usize>()
+                + 2 * args.len().saturating_sub(1)
+        }
+        CExprKind::Field { object, field } => flat_width(object) + 1 + field.as_str().len(),
+        CExprKind::Enumerator { owner, value } => {
+            owner.iter().map(|part| part.as_str().len() + 2).sum::<usize>() + value.as_str().len()
+        }
         CExprKind::Paren(inner) => 2 + flat_width(inner),
         CExprKind::Error => "0 /* error */".len(),
     }

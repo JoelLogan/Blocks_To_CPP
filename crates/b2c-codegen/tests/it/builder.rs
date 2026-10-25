@@ -83,6 +83,56 @@ impl Builder {
         self.symbol(name, SymbolKind::LoopVariable, Type::Int)
     }
 
+    /// A struct with its fields (from milestone M3; no SAST item defines it
+    /// before the definition blocks, so only its symbols exist).
+    pub(crate) fn structure(
+        &self,
+        name: &str,
+        fields: &[(&str, Type)],
+        comparable: bool,
+        printable: bool,
+    ) -> Type {
+        let id = self.symbol(
+            name,
+            SymbolKind::Struct {
+                fields: Vec::new(),
+                comparable,
+                printable,
+            },
+            Type::Error,
+        );
+        let ids = fields
+            .iter()
+            .map(|(field, ty)| self.symbol(field, SymbolKind::Field { owner: id.clone() }, ty.clone()))
+            .collect();
+        let mut symbols = self.symbols.borrow_mut();
+        if let Some(symbol) = symbols.symbols.get_mut(&id) {
+            symbol.kind = SymbolKind::Struct {
+                fields: ids,
+                comparable,
+                printable,
+            };
+            symbol.ty = Type::Named(id.clone());
+        }
+        Type::Named(id)
+    }
+
+    /// An enum with its enumerators (from milestone M3; only its symbols).
+    pub(crate) fn enumeration(&self, name: &str, values: &[&str]) -> Type {
+        let id = self.symbol(name, SymbolKind::Enum { values: Vec::new() }, Type::Error);
+        let ty = Type::Named(id.clone());
+        let ids = values
+            .iter()
+            .map(|value| self.symbol(value, SymbolKind::Enumerator { owner: id.clone() }, ty.clone()))
+            .collect();
+        let mut symbols = self.symbols.borrow_mut();
+        if let Some(symbol) = symbols.symbols.get_mut(&id) {
+            symbol.kind = SymbolKind::Enum { values: ids };
+            symbol.ty = ty.clone();
+        }
+        ty
+    }
+
     /// A function with its parameters.
     pub(crate) fn function(&self, name: &str, ret: Type, params: &[(&str, Type, PassMode)]) -> Function {
         let param_ids: Vec<_> = params

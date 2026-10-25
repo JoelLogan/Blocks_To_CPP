@@ -35,7 +35,33 @@
 //!   `for (int i = 0, n = b2c::random_int(1, 6); i < n; ++i)`.
 //! * `repeat until <c>` becomes `while (!(c))`, written as the inverse
 //!   comparison where that is exact (`a != b` for `a == b`; not for ordering
-//!   comparisons of `double`, because of NaN).
+//!   comparisons of `double`, because of NaN, nor of library and user types,
+//!   which may hold one).
+//!
+//! # Types and includes (`docs/plans/m3-contracts/types.md` §5)
+//!
+//! * Types are printed from closed tables and validated identifiers:
+//!   standard names in full (`std::map<std::string, std::vector<int>>`;
+//!   06 §6.14.5 shortens them only inside a `using namespace` region, which
+//!   no project has yet), user structs and enums by their qualified name.
+//! * A read-only parameter is `const T&` for every type that is not a
+//!   scalar: `std::string`, the library types and structs. Numbers,
+//!   characters, `bool` and enums are copied.
+//! * Each file includes exactly the standard headers its own code needs: those
+//!   of the types it prints, of the values it uses through their type (a
+//!   returned `std::string`), of the forms it chooses (`<cstdlib>` for
+//!   `std::exit`, `<cstddef>` for an index cast, …), of the helpers it
+//!   inlines, and the catalog's headers of the blocks lowered into each item
+//!   ([`b2c_ir::headers::ItemHeaders`]). They are recorded per item part, the
+//!   declaration apart from the definition, for ADR-0019's headers.
+//! * The forms that the collection and definition blocks of milestone M3's
+//!   second wave lower to are ready in the C++ AST and the emitter: `c.at(i)`
+//!   with `static_cast<std::size_t>(i)` for a position that is not a literal,
+//!   `static_cast<int>(c.size())`, range-`for` with a structured binding for
+//!   a map, and structs and enums with the operators their ticks and uses
+//!   promise (a defaulted `<=>` in C++20, six hidden friends on `std::tie` in
+//!   C++17, a hidden-friend `operator<<`, an enum's `operator<<` and
+//!   `to_string`).
 
 mod cast;
 mod emit;

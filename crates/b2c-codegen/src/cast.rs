@@ -11,12 +11,22 @@
 //! parentheses that also keep `-Wall` quiet (mixed `&&`/`||`, a comparison
 //! inside a comparison, `!x` on the left of a comparison).
 
-use b2c_ir::sast::Origin;
-use b2c_ir::text::{CharLit, Comment, Ident, NumLit, StrLit};
-use b2c_ir::types::Type;
+use std::collections::BTreeSet;
 
-/// A C++ type as written in a declaration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+use b2c_ir::headers::Header;
+use b2c_ir::sast::{Origin, SymbolKind, SymbolTable};
+use b2c_ir::text::{CharLit, Comment, Ident, NumLit, StrLit};
+use b2c_ir::types::{LibType, Type};
+
+/// A C++ type as written in a declaration (types.md §5.1).
+///
+/// It is made of names from closed tables (the keywords, [`LibType`]'s
+/// qualified names) and validated [`Ident`]s, so the emitter composes it from
+/// `&'static str` text and identifiers and a type never carries other text.
+/// Standard names are spelt in full: 06 §6.14.5 shortens them only inside a
+/// region of a `using namespace` directive, and no project has one before
+/// *Textbook style* and the `use namespace` block arrive.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum CType {
     /// `void`.
     Void,
@@ -30,6 +40,15 @@ pub(crate) enum CType {
     Double,
     /// `std::string`.
     String,
+    /// `std::size_t`: what an `int` index into a vector, deque or string is
+    /// cast to (types.md §5.2).
+    Size,
+    /// A standard-library type with its template arguments:
+    /// `std::vector<int>`, `std::map<std::string, int>`, `std::ifstream`.
+    Lib(LibType, Vec<CType>),
+    /// A user struct or enum, by its qualified name: the identifiers joined
+    /// by `::` (`Point`; `geo::Point` once namespaces arrive).
+    Named(Vec<Ident>),
     /// `auto`.
     Auto,
     /// A type that could not be determined (best-effort output after errors).
@@ -38,40 +57,136 @@ pub(crate) enum CType {
 
 impl CType {
     /// The C++ type for a value of a static type. `Void` and `Error` have no
-    /// value type and map to [`CType::Error`], and so, until code generation
-    /// prints them (types.md §8.2), do the library and user types, which no
-    /// stage produces yet.
-    pub(crate) fn value(ty: &Type) -> Self {
+    /// value type and map to [`CType::Error`], and so does a user type whose
+    /// symbol is missing or is not a struct or an enum, and a library type
+    /// with such an argument (best-effort output after errors).
+    pub(crate) fn value(ty: &Type, symbols: &SymbolTable) -> Self {
         match ty {
             Type::Bool => Self::Bool,
             Type::Char => Self::Char,
             Type::Int => Self::Int,
             Type::Double => Self::Double,
             Type::String => Self::String,
-            Type::Void | Type::Lib(_) | Type::Named(_) | Type::Error => Self::Error,
+            Type::Lib(app) => {
+                let mut args = Vec::with_capacity(app.args().len());
+                for arg in app.args() {
+                    match Self::value(arg, symbols) {
+                        Self::Error => return Self::Error,
+                        arg => args.push(arg),
+                    }
+                }
+                Self::Lib(app.ty(), args)
+            }
+            Type::Named(id) => match symbols.get(id) {
+                Some(symbol)
+                    if matches!(symbol.kind, SymbolKind::Struct { .. } | SymbolKind::Enum { .. }) =>
+                {
+                    Self::Named(vec![symbol.name.clone()])
+                }
+                _ => Self::Error,
+            },
+            Type::Void | Type::Error => Self::Error,
         }
     }
 
     /// The C++ type for a function result (`void` allowed).
-    pub(crate) fn result(ty: &Type) -> Self {
+    pub(crate) fn result(ty: &Type, symbols: &SymbolTable) -> Self {
         if *ty == Type::Void {
             Self::Void
         } else {
-            Self::value(ty)
+            Self::value(ty, symbols)
         }
     }
 
-    /// The C++ spelling.
-    pub(crate) fn spelling(self) -> &'static str {
-        match self {
+    /// The spelling of a type that is one keyword or standard name; `None`
+    /// for library and user types, which are composed of several names.
+    pub(crate) fn keyword(&self) -> Option<&'static str> {
+        Some(match self {
             Self::Void => "void",
             Self::Bool => "bool",
             Self::Char => "char",
             Self::Int => "int",
             Self::Double => "double",
             Self::String => "std::string",
+            Self::Size => "std::size_t",
             Self::Auto => "auto",
             Self::Error => "int /* error */",
+            Self::Lib(..) | Self::Named(_) => return None,
+        })
+    }
+
+    /// Adds the standard headers that spelling the type needs (types.md
+    /// §5.2): `<string>`, `<cstddef>` for `std::size_t`, and each library
+    /// type's header with those of its arguments. User types need none.
+    pub(crate) fn collect_headers(&self, headers: &mut BTreeSet<Header>) {
+        match self {
+            Self::String => headers.extend(Header::standard("<string>")),
+            Self::Size => headers.extend(Header::standard("<cstddef>")),
+            Self::Lib(ty, args) => {
+                headers.insert(ty.header());
+                for arg in args {
+                    arg.collect_headers(headers);
+                }
+            }
+            Self::Void
+            | Self::Bool
+            | Self::Char
+            | Self::Int
+            | Self::Double
+            | Self::Named(_)
+            | Self::Auto
+            | Self::Error => {}
+        }
+    }
+
+    /// The length in bytes of the type as printed.
+    pub(crate) fn width(&self) -> usize {
+        match self {
+            Self::Lib(ty, args) if args.is_empty() => ty.cpp_name().len(),
+            // `name<a, b>`
+            Self::Lib(ty, args) => {
+                ty.cpp_name().len() + 2 + args.iter().map(Self::width).sum::<usize>() + 2 * (args.len() - 1)
+            }
+            // `a::b`
+            Self::Named(path) => {
+                path.iter().map(|part| part.as_str().len()).sum::<usize>() + 2 * path.len().saturating_sub(1)
+            }
+            other => other.keyword().map_or(0, str::len),
+        }
+    }
+
+    /// The type as printed, for ordering overloads only (the emitter prints
+    /// types through the printer).
+    pub(crate) fn sort_key(&self) -> String {
+        let mut key = String::new();
+        self.write_key(&mut key);
+        key
+    }
+
+    fn write_key(&self, key: &mut String) {
+        match self {
+            Self::Lib(ty, args) => {
+                key.push_str(ty.cpp_name());
+                if !args.is_empty() {
+                    key.push('<');
+                    for (index, arg) in args.iter().enumerate() {
+                        if index > 0 {
+                            key.push_str(", ");
+                        }
+                        arg.write_key(key);
+                    }
+                    key.push('>');
+                }
+            }
+            Self::Named(path) => {
+                for (index, part) in path.iter().enumerate() {
+                    if index > 0 {
+                        key.push_str("::");
+                    }
+                    key.push_str(part.as_str());
+                }
+            }
+            other => key.push_str(other.keyword().unwrap_or_default()),
         }
     }
 }
@@ -270,6 +385,33 @@ pub(crate) enum CExprKind {
         /// Converted value.
         value: Box<CExpr>,
     },
+    /// `object.name(args)`: a member function of a library type, chosen by
+    /// the generator (`at`, `size`; types.md §5.2).
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's collection blocks"))]
+    Method {
+        /// The object (already parenthesised if needed).
+        object: Box<CExpr>,
+        /// The member function.
+        name: &'static str,
+        /// Arguments.
+        args: Vec<CExpr>,
+    },
+    /// `object.field`: a field of a user struct.
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's struct blocks"))]
+    Field {
+        /// The object (already parenthesised if needed).
+        object: Box<CExpr>,
+        /// The field.
+        field: Ident,
+    },
+    /// `Color::Red`: an enumerator, after its enum's qualified name.
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's enum blocks"))]
+    Enumerator {
+        /// The enum's qualified name.
+        owner: Vec<Ident>,
+        /// The enumerator.
+        value: Ident,
+    },
     /// `(inner)`.
     Paren(Box<CExpr>),
     /// `0 /* error */`: an expression that could not be generated.
@@ -323,9 +465,42 @@ impl CExpr {
             | CExprKind::Name(_)
             | CExprKind::Call { .. }
             | CExprKind::Cast { .. }
+            | CExprKind::Method { .. }
+            | CExprKind::Field { .. }
+            | CExprKind::Enumerator { .. }
             | CExprKind::Paren(_)
             | CExprKind::Error => Prec::Primary,
         }
+    }
+
+    /// `static_cast<ty>(value)`.
+    pub(crate) fn cast(ty: CType, value: Self) -> Self {
+        Self::new(CExprKind::Cast {
+            ty,
+            value: Box::new(value),
+        })
+    }
+
+    /// `object.name(args)`, parenthesising the object when needed
+    /// (`(a + b).size()`).
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's collection blocks"))]
+    pub(crate) fn method(object: Self, name: &'static str, args: Vec<Self>) -> Self {
+        let wrap = object.precedence() < Prec::Primary;
+        Self::new(CExprKind::Method {
+            object: Box::new(object.paren_if(wrap)),
+            name,
+            args,
+        })
+    }
+
+    /// `object.field`, parenthesising the object when needed.
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's struct blocks"))]
+    pub(crate) fn field(object: Self, field: Ident) -> Self {
+        let wrap = object.precedence() < Prec::Primary;
+        Self::new(CExprKind::Field {
+            object: Box::new(object.paren_if(wrap)),
+            field,
+        })
     }
 
     /// Wraps the expression in parentheses.
@@ -570,6 +745,26 @@ pub(crate) enum CStmtKind {
         /// Body.
         body: CBlock,
     },
+    /// `for (const auto& x : range) { … }`, or with a structured binding
+    /// `for (const auto& [k, v] : range) { … }` (types.md §1.5, §5.2).
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's for-each blocks"))]
+    RangeFor {
+        /// What each item is bound to.
+        binding: RangeBinding,
+        /// The range: never a literal (a text literal becomes a
+        /// `std::string` object first).
+        range: CExpr,
+        /// Body.
+        body: CBlock,
+    },
+    /// `switch (value) { case label: … }`.
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's enums and switch block"))]
+    Switch {
+        /// The value switched on.
+        value: CExpr,
+        /// The cases, in order.
+        cases: Vec<CCase>,
+    },
     /// `break;`
     Break,
     /// `continue;`
@@ -582,6 +777,26 @@ pub(crate) enum CStmtKind {
     Block(CBlock),
     /// `/* error */;`: a statement that could not be generated.
     Error,
+}
+
+/// What a range-`for` binds each item to: `const auto& x`, or the structured
+/// binding `const auto& [k, v]` of a map's key and value.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's for-each blocks"))]
+pub(crate) enum RangeBinding {
+    /// One name for the whole item.
+    One(Ident),
+    /// A key and a value (C++17 structured binding).
+    Pair(Ident, Ident),
+}
+
+/// One `case label:` of a `switch` with the statements under it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CCase {
+    /// The label: a literal or an enumerator.
+    pub(crate) label: CExpr,
+    /// The statements, printed one level deeper than the label.
+    pub(crate) body: Vec<CStmt>,
 }
 
 /// How a parameter is passed.
@@ -623,6 +838,140 @@ pub(crate) struct CFunction {
     pub(crate) origin: Origin,
     /// The block's comment.
     pub(crate) comment: Option<Comment>,
+}
+
+/// A user type's definition with the functions its ticks and uses promise
+/// (types.md §1.6, §5.2).
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's struct and enum blocks"))]
+pub(crate) enum CTypeDef {
+    /// `struct S { … };`
+    Struct(CStruct),
+    /// `enum class E { … };` and its print support.
+    Enum(CEnum),
+}
+
+/// `struct S { fields; operators };`
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CStruct {
+    /// Its name.
+    pub(crate) name: Ident,
+    /// Its fields, in order.
+    pub(crate) fields: Vec<CField>,
+    /// `auto operator<=>(const S&) const = default;`: a comparable struct in
+    /// C++20.
+    pub(crate) defaulted_compare: bool,
+    /// Hidden friends: the six comparisons of a comparable struct in C++17,
+    /// then the `operator<<` of a printable struct.
+    pub(crate) friends: Vec<CGenerated>,
+    /// The defining block.
+    pub(crate) origin: Origin,
+    /// The block's comment.
+    pub(crate) comment: Option<Comment>,
+}
+
+/// A field of a struct: `T name{};` or `T name = value;`.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CField {
+    /// Its type.
+    pub(crate) ty: CType,
+    /// Its name.
+    pub(crate) name: Ident,
+    /// Its default member initialiser.
+    pub(crate) init: Init,
+    /// Where it was declared.
+    pub(crate) origin: Origin,
+}
+
+/// `enum class E { A, B };` and the free functions that print it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CEnum {
+    /// Its name.
+    pub(crate) name: Ident,
+    /// Its enumerators, in order.
+    pub(crate) values: Vec<Ident>,
+    /// `operator<<` (the enum is printed or written) and `to_string` (it is
+    /// joined), printed after the definition.
+    pub(crate) functions: Vec<CGenerated>,
+    /// The defining block.
+    pub(crate) origin: Origin,
+    /// The block's comment.
+    pub(crate) comment: Option<Comment>,
+}
+
+/// A function the generator writes for a user type `T` (types.md §5.2).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CGenerated {
+    /// Which one; it gives the signature.
+    pub(crate) kind: Generated,
+    /// The parameters' names, one per parameter of [`Generated::params`];
+    /// `None` leaves a parameter the body does not use unnamed.
+    pub(crate) params: Vec<Option<Ident>>,
+    /// The body.
+    pub(crate) body: CBlock,
+}
+
+/// The functions the generator writes for user types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Generated {
+    /// `friend bool operator==(const T& a, const T& b)`, and the other five
+    /// comparisons: a hidden friend of a comparable struct in C++17.
+    Compare(BinOp),
+    /// `friend std::ostream& operator<<(std::ostream& out, const T& value)`:
+    /// a hidden friend of a printable struct.
+    PrintStruct,
+    /// `std::ostream& operator<<(std::ostream& out, T value)`: an enum that
+    /// is printed or written.
+    PrintEnum,
+    /// `std::string to_string(T value)`: an enum that is joined.
+    EnumToString,
+}
+
+/// How a parameter of a [`Generated`] function is declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GeneratedParam {
+    /// `std::ostream& out`.
+    Stream,
+    /// `const T& value`.
+    ConstRef,
+    /// `T value` (an enum, which is a scalar).
+    Value,
+}
+
+impl Generated {
+    /// The result type.
+    pub(crate) fn ret(self) -> &'static str {
+        match self {
+            Self::Compare(_) => "bool",
+            Self::PrintStruct | Self::PrintEnum => "std::ostream&",
+            Self::EnumToString => "std::string",
+        }
+    }
+
+    /// The function's name after `operator` (`==`, `<<`), or its whole name
+    /// (`to_string`).
+    pub(crate) fn name(self) -> (Option<&'static str>, &'static str) {
+        match self {
+            Self::Compare(op) => (Some("operator"), op.token()),
+            Self::PrintStruct | Self::PrintEnum => (Some("operator"), "<<"),
+            Self::EnumToString => (None, "to_string"),
+        }
+    }
+
+    /// Whether it is a hidden friend, defined inside its struct.
+    pub(crate) fn is_friend(self) -> bool {
+        matches!(self, Self::Compare(_) | Self::PrintStruct)
+    }
+
+    /// Its parameters, in order.
+    pub(crate) fn params(self) -> &'static [GeneratedParam] {
+        match self {
+            Self::Compare(_) => &[GeneratedParam::ConstRef, GeneratedParam::ConstRef],
+            Self::PrintStruct => &[GeneratedParam::Stream, GeneratedParam::ConstRef],
+            Self::PrintEnum => &[GeneratedParam::Stream, GeneratedParam::Value],
+            Self::EnumToString => &[GeneratedParam::Value],
+        }
+    }
 }
 
 #[cfg(test)]
@@ -708,8 +1057,9 @@ mod tests {
 
     #[test]
     fn type_spellings() {
-        assert_eq!(CType::value(&Type::String).spelling(), "std::string");
-        assert_eq!(CType::result(&Type::Void).spelling(), "void");
-        assert_eq!(CType::value(&Type::Void), CType::Error);
+        let symbols = SymbolTable::default();
+        assert_eq!(CType::value(&Type::String, &symbols).sort_key(), "std::string");
+        assert_eq!(CType::result(&Type::Void, &symbols).sort_key(), "void");
+        assert_eq!(CType::value(&Type::Void, &symbols), CType::Error);
     }
 }
