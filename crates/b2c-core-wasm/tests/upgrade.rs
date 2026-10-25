@@ -93,7 +93,7 @@ fn paste_upgrades_the_pasted_blocks() {
     assert_eq!(codes(&pasted["diagnostics"]), ["B2C-E0602"]);
     assert_eq!(pasted["blocks"][0]["fields"]["VOLUME"], "11");
     // From this catalog, it is left to the preview (an unknown field).
-    let pasted = paste(&payload("1.2.0", &extended), &document);
+    let pasted = paste(&payload(b2c_catalog::CATALOG_VERSION, &extended), &document);
     assert_eq!(pasted["diagnostics"], json!([]));
 }
 
