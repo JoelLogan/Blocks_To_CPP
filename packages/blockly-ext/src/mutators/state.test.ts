@@ -10,6 +10,8 @@ import {
   MAX_VARIADIC_PARTS,
   readParamsExtra,
   readVariadicExtra,
+  rowTypeJson,
+  rowTypeKey,
   writeVariadicExtra,
 } from './state';
 
@@ -130,6 +132,39 @@ describe('readParamsExtra', () => {
       'unknownKey',
       'other',
     ]);
+  });
+});
+
+describe('the type of a parameter row (catalog 1.3.0, types.md §8.2)', () => {
+  it('takes a type term of the value class by its key, as the core does', () => {
+    const typed = (type: unknown) =>
+      readParamsExtra(defineSpec, { params: [{ ...row, type }] })[0]?.type;
+    expect(defineSpec.typeClass).toBe('value');
+    expect(typed({ 'std::vector': 'int' })).toBe('{"std::vector":"int"}');
+    expect(typed({ 'std::map': ['std::string', { 'std::set': 'char' }] })).toBe(
+      '{"std::map":["std::string",{"std::set":"char"}]}',
+    );
+    // A user type, whose class only the analysis knows.
+    expect(typed({ ref: 'sym_Pt' })).toBe('{"ref":"sym_Pt"}');
+    expect(typed('double')).toBe('double');
+    expect(rowTypeJson('{"std::vector":"int"}')).toEqual({ 'std::vector': 'int' });
+    expect(rowTypeJson('int')).toBe('int');
+    const bad = (type: unknown): [MutatorStateProblem, string | null] =>
+      problemOf(() => readParamsExtra(defineSpec, { params: [{ ...row, type }] }));
+    // Outside the value class, not a type, or not a term.
+    for (const type of [
+      'std::ifstream',
+      { 'std::vector': 'std::ifstream' },
+      'void',
+      'auto',
+      { 'no::such': 'int' },
+      { 'std::vector': ['int', 'int'] },
+      7,
+    ]) {
+      expect(bad(type), JSON.stringify(type)).toEqual(['badParamRow', 'params']);
+    }
+    // A spec without a class keeps to its names.
+    expect(rowTypeKey({ ...defineSpec, typeClass: null }, { 'std::vector': 'int' })).toBeNull();
   });
 });
 

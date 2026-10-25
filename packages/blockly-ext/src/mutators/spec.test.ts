@@ -142,6 +142,7 @@ describe('paramsSpec', () => {
       name: 'params',
       max: 16,
       types: ['int', 'double', 'bool', 'char', 'std::string'],
+      typeClass: 'value',
       anchorArgs: ['RETURNS', 'BODY'],
     });
   });

@@ -602,6 +602,11 @@ members = "S"                         # lists the fields of the struct bound to 
   from there) and, when it has a `type` pattern, every type the pattern
   matches within its variables' classes. A row key accepts its `types` and
   its `type_class` (`func.define`'s `params` have `type_class = "value"`).
+  The editor's parameter mutator accepts the same rows (`rowTypeKey` in
+  `mutators/state.ts`, from the catalog's `typeClass`): a template or a
+  user type is kept by its key, as a type field keeps one, and written
+  back as its term, so such a function stays editable; W4's type picker
+  is what offers them in the menu.
   `math.convert`'s `TO`, with `types` and no pattern, stays as it is, and so
   does `func.define`'s `RETURNS`: a function's result type is not widened
   in W1.

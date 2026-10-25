@@ -400,3 +400,22 @@ describe('what a candidate’s fit asks (slots.md §4.3, Speed)', () => {
     }
   });
 });
+
+describe('a function’s parameter rows with the registered type field', () => {
+  it('keep a library or user type by its key and give the term back', () => {
+    const define = block('func.define') as Blockly.BlockSvg & {
+      b2cSetExtra(extra: unknown): void;
+      b2cGetExtra(): unknown;
+    };
+    const params = [
+      { sym: 's_list', name: 'list', type: { 'std::vector': 'int' }, mode: 'read_only' },
+      { sym: 's_pt', name: 'pt', type: { ref: 'sym_Pt' }, mode: 'copy' },
+    ];
+    define.b2cSetExtra({ params });
+    expect(define.getFieldValue('B2C_PARAM0_TYPE')).toBe('{"std::vector":"int"}');
+    expect(define.b2cGetExtra()).toEqual({ params });
+    // Choosing a listed type from the menu still works.
+    define.setFieldValue('double', 'B2C_PARAM0_TYPE');
+    expect(define.b2cGetExtra()).toEqual({ params: [{ ...params[0], type: 'double' }, params[1]] });
+  });
+});

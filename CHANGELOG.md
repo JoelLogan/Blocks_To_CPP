@@ -417,7 +417,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
 - Block catalog 1.3.0: type signatures (`where`, `type` patterns, `assign`,
   `members`, `type_class`), a closed table of standard headers with the
   `header` field kind and per-option headers, and in `catalog.json` a
-  `types` section and each block's signature keys.
+  `types` section and each block's signature keys. A function's parameter
+  row may have any type a variable can hold (a list, a map, a struct), in
+  the core and in the editor, which keeps such a function editable.
 - Typed slots (ADR-0018): a block with catalog patterns is typed in one
   pass, by the same rule in the analyser and in the editor's TypeScript
   copy, which two committed fixtures hold to it. A drag or keyboard listing

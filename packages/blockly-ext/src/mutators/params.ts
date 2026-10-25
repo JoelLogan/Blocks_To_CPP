@@ -28,7 +28,13 @@ import {
 import { mutatorHooks, randomSymbolId } from './hooks';
 import { placeParts } from './parts';
 import type { ParamsSpec } from './spec';
-import { isShowableName, MAX_VARIADIC_PARTS, readParamsExtra } from './state';
+import {
+  isShowableName,
+  MAX_VARIADIC_PARTS,
+  readParamsExtra,
+  rowTypeJson,
+  rowTypeKey,
+} from './state';
 import { PARAM_MODES, type ParamMode, type ParamRow } from './types';
 
 /** The prefix of a parameter row's dummy input (`B2C_PARAM0`). */
@@ -100,7 +106,9 @@ export class ParamsController implements MutatorController {
   }
 
   extra(): Record<string, unknown> {
-    return { [this.spec.name]: this.readRows() };
+    return {
+      [this.spec.name]: this.readRows().map((row) => ({ ...row, type: rowTypeJson(row.type) })),
+    };
   }
 
   apply(extra: unknown): void {
@@ -118,13 +126,14 @@ export class ParamsController implements MutatorController {
       if (fields === undefined) {
         return { ...row };
       }
-      const type: unknown = fields.type.getValue();
+      const value: unknown = fields.type.getValue();
+      const type = typeof value === 'string' ? rowTypeKey(this.spec, rowTypeJson(value)) : null;
       const name = readName(fields.name);
       const mode: unknown = fields.mode.getValue();
       return {
         sym: row.sym,
         name: name !== null && isShowableName(name) ? name : row.name,
-        type: typeof type === 'string' && this.spec.types.includes(type) ? type : row.type,
+        type: type ?? row.type,
         mode: isParamMode(mode) ? mode : row.mode,
       };
     });

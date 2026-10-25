@@ -8,6 +8,16 @@
  * unchanged with the analyser's error on the block; values it cannot represent raise
  * `MutatorStateError`.
  */
+import {
+  inClass,
+  NO_FACTS,
+  parseTerm,
+  termFromKey,
+  termJson,
+  termKey,
+  typeFromTerm,
+  type TypeJson,
+} from '../types/static-type';
 import { MutatorStateError } from './errors';
 import type { CountSpec, FlagSpec, ParamsSpec, VariadicSpec } from './spec';
 import { PARAM_MODES, type ParamMode, type ParamRow } from './types';
@@ -161,13 +171,43 @@ function readRow(spec: ParamsSpec, row: unknown, index: number): ParamRow {
   if (typeof name !== 'string' || !isShowableName(name)) {
     throw badRow(spec, index, `needs a name of at most ${String(MAX_PARAM_NAME_CHARS)} characters`);
   }
-  if (typeof type !== 'string' || !spec.types.includes(type)) {
+  const key = rowTypeKey(spec, type);
+  if (key === null) {
     throw badRow(spec, index, 'has a type parameters cannot have');
   }
   if (!isParamMode(mode)) {
     throw badRow(spec, index, 'has an unknown mode');
   }
-  return { sym, name, type, mode };
+  return { sym, name, type: key, mode };
+}
+
+/**
+ * A row's type as the mutator keeps it, as the catalog accepts it (`row_type_fit`): one of the
+ * listed names, or a type term (a template, a user type) whose type is not outside the spec's class
+ * (a user type, whose class only the analysis knows, is accepted). A term is kept by its key
+ * (`termKey`), as type fields keep one; `null` for a type rows cannot have.
+ */
+export function rowTypeKey(spec: ParamsSpec, value: unknown): string | null {
+  if (typeof value === 'string' && spec.types.includes(value)) {
+    return value;
+  }
+  const term = spec.typeClass === null ? null : parseTerm(value);
+  const type = term === null ? null : typeFromTerm(term);
+  if (term === null || type === null || spec.typeClass === null) {
+    return null;
+  }
+  const key = termKey(term);
+  if (spec.types.includes(key)) {
+    return key;
+  }
+  const isVoid = type.kind === 'prim' && type.name === 'void';
+  return !isVoid && inClass(type, spec.typeClass, NO_FACTS) !== false ? key : null;
+}
+
+/** A row's type as a project file writes it: a name, or the term of a key ({@link rowTypeKey}). */
+export function rowTypeJson(key: string): TypeJson {
+  const term = termFromKey(key);
+  return term === null ? key : termJson(term);
 }
 
 /** Reads the parameter rows of a block; an absent `params` is no rows. */

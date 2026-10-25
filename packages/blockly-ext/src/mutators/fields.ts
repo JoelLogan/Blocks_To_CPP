@@ -40,11 +40,16 @@ export function friendlyModeName(mode: ParamMode): string {
   return mode === 'read_only' ? 'read-only' : mode;
 }
 
-/** A field choosing one of `types` (a `b2c_type`), set to `value`. */
+/**
+ * A field choosing one of `types` (a `b2c_type`), set to `value`, which may be a type term's key
+ * that is not in the menu (a row's library or user type): the `b2c_type` field keeps it, and the
+ * plain dropdown used without one gets it as an extra option.
+ */
 export function createTypeField(types: readonly string[], value: string): Blockly.Field {
+  const options = types.includes(value) ? types : [...types, value];
   const field =
     fromRegistry('b2c_type', { types: [...types], value, ariaLabel: 'Parameter type' }) ??
-    new Blockly.FieldDropdown(types.map((type) => [friendlyTypeName(type), type]));
+    new Blockly.FieldDropdown(options.map((type) => [friendlyTypeName(type), type]));
   field.setValue(value);
   return field;
 }

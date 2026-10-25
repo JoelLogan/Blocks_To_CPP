@@ -108,6 +108,11 @@ export interface ParamsSpec {
   readonly max: number;
   /** The parameter types, in menu order. */
   readonly types: readonly string[];
+  /**
+   * The class of the other types a row may have, as a type term (a template, a user type); catalog
+   * 1.3.0 gives `func.define` the `value` class. `null`: the listed names only.
+   */
+  readonly typeClass: ExtraDefJson['typeClass'];
   readonly anchorArgs: readonly string[];
 }
 
@@ -335,6 +340,7 @@ export function paramsSpec(def: BlockDefJson): ParamsSpec {
     name: extra.name,
     max: extra.max,
     types: extra.types,
+    typeClass: extra.typeClass,
     anchorArgs: anchorArgs(def, region),
   };
 }

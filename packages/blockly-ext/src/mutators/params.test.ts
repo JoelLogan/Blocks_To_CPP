@@ -56,6 +56,26 @@ const greet: ParamRow[] = [
   { sym: 'sym_times', name: 'times', type: 'int', mode: 'copy' },
 ];
 
+describe('func.define rows of library and user types', () => {
+  it('open and give back a template or a user type as the file had it', () => {
+    const block = define();
+    const params = [
+      { sym: 'sym_list', name: 'list', type: { 'std::vector': 'int' }, mode: 'read_only' },
+      {
+        sym: 'sym_map',
+        name: 'map',
+        type: { 'std::map': ['std::string', { 'std::set': 'char' }] },
+        mode: 'editable',
+      },
+      { sym: 'sym_pt', name: 'pt', type: { ref: 'sym_Pt' }, mode: 'copy' },
+      { sym: 'sym_n', name: 'n', type: 'int', mode: 'copy' },
+    ];
+    block.b2cSetExtra({ params });
+    expect(block.b2cGetExtra()).toEqual({ params });
+    expect(block.getFieldValue('B2C_PARAM0_TYPE')).toBe('{"std::vector":"int"}');
+  });
+});
+
 describe('func.define rows', () => {
   it('start with no parameters, the words of the group, and ⊕', () => {
     const block = define();
