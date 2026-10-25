@@ -198,16 +198,17 @@ pushed.
 
 | Wave | Content                                                                                                                                                                                                                                                  | Depends on                     | Size |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---- |
-| W0   | Decisions above; ADR-0016 (Worker) and ADRs for the type representation (L14), slot typing (L15) and the header split (L18); the catalog schema extension (L17); the M3-D1 assignments written as failing golden tests; the Blockly 13 / xterm 6.1 spike | —                              | M    |
-| W1   | Foundations: L14, L15, L17 with `headers` (L8), L16, L10; the catalog snapshot test                                                                                                                                                                      | W0 ADRs                        | XL   |
+| W0   | Decisions above; ADR-0016 (Worker) and ADRs for the type representation (L14), slot typing (L15) and the header split (L18); the catalog schema extension (L17); the M3-D1 assignments as acceptance tests checked against reference solutions; the Blockly 13 / xterm 6.1 spike. Done 2026-10-25 (§3.6) | — | M    |
+| W1   | Foundations from [the contracts](m3-contracts/types.md): L14, L15, L17 with `headers` (L8), L16, L10, and ADR-0019's IR types (no output change); the catalog snapshot test | W0 ADRs | XL   |
 | W2   | Language blocks needed by the assignments: collections, strings, structs, enums, files, errors, random, time, globals, constants, math, conversions, `switch`, `do … while`, overloads, default arguments, M3-8                                          | W1                             | XL   |
-| W3   | Projects, build, run: multi-module (L18), CMake/Make export, project settings dialog, run options, close-input, S7-5, S7-7, S7-8                                                                                                                         | W1 (L18 ADR)                   | L    |
+| W3   | Projects, build, run: multi-module (L18) in two parts (functions across modules after W1; structs, enums, globals and constants after W2's definition blocks; the per-unit object cache if-time), CMake/Make export, project settings dialog, run options, close-input, S7-5, S7-7, S7-8 | W1; W2 for the second part | L    |
 | W4   | Editor: type picker, Quick Insert, toolbox search, expert mode, quick fixes, _Copy bug report_, feature gating, friendly g++ messages, Appearance (F-1, U14d)                                                                                            | W1, W2 for the blocks it shows | L    |
-| W5   | Performance and platform: Worker preview (M3-1), M3-5, M3-4, M3-9, M3-6, M3-7, RD-15 (the Blockly 13 upgrade moved after M3: W0's spike was not clean)                                                                                                                            | W2 (stable `update()`)         | L    |
+| W5   | Performance and platform: starting with the worker CSP spike on both webviews (ADR-0016), the Worker preview (M3-1), M3-5, M3-4, M3-9, M3-6, M3-7, RD-15 (the Blockly 13 upgrade moved after M3: W0's spike was not clean) | W2 (stable `update()`) | L    |
 | W6   | Close-out: every M3-D1 assignment green, threat-model review, toolchain cells, docs and the getting-started guide, usability protocol for M3, a green nightly and weekly                                                                                 | all                            | M    |
 
-W2 and W3 can run in parallel once W1's contracts land; W4 starts with the
-pieces that need no new blocks (expert mode, toolbox search, Appearance).
+W2 and W3's first part can run in parallel once W1's contracts land; W3's
+second part follows W2's definition blocks; W4 starts with the pieces that
+need no new blocks (expert mode, toolbox search, Appearance).
 
 ### 3.5 Critical path and risks
 
@@ -230,8 +231,9 @@ pieces that need no new blocks (expert mode, toolbox search, Appearance).
 ### 3.6 First steps once M3 is approved
 
 1. Ask the M3-D questions in one batch, with the recommendations above.
-2. Write the M3-D1 assignments as example projects whose golden tests fail
-   until W2, so progress is visible as tests turning green. Done:
+2. Write the M3-D1 assignments as acceptance tests, checked against
+   reference solutions until their block projects exist, so progress is
+   visible as assignments turning green. Done:
    [`tests/assignments/`](../../tests/assignments/README.md) holds the ten,
    each with a reference solution that checks its run data until its block
    project passes (1 of 10 green: the guessing game).
@@ -242,7 +244,12 @@ pieces that need no new blocks (expert mode, toolbox search, Appearance).
    [ADR-0018](../adr/0018-slot-typing.md) (slot typing) and
    [ADR-0019](../adr/0019-multi-module-header-split.md) (multi-module
    projects and the header split); each lists the points for the owner to
-   confirm.
+   confirm. Reviewed the same day (one reviewer per ADR, one for the
+   assignments, one across all four; every finding checked again before it
+   was applied), and split: each ADR keeps the decision, and
+   [`m3-contracts/`](m3-contracts/types.md) holds the exact contracts W1
+   turns into code (`types.md`, `slots.md`, `worker.md`, `modules.md`),
+   with one table of new diagnostic codes and one version plan.
 4. Run the Blockly 13 / xterm 6.1 spike and record it. Done:
    [the record](m3-spike-blockly13.md). Not clean (4 of 105 Linux E2E
    tests and 79 unit tests fail, the slots render differently, dragging is
