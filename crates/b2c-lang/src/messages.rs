@@ -49,6 +49,9 @@ pub(crate) fn a_type(ty: &Type) -> &'static str {
         Type::Int => "a whole number",
         Type::Double => "a decimal number",
         Type::String => "text",
+        // No stage produces library or user types before the analyser names
+        // them by their labels (types.md §1.7).
+        Type::Lib(_) | Type::Named(_) => "a value of another type",
         Type::Error => "an unknown value",
     }
 }

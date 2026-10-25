@@ -589,6 +589,13 @@ impl Writer {
                 self.field_str("ref", reference.target.as_str());
                 self.end('}');
             }
+            // The loader does not produce template terms yet; written as
+            // free-form JSON until the term writer of format version 2
+            // (types.md §2.1).
+            FieldValue::Type(term) => match serde_json::to_value(term) {
+                Ok(value) => self.value(&value),
+                Err(_) => self.out.push_str("null"),
+            },
         }
     }
 

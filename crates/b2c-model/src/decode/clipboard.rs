@@ -15,7 +15,9 @@ use crate::text_rules::quote;
 /// Keys of a clipboard payload, in canonical order.
 const CLIPBOARD_KEYS: [&str; 5] = ["format", "formatVersion", "catalog", "blocks", "refs"];
 
-/// Every reference kind, in declaration order.
+/// The reference kinds a payload may record, in declaration order: those of
+/// clipboard format version 1. The kinds of user types join them with
+/// version 2 (types.md §2.4).
 pub(crate) const REF_KINDS: [RefKind; 4] = [
     RefKind::Variable,
     RefKind::Parameter,
@@ -129,6 +131,11 @@ mod tests {
             RefKind::Parameter => 1,
             RefKind::LoopVariable => 2,
             RefKind::Function => 3,
+            // Not read before clipboard format version 2.
+            RefKind::Struct => 4,
+            RefKind::Enum => 5,
+            RefKind::Field => 6,
+            RefKind::Enumerator => 7,
         }
     }
 

@@ -146,6 +146,8 @@ mod tests {
     #[test]
     fn every_type_is_listed_once() {
         // Fails to compile when a type is added, so the list stays complete.
+        // The library and user types join the table with `sample_types()`
+        // (types.md §3.2), when they serialise.
         let position = |ty: &Type| match ty {
             Type::Void => 0,
             Type::Bool => 1,
@@ -154,6 +156,7 @@ mod tests {
             Type::Double => 4,
             Type::String => 5,
             Type::Error => 6,
+            Type::Lib(_) | Type::Named(_) => usize::MAX,
         };
         for (index, ty) in STATIC_TYPES.iter().enumerate() {
             assert_eq!(position(ty), index);

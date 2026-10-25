@@ -35,7 +35,8 @@
 //! For the editor, an [`Analysis`] also answers questions about the blocks
 //! (spec §6.5): [`Analysis::symbols_in_scope`] lists the symbols a block may
 //! refer to, [`Analysis::symbol_infos`] every symbol, and
-//! [`Analysis::block_types`] the static type of each value block. Together
+//! [`Analysis::block_types`] the static type of each value block
+//! ([`Analysis::slot_types`] that of each expression slot). Together
 //! with [`conversion`], the analyser's own conversion rule (see its type,
 //! [`Conversion`], for the sites it covers), they let the editor offer and
 //! connect only what the analyser accepts.
@@ -50,15 +51,18 @@ mod nesting;
 mod parser;
 mod query;
 mod scope;
+mod slots;
 mod typing;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::sast::Program;
-use b2c_ir::{BlockId, DiagSource, Diagnostic, Part, Severity};
+use b2c_ir::sig::SigTable;
+use b2c_ir::{BlockId, DiagSource, Diagnostic, Part, Severity, Type};
 use b2c_model::Document;
 
-pub use typing::{Conversion, conversion};
+pub use slots::{Binder, BlockTyping, InputTyping, SlotFit, type_block};
+pub use typing::{Conversion, assignment, check_accepts, conversion};
 
 /// The result of analysing a document.
 #[derive(Debug, Clone, PartialEq)]
@@ -69,14 +73,38 @@ pub struct Analysis {
     pub diagnostics: Vec<Diagnostic>,
     /// What is visible where, for [`Analysis::symbols_in_scope`].
     index: query::ScopeIndex,
+    /// The static type of each expression slot lowered, for
+    /// [`Analysis::slot_types`].
+    slot_types: BTreeMap<BlockId, BTreeMap<String, Type>>,
 }
 
-/// Analyses a document, normally one that `b2c_catalog::resolve` completed.
+impl Analysis {
+    /// The static type of each expression slot that was lowered, by block
+    /// ID, then input name (ADR-0018 §3); a block's own type is in
+    /// [`Analysis::block_types`]. Empty until the analyser records slot types
+    /// (package 3 of `docs/plans/m3-contracts/types.md` §8.2).
+    pub fn slot_types(&self) -> BTreeMap<BlockId, BTreeMap<String, Type>> {
+        self.slot_types.clone()
+    }
+}
+
+/// Analyses a document, normally one that `b2c_catalog::resolve` completed,
+/// with no catalog signatures: every block keeps its M2 typing rules.
 ///
 /// Never panics, also on a document whose resolution failed (the editor's
 /// preview analyses those too): problems in the document become
 /// diagnostics, and the program contains everything that could be lowered.
 pub fn analyze(document: &Document) -> Analysis {
+    analyze_with(document, &SigTable::empty())
+}
+
+/// [`analyze`] with the catalog's signatures (`b2c_catalog::Catalog::sigs`),
+/// which type the slots of the blocks that have one (ADR-0018). Taking the
+/// table keeps this crate independent of `b2c-catalog`. A block the table
+/// does not know keeps its M2 typing rules, as every block does until the
+/// analyser reads the table (package 3 of types.md §8.2).
+pub fn analyze_with(document: &Document, sigs: &SigTable) -> Analysis {
+    let _ = sigs;
     lower::run(document)
 }
 
@@ -106,7 +134,18 @@ pub fn analyze_checked(
     catalog: &[Diagnostic],
     unchecked: &BTreeSet<BlockId>,
 ) -> Analysis {
-    let mut analysis = analyze(document);
+    analyze_checked_with(document, catalog, unchecked, &SigTable::empty())
+}
+
+/// [`analyze_checked`] with the catalog's signatures, as [`analyze_with`]
+/// takes them: what the build and the editor's preview run.
+pub fn analyze_checked_with(
+    document: &Document,
+    catalog: &[Diagnostic],
+    unchecked: &BTreeSet<BlockId>,
+    sigs: &SigTable,
+) -> Analysis {
+    let mut analysis = analyze_with(document, sigs);
     let reported: BTreeSet<(&BlockId, PartKey<'_>)> = catalog
         .iter()
         .filter(|d| d.source == DiagSource::Catalog && d.severity == Severity::Error)

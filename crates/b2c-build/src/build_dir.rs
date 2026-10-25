@@ -32,6 +32,7 @@ use std::time::{Duration, SystemTime};
 
 use b2c_ir::ids::ProjectId;
 use b2c_ir::source_map::{FileKind, GeneratedProject};
+use b2c_ir::text::is_device_name;
 use b2c_process::CancelToken;
 use sha2::{Digest as _, Sha256};
 
@@ -391,19 +392,6 @@ fn is_generated_file_name(name: &str) -> bool {
         && stem != IDE_INIT_STEM
 }
 
-/// Whether Windows reserves `stem` for a device, so that a file named
-/// `<stem>` or `<stem>.<anything>` would open the device instead
-/// (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`, `LPT0`–`LPT9`; compared
-/// without regard to case).
-pub(crate) fn is_device_name(stem: &str) -> bool {
-    let lower = stem.to_ascii_lowercase();
-    match lower.as_bytes() {
-        b"con" | b"prn" | b"aux" | b"nul" => true,
-        [b'c', b'o', b'm', digit] | [b'l', b'p', b't', digit] => digit.is_ascii_digit(),
-        _ => false,
-    }
-}
-
 /// The permissions for a file replacing one with `existing` permissions
 /// (`None` to keep the temporary file's owner-only ones).
 fn new_permissions(existing: Option<fs::Permissions>, executable: bool) -> Option<fs::Permissions> {
@@ -548,6 +536,7 @@ mod tests {
             files: vec![GeneratedFile {
                 path: path.to_owned(),
                 kind: FileKind::Source,
+                module: None,
                 contents: contents.to_owned(),
             }],
             source_map: SourceMap::default(),
@@ -612,11 +601,13 @@ mod tests {
                 GeneratedFile {
                     path: String::from("main.cpp"),
                     kind: FileKind::Source,
+                    module: None,
                     contents: String::from("int main() {}\n"),
                 },
                 GeneratedFile {
                     path: String::from("main.hpp"),
                     kind: FileKind::Header,
+                    module: None,
                     contents: header.to_owned(),
                 },
             ],
@@ -685,11 +676,13 @@ mod tests {
                     GeneratedFile {
                         path: String::from("main.cpp"),
                         kind: FileKind::Source,
+                        module: None,
                         contents: String::new(),
                     },
                     GeneratedFile {
                         path: name.to_owned(),
                         kind: FileKind::Source,
+                        module: None,
                         contents: String::new(),
                     },
                 ],
@@ -758,6 +751,7 @@ mod tests {
                 .map(|&(path, kind)| GeneratedFile {
                     path: path.to_owned(),
                     kind,
+                    module: None,
                     contents: String::new(),
                 })
                 .collect(),

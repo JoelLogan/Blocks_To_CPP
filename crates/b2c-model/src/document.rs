@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use b2c_ir::ids::{BlockId, ModuleId, ProjectId, SymbolId};
 use b2c_ir::sast::CppStandard;
+use b2c_ir::types::TypeTerm;
 use serde::{Deserialize, Serialize};
 
 /// The value of the top-level `"format"` key.
@@ -476,8 +477,27 @@ pub enum FieldValue {
     Text(String),
     /// Declares a symbol: `{"sym": "sym_x", "name": "score"}`.
     Decl(SymbolDecl),
-    /// References a symbol: `{"ref": "sym_x"}`.
+    /// References a symbol: `{"ref": "sym_x"}`; in a type field, a user type.
     Ref(SymbolRef),
+    /// A type field holding a template term: `{"std::vector": "int"}`
+    /// (format version 2, types.md §2). A type field holding a name stays
+    /// [`FieldValue::Text`], and one holding a user type
+    /// [`FieldValue::Ref`]. The loader does not produce it yet.
+    Type(TypeTerm),
+}
+
+impl FieldValue {
+    /// The value read as a type term: a name (`Text`), a user type (`Ref`)
+    /// or a template (`Type`); `None` for a checkbox, a declaration or text
+    /// that breaks the name rule.
+    pub fn type_term(&self) -> Option<TypeTerm> {
+        match self {
+            FieldValue::Text(name) => TypeTerm::name(name).ok(),
+            FieldValue::Ref(reference) => Some(TypeTerm::Ref(reference.target.clone())),
+            FieldValue::Type(term) => Some(term.clone()),
+            FieldValue::Bool(_) | FieldValue::Decl(_) => None,
+        }
+    }
 }
 
 /// A symbol declaration in a field.

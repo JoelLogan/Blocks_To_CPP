@@ -13,9 +13,11 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::diag::{Location, Part};
+use crate::headers::ItemHeaders;
 use crate::ids::{BlockId, ModuleId, SymbolId};
+use crate::layout::Layout;
 use crate::text::{CharLit, Comment, Ident, NumLit, StrLit};
-use crate::types::Type;
+use crate::types::{Type, TypeFacts, UserKind, UserType};
 
 /// The C++ language standard a project targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
@@ -76,6 +78,11 @@ pub struct Program {
     pub modules: Vec<Module>,
     /// Every symbol in the program.
     pub symbols: SymbolTable,
+    /// Which files each module gets, what they include and in which order
+    /// their declarations are printed (ADR-0019). Not serialised in the SAST
+    /// JSON: the layout has its own snapshots.
+    #[serde(skip)]
+    pub layout: Layout,
 }
 
 /// One module.
@@ -98,6 +105,15 @@ pub struct Item {
     pub origin: Origin,
     /// The block's comment, emitted above the definition.
     pub comment: Option<Comment>,
+    /// The catalog headers of the blocks lowered into it, by where their
+    /// code is printed (types.md §5.1). Serialised only when not empty.
+    #[serde(skip_serializing_if = "ItemHeaders::is_empty")]
+    pub headers: ItemHeaders,
+    /// Whether the definition goes into its module's header (ADR-0019).
+    /// Always `false` in a single-module project. Serialised only when
+    /// `true`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub shared: bool,
 }
 
 /// Kinds of top-level definitions.
@@ -504,6 +520,34 @@ impl SymbolTable {
     }
 }
 
+/// The program's structs and enums, with the effective flags the analyser
+/// worked out when it declared them.
+impl TypeFacts for SymbolTable {
+    fn user_type(&self, id: &SymbolId) -> Option<UserType<'_>> {
+        let symbol = self.get(id)?;
+        let (kind, comparable, printable) = match &symbol.kind {
+            SymbolKind::Struct {
+                comparable,
+                printable,
+                ..
+            } => (UserKind::Struct, *comparable, *printable),
+            SymbolKind::Enum { .. } => (UserKind::Enum, true, true),
+            SymbolKind::Variable { .. }
+            | SymbolKind::Parameter { .. }
+            | SymbolKind::LoopVariable
+            | SymbolKind::Function { .. }
+            | SymbolKind::Field { .. }
+            | SymbolKind::Enumerator { .. } => return None,
+        };
+        Some(UserType {
+            name: symbol.name.as_str(),
+            kind,
+            comparable,
+            printable,
+        })
+    }
+}
+
 /// A named entity.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Symbol {
@@ -511,7 +555,9 @@ pub struct Symbol {
     pub name: Ident,
     /// What it is.
     pub kind: SymbolKind,
-    /// Its type (for functions: the return type).
+    /// Its type: for a function the return type, for a struct or enum
+    /// [`Type::Named`] of itself, for an enumerator [`Type::Named`] of its
+    /// enum, and for a field its declared type.
     pub ty: Type,
     /// Where it was declared.
     pub origin: Origin,
@@ -538,4 +584,123 @@ pub enum SymbolKind {
         /// Parameter symbols in order.
         params: Vec<SymbolId>,
     },
+    /// A user struct (from milestone M3).
+    Struct {
+        /// Field symbols in order.
+        fields: Vec<SymbolId>,
+        /// Ticked *comparable*, and every field's type is comparable
+        /// (types.md §1.6).
+        comparable: bool,
+        /// Ticked *printable*, and every field's type is printable.
+        printable: bool,
+    },
+    /// A field of a struct.
+    Field {
+        /// The struct.
+        owner: SymbolId,
+    },
+    /// A user enum (`enum class`).
+    Enum {
+        /// Enumerator symbols in order.
+        values: Vec<SymbolId>,
+    },
+    /// A value of an enum.
+    Enumerator {
+        /// The enum.
+        owner: SymbolId,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::TypeClass;
+
+    fn sym(id: &str) -> SymbolId {
+        SymbolId::new(id).unwrap()
+    }
+
+    fn symbol(name: &str, kind: SymbolKind, ty: Type) -> Symbol {
+        Symbol {
+            name: Ident::new(name).unwrap(),
+            kind,
+            ty,
+            origin: Origin::whole(ModuleId::new("m").unwrap(), BlockId::new("b").unwrap()),
+        }
+    }
+
+    #[test]
+    fn the_symbol_table_knows_its_user_types() {
+        let mut table = SymbolTable::default();
+        table.symbols.insert(
+            sym("s_pt"),
+            symbol(
+                "Point",
+                SymbolKind::Struct {
+                    fields: vec![sym("f_x")],
+                    comparable: true,
+                    printable: false,
+                },
+                Type::Named(sym("s_pt")),
+            ),
+        );
+        table.symbols.insert(
+            sym("f_x"),
+            symbol("x", SymbolKind::Field { owner: sym("s_pt") }, Type::Int),
+        );
+        table.symbols.insert(
+            sym("s_col"),
+            symbol(
+                "Color",
+                SymbolKind::Enum {
+                    values: vec![sym("e_red")],
+                },
+                Type::Named(sym("s_col")),
+            ),
+        );
+        table.symbols.insert(
+            sym("v_n"),
+            symbol("n", SymbolKind::Variable { is_const: false }, Type::Int),
+        );
+        let point = table.user_type(&sym("s_pt")).unwrap();
+        assert_eq!(
+            (point.name, point.kind, point.comparable, point.printable),
+            ("Point", UserKind::Struct, true, false)
+        );
+        let color = table.user_type(&sym("s_col")).unwrap();
+        assert_eq!(
+            (color.name, color.kind, color.comparable, color.printable),
+            ("Color", UserKind::Enum, true, true)
+        );
+        for other in ["f_x", "v_n", "missing"] {
+            assert_eq!(table.user_type(&sym(other)), None, "{other}");
+        }
+        assert_eq!(
+            Type::Named(sym("s_pt")).is_in(TypeClass::Printable, &table),
+            Some(false)
+        );
+        assert_eq!(Type::Named(sym("s_col")).label(&table).to_string(), "Color");
+    }
+
+    #[test]
+    fn new_item_keys_are_written_only_when_set() {
+        let mut item = Item {
+            kind: ItemKind::Main(MainDef {
+                body: Block::default(),
+            }),
+            origin: Origin::whole(ModuleId::new("m").unwrap(), BlockId::new("b").unwrap()),
+            comment: None,
+            headers: ItemHeaders::default(),
+            shared: false,
+        };
+        let plain = serde_json::to_value(&item).unwrap();
+        assert_eq!(plain.as_object().unwrap().len(), 3, "{plain}");
+        item.shared = true;
+        item.headers
+            .decl
+            .insert(crate::headers::Header::standard("<string>").unwrap());
+        let json = serde_json::to_value(&item).unwrap();
+        assert_eq!(json["shared"], true);
+        assert_eq!(json["headers"]["decl"], serde_json::json!(["<string>"]));
+    }
 }

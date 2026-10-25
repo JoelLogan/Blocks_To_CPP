@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use b2c_ir::text::is_device_name;
 use b2c_ir::{BlockId, Location, ModuleId, SymbolId};
 
 use super::{Decoder, Origin, Placement, Seg, find};
@@ -48,41 +49,6 @@ const TOKEN_KINDS: [&str; 7] = ["num", "str", "chr", "ref", "op", "kw", "text"];
 const MIN_ZOOM: f64 = 0.1;
 const MAX_ZOOM: f64 = 4.0;
 
-/// Windows device names (spec §8.4.1): a file with such a stem refers to a
-/// device instead of a file, in any folder, with any extension.
-const DEVICE_NAMES: [&str; 30] = [
-    "con",
-    "prn",
-    "aux",
-    "nul",
-    "com0",
-    "com1",
-    "com2",
-    "com3",
-    "com4",
-    "com5",
-    "com6",
-    "com7",
-    "com8",
-    "com9",
-    "lpt0",
-    "lpt1",
-    "lpt2",
-    "lpt3",
-    "lpt4",
-    "lpt5",
-    "lpt6",
-    "lpt7",
-    "lpt8",
-    "lpt9",
-    "com\u{b9}",
-    "com\u{b2}",
-    "com\u{b3}",
-    "lpt\u{b9}",
-    "lpt\u{b2}",
-    "lpt\u{b3}",
-];
-
 /// A number for a message: plain when it is of a familiar size, otherwise in
 /// scientific notation (`1e308` instead of 309 digits).
 fn short_number(value: f64) -> String {
@@ -100,14 +66,6 @@ pub(crate) fn is_module_name(name: &str) -> bool {
     bytes.next().is_some_and(|b| b.is_ascii_lowercase())
         && name.len() <= 64
         && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
-}
-
-/// Whether a module name is a Windows device name (ignoring case, an
-/// extension and trailing spaces or dots, as Windows does).
-pub(crate) fn is_device_name(name: &str) -> bool {
-    let stem = name.split('.').next().unwrap_or_default();
-    let stem = stem.trim_end_matches([' ', '.']).to_lowercase();
-    DEVICE_NAMES.contains(&stem.as_str())
 }
 
 impl<'a> Decoder<'a> {

@@ -89,6 +89,18 @@ pub enum RefKind {
     LoopVariable,
     /// A function (`"function"`).
     Function,
+    /// A user struct (`"struct"`), recorded by its qualified name
+    /// (`::Student`). Clipboard format version 2; the loader does not read
+    /// it yet (types.md §2.4).
+    Struct,
+    /// A user enum (`"enum"`), recorded by its qualified name.
+    Enum,
+    /// A field of a struct (`"field"`), recorded by its owner's qualified
+    /// name and its own (`::Student::mark`).
+    Field,
+    /// A value of an enum (`"enumerator"`), recorded by its owner's
+    /// qualified name and its own (`::Action::Deposit`).
+    Enumerator,
 }
 
 /// Parses and validates an untrusted clipboard payload.

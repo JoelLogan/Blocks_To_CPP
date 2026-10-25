@@ -13,6 +13,11 @@
 //! `editable` or `read_only`), `loopVariable`, or `function` (with `params`,
 //! the parameter symbol IDs in order, and `returns`). Types are `void`,
 //! `bool`, `char`, `int`, `double`, `string` or `error`.
+//!
+//! Milestone M3 adds the kinds `struct` (with `fields`, `comparable` and
+//! `printable`), `field` (with `owner`), `enum` (with `values`) and
+//! `enumerator` (with `owner`), and the key `shared`, written only when it
+//! is `true` (ADR-0019). No stage makes them yet.
 
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +45,11 @@ pub struct SymbolInfo {
     /// The block that declares it (`var.declare`, `control.for_range`, or the
     /// `func.define` of a function and of its parameters).
     pub decl_block: BlockId,
+    /// Whether its definition goes into its module's header (ADR-0019).
+    /// Always `false` in a single-module project; serialised only when
+    /// `true`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub shared: bool,
 }
 
 /// The kind of a [`SymbolInfo`], serialised as its `kind` key next to the
@@ -66,6 +76,32 @@ pub enum SymbolInfoKind {
         /// The type it gives back (`void` for nothing).
         returns: Type,
     },
+    /// A user struct.
+    Struct {
+        /// Its fields' symbols, in order.
+        fields: Vec<SymbolId>,
+        /// Whether it is comparable: ticked, and every field's type is
+        /// comparable (the effective flag of `UserType`).
+        comparable: bool,
+        /// Whether it is printable: ticked, and every field's type is
+        /// printable (the effective flag of `UserType`).
+        printable: bool,
+    },
+    /// A field of a struct.
+    Field {
+        /// The struct.
+        owner: SymbolId,
+    },
+    /// A user enum.
+    Enum {
+        /// Its enumerators' symbols, in order.
+        values: Vec<SymbolId>,
+    },
+    /// A value of an enum.
+    Enumerator {
+        /// The enum.
+        owner: SymbolId,
+    },
 }
 
 impl SymbolInfo {
@@ -83,6 +119,20 @@ impl SymbolInfo {
                 params: params.clone(),
                 returns: symbol.ty.clone(),
             },
+            SymbolKind::Struct {
+                fields,
+                comparable,
+                printable,
+            } => SymbolInfoKind::Struct {
+                fields: fields.clone(),
+                comparable: *comparable,
+                printable: *printable,
+            },
+            SymbolKind::Field { owner } => SymbolInfoKind::Field { owner: owner.clone() },
+            SymbolKind::Enum { values } => SymbolInfoKind::Enum {
+                values: values.clone(),
+            },
+            SymbolKind::Enumerator { owner } => SymbolInfoKind::Enumerator { owner: owner.clone() },
         };
         Self {
             id,
@@ -91,6 +141,7 @@ impl SymbolInfo {
             ty: symbol.ty.clone(),
             module: symbol.origin.module.clone(),
             decl_block: symbol.origin.block.clone(),
+            shared: false,
         }
     }
 }
@@ -252,6 +303,68 @@ mod tests {
         ] {
             assert_eq!(serde_json::to_value(&ty).expect("json"), json!(text));
         }
+    }
+
+    #[test]
+    fn user_type_kinds_have_their_json_shape() {
+        let module = ModuleId::new("mod_main").expect("id");
+        let make = |kind: SymbolKind, ty: Type| {
+            SymbolInfo::new(
+                sym("s1"),
+                "Point",
+                &symbol("Point", kind, ty, "b1", field("NAME")),
+            )
+        };
+        let point = Type::Named(sym("s1"));
+        let structure = make(
+            SymbolKind::Struct {
+                fields: vec![sym("f_x"), sym("f_y")],
+                comparable: true,
+                printable: false,
+            },
+            point.clone(),
+        );
+        assert_eq!(
+            structure.kind,
+            SymbolInfoKind::Struct {
+                fields: vec![sym("f_x"), sym("f_y")],
+                comparable: true,
+                printable: false
+            }
+        );
+        // `Named` types do not serialise until the serialisation pull request,
+        // so the records are checked with an M2 type.
+        let mut record = structure;
+        record.ty = Type::Int;
+        round_trip(
+            &record,
+            &json!({"id": "s1", "name": "Point", "kind": "struct", "fields": ["f_x", "f_y"],
+                    "comparable": true, "printable": false, "type": "int", "module": "mod_main",
+                    "declBlock": "b1"}),
+        );
+        let mut shared = make(SymbolKind::Field { owner: sym("s_pt") }, Type::Double);
+        assert!(!shared.shared);
+        shared.shared = true;
+        round_trip(
+            &shared,
+            &json!({"id": "s1", "name": "Point", "kind": "field", "owner": "s_pt", "type": "double",
+                    "module": "mod_main", "declBlock": "b1", "shared": true}),
+        );
+        let mut colour = make(
+            SymbolKind::Enum {
+                values: vec![sym("e_red")],
+            },
+            point.clone(),
+        );
+        colour.ty = Type::Int;
+        assert_eq!(
+            serde_json::to_value(&colour).expect("json")["values"],
+            json!(["e_red"])
+        );
+        let mut red = make(SymbolKind::Enumerator { owner: sym("s_col") }, point);
+        red.ty = Type::Int;
+        assert_eq!(serde_json::to_value(&red).expect("json")["kind"], "enumerator");
+        assert_eq!(red.module, module);
     }
 
     #[test]

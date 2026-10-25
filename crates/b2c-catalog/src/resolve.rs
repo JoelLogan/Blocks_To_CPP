@@ -799,6 +799,7 @@ fn describe_field(value: &FieldValue) -> String {
         FieldValue::Text(text) => quote(text),
         FieldValue::Decl(_) => String::from("a name declaration"),
         FieldValue::Ref(_) => String::from("a reference to a variable or function"),
+        FieldValue::Type(_) => String::from("a type"),
     }
 }
 

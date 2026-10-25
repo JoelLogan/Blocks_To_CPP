@@ -823,6 +823,118 @@ impl RawCode {
     }
 }
 
+// ---------------------------------------------------------------------------
+// File stems
+// ---------------------------------------------------------------------------
+
+/// Windows device names (spec §8.4.1): a file with such a stem refers to a
+/// device instead of a file, in any folder, with any extension.
+const DEVICE_NAMES: [&str; 30] = [
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    "com0",
+    "com1",
+    "com2",
+    "com3",
+    "com4",
+    "com5",
+    "com6",
+    "com7",
+    "com8",
+    "com9",
+    "lpt0",
+    "lpt1",
+    "lpt2",
+    "lpt3",
+    "lpt4",
+    "lpt5",
+    "lpt6",
+    "lpt7",
+    "lpt8",
+    "lpt9",
+    "com\u{b9}",
+    "com\u{b2}",
+    "com\u{b3}",
+    "lpt\u{b9}",
+    "lpt\u{b2}",
+    "lpt\u{b3}",
+];
+
+/// The one Windows device-name check: `con`, `prn`, `aux`, `nul`,
+/// `com0`–`com9`, `lpt0`–`lpt9` and the superscript-digit forms (`com¹`,
+/// `lpt²`, …), in any case, ignoring an extension and trailing spaces or
+/// dots, as Windows does. The loader refuses such a module name, and the
+/// build never writes a file with such a stem.
+pub fn is_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or_default();
+    let stem = stem.trim_end_matches([' ', '.']).to_lowercase();
+    DEVICE_NAMES.contains(&stem.as_str())
+}
+
+/// A module name as a file stem (ADR-0019): the only way a module name
+/// becomes part of a path. `[a-z][a-z0-9_-]{0,63}`, not a Windows device
+/// name ([`is_device_name`]), and not starting with `b2c` in any case, which
+/// is kept for the files Blocks2Cpp writes itself (`b2c_support.hpp`).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct FileStem(Box<str>);
+
+/// Why a name is not a [`FileStem`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum StemError {
+    /// Not 1 to 64 characters from `a`–`z`, `0`–`9`, `_` and `-` starting
+    /// with a letter.
+    #[error("a file name stem has 1 to 64 characters from a-z, 0-9, _ and -, and starts with a letter")]
+    Pattern,
+    /// A name Windows reserves for a device.
+    #[error("Windows reserves this name for a device")]
+    DeviceName,
+    /// A name starting with `b2c`.
+    #[error("names that start with b2c are kept for the files Blocks2Cpp writes")]
+    Reserved,
+}
+
+impl FileStem {
+    /// Checks a module name.
+    ///
+    /// # Errors
+    /// [`StemError::Pattern`] when it breaks the pattern,
+    /// [`StemError::DeviceName`] for a Windows device name and
+    /// [`StemError::Reserved`] when it starts with `b2c`.
+    pub fn new(name: &str) -> Result<FileStem, StemError> {
+        let mut bytes = name.bytes();
+        let pattern = bytes.next().is_some_and(|b| b.is_ascii_lowercase())
+            && name.len() <= 64
+            && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-');
+        if !pattern {
+            return Err(StemError::Pattern);
+        }
+        if is_device_name(name) {
+            return Err(StemError::DeviceName);
+        }
+        if name
+            .get(..3)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("b2c"))
+        {
+            return Err(StemError::Reserved);
+        }
+        Ok(FileStem(name.into()))
+    }
+
+    /// The stem's text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for FileStem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
@@ -1239,5 +1351,115 @@ mod tests {
             prop_assert_eq!(lit.as_str().parse::<f64>().unwrap(), v);
             prop_assert!(lit.as_str().contains('.') || lit.as_str().contains('e'));
         }
+
+        /// Every accepted stem gives `.cpp` and `.hpp` names that are valid
+        /// file names on Windows and Linux and never those of the files
+        /// Blocks2Cpp writes itself.
+        #[test]
+        fn stems_make_valid_file_names(name in "[a-zA-Z0-9_. -]{0,66}") {
+            if let Ok(stem) = FileStem::new(&name) {
+                prop_assert_eq!(stem.as_str(), name.as_str());
+                for file in [format!("{stem}.cpp"), format!("{stem}.hpp")] {
+                    prop_assert!(!is_device_name(&file));
+                    prop_assert!(file.len() <= 68);
+                    prop_assert!(file.bytes().all(|b| b.is_ascii_lowercase()
+                        || b.is_ascii_digit()
+                        || b"_-.".contains(&b)));
+                    prop_assert!(file != "b2c_support.hpp" && file != "b2c_ide_init.cpp");
+                }
+            }
+        }
+    }
+
+    /// The loader's cases (`b2c-model`'s `decode/workspace.rs`), which now
+    /// calls this check.
+    #[test]
+    fn device_names() {
+        for device in [
+            "con",
+            "CON",
+            "prn",
+            "aux",
+            "nul",
+            "com0",
+            "com9",
+            "lpt0",
+            "lpt9",
+            "com\u{b9}",
+            "COM\u{b2}",
+            "lpt\u{b3}",
+            "con.txt",
+            "nul.cpp",
+            "con ",
+            "aux.",
+            "Nul.tar.gz",
+            "prn. .",
+            "lpt5 .x",
+        ] {
+            assert!(is_device_name(device), "{device}");
+        }
+        for name in [
+            "main",
+            "conx",
+            "com10",
+            "lpt",
+            "com",
+            "console",
+            "nul-1",
+            "com\u{b4}",
+            "",
+            ".con",
+            " con",
+            "co.n",
+        ] {
+            assert!(!is_device_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn file_stems() {
+        for good in [
+            "main",
+            "a",
+            "geo-2d",
+            "x_y",
+            "b2",
+            "xb2c",
+            "a1",
+            "connect",
+            &"a".repeat(64),
+        ] {
+            assert_eq!(
+                FileStem::new(good).map(|s| s.as_str().to_owned()),
+                Ok(good.to_owned())
+            );
+        }
+        for bad in [
+            "",
+            "Main",
+            "1x",
+            "_x",
+            "-x",
+            "a.b",
+            "a b",
+            "a/b",
+            "\u{e4}",
+            "aB",
+            &"a".repeat(65),
+            "con.cpp",
+            "CON",
+        ] {
+            assert_eq!(FileStem::new(bad), Err(StemError::Pattern), "{bad}");
+        }
+        for device in ["con", "nul", "com1", "lpt9", "aux", "prn"] {
+            assert_eq!(FileStem::new(device), Err(StemError::DeviceName), "{device}");
+        }
+        for reserved in ["b2c", "b2c_support", "b2cx", "b2c-1"] {
+            assert_eq!(FileStem::new(reserved), Err(StemError::Reserved), "{reserved}");
+        }
+        let stem = FileStem::new("geometry").unwrap();
+        assert_eq!(stem.to_string(), "geometry");
+        assert_eq!(serde_json::to_string(&stem).unwrap(), "\"geometry\"");
+        assert_ne!(StemError::Pattern.to_string(), StemError::Reserved.to_string());
     }
 }

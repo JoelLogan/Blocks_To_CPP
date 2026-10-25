@@ -4,7 +4,9 @@
 
 use b2c_codegen::{CodegenOptions, generate};
 use b2c_ir::diag::Part;
+use b2c_ir::headers::ItemHeaders;
 use b2c_ir::ids::{BlockId, ModuleId, SymbolId};
+use b2c_ir::layout::Layout;
 use b2c_ir::sast::{
     AskMode, BinaryOp, Block, CompoundOp, CppStandard, Expr, ExprKind, FunctionDef, IfBranch, Item, ItemKind,
     MainDef, Module, Origin, OutputStream, Param, PassMode, PrintSeparator, Program, RangeDirection, Stmt,
@@ -432,15 +434,24 @@ proptest! {
         let (symbols, ids) = symbols();
         let params = vec![Param { symbol: ids[ids.len() - 2].clone(), mode: PassMode::ReadOnly, origin: origin() }];
         let items = vec![
-            Item { kind: ItemKind::Main(MainDef { body: Block { stmts: main_body } }), origin: origin(), comment: None },
+            Item {
+                kind: ItemKind::Main(MainDef { body: Block { stmts: main_body } }),
+                origin: origin(),
+                comment: None,
+                headers: ItemHeaders::default(),
+                shared: false,
+            },
             Item {
                 kind: ItemKind::Function(FunctionDef { symbol: function, params, ret, body: Block { stmts: function_body } }),
                 origin: origin(),
                 comment: None,
+                headers: ItemHeaders::default(),
+                shared: false,
             },
         ];
-        let module = Module { id: ModuleId::new("mod_main").unwrap(), name: String::from("main"), items };
-        let program = Program { standard: CppStandard::Cpp20, modules: vec![module], symbols };
+        let modules = vec![Module { id: ModuleId::new("mod_main").unwrap(), name: String::from("main"), items }];
+        let layout = Layout::flat(&modules, &symbols);
+        let program = Program { standard: CppStandard::Cpp20, modules, symbols, layout };
         let first = generate(&program, &options("Random"));
         assert_style(&first);
         source_map::assert_well_formed(&first);

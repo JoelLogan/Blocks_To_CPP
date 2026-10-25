@@ -3,8 +3,9 @@
 //! [`preview_document`] re-composes the front half of the pipeline exactly
 //! as `b2c_build::run_frontend` does (this crate may not depend on
 //! `b2c-build`): `b2c_model::load`, `b2c_catalog::resolve_report` against
-//! the core catalog, `b2c_lang::analyze_checked` (which does not repeat the
-//! catalog's problems), then `b2c_codegen::generate_with_report`
+//! the core catalog, `b2c_lang::analyze_checked_with` with the catalog's
+//! signatures (which does not repeat the catalog's problems), then
+//! `b2c_codegen::generate_with_report`
 //! with the same [`CodegenOptions`] (the workspace version as the app
 //! version, the "do not edit" banner on, support helpers inline), so an
 //! error-free project previews byte for byte as it builds. Two conformance
@@ -183,6 +184,12 @@ pub struct Preview {
     /// Every symbol of the program, sorted by name, then ID
     /// ([`b2c_lang::Analysis::symbol_infos`]); empty when loading failed.
     pub symbols: Vec<SymbolInfo>,
+    /// The static type of each expression slot the analysis lowered, by
+    /// block ID, then input name ([`b2c_lang::Analysis::slot_types`]).
+    /// Empty, and left out of the JSON, until the analyser records slot
+    /// types (`docs/plans/m3-contracts/slots.md` §4.1).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub slot_types: BTreeMap<BlockId, BTreeMap<String, Type>>,
 }
 
 /// What the editor needs after an edit (06 §6.13): the preview and the
@@ -213,6 +220,7 @@ impl Preview {
             content_hash: None,
             block_types: BTreeMap::new(),
             symbols: Vec::new(),
+            slot_types: BTreeMap::new(),
         }
     }
 }
@@ -290,8 +298,14 @@ pub(crate) fn codegen_options(project_name: &str, options: PreviewOptions) -> Co
 /// Resolves and analyses a loaded document (stages ② to ⑥), returning the
 /// analysis and the catalog's diagnostics.
 pub(crate) fn analyse(loaded: &Document) -> (Document, Vec<Diagnostic>, Analysis) {
-    let resolved = b2c_catalog::resolve_report(loaded, b2c_catalog::core_catalog());
-    let analysis = b2c_lang::analyze_checked(&resolved.document, &resolved.diagnostics, &resolved.unchecked);
+    let catalog = b2c_catalog::core_catalog();
+    let resolved = b2c_catalog::resolve_report(loaded, catalog);
+    let analysis = b2c_lang::analyze_checked_with(
+        &resolved.document,
+        &resolved.diagnostics,
+        &resolved.unchecked,
+        catalog.sigs(),
+    );
     (resolved.document, resolved.diagnostics, analysis)
 }
 
@@ -351,6 +365,7 @@ fn run_loaded(loaded: &Document, options: PreviewOptions) -> PipelineRun {
         content_hash: Some(b2c_model::hex(&content_hash)),
         block_types: analysis.block_types(),
         symbols: analysis.symbol_infos(),
+        slot_types: analysis.slot_types(),
     };
     PipelineRun {
         preview,

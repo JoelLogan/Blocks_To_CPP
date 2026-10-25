@@ -206,8 +206,20 @@ export interface SymbolRef {
   ref: SymbolId;
 }
 
-/** A field value: checkbox, text (numbers are stored as text), declaration or reference. */
-export type FieldValue = boolean | string | SymbolDecl | SymbolRef;
+/**
+ * A static type as files and the wire write it (docs/plans/m3-contracts/types.md §2.1, §3.1): a
+ * name (`"int"`, `"std::string"`), a user type (`{"ref": "sym_x"}`), or a template: an object with
+ * exactly one key, the template's qualified C++ name, whose value is its argument or an array of
+ * its two or more arguments (`{"std::map": ["std::string", {"std::vector": "int"}]}`).
+ */
+export type TypeJson = string | { readonly [name: string]: TypeJson | readonly TypeJson[] };
+
+/**
+ * A field value: checkbox, text (numbers are stored as text), declaration, reference, or, in a
+ * type field, a template type term (format version 2). A type field holding a name stays text,
+ * and one holding a user type a reference; the loader does not produce template terms yet.
+ */
+export type FieldValue = boolean | string | SymbolDecl | SymbolRef | TypeJson;
 
 /** A value input: a nested reporter block or an expression slot (03 §3.4). */
 export type InputValue = { block: BdmBlock } | ExprInput;

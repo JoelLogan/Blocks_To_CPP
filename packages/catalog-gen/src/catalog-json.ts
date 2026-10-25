@@ -22,12 +22,88 @@ export class CatalogJsonError extends Error {
   }
 }
 
-/** The export: `{catalogVersion, blocks, toolbox}`. */
+/**
+ * The export: `{catalogVersion, blocks, toolbox}`.
+ *
+ * The optional keys here and below are the typed signatures of milestone M3
+ * (docs/plans/m3-contracts/types.md §4.5): declared so the generator and the editor build against
+ * one shape, absent from catalog.json until the catalog's definitions declare them, and not read
+ * by {@link readCatalogJson} yet, which refuses keys it does not know.
+ */
 export interface CatalogJson {
   readonly catalogVersion: string;
   readonly blocks: readonly RustBlockDef[];
   readonly toolbox: RustToolbox;
+  /** The types of M3 (types.md §1.1), from `b2c_ir::LibType` and the fundamental types. */
+  readonly types?: readonly RustTypeEntry[];
 }
+
+/** A class of types (`b2c_ir::TypeClass`, types.md §1.3), as catalog files write it. */
+export type RustTypeClass =
+  | 'any'
+  | 'number'
+  | 'integer'
+  | 'bool'
+  | 'text'
+  | 'value'
+  | 'collection'
+  | 'sequence'
+  | 'indexable'
+  | 'insertable'
+  | 'searchable'
+  | 'iterable'
+  | 'keyed'
+  | 'adaptor'
+  | 'listable'
+  | 'sortable'
+  | 'switchable'
+  | 'comparable'
+  | 'printable'
+  | 'struct'
+  | 'enum'
+  | 'input_file'
+  | 'output_file'
+  | 'exception';
+
+/**
+ * A type as files and the wire write it (types.md §3.1): a name, `{"ref": id}`, or a template
+ * object with one key, its qualified C++ name.
+ */
+export type RustTypeJson =
+  string | { readonly [name: string]: RustTypeJson | readonly RustTypeJson[] };
+
+/** One entry of the `types` section: a fundamental type, `std::string` or a library type. */
+export interface RustTypeEntry {
+  /** Its JSON name: `int`, `std::string`, `std::vector`. */
+  readonly name: string;
+  /** How many template arguments it takes (0 for a type written as a name). */
+  readonly arity: number;
+  /** Its friendly label, with `%1` and `%2` for the arguments' labels (`list of %1`). */
+  readonly label: string;
+  /** The standard header that declares it, if any. */
+  readonly header: string | null;
+}
+
+/**
+ * A type pattern as catalog.json writes it (types.md §4.2, §4.5), tagged by `kind`: `any` and
+ * `number` (M2), a fixed type, a type variable, a library template over patterns, a type function,
+ * and the forms that take a part's type (`field:`, `symbol`, `param:`, `member:`, `result`).
+ */
+export type RustPattern =
+  | { readonly kind: 'any' }
+  | { readonly kind: 'number' }
+  | { readonly kind: 'type'; readonly type: RustTypeJson }
+  | { readonly kind: 'var'; readonly name: string }
+  | { readonly kind: 'lib'; readonly name: string; readonly args: readonly RustPattern[] }
+  | { readonly kind: 'fn'; readonly fn: 'elem' | 'index' | 'key'; readonly of: RustPattern }
+  | { readonly kind: 'field'; readonly field: string }
+  | { readonly kind: 'symbol'; readonly field: string | null }
+  | { readonly kind: 'param'; readonly field: string }
+  | { readonly kind: 'member'; readonly field: string }
+  | { readonly kind: 'result' };
+
+/** A part of a block that has a pattern, in catalog order (`b2c_ir::sig::PartName`). */
+export type RustPartName = { readonly field: string } | { readonly input: string };
 
 /** `b2c_catalog::BlockDef`. */
 export interface RustBlockDef {
@@ -44,6 +120,16 @@ export interface RustBlockDef {
   readonly input: readonly RustInputDef[];
   readonly statement: readonly RustStatementDef[];
   readonly extra: readonly RustExtraDef[];
+  /** Each type variable and its class (`where`). */
+  readonly typeVars?: Readonly<Record<string, RustTypeClass>>;
+  /** The parts that have a pattern, in catalog order: the order they bind in. */
+  readonly order?: readonly RustPartName[];
+  /** The output's variable when no part binds it: the block takes its type from its place. */
+  readonly placeVar?: string | null;
+  /** `symbol_ref` fields that list the members of the user type bound to a variable. */
+  readonly members?: Readonly<Record<string, string>>;
+  /** The headers a dropdown option adds, by field, then option. */
+  readonly optionHeaders?: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
 }
 
 /** `b2c_catalog::FieldDef`. */
@@ -53,6 +139,8 @@ export interface RustFieldDef {
   readonly options: readonly (readonly [string, string])[];
   readonly types: readonly string[];
   readonly default: string | boolean | null;
+  /** The field's pattern (`type`), on `type`, `symbol_ref` and `symbol_decl` fields. */
+  readonly type?: RustPattern;
 }
 
 /** `b2c_catalog::Repeat`. */
@@ -68,6 +156,10 @@ export interface RustInputDef {
   readonly optional: boolean;
   readonly repeat: RustRepeat | null;
   readonly default: readonly RustToken[];
+  /** The input's pattern (`type`), for each part of a repeated input. */
+  readonly type?: RustPattern;
+  /** `assign = true`: the value is assigned, not used to initialise; it never binds. */
+  readonly assign?: boolean;
 }
 
 /** A token table such as `{"num": "0"}`. */
@@ -94,6 +186,8 @@ export interface RustExtraDef {
   readonly max: number;
   readonly default: string | boolean | null;
   readonly types: readonly string[];
+  /** The class of types a parameter row accepts besides its `types` (`type_class`). */
+  readonly typeClass?: RustTypeClass;
 }
 
 /** `b2c_catalog::Toolbox`. */

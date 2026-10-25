@@ -362,21 +362,10 @@ pub struct Repeat {
     pub plus: u32,
 }
 
-/// Type classes for inputs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TypeClass {
-    /// Any non-void value.
-    Any,
-    /// `int`, `double` or `char`.
-    Number,
-    /// `int` (or `char`).
-    Integer,
-    /// `bool`.
-    Bool,
-    /// `std::string` or `char`.
-    Text,
-}
+/// Type classes for an input's `check` (and, from milestone M3, a
+/// signature's `where`): defined in `b2c-ir` with the type rules
+/// (`docs/plans/m3-contracts/types.md` §1.3).
+pub use b2c_ir::types::TypeClass;
 
 /// A mutator-state key definition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

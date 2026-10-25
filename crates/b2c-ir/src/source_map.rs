@@ -32,6 +32,11 @@ pub struct GeneratedFile {
     pub path: String,
     /// Source or header.
     pub kind: FileKind,
+    /// The module the file belongs to; `None` for `b2c_support.hpp`, and in
+    /// every project until code generation sets it (ADR-0019). Serialised
+    /// only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub module: Option<ModuleId>,
     /// File contents (UTF-8, `\n` line endings, ends with one newline).
     pub contents: String,
 }
@@ -50,6 +55,10 @@ pub struct SourceMap {
 pub struct FileMap {
     /// Path as in [`GeneratedFile::path`].
     pub path: String,
+    /// The module of the file, as in [`GeneratedFile::module`]. Serialised
+    /// only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub module: Option<ModuleId>,
     /// Ranges, sorted by start position.
     pub ranges: Vec<MappedRange>,
 }
@@ -134,6 +143,7 @@ mod tests {
             version: 1,
             files: vec![FileMap {
                 path: "main.cpp".into(),
+                module: None,
                 ranges: vec![
                     range(3, 1, 10, 2, "outer"),
                     range(4, 5, 4, 20, "before"),
@@ -164,5 +174,41 @@ mod tests {
         assert_eq!(on_line(7), Some("multi_inner"));
         assert_eq!(on_line(9), Some("outer"));
         assert_eq!(on_line(11), None);
+    }
+
+    #[test]
+    fn module_keys_are_written_only_when_set() {
+        let mut file = GeneratedFile {
+            path: "main.cpp".into(),
+            kind: FileKind::Source,
+            module: None,
+            contents: "int main() {}\n".into(),
+        };
+        assert_eq!(
+            serde_json::to_string(&file).unwrap(),
+            r#"{"path":"main.cpp","kind":"source","contents":"int main() {}\n"}"#
+        );
+        file.module = Some(ModuleId::new("mod_geo").unwrap());
+        let json = serde_json::to_string(&file).unwrap();
+        assert_eq!(
+            json,
+            r#"{"path":"main.cpp","kind":"source","module":"mod_geo","contents":"int main() {}\n"}"#
+        );
+        assert_eq!(serde_json::from_str::<GeneratedFile>(&json).unwrap(), file);
+        let map = FileMap {
+            path: "geo.hpp".into(),
+            module: None,
+            ranges: Vec::new(),
+        };
+        assert_eq!(
+            serde_json::to_string(&map).unwrap(),
+            r#"{"path":"geo.hpp","ranges":[]}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<FileMap>(r#"{"path":"geo.hpp","module":"m","ranges":[]}"#)
+                .unwrap()
+                .module,
+            Some(ModuleId::new("m").unwrap())
+        );
     }
 }

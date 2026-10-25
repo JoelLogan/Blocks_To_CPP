@@ -39,6 +39,7 @@ use std::time::Instant;
 use b2c_ipc::dto::{BuildConfig, BuildStage};
 use b2c_ir::diag::Related;
 use b2c_ir::source_map::{GeneratedProject, Position, SourceMap};
+use b2c_ir::text::is_device_name;
 use b2c_ir::{DiagSource, Diagnostic, Location, Severity};
 use b2c_model::{BuildConfiguration, Document};
 use b2c_process::CancelToken;
@@ -50,7 +51,7 @@ use b2c_toolchain::probe::{ProbeError, ProbeOptions, Toolchain, probe};
 use b2c_toolchain::target::Platform;
 use sha2::{Digest as _, Sha256};
 
-use crate::build_dir::{BuildDir, BuildDirError, is_device_name, write_generated_tracked, write_if_changed};
+use crate::build_dir::{BuildDir, BuildDirError, write_generated_tracked, write_if_changed};
 use crate::frontend::{FrontendOptions, run_frontend_cancellable};
 use crate::ide;
 use crate::manifest::{self, ManifestInputs, ManifestStep, ManifestToolchain, StepKind};
@@ -1698,6 +1699,7 @@ mod tests {
             version: 1,
             files: vec![FileMap {
                 path: String::from("main.cpp"),
+                module: None,
                 ranges: vec![
                     range(7, 5, 40, "b003"),
                     range(7, 18, 30, "b004"),
@@ -1892,6 +1894,7 @@ mod tests {
             version: 1,
             files: vec![FileMap {
                 path: String::from("main.cpp"),
+                module: None,
                 ranges: (1..=40)
                     .map(|line| MappedRange {
                         start: Position { line, column: 1 },

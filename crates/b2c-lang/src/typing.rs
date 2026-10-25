@@ -7,7 +7,7 @@
 
 use b2c_ir::sast::Expr;
 use b2c_ir::sast::{BinaryOp, ExprKind};
-use b2c_ir::types::Type;
+use b2c_ir::types::{Type, TypeClass, TypeFacts};
 
 /// How a value of one type converts to another when it initialises a
 /// variable, is passed as an argument or is returned (spec §3.5.3).
@@ -105,6 +105,50 @@ pub fn conversion(from: &Type, to: &Type) -> Conversion {
         (T::Int | T::Char, T::Double) | (T::Char, T::Int) => Conversion::Widening,
         (T::Double, T::Int | T::Char) | (T::Int, T::Char) => Conversion::Narrowing,
         _ => Conversion::Invalid,
+    }
+}
+
+/// [`conversion`] where a value is assigned (a catalog input with
+/// `assign = true`, as in `set`): also `char` to `std::string`, as
+/// [`Conversion::Widening`] (`s = 'a';` compiles, `std::string s = 'a';`
+/// does not).
+///
+/// ```
+/// use b2c_ir::Type;
+/// use b2c_lang::{Conversion, assignment};
+///
+/// assert_eq!(assignment(&Type::Char, &Type::String), Conversion::Widening);
+/// assert_eq!(assignment(&Type::Int, &Type::String), Conversion::Invalid);
+/// ```
+pub fn assignment(from: &Type, to: &Type) -> Conversion {
+    match (from, to) {
+        (Type::Char, Type::String) => Conversion::Widening,
+        _ => conversion(from, to),
+    }
+}
+
+/// Whether an input whose `check` is `class` accepts a value of type `ty`
+/// (types.md §1.3): `bool`, `integer` and `number` by conversion (to `bool`,
+/// `int` and `double`, without [`Conversion::Invalid`]), so a `double` count
+/// stays the warning `B2C-W0518`; `any` every type but `void`; the other
+/// classes by membership ([`Type::is_in`]). `None` when it is not known.
+///
+/// ```
+/// use b2c_ir::Type;
+/// use b2c_ir::types::{NoFacts, TypeClass};
+/// use b2c_lang::check_accepts;
+///
+/// assert_eq!(check_accepts(TypeClass::Integer, &Type::Double, &NoFacts), Some(true));
+/// assert_eq!(check_accepts(TypeClass::Text, &Type::Int, &NoFacts), Some(false));
+/// ```
+pub fn check_accepts(class: TypeClass, ty: &Type, facts: &dyn TypeFacts) -> Option<bool> {
+    let converts = |to: &Type| !conversion(ty, to).is_error();
+    match class {
+        TypeClass::Bool => Some(converts(&Type::Bool)),
+        TypeClass::Integer => Some(converts(&Type::Int)),
+        TypeClass::Number => Some(converts(&Type::Double)),
+        TypeClass::Any => Some(*ty != Type::Void),
+        _ => ty.is_in(class, facts),
     }
 }
 
@@ -292,6 +336,48 @@ mod tests {
         assert!(is_integral(&Type::Bool) && !is_integral(&Type::Double));
         assert!(is_scalar(&Type::Char) && !is_scalar(&Type::String));
         assert_eq!(arithmetic_result(&Type::Char, &Type::Char), Type::Int);
+    }
+
+    #[test]
+    fn assignment_adds_char_to_text() {
+        assert_eq!(assignment(&Type::Char, &Type::String), Conversion::Widening);
+        for from in [Type::Int, Type::Double, Type::Bool, Type::Void] {
+            assert_eq!(assignment(&from, &Type::String), conversion(&from, &Type::String));
+        }
+        assert_eq!(assignment(&Type::String, &Type::Char), Conversion::Invalid);
+        assert_eq!(assignment(&Type::Double, &Type::Int), Conversion::Narrowing);
+    }
+
+    #[test]
+    fn checks_accept_by_conversion_or_membership() {
+        use b2c_ir::types::NoFacts;
+        let gone = Type::Named(b2c_ir::ids::SymbolId::new("sym_gone").expect("id"));
+        let list = Type::lib(b2c_ir::types::LibType::Vector, vec![Type::Int]).expect("type");
+        let cases = [
+            (TypeClass::Integer, Type::Double, Some(true)),
+            (TypeClass::Integer, Type::Bool, Some(true)),
+            (TypeClass::Integer, Type::String, Some(false)),
+            (TypeClass::Number, Type::Char, Some(true)),
+            (TypeClass::Number, list.clone(), Some(false)),
+            (TypeClass::Bool, Type::Int, Some(true)),
+            (TypeClass::Bool, Type::Void, Some(false)),
+            (TypeClass::Any, Type::Void, Some(false)),
+            (TypeClass::Any, gone.clone(), Some(true)),
+            (TypeClass::Text, Type::Char, Some(true)),
+            (TypeClass::Text, Type::Int, Some(false)),
+            (TypeClass::Collection, list, Some(true)),
+            (TypeClass::Collection, gone.clone(), None),
+            (TypeClass::Number, gone, Some(false)),
+            (TypeClass::Text, Type::Error, Some(true)),
+            (TypeClass::Integer, Type::Error, Some(true)),
+        ];
+        for (class, ty, expected) in cases {
+            assert_eq!(
+                check_accepts(class, &ty, &NoFacts),
+                expected,
+                "{ty:?} in {class:?}"
+            );
+        }
     }
 
     #[test]

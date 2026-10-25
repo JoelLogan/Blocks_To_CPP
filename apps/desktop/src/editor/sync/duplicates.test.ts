@@ -132,7 +132,7 @@ describe.skipIf(core === null)('duplicating blocks', () => {
     const refs: string[] = [];
     forEachNode(copyNode === undefined ? [] : [copyNode], (node) => {
       for (const value of Object.values(node.fields ?? {})) {
-        if (typeof value === 'object' && 'ref' in value) {
+        if (typeof value === 'object' && 'ref' in value && typeof value.ref === 'string') {
           refs.push(value.ref);
         }
       }

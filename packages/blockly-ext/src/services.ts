@@ -15,6 +15,7 @@ import type * as Blockly from 'blockly/core';
 
 import { setCheckerTypeOracle } from './checker/oracle';
 import { configureMutators } from './mutators/hooks';
+import type { StaticType as TypedStaticType, TypeFactsTs } from './types';
 
 /** How a parameter is passed (`b2c_ir::PassMode`). */
 export type PassMode = 'copy' | 'editable' | 'read_only';
@@ -75,10 +76,27 @@ export interface SymbolProvider {
   functionParams?(blockId: string, funcId: string): readonly string[] | null;
 }
 
-/** Static types from the latest analysis. */
+/**
+ * Static types from the latest analysis.
+ *
+ * The four optional methods are typed slots' (ADR-0018, docs/plans/m3-contracts/slots.md §4.3);
+ * they use the type objects of `./types` and become required when the editor's oracle implements
+ * them and the connection checker types slots.
+ */
 export interface TypeOracle {
   /** The type of the value a reporter or predicate block gives, or null when unknown. */
   outputTypeOf(block: Blockly.Block): StaticType | null;
+  /** The analysis's type of an expression slot (the preview's `slotTypes`), or null. */
+  slotTypeOf?(blockId: string, input: string): TypedStaticType | null;
+  /** A symbol of the latest analysis, or null. */
+  symbol?(symId: string): SymbolInfo | null;
+  /**
+   * Whether the symbol is visible at the block (and input): the scope index, or for a block the
+   * index lacks, its place. Null when not known.
+   */
+  visibleAt?(symId: string, block: Blockly.Block, input: string | null): boolean | null;
+  /** What the type rules need to know about user types, from the latest analysis. */
+  facts?(): TypeFactsTs;
 }
 
 /**

@@ -5,9 +5,12 @@
  */
 import type { BdmBlock, BdmComment, FieldValue, JsonValue } from '@blocks2cpp/b2c-core-wasm';
 import {
+  type B2cFieldValue,
   type BlockDefJson,
   hasB2cMutator,
   isManuallyDisabled,
+  isSymbolDeclValue,
+  isSymbolRefValue,
   readB2cField,
   setManuallyDisabled,
   writeB2cField,
@@ -128,7 +131,7 @@ export function writeOwnData(block: Blockly.Block, def: BlockDefJson, node: BdmB
   }
   for (const [name, value] of Object.entries(node.fields ?? {})) {
     const field = fieldDef(def, name) === null ? null : block.getField(name);
-    if (field === null || !writeB2cField(field, value)) {
+    if (field === null || !isB2cFieldValue(value) || !writeB2cField(field, value)) {
       return false;
     }
   }
@@ -155,4 +158,18 @@ export function writeFlagsAndComment(block: Blockly.Block, node: BdmBlock): void
     setManuallyDisabled(block, true);
   }
   writeComment(block, node.comment);
+}
+
+/**
+ * Whether a field value is one a Blockly field holds. A template type term (format version 2,
+ * docs/plans/m3-contracts/types.md §2.1) is not yet: the type field's key for it comes with the
+ * editor's type package, and the loader does not produce one before.
+ */
+function isB2cFieldValue(value: FieldValue): value is B2cFieldValue {
+  return (
+    typeof value === 'boolean' ||
+    typeof value === 'string' ||
+    isSymbolDeclValue(value) ||
+    isSymbolRefValue(value)
+  );
 }

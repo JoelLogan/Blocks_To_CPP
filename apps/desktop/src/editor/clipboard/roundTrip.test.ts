@@ -344,7 +344,7 @@ describe.skipIf(!WITH_CORE)('many duplicates', () => {
       forEachNode(after.modules[0]?.workspace.blocks ?? [], (node) => {
         ids.push(node.id);
         const name = node.fields?.['NAME'];
-        if (typeof name === 'object' && 'sym' in name) {
+        if (typeof name === 'object' && 'sym' in name && typeof name.sym === 'string') {
           syms.push(name.sym);
         }
       });

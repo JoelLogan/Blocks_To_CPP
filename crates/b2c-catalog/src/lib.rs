@@ -60,6 +60,7 @@ mod upgrade;
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
+use b2c_ir::sig::SigTable;
 use b2c_ir::{BlockId, Diagnostic};
 use b2c_model::{Clipboard, Document};
 
@@ -93,6 +94,19 @@ pub struct Catalog {
     pub version: String,
     /// Block definitions by ID.
     pub blocks: std::collections::BTreeMap<String, BlockDef>,
+}
+
+impl Catalog {
+    /// The blocks' type signatures (ADR-0017 §5), which `b2c_lang`'s
+    /// `analyze_with` and `analyze_checked_with` read. Empty until the
+    /// catalog's definitions declare `where` and `type`
+    /// (`docs/plans/m3-contracts/types.md` §8.2, package 2), so every block
+    /// keeps its M2 typing rules.
+    #[allow(clippy::unused_self, reason = "built from the definitions with package 2")]
+    pub fn sigs(&self) -> &SigTable {
+        static EMPTY: SigTable = SigTable::empty();
+        &EMPTY
+    }
 }
 
 /// The built-in core catalog, parsed and checked on first use.

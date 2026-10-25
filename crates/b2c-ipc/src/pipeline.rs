@@ -39,6 +39,11 @@ pub struct GeneratedFile {
     pub path: String,
     /// Source or header.
     pub kind: FileKind,
+    /// The module the file belongs to (ADR-0019); omitted for
+    /// `b2c_support.hpp` and while code generation does not set it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub module: Option<String>,
     /// The contents: UTF-8 text with `\n` line endings, ending with one newline.
     pub contents: String,
 }
@@ -61,6 +66,11 @@ pub struct SourceMap {
 pub struct FileMap {
     /// The path, as in [`GeneratedFile::path`].
     pub path: String,
+    /// The module of the file, as in [`GeneratedFile::module`]; omitted when
+    /// not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub module: Option<String>,
     /// The ranges, sorted by start position.
     pub ranges: Vec<MappedRange>,
 }
@@ -150,6 +160,10 @@ pub struct SymbolInfo {
     /// The block that declares it (`var.declare`, `control.for_range`, or the
     /// `func.define` of a function and of its parameters).
     pub decl_block: String,
+    /// Whether its definition goes into its module's header (ADR-0019);
+    /// omitted when false, as it always is in a single-module project.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub shared: bool,
 }
 
 /// The kind of a [`SymbolInfo`], with the details of that kind.
@@ -192,6 +206,7 @@ impl From<&b2c_ir::source_map::GeneratedFile> for GeneratedFile {
         Self {
             path: file.path.clone(),
             kind: file.kind.into(),
+            module: file.module.as_ref().map(|module| module.as_str().to_owned()),
             contents: file.contents.clone(),
         }
     }
@@ -210,6 +225,7 @@ impl From<&b2c_ir::source_map::FileMap> for FileMap {
     fn from(file: &b2c_ir::source_map::FileMap) -> Self {
         Self {
             path: file.path.clone(),
+            module: file.module.as_ref().map(|module| module.as_str().to_owned()),
             ranges: file.ranges.iter().map(MappedRange::from).collect(),
         }
     }
@@ -236,6 +252,8 @@ impl From<&b2c_ir::source_map::MappedRange> for MappedRange {
     }
 }
 
+/// A library or user type, which no stage produces yet, becomes `error`
+/// until `StaticType` gives way to the type's term (types.md §3.1).
 impl From<&b2c_ir::Type> for StaticType {
     fn from(ty: &b2c_ir::Type) -> Self {
         match ty {
@@ -245,7 +263,7 @@ impl From<&b2c_ir::Type> for StaticType {
             b2c_ir::Type::Int => Self::Int,
             b2c_ir::Type::Double => Self::Double,
             b2c_ir::Type::String => Self::String,
-            b2c_ir::Type::Error => Self::Error,
+            b2c_ir::Type::Lib(_) | b2c_ir::Type::Named(_) | b2c_ir::Type::Error => Self::Error,
         }
     }
 }
@@ -270,6 +288,14 @@ impl From<&b2c_ir::SymbolInfoKind> for SymbolInfoKind {
                 params: params.iter().map(|p| p.as_str().to_owned()).collect(),
                 returns: returns.into(),
             },
+            // The kinds of user types, which no stage produces yet, have no
+            // copy here until the wire carries them (types.md §8.2): a field
+            // or enumerator reads as a variable, constant for an enumerator,
+            // and a struct or enum as a constant.
+            b2c_ir::SymbolInfoKind::Field { .. } => Self::Variable { is_const: false },
+            b2c_ir::SymbolInfoKind::Struct { .. }
+            | b2c_ir::SymbolInfoKind::Enum { .. }
+            | b2c_ir::SymbolInfoKind::Enumerator { .. } => Self::Variable { is_const: true },
         }
     }
 }
@@ -283,6 +309,7 @@ impl From<&b2c_ir::SymbolInfo> for SymbolInfo {
             ty: StaticType::from(&info.ty),
             module: info.module.as_str().to_owned(),
             decl_block: info.decl_block.as_str().to_owned(),
+            shared: info.shared,
         }
     }
 }

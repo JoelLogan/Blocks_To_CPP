@@ -66,6 +66,7 @@ export type {
   SymbolId,
   SymbolRef,
   TokenJson,
+  TypeJson,
 } from './bdm';
 export { CURRENT_FORMAT_VERSION, FORMAT_TAG } from './bdm';
 export { MAX_DOCUMENT_BYTES } from './core';

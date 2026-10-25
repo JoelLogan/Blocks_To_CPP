@@ -193,12 +193,14 @@ mod tests {
             vec![GeneratedFile {
                 path: String::from("main.cpp"),
                 kind: FileKind::Source,
+                module: None,
                 contents: contents.to_owned(),
             }],
             SourceMap {
                 version: 1,
                 files: vec![FileMap {
                     path: String::from("main.cpp"),
+                    module: None,
                     ranges,
                 }],
             },

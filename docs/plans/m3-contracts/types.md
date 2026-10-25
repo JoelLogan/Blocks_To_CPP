@@ -762,7 +762,8 @@ impl TypeEnv {
     pub fn bind_place(&mut self, place: Option<&Type>, facts: &dyn TypeFacts) -> Fit;
     /// `index` is the part's index for `param:` and `member:`.
     pub fn resolve(&self, pattern: &TypePattern, parts: &dyn BlockParts, index: Option<usize>) -> Resolution;
-    pub fn get(&self, var: &TypeVar) -> Option<(&Type, &PartName)>;
+    /// The binder is `None` when the place bound the variable (a place has no part name).
+    pub fn get(&self, var: &TypeVar) -> Option<(&Type, Option<&PartName>)>;
 }
 ```
 
@@ -803,7 +804,7 @@ impl Header {
     /// A lookup in the closed table of the C++ standard library's headers
     /// (C++17 to C++26, the `<cxxx>` forms only), each with the first standard that has it.
     pub fn standard(name: &str) -> Option<Header>;
-    pub fn since(self) -> Standard;
+    pub fn since(self) -> CppStandard;
     pub fn as_str(self) -> &'static str;
 }
 

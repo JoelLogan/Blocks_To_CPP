@@ -67,7 +67,8 @@ impl Layout {
     /// One `.cpp` per module, no header, no includes; `source_order` lists
     /// the function items as codegen sorts them today (by name, then
     /// signature, then block ID). What W1 fills in.
-    pub fn flat(modules: &[Module]) -> Layout;
+    /// Takes the symbol table for the names and parameter types codegen's sort order needs.
+    pub fn flat(modules: &[Module], symbols: &SymbolTable) -> Layout;
     /// More than one module.
     pub fn multi_module(&self) -> bool;
 }
@@ -103,7 +104,7 @@ pub struct FileMap { /* path, */ pub module: Option<ModuleId>, /* ranges */ }
 pub struct SymbolInfo { /* id, name, kind, ty, module, decl_block, */ pub shared: bool }
 ```
 
-* `b2c-lang` fills `layout: Layout::flat(&modules)` in W1. The struct
+* `b2c-lang` fills `layout: Layout::flat(&modules, &symbols)` in W1. The struct
   literals that build a `Program`, `Item`, `GeneratedFile`, `FileMap` or
   `SymbolInfo` by hand (codegen's tests in `crates/b2c-codegen/tests/it/`,
   `crates/b2c-lang/src/lower/mod.rs`, `src/query.rs`, `tests/scope.rs`,

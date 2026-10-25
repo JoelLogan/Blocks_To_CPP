@@ -82,12 +82,15 @@ fn parts() -> Vec<Part> {
 #[test]
 fn generated_files() {
     for kind in [ir::FileKind::Source, ir::FileKind::Header] {
-        let file = ir::GeneratedFile {
-            path: "geo/b2c_support.hpp".into(),
-            kind,
-            contents: "// “Quoted” <b>text</b> \u{202e} \\ \"\n#include <string>\n\tint x = 1;\n".into(),
-        };
-        assert_identical::<_, GeneratedFile>(&file);
+        for module in [None, Some(module())] {
+            let file = ir::GeneratedFile {
+                path: "geo/b2c_support.hpp".into(),
+                kind,
+                module,
+                contents: "// “Quoted” <b>text</b> \u{202e} \\ \"\n#include <string>\n\tint x = 1;\n".into(),
+            };
+            assert_identical::<_, GeneratedFile>(&file);
+        }
     }
     assert_eq!(FileKind::VALUES, ["source", "header"]);
 }
@@ -119,10 +122,12 @@ fn source_maps() {
         files: vec![
             FileMap {
                 path: "main.cpp".into(),
+                module: None,
                 ranges,
             },
             FileMap {
                 path: "empty.hpp".into(),
+                module: Some(module()),
                 ranges: Vec::new(),
             },
         ],
@@ -174,15 +179,18 @@ fn symbol_infos() {
     kinds.extend(MODES.map(|mode| b2c_ir::SymbolInfoKind::Parameter { mode }));
     for kind in kinds {
         for ty in &TYPES {
-            let info = b2c_ir::SymbolInfo {
-                id: sym("s_guess"),
-                name: "my “score” <b>".into(),
-                kind: kind.clone(),
-                ty: ty.clone(),
-                module: module(),
-                decl_block: block("b003"),
-            };
-            assert_identical::<_, SymbolInfo>(&info);
+            for shared in [false, true] {
+                let info = b2c_ir::SymbolInfo {
+                    id: sym("s_guess"),
+                    name: "my “score” <b>".into(),
+                    kind: kind.clone(),
+                    ty: ty.clone(),
+                    module: module(),
+                    decl_block: block("b003"),
+                    shared,
+                };
+                assert_identical::<_, SymbolInfo>(&info);
+            }
         }
     }
 }
@@ -197,6 +205,7 @@ fn the_spec_example() {
         ty: StaticType::Int,
         module: "mod_main".into(),
         decl_block: "b003".into(),
+        shared: false,
     };
     assert_eq!(
         serde_json::to_string(&info).unwrap(),
@@ -248,13 +257,25 @@ fn range() -> impl Strategy<Value = ir::MappedRange> {
 }
 
 fn source_map() -> impl Strategy<Value = ir::SourceMap> {
-    let file = (text(), vec(range(), 0..4)).prop_map(|(path, ranges)| FileMap { path, ranges });
+    let file =
+        (text(), prop::option::of(id()), vec(range(), 0..4)).prop_map(|(path, module, ranges)| FileMap {
+            path,
+            module: module.map(|m| ModuleId::new(&m).unwrap()),
+            ranges,
+        });
     (any::<u32>(), vec(file, 0..3)).prop_map(|(version, files)| ir::SourceMap { version, files })
 }
 
 fn generated_file() -> impl Strategy<Value = ir::GeneratedFile> {
     let kind = prop_oneof![Just(ir::FileKind::Source), Just(ir::FileKind::Header)];
-    (text(), kind, text()).prop_map(|(path, kind, contents)| ir::GeneratedFile { path, kind, contents })
+    (text(), kind, prop::option::of(id()), text()).prop_map(|(path, kind, module, contents)| {
+        ir::GeneratedFile {
+            path,
+            kind,
+            module: module.map(|m| ModuleId::new(&m).unwrap()),
+            contents,
+        }
+    })
 }
 
 fn symbol_info() -> impl Strategy<Value = b2c_ir::SymbolInfo> {
@@ -267,13 +288,16 @@ fn symbol_info() -> impl Strategy<Value = b2c_ir::SymbolInfo> {
             returns,
         }),
     ];
-    (id(), text(), kind, ty(), id(), id()).prop_map(|(s, name, kind, ty, m, b)| b2c_ir::SymbolInfo {
-        id: sym(&s),
-        name,
-        kind,
-        ty,
-        module: ModuleId::new(&m).unwrap(),
-        decl_block: block(&b),
+    (id(), text(), kind, ty(), id(), id(), any::<bool>()).prop_map(|(s, name, kind, ty, m, b, shared)| {
+        b2c_ir::SymbolInfo {
+            id: sym(&s),
+            name,
+            kind,
+            ty,
+            module: ModuleId::new(&m).unwrap(),
+            decl_block: block(&b),
+            shared,
+        }
     })
 }
 

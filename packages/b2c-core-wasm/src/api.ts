@@ -13,7 +13,7 @@ import type {
   SymbolInfo,
 } from '@blocks2cpp/ipc-types';
 
-import type { BdmBlock, BdmDocument } from './bdm';
+import type { BdmBlock, BdmDocument, TypeJson } from './bdm';
 
 /** What `CoreWasm.version()` reports. */
 export interface CoreVersion {
@@ -90,6 +90,11 @@ export interface PreviewResult {
   blockTypes: Record<string, StaticType>;
   /** Every symbol of the program, sorted by name, then ID; empty when loading failed. */
   symbols: SymbolInfo[];
+  /**
+   * The static type of each expression slot the analysis lowered, by block ID, then input name
+   * (ADR-0018, docs/plans/m3-contracts/slots.md §4.1). Absent until the core records slot types.
+   */
+  slotTypes?: Record<string, Record<string, TypeJson>>;
 }
 
 /**

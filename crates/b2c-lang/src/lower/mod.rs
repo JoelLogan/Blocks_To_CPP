@@ -14,7 +14,9 @@ mod stmt;
 use std::collections::BTreeMap;
 
 use b2c_ir::diag::{Location, Part};
+use b2c_ir::headers::ItemHeaders;
 use b2c_ir::ids::{BlockId, ModuleId, SymbolId};
+use b2c_ir::layout::Layout;
 use b2c_ir::sast::{
     FunctionDef, Item, ItemKind, MainDef, Module, Origin, Param, PassMode, Program, Symbol, SymbolKind,
     SymbolTable,
@@ -55,11 +57,13 @@ pub(crate) fn run(document: &Document) -> Analysis {
             standard,
             modules: Vec::new(),
             symbols: SymbolTable::default(),
+            layout: Layout::default(),
         };
         return Analysis {
             program,
             diagnostics: diags.list,
             index: ScopeIndex::default(),
+            slot_types: BTreeMap::new(),
         };
     };
     let mut lowerer = Lowerer::new(document, first.id.clone());
@@ -73,14 +77,18 @@ pub(crate) fn run(document: &Document) -> Analysis {
         .iter()
         .map(|(sym, sig)| (sig.module, sig.name.as_str(), sym));
     lowerer.index.finish(trail, document.modules.len(), functions);
+    // One `.cpp` per module until shared definitions arrive (ADR-0019).
+    let layout = Layout::flat(&modules, &lowerer.symbols);
     Analysis {
         program: Program {
             standard,
             modules,
             symbols: lowerer.symbols,
+            layout,
         },
         diagnostics: lowerer.diags.list,
         index: lowerer.index,
+        slot_types: BTreeMap::new(),
     }
 }
 
@@ -403,6 +411,8 @@ impl<'d> Lowerer<'d> {
             kind: ItemKind::Main(MainDef { body }),
             origin: self.origin(&block.id, Part::Whole),
             comment: self.comment(block),
+            headers: ItemHeaders::default(),
+            shared: false,
         }
     }
 
@@ -439,6 +449,8 @@ impl<'d> Lowerer<'d> {
             }),
             origin: self.origin(&block.id, Part::Whole),
             comment: self.comment(block),
+            headers: ItemHeaders::default(),
+            shared: false,
         })
     }
 
@@ -741,6 +753,10 @@ impl<'d> Lowerer<'d> {
     }
 
     /// A type field (`int`, `std::string`, …) as a type.
+    #[allow(
+        deprecated,
+        reason = "M2's type fields, until the analyser reads type terms (types.md §8.2)"
+    )]
     fn type_setting(&mut self, block: &Block, name: &str, default: &str, allow_void: bool) -> Type {
         let location = self.loc(&block.id, field(name));
         let Ok(text) = access::text_field(block, name, Some(default)) else {

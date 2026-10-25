@@ -165,12 +165,14 @@ export function renameInTrees(
         if (typeof value !== 'object') {
           continue;
         }
-        if ('sym' in value) {
+        // A template type term (format version 2) is an object too; its references are renamed
+        // with the type terms (types.md §2.4).
+        if ('sym' in value && typeof value.sym === 'string' && typeof value.name === 'string') {
           const renamed = syms.get(value.sym);
           if (renamed !== undefined) {
             setOwn(fields, key, { sym: renamed, name: value.name });
           }
-        } else if ('ref' in value) {
+        } else if ('ref' in value && typeof value.ref === 'string') {
           const renamed = syms.get(value.ref);
           if (renamed !== undefined) {
             setOwn(fields, key, { ref: renamed });

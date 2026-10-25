@@ -112,6 +112,10 @@ pub(crate) fn param_rows(block: &Block) -> Vec<Result<ParamRow, ()>> {
     rows.iter().take(MAX_VARIADIC_PARTS).map(param_row).collect()
 }
 
+#[allow(
+    deprecated,
+    reason = "M2's parameter types, until the analyser reads type terms (types.md §8.2)"
+)]
 fn param_row(row: &Value) -> Result<ParamRow, ()> {
     let Value::Object(map) = row else {
         return Err(());

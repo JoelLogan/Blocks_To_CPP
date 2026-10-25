@@ -38,7 +38,9 @@ pub(crate) enum CType {
 
 impl CType {
     /// The C++ type for a value of a static type. `Void` and `Error` have no
-    /// value type and map to [`CType::Error`].
+    /// value type and map to [`CType::Error`], and so, until code generation
+    /// prints them (types.md §8.2), do the library and user types, which no
+    /// stage produces yet.
     pub(crate) fn value(ty: &Type) -> Self {
         match ty {
             Type::Bool => Self::Bool,
@@ -46,7 +48,7 @@ impl CType {
             Type::Int => Self::Int,
             Type::Double => Self::Double,
             Type::String => Self::String,
-            Type::Void | Type::Error => Self::Error,
+            Type::Void | Type::Lib(_) | Type::Named(_) | Type::Error => Self::Error,
         }
     }
 

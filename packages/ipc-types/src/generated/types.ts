@@ -312,6 +312,11 @@ export type FileMap = {
  */
 path: string,
 /**
+ * The module of the file, as in `GeneratedFile::module`; omitted when
+ * not set.
+ */
+module?: string,
+/**
  * The ranges, sorted by start position.
  */
 ranges: Array<MappedRange>, };
@@ -329,6 +334,11 @@ path: string,
  * Source or header.
  */
 kind: FileKind,
+/**
+ * The module the file belongs to (ADR-0019); omitted for
+ * `b2c_support.hpp` and while code generation does not set it.
+ */
+module?: string,
 /**
  * The contents: UTF-8 text with `\n` line endings, ending with one newline.
  */
@@ -1291,7 +1301,12 @@ module: string,
  * The block that declares it (`var.declare`, `control.for_range`, or the
  * `func.define` of a function and of its parameters).
  */
-declBlock: string, } & ({ "kind": "variable",
+declBlock: string,
+/**
+ * Whether its definition goes into its module's header (ADR-0019);
+ * omitted when false, as it always is in a single-module project.
+ */
+shared?: boolean, } & ({ "kind": "variable",
 /**
  * Whether it was declared `const`.
  */

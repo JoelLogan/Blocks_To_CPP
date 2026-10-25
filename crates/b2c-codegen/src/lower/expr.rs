@@ -233,7 +233,7 @@ impl Lowerer<'_> {
                 let text = bool_text(expr, lowered);
                 CExpr::call_fixed("std::string", vec![text])
             }
-            Type::Void | Type::Error => lowered,
+            Type::Void | Type::Lib(_) | Type::Named(_) | Type::Error => lowered,
         }
     }
 
@@ -263,7 +263,7 @@ impl Lowerer<'_> {
                 Type::Char => CExpr::call_fixed("std::string", vec![int_literal(1), lowered]),
                 Type::Int | Type::Double => self.number_text(&item.ty, lowered),
                 Type::Bool => bool_text(item, lowered),
-                Type::String | Type::Void | Type::Error => lowered,
+                Type::String | Type::Void | Type::Lib(_) | Type::Named(_) | Type::Error => lowered,
             };
             joined = CExpr::binary(BinOp::Add, joined, part);
         }

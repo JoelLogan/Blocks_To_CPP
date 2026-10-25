@@ -628,9 +628,12 @@ mod tests {
                     kind: ItemKind::Main(b2c_ir::sast::MainDef { body }),
                     origin: Origin::whole(module, block("main")),
                     comment: None,
+                    headers: b2c_ir::headers::ItemHeaders::default(),
+                    shared: false,
                 }],
             }],
             symbols: b2c_ir::sast::SymbolTable::default(),
+            layout: b2c_ir::layout::Layout::default(),
         };
         let types = block_types(&program);
         assert_eq!(types.len(), 1);

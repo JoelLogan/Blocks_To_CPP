@@ -211,8 +211,14 @@ pub(crate) fn declarations(document: &Document) -> BTreeMap<SymbolId, (String, R
 /// The qualified name recorded for a symbol (see the module docs).
 pub(crate) fn qualified_name(name: &str, kind: RefKind) -> String {
     match kind {
-        RefKind::Function => format!("::{name}"),
-        RefKind::Variable | RefKind::Parameter | RefKind::LoopVariable => name.to_owned(),
+        RefKind::Function | RefKind::Struct | RefKind::Enum => format!("::{name}"),
+        // A field or an enumerator also gets its owner's qualified name in
+        // front (types.md §2.4) once payloads record them.
+        RefKind::Variable
+        | RefKind::Parameter
+        | RefKind::LoopVariable
+        | RefKind::Field
+        | RefKind::Enumerator => name.to_owned(),
     }
 }
 
@@ -266,6 +272,10 @@ fn ref_kind(info: &SymbolInfo) -> RefKind {
         SymbolInfoKind::Parameter { .. } => RefKind::Parameter,
         SymbolInfoKind::LoopVariable => RefKind::LoopVariable,
         SymbolInfoKind::Function { .. } => RefKind::Function,
+        SymbolInfoKind::Struct { .. } => RefKind::Struct,
+        SymbolInfoKind::Enum { .. } => RefKind::Enum,
+        SymbolInfoKind::Field { .. } => RefKind::Field,
+        SymbolInfoKind::Enumerator { .. } => RefKind::Enumerator,
     }
 }
 
@@ -276,8 +286,13 @@ fn names(reference: &ClipboardRef, info: &SymbolInfo) -> bool {
         return false;
     }
     match reference.kind {
-        RefKind::Function => reference.name.strip_prefix("::").unwrap_or(&reference.name) == info.name,
+        RefKind::Function | RefKind::Struct | RefKind::Enum => {
+            reference.name.strip_prefix("::").unwrap_or(&reference.name) == info.name
+        }
         RefKind::Variable | RefKind::Parameter | RefKind::LoopVariable => reference.name == info.name,
+        // Bound again through their owner (types.md §2.4), which payloads do
+        // not record yet.
+        RefKind::Field | RefKind::Enumerator => false,
     }
 }
 
@@ -401,6 +416,10 @@ fn kind_words(kind: RefKind) -> &'static str {
         RefKind::Parameter => "parameter",
         RefKind::LoopVariable => "loop counter",
         RefKind::Function => "function",
+        RefKind::Struct => "struct",
+        RefKind::Enum => "enum",
+        RefKind::Field => "field",
+        RefKind::Enumerator => "enum value",
     }
 }
 
@@ -465,6 +484,7 @@ mod tests {
             ty: Type::Int,
             module: ModuleId::new("m").unwrap(),
             decl_block: BlockId::new("b").unwrap(),
+            shared: false,
         }
     }
 

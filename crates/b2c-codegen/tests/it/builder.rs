@@ -7,7 +7,9 @@
 use std::cell::{Cell, RefCell};
 
 use b2c_ir::diag::Part;
+use b2c_ir::headers::ItemHeaders;
 use b2c_ir::ids::{BlockId, ModuleId, SymbolId};
+use b2c_ir::layout::Layout;
 use b2c_ir::sast::{
     AskMode, BinaryOp, Block, CppStandard, Expr, ExprKind, FunctionDef, IfBranch, Item, ItemKind, MainDef,
     Module, Origin, OutputStream, Param, PassMode, PrintSeparator, Program, RangeDirection, Stmt, StmtKind,
@@ -362,6 +364,8 @@ impl Builder {
             kind: ItemKind::Main(MainDef { body: block(body) }),
             origin,
             comment: None,
+            headers: ItemHeaders::default(),
+            shared: false,
         }
     }
 
@@ -394,6 +398,8 @@ impl Builder {
             kind: ItemKind::Function(def),
             origin,
             comment: None,
+            headers: ItemHeaders::default(),
+            shared: false,
         }
     }
 
@@ -403,10 +409,13 @@ impl Builder {
             name: String::from("main"),
             items,
         };
+        let modules = vec![module];
+        let symbols = self.symbols.into_inner();
         Program {
             standard: CppStandard::Cpp20,
-            modules: vec![module],
-            symbols: self.symbols.into_inner(),
+            layout: Layout::flat(&modules, &symbols),
+            modules,
+            symbols,
         }
     }
 }

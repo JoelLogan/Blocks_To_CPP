@@ -127,11 +127,13 @@ pub fn generate_with_report(program: &Program, options: &CodegenOptions) -> Gene
         placeholders = placeholders.saturating_add(source.placeholders);
         maps.push(FileMap {
             path: path.clone(),
+            module: None,
             ranges: source.ranges,
         });
         files.push(GeneratedFile {
             path,
             kind: FileKind::Source,
+            module: None,
             contents: source.contents,
         });
     }
@@ -140,11 +142,13 @@ pub fn generate_with_report(program: &Program, options: &CodegenOptions) -> Gene
         let contents = emit::support_header(&helpers_used, options);
         maps.push(FileMap {
             path: path.clone(),
+            module: None,
             ranges: Vec::new(),
         });
         files.push(GeneratedFile {
             path,
             kind: FileKind::Header,
+            module: None,
             contents,
         });
     }
@@ -251,6 +255,7 @@ mod tests {
             standard: CppStandard::default(),
             modules: Vec::new(),
             symbols: SymbolTable::default(),
+            layout: b2c_ir::layout::Layout::default(),
         };
         let project = generate(&program, &CodegenOptions::default());
         assert!(project.files.is_empty());
