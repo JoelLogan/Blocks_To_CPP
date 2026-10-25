@@ -242,12 +242,14 @@ The same allocation stands in ADR-0018 and the contracts:
 | `B2C-E0213`, `E0214`, `E0221` | `::name` reach (06 §6.14.7); shared header part names a non-shared definition; module name starts with `b2c` | spec; ADR-0019 | W3 |
 | `B2C-E0313`, `E0314` | not comparable; not printable | ADR-0017 | W1 |
 | `B2C-E0315` | no type from its place | ADR-0018 | W1 |
+| `B2C-E0316` | whole-number division or `mod` by a constant zero | L10 (types.md §11.2) | W1 |
 | `B2C-E0420`, `E0421` | declaration cycles (06 §6.7) | spec | W2 |
 | `B2C-E0422`, `E0423` | header cycle; cross-module initialisation order | ADR-0019 | W3 |
+| `B2C-W0506` | a decimal result that is infinity or NaN | L10 (types.md §11.2) | W1 |
 
-`E0206`, `E0207` and `E0301` are reused with new text; the next free codes are
-`E0141`, `E0219`, `E0222`, `E0316` and `E0424`. Each code gets its reference
-entry in the pull request that defines it.
+`E0206`, `E0207`, `E0301`, `E0303` (L16) and `E0517` (L10) are reused with new
+text; the next free codes are `E0141`, `E0219`, `E0222` and `E0424`. Each code
+gets its reference entry in the pull request that defines it.
 
 Versions: `formatVersion` 2 holds *Textbook style* and type terms (and
 `use header`'s module value if ADR-0019 needs a new shape), 3 is
