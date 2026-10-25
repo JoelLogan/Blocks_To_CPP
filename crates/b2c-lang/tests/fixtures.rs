@@ -1076,6 +1076,54 @@ fn sampled_parts(sig: &BlockSig, rng: &mut Rng, samples: &[Type]) -> Parts {
     parts
 }
 
+/// A catalog block as `catalog.json` writes it (types.md §4.5): its
+/// definition in its serde shape, with what its signature adds (`order`,
+/// `placeVar`, `members` and `optionHeaders`, each left out while empty).
+fn export_json(def: &b2c_catalog::schema::BlockDef, sig: &BlockSig) -> Value {
+    let mut json = serde_json::to_value(def).unwrap();
+    let object = json.as_object_mut().unwrap();
+    let order: Vec<Value> = sig
+        .order
+        .iter()
+        .map(|part| match part {
+            PartName::Field(name) => json!({"field": name}),
+            PartName::Input(name) => json!({"input": name}),
+        })
+        .collect();
+    if !order.is_empty() {
+        object.insert("order".into(), Value::from(order));
+    }
+    if let Some(var) = &sig.place_var {
+        object.insert("placeVar".into(), json!(var.as_str()));
+    }
+    if !sig.members.is_empty() {
+        let members: Map<String, Value> = sig
+            .members
+            .iter()
+            .map(|(field, var)| (field.clone(), json!(var.as_str())))
+            .collect();
+        object.insert("members".into(), Value::Object(members));
+    }
+    if !sig.option_headers.is_empty() {
+        let headers: Map<String, Value> = sig
+            .option_headers
+            .iter()
+            .map(|(field, options)| {
+                let options: Map<String, Value> = options
+                    .iter()
+                    .map(|(option, headers)| {
+                        let names: Vec<&str> = headers.iter().map(|header| header.as_str()).collect();
+                        (option.clone(), json!(names))
+                    })
+                    .collect();
+                (field.clone(), Value::Object(options))
+            })
+            .collect();
+        object.insert("optionHeaders".into(), Value::Object(headers));
+    }
+    json
+}
+
 /// For each catalog block with a pattern, a seeded sample of part
 /// combinations with its signature as `catalog.json` writes it.
 fn catalog_samples(facts: &[(&'static str, Facts)]) -> Vec<Value> {
@@ -1091,7 +1139,7 @@ fn catalog_samples(facts: &[(&'static str, Facts)]) -> Vec<Value> {
         let def = catalog
             .blocks
             .get(id)
-            .map_or_else(|| sig_json(id, sig), |def| serde_json::to_value(def).unwrap());
+            .map_or_else(|| sig_json(id, sig), |def| export_json(def, sig));
         let mut cases = Vec::new();
         for i in 0..SAMPLES_PER_BLOCK {
             let parts = sampled_parts(sig, &mut rng, &samples);
