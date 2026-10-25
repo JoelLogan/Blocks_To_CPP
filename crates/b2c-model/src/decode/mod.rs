@@ -10,6 +10,7 @@
 
 mod clipboard;
 mod project;
+mod term;
 mod workspace;
 
 use std::collections::BTreeMap;
@@ -278,6 +279,12 @@ impl<'a> Decoder<'a> {
     /// as made with a newer version when a newer app saved the input
     /// (`B2C-E0108`, naming no version), else as unknown (`B2C-E0110`).
     fn object(&mut self, value: &'a Json, known: &[&str]) -> Option<Entries<'a>> {
+        self.object_in(value, known, true)
+    }
+
+    /// Like [`Self::object`]; `reserved` says whether reserved keys are
+    /// reported here, which free-form data leaves to [`Self::untyped`].
+    fn object_in(&mut self, value: &'a Json, known: &[&str], reserved: bool) -> Option<Entries<'a>> {
         let Json::Object(entries) = value else {
             self.wrong(value, "an object");
             return None;
@@ -287,7 +294,9 @@ impl<'a> Decoder<'a> {
                 continue;
             }
             if RESERVED_KEYS.contains(&&**key) {
-                self.reserved_key(key);
+                if reserved {
+                    self.reserved_key(key);
+                }
             } else if self.saved_by_newer {
                 let message = format!(
                     "{} has the key {}, which this version of Blocks2Cpp does not know. The project was made \

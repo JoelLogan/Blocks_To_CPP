@@ -112,9 +112,9 @@ fn with_session(call: impl FnOnce(&mut Session) -> String) -> String {
         .unwrap_or_else(|_| unavailable())
 }
 
-/// The versions of the app, the catalog, the project format and the source
-/// map format this core implements:
-/// `{"app": "0.1.0", "catalog": "1.2.0", "formatVersion": 1, "sourceMapVersion": 1}`.
+/// The versions of the app, the catalog, the newest project format and the
+/// source map format this core implements:
+/// `{"app": "0.1.0", "catalog": "1.2.0", "formatVersion": 2, "sourceMapVersion": 1}`.
 #[wasm_bindgen]
 pub fn version() -> String {
     wire::version(&version_info())

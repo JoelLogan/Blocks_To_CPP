@@ -109,6 +109,22 @@ fn examples_open_restricted_with_an_empty_trust_store() {
 }
 
 #[test]
+fn a_version_2_file_opens_without_a_migration() {
+    let app = TestApp::new();
+    // Format version 2 only adds keys (ADR-0013): a file of that version
+    // was not migrated, and one that uses nothing of it is shown as the
+    // version 1 document it is.
+    let text = edit(&example_text("hello_world"), |project| {
+        project["formatVersion"] = serde_json::json!(2);
+    });
+    let path = app.write("version2.b2c", text.as_bytes());
+    let opened = app.open(&path);
+    assert_eq!(opened.migrated_from, None);
+    assert!(!opened.blocks_upgraded);
+    assert_eq!(opened.document, example_text("hello_world"));
+}
+
+#[test]
 fn security_test_projects_are_rejected_or_restricted_and_never_compiled() {
     let app = TestApp::with(Compiler::Spy, TestProber::new());
     app.wait_discovery();

@@ -143,7 +143,9 @@ The project was saved by a newer version of Blocks2Cpp, in one of two ways
 ([spec §5.7](../../spec/05-project-format.md#57-versioning-and-migration)):
 
 * it uses a newer file format than this version understands (any whole
-  number above the current format version, however large); or
+  number above the newest format version this version reads, however
+  large; format version 2 holds template types such as a list of whole
+  numbers, and every version up to it opens without a change); or
 * it has a key that this version does not know, and its `generator.app` is a
   newer version than this app (compared by SemVer precedence). Each format
   version only adds keys, so such a key is one that the newer version added,
@@ -158,7 +160,8 @@ because the file could claim any.
 > "project.options" has the key "usingNamespaceStd", which this version of Blocks2Cpp does not know. The project was made with a newer version of Blocks2Cpp; update Blocks2Cpp to open it.
 
 Blocks copied in a newer version of Blocks2Cpp can use a newer clipboard
-format, and are refused the same way when pasted:
+format (this version reads clipboard formats 1 and 2), and are refused the
+same way when pasted:
 
 > These blocks were copied from a newer version of Blocks2Cpp, which copies blocks in a newer format than this version can read. Update Blocks2Cpp to paste them.
 
@@ -169,6 +172,8 @@ format, and are refused the same way when pasted:
 `"formatVersion"` is missing, is not a whole number, or names a version that
 never existed or that this version cannot upgrade from. (Older versions are
 upgraded automatically; see [spec §5.7](../../spec/05-project-format.md#57-versioning-and-migration).)
+Pasted blocks get this code too when their clipboard format is older than
+any this version reads.
 
 > The project file has no valid "formatVersion" (a whole number such as 1), so it cannot be read.
 >
@@ -214,6 +219,17 @@ stacked below a loose block on the canvas) is never an empty list: a block
 with nothing below it has no `"stack"` key, so every project has one
 spelling.
 
+A type term ([spec §5.4](../../spec/05-project-format.md#54-block-nodes)),
+in a type field or in the `type` of a function parameter, has one
+spelling: a name is text (`"int"`), a struct or enum is `{"ref": id}`, and
+a template is an object with one key, its name, whose value is its
+argument or a list of its two or more arguments
+(`{"std::map": ["std::string", "int"]}`). One argument written as a list,
+an empty list, a number, `null` and an object of another shape are this
+error, and so is a name that is not 1 to 64 letters, digits and `_` in
+names joined by `::` or single spaces. Whether a name is a type the block
+catalog decides ([`B2C-E0607`](#b2c-e0607-field-value-does-not-fit)).
+
 A preprocessor define's `int` value, and every number in free-form data
 (a block's `"extra"` and `"x-ext"`), must be between -9007199254740991 and
 9007199254740991 (±(2⁵³ − 1)). The editor holds the project as JavaScript
@@ -228,10 +244,13 @@ program or the project's security hash.
 > "project.build.defines[0].value.int" should be a whole number from -9007199254740991 to 9007199254740991, but it is the number 9007199254740993.
 >
 > "x-ext.a" is the number 9007199254740992, but numbers in free-form data must be between -9007199254740991 and 9007199254740991, which the editor can hold exactly.
+>
+> "fields.TYPE["std::vector"]" in this block is a list of one argument. Write a template's only argument without the list, as in {"std::vector": "int"}.
 
 **Fix:** use one of the values the message lists, remove an empty
-`"stack"`, or use a smaller number (or text, in `"x-ext"`, for a large ID or
-count that a tool needs to keep exactly).
+`"stack"`, use a smaller number (or text, in `"x-ext"`, for a large ID or
+count that a tool needs to keep exactly), or write the type in its one
+spelling.
 
 ### B2C-E0113: invalid ID
 
@@ -509,6 +528,22 @@ is a statement block is checked later, against the catalog.)
 
 **Fix:** move the stacked blocks into the statement list they belong to,
 or into the stack of the first block of the canvas stack.
+
+### B2C-E0140: type too large
+
+A type in a type field, or in the `type` of a function parameter, has more
+than 8 levels of templates (a list of a list of … eight deep) or more than
+32 names and references in all
+([spec §5.6](../../spec/05-project-format.md#56-validation-limits)). No real
+program needs such a type, and the limit keeps every step that reads types
+small. The type is counted before anything else in it is checked, so a
+type over the limit gets this one problem only. Pasted blocks are checked
+the same way.
+
+> "fields.TYPE" in this block is a type with more than 8 levels or more than 32 names, more than a type can have.
+
+**Fix:** use a simpler type, for example a struct that holds the inner
+parts.
 
 ### B2C-E0199: more problems than are listed
 

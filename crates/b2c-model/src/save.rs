@@ -4,8 +4,12 @@
 //! * `to_canonical_json`: UTF-8 JSON, 2-space indentation, `\n` line endings,
 //!   one trailing newline; struct keys in declaration order, map keys sorted,
 //!   top-level blocks of each module sorted by ID (statement lists and a
-//!   top-level block's `stack` keep their order). Saving an unchanged document
-//!   gives byte-identical output, and `load(to_canonical_json(d)) == d`.
+//!   top-level block's `stack` keep their order). `formatVersion` is the
+//!   lowest version whose keys cover the document
+//!   ([`crate::required_format_version`], ADR-0013), not the stored number.
+//!   Saving an unchanged document gives byte-identical output, and
+//!   `load(to_canonical_json(d)) == d` when `d.format_version` is that
+//!   version.
 //! * `content_hash`: SHA-256 of the canonical serialisation with layout-only
 //!   data removed (block `x`/`y`/`collapsed`, comment `pinned`, workspace
 //!   `frames`/`notes`/`viewport`), so moving blocks never changes the hash.
@@ -24,9 +28,15 @@
 //! loader's rules for free-form numbers (spec §5.6: within ±(2^53 − 1),
 //! whole numbers stored as integers), a document that has been through
 //! `JSON.parse` and `JSON.stringify` saves to the same text and hash.
+//!
+//! A type term in a field is written in its one spelling (types.md §2.1): a
+//! name as text, a user type as `{"ref": id}`, a template as an object with
+//! one key whose value is its argument, or an array of its two or more
+//! arguments.
 
 use std::fmt::Write as _;
 
+use b2c_ir::types::TypeTerm;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -34,6 +44,7 @@ use crate::document::{
     Block, BuildConfiguration, BuildSettings, DefineValue, Document, FieldValue, Input, Module, Project,
     Token, Workspace,
 };
+use crate::version::required_format_version;
 
 /// Serialises a document canonically.
 pub fn to_canonical_json(document: &Document) -> String {
@@ -290,7 +301,7 @@ impl Writer {
     fn document(&mut self, document: &Document) {
         self.begin('{');
         self.field_str("format", &document.format);
-        self.field_display("formatVersion", document.format_version);
+        self.field_display("formatVersion", required_format_version(document));
         self.key("generator");
         self.begin('{');
         self.field_str("app", &document.generator.app);
@@ -589,13 +600,49 @@ impl Writer {
                 self.field_str("ref", reference.target.as_str());
                 self.end('}');
             }
-            // The loader does not produce template terms yet; written as
-            // free-form JSON until the term writer of format version 2
-            // (types.md §2.1).
-            FieldValue::Type(term) => match serde_json::to_value(term) {
-                Ok(value) => self.value(&value),
-                Err(_) => self.out.push_str("null"),
-            },
+            FieldValue::Type(term) => self.term(term),
+        }
+    }
+
+    /// A type term in its one spelling (types.md §2.1), without recursion:
+    /// a term built in memory has no depth limit.
+    fn term(&mut self, term: &TypeTerm) {
+        /// What is left to write.
+        enum Step<'t> {
+            /// A term.
+            Term(&'t TypeTerm),
+            /// An argument in a list: a new entry, then the term.
+            Entry(&'t TypeTerm),
+            /// The end of an object or a list.
+            End(char),
+        }
+        let mut steps = vec![Step::Term(term)];
+        while let Some(step) = steps.pop() {
+            match step {
+                Step::Term(TypeTerm::Name(name)) => self.string(name),
+                Step::Term(TypeTerm::Ref(id)) => {
+                    self.begin('{');
+                    self.field_str("ref", id.as_str());
+                    self.end('}');
+                }
+                Step::Term(TypeTerm::App(name, args)) => {
+                    self.begin('{');
+                    self.key(name);
+                    steps.push(Step::End('}'));
+                    if let [arg] = &args[..] {
+                        steps.push(Step::Term(arg));
+                    } else {
+                        self.begin('[');
+                        steps.push(Step::End(']'));
+                        steps.extend(args.iter().rev().map(Step::Entry));
+                    }
+                }
+                Step::Entry(arg) => {
+                    self.entry();
+                    steps.push(Step::Term(arg));
+                }
+                Step::End(bracket) => self.end(bracket),
+            }
         }
     }
 
@@ -731,6 +778,46 @@ mod tests {
         assert_eq!(
             writer.out,
             "{\n  \"big\": 1e+300,\n  \"n\": [\n    1,\n    -7,\n    2.5\n  ],\n  \"tiny\": 0.0000015\n}"
+        );
+    }
+
+    #[test]
+    fn terms_are_written_as_serde_writes_them() {
+        let int = TypeTerm::name("int").unwrap();
+        let point = TypeTerm::Ref(b2c_ir::SymbolId::new("sym_Pt").unwrap());
+        let list = TypeTerm::app("std::vector", vec![point.clone()]).unwrap();
+        let terms = [
+            int.clone(),
+            point,
+            list.clone(),
+            TypeTerm::app("std::map", vec![int.clone(), list.clone()]).unwrap(),
+            TypeTerm::app(
+                "std::vector",
+                vec![TypeTerm::app("std::vector", vec![int.clone()]).unwrap()],
+            )
+            .unwrap(),
+            TypeTerm::app("a::b", vec![int.clone(), list, int]).unwrap(),
+        ];
+        for term in terms {
+            let mut writer = Writer::new(false);
+            writer.term(&term);
+            assert_eq!(
+                writer.out,
+                serde_json::to_string_pretty(&term).unwrap(),
+                "{term:?}"
+            );
+        }
+        let mut writer = Writer::new(false);
+        writer.term(
+            &TypeTerm::app(
+                "std::map",
+                vec![TypeTerm::name("int").unwrap(), TypeTerm::name("char").unwrap()],
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            writer.out,
+            "{\n  \"std::map\": [\n    \"int\",\n    \"char\"\n  ]\n}"
         );
     }
 

@@ -68,7 +68,7 @@ export type {
   TokenJson,
   TypeJson,
 } from './bdm';
-export { CURRENT_FORMAT_VERSION, FORMAT_TAG } from './bdm';
+export { FORMAT_TAG, MAX_FORMAT_VERSION } from './bdm';
 export { MAX_DOCUMENT_BYTES } from './core';
 export { CoreError, type CoreErrorKind, CoreTrap } from './errors';
 export { initCore, initCoreFromBytes, resetCore } from './loader';

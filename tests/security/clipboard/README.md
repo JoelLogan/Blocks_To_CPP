@@ -51,7 +51,7 @@ the rest of the payload valid, so that the file tests one thing.
 | `huge-coordinate.json` | T5 | A canvas position beyond 32 bits | `B2C-E0129` |
 | `huge-variadic-count.json` | T5 | A ⊕ count of 4,294,967,295 parts | `B2C-E0131` |
 | `linked-next-chain.json` | T5 | A Blockly-style linked `next` chain instead of a stack array | `B2C-E0110` |
-| `newer-version.json` | T1 | `formatVersion` 2 with keys this version does not know | `B2C-E0108` |
+| `newer-version.json` | T1 | `formatVersion` 3 with keys this version does not know | `B2C-E0108` |
 | `not-an-object.json` | T1 | A JSON list instead of a payload object | `B2C-E0138` |
 | `nul-in-ref-name.json` | T3 | A NUL character in a qualified name in `refs` | `B2C-E0124` |
 | `position-on-copied-block.json` | — | A canvas position on the top-level copied blocks, which a paste ignores (the loader drops it) | accepted |
@@ -61,7 +61,9 @@ the rest of the payload valid, so that the file tests one thing.
 | `proto-key-in-refs.json` | T6 | A `__proto__` key in `refs` | `B2C-E0127` |
 | `proto-key.json` | T6 | A `__proto__` key in a block's fields | `B2C-E0127` |
 | `stack-in-stack.json` | T5 | A `stack` inside a stacked block | `B2C-E0139` |
+| `type-term-too-deep.json` | T5 | A type field with 100 nested templates | `B2C-E0140` |
 | `unknown-ref-kind.json` | T1 | A `refs` entry of an unknown kind (`macro`) | `B2C-E0112` |
+| `user-types.json` | — | None: clipboard format version 2, with a template type naming a struct, and `refs` entries of the kinds `struct`, `field`, `enum` and `enumerator` | accepted |
 | `valid.json` | — | None: a loose stack, a declaration and two outside references | accepted |
 | `wrong-tag.json` | T1 | Another program's clipboard format (`blockly/clipboard`) | `B2C-E0138` |
 | `x-ext.json` | T1 | Tool data in `x-ext`, which only project files may carry | `B2C-E0110` |

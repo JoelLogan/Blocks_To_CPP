@@ -1,15 +1,65 @@
-//! App versions: which Blocks2Cpp saved a file, compared with this one by
-//! SemVer 2.0.0 precedence (<https://semver.org/#spec-item-11>).
+//! Versions: the project format versions this build reads and writes, and
+//! which Blocks2Cpp saved a file.
 //!
-//! The loader uses it for one rule (ADR-0013): a key this version does not
-//! know, in a file whose `generator.app` is a newer version than this app, is
-//! a key that newer version added, so it is reported as `B2C-E0108` ("made
-//! with a newer version of Blocks2Cpp") instead of `B2C-E0110` ("unknown
-//! key"). The block catalog compares `generator.catalog` with its own version
-//! the same way (ADR-0015), through [`crate::is_newer_version`]. The version
-//! text comes from the file, so it is only compared, never shown.
+//! **Format versions** (ADR-0013, ADR-0017 §4, types.md §2.3). A file's
+//! `formatVersion` is the lowest version whose keys cover it: each version
+//! only adds keys, so the writer computes it from the keys present
+//! ([`required_format_version`]) and a file that uses nothing newer keeps
+//! version 1 and still opens in older apps. The loader reads every version
+//! up to [`MAX_FORMAT_VERSION`]; those from [`OLDEST_UNMIGRATED_VERSION`] up
+//! load without a migration step, and only an older one runs the migration
+//! chain ([`crate::migrate`]), which covers changes of meaning.
+//!
+//! **App versions**, compared by SemVer 2.0.0 precedence
+//! (<https://semver.org/#spec-item-11>). The loader uses them for one rule
+//! (ADR-0013): a key this version does not know, in a file whose
+//! `generator.app` is a newer version than this app, is a key that newer
+//! version added, so it is reported as `B2C-E0108` ("made with a newer
+//! version of Blocks2Cpp") instead of `B2C-E0110` ("unknown key"). The block
+//! catalog compares `generator.catalog` with its own version the same way
+//! (ADR-0015), through [`crate::is_newer_version`]. The version text comes
+//! from the file, so it is only compared, never shown.
 
 use std::cmp::Ordering;
+
+use crate::document::Document;
+use crate::{terms, walk};
+
+/// The newest project format version this build reads and writes
+/// (types.md §2.3). Version 2 adds template type terms (ADR-0017) and
+/// *Textbook style*, `options.usingNamespaceStd` (ADR-0013).
+pub const MAX_FORMAT_VERSION: u32 = 2;
+
+/// The oldest project format version that loads without a migration step.
+/// Versions from here to [`MAX_FORMAT_VERSION`] differ only by added keys
+/// (ADR-0013); a future change of meaning raises it and adds its migration
+/// steps. `migratedFrom` (05 §5.7) compares with it.
+pub const OLDEST_UNMIGRATED_VERSION: u32 = 1;
+
+// Every version from the oldest unmigrated one up loads as it is.
+const _: () = assert!(OLDEST_UNMIGRATED_VERSION <= MAX_FORMAT_VERSION);
+
+/// The format version that added template type terms.
+const TEMPLATE_TERMS: u32 = 2;
+
+/// The lowest format version whose keys cover the document (ADR-0013): 2
+/// when it holds a template type term, in a field or in the `type` of a row
+/// of `extra` (`params`), at any depth, in any module; else 1. A user type
+/// (`{"ref": id}`) and a name are version 1 values.
+///
+/// `options.usingNamespaceStd` (*Textbook style*) is a version 2 key too,
+/// but no document has it yet: [`crate::ProjectOptions`] gains it with
+/// Textbook style, and this function with it.
+///
+/// The canonical writer writes this, not [`Document::format_version`], so a
+/// file that stops using templates goes back to version 1.
+pub fn required_format_version(document: &Document) -> u32 {
+    let mut template = false;
+    walk::document(document, |block| {
+        template = template || terms::has_template(block);
+    });
+    if template { TEMPLATE_TERMS } else { 1 }
+}
 
 /// This app's version. Every crate of the workspace, the desktop app and the
 /// CLI share one version, which is what the app writes as `generator.app`.

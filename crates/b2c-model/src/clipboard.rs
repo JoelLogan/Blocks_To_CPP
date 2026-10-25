@@ -7,13 +7,22 @@
 //!   "refs": { "<symbol id>": { "name": "geo::area", "kind": "function" } } }
 //! ```
 //!
+//! **Versions** (types.md §2.4). Like a project file's, a payload's
+//! `formatVersion` is the lowest version whose keys cover it: 2 when it
+//! holds a template type term or a `refs` entry of a kind version 2 adds
+//! (`struct`, `enum`, `field`, `enumerator`), else 1
+//! ([`required_clipboard_format_version`]). A reader takes every version
+//! from [`OLDEST_CLIPBOARD_FORMAT_VERSION`] to
+//! [`MAX_CLIPBOARD_FORMAT_VERSION`]; there are no clipboard migrations.
+//!
 //! Clipboard data comes from anywhere (another app, a web page, a
 //! hand-written file), so it is as untrusted as a project file. Pasting runs
 //! the **same validator and limits as file loading** (spec §5.6):
 //! [`load_clipboard`] uses the same strict JSON parser, size and depth
 //! limits, text rules, block decoder and `B2C-E01xx` codes as
 //! [`crate::load()`]. Only the header differs: data that is not clipboard data
-//! is `B2C-E0138`, and a newer `formatVersion` is `B2C-E0108`.
+//! is `B2C-E0138`, a newer `formatVersion` is `B2C-E0108`, and an older one
+//! than this version reads is `B2C-E0109`.
 //!
 //! The copied blocks are the payload's top-level blocks: like blocks on a
 //! canvas they may have a loose `stack` (ADR-0011), so copying a stack gives
@@ -38,16 +47,28 @@ use crate::json::Json;
 use crate::load::{LoadError, check_bytes, parse};
 use crate::save::Writer;
 use crate::text_rules::quote;
+use crate::{terms, walk};
 
 /// The value of a clipboard payload's `"format"` key.
 pub const CLIPBOARD_FORMAT_TAG: &str = "blocks2cpp/clipboard";
 
-/// The clipboard format version this build reads and writes.
-pub const CLIPBOARD_FORMAT_VERSION: u32 = 1;
+/// The newest clipboard format version this build reads and writes
+/// (types.md §2.4). Version 2 adds template type terms and the `refs`
+/// kinds `struct`, `enum`, `field` and `enumerator`.
+pub const MAX_CLIPBOARD_FORMAT_VERSION: u32 = 2;
+
+/// The oldest clipboard format version this build reads. Versions from here
+/// to [`MAX_CLIPBOARD_FORMAT_VERSION`] differ only by added keys and kinds.
+pub const OLDEST_CLIPBOARD_FORMAT_VERSION: u32 = 1;
+
+/// The clipboard format version that added template terms and the kinds of
+/// user types.
+const USER_TYPES: u32 = 2;
 
 /// A validated clipboard payload (spec §5.12). `format` and
-/// `formatVersion` are not stored: they are always
-/// [`CLIPBOARD_FORMAT_TAG`] and [`CLIPBOARD_FORMAT_VERSION`].
+/// `formatVersion` are not stored: `format` is always
+/// [`CLIPBOARD_FORMAT_TAG`], and the writer computes `formatVersion`
+/// ([`required_clipboard_format_version`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Clipboard {
     /// Version of the block catalog the blocks were copied with, e.g.
@@ -90,8 +111,8 @@ pub enum RefKind {
     /// A function (`"function"`).
     Function,
     /// A user struct (`"struct"`), recorded by its qualified name
-    /// (`::Student`). Clipboard format version 2; the loader does not read
-    /// it yet (types.md §2.4).
+    /// (`::Student`), as functions are. This kind and the three after it
+    /// are clipboard format version 2 (types.md §2.4).
     Struct,
     /// A user enum (`"enum"`), recorded by its qualified name.
     Enum,
@@ -101,6 +122,33 @@ pub enum RefKind {
     /// A value of an enum (`"enumerator"`), recorded by its owner's
     /// qualified name and its own (`::Action::Deposit`).
     Enumerator,
+}
+
+impl RefKind {
+    /// Whether clipboard format version 2 added this kind: the kinds of user
+    /// types and their members.
+    pub fn is_user_type_kind(self) -> bool {
+        match self {
+            Self::Variable | Self::Parameter | Self::LoopVariable | Self::Function => false,
+            Self::Struct | Self::Enum | Self::Field | Self::Enumerator => true,
+        }
+    }
+}
+
+/// The lowest clipboard format version whose keys cover the payload
+/// (types.md §2.4): 2 when a copied block holds a template type term (in a
+/// field or in the `type` of a row of `extra`, at any depth) or a `refs`
+/// entry has a kind that version 2 adds, else 1. The canonical writer writes
+/// it.
+pub fn required_clipboard_format_version(clipboard: &Clipboard) -> u32 {
+    let mut user_types = clipboard
+        .refs
+        .values()
+        .any(|reference| reference.kind.is_user_type_kind());
+    walk::blocks(&clipboard.blocks, |block| {
+        user_types = user_types || terms::has_template(block);
+    });
+    if user_types { USER_TYPES } else { 1 }
 }
 
 /// Parses and validates an untrusted clipboard payload.
@@ -126,18 +174,18 @@ pub fn load_clipboard(bytes: &[u8]) -> Result<Clipboard, LoadError> {
 
 /// Serialises a clipboard payload canonically, in the style of
 /// [`crate::to_canonical_json`]: 2-space indentation, `\n` line endings, one
-/// trailing newline, keys in the order `format`, `formatVersion`,
-/// `catalog`, `blocks`, `refs` (always written, `{}` when empty), map keys
-/// sorted. The blocks keep their order and are written as in a project
-/// file, except that a copied block's `x`/`y` are never written. For a valid
-/// payload `c` whose copied blocks have no position (as every payload that
-/// [`load_clipboard`] returns),
-/// `load_clipboard(to_canonical_clipboard_json(c)) == c`.
+/// trailing newline, keys in the order `format`, `formatVersion` (the
+/// [required](required_clipboard_format_version) one), `catalog`, `blocks`,
+/// `refs` (always written, `{}` when empty), map keys sorted. The blocks
+/// keep their order and are written as in a project file, except that a
+/// copied block's `x`/`y` are never written. For a valid payload `c` whose
+/// copied blocks have no position (as every payload that [`load_clipboard`]
+/// returns), `load_clipboard(to_canonical_clipboard_json(c)) == c`.
 pub fn to_canonical_clipboard_json(clipboard: &Clipboard) -> String {
     let mut writer = Writer::new(false);
     writer.begin('{');
     writer.field_str("format", CLIPBOARD_FORMAT_TAG);
-    writer.field_display("formatVersion", CLIPBOARD_FORMAT_VERSION);
+    writer.field_display("formatVersion", required_clipboard_format_version(clipboard));
     writer.field_str("catalog", &clipboard.catalog);
     writer.key("blocks");
     writer.begin('[');
@@ -161,9 +209,10 @@ pub fn to_canonical_clipboard_json(clipboard: &Clipboard) -> String {
 }
 
 /// The header: `format` must be [`CLIPBOARD_FORMAT_TAG`] (else
-/// `B2C-E0138`), and `formatVersion` a whole number: newer is `B2C-E0108`,
-/// anything else but [`CLIPBOARD_FORMAT_VERSION`] is `B2C-E0109`. There is
-/// one clipboard format version so far, so there are no migrations.
+/// `B2C-E0138`), and `formatVersion` a whole number: newer than
+/// [`MAX_CLIPBOARD_FORMAT_VERSION`] is `B2C-E0108`, older than
+/// [`OLDEST_CLIPBOARD_FORMAT_VERSION`] `B2C-E0109`. The versions between
+/// only add keys, so there are no migrations.
 fn check_header(root: &Json) -> Result<(), LoadError> {
     let not_clipboard = |detail: String| LoadError::single(codes::NOT_CLIPBOARD, detail);
     let Json::Object(_) = root else {
@@ -210,7 +259,7 @@ fn check_header(root: &Json) -> Result<(), LoadError> {
         ));
     };
     // Like a project's, the message names no version taken from the data.
-    if version > u64::from(CLIPBOARD_FORMAT_VERSION) {
+    if version > u64::from(MAX_CLIPBOARD_FORMAT_VERSION) {
         return Err(LoadError::single(
             codes::NEWER_FORMAT,
             String::from(
@@ -219,7 +268,7 @@ fn check_header(root: &Json) -> Result<(), LoadError> {
             ),
         ));
     }
-    if version < u64::from(CLIPBOARD_FORMAT_VERSION) {
+    if version < u64::from(OLDEST_CLIPBOARD_FORMAT_VERSION) {
         return Err(LoadError::single(
             codes::BAD_FORMAT_VERSION,
             format!(
@@ -316,8 +365,29 @@ mod tests {
     }
 
     #[test]
+    fn versions_one_and_two_are_read() {
+        for version in [1, 2] {
+            let text = format!(
+                r#"{{"format": "blocks2cpp/clipboard", "formatVersion": {version}, "catalog": "1.0.0", "blocks": [], "refs": {{"s": {{"name": "::Student::mark", "kind": "field"}}}}}}"#
+            );
+            let clipboard = load_clipboard(text.as_bytes()).unwrap();
+            assert_eq!(
+                clipboard.refs.values().next().map(|r| r.kind),
+                Some(RefKind::Field)
+            );
+            assert_eq!(required_clipboard_format_version(&clipboard), 2);
+            assert!(to_canonical_clipboard_json(&clipboard).contains("\"formatVersion\": 2,"));
+        }
+        assert!(RefKind::Enumerator.is_user_type_kind());
+        assert!(RefKind::Struct.is_user_type_kind());
+        assert!(RefKind::Enum.is_user_type_kind());
+        assert!(!RefKind::Function.is_user_type_kind());
+        assert!(!RefKind::LoopVariable.is_user_type_kind());
+    }
+
+    #[test]
     fn newer_versions_are_refused_clearly() {
-        for version in ["2", "4294967296"] {
+        for version in ["3", "4294967296"] {
             let text = format!(
                 r#"{{"format": "blocks2cpp/clipboard", "formatVersion": {version}, "future": true}}"#
             );

@@ -82,6 +82,9 @@ pub(crate) const DUPLICATE_PACK: &str = "B2C-E0137";
 pub(crate) const NOT_CLIPBOARD: &str = "B2C-E0138";
 /// A `stack` on a block that is not directly on the canvas.
 pub(crate) const MISPLACED_STACK: &str = "B2C-E0139";
+/// A type term with more levels of templates or more names than a type can
+/// have (types.md §2.2).
+pub(crate) const TYPE_TOO_LARGE: &str = "B2C-E0140";
 /// More problems than are listed.
 pub(crate) const TOO_MANY_PROBLEMS: &str = "B2C-E0199";
 

@@ -20,6 +20,25 @@
 //! A name qualified with a namespace (`geo::area`, from a later version)
 //! never matches in M2 and stays unresolved.
 //!
+//! # User types and their members (clipboard format version 2)
+//!
+//! Milestone M3 adds structs and enums (types.md §2.4):
+//!
+//! * a struct or an enum is recorded with the global-namespace qualifier,
+//!   as a function is (`::Student`), and binds again by the same rule;
+//! * a field or an enumerator is recorded with its owner's qualified name in
+//!   front of its own (`::Student::mark`, `::Action::Deposit`), and binds
+//!   again through its owner: the owner binds by its name, as a struct or
+//!   enum would; when it is the member's own owner (the struct the field
+//!   belongs to at the target), the member keeps its ID; when it is another
+//!   type, the member binds to that type's member of the same name;
+//!   otherwise it is unresolved. Members are found among the visible
+//!   symbols, with their owner.
+//!
+//! The blocks that declare structs and enums come with wave W2; until then
+//! no document declares them, so no payload records them, but a payload
+//! from elsewhere is bound by these rules.
+//!
 //! # What is visible at the paste target
 //!
 //! A paste target is `{module, block, input}` ([`crate::PasteTarget`]):
@@ -157,17 +176,31 @@ fn children_of(block: &Block) -> Vec<&Block> {
     children
 }
 
+/// A symbol declared in a document, as a payload records it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Declared {
+    /// Its name as written.
+    pub(crate) name: String,
+    /// What kind of symbol it is.
+    pub(crate) kind: RefKind,
+    /// For a field or an enumerator, the struct or enum it belongs to.
+    pub(crate) owner: Option<SymbolId>,
+}
+
 /// Every symbol declared in a document (also in disabled and loose blocks),
 /// with its name as written and its kind: `var.declare` and
 /// `control.for_range` declare variables and loop counters, `func.define`
 /// declares a function and (in `extra.params`) its parameters, as in the
-/// analyser's declaration pass. The first declaration of an ID wins.
-pub(crate) fn declarations(document: &Document) -> BTreeMap<SymbolId, (String, RefKind)> {
-    let mut found: BTreeMap<SymbolId, (String, RefKind)> = BTreeMap::new();
+/// analyser's declaration pass. The first declaration of an ID wins. The
+/// blocks that declare structs, enums and their members join in wave W2.
+pub(crate) fn declarations(document: &Document) -> BTreeMap<SymbolId, Declared> {
+    let mut found: BTreeMap<SymbolId, Declared> = BTreeMap::new();
     let mut record = |sym: &SymbolId, name: &str, kind: RefKind| {
-        found
-            .entry(sym.clone())
-            .or_insert_with(|| (name.to_owned(), kind));
+        found.entry(sym.clone()).or_insert_with(|| Declared {
+            name: name.to_owned(),
+            kind,
+            owner: None,
+        });
     };
     let roots = document
         .modules
@@ -208,17 +241,31 @@ pub(crate) fn declarations(document: &Document) -> BTreeMap<SymbolId, (String, R
     found
 }
 
-/// The qualified name recorded for a symbol (see the module docs).
-pub(crate) fn qualified_name(name: &str, kind: RefKind) -> String {
-    match kind {
-        RefKind::Function | RefKind::Struct | RefKind::Enum => format!("::{name}"),
-        // A field or an enumerator also gets its owner's qualified name in
-        // front (types.md §2.4) once payloads record them.
-        RefKind::Variable
-        | RefKind::Parameter
-        | RefKind::LoopVariable
-        | RefKind::Field
-        | RefKind::Enumerator => name.to_owned(),
+/// The qualified name recorded for a declared symbol (see the module docs):
+/// `None` for a field or an enumerator whose owner is not a declared struct
+/// or enum.
+pub(crate) fn qualified_name(declared: &BTreeMap<SymbolId, Declared>, sym: &SymbolId) -> Option<String> {
+    let symbol = declared.get(sym)?;
+    Some(match symbol.kind {
+        RefKind::Function | RefKind::Struct | RefKind::Enum => format!("::{}", symbol.name),
+        RefKind::Field | RefKind::Enumerator => {
+            let owner = declared.get(symbol.owner.as_ref()?)?;
+            if owner.kind != owner_kind(symbol.kind) {
+                return None;
+            }
+            format!("::{}::{}", owner.name, symbol.name)
+        }
+        RefKind::Variable | RefKind::Parameter | RefKind::LoopVariable => symbol.name.clone(),
+    })
+}
+
+/// The kind of the type a member belongs to: a struct for a field, an enum
+/// for an enumerator.
+fn owner_kind(member: RefKind) -> RefKind {
+    if member == RefKind::Enumerator {
+        RefKind::Enum
+    } else {
+        RefKind::Struct
     }
 }
 
@@ -231,11 +278,16 @@ pub(crate) fn payload(document: &Document, blocks: Vec<Block>) -> Clipboard {
     let declared = declarations(document);
     let mut refs = BTreeMap::new();
     for sym in b2c_model::outside_refs(&blocks) {
-        if let Some((name, kind)) = declared.get(&sym) {
-            let name = qualified_name(name, *kind);
-            if name.chars().count() <= MAX_QUALIFIED_NAME_LEN {
-                refs.insert(sym, ClipboardRef { name, kind: *kind });
-            }
+        if let (Some(symbol), Some(name)) = (declared.get(&sym), qualified_name(&declared, &sym))
+            && name.chars().count() <= MAX_QUALIFIED_NAME_LEN
+        {
+            refs.insert(
+                sym,
+                ClipboardRef {
+                    name,
+                    kind: symbol.kind,
+                },
+            );
         }
     }
     Clipboard {
@@ -282,17 +334,88 @@ fn ref_kind(info: &SymbolInfo) -> RefKind {
 /// Whether a visible symbol is the one a payload's `refs` entry names: the
 /// same kind and the same qualified name (see the module docs).
 fn names(reference: &ClipboardRef, info: &SymbolInfo) -> bool {
-    if ref_kind(info) != reference.kind {
+    named(&reference.name, reference.kind, info)
+}
+
+/// Whether a visible symbol has the qualified name `name` and the kind
+/// `kind`. A field or an enumerator is never matched by name alone: it is
+/// bound again through its owner ([`bind_member`]).
+fn named(name: &str, kind: RefKind, info: &SymbolInfo) -> bool {
+    if ref_kind(info) != kind {
         return false;
     }
-    match reference.kind {
+    match kind {
         RefKind::Function | RefKind::Struct | RefKind::Enum => {
-            reference.name.strip_prefix("::").unwrap_or(&reference.name) == info.name
+            name.strip_prefix("::").unwrap_or(name) == info.name
         }
-        RefKind::Variable | RefKind::Parameter | RefKind::LoopVariable => reference.name == info.name,
-        // Bound again through their owner (types.md §2.4), which payloads do
-        // not record yet.
+        RefKind::Variable | RefKind::Parameter | RefKind::LoopVariable => name == info.name,
         RefKind::Field | RefKind::Enumerator => false,
+    }
+}
+
+/// The struct or enum a visible field or enumerator belongs to.
+fn member_owner(info: &SymbolInfo) -> Option<&SymbolId> {
+    match &info.kind {
+        SymbolInfoKind::Field { owner } | SymbolInfoKind::Enumerator { owner } => Some(owner),
+        _ => None,
+    }
+}
+
+/// How a field or an enumerator is bound again.
+#[derive(Debug, PartialEq, Eq)]
+enum Member {
+    /// It keeps its ID.
+    Keep,
+    /// It binds to this member of another type.
+    Rebind(SymbolId),
+    /// Nothing matches.
+    Unresolved,
+}
+
+/// Binds a field or an enumerator again through its owner (types.md §2.4),
+/// whose qualified name the payload records in front of the member's own
+/// (`::Student::mark`):
+///
+/// * the owner binds to the visible struct (or enum) with that name, by the
+///   rule of the other names: the original member's own owner if it is one
+///   of them, otherwise the only one; with none, the original member's own
+///   owner when the original member is visible (the type was renamed since
+///   the copy);
+/// * when that is the original member's own owner, the member keeps its ID;
+/// * when it is another type, the member binds to that type's visible
+///   member of the same name and kind;
+/// * otherwise, and with several, it is unresolved.
+fn bind_member(sym: &SymbolId, reference: &ClipboardRef, visible: &[SymbolInfo]) -> Member {
+    let Some((owner_name, member)) = reference.name.rsplit_once("::") else {
+        return Member::Unresolved;
+    };
+    let own_owner = visible
+        .iter()
+        .find(|info| info.id == *sym && ref_kind(info) == reference.kind)
+        .and_then(member_owner);
+    let owners: Vec<&SymbolId> = visible
+        .iter()
+        .filter(|info| named(owner_name, owner_kind(reference.kind), info))
+        .map(|info| &info.id)
+        .collect();
+    let owner = match (own_owner, owners.as_slice()) {
+        (Some(own), _) if owners.contains(&own) => own,
+        (_, [only]) => *only,
+        (Some(own), []) => own,
+        _ => return Member::Unresolved,
+    };
+    if own_owner == Some(owner) {
+        return Member::Keep;
+    }
+    let members: Vec<&SymbolInfo> = visible
+        .iter()
+        .filter(|info| {
+            ref_kind(info) == reference.kind && member_owner(info) == Some(owner) && info.name == member
+        })
+        .collect();
+    match members.as_slice() {
+        [only] => Member::Rebind(only.id.clone()),
+        _ => Member::Unresolved,
     }
 }
 
@@ -305,7 +428,8 @@ fn names(reference: &ClipboardRef, info: &SymbolInfo) -> bool {
 ///   keeps its original symbol if that is visible and of that kind (renamed
 ///   since the copy); otherwise, and with several, it is unresolved;
 /// * a reference the payload does not name stays as it is, and is
-///   unresolved unless that very symbol is visible.
+///   unresolved unless that very symbol is visible;
+/// * a field or an enumerator binds through its owner ([`bind_member`]).
 pub(crate) fn rebind(
     outside: &BTreeSet<SymbolId>,
     refs: &BTreeMap<SymbolId, ClipboardRef>,
@@ -323,6 +447,19 @@ pub(crate) fn rebind(
             }
             continue;
         };
+        if matches!(reference.kind, RefKind::Field | RefKind::Enumerator) {
+            match bind_member(sym, reference, visible) {
+                Member::Keep => {}
+                Member::Rebind(id) => {
+                    binding.rebound.insert(sym.clone(), id);
+                }
+                Member::Unresolved => binding.unresolved.push(Unresolved {
+                    sym: sym.clone(),
+                    name: Some(reference.name.clone()),
+                }),
+            }
+            continue;
+        }
         let named: Vec<&SymbolInfo> = visible.iter().filter(|info| names(reference, info)).collect();
         if named.iter().any(|info| info.id == *sym) {
             continue;
@@ -358,17 +495,23 @@ pub(crate) fn unstack(blocks: Vec<Block>) -> Vec<Block> {
 }
 
 /// Where each symbol is first referred to in the blocks: the block and the
-/// field, or the token in an expression slot.
+/// field (also in a type term there), or the token in an expression slot,
+/// or the block, for a type term in a row of `extra`.
 fn first_references(blocks: &[Block], wanted: &BTreeSet<&SymbolId>) -> BTreeMap<SymbolId, (BlockId, Part)> {
     let mut found: BTreeMap<SymbolId, (BlockId, Part)> = BTreeMap::new();
     tree::walk(blocks, |block| {
         for (field, value) in &block.fields {
-            if let FieldValue::Ref(reference) = value
-                && wanted.contains(&reference.target)
-            {
-                found
-                    .entry(reference.target.clone())
-                    .or_insert_with(|| (block.id.clone(), Part::Field { name: field.clone() }));
+            let targets: Vec<&SymbolId> = match value {
+                FieldValue::Ref(reference) => vec![&reference.target],
+                FieldValue::Type(term) => term.refs().collect(),
+                _ => Vec::new(),
+            };
+            for target in targets {
+                if wanted.contains(target) {
+                    found
+                        .entry(target.clone())
+                        .or_insert_with(|| (block.id.clone(), Part::Field { name: field.clone() }));
+                }
             }
         }
         for (input, value) in &block.inputs {
@@ -391,6 +534,14 @@ fn first_references(blocks: &[Block], wanted: &BTreeSet<&SymbolId>) -> BTreeMap<
                         )
                     });
                 }
+            }
+        }
+        // The rows of `extra` (the field terms are found above already).
+        for sym in block.type_term_refs() {
+            if wanted.contains(&sym) {
+                found
+                    .entry(sym)
+                    .or_insert_with(|| (block.id.clone(), Part::Whole));
             }
         }
     });
@@ -510,12 +661,46 @@ mod tests {
         }
     }
 
+    fn declared(name: &str, kind: RefKind, owner: Option<&str>) -> Declared {
+        Declared {
+            name: name.to_owned(),
+            kind,
+            owner: owner.map(sym),
+        }
+    }
+
     #[test]
     fn qualified_names() {
-        assert_eq!(qualified_name("score", RefKind::Variable), "score");
-        assert_eq!(qualified_name("p", RefKind::Parameter), "p");
-        assert_eq!(qualified_name("i", RefKind::LoopVariable), "i");
-        assert_eq!(qualified_name("area", RefKind::Function), "::area");
+        let table: BTreeMap<SymbolId, Declared> = [
+            ("v", declared("score", RefKind::Variable, None)),
+            ("p", declared("p", RefKind::Parameter, None)),
+            ("i", declared("i", RefKind::LoopVariable, None)),
+            ("f", declared("area", RefKind::Function, None)),
+            ("st", declared("Student", RefKind::Struct, None)),
+            ("en", declared("Action", RefKind::Enum, None)),
+            ("mark", declared("mark", RefKind::Field, Some("st"))),
+            ("dep", declared("Deposit", RefKind::Enumerator, Some("en"))),
+            ("lost", declared("x", RefKind::Field, Some("gone"))),
+            ("odd", declared("x", RefKind::Field, Some("en"))),
+            ("bare", declared("x", RefKind::Enumerator, None)),
+        ]
+        .into_iter()
+        .map(|(id, d)| (sym(id), d))
+        .collect();
+        let name = |id: &str| qualified_name(&table, &sym(id));
+        assert_eq!(name("v").as_deref(), Some("score"));
+        assert_eq!(name("p").as_deref(), Some("p"));
+        assert_eq!(name("i").as_deref(), Some("i"));
+        assert_eq!(name("f").as_deref(), Some("::area"));
+        assert_eq!(name("st").as_deref(), Some("::Student"));
+        assert_eq!(name("en").as_deref(), Some("::Action"));
+        assert_eq!(name("mark").as_deref(), Some("::Student::mark"));
+        assert_eq!(name("dep").as_deref(), Some("::Action::Deposit"));
+        // A member without a declared owner of the right kind gets no entry.
+        assert_eq!(name("lost"), None);
+        assert_eq!(name("odd"), None);
+        assert_eq!(name("bare"), None);
+        assert_eq!(name("unknown"), None);
         assert!(names(
             &reference("::area", RefKind::Function),
             &function("f", "area")
@@ -603,6 +788,183 @@ mod tests {
         // Visible, but not of the recorded kind: unresolved.
         let binding = rebind(&outside, &refs, &[function("s_x", "x")]);
         assert_eq!(binding.unresolved.len(), 1);
+    }
+
+    fn user_type(id: &str, name: &str) -> SymbolInfo {
+        info(
+            id,
+            name,
+            SymbolInfoKind::Struct {
+                fields: Vec::new(),
+                comparable: false,
+                printable: false,
+            },
+        )
+    }
+
+    fn user_enum(id: &str, name: &str) -> SymbolInfo {
+        info(id, name, SymbolInfoKind::Enum { values: Vec::new() })
+    }
+
+    fn field(id: &str, name: &str, owner: &str) -> SymbolInfo {
+        info(id, name, SymbolInfoKind::Field { owner: sym(owner) })
+    }
+
+    fn enumerator(id: &str, name: &str, owner: &str) -> SymbolInfo {
+        info(id, name, SymbolInfoKind::Enumerator { owner: sym(owner) })
+    }
+
+    #[test]
+    fn structs_and_enums_bind_by_name_like_functions() {
+        let outside = BTreeSet::from([sym("s_st"), sym("s_en")]);
+        let refs = BTreeMap::from([
+            (sym("s_st"), reference("::Student", RefKind::Struct)),
+            (sym("s_en"), reference("Action", RefKind::Enum)),
+        ]);
+        let visible = [
+            user_type("t_st", "Student"),
+            user_enum("t_en", "Action"),
+            // A function of the same name is not a struct.
+            function("t_f", "Student"),
+        ];
+        let binding = rebind(&outside, &refs, &visible);
+        assert_eq!(
+            binding.rebound,
+            BTreeMap::from([(sym("s_st"), sym("t_st")), (sym("s_en"), sym("t_en"))])
+        );
+        assert!(binding.unresolved.is_empty());
+        assert!(!names(
+            &reference("::Student", RefKind::Enum),
+            &user_type("t", "Student")
+        ));
+    }
+
+    #[test]
+    fn fields_and_enumerators_bind_again_through_their_owner() {
+        let refs = BTreeMap::from([
+            (sym("s_mark"), reference("::Student::mark", RefKind::Field)),
+            (sym("s_dep"), reference("::Action::Deposit", RefKind::Enumerator)),
+        ]);
+        let outside = BTreeSet::from([sym("s_mark"), sym("s_dep")]);
+        // Pasted next to the original: the owner is the member's own, so
+        // the members keep their IDs, even renamed since the copy.
+        let original = [
+            user_type("s_st", "Student"),
+            field("s_mark", "grade", "s_st"),
+            user_enum("s_en", "Action"),
+            enumerator("s_dep", "Deposit", "s_en"),
+        ];
+        let binding = rebind(&outside, &refs, &original);
+        assert!(binding.rebound.is_empty());
+        assert!(binding.unresolved.is_empty());
+        // The owner was renamed too: no type has the name, but the member's
+        // own owner is visible, so it still keeps its ID.
+        let renamed = [user_type("s_st", "Pupil"), field("s_mark", "mark", "s_st")];
+        let binding = rebind(&BTreeSet::from([sym("s_mark")]), &refs, &renamed);
+        assert!(binding.rebound.is_empty() && binding.unresolved.is_empty());
+        // In another project: the owner binds to that project's type by name,
+        // and the member to that type's member of the same name.
+        let other = [
+            user_type("t_st", "Student"),
+            field("t_name", "name", "t_st"),
+            field("t_mark", "mark", "t_st"),
+            // A member of the same name of another type does not count.
+            user_type("t_other", "Other"),
+            field("t_other_mark", "mark", "t_other"),
+            user_enum("t_en", "Action"),
+            enumerator("t_dep", "Deposit", "t_en"),
+            enumerator("t_wd", "Withdraw", "t_en"),
+        ];
+        let binding = rebind(&outside, &refs, &other);
+        assert_eq!(
+            binding.rebound,
+            BTreeMap::from([(sym("s_dep"), sym("t_dep")), (sym("s_mark"), sym("t_mark"))])
+        );
+        assert!(binding.unresolved.is_empty());
+        // The owner is there, the member is not; or no owner at all; or two.
+        let missing = [user_type("t_st", "Student"), field("t_name", "name", "t_st")];
+        let twice = [
+            user_type("t_a", "Student"),
+            user_type("t_b", "Student"),
+            field("t_mark", "mark", "t_a"),
+        ];
+        for visible in [&missing[..], &[], &twice[..]] {
+            let binding = rebind(&BTreeSet::from([sym("s_mark")]), &refs, visible);
+            assert!(binding.rebound.is_empty());
+            assert_eq!(
+                binding.unresolved,
+                [Unresolved {
+                    sym: sym("s_mark"),
+                    name: Some(String::from("::Student::mark"))
+                }]
+            );
+        }
+        // A field is not an enumerator, and a struct no enum.
+        let wrong = [user_enum("t_st", "Student"), enumerator("t_mark", "mark", "t_st")];
+        let binding = rebind(&BTreeSet::from([sym("s_mark")]), &refs, &wrong);
+        assert_eq!(binding.unresolved.len(), 1);
+        // A recorded name without an owner binds nothing.
+        let bare = BTreeMap::from([(sym("s_mark"), reference("mark", RefKind::Field))]);
+        let binding = rebind(&BTreeSet::from([sym("s_mark")]), &bare, &other);
+        assert_eq!(binding.unresolved.len(), 1);
+    }
+
+    #[test]
+    fn a_member_prefers_its_own_owner_among_types_of_that_name() {
+        let refs = BTreeMap::from([(sym("s_mark"), reference("::Student::mark", RefKind::Field))]);
+        let visible = [
+            user_type("s_st", "Student"),
+            user_type("t_st", "Student"),
+            field("s_mark", "mark", "s_st"),
+            field("t_mark", "mark", "t_st"),
+        ];
+        let binding = rebind(&BTreeSet::from([sym("s_mark")]), &refs, &visible);
+        assert!(binding.rebound.is_empty() && binding.unresolved.is_empty());
+        assert_eq!(member_owner(&visible[2]), Some(&sym("s_st")));
+        assert_eq!(member_owner(&visible[0]), None);
+    }
+
+    #[test]
+    fn unresolved_references_in_type_terms_point_at_their_block() {
+        let term =
+            b2c_ir::types::TypeTerm::app("std::vector", vec![b2c_ir::types::TypeTerm::Ref(sym("s_st"))])
+                .unwrap();
+        let mut typed = block_with_id("b_typed");
+        typed.fields.insert("TYPE".into(), FieldValue::Type(term));
+        let mut row = block_with_id("b_row");
+        row.extra.insert(
+            "params".into(),
+            serde_json::json!([{"sym": "s_n", "name": "n", "type": {"ref": "s_en"}, "mode": "copy"}]),
+        );
+        let wanted_ids = [sym("s_st"), sym("s_en")];
+        let wanted: BTreeSet<&SymbolId> = wanted_ids.iter().collect();
+        let found = first_references(&[typed, row], &wanted);
+        assert_eq!(
+            found[&sym("s_st")],
+            (
+                BlockId::new("b_typed").unwrap(),
+                Part::Field { name: "TYPE".into() }
+            )
+        );
+        assert_eq!(found[&sym("s_en")], (BlockId::new("b_row").unwrap(), Part::Whole));
+    }
+
+    fn block_with_id(id: &str) -> Block {
+        Block {
+            id: BlockId::new(id).unwrap(),
+            block_type: "t".into(),
+            v: 1,
+            x: None,
+            y: None,
+            collapsed: false,
+            disabled: false,
+            comment: None,
+            extra: BTreeMap::new(),
+            fields: BTreeMap::new(),
+            inputs: BTreeMap::new(),
+            statements: BTreeMap::new(),
+            stack: Vec::new(),
+        }
     }
 
     #[test]

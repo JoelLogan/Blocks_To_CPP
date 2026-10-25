@@ -28,7 +28,6 @@ pub(crate) struct TextProblems {
 
 impl TextProblems {
     /// Whether the text follows every rule.
-    #[cfg(test)]
     pub(crate) fn is_clean(self) -> bool {
         self == Self::default()
     }

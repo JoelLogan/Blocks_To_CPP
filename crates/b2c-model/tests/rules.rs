@@ -11,9 +11,10 @@
 
 mod common;
 
-use b2c_ir::{BlockId, DiagSource, Location, ModuleId, Part, Severity};
+use b2c_ir::types::TypeTerm;
+use b2c_ir::{BlockId, DiagSource, Location, ModuleId, Part, Severity, SymbolId};
 use b2c_model::limits::{MAX_BLOCKS, MAX_EXPR_TOKENS, MAX_FILE_BYTES, MAX_MODULES, MAX_STRING_BYTES};
-use b2c_model::{Document, FieldValue, Input, Token, load};
+use b2c_model::{Document, FieldValue, Input, SymbolRef, Token, load};
 use common::{base, bytes, codes, failure, main_block, print_block};
 use serde_json::{Value, json};
 
@@ -124,9 +125,12 @@ fn e0107_to_e0109_header() {
     document["format"] = json!("blocks2cpp/clipboard");
     assert_eq!(codes(&document), ["B2C-E0107"]);
     let mut document = base();
-    document["formatVersion"] = json!(2);
+    document["formatVersion"] = json!(3);
     document["unknownFutureKey"] = json!(true);
     assert_eq!(codes(&document), ["B2C-E0108"]);
+    // Version 2 is read: an unknown key in it is just unknown.
+    document["formatVersion"] = json!(2);
+    assert_eq!(codes(&document), ["B2C-E0110"]);
     let mut document = base();
     document["formatVersion"] = json!(0);
     assert_eq!(codes(&document), ["B2C-E0109"]);
@@ -730,6 +734,354 @@ fn e0127_reserved_keys_outside_x_ext() {
     let mut document = base();
     document["x-ext"] = json!({"__proto__": {"constructor": {"prototype": 1}}});
     assert_eq!(loads(&document).ext, Some(document["x-ext"].clone()));
+}
+
+// --- Type terms (types.md §2): the readings of an object, E0140 ------------
+
+/// The `var.declare` block of [`base`], whose `TYPE` field holds a type.
+fn declare_block(document: &mut Value) -> &mut Value {
+    &mut main_block(document)["statements"]["BODY"][1]
+}
+
+/// The `type` of the parameter row of [`base`]'s function.
+fn param_type(document: &mut Value) -> &mut Value {
+    &mut document["modules"][0]["workspace"]["blocks"][1]["extra"]["params"][0]["type"]
+}
+
+/// `levels` `std::vector`s nested around `int`.
+fn nested(levels: usize) -> Value {
+    let mut term = json!("int");
+    for _ in 0..levels {
+        term = json!({ "std::vector": term });
+    }
+    term
+}
+
+/// A template with `count` arguments: `count + 1` names.
+fn wide(count: usize) -> Value {
+    json!({ "lib::tuple": (0..count).map(|i| format!("t{i}")).collect::<Vec<_>>() })
+}
+
+/// The codes of a document whose `TYPE` field holds `term`.
+fn type_field_codes(term: Value) -> Vec<String> {
+    let mut document = base();
+    declare_block(&mut document)["fields"]["TYPE"] = term;
+    codes(&document)
+}
+
+/// The codes of a document whose parameter row's `type` holds `term`.
+fn row_codes(term: Value) -> Vec<String> {
+    let mut document = base();
+    *param_type(&mut document) = term;
+    codes(&document)
+}
+
+fn sym(id: &str) -> SymbolId {
+    SymbolId::new(id).unwrap()
+}
+
+fn name(text: &str) -> TypeTerm {
+    TypeTerm::name(text).unwrap()
+}
+
+#[test]
+fn objects_in_fields_are_read_three_ways() {
+    let declared = |document: &Document| {
+        document.modules[0].workspace.blocks[0].statements["BODY"][1].fields["TYPE"].clone()
+    };
+    // 1. With the key `ref`: a reference; in a type field, a user type.
+    let mut document = base();
+    declare_block(&mut document)["fields"]["TYPE"] = json!({"ref": "s_point"});
+    assert_eq!(
+        declared(&loads(&document)),
+        FieldValue::Ref(SymbolRef {
+            target: sym("s_point")
+        })
+    );
+    // 2. Exactly one key, a qualified name: a template type term.
+    declare_block(&mut document)["fields"]["TYPE"] =
+        json!({"std::map": ["std::string", {"std::vector": {"ref": "s_point"}}]});
+    let list = TypeTerm::app("std::vector", vec![TypeTerm::Ref(sym("s_point"))]).unwrap();
+    let map = TypeTerm::app("std::map", vec![name("std::string"), list]).unwrap();
+    assert_eq!(declared(&loads(&document)), FieldValue::Type(map));
+    // Names are only checked against the name rule here: the catalog
+    // decides which are types.
+    declare_block(&mut document)["fields"]["TYPE"] = json!({"my lib::thing": ["auto", "void", "long long"]});
+    assert!(matches!(
+        declared(&loads(&document)),
+        FieldValue::Type(TypeTerm::App(..))
+    ));
+    // 3. Anything else: a declaration, so a damaged declaration keeps its
+    // own problems instead of becoming a template called `sm`.
+    let mut document = base();
+    declare_block(&mut document)["fields"]["NAME"] = json!({"sm": "s_x", "name": "x"});
+    let diagnostics = failure(&bytes(&document));
+    let messages: Vec<(&str, &str)> = diagnostics
+        .iter()
+        .map(|d| (d.code.0.as_str(), d.message.as_str()))
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            (
+                "B2C-E0110",
+                "\"fields.NAME\" in this block has an unknown key \"sm\". Remove it or check its spelling."
+            ),
+            ("B2C-E0111", "\"fields.NAME\" in this block is missing \"sym\"."),
+        ]
+    );
+    // An unqualified key, or two qualified ones, make no template either.
+    for object in [
+        json!({"vector": "int"}),
+        json!({"std::vector": "int", "std::set": "int"}),
+        json!({"std:vector": "int"}),
+        json!({"::vector": "int"}),
+    ] {
+        let found = type_field_codes(object.clone());
+        assert!(found.contains(&"B2C-E0110".to_owned()), "{object}: {found:?}");
+        assert!(found.contains(&"B2C-E0111".to_owned()), "{object}: {found:?}");
+    }
+    // From a newer app, the unknown key is one that app added.
+    let mut document = base();
+    document["generator"]["app"] = json!("9.0.0");
+    declare_block(&mut document)["fields"]["NAME"] = json!({"sm": "s_x", "name": "x"});
+    assert_eq!(codes(&document), ["B2C-E0108", "B2C-E0111"]);
+}
+
+#[test]
+fn e0140_type_terms_too_large() {
+    // 8 levels and 32 names fit; 9 levels and 33 names do not.
+    let mut document = base();
+    declare_block(&mut document)["fields"]["TYPE"] = nested(8);
+    loads(&document);
+    declare_block(&mut document)["fields"]["TYPE"] = wide(31);
+    loads(&document);
+    *param_type(&mut document) = nested(8);
+    loads(&document);
+    declare_block(&mut document)["fields"]["TYPE"] = nested(9);
+    let diagnostics = failure(&bytes(&document));
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code.0, "B2C-E0140");
+    assert_eq!(
+        diagnostics[0].message,
+        "\"fields.TYPE\" in this block is a type with more than 8 levels or more than 32 names, more than a type can have."
+    );
+    assert_eq!(
+        diagnostics[0].primary,
+        block_location("b_var", Part::Field { name: "TYPE".into() })
+    );
+    assert_eq!(type_field_codes(wide(32)), ["B2C-E0140"]);
+    // References count as names.
+    let refs = vec![json!({"ref": "s_point"}); 32];
+    assert_eq!(type_field_codes(json!({"lib::tuple": refs})), ["B2C-E0140"]);
+    // One problem, however broken the rest of the term is.
+    let mut broken = json!([5, null, ["x"], {"__proto__": 1}, "a\u{202e}b"]);
+    for _ in 0..12 {
+        broken = json!({ "std::vector": broken });
+    }
+    assert_eq!(type_field_codes(broken), ["B2C-E0140"]);
+    // In a parameter row too.
+    let mut document = base();
+    *param_type(&mut document) = wide(40);
+    let diagnostics = failure(&bytes(&document));
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "\"extra.params[0].type\" in this block is a type with more than 8 levels or more than 32 names, more than a type can have."
+    );
+    assert_eq!(diagnostics[0].primary, block_location("b_fn", Part::Whole));
+}
+
+#[test]
+fn e0112_type_term_shapes() {
+    let mut document = base();
+    declare_block(&mut document)["fields"]["TYPE"] = json!({"std::vector": ["int"]});
+    let diagnostics = failure(&bytes(&document));
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(
+        diagnostics[0].message,
+        "\"fields.TYPE[\"std::vector\"]\" in this block is a list of one argument. Write a template's only argument without the list, as in {\"std::vector\": \"int\"}."
+    );
+    assert_eq!(
+        diagnostics[0].primary,
+        block_location("b_var", Part::Field { name: "TYPE".into() })
+    );
+    let message = |term: Value| {
+        let mut document = base();
+        declare_block(&mut document)["fields"]["TYPE"] = term;
+        let diagnostics = failure(&bytes(&document));
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+        assert_eq!(diagnostics[0].code.0, "B2C-E0112");
+        diagnostics[0].message.clone()
+    };
+    assert_eq!(
+        message(json!({"std::vector": []})),
+        "\"fields.TYPE[\"std::vector\"]\" in this block is an empty list, but a template needs its arguments: one written as it is, or two or more in a list."
+    );
+    assert_eq!(
+        message(json!({"std::map": ["int", 5]})),
+        "\"fields.TYPE[\"std::map\"][1]\" in this block should be a type: a name such as \"int\", a user type {\"ref\": …} or a template such as {\"std::vector\": \"int\"}, but it is the number 5."
+    );
+    assert_eq!(
+        message(json!({"std::vector": "in t!"})),
+        "\"fields.TYPE[\"std::vector\"]\" in this block is not a type name: \"in t!\" is not 1 to 64 letters, digits and _ in names joined by :: or single spaces, each name starting with a letter or _."
+    );
+    for term in [
+        json!({"std::vector": null}),
+        json!({"std::vector": true}),
+        json!({"std::vector": 1.5}),
+        json!({"std::map": ["int", ["int", "int"]]}),
+        json!({"std::vector": {"vector": "int"}}),
+        json!({"std::vector": {"a": "b", "c": "d"}}),
+        json!({"std::vector": {}}),
+        json!({"std::vector": ""}),
+        json!({"std::vector": "a  b"}),
+        json!({"std::vector": " int"}),
+        json!({"std::vector": "1st"}),
+        json!({"std::vector": "x".repeat(65)}),
+        json!({"std::vector": {"std::set": ["int"]}}),
+    ] {
+        assert_eq!(type_field_codes(term.clone()), ["B2C-E0112"], "{term}");
+    }
+    // Every argument is checked.
+    assert_eq!(
+        type_field_codes(json!({"std::map": [5, "x y!", "int"]})),
+        ["B2C-E0112", "B2C-E0112"]
+    );
+    // 64 characters is the longest name; two arguments make a list.
+    let mut document = base();
+    declare_block(&mut document)["fields"]["TYPE"] = json!({"std::vector": "x".repeat(64)});
+    loads(&document);
+    declare_block(&mut document)["fields"]["TYPE"] = json!({"std::map": ["int", "int"]});
+    loads(&document);
+}
+
+#[test]
+fn ids_reserved_keys_and_text_rules_in_type_terms() {
+    assert_eq!(
+        type_field_codes(json!({"std::vector": {"ref": "s\"><img>"}})),
+        ["B2C-E0113"]
+    );
+    assert_eq!(
+        type_field_codes(json!({"std::vector": {"ref": "s_point", "x": 1}})),
+        ["B2C-E0110"]
+    );
+    assert_eq!(
+        type_field_codes(json!({"std::vector": {"ref": 5}})),
+        ["B2C-E0112"]
+    );
+    assert_eq!(
+        type_field_codes(json!({"std::vector": {"__proto__": "int"}})),
+        ["B2C-E0127"]
+    );
+    assert_eq!(
+        type_field_codes(json!({"std::vector": {"a": 1, "constructor": 2}})),
+        ["B2C-E0112", "B2C-E0127"]
+    );
+    assert_eq!(
+        type_field_codes(json!({"std::vector": {"ref": "s", "prototype": 2}})),
+        ["B2C-E0127"]
+    );
+    assert_eq!(
+        type_field_codes(json!({"std::vector": "in\u{202e}t"})),
+        ["B2C-E0126"]
+    );
+    assert_eq!(
+        type_field_codes(json!({"std::vector": "int\u{0}"})),
+        ["B2C-E0124"]
+    );
+    assert_eq!(
+        type_field_codes(json!({"std::vector": "x".repeat(MAX_STRING_BYTES + 1)})),
+        ["B2C-E0123"]
+    );
+    // A template name with a hidden character is no qualified name: the
+    // object is a damaged declaration, and the message shows the character.
+    let mut document = base();
+    declare_block(&mut document)["fields"]["TYPE"] = json!({"std::vec\u{202e}tor": "int"});
+    let diagnostics = failure(&bytes(&document));
+    assert_eq!(diagnostics[0].code.0, "B2C-E0110");
+    assert!(
+        diagnostics[0].message.contains("\\u{202E}"),
+        "{}",
+        diagnostics[0].message
+    );
+    // From a newer app, an unknown key in a reference is one it added.
+    let mut document = base();
+    document["generator"]["app"] = json!("9.0.0");
+    declare_block(&mut document)["fields"]["TYPE"] = json!({"std::vector": {"ref": "s_point", "x": 1}});
+    assert_eq!(codes(&document), ["B2C-E0108"]);
+}
+
+#[test]
+fn parameter_row_types_are_checked_like_type_fields() {
+    // Names, references and templates load; the row stays free-form data.
+    let mut document = base();
+    for term in [
+        json!("int"),
+        json!({"ref": "s_point"}),
+        json!({"std::map": ["int", {"std::vector": {"ref": "s_point"}}]}),
+    ] {
+        *param_type(&mut document) = term.clone();
+        let loaded = loads(&document);
+        assert_eq!(
+            loaded.modules[0].workspace.blocks[1].extra["params"][0]["type"],
+            term
+        );
+    }
+    assert_eq!(row_codes(json!({"std::vector": ["int"]})), ["B2C-E0112"]);
+    assert_eq!(row_codes(json!({"std::vector": "in t!"})), ["B2C-E0112"]);
+    assert_eq!(
+        row_codes(json!({"std::vector": {"ref": "bad id"}})),
+        ["B2C-E0113"]
+    );
+    assert_eq!(row_codes(json!({"ref": "bad id"})), ["B2C-E0113"]);
+    assert_eq!(row_codes(json!({"ref": "s", "x": 1})), ["B2C-E0110"]);
+    assert_eq!(row_codes(nested(9)), ["B2C-E0140"]);
+    // Text rules and reserved keys are reported once, by the free-form
+    // checks of `extra`.
+    assert_eq!(row_codes(json!({"std::vector": "in\u{202e}t"})), ["B2C-E0126"]);
+    assert_eq!(
+        row_codes(json!({"std::vector": {"__proto__": "int"}})),
+        ["B2C-E0127"]
+    );
+    assert_eq!(row_codes(json!({"ref": "s", "constructor": 1})), ["B2C-E0127"]);
+    assert_eq!(
+        row_codes(json!({"std::vector": {"a": 1, "__proto__": 2}})),
+        ["B2C-E0112", "B2C-E0127"]
+    );
+    // A long name breaks the name rule, or the length limit, never both.
+    assert_eq!(
+        row_codes(json!({"std::vector": "x".repeat(MAX_STRING_BYTES)})),
+        ["B2C-E0112"]
+    );
+    assert_eq!(
+        row_codes(json!({"std::vector": "x".repeat(MAX_STRING_BYTES + 1)})),
+        ["B2C-E0123"]
+    );
+    // Anything else is left to the catalog, which checks parameter rows, as
+    // before type terms.
+    for term in [
+        json!({"vector": "int"}),
+        json!({"sym": "x", "name": "y"}),
+        json!(5),
+        json!(["int"]),
+        json!("in t!"),
+    ] {
+        *param_type(&mut document) = term;
+        loads(&document);
+    }
+    // Rows of other keys are not type terms.
+    let mut document = base();
+    document["modules"][0]["workspace"]["blocks"][1]["extra"]["other"] =
+        json!([{"type": {"std::vector": []}}]);
+    loads(&document);
+    // Rows that are not objects, and rows without a type, are left alone.
+    document["modules"][0]["workspace"]["blocks"][1]["extra"]["params"] =
+        json!([{"sym": "s_n", "name": "n"}, "row", 5]);
+    loads(&document);
+    document["modules"][0]["workspace"]["blocks"][1]["extra"]["params"] =
+        json!({"type": {"std::vector": []}});
+    loads(&document);
 }
 
 // --- E0128–E0135: positions, sizes and settings ---------------------------

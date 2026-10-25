@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use b2c_ir::text::is_device_name;
 use b2c_ir::{BlockId, Location, ModuleId, SymbolId};
 
+use super::term::{Place, is_template_object};
 use super::{Decoder, Origin, Placement, Seg, find};
 use crate::codes;
 use crate::document::{
@@ -13,6 +14,7 @@ use crate::document::{
 };
 use crate::json::Json;
 use crate::limits::{MAX_BLOCKS, MAX_COORDINATE, MAX_EXPR_TOKENS, MAX_IDENT_LEN, MAX_VARIADIC_PARTS};
+use crate::terms::ROW_KEYS;
 use crate::text_rules::quote;
 
 /// Every frame colour.
@@ -428,6 +430,9 @@ impl<'a> Decoder<'a> {
             if key == "params" {
                 d.declare_params(item);
             }
+            if ROW_KEYS.contains(&key) {
+                d.row_types(item);
+            }
             if too_many && matches!(item, Json::Number(_)) {
                 // Already reported; a count that large is never also
                 // reported as a number JavaScript cannot hold.
@@ -485,6 +490,20 @@ impl<'a> Decoder<'a> {
         }
     }
 
+    /// The `type` of each row of a known row key is a type term
+    /// (types.md §2.1): a reference or a template there is checked like
+    /// one in a type field. The rows stay free-form data.
+    fn row_types(&mut self, value: &'a Json) {
+        let Json::Array(rows) = value else {
+            return;
+        };
+        for (index, row) in rows.iter().enumerate() {
+            if let Some(ty) = row.get("type") {
+                self.at(Seg::Index(index), |d| d.at(Seg::Key("type"), |d| d.row_type(ty)));
+            }
+        }
+    }
+
     /// Names are limited in characters, like identifiers (the text itself is
     /// already limited in bytes); the message gives the same count.
     fn check_name_length(&mut self, name: &str) -> bool {
@@ -504,14 +523,20 @@ impl<'a> Decoder<'a> {
         self.map(value, |d, _, item| d.field_value(item))
     }
 
+    /// A field value. An object is read (types.md §2.2) as a reference when
+    /// it has the key `ref`; as a template type term when its one key is a
+    /// qualified name; otherwise as a declaration, so a damaged declaration
+    /// keeps its own problems (`B2C-E0110`, `B2C-E0111`).
     fn field_value(&mut self, value: &'a Json) -> Option<FieldValue> {
         match value {
             Json::Bool(b) => Some(FieldValue::Bool(*b)),
             Json::String(_) => self.string(value).map(FieldValue::Text),
             Json::Object(entries) if find(entries, "ref").is_some() => {
-                let entries = self.object(value, &["ref"])?;
-                let target = self.required(entries, "ref", |d, v| d.id(v, SymbolId::new))?;
+                let target = self.reference(value, Place::Field)?;
                 Some(FieldValue::Ref(SymbolRef { target }))
+            }
+            Json::Object(entries) if is_template_object(entries) => {
+                self.template(value, Place::Field).map(FieldValue::Type)
             }
             Json::Object(_) => {
                 let entries = self.object(value, &["sym", "name"])?;

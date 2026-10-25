@@ -6,6 +6,11 @@
 //! `B2C-E0114`/`B2C-E0115`. References to symbols declared outside the
 //! blocks are left alone; the paste binds them again by name.
 //!
+//! A reference is a field reference (`{"ref": id}`, also a user type in a
+//! type field), an expression token, or a reference inside a type term: in
+//! a template in a type field, or in the `type` of a row of `extra`
+//! (`params`) (types.md §2.4).
+//!
 //! The pure crates use no randomness, so the randomness comes from outside:
 //! [`SeededIds`] derives IDs from a 256-bit seed that the caller takes from
 //! a cryptographic random source (in the editor, `crypto.getRandomValues`).
@@ -22,7 +27,7 @@ use b2c_ir::{BlockId, IdError, SymbolId};
 use sha2::{Digest, Sha256};
 
 use crate::document::{Block, Document, FieldValue, Input, Token};
-use crate::walk;
+use crate::{terms, walk};
 
 /// How many candidates [`remap_ids`] asks for before it gives up on one ID.
 pub const MAX_ID_ATTEMPTS: usize = 64;
@@ -164,8 +169,9 @@ pub enum RemapError {
 
 /// Gives every block in `blocks` (at any depth, in stacks too) a fresh block
 /// ID, and every symbol declared inside them a fresh symbol ID, and points
-/// the references to those symbols (field references, expression tokens) at
-/// the new IDs. References to symbols declared elsewhere are not changed.
+/// the references to those symbols (field references, expression tokens,
+/// references in type terms) at the new IDs. References to symbols declared
+/// elsewhere are not changed.
 ///
 /// A fresh ID is one that is not in `taken` and was not given earlier in
 /// the same call; [`used_ids`] gives the `taken` set of a document. Symbols
@@ -214,10 +220,11 @@ pub fn remap_ids(
     result.map(|()| symbols)
 }
 
-/// Points every reference to a symbol in `map` (field references and
-/// expression tokens, at any depth) at the symbol's new ID. Declarations
-/// are not changed. A paste uses this to bind references to symbols
-/// declared outside the pasted blocks to the target's symbols.
+/// Points every reference to a symbol in `map` (field references,
+/// expression tokens and references in type terms, at any depth) at the
+/// symbol's new ID. Declarations are not changed. A paste uses this to bind
+/// references to symbols declared outside the pasted blocks to the target's
+/// symbols.
 pub fn rewrite_refs(blocks: &mut [Block], map: &BTreeMap<SymbolId, SymbolId>) {
     if map.is_empty() {
         return;
@@ -225,9 +232,9 @@ pub fn rewrite_refs(blocks: &mut [Block], map: &BTreeMap<SymbolId, SymbolId>) {
     walk::blocks_mut(blocks, |block| rename_symbols(block, map, false));
 }
 
-/// The symbols that `blocks` refer to (in field references or expression
-/// tokens) but do not declare: what a clipboard payload's `refs` describes
-/// (spec §5.12).
+/// The symbols that `blocks` refer to (in field references, expression
+/// tokens or type terms) but do not declare: what a clipboard payload's
+/// `refs` describes (spec §5.12).
 pub fn outside_refs(blocks: &[Block]) -> BTreeSet<SymbolId> {
     let mut declared = BTreeSet::new();
     let mut referenced = BTreeSet::new();
@@ -238,6 +245,7 @@ pub fn outside_refs(blocks: &[Block]) -> BTreeSet<SymbolId> {
                 referenced.insert(reference.target.clone());
             }
         }
+        referenced.extend(terms::refs(block));
         for input in block.inputs.values() {
             if let Input::Expr(expr) = input {
                 for token in &expr.expr {
@@ -312,8 +320,10 @@ fn declarations(block: &Block) -> impl Iterator<Item = SymbolId> + '_ {
 }
 
 /// Renames the symbols in `map` in one block (not its children): its
-/// references, and its declarations too when `declarations` is set.
+/// references (also those in type terms), and its declarations too when
+/// `declarations` is set.
 fn rename_symbols(block: &mut Block, map: &BTreeMap<SymbolId, SymbolId>, declarations: bool) {
+    terms::rename(block, map);
     for value in block.fields.values_mut() {
         match value {
             FieldValue::Ref(reference) => {

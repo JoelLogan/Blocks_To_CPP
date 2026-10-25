@@ -19,8 +19,12 @@
 /** The value of the top-level `format` key. */
 export const FORMAT_TAG = 'blocks2cpp/project';
 
-/** The project format version this core reads and writes (`CoreVersion.formatVersion`). */
-export const CURRENT_FORMAT_VERSION = 1;
+/**
+ * The newest project format version this core reads and writes (`CoreVersion.formatVersion`,
+ * `b2c_model::MAX_FORMAT_VERSION`). Version 2 adds template type terms; a document is saved as the
+ * lowest version whose keys cover it (ADR-0013), so one without them stays version 1.
+ */
+export const MAX_FORMAT_VERSION = 2;
 
 /** A block ID: `[A-Za-z0-9_]{1,32}`, unique in the project. */
 export type BlockId = string;
@@ -217,7 +221,7 @@ export type TypeJson = string | { readonly [name: string]: TypeJson | readonly T
 /**
  * A field value: checkbox, text (numbers are stored as text), declaration, reference, or, in a
  * type field, a template type term (format version 2). A type field holding a name stays text,
- * and one holding a user type a reference; the loader does not produce template terms yet.
+ * and one holding a user type a reference.
  */
 export type FieldValue = boolean | string | SymbolDecl | SymbolRef | TypeJson;
 

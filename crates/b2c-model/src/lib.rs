@@ -5,6 +5,9 @@
 //! * [`load()`]: parse untrusted bytes with every limit and rule of §5.6.
 //! * [`to_canonical_json`]: deterministic serialisation (§5.2).
 //! * [`content_hash`]: SHA-256 of the semantic content (§5.11).
+//! * [`MAX_FORMAT_VERSION`], [`OLDEST_UNMIGRATED_VERSION`] and
+//!   [`required_format_version`]: which format versions load, and which one
+//!   a document is saved as (§5.7, ADR-0013).
 //! * [`load_clipboard`] and [`to_canonical_clipboard_json`]: the clipboard
 //!   format (§5.12), validated exactly like a project file.
 //! * [`remap_ids`] and [`SeededIds`]: fresh block and symbol IDs for pasted
@@ -28,12 +31,14 @@ mod load;
 mod migrate;
 mod save;
 mod security;
+mod terms;
 mod text_rules;
 mod version;
 mod walk;
 
 pub use clipboard::{
-    CLIPBOARD_FORMAT_TAG, CLIPBOARD_FORMAT_VERSION, Clipboard, ClipboardRef, RefKind, load_clipboard,
+    CLIPBOARD_FORMAT_TAG, Clipboard, ClipboardRef, MAX_CLIPBOARD_FORMAT_VERSION,
+    OLDEST_CLIPBOARD_FORMAT_VERSION, RefKind, load_clipboard, required_clipboard_format_version,
     to_canonical_clipboard_json,
 };
 pub use document::*;
@@ -43,4 +48,6 @@ pub use ids::{
 pub use load::{LoadError, load};
 pub use save::{content_hash, to_canonical_json};
 pub use security::{SecuritySummary, hex, security_hash, security_summary};
-pub use version::is_newer as is_newer_version;
+pub use version::{
+    MAX_FORMAT_VERSION, OLDEST_UNMIGRATED_VERSION, is_newer as is_newer_version, required_format_version,
+};
