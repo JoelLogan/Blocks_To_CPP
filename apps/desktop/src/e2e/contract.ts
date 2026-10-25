@@ -52,7 +52,8 @@ export interface E2eConsoleScreen {
  * The latest duration, in milliseconds, of each User Timing span the app measures
  * (src/lib/timing.ts), by span name: `b2c:preview` and its phases `b2c:preview:read`,
  * `b2c:preview:update`, `b2c:preview:commit` and `b2c:preview:publish`;
- * `b2c:toolbox-refresh` (a rebuild of the toolbox's flyout); `b2c:select`; `b2c:code-panel`. A
+ * `b2c:toolbox-refresh` (a rebuild of the toolbox's flyout); `b2c:select`; `b2c:code-panel`;
+ * `b2c:keyboard-targets` (listing a keyboard move's places). A
  * span that has not run since the window started is `null`.
  */
 export type E2eTimings = Readonly<Record<string, number | null>>;

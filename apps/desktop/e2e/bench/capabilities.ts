@@ -47,6 +47,17 @@ export const BENCH_HOOK_METHODS = {
   console: ['document', 'insertBlocks', 'consoleText'],
   // Opening the document, centring on the handle, where the handle is and where to grab it.
   drag: ['blockElement', 'code', 'selectBlock', 'grabPoint'],
+  // Opening the document, centring on the number block, where it and the column's inputs are, the
+  // document after each drop, and the keyboard listing's span.
+  'typed-slots': [
+    'blockElement',
+    'code',
+    'selectBlock',
+    'grabPoint',
+    'connectionPoint',
+    'document',
+    'timings',
+  ],
 } as const satisfies Readonly<Record<string, readonly HookMethod[]>>;
 
 /** A benchmark that uses the hook. */
