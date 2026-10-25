@@ -377,9 +377,12 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   assignments of decision M3-D1, each with the assignment, a reference
   solution and golden-style run data. Until its block project passes, the
   reference solution is built with the debug configuration's flags and
-  `-Werror` and must give the expected output; `status.toml` records which
-  are green (the guessing game so far), and the test fails when a pending
-  assignment's project starts to pass.
+  `-Werror` and must give the expected output, and the project, while it is
+  built, stays in the assignment's folder rather than in `examples/`;
+  `status.toml` records which are green (the guessing game so far), and the
+  test fails when a pending assignment's project starts to pass. The golden
+  test and this one share one run check, which runs each program in a copy
+  of its folder and fails if the program changes anything there.
 
 ### Changed
 

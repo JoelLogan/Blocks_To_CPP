@@ -30,6 +30,16 @@ a comparison function, a lambda, and lambdas come in M4
 marks in the test data are equal, so any correct sort gives the same
 ranking.
 
+The sort compares `students.at(j).mark`: in blocks, a field-access block
+on an *item* block, `(item (j) of [students]) . [mark]`. That works because
+the W1 contracts give the field-access block its object as a value input
+(`OBJ`, the struct type bound from what is plugged in;
+[`types.md`](../../../docs/plans/m3-contracts/types.md), the struct blocks),
+where spec 03 §3.7.9 still shows a variable field, `[obj ▾] . [field ▾]`.
+If the variable field stays, the project first copies each item into a
+variable (`create [Student] a = item (j) of [students]`) and compares
+`[a] . [mark]`; the output is the same, so the run data does not change.
+
 ## Test data
 
 Five students with full names (each read as a whole line) and marks 74, 91,

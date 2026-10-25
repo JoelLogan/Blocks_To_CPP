@@ -7,21 +7,26 @@
 //!   and its run data as the golden tests have it: `stdin.txt`,
 //!   `stdout.txt` or `stdout.regex`, `exit_code.txt` and any input files.
 //!   The reference solution is built with g++ as the debug configuration
-//!   builds generated code, with warnings as errors, and run in that folder:
+//!   builds generated code, with warnings as errors, and run on that data:
 //!   it must give the expected output and exit code, which checks the run
-//!   data until the blocks exist. Once `examples/<name>.b2c` exists, it is
-//!   built and run the same way as a golden example; when it passes, this
-//!   test fails with "now passes: mark it green", so progress is never
-//!   silent.
+//!   data until the blocks exist. While its block project is being built,
+//!   it is kept here too, as `<name>.b2c`, and not in `examples/`: every
+//!   file there must already pass the tests that read all examples, which
+//!   want no diagnostic at all and the canonical form. The project is built
+//!   and run as a golden example is; once it passes and is ready for
+//!   `examples/`, this test fails with "now passes: mark it green", so
+//!   progress is never silent.
 //! * A **green** assignment has its block project `examples/<name>.b2c` and
-//!   its run data in `tests/golden/<name>/`, where `golden.rs` also checks
-//!   the generated C++; its folder here keeps only `README.md` and, if it
-//!   has one, `reference.cpp`. The project must pass the golden run check,
-//!   and so must the reference solution.
+//!   its run data in `tests/golden/<name>/`, where `golden.rs` builds and
+//!   runs it and checks the generated C++. Its folder here keeps only
+//!   `README.md` and, if it has one, `reference.cpp`, which must pass on the
+//!   golden run data.
 //!
-//! The run check prints a progress line, such as "M3 assignments: 1 of 10
-//! green", even when the test passes. Without g++ it is skipped, unless
-//! `B2C_REQUIRE_GXX` is set; the layout checks run everywhere.
+//! Every program runs through `common::run_data`, as in `golden.rs`: in a
+//! copy of its run folder, which must be unchanged afterwards. When g++ is
+//! there, the run check prints a progress line, such as "M3 assignments: 1
+//! of 10 green", even when the test passes. Without g++ it is skipped,
+//! unless `B2C_REQUIRE_GXX` is set; the layout checks run everywhere.
 
 // Test helpers fail the test by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -33,6 +38,7 @@ use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
+use b2c_build::{FrontendOptions, run_frontend};
 use common::repo_root;
 use common::run_data::{RunData, build_cpp, build_project};
 
@@ -69,7 +75,14 @@ impl Assignment {
         assignments_root().join(&self.name)
     }
 
-    /// `examples/<name>.b2c`, the block project.
+    /// `tests/assignments/<name>/<name>.b2c`, the block project while the
+    /// assignment is pending.
+    fn draft(&self) -> PathBuf {
+        self.folder().join(format!("{}.b2c", self.name))
+    }
+
+    /// `examples/<name>.b2c`, the block project once the assignment is
+    /// green.
     fn project(&self) -> PathBuf {
         repo_root().join("examples").join(format!("{}.b2c", self.name))
     }
@@ -207,6 +220,13 @@ fn layout_problems(assignment: &Assignment) -> Vec<String> {
                     "{name}: is pending but tests/golden/{name}/ exists; mark it green or move the run data back"
                 ));
             }
+            if assignment.project().exists() {
+                problems.push(format!(
+                    "{name}: is pending but examples/{name}.b2c exists; the tests that read every example fail on \
+                     a project that is not finished, so keep it at tests/assignments/{name}/{name}.b2c until this \
+                     test says it passes"
+                ));
+            }
         }
         Status::Green => {
             if !assignment.project().is_file() {
@@ -215,38 +235,141 @@ fn layout_problems(assignment: &Assignment) -> Vec<String> {
             if let Err(problem) = RunData::read(&assignment.golden()) {
                 problems.push(format!("{name}: is green but tests/golden/{name}/ {problem}"));
             }
-            // The run data has moved; a copy left here could drift.
+            // The project and the run data have moved; a copy left here
+            // could drift.
+            let draft = format!("{name}.b2c");
             let files: BTreeSet<String> = std::fs::read_dir(&folder)
                 .unwrap()
                 .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
                 .collect();
             for file in files {
-                if file != "README.md" && file != "reference.cpp" {
-                    problems.push(format!(
-                        "{name}: is green, so {file} belongs in tests/golden/{name}/, not tests/assignments/{name}/"
-                    ));
+                if file == "README.md" || file == "reference.cpp" {
+                    continue;
                 }
+                let home = if file == draft {
+                    "examples/".to_owned()
+                } else {
+                    format!("tests/golden/{name}/")
+                };
+                problems.push(format!(
+                    "{name}: is green, so {file} belongs in {home}, not tests/assignments/{name}/"
+                ));
             }
         }
     }
     problems
 }
 
-/// Whether the README's index has the assignment's row with its status in
-/// the last column.
-fn index_problem(index: &str, assignment: &Assignment) -> Option<String> {
-    let name = &assignment.name;
-    let start = format!("| [`{name}`]({name}/README.md) |");
-    let status = format!("| {} |", assignment.status.word());
-    let row = index.lines().find(|line| line.starts_with(&start));
-    match row {
-        Some(row) if row.trim_end().ends_with(&status) => None,
-        Some(_) => Some(format!(
-            "{name}: its row in tests/assignments/README.md does not end with `{status}`"
-        )),
-        None => Some(format!(
-            "{name}: tests/assignments/README.md has no index row starting with `{start}`"
-        )),
+/// One assignment row of the README's index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IndexRow {
+    /// Its number in the file, from 1.
+    line: usize,
+    name: String,
+    /// The last column.
+    status: String,
+}
+
+/// The assignment rows of the README's index, in order: every line that
+/// starts with ``| [` ``, which must go on as ``| [`name`](name/README.md) |``
+/// and end with ` | <status> |`.
+fn index_rows(readme: &str) -> Result<Vec<IndexRow>, String> {
+    let mut rows = Vec::new();
+    for (index, line) in readme.lines().enumerate() {
+        let number = index + 1;
+        let Some(rest) = line.strip_prefix("| [`") else {
+            continue;
+        };
+        let name = rest.split_once('`').map_or("", |(name, _)| name);
+        let start = format!("| [`{name}`]({name}/README.md) |");
+        if name.is_empty() || !line.starts_with(&start) {
+            return Err(format!(
+                "tests/assignments/README.md line {number}: an index row starts with ``| [`name`](name/README.md) |``"
+            ));
+        }
+        let status = line
+            .trim_end()
+            .strip_suffix('|')
+            .and_then(|row| row.rsplit_once('|'))
+            .map_or("", |(_, last)| last.trim());
+        rows.push(IndexRow {
+            line: number,
+            name: name.to_owned(),
+            status: status.to_owned(),
+        });
+    }
+    Ok(rows)
+}
+
+/// What is wrong with the README's index: it must have one row for each
+/// assignment of `status.toml`, in the same order, with its status in the
+/// last column, and no other row.
+fn index_problems(readme: &str, assignments: &[Assignment]) -> Vec<String> {
+    let rows = match index_rows(readme) {
+        Ok(rows) => rows,
+        Err(problem) => return vec![problem],
+    };
+    let mut problems = Vec::new();
+    let mut seen = BTreeSet::new();
+    for row in &rows {
+        let at = format!("tests/assignments/README.md line {}", row.line);
+        if !seen.insert(row.name.as_str()) {
+            problems.push(format!("{at}: `{}` has a second index row", row.name));
+            continue;
+        }
+        match assignments.iter().find(|assignment| assignment.name == row.name) {
+            None => problems.push(format!(
+                "{at}: `{}` has an index row but is not in status.toml",
+                row.name
+            )),
+            Some(assignment) if assignment.status.word() != row.status => problems.push(format!(
+                "{at}: `{}` is {} in status.toml but `{}` in the index",
+                row.name,
+                assignment.status.word(),
+                row.status
+            )),
+            Some(_) => {}
+        }
+    }
+    for assignment in assignments {
+        if !seen.contains(assignment.name.as_str()) {
+            problems.push(format!(
+                "{}: tests/assignments/README.md has no index row for it",
+                assignment.name
+            ));
+        }
+    }
+    let indexed: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+    let listed: Vec<&str> = assignments.iter().map(|a| a.name.as_str()).collect();
+    if problems.is_empty() && indexed != listed {
+        problems.push(format!(
+            "the index of tests/assignments/README.md is not in status.toml's order:\n  index: {}\n  status.toml: {}",
+            indexed.join(", "),
+            listed.join(", ")
+        ));
+    }
+    problems
+}
+
+/// Why a block project that passes its run is not ready for `examples/`
+/// yet, if it is not: the tests that read every example also want no
+/// diagnostic at all, notes included, and the canonical form that `b2c fmt`
+/// writes.
+fn not_ready_for_examples(project: &Path) -> Option<String> {
+    let bytes = std::fs::read(project).unwrap();
+    let frontend = run_frontend(&bytes, &FrontendOptions::default());
+    if let Some(first) = frontend.diagnostics.first() {
+        return Some(format!(
+            "{} diagnostic(s), notes included; the first: {} {}",
+            frontend.diagnostics.len(),
+            first.code.0,
+            first.message
+        ));
+    }
+    match b2c_model::load(&bytes) {
+        Ok(document) if b2c_model::to_canonical_json(&document).as_bytes() == bytes.as_slice() => None,
+        Ok(_) => Some("it is not in canonical form (`b2c fmt` writes it)".to_owned()),
+        Err(error) => Some(error.to_string()),
     }
 }
 
@@ -283,6 +406,57 @@ fn status_toml_is_read_strictly() {
 }
 
 #[test]
+fn the_index_is_read_strictly() {
+    let listed = parse_status("[assignments]\na = \"pending\"\nb = \"green\"\n").unwrap();
+    let row = |name: &str, status: &str| format!("| [`{name}`]({name}/README.md) | x | W2 | {status} |\n");
+    let header = "| Assignment | Concepts | Wave | Status |\n| --- | --- | --- | --- |\n";
+    let good = format!("{header}{}{}", row("a", "pending"), row("b", "green"));
+    assert_eq!(index_problems(&good, &listed), Vec::<String>::new());
+    for (bad, expected) in [
+        (
+            format!("{header}{}", row("a", "pending")),
+            "b: tests/assignments/README.md has no index row",
+        ),
+        (
+            format!(
+                "{header}{}{}{}",
+                row("a", "pending"),
+                row("b", "green"),
+                row("c", "green")
+            ),
+            "`c` has an index row but is not in status.toml",
+        ),
+        (
+            format!(
+                "{header}{}{}{}",
+                row("a", "pending"),
+                row("b", "green"),
+                row("a", "pending")
+            ),
+            "`a` has a second index row",
+        ),
+        (
+            format!("{header}{}{}", row("b", "green"), row("a", "pending")),
+            "not in status.toml's order",
+        ),
+        (
+            format!("{header}{}{}", row("a", "green"), row("b", "green")),
+            "`a` is pending in status.toml but `green` in the index",
+        ),
+        (
+            format!(
+                "{header}| [`a`](b/README.md) | x | W2 | pending |\n{}",
+                row("b", "green")
+            ),
+            "line 3: an index row starts with",
+        ),
+    ] {
+        let problems = index_problems(&bad, &listed).join("\n");
+        assert!(problems.contains(expected), "{bad}\n{problems}");
+    }
+}
+
+#[test]
 fn assignments_are_laid_out_as_their_status_says() {
     let assignments = assignments();
     let mut failures = Vec::new();
@@ -292,7 +466,8 @@ fn assignments_are_laid_out_as_their_status_says() {
             "tests/assignments/{folder}/ is not listed in tests/assignments/status.toml"
         ));
     }
-    let index = std::fs::read_to_string(assignments_root().join("README.md")).unwrap();
+    let readme = std::fs::read_to_string(assignments_root().join("README.md")).unwrap();
+    failures.extend(index_problems(&readme, &assignments));
     for assignment in &assignments {
         if !assignment.folder().is_dir() {
             let name = &assignment.name;
@@ -300,7 +475,6 @@ fn assignments_are_laid_out_as_their_status_says() {
             continue;
         }
         failures.extend(layout_problems(assignment));
-        failures.extend(index_problem(&index, assignment));
     }
     finish(&failures);
 }
@@ -313,8 +487,9 @@ struct Checked {
     not_yet: Option<String>,
 }
 
-/// Builds and runs the reference solution and the block project, as the
-/// assignment's status asks.
+/// Builds and runs the reference solution and, while the assignment is
+/// pending, its block project. A green assignment's project is
+/// `golden.rs`'s to run.
 fn check(assignment: &Assignment, work: &Path) -> Checked {
     let name = &assignment.name;
     let mut checked = Checked::default();
@@ -334,28 +509,25 @@ fn check(assignment: &Assignment, work: &Path) -> Checked {
             checked.failures.push(format!("{name}: reference.cpp: {problem}"));
         }
     }
-    let project = assignment.project();
-    let cache = work.join("cache");
-    match assignment.status {
-        Status::Green => {
-            if let Err(problem) = build_project(&project, &cache).and_then(|program| data.check(&program)) {
-                checked
-                    .failures
-                    .push(format!("{name}: examples/{name}.b2c: {problem}"));
-            }
-        }
-        Status::Pending if project.is_file() => {
-            match build_project(&project, &cache).and_then(|program| data.check(&program)) {
-                Ok(()) => checked.failures.push(format!(
-                    "{name}: examples/{name}.b2c now passes: mark it green (tests/assignments/README.md says how)"
+    let draft = assignment.draft();
+    if assignment.status == Status::Pending && draft.is_file() {
+        let shown = format!("tests/assignments/{name}/{name}.b2c");
+        match build_project(&draft, &work.join("cache")).and_then(|program| data.check(&program)) {
+            Ok(()) => match not_ready_for_examples(&draft) {
+                None => checked.failures.push(format!(
+                    "{name}: {shown} now passes: mark it green (tests/assignments/README.md says how)"
                 )),
-                Err(problem) => {
-                    let first = problem.lines().next().unwrap_or_default();
-                    checked.not_yet = Some(format!("{name}: examples/{name}.b2c does not pass yet: {first}"));
+                Some(reason) => {
+                    checked.not_yet = Some(format!(
+                        "{name}: {shown} passes its run but is not ready for examples/ yet: {reason}"
+                    ));
                 }
+            },
+            Err(problem) => {
+                let first = problem.lines().next().unwrap_or_default();
+                checked.not_yet = Some(format!("{name}: {shown} does not pass yet: {first}"));
             }
         }
-        Status::Pending => {}
     }
     checked
 }
@@ -371,7 +543,7 @@ fn assignments_pass_their_run_check() {
     let work = tempfile::tempdir().unwrap();
     let mut failures = Vec::new();
     let mut not_yet = Vec::new();
-    // Green assignments that passed every check.
+    // Green assignments that passed every check here.
     let mut green = 0;
     for assignment in &assignments {
         let checked = check(assignment, work.path());

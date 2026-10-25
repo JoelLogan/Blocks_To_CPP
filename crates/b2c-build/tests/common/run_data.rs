@@ -2,13 +2,16 @@
 //! program and check what it does: a folder with `stdin.txt`, the expected
 //! standard output (`stdout.txt`, or a regular expression in
 //! `stdout.regex`), `exit_code.txt` and any input files the program reads.
-//! The program runs with that folder as its working directory, which stands
-//! in for the project folder a program runs in by default (07 §7.6.2), so
-//! it names its input files with paths relative to it.
+//! The program runs in a copy of that folder, which stands in for the
+//! project folder a program runs in by default (07 §7.6.2), so it names its
+//! input files with paths relative to it. The copy must be the same after
+//! the run: a program that adds, removes or changes a file there fails, so
+//! no run leaves anything in the source tree for a later run to find.
 //!
-//! `tests/golden.rs` has its own copy of the run check; these helpers do
-//! the same, so a program passes here exactly when it would pass there.
+//! `tests/golden.rs` and `tests/assignments.rs` both build and check
+//! programs with these helpers, so the two run checks cannot drift apart.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -28,13 +31,10 @@ use super::real_toolchain;
 /// How long one program may run.
 pub(crate) const RUN_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The files that make up the run data, apart from input files.
-pub(crate) const RUN_DATA_FILES: [&str; 4] = ["stdin.txt", "stdout.txt", "stdout.regex", "exit_code.txt"];
-
 /// What a program must do with the input in its folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RunData {
-    /// The folder: the program's working directory.
+    /// The folder; the program runs in a copy of it.
     pub(crate) folder: PathBuf,
     /// Its standard input.
     pub(crate) stdin: Vec<u8>,
@@ -90,18 +90,35 @@ impl RunData {
         })
     }
 
-    /// Runs `executable` in the folder with `stdin.txt` as its input and
-    /// checks its exit code and standard output.
+    /// Runs `executable` in a copy of the folder with `stdin.txt` as its
+    /// input, checks its exit code and standard output, and then checks that
+    /// the copy is unchanged.
     pub(crate) fn check(&self, executable: &Path) -> Result<(), String> {
+        let before = snapshot(&self.folder)?;
+        let copy = tempfile::Builder::new()
+            .prefix("b2c-run-")
+            .tempdir()
+            .map_err(|error| format!("cannot make a folder to run in: {error}"))?;
+        write_snapshot(&before, copy.path())?;
         let run = run_program_captured(&RunRequest {
             executable: executable.to_path_buf(),
             args: Vec::new(),
             input: ProgramInput::Bytes(self.stdin.clone()),
             timeout: Some(RUN_TIMEOUT),
-            working_directory: self.folder.clone(),
+            working_directory: copy.path().to_path_buf(),
         })
         .map_err(|error| error.to_string())?;
-        self.compare(&run)
+        self.compare(&run)?;
+        let changed = changes(&before, &snapshot(copy.path())?);
+        if changed.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "changed the folder it ran in, a copy of its run data ({}); run data has no \
+                 way yet to say which files a program writes",
+                changed.join(", ")
+            ))
+        }
     }
 
     /// Compares a finished run with the expected exit code and output.
@@ -131,6 +148,70 @@ impl RunData {
             }
         }
     }
+}
+
+/// What a folder holds: every file and folder under it, by its path
+/// relative to it, with a file's bytes (`None` for a folder).
+type Snapshot = BTreeMap<PathBuf, Option<Vec<u8>>>;
+
+/// Reads everything under `folder`. A link or anything else that is neither
+/// a file nor a folder is an error: run data holds neither.
+fn snapshot(folder: &Path) -> Result<Snapshot, String> {
+    let mut entries = Snapshot::new();
+    let mut pending = vec![PathBuf::new()];
+    while let Some(relative) = pending.pop() {
+        let dir = folder.join(&relative);
+        let listing =
+            std::fs::read_dir(&dir).map_err(|error| format!("cannot list {}: {error}", dir.display()))?;
+        for entry in listing {
+            let entry = entry.map_err(|error| format!("cannot list {}: {error}", dir.display()))?;
+            let path = relative.join(entry.file_name());
+            let kind = entry
+                .file_type()
+                .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
+            if kind.is_dir() {
+                entries.insert(path.clone(), None);
+                pending.push(path);
+            } else if kind.is_file() {
+                let bytes = std::fs::read(entry.path())
+                    .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+                entries.insert(path, Some(bytes));
+            } else {
+                return Err(format!("{} is neither a file nor a folder", path.display()));
+            }
+        }
+    }
+    Ok(entries)
+}
+
+/// Writes a snapshot into the empty folder `into`.
+fn write_snapshot(snapshot: &Snapshot, into: &Path) -> Result<(), String> {
+    // A folder's path sorts before the paths in it.
+    for (path, contents) in snapshot {
+        let target = into.join(path);
+        let written = match contents {
+            None => std::fs::create_dir(&target),
+            Some(bytes) => std::fs::write(&target, bytes),
+        };
+        written.map_err(|error| format!("cannot copy {}: {error}", path.display()))?;
+    }
+    Ok(())
+}
+
+/// What differs between two snapshots, one item per path.
+fn changes(before: &Snapshot, after: &Snapshot) -> Vec<String> {
+    let mut changed = Vec::new();
+    for (path, contents) in after {
+        match before.get(path) {
+            None => changed.push(format!("added {}", path.display())),
+            Some(old) if old != contents => changed.push(format!("changed {}", path.display())),
+            Some(_) => {}
+        }
+    }
+    for path in before.keys().filter(|path| !after.contains_key(*path)) {
+        changed.push(format!("removed {}", path.display()));
+    }
+    changed
 }
 
 /// Standard output as text; Windows text mode turns each `\n` into `\r\n`,

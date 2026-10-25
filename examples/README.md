@@ -7,8 +7,9 @@ compares the output and exit code with the expected files in that folder.
 
 The intro-CS assignments that make up M3's exit are acceptance tests in
 [`tests/assignments/`](../tests/assignments/README.md) until their block
-projects exist; each one joins this list, with its golden test, once its
-project passes.
+projects pass. A project being built stays in its assignment's folder,
+since every file here must pass the tests that read all examples; each one
+joins this list, with its golden test, once its project passes.
 
 | File | Name | What it shows |
 |------|------|---------------|

@@ -25,57 +25,72 @@ green one by one as the block projects arrive.
 | [`matrix_sum`](matrix_sum/README.md) | list of lists (vector of vectors) | W2 | pending |
 | [`input_validation`](input_validation/README.md) | exceptions, text to number | W2 | pending |
 
-Every run of the test prints the count, for example
+When g++ is on `PATH`, every run of the test prints the count, for example
 `M3 assignments: 1 of 10 green`.
 
 ## The files
 
 [`status.toml`](status.toml) lists every assignment as `pending` or
-`green`, in the order of the index. Each assignment has a folder,
-`tests/assignments/<name>/`:
+`green`. The index above has one row for each, in the same order. Each
+assignment has a folder, `tests/assignments/<name>/`:
 
 - `README.md`: the assignment as a student would get it, its concepts, the
   blocks it needs (with the spec section and when each arrives) and its
   test data.
 - `reference.cpp`: a reference solution. It uses only the standard library
   and only what M3's blocks can express (no lambdas or classes, which come
-  in M4), written the way generated code looks. Each `std::cin >>` stands
-  for an *ask* block: the input has one valid answer per line, never an
-  empty line, and never runs out, so both print the same.
+  in M4), close to the code the blocks generate. The test compares what it
+  prints, not its text, so a block project may take another shape where the
+  blocks need one; the assignment's README says where. Each `std::cin >>`
+  stands for an *ask* block: the input has one valid answer per line, never
+  an empty line, and never runs out, so both print the same.
 - The run data, as a golden test has it
   ([09 §9.2](../../docs/spec/09-quality-and-delivery.md#92-testing-strategy)):
   `stdin.txt`, `stdout.txt` (or `stdout.regex` when the output is random),
   `exit_code.txt`, and any input file the program reads. The program runs
-  with this folder as its working directory, which stands in for the
-  project folder a program runs in by default, so it names its files with
-  relative paths (decision M3-D3). In a `stdout.regex` the file's own last
-  line break is ignored, so the pattern ends with `\n`.
+  in a copy of this folder, which stands in for the project folder a
+  program runs in by default, so it names its files with relative paths
+  (decision M3-D3). A program that adds, removes or changes a file in the
+  copy fails, so no run leaves anything in the source tree for a later run
+  to find. In a `stdout.regex` the file's own last line break is ignored,
+  so the pattern ends with `\n`.
+- `<name>.b2c`, the block project, while it is being built. It stays here
+  until it passes, because every file in
+  [`examples/`](../../examples/README.md) must already pass the tests that
+  read all examples: no diagnostic at all (notes included), C++ that
+  compiles with `-Werror`, the canonical form, `b2c check`, `b2c migrate`
+  and the editor's round trip.
 
 ## What the test checks
 
 [`crates/b2c-build/tests/assignments.rs`](../../crates/b2c-build/tests/assignments.rs)
 checks every assignment in `status.toml`:
 
-- **pending**: the folder holds all of the above, and `tests/golden/<name>/`
-  does not exist. The reference solution is built with g++ the way the
-  debug configuration builds generated code (C++20, `-Wall -Wextra
-  -Wpedantic`, the sanitizers where the compiler has them, hardening),
-  plus `-Werror`, and run in the folder: its output and exit code must be
-  the expected ones. This checks the run data until the blocks exist. Once
-  `examples/<name>.b2c` exists, it is built and run the same way as a
-  golden example; when it passes, the test fails with "now passes: mark it
-  green", so progress is never silent. Until then the test lists it as
-  "does not pass yet" and carries on.
+- **pending**: the folder holds the README, the reference solution and the
+  run data, and neither `tests/golden/<name>/` nor `examples/<name>.b2c`
+  exists. The reference solution is built with g++ the way the debug
+  configuration builds generated code (C++20, `-Wall -Wextra -Wpedantic`,
+  the sanitizers where the compiler has them, hardening), plus `-Werror`,
+  and run on the run data: its output and exit code must be the expected
+  ones. This checks the run data until the blocks exist. If `<name>.b2c`
+  is in the folder, it is built and run the same way as a golden example.
+  When it passes and is ready for `examples/` (no diagnostic at all, notes
+  included, and the canonical form that `b2c fmt` writes), the test fails
+  with "now passes: mark it green", so progress is never silent. Until
+  then the test lists it as "does not pass yet" or "not ready for
+  examples/ yet", with the first reason, and carries on.
 - **green**: `examples/<name>.b2c` exists and its run data is in
-  `tests/golden/<name>/`, where the golden test also compares the
-  generated C++; the folder here keeps only `README.md` and, if there is
-  one, `reference.cpp`, so no run data exists twice. The project must pass
-  the golden run check: no error or warning from the front end or g++, then
-  the expected output and exit code. The reference solution, if any, must
-  pass too.
-- The index above has a row for every assignment, with its status in the
-  last column, and every folder here is listed in `status.toml`.
+  `tests/golden/<name>/`, where the golden test builds and runs it and
+  compares the generated C++. The folder here keeps only `README.md` and,
+  if there is one, `reference.cpp`, so nothing exists twice; the reference
+  solution, if any, must pass on the golden run data.
+- The index above has exactly one row for each assignment in
+  `status.toml`, in the same order, with its status in the last column,
+  and every folder here is listed in `status.toml`.
 
+Both tests build and run programs with the same helpers
+([`common/run_data.rs`](../../crates/b2c-build/tests/common/run_data.rs)),
+so a project that passes here passes the golden test's run check too.
 Without g++ on `PATH` the build-and-run part is skipped, as in the golden
 test, unless `B2C_REQUIRE_GXX` is set. CI sets it and runs the test on Linux
 and Windows (MSYS2 UCRT64), and in the GCC 11 and GCC 15 containers
@@ -87,12 +102,14 @@ B2C_REQUIRE_GXX=1 cargo test -p b2c-build --test assignments
 
 ## Turning an assignment green
 
-1. Build `examples/<name>.b2c` from blocks until the assignment test fails
-   with "now passes: mark it green".
-2. Move the run data to the golden test, every file but `README.md` and
-   `reference.cpp`:
+1. Build `tests/assignments/<name>/<name>.b2c` from blocks (it may be
+   committed while it is unfinished) until the assignment test fails with
+   "now passes: mark it green".
+2. Move the project to the examples and the run data to the golden test,
+   every file but `README.md` and `reference.cpp`:
 
    ```sh
+   git mv tests/assignments/<name>/<name>.b2c examples/
    mkdir tests/golden/<name>
    git mv tests/assignments/<name>/{stdin.txt,stdout.txt,exit_code.txt} tests/golden/<name>/
    ```
@@ -106,7 +123,10 @@ B2C_REQUIRE_GXX=1 cargo test -p b2c-build --test assignments
    last column, and add the example to
    [`examples/README.md`](../../examples/README.md).
 5. Check with
-   `B2C_REQUIRE_GXX=1 cargo test -p b2c-build --test assignments --test golden`.
+   `B2C_REQUIRE_GXX=1 cargo test -p b2c-build --test assignments --test golden`,
+   then run the other tests that read every example:
+   `cargo test -p b2c-lang -p b2c-cli -p b2c-app -p b2c-catalog` and
+   `pnpm --filter @blocks2cpp/desktop exec vitest run src/editor/sync/roundTrip.test.ts`.
 
 The golden test then covers it like every other example: the generated C++,
 generating twice, and the run, on every compiler in CI.

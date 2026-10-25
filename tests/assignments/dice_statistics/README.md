@@ -27,6 +27,17 @@ Random numbers, a map, counting, percentages.
 
 600 rolls. The random blocks have no seed (spec 03 offers none, and the
 helper seeds itself from `std::random_device`), so the counts differ on
-every run: `stdout.regex` checks the shape of each line and the totals
-that do not change (6 faces, 600 rolls), as the guessing game's golden
-test does.
+every run. `stdout.regex` checks each line's shape, as the guessing game's
+golden test does, and bounds the numbers:
+
+- each count is 50 to 150 and each share 8.0 % to 25.9 %, so a die that
+  always shows the same face fails, and so does a share worked out with
+  whole-number division first (`count / rolls * 100.0` prints `0.0%`);
+- the totals do not change: 6 faces, 600 rolls.
+
+A fair die leaves those bounds about once in two million runs (each count
+is binomial with n = 600 and p = 1/6: below 50 or above 150 with
+probability 8.2 × 10⁻⁸, so under 4.9 × 10⁻⁷ for the six). A regular
+expression cannot check that a share matches its count or that the most
+common face is the right one; the reference solution and a reading of the
+block project cover those.

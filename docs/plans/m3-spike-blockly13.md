@@ -46,8 +46,9 @@ toolbox), but:
   13's own keyboard navigation is switched off rather than adopted, which is a product decision
   ([Remaining work](#remaining-work)).
 
-That is about 9 to 13 working days of work and review, against the 2 days M3-D7 allowed, and
-most of it is in the editor, where W4 works.
+The verdict rests on "not clean", which is M3-D7's test, not on the size of what is left. What is
+left is about 9 to 13 working days of work and review beyond the 2-day spike, and most of it is in
+the editor, where W4 works.
 
 ## Versions and policy
 
@@ -385,7 +386,10 @@ For the upgrade after M3, with the effort of each in working days:
    selection tracking after a reload (FA-8), the 58 drag tests once 2 is done. 1 day.
 5. **The drag benchmark**: profile the 5,000-block drag, then fix it (for example by keeping
    Blockly's connection-pair cache out of pointer drags, if a documented seam allows) or record it
-   in `accepted.json` with the owner's agreement. 1 day.
+   in `accepted.json` with the owner's agreement. By then M3's typed slots
+   ([ADR-0018](../adr/0018-slot-typing.md)) make each pair the cache checks a type check, where
+   Blockly 12 asks the checker only about connections within the snap radius; so measure
+   `webview.drag-typed-1000.frame-p95-all` (added in W1) on both builds as well. 1 day.
 6. **Records**: the seams list and its checked versions, ADR-0014's consequences, the dependency
    rows and notes, `dragTargets.ts` and its upstream report (item 10), the render-queue report
    (item 8), and an A/B run on both systems in CI. 1 day.
@@ -398,7 +402,17 @@ wheel check, then removing `wheel.ts` (about 1 day).
 
 The worktree's diff against `22c2532` is kept as
 [`m3-spike/blockly13.patch`](m3-spike/blockly13.patch) (21 files, 930 lines), without its
-`pnpm-lock.yaml` hunk: after M3, the upgrade starts from it, changes the two version pins and
-runs `pnpm install` under the policy, which writes the lockfile again. It applies to `22c2532`
-but is for reading first: it is the spike's state, with the failures above still open. The
-screenshots and logs were not kept.
+`pnpm-lock.yaml` hunk. It pins `blockly` and `@blockly/continuous-toolbox` at 13.4.0. It applies
+cleanly to `22c2532` and to `e49e61b` (checked with `git apply --check`), but it is for reading,
+not for applying: it is the spike's state, with the failures above still open, and W4 will change
+the same editor files (`sync/drag.ts`, `keyboard/navigation.ts`, `keyboard/shortcuts.ts`,
+`toolbox/continuous.ts`). The upgrade after M3:
+
+- bumps both pins to the 13.x that is current then and at least 7 days old;
+- checks Blockly's `jsdom` peer range and the Node.js floor again (22.22.2 for `jsdom` 30.1.3,
+  [Versions and policy](#versions-and-policy));
+- runs `pnpm install` under the policy, which writes the lockfile again;
+- makes the changes again by hand where W4 has changed the same files, with the patch as the
+  guide.
+
+The screenshots and logs were not kept.
