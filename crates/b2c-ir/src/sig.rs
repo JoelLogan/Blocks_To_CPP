@@ -404,6 +404,17 @@ pub struct BlockSig {
     /// `symbol_ref` fields that list the members of the user type bound to a
     /// variable.
     pub members: BTreeMap<String, TypeVar>,
+    /// The fields of `fields` that are `symbol_ref` fields; the others not in
+    /// `symbol_decls` are `type` fields. Typing tells the kinds apart
+    /// (slots.md §2): a reference is never converted, and a declaration
+    /// never binds.
+    pub symbol_refs: BTreeSet<String>,
+    /// The fields of `fields` that are `symbol_decl` fields: they declare a
+    /// symbol of their resolved pattern and bind nothing.
+    pub symbol_decls: BTreeSet<String>,
+    /// The inputs of `inputs` that are repeated (`ITEM0`, `ITEM1`, …); the
+    /// others have one part, named as the input.
+    pub repeated: BTreeSet<String>,
     /// The headers every form of the block needs.
     pub headers: Vec<Header>,
     /// The headers a dropdown option adds, by field, then option.

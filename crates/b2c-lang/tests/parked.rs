@@ -12,7 +12,7 @@ use b2c_catalog::{FieldKind, Shape};
 use b2c_codegen::{CodegenOptions, generate};
 use b2c_ir::diag::{DiagSource, Diagnostic, Part, Severity};
 use b2c_ir::ids::BlockId;
-use b2c_lang::{Analysis, analyze, analyze_checked};
+use b2c_lang::{Analysis, analyze_checked};
 use common::*;
 use serde_json::{Value, json};
 
@@ -184,12 +184,12 @@ fn every_catalog_block_is_parked_by_its_shape() {
 fn parked_blocks_never_change_the_program() {
     let attached = main(vec![declare("int", "n", Some(num("3"))), print(vec![get("n")])]);
     let options = CodegenOptions::default();
-    let without = analyze(&doc(vec![attached.clone()]));
+    let without = analyse(&doc(vec![attached.clone()]));
     // A parked stack that declares and changes a variable of its own, and
     // changes and reads main's `n`.
     let mut stack_head = on_canvas(declare("int", "m", Some(num("7"))), "p2");
     stack_head["stack"] = json!([set("n", get("m")), print(vec![get("n")])]);
-    let with = analyze(&doc(vec![
+    let with = analyse(&doc(vec![
         attached,
         on_canvas(print(vec![text("never")]), "p1"),
         stack_head,

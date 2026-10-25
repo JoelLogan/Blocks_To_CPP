@@ -10,10 +10,13 @@
 pub(crate) mod gxx;
 
 use std::cell::Cell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use b2c_ir::diag::{Diagnostic, Part, Severity};
-use b2c_lang::{Analysis, analyze};
+use b2c_ir::sig::{BlockSig, InputSig, PartName, SigTable, TypePattern, TypeVar};
+use b2c_ir::types::TypeClass;
+use b2c_lang::{Analysis, analyze, analyze_with};
 use b2c_model::{Block, Document, Input};
 use serde_json::{Value, json};
 
@@ -162,14 +165,130 @@ pub(crate) fn all_blocks(document: &Document) -> Vec<(usize, bool, &Block)> {
     found
 }
 
-/// Analyses a program whose `main` holds these statements.
+/// Analyses a program whose `main` holds these statements (see
+/// [`analyse`]).
 pub(crate) fn run_main(body: Vec<Value>) -> Analysis {
-    analyze(&doc(vec![main(body)]))
+    analyse(&doc(vec![main(body)]))
 }
 
-/// Analyses a program with these top-level blocks.
+/// Analyses a program with these top-level blocks (see [`analyse`]).
 pub(crate) fn run(blocks: Vec<Value>) -> Analysis {
-    analyze(&doc(blocks))
+    analyse(&doc(blocks))
+}
+
+// --- Signatures --------------------------------------------------------------------
+
+fn pattern(text: &str) -> TypePattern {
+    TypePattern::parse(text).expect("pattern")
+}
+
+fn names(list: &[&str]) -> BTreeSet<String> {
+    list.iter().map(|name| (*name).to_owned()).collect()
+}
+
+/// A value input of class `any` with this pattern.
+fn any_input(text: &str, assign: bool) -> InputSig {
+    InputSig {
+        check: TypeClass::Any,
+        pattern: Some(pattern(text)),
+        assign,
+    }
+}
+
+/// The patterns slots.md §5 gives M2's blocks, as `b2c-catalog` builds them
+/// into its signature table, without headers (which change no
+/// diagnostic): `create` and `set` bind `T` of class `value`, call
+/// arguments expect their parameters (`param:FUNC`) and `return` the
+/// result (`result`).
+pub(crate) fn m2_sigs() -> SigTable {
+    let t = TypeVar::new("T").expect("variable");
+    let mut table = SigTable::empty();
+    table.insert(
+        "var.declare",
+        BlockSig {
+            vars: BTreeMap::from([(t.clone(), TypeClass::Value)]),
+            fields: BTreeMap::from([("TYPE".into(), pattern("T")), ("NAME".into(), pattern("T"))]),
+            inputs: BTreeMap::from([("VALUE".into(), any_input("T", false))]),
+            order: vec![
+                PartName::Field("TYPE".into()),
+                PartName::Field("NAME".into()),
+                PartName::Input("VALUE".into()),
+            ],
+            symbol_decls: names(&["NAME"]),
+            ..BlockSig::default()
+        },
+    );
+    table.insert(
+        "var.set",
+        BlockSig {
+            vars: BTreeMap::from([(t, TypeClass::Value)]),
+            fields: BTreeMap::from([("VAR".into(), pattern("T"))]),
+            inputs: BTreeMap::from([("VALUE".into(), any_input("T", true))]),
+            order: vec![PartName::Field("VAR".into()), PartName::Input("VALUE".into())],
+            symbol_refs: names(&["VAR"]),
+            ..BlockSig::default()
+        },
+    );
+    let call = BlockSig {
+        inputs: BTreeMap::from([("ARG".into(), any_input("param:FUNC", false))]),
+        order: vec![PartName::Input("ARG".into())],
+        repeated: names(&["ARG"]),
+        ..BlockSig::default()
+    };
+    table.insert(
+        "func.call",
+        BlockSig {
+            output: Some(pattern("symbol:FUNC")),
+            ..call.clone()
+        },
+    );
+    table.insert("func.call_stmt", call);
+    table.insert(
+        "func.return",
+        BlockSig {
+            inputs: BTreeMap::from([("VALUE".into(), any_input("result", false))]),
+            order: vec![PartName::Input("VALUE".into())],
+            ..BlockSig::default()
+        },
+    );
+    table
+}
+
+/// Analyses a document with M2's typing rules and again with M2's patterns
+/// ([`m2_sigs`]), checks that both give the same program, diagnostics and
+/// scope answers (ADR-0018: M2's blocks go through `type_block` with
+/// unchanged results), and returns the analysis.
+#[track_caller]
+pub(crate) fn analyse(document: &Document) -> Analysis {
+    let plain = analyze(document);
+    let typed = analyze_with(document, &m2_sigs());
+    assert_eq!(
+        render_all(&typed),
+        render_all(&plain),
+        "M2's patterns change the diagnostics"
+    );
+    assert!(typed == plain, "M2's patterns change the analysis");
+    // And so must the catalog's own table, whatever it holds: its headers
+    // fill the items' `headers`, and change nothing else.
+    let catalog = analyze_with(document, b2c_catalog::core_catalog().sigs());
+    assert_eq!(
+        render_all(&catalog),
+        render_all(&plain),
+        "the catalog's signatures change the diagnostics"
+    );
+    let without_headers = |a: &Analysis| {
+        let mut program = a.program.clone();
+        for item in program.modules.iter_mut().flat_map(|module| &mut module.items) {
+            item.headers = b2c_ir::headers::ItemHeaders::default();
+        }
+        program
+    };
+    assert!(
+        without_headers(&catalog) == plain.program,
+        "the catalog's signatures change the program"
+    );
+    assert_eq!(catalog.slot_types(), plain.slot_types());
+    plain
 }
 
 // --- Assertions ----------------------------------------------------------------

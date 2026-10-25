@@ -32,6 +32,17 @@
 //!    blocks, variables used before they get a value, endless loops. An item
 //!    that nests too deeply for the later stages is reported instead.
 //!
+//! Blocks whose catalog signature has type patterns (ADR-0017 §5,
+//! `b2c_ir::sig`) are typed by [`type_block`], the one-pass rule of typed
+//! slots (ADR-0018) that the editor's TypeScript copy shares: the analyser
+//! lowers their inputs, types the block with the place its parent expects,
+//! lowers the values that take their type from that place, and reports each
+//! part's fit through the checks M2's blocks always used. The catalog
+//! headers of the blocks lowered into an item are recorded in its
+//! `headers`, by where their code is printed. [`analyze_with`] and
+//! [`analyze_checked_with`] take the signatures; [`analyze`] and
+//! [`analyze_checked`] use none, which gives every block its M2 rules.
+//!
 //! For the editor, an [`Analysis`] also answers questions about the blocks
 //! (spec §6.5): [`Analysis::symbols_in_scope`] lists the symbols a block may
 //! refer to, [`Analysis::symbol_infos`] every symbol, and
@@ -81,8 +92,7 @@ pub struct Analysis {
 impl Analysis {
     /// The static type of each expression slot that was lowered, by block
     /// ID, then input name (ADR-0018 §3); a block's own type is in
-    /// [`Analysis::block_types`]. Empty until the analyser records slot types
-    /// (package 3 of `docs/plans/m3-contracts/types.md` §8.2).
+    /// [`Analysis::block_types`].
     pub fn slot_types(&self) -> BTreeMap<BlockId, BTreeMap<String, Type>> {
         self.slot_types.clone()
     }
@@ -99,13 +109,13 @@ pub fn analyze(document: &Document) -> Analysis {
 }
 
 /// [`analyze`] with the catalog's signatures (`b2c_catalog::Catalog::sigs`),
-/// which type the slots of the blocks that have one (ADR-0018). Taking the
-/// table keeps this crate independent of `b2c-catalog`. A block the table
-/// does not know keeps its M2 typing rules, as every block does until the
-/// analyser reads the table (package 3 of types.md §8.2).
+/// which type the slots of the blocks that have patterns (ADR-0018, [`type_block`])
+/// and give the items their catalog headers (`Item::headers`). Taking the
+/// table keeps this crate independent of `b2c-catalog`. A block whose
+/// signature has no patterns, or that the table does not know, keeps its M2
+/// typing rules.
 pub fn analyze_with(document: &Document, sigs: &SigTable) -> Analysis {
-    let _ = sigs;
-    lower::run(document)
+    lower::run(document, sigs, &BTreeSet::new())
 }
 
 /// [`analyze`] for a document the block catalog has checked
@@ -139,13 +149,19 @@ pub fn analyze_checked(
 
 /// [`analyze_checked`] with the catalog's signatures, as [`analyze_with`]
 /// takes them: what the build and the editor's preview run.
+///
+/// The `unchecked` blocks also go into lowering (ADR-0018 §3): the value of
+/// an unchecked block has type `Error`, and an unchecked block's inputs are
+/// lowered but check nothing, so neither gives a `B2C-E0301` or
+/// `B2C-E0315` (which a filter afterwards could not catch, since they are
+/// reported at the value, not at the unchecked block).
 pub fn analyze_checked_with(
     document: &Document,
     catalog: &[Diagnostic],
     unchecked: &BTreeSet<BlockId>,
     sigs: &SigTable,
 ) -> Analysis {
-    let mut analysis = analyze_with(document, sigs);
+    let mut analysis = lower::run(document, sigs, unchecked);
     let reported: BTreeSet<(&BlockId, PartKey<'_>)> = catalog
         .iter()
         .filter(|d| d.source == DiagSource::Catalog && d.severity == Severity::Error)

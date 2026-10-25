@@ -1,9 +1,12 @@
-//! Type rules for the M1 types (spec §3.5.3, §6.6), as pure functions.
+//! Type rules (spec §3.5.3, §6.6; types.md §1.6), as pure functions.
 //!
 //! The rules approximate C++: an error is reported only when g++ would reject
 //! the code (or the generated code would certainly not mean what the blocks
 //! say); legal but suspicious code gets a warning. [`Type::Error`] is
-//! compatible with everything so that one mistake is reported once.
+//! compatible with everything so that one mistake is reported once. A
+//! library or user type converts only to itself; a class of types (types.md
+//! §1.3) is decided by [`Type::is_in`], and by [`check_accepts`] for a
+//! catalog input's `check`.
 
 use b2c_ir::sast::Expr;
 use b2c_ir::sast::{BinaryOp, ExprKind};
@@ -39,8 +42,9 @@ pub enum Conversion {
     /// Between `bool` and a number (`int`, `double` or `char`), either way.
     /// Legal, but suspicious, so warned about.
     BoolNumber,
-    /// Not possible: text to or from any other type, and `void` (a missing
-    /// value) to or from any other type.
+    /// Not possible: text to or from any other type, `void` (a missing
+    /// value) to or from any other type, and a library or user type to or
+    /// from any other type.
     Invalid,
 }
 
@@ -82,6 +86,10 @@ impl Conversion {
 /// 4. `double` to `int` or `char`, `int` to `char`: `Narrowing`.
 /// 5. Anything else (text with any other type, `void` with any other type):
 ///    `Invalid`.
+///
+/// A library or user type (`std::vector<int>`, `Student`) converts only to
+/// the same type, by rule 1 (types are equal structurally), and is
+/// `Invalid` otherwise, by rule 5: no rule needs an arm of its own for them.
 ///
 /// ```
 /// use b2c_ir::Type;
@@ -295,6 +303,33 @@ mod tests {
             assert_eq!(conversion(t, t), C::Same);
             assert_eq!(conversion(t, &Type::Error), C::Same);
         }
+    }
+
+    #[test]
+    fn library_and_user_types_convert_only_to_themselves() {
+        use b2c_ir::ids::SymbolId;
+        use b2c_ir::types::LibType;
+        let list = |of: Type| Type::lib(LibType::Vector, vec![of]).expect("type");
+        let named = |id: &str| Type::Named(SymbolId::new(id).expect("id"));
+        let cases = [
+            (list(Type::Int), list(Type::Int), Conversion::Same),
+            (list(Type::Int), list(Type::Double), Conversion::Invalid),
+            (list(Type::Int), Type::Int, Conversion::Invalid),
+            (Type::Int, list(Type::Int), Conversion::Invalid),
+            (named("sym_a"), named("sym_a"), Conversion::Same),
+            (named("sym_a"), named("sym_b"), Conversion::Invalid),
+            (named("sym_a"), Type::Bool, Conversion::Invalid),
+            (list(named("sym_a")), Type::Error, Conversion::Same),
+        ];
+        for (from, to, expected) in cases {
+            assert_eq!(conversion(&from, &to), expected, "{from:?} -> {to:?}");
+            assert_eq!(assignment(&from, &to), expected, "{from:?} = {to:?}");
+        }
+        assert_eq!(
+            conditional_result(&list(Type::Int), &list(Type::Int)),
+            Ok((list(Type::Int), false))
+        );
+        assert_eq!(conditional_result(&list(Type::Int), &list(Type::Char)), Err(()));
     }
 
     #[test]
