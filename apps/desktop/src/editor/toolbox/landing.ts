@@ -32,17 +32,10 @@ import { B2cSymbolDeclField, B2cSymbolRefField } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
 import { fitsGenericBlock } from './contents';
-import { firstFreeName, type DefaultNameKind } from './names';
+import { defaultNameKind, firstFreeName, type DefaultNameKind } from './names';
 import type { B2cBlockInfo } from './presets';
 import { landingStartValues, reshapeSetValue } from './reshape';
 import { symbolsAtConnection, takenNamesAtDrop, type SymbolSource } from './scope';
-
-/** The kind of default name each block that declares something gets. */
-const NAME_KINDS: Readonly<Record<string, DefaultNameKind>> = Object.freeze({
-  'var.declare': 'variable',
-  'control.for_range': 'loop',
-  'func.define': 'function',
-});
 
 /** What a block created from the toolbox still has of its toolbox item. */
 interface ToolboxOrigin {
@@ -92,13 +85,11 @@ export function noteCreatedFromToolbox(original: Blockly.Block, created: Blockly
   if (info === undefined) {
     return;
   }
-  const kind = NAME_KINDS[info.type];
-  const defaults =
-    kind === undefined
-      ? []
-      : Object.entries(info.declares ?? {})
-          .filter(([field, name]) => declarationName(original, field) === name)
-          .map(([field]) => ({ field, kind }));
+  // The kind of default name of each declaration field, by block and field (./names.ts).
+  const defaults = Object.entries(info.declares ?? {}).flatMap(([field, name]) => {
+    const kind = defaultNameKind(info.type, field);
+    return kind !== undefined && declarationName(original, field) === name ? [{ field, kind }] : [];
+  });
   const field = info.retarget;
   const retarget =
     field !== undefined &&

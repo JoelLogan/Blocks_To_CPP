@@ -2,7 +2,9 @@
  * Plain-data helpers over block trees of the Block Document Model (docs/spec/05-project-format.md
  * §5.4–5.5). They work on any block, including blocks whose type the catalog does not know, and
  * mirror the rules of `b2c_model::ids`: a field value `{sym, name}` declares a symbol, so does each
- * row of `extra.params`; a field value `{ref}` and an expression token `{ref}` refer to one.
+ * row of the row extras `extra.params`, `extra.fields` and `extra.values`
+ * (docs/plans/m3-contracts/w2.md §2.1); a field value `{ref}` and an expression token `{ref}` refer
+ * to one.
  *
  * Every walk is iterative: statement lists and stacks may hold thousands of blocks.
  */
@@ -84,17 +86,33 @@ export function declInFieldValue(value: unknown): FoundDecl | null {
   return typeof sym === 'string' && typeof name === 'string' ? { sym, name } : null;
 }
 
-/** The declarations of `params` rows (`[{sym, name, …}]`) in an `extra`. */
-function paramDecls(extra: Record<string, JsonValue> | undefined): FoundDecl[] {
+/**
+ * The `extra` keys whose rows declare symbols (`b2c_model`'s `ROW_KEYS`, w2.md §2.1): a function's
+ * parameters, a struct's fields and an enum's values, each row `{sym, name, …}`.
+ */
+export const ROW_EXTRA_KEYS: readonly string[] = Object.freeze(['params', 'fields', 'values']);
+
+/** The rows of the row extras of an `extra`, in key order, then row order. */
+function extraRows(extra: Record<string, JsonValue> | undefined): unknown[] {
   if (extra === undefined) {
     return [];
   }
-  const rows = own(extra, 'params');
-  if (!Array.isArray(rows)) {
-    return [];
+  const found: unknown[] = [];
+  for (const key of ROW_EXTRA_KEYS) {
+    const rows = own(extra, key);
+    if (Array.isArray(rows)) {
+      for (const row of rows as unknown[]) {
+        found.push(row);
+      }
+    }
   }
+  return found;
+}
+
+/** The declarations of the row extras' rows (`[{sym, name, …}]`) in an `extra`. */
+function rowDecls(extra: Record<string, JsonValue> | undefined): FoundDecl[] {
   const found: FoundDecl[] = [];
-  for (const row of rows) {
+  for (const row of extraRows(extra)) {
     const decl = declInFieldValue(row);
     if (decl !== null) {
       found.push(decl);
@@ -112,7 +130,7 @@ export function nodeDecls(node: BdmBlock): FoundDecl[] {
       found.push(decl);
     }
   }
-  found.push(...paramDecls(node.extra));
+  found.push(...rowDecls(node.extra));
   return found;
 }
 
@@ -170,7 +188,8 @@ export function renamedTypeJson(
 
 /**
  * Renames, in place, block IDs (`blockIds`) and symbol IDs (`syms`) in the trees: block `id`s,
- * declarations (fields and `params` rows), field references and expression-token references.
+ * declarations (fields and the rows of `params`, `fields` and `values`), field references and
+ * expression-token references.
  * IDs that are not in the maps stay as they are.
  */
 export function renameInTrees(
@@ -208,23 +227,20 @@ export function renameInTrees(
         }
       }
     }
-    const rows = node.extra === undefined ? undefined : own(node.extra, 'params');
-    if (Array.isArray(rows)) {
-      rows.forEach((row) => {
-        if (!isRecord(row)) {
-          return;
+    for (const row of extraRows(node.extra)) {
+      if (!isRecord(row)) {
+        continue;
+      }
+      if (typeof row['sym'] === 'string') {
+        const renamed = syms.get(row['sym']);
+        if (renamed !== undefined) {
+          row['sym'] = renamed;
         }
-        if (typeof row['sym'] === 'string') {
-          const renamed = syms.get(row['sym']);
-          if (renamed !== undefined) {
-            row['sym'] = renamed;
-          }
-        }
-        const type = renamedTypeJson(row['type'], syms);
-        if (type !== null) {
-          row['type'] = type;
-        }
-      });
+      }
+      const type = renamedTypeJson(row['type'], syms);
+      if (type !== null) {
+        row['type'] = type;
+      }
     }
     for (const input of Object.values(node.inputs ?? {})) {
       renameInput(input, syms);

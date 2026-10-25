@@ -99,7 +99,9 @@ function presetExtra(
         state[key.name] = typeof value === 'boolean' ? value : key.default === true;
         break;
       case 'params':
-        // New definitions start without parameters; the ⊕ button adds them.
+      case 'fields':
+      case 'values':
+        // New definitions start without rows (parameters, fields, values); ⊕ adds them.
         state[key.name] = [];
         break;
     }
@@ -119,7 +121,9 @@ export function valueInputs(
       continue;
     }
     const count = extra?.[input.repeat.count];
-    const copies = (typeof count === 'number' ? count : 0) + input.repeat.plus;
+    // A repeat counted by a row extra has one part per row (w2.md §2.1).
+    const counted = Array.isArray(count) ? count.length : typeof count === 'number' ? count : 0;
+    const copies = counted + input.repeat.plus;
     for (let copy = 0; copy < copies; copy += 1) {
       inputs.push({ name: `${input.name}${String(copy)}`, input });
     }

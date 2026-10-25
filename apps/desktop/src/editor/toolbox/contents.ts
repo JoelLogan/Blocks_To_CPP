@@ -48,7 +48,7 @@ import {
   FLYOUT_NOTE_CLASS,
   FLYOUT_NOTE_LINE_CLASS,
 } from '../keyboard/flyoutItems';
-import { candidateName } from './names';
+import { candidateName, DEFAULT_NAME_KINDS } from './names';
 import {
   catalogPresetExtra,
   catalogPresetFields,
@@ -180,33 +180,38 @@ function categoryJson(id: CategoryId): ToolboxCategoryJson | undefined {
   return TOOLBOX.find((category) => category.id === id);
 }
 
-/** The declaration field each block with a default name has, and the kind of name. */
-const DEFAULT_NAMED: Readonly<Record<string, { field: string }>> = Object.freeze({
-  'var.declare': { field: 'NAME' },
-  'control.for_range': { field: 'VAR' },
-  'func.define': { field: 'NAME' },
-});
-
 /**
- * The names declarations show in the toolbox: the first default name of each kind. A block gets a
- * free name where it lands on the canvas (./landing.ts), so the flyout does not depend on where
- * the block will go.
+ * The names declarations show in the toolbox, by block and declaration field: the first default
+ * name of each field's kind (./names.ts, `DEFAULT_NAME_KINDS`). A block gets a free name where it
+ * lands on the canvas (./landing.ts), so the flyout does not depend on where the block will go.
+ * A repeated declaration field (*try*'s `NAME0`, …) is named by the mutator that creates its parts
+ * (the `declName` hook, ../services/install.ts), so it is not listed here.
  */
-const FIRST_NAMES: Readonly<Record<string, string>> = Object.freeze({
-  'var.declare': candidateName('variable', 0),
-  'control.for_range': candidateName('loop', 0),
-  'func.define': candidateName('function', 0),
-});
+function firstNames(blockType: string): Readonly<Record<string, string>> {
+  const def = catalogBlock(blockType);
+  const kinds = Object.hasOwn(DEFAULT_NAME_KINDS, blockType)
+    ? DEFAULT_NAME_KINDS[blockType]
+    : undefined;
+  if (def === undefined || kinds === undefined) {
+    return {};
+  }
+  const names: Record<string, string> = {};
+  for (const field of def.fields) {
+    const kind = Object.hasOwn(kinds, field.name) ? kinds[field.name] : undefined;
+    if (field.kind === 'symbol_decl' && field.repeat === null && kind !== undefined) {
+      names[field.name] = candidateName(kind, 0);
+    }
+  }
+  return names;
+}
 
-/** The block of one catalog entry, its declaration (if any) named with the first default name. */
+/** The block of one catalog entry, its declarations (if any) named with the first default names. */
 function entryBlock(entry: ToolboxEntryJson): B2cBlockInfo {
   const fields: Record<string, PresetFieldValue> = catalogPresetFields(entry.preset?.fields);
-  const named = DEFAULT_NAMED[entry.block];
-  const name = FIRST_NAMES[entry.block];
-  const declare =
-    named !== undefined && name !== undefined && !Object.hasOwn(fields, named.field)
-      ? { [named.field]: name }
-      : undefined;
+  const named = Object.entries(firstNames(entry.block)).filter(
+    ([field]) => !Object.hasOwn(fields, field),
+  );
+  const declare = named.length === 0 ? undefined : Object.fromEntries(named);
   const preset: BlockPreset = {
     fields,
     extra: catalogPresetExtra(entry.preset?.extra),
@@ -703,14 +708,33 @@ export function categoryOfDefinition(definition: unknown): CategoryId | null {
 }
 
 /**
- * The full toolbox: every category in catalog order (03 §3.7), with Program, Variables and
- * Functions built when they are shown. The dynamic categories need their callbacks registered on
- * the workspace (the toolbox plugin does that) before the toolbox shows them.
+ * Whether the toolbox shows a category: one with catalog entries, or one whose contents the editor
+ * builds. A category with no entries yet (one of W2's, until its package adds blocks,
+ * docs/plans/m3-contracts/w2.md §2.1) is not shown.
+ */
+export function isShownCategory(category: ToolboxCategoryJson): boolean {
+  return (
+    category.entries.length > 0 ||
+    category.dynamic !== null ||
+    DYNAMIC_CATEGORY[category.id] !== undefined
+  );
+}
+
+/** The categories the toolbox shows, in catalog order. */
+function shownCategories(): ToolboxCategoryJson[] {
+  return TOOLBOX.filter(isShownCategory);
+}
+
+/**
+ * The full toolbox: every category in catalog order (03 §3.7) that has blocks
+ * ({@link isShownCategory}), with Program, Variables and Functions built when they are shown. The
+ * dynamic categories need their callbacks registered on the workspace (the toolbox plugin does
+ * that) before the toolbox shows them.
  */
 export function toolboxDefinition(): Blockly.utils.toolbox.ToolboxInfo {
   return {
     kind: 'categoryToolbox',
-    contents: TOOLBOX.map((category) => categoryDefinition(category, true)),
+    contents: shownCategories().map((category) => categoryDefinition(category, true)),
   };
 }
 
@@ -722,6 +746,6 @@ export function toolboxDefinition(): Blockly.utils.toolbox.ToolboxInfo {
 export function initialToolboxDefinition(): Blockly.utils.toolbox.ToolboxInfo {
   return {
     kind: 'categoryToolbox',
-    contents: TOOLBOX.map((category) => categoryDefinition(category, false)),
+    contents: shownCategories().map((category) => categoryDefinition(category, false)),
   };
 }

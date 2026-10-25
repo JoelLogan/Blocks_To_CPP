@@ -19,7 +19,7 @@ import {
 import * as Blockly from 'blockly/core';
 
 import { stableJson } from './bdmTree';
-import { extraDef, extraDefault, fieldDef, fieldDefault } from './catalog';
+import { catalogFieldsOf, extraDef, extraDefault, fieldDef, fieldDefault } from './catalog';
 import { type BlockOrigin, originOf } from './origin';
 
 /**
@@ -33,23 +33,20 @@ export function readFields(
 ): Record<string, FieldValue> | undefined {
   const fields: Record<string, FieldValue> = {};
   let any = false;
-  for (const definition of def.fields) {
-    const field = block.getField(definition.name);
-    if (field === null) {
-      continue;
-    }
+  // A repeated field's parts are fields of their own (`ERROR0`, w2.md §2.1).
+  for (const { name, def: definition, field } of catalogFieldsOf(block, def)) {
     const value = readB2cField(field);
     if (value === null) {
       continue;
     }
     if (
       origin !== null &&
-      !origin.fields.has(definition.name) &&
+      !origin.fields.has(name) &&
       stableJson(value) === stableJson(fieldDefault(definition))
     ) {
       continue;
     }
-    fields[definition.name] = value;
+    fields[name] = value;
     any = true;
   }
   return any ? fields : undefined;

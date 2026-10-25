@@ -23,11 +23,12 @@
  * from the workspace, whose block IDs are the project's.
  */
 import type { SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
-import { B2cSymbolDeclField, isPlaceholder } from '@blocks2cpp/blockly-ext';
-import type * as Blockly from 'blockly/core';
+import { B2cSymbolDeclField, catalogBlock, isPlaceholder } from '@blocks2cpp/blockly-ext';
+import * as Blockly from 'blockly/core';
 
+import { catalogFieldsOf } from '../sync/catalog';
 import { descendantsOf } from '../sync/traverse';
-import type { DefaultNameKind } from './names';
+import { DEFAULT_NAME_KINDS, NAME_SCOPES, type DefaultNameKind } from './names';
 
 /** The block that starts the program. */
 export const MAIN_TYPE = 'program.main';
@@ -39,10 +40,6 @@ export const DECLARE_TYPE = 'var.declare';
 export const BODY_INPUT = 'BODY';
 /** The name field of a declaration block. */
 export const NAME_FIELD = 'NAME';
-/** The counted loop, whose counter is a declaration. */
-const COUNTED_LOOP_TYPE = 'control.for_range';
-/** The counter field of a counted loop. */
-const COUNTER_FIELD = 'VAR';
 
 /** The most statements walked along one list (a project holds at most 100,000 blocks, 05 §5.6). */
 const MAX_LIST_LENGTH = 100_000;
@@ -427,8 +424,34 @@ export function declaredName(block: Blockly.Block): string | null {
 }
 
 /**
- * The names the `var.declare` blocks of a statement list declare, from `first` on, leaving out
- * `except` (a declaration whose own name is being chosen).
+ * The names a block declares into the statement list it is in (visible after it there): its
+ * declaration fields whose default-name kind has the `list` scope (./names.ts): a `create` block's
+ * variable, and an opened file (docs/plans/m3-contracts/w2.md §2.13).
+ */
+function listDeclaredNames(block: Blockly.Block): string[] {
+  const kinds = Object.hasOwn(DEFAULT_NAME_KINDS, block.type)
+    ? DEFAULT_NAME_KINDS[block.type]
+    : undefined;
+  if (kinds === undefined) {
+    return [];
+  }
+  const names: string[] = [];
+  for (const [field, kind] of Object.entries(kinds)) {
+    if (NAME_SCOPES[kind] !== 'list') {
+      continue;
+    }
+    const decl = block.getField(field);
+    const name = decl instanceof B2cSymbolDeclField ? (decl.getDecl()?.name ?? null) : null;
+    if (name !== null) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * The names the blocks of a statement list declare into it (`create` blocks, opened files), from
+ * `first` on, leaving out `except` (a declaration whose own name is being chosen).
  */
 function namesDeclaredFrom(
   first: Blockly.Block | null,
@@ -437,9 +460,8 @@ function namesDeclaredFrom(
   const names = new Set<string>();
   let current = first;
   for (let steps = 0; current !== null && steps < MAX_LIST_LENGTH; steps += 1) {
-    if (current.type === DECLARE_TYPE && current !== except) {
-      const name = declaredName(current);
-      if (name !== null) {
+    if (current !== except) {
+      for (const name of listDeclaredNames(current)) {
         names.add(name);
       }
     }
@@ -449,21 +471,88 @@ function namesDeclaredFrom(
 }
 
 /**
+ * The names a block's own declaration fields declare, read from the catalog's `symbol_decl` fields
+ * (the parts of a repeated one included, w2.md §2.13); none for a block outside the catalog.
+ */
+export function blockDeclaredNames(block: Blockly.Block): string[] {
+  const def = catalogBlock(block.type);
+  if (def === undefined) {
+    return [];
+  }
+  const names: string[] = [];
+  for (const { def: definition, field } of catalogFieldsOf(block, def)) {
+    if (definition.kind !== 'symbol_decl' || !(field instanceof B2cSymbolDeclField)) {
+      continue;
+    }
+    const name = field.getDecl()?.name ?? null;
+    if (name !== null) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
  * The names the local declarations nested anywhere in a statement list declare, from `first` on:
- * its `create` blocks' variables and its counted loops' counters, in nested lists too.
+ * every declaration field of its blocks (`create` blocks' variables, loops' counters and items,
+ * caught errors), in nested lists too.
  */
 function localNamesInside(first: Blockly.Block | null): Set<string> {
   const names = new Set<string>();
   for (const block of first === null ? [] : descendantsOf(first)) {
-    const field =
-      block.type === DECLARE_TYPE
-        ? block.getField(NAME_FIELD)
-        : block.type === COUNTED_LOOP_TYPE
-          ? block.getField(COUNTER_FIELD)
-          : null;
-    const name = field instanceof B2cSymbolDeclField ? (field.getDecl()?.name ?? null) : null;
-    if (name !== null) {
+    for (const name of blockDeclaredNames(block)) {
       names.add(name);
+    }
+  }
+  return names;
+}
+
+/** The names declared inside every statement list of a block (its bodies, its catch parts). */
+function localNamesInBodies(block: Blockly.Block): Set<string> {
+  const names = new Set<string>();
+  for (const input of block.inputList) {
+    if (input.type !== Blockly.inputs.inputTypes.STATEMENT) {
+      continue;
+    }
+    for (const name of localNamesInside(input.connection?.targetBlock() ?? null)) {
+      names.add(name);
+    }
+  }
+  return names;
+}
+
+/** The module's definitions other than `block`: analysed and on the canvas (w2.md §2.13). */
+function definitionNames(
+  workspace: Blockly.Workspace,
+  block: Blockly.Block,
+  source: SymbolSource,
+): Set<string> {
+  const names = addNames(
+    new Set(),
+    source.allSymbols().filter(
+      (symbol) =>
+        symbol.declBlock !== block.id &&
+        (symbol.kind === 'function' ||
+          symbol.kind === 'struct' ||
+          symbol.kind === 'enum' ||
+          // `global` comes with W2's symbol kinds (w2.md §2.7); the wire type may not have it.
+          (symbol.kind as string) === 'global'),
+    ),
+  );
+  for (const top of workspace.getTopBlocks(false)) {
+    if (top === block) {
+      continue;
+    }
+    const kinds = Object.hasOwn(DEFAULT_NAME_KINDS, top.type)
+      ? DEFAULT_NAME_KINDS[top.type]
+      : undefined;
+    for (const [field, kind] of Object.entries(kinds ?? {})) {
+      const scope = NAME_SCOPES[kind];
+      const decl = top.getField(field);
+      const name = decl instanceof B2cSymbolDeclField ? (decl.getDecl()?.name ?? null) : null;
+      if ((scope === 'module' || scope === 'function') && name !== null) {
+        names.add(name);
+      }
     }
   }
   return names;
@@ -516,7 +605,11 @@ export function takenNamesAtInsertion(point: InsertionPoint, source: SymbolSourc
  *   counter's name is `B2C-E0210`), while a counter or variable deeper in would hide it
  *   (`B2C-W0501`);
  * - a function: every other function, analysed or on the canvas (function names are unique,
- *   `B2C-E0211`).
+ *   `B2C-E0211`);
+ * - W2's declarations by the scope of their kind (./names.ts, `NAME_SCOPES`): an opened file as a
+ *   variable; a loop's item, a map's key and value, a file's line and a caught error as a loop
+ *   counter (the names in every statement list of the block); a struct, an enum or a global as a
+ *   definition of the module (every other one, `B2C-E0210`).
  */
 export function takenNamesAtDrop(
   workspace: Blockly.Workspace,
@@ -537,11 +630,17 @@ export function takenNamesAtDrop(
     }
     return names;
   }
+  const scope = NAME_SCOPES[kind];
+  if (scope === 'module' || scope === 'row') {
+    return definitionNames(workspace, block, source);
+  }
   const names = addNames(new Set(), symbolsAtConnection(workspace, block, source));
   const inScope =
-    kind === 'variable'
+    scope === 'list'
       ? namesDeclaredFrom(firstOfList(block), block)
-      : localNamesInside(block.getInputTargetBlock(BODY_INPUT));
+      : kind === 'loop'
+        ? localNamesInside(block.getInputTargetBlock(BODY_INPUT))
+        : localNamesInBodies(block);
   for (const name of inScope) {
     names.add(name);
   }

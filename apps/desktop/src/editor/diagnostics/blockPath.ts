@@ -20,6 +20,9 @@ import type { BlockDefJson } from '@blocks2cpp/blockly-ext';
 import { placeholderFor, visibleInvisibles } from '../../panels/shared/invisibles';
 import { type PathCatalog, pathCatalog } from './catalog';
 
+/** The `extra` keys whose rows declare symbols (w2.md §2.1; `ROW_EXTRA_KEYS` of the sync). */
+const ROW_EXTRA_KEYS: readonly string[] = ['params', 'fields', 'values'];
+
 /** What separates the levels of a block path. */
 export const PATH_SEPARATOR = ' › ';
 
@@ -75,7 +78,10 @@ function reference(value: unknown): string | null {
   return isObject(value) && typeof value['ref'] === 'string' ? value['ref'] : null;
 }
 
-/** Records the symbols a block declares: its declaration fields and its parameter rows. */
+/**
+ * Records the symbols a block declares: its declaration fields and the rows of its row extras
+ * (`params`, `fields`, `values`, docs/plans/m3-contracts/w2.md §2.1).
+ */
 function collectNames(block: BdmBlock, names: Map<string, string>): void {
   for (const value of Object.values(block.fields ?? {})) {
     const declared = declaration(value);
@@ -83,9 +89,12 @@ function collectNames(block: BdmBlock, names: Map<string, string>): void {
       names.set(declared.sym, declared.name);
     }
   }
-  const params = block.extra?.['params'];
-  if (Array.isArray(params)) {
-    for (const row of params) {
+  for (const key of ROW_EXTRA_KEYS) {
+    const rows = block.extra?.[key];
+    if (!Array.isArray(rows)) {
+      continue;
+    }
+    for (const row of rows) {
       const declared = declaration(row);
       if (declared !== null) {
         names.set(declared.sym, declared.name);
