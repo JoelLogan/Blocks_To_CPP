@@ -15,7 +15,7 @@
 
 mod common;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_catalog::{BlockDef, Catalog, CatalogFile, FieldKind, core_catalog, resolve};
 use b2c_ir::{Diagnostic, Header, PartName, TypeClass, TypePattern, TypeTerm, TypeVar};
@@ -29,6 +29,10 @@ fn var(name: &str) -> TypeVar {
 
 fn pattern(text: &str) -> TypePattern {
     TypePattern::parse(text).unwrap()
+}
+
+fn names(names: &[&str]) -> BTreeSet<String> {
+    names.iter().map(|name| (*name).to_owned()).collect()
 }
 
 /// The codes and messages of resolving a document against the core catalog.
@@ -85,6 +89,24 @@ fn every_block_has_a_signature_in_catalog_order() {
             )
             .collect();
         assert_eq!(sig.order, order, "{id}");
+        // The fields of each symbol kind with a pattern, and the repeated
+        // inputs.
+        let fields = |kind: FieldKind| -> BTreeSet<String> {
+            def.field
+                .iter()
+                .filter(|f| f.kind == kind && f.pattern.is_some())
+                .map(|f| f.name.clone())
+                .collect()
+        };
+        assert_eq!(sig.symbol_refs, fields(FieldKind::SymbolRef), "{id}");
+        assert_eq!(sig.symbol_decls, fields(FieldKind::SymbolDecl), "{id}");
+        let repeated: BTreeSet<String> = def
+            .input
+            .iter()
+            .filter(|i| i.repeat.is_some())
+            .map(|i| i.name.clone())
+            .collect();
+        assert_eq!(sig.repeated, repeated, "{id}");
         // Every value input, with its check class.
         assert_eq!(sig.inputs.len(), def.input.len(), "{id}");
         for input in &def.input {
@@ -114,6 +136,8 @@ fn m2_blocks_have_the_patterns_of_w1() {
     assert_eq!(declare.fields["NAME"], t());
     assert_eq!(declare.inputs["VALUE"].pattern, Some(t()));
     assert!(!declare.inputs["VALUE"].assign);
+    assert_eq!(declare.symbol_decls, names(&["NAME"]));
+    assert!(declare.symbol_refs.is_empty() && declare.repeated.is_empty());
     assert_eq!(
         declare.order,
         [
@@ -128,12 +152,17 @@ fn m2_blocks_have_the_patterns_of_w1() {
     assert_eq!(set.fields["VAR"], t());
     assert_eq!(set.inputs["VALUE"].pattern, Some(t()));
     assert!(set.inputs["VALUE"].assign);
+    assert_eq!(set.symbol_refs, names(&["VAR"]));
+    assert!(set.symbol_decls.is_empty() && set.repeated.is_empty());
 
     for call in ["func.call", "func.call_stmt"] {
         let sig = sigs.get(call).unwrap();
         assert!(sig.vars.is_empty(), "{call}");
         assert_eq!(sig.inputs["ARG"].pattern, Some(pattern("param:FUNC")), "{call}");
         assert_eq!(sig.order, [PartName::Input("ARG".into())], "{call}");
+        // FUNC has no pattern, so it is not among the typed references.
+        assert!(sig.symbol_refs.is_empty(), "{call}");
+        assert_eq!(sig.repeated, names(&["ARG"]), "{call}");
     }
     let ret = sigs.get("func.return").unwrap();
     assert_eq!(ret.inputs["VALUE"].pattern, Some(TypePattern::Result));

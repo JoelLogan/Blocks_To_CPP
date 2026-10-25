@@ -462,6 +462,24 @@ pub(crate) fn build(def: &BlockDef) -> BlockSig {
             .iter()
             .filter_map(|field| Some((field.name.clone(), TypeVar::new(field.members.as_deref()?)?)))
             .collect(),
+        symbol_refs: def
+            .field
+            .iter()
+            .filter(|field| field.kind == FieldKind::SymbolRef && field.pattern.is_some())
+            .map(|field| field.name.clone())
+            .collect(),
+        symbol_decls: def
+            .field
+            .iter()
+            .filter(|field| field.kind == FieldKind::SymbolDecl && field.pattern.is_some())
+            .map(|field| field.name.clone())
+            .collect(),
+        repeated: def
+            .input
+            .iter()
+            .filter(|input| input.repeat.is_some())
+            .map(|input| input.name.clone())
+            .collect(),
         headers: headers(&def.headers),
         option_headers: def
             .field
