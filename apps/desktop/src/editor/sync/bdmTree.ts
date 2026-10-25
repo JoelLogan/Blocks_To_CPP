@@ -6,7 +6,13 @@
  *
  * Every walk is iterative: statement lists and stacks may hold thousands of blocks.
  */
-import type { BdmBlock, InputValue, JsonValue, TokenJson } from '@blocks2cpp/b2c-core-wasm';
+import type {
+  BdmBlock,
+  InputValue,
+  JsonValue,
+  TokenJson,
+  TypeJson,
+} from '@blocks2cpp/b2c-core-wasm';
 import { parseTerm, renameTermRefs, termJson } from '@blocks2cpp/blockly-ext';
 
 /** A symbol declaration found in a block. */
@@ -153,13 +159,13 @@ function renameInput(input: InputValue, syms: ReadonlyMap<string, string>): void
 export function renamedTypeJson(
   value: unknown,
   syms: ReadonlyMap<string, string>,
-): JsonValue | null {
+): TypeJson | null {
   const term = parseTerm(value);
   if (term === null) {
     return null;
   }
   const renamed = renameTermRefs(term, syms);
-  return renamed === term ? null : (termJson(renamed) as JsonValue);
+  return renamed === term ? null : termJson(renamed);
 }
 
 /**
