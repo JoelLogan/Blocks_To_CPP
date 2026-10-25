@@ -82,6 +82,7 @@ fn position_of(contents: &str, needle: &str) -> Position {
 }
 
 /// Every statement and expression of a program, in order.
+#[allow(clippy::too_many_lines, reason = "one arm per statement")]
 fn nodes(program: &Program) -> (Vec<&Stmt>, Vec<&Expr>) {
     fn block<'a>(b: &'a Block, stmts: &mut Vec<&'a Stmt>, exprs: &mut Vec<&'a Expr>) {
         for stmt in &b.stmts {
@@ -119,37 +120,70 @@ fn nodes(program: &Program) -> (Vec<&Stmt>, Vec<&Expr>) {
                 | StmtKind::Ask { prompt: x, .. } => {
                     x.iter().for_each(e);
                 }
-                StmtKind::Eval { expr: x } => e(x),
-                StmtKind::Print { items, .. } => items.iter().for_each(e),
-                StmtKind::Break | StmtKind::Continue => {}
+                StmtKind::Print { items, .. } | StmtKind::WriteFile { items, .. } => items.iter().for_each(e),
+                StmtKind::Break
+                | StmtKind::Continue
+                | StmtKind::Rethrow
+                | StmtKind::FallThrough
+                | StmtKind::Flip { .. } => {}
+                // W2's statements (w2.md §2.13).
+                StmtKind::Switch {
+                    value,
+                    cases,
+                    default,
+                } => {
+                    expr(value, exprs);
+                    for case in cases {
+                        expr(&case.label, exprs);
+                        block(&case.body, stmts, exprs);
+                    }
+                    if let Some(body) = default {
+                        block(body, stmts, exprs);
+                    }
+                }
+                StmtKind::DoWhile { body, cond, .. } => {
+                    block(body, stmts, exprs);
+                    expr(cond, exprs);
+                }
+                StmtKind::RangeFor { range, body, .. } => {
+                    expr(range, exprs);
+                    block(body, stmts, exprs);
+                }
+                StmtKind::Try { body, catches } => {
+                    block(body, stmts, exprs);
+                    for catch in catches {
+                        block(&catch.body, stmts, exprs);
+                    }
+                }
+                StmtKind::FileLines {
+                    path, body, failed, ..
+                } => {
+                    expr(path, exprs);
+                    if let Some(failed) = failed {
+                        block(failed, stmts, exprs);
+                    }
+                    block(body, stmts, exprs);
+                }
+                StmtKind::OpenFile { path, failed, .. } => {
+                    expr(path, exprs);
+                    if let Some(failed) = failed {
+                        block(failed, stmts, exprs);
+                    }
+                }
+                StmtKind::CollectionOp { op, .. } => op.operands().into_iter().for_each(e),
+                StmtKind::Eval { expr: x }
+                | StmtKind::Throw { message: x, .. }
+                | StmtKind::SetField { value: x, .. }
+                | StmtKind::Decimals { digits: x }
+                | StmtKind::Wait { seconds: x }
+                | StmtKind::StaticCheck { cond: x, .. } => e(x),
             }
         }
     }
     fn expr<'a>(x: &'a Expr, exprs: &mut Vec<&'a Expr>) {
         exprs.push(x);
-        match &x.kind {
-            ExprKind::Unary { operand, .. } | ExprKind::Convert { value: operand, .. } => {
-                expr(operand, exprs);
-            }
-            ExprKind::Binary { lhs, rhs, .. } | ExprKind::RandomInt { low: lhs, high: rhs } => {
-                expr(lhs, exprs);
-                expr(rhs, exprs);
-            }
-            ExprKind::Conditional {
-                cond,
-                then_value,
-                else_value,
-            } => {
-                for x in [cond, then_value, else_value] {
-                    expr(x, exprs);
-                }
-            }
-            ExprKind::Call { args: items, .. } | ExprKind::Join(items) => {
-                for item in items {
-                    expr(item, exprs);
-                }
-            }
-            _ => {}
+        for child in x.kind.children() {
+            expr(child, exprs);
         }
     }
     let (mut stmts, mut exprs) = (Vec::new(), Vec::new());
@@ -157,6 +191,9 @@ fn nodes(program: &Program) -> (Vec<&Stmt>, Vec<&Expr>) {
         match &item.kind {
             ItemKind::Main(def) => block(&def.body, &mut stmts, &mut exprs),
             ItemKind::Function(def) => block(&def.body, &mut stmts, &mut exprs),
+            ItemKind::Global(def) => def.init.iter().for_each(|x| expr(x, &mut exprs)),
+            ItemKind::Struct(def) => def.defaults.values().for_each(|x| expr(x, &mut exprs)),
+            ItemKind::Enum(_) | ItemKind::UseHeader { .. } => {}
         }
     }
     (stmts, exprs)

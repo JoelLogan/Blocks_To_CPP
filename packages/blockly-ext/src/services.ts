@@ -22,12 +22,14 @@ export type PassMode = 'copy' | 'editable' | 'read_only';
 
 /**
  * The kind of a symbol, as the scope query reports it. Milestone M3 adds user types: `struct`,
- * `field`, `enum` and `enumerator` (docs/plans/m3-contracts/types.md §1.2).
+ * `field`, `enum` and `enumerator` (docs/plans/m3-contracts/types.md §1.2), and globals: `global`
+ * (docs/plans/m3-contracts/w2.md §2.7).
  */
 export type SymbolKind =
   | 'variable'
   | 'parameter'
   | 'loopVariable'
+  | 'global'
   | 'function'
   | 'struct'
   | 'field'
@@ -48,7 +50,7 @@ export interface SymbolInfo {
   /** The name as the user wrote it in the declaring block. */
   readonly name: string;
   readonly kind: SymbolKind;
-  /** Variables: declared `const`. */
+  /** Variables and globals: declared `const`. */
   readonly isConst?: boolean;
   /** Parameters: how the argument is passed. */
   readonly mode?: PassMode;

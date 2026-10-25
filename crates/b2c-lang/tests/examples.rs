@@ -54,7 +54,11 @@ fn catalog_defaults() -> BTreeMap<String, Vec<DefaultInput>> {
     for path in paths {
         let text = std::fs::read_to_string(&path).expect("catalog file");
         let file: toml::Table = toml::from_str(&text).expect("catalog TOML");
-        for block in file["block"].as_array().expect("[[block]]") {
+        // A file of W2's families has no blocks until its package fills it.
+        let blocks = file
+            .get("block")
+            .map(|blocks| blocks.as_array().expect("[[block]]"));
+        for block in blocks.into_iter().flatten() {
             let id = block["id"].as_str().expect("block id").to_owned();
             let extra_default = |key: &str| -> u64 {
                 block

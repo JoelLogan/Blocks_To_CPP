@@ -188,6 +188,8 @@ describe('the slot fixture', () => {
     expect(FIXTURE.catalog.map((block) => block.block)).toEqual([
       'func.call',
       'func.call_stmt',
+      // What it gives back is typed from W2 (docs/plans/m3-contracts/w2.md §1.9).
+      'func.define',
       'func.return',
       'var.declare',
       'var.set',

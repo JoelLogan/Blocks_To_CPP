@@ -925,7 +925,7 @@ fn the_forms_program_prints_as_expected() {
 }
 
 /// Warning flags of the *strict* level (spec §7.4.2) with `-Werror`.
-const STRICT: &[&str] = &[
+pub(super) const STRICT: &[&str] = &[
     "-Wall",
     "-Wextra",
     "-Wpedantic",
@@ -945,14 +945,14 @@ const STRICT: &[&str] = &[
 /// A command for g++ or a built test program. Production code spawns
 /// processes only through b2c-process; this test drives g++ directly.
 #[allow(clippy::disallowed_methods)]
-fn command(program: &Path) -> std::process::Command {
+pub(super) fn command(program: &Path) -> std::process::Command {
     std::process::Command::new(program)
 }
 
 /// The compilers to check with: the `g++` on `PATH` first, then every
 /// `/usr/bin/g++-N` (side-by-side GCC versions, 07 §7.2). Without a `g++` on
 /// `PATH` the check is skipped, unless `B2C_REQUIRE_GXX` is set.
-fn compilers() -> Vec<PathBuf> {
+pub(super) fn compilers() -> Vec<PathBuf> {
     let path_gxx = PathBuf::from("g++");
     let works = |gxx: &Path| {
         command(gxx)

@@ -513,7 +513,7 @@ fn slot_types_list_each_expression_slot_lowered() {
     let slots = a.slot_types();
     let body = match &a.program.modules[0].items[0].kind {
         ItemKind::Main(main) => &main.body.stmts,
-        ItemKind::Function(_) => panic!("main"),
+        _ => panic!("main"),
     };
     let block_of = |i: usize| body[i].origin.block.clone();
     assert_eq!(
@@ -589,6 +589,7 @@ fn item_headers_come_from_the_blocks_lowered_into_them() {
             .position(|item| match &item.kind {
                 ItemKind::Function(function) => function.symbol.as_str() == sym(name),
                 ItemKind::Main(_) => name == "main",
+                _ => false,
             })
             .unwrap()
     };

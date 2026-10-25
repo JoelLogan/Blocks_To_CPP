@@ -52,7 +52,7 @@ use b2c_model::{Block, Document, ExprInput, FieldValue, Input};
 use serde_json::Value;
 
 use crate::codes::{self, Diags};
-use crate::definitions::{self, PARAM_MODES, count_default, default_tokens, repeat_index};
+use crate::definitions::{self, PARAM_MODES, count_default, default_tokens, field_def, repeat_index};
 use crate::schema::{BlockDef, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, Shape};
 use crate::signature::{self, TypeFit};
 use crate::stack;
@@ -78,7 +78,8 @@ enum Position {
 enum Resolved {
     Count(u32),
     Flag(bool),
-    Params,
+    /// A row extra (`params`, `fields`, `values`) with this many rows.
+    Rows(u32),
     /// Missing or invalid (already reported).
     Invalid,
 }
@@ -247,7 +248,7 @@ impl Resolver<'_> {
         }
         self.check_place(def, position, &location);
         let extras = self.extras(def, block, &location);
-        self.fields(def, block, &location);
+        self.fields(def, block, &extras, &location);
         self.inputs(def, block, &extras, &location);
         self.statements(def, block, &extras, &location);
     }
@@ -399,26 +400,29 @@ impl Resolver<'_> {
                     )),
                 ),
             },
-            ExtraKind::Params => match value {
+            ExtraKind::Params | ExtraKind::Fields | ExtraKind::Values => match value {
                 Value::Array(rows) => {
                     let limit = usize::try_from(extra.max).unwrap_or(usize::MAX);
                     if rows.len() > limit {
                         let message = format!(
-                            "This block has {} parameters, but at most {} are allowed.",
+                            "This block has {} {}, but at most {} are allowed.",
                             rows.len(),
+                            row_noun(extra.kind).1,
                             extra.max
                         );
                         self.diags.error(codes::BAD_EXTRA, location.clone(), message);
                     }
                     for (index, row) in rows.iter().enumerate() {
-                        self.param_row(index + 1, row, extra, location);
+                        self.row(index + 1, row, extra, location);
                     }
-                    (Resolved::Params, None)
+                    let count = u32::try_from(rows.len()).unwrap_or(u32::MAX);
+                    (Resolved::Rows(count), None)
                 }
                 _ => (
                     Resolved::Invalid,
                     Some(format!(
-                        "\"extra.{name}\" of this block should be a list of parameters, but it is {}.",
+                        "\"extra.{name}\" of this block should be a list of {}, but it is {}.",
+                        row_noun(extra.kind).1,
                         describe(value)
                     )),
                 ),
@@ -430,11 +434,15 @@ impl Resolver<'_> {
         state
     }
 
-    fn param_row(&mut self, number: usize, row: &Value, extra: &ExtraDef, location: &Location) {
+    /// One row of a row extra: a function's parameter, a struct's field or
+    /// an enum's value (w2.md §2.1).
+    fn row(&mut self, number: usize, row: &Value, extra: &ExtraDef, location: &Location) {
+        let keys = extra.kind.row_keys();
+        let (noun, plural) = row_noun(extra.kind);
         let mut problems = Vec::new();
         if let Value::Object(map) = row {
             for key in map.keys() {
-                if !["sym", "name", "type", "mode"].contains(&key.as_str()) {
+                if !keys.contains(&key.as_str()) {
                     problems.push(format!("has an unknown key {}", quote(key)));
                 }
             }
@@ -446,28 +454,37 @@ impl Resolver<'_> {
                 problems.push(String::from("needs a name in \"name\""));
             }
             let row_type = map.get("type");
-            if row_type.is_none_or(|ty| signature::row_type_fit(extra, ty) != TypeFit::Fits) {
+            if extra.kind.has_row_types()
+                && row_type.is_none_or(|ty| signature::row_type_fit(extra, ty) != TypeFit::Fits)
+            {
                 let wider = extra
                     .type_class
                     .map(|class| format!(", or {}", signature::class_phrase(class)))
                     .unwrap_or_default();
                 problems.push(format!(
-                    "has the type {}, but parameters can only be {}{wider}",
+                    "has the type {}, but {plural} can only be {}{wider}",
                     describe_row_type(row_type),
                     list(extra.types.iter().map(String::as_str))
                 ));
             }
-            match map.get("mode") {
-                Some(Value::String(m)) if PARAM_MODES.contains(&m.as_str()) => {}
-                other => problems.push(format!(
-                    "has the mode {}, but the mode must be {}",
-                    describe_choice(other),
-                    list(PARAM_MODES)
-                )),
+            if extra.kind == ExtraKind::Params {
+                match map.get("mode") {
+                    Some(Value::String(m)) if PARAM_MODES.contains(&m.as_str()) => {}
+                    other => problems.push(format!(
+                        "has the mode {}, but the mode must be {}",
+                        describe_choice(other),
+                        list(PARAM_MODES)
+                    )),
+                }
             }
         } else {
+            let keys: Vec<String> = keys.iter().map(|key| format!("\"{key}\"")).collect();
+            let (last, first) = keys
+                .split_last()
+                .map_or((String::new(), &[][..]), |(last, first)| (last.clone(), first));
             problems.push(format!(
-                "should be an object with \"sym\", \"name\", \"type\" and \"mode\", but it is {}",
+                "should be an object with {} and {last}, but it is {}",
+                first.join(", "),
                 describe(row)
             ));
         }
@@ -475,7 +492,7 @@ impl Resolver<'_> {
             self.diags.error(
                 codes::BAD_PARAM,
                 location.clone(),
-                format!("Parameter {number} of this block {problem}."),
+                format!("{noun} {number} of this block {problem}."),
             );
         }
     }
@@ -484,47 +501,83 @@ impl Resolver<'_> {
     // Fields
     // -----------------------------------------------------------------------
 
-    fn fields(&mut self, def: &BlockDef, block: &mut Block, location: &Location) {
+    fn fields(
+        &mut self,
+        def: &BlockDef,
+        block: &mut Block,
+        extras: &BTreeMap<&str, Resolved>,
+        location: &Location,
+    ) {
         for name in block.fields.keys() {
-            if !def.field.iter().any(|f| &f.name == name) {
-                let message = format!(
+            let message = match field_def(def, name) {
+                None => format!(
                     "This block has no field {}. Remove it or check its spelling.",
                     quote(name)
-                );
-                self.diags
-                    .error(codes::UNKNOWN_FIELD, field_location(location, name), message);
-            }
+                ),
+                Some(field) => match (&field.repeat, repeat_index(name, &field.name)) {
+                    (Some(repeat), Some(index)) => {
+                        match Self::repeat_count(extras, &repeat.count, repeat.plus) {
+                            Some(count) if index >= count => format!(
+                                "This block has no field {}: it has {count} {} field(s), set by \"extra.{}\".",
+                                quote(name),
+                                field.name,
+                                repeat.count
+                            ),
+                            _ => continue,
+                        }
+                    }
+                    _ => continue,
+                },
+            };
+            self.diags
+                .error(codes::UNKNOWN_FIELD, field_location(location, name), message);
         }
         for field in &def.field {
-            if let Some(value) = block.fields.get(&field.name) {
-                self.field(def, field, value, location);
-                continue;
-            }
-            match &field.default {
-                Some(FieldDefault::Bool(flag)) => {
-                    block.fields.insert(field.name.clone(), FieldValue::Bool(*flag));
+            let names: Vec<String> = match &field.repeat {
+                None => vec![field.name.clone()],
+                Some(repeat) => match Self::repeat_count(extras, &repeat.count, repeat.plus) {
+                    Some(count) => (0..count).map(|i| format!("{}{i}", field.name)).collect(),
+                    None => Vec::new(),
+                },
+            };
+            for name in names {
+                if let Some(value) = block.fields.get(&name) {
+                    self.field(def, field, &name, value, location);
+                    continue;
                 }
-                Some(FieldDefault::Text(text)) => {
-                    block
-                        .fields
-                        .insert(field.name.clone(), FieldValue::Text(text.clone()));
-                }
-                // Nothing chosen yet: the editor saves an unchosen name or
-                // reference as an absent field. That is the analyser's to
-                // report, once the block is part of the program (ADR-0012).
-                None if matches!(field.kind, FieldKind::SymbolDecl | FieldKind::SymbolRef) => {}
-                None => {
-                    let name = &field.name;
-                    let message = format!("This block is missing its field {name}.");
-                    self.diags
-                        .error(codes::MISSING_FIELD, field_location(location, name), message);
+                match &field.default {
+                    Some(FieldDefault::Bool(flag)) => {
+                        block.fields.insert(name, FieldValue::Bool(*flag));
+                    }
+                    Some(FieldDefault::Text(text)) => {
+                        block.fields.insert(name, FieldValue::Text(text.clone()));
+                    }
+                    // Nothing chosen yet: the editor saves an unchosen name or
+                    // reference, or a user type not chosen in a type field
+                    // that lists only the module's types, as an absent field.
+                    // That is the analyser's to report, once the block is part
+                    // of the program (ADR-0012).
+                    None if matches!(field.kind, FieldKind::SymbolDecl | FieldKind::SymbolRef)
+                        || (field.kind == FieldKind::Type && field.types.is_empty()) => {}
+                    None => {
+                        let message = format!("This block is missing its field {name}.");
+                        self.diags
+                            .error(codes::MISSING_FIELD, field_location(location, &name), message);
+                    }
                 }
             }
         }
     }
 
-    fn field(&mut self, def: &BlockDef, field: &FieldDef, value: &FieldValue, location: &Location) {
-        let name = &field.name;
+    /// Checks the value of the field part `name` of `field`'s definition.
+    fn field(
+        &mut self,
+        def: &BlockDef,
+        field: &FieldDef,
+        name: &str,
+        value: &FieldValue,
+        location: &Location,
+    ) {
         let problem = match (field.kind, value) {
             (FieldKind::Dropdown, FieldValue::Text(text))
                 if field.options.iter().any(|[_, option]| option == text) =>
@@ -589,7 +642,7 @@ impl Resolver<'_> {
     /// The number of parts a repeated input or statement has, if known.
     fn repeat_count(extras: &BTreeMap<&str, Resolved>, count: &str, plus: u32) -> Option<u32> {
         match extras.get(count) {
-            Some(Resolved::Count(n)) => Some(n.saturating_add(plus)),
+            Some(Resolved::Count(n) | Resolved::Rows(n)) => Some(n.saturating_add(plus)),
             _ => None,
         }
     }
@@ -712,6 +765,15 @@ impl Resolver<'_> {
                 self.block(child, Position::Statement);
             }
         }
+    }
+}
+
+/// How messages name one row and the rows of a row extra.
+fn row_noun(kind: ExtraKind) -> (&'static str, &'static str) {
+    match kind {
+        ExtraKind::Fields => ("Field", "fields"),
+        ExtraKind::Values => ("Value", "values"),
+        ExtraKind::Params | ExtraKind::Count | ExtraKind::Flag => ("Parameter", "parameters"),
     }
 }
 
@@ -906,6 +968,212 @@ mod tests {
     /// The completed document and the diagnostics of a report.
     fn parts(report: ResolveReport) -> (Document, Vec<Diagnostic>) {
         (report.document, report.diagnostics)
+    }
+
+    /// The core catalog with two definitions of the shapes W2 adds
+    /// (w2.md §2.1): `test.record`, with `fields` and `values` rows and an
+    /// input repeated by the rows of `fields`, and `test.attempt`, with a
+    /// repeated type field and a repeated name typed by it.
+    fn catalog_w2() -> Catalog {
+        let text = r#"
+[[block]]
+id = "test.record"
+version = 1
+category = "types"
+shape = "definition"
+label = { friendly = "record %NAME", cpp = "struct %NAME" }
+lowering = "builtin"
+help = "A record."
+
+[[block.field]]
+name = "NAME"
+kind = "symbol_decl"
+
+[[block.extra]]
+name = "fields"
+kind = "fields"
+max = 4
+types = ["int", "std::string"]
+type_class = "value"
+
+[[block.extra]]
+name = "values"
+kind = "values"
+max = 4
+
+[[block.input]]
+name = "DEFAULT"
+check = "any"
+optional = true
+repeat = { count = "fields" }
+
+[[block]]
+id = "test.attempt"
+version = 1
+category = "errors"
+shape = "statement"
+label = { friendly = "try %TRY catch %ERROR as %NAME %CATCH catch …", cpp = "try" }
+lowering = "builtin"
+help = "Tries."
+
+[[block.extra]]
+name = "catchCount"
+kind = "count"
+min = 1
+max = 4
+default = "1"
+
+[[block.field]]
+name = "ERROR"
+kind = "type"
+types = ["std::exception", "std::runtime_error"]
+default = "std::exception"
+repeat = { count = "catchCount" }
+
+[[block.field]]
+name = "NAME"
+kind = "symbol_decl"
+type = "field:ERROR"
+repeat = { count = "catchCount" }
+
+[[block.statement]]
+name = "TRY"
+
+[[block.statement]]
+name = "CATCH"
+repeat = { count = "catchCount" }
+"#;
+        let file: crate::schema::CatalogFile = toml::from_str(text).unwrap();
+        let mut catalog = crate::core_catalog().clone();
+        for def in file.block {
+            assert_eq!(definitions::check_block(&def), Vec::<String>::new(), "{}", def.id);
+            catalog.blocks.insert(def.id.clone(), def);
+        }
+        catalog
+    }
+
+    /// A document with `blocks` on the canvas and `statements` in `main`.
+    fn w2_document(blocks: Vec<Value>, statements: &[Value]) -> Document {
+        let mut top = vec![serde_json::json!({
+            "id": "b_main", "type": "program.main", "v": 1, "statements": {"BODY": statements}
+        })];
+        top.extend(blocks);
+        let value = serde_json::json!({
+            "format": "blocks2cpp/project",
+            "formatVersion": 1,
+            "generator": {"app": "0.1.0", "catalog": "1.3.0"},
+            "project": {"id": "p", "name": "P", "language": {"standard": "c++20"}},
+            "modules": [{"id": "m", "name": "main", "workspace": {"blocks": top}}]
+        });
+        b2c_model::load(&serde_json::to_vec(&value).unwrap()).unwrap()
+    }
+
+    fn messages(diagnostics: &[Diagnostic]) -> Vec<(&str, &str)> {
+        diagnostics
+            .iter()
+            .map(|d| (d.code.0.as_str(), d.message.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn field_and_value_rows_are_checked_like_parameters() {
+        let catalog = catalog_w2();
+        let record = |extra: Value, inputs: Value| {
+            serde_json::json!({"id": "b_rec", "type": "test.record", "v": 1, "x": 0, "y": 0,
+                "fields": {"NAME": {"sym": "s_rec", "name": "Student"}}, "extra": extra, "inputs": inputs})
+        };
+        let good = record(
+            serde_json::json!({
+                "fields": [{"sym": "s_name", "name": "name", "type": "std::string"},
+                           {"sym": "s_list", "name": "marks", "type": {"std::vector": "int"}}],
+                "values": [{"sym": "s_a", "name": "A"}]
+            }),
+            serde_json::json!({"DEFAULT1": {"expr": [{"num": "0"}]}}),
+        );
+        let (_, diagnostics) = parts(run(&w2_document(vec![good], &[]), &catalog));
+        assert_eq!(messages(&diagnostics), []);
+
+        let bad = record(
+            serde_json::json!({
+                "fields": [{"sym": "s_name", "name": "name", "type": "std::string", "mode": "copy"},
+                           {"sym": "s_x", "name": "x", "type": "void"}],
+                "values": [{"sym": "s_a", "name": "A", "type": "int"}, "B"]
+            }),
+            serde_json::json!({"DEFAULT2": {"expr": [{"num": "0"}]}}),
+        );
+        let (_, diagnostics) = parts(run(&w2_document(vec![bad], &[]), &catalog));
+        assert_eq!(
+            messages(&diagnostics),
+            [
+                (
+                    codes::BAD_PARAM,
+                    "Field 1 of this block has an unknown key \"mode\"."
+                ),
+                (
+                    codes::BAD_PARAM,
+                    "Field 2 of this block has the type \"void\", but fields can only be \"int\" or \"std::string\", or another type a variable can hold."
+                ),
+                (
+                    codes::BAD_PARAM,
+                    "Value 1 of this block has an unknown key \"type\"."
+                ),
+                (
+                    codes::BAD_PARAM,
+                    "Value 2 of this block should be an object with \"sym\" and \"name\", but it is the text \"B\"."
+                ),
+                (
+                    codes::UNKNOWN_INPUT,
+                    "This block has no input \"DEFAULT2\": it has 2 DEFAULT input(s), set by \"extra.fields\"."
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn repeated_fields_have_a_part_per_count() {
+        let catalog = catalog_w2();
+        let attempt = |fields: Value| {
+            serde_json::json!({"id": "b_try", "type": "test.attempt", "v": 1,
+                "extra": {"catchCount": 2}, "fields": fields})
+        };
+        let filled = attempt(serde_json::json!({
+            "ERROR0": "std::runtime_error",
+            "NAME0": {"sym": "s_e", "name": "e"}
+        }));
+        let (completed, diagnostics) = parts(run(&w2_document(vec![], &[filled]), &catalog));
+        assert_eq!(messages(&diagnostics), []);
+        let block = &completed.modules[0].workspace.blocks[0].statements["BODY"][0];
+        // The missing part takes the field's default; an unchosen name stays
+        // absent, for the analyser to report.
+        assert_eq!(
+            block.fields["ERROR0"],
+            FieldValue::Text("std::runtime_error".into())
+        );
+        assert_eq!(block.fields["ERROR1"], FieldValue::Text("std::exception".into()));
+        assert!(!block.fields.contains_key("NAME1"));
+        assert!(!block.fields.contains_key("ERROR"));
+
+        let extra = attempt(
+            serde_json::json!({"ERROR2": "std::exception", "ERROR": "std::exception", "ERROR0": "int"}),
+        );
+        let (_, diagnostics) = parts(run(&w2_document(vec![], &[extra]), &catalog));
+        assert_eq!(
+            messages(&diagnostics),
+            [
+                (
+                    codes::UNKNOWN_FIELD,
+                    "This block has no field \"ERROR\". Remove it or check its spelling."
+                ),
+                (
+                    codes::UNKNOWN_FIELD,
+                    "This block has no field \"ERROR2\": it has 2 ERROR field(s), set by \"extra.catchCount\"."
+                ),
+                (
+                    codes::BAD_FIELD,
+                    "The field ERROR0 is \"int\", but it must be one of the types \"std::exception\" or \"std::runtime_error\"."
+                ),
+            ]
+        );
     }
 
     /// A synthetic `io.print` v1 → v2 step: the separator `space` was

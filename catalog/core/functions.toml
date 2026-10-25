@@ -6,6 +6,9 @@ version = 1
 category = "functions"
 shape = "definition"
 label = { friendly = "define %NAME with … returns %RETURNS", cpp = "%RETURNS %NAME(…) { … }" }
+# What a function gives back offers these types first and takes any type a
+# variable can hold, such as a struct (docs/plans/m3-contracts/w2.md §1.9).
+where = { R = "value" }
 lowering = "builtin"
 help = "Defines a function: a named group of blocks you can use again."
 
@@ -17,6 +20,7 @@ kind = "symbol_decl"
 name = "RETURNS"
 kind = "type"
 types = ["void", "int", "double", "bool", "char", "std::string"]
+type = "R"
 default = "void"
 
 # A parameter row offers these types first and takes any type a variable

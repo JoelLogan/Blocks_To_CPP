@@ -17,14 +17,20 @@ fn is_literal_one(expr: &Expr) -> bool {
     matches!(&expr.kind, ExprKind::Int(lit) if lit.as_str() == "1")
 }
 
-/// The C++ assignment operator for a compound operator.
+/// The C++ assignment operator for a compound operator. *add to the end*
+/// on text is `+=` (w2.md §1.9).
 fn assign_op(op: CompoundOp) -> AssignOp {
     match op {
-        CompoundOp::Add => AssignOp::Add,
+        CompoundOp::Add | CompoundOp::Append => AssignOp::Add,
         CompoundOp::Sub => AssignOp::Sub,
         CompoundOp::Mul => AssignOp::Mul,
         CompoundOp::Div => AssignOp::Div,
         CompoundOp::Mod => AssignOp::Mod,
+        CompoundOp::BitAnd => AssignOp::BitAnd,
+        CompoundOp::BitOr => AssignOp::BitOr,
+        CompoundOp::BitXor => AssignOp::BitXor,
+        CompoundOp::Shl => AssignOp::Shl,
+        CompoundOp::Shr => AssignOp::Shr,
     }
 }
 
@@ -115,6 +121,21 @@ impl Lowerer<'_> {
                 stream,
             } => self.print(items, *separator, *newline, *stream),
             StmtKind::Ask { prompt, target, mode } => self.ask(prompt.as_ref(), target, *mode),
+            // W2's statements, each desugared by its family's module (w2.md
+            // §3.2), which the packages fill in.
+            StmtKind::RangeFor { .. } | StmtKind::CollectionOp { .. } => self.collection_stmt(kind),
+            StmtKind::Decimals { .. } => self.text_stmt(kind),
+            StmtKind::Try { .. } | StmtKind::Throw { .. } | StmtKind::Rethrow => self.error_stmt(kind),
+            StmtKind::SetField { .. } => self.type_stmt(kind),
+            StmtKind::Switch { .. }
+            | StmtKind::DoWhile { .. }
+            | StmtKind::Wait { .. }
+            | StmtKind::FallThrough => self.control_stmt(kind),
+            StmtKind::FileLines { .. }
+            | StmtKind::OpenFile { .. }
+            | StmtKind::WriteFile { .. }
+            | StmtKind::StaticCheck { .. } => self.file_stmt(kind),
+            StmtKind::Flip { .. } => self.global_stmt(kind),
         }
     }
 

@@ -9,7 +9,8 @@
 //! A reference is a field reference (`{"ref": id}`, also a user type in a
 //! type field), an expression token, or a reference inside a type term: in
 //! a template in a type field, or in the `type` of a row of `extra`
-//! (`params`) (types.md §2.4).
+//! (`params`, `fields`) (types.md §2.4). Rows of `params`, `fields` and
+//! `values` declare symbols (w2.md §2.1).
 //!
 //! The pure crates use no randomness, so the randomness comes from outside:
 //! [`SeededIds`] derives IDs from a 256-bit seed that the caller takes from
@@ -27,6 +28,7 @@ use b2c_ir::{BlockId, IdError, SymbolId};
 use sha2::{Digest, Sha256};
 
 use crate::document::{Block, Document, FieldValue, Input, Token};
+use crate::terms::DECLARING_ROW_KEYS;
 use crate::{terms, walk};
 
 /// How many candidates [`remap_ids`] asks for before it gives up on one ID.
@@ -302,21 +304,20 @@ impl Fresh<'_> {
 
 /// The symbols a block declares, as the loader counts them: symbol
 /// declaration fields, and the `sym` of each row of `extra.params`
-/// (function parameters).
+/// (function parameters), `extra.fields` (struct fields) and `extra.values`
+/// (enum values).
 fn declarations(block: &Block) -> impl Iterator<Item = SymbolId> + '_ {
     let fields = block.fields.values().filter_map(|value| match value {
         FieldValue::Decl(decl) => Some(decl.sym.clone()),
         _ => None,
     });
-    let params = block
-        .extra
-        .get("params")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
+    let rows = DECLARING_ROW_KEYS
+        .iter()
+        .filter_map(|key| block.extra.get(*key)?.as_array())
         .flatten()
         .filter_map(|row| row.get("sym")?.as_str())
         .filter_map(|sym| SymbolId::new(sym).ok());
-    fields.chain(params)
+    fields.chain(rows)
 }
 
 /// Renames the symbols in `map` in one block (not its children): its
@@ -350,7 +351,16 @@ fn rename_symbols(block: &mut Block, map: &BTreeMap<SymbolId, SymbolId>, declara
             }
         }
     }
-    if declarations && let Some(serde_json::Value::Array(rows)) = block.extra.get_mut("params") {
+    if !declarations {
+        return;
+    }
+    for (key, rows) in &mut block.extra {
+        let serde_json::Value::Array(rows) = rows else {
+            continue;
+        };
+        if !DECLARING_ROW_KEYS.contains(&key.as_str()) {
+            continue;
+        }
         for row in rows {
             if let Some(serde_json::Value::String(text)) = row.get_mut("sym")
                 && let Ok(sym) = SymbolId::new(text)

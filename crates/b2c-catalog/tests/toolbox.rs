@@ -494,12 +494,12 @@ fn bad_entries_and_categories_are_rejected() {
         assert_eq!(messages.len(), 1, "{expected}: {messages:?}");
         assert!(messages[0].contains(expected), "{expected}: {messages:?}");
     }
-    // A category without entries (and not dynamic) is an error; removing
-    // the entries also leaves their blocks unreachable.
+    // A category without entries is valid (the editor does not show it;
+    // w2.md §2.1), but removing the entries leaves their blocks
+    // unreachable.
     let messages = messages_after(|t| category(t, Category::Text).entries.clear());
-    assert_eq!(messages[0], "category text: the category has no entries");
     assert_eq!(
-        &messages[1..],
+        messages,
         [
             "the block text.char is not in the toolbox: add an entry for it",
             "the block text.join is not in the toolbox: add an entry for it",
@@ -523,10 +523,7 @@ fn malformed_files_are_rejected_before_checking() {
             "[[category]]\nid = \"program\"\nname = \"P\"\nicon = \"P\"\ncolour = \"program\"\nshade = 1\n",
             "unknown field `shade`",
         ),
-        (
-            "[[category]]\nid = \"collections\"\n",
-            "unknown variant `collections`",
-        ),
+        ("[[category]]\nid = \"graphics\"\n", "unknown variant `graphics`"),
         (
             "[[category]]\nid = \"program\"\nname = \"P\"\nicon = \"P\"\ncolour = \"program\"\ndynamic = \"lists\"\n",
             "unknown variant `lists`",

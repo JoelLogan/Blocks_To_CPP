@@ -72,6 +72,8 @@ mod query;
 mod scope;
 mod slots;
 mod typing;
+#[cfg(test)]
+mod w2_tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 

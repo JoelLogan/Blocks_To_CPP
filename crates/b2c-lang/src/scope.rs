@@ -64,6 +64,12 @@ impl ListKey {
 pub(crate) const PARAMS_LIST: &str = "#params";
 /// Pseudo-list holding a `for` loop's counter.
 pub(crate) const COUNTER_LIST: &str = "#counter";
+/// Pseudo-list holding the variables a loop over items declares: a *for
+/// each* item, a map's key and value, a file's line (w2.md §2.13). Like
+/// [`COUNTER_LIST`], it encloses the loop's `BODY` only, which is lowered
+/// joined to it: C++ treats the loop's declaration and its body as one
+/// scope.
+pub(crate) const ITEM_LIST: &str = "#item";
 
 #[derive(Debug)]
 struct Frame {

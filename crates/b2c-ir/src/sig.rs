@@ -96,7 +96,9 @@ pub enum TypePattern {
     Lib(LibType, Vec<TypePattern>),
     /// A type function applied to a pattern: `elem(C)`.
     Fn(TypeFn, Box<TypePattern>),
-    /// `field:NAME`: the type chosen in the type field `NAME` (M2).
+    /// `field:NAME`: the type chosen in the type field `NAME` (M2). On a
+    /// repeated field (w2.md §2.1), the part of `NAME` with the same index
+    /// (`NAME0`'s type for part 0).
     Field(String),
     /// `symbol` (M2) or `symbol:NAME`: the type of the symbol in the block's
     /// one symbol field, or in the field `NAME`.
@@ -415,6 +417,11 @@ pub struct BlockSig {
     /// The inputs of `inputs` that are repeated (`ITEM0`, `ITEM1`, …); the
     /// others have one part, named as the input.
     pub repeated: BTreeSet<String>,
+    /// The fields that are repeated (`ERROR0`, `ERROR1`, …; w2.md §2.1),
+    /// with or without a pattern: `field:F` on a repeated field reads `F`'s
+    /// part of the same index, and a repeated `symbol_decl` declares one
+    /// symbol per part.
+    pub repeated_fields: BTreeSet<String>,
     /// The headers every form of the block needs.
     pub headers: Vec<Header>,
     /// The headers a dropdown option adds, by field, then option.
@@ -488,7 +495,7 @@ pub trait BlockParts {
     fn field(&self, name: &str) -> PartType;
     /// A value input part.
     fn input(&self, part: &str) -> PartType;
-    /// How many parts the repeated input `base` has now.
+    /// How many parts the repeated input or field `base` has now.
     fn count(&self, base: &str) -> usize;
     /// `param:F`: parameter `index` of the function chosen in field `field`.
     fn param(&self, field: &str, index: usize) -> PartType;
@@ -535,6 +542,7 @@ pub struct TypeEnv {
     classes: BTreeMap<TypeVar, TypeClass>,
     place_var: Option<TypeVar>,
     members: BTreeMap<String, TypeVar>,
+    repeated_fields: BTreeSet<String>,
     /// Each bound variable, its type and its binder (`None`: the place).
     bound: BTreeMap<TypeVar, (Type, Option<PartName>)>,
     /// Unbound variables that an empty part could have bound.
@@ -548,6 +556,7 @@ impl TypeEnv {
             classes: sig.vars.clone(),
             place_var: sig.place_var.clone(),
             members: sig.members.clone(),
+            repeated_fields: sig.repeated_fields.clone(),
             bound: BTreeMap::new(),
             empty: BTreeSet::new(),
         }
@@ -632,7 +641,7 @@ impl TypeEnv {
     }
 
     /// Resolves a pattern against what is bound. `index` is the part's index
-    /// for `param:` and `member:`.
+    /// for `param:`, `member:` and `field:` on a repeated field.
     ///
     /// An unbound variable is [`Resolution::Missing`] when an empty part
     /// could have bound it, and [`Resolution::Open`] otherwise; a type
@@ -679,6 +688,9 @@ impl TypeEnv {
                 Resolution::Type(ty) => function.apply(&ty).map_or(Resolution::Missing, Resolution::Type),
                 other => other,
             },
+            TypePattern::Field(name) if self.repeated_fields.contains(name) => {
+                index.map_or(Resolution::Missing, |i| known(parts.field(&format!("{name}{i}"))))
+            }
             TypePattern::Field(name) => known(parts.field(name)),
             TypePattern::Symbol(None) => Resolution::Missing,
             TypePattern::Symbol(Some(name)) => match self.members.get(name) {
@@ -1263,6 +1275,43 @@ mod tests {
         );
         let void = Parts::default();
         assert_eq!(env.resolve(&pattern("result"), &void, None), Resolution::Missing);
+    }
+
+    #[test]
+    fn field_of_a_repeated_field_reads_the_part_of_the_same_index() {
+        let mut repeated = BlockSig::default();
+        repeated.repeated_fields.insert("ERROR".into());
+        let env = TypeEnv::new(&repeated);
+        let runtime = Type::lib(LibType::RuntimeError, Vec::new()).unwrap();
+        let parts = Parts {
+            fields: BTreeMap::from([
+                ("ERROR0".to_owned(), PartType::Known(runtime.clone())),
+                ("ERROR1".to_owned(), PartType::Empty),
+                ("TO".to_owned(), PartType::Known(Type::Int)),
+            ]),
+            ..Parts::default()
+        };
+        assert_eq!(
+            env.resolve(&pattern("field:ERROR"), &parts, Some(0)),
+            Resolution::Type(runtime)
+        );
+        assert_eq!(
+            env.resolve(&pattern("field:ERROR"), &parts, Some(1)),
+            Resolution::Missing
+        );
+        assert_eq!(
+            env.resolve(&pattern("field:ERROR"), &parts, Some(2)),
+            Resolution::Missing
+        );
+        assert_eq!(
+            env.resolve(&pattern("field:ERROR"), &parts, None),
+            Resolution::Missing
+        );
+        // A field that is not repeated ignores the index.
+        assert_eq!(
+            env.resolve(&pattern("field:TO"), &parts, Some(1)),
+            Resolution::Type(Type::Int)
+        );
     }
 
     #[test]

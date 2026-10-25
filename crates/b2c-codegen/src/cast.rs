@@ -322,6 +322,10 @@ pub(crate) enum Callee {
     /// A standard-library function or support helper chosen by the generator
     /// (e.g. `std::to_string`, `b2c::random_int`).
     Fixed(&'static str),
+    /// A function template with explicit template arguments, chosen by the
+    /// generator: `std::max<double>`, `std::clamp<int>` (w2.md §1.4).
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's math blocks"))]
+    Template(&'static str, Vec<CType>),
 }
 
 /// An expression with the origins (blocks) it maps back to.
@@ -412,6 +416,28 @@ pub(crate) enum CExprKind {
         /// The enumerator.
         value: Ident,
     },
+    /// `object[index]`: a map's item by key, which *set item* creates when it
+    /// is missing (w2.md §1.2).
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's collection blocks"))]
+    Index {
+        /// The object (already parenthesised if needed).
+        object: Box<CExpr>,
+        /// The key.
+        index: Box<CExpr>,
+    },
+    /// `{a, b}`: a brace list (*list of*, an empty part of *new … with* in
+    /// C++17).
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's list and struct blocks"))]
+    Braces(Vec<CExpr>),
+    /// `Student{.name = n, .mark = m}` (C++20) or `Student{n, m}`: a struct
+    /// value from its fields (*new … with*).
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's struct blocks"))]
+    Init {
+        /// The struct's type.
+        ty: CType,
+        /// The parts in order, each with its field's name when designated.
+        items: Vec<(Option<Ident>, CExpr)>,
+    },
     /// `(inner)`.
     Paren(Box<CExpr>),
     /// `0 /* error */`: an expression that could not be generated.
@@ -468,6 +494,9 @@ impl CExpr {
             | CExprKind::Method { .. }
             | CExprKind::Field { .. }
             | CExprKind::Enumerator { .. }
+            | CExprKind::Index { .. }
+            | CExprKind::Braces(_)
+            | CExprKind::Init { .. }
             | CExprKind::Paren(_)
             | CExprKind::Error => Prec::Primary,
         }
@@ -500,6 +529,25 @@ impl CExpr {
         Self::new(CExprKind::Field {
             object: Box::new(object.paren_if(wrap)),
             field,
+        })
+    }
+
+    /// `object[index]`, parenthesising the object when needed.
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's collection blocks"))]
+    pub(crate) fn index(object: Self, index: Self) -> Self {
+        let wrap = object.precedence() < Prec::Primary;
+        Self::new(CExprKind::Index {
+            object: Box::new(object.paren_if(wrap)),
+            index: Box::new(index),
+        })
+    }
+
+    /// A call of a function template with explicit template arguments.
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's math blocks"))]
+    pub(crate) fn call_template(name: &'static str, types: Vec<CType>, args: Vec<Self>) -> Self {
+        Self::new(CExprKind::Call {
+            callee: Callee::Template(name, types),
+            args,
         })
     }
 
@@ -624,6 +672,16 @@ pub(crate) enum AssignOp {
     Div,
     /// `%=`
     Mod,
+    /// `&=`
+    BitAnd,
+    /// `|=`
+    BitOr,
+    /// `^=`
+    BitXor,
+    /// `<<=`
+    Shl,
+    /// `>>=`
+    Shr,
 }
 
 impl AssignOp {
@@ -636,6 +694,11 @@ impl AssignOp {
             Self::Mul => "*=",
             Self::Div => "/=",
             Self::Mod => "%=",
+            Self::BitAnd => "&=",
+            Self::BitOr => "|=",
+            Self::BitXor => "^=",
+            Self::Shl => "<<=",
+            Self::Shr => ">>=",
         }
     }
 }
@@ -666,6 +729,33 @@ pub(crate) enum Init {
     Value(CExpr),
     /// `{}` (value-initialisation).
     Braces,
+    /// `(a, b)`: a constructor's arguments (`std::ifstream file("x");`,
+    /// w2.md §2.4).
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's file blocks"))]
+    Args(Vec<CExpr>),
+}
+
+/// What comes before a declaration's type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's globals"))]
+pub(crate) enum Qualifier {
+    /// Nothing: a variable.
+    None,
+    /// `const`.
+    Const,
+    /// `constexpr` (w2.md §2.7).
+    Constexpr,
+}
+
+impl Qualifier {
+    /// The keyword with its space, or nothing.
+    pub(crate) fn prefix(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Const => "const ",
+            Self::Constexpr => "constexpr ",
+        }
+    }
 }
 
 /// The third clause of a `for` loop.
@@ -751,19 +841,70 @@ pub(crate) enum CStmtKind {
     RangeFor {
         /// What each item is bound to.
         binding: RangeBinding,
+        /// How it is bound: `const auto&`, `auto` or `auto&` (w2.md §1.2).
+        style: BindingStyle,
+        /// `[[maybe_unused]]` before the declaration, for a body that reads
+        /// none of the names it declares (w2.md §2.12).
+        maybe_unused: bool,
         /// The range: never a literal (a text literal becomes a
         /// `std::string` object first).
         range: CExpr,
         /// Body.
         body: CBlock,
     },
-    /// `switch (value) { case label: … }`.
+    /// `switch (value) { case label: … default: … }`.
     #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's enums and switch block"))]
     Switch {
         /// The value switched on.
         value: CExpr,
         /// The cases, in order.
         cases: Vec<CCase>,
+        /// The statements under `default:`, if the switch has one.
+        default: Option<Vec<CStmt>>,
+    },
+    /// `do { … } while (cond);` (w2.md §1.6).
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's do-while block"))]
+    DoWhile {
+        /// Body.
+        body: CBlock,
+        /// Condition.
+        cond: CExpr,
+    },
+    /// `try { … } catch (const E& e) { … } …` (w2.md §2.5).
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's error blocks"))]
+    Try {
+        /// The `try` part.
+        body: CBlock,
+        /// The catch parts, in order.
+        catches: Vec<CCatch>,
+    },
+    /// `throw value;`, or `throw;` to throw the caught error again.
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's error blocks"))]
+    Throw(Option<CExpr>),
+    /// `[[fallthrough]];`
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's switch block"))]
+    FallThrough,
+    /// `static_assert(cond, "message");` (*check at compile time*).
+    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's check block"))]
+    StaticAssert {
+        /// The condition.
+        cond: CExpr,
+        /// The message (user text).
+        message: StrLit,
+    },
+    /// `target op value;` where the target is not a plain name: `c.at(i) =
+    /// x;`, `c[k] = x;`, `s.mark = x;` (w2.md §1.2, §1.5).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "made for W2's collection and struct blocks")
+    )]
+    AssignTo {
+        /// What is assigned to.
+        target: CExpr,
+        /// Operator.
+        op: AssignOp,
+        /// Right-hand side.
+        value: CExpr,
     },
     /// `break;`
     Break,
@@ -788,6 +929,62 @@ pub(crate) enum RangeBinding {
     One(Ident),
     /// A key and a value (C++17 structured binding).
     Pair(Ident, Ident),
+}
+
+/// How a range-`for` declares its binding (*for each*'s modes, w2.md §1.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's for-each blocks"))]
+pub(crate) enum BindingStyle {
+    /// `const auto&`: read-only.
+    ConstRef,
+    /// `auto`: a copy.
+    Copy,
+    /// `auto&`: editable.
+    Ref,
+}
+
+impl BindingStyle {
+    /// The declaration's type, with its space.
+    pub(crate) fn prefix(self) -> &'static str {
+        match self {
+            Self::ConstRef => "const auto& ",
+            Self::Copy => "auto ",
+            Self::Ref => "auto& ",
+        }
+    }
+}
+
+/// One `catch (const E& name) { … }` of a `try`.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's error blocks"))]
+pub(crate) struct CCatch {
+    /// The error type caught (`std::exception`, …).
+    pub(crate) ty: CType,
+    /// The caught error's name.
+    pub(crate) name: Ident,
+    /// The part's statements.
+    pub(crate) body: CBlock,
+    /// Where the part is on its block.
+    pub(crate) origin: Option<Origin>,
+}
+
+/// A global variable or constant at namespace scope (`var.global`, w2.md
+/// §2.7): `int count = 0;`, `constexpr double kGravity = 9.81;`.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's globals"))]
+pub(crate) struct CGlobal {
+    /// `const`, `constexpr` or nothing.
+    pub(crate) qualifier: Qualifier,
+    /// Its type.
+    pub(crate) ty: CType,
+    /// Its name.
+    pub(crate) name: Ident,
+    /// Its initialiser.
+    pub(crate) init: Init,
+    /// The defining block.
+    pub(crate) origin: Origin,
+    /// The block's comment.
+    pub(crate) comment: Option<Comment>,
 }
 
 /// One `case label:` of a `switch` with the statements under it.

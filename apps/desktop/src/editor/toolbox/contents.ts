@@ -623,6 +623,7 @@ function symbolKey(symbol: SymbolInfo): unknown[] {
   const common = [symbol.id, symbol.name, symbol.kind, symbol.type];
   switch (symbol.kind) {
     case 'variable':
+    case 'global':
       return [...common, symbol.isConst];
     case 'parameter':
       return [...common, symbol.mode];

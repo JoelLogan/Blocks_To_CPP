@@ -19,17 +19,85 @@ pub(crate) enum Helper {
     Ask,
     /// `b2c::to_text(x)`: a decimal number as text, written as `print` writes it.
     ToText,
+    /// `b2c::split(text, separator)` (*split … by*; w2.md §2.12).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "called by W2's text blocks (package B)")
+    )]
+    Split,
+    /// `b2c::to_lower(text)` (*lowercase*).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "called by W2's text blocks (package B)")
+    )]
+    ToLower,
+    /// `b2c::to_upper(text)` (*uppercase*).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "called by W2's text blocks (package B)")
+    )]
+    ToUpper,
+    /// `b2c::trim(text)` (*trim*).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "called by W2's text blocks (package B)")
+    )]
+    Trim,
+    /// `b2c::replace_all(text, old, new)` (*replace all*).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "called by W2's text blocks (package B)")
+    )]
+    ReplaceAll,
+    /// `b2c::starts_with(text, prefix)` (*starts with*, C++17 only).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "called by W2's text blocks (package B)")
+    )]
+    StartsWith,
+    /// `b2c::ends_with(text, suffix)` (*ends with*, C++17 only).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "called by W2's text blocks (package B)")
+    )]
+    EndsWith,
+    /// `b2c::random_real(low, high)` (*random decimal*).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "called by W2's math blocks (package B)")
+    )]
+    RandomReal,
+    /// `b2c::remove_at(items, index)` (*remove item at*).
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "called by W2's collection blocks (package A)")
+    )]
+    RemoveAt,
 }
 
 impl Helper {
     /// Every helper, in emission order.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 4] = [Self::RandomInt, Self::AskLine, Self::Ask, Self::ToText];
+    pub(crate) const ALL: [Self; 13] = [
+        Self::RandomInt,
+        Self::AskLine,
+        Self::Ask,
+        Self::ToText,
+        Self::Split,
+        Self::ToLower,
+        Self::ToUpper,
+        Self::Trim,
+        Self::ReplaceAll,
+        Self::StartsWith,
+        Self::EndsWith,
+        Self::RandomReal,
+        Self::RemoveAt,
+    ];
 
     /// The standard headers the helper's code needs.
     pub(crate) fn headers(self) -> &'static [&'static str] {
         match self {
-            Self::RandomInt => &["<random>", "<utility>"],
+            Self::RandomInt | Self::RandomReal => &["<random>", "<utility>"],
             Self::AskLine => &["<cstdlib>", "<iostream>", "<limits>", "<string>"],
             Self::Ask => &[
                 "<cctype>",
@@ -40,6 +108,10 @@ impl Helper {
                 "<string>",
             ],
             Self::ToText => &["<iostream>", "<sstream>", "<string>"],
+            Self::Split => &["<cstddef>", "<string>", "<vector>"],
+            Self::ToLower | Self::ToUpper | Self::StartsWith | Self::EndsWith => &["<string>"],
+            Self::Trim | Self::ReplaceAll => &["<cstddef>", "<string>"],
+            Self::RemoveAt => &["<cstddef>"],
         }
     }
 
@@ -50,6 +122,15 @@ impl Helper {
             Self::AskLine => ASK_LINE,
             Self::Ask => ASK,
             Self::ToText => TO_TEXT,
+            Self::Split => SPLIT,
+            Self::ToLower => TO_LOWER,
+            Self::ToUpper => TO_UPPER,
+            Self::Trim => TRIM,
+            Self::ReplaceAll => REPLACE_ALL,
+            Self::StartsWith => STARTS_WITH,
+            Self::EndsWith => ENDS_WITH,
+            Self::RandomReal => RANDOM_REAL,
+            Self::RemoveAt => REMOVE_AT,
         }
     }
 }
@@ -202,6 +283,127 @@ inline std::string to_text(double value) {
 \tout.copyfmt(std::cout);
 \tout << value;
 \treturn out.str();
+}
+";
+
+const SPLIT: &str = "\
+/// Splits `text` at every `separator` and returns the parts in order. Two
+/// separators in a row give an empty part between them, and so does a
+/// separator at either end. An empty separator gives one part per character.
+inline std::vector<std::string> split(const std::string& text, const std::string& separator) {
+\tstd::vector<std::string> parts;
+\tif (separator.empty()) {
+\t\tfor (const char letter : text) {
+\t\t\tparts.push_back(std::string(1, letter));
+\t\t}
+\t\treturn parts;
+\t}
+\tstd::size_t start = 0;
+\twhile (true) {
+\t\tconst std::size_t found = text.find(separator, start);
+\t\tif (found == std::string::npos) {
+\t\t\tparts.push_back(text.substr(start));
+\t\t\treturn parts;
+\t\t}
+\t\tparts.push_back(text.substr(start, found - start));
+\t\tstart = found + separator.size();
+\t}
+}
+";
+
+const TO_LOWER: &str = "\
+/// Returns `text` with the letters A to Z in lower case. Every other
+/// character, also a letter outside ASCII, is left as it is.
+inline std::string to_lower(std::string text) {
+\tfor (char& letter : text) {
+\t\tif (letter >= 'A' && letter <= 'Z') {
+\t\t\tletter = static_cast<char>(letter - 'A' + 'a');
+\t\t}
+\t}
+\treturn text;
+}
+";
+
+const TO_UPPER: &str = "\
+/// Returns `text` with the letters a to z in upper case. Every other
+/// character, also a letter outside ASCII, is left as it is.
+inline std::string to_upper(std::string text) {
+\tfor (char& letter : text) {
+\t\tif (letter >= 'a' && letter <= 'z') {
+\t\t\tletter = static_cast<char>(letter - 'a' + 'A');
+\t\t}
+\t}
+\treturn text;
+}
+";
+
+const TRIM: &str = "\
+/// Returns `text` without the spaces and tabs at its start and its end.
+inline std::string trim(const std::string& text) {
+\tconst std::size_t first = text.find_first_not_of(\" \\t\");
+\tif (first == std::string::npos) {
+\t\treturn std::string();
+\t}
+\tconst std::size_t last = text.find_last_not_of(\" \\t\");
+\treturn text.substr(first, last - first + 1);
+}
+";
+
+const REPLACE_ALL: &str = "\
+/// Returns `text` with every `old_text` replaced by `new_text`, from left to
+/// right; what a replacement puts in is never replaced again. An empty
+/// `old_text` changes nothing.
+inline std::string replace_all(std::string text, const std::string& old_text, const std::string& new_text) {
+\tif (old_text.empty()) {
+\t\treturn text;
+\t}
+\tstd::size_t at = text.find(old_text);
+\twhile (at != std::string::npos) {
+\t\ttext.replace(at, old_text.size(), new_text);
+\t\tat = text.find(old_text, at + new_text.size());
+\t}
+\treturn text;
+}
+";
+
+const STARTS_WITH: &str = "\
+/// Whether `text` starts with `prefix` (C++20's `text.starts_with(prefix)`).
+inline bool starts_with(const std::string& text, const std::string& prefix) {
+\treturn text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
+}
+";
+
+const ENDS_WITH: &str = "\
+/// Whether `text` ends with `suffix` (C++20's `text.ends_with(suffix)`).
+inline bool ends_with(const std::string& text, const std::string& suffix) {
+\treturn text.size() >= suffix.size()
+\t\t&& text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+";
+
+const RANDOM_REAL: &str = "\
+/// Returns a random decimal number from `low` up to, but not including,
+/// `high` (`low` itself when both are equal). The bounds may be given in
+/// either order. The random engine is seeded once, from
+/// `std::random_device`, the first time this function is called.
+inline double random_real(double low, double high) {
+\tstatic std::mt19937 engine{std::random_device{}()};
+\tif (low > high) {
+\t\tstd::swap(low, high);
+\t}
+\tstd::uniform_real_distribution<double> distribution(low, high);
+\treturn distribution(engine);
+}
+";
+
+const REMOVE_AT: &str = "\
+/// Removes the item at position `index` of a list or a deque; the items
+/// after it move one place forward. As with `.at()`, a position the list
+/// does not have stops the program with an out-of-range error.
+template <typename C>
+void remove_at(C& items, int index) {
+\tstatic_cast<void>(items.at(static_cast<std::size_t>(index)));
+\titems.erase(items.begin() + index);
 }
 ";
 

@@ -1,10 +1,17 @@
 //! Read-only walks over the SAST used while desugaring: which symbols a piece
 //! of code mentions, reads or may change, and choosing fresh readable names.
+//!
+//! Every node of W2 has its arm (w2.md §2.13), so a name a W2 block declares
+//! counts when a fresh name is chosen, a call keeps a value from being
+//! hoisted out of a loop, and a change to a variable counts as a write. The
+//! hidden names of W2's forms (`b2c_file`) are not symbols: they start with
+//! `b2c`, which no user name may, and are chosen against the names already
+//! in scope, as *repeat*'s counter is.
 
 use std::collections::BTreeSet;
 
 use b2c_ir::ids::SymbolId;
-use b2c_ir::sast::{Block, Expr, ExprKind, PassMode, Stmt, StmtKind, SymbolKind, SymbolTable};
+use b2c_ir::sast::{Block, Expr, ExprKind, PassMode, RangeMode, Stmt, StmtKind, SymbolKind, SymbolTable};
 use b2c_ir::text::Ident;
 
 /// Maximum nesting of statements and expressions the generator descends into.
@@ -64,12 +71,56 @@ fn walk_stmt(stmt: &Stmt, visitor: &mut impl Visitor, depth: usize) -> bool {
                 && walk_block(body, visitor, next)
         }
         StmtKind::Forever { body } => walk_block(body, visitor, next),
-        StmtKind::Break | StmtKind::Continue => true,
+        StmtKind::Break
+        | StmtKind::Continue
+        | StmtKind::Rethrow
+        | StmtKind::FallThrough
+        | StmtKind::Flip { .. } => true,
         StmtKind::Return { value } => walk_opt(value.as_ref(), visitor, next),
         StmtKind::Exit { code, .. } => walk_opt(code.as_ref(), visitor, next),
         StmtKind::Eval { expr } => walk_expr(expr, visitor, next),
-        StmtKind::Print { items, .. } => items.iter().all(|e| walk_expr(e, visitor, next)),
+        StmtKind::Print { items, .. } | StmtKind::WriteFile { items, .. } => {
+            items.iter().all(|e| walk_expr(e, visitor, next))
+        }
         StmtKind::Ask { prompt, .. } => walk_opt(prompt.as_ref(), visitor, next),
+        StmtKind::Switch {
+            value,
+            cases,
+            default,
+        } => {
+            walk_expr(value, visitor, next)
+                && cases.iter().all(|case| {
+                    walk_expr(&case.label, visitor, next) && walk_block(&case.body, visitor, next)
+                })
+                && default
+                    .as_ref()
+                    .is_none_or(|body| walk_block(body, visitor, next))
+        }
+        StmtKind::DoWhile { body, cond, .. } => {
+            walk_block(body, visitor, next) && walk_expr(cond, visitor, next)
+        }
+        StmtKind::RangeFor { range, body, .. } => {
+            walk_expr(range, visitor, next) && walk_block(body, visitor, next)
+        }
+        StmtKind::Try { body, catches } => {
+            walk_block(body, visitor, next) && catches.iter().all(|c| walk_block(&c.body, visitor, next))
+        }
+        StmtKind::Throw { message: value, .. }
+        | StmtKind::SetField { value, .. }
+        | StmtKind::Decimals { digits: value }
+        | StmtKind::Wait { seconds: value }
+        | StmtKind::StaticCheck { cond: value, .. } => walk_expr(value, visitor, next),
+        StmtKind::FileLines {
+            path, body, failed, ..
+        } => {
+            walk_expr(path, visitor, next)
+                && failed.as_ref().is_none_or(|f| walk_block(f, visitor, next))
+                && walk_block(body, visitor, next)
+        }
+        StmtKind::OpenFile { path, failed, .. } => {
+            walk_expr(path, visitor, next) && failed.as_ref().is_none_or(|f| walk_block(f, visitor, next))
+        }
+        StmtKind::CollectionOp { op, .. } => op.operands().into_iter().all(|e| walk_expr(e, visitor, next)),
     }
 }
 
@@ -104,6 +155,29 @@ fn walk_expr(expr: &Expr, visitor: &mut impl Visitor, depth: usize) -> bool {
             items.iter().all(|e| walk_expr(e, visitor, next))
         }
         ExprKind::Convert { value, .. } => walk_expr(value, visitor, next),
+        ExprKind::Item { .. }
+        | ExprKind::Size(_)
+        | ExprKind::IsEmpty(_)
+        | ExprKind::Contains { .. }
+        | ExprKind::Next(_)
+        | ExprKind::ListOf(_)
+        | ExprKind::Field { .. }
+        | ExprKind::New { .. }
+        | ExprKind::Enumerator(_)
+        | ExprKind::Letter { .. }
+        | ExprKind::TextLength(_)
+        | ExprKind::TextCall { .. }
+        | ExprKind::ToNumber { .. }
+        | ExprKind::AsText(_)
+        | ExprKind::ErrorMessage(_)
+        | ExprKind::MathCall { .. }
+        | ExprKind::RandomReal { .. }
+        | ExprKind::ReadLine { .. }
+        | ExprKind::FileExists(_) => expr
+            .kind
+            .children()
+            .into_iter()
+            .all(|e| walk_expr(e, visitor, next)),
     }
 }
 
@@ -120,17 +194,31 @@ impl Visitor for Mentions {
             StmtKind::Assign { target, .. }
             | StmtKind::CompoundAssign { target, .. }
             | StmtKind::Ask { target, .. }
-            | StmtKind::ForRange { var: target, .. } => {
+            | StmtKind::ForRange { var: target, .. }
+            | StmtKind::FileLines { line: target, .. }
+            | StmtKind::OpenFile { file: target, .. }
+            | StmtKind::WriteFile { file: target, .. }
+            | StmtKind::CollectionOp {
+                collection: target, ..
+            }
+            | StmtKind::SetField { target, .. }
+            | StmtKind::Flip { target } => {
                 self.0.insert(target.clone());
             }
+            StmtKind::RangeFor { vars, .. } => self.0.extend(vars.iter().cloned()),
+            StmtKind::Try { catches, .. } => self.0.extend(catches.iter().map(|catch| catch.var.clone())),
             _ => {}
         }
     }
 
     fn expr(&mut self, expr: &Expr) {
         match &expr.kind {
-            ExprKind::Var(id) | ExprKind::Call { function: id, .. } => {
+            ExprKind::Var(id) | ExprKind::Call { function: id, .. } | ExprKind::ErrorMessage(id) => {
                 self.0.insert(id.clone());
+            }
+            ExprKind::ReadLine { file, line } => {
+                self.0.insert(file.clone());
+                self.0.insert(line.clone());
             }
             _ => {}
         }
@@ -168,10 +256,17 @@ struct Reads {
 impl Visitor for Reads {
     fn expr(&mut self, expr: &Expr) {
         match &expr.kind {
-            ExprKind::Var(id) => {
+            ExprKind::Var(id) | ExprKind::ErrorMessage(id) => {
                 self.vars.insert(id.clone());
             }
-            ExprKind::Call { .. } | ExprKind::RandomInt { .. } => self.calls = true,
+            // A different value each time, or a value that changes what it
+            // reads (W2: a random decimal, a line read from a file, text read
+            // as a number, which may throw).
+            ExprKind::Call { .. }
+            | ExprKind::RandomInt { .. }
+            | ExprKind::RandomReal { .. }
+            | ExprKind::ReadLine { .. }
+            | ExprKind::ToNumber { .. } => self.calls = true,
             _ => {}
         }
     }
@@ -207,22 +302,49 @@ impl Visitor for Writes<'_> {
             StmtKind::Assign { target, .. }
             | StmtKind::CompoundAssign { target, .. }
             | StmtKind::Ask { target, .. }
-            | StmtKind::ForRange { var: target, .. } => {
+            | StmtKind::ForRange { var: target, .. }
+            | StmtKind::SetField { target, .. }
+            | StmtKind::Flip { target }
+            | StmtKind::OpenFile { file: target, .. }
+            | StmtKind::WriteFile { file: target, .. } => {
                 self.vars.insert(target.clone());
+            }
+            // Every change to a collection, also one that keeps its size
+            // (*set item*, *sort*), changes what reads of it give.
+            StmtKind::CollectionOp { collection, .. } => {
+                self.vars.insert(collection.clone());
+            }
+            // An editable *for each* item changes the collection's items.
+            StmtKind::RangeFor {
+                range,
+                mode: RangeMode::Editable,
+                ..
+            } => {
+                if let ExprKind::Var(id) = &range.kind {
+                    self.vars.insert(id.clone());
+                }
             }
             _ => {}
         }
     }
 
     fn expr(&mut self, expr: &Expr) {
-        if let ExprKind::Call { function, args } = &expr.kind {
-            for (index, arg) in args.iter().enumerate() {
-                if let ExprKind::Var(id) = &arg.kind
-                    && self.is_editable_arg(function, index)
-                {
-                    self.vars.insert(id.clone());
+        match &expr.kind {
+            ExprKind::Call { function, args } => {
+                for (index, arg) in args.iter().enumerate() {
+                    if let ExprKind::Var(id) = &arg.kind
+                        && self.is_editable_arg(function, index)
+                    {
+                        self.vars.insert(id.clone());
+                    }
                 }
             }
+            // *read line* changes the line and moves on in the file.
+            ExprKind::ReadLine { file, line } => {
+                self.vars.insert(file.clone());
+                self.vars.insert(line.clone());
+            }
+            _ => {}
         }
     }
 }
@@ -295,5 +417,143 @@ mod tests {
         let mut names = taken(&["n"]);
         names.extend((2..500).map(|n| format!("n{n}")));
         assert_eq!(fresh_name(&["n"], "n", &names).as_str(), "n500");
+    }
+
+    // ---- W2's nodes (w2.md §2.13) ----------------------------------------
+
+    use b2c_ir::ids::{BlockId, ModuleId};
+    use b2c_ir::sast::{CollectionChange, Origin, Symbol};
+    use b2c_ir::text::{NumLit, NumType};
+    use b2c_ir::types::{LibType, Type};
+
+    fn origin() -> Origin {
+        Origin::whole(ModuleId::new("mod_main").unwrap(), BlockId::new("blk").unwrap())
+    }
+
+    fn id(text: &str) -> SymbolId {
+        SymbolId::new(text).unwrap()
+    }
+
+    fn symbols(names: &[(&str, &str, Type)]) -> SymbolTable {
+        let mut table = SymbolTable::default();
+        for (symbol, name, ty) in names {
+            table.symbols.insert(
+                id(symbol),
+                Symbol {
+                    name: Ident::new(name).unwrap(),
+                    kind: SymbolKind::Variable { is_const: false },
+                    ty: ty.clone(),
+                    origin: origin(),
+                },
+            );
+        }
+        table
+    }
+
+    fn expr(kind: ExprKind, ty: Type) -> Expr {
+        Expr {
+            kind,
+            ty,
+            origin: origin(),
+        }
+    }
+
+    fn var(symbol: &str, ty: Type) -> Expr {
+        expr(ExprKind::Var(id(symbol)), ty)
+    }
+
+    fn int(value: i32) -> Expr {
+        expr(ExprKind::Int(NumLit::int(value)), Type::Int)
+    }
+
+    fn real(text: &str) -> Expr {
+        expr(
+            ExprKind::Float(NumLit::parse(text, NumType::Double).unwrap()),
+            Type::Double,
+        )
+    }
+
+    fn stmt(kind: StmtKind) -> Stmt {
+        Stmt {
+            kind,
+            origin: origin(),
+            comment: None,
+        }
+    }
+
+    fn list() -> Type {
+        Type::lib(LibType::Vector, vec![Type::Int]).unwrap()
+    }
+
+    /// A *for each* whose item is `i`, inside a *repeat*: the counter the
+    /// repeat chooses must not be `i`.
+    #[test]
+    fn a_for_each_item_is_a_name_mentioned() {
+        let table = symbols(&[("s_items", "items", list()), ("s_i", "i", Type::Int)]);
+        let body = Block {
+            stmts: vec![stmt(StmtKind::RangeFor {
+                vars: vec![id("s_i")],
+                range: var("s_items", list()),
+                mode: RangeMode::ReadOnly,
+                body: Block::default(),
+            })],
+        };
+        let names = names_mentioned(&table, &body, &[]);
+        assert!(names.contains("i"), "{names:?}");
+        assert_eq!(fresh_name(&["i", "j", "k"], "i", &names).as_str(), "j");
+    }
+
+    /// The size of a list the body adds to changes as the loop runs; the size
+    /// of a list the body only reads does not.
+    #[test]
+    fn a_size_of_a_changed_list_is_not_loop_invariant() {
+        let table = symbols(&[("s_items", "items", list()), ("s_total", "total", Type::Int)]);
+        let size = expr(ExprKind::Size(Box::new(var("s_items", list()))), Type::Int);
+        let adds = Block {
+            stmts: vec![stmt(StmtKind::CollectionOp {
+                collection: id("s_items"),
+                op: CollectionChange::Add(int(1)),
+            })],
+        };
+        assert!(!is_loop_invariant(&table, &size, &adds));
+        let reads = Block {
+            stmts: vec![stmt(StmtKind::Assign {
+                target: id("s_total"),
+                value: size.clone(),
+            })],
+        };
+        assert!(is_loop_invariant(&table, &size, &reads));
+        // An editable *for each* over the list changes its items too.
+        let edits = Block {
+            stmts: vec![stmt(StmtKind::RangeFor {
+                vars: Vec::new(),
+                range: var("s_items", list()),
+                mode: RangeMode::Editable,
+                body: Block::default(),
+            })],
+        };
+        let first = expr(
+            ExprKind::Item {
+                collection: Box::new(var("s_items", list())),
+                index: Box::new(int(0)),
+            },
+            Type::Int,
+        );
+        assert!(!is_loop_invariant(&table, &first, &edits));
+    }
+
+    /// A random decimal is different each time.
+    #[test]
+    fn a_random_decimal_is_not_loop_invariant() {
+        let table = symbols(&[]);
+        let random = expr(
+            ExprKind::RandomReal {
+                low: Box::new(real("1.5")),
+                high: Box::new(real("2.5")),
+            },
+            Type::Double,
+        );
+        assert!(!is_loop_invariant(&table, &random, &Block::default()));
+        assert!(is_loop_invariant(&table, &real("1.5"), &Block::default()));
     }
 }

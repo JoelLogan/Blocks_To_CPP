@@ -39,6 +39,15 @@
 //! [`crate::Analysis::constants`] the value of each `const` variable whose
 //! starting value is constant, which ADR-0019's initialisation-order rule
 //! (modules.md §4.4) reads.
+//!
+//! The walk also checks what W2 needs fixed when the program is built
+//! (w2.md §2.9), since only it knows the item's `const` variables in
+//! program order: a `case` label must be a whole number, a character or an
+//! enum value that is a constant expression (`B2C-E0424`), and two labels
+//! of one switch never have the same value (`B2C-E0425`; `'A'` and `65` are
+//! the same, enum values are told apart by their enumerator); the condition
+//! of *check at compile time* must be a constant expression
+//! (`B2C-E0424`) that is not `false` (`B2C-E0428`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::FpCategory;
@@ -46,8 +55,8 @@ use std::num::FpCategory;
 use b2c_ir::diag::Location;
 use b2c_ir::ids::{BlockId, SymbolId};
 use b2c_ir::sast::{
-    BinaryOp, Block, CompoundOp, Expr, ExprKind, Item, ItemKind, Stmt, StmtKind, SymbolKind, SymbolTable,
-    UnaryOp,
+    BinaryOp, Block, CompoundOp, Expr, ExprKind, Item, ItemKind, Stmt, StmtKind, SwitchCase, SymbolKind,
+    SymbolTable, UnaryOp,
 };
 use b2c_ir::types::Type;
 
@@ -206,6 +215,35 @@ pub(crate) fn check_item(
     let (body, ret) = match &item.kind {
         ItemKind::Main(main) => (&main.body, Type::Int),
         ItemKind::Function(function) => (&function.body, function.ret.clone()),
+        ItemKind::Global(global) => {
+            // A global's starting value converts to its type; recording a
+            // constant global's value is W2's globals' (package C2).
+            let mut checker = Checker {
+                context: Context { symbols, unchecked },
+                diags,
+                constants,
+                ret: Type::Void,
+            };
+            if let Some(init) = &global.init {
+                let ty = symbols.get(&global.symbol).map(|symbol| symbol.ty.clone());
+                checker.eval_into(init, ty.as_ref());
+            }
+            return;
+        }
+        ItemKind::Struct(def) => {
+            let mut checker = Checker {
+                context: Context { symbols, unchecked },
+                diags,
+                constants,
+                ret: Type::Void,
+            };
+            for (field, value) in &def.defaults {
+                let ty = symbols.get(field).map(|symbol| symbol.ty.clone());
+                checker.eval_into(value, ty.as_ref());
+            }
+            return;
+        }
+        ItemKind::Enum(_) | ItemKind::UseHeader { .. } => return,
     };
     let mut checker = Checker {
         context: Context { symbols, unchecked },
@@ -214,6 +252,17 @@ pub(crate) fn check_item(
         ret,
     };
     checker.block(body);
+}
+
+/// What tells two `case` labels apart (w2.md §2.9): the value of a whole
+/// number or character after the integral promotions, or an enum value's
+/// enumerator.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum LabelKey {
+    /// A whole number or a character.
+    Integer(i64),
+    /// An enum value.
+    Enumerator(SymbolId),
 }
 
 /// The statement walk of [`check_item`].
@@ -261,6 +310,7 @@ impl Checker<'_> {
         }
     }
 
+    #[allow(clippy::too_many_lines, reason = "one arm per statement")]
     fn stmt(&mut self, stmt: &Stmt) {
         match &stmt.kind {
             StmtKind::VarDecl(decl) => {
@@ -322,7 +372,11 @@ impl Checker<'_> {
                 self.block(body);
             }
             StmtKind::Forever { body } => self.block(body),
-            StmtKind::Break | StmtKind::Continue => {}
+            StmtKind::Break
+            | StmtKind::Continue
+            | StmtKind::Rethrow
+            | StmtKind::FallThrough
+            | StmtKind::Flip { .. } => {}
             StmtKind::Return { value } => {
                 if let Some(value) = value {
                     let ty = self.checked_type(stmt, self.ret.clone());
@@ -338,7 +392,7 @@ impl Checker<'_> {
             StmtKind::Eval { expr } => {
                 self.eval(expr);
             }
-            StmtKind::Print { items, .. } => {
+            StmtKind::Print { items, .. } | StmtKind::WriteFile { items, .. } => {
                 for item in items {
                     self.eval(item);
                 }
@@ -348,6 +402,147 @@ impl Checker<'_> {
                     self.eval(prompt);
                 }
             }
+            StmtKind::Switch {
+                value,
+                cases,
+                default,
+            } => {
+                self.eval(value);
+                self.switch_labels(value, cases);
+                for case in cases {
+                    self.block(&case.body);
+                }
+                if let Some(body) = default {
+                    self.block(body);
+                }
+            }
+            StmtKind::StaticCheck { cond, .. } => self.static_check(cond),
+            StmtKind::DoWhile { body, cond, .. } => {
+                self.block(body);
+                self.eval(cond);
+            }
+            StmtKind::RangeFor { range, body, .. } => {
+                self.eval(range);
+                self.block(body);
+            }
+            StmtKind::Try { body, catches } => {
+                self.block(body);
+                for catch in catches {
+                    self.block(&catch.body);
+                }
+            }
+            StmtKind::FileLines {
+                path, body, failed, ..
+            } => {
+                self.eval(path);
+                if let Some(failed) = failed {
+                    self.block(failed);
+                }
+                self.block(body);
+            }
+            StmtKind::OpenFile { path, failed, .. } => {
+                self.eval(path);
+                if let Some(failed) = failed {
+                    self.block(failed);
+                }
+            }
+            StmtKind::CollectionOp { op, .. } => {
+                for value in op.operands() {
+                    self.eval(value);
+                }
+            }
+            StmtKind::SetField { field, value, .. } => {
+                let ty = self.type_of(stmt, field);
+                self.eval_into(value, ty.as_ref());
+            }
+            StmtKind::Decimals { digits: value }
+            | StmtKind::Wait { seconds: value }
+            | StmtKind::Throw { message: value, .. } => {
+                self.eval(value);
+            }
+        }
+    }
+
+    /// The labels of a switch: each a constant expression of a whole
+    /// number or a character, or an enum value (`B2C-E0424`), and no two
+    /// with the same value (`B2C-E0425`). A label of type `Error` was
+    /// reported already.
+    fn switch_labels(&mut self, value: &Expr, cases: &[SwitchCase]) {
+        let mut seen: BTreeSet<LabelKey> = BTreeSet::new();
+        let into = (value.ty != Type::Error).then_some(&value.ty);
+        for case in cases {
+            let label = &case.label;
+            if label.ty == Type::Error {
+                continue;
+            }
+            let key = match &label.kind {
+                ExprKind::Enumerator(sym) => Some(LabelKey::Enumerator(sym.clone())),
+                _ => self
+                    .eval_into(label, into)
+                    .filter(|constant| constant.constant_expression)
+                    .and_then(|constant| match constant.value {
+                        ConstValue::Int(_) | ConstValue::Char(_) => constant.value.integer(),
+                        ConstValue::Bool(_) | ConstValue::Double(_) => None,
+                    })
+                    .map(LabelKey::Integer),
+            };
+            let Some(key) = key else {
+                self.diags.error(
+                    codes::NOT_CONSTANT,
+                    label.origin.location(),
+                    "A 'case' label must be a value that is fixed when the program is built: a whole number, a \
+                     character, a value of an enum, or a constant whole number or character with a fixed value.",
+                );
+                continue;
+            };
+            if seen.contains(&key) {
+                let shown = match &key {
+                    LabelKey::Integer(number) => number.to_string(),
+                    LabelKey::Enumerator(sym) => self
+                        .context
+                        .symbols
+                        .get(sym)
+                        .map(|symbol| symbol.name.as_str().to_owned())
+                        .unwrap_or_default(),
+                };
+                self.diags.error(
+                    codes::DUPLICATE_CASE,
+                    label.origin.location(),
+                    format!(
+                        "Another 'case' of this switch has the same value ({shown}). Each case needs its own value: \
+                         remove one of them, or put their blocks together in one case."
+                    ),
+                );
+            } else {
+                seen.insert(key);
+            }
+        }
+    }
+
+    /// *check at compile time*: a condition fixed when the program is built
+    /// (`B2C-E0424`) that is not `false` (`B2C-E0428`).
+    fn static_check(&mut self, cond: &Expr) {
+        if cond.ty == Type::Error {
+            return;
+        }
+        match self.eval_into(cond, Some(&Type::Bool)) {
+            Some(constant) if constant.constant_expression => {
+                if !constant.value.truth() {
+                    self.diags.error(
+                        codes::CHECK_FAILED,
+                        cond.origin.location(),
+                        "This check fails when the program is built: its condition is false. Fix the values it \
+                         checks, or remove the check.",
+                    );
+                }
+            }
+            _ => self.diags.error(
+                codes::NOT_CONSTANT,
+                cond.origin.location(),
+                "The condition of 'check at compile time' must be fixed when the program is built: use numbers, \
+                 characters, true/false values and constants with fixed values, not variables or the answers \
+                 of functions.",
+            ),
         }
     }
 }
@@ -465,6 +660,7 @@ impl Folder<'_, '_> {
     /// [`Self::eval`] for a value C++ then converts to `into` (`None`: not
     /// converted, or not known): a decimal division by zero that goes into a
     /// whole number is an error, not a warning.
+    #[allow(clippy::too_many_lines, reason = "one arm per expression")]
     fn eval_into(&mut self, expr: &Expr, into: Option<&Type>) -> Option<Constant> {
         let foldable = matches!(expr.ty, Type::Bool | Type::Char | Type::Int | Type::Double);
         match &expr.kind {
@@ -558,6 +754,34 @@ impl Folder<'_, '_> {
             | ExprKind::Char(_)
             | ExprKind::Str(_)
             | ExprKind::Var(_) => None,
+            // W2's values are never constants here (an enum value is told
+            // apart by its enumerator); their operands are checked.
+            ExprKind::Item { .. }
+            | ExprKind::Size(_)
+            | ExprKind::IsEmpty(_)
+            | ExprKind::Contains { .. }
+            | ExprKind::Next(_)
+            | ExprKind::ListOf(_)
+            | ExprKind::Field { .. }
+            | ExprKind::New { .. }
+            | ExprKind::Enumerator(_)
+            | ExprKind::Letter { .. }
+            | ExprKind::TextLength(_)
+            | ExprKind::TextCall { .. }
+            | ExprKind::ToNumber { .. }
+            | ExprKind::AsText(_)
+            | ExprKind::ErrorMessage(_)
+            | ExprKind::MathCall { .. }
+            | ExprKind::RandomReal { .. }
+            | ExprKind::ReadLine { .. }
+            | ExprKind::FileExists(_) => {
+                if self.diags.is_some() {
+                    for child in expr.kind.children() {
+                        self.eval(child);
+                    }
+                }
+                None
+            }
         }
     }
 

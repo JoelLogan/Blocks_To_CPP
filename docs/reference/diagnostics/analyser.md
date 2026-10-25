@@ -453,8 +453,38 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** `leave loop` (`break`) or `skip to next round` (`continue`) is
   not inside a loop. A function body is never inside the caller's loop.
-* **Message:** "'leave loop' can only be used inside a loop."
-* **How to fix:** move the block into a loop, or remove it.
+  Also reported for a `leave loop` whose nearest loop or `switch` around it
+  is a `switch`, however many `if`, `try` or file blocks are between: in
+  C++ its `break` would leave only the switch, and the loop would go on.
+  `skip to next round` in a switch inside a loop is fine: it reaches the
+  loop.
+* **Example:**
+
+  ```text
+  repeat while <true>
+  │ switch on (choice)
+  │ case (0)
+  │ │ leave loop      ← would only leave the switch
+  ```
+
+* **Message:** "'leave loop' can only be used inside a loop." / "In C++
+  'leave loop' here would only leave the switch, not the loop around it. To
+  leave the loop, set a variable that the loop checks, or use 'return' in a
+  function."
+* **How to fix:** move the block into a loop, or remove it. To leave a loop
+  from a switch, set a true/false variable that the loop's condition checks,
+  or move the loop into a function and use `return`.
+
+## B2C-E0402 throw the error again outside a catch part
+
+* **Severity:** error
+* **Meaning:** `throw the error again` (`throw;`) is not inside a `catch`
+  part of a `try` block, so there is no caught error to throw again. Inside
+  a catch part it may be at any depth of other blocks.
+* **Message:** "'throw the error again' can only be used inside a 'catch'
+  part, where there is an error to throw again."
+* **How to fix:** move the block into a `catch` part, or use `throw` with a
+  new error.
 
 ## B2C-E0403 return needs a value
 
@@ -522,6 +552,96 @@ Codes by area:
   path)."
 * **How to fix:** add a `return` block at the end, or an `else` part that
   returns.
+
+## B2C-E0420 Structs that hold each other
+
+* **Severity:** error
+* **Meaning:** a struct has a field whose type is the struct itself, or a
+  struct that (through its own fields) holds the first one. A value of such
+  a struct would have to hold a whole copy of itself, which C++ does not
+  allow. A list of the struct is fine, since a list holds its items
+  elsewhere.
+* **Example:** `struct [Node]` with a field `[Node] next`.
+* **How to fix:** use a list of the struct for the field (`list of Node`),
+  or remove the field.
+
+## B2C-E0421 Definitions that depend on each other
+
+* **Severity:** error
+* **Meaning:** the definitions of a module depend on each other in a circle
+  that C++ cannot order, such as two globals whose starting values are each
+  worked out from the other. Each definition must come after the ones it
+  uses.
+* **Example:** `global [int] [a] = (b + 1)` and `global [int] [b] = (a + 1)`.
+* **How to fix:** give one of them a starting value that does not use the
+  other, and set it later in `when program starts`.
+
+## B2C-E0424 Not fixed when the program is built
+
+* **Severity:** error
+* **Meaning:** a value that C++ needs when it builds the program is not
+  fixed then: a `case` label of a `switch`, or the condition of `check at
+  compile time`. A label must be a whole number, a character, a value of an
+  enum, or a calculation from those and constants with fixed values. A
+  condition may use numbers, characters, true/false values and such
+  constants. Variables and the answers of functions are only known when the
+  program runs.
+* **Example:** `case (limit)` where `limit` is a variable, or `case (1.5)`.
+* **Message:** "A 'case' label must be a value that is fixed when the program
+  is built: a whole number, a character, a value of an enum, or a constant
+  whole number or character with a fixed value." / "The condition of 'check
+  at compile time' must be fixed when the program is built: use numbers,
+  characters, true/false values and constants with fixed values, not
+  variables or the answers of functions."
+* **How to fix:** use a number, a character or an enum value, or make the
+  variable a constant with a fixed starting value.
+
+## B2C-E0425 Two cases with the same value
+
+* **Severity:** error
+* **Meaning:** two `case` labels of one `switch` have the same value, so C++
+  could not tell which part to run. Values are compared after they are
+  worked out, so `'A'` and `65` are the same, and so are `(2 + 3)` and `5`.
+* **Example:** `case (1)` … `case (1)`.
+* **Message:** "Another 'case' of this switch has the same value (1). Each
+  case needs its own value: remove one of them, or put their blocks together
+  in one case."
+* **How to fix:** change or remove one of the labels, or put the blocks of
+  both cases into one.
+
+## B2C-E0426 Input without a default after one with a default
+
+* **Severity:** error
+* **Meaning:** a function input has no default value, but an input before it
+  has one. A call may leave out inputs only from the end, so once an input
+  has a default, every input after it needs one too.
+* **Example:** `define [greet] with ([string] name = ("you")) ([int] times)`.
+* **How to fix:** give the later inputs defaults too, or move the inputs with
+  defaults to the end.
+
+## B2C-E0427 go on into the next case in the wrong place
+
+* **Severity:** error
+* **Meaning:** `go on into the next case` (`[[fallthrough]];`) is not the
+  last block of a case directly in the case, or it is in the last part of
+  the switch, where there is no next case. C++ allows it only right before
+  the next case.
+* **Message:** "'go on into the next case' must be the last block of a case,
+  directly in the case (not inside another block). Move it to the end of the
+  case." / "'go on into the next case' can't be used in the last part of a
+  switch: there is no next case to go on into. Remove it."
+* **How to fix:** move the block to the end of the case, or remove it.
+
+## B2C-E0428 Check fails when the program is built
+
+* **Severity:** error
+* **Meaning:** the condition of `check at compile time` (`static_assert`) is
+  false, so g++ would stop building the program with the check's message.
+* **Example:** `check at compile time <(MAX_PLAYERS) < (2)>` where
+  `MAX_PLAYERS` is a constant 4.
+* **Message:** "This check fails when the program is built: its condition is
+  false. Fix the values it checks, or remove the check."
+* **How to fix:** fix the constants the check reads, or the condition.
 
 ## B2C-E0430 Incomplete or damaged block
 
@@ -721,6 +841,32 @@ Codes by area:
   infinity. Check the values."
 * **How to fix:** divide by the value you meant, or check it with an `if`
   block first.
+
+## B2C-W0507 Catch part that never runs
+
+* **Severity:** warning
+* **Meaning:** a `catch` part of a `try` block catches an error that an
+  earlier part already catches: the same error, or one derived from it
+  (*any error* catches them all). The earlier part always gets it first.
+  g++ warns about this too, so a project with it does not build when
+  warnings are errors.
+* **Example:** `catch [any error] as [e]` followed by `catch [out-of-range
+  error] as [e]`.
+* **Message:** for example "This part never runs: the part before catches
+  every out-of-range error. Move it up."
+* **How to fix:** move the more specific part up, before the part that
+  catches more.
+
+## B2C-W0508 Switch misses values of its enum
+
+* **Severity:** warning
+* **Meaning:** a `switch` on an enum value has no `default` part and no case
+  for some of the enum's values, so for those values none of its parts
+  runs. That may be meant, but it is often a value added to the enum later
+  and forgotten here.
+* **Example:** a switch on an `Action` with cases for `Add` and `Quit` but not
+  `List`.
+* **How to fix:** add the missing cases, or a `default` part.
 
 ## B2C-W0510 Whole-number division where a decimal is expected
 

@@ -773,18 +773,27 @@ allowed.
 
 **Fix:** use a value within the range given.
 
-### B2C-E0614: malformed parameter
+### B2C-E0614: malformed parameter, field or value
 
-A row of a function's parameter list is not an object with exactly `"sym"`
-(a symbol ID), `"name"`, `"type"` (a type a parameter may have: one of the
-listed parameter types, or another type a variable can hold, such as a list)
-and `"mode"` (`"copy"`, `"editable"` or `"read_only"`).
+A row of a block's list of rows is not an object with exactly the keys its
+kind has:
+
+* a function's parameter: `"sym"` (a symbol ID), `"name"`, `"type"` (a type
+  a parameter may have: one of the listed parameter types, or another type a
+  variable can hold, such as a list) and `"mode"` (`"copy"`, `"editable"` or
+  `"read_only"`);
+* a struct's field: `"sym"`, `"name"` and `"type"` (a type a field may
+  have);
+* an enum's value: `"sym"` and `"name"`.
 
 > Parameter 2 of this block has the mode "rvalue", but the mode must be "copy", "editable" or "read_only".
 >
 > Parameter 1 of this block has the type "std::ifstream", but parameters can only be "int", "double", "bool", "char" or "std::string", or another type a variable can hold.
+>
+> Value 1 of this block has an unknown key "type".
 
-**Fix:** correct the parameter in the function's settings.
+**Fix:** correct the parameter in the function's settings, or the field or
+value in the struct's or enum's.
 
 ### B2C-E0620: broken block definition
 

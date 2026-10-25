@@ -38,9 +38,17 @@
 //!   (`b2c_lang::Analysis::scope_at`), and so does the fallback for a block
 //!   it has no answer for (`crate::scope`).
 //!
-//! The blocks that declare structs and enums come with wave W2; until then
-//! no document declares them, so no payload records them, but a payload
-//! from elsewhere is bound by these rules.
+//! The blocks that declare structs and enums come with wave W2: they are in
+//! `declarations` already (w2.md §2.13), so a payload records them as soon
+//! as a document has them; a payload from elsewhere is bound by these rules.
+//!
+//! The other names W2's blocks declare are locals, recorded by their plain
+//! name as `var.declare`'s are: a *for each* item (a loop variable when it is
+//! read-only, a variable when it is a copy or editable), a map's key and
+//! value and a file's line (loop variables), a caught error and an opened
+//! file (variables). A global (`var.global`) is recorded as a variable by
+//! its plain name too, as the clipboard format has no kind for it: it binds
+//! to the visible global of that name, whose kind reads as a variable.
 //!
 //! # What is visible at the paste target
 //!
@@ -194,15 +202,18 @@ pub(crate) struct Declared {
 /// with its name as written and its kind: `var.declare` and
 /// `control.for_range` declare variables and loop counters, `func.define`
 /// declares a function and (in `extra.params`) its parameters, as in the
-/// analyser's declaration pass. The first declaration of an ID wins. The
-/// blocks that declare structs, enums and their members join in wave W2.
+/// analyser's declaration pass, and W2's blocks declare structs and enums
+/// with their members (`extra.fields`, `extra.values`), globals, and the
+/// locals of its loops, catch parts and files (see the module docs). The
+/// first declaration of an ID wins.
+#[allow(clippy::too_many_lines, reason = "one arm per declaring block")]
 pub(crate) fn declarations(document: &Document) -> BTreeMap<SymbolId, Declared> {
     let mut found: BTreeMap<SymbolId, Declared> = BTreeMap::new();
-    let mut record = |sym: &SymbolId, name: &str, kind: RefKind| {
+    let mut record = |sym: &SymbolId, name: &str, kind: RefKind, owner: Option<&SymbolId>| {
         found.entry(sym.clone()).or_insert_with(|| Declared {
             name: name.to_owned(),
             kind,
-            owner: None,
+            owner: owner.cloned(),
         });
     };
     let roots = document
@@ -214,27 +225,86 @@ pub(crate) fn declarations(document: &Document) -> BTreeMap<SymbolId, Declared> 
             Some(FieldValue::Decl(decl)) => Some(decl),
             _ => None,
         };
+        // The rows of `extra.<key>`: each its symbol and name.
+        let rows = |key: &str| -> Vec<(SymbolId, &str)> {
+            let rows = block.extra.get(key).and_then(serde_json::Value::as_array);
+            rows.into_iter()
+                .flatten()
+                .filter_map(|row| {
+                    let sym = row.get("sym").and_then(serde_json::Value::as_str)?;
+                    let name = row.get("name").and_then(serde_json::Value::as_str)?;
+                    Some((SymbolId::new(sym).ok()?, name))
+                })
+                .collect()
+        };
         match block.block_type.as_str() {
-            "var.declare" => {
-                if let Some(decl) = decl("NAME") {
-                    record(&decl.sym, &decl.name, RefKind::Variable);
+            "var.declare" | "var.global" | "file.open" => {
+                let field = if block.block_type == "file.open" {
+                    "FILE"
+                } else {
+                    "NAME"
+                };
+                if let Some(decl) = decl(field) {
+                    record(&decl.sym, &decl.name, RefKind::Variable, None);
                 }
             }
             "control.for_range" => {
                 if let Some(decl) = decl("VAR") {
-                    record(&decl.sym, &decl.name, RefKind::LoopVariable);
+                    record(&decl.sym, &decl.name, RefKind::LoopVariable, None);
                 }
             }
             "func.define" => {
                 if let Some(decl) = decl("NAME") {
-                    record(&decl.sym, &decl.name, RefKind::Function);
+                    record(&decl.sym, &decl.name, RefKind::Function, None);
                 }
-                let rows = block.extra.get("params").and_then(serde_json::Value::as_array);
-                for row in rows.into_iter().flatten() {
-                    let sym = row.get("sym").and_then(serde_json::Value::as_str);
-                    let name = row.get("name").and_then(serde_json::Value::as_str);
-                    if let (Some(sym), Some(name)) = (sym.and_then(|s| SymbolId::new(s).ok()), name) {
-                        record(&sym, name, RefKind::Parameter);
+                for (sym, name) in rows("params") {
+                    record(&sym, name, RefKind::Parameter, None);
+                }
+            }
+            "type.struct" | "type.enum" => {
+                let (kind, key, member) = if block.block_type == "type.struct" {
+                    (RefKind::Struct, "fields", RefKind::Field)
+                } else {
+                    (RefKind::Enum, "values", RefKind::Enumerator)
+                };
+                let owner = decl("NAME");
+                if let Some(owner) = owner {
+                    record(&owner.sym, &owner.name, kind, None);
+                }
+                for (sym, name) in rows(key) {
+                    record(&sym, name, member, owner.map(|owner| &owner.sym));
+                }
+            }
+            "coll.for_each" => {
+                // A copied or editable item is a variable the body may change.
+                let read_only = !matches!(
+                    block.fields.get("MODE"),
+                    Some(FieldValue::Text(mode)) if mode == "copy" || mode == "editable"
+                );
+                let kind = if read_only {
+                    RefKind::LoopVariable
+                } else {
+                    RefKind::Variable
+                };
+                if let Some(decl) = decl("ITEM") {
+                    record(&decl.sym, &decl.name, kind, None);
+                }
+            }
+            "coll.for_each_pair" | "file.for_each_line" => {
+                for field in ["KEY", "VALUE", "LINE"] {
+                    if let Some(decl) = decl(field) {
+                        record(&decl.sym, &decl.name, RefKind::LoopVariable, None);
+                    }
+                }
+            }
+            "error.try" => {
+                // Every caught error's name, `NAME0`, `NAME1`, …
+                for (field, value) in &block.fields {
+                    if let (Some(index), FieldValue::Decl(decl)) = (field.strip_prefix("NAME"), value)
+                        && !index.is_empty()
+                        && index.bytes().all(|b| b.is_ascii_digit())
+                    {
+                        record(&decl.sym, &decl.name, RefKind::Variable, None);
                     }
                 }
             }
@@ -323,7 +393,8 @@ pub(crate) struct Binding {
 /// The kind of a visible symbol, as a payload names it.
 fn ref_kind(info: &SymbolInfo) -> RefKind {
     match info.kind {
-        SymbolInfoKind::Variable { .. } => RefKind::Variable,
+        // A global reads as a variable (see the module docs).
+        SymbolInfoKind::Variable { .. } | SymbolInfoKind::Global { .. } => RefKind::Variable,
         SymbolInfoKind::Parameter { .. } => RefKind::Parameter,
         SymbolInfoKind::LoopVariable => RefKind::LoopVariable,
         SymbolInfoKind::Function { .. } => RefKind::Function,
@@ -968,6 +1039,73 @@ mod tests {
             statements: BTreeMap::new(),
             stack: Vec::new(),
         }
+    }
+
+    /// W2's declaring blocks (w2.md §2.13) are recorded before the blocks
+    /// exist: their package adds the recording and binding tests of user
+    /// types (C1).
+    #[test]
+    fn w2_declarations_are_recorded() {
+        let value = serde_json::json!({
+            "format": "blocks2cpp/project",
+            "formatVersion": 1,
+            "generator": {"app": "0.1.0", "catalog": "1.3.0"},
+            "project": {"id": "p", "name": "P", "language": {"standard": "c++20"}},
+            "modules": [{"id": "m", "name": "main", "workspace": {"blocks": [
+                {"id": "b_st", "type": "type.struct", "v": 1, "x": 0, "y": 0,
+                 "fields": {"NAME": {"sym": "s_st", "name": "Student"}},
+                 "extra": {"fields": [{"sym": "s_mark", "name": "mark", "type": "int"}]}},
+                {"id": "b_en", "type": "type.enum", "v": 1, "x": 0, "y": 400,
+                 "fields": {"NAME": {"sym": "s_en", "name": "Action"}},
+                 "extra": {"values": [{"sym": "s_quit", "name": "Quit"}]}},
+                {"id": "b_gl", "type": "var.global", "v": 1, "x": 0, "y": 800,
+                 "fields": {"NAME": {"sym": "s_count", "name": "count"}}},
+                {"id": "b_main", "type": "program.main", "v": 1, "x": 0, "y": 1200, "statements": {"BODY": [
+                    {"id": "b_each", "type": "coll.for_each", "v": 1,
+                     "fields": {"ITEM": {"sym": "s_item", "name": "item"}, "MODE": "copy"}},
+                    {"id": "b_pair", "type": "coll.for_each_pair", "v": 1,
+                     "fields": {"KEY": {"sym": "s_key", "name": "key"}, "VALUE": {"sym": "s_val", "name": "value"}}},
+                    {"id": "b_lines", "type": "file.for_each_line", "v": 1,
+                     "fields": {"LINE": {"sym": "s_line", "name": "line"}}},
+                    {"id": "b_open", "type": "file.open", "v": 1,
+                     "fields": {"FILE": {"sym": "s_file", "name": "file"}}},
+                    {"id": "b_try", "type": "error.try", "v": 1,
+                     "fields": {"NAME0": {"sym": "s_e0", "name": "e"}, "NAME1": {"sym": "s_e1", "name": "error"}}}
+                ]}}
+            ]}}]
+        });
+        let document = b2c_model::load(&serde_json::to_vec(&value).unwrap()).unwrap();
+        let declared = declarations(&document);
+        let kind = |id: &str| declared[&sym(id)].kind;
+        assert_eq!(kind("s_st"), RefKind::Struct);
+        assert_eq!(kind("s_mark"), RefKind::Field);
+        assert_eq!(declared[&sym("s_mark")].owner, Some(sym("s_st")));
+        assert_eq!(kind("s_en"), RefKind::Enum);
+        assert_eq!(kind("s_quit"), RefKind::Enumerator);
+        assert_eq!(declared[&sym("s_quit")].owner, Some(sym("s_en")));
+        assert_eq!(
+            qualified_name(&declared, &sym("s_mark")).as_deref(),
+            Some("::Student::mark")
+        );
+        assert_eq!(
+            qualified_name(&declared, &sym("s_quit")).as_deref(),
+            Some("::Action::Quit")
+        );
+        assert_eq!(kind("s_count"), RefKind::Variable);
+        assert_eq!(
+            qualified_name(&declared, &sym("s_count")).as_deref(),
+            Some("count")
+        );
+        assert_eq!(kind("s_item"), RefKind::Variable);
+        for loop_variable in ["s_key", "s_val", "s_line"] {
+            assert_eq!(kind(loop_variable), RefKind::LoopVariable, "{loop_variable}");
+        }
+        for variable in ["s_file", "s_e0", "s_e1"] {
+            assert_eq!(kind(variable), RefKind::Variable, "{variable}");
+        }
+        // A global binds again as a variable of its name.
+        let global = info("t_count", "count", SymbolInfoKind::Global { is_const: false });
+        assert_eq!(ref_kind(&global), RefKind::Variable);
     }
 
     #[test]

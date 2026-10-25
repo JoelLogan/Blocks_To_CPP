@@ -12,8 +12,8 @@ use b2c_ir::diag::{Location, Part};
 use b2c_ir::ids::{ModuleId, SymbolId};
 use b2c_model::{Block, Document, Input};
 
-use crate::access::{decl_field, is_statement_type, param_rows, statement_lists};
-use crate::scope::{COUNTER_LIST, ListKey, PARAMS_LIST};
+use crate::access::{catch_count, decl_field, is_statement_type, param_rows, rows, statement_lists};
+use crate::scope::{COUNTER_LIST, ITEM_LIST, ListKey, PARAMS_LIST};
 
 /// Deepest block nesting the analyser follows (statement and value nesting
 /// combined). A loaded project file cannot get close: its JSON nesting limit
@@ -23,7 +23,7 @@ pub(crate) const MAX_BLOCK_DEPTH: usize = 64;
 /// What a declaration declares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DeclKind {
-    /// A local variable (`var.declare`).
+    /// A local variable (`var.declare`, and `file.open`'s `FILE`).
     Variable,
     /// A function parameter.
     Parameter,
@@ -31,6 +31,21 @@ pub(crate) enum DeclKind {
     Counter,
     /// A function.
     Function,
+    /// A variable a loop over items declares for its body: a *for each*
+    /// item, a map's key and value, a file's line (w2.md §2.13).
+    LoopItem,
+    /// The error of a catch part, visible in that part only.
+    CatchVariable,
+    /// A global variable or constant (`var.global`).
+    Global,
+    /// A struct (`type.struct`).
+    Struct,
+    /// An enum (`type.enum`).
+    Enum,
+    /// A field of a struct (a row of `extra.fields`).
+    Field,
+    /// A value of an enum (a row of `extra.values`).
+    Enumerator,
 }
 
 /// Whether a declaration is part of the program.
@@ -59,7 +74,8 @@ pub(crate) struct DeclInfo {
     pub(crate) location: Location,
     /// The statement lists enclosing it, outermost first (empty for functions).
     pub(crate) path: Vec<ListKey>,
-    /// For parameters: the function's name.
+    /// For parameters: the function's name; for fields and enum values: the
+    /// struct's or enum's name.
     pub(crate) owner: Option<String>,
 }
 
@@ -145,6 +161,11 @@ impl Collector {
                 self.other_statements(block, &["BODY"], 1, status);
             }
             "func.define" => self.function(block, status),
+            "type.struct" | "type.enum" | "var.global" => {
+                self.definition(block, status);
+                self.other_statements(block, &[], 1, status);
+                self.inputs(block, 0, status);
+            }
             _ => self.anywhere(block, Self::off_program(status), 0),
         }
         // A loose stack (05 §5.4) is outside the program, like its head. The
@@ -181,6 +202,36 @@ impl Collector {
         self.other_statements(block, &["BODY"], 1, status);
     }
 
+    /// A struct, an enum or a global (w2.md §2.2, §2.7): module-level names,
+    /// with the struct's fields and the enum's values (their rows).
+    fn definition(&mut self, block: &Block, status: DeclStatus) {
+        let (kind, key, row_kind) = match block.block_type.as_str() {
+            "type.struct" => (DeclKind::Struct, "fields", DeclKind::Field),
+            "type.enum" => (DeclKind::Enum, "values", DeclKind::Enumerator),
+            _ => {
+                self.record(block, "NAME", DeclKind::Global, status, &[]);
+                return;
+            }
+        };
+        self.record(block, "NAME", kind, status, &[]);
+        let owner = decl_field(block, "NAME").map(|d| d.name.clone()).ok();
+        for (i, row) in rows(block, key).into_iter().enumerate() {
+            if let Ok(row) = row {
+                let part = format!("{key}[{i}]");
+                self.record_symbol(
+                    &row.sym,
+                    &row.name,
+                    block,
+                    &part,
+                    row_kind,
+                    status,
+                    &[],
+                    owner.as_deref(),
+                );
+            }
+        }
+    }
+
     /// The statements of one list of `owner`, at `path`.
     fn list(&mut self, owner: &Block, name: &str, path: &[ListKey], status: DeclStatus, depth: usize) {
         for block in crate::access::statements(owner, name) {
@@ -202,11 +253,39 @@ impl Collector {
             return;
         }
         let mut inner: Vec<ListKey> = path.to_vec();
+        // The pseudo-list around a loop's `BODY` that holds what the loop
+        // declares for it (W2's loops over items, w2.md §2.13).
+        let mut body_prefix = None;
         match block.block_type.as_str() {
-            "var.declare" => self.record(block, "NAME", DeclKind::Variable, status, path),
+            "var.declare" | "file.open" => {
+                let field = if block.block_type == "file.open" {
+                    "FILE"
+                } else {
+                    "NAME"
+                };
+                self.record(block, field, DeclKind::Variable, status, path);
+            }
             "control.for_range" => {
                 inner.push(ListKey::new(&block.id, COUNTER_LIST));
                 self.record(block, "VAR", DeclKind::Counter, status, &inner);
+            }
+            "coll.for_each" | "coll.for_each_pair" | "file.for_each_line" => {
+                let item = ListKey::new(&block.id, ITEM_LIST);
+                let item_path: Vec<ListKey> = inner.iter().cloned().chain([item.clone()]).collect();
+                for field in loop_item_fields(&block.block_type) {
+                    self.record(block, field, DeclKind::LoopItem, status, &item_path);
+                }
+                body_prefix = Some(item);
+            }
+            "error.try" => {
+                for i in 0..catch_count(block) {
+                    let part: Vec<ListKey> = inner
+                        .iter()
+                        .cloned()
+                        .chain([ListKey::new(&block.id, &format!("CATCH{i}"))])
+                        .collect();
+                    self.record(block, &format!("NAME{i}"), DeclKind::CatchVariable, status, &part);
+                }
             }
             _ => {}
         }
@@ -214,6 +293,11 @@ impl Collector {
         let names: Vec<&str> = lists.iter().map(|(name, _)| name.as_str()).collect();
         for (name, _) in &lists {
             let mut list_path = inner.clone();
+            if name == "BODY"
+                && let Some(prefix) = &body_prefix
+            {
+                list_path.push(prefix.clone());
+            }
             list_path.push(ListKey::new(&block.id, name));
             self.list(block, name, &list_path, status, depth + 1);
         }
@@ -255,6 +339,18 @@ impl Collector {
         match block.block_type.as_str() {
             "var.declare" | "func.define" => self.record(block, "NAME", Self::kind_of(block), status, &[]),
             "control.for_range" => self.record(block, "VAR", DeclKind::Counter, status, &[]),
+            "file.open" => self.record(block, "FILE", DeclKind::Variable, status, &[]),
+            "coll.for_each" | "coll.for_each_pair" | "file.for_each_line" => {
+                for field in loop_item_fields(&block.block_type) {
+                    self.record(block, field, DeclKind::LoopItem, status, &[]);
+                }
+            }
+            "error.try" => {
+                for i in 0..catch_count(block) {
+                    self.record(block, &format!("NAME{i}"), DeclKind::CatchVariable, status, &[]);
+                }
+            }
+            "type.struct" | "type.enum" | "var.global" => self.definition(block, status),
             _ => {}
         }
         for list in block.statements.values() {
@@ -284,6 +380,17 @@ impl Collector {
         } else {
             DeclStatus::Detached
         }
+    }
+}
+
+/// The `symbol_decl` fields of a loop over items, which its body sees
+/// (w2.md §1.2, §1.8).
+fn loop_item_fields(block_type: &str) -> &'static [&'static str] {
+    match block_type {
+        "coll.for_each" => &["ITEM"],
+        "coll.for_each_pair" => &["KEY", "VALUE"],
+        "file.for_each_line" => &["LINE"],
+        _ => &[],
     }
 }
 
@@ -399,6 +506,90 @@ mod tests {
         assert_eq!(get(&decls, "x").status, DeclStatus::Detached);
         assert_eq!(get(&decls, "y").status, DeclStatus::Detached);
         assert_eq!(get(&decls, "z").status, DeclStatus::Disabled);
+    }
+
+    /// W2's declaring blocks (w2.md §2.13), before the blocks exist: their
+    /// packages test how the names are used.
+    #[test]
+    fn w2_declarations_are_collected_with_their_scopes() {
+        let decl = |sym: &str| json!({"sym": sym, "name": sym});
+        let d = doc(&json!([
+            {"id": "st", "type": "type.struct", "v": 1, "x": 0, "y": 0,
+             "fields": {"NAME": decl("Student")},
+             "extra": {"fields": [{"sym": "mark", "name": "mark", "type": "int"}]}},
+            {"id": "en", "type": "type.enum", "v": 1, "x": 0, "y": 200,
+             "fields": {"NAME": decl("Action")},
+             "extra": {"values": [{"sym": "Quit", "name": "Quit"}, {"sym": "Go", "name": "Go"}]}},
+            {"id": "gl", "type": "var.global", "v": 1, "x": 0, "y": 400, "fields": {"NAME": decl("count")}},
+            {"id": "main", "type": "program.main", "v": 1, "x": 0, "y": 600, "statements": {"BODY": [
+                {"id": "each", "type": "coll.for_each", "v": 1, "fields": {"ITEM": decl("item")},
+                 "statements": {"BODY": [declare("d1", "inner", false)]}},
+                {"id": "pair", "type": "coll.for_each_pair", "v": 1,
+                 "fields": {"KEY": decl("key"), "VALUE": decl("value")}},
+                {"id": "lines", "type": "file.for_each_line", "v": 1, "fields": {"LINE": decl("line")}},
+                {"id": "open", "type": "file.open", "v": 1, "fields": {"FILE": decl("file")}},
+                {"id": "try", "type": "error.try", "v": 1, "extra": {"catchCount": 2},
+                 "fields": {"NAME0": decl("e0"), "NAME1": decl("e1")},
+                 "statements": {"CATCH1": [declare("d2", "in_catch", false)]}}
+            ]}}
+        ]));
+        let decls = collect(&d);
+        let key = |block: &str, list: &str| ListKey::new(&BlockId::new(block).expect("id"), list);
+        let main = key("main", "BODY");
+
+        let student = get(&decls, "Student");
+        assert_eq!(
+            (student.kind, student.status),
+            (DeclKind::Struct, DeclStatus::Active)
+        );
+        assert!(student.path.is_empty());
+        let mark = get(&decls, "mark");
+        assert_eq!(
+            (mark.kind, mark.owner.as_deref()),
+            (DeclKind::Field, Some("Student"))
+        );
+        assert_eq!(
+            mark.location.part,
+            Part::Field {
+                name: String::from("fields[0]")
+            }
+        );
+        assert_eq!(get(&decls, "Action").kind, DeclKind::Enum);
+        let go = get(&decls, "Go");
+        assert_eq!(
+            (go.kind, go.owner.as_deref()),
+            (DeclKind::Enumerator, Some("Action"))
+        );
+        assert_eq!(
+            go.location.part,
+            Part::Field {
+                name: String::from("values[1]")
+            }
+        );
+        let count = get(&decls, "count");
+        assert_eq!((count.kind, count.status), (DeclKind::Global, DeclStatus::Active));
+
+        // A loop's item is in the pseudo-list around its body, which the
+        // body's own declarations are inside.
+        let item = get(&decls, "item");
+        assert_eq!(item.kind, DeclKind::LoopItem);
+        assert_eq!(item.path, vec![main.clone(), key("each", ITEM_LIST)]);
+        assert_eq!(
+            get(&decls, "inner").path,
+            vec![main.clone(), key("each", ITEM_LIST), key("each", "BODY")]
+        );
+        for name in ["key", "value", "line"] {
+            assert_eq!(get(&decls, name).kind, DeclKind::LoopItem, "{name}");
+        }
+        let file = get(&decls, "file");
+        assert_eq!((file.kind, file.path), (DeclKind::Variable, vec![main.clone()]));
+
+        // A caught error is in its catch part only.
+        let e1 = get(&decls, "e1");
+        assert_eq!(e1.kind, DeclKind::CatchVariable);
+        assert_eq!(e1.path, vec![main.clone(), key("try", "CATCH1")]);
+        assert_eq!(get(&decls, "e0").path, vec![main.clone(), key("try", "CATCH0")]);
+        assert_eq!(get(&decls, "in_catch").path, vec![main, key("try", "CATCH1")]);
     }
 
     #[test]

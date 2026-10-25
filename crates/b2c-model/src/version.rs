@@ -44,7 +44,7 @@ const TEMPLATE_TERMS: u32 = 2;
 
 /// The lowest format version whose keys cover the document (ADR-0013): 2
 /// when it holds a template type term, in a field or in the `type` of a row
-/// of `extra` (`params`), at any depth, in any module; else 1. A user type
+/// of `extra` (`params`, `fields`), at any depth, in any module; else 1. A user type
 /// (`{"ref": id}`) and a name are version 1 values.
 ///
 /// `options.usingNamespaceStd` (*Textbook style*) is a version 2 key too,

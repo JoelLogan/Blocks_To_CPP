@@ -184,6 +184,24 @@ impl Lowerer<'_> {
                 }
                 _ => CExpr::error(),
             },
+            // W2's values, each desugared by its family's module (w2.md
+            // §3.2), which the packages fill in.
+            ExprKind::Item { .. }
+            | ExprKind::Size(_)
+            | ExprKind::IsEmpty(_)
+            | ExprKind::Contains { .. }
+            | ExprKind::Next(_)
+            | ExprKind::ListOf(_) => self.collection_expr(expr),
+            ExprKind::Letter { .. }
+            | ExprKind::TextLength(_)
+            | ExprKind::TextCall { .. }
+            | ExprKind::ToNumber { .. }
+            | ExprKind::AsText(_)
+            | ExprKind::MathCall { .. }
+            | ExprKind::RandomReal { .. } => self.text_expr(expr),
+            ExprKind::Field { .. } | ExprKind::New { .. } | ExprKind::Enumerator(_) => self.type_expr(expr),
+            ExprKind::ErrorMessage(_) => self.error_expr(expr),
+            ExprKind::ReadLine { .. } | ExprKind::FileExists(_) => self.file_expr(expr),
         }
     }
 

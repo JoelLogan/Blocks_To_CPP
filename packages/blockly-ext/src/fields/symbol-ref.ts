@@ -68,6 +68,7 @@ const NUMERIC_TYPES: ReadonlySet<string> = new Set(['int', 'double', 'char', 'er
 function isAssignable(symbol: SymbolInfo): boolean {
   switch (symbol.kind) {
     case 'variable':
+    case 'global':
       return symbol.isConst !== true;
     case 'parameter':
       return symbol.mode !== 'read_only';
@@ -93,10 +94,18 @@ export function symbolMatchesKinds(symbol: SymbolInfo, kinds: SymbolRefKinds): b
         isAssignable(symbol) && typeof symbol.type === 'string' && NUMERIC_TYPES.has(symbol.type)
       );
     case 'variables':
-      return (
-        symbol.kind === 'variable' || symbol.kind === 'parameter' || symbol.kind === 'loopVariable'
-      );
+      return isVariable(symbol);
   }
+}
+
+/** Whether a symbol holds a value a block can read: a variable, parameter, loop variable or global. */
+function isVariable(symbol: SymbolInfo): boolean {
+  return (
+    symbol.kind === 'variable' ||
+    symbol.kind === 'parameter' ||
+    symbol.kind === 'loopVariable' ||
+    symbol.kind === 'global'
+  );
 }
 
 /** What a reference shows when its declaration is not known: `missing (sym_x)`. */

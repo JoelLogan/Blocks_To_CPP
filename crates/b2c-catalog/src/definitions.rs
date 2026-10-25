@@ -15,9 +15,17 @@ use crate::schema::{
 };
 use crate::{CATALOG_VERSION, Catalog, signature};
 
-/// The built-in catalog files, embedded at compile time.
-pub(crate) const CORE_FILES: [(&str, &str); 8] = [
+/// The built-in catalog files, embedded at compile time. Milestone M3's
+/// second wave adds `collections`, `errors`, `files` and `types`, empty
+/// until its packages fill them (w2.md §3.1).
+pub(crate) const CORE_FILES: [(&str, &str); 12] = [
+    (
+        "collections.toml",
+        include_str!("../../../catalog/core/collections.toml"),
+    ),
     ("control.toml", include_str!("../../../catalog/core/control.toml")),
+    ("errors.toml", include_str!("../../../catalog/core/errors.toml")),
+    ("files.toml", include_str!("../../../catalog/core/files.toml")),
     (
         "functions.toml",
         include_str!("../../../catalog/core/functions.toml"),
@@ -27,6 +35,7 @@ pub(crate) const CORE_FILES: [(&str, &str); 8] = [
     ("math.toml", include_str!("../../../catalog/core/math.toml")),
     ("program.toml", include_str!("../../../catalog/core/program.toml")),
     ("text.toml", include_str!("../../../catalog/core/text.toml")),
+    ("types.toml", include_str!("../../../catalog/core/types.toml")),
     (
         "variables.toml",
         include_str!("../../../catalog/core/variables.toml"),
@@ -121,6 +130,16 @@ pub(crate) fn repeat_index(name: &str, base: &str) -> Option<u32> {
     if canonical { digits.parse().ok() } else { None }
 }
 
+/// The definition of a block's field part: a field by its name, or a part
+/// of a repeated field by its numbered name (`ERROR2`). The part's index is
+/// not checked against the block's count.
+pub(crate) fn field_def<'d>(def: &'d BlockDef, name: &str) -> Option<&'d FieldDef> {
+    def.field.iter().find(|field| match field.repeat {
+        None => field.name == name,
+        Some(_) => repeat_index(name, &field.name).is_some(),
+    })
+}
+
 /// Converts a catalog default token (`{ num = "0" }`) to a project token.
 /// Only literal and operator tokens make sense as defaults: a default cannot
 /// refer to a symbol, and draft text is never a default.
@@ -179,6 +198,18 @@ pub(crate) fn check_block(def: &BlockDef) -> Vec<String> {
     check_names(def, &mut problems);
     for field in &def.field {
         check_field(field, &mut problems);
+        if let Some(repeat) = &field.repeat {
+            check_repeat(&field.name, &repeat.count, repeat.plus, &extras, &mut problems);
+            if !matches!(
+                field.kind,
+                FieldKind::Dropdown | FieldKind::Checkbox | FieldKind::Type | FieldKind::SymbolDecl
+            ) {
+                problems.push(format!(
+                    "the field {} repeats, but only dropdown, checkbox, type and symbol_decl fields can",
+                    field.name
+                ));
+            }
+        }
     }
     for input in &def.input {
         if let Some(repeat) = &input.repeat {
@@ -266,8 +297,19 @@ fn check_extras<'a>(def: &'a BlockDef, problems: &mut Vec<String>) -> BTreeMap<&
         if kinds.insert(extra.name.as_str(), extra.kind).is_some() {
             problems.push(format!("the extra {:?} is defined twice", extra.name));
         }
-        if extra.kind != ExtraKind::Params && !extra.types.is_empty() {
-            problems.push(format!("only params extras have types ({})", extra.name));
+        if !extra.kind.has_row_types() && !extra.types.is_empty() {
+            problems.push(format!(
+                "only params and fields extras have types ({})",
+                extra.name
+            ));
+        }
+        if let Some(name) = extra.kind.row_name()
+            && extra.name != name
+        {
+            problems.push(format!(
+                "an extra of kind {name} must be called {name:?}, not {:?}",
+                extra.name
+            ));
         }
         match extra.kind {
             ExtraKind::Count => {
@@ -294,18 +336,19 @@ fn check_extras<'a>(def: &'a BlockDef, problems: &mut Vec<String>) -> BTreeMap<&
                     ));
                 }
             }
-            ExtraKind::Params => {
+            ExtraKind::Params | ExtraKind::Fields | ExtraKind::Values => {
+                let kind = extra.kind.row_name().unwrap_or_default();
                 if extra.max == 0 || extra.max > limit {
                     problems.push(format!(
-                        "params {} must allow 1 to {MAX_VARIADIC_PARTS} rows",
+                        "{kind} {} must allow 1 to {MAX_VARIADIC_PARTS} rows",
                         extra.name
                     ));
                 }
-                if extra.types.is_empty() || !all_unique(&extra.types) {
-                    problems.push(format!("params {} need a list of distinct types", extra.name));
+                if extra.kind.has_row_types() && (extra.types.is_empty() || !all_unique(&extra.types)) {
+                    problems.push(format!("{kind} {} need a list of distinct types", extra.name));
                 }
                 if extra.default.is_some() {
-                    problems.push(format!("params {} cannot have a default", extra.name));
+                    problems.push(format!("{kind} {} cannot have a default", extra.name));
                 }
             }
         }
@@ -323,6 +366,8 @@ pub(crate) fn count_default(extra: &ExtraDef, default: &FieldDefault) -> Option<
         .filter(|n| (extra.min..=extra.max).contains(n))
 }
 
+/// A repeated part's count: a `count` extra, or a row extra whose rows it
+/// counts (`repeat = { count = "params" }`; w2.md §2.1).
 fn check_repeat(
     name: &str,
     count: &str,
@@ -330,9 +375,12 @@ fn check_repeat(
     extras: &BTreeMap<&str, ExtraKind>,
     problems: &mut Vec<String>,
 ) {
-    if extras.get(count) != Some(&ExtraKind::Count) {
+    if !extras
+        .get(count)
+        .is_some_and(|kind| *kind == ExtraKind::Count || kind.is_rows())
+    {
         problems.push(format!(
-            "{name} repeats by {count:?}, which is not a count in extra"
+            "{name} repeats by {count:?}, which is not a count or a row extra (params, fields, values) in extra"
         ));
     }
     if plus > 1 {
@@ -348,7 +396,7 @@ fn check_names(def: &BlockDef, problems: &mut Vec<String>) {
     let parts: Vec<(&str, bool)> = def
         .field
         .iter()
-        .map(|f| (f.name.as_str(), false))
+        .map(|f| (f.name.as_str(), f.repeat.is_some()))
         .chain(def.input.iter().map(|i| (i.name.as_str(), i.repeat.is_some())))
         .chain(
             def.statement
@@ -403,7 +451,12 @@ fn check_field(field: &FieldDef, problems: &mut Vec<String>) {
                 ));
             }
         }
-        FieldKind::Type if field.types.is_empty() || !all_unique(&field.types) => {
+        // An empty list is for a type field filled only from the module
+        // (`struct`), which needs a pattern: the signature checks that no M2
+        // type fits it (w2.md §2.1).
+        FieldKind::Type
+            if (field.types.is_empty() && field.pattern.is_none()) || !all_unique(&field.types) =>
+        {
             problems.push(format!("the type field {name} needs a list of distinct types"));
         }
         _ => {}
@@ -498,7 +551,7 @@ fn label_pieces(label: &str) -> Vec<LabelPiece<'_>> {
 
 /// The friendly label is all a block shows, so it must name every part a
 /// user sets on the block (spec §3.11.1): every field and every value input
-/// that is not repeated (repeated inputs come with the block's ⊕/⊖ parts)
+/// that is not repeated (repeated parts come with the block's ⊕/⊖ parts)
 /// appears in it as `%NAME`, and a checkbox stands next to words that say
 /// what ticking it means (`new line %NEWLINE`), because a bare ☑ explains
 /// nothing.
@@ -514,6 +567,7 @@ fn check_friendly_label(def: &BlockDef, problems: &mut Vec<String>) {
     let parts = def
         .field
         .iter()
+        .filter(|field| field.repeat.is_none())
         .map(|field| ("field", field.name.as_str()))
         .chain(
             def.input
@@ -580,6 +634,7 @@ mod tests {
                 pattern: None,
                 members: None,
                 headers: BTreeMap::new(),
+                repeat: None,
             }],
             input: vec![InputDef {
                 name: "ITEM".into(),
@@ -635,8 +690,19 @@ mod tests {
     fn the_core_catalog_is_valid_and_complete() {
         let (catalog, problems) = build(&CORE_FILES);
         assert_eq!(problems, []);
-        assert_eq!(catalog.blocks.len(), 31);
+        // Every `[[block]]` of every file is in the catalog (M2 has 31), so
+        // the packages that fill W2's files never edit this test.
+        let tables: usize = CORE_FILES
+            .iter()
+            .map(|(_, text)| text.lines().filter(|line| *line == "[[block]]").count())
+            .sum();
+        assert!(tables >= 31);
+        assert_eq!(catalog.blocks.len(), tables);
         assert_eq!(catalog.version, CATALOG_VERSION);
+        let names: Vec<&str> = CORE_FILES.iter().map(|(name, _)| *name).collect();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        assert_eq!(names, sorted, "the files are listed by name");
     }
 
     #[test]
@@ -709,6 +775,7 @@ mod tests {
                 pattern: None,
                 members: None,
                 headers: BTreeMap::new(),
+                repeat: None,
             };
             d.label.friendly = label.into();
         };
@@ -796,6 +863,7 @@ mod tests {
             pattern: None,
             members: None,
             headers: BTreeMap::new(),
+            repeat: None,
         };
         for (kind, default, types, ok) in [
             (FieldKind::Checkbox, Some(FieldDefault::Bool(true)), vec![], true),
@@ -872,6 +940,7 @@ mod tests {
             pattern: None,
             members: None,
             headers: BTreeMap::new(),
+            repeat: None,
         }
     }
 
@@ -1042,15 +1111,206 @@ mod tests {
         assert!(problems_after(|d| d.extra.push(wide.clone())).is_empty());
         assert_eq!(
             problems_after(|d| d.extra[0].type_class = Some(TypeClass::Value)),
-            ["only params extras have a type_class (itemCount)"]
+            ["only params and fields extras have a type_class (itemCount)"]
+        );
+    }
+
+    /// A row extra of each kind (w2.md §2.1), named after its kind.
+    fn row_extra(kind: ExtraKind) -> ExtraDef {
+        ExtraDef {
+            name: kind.row_name().unwrap().into(),
+            kind,
+            min: 0,
+            max: 8,
+            default: None,
+            types: if kind.has_row_types() {
+                vec!["int".into()]
+            } else {
+                vec![]
+            },
+            type_class: None,
+        }
+    }
+
+    #[test]
+    fn row_extras_have_their_kind_s_name_and_shape() {
+        for kind in [ExtraKind::Params, ExtraKind::Fields, ExtraKind::Values] {
+            assert_eq!(
+                problems_after(|d| d.extra.push(row_extra(kind))),
+                Vec::<String>::new(),
+                "{kind:?}"
+            );
+            let mut misnamed = row_extra(kind);
+            misnamed.name = "rows".into();
+            let name = kind.row_name().unwrap();
+            assert_eq!(
+                problems_after(|d| d.extra.push(misnamed.clone())),
+                [format!(
+                    "an extra of kind {name} must be called {name:?}, not \"rows\""
+                )],
+                "{kind:?}"
+            );
+        }
+        let mut fields = row_extra(ExtraKind::Fields);
+        fields.types.clear();
+        assert_eq!(
+            problems_after(|d| d.extra.push(fields.clone())),
+            ["fields fields need a list of distinct types"]
+        );
+        fields.types = vec!["int".into()];
+        fields.type_class = Some(TypeClass::Value);
+        assert_eq!(
+            problems_after(|d| d.extra.push(fields.clone())),
+            Vec::<String>::new()
+        );
+        let mut values = row_extra(ExtraKind::Values);
+        values.types = vec!["int".into()];
+        assert_eq!(
+            problems_after(|d| d.extra.push(values.clone())),
+            ["only params and fields extras have types (values)"]
+        );
+        values.types.clear();
+        values.max = 0;
+        assert_eq!(
+            problems_after(|d| d.extra.push(values.clone())),
+            ["values values must allow 1 to 64 rows"]
+        );
+    }
+
+    #[test]
+    fn a_repeat_may_count_rows_but_not_a_flag() {
+        let by = |count: &'static str| {
+            move |d: &mut BlockDef| {
+                d.extra.push(row_extra(ExtraKind::Fields));
+                d.input[0].repeat = Some(Repeat {
+                    count: count.into(),
+                    plus: 0,
+                });
+            }
+        };
+        assert_eq!(problems_after(by("fields")), Vec::<String>::new());
+        assert_eq!(problems_after(by("itemCount")), Vec::<String>::new());
+        assert_eq!(
+            problems_after(by("open")),
+            [
+                "ITEM repeats by \"open\", which is not a count or a row extra (params, fields, values) in extra"
+            ]
+        );
+    }
+
+    /// A repeated field `F` of `kind`, counted by `itemCount`.
+    fn repeated_field(name: &str, kind: FieldKind) -> FieldDef {
+        FieldDef {
+            name: name.into(),
+            kind,
+            options: if kind == FieldKind::Dropdown {
+                vec![["a".into(), "a".into()]]
+            } else {
+                vec![]
+            },
+            types: if kind == FieldKind::Type {
+                vec!["std::exception".into(), "std::runtime_error".into()]
+            } else {
+                vec![]
+            },
+            default: None,
+            pattern: None,
+            members: None,
+            headers: BTreeMap::new(),
+            repeat: Some(Repeat {
+                count: "itemCount".into(),
+                plus: 0,
+            }),
+        }
+    }
+
+    #[test]
+    fn repeated_fields() {
+        // The friendly label need not name a repeated field: it is drawn with
+        // its group, as a repeated input is.
+        for kind in [
+            FieldKind::Dropdown,
+            FieldKind::Checkbox,
+            FieldKind::Type,
+            FieldKind::SymbolDecl,
+        ] {
+            assert_eq!(
+                problems_after(|d| d.field.push(repeated_field("F", kind))),
+                Vec::<String>::new(),
+                "{kind:?}"
+            );
+        }
+        for kind in [
+            FieldKind::Text,
+            FieldKind::Number,
+            FieldKind::SymbolRef,
+            FieldKind::Header,
+        ] {
+            assert_eq!(
+                problems_after(|d| d.field.push(repeated_field("F", kind))),
+                ["the field F repeats, but only dropdown, checkbox, type and symbol_decl fields can"],
+                "{kind:?}"
+            );
+        }
+        // A repeated field without a count to repeat by.
+        let mut uncounted = repeated_field("F", FieldKind::Dropdown);
+        uncounted.repeat = Some(Repeat {
+            count: "nope".into(),
+            plus: 0,
+        });
+        assert_eq!(
+            problems_after(|d| d.field.push(uncounted.clone())),
+            ["F repeats by \"nope\", which is not a count or a row extra (params, fields, values) in extra"]
+        );
+        // Its numbered parts share the names of the block's parts.
+        assert_eq!(
+            problems_after(|d| {
+                d.field.push(repeated_field("F", FieldKind::Checkbox));
+                d.field[0].name = "F2".into();
+                d.label.friendly = "do %F2 with %ITEM".into();
+                d.label.cpp = "%F2(%ITEM)".into();
+            }),
+            ["the name F2 collides with the repeated parts of F"]
+        );
+    }
+
+    #[test]
+    fn field_defs_find_repeated_parts() {
+        let mut block = def();
+        block.field.push(repeated_field("ERROR", FieldKind::Type));
+        assert_eq!(field_def(&block, "X").map(|f| f.name.as_str()), Some("X"));
+        assert_eq!(
+            field_def(&block, "ERROR3").map(|f| f.name.as_str()),
+            Some("ERROR")
+        );
+        assert_eq!(field_def(&block, "ERROR"), None);
+        assert_eq!(field_def(&block, "ERROR01"), None);
+        assert_eq!(field_def(&block, "X0"), None);
+    }
+
+    #[test]
+    fn a_type_field_without_types_needs_a_pattern() {
+        let mut empty = plain_field("TYPE", FieldKind::Type);
+        empty.types.clear();
+        assert_eq!(
+            problems_after(|d| {
+                d.field.push(empty.clone());
+                d.label.friendly.push_str(" %TYPE");
+            }),
+            ["the type field TYPE needs a list of distinct types"]
         );
     }
 
     #[test]
     fn broken_files_and_duplicates_are_reported() {
+        let control = CORE_FILES
+            .iter()
+            .find(|(name, _)| *name == "control.toml")
+            .map(|(_, text)| *text)
+            .unwrap();
         let files = [
-            ("a.toml", CORE_FILES[0].1),
-            ("b.toml", CORE_FILES[0].1),
+            ("a.toml", control),
+            ("b.toml", control),
             ("c.toml", "[[block]]\nid = \"x.y\"\nunknown = 1\n"),
             ("d.toml", "not toml at all ["),
         ];

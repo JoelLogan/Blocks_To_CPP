@@ -203,8 +203,14 @@ pub enum SymbolInfoKind {
         /// How the argument is passed.
         mode: PassMode,
     },
-    /// The counter of a `for` loop.
+    /// A loop's own variable: the counter of a `for` loop, a read-only
+    /// *for each* item, a map's key and value, a file's line.
     LoopVariable,
+    /// A module-level variable or constant (milestone M3's second wave).
+    Global {
+        /// Whether it is a constant.
+        is_const: bool,
+    },
     /// A user function.
     Function {
         /// Its parameters' symbol IDs, in order.
@@ -325,6 +331,7 @@ impl From<&b2c_ir::SymbolInfoKind> for SymbolInfoKind {
             b2c_ir::SymbolInfoKind::Variable { is_const } => Self::Variable { is_const: *is_const },
             b2c_ir::SymbolInfoKind::Parameter { mode } => Self::Parameter { mode: (*mode).into() },
             b2c_ir::SymbolInfoKind::LoopVariable => Self::LoopVariable,
+            b2c_ir::SymbolInfoKind::Global { is_const } => Self::Global { is_const: *is_const },
             b2c_ir::SymbolInfoKind::Function { params, returns } => Self::Function {
                 params: ids(params),
                 returns: returns.into(),

@@ -270,6 +270,18 @@ impl Lowerer<'_> {
             "func.call" => self
                 .call_block(block, false)
                 .unwrap_or_else(|| error_expr(origin)),
+            // W2's values, each lowered by its family's module (w2.md §3.2),
+            // which the packages fill in.
+            "coll.item" | "coll.length" | "coll.is_empty" | "coll.list_of" | "coll.contains"
+            | "coll.next" => self.collection_value(block, origin),
+            "text.length" | "text.letter" | "text.case" | "text.split" | "text.to_number"
+            | "text.as_text" | "text.find" | "text.part" | "text.trim" | "text.replace" | "math.fn"
+            | "math.abs" | "math.minmax" | "math.fn2" | "math.clamp" | "math.random_real" => {
+                self.text_value(block, origin)
+            }
+            "type.new" | "type.field" | "type.enum_value" => self.type_value(block, origin),
+            "error.message" => self.error_value(block, origin),
+            "file.read_line" | "file.exists" => self.file_value(block, origin),
             _ => error_expr(origin),
         }
     }

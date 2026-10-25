@@ -112,38 +112,67 @@ fn value_blocks_declare_their_output_type() {
 
 /// A minimal valid instance of a block: required fields and extras set,
 /// value inputs left to their defaults, required ones given an expression.
+/// A row extra gets one row, and a count its default or minimum; a
+/// repeated field gets a part for each that count gives.
 fn instance(def: &BlockDef, index: usize) -> Value {
-    let mut fields = Map::new();
-    for field in &def.field {
-        if field.default.is_some() {
-            continue;
-        }
-        let value = match field.kind {
-            FieldKind::Dropdown => json!(field.options[0][1]),
-            FieldKind::Checkbox => json!(true),
-            FieldKind::Text => json!("a"),
-            FieldKind::Number => json!("1"),
-            FieldKind::Type => json!(field.types[0]),
-            FieldKind::SymbolDecl => json!({"sym": format!("s{index}_{}", field.name), "name": "x"}),
-            FieldKind::SymbolRef => json!({"ref": "s_any"}),
-            FieldKind::Header => json!("<vector>"),
-        };
-        fields.insert(field.name.clone(), value);
-    }
     let mut extra = Map::new();
+    let mut counts = std::collections::BTreeMap::new();
     for def_extra in &def.extra {
+        let name = def_extra.name.clone();
         match (def_extra.kind, &def_extra.default) {
             (ExtraKind::Params, _) => {
                 let row = json!({"sym": format!("p{index}"), "name": "p", "type": def_extra.types[0], "mode": "copy"});
-                extra.insert(def_extra.name.clone(), json!([row]));
+                extra.insert(name.clone(), json!([row]));
+                counts.insert(name, 1);
+            }
+            (ExtraKind::Fields, _) => {
+                let row = json!({"sym": format!("f{index}"), "name": "f", "type": def_extra.types[0]});
+                extra.insert(name.clone(), json!([row]));
+                counts.insert(name, 1);
+            }
+            (ExtraKind::Values, _) => {
+                extra.insert(name.clone(), json!([{"sym": format!("v{index}"), "name": "V"}]));
+                counts.insert(name, 1);
             }
             (ExtraKind::Count, None) => {
-                extra.insert(def_extra.name.clone(), json!(def_extra.min));
+                extra.insert(name.clone(), json!(def_extra.min));
+                counts.insert(name, def_extra.min);
+            }
+            (ExtraKind::Count, Some(FieldDefault::Text(text))) => {
+                counts.insert(name, text.parse().unwrap_or(0));
             }
             (ExtraKind::Flag, None) => {
-                extra.insert(def_extra.name.clone(), json!(true));
+                extra.insert(name, json!(true));
             }
             (_, Some(FieldDefault::Text(_) | FieldDefault::Bool(_))) => {}
+        }
+    }
+    let mut fields = Map::new();
+    for field in &def.field {
+        // A type field that lists only the module's types may be left
+        // unchosen, as a name or a reference may.
+        if field.default.is_some() || (field.kind == FieldKind::Type && field.types.is_empty()) {
+            continue;
+        }
+        let names: Vec<String> = match &field.repeat {
+            None => vec![field.name.clone()],
+            Some(repeat) => {
+                let count = counts.get(&repeat.count).copied().unwrap_or(0) + repeat.plus;
+                (0..count).map(|i| format!("{}{i}", field.name)).collect()
+            }
+        };
+        for name in names {
+            let value = match field.kind {
+                FieldKind::Dropdown => json!(field.options[0][1]),
+                FieldKind::Checkbox => json!(true),
+                FieldKind::Text => json!("a"),
+                FieldKind::Number => json!("1"),
+                FieldKind::Type => json!(field.types[0]),
+                FieldKind::SymbolDecl => json!({"sym": format!("s{index}_{name}"), "name": "x"}),
+                FieldKind::SymbolRef => json!({"ref": "s_any"}),
+                FieldKind::Header => json!("<vector>"),
+            };
+            fields.insert(name, value);
         }
     }
     let mut inputs = Map::new();

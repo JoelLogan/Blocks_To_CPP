@@ -123,6 +123,41 @@ fn every_block_has_a_signature_in_catalog_order() {
     }
 }
 
+/// The blocks of milestone M2.
+const M2_BLOCKS: [&str; 31] = [
+    "control.if",
+    "control.while",
+    "control.repeat",
+    "control.for_range",
+    "control.forever",
+    "control.break",
+    "control.continue",
+    "func.define",
+    "func.call",
+    "func.call_stmt",
+    "func.return",
+    "io.print",
+    "io.ask",
+    "logic.boolean",
+    "logic.operation",
+    "logic.not",
+    "logic.ternary",
+    "math.number",
+    "math.arithmetic",
+    "math.compare",
+    "math.random_int",
+    "math.convert",
+    "program.main",
+    "program.exit",
+    "text.literal",
+    "text.char",
+    "text.join",
+    "var.declare",
+    "var.set",
+    "var.change",
+    "var.get",
+];
+
 /// `docs/plans/m3-contracts/slots.md` §5.
 #[test]
 fn m2_blocks_have_the_patterns_of_w1() {
@@ -167,16 +202,28 @@ fn m2_blocks_have_the_patterns_of_w1() {
     let ret = sigs.get("func.return").unwrap();
     assert_eq!(ret.inputs["VALUE"].pattern, Some(TypePattern::Result));
 
-    // The other blocks keep their M2 rules: no variables and no patterns on
-    // their parts. M2's `symbol` output names the block's reference field.
+    // What a function gives back is any type a variable can hold, or void
+    // (w2.md §1.9): the field binds R, which nothing else uses.
+    let define = sigs.get("func.define").unwrap();
+    assert_eq!(define.vars, BTreeMap::from([(var("R"), TypeClass::Value)]));
+    assert_eq!(define.fields["RETURNS"], TypePattern::Var(var("R")));
+    assert_eq!(define.order, [PartName::Field("RETURNS".into())]);
+
+    // The other blocks of M2 keep their M2 rules: no variables and no
+    // patterns on their parts. M2's `symbol` output names the block's
+    // reference field.
     let patterned = [
         "var.declare",
         "var.set",
         "func.call",
         "func.call_stmt",
         "func.return",
+        "func.define",
     ];
-    for (id, sig) in sigs.iter().filter(|(id, _)| !patterned.contains(id)) {
+    for (id, sig) in sigs
+        .iter()
+        .filter(|(id, _)| M2_BLOCKS.contains(id) && !patterned.contains(id))
+    {
         assert!(sig.vars.is_empty() && sig.order.is_empty(), "{id}");
     }
     assert_eq!(

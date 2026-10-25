@@ -434,8 +434,10 @@ pub struct Block {
     /// catalog's schema for the block type. Free-form data: a loaded
     /// document's numbers here are within ±[`crate::limits::MAX_SAFE_INTEGER`]
     /// and whole ones are integers (spec §5.6). The `type` of a row of
-    /// `params` is a type term in JSON (types.md §2.1): the loader checks a
-    /// reference or a template there like one in a type field.
+    /// `params` or `fields` is a type term in JSON (types.md §2.1, w2.md
+    /// §2.1): the loader checks a reference or a template there like one in
+    /// a type field. Each row of `params`, `fields` and `values` declares
+    /// the symbol in its `sym`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extra: BTreeMap<String, serde_json::Value>,
     /// Field values.
@@ -461,7 +463,8 @@ pub struct Block {
 impl Block {
     /// The references in this block's type terms (not its children's), in
     /// order: in templates in its fields, then in the `type` of its rows of
-    /// `extra` (`params`), read as the loader reads them (types.md §2.2). A
+    /// `extra` (`params`, `fields`), read as the loader reads them (types.md
+    /// §2.2). A
     /// user type held directly in a field is a [`FieldValue::Ref`] and is
     /// not listed.
     pub fn type_term_refs(&self) -> Vec<SymbolId> {
