@@ -313,3 +313,29 @@ full):
   without the four blocks' signatures checks nothing of their values'
   types. Codegen's unspecified formats (a struct printed as
   `Point{x: 1, y: 2}`, an enum's `switch`) are reviewed with W2's blocks.
+
+**Review of W1.** Six reviewers (types, security, compatibility, editor,
+codegen, tests and docs) found one major and fourteen minor points, all
+fixed on the branch after `cf164be` except what follows. The major one:
+typed checks made a scope query per parent they typed, so keyboard listings
+and drags on programs with `set` blocks and prints of variables were up to
+tens of times slower than in M2; they now type only what a fit needs and ask
+about scopes only to confirm a refusal (slots.md §4.3, _Speed_).
+
+- **For the owner to confirm:** a decimal division by a constant zero whose
+  result goes straight into an `int` or `char` is now the error `B2C-E0517`
+  (C++ leaves converting infinity or NaN undefined) instead of the warning
+  `B2C-W0506`; a division nested in a larger calculation still warns. The
+  typed benchmark document now also sets and prints its variables, so
+  `webview.keyboard-list-1000.ms` and `webview.drag-typed-1000.frame-p95-all`
+  start a new series (both are reported, not gated).
+- **Left for W2:** a `members` field's menu (W1 lists the plain scope, as M2
+  did) and the checker tests that need a place-typed block or a `members`
+  field (slots.md §9); a user function named `to_string` that takes an enum
+  clashes with the `to_string` generated for a joined enum (the call is
+  qualified, `::to_string(c)`, so a variable of that name no longer hides
+  it): reserve the name or move the generated function into namespace
+  `b2c` with W2's enum blocks.
+- **Left for W3:** the enum's `to_string` call is qualified with the global
+  namespace; once types can live in modules' namespaces it takes the
+  enum's namespace.
