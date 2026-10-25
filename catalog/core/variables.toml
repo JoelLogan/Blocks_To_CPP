@@ -8,16 +8,22 @@ shape = "statement"
 label = { friendly = "create %TYPE variable %NAME = %VALUE constant %CONST", cpp = "%TYPE %NAME = %VALUE;" }
 lowering = "builtin"
 help = "Creates a variable. It can be used by the blocks after it in the same place."
+# The type field binds T (catalog 1.3.0): it offers its types and takes any
+# type a variable can hold; the name is declared with T, and the value
+# converts to it. `auto` binds nothing.
+where = { T = "value" }
 
 [[block.field]]
 name = "TYPE"
 kind = "type"
 types = ["int", "double", "bool", "char", "std::string", "auto"]
 default = "int"
+type = "T"
 
 [[block.field]]
 name = "NAME"
 kind = "symbol_decl"
+type = "T"
 
 [[block.field]]
 name = "CONST"
@@ -28,6 +34,7 @@ default = false
 name = "VALUE"
 check = "any"
 optional = true
+type = "T"
 
 [[block]]
 id = "var.set"
@@ -37,14 +44,20 @@ shape = "statement"
 label = { friendly = "set %VAR to %VALUE", cpp = "%VAR = %VALUE;" }
 lowering = "builtin"
 help = "Gives a variable a new value."
+# The variable binds T (catalog 1.3.0); the value is assigned to it, so a
+# character also fits a text variable, and it never binds T itself.
+where = { T = "value" }
 
 [[block.field]]
 name = "VAR"
 kind = "symbol_ref"
+type = "T"
 
 [[block.input]]
 name = "VALUE"
 check = "any"
+type = "T"
+assign = true
 
 # `OP` was added in catalog 1.2.0, when `change` took over the retired
 # `var.update` (03 §3.11.3, ADR-0015): a compatible change, so the version

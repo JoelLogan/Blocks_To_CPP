@@ -5,8 +5,14 @@
 //! with an older version of their definition and blocks of a retired type.
 //! A block that could not be upgraded is `B2C-E0603` at its place. In a
 //! document from a newer catalog (`generator.catalog`), a block with a field,
-//! input, `extra` setting or option its definition does not have is
+//! input, `extra` setting or option its definition does not have, or with a
+//! type or header this catalog does not know or does not allow there, is
 //! `B2C-E0602` and is kept as it is (spec §3.11.3, ADR-0015).
+//!
+//! A type field takes its `types` and every type its pattern allows, and a
+//! parameter row its `types` and its `type_class` (ADR-0017 §5,
+//! `docs/plans/m3-contracts/types.md` §4.1); a user type always passes here,
+//! since only the analyser knows what it names.
 //!
 //! Defaults filled in: absent fields with a default, absent `count`/`flag`
 //! extras with a default, and absent value inputs with default tokens (the
@@ -40,13 +46,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use b2c_ir::{BlockId, Location, ModuleId, Part, SymbolId};
+use b2c_ir::types::NoFacts;
+use b2c_ir::{BlockId, Location, ModuleId, Part, SymbolId, Type, TypeTerm};
 use b2c_model::{Block, Document, ExprInput, FieldValue, Input};
 use serde_json::Value;
 
 use crate::codes::{self, Diags};
 use crate::definitions::{self, PARAM_MODES, count_default, default_tokens, repeat_index};
 use crate::schema::{BlockDef, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, Shape};
+use crate::signature::{self, TypeFit};
 use crate::stack;
 use crate::upgrade::{self, BlockUpgrades};
 use crate::{Catalog, ResolveReport};
@@ -437,13 +445,17 @@ impl Resolver<'_> {
             if !matches!(map.get("name"), Some(Value::String(_))) {
                 problems.push(String::from("needs a name in \"name\""));
             }
-            match map.get("type") {
-                Some(Value::String(t)) if extra.types.contains(t) => {}
-                other => problems.push(format!(
-                    "has the type {}, but parameters can only be {}",
-                    describe_choice(other),
+            let row_type = map.get("type");
+            if row_type.is_none_or(|ty| signature::row_type_fit(extra, ty) != TypeFit::Fits) {
+                let wider = extra
+                    .type_class
+                    .map(|class| format!(", or {}", signature::class_phrase(class)))
+                    .unwrap_or_default();
+                problems.push(format!(
+                    "has the type {}, but parameters can only be {}{wider}",
+                    describe_row_type(row_type),
                     list(extra.types.iter().map(String::as_str))
-                )),
+                ));
             }
             match map.get("mode") {
                 Some(Value::String(m)) if PARAM_MODES.contains(&m.as_str()) => {}
@@ -485,7 +497,7 @@ impl Resolver<'_> {
         }
         for field in &def.field {
             if let Some(value) = block.fields.get(&field.name) {
-                self.field(field, value, location);
+                self.field(def, field, value, location);
                 continue;
             }
             match &field.default {
@@ -511,7 +523,7 @@ impl Resolver<'_> {
         }
     }
 
-    fn field(&mut self, field: &FieldDef, value: &FieldValue, location: &Location) {
+    fn field(&mut self, def: &BlockDef, field: &FieldDef, value: &FieldValue, location: &Location) {
         let name = &field.name;
         let problem = match (field.kind, value) {
             (FieldKind::Dropdown, FieldValue::Text(text))
@@ -529,7 +541,8 @@ impl Resolver<'_> {
             | (FieldKind::SymbolDecl, FieldValue::Decl(_))
             | (FieldKind::SymbolRef, FieldValue::Ref(_)) => return,
             (FieldKind::Number, FieldValue::Text(text)) if !text.trim().is_empty() => return,
-            (FieldKind::Type, FieldValue::Text(text)) if field.types.contains(text) => return,
+            (FieldKind::Type, _) if signature::field_type_fit(def, field, value) == TypeFit::Fits => return,
+            (FieldKind::Header, FieldValue::Text(text)) if signature::header_fits(text) => return,
             (FieldKind::Checkbox, _) => format!(
                 "The field {name} should be true or false, but it is {}.",
                 describe_field(value)
@@ -542,10 +555,19 @@ impl Resolver<'_> {
                 "The field {name} should be a number written as text, such as \"42\", but it is {}.",
                 describe_field(value)
             ),
-            (FieldKind::Type, _) => format!(
-                "The field {name} is {}, but it must be one of the types {}.",
-                describe_field(value),
-                list(field.types.iter().map(String::as_str))
+            (FieldKind::Type, _) => {
+                let wider = signature::field_wider(def, field)
+                    .map(|wider| format!(", or {wider}"))
+                    .unwrap_or_default();
+                format!(
+                    "The field {name} is {}, but it must be one of the types {}{wider}.",
+                    describe_type(value),
+                    list(field.types.iter().map(String::as_str))
+                )
+            }
+            (FieldKind::Header, _) => format!(
+                "The field {name} is {}, but it must be a standard header such as \"<vector>\".",
+                describe_field(value)
             ),
             (FieldKind::SymbolDecl, _) => format!(
                 "The field {name} should declare a name, like {{\"sym\": \"sym_x\", \"name\": \"score\"}}, but it is {}.",
@@ -792,6 +814,40 @@ fn describe_choice(value: Option<&Value>) -> String {
     }
 }
 
+/// Describes the value of a type field for a message: a name as it is
+/// written, a template by its C++ spelling, a reference as a user type.
+pub(crate) fn describe_type(value: &FieldValue) -> String {
+    match value {
+        FieldValue::Type(term) => describe_term(term),
+        FieldValue::Ref(_) => String::from("a struct or enum"),
+        FieldValue::Bool(_) | FieldValue::Text(_) | FieldValue::Decl(_) => describe_field(value),
+    }
+}
+
+/// Describes the `type` of a parameter row for a message, as
+/// [`describe_type`] does.
+pub(crate) fn describe_row_type(value: Option<&Value>) -> String {
+    match value {
+        Some(value @ (Value::Object(_) | Value::Array(_))) => {
+            match serde_json::from_value::<TypeTerm>(value.clone()) {
+                Ok(TypeTerm::Ref(_)) => String::from("a struct or enum"),
+                Ok(term) => describe_term(&term),
+                Err(_) => describe(value),
+            }
+        }
+        other => describe_choice(other),
+    }
+}
+
+/// A type term by its C++ spelling (`"std::vector<int>"`), or by its JSON
+/// when it is no type.
+fn describe_term(term: &TypeTerm) -> String {
+    match Type::from_term(term) {
+        Ok(ty) => quote(&ty.cpp(&NoFacts).to_string()),
+        Err(_) => quote(&term.key()),
+    }
+}
+
 /// Describes a field value for a message.
 fn describe_field(value: &FieldValue) -> String {
     match value {
@@ -1030,7 +1086,7 @@ mod tests {
             let document = b2c_model::load(&serde_json::to_vec(&value(catalog)).unwrap()).unwrap();
             parts(run(&document, crate::core_catalog()))
         };
-        let (completed, diagnostics) = resolve("1.3.0");
+        let (completed, diagnostics) = resolve("1.4.0");
         assert_eq!(
             codes_and_blocks(&diagnostics),
             [(codes::NEWER_BLOCK.to_owned(), "b1".to_owned())]

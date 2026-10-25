@@ -15,8 +15,7 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_catalog::{
-    BlockDef, CATALOG_VERSION, CatalogFile, ExtraKind, FieldDefault, FieldKind, OutputType, Shape,
-    core_catalog,
+    BlockDef, CATALOG_VERSION, CatalogFile, ExtraKind, FieldDefault, FieldKind, Shape, core_catalog,
 };
 use common::{project, resolve};
 use serde_json::{Map, Value, json};
@@ -64,38 +63,49 @@ fn only_hats_and_definitions_are_top_level() {
 }
 
 /// The output type of every value block is pinned: the editor's connection
-/// checker and the generated block definitions rely on it.
+/// checker and the generated block definitions rely on it. From catalog
+/// 1.3.0 it is a type pattern, and `std::string` is written that way.
 #[test]
 fn value_blocks_declare_their_output_type() {
-    use OutputType as O;
-    let expected: BTreeMap<&str, OutputType> = [
-        ("func.call", O::Symbol),
-        ("logic.boolean", O::Bool),
-        ("logic.not", O::Bool),
-        ("logic.operation", O::Bool),
-        ("logic.ternary", O::Any),
-        ("math.arithmetic", O::Number),
-        ("math.compare", O::Bool),
-        ("math.convert", O::Field("TO".into())),
-        ("math.number", O::Number),
-        ("math.random_int", O::Int),
-        ("text.char", O::Char),
-        ("text.join", O::StdString),
-        ("text.literal", O::StdString),
-        ("var.get", O::Symbol),
+    let expected: BTreeMap<&str, &str> = [
+        ("func.call", "symbol"),
+        ("logic.boolean", "bool"),
+        ("logic.not", "bool"),
+        ("logic.operation", "bool"),
+        ("logic.ternary", "any"),
+        ("math.arithmetic", "number"),
+        ("math.compare", "bool"),
+        ("math.convert", "field:TO"),
+        ("math.number", "number"),
+        ("math.random_int", "int"),
+        ("text.char", "char"),
+        ("text.join", "std::string"),
+        ("text.literal", "std::string"),
+        ("var.get", "symbol"),
     ]
     .into_iter()
     .collect();
-    let actual: BTreeMap<&str, OutputType> = core_catalog()
+    let actual: BTreeMap<&str, String> = core_catalog()
         .blocks
         .values()
-        .filter_map(|def| Some((def.id.as_str(), def.output.clone()?)))
+        .filter_map(|def| Some((def.id.as_str(), def.output.as_ref()?.to_string())))
         .collect();
-    assert_eq!(actual, expected);
+    assert_eq!(
+        actual,
+        expected
+            .into_iter()
+            .map(|(id, output)| (id, output.to_owned()))
+            .collect()
+    );
     for def in core_catalog().blocks.values() {
         assert_eq!(def.output.is_some(), def.shape.is_value(), "{}", def.id);
         if def.shape == Shape::Predicate {
-            assert_eq!(def.output, Some(O::Bool), "{}", def.id);
+            assert_eq!(
+                def.output.as_ref().map(ToString::to_string).as_deref(),
+                Some("bool"),
+                "{}",
+                def.id
+            );
         }
     }
 }
@@ -116,6 +126,7 @@ fn instance(def: &BlockDef, index: usize) -> Value {
             FieldKind::Type => json!(field.types[0]),
             FieldKind::SymbolDecl => json!({"sym": format!("s{index}_{}", field.name), "name": "x"}),
             FieldKind::SymbolRef => json!({"ref": "s_any"}),
+            FieldKind::Header => json!("<vector>"),
         };
         fields.insert(field.name.clone(), value);
     }

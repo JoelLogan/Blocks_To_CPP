@@ -5,10 +5,12 @@ id = "text.literal"
 version = 1
 category = "text"
 shape = "reporter"
-output = "string"
+output = "std::string"
 label = { friendly = "\"%VALUE\"", cpp = "\"%VALUE\"" }
 lowering = "builtin"
-headers = ["<string>"]
+# A literal needs <string> only where it becomes a std::string, and the
+# generator adds the header with that form (catalog 1.3.0, M3 contracts
+# types.md §5.3).
 help = "A piece of text."
 
 [[block.field]]
@@ -36,7 +38,7 @@ id = "text.join"
 version = 1
 category = "text"
 shape = "reporter"
-output = "string"
+output = "std::string"
 label = { friendly = "join %ITEM …", cpp = "%ITEM + …" }
 lowering = "builtin"
 headers = ["<string>"]

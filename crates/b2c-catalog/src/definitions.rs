@@ -4,14 +4,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use b2c_ir::sig::TypePattern;
+use b2c_ir::types::Type;
 use b2c_model::Token;
 use b2c_model::limits::MAX_VARIADIC_PARTS;
 
 use crate::schema::{
-    BlockDef, CatalogFile, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, InputDef, OutputType,
-    Shape, is_part_name,
+    BlockDef, CatalogFile, ExtraDef, ExtraKind, FieldDef, FieldDefault, FieldKind, InputDef, Shape,
+    is_part_name,
 };
-use crate::{CATALOG_VERSION, Catalog};
+use crate::{CATALOG_VERSION, Catalog, signature};
 
 /// The built-in catalog files, embedded at compile time.
 pub(crate) const CORE_FILES: [(&str, &str); 8] = [
@@ -68,10 +70,7 @@ pub(crate) fn build(files: &[(&str, &str)]) -> (Catalog, Vec<Problem>) {
             }),
         }
     }
-    let catalog = Catalog {
-        version: CATALOG_VERSION.to_owned(),
-        blocks,
-    };
+    let catalog = Catalog::new(CATALOG_VERSION, blocks);
     problems.extend(check_catalog(&catalog));
     (catalog, problems)
 }
@@ -176,19 +175,6 @@ pub(crate) fn check_block(def: &BlockDef) -> Vec<String> {
     if def.help.trim().is_empty() {
         problems.push(String::from("the help text is empty"));
     }
-    for header in &def.headers {
-        let inner = header.strip_prefix('<').and_then(|h| h.strip_suffix('>'));
-        let ok = inner.is_some_and(|h| {
-            !h.is_empty()
-                && h.bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'.' | b'/'))
-        });
-        if !ok {
-            problems.push(format!(
-                "the header {header:?} is not a standard header name like <iostream>"
-            ));
-        }
-    }
     let extras = check_extras(def, &mut problems);
     check_names(def, &mut problems);
     for field in &def.field {
@@ -241,13 +227,14 @@ pub(crate) fn check_block(def: &BlockDef) -> Vec<String> {
     check_output(def, &mut problems);
     check_labels(def, &mut problems);
     check_friendly_label(def, &mut problems);
+    problems.extend(signature::problems(def));
     problems
 }
 
 /// Reporters and predicates declare the type of their value; other shapes
-/// give no value. A predicate gives `bool`, `symbol` needs exactly one
-/// `symbol_ref` field to take the type from, and `field:NAME` names a
-/// `type` field.
+/// give no value, and a predicate gives `bool`. The forms of the output
+/// pattern (`symbol`, `field:NAME`, its variables) are checked with the
+/// other patterns ([`signature::problems`]).
 fn check_output(def: &BlockDef, problems: &mut Vec<String>) {
     let Some(output) = &def.output else {
         if def.shape.is_value() {
@@ -261,35 +248,10 @@ fn check_output(def: &BlockDef, problems: &mut Vec<String>) {
         ));
         return;
     }
-    if def.shape == Shape::Predicate && *output != OutputType::Bool {
+    if def.shape == Shape::Predicate && *output != TypePattern::Type(Type::Bool) {
         problems.push(format!(
             "a predicate gives bool, so its output type cannot be {output}"
         ));
-    }
-    match output {
-        OutputType::Symbol => {
-            let refs = def
-                .field
-                .iter()
-                .filter(|f| f.kind == FieldKind::SymbolRef)
-                .count();
-            if refs != 1 {
-                problems.push(format!(
-                    "the output type symbol needs exactly one symbol_ref field to take the type from, but the block has {refs}"
-                ));
-            }
-        }
-        OutputType::Field(name)
-            if !def
-                .field
-                .iter()
-                .any(|f| &f.name == name && f.kind == FieldKind::Type) =>
-        {
-            problems.push(format!(
-                "the output type {output} does not name a type field of the block"
-            ));
-        }
-        _ => {}
     }
 }
 
@@ -453,8 +415,9 @@ fn check_field(field: &FieldDef, problems: &mut Vec<String>) {
 
 /// Whether a value written in the catalog (a default, or a toolbox preset)
 /// fits a field: a dropdown's option value, a checkbox's `true` or `false`,
-/// text, non-empty number text, or one of a type field's types. Symbol
-/// fields take no such value: the editor fills them in.
+/// text, non-empty number text, one of a type field's types, or a header of
+/// the header table. Symbol fields take no such value: the editor fills
+/// them in.
 pub(crate) fn field_value_fits(field: &FieldDef, value: &FieldDefault) -> bool {
     match (field.kind, value) {
         (FieldKind::Dropdown, FieldDefault::Text(text)) => {
@@ -463,6 +426,7 @@ pub(crate) fn field_value_fits(field: &FieldDef, value: &FieldDefault) -> bool {
         (FieldKind::Checkbox, FieldDefault::Bool(_)) | (FieldKind::Text, FieldDefault::Text(_)) => true,
         (FieldKind::Number, FieldDefault::Text(text)) => !text.is_empty(),
         (FieldKind::Type, FieldDefault::Text(text)) => field.types.contains(text),
+        (FieldKind::Header, FieldDefault::Text(text)) => signature::header_fits(text),
         _ => false,
     }
 }
@@ -599,6 +563,7 @@ mod tests {
             category: Category::Control,
             shape: Shape::Statement,
             output: None,
+            type_vars: BTreeMap::new(),
             label: Label {
                 friendly: "do %X with %ITEM".into(),
                 cpp: "%X(%ITEM)".into(),
@@ -612,6 +577,9 @@ mod tests {
                 options: vec![["a".into(), "a".into()], ["b".into(), "b".into()]],
                 types: vec![],
                 default: Some(FieldDefault::Text("a".into())),
+                pattern: None,
+                members: None,
+                headers: BTreeMap::new(),
             }],
             input: vec![InputDef {
                 name: "ITEM".into(),
@@ -626,6 +594,8 @@ mod tests {
                         .into_iter()
                         .collect(),
                 )],
+                pattern: None,
+                assign: false,
             }],
             statement: vec![StatementDef {
                 name: "BODY".into(),
@@ -640,6 +610,7 @@ mod tests {
                     max: 8,
                     default: Some(FieldDefault::Text("1".into())),
                     types: vec![],
+                    type_class: None,
                 },
                 ExtraDef {
                     name: "open".into(),
@@ -648,6 +619,7 @@ mod tests {
                     max: 1,
                     default: Some(FieldDefault::Bool(true)),
                     types: vec![],
+                    type_class: None,
                 },
             ],
         }
@@ -734,6 +706,9 @@ mod tests {
                 options: vec![],
                 types: vec![],
                 default: Some(FieldDefault::Bool(true)),
+                pattern: None,
+                members: None,
+                headers: BTreeMap::new(),
             };
             d.label.friendly = label.into();
         };
@@ -788,6 +763,7 @@ mod tests {
         assert!(!problems_after(|d| d.input[0].name = "ITEM2".into()).is_empty());
         assert!(!problems_after(|d| d.extra[1].name = "itemCount".into()).is_empty());
         assert!(!problems_after(|d| d.headers = vec!["iostream".into()]).is_empty());
+        assert!(!problems_after(|d| d.headers = vec!["<bits/stdc++.h>".into()]).is_empty());
         assert!(!problems_after(|d| d.help = " ".into()).is_empty());
         assert!(!problems_after(|d| d.label.cpp = String::new()).is_empty());
         assert!(!problems_after(|d| d.label.friendly = "%MISSING".into()).is_empty());
@@ -817,6 +793,9 @@ mod tests {
             options: vec![],
             types,
             default,
+            pattern: None,
+            members: None,
+            headers: BTreeMap::new(),
         };
         for (kind, default, types, ok) in [
             (FieldKind::Checkbox, Some(FieldDefault::Bool(true)), vec![], true),
@@ -830,6 +809,15 @@ mod tests {
             (FieldKind::Type, None, vec!["int".into(), "int".into()], false),
             (FieldKind::SymbolDecl, None, vec![], true),
             (FieldKind::SymbolRef, text("x"), vec![], false),
+            (
+                FieldKind::Type,
+                text("int"),
+                vec!["int".into(), "string".into()],
+                false,
+            ),
+            (FieldKind::Header, text("<vector>"), vec![], true),
+            (FieldKind::Header, text("<math.h>"), vec![], false),
+            (FieldKind::Header, None, vec!["int".into()], false),
         ] {
             let problems = problems_after(|d| d.field[0] = field(kind, default, types));
             assert_eq!(problems.is_empty(), ok, "{kind:?}: {problems:?}");
@@ -857,11 +845,11 @@ mod tests {
 
     /// The test definition as a reporter (no statement inputs) with the
     /// given output type and extra fields (shown in its friendly label).
-    fn value_block(shape: Shape, output: Option<OutputType>, fields: Vec<FieldDef>) -> Vec<String> {
+    fn value_block(shape: Shape, output: Option<&str>, fields: Vec<FieldDef>) -> Vec<String> {
         problems_after(|d| {
             d.shape = shape;
             d.statement.clear();
-            d.output = output;
+            d.output = output.map(|text| TypePattern::parse(text).unwrap());
             for field in &fields {
                 d.label.friendly.push_str(" %");
                 d.label.friendly.push_str(&field.name);
@@ -881,17 +869,19 @@ mod tests {
                 vec![]
             },
             default: None,
+            pattern: None,
+            members: None,
+            headers: BTreeMap::new(),
         }
     }
 
     #[test]
     fn output_types_follow_the_shape() {
-        use OutputType as O;
         // Required for value shapes, forbidden for the others.
         assert!(!value_block(Shape::Reporter, None, vec![]).is_empty());
         assert!(!value_block(Shape::Predicate, None, vec![]).is_empty());
         for shape in [Shape::Hat, Shape::Definition, Shape::Statement] {
-            let problems = value_block(shape, Some(O::Int), vec![]);
+            let problems = value_block(shape, Some("int"), vec![]);
             assert_eq!(problems.len(), 1, "{shape:?}: {problems:?}");
             assert!(
                 problems[0].contains("only reporter and predicate"),
@@ -900,22 +890,24 @@ mod tests {
             assert!(value_block(shape, None, vec![]).is_empty(), "{shape:?}");
         }
         for output in [
-            O::Any,
-            O::Bool,
-            O::Int,
-            O::Double,
-            O::Number,
-            O::Char,
-            O::StdString,
+            "any",
+            "bool",
+            "int",
+            "double",
+            "number",
+            "char",
+            "std::string",
+            "std::vector<int>",
         ] {
-            assert!(
-                value_block(Shape::Reporter, Some(output.clone()), vec![]).is_empty(),
+            assert_eq!(
+                value_block(Shape::Reporter, Some(output), vec![]),
+                Vec::<String>::new(),
                 "{output}"
             );
         }
         // A predicate gives bool.
-        assert!(value_block(Shape::Predicate, Some(O::Bool), vec![]).is_empty());
-        let problems = value_block(Shape::Predicate, Some(O::Int), vec![]);
+        assert!(value_block(Shape::Predicate, Some("bool"), vec![]).is_empty());
+        let problems = value_block(Shape::Predicate, Some("int"), vec![]);
         assert_eq!(
             problems,
             ["a predicate gives bool, so its output type cannot be int"]
@@ -924,80 +916,61 @@ mod tests {
 
     #[test]
     fn symbol_and_field_outputs_need_their_field() {
-        use OutputType as O;
         let reference = || plain_field("VAR", FieldKind::SymbolRef);
-        assert!(value_block(Shape::Reporter, Some(O::Symbol), vec![reference()]).is_empty());
-        let none = value_block(Shape::Reporter, Some(O::Symbol), vec![]);
+        assert!(value_block(Shape::Reporter, Some("symbol"), vec![reference()]).is_empty());
+        let none = value_block(Shape::Reporter, Some("symbol"), vec![]);
         assert_eq!(none.len(), 1);
         assert!(none[0].contains("exactly one symbol_ref field"), "{none:?}");
         let mut second = reference();
         second.name = "OTHER".into();
-        assert!(!value_block(Shape::Reporter, Some(O::Symbol), vec![reference(), second]).is_empty());
+        assert!(!value_block(Shape::Reporter, Some("symbol"), vec![reference(), second]).is_empty());
+        assert!(value_block(Shape::Reporter, Some("symbol:VAR"), vec![reference()]).is_empty());
 
         let type_field = || plain_field("TO", FieldKind::Type);
-        assert!(value_block(Shape::Reporter, Some(O::Field("TO".into())), vec![type_field()]).is_empty());
+        assert!(value_block(Shape::Reporter, Some("field:TO"), vec![type_field()]).is_empty());
         // The field must exist and be a type field (X is a dropdown).
         for name in ["NOPE", "X"] {
-            let problems = value_block(Shape::Reporter, Some(O::Field(name.into())), vec![type_field()]);
+            let output = format!("field:{name}");
+            let problems = value_block(Shape::Reporter, Some(&output), vec![type_field()]);
             assert_eq!(
                 problems,
                 [format!(
-                    "the output type field:{name} does not name a type field of the block"
+                    "the output type uses field:{name}, but the block has no type field {name}"
                 )]
             );
         }
     }
 
     #[test]
-    fn output_types_parse_and_print() {
-        use OutputType as O;
-        for (text, output) in [
-            ("any", O::Any),
-            ("bool", O::Bool),
-            ("int", O::Int),
-            ("double", O::Double),
-            ("number", O::Number),
-            ("char", O::Char),
-            ("string", O::StdString),
-            ("symbol", O::Symbol),
-            ("field:TO", O::Field("TO".into())),
-            ("field:A_1", O::Field("A_1".into())),
-        ] {
-            assert_eq!(text.parse::<OutputType>(), Ok(output.clone()), "{text}");
-            assert_eq!(output.to_string(), text);
-            assert_eq!(String::from(output), text);
-        }
-        for bad in [
-            "",
-            "Int",
-            "std::string",
-            "void",
-            "field:",
-            "field:to",
-            "field:1X",
-            "field: TO",
-            "TO",
-        ] {
-            assert_eq!(
-                bad.parse::<OutputType>(),
-                Err(crate::schema::OutputTypeError(bad.into())),
-                "{bad}"
+    fn output_types_parse_as_patterns() {
+        let file = |output: &str| {
+            format!(
+                "[[block]]\nid = \"x.y\"\nversion = 1\ncategory = \"math\"\nshape = \"reporter\"\noutput = \"{output}\"\nlabel = {{ friendly = \"x\", cpp = \"x\" }}\nlowering = \"builtin\"\nhelp = \"X.\"\n"
+            )
+        };
+        // In a catalog file, an output that is no pattern makes the file
+        // invalid: M2's `string` is written `std::string` from catalog 1.3.0.
+        for bad in ["float", "string", "Int", "void*", "field:", "std::vector<int"] {
+            let (catalog, problems) = build(&[("x.toml", &file(bad))]);
+            assert!(catalog.blocks.is_empty(), "{bad}");
+            assert_eq!(problems.len(), 1, "{bad}");
+            assert!(
+                problems[0].message.contains("is not a type pattern"),
+                "{problems:?}"
             );
         }
-        let error = "float".parse::<OutputType>().unwrap_err().to_string();
-        assert!(error.starts_with("\"float\" is not an output type"), "{error}");
-        // In a catalog file, a bad output type makes the file invalid.
-        let text = "[[block]]\nid = \"x.y\"\nversion = 1\ncategory = \"math\"\nshape = \"reporter\"\noutput = \"float\"\nlabel = { friendly = \"x\", cpp = \"x\" }\nlowering = \"builtin\"\nhelp = \"X.\"\n";
-        let (catalog, problems) = build(&[("x.toml", text)]);
-        assert!(catalog.blocks.is_empty());
-        assert_eq!(problems.len(), 1);
-        assert!(
-            problems[0].message.contains("is not an output type"),
-            "{problems:?}"
-        );
-        let (catalog, problems) = build(&[("x.toml", &text.replace("float", "double"))]);
+        let (catalog, problems) = build(&[("x.toml", &file("double"))]);
         assert_eq!(problems, []);
-        assert_eq!(catalog.blocks["x.y"].output, Some(O::Double));
+        assert_eq!(
+            catalog.blocks["x.y"].output,
+            Some(TypePattern::Type(Type::Double))
+        );
+        let (catalog, problems) = build(&[("x.toml", &file("std::string"))]);
+        assert_eq!(problems, []);
+        assert_eq!(
+            catalog.blocks["x.y"].output,
+            Some(TypePattern::Type(Type::String))
+        );
     }
 
     #[test]
@@ -1057,11 +1030,20 @@ mod tests {
             max,
             default,
             types,
+            type_class: None,
         };
         assert!(problems_after(|d| d.extra.push(params(4, vec!["int".into()], None))).is_empty());
         assert!(!problems_after(|d| d.extra.push(params(0, vec!["int".into()], None))).is_empty());
         assert!(!problems_after(|d| d.extra.push(params(4, vec![], None))).is_empty());
         assert!(!problems_after(|d| d.extra.push(params(4, vec!["int".into()], text("x")))).is_empty());
+        assert!(!problems_after(|d| d.extra.push(params(4, vec!["float".into()], None))).is_empty());
+        let mut wide = params(4, vec!["int".into()], None);
+        wide.type_class = Some(TypeClass::Value);
+        assert!(problems_after(|d| d.extra.push(wide.clone())).is_empty());
+        assert_eq!(
+            problems_after(|d| d.extra[0].type_class = Some(TypeClass::Value)),
+            ["only params extras have a type_class (itemCount)"]
+        );
     }
 
     #[test]

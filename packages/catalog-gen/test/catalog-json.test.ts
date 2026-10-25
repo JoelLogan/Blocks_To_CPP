@@ -1,7 +1,12 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { CatalogJsonError, MAX_CATALOG_JSON_BYTES, readCatalogJson } from '../src/catalog-json.ts';
-import { fixture, fixtureText, rustBlock } from './fixture.ts';
+import { fixture, fixtureText, repoPath, rustBlock } from './fixture.ts';
+
+/** A value input in the Rust shape, to which tests add a signature's keys. */
+const SIGNED_INPUT = { name: 'A', check: 'any', optional: false, repeat: null, default: [] };
 
 /** The error message for a changed fixture. */
 function errorFor(change: (catalog: ReturnType<typeof fixture>) => void): string {
@@ -223,8 +228,176 @@ describe('readCatalogJson', () => {
         ),
       'input[0].optional should be true or false',
     ],
+    [
+      'an unknown pattern kind',
+      (c) =>
+        c.blocks.push(
+          rustBlock('x.y', {
+            input: [{ ...SIGNED_INPUT, type: { kind: 'list' } }],
+          }),
+        ),
+      'input[0].type.kind should be one of any',
+    ],
+    [
+      'a pattern with a stray key',
+      (c) =>
+        c.blocks.push(
+          rustBlock('x.y', {
+            input: [{ ...SIGNED_INPUT, type: { kind: 'result', field: 'F' } }],
+          }),
+        ),
+      'input[0].type has the unknown key "field"',
+    ],
+    [
+      'a pattern nested too deep',
+      (c) => {
+        let deep: object = { kind: 'var', name: 'C' };
+        for (let i = 0; i < 9; i += 1) {
+          deep = { kind: 'fn', fn: 'elem', of: deep };
+        }
+        c.blocks.push(rustBlock('x.y', { input: [{ ...SIGNED_INPUT, type: deep }] }));
+      },
+      'nests more than 8 levels',
+    ],
+    [
+      'a type that is a one-element list',
+      (c) =>
+        c.blocks.push(
+          rustBlock('x.y', {
+            input: [{ ...SIGNED_INPUT, type: { kind: 'type', type: { 'std::map': ['int'] } } }],
+          }),
+        ),
+      'input[0].type.type.std::map should list two or more arguments',
+    ],
+    [
+      'a type with a prototype key',
+      (c) =>
+        c.blocks.push(
+          rustBlock('x.y', {
+            input: [
+              {
+                ...SIGNED_INPUT,
+                type: { kind: 'type', type: JSON.parse('{"__proto__": "int"}') as unknown },
+              },
+            ],
+          }),
+        ),
+      'should be a type',
+    ],
+    [
+      'a bad class of a type variable',
+      (c) => c.blocks.push(rustBlock('x.y', { typeVars: { T: 'lists' } })),
+      'blocks[5].typeVars.T should be one of any',
+    ],
+    [
+      'a part that is neither a field nor an input',
+      (c) => c.blocks.push(rustBlock('x.y', { order: [{ field: 'A', input: 'B' }] })),
+      'blocks[5].order[0] should be {"field": name} or {"input": name}',
+    ],
+    [
+      'a non-boolean assign',
+      (c) => c.blocks.push(rustBlock('x.y', { input: [{ ...SIGNED_INPUT, assign: 'yes' }] })),
+      'input[0].assign should be true or false',
+    ],
+    [
+      'a bad row class',
+      (c) =>
+        c.blocks.push(
+          rustBlock('x.y', {
+            extra: [
+              {
+                name: 'params',
+                kind: 'params',
+                min: 0,
+                max: 1,
+                default: null,
+                types: ['int'],
+                typeClass: 'lists',
+              },
+            ],
+          }),
+        ),
+      'extra[0].typeClass should be one of any',
+    ],
+    [
+      'a bad types entry',
+      (c) => Object.assign(c, { types: [{ name: 'int', arity: -1, label: 'int', header: null }] }),
+      'types[0].arity should be a whole number',
+    ],
   ])('rejects %s', (_, change, message) => {
     expect(errorFor(change)).toContain(message);
+  });
+
+  it('decodes the signatures of catalog 1.3.0', () => {
+    const catalog = fixture();
+    const signed = rustBlock('coll.item', {
+      shape: 'reporter',
+      output: 'elem(C)',
+      typeVars: { C: 'indexable' },
+      field: [
+        {
+          name: 'LIST',
+          kind: 'symbol_ref',
+          options: [],
+          types: [],
+          default: null,
+          type: { kind: 'var', name: 'C' },
+        },
+      ],
+      input: [
+        {
+          ...SIGNED_INPUT,
+          type: { kind: 'fn', fn: 'index', of: { kind: 'var', name: 'C' } },
+          assign: true,
+        },
+      ],
+      order: [{ field: 'LIST' }, { input: 'A' }],
+      placeVar: null,
+      members: { MEMBER: 'S' },
+      optionHeaders: { FN: { sqrt: ['<cmath>'] } },
+    });
+    const types = [
+      { name: 'std::string', arity: 0, label: 'string', header: '<string>' },
+      { name: 'std::map', arity: 2, label: 'map from %1 to %2', header: '<map>' },
+    ];
+    Object.assign(catalog, { types });
+    catalog.blocks.push(signed);
+    const decoded = readCatalogJson(JSON.stringify(catalog));
+    expect(decoded.types).toEqual(types);
+    expect(decoded.blocks.at(-1)).toEqual(signed);
+    // A block without a signature has none of the keys.
+    expect(Object.keys(decoded.blocks[0] ?? {})).not.toContain('typeVars');
+    expect(Object.keys(decoded.blocks[0]?.input[0] ?? {})).not.toContain('type');
+    // Every pattern form and a nested type term.
+    const forms = [
+      { kind: 'any' },
+      { kind: 'number' },
+      { kind: 'result' },
+      { kind: 'type', type: { 'std::map': ['std::string', { 'std::vector': { ref: 'sym_Pt' } }] } },
+      { kind: 'lib', name: 'std::vector', args: [{ kind: 'var', name: 'T' }] },
+      { kind: 'field', field: 'TO' },
+      { kind: 'symbol', field: null },
+      { kind: 'symbol', field: 'VAR' },
+      { kind: 'param', field: 'FUNC' },
+      { kind: 'member', field: 'TYPE' },
+    ];
+    const many = fixture();
+    many.blocks.push(rustBlock('x.y', { input: forms.map((type) => ({ ...SIGNED_INPUT, type })) }));
+    expect(
+      readCatalogJson(JSON.stringify(many))
+        .blocks.at(-1)
+        ?.input.map((i) => i.type),
+    ).toEqual(forms);
+  });
+
+  it('reads the exported catalog', () => {
+    const exported = readCatalogJson(
+      readFileSync(repoPath('packages/catalog-gen/catalog.json'), 'utf8'),
+    );
+    const declare = exported.blocks.find((b) => b.id === 'var.declare');
+    expect(declare?.typeVars).toEqual({ T: 'value' });
+    expect(declare?.order).toEqual([{ field: 'TYPE' }, { field: 'NAME' }, { input: 'VALUE' }]);
+    expect(exported.types?.find((t) => t.name === 'std::vector')?.label).toBe('list of %1');
   });
 
   it('names the place of the problem', () => {

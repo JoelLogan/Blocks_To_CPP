@@ -551,16 +551,23 @@ a newer version of its definition than this version knows, or the project
 (or the pasted blocks) came from a newer block catalog
 ([spec §3.11.3](../../spec/03-block-language.md#3113-block-versioning)) and
 the block has a field, input, setting in `extra` or dropdown choice that
-this version does not know. Such a newer addition is not reported as unknown
-(`B2C-E0605`, `E0607`, `E0608`, `E0610`, `E0611`): the block is kept
-unchanged (shown as a placeholder in the editor), and saving the project
-preserves it. The save also keeps the newer catalog version the file names
-(`generator.catalog`), so the block is still reported this way after the
-save.
+this version does not know, or a type or header that this version does not
+know or does not allow there: a type in a type field or a function
+parameter that a newer catalog added or allowed in more places, or a header
+of a newer standard. Such a newer addition is not reported as unknown
+(`B2C-E0605`, `E0607`, `E0608`, `E0610`, `E0611`, `E0614`): the block is
+kept unchanged (shown as a placeholder in the editor), and saving the
+project preserves it. The save also keeps the newer catalog version the
+file names (`generator.catalog`), so the block is still reported this way
+after the save. A value that no version could have written, such as a type
+name with a semicolon in it, is reported as the broken value it is
+(`B2C-E0607`, `E0614`).
 
 > This "print" block was made with a newer version of Blocks2Cpp: it is version 2, and this version knows only up to version 1. Update Blocks2Cpp to use it.
 >
 > This "change" block was made with a newer version of Blocks2Cpp: it has the field "OP", which this version does not know. Update Blocks2Cpp to use it; until then the block is kept as it is.
+>
+> This "create" block was made with a newer version of Blocks2Cpp: it has the type "std::span" in its field "TYPE", which this version does not know. Update Blocks2Cpp to use it; until then the block is kept as it is.
 
 **Fix:** update Blocks2Cpp.
 
@@ -660,11 +667,17 @@ such a catalog.
 ### B2C-E0607: field value does not fit
 
 A field's value is not allowed for its kind: a dropdown value that is not one
-of the options, a type that is not in the type list, a checkbox that is not
-true or false, an empty number, or a name declaration or reference of the
-wrong shape.
+of the options, a type the field does not take, a checkbox that is not true
+or false, an empty number, a header that is not a standard header, or a name
+declaration or reference of the wrong shape. A type field takes the types
+of its list, and some take more: the type field of `create` takes every
+type a variable can hold, such as a list of numbers, but not a file or an
+error, and not `void`. A struct or enum named there is checked by the
+analyser.
 
 > The field SEP is "none\"); system(\"id", but it must be one of "none", "space" or "comma".
+>
+> The field TYPE is "std::ifstream", but it must be one of the types "int", "double", "bool", "char", "std::string" or "auto", or another type a variable can hold.
 
 **Fix:** pick one of the listed values.
 
@@ -728,10 +741,13 @@ allowed.
 ### B2C-E0614: malformed parameter
 
 A row of a function's parameter list is not an object with exactly `"sym"`
-(a symbol ID), `"name"`, `"type"` (one of the allowed parameter types) and
-`"mode"` (`"copy"`, `"editable"` or `"read_only"`).
+(a symbol ID), `"name"`, `"type"` (a type a parameter may have: one of the
+listed parameter types, or another type a variable can hold, such as a list)
+and `"mode"` (`"copy"`, `"editable"` or `"read_only"`).
 
 > Parameter 2 of this block has the mode "rvalue", but the mode must be "copy", "editable" or "read_only".
+>
+> Parameter 1 of this block has the type "std::ifstream", but parameters can only be "int", "double", "bool", "char" or "std::string", or another type a variable can hold.
 
 **Fix:** correct the parameter in the function's settings.
 

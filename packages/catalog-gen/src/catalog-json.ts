@@ -23,12 +23,12 @@ export class CatalogJsonError extends Error {
 }
 
 /**
- * The export: `{catalogVersion, blocks, toolbox}`.
+ * The export: `{catalogVersion, blocks, toolbox, types}`.
  *
  * The optional keys here and below are the typed signatures of milestone M3
- * (docs/plans/m3-contracts/types.md §4.5): declared so the generator and the editor build against
- * one shape, absent from catalog.json until the catalog's definitions declare them, and not read
- * by {@link readCatalogJson} yet, which refuses keys it does not know.
+ * (docs/plans/m3-contracts/types.md §4.5), which the export leaves out while they are empty (a
+ * block without a signature has none). {@link readCatalogJson} checks their shape like every other
+ * key; generating editor code from them is the TypeScript side's (types.md §8.2).
  */
 export interface CatalogJson {
   readonly catalogVersion: string;
@@ -232,6 +232,50 @@ export const CATEGORY_IDS: readonly CategoryId[] = [
 ];
 const SHAPES: readonly Shape[] = ['hat', 'definition', 'statement', 'reporter', 'predicate'];
 const TYPE_CLASSES: readonly TypeClass[] = ['any', 'number', 'integer', 'bool', 'text'];
+const RUST_TYPE_CLASSES: readonly RustTypeClass[] = [
+  'any',
+  'number',
+  'integer',
+  'bool',
+  'text',
+  'value',
+  'collection',
+  'sequence',
+  'indexable',
+  'insertable',
+  'searchable',
+  'iterable',
+  'keyed',
+  'adaptor',
+  'listable',
+  'sortable',
+  'switchable',
+  'comparable',
+  'printable',
+  'struct',
+  'enum',
+  'input_file',
+  'output_file',
+  'exception',
+];
+const PATTERN_KINDS = [
+  'any',
+  'number',
+  'type',
+  'var',
+  'lib',
+  'fn',
+  'field',
+  'symbol',
+  'param',
+  'member',
+  'result',
+] as const;
+const TYPE_FNS = ['elem', 'index', 'key'] as const;
+/** The deepest pattern or type the reader follows (`TypePattern::MAX_DEPTH`, `Type::MAX_DEPTH`). */
+const MAX_TYPE_DEPTH = 8;
+/** Keys that would reach an object's prototype (spec §5.6). */
+const PROTOTYPE_KEYS: readonly string[] = ['__proto__', 'constructor', 'prototype'];
 const FIELD_KINDS: readonly FieldKind[] = [
   'dropdown',
   'checkbox',
@@ -261,11 +305,22 @@ export function readCatalogJson(text: string): CatalogJson {
   } catch (error) {
     throw new CatalogJsonError('', `is not JSON (${String(error)})`);
   }
-  const root = object(value, '', ['catalogVersion', 'blocks', 'toolbox']);
+  const root = object(value, '', ['catalogVersion', 'blocks', 'toolbox', 'types']);
   return {
     catalogVersion: string(root.catalogVersion, 'catalogVersion'),
     blocks: array(root.blocks, 'blocks', blockDef),
     toolbox: toolbox(root.toolbox, 'toolbox'),
+    ...optional(root.types, 'types', (v, p) => ({ types: array(v, p, typeEntry) })),
+  };
+}
+
+function typeEntry(value: unknown, path: string): RustTypeEntry {
+  const o = object(value, path, ['name', 'arity', 'label', 'header']);
+  return {
+    name: string(o.name, `${path}.name`),
+    arity: count(o.arity, `${path}.arity`),
+    label: string(o.label, `${path}.label`),
+    header: nullable(o.header, `${path}.header`, string),
   };
 }
 
@@ -284,6 +339,11 @@ function blockDef(value: unknown, path: string): RustBlockDef {
     'input',
     'statement',
     'extra',
+    'typeVars',
+    'order',
+    'placeVar',
+    'members',
+    'optionHeaders',
   ] as const;
   const o = object(value, path, keys);
   const label = object(o.label, `${path}.label`, ['friendly', 'cpp']);
@@ -304,17 +364,31 @@ function blockDef(value: unknown, path: string): RustBlockDef {
     input: array(o.input, `${path}.input`, inputDef),
     statement: array(o.statement, `${path}.statement`, statementDef),
     extra: array(o.extra, `${path}.extra`, extraDef),
+    ...optional(o.typeVars, `${path}.typeVars`, (v, p) => ({
+      typeVars: record(v, p, (c, q) => oneOf(c, q, RUST_TYPE_CLASSES)),
+    })),
+    ...optional(o.order, `${path}.order`, (v, p) => ({ order: array(v, p, partName) })),
+    ...optional(o.placeVar, `${path}.placeVar`, (v, p) => ({
+      placeVar: nullable(v, p, string),
+    })),
+    ...optional(o.members, `${path}.members`, (v, p) => ({ members: record(v, p, string) })),
+    ...optional(o.optionHeaders, `${path}.optionHeaders`, (v, p) => ({
+      optionHeaders: record(v, p, (options, q) =>
+        record(options, q, (headers, r) => array(headers, r, string)),
+      ),
+    })),
   };
 }
 
 function fieldDef(value: unknown, path: string): RustFieldDef {
-  const o = object(value, path, ['name', 'kind', 'options', 'types', 'default']);
+  const o = object(value, path, ['name', 'kind', 'options', 'types', 'default', 'type']);
   return {
     name: string(o.name, `${path}.name`),
     kind: oneOf(o.kind, `${path}.kind`, FIELD_KINDS),
     options: array(o.options, `${path}.options`, option),
     types: array(o.types, `${path}.types`, string),
     default: nullable(o.default, `${path}.default`, stringOrBoolean),
+    ...optional(o.type, `${path}.type`, (v, p) => ({ type: pattern(v, p, 0) })),
   };
 }
 
@@ -328,13 +402,16 @@ function option(value: unknown, path: string): readonly [string, string] {
 }
 
 function inputDef(value: unknown, path: string): RustInputDef {
-  const o = object(value, path, ['name', 'check', 'optional', 'repeat', 'default']);
+  const keys = ['name', 'check', 'optional', 'repeat', 'default', 'type', 'assign'] as const;
+  const o = object(value, path, keys);
   return {
     name: string(o.name, `${path}.name`),
     check: oneOf(o.check, `${path}.check`, TYPE_CLASSES),
     optional: boolean(o.optional, `${path}.optional`),
     repeat: nullable(o.repeat, `${path}.repeat`, repeat),
     default: array(o.default, `${path}.default`, token),
+    ...optional(o.type, `${path}.type`, (v, p) => ({ type: pattern(v, p, 0) })),
+    ...optional(o.assign, `${path}.assign`, (v, p) => ({ assign: boolean(v, p) })),
   };
 }
 
@@ -353,7 +430,7 @@ function repeat(value: unknown, path: string): RustRepeat {
 }
 
 function extraDef(value: unknown, path: string): RustExtraDef {
-  const o = object(value, path, ['name', 'kind', 'min', 'max', 'default', 'types']);
+  const o = object(value, path, ['name', 'kind', 'min', 'max', 'default', 'types', 'typeClass']);
   return {
     name: string(o.name, `${path}.name`),
     kind: oneOf(o.kind, `${path}.kind`, EXTRA_KINDS),
@@ -361,7 +438,110 @@ function extraDef(value: unknown, path: string): RustExtraDef {
     max: count(o.max, `${path}.max`),
     default: nullable(o.default, `${path}.default`, stringOrBoolean),
     types: array(o.types, `${path}.types`, string),
+    ...optional(o.typeClass, `${path}.typeClass`, (v, p) => ({
+      typeClass: oneOf(v, p, RUST_TYPE_CLASSES),
+    })),
   };
+}
+
+/** A part in the binding order: `{"field": name}` or `{"input": name}`. */
+function partName(value: unknown, path: string): RustPartName {
+  const o = object(value, path, ['field', 'input']);
+  if (o.field !== undefined && o.input === undefined) {
+    return { field: string(o.field, `${path}.field`) };
+  }
+  if (o.input !== undefined && o.field === undefined) {
+    return { input: string(o.input, `${path}.input`) };
+  }
+  throw new CatalogJsonError(path, 'should be {"field": name} or {"input": name}');
+}
+
+/** A type pattern in its tagged form (types.md §4.5), at most {@link MAX_TYPE_DEPTH} levels deep. */
+function pattern(value: unknown, path: string, depth: number): RustPattern {
+  if (depth > MAX_TYPE_DEPTH) {
+    throw new CatalogJsonError(path, `nests more than ${String(MAX_TYPE_DEPTH)} levels`);
+  }
+  const kind = oneOf(
+    object(value, path, ['kind', 'type', 'name', 'args', 'fn', 'of', 'field']).kind,
+    `${path}.kind`,
+    PATTERN_KINDS,
+  );
+  switch (kind) {
+    case 'any':
+    case 'number':
+    case 'result':
+      object(value, path, ['kind']);
+      return { kind };
+    case 'type': {
+      const o = object(value, path, ['kind', 'type']);
+      return { kind, type: typeJson(o.type, `${path}.type`, 0) };
+    }
+    case 'var': {
+      const o = object(value, path, ['kind', 'name']);
+      return { kind, name: string(o.name, `${path}.name`) };
+    }
+    case 'lib': {
+      const o = object(value, path, ['kind', 'name', 'args']);
+      return {
+        kind,
+        name: string(o.name, `${path}.name`),
+        args: array(o.args, `${path}.args`, (v, p) => pattern(v, p, depth + 1)),
+      };
+    }
+    case 'fn': {
+      const o = object(value, path, ['kind', 'fn', 'of']);
+      return {
+        kind,
+        fn: oneOf(o.fn, `${path}.fn`, TYPE_FNS),
+        of: pattern(o.of, `${path}.of`, depth + 1),
+      };
+    }
+    case 'symbol': {
+      const o = object(value, path, ['kind', 'field']);
+      return { kind, field: nullable(o.field, `${path}.field`, string) };
+    }
+    case 'field':
+    case 'param':
+    case 'member': {
+      const o = object(value, path, ['kind', 'field']);
+      return { kind, field: string(o.field, `${path}.field`) };
+    }
+  }
+}
+
+/**
+ * A type term (types.md §3.1): a name, or an object with one key whose value is a term or an
+ * array of two or more. Only the shape is checked here; the names were checked in Rust.
+ */
+function typeJson(value: unknown, path: string, depth: number): RustTypeJson {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (depth >= MAX_TYPE_DEPTH) {
+    throw new CatalogJsonError(path, `nests more than ${String(MAX_TYPE_DEPTH)} levels`);
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new CatalogJsonError(path, 'should be a type: a name or an object with one key');
+  }
+  const entries: [string, unknown][] = Object.entries(value);
+  const [entry] = entries;
+  if (entries.length !== 1 || entry === undefined || PROTOTYPE_KEYS.includes(entry[0])) {
+    throw new CatalogJsonError(path, 'should be a type: a name or an object with one key');
+  }
+  const [name, argument] = entry;
+  const inner = `${path}.${name}`;
+  if (Array.isArray(argument)) {
+    if (argument.length < 2) {
+      throw new CatalogJsonError(inner, 'should list two or more arguments');
+    }
+    return {
+      [name]: argument.map((arg: unknown, i) => typeJson(arg, `${inner}[${String(i)}]`, depth + 1)),
+    };
+  }
+  if (name === 'ref') {
+    return { ref: string(argument, inner) };
+  }
+  return { [name]: typeJson(argument, inner, depth + 1) };
 }
 
 function token(value: unknown, path: string): RustToken {
@@ -433,6 +613,37 @@ function object<const K extends string>(
   }
   // Every key is one of K, and the values are still unknown.
   return value as Readonly<Partial<Record<K, unknown>>>;
+}
+
+/**
+ * An optional key: `{}` when it is absent, else what `item` makes of it (an object with the key, so
+ * that absent keys stay absent under `exactOptionalPropertyTypes`).
+ */
+function optional<T extends object>(
+  value: unknown,
+  path: string,
+  item: (value: unknown, path: string) => T,
+): Partial<T> {
+  return value === undefined ? {} : item(value, path);
+}
+
+/** A JSON object of values, as a fresh record in key order (prototype keys are refused). */
+function record<T>(
+  value: unknown,
+  path: string,
+  item: (value: unknown, path: string) => T,
+): Readonly<Record<string, T>> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new CatalogJsonError(path, 'should be an object');
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => {
+      if (PROTOTYPE_KEYS.includes(key)) {
+        throw new CatalogJsonError(path, `has the reserved key ${JSON.stringify(key)}`);
+      }
+      return [key, item(entry, `${path}.${key}`)] as const;
+    }),
+  );
 }
 
 /** An optional object of values, as a map in key order. */

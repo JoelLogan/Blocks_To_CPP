@@ -89,7 +89,7 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     const version = core.version();
     expect(version).toEqual({
       app: expect.stringMatching(/^\d+\.\d+\.\d+/) as unknown,
-      catalog: '1.2.0',
+      catalog: '1.3.0',
       formatVersion: CURRENT_FORMAT_VERSION,
       sourceMapVersion: 1,
     });
@@ -323,7 +323,7 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
       CoreError,
     );
     // The instance keeps working.
-    expect(core.version().catalog).toBe('1.2.0');
+    expect(core.version().catalog).toBe('1.3.0');
   });
 
   it('returns failures, never throws, for garbage', () => {

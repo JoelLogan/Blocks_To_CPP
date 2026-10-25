@@ -93,6 +93,10 @@ function output(value: string | null, path: string): OutputType | null {
     case 'string':
     case 'symbol':
       return value;
+    // From catalog 1.3.0 the catalog spells the type `std::string` (types.md §3.1); the editor's
+    // M2 checker still names it `string` until it moves to type objects.
+    case 'std::string':
+      return 'string';
     default:
       if (value.startsWith('field:')) {
         return `field:${value.slice('field:'.length)}`;

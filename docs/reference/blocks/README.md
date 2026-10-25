@@ -6,7 +6,7 @@ Every block of the Blocks2Cpp core catalog, by toolbox category. The editor and 
 compiler both use the catalog, and this reference is generated from it, so the three
 always agree ([spec §3.11.1](../../spec/03-block-language.md#3111-catalog-format)).
 
-Catalog version: 1.2.0.
+Catalog version: 1.3.0.
 
 | Category | Icon | Blocks |
 | --- | --- | --- |

@@ -158,10 +158,8 @@ fn present_values_are_kept_and_optional_inputs_stay_empty() {
 
 #[test]
 fn e0600_empty_catalog() {
-    let empty = Catalog {
-        version: "1.0.0".into(),
-        blocks: BTreeMap::new(),
-    };
+    let empty = Catalog::new("1.0.0", BTreeMap::new());
+    assert!(empty.sigs().is_empty());
     let document = common::load(&project(json!([]), json!([])));
     let (same, diagnostics) = resolve(&document, &empty);
     assert_eq!(same, document);
@@ -356,7 +354,7 @@ fn e0605_to_e0607_fields() {
     );
     assert_eq!(
         diagnostics[3].message,
-        "The field TYPE is \"int; system(\\\"x\\\"); int\", but it must be one of the types \"int\", \"double\", \"bool\", \"char\", \"std::string\" or \"auto\"."
+        "The field TYPE is \"int; system(\\\"x\\\"); int\", but it must be one of the types \"int\", \"double\", \"bool\", \"char\", \"std::string\" or \"auto\", or another type a variable can hold."
     );
     // The absent variable of b3 and the absent counter name of b4 are what
     // the editor saves while nothing is chosen yet: the analyser's to report
@@ -549,7 +547,7 @@ fn e0613_and_e0614_parameters() {
             ),
             (
                 "B2C-E0614",
-                "Parameter 1 of this block has the type \"float\", but parameters can only be \"int\", \"double\", \"bool\", \"char\" or \"std::string\"."
+                "Parameter 1 of this block has the type \"float\", but parameters can only be \"int\", \"double\", \"bool\", \"char\" or \"std::string\", or another type a variable can hold."
             ),
             (
                 "B2C-E0614",
