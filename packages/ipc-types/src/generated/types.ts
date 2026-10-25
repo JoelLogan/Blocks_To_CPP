@@ -1270,13 +1270,6 @@ version: number,
 files: Array<FileMap>, };
 
 /**
- * A static type (spec 06 §6.6). `string` is `std::string`; `error` is the
- * type of an expression that already has an error and is compatible with
- * everything.
- */
-export type StaticType = "void" | "bool" | "char" | "int" | "double" | "string" | "error";
-
-/**
  * A symbol as the editor sees it (spec 06 §6.5): enough to fill a dropdown,
  * label a getter block or pick the type of a reporter.
  */
@@ -1290,9 +1283,10 @@ id: string,
  */
 name: string,
 /**
- * Its type; for a function, the type it gives back.
+ * Its type; for a function, the type it gives back; for a struct or an
+ * enum, the type itself, and for an enumerator, its enum.
  */
-type: StaticType,
+type: TypeJson,
 /**
  * The module that declares it.
  */
@@ -1322,7 +1316,33 @@ params: Array<string>,
 /**
  * The type it gives back (`void` for nothing).
  */
-returns: StaticType, });
+returns: TypeJson, } | { "kind": "struct",
+/**
+ * Its fields' symbol IDs, in order.
+ */
+fields: Array<string>,
+/**
+ * Whether it is comparable: ticked, and every field's type is
+ * comparable.
+ */
+comparable: boolean,
+/**
+ * Whether it is printable: ticked, and every field's type is
+ * printable.
+ */
+printable: boolean, } | { "kind": "field",
+/**
+ * The struct's symbol ID.
+ */
+owner: string, } | { "kind": "enum",
+/**
+ * Its enumerators' symbol IDs, in order.
+ */
+values: Array<string>, } | { "kind": "enumerator",
+/**
+ * The enum's symbol ID.
+ */
+owner: string, });
 
 /**
  * The kind of a `SymbolInfo`, with the details of that kind.
@@ -1343,7 +1363,33 @@ params: Array<string>,
 /**
  * The type it gives back (`void` for nothing).
  */
-returns: StaticType, };
+returns: TypeJson, } | { "kind": "struct",
+/**
+ * Its fields' symbol IDs, in order.
+ */
+fields: Array<string>,
+/**
+ * Whether it is comparable: ticked, and every field's type is
+ * comparable.
+ */
+comparable: boolean,
+/**
+ * Whether it is printable: ticked, and every field's type is
+ * printable.
+ */
+printable: boolean, } | { "kind": "field",
+/**
+ * The struct's symbol ID.
+ */
+owner: string, } | { "kind": "enum",
+/**
+ * Its enumerators' symbol IDs, in order.
+ */
+values: Array<string>, } | { "kind": "enumerator",
+/**
+ * The enum's symbol ID.
+ */
+owner: string, };
 
 /**
  * The bundled templates a new project can start from.
@@ -1571,6 +1617,17 @@ export type TrustSource = "createdHere" | "project" | "folder";
  * Whether a project may be built and run.
  */
 export type TrustState = "trusted" | "restricted";
+
+/**
+ * A static type as the wire writes it (spec 06 §6.6, types.md §3.1): its
+ * type term (`"int"`, `"std::string"`, `{"std::vector": "int"}`,
+ * `{"std::map": ["std::string", "int"]}`, `{"ref": "sym_x"}` for a user
+ * struct or enum), or `"error"` for the type of an expression that already
+ * has an error, which is compatible with everything. Until the switch to
+ * the term form (types.md §8.2), M2's seven types keep their M2 names
+ * (`"string"` for `std::string`).
+ */
+export type TypeJson = string | { readonly [name: string]: TypeJson | readonly TypeJson[] };
 
 /**
  * A change to `UiSettings`.

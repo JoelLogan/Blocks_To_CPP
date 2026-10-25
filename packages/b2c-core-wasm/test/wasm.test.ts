@@ -146,6 +146,19 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     for (const symbol of preview.symbols) {
       expect(types).toContain(symbol.type);
     }
+    // The type of each expression slot, by block and input (slots.md §4.1).
+    for (const inputs of Object.values(preview.slotTypes)) {
+      for (const type of Object.values(inputs)) {
+        expect(types).toContain(type);
+      }
+    }
+  });
+
+  it('types the expression slots of the guessing game', () => {
+    const preview = core.update(exampleText('guessing_game'), { indentWidth: 4 });
+    expect(preview.slotTypes['b009']).toEqual({ COND0: 'bool', COND1: 'bool' });
+    expect(preview.slotTypes['b003']).toEqual({ VALUE: 'int' });
+    expect(core.update('{', { indentWidth: 4 }).slotTypes).toEqual({});
   });
 
   it('indents with two spaces when asked', () => {

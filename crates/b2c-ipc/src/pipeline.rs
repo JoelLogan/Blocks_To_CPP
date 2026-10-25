@@ -14,7 +14,10 @@
 //! pipeline, which has validated them. Each type converts from its shared
 //! counterpart with [`From`].
 
+use serde::de::{self, Deserializer};
+use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::diag::Part;
 use crate::macros::string_enum;
@@ -104,25 +107,48 @@ pub struct MappedRange {
     pub part: Part,
 }
 
-string_enum! {
-    /// A static type (spec 06 §6.6). `string` is `std::string`; `error` is the
-    /// type of an expression that already has an error and is compatible with
-    /// everything.
-    pub enum StaticType {
-        /// `void` (function results only).
-        Void = "void",
-        /// `bool`.
-        Bool = "bool",
-        /// `char`.
-        Char = "char",
-        /// `int`.
-        Int = "int",
-        /// `double`.
-        Double = "double",
-        /// `std::string`.
-        String = "string",
-        /// The type of an expression that already has an error.
-        Error = "error",
+/// A static type as the wire writes it (spec 06 §6.6, types.md §3.1): its
+/// type term (`"int"`, `"std::string"`, `{"std::vector": "int"}`,
+/// `{"std::map": ["std::string", "int"]}`, `{"ref": "sym_x"}` for a user
+/// struct or enum), or `"error"` for the type of an expression that already
+/// has an error, which is compatible with everything. Until the switch to
+/// the term form (types.md §8.2), M2's seven types keep their M2 names
+/// (`"string"` for `std::string`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "ts",
+    derive(ts_rs::TS),
+    ts(type = "string | { readonly [name: string]: TypeJson | readonly TypeJson[] }")
+)]
+pub struct TypeJson(Value);
+
+/// It holds the JSON itself, made from a `b2c_ir::Type` with [`From`], so it
+/// is byte-identical to the shared type's JSON by construction.
+impl TypeJson {
+    /// The JSON.
+    pub fn as_json(&self) -> &Value {
+        &self.0
+    }
+}
+
+/// The JSON itself.
+impl Serialize for TypeJson {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+/// Accepts what `b2c_ir::Type` reads, and the term form it switches to
+/// (`b2c_ir::types::term_form`), so a value is always a type.
+impl<'de> Deserialize<'de> for TypeJson {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        let shared = b2c_ir::Type::deserialize(&value).is_ok();
+        if shared || b2c_ir::types::term_form::deserialize(&value).is_ok() {
+            Ok(Self(value))
+        } else {
+            Err(de::Error::custom("not a type"))
+        }
     }
 }
 
@@ -152,9 +178,10 @@ pub struct SymbolInfo {
     /// other keys.
     #[serde(flatten)]
     pub kind: SymbolInfoKind,
-    /// Its type; for a function, the type it gives back.
+    /// Its type; for a function, the type it gives back; for a struct or an
+    /// enum, the type itself, and for an enumerator, its enum.
     #[serde(rename = "type")]
-    pub ty: StaticType,
+    pub ty: TypeJson,
     /// The module that declares it.
     pub module: String,
     /// The block that declares it (`var.declare`, `control.for_range`, or the
@@ -188,7 +215,33 @@ pub enum SymbolInfoKind {
         /// Its parameters' symbol IDs, in order.
         params: Vec<String>,
         /// The type it gives back (`void` for nothing).
-        returns: StaticType,
+        returns: TypeJson,
+    },
+    /// A user struct (milestone M3).
+    Struct {
+        /// Its fields' symbol IDs, in order.
+        fields: Vec<String>,
+        /// Whether it is comparable: ticked, and every field's type is
+        /// comparable.
+        comparable: bool,
+        /// Whether it is printable: ticked, and every field's type is
+        /// printable.
+        printable: bool,
+    },
+    /// A field of a struct.
+    Field {
+        /// The struct's symbol ID.
+        owner: String,
+    },
+    /// A user enum (milestone M3).
+    Enum {
+        /// Its enumerators' symbol IDs, in order.
+        values: Vec<String>,
+    },
+    /// A value of an enum.
+    Enumerator {
+        /// The enum's symbol ID.
+        owner: String,
     },
 }
 
@@ -252,19 +305,14 @@ impl From<&b2c_ir::source_map::MappedRange> for MappedRange {
     }
 }
 
-/// A library or user type, which no stage produces yet, becomes `error`
-/// until `StaticType` gives way to the type's term (types.md §3.1).
-impl From<&b2c_ir::Type> for StaticType {
+/// `b2c_ir::Type`'s own JSON. Until the switch to the term form (types.md
+/// §8.2), the shared type has none for library and user types, and they get
+/// their term form, which the switch gives them there.
+impl From<&b2c_ir::Type> for TypeJson {
     fn from(ty: &b2c_ir::Type) -> Self {
-        match ty {
-            b2c_ir::Type::Void => Self::Void,
-            b2c_ir::Type::Bool => Self::Bool,
-            b2c_ir::Type::Char => Self::Char,
-            b2c_ir::Type::Int => Self::Int,
-            b2c_ir::Type::Double => Self::Double,
-            b2c_ir::Type::String => Self::String,
-            b2c_ir::Type::Lib(_) | b2c_ir::Type::Named(_) | b2c_ir::Type::Error => Self::Error,
-        }
+        let json = serde_json::to_value(ty).or_else(|_| serde_json::to_value(b2c_ir::TermForm(ty)));
+        // Both always serialise; the fallback keeps `From` total.
+        Self(json.unwrap_or_else(|_| Value::from(b2c_ir::types::ERROR_JSON)))
     }
 }
 
@@ -280,22 +328,31 @@ impl From<b2c_ir::sast::PassMode> for PassMode {
 
 impl From<&b2c_ir::SymbolInfoKind> for SymbolInfoKind {
     fn from(kind: &b2c_ir::SymbolInfoKind) -> Self {
+        let ids = |ids: &[b2c_ir::SymbolId]| ids.iter().map(|id| id.as_str().to_owned()).collect();
         match kind {
             b2c_ir::SymbolInfoKind::Variable { is_const } => Self::Variable { is_const: *is_const },
             b2c_ir::SymbolInfoKind::Parameter { mode } => Self::Parameter { mode: (*mode).into() },
             b2c_ir::SymbolInfoKind::LoopVariable => Self::LoopVariable,
             b2c_ir::SymbolInfoKind::Function { params, returns } => Self::Function {
-                params: params.iter().map(|p| p.as_str().to_owned()).collect(),
+                params: ids(params),
                 returns: returns.into(),
             },
-            // The kinds of user types, which no stage produces yet, have no
-            // copy here until the wire carries them (types.md §8.2): a field
-            // or enumerator reads as a variable, constant for an enumerator,
-            // and a struct or enum as a constant.
-            b2c_ir::SymbolInfoKind::Field { .. } => Self::Variable { is_const: false },
-            b2c_ir::SymbolInfoKind::Struct { .. }
-            | b2c_ir::SymbolInfoKind::Enum { .. }
-            | b2c_ir::SymbolInfoKind::Enumerator { .. } => Self::Variable { is_const: true },
+            b2c_ir::SymbolInfoKind::Struct {
+                fields,
+                comparable,
+                printable,
+            } => Self::Struct {
+                fields: ids(fields),
+                comparable: *comparable,
+                printable: *printable,
+            },
+            b2c_ir::SymbolInfoKind::Field { owner } => Self::Field {
+                owner: owner.as_str().to_owned(),
+            },
+            b2c_ir::SymbolInfoKind::Enum { values } => Self::Enum { values: ids(values) },
+            b2c_ir::SymbolInfoKind::Enumerator { owner } => Self::Enumerator {
+                owner: owner.as_str().to_owned(),
+            },
         }
     }
 }
@@ -306,7 +363,7 @@ impl From<&b2c_ir::SymbolInfo> for SymbolInfo {
             id: info.id.as_str().to_owned(),
             name: info.name.clone(),
             kind: SymbolInfoKind::from(&info.kind),
-            ty: StaticType::from(&info.ty),
+            ty: TypeJson::from(&info.ty),
             module: info.module.as_str().to_owned(),
             decl_block: info.decl_block.as_str().to_owned(),
             shared: info.shared,

@@ -183,7 +183,8 @@ export function createTypeOracle(deps: Pick<SymbolServiceDeps, 'preview'>): Type
       if (symbol === undefined) {
         return null;
       }
-      return symbol.kind === 'function' ? symbol.returns : symbol.type;
+      const type = symbol.kind === 'function' ? symbol.returns : symbol.type;
+      return isStaticType(type) ? type : null;
     },
   };
 }

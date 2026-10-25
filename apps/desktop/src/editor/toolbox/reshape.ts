@@ -17,7 +17,7 @@
  * there: the toolbox keeps its flyout's start values in step too (./plugin.ts), so the block taken
  * out has the start value of the type it shows (`set word to ""`, not `set word to 0`).
  */
-import type { StaticType } from '@blocks2cpp/b2c-core-wasm';
+import type { TypeJson } from '@blocks2cpp/b2c-core-wasm';
 import {
   catalogBlock,
   exprShadowState,
@@ -153,8 +153,8 @@ export function reshapeStartValue(
  */
 export function reshapeSetValue(
   block: Blockly.Block,
-  oldType: StaticType | null,
-  newType: StaticType | null,
+  oldType: TypeJson | null,
+  newType: TypeJson | null,
 ): StartValueChange | null {
   if (block.type !== SET_TYPE || oldType === null || newType === null) {
     return null;
@@ -192,7 +192,7 @@ function isFieldChange(
  */
 export function installStartValueReshaping(
   workspace: Blockly.Workspace,
-  typeOf: (symId: string) => StaticType | null,
+  typeOf: (symId: string) => TypeJson | null,
 ): () => void {
   const listener = (event: Blockly.Events.Abstract): void => {
     if (!(event instanceof Blockly.Events.BlockChange) || event.blockId === undefined) {

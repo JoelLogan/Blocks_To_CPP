@@ -23,7 +23,7 @@
  * in, the gesture that took the block out: a block added another way (with the keyboard) and
  * dragged later is left as it is.
  */
-import type { StaticType } from '@blocks2cpp/b2c-core-wasm';
+import type { TypeJson } from '@blocks2cpp/b2c-core-wasm';
 import { B2cSymbolDeclField, B2cSymbolRefField } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 
@@ -107,7 +107,7 @@ export function noteCreatedFromToolbox(original: Blockly.Block, created: Blockly
 }
 
 /** The type of symbol `symId` in the latest analysis, or `null` when it does not know it. */
-export function symbolType(source: SymbolSource, symId: string | null): StaticType | null {
+export function symbolType(source: SymbolSource, symId: string | null): TypeJson | null {
   if (symId === null) {
     return null;
   }

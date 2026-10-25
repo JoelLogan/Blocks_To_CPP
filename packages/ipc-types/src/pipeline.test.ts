@@ -5,9 +5,9 @@ import type {
   GeneratedFile,
   PassMode,
   SourceMap,
-  StaticType,
   SymbolInfo,
   SymbolInfoKind,
+  TypeJson,
 } from './index';
 
 // The pipeline's shared shapes (06 §6.5, §6.6, §6.9), checked against the JSON the Rust
@@ -52,29 +52,100 @@ describe('pipeline types', () => {
         module: 'm',
         declBlock: 'fn_area',
       },
+      {
+        id: 's_pt',
+        name: 'Point',
+        kind: 'struct',
+        fields: ['f_x', 'f_y'],
+        comparable: true,
+        printable: false,
+        type: { ref: 's_pt' },
+        module: 'm',
+        declBlock: 'b_pt',
+      },
+      {
+        id: 'f_x',
+        name: 'x',
+        kind: 'field',
+        owner: 's_pt',
+        type: 'double',
+        module: 'm',
+        declBlock: 'b_pt',
+      },
+      {
+        id: 's_col',
+        name: 'Color',
+        kind: 'enum',
+        values: ['e_red'],
+        type: { ref: 's_col' },
+        module: 'm',
+        declBlock: 'b_col',
+        shared: true,
+      },
+      {
+        id: 'e_red',
+        name: 'Red',
+        kind: 'enumerator',
+        owner: 's_col',
+        type: { ref: 's_col' },
+        module: 'm',
+        declBlock: 'b_col',
+      },
     ];
     const details = symbols.map((symbol) => {
       switch (symbol.kind) {
         case 'parameter':
           return symbol.mode;
         case 'function':
-          return `${symbol.params.join(',')}->${symbol.returns}`;
+          return `${symbol.params.join(',')}->${JSON.stringify(symbol.returns)}`;
         case 'variable':
           return String(symbol.isConst);
         case 'loopVariable':
           return 'counter';
+        case 'struct':
+          return `${symbol.fields.join(',')} ${String(symbol.comparable)} ${String(symbol.printable)}`;
+        case 'enum':
+          return symbol.values.join(',');
+        case 'field':
+        case 'enumerator':
+          return `of ${symbol.owner}`;
       }
     });
-    expect(details).toEqual(['read_only', 'counter', 'p_w,p_h->double']);
+    expect(details).toEqual([
+      'read_only',
+      'counter',
+      'p_w,p_h->"double"',
+      'f_x,f_y true false',
+      'of s_pt',
+      'e_red',
+      'of s_col',
+    ]);
     expectTypeOf<SymbolInfoKind['kind']>().toEqualTypeOf<
-      'variable' | 'parameter' | 'loopVariable' | 'function'
+      | 'variable'
+      | 'parameter'
+      | 'loopVariable'
+      | 'function'
+      | 'struct'
+      | 'field'
+      | 'enum'
+      | 'enumerator'
     >();
   });
 
-  it('list every static type, pass mode and file kind', () => {
-    expectTypeOf<StaticType>().toEqualTypeOf<
-      'void' | 'bool' | 'char' | 'int' | 'double' | 'string' | 'error'
-    >();
+  it('describe a type by its term', () => {
+    const types = [
+      'int',
+      'std::string',
+      'error',
+      { 'std::vector': 'int' },
+      { 'std::map': ['std::string', { 'std::vector': { ref: 'sym_Pt12' } }] },
+    ] satisfies TypeJson[];
+    expect(JSON.parse(JSON.stringify(types))).toEqual(types);
+    expectTypeOf<string>().toExtend<TypeJson>();
+    expectTypeOf<number>().not.toExtend<TypeJson>();
+  });
+
+  it('list every pass mode and file kind', () => {
     expectTypeOf<PassMode>().toEqualTypeOf<'copy' | 'editable' | 'read_only'>();
     expectTypeOf<FileKind>().toEqualTypeOf<'source' | 'header'>();
   });

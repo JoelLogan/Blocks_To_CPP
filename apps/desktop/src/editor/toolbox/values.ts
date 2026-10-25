@@ -4,11 +4,16 @@
  * (`0`, `0.0`, `true`, `'a'`, `""`), and a call from *Your functions* comes with an argument of each
  * parameter's type.
  */
-import type { StaticType } from '@blocks2cpp/b2c-core-wasm';
+import type { TypeJson } from '@blocks2cpp/b2c-core-wasm';
 import type { TokenJson } from '@blocks2cpp/blockly-ext';
 
-/** The value a new variable or argument of a static type starts with, or `null` for none. */
-export function startTokensForStaticType(type: StaticType): readonly TokenJson[] | null {
+/**
+ * The value a new variable or argument of a static type starts with, or `null` for none: `void`,
+ * `error`, and, until start values follow every type (docs/plans/m3-contracts/slots.md §6), the
+ * library and user types. The type is as the analysis sends it, M2's types by their names until
+ * the switch to type terms (docs/plans/m3-contracts/types.md §3.1).
+ */
+export function startTokensForStaticType(type: TypeJson): readonly TokenJson[] | null {
   switch (type) {
     case 'int':
       return [{ num: '0' }];
@@ -20,8 +25,7 @@ export function startTokensForStaticType(type: StaticType): readonly TokenJson[]
       return [{ chr: 'a' }];
     case 'string':
       return [{ str: '' }];
-    case 'void':
-    case 'error':
+    default:
       return null;
   }
 }

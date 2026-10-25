@@ -9,10 +9,11 @@
 use std::fmt::Debug;
 
 use b2c_ipc::pipeline::{
-    FileKind, GeneratedFile, MappedRange, PassMode, SourceMap, StaticType, SymbolInfo, SymbolInfoKind,
+    FileKind, GeneratedFile, MappedRange, PassMode, SourceMap, SymbolInfo, SymbolInfoKind, TypeJson,
 };
 use b2c_ir::source_map::{self as ir, FileMap, Position};
-use b2c_ir::{BlockId, ModuleId, Part, SymbolId, Type};
+use b2c_ir::types::sample_types;
+use b2c_ir::{BlockId, LibType, ModuleId, Part, SymbolId, TermForm, Type};
 use proptest::collection::vec;
 use proptest::prelude::*;
 use serde::Serialize;
@@ -137,18 +138,22 @@ fn source_maps() {
 }
 
 #[test]
-fn static_types_and_pass_modes() {
+fn types_and_pass_modes() {
     for ty in &TYPES {
-        let dto = StaticType::from(ty);
+        let dto = TypeJson::from(ty);
+        assert_eq!(dto.as_json(), &serde_json::to_value(ty).unwrap());
         assert_eq!(
-            serde_json::to_value(dto).unwrap(),
-            serde_json::to_value(ty).unwrap()
+            serde_json::from_value::<Type>(dto.as_json().clone()).unwrap(),
+            *ty
         );
-        assert_eq!(serde_json::from_value::<Type>(json!(dto.as_str())).unwrap(), *ty);
+        assert_eq!(
+            serde_json::from_value::<TypeJson>(dto.as_json().clone()).unwrap(),
+            dto
+        );
     }
     assert_eq!(
-        StaticType::VALUES,
-        ["void", "bool", "char", "int", "double", "string", "error"]
+        TYPES.map(|ty| TypeJson::from(&ty).as_json().clone()),
+        ["void", "bool", "char", "int", "double", "string", "error"].map(|name| json!(name))
     );
     for mode in MODES {
         let dto = PassMode::from(mode);
@@ -160,10 +165,68 @@ fn static_types_and_pass_modes() {
     assert_eq!(PassMode::VALUES, ["copy", "editable", "read_only"]);
 }
 
+/// Library and user types, which `b2c_ir::Type` does not serialise until the
+/// switch to the term form (types.md §8.2), get their term form, and every
+/// sample type reads back.
+#[test]
+fn every_sample_type_has_its_json() {
+    for ty in sample_types() {
+        let dto = TypeJson::from(&ty);
+        let expected =
+            serde_json::to_value(&ty).unwrap_or_else(|_| serde_json::to_value(TermForm(&ty)).unwrap());
+        assert_eq!(dto.as_json(), &expected, "{ty:?}");
+        assert_eq!(serde_json::from_value::<TypeJson>(expected).unwrap(), dto);
+    }
+    let scores = Type::lib(
+        LibType::Map,
+        vec![Type::String, Type::lib(LibType::Vector, vec![Type::Int]).unwrap()],
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&TypeJson::from(&scores)).unwrap(),
+        r#"{"std::map":["std::string",{"std::vector":"int"}]}"#
+    );
+    assert_eq!(
+        TypeJson::from(&Type::Named(sym("sym_Pt12"))).as_json(),
+        &json!({"ref": "sym_Pt12"})
+    );
+}
+
+#[test]
+fn only_types_read_as_types() {
+    for good in [
+        json!("int"),
+        json!("string"),
+        json!("std::string"),
+        json!("error"),
+        json!("std::ifstream"),
+        json!({"std::vector": "int"}),
+        json!({"std::map": ["std::string", {"ref": "sym_x"}]}),
+    ] {
+        assert!(serde_json::from_value::<TypeJson>(good.clone()).is_ok(), "{good}");
+    }
+    for bad in [
+        json!("auto"),
+        json!("Student"),
+        json!(""),
+        json!({"std::vector": "void"}),
+        json!({"std::vector": ["int"]}),
+        json!({"std::vector": "int", "std::set": "int"}),
+        json!({"__proto__": "int"}),
+        json!({"ref": "not an id"}),
+        json!(["int"]),
+        json!(3),
+        json!(null),
+    ] {
+        assert!(serde_json::from_value::<TypeJson>(bad.clone()).is_err(), "{bad}");
+    }
+}
+
 /// Every kind of symbol, with every type and pass mode.
 #[test]
 fn symbol_infos() {
-    let mut kinds = vec![
+    let mut kinds = user_type_kinds();
+    kinds.extend([
         b2c_ir::SymbolInfoKind::Variable { is_const: false },
         b2c_ir::SymbolInfoKind::Variable { is_const: true },
         b2c_ir::SymbolInfoKind::LoopVariable,
@@ -175,7 +238,7 @@ fn symbol_infos() {
             params: vec![sym("p_w"), sym("p_h")],
             returns: Type::Double,
         },
-    ];
+    ]);
     kinds.extend(MODES.map(|mode| b2c_ir::SymbolInfoKind::Parameter { mode }));
     for kind in kinds {
         for ty in &TYPES {
@@ -195,6 +258,81 @@ fn symbol_infos() {
     }
 }
 
+/// The kinds of user types (milestone M3). Their records carry M2 types here:
+/// `b2c_ir::Type` does not serialise user types until the switch to the term
+/// form (types.md §8.2).
+fn user_type_kinds() -> Vec<b2c_ir::SymbolInfoKind> {
+    vec![
+        b2c_ir::SymbolInfoKind::Struct {
+            fields: vec![sym("f_x"), sym("f_y")],
+            comparable: true,
+            printable: false,
+        },
+        b2c_ir::SymbolInfoKind::Struct {
+            fields: Vec::new(),
+            comparable: false,
+            printable: true,
+        },
+        b2c_ir::SymbolInfoKind::Field { owner: sym("s_pt") },
+        b2c_ir::SymbolInfoKind::Enum {
+            values: vec![sym("e_red"), sym("e_green")],
+        },
+        b2c_ir::SymbolInfoKind::Enumerator { owner: sym("s_col") },
+    ]
+}
+
+#[test]
+fn user_type_kinds_have_their_json_shape() {
+    let record = |kind: b2c_ir::SymbolInfoKind| {
+        let info = b2c_ir::SymbolInfo {
+            id: sym("s1"),
+            name: "Point".into(),
+            kind,
+            ty: Type::Int,
+            module: module(),
+            decl_block: block("b1"),
+            shared: false,
+        };
+        serde_json::to_value(SymbolInfo::from(&info)).unwrap()
+    };
+    let records: Vec<serde_json::Value> = user_type_kinds().into_iter().map(record).collect();
+    let [structure, empty, field, colour, red] = <[serde_json::Value; 5]>::try_from(records).unwrap();
+    assert_eq!(
+        structure,
+        json!({"id": "s1", "name": "Point", "kind": "struct", "fields": ["f_x", "f_y"],
+               "comparable": true, "printable": false, "type": "int", "module": "mod_main",
+               "declBlock": "b1"})
+    );
+    assert_eq!(empty["fields"], json!([]));
+    assert_eq!(field["kind"], "field");
+    assert_eq!(field["owner"], "s_pt");
+    assert_eq!(colour["kind"], "enum");
+    assert_eq!(colour["values"], json!(["e_red", "e_green"]));
+    assert_eq!(red["kind"], "enumerator");
+    assert_eq!(red["owner"], "s_col");
+    // A user type's own record has the type itself: its term.
+    let point = b2c_ir::SymbolInfo {
+        id: sym("s_pt"),
+        name: "Point".into(),
+        kind: b2c_ir::SymbolInfoKind::Struct {
+            fields: Vec::new(),
+            comparable: false,
+            printable: false,
+        },
+        ty: Type::Named(sym("s_pt")),
+        module: module(),
+        decl_block: block("b1"),
+        shared: true,
+    };
+    let json = serde_json::to_value(SymbolInfo::from(&point)).unwrap();
+    assert_eq!(json["type"], json!({"ref": "s_pt"}));
+    assert_eq!(json["shared"], true);
+    assert_eq!(
+        serde_json::from_value::<SymbolInfo>(json).unwrap(),
+        SymbolInfo::from(&point)
+    );
+}
+
 /// The exact text of the spec example (06 §6.5), key order included.
 #[test]
 fn the_spec_example() {
@@ -202,7 +340,7 @@ fn the_spec_example() {
         id: "s_guess".into(),
         name: "guess".into(),
         kind: SymbolInfoKind::Variable { is_const: false },
-        ty: StaticType::Int,
+        ty: TypeJson::from(&Type::Int),
         module: "mod_main".into(),
         decl_block: "b003".into(),
         shared: false,
@@ -287,6 +425,18 @@ fn symbol_info() -> impl Strategy<Value = b2c_ir::SymbolInfo> {
             params: params.iter().map(|p| sym(p)).collect(),
             returns,
         }),
+        (vec(id(), 0..4), any::<bool>(), any::<bool>()).prop_map(|(fields, comparable, printable)| {
+            b2c_ir::SymbolInfoKind::Struct {
+                fields: fields.iter().map(|f| sym(f)).collect(),
+                comparable,
+                printable,
+            }
+        }),
+        id().prop_map(|owner| b2c_ir::SymbolInfoKind::Field { owner: sym(&owner) }),
+        vec(id(), 0..4).prop_map(|values| b2c_ir::SymbolInfoKind::Enum {
+            values: values.iter().map(|v| sym(v)).collect(),
+        }),
+        id().prop_map(|owner| b2c_ir::SymbolInfoKind::Enumerator { owner: sym(&owner) }),
     ];
     (id(), text(), kind, ty(), id(), id(), any::<bool>()).prop_map(|(s, name, kind, ty, m, b, shared)| {
         b2c_ir::SymbolInfo {

@@ -60,6 +60,10 @@ function isAssignable(symbol: SymbolInfo): boolean {
       return symbol.mode !== 'read_only';
     case 'loopVariable':
     case 'function':
+    case 'struct':
+    case 'field':
+    case 'enum':
+    case 'enumerator':
       return false;
   }
 }
@@ -72,9 +76,13 @@ export function symbolMatchesKinds(symbol: SymbolInfo, kinds: SymbolRefKinds): b
     case 'assignable':
       return isAssignable(symbol);
     case 'numeric':
-      return isAssignable(symbol) && NUMERIC_TYPES.has(symbol.type);
+      return (
+        isAssignable(symbol) && typeof symbol.type === 'string' && NUMERIC_TYPES.has(symbol.type)
+      );
     case 'variables':
-      return symbol.kind !== 'function';
+      return (
+        symbol.kind === 'variable' || symbol.kind === 'parameter' || symbol.kind === 'loopVariable'
+      );
   }
 }
 

@@ -31,7 +31,7 @@ use crate::error::{InvalidReason, IoKind, IpcError};
 use crate::ids::{BuildId, Handle, RecentId, RunId, SnapshotId, ToolchainId};
 use crate::links::LinkId;
 use crate::pipeline::{
-    FileKind, FileMap, MappedRange, PassMode, Position, SourceMap, StaticType, SymbolInfo, SymbolInfoKind,
+    FileKind, FileMap, MappedRange, PassMode, Position, SourceMap, SymbolInfo, SymbolInfoKind, TypeJson,
 };
 use crate::schema::{FieldSchema, ObjectSchema};
 
@@ -158,7 +158,7 @@ pub fn type_decls() -> Vec<TypeDecl> {
         Handle, BuildId, RunId, RecentId, SnapshotId, ToolchainId, LinkId,
         // The pipeline's shared shapes (not carried by any command yet).
         crate::pipeline::GeneratedFile, FileKind, SourceMap, FileMap, MappedRange, Position,
-        StaticType, SymbolInfo, SymbolInfoKind, PassMode,
+        TypeJson, SymbolInfo, SymbolInfoKind, PassMode,
         // App.
         AppEvent, AppInfo, Empty, Platform,
         // Projects.

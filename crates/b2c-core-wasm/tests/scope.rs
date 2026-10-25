@@ -239,8 +239,9 @@ fn block_types_of_the_examples() {
     );
 }
 
-#[test]
-fn block_types_follow_the_values() {
+/// `hello_world` printing a join, a comparison and a random number, each
+/// with expression slots: `(print ID, document)`.
+fn typed_values() -> (String, String) {
     let mut document: Value = serde_json::from_str(&example("hello_world")).unwrap();
     let print = &mut document["modules"][0]["workspace"]["blocks"][0]["statements"]["BODY"][0];
     print["extra"]["itemCount"] = json!(3);
@@ -252,12 +253,52 @@ fn block_types_follow_the_values() {
         "inputs": {"A": {"expr": [{"num": "1"}]}, "B": {"expr": [{"num": "2.5"}]}}}});
     print["inputs"]["ITEM2"] = json!({"block": {"id": "t_rand", "type": "math.random_int", "v": 1,
         "inputs": {"LOW": {"expr": [{"num": "1"}]}, "HIGH": {"expr": [{"num": "6"}]}}}});
-    let text = serde_json::to_string(&document).unwrap();
+    let id = print["id"].as_str().unwrap().to_owned();
+    (id, serde_json::to_string(&document).unwrap())
+}
+
+#[test]
+fn block_types_follow_the_values() {
+    let (_, text) = typed_values();
     let result = update(&text, 4);
     assert_eq!(result["stage"], "generate", "{}", result["diagnostics"]);
     assert_eq!(
         result["blockTypes"],
         json!({"t_cmp": "bool", "t_join": "string", "t_rand": "int"})
+    );
+}
+
+/// `update()` carries `slotTypes` (slots.md §4.1): the type of each
+/// expression slot by block and input, never a block's own type.
+#[test]
+fn slot_types_follow_the_expression_slots() {
+    let (print, text) = typed_values();
+    let result = update(&text, 4);
+    assert_eq!(
+        result["slotTypes"],
+        json!({"t_cmp": {"A": "int", "B": "double"}, "t_join": {"ITEM0": "string", "ITEM1": "string"},
+               "t_rand": {"HIGH": "int", "LOW": "int"}})
+    );
+    // The print block's inputs hold blocks: their types are block types.
+    assert!(result["slotTypes"].get(&print).is_none());
+    for block in ["t_cmp", "t_join", "t_rand"] {
+        assert!(result["blockTypes"].get(block).is_some(), "{block}");
+    }
+    let game = update(&example("guessing_game"), 4);
+    assert_eq!(
+        game["slotTypes"]["b009"],
+        json!({"COND0": "bool", "COND1": "bool"})
+    );
+    assert_eq!(game["slotTypes"]["b003"], json!({"VALUE": "int"}));
+    assert_eq!(game["slotTypes"]["b005"], json!({"PROMPT": "string"}));
+    // Always present: empty when nothing loads.
+    assert_eq!(update("{", 4)["slotTypes"], json!({}));
+    assert_eq!(
+        update(&example("hello_world"), 4)["slotTypes"]
+            .as_object()
+            .unwrap()
+            .len(),
+        1
     );
 }
 
@@ -292,4 +333,42 @@ fn the_conversion_table_is_the_analysers_rule() {
     assert_eq!(find(Type::Void, Type::Int), "invalid");
     assert_eq!(find(Type::Error, Type::String), "same");
     assert_eq!(find(Type::Char, Type::String), "invalid");
+}
+
+/// The table over the sample types is the shared type fixture's
+/// `conversions` (types.md §3.2, §9), with the samples in the same order.
+#[test]
+fn the_conversion_table_is_the_type_fixtures() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packages/blockly-ext/src/types/fixture.json"
+    );
+    let fixture: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let samples = b2c_ir::types::sample_types();
+    let fixture_samples = fixture["samples"].as_array().unwrap();
+    assert_eq!(fixture_samples.len(), samples.len());
+    for (ty, sample) in samples.iter().zip(fixture_samples) {
+        assert_eq!(
+            serde_json::to_value(b2c_ir::TermForm(ty)).unwrap(),
+            sample["type"]
+        );
+    }
+    let table = b2c_core_wasm::scope::conversion_table();
+    assert_eq!(table.len(), samples.len() * samples.len());
+    for (index, row) in table.iter().enumerate() {
+        let expected = &fixture["conversions"][index / samples.len()][index % samples.len()];
+        assert_eq!(row.from, samples[index / samples.len()]);
+        assert_eq!(row.to, samples[index % samples.len()]);
+        assert_eq!(row.conversion.name(), expected, "{:?} → {:?}", row.from, row.to);
+    }
+    // The export writes M2's rows of the same table until the switch.
+    let exported: Vec<Value> = serde_json::from_str(&b2c_core_wasm::conversion_table()).unwrap();
+    let m2: Vec<Value> = table
+        .iter()
+        .filter(|row| {
+            b2c_core_wasm::STATIC_TYPES.contains(&row.from) && b2c_core_wasm::STATIC_TYPES.contains(&row.to)
+        })
+        .map(|row| serde_json::to_value(row).unwrap())
+        .collect();
+    assert_eq!(exported, m2);
 }

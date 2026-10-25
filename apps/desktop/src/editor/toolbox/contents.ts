@@ -415,7 +415,10 @@ export function moreVariablesNote(count: number): string {
  */
 export function fitsGenericBlock(type: string, symbol: SymbolInfo): boolean {
   const kinds = catalogFieldOptions(type, VAR_FIELD).kinds ?? 'variables';
-  return symbolMatchesKinds(symbol, kinds) && (type === SET_TYPE || NUMBER_TYPES.has(symbol.type));
+  return (
+    symbolMatchesKinds(symbol, kinds) &&
+    (type === SET_TYPE || (typeof symbol.type === 'string' && NUMBER_TYPES.has(symbol.type)))
+  );
 }
 
 /** The variable a generic block is preset to: the first of `main` it fits, else of the module. */
@@ -625,6 +628,13 @@ function symbolKey(symbol: SymbolInfo): unknown[] {
       return [...common, symbol.mode];
     case 'function':
       return [...common, symbol.params, symbol.returns];
+    case 'struct':
+      return [...common, symbol.fields, symbol.comparable, symbol.printable];
+    case 'enum':
+      return [...common, symbol.values];
+    case 'field':
+    case 'enumerator':
+      return [...common, symbol.owner];
     case 'loopVariable':
       return common;
   }

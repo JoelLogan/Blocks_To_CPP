@@ -104,6 +104,7 @@ export function previewFixture(diagnostics: Diagnostic[] = []): PreviewResult {
     placeholders: 0,
     contentHash: 'a'.repeat(64),
     blockTypes: {},
+    slotTypes: {},
     symbols: [],
   };
 }

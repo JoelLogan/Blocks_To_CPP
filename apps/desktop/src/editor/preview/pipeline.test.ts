@@ -56,6 +56,7 @@ function notLoaded(diagnostics: Diagnostic[]): UpdateResult {
     placeholders: 0,
     contentHash: null,
     blockTypes: {},
+    slotTypes: {},
     symbols: [],
     textHash: null,
   };

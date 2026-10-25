@@ -32,6 +32,7 @@ export type {
   PreviewResult,
   PreviewStage,
   StaticConversion,
+  StaticType,
   UnresolvedRef,
   UpdateResult,
 } from './api';
@@ -92,7 +93,6 @@ export type {
   Related,
   Severity,
   SourceMap,
-  StaticType,
   SymbolInfo,
   SymbolInfoKind,
 } from '@blocks2cpp/ipc-types';

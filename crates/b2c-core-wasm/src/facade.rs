@@ -187,10 +187,10 @@ pub struct Preview {
     /// ([`b2c_lang::Analysis::symbol_infos`]); empty when loading failed.
     pub symbols: Vec<SymbolInfo>,
     /// The static type of each expression slot the analysis lowered, by
-    /// block ID, then input name ([`b2c_lang::Analysis::slot_types`]).
-    /// Empty, and left out of the JSON, until the analyser records slot
-    /// types (`docs/plans/m3-contracts/slots.md` §4.1).
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    /// block ID, then input name ([`b2c_lang::Analysis::slot_types`],
+    /// `docs/plans/m3-contracts/slots.md` §4.1): what the editor's checker
+    /// reads for a slot's tokens. A block's own type is in
+    /// [`Preview::block_types`], never here. Empty when loading failed.
     pub slot_types: BTreeMap<BlockId, BTreeMap<String, Type>>,
 }
 

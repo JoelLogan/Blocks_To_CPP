@@ -330,6 +330,7 @@ export function storeAnalysis(document: BdmDocument, symbols: readonly SymbolInf
         placeholders: 0,
         contentHash: 'a'.repeat(64),
         blockTypes: {},
+        slotTypes: {},
         symbols: [...symbols],
       },
     },

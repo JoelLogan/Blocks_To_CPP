@@ -5,15 +5,17 @@
  * types, so the preview and the backend can never disagree about them.
  */
 
-import type {
-  Diagnostic,
-  GeneratedFile,
-  SourceMap,
-  StaticType,
-  SymbolInfo,
-} from '@blocks2cpp/ipc-types';
+import type { Diagnostic, GeneratedFile, SourceMap, SymbolInfo } from '@blocks2cpp/ipc-types';
 
 import type { BdmBlock, BdmDocument, TypeJson } from './bdm';
+
+/**
+ * The names M2's seven static types have in `blockTypes` and `conversionTable()` until the switch
+ * to the term form (docs/plans/m3-contracts/types.md §8.2): `TypeJson`, with `string` for
+ * `std::string`. The switch replaces them with type terms (`std::string`, `{"std::vector":
+ * "int"}`), and this type with `TypeJson`.
+ */
+export type StaticType = 'void' | 'bool' | 'char' | 'int' | 'double' | 'string' | 'error';
 
 /** What `CoreWasm.version()` reports. */
 export interface CoreVersion {
@@ -92,9 +94,10 @@ export interface PreviewResult {
   symbols: SymbolInfo[];
   /**
    * The static type of each expression slot the analysis lowered, by block ID, then input name
-   * (ADR-0018, docs/plans/m3-contracts/slots.md §4.1). Absent until the core records slot types.
+   * (ADR-0018, docs/plans/m3-contracts/slots.md §4.1): the slots of the blocks in `blockTypes`
+   * and of statement blocks, never a block's own type. Empty when loading failed.
    */
-  slotTypes?: Record<string, Record<string, TypeJson>>;
+  slotTypes: Record<string, Record<string, TypeJson>>;
 }
 
 /**
@@ -232,7 +235,10 @@ export interface CoreWasm {
    * own update has finished, so the answer is about the document you show.
    */
   symbolsInScope(blockId: string, input: string | null): SymbolInfo[] | null;
-  /** The analyser's conversion rule for every pair of static types (49 rows). */
+  /**
+   * The analyser's conversion rule for every pair of static types: until the switch to the term
+   * form, the 49 pairs of M2's seven types (see `StaticType`).
+   */
   conversionTable(): ConversionRow[];
   /**
    * Copies blocks of a document: `blockIds` in copy order (a listed block inside another listed

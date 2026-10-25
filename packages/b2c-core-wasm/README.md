@@ -27,9 +27,9 @@ if (loaded.ok) {
 | `version()`                                         | `{app, catalog, formatVersion, sourceMapVersion}`                                                                                                                                                   |
 | `load(bytes)`                                       | `{ok: true, document, diagnostics}` (migrated, blocks upgraded (05 §5.7), not resolved, canonical key order; a `B2C-E0603` for each block that could not be upgraded) or `{ok: false, diagnostics}` |
 | `canonical(documentJson)`                           | `{ok: true, text, hash, textHash, diagnostics: []}`: what a save writes (05 §5.2), the content hash (05 §5.11) and the SHA-256 of the text                                                          |
-| `update(documentJson, { indentWidth })`             | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols, textHash}`: the preview and the hash of the canonical text, from one load                        |
+| `update(documentJson, { indentWidth })`             | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols, slotTypes, textHash}`: the preview and the hash of the canonical text, from one load             |
 | `symbolsInScope(blockId, input)`                    | `SymbolInfo[]` or `null`: what a block may refer to (06 §6.5), from the **last update's** analysis                                                                                                  |
-| `conversionTable()`                                 | `[{from, to, conversion}]` for all 49 pairs of static types: the analyser's rule (06 §6.6)                                                                                                          |
+| `conversionTable()`                                 | `[{from, to, conversion}]` for every pair of static types: the analyser's rule (06 §6.6)                                                                                                            |
 | `clipboardMake(documentJson, blockIds)`             | `{ok: true, payload, text?, diagnostics: []}`: the clipboard payload (05 §5.12) and the blocks' C++                                                                                                 |
 | `pastePrepare(text, documentJson, target, seedHex)` | `{ok: true, blocks, unresolved, diagnostics}`: a payload's blocks ready to insert at `target`                                                                                                       |
 
@@ -46,8 +46,11 @@ if (loaded.ok) {
   Their TypeScript types come from `@blocks2cpp/ipc-types` (generated from the Rust types) and are
   re-exported here. Messages may quote project text: render them as text, never as HTML.
 - `blockTypes` gives the static type of each value block of the program (what the connection
-  checker and the output types of `var.get` and `func.call` use), and `symbols` every symbol of
-  the program, sorted by name.
+  checker and the output types of `var.get` and `func.call` use), `slotTypes` that of each
+  expression slot, by block ID, then input name (ADR-0018), and `symbols` every symbol of the
+  program, sorted by name. Types are `TypeJson`: type terms (`"int"`, `{"std::vector": "int"}`,
+  `{"ref": "sym_x"}`) and `"error"`; until the switch to the term form
+  (docs/plans/m3-contracts/types.md §8.2), M2's seven types keep their M2 names (`"string"`).
 
 ### One load per edit
 
@@ -75,7 +78,9 @@ document does not have, and for one nested too deeply; `[]` means that nothing i
 An update whose document does not load keeps the analysis of the last one that did, which is
 what the editor still shows.
 `conversionTable()` lets the connection checker refuse exactly the connections the analyser would
-report (`invalid`).
+report (`invalid`). The core's table covers every pair of the sample types of the shared type
+fixture (`packages/blockly-ext/src/types/fixture.json`); until the switch to the term form, the
+export returns the 49 pairs of M2's seven types.
 
 ### Clipboard
 

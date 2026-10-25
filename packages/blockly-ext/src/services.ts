@@ -10,7 +10,7 @@
  * Every call into a service is guarded: a service that throws is treated like one that has no
  * answer, and the field keeps working.
  */
-import type { StaticType } from '@blocks2cpp/b2c-core-wasm';
+import type { StaticType, TypeJson } from '@blocks2cpp/b2c-core-wasm';
 import type * as Blockly from 'blockly/core';
 
 import { setCheckerTypeOracle } from './checker/oracle';
@@ -20,8 +20,19 @@ import type { StaticType as TypedStaticType, TypeFactsTs } from './types';
 /** How a parameter is passed (`b2c_ir::PassMode`). */
 export type PassMode = 'copy' | 'editable' | 'read_only';
 
-/** The kind of a symbol, as the scope query reports it. */
-export type SymbolKind = 'variable' | 'parameter' | 'loopVariable' | 'function';
+/**
+ * The kind of a symbol, as the scope query reports it. Milestone M3 adds user types: `struct`,
+ * `field`, `enum` and `enumerator` (docs/plans/m3-contracts/types.md §1.2).
+ */
+export type SymbolKind =
+  | 'variable'
+  | 'parameter'
+  | 'loopVariable'
+  | 'function'
+  | 'struct'
+  | 'field'
+  | 'enum'
+  | 'enumerator';
 
 /**
  * One symbol from the scope query (`b2c_ir::SymbolInfo` as JSON, docs/spec/06-compiler-pipeline.md
@@ -44,9 +55,12 @@ export interface SymbolInfo {
   /** Functions: the parameter symbol IDs, in order. */
   readonly params?: readonly string[];
   /** Functions: the return type. */
-  readonly returns?: StaticType;
-  /** The value type (a function's return type). */
-  readonly type: StaticType;
+  readonly returns?: TypeJson;
+  /**
+   * The value type (a function's return type), as the wire writes it: M2's types by their names
+   * until the switch to type terms (docs/plans/m3-contracts/types.md §3.1).
+   */
+  readonly type: TypeJson;
   /** The ID of the module that declares it. */
   readonly module: string;
   /** The ID of the declaring block. */

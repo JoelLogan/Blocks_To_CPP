@@ -13,7 +13,7 @@
 //! | [`version`] | `{app, catalog, formatVersion, sourceMapVersion}` |
 //! | [`load`] | `{ok, document?, diagnostics}`: the loaded document (migrated, blocks upgraded, not resolved), in canonical key order |
 //! | [`canonical`] | `{ok, text?, hash?, textHash?, diagnostics}`: the canonical file text (05 §5.2), the content hash (05 §5.11) and the hash of the text |
-//! | [`update`] | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols, textHash}`: the preview and the hash of the canonical text, from one load |
+//! | [`update`] | `{stage, diagnostics, files, sourceMap, buildable, placeholders, contentHash, blockTypes, symbols, slotTypes, textHash}`: the preview and the hash of the canonical text, from one load |
 //! | [`symbols_in_scope`] | `[SymbolInfo, …]` or `null`: what a block may refer to, from the last update's analysis (06 §6.5) |
 //! | [`conversion_table`] | `[{from, to, conversion}, …]`: the analyser's conversion rule for every pair of static types (06 §6.6) |
 //! | [`clipboard_make`] | `{ok, payload?, text?, diagnostics}`: the clipboard payload of copied blocks and their C++ (05 §5.12) |
@@ -152,8 +152,8 @@ pub fn canonical(document_json: &str) -> String {
 /// [`symbols_in_scope`] and the clipboard exports.
 ///
 /// Returns the preview, `{"stage", "diagnostics", "files", "sourceMap",
-/// "buildable", "placeholders", "contentHash", "blockTypes", "symbols"}`,
-/// with `"textHash"`: the hash of the document's canonical text, the same as
+/// "buildable", "placeholders", "contentHash", "blockTypes", "symbols",
+/// "slotTypes"}`, with `"textHash"`: the hash of the document's canonical text, the same as
 /// [`canonical`] reports, so the editor knows whether there are unsaved
 /// changes without the text itself (`null`, like `contentHash`, when the
 /// document does not load).
@@ -161,7 +161,8 @@ pub fn canonical(document_json: &str) -> String {
 /// Unlike a build, the preview carries on through catalog and analyser
 /// errors, so the editor always shows as much C++ as it can; see
 /// [`preview_document`] for the exact rules. `symbols` lists every symbol of
-/// the program and `blockTypes` the static type of each value block. A
+/// the program, `blockTypes` the static type of each value block and
+/// `slotTypes` that of each expression slot, by block and input. A
 /// document that does not load gives stage `load` with the loader's
 /// diagnostics and keeps the analysis of the last one that did. Invalid
 /// options give `{"error": {"kind": "invalidOptions", …}}` and change
@@ -204,11 +205,14 @@ pub fn symbols_in_scope(block_id: &str, input: Option<String>) -> String {
 /// The analyser's conversion rule ([`b2c_lang::conversion`]) for every
 /// pair of static types: a JSON list of
 /// `{"from": <type>, "to": <type>, "conversion": "same" | "widening" |
-/// "narrowing" | "boolNumber" | "invalid"}`, 49 entries. Only `invalid` is
-/// an analyser error; the editor's connection checker refuses exactly those.
+/// "narrowing" | "boolNumber" | "invalid"}`. Only `invalid` is an analyser
+/// error; the editor's connection checker refuses exactly those. Until the
+/// switch to the term form (types.md §8.2), the 49 rows between M2's seven
+/// types ([`scope::exported_conversion_table`]); from then on, every pair of
+/// the sample types ([`scope::conversion_table`]).
 #[wasm_bindgen]
 pub fn conversion_table() -> String {
-    wire::conversion_table(&scope::conversion_table())
+    wire::conversion_table(&scope::exported_conversion_table())
 }
 
 /// Copies blocks of a document (05 §5.12).
