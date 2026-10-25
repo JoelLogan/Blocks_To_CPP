@@ -10,6 +10,8 @@
 
 mod common;
 
+use std::collections::BTreeSet;
+
 use b2c_codegen::{CodegenOptions, generate};
 use b2c_ir::diag::{DiagSource, Part, Severity};
 use b2c_ir::source_map::FileKind;
@@ -698,4 +700,105 @@ proptest! {
             compiles(&a)?;
         }
     }
+}
+
+// --- M2's documents through the catalog's table ------------------------------------
+//
+// types.md §8.3: the analyser's M2 rules of `create`, `set`, call arguments and
+// `return` went once the catalog's patterns covered them (slots.md §5). The
+// record below was written by those M2 rules, an analysis without signatures,
+// in the commit before they went; the catalog's table must give every document
+// in it the same diagnostics, program, block types and slot types.
+
+/// A document of the record, with what the catalog check said of it.
+struct Recorded {
+    name: String,
+    document: Document,
+    catalog: Vec<b2c_ir::Diagnostic>,
+    unchecked: BTreeSet<b2c_ir::BlockId>,
+}
+
+/// How many generated programs the record holds.
+const RECORD_CASES: usize = 400;
+
+/// The documents of the record: generated programs (both generators, from a
+/// fixed seed), every example and every file of the malicious-project suite
+/// that loads, completed by the catalog as the build completes them.
+fn record_documents() -> Vec<Recorded> {
+    use proptest::strategy::ValueTree;
+    use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
+
+    let mut documents = Vec::new();
+    let rng = TestRng::from_seed(RngAlgorithm::ChaCha, &[0x5e; 32]);
+    let mut runner = TestRunner::new_with_rng(Config::default(), rng);
+    let strategy = prop_oneof![program(), typed_program()];
+    for case in 0..RECORD_CASES {
+        let tree = strategy.new_tree(&mut runner).expect("a generated program");
+        documents.push(Recorded {
+            name: format!("generated {case}"),
+            document: build(tree.current()),
+            catalog: Vec::new(),
+            unchecked: BTreeSet::new(),
+        });
+    }
+    for folder in ["examples", "tests/security/projects"] {
+        for path in common::project_files(folder) {
+            let bytes = std::fs::read(&path).expect("project file");
+            let Ok(loaded) = b2c_model::load(&bytes) else {
+                continue;
+            };
+            let report = b2c_catalog::resolve_report(&loaded, b2c_catalog::core_catalog());
+            documents.push(Recorded {
+                name: format!("{folder}/{}", common::file_name(&path)),
+                document: report.document,
+                catalog: report.diagnostics,
+                unchecked: report.unchecked,
+            });
+        }
+    }
+    documents
+}
+
+/// One line for an analysis: its diagnostic codes, then a hash (64-bit
+/// FNV-1a) of its rendered diagnostics, its program without the items'
+/// catalog headers (which only signatures fill), its block types and its slot
+/// types.
+fn record_line(a: &Analysis) -> String {
+    let mut program = a.program.clone();
+    for item in program.modules.iter_mut().flat_map(|module| &mut module.items) {
+        item.headers = b2c_ir::headers::ItemHeaders::default();
+    }
+    let text = format!(
+        "{}\n{}\n{:?}\n{:?}",
+        render_all(a),
+        serde_json::to_string(&program).expect("serialise"),
+        a.block_types(),
+        a.slot_types()
+    );
+    let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    });
+    let codes: Vec<&str> = a.diagnostics.iter().map(|d| d.code.0.as_str()).collect();
+    format!("{hash:016x} [{}]", codes.join(" "))
+}
+
+#[test]
+fn m2_documents_analyse_with_the_catalog_table_as_with_m2_rules() {
+    let sigs = b2c_catalog::core_catalog().sigs();
+    let mut lines = Vec::new();
+    for recorded in record_documents() {
+        let Recorded {
+            name,
+            document,
+            catalog,
+            unchecked,
+        } = recorded;
+        let m2 = record_line(&b2c_lang::analyze_checked(&document, &catalog, &unchecked));
+        let line = record_line(&b2c_lang::analyze_checked_with(
+            &document, &catalog, &unchecked, sigs,
+        ));
+        assert_eq!(line, m2, "{name}");
+        lines.push(format!("{name}: {line}"));
+    }
+    insta::assert_snapshot!(lines.join("\n"));
 }
