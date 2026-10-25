@@ -1206,6 +1206,20 @@ fn sampled_parts(sig: &BlockSig, rng: &mut Rng, samples: &[Type]) -> Parts {
             parts.inputs.insert(name, part);
         }
     }
+    // Repeated fields (w2.md §2.1), with or without a pattern: one count
+    // for them all, since they repeat together (`field:F` on a repeated
+    // field needs `F`'s count), and a part for each index. A block without
+    // them draws nothing more, so its cases stay as they were.
+    if !sig.repeated_fields.is_empty() {
+        let count = rng.below(4);
+        for base in &sig.repeated_fields {
+            parts.counts.insert(base.clone(), count);
+            for i in 0..count {
+                let part = known_or(rng, &[PartType::Empty, PartType::Auto]);
+                parts.fields.insert(format!("{base}{i}"), part);
+            }
+        }
+    }
     parts.result = Some(known_or(rng, &[PartType::Empty, PartType::Unknown]));
     parts
 }
