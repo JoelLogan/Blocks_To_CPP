@@ -65,6 +65,20 @@ palindrome.b2c:
   b033: "bool"
 primes.b2c:
   (no value blocks)
+student_records.b2c:
+  b004: "int"
+  b010: "bool"
+  b011: "int"
+  b012: {"ref":"s_Student"}
+  b013: "int"
+  b014: {"ref":"s_Student"}
+  b016: {"ref":"s_Student"}
+  b018: {"ref":"s_Student"}
+  b030: {"ref":"s_Student"}
+  b039: "std::string"
+  b040: "int"
+  b043: "bool"
+  b044: "int"
 sum_to_ten.b2c:
   (no value blocks)
 temperature.b2c:

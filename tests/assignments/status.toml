@@ -14,7 +14,7 @@
 temperature_table = "green"
 grade_average = "green"
 word_count = "pending"
-student_records = "pending"
+student_records = "green"
 bank_menu = "pending"
 palindrome = "green"
 dice_statistics = "green"

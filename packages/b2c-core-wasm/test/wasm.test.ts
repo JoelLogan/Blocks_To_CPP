@@ -60,7 +60,8 @@ const ERROR_TYPES: readonly unknown[] = [
 
 /**
  * Whether a type term is one the examples use: M2's types, the errors of W2's input_validation,
- * lists of them (W2's matrix_sum) and maps from one to another (W2's dice_statistics).
+ * a struct of the project (`{"ref": id}`, W2's student_records), lists of them (W2's matrix_sum)
+ * and maps from one to another (W2's dice_statistics).
  */
 function isExampleType(type: unknown): boolean {
   if (M2_TYPES.includes(type) || ERROR_TYPES.includes(type)) {
@@ -74,6 +75,9 @@ function isExampleType(type: unknown): boolean {
     return false;
   }
   const [name, args] = entries[0] ?? [];
+  if (name === 'ref') {
+    return typeof args === 'string' && args.length > 0;
+  }
   if (name === 'std::vector') {
     return isExampleType(args);
   }
@@ -181,7 +185,7 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     // Scope data of the program (the exact values are checked natively and in
     // scope-clipboard.test.ts): static types, and symbols sorted by name.
     // Types are terms (types.md §3.1): the examples use M2's types, the errors W2's
-    // input_validation catches, lists of them and maps.
+    // input_validation catches, student_records' struct, lists of them and maps.
     for (const type of Object.values(preview.blockTypes)) {
       expect(isExampleType(type), JSON.stringify(type)).toBe(true);
     }

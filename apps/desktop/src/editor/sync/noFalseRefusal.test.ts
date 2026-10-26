@@ -15,7 +15,7 @@
 import type { BdmDocument, CoreWasm, PreviewResult } from '@blocks2cpp/b2c-core-wasm';
 import { candidateFit, isFitError } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTypeOracle } from '../services/symbols';
 import { loadModule } from './bdmToWorkspace';
@@ -29,6 +29,14 @@ import {
 import { readModule } from './workspaceToBdm';
 
 const core = await testCore();
+
+/**
+ * Each example's sample analyses the example again for every refusal it finds. student_records
+ * (W2's package C1: a struct, a list of it and a sorting function) has the most refusals of the
+ * examples, and its sample took 5.3 s alone in this file (matrix_sum, the next, 2.0 s), past
+ * Vitest's default of 5 s, so this file's tests may take 20 s.
+ */
+vi.setConfig({ testTimeout: 20_000 });
 
 afterEach(() => {
   disposeWorkspaces();
@@ -149,17 +157,23 @@ function analyseConnected(
   return analyse(wasm, readModule(moved, doc, moduleId));
 }
 
-/** Expects an analyser error at `child` or `parent` in `after`. */
+/**
+ * Expects an analyser error at `child` (or a block inside it) or at `parent` in `after`. A block
+ * inside the moved one counts: moved out of the scope of a name it reads (a *… of* on an item of a
+ * function's list), the analyser reports the name there, and a value that holds an error is not
+ * reported again where it is plugged in.
+ */
 function expectErrorAt(
   after: PreviewResult,
   child: Blockly.Block,
   parent: Blockly.Block,
   input: string,
 ): void {
+  const moved = new Set<unknown>(child.getDescendants(false).map((block) => block.id));
   const errors = after.diagnostics.filter(
     (diagnostic) =>
       diagnostic.severity === 'error' &&
-      (diagnostic.primary.block === child.id || diagnostic.primary.block === parent.id),
+      (moved.has(diagnostic.primary.block) || diagnostic.primary.block === parent.id),
   );
   expect(
     errors.length,
