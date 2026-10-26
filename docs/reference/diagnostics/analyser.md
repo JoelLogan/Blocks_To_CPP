@@ -156,7 +156,9 @@ Codes by area:
 * **Meaning:** two variables (or function inputs) with the same name exist in
   the same scope, which C++ does not allow. A function's body counts as the
   same scope as its inputs, and a `for` loop's body as the same scope as its
-  counter.
+  counter. Also two fields of a struct, or two values of an enum, with the
+  same name; a field named like its struct; and a struct or enum named like
+  another struct, enum or function.
 * **Example:**
 
   ```text
@@ -165,7 +167,10 @@ Codes by area:
   ```
 
 * **Message:** "There is already a variable called `count` here. Choose
-  another name."
+  another name." / "Two fields of `Student` are called `mark`. Rename one of
+  them." / "A field can't have the name of its struct (`Student`). Rename
+  the field." / "There is already a struct or enum called `Student`. Rename
+  one of them."
 * **How to fix:** rename one of them.
 
 ## B2C-E0211 Duplicate function
@@ -304,10 +309,13 @@ Codes by area:
 
 * **Severity:** error
 * **Meaning:** a call gives a function more or fewer values than it has
-  inputs. Default values for inputs are not supported yet.
+  inputs, or *new … with* has a number of parts other than its struct's
+  fields. Default values for inputs are not supported yet.
 * **Example:** `area (5)` typed in a slot, where `area` has the inputs
   `width` and `height`.
-* **Message:** "`area` needs 2 values, but 1 is given."
+* **Message:** "`area` needs 2 values, but 1 is given." / "`Student` has 2
+  fields, but this block has 1 part. Choose the struct again so that the
+  block has one part for each field."
 * **How to fix:** add or remove values in the call block (⊕ / ⊖).
 
 ## B2C-E0307 Editable input needs a variable
@@ -423,11 +431,13 @@ Codes by area:
   are printed item by item), a file, an error, or a struct not ticked
   *printable*. A struct ticked *printable* must have fields whose types are
   all printable; that is reported at the tick, naming the first field that
-  is not.
+  is not. *join* and *as text* take no struct at all, printable or not:
+  C++ cannot add one to text.
 * **Example:** `print (scores)` where `scores` is a list of int.
 * **Message:** "A list can't be printed in one go. Use 'for each' to go
   through its items." / "`Point` can't be printed. Tick 'printable' on
-  `Point`, or use its fields one by one."
+  `Point`, or use its fields one by one." / "`Point` can't be joined into
+  text in one go. Join its fields instead."
 * **How to fix:** print the items with `for each`, print a struct's fields
   one by one, or tick *printable* on the struct.
 
@@ -580,6 +590,13 @@ Codes by area:
   allow. A list of the struct is fine, since a list holds its items
   elsewhere.
 * **Example:** `struct [Node]` with a field `[Node] next`.
+* **Message:** "`Node` holds a `Node` in its field `next`, so each `Node`
+  would have to hold a whole copy of itself, which C++ does not allow. Make
+  the field a list (a list keeps its items elsewhere), or remove it." /
+  "`Player` holds a `Team` in its field `team`, which holds a `Player` in its
+  field `captain`, so each `Player` would have to hold a whole copy of
+  itself, which C++ does not allow. Make one of these fields a list (a list
+  keeps its items elsewhere), or remove it."
 * **How to fix:** use a list of the struct for the field (`list of Node`),
   or remove the field.
 

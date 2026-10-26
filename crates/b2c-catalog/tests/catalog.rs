@@ -88,6 +88,9 @@ fn value_blocks_declare_their_output_type() {
         ("text.split", "std::vector<std::string>"),
         ("text.to_number", "field:TO"),
         ("text.trim", "std::string"),
+        ("type.enum_value", "E"),
+        ("type.field", "symbol:MEMBER"),
+        ("type.new", "S"),
         ("var.get", "symbol"),
     ]
     .into_iter()

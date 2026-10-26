@@ -1,29 +1,32 @@
 //! User types' definitions with the functions their ticks and uses promise
-//! (types.md §1.6 and §5.2): the comparisons of a comparable struct, the
-//! `operator<<` of a printable struct, and the `operator<<` and `to_string`
-//! of an enum that is printed, written or joined.
+//! (types.md §1.6 and §5.2; w2.md §1.5, §2.11): the comparisons of a
+//! comparable struct, the `operator<<` of a printable struct, and the
+//! `operator<<` and `b2c::to_text` of an enum that is printed, written or
+//! joined; and the struct and enum values (*new … with*, *… of …*, an
+//! enum's value, *set … of … to*).
 //!
-//! The SAST has no struct or enum item before the definition blocks of
-//! milestone M3's second wave, whose lowering calls these between
-//! `Lowerer::start_item` and `Lowerer::finish_item` with the symbols the
-//! blocks declare. They record their headers in the item's declaration
-//! part: a type's definition goes where its declaration is printed, the
-//! module's header when it is shared (ADR-0019).
-#![cfg_attr(
-    not(test),
-    allow(dead_code, reason = "called by the lowering of W2's definition blocks")
-)]
+//! A type's definition is lowered between `Lowerer::start_item` and
+//! `Lowerer::finish_item`, and records its headers in the item's
+//! declaration part: a type's definition goes where its declaration is
+//! printed, the module's header when it is shared (ADR-0019). Types are
+//! printed in the declaration graph's order (`ModuleFiles::source_order`,
+//! modules.md §4), so each comes after the types it holds; a struct named
+//! only in the lists of one printed before it gets a forward declaration
+//! there.
 
 use std::collections::BTreeSet;
 
 use b2c_ir::ids::SymbolId;
-use b2c_ir::sast::{CppStandard, Expr, Item, StmtKind, SymbolKind};
+use b2c_ir::sast::{CppStandard, Expr, ExprKind, Item, ItemKind, StmtKind, SymbolKind};
 use b2c_ir::text::{Ident, StrLit};
+use b2c_ir::types::{LibType, Type};
 
-use super::{Lowerer, name_expr, scan};
+use super::collections::fits_as_written;
+use super::scan::EnumUses;
+use super::{Lowerer, is_scalar, name_expr, scan};
 use crate::cast::{
-    BinOp, CBlock, CCase, CEnum, CExpr, CExprKind, CField, CGenerated, CStmt, CStmtKind, CStruct, CType,
-    CTypeDef, Generated, Init,
+    AssignOp, BinOp, CBlock, CCase, CEnum, CExpr, CExprKind, CField, CGenerated, CStmt, CStmtKind, CStruct,
+    CType, CTypeDef, Generated, Init,
 };
 
 /// The six comparisons a comparable struct gets in C++17, in the order they
@@ -45,30 +48,169 @@ fn returning(value: CExpr) -> CBlock {
     }
 }
 
+/// The struct a type names only inside lists (`std::vector`, at any
+/// depth), which a forward declaration is enough for.
+fn listed_struct<'t>(ty: &'t Type, symbols: &b2c_ir::sast::SymbolTable) -> Option<&'t SymbolId> {
+    let mut ty = ty;
+    let mut in_list = false;
+    while let Type::Lib(app) = ty {
+        match (app.ty(), app.args()) {
+            (LibType::Vector, [item]) => {
+                ty = item;
+                in_list = true;
+            }
+            _ => return None,
+        }
+    }
+    match ty {
+        Type::Named(id)
+            if in_list
+                && matches!(
+                    symbols.get(id).map(|symbol| &symbol.kind),
+                    Some(SymbolKind::Struct { .. })
+                ) =>
+        {
+            Some(id)
+        }
+        _ => None,
+    }
+}
+
 impl Lowerer<'_> {
     /// A struct or enum item (`type.struct`, `type.enum`; w2.md §1.5): its
-    /// definition with the functions its ticks and uses promise, between
-    /// `start_item` and `finish_item`. Package C1 fills this in; until then
-    /// the item prints nothing, and no analysis makes one.
-    #[allow(clippy::unused_self, reason = "a stub until package C1 lowers the items")]
-    pub(super) fn type_item(&mut self, item: &Item) -> Option<CTypeDef> {
-        let _ = item;
-        None
+    /// definition with the functions its ticks and `uses` promise, after
+    /// forward declarations of the structs its lists name that are not in
+    /// `printed` yet. Records the types it prints in `printed`.
+    pub(super) fn type_item(
+        &mut self,
+        item: &Item,
+        uses: &EnumUses,
+        printed: &mut BTreeSet<SymbolId>,
+    ) -> Vec<CTypeDef> {
+        let mut defs = Vec::new();
+        self.start_item();
+        match &item.kind {
+            ItemKind::Struct(def) => {
+                let symbols = self.symbols;
+                if let Some(SymbolKind::Struct { fields, .. }) = symbols.get(&def.symbol).map(|s| &s.kind) {
+                    let listed = fields
+                        .iter()
+                        .filter_map(|field| symbols.get(field))
+                        .filter_map(|field| listed_struct(&field.ty, symbols));
+                    for id in listed {
+                        if *id != def.symbol
+                            && !printed.contains(id)
+                            && let Some(symbol) = symbols.get(id)
+                        {
+                            printed.insert(id.clone());
+                            defs.push(CTypeDef::Forward(symbol.name.clone()));
+                        }
+                    }
+                }
+                if let Some(mut lowered) = self.struct_def(&def.symbol) {
+                    lowered.comment.clone_from(&item.comment);
+                    defs.push(CTypeDef::Struct(lowered));
+                }
+                printed.insert(def.symbol.clone());
+            }
+            ItemKind::Enum(def) => {
+                let print = uses.printed.contains(&def.symbol);
+                let joined = uses.joined.contains(&def.symbol);
+                if let Some(mut lowered) = self.enum_def(&def.symbol, print, joined) {
+                    lowered.comment.clone_from(&item.comment);
+                    defs.push(CTypeDef::Enum(lowered));
+                }
+                printed.insert(def.symbol.clone());
+            }
+            _ => {}
+        }
+        self.finish_item(&item.headers);
+        defs
     }
 
-    /// *set … of … to* (`StmtKind::SetField`). Package C1 fills this in.
-    #[allow(clippy::unused_self, reason = "a stub until package C1 lowers the blocks")]
+    /// *set … of … to* (`StmtKind::SetField`): `s.mark = x;`.
     pub(super) fn type_stmt(&mut self, kind: &StmtKind) -> CStmtKind {
-        let _ = kind;
-        CStmtKind::Error
+        let StmtKind::SetField { target, field, value } = kind else {
+            return CStmtKind::Error;
+        };
+        let (Some(variable), Some(member)) = (self.variable(target), self.symbol(field)) else {
+            return CStmtKind::Error;
+        };
+        CStmtKind::AssignTo {
+            target: CExpr::field(name_expr(variable.name.clone()), member.name.clone()),
+            op: AssignOp::Set,
+            value: self.expr(value),
+        }
     }
 
-    /// A struct's field, a new struct value or an enum value. Package C1
-    /// fills this in.
-    #[allow(clippy::unused_self, reason = "a stub until package C1 lowers the blocks")]
+    /// A struct's field (`obj.mark`), a new struct value (`Student{…}`) or
+    /// an enum value (`Action::Deposit`).
     pub(super) fn type_expr(&mut self, expr: &Expr) -> CExpr {
-        let _ = expr;
-        CExpr::error()
+        match &expr.kind {
+            ExprKind::Field { object, field } => {
+                let Some(member) = self.symbol(field) else {
+                    return CExpr::error();
+                };
+                let object = self.expr(object);
+                CExpr::field(object, member.name.clone())
+            }
+            ExprKind::New { ty, fields } => self.new_struct(ty, fields, &expr.ty),
+            ExprKind::Enumerator(value) => {
+                let symbols = self.symbols;
+                let Some(symbol) = symbols.get(value) else {
+                    return CExpr::error();
+                };
+                let SymbolKind::Enumerator { owner } = &symbol.kind else {
+                    return CExpr::error();
+                };
+                let Some(owner) = symbols.get(owner) else {
+                    return CExpr::error();
+                };
+                CExpr::new(CExprKind::Enumerator {
+                    owner: vec![owner.name.clone()],
+                    value: symbol.name.clone(),
+                })
+            }
+            _ => CExpr::error(),
+        }
+    }
+
+    /// *new [S] with …*: in C++20 `Student{.name = n, .mark = m}`, empty
+    /// parts left out; in C++17 `Student{n, m}`, an empty part before a
+    /// filled one as `{}` (w2.md §1.5). Each part whose type is not its
+    /// field's is cast as a brace list's items are (slots.md §3.1).
+    fn new_struct(&mut self, id: &SymbolId, parts: &[Option<Expr>], ty: &Type) -> CExpr {
+        let symbols = self.symbols;
+        let Some(SymbolKind::Struct { fields, .. }) = symbols.get(id).map(|symbol| &symbol.kind) else {
+            return CExpr::error();
+        };
+        let cty = self.ctype(ty);
+        self.note_type(&cty);
+        let designated = self.standard >= CppStandard::Cpp20;
+        let mut items: Vec<(Option<Ident>, CExpr)> = Vec::new();
+        let mut pending_empty = 0;
+        for (part, field) in parts.iter().zip(fields) {
+            let Some(field) = symbols.get(field) else {
+                return CExpr::error();
+            };
+            let Some(part) = part else {
+                pending_empty += 1;
+                continue;
+            };
+            if !designated {
+                for _ in 0..pending_empty {
+                    items.push((None, CExpr::new(CExprKind::Braces(Vec::new()))));
+                }
+            }
+            pending_empty = 0;
+            let mut lowered = self.expr(part);
+            if is_scalar(&field.ty) && !fits_as_written(part, &field.ty) {
+                lowered = CExpr::cast(self.ctype(&field.ty), lowered);
+            }
+            let name = designated.then(|| field.name.clone());
+            items.push((name, lowered));
+        }
+        CExpr::new(CExprKind::Init { ty: cty, items })
     }
 
     /// Every name in the program, which a generated function's parameters
@@ -214,10 +356,10 @@ impl Lowerer<'_> {
 
     /// `enum class E { A, B };` for the enum symbol `id`, with `operator<<`
     /// when the enum is printed or written (`<ostream>`; `std::cout <<
-    /// Color::Red` does not compile for an `enum class`) and `to_string`
-    /// when it is joined (`<string>`), each writing an enumerator's name.
-    /// `None` when `id` is not an enum.
-    pub(super) fn enum_def(&mut self, id: &SymbolId, print: bool, to_string: bool) -> Option<CEnum> {
+    /// Color::Red` does not compile for an `enum class`) and `b2c::to_text`
+    /// when it is joined or turned into text (`<string>`), each writing an
+    /// enumerator's name. `None` when `id` is not an enum.
+    pub(super) fn enum_def(&mut self, id: &SymbolId, print: bool, to_text: bool) -> Option<CEnum> {
         let symbol = self.symbol(id)?;
         let SymbolKind::Enum { values } = &symbol.kind else {
             return None;
@@ -240,7 +382,7 @@ impl Lowerer<'_> {
                 &names,
             ));
         }
-        if to_string {
+        if to_text {
             self.include("<string>");
             functions.push(enum_function(
                 Generated::EnumToString,
@@ -260,7 +402,7 @@ impl Lowerer<'_> {
     }
 }
 
-/// An enum's `operator<<` (with the stream `out`) or `to_string`: a `switch`
+/// An enum's `operator<<` (with the stream `out`) or `to_text`: a `switch`
 /// over the enumerators that returns each one's name, then a return for any
 /// other value, which keeps `-Wreturn-type` quiet.
 fn enum_function(

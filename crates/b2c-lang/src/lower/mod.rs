@@ -86,13 +86,24 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
     // parked scope is known once every `main` is lowered.
     lowerer.index.record_unlowered(document);
     let trail = lowerer.scopes.take_trail();
+    // A module's definitions are visible everywhere in it: its functions,
+    // structs and enums.
     let functions = lowerer
         .functions
         .iter()
         .map(|(sym, sig)| (sig.module, sig.name.as_str(), sym));
-    lowerer.index.finish(trail, document.modules.len(), functions);
-    // One `.cpp` per module until shared definitions arrive (ADR-0019).
-    let layout = Layout::flat(&modules, &lowerer.symbols);
+    let user_types = lowerer.symbols.symbols.iter().filter_map(|(sym, symbol)| {
+        let module = lowerer.decls.get(sym)?.module;
+        matches!(symbol.kind, SymbolKind::Struct { .. } | SymbolKind::Enum { .. })
+            .then(|| (module, symbol.name.as_str(), sym))
+    });
+    lowerer
+        .index
+        .finish(trail, document.modules.len(), functions.chain(user_types));
+    // One `.cpp` per module until shared definitions arrive (ADR-0019), its
+    // declarations in the declaration graph's order (modules.md §4).
+    let mut layout = Layout::flat(&modules, &lowerer.symbols);
+    crate::order::order_declarations(&modules, &lowerer.symbols, &mut layout, &mut lowerer.diags);
     Analysis {
         program: Program {
             standard,
@@ -350,6 +361,13 @@ impl<'d> Lowerer<'d> {
     /// Lowers every module.
     fn program(&mut self) -> Vec<Module> {
         let document = self.document;
+        // Structs and enums come first, so that any parameter, result or
+        // field may name them (w2.md §2.2), and their flags are known before
+        // any type that holds them is checked or any body is lowered
+        // (types.md §1.6).
+        let fields = self.declare_user_types();
+        self.settle_ticks();
+        self.check_field_requirements(fields);
         // Function names are unique in the whole program: every function is
         // generated with external linkage, so two modules defining the same
         // name would not link.
@@ -362,8 +380,6 @@ impl<'d> Lowerer<'d> {
                 }
             }
         }
-        // Struct flags are known before any body is lowered (types.md §1.6).
-        self.settle_ticks();
         let chosen_main = self.check_mains();
         let mut modules = Vec::with_capacity(document.modules.len());
         for (index, module) in document.modules.iter().enumerate() {
@@ -962,6 +978,15 @@ impl<'d> Lowerer<'d> {
     /// sets and priority queues and the keys of maps must be comparable
     /// (`B2C-E0313`).
     fn type_of_term(&mut self, term: &TypeTerm, location: &Location, used: TypeUse) -> Type {
+        let ty = self.lookup_term(term, location, used);
+        self.check_requirements(&ty, location);
+        ty
+    }
+
+    /// [`Self::type_of_term`] without the requirements of sets, priority
+    /// queues and maps, which a struct's fields check once every struct's
+    /// flags are known.
+    fn lookup_term(&mut self, term: &TypeTerm, location: &Location, used: TypeUse) -> Type {
         for id in term.refs() {
             if !self.check_type_reference(id, location) {
                 return Type::Error;
@@ -976,10 +1001,7 @@ impl<'d> Lowerer<'d> {
                 );
                 return Type::Error;
             }
-            Ok(ty) if ty.is_in(TypeClass::Value, &self.symbols) != Some(false) => {
-                self.check_requirements(&ty, location);
-                return ty;
-            }
+            Ok(ty) if ty.is_in(TypeClass::Value, &self.symbols) != Some(false) => return ty,
             Ok(_) | Err(_) => {}
         }
         let shown = quoted(&term_cpp(term, &self.symbols));

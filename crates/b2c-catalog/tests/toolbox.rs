@@ -596,8 +596,8 @@ fn entry_block(id: String, block: &str, preset: Option<&Preset>) -> Value {
 }
 
 /// Every toolbox entry, dropped where its shape belongs, resolves with only
-/// the problem the editor fixes when the block is dropped: the parameter
-/// list of a new function. A name or variable nobody has chosen yet (a new
+/// the problems the editor fixes when the block is dropped: the row lists
+/// of a new function, struct or enum (`params`, `fields`, `values`). A name or variable nobody has chosen yet (a new
 /// variable's or function's name, the variable an `ask` stores into) is
 /// absent, which is no catalog problem: the analyser reports it once the
 /// block is part of the program (ADR-0012).
@@ -632,10 +632,14 @@ fn every_toolbox_block_resolves_apart_from_what_the_editor_fills_in() {
             (types[block].clone(), d.code.0.clone(), part)
         })
         .collect();
-    let mut expected: BTreeSet<(String, String, String)> = [("func.define", "B2C-E0612", "Whole")]
-        .into_iter()
-        .map(|(a, b, c)| (a.to_owned(), b.to_owned(), c.to_owned()))
-        .collect();
+    let mut expected: BTreeSet<(String, String, String)> = [
+        ("func.define", "B2C-E0612", "Whole"),
+        ("type.enum", "B2C-E0612", "Whole"),
+        ("type.struct", "B2C-E0612", "Whole"),
+    ]
+    .into_iter()
+    .map(|(a, b, c)| (a.to_owned(), b.to_owned(), c.to_owned()))
+    .collect();
     // An input typed by another part (`elem(C)`, `index(C)`) has no catalog
     // default: the editor writes its start value once that part is chosen,
     // which in the toolbox it is not (types.md §4.3, slots.md §6).

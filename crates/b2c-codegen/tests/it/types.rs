@@ -252,10 +252,10 @@ fn catalog_headers_of_both_item_parts_are_included() {
     );
 }
 
-/// `join` writes an enum with its generated `::to_string` (types.md §5.2), and
+/// `join` writes an enum with its generated `b2c::to_text` (w2.md §2.11), and
 /// `repeat until` turns `==` of two library values into `!=`, as for numbers.
 #[test]
-fn enums_join_by_to_string_and_library_equality_inverts() {
+fn enums_join_by_to_text_and_library_equality_inverts() {
     let b = Builder::new();
     let color = b.enumeration("Color", &["Red"]);
     let c = b.var("c", color);
@@ -286,7 +286,7 @@ fn enums_join_by_to_string_and_library_equality_inverts() {
         .remove(0)
         .contents;
     assert!(
-        contents.contains("std::string text = std::string(\"colour: \") + ::to_string(c);"),
+        contents.contains("std::string text = std::string(\"colour: \") + b2c::to_text(c);"),
         "{contents}"
     );
     assert!(contents.contains("while (first != second) {"), "{contents}");

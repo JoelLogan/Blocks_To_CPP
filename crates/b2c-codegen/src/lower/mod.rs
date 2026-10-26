@@ -80,13 +80,41 @@ pub(crate) fn lower_module(program: &Program, module: &Module) -> LoweredModule 
     let mut functions = Vec::new();
     let mut mains = Vec::new();
     let mut types = Vec::new();
+    // Structs and enums in the declaration graph's order (modules.md §4),
+    // which the analysis puts in the module's layout; any the layout does
+    // not list come after, in item order.
+    let listed = program
+        .layout
+        .modules
+        .iter()
+        .find(|files| files.module == module.id)
+        .map_or(&[][..], |files| files.source_order.as_slice());
+    let is_type = |index: &usize| {
+        module
+            .items
+            .get(*index)
+            .is_some_and(|item| matches!(item.kind, ItemKind::Struct(_) | ItemKind::Enum(_)))
+    };
+    let mut type_order: Vec<usize> = listed.iter().copied().filter(is_type).collect();
+    let seen: BTreeSet<usize> = type_order.iter().copied().collect();
+    let unlisted: Vec<usize> = (0..module.items.len())
+        .filter(|index| is_type(index) && !seen.contains(index))
+        .collect();
+    type_order.extend(unlisted);
+    if !type_order.is_empty() {
+        let uses = scan::enum_uses(program);
+        let mut printed = BTreeSet::new();
+        for index in type_order {
+            types.extend(lowerer.type_item(&module.items[index], &uses, &mut printed));
+        }
+    }
     for item in &module.items {
         match &item.kind {
             ItemKind::Main(def) => mains.push(lowerer.main(def, item)),
             ItemKind::Function(def) => functions.extend(lowerer.function(def, item)),
             // W2's definitions (w2.md §3.2): structs and enums are C1's,
-            // globals C2's, a used header D's.
-            ItemKind::Struct(_) | ItemKind::Enum(_) => types.extend(lowerer.type_item(item)),
+            // lowered above, globals C2's, a used header D's.
+            ItemKind::Struct(_) | ItemKind::Enum(_) => {}
             ItemKind::Global(def) => lowerer.global_item(def, item),
             ItemKind::UseHeader { header } => lowerer.use_header(*header, item),
         }

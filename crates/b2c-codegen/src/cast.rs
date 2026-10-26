@@ -1042,6 +1042,9 @@ pub(crate) struct CFunction {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's struct and enum blocks"))]
 pub(crate) enum CTypeDef {
+    /// `struct S;`: a struct named only in the lists of a struct defined
+    /// before it (modules.md §3.3).
+    Forward(Ident),
     /// `struct S { … };`
     Struct(CStruct),
     /// `enum class E { … };` and its print support.
@@ -1120,7 +1123,9 @@ pub(crate) enum Generated {
     /// `std::ostream& operator<<(std::ostream& out, T value)`: an enum that
     /// is printed or written.
     PrintEnum,
-    /// `std::string to_string(T value)`: an enum that is joined.
+    /// `inline std::string to_text(T value)` in the support namespace `b2c`,
+    /// beside the decimal helper of that name: an enum that is joined or
+    /// turned into text (w2.md §2.11).
     EnumToString,
 }
 
@@ -1146,12 +1151,12 @@ impl Generated {
     }
 
     /// The function's name after `operator` (`==`, `<<`), or its whole name
-    /// (`to_string`).
+    /// (`to_text`).
     pub(crate) fn name(self) -> (Option<&'static str>, &'static str) {
         match self {
             Self::Compare(op) => (Some("operator"), op.token()),
             Self::PrintStruct | Self::PrintEnum => (Some("operator"), "<<"),
-            Self::EnumToString => (None, "to_string"),
+            Self::EnumToString => (None, "to_text"),
         }
     }
 

@@ -255,6 +255,105 @@ pub(super) fn mentions_any(block: &Block, ids: &[SymbolId]) -> bool {
     !walk_block(block, &mut mentions, 0) || ids.iter().any(|id| mentions.0.contains(id))
 }
 
+/// The enums whose values a program prints or writes, and those whose values
+/// it joins or turns into text: the uses that need an enum's `operator<<`
+/// and its `b2c::to_text` (w2.md §1.5, §2.11).
+#[derive(Debug, Default)]
+pub(super) struct EnumUses {
+    /// Enums printed or written.
+    pub(super) printed: BTreeSet<SymbolId>,
+    /// Enums joined or turned into text.
+    pub(super) joined: BTreeSet<SymbolId>,
+}
+
+impl EnumUses {
+    /// Records the enum of `expr`'s type, if it has one, in `set`.
+    fn note(symbols: &SymbolTable, expr: &Expr, set: &mut BTreeSet<SymbolId>) {
+        if let b2c_ir::types::Type::Named(id) = &expr.ty
+            && matches!(symbols.get(id).map(|s| &s.kind), Some(SymbolKind::Enum { .. }))
+        {
+            set.insert(id.clone());
+        }
+    }
+}
+
+/// [`EnumUses`] as a walk sees them.
+struct EnumWalk<'a> {
+    symbols: &'a SymbolTable,
+    uses: EnumUses,
+}
+
+impl Visitor for EnumWalk<'_> {
+    fn stmt(&mut self, stmt: &Stmt) {
+        if let StmtKind::Print { items, .. } | StmtKind::WriteFile { items, .. } = &stmt.kind {
+            for item in items {
+                EnumUses::note(self.symbols, item, &mut self.uses.printed);
+            }
+        }
+    }
+
+    fn expr(&mut self, expr: &Expr) {
+        match &expr.kind {
+            ExprKind::Join(items) => {
+                for item in items {
+                    EnumUses::note(self.symbols, item, &mut self.uses.joined);
+                }
+            }
+            ExprKind::AsText(value) => EnumUses::note(self.symbols, value, &mut self.uses.joined),
+            _ => {}
+        }
+    }
+}
+
+/// The enums every module of `program` prints, writes or joins. An enum held
+/// by a field of a printable struct is printed too, by the struct's
+/// `operator<<`.
+pub(super) fn enum_uses(program: &b2c_ir::sast::Program) -> EnumUses {
+    let symbols = &program.symbols;
+    let mut walk = EnumWalk {
+        symbols,
+        uses: EnumUses::default(),
+    };
+    for item in program.modules.iter().flat_map(|module| &module.items) {
+        match &item.kind {
+            b2c_ir::sast::ItemKind::Main(def) => {
+                walk_block(&def.body, &mut walk, 0);
+            }
+            b2c_ir::sast::ItemKind::Function(def) => {
+                walk_block(&def.body, &mut walk, 0);
+            }
+            b2c_ir::sast::ItemKind::Global(def) => {
+                walk_opt(def.init.as_ref(), &mut walk, 0);
+            }
+            b2c_ir::sast::ItemKind::Struct(def) => {
+                for value in def.defaults.values() {
+                    walk_expr(value, &mut walk, 0);
+                }
+            }
+            b2c_ir::sast::ItemKind::Enum(_) | b2c_ir::sast::ItemKind::UseHeader { .. } => {}
+        }
+    }
+    let mut uses = walk.uses;
+    for symbol in symbols.symbols.values() {
+        let SymbolKind::Struct {
+            fields,
+            printable: true,
+            ..
+        } = &symbol.kind
+        else {
+            continue;
+        };
+        for field in fields.iter().filter_map(|field| symbols.get(field)) {
+            if let b2c_ir::types::Type::Named(id) = &field.ty
+                && matches!(symbols.get(id).map(|s| &s.kind), Some(SymbolKind::Enum { .. }))
+            {
+                uses.printed.insert(id.clone());
+            }
+        }
+    }
+    uses
+}
+
 /// Collects the variables an expression reads, and whether it calls anything.
 #[derive(Default)]
 struct Reads {

@@ -225,6 +225,11 @@ describe('the slot fixture', () => {
       'text.split',
       'text.to_number',
       'text.trim',
+      // W2's structs and enums (w2.md §1.5).
+      'type.enum_value',
+      'type.field',
+      'type.new',
+      'type.set_field',
       'var.declare',
       'var.set',
     ]);

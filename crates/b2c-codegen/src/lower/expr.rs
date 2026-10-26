@@ -112,14 +112,13 @@ fn replace_kind(from: CExpr, kind: CExprKind) -> CExpr {
     }
 }
 
-/// A desugared enum value as text: `::to_string(c)`, the function generated
-/// for an enum that is joined (types.md §5.2), next to the enum in the
-/// global namespace. It is qualified because an unqualified call finds a
-/// variable or parameter named `to_string` first, and argument-dependent
-/// lookup does not run then; once types can live in namespaces (W3), the
-/// qualifier is the enum's namespace.
+/// A desugared enum value as text: `b2c::to_text(c)`, the function generated
+/// for an enum that is joined or turned into text, an overload of the
+/// decimal helper in the global support namespace (w2.md §2.11). No user
+/// name starts with `b2c`, so nothing hides it, and a user function
+/// `to_string` taking the enum does not clash with it.
 fn enum_text(lowered: CExpr) -> CExpr {
-    CExpr::call_fixed("::to_string", vec![lowered])
+    CExpr::call_fixed("b2c::to_text", vec![lowered])
 }
 
 /// A desugared `bool` as text: `b ? "true" : "false"`, or just `"true"` /
@@ -266,7 +265,7 @@ impl Lowerer<'_> {
     /// Converts a desugared expression to a `std::string` object:
     /// `std::string(text)`, `std::string(1, c)`, `std::to_string(n)`,
     /// `b2c::to_text(x)`, `std::string(b ? "true" : "false")` or, for an
-    /// enum, its generated `::to_string(c)` (types.md §5.2).
+    /// enum, its generated `b2c::to_text(c)` (w2.md §2.11).
     pub(super) fn std_string_of(&mut self, expr: &Expr, lowered: CExpr) -> CExpr {
         self.include("<string>");
         match expr.ty {

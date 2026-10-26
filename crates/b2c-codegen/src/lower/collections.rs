@@ -43,7 +43,7 @@ fn int_literal_value(expr: &Expr) -> Option<i64> {
 /// `char`, 0 and 1 into `bool`. Every other item is cast, so g++ never meets
 /// a narrowing conversion in braces (an error, or `-Wnarrowing`), also where
 /// `char` is unsigned.
-fn fits_as_written(item: &Expr, elem: &Type) -> bool {
+pub(super) fn fits_as_written(item: &Expr, elem: &Type) -> bool {
     if item.ty == *elem || item.ty == Type::Error || *elem == Type::Error {
         return true;
     }
