@@ -19,7 +19,8 @@
  *   (./inflater.ts) and only moves it where the new contents put it, so showing it again builds
  *   and draws only the blocks that changed; the plugin's own recycler (one block per block type,
  *   for blocks without mutators or variables) is never used, and stays empty instead of needing to
- *   replace Blockly's block inflater for every flyout;
+ *   replace Blockly's block inflater for every flyout; and it shows its contents with Blockly's
+ *   events off (no one listens for the flyout's own block events);
  * - showing the flyout again keeps the keyboard focus on the same item when it was in the flyout
  *   (04 §4.8), and the animated scroll to a chosen category jumps at once when the system asks for
  *   reduced motion;
@@ -679,6 +680,24 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
       ),
     );
     workspace.scrollbar?.setY(target);
+  }
+
+  /**
+   * Shows `flyoutDef` (the plugin's showing) with Blockly's events off: nothing listens for the
+   * flyout's own block creations, deletions and moves, which cost Blockly two serialisations and
+   * an event for each block it builds or disposes of, and a move event for each block it places.
+   * Also left out: the viewport events of the flyout's resizing within the showing and, at the
+   * first showing only, the plugin's selection of the first category. The toolbox keeps the focus
+   * and the scroll position after the showing (`B2cContinuousToolbox.showAllCategories`), with
+   * events on.
+   */
+  override show(flyoutDef: Blockly.utils.toolbox.FlyoutDefinition | string): void {
+    Blockly.Events.disable();
+    try {
+      super.show(flyoutDef);
+    } finally {
+      Blockly.Events.enable();
+    }
   }
 
   /**

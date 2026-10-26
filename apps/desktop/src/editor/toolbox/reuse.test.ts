@@ -573,6 +573,34 @@ describe('a kept block', () => {
   });
 });
 
+describe('the events of a showing', () => {
+  it('include no block created, deleted or moved in the flyout, but a change made there', async () => {
+    const workspace = attached();
+    await settle();
+    const flyoutWorkspace = workspace.getFlyout()?.getWorkspace();
+    if (flyoutWorkspace === undefined) {
+      throw new Error('no flyout');
+    }
+    const seen: string[] = [];
+    flyoutWorkspace.addChangeListener((event) => {
+      seen.push(event.type);
+    });
+    addCount(workspace);
+    await settle();
+    continuousToolbox(workspace).showAllCategories();
+    await settle();
+    expect(seen).not.toContain(Blockly.Events.BLOCK_CREATE);
+    expect(seen).not.toContain(Blockly.Events.BLOCK_DELETE);
+    expect(seen).not.toContain(Blockly.Events.BLOCK_MOVE);
+    // An edit in the flyout still reaches its listeners (start values follow it, ./reshape.ts).
+    const set = flyoutBlocks(workspace).find((block) => block.type === 'var.set');
+    set?.setFieldValue('s_n', 'VAR');
+    await settle();
+    expect(seen).toContain(Blockly.Events.BLOCK_CHANGE);
+    expect(Blockly.Events.isEnabled()).toBe(true);
+  });
+});
+
 describe('the time a showing takes', () => {
   /** The median of `count` runs of `run`, in milliseconds. */
   function median(count: number, run: (index: number) => void): number {
