@@ -16,6 +16,7 @@ import { B2cContinuousToolbox, CONTINUOUS_REFRESH_DELAY_MS } from './continuous'
 import { declaresSymbols, type B2cBlockInflater, type FlyoutBlockStats } from './inflater';
 import { createToolboxPlugin } from './plugin';
 import { B2C_BLOCK_KIND, type B2cBlockInfo } from './presets';
+import { toolboxInjectOptions } from './register';
 import {
   FLYOUT_TEST_TIMEOUT_MS,
   disposeTestWorkspaces,
@@ -629,6 +630,50 @@ describe('a showing of the displayed flyout', () => {
     // Recorded again in the next frame (the layout marked them stale).
     await settle();
     expect(record).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the canvas’s block limits', () => {
+  it('cost a block added to the canvas no walk of the flyout while there are none', async () => {
+    const workspace = attached();
+    await settle();
+    const walks = vi.spyOn(workspace.getFlyout()?.getWorkspace() ?? workspace, 'getTopBlocks');
+    const block = workspace.newBlock('io.print');
+    block.initSvg();
+    block.render();
+    await settle();
+    expect(walks).not.toHaveBeenCalled();
+  });
+
+  it('still disable a flyout block once the canvas has as many as it may', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const options = toolboxInjectOptions();
+    const workspace = Blockly.inject(host, {
+      renderer: 'zelos',
+      sounds: false,
+      toolbox: options.toolbox,
+      plugins: { ...options.plugins },
+      maxInstances: { 'io.print': 1 },
+    });
+    try {
+      const print = () => flyoutBlocks(workspace).find((block) => block.type === 'io.print');
+      expect(print()?.isEnabled()).toBe(true);
+      const block = workspace.newBlock('io.print');
+      block.initSvg();
+      block.render();
+      await settle();
+      expect(print()?.isEnabled()).toBe(false);
+      // Also after the flyout is shown again, with the block kept.
+      const toolbox = continuousToolbox(workspace);
+      toolbox.showAllCategories();
+      expect(print()?.isEnabled()).toBe(false);
+      block.dispose(false);
+      await settle();
+      expect(print()?.isEnabled()).toBe(true);
+    } finally {
+      workspace.dispose();
+    }
   });
 });
 

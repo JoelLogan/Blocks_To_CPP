@@ -15,7 +15,9 @@
  *   and a block the user changed in the flyout (a number typed in, a variable chosen), which is told by comparing
  *   its serialised state with the state it was built with when the flyout is shown again;
  * - each block remembers the item it was built from, so a block dragged out of it can be settled
- *   where it lands (./landing.ts).
+ *   where it lands (./landing.ts);
+ * - Blockly's listener that disables flyout blocks when the canvas reaches a block limit is added
+ *   only when the canvas has limits (the app sets none).
  *
  * Its items have their own type, so the flyout gives them back to this inflater to dispose of: a
  * block that may be kept is parked, without its pointer listeners and its hover highlight, until
@@ -108,6 +110,8 @@ export class B2cBlockInflater extends Blockly.BlockFlyoutInflater {
   private readonly keys = new WeakMap<Blockly.BlockSvg, string>();
   /** The state each block that may be kept was built with ({@link fingerprint}). */
   private readonly fingerprints = new WeakMap<Blockly.BlockSvg, string>();
+  /** Whether Blockly's capacity listener is on the flyout's canvas ({@link setFlyout}). */
+  private capacityListened = false;
   /** The key of the item `load` is loading, for `createBlock`, or `null`. */
   private pendingKey: string | null = null;
   private created = 0;
@@ -162,11 +166,18 @@ export class B2cBlockInflater extends Blockly.BlockFlyoutInflater {
 
   /**
    * Parks a block that may be kept and that the user did not change in the flyout (it keeps its
-   * place until the next layout); disposes of any other.
+   * place until the next layout); disposes of any other. A disabled block is never kept: Blockly's
+   * `load` would take it for one disabled by its item, and never enable it again by the canvas's
+   * block limits.
    */
   override disposeItem(item: Blockly.FlyoutItem): void {
     const block = item.getElement();
-    if (block instanceof Blockly.BlockSvg && this.reuse && !block.isDeadOrDying()) {
+    if (
+      block instanceof Blockly.BlockSvg &&
+      this.reuse &&
+      !block.isDeadOrDying() &&
+      block.isEnabled()
+    ) {
       const key = this.keys.get(block);
       const built = this.fingerprints.get(block);
       if (key !== undefined && built !== undefined && fingerprint(block) === built) {
@@ -196,6 +207,29 @@ export class B2cBlockInflater extends Blockly.BlockFlyoutInflater {
       }
     }
     this.parked.clear();
+  }
+
+  /**
+   * Remembers the flyout (Blockly's), without Blockly's capacity listener while the canvas has no
+   * block limits: on every block created or deleted on the canvas, that listener walks every
+   * block of the flyout to enable or disable it by the canvas's remaining capacity. The app sets
+   * no block limits; Blockly's listener is kept if limits are ever set, also once they are set
+   * after the flyout's first showing.
+   */
+  protected override setFlyout(flyout: Blockly.IFlyout): void {
+    if (flyout.targetWorkspace?.hasBlockLimits() !== true) {
+      this.flyout = flyout;
+      return;
+    }
+    if (this.capacityListened && this.flyout === flyout) {
+      return;
+    }
+    if (this.flyout === flyout) {
+      // Blockly adds its listener only for a flyout it has not seen.
+      delete this.flyout;
+    }
+    super.setFlyout(flyout);
+    this.capacityListened = true;
   }
 
   /** How many blocks this inflater built, kept and disposed of so far. */
