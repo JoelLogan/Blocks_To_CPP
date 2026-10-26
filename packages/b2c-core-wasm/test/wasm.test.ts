@@ -60,7 +60,7 @@ const ERROR_TYPES: readonly unknown[] = [
 
 /**
  * Whether a type term is one the examples use: M2's types, the errors of W2's input_validation,
- * and lists of them (W2's matrix_sum).
+ * lists of them (W2's matrix_sum) and maps from one to another (W2's dice_statistics).
  */
 function isExampleType(type: unknown): boolean {
   if (M2_TYPES.includes(type) || ERROR_TYPES.includes(type)) {
@@ -70,7 +70,16 @@ function isExampleType(type: unknown): boolean {
     return false;
   }
   const entries = Object.entries(type);
-  return entries.length === 1 && entries[0]?.[0] === 'std::vector' && isExampleType(entries[0][1]);
+  if (entries.length !== 1) {
+    return false;
+  }
+  const [name, args] = entries[0] ?? [];
+  if (name === 'std::vector') {
+    return isExampleType(args);
+  }
+  return (
+    name === 'std::map' && Array.isArray(args) && args.length === 2 && args.every(isExampleType)
+  );
 }
 /** The SHA-256 of a text's UTF-8 bytes, as 64 lower-case hex digits. */
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
@@ -172,7 +181,7 @@ describe.skipIf(!built && !required)('the built compiler core', () => {
     // Scope data of the program (the exact values are checked natively and in
     // scope-clipboard.test.ts): static types, and symbols sorted by name.
     // Types are terms (types.md §3.1): the examples use M2's types, the errors W2's
-    // input_validation catches, and lists of them.
+    // input_validation catches, lists of them and maps.
     for (const type of Object.values(preview.blockTypes)) {
       expect(isExampleType(type), JSON.stringify(type)).toBe(true);
     }

@@ -6,6 +6,13 @@ average.b2c:
   (no value blocks)
 countdown.b2c:
   (no value blocks)
+dice_statistics.b2c:
+  b013: "int"
+  b015: "int"
+  b016: "int"
+  b024: "bool"
+  b025: "int"
+  b028: "int"
 exit_code.b2c:
   (no value blocks)
 factorial.b2c:

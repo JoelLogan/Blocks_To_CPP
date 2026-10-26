@@ -20,7 +20,7 @@ green one by one as the block projects arrive.
 | [`student_records`](student_records/README.md) | struct, list of structs, sorting | W2 | pending |
 | [`bank_menu`](bank_menu/README.md) | `switch`, enum, `do … while` | W2 | pending |
 | [`palindrome`](palindrome/README.md) | strings, reversal | W2 | pending |
-| [`dice_statistics`](dice_statistics/README.md) | random numbers, map | W2 | pending |
+| [`dice_statistics`](dice_statistics/README.md) | random numbers, map | W2 | green |
 | [`guessing_game`](guessing_game/README.md) | random numbers, input, loops | M2 | green |
 | [`matrix_sum`](matrix_sum/README.md) | list of lists (vector of vectors) | W2 | green |
 | [`input_validation`](input_validation/README.md) | exceptions, text to number | W2 | green |

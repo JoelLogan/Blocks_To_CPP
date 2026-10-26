@@ -1,0 +1,721 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 2,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.3.0"
+  },
+  "project": {
+    "id": "prj_dice_statistics",
+    "name": "Dice Statistics",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b001",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b002",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_rolls",
+                      "name": "rolls"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b003",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "MODE": "keep_asking",
+                    "VAR": {
+                      "ref": "s_rolls"
+                    }
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "How many times should I roll the die? "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b004",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": ""
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b005",
+                  "type": "control.if",
+                  "v": 1,
+                  "extra": {
+                    "elseIfCount": 0,
+                    "hasElse": false
+                  },
+                  "inputs": {
+                    "COND0": {
+                      "expr": [
+                        {
+                          "ref": "s_rolls"
+                        },
+                        {
+                          "op": "<"
+                        },
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b006",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 1
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "Roll at least once."
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b007",
+                        "type": "program.exit",
+                        "v": 1,
+                        "inputs": {
+                          "CODE": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b008",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_counts",
+                      "name": "counts"
+                    },
+                    "TYPE": {
+                      "std::map": [
+                        "int",
+                        "int"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b009",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "DIRECTION": "through",
+                    "VAR": {
+                      "sym": "s_face",
+                      "name": "face"
+                    }
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "num": "6"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b010",
+                        "type": "coll.set_item",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_counts"
+                          }
+                        },
+                        "inputs": {
+                          "INDEX": {
+                            "expr": [
+                              {
+                                "ref": "s_face"
+                              }
+                            ]
+                          },
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b011",
+                  "type": "control.repeat",
+                  "v": 1,
+                  "inputs": {
+                    "TIMES": {
+                      "expr": [
+                        {
+                          "ref": "s_rolls"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b012",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "CONST": false,
+                          "NAME": {
+                            "sym": "s_rolled",
+                            "name": "face"
+                          },
+                          "TYPE": "int"
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "block": {
+                              "id": "b013",
+                              "type": "math.random_int",
+                              "v": 1,
+                              "inputs": {
+                                "HIGH": {
+                                  "expr": [
+                                    {
+                                      "num": "6"
+                                    }
+                                  ]
+                                },
+                                "LOW": {
+                                  "expr": [
+                                    {
+                                      "num": "1"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "id": "b014",
+                        "type": "coll.set_item",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_counts"
+                          }
+                        },
+                        "inputs": {
+                          "INDEX": {
+                            "expr": [
+                              {
+                                "ref": "s_rolled"
+                              }
+                            ]
+                          },
+                          "VALUE": {
+                            "block": {
+                              "id": "b015",
+                              "type": "math.arithmetic",
+                              "v": 1,
+                              "fields": {
+                                "OP": "add"
+                              },
+                              "inputs": {
+                                "A": {
+                                  "block": {
+                                    "id": "b016",
+                                    "type": "coll.item",
+                                    "v": 1,
+                                    "fields": {
+                                      "LIST": {
+                                        "ref": "s_counts"
+                                      }
+                                    },
+                                    "inputs": {
+                                      "INDEX": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_rolled"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                "B": {
+                                  "expr": [
+                                    {
+                                      "num": "1"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b017",
+                  "type": "io.decimals",
+                  "v": 1,
+                  "inputs": {
+                    "DIGITS": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b018",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_total",
+                      "name": "total"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b019",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_most_common",
+                      "name": "most_common"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "1"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b020",
+                  "type": "coll.for_each_pair",
+                  "v": 1,
+                  "fields": {
+                    "KEY": {
+                      "sym": "s_counts_face",
+                      "name": "face"
+                    },
+                    "MAP": {
+                      "ref": "s_counts"
+                    },
+                    "VALUE": {
+                      "sym": "s_count",
+                      "name": "count"
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b021",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 6
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "ref": "s_counts_face"
+                              }
+                            ]
+                          },
+                          "ITEM1": {
+                            "expr": [
+                              {
+                                "str": ": "
+                              }
+                            ]
+                          },
+                          "ITEM2": {
+                            "expr": [
+                              {
+                                "ref": "s_count"
+                              }
+                            ]
+                          },
+                          "ITEM3": {
+                            "expr": [
+                              {
+                                "str": " ("
+                              }
+                            ]
+                          },
+                          "ITEM4": {
+                            "expr": [
+                              {
+                                "ref": "s_count"
+                              },
+                              {
+                                "op": "*"
+                              },
+                              {
+                                "num": "100.0"
+                              },
+                              {
+                                "op": "/"
+                              },
+                              {
+                                "ref": "s_rolls"
+                              }
+                            ]
+                          },
+                          "ITEM5": {
+                            "expr": [
+                              {
+                                "str": "%)"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b022",
+                        "type": "var.change",
+                        "v": 1,
+                        "fields": {
+                          "OP": "add",
+                          "VAR": {
+                            "ref": "s_total"
+                          }
+                        },
+                        "inputs": {
+                          "BY": {
+                            "expr": [
+                              {
+                                "ref": "s_count"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b023",
+                        "type": "control.if",
+                        "v": 1,
+                        "extra": {
+                          "elseIfCount": 0,
+                          "hasElse": false
+                        },
+                        "inputs": {
+                          "COND0": {
+                            "block": {
+                              "id": "b024",
+                              "type": "math.compare",
+                              "v": 1,
+                              "fields": {
+                                "OP": "gt"
+                              },
+                              "inputs": {
+                                "A": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_count"
+                                    }
+                                  ]
+                                },
+                                "B": {
+                                  "block": {
+                                    "id": "b025",
+                                    "type": "coll.item",
+                                    "v": 1,
+                                    "fields": {
+                                      "LIST": {
+                                        "ref": "s_counts"
+                                      }
+                                    },
+                                    "inputs": {
+                                      "INDEX": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_most_common"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b026",
+                              "type": "var.set",
+                              "v": 1,
+                              "fields": {
+                                "VAR": {
+                                  "ref": "s_most_common"
+                                }
+                              },
+                              "inputs": {
+                                "VALUE": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_counts_face"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b027",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Faces: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "block": {
+                        "id": "b028",
+                        "type": "coll.length",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_counts"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b029",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Total: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_total"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b030",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 2
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Most common face: "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_most_common"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
