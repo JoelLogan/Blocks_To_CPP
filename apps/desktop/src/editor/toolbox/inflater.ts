@@ -10,10 +10,10 @@
  * - a block is kept from one showing of the flyout to the next when the next showing has an equal
  *   item, so showing the flyout again builds and draws only the blocks whose items changed
  *   (drawing a block is most of the cost of a showing). Everything a block shows comes from its
- *   item, so a kept block is the block its item would build. These are built again instead:
- *   a block that declares something ({@link declaresSymbols}: each showing declares new symbols),
- *   and a block the user changed in the flyout (a number typed in, a variable chosen), which is told by comparing
- *   its serialised state with the state it was built with when the flyout is shown again;
+ *   item, so a kept block is the block its item would build. These are built again instead: a
+ *   block that declares something ({@link declaresSymbols}: each showing declares new symbols),
+ *   and a block the user changed in the flyout (a number typed in, a variable chosen), which is
+ *   told by comparing its serialised state with the state it was built with;
  * - each block remembers the item it was built from, so a block dragged out of it can be settled
  *   where it lands (./landing.ts);
  * - Blockly's listener that disables flyout blocks when the canvas reaches a block limit is added
@@ -249,7 +249,7 @@ export const LABEL_KIND = 'label';
  * The flyout's labels (the category headings, the groups of *Variables*, the notes): Blockly's
  * label inflater, except that a label is kept from one showing to the next when the next showing
  * has an equal one, as the toolbox's blocks are (`B2cBlockInflater`). A label shows only its item's
- * text and style, and drawing one (its text measured) costs a fifth of a showing of kept blocks.
+ * text and style, and drawing them (their text measured) was a third of a showing of kept blocks.
  * The flyout chooses this inflater for its labels itself (`B2cContinuousFlyout`), so Blockly's
  * stays the default for every other flyout.
  */

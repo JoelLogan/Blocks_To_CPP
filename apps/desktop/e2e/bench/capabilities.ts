@@ -43,6 +43,8 @@ export const BENCH_HOOK_METHODS = {
   select: ['blockElement', 'code', 'scrollCanvasBy', 'grabPoint'],
   // The clicks of `select` and the edits of `preview`, on the guessing game.
   guessing: ['blockElement', 'code', 'scrollCanvasBy', 'grabPoint', 'insertBlocks', 'selectBlock'],
+  // Opening each document, the declarations (EDIT_SCRIPT) and deleting them.
+  declare: ['blockElement', 'code', 'insertBlocks', 'selectBlock'],
   // The Empty template's `main` (from the document), the program, and the console's transcript.
   console: ['document', 'insertBlocks', 'consoleText'],
   // Opening the document, centring on the handle, where the handle is and where to grab it.
