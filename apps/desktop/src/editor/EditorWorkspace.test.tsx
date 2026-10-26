@@ -20,6 +20,12 @@ import { registerEditorBlocks } from './services';
 import { B2cBlockDragger } from './sync/drag';
 import { present, setViewSize } from './sync/testing';
 import { CONTROLS_COMPONENT_ID } from './view/placement';
+import { FLYOUT_TEST_TIMEOUT_MS } from './toolbox/testing';
+
+// Each test here injects the editor with the continuous toolbox, whose flyout draws every catalog
+// block (toolbox/testing.ts): the slowest test took 2.6 s under coverage with two workers here and
+// 3.3 s in CI after W2's blocks. Package T's flyout reuse is to make this limit unneeded.
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 /** The colour-scheme media query the component reads. */
 const scheme = vi.hoisted(() => {

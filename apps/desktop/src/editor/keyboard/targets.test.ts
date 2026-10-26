@@ -3,7 +3,7 @@
  * blocks and type-aware connection checker.
  */
 import * as Blockly from 'blockly/core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { describeTarget } from './labels';
 import {
@@ -16,6 +16,12 @@ import {
   movingConnection,
 } from './targets';
 import { type KeyboardEditor, keyboardEditor } from './testing';
+import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
+
+// Each test here injects the editor with the continuous toolbox, whose flyout draws every catalog
+// block (toolbox/testing.ts): the slowest test took 2.9 s under coverage with two workers here and
+// 4.0 s in CI after W2's blocks. Package T's flyout reuse is to make this limit unneeded.
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 let editor: KeyboardEditor | null = null;
 

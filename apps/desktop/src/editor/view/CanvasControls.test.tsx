@@ -8,7 +8,7 @@ import { b2cLightTheme } from '@blocks2cpp/blockly-ext';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import * as Blockly from 'blockly/core';
 import { createPortal } from 'react-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import appCss from '../../app/app.css?raw';
 import {
@@ -24,6 +24,12 @@ import { disposeWorkspaces, renderedWorkspace, setViewSize } from '../sync/testi
 import { CanvasControls, SHOW_ALL_ANNOUNCEMENTS, ZOOM_KEYS, zoomKeyOf } from './CanvasControls';
 import controlsCss from './CanvasControls.css?raw';
 import { CONTROLS_COMPONENT_ID } from './placement';
+import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
+
+// Each test here injects the editor with the continuous toolbox, whose flyout draws every catalog
+// block (toolbox/testing.ts): the slowest test took 2.6 s under coverage with two workers here and
+// 4.3 s in CI after W2's blocks. Package T's flyout reuse is to make this limit unneeded.
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 afterEach(() => {
   disposeWorkspaces();

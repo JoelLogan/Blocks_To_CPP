@@ -10,7 +10,7 @@ import { act, render, screen } from '@testing-library/react';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { guessDocument } from '../../editor/toolbox/testing';
+import { FLYOUT_TEST_TIMEOUT_MS, guessDocument } from '../../editor/toolbox/testing';
 import { expectNoAxeViolations } from '../../test/axe';
 import { App } from '../App';
 import { setCore } from '../core';
@@ -18,6 +18,12 @@ import { resetAppStore, useAppStore } from '../store';
 import { projectFixture, settingsFixture, toolchainFixture } from '../testing/fixtures';
 import { HintProvider } from '../ui/Hint';
 import { pressTab } from './sequentialFocus';
+
+// Each test here injects the editor with the continuous toolbox, whose flyout draws every catalog
+// block (toolbox/testing.ts): the first test took 3.4 s under coverage with two workers here and
+// 5.6 s in CI after W2's blocks, past the default 5 s (the second sets its own limit). Package T's
+// flyout reuse is to make this limit unneeded.
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 /** A ResizeObserver that never calls back (happy-dom lays nothing out). */
 class StillResizeObserver {
