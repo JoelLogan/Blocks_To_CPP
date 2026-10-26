@@ -105,6 +105,12 @@ export interface SymbolProvider {
    * {@link symbolsAt}.
    */
   structFields?(blockId: string, structId: string): readonly string[] | null;
+  /**
+   * Optional: the structs and enums of the module shown, from the latest analysis, in any order
+   * (docs/plans/m3-contracts/w2.md §2.3). Type fields list them after their catalog types; without
+   * it, a type field asks {@link symbolsAt} at its block, whose answer lists them too.
+   */
+  userTypes?(): readonly SymbolInfo[];
 }
 
 /**
