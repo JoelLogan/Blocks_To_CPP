@@ -14,8 +14,15 @@ import { By, type WebElement } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
 import { type BlockNode, moduleNodes, NodeIds, type ProjectDocument } from '../../support/bdm';
-import { currentDocument, fieldOf, foldCodePanel, waitForDelivery } from '../../support/editor';
-import { clickMiddle } from '../../support/ui';
+import { bringIntoView } from '../../support/canvas';
+import {
+  centerOn,
+  currentDocument,
+  fieldOf,
+  foldCodePanel,
+  waitForDelivery,
+} from '../../support/editor';
+import { clickMiddle, middleOf } from '../../support/ui';
 import { waitFor } from '../../support/wait';
 import { closeMenu, menuLabels } from './lib/editor';
 import { type FlowApp, startFlow } from './lib/launch';
@@ -60,8 +67,21 @@ function waitForParts(app: FlowApp, id: string, count: number): Promise<BlockNod
   );
 }
 
-/** The ⊕ of block `id`: its button whose text alternative starts with "Add". */
+/**
+ * The ⊕ of block `id`: its button whose text alternative starts with "Add", with the block centred
+ * and the canvas panned until the button is well inside the visible canvas, as `fieldOf` does for a
+ * field. The toolbox's flyout stays open over the canvas's left part: in a window the size of the
+ * Windows runner's (1024 × 768) it covers the ⊕ of a *try* block in `main`, and a click there lands
+ * on the flyout.
+ */
 async function addButton(app: FlowApp, id: string): Promise<WebElement> {
+  await centerOn(app, id);
+  await bringIntoView(app.driver, async () => middleOf(app.driver, await findAddButton(app, id)));
+  return findAddButton(app, id);
+}
+
+/** Waits for the ⊕ of block `id`, wherever it is on the canvas. */
+function findAddButton(app: FlowApp, id: string): Promise<WebElement> {
   return waitFor(
     async () => {
       const group = await app.hook.blockElement(id);
