@@ -11,7 +11,12 @@ import type { ChoiceOptions, DialogService } from '../../app/dialogs';
 import { useAppStore } from '../../app/store';
 import { type B2cContinuousToolbox, CONTINUOUS_REFRESH_DELAY_MS } from '../toolbox/continuous';
 import { createToolboxPlugin } from '../toolbox/plugin';
-import { FLYOUT_TEST_TIMEOUT_MS, guessDocument, symbolFixture } from '../toolbox/testing';
+import {
+  FLYOUT_TEST_TIMEOUT_MS,
+  flyoutInflater,
+  guessDocument,
+  symbolFixture,
+} from '../toolbox/testing';
 import { keepFlyoutFocus } from './keepFocus';
 import { focused, type KeyboardEditor, keyboardEditor, press } from './testing';
 
@@ -230,7 +235,29 @@ describe('the toolbox’s blocks rebuilt while the keyboard is in them', () => {
     return !dead && element.isConnected && document.activeElement === element;
   }
 
-  it('keep the keyboard on the same item, and ↓ goes on from there', () => {
+  it('keep the keyboard on a kept block, and ↓ goes on from there', () => {
+    const { block, keyboard, workspace } = open();
+    focus(block('print'));
+    press('t');
+    press('ArrowRight');
+    press('ArrowDown');
+    press('ArrowDown');
+    const before = focused();
+    expect(before).toBeInstanceOf(Blockly.BlockSvg);
+    const toolbox = workspace.getToolbox() as B2cContinuousToolbox;
+
+    // Its item is unchanged, so the flyout keeps the block (toolbox/inflater.ts).
+    expect(toolbox.showAllCategories(true)).toBe(true);
+    expect(focused()).toBe(before);
+    expect(onLiveNode()).toBe(true);
+    expect(keyboard.area()).toBe('flyout');
+
+    press('ArrowDown');
+    expect(onLiveNode()).toBe(true);
+    expect(focused()).not.toBe(before);
+  });
+
+  it('keep the keyboard on the same item when its block is built again, and ↓ goes on', () => {
     const { block, keyboard, workspace } = open();
     focus(block('print'));
     press('t');
@@ -241,6 +268,12 @@ describe('the toolbox’s blocks rebuilt while the keyboard is in them', () => {
     expect(before).toBeInstanceOf(Blockly.BlockSvg);
     const type = (before as Blockly.BlockSvg).type;
     const toolbox = workspace.getToolbox() as B2cContinuousToolbox;
+    // Every block built again, as for a block whose item changed.
+    const inflater = flyoutInflater(workspace);
+    if (inflater === null) {
+      throw new Error('no toolbox blocks in the flyout');
+    }
+    inflater.reuse = false;
 
     expect(toolbox.showAllCategories(true)).toBe(true);
     expect((before as Blockly.BlockSvg).isDeadOrDying()).toBe(true);
@@ -350,7 +383,8 @@ describe('the toolbox’s blocks rebuilt while the keyboard is in them', () => {
       });
       await new Promise((resolve) => setTimeout(resolve, CONTINUOUS_REFRESH_DELAY_MS + 50));
 
-      expect((before as Blockly.BlockSvg).isDeadOrDying()).toBe(true);
+      // The block's item is unchanged, so the flyout kept it (toolbox/inflater.ts).
+      expect(focused()).toBe(before);
       expect(onLiveNode()).toBe(true);
       expect(keyboard.area()).toBe('flyout');
       press('ArrowDown');

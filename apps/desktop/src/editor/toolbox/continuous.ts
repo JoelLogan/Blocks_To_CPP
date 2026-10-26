@@ -15,9 +15,11 @@
  *   or a menu is open or the flyout scrolls to a category, and then keeps the category in view
  *   and the selected category (04 §4.2); its delayed refresh is cancelled when the toolbox is
  *   disposed;
- * - the flyout never recycles blocks (the toolbox's blocks change between showings: default names,
- *   fresh symbol IDs), so it keeps a recycler of its own that stays empty instead of needing the
- *   plugin's recycler to replace Blockly's block inflater for every flyout;
+ * - the flyout keeps each toolbox block whose item is unchanged from one showing to the next
+ *   (./inflater.ts) and only moves it where the new contents put it, so showing it again builds
+ *   and draws only the blocks that changed; the plugin's own recycler (one block per block type,
+ *   for blocks without mutators or variables) is never used, and stays empty instead of needing to
+ *   replace Blockly's block inflater for every flyout;
  * - showing the flyout again keeps the keyboard focus on the same item when it was in the flyout
  *   (04 §4.8), and the animated scroll to a chosen category jumps at once when the system asks for
  *   reduced motion;
@@ -49,7 +51,9 @@ import { timed } from '../../lib/timing';
 import { keepFlyoutFocus } from '../keyboard/keepFocus';
 import { prefersReducedMotion } from '../keyboard/motion';
 import { markDragTargetsStale } from '../sync/dragTargets';
+import { B2cBlockInflater } from './inflater';
 import { noteCreatedFromToolbox } from './landing';
+import { B2C_BLOCK_KIND } from './presets';
 
 /** How long the toolbox waits after the last change before it rebuilds the flyout. */
 export const CONTINUOUS_REFRESH_DELAY_MS = 100;
@@ -365,11 +369,12 @@ export interface FlyoutScrollAnchor {
 }
 
 /**
- * The continuous flyout, without block recycling, without its scroll animation on request, landing
- * on a chosen category at every zoom level, keeping the category in view when its contents are
- * shown again, with a fixed block scale and a width the user can choose, recorded as a drop target
- * wherever it is (without laying the page out for it), telling the window's layout where it is,
- * and telling the toolbox which blocks it creates on the canvas (./landing.ts).
+ * The continuous flyout, keeping its toolbox blocks across showings (./inflater.ts) instead of the
+ * plugin's block recycling, without its scroll animation on request, landing on a chosen category
+ * at every zoom level, keeping the category in view when its contents are shown again, with a
+ * fixed block scale and a width the user can choose, recorded as a drop target wherever it is
+ * (without laying the page out for it), telling the window's layout where it is, and telling the
+ * toolbox which blocks it creates on the canvas (./landing.ts).
  */
 export class B2cContinuousFlyout extends ContinuousFlyout {
   /**
@@ -677,6 +682,37 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
   }
 
   /**
+   * Places the items of the flyout's new contents one below the other: Blockly 12.5.1's
+   * `VerticalFlyout.layout_`, with three changes:
+   *
+   * - first, the toolbox blocks parked by the last showing that no item claimed are disposed of
+   *   (`B2cBlockInflater.sweep`), so the contents' bounds, measured next, count only blocks shown;
+   * - an item is placed where it goes, not moved by that much: a block kept from the last showing
+   *   is already somewhere, and it is moved only when its place changed;
+   * - the scale is left as it is: {@link reflowInternal_} sets the flyout's own scale next
+   *   (Blockly's set the canvas's, only for it to be replaced).
+   *
+   * The inflater is read from the flyout's own map, so the trash can's flyout, which has no
+   * toolbox blocks, gets none.
+   */
+  protected override layout_(contents: Blockly.FlyoutItem[]): void {
+    const inflater = this.inflaters.get(B2C_BLOCK_KIND);
+    if (inflater instanceof B2cBlockInflater) {
+      inflater.sweep();
+    }
+    const x = this.RTL ? this.MARGIN : this.MARGIN + this.tabWidth_;
+    let y = this.MARGIN;
+    for (const item of contents) {
+      const element = item.getElement();
+      const at = placeOf(element);
+      if (at.x !== x || at.y !== y) {
+        element.moveBy(x - at.x, y - at.y);
+      }
+      y += element.getBoundingRectangle().getHeight();
+    }
+  }
+
+  /**
    * Creates a block on the canvas from `original`, a block of this flyout (Blockly's), and tells
    * the toolbox, which settles a block taken from it where it is dropped (./landing.ts).
    */
@@ -701,6 +737,18 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
     recycler.recyclingEnabled = false;
     return recycler;
   }
+}
+
+/** Where a flyout item is now (its top-left corner, in flyout workspace units). */
+function placeOf(element: Blockly.IBoundedElement): Blockly.utils.Coordinate {
+  if (element instanceof Blockly.BlockSvg) {
+    return element.getRelativeToSurfaceXY();
+  }
+  if (element instanceof Blockly.FlyoutButton) {
+    return element.getPosition();
+  }
+  const bounds = element.getBoundingRectangle();
+  return new Blockly.utils.Coordinate(bounds.left, bounds.top);
 }
 
 /** Registers `cls` as `name` of `type`, replacing a different class of that name. */

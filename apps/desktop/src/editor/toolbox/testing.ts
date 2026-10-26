@@ -23,6 +23,9 @@ import * as Blockly from 'blockly/core';
 import type { EditorContext } from '../../app/editor-types';
 import { useAppStore } from '../../app/store';
 import { documentFixture, projectFixture } from '../../app/testing/fixtures';
+import { toolboxDefinition } from './contents';
+import { B2cBlockInflater } from './inflater';
+import { B2C_BLOCK_KIND } from './presets';
 import { registerToolboxComponents, toolboxInjectOptions } from './register';
 import type { SymbolSource } from './scope';
 
@@ -356,4 +359,39 @@ export function editorContext(workspace: Blockly.WorkspaceSvg, core: CoreWasm): 
     selectBlock: () => undefined,
     activeModuleId: () => useAppStore.getState().project?.activeModuleId ?? 'mod_main',
   };
+}
+
+/**
+ * The inflater of the toolbox blocks of `workspace`'s flyout (its `stats()` count the blocks it
+ * built, kept and disposed of), or `null` before the flyout has shown one.
+ */
+export function flyoutInflater(workspace: Blockly.WorkspaceSvg): B2cBlockInflater | null {
+  const flyout = workspace.getFlyout();
+  if (flyout === null) {
+    return null;
+  }
+  // The flyout's inflaters are protected: read the map the way a subclass would.
+  const inflater = (flyout as unknown as { inflaters: Map<string, unknown> }).inflaters.get(
+    B2C_BLOCK_KIND,
+  );
+  return inflater instanceof B2cBlockInflater ? inflater : null;
+}
+
+/**
+ * The full toolbox ({@link toolboxDefinition}) with every category whose contents are fixed shown
+ * `times` times, the copies named `Logic 2`, `Logic 3` and so on: a toolbox about `times` as large,
+ * for tests of how the cost of showing the flyout grows with the number of blocks.
+ */
+export function paddedToolbox(times: number): Blockly.utils.toolbox.ToolboxInfo {
+  const definition = toolboxDefinition();
+  const categories = definition.contents;
+  const copies = [];
+  for (let copy = 2; copy <= times; copy += 1) {
+    for (const category of categories) {
+      if ('contents' in category && 'name' in category) {
+        copies.push({ ...category, name: `${category.name} ${String(copy)}` });
+      }
+    }
+  }
+  return { ...definition, contents: [...categories, ...copies] };
 }
