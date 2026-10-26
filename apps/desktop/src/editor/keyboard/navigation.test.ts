@@ -287,7 +287,7 @@ describe('the toolbox’s blocks rebuilt while the keyboard is in them', () => {
     expect(focused()).not.toBe(at);
   });
 
-  it('keep the keyboard on a toolbox button that is rebuilt', () => {
+  it('keep the keyboard on a toolbox heading, which is kept', () => {
     const { block, keyboard, workspace } = open();
     focus(block('print'));
     press('t');
@@ -295,8 +295,9 @@ describe('the toolbox’s blocks rebuilt while the keyboard is in them', () => {
     const label = focused();
     expect(nameOf(label)).toBe('button:Program');
 
+    // The flyout keeps an unchanged label (toolbox/inflater.ts).
     (workspace.getToolbox() as B2cContinuousToolbox).showAllCategories(true);
-    expect(focused()).not.toBe(label);
+    expect(focused()).toBe(label);
     expect(nameOf(focused())).toBe('button:Program');
     expect(onLiveNode()).toBe(true);
     expect(keyboard.area()).toBe('flyout');

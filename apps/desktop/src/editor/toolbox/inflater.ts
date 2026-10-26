@@ -241,3 +241,62 @@ export class B2cBlockInflater extends Blockly.BlockFlyoutInflater {
     return B2C_BLOCK_KIND;
   }
 }
+
+/** The flyout item kind of labels (Blockly's; the continuous toolbox finds its headings by it). */
+export const LABEL_KIND = 'label';
+
+/**
+ * The flyout's labels (the category headings, the groups of *Variables*, the notes): Blockly's
+ * label inflater, except that a label is kept from one showing to the next when the next showing
+ * has an equal one, as the toolbox's blocks are (`B2cBlockInflater`). A label shows only its item's
+ * text and style, and drawing one (its text measured) costs a fifth of a showing of kept blocks.
+ * The flyout chooses this inflater for its labels itself (`B2cContinuousFlyout`), so Blockly's
+ * stays the default for every other flyout.
+ */
+export class B2cLabelInflater extends Blockly.LabelFlyoutInflater {
+  /** Labels parked by the last disposal, by the key of their item, until the next layout. */
+  private readonly parked = new Map<string, Blockly.FlyoutButton[]>();
+  /** The key of the item each label was built from. */
+  private readonly keys = new WeakMap<Blockly.FlyoutButton, string>();
+
+  /** A parked label for an equal item, when there is one, else a new label (Blockly's). */
+  override load(state: object, flyout: Blockly.IFlyout): Blockly.FlyoutItem {
+    const key = JSON.stringify(state);
+    const label = this.parked.get(key)?.pop();
+    if (label !== undefined) {
+      return new Blockly.FlyoutItem(label, LABEL_KIND);
+    }
+    const item = super.load(state, flyout);
+    const element = item.getElement();
+    if (element instanceof Blockly.FlyoutButton) {
+      this.keys.set(element, key);
+    }
+    return item;
+  }
+
+  /** Parks a label until the next layout. */
+  override disposeItem(item: Blockly.FlyoutItem): void {
+    const label = item.getElement();
+    const key = label instanceof Blockly.FlyoutButton ? this.keys.get(label) : undefined;
+    if (label instanceof Blockly.FlyoutButton && key !== undefined) {
+      const labels = this.parked.get(key);
+      if (labels === undefined) {
+        this.parked.set(key, [label]);
+      } else {
+        labels.push(label);
+      }
+      return;
+    }
+    super.disposeItem(item);
+  }
+
+  /** Disposes of the parked labels no item of the new contents claimed. */
+  sweep(): void {
+    for (const labels of this.parked.values()) {
+      for (const label of labels) {
+        super.disposeItem(new Blockly.FlyoutItem(label, LABEL_KIND));
+      }
+    }
+    this.parked.clear();
+  }
+}

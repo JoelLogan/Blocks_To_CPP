@@ -12,7 +12,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { setCore } from '../../app/core';
 import { resetAppStore, useAppStore } from '../../app/store';
-import { B2cContinuousToolbox, CONTINUOUS_REFRESH_DELAY_MS } from './continuous';
+import {
+  B2cContinuousFlyout,
+  B2cContinuousToolbox,
+  CONTINUOUS_REFRESH_DELAY_MS,
+} from './continuous';
 import { declaresSymbols, type B2cBlockInflater, type FlyoutBlockStats } from './inflater';
 import { createToolboxPlugin } from './plugin';
 import { B2C_BLOCK_KIND, type B2cBlockInfo } from './presets';
@@ -311,13 +315,10 @@ describe('showing the flyout again', () => {
     const twice = await variableRefresh(padded);
     expect(twice.stats.created).toBe(twice.expected.created);
     expect(twice.stats.disposed).toBe(twice.expected.disposed);
-    // As many blocks built and disposed of, but for the copies of the declaring blocks.
-    expect(twice.stats.created - twice.declaring.after).toBe(
-      plain.stats.created - plain.declaring.after,
-    );
-    expect(twice.stats.disposed - twice.declaring.before).toBe(
-      plain.stats.disposed - plain.declaring.before,
-    );
+    // As many blocks built and disposed of (the copies leave out the declaring blocks).
+    expect(twice.declaring).toEqual(plain.declaring);
+    expect(twice.stats.created).toBe(plain.stats.created);
+    expect(twice.stats.disposed).toBe(plain.stats.disposed);
   });
 
   it('builds only the declaring blocks when nothing changed', async () => {
@@ -409,6 +410,46 @@ describe('showing the flyout again', () => {
         expect(decl?.sym).not.toBe(before?.decls[at]?.sym);
       });
     });
+  });
+});
+
+describe('the flyout’s labels', () => {
+  /** The labels the flyout shows, in order. */
+  function labels(workspace: Blockly.WorkspaceSvg): Blockly.FlyoutButton[] {
+    return (workspace.getFlyout()?.getContents() ?? []).flatMap((item) => {
+      const element = item.getElement();
+      return element instanceof Blockly.FlyoutButton && element.isLabel() ? [element] : [];
+    });
+  }
+
+  it('are kept, and only a new one is drawn', async () => {
+    const workspace = attached();
+    await settle();
+    const before = labels(workspace);
+    expect(before.length).toBeGreaterThan(10);
+    // A text variable in main beside guess: no new heading.
+    publishPreview([factorial, guess, label, n]);
+    await settle();
+    continuousToolbox(workspace).showAllCategories(false);
+    expect(labels(workspace)).toEqual(before);
+    // No variable at all: the group headings go, the others stay.
+    publishPreview([factorial]);
+    await settle();
+    continuousToolbox(workspace).showAllCategories(false);
+    const after = labels(workspace);
+    const gone = before.filter((element) => !after.includes(element));
+    expect(gone.length).toBeGreaterThan(0);
+    expect(after.every((element) => before.includes(element))).toBe(true);
+    // Gone labels are disposed of: their elements left the flyout.
+    for (const element of gone) {
+      expect(element.getSvgRoot().isConnected).toBe(false);
+    }
+    // The categories still scroll to their headings.
+    const flyout = workspace.getFlyout();
+    if (!(flyout instanceof B2cContinuousFlyout)) {
+      throw new Error('not the continuous flyout');
+    }
+    expect(flyout.getCategoryScrollPosition('Functions')).not.toBeNull();
   });
 });
 
@@ -699,12 +740,20 @@ describe('the time a showing takes', () => {
     });
   }
 
-  it('is a fraction of building every block', { retry: 2 }, async () => {
+  it('is a fraction of building every block, and hardly grows with it', { retry: 2 }, async () => {
     const workspace = attached();
     await settle();
     const kept = refreshTime(workspace, 5);
     inflaterOf(workspace).reuse = false;
     const rebuilt = refreshTime(workspace, 3);
     expect(kept).toBeLessThanOrEqual(0.35 * rebuilt);
+
+    // Every fixed category shown twice: about 50 more blocks and 10 more labels.
+    disposeAll();
+    const padded = attached();
+    padded.updateToolbox(paddedToolbox(2));
+    continuousToolbox(padded).showAllCategories();
+    await settle();
+    expect(refreshTime(padded, 5)).toBeLessThanOrEqual(1.5 * kept + 50);
   });
 });

@@ -15,9 +15,9 @@
  *   or a menu is open or the flyout scrolls to a category, and then keeps the category in view
  *   and the selected category (04 §4.2); its delayed refresh is cancelled when the toolbox is
  *   disposed;
- * - the flyout keeps each toolbox block whose item is unchanged from one showing to the next
- *   (./inflater.ts) and only moves it where the new contents put it, so showing it again builds
- *   and draws only the blocks that changed; the plugin's own recycler (one block per block type,
+ * - the flyout keeps each toolbox block and label whose item is unchanged from one showing to the
+ *   next (./inflater.ts) and only moves it where the new contents put it, so showing it again
+ *   builds and draws only what changed; the plugin's own recycler (one block per block type,
  *   for blocks without mutators or variables) is never used, and stays empty instead of needing to
  *   replace Blockly's block inflater for every flyout; and it shows its contents with Blockly's
  *   events off (no one listens for the flyout's own block events), without hiding a displayed
@@ -53,7 +53,7 @@ import { timed } from '../../lib/timing';
 import { keepFlyoutFocus } from '../keyboard/keepFocus';
 import { prefersReducedMotion } from '../keyboard/motion';
 import { markDragTargetsStale } from '../sync/dragTargets';
-import { B2cBlockInflater } from './inflater';
+import { B2cBlockInflater, B2cLabelInflater, LABEL_KIND } from './inflater';
 import { noteCreatedFromToolbox } from './landing';
 import { B2C_BLOCK_KIND } from './presets';
 
@@ -727,20 +727,25 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
    * Places the items of the flyout's new contents one below the other: Blockly 12.5.1's
    * `VerticalFlyout.layout_`, with three changes:
    *
-   * - first, the toolbox blocks parked by the last showing that no item claimed are disposed of
-   *   (`B2cBlockInflater.sweep`), so the contents' bounds, measured next, count only blocks shown;
+   * - first, the toolbox blocks and labels parked by the last showing that no item claimed are
+   *   disposed of (`B2cBlockInflater.sweep`, `B2cLabelInflater.sweep`), so the contents' bounds,
+   *   measured next, count only what is shown;
    * - an item is placed where it goes, not moved by that much: a block kept from the last showing
    *   is already somewhere, and it is moved only when its place changed;
    * - the scale is left as it is: {@link reflowInternal_} sets the flyout's own scale next
    *   (Blockly's set the canvas's, only for it to be replaced).
    *
-   * The inflater is read from the flyout's own map, so the trash can's flyout, which has no
+   * The inflaters are read from the flyout's own map, so the trash can's flyout, which has no
    * toolbox blocks, gets none.
    */
   protected override layout_(contents: Blockly.FlyoutItem[]): void {
-    const inflater = this.inflaters.get(B2C_BLOCK_KIND);
-    if (inflater instanceof B2cBlockInflater) {
-      inflater.sweep();
+    const blocks = this.inflaters.get(B2C_BLOCK_KIND);
+    if (blocks instanceof B2cBlockInflater) {
+      blocks.sweep();
+    }
+    const labels = this.inflaters.get(LABEL_KIND);
+    if (labels instanceof B2cLabelInflater) {
+      labels.sweep();
     }
     const x = this.RTL ? this.MARGIN : this.MARGIN + this.tabWidth_;
     let y = this.MARGIN;
@@ -752,6 +757,23 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
       }
       y += element.getBoundingRectangle().getHeight();
     }
+  }
+
+  /**
+   * The inflater of a kind of flyout item (Blockly's), with this flyout's own label inflater, which
+   * keeps labels across showings (`B2cLabelInflater`), instead of the one registered for every
+   * flyout.
+   */
+  protected override getInflaterForType(type: string): Blockly.IFlyoutInflater | null {
+    if (type !== LABEL_KIND) {
+      return super.getInflaterForType(type);
+    }
+    let inflater = this.inflaters.get(type);
+    if (!(inflater instanceof B2cLabelInflater)) {
+      inflater = new B2cLabelInflater();
+      this.inflaters.set(type, inflater);
+    }
+    return inflater;
   }
 
   /**

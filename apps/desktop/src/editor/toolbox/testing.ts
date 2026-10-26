@@ -377,10 +377,22 @@ export function flyoutInflater(workspace: Blockly.WorkspaceSvg): B2cBlockInflate
   return inflater instanceof B2cBlockInflater ? inflater : null;
 }
 
+/** Whether a flyout item is a block with a declaration field (`symbol_decl`). */
+function declaresSomething(item: Blockly.utils.toolbox.ToolboxItemInfo): boolean {
+  const type = (item as { type?: unknown }).type;
+  return (
+    typeof type === 'string' &&
+    (catalogBlock(type)?.fields.some((field) => field.kind === 'symbol_decl') ?? false)
+  );
+}
+
 /**
  * The full toolbox ({@link toolboxDefinition}) with every category whose contents are fixed shown
- * `times` times, the copies named `Logic 2`, `Logic 3` and so on: a toolbox about `times` as large,
- * for tests of how the cost of showing the flyout grows with the number of blocks.
+ * `times` times, the copies named `Logic 2`, `Logic 3` and so on, for tests of how the cost of
+ * showing the flyout grows with the number of blocks. The copies leave out the blocks that declare
+ * something (a block with a declaration field), which every showing builds again
+ * (./inflater.ts), so a showing of the larger toolbox builds as many blocks as one of the full
+ * toolbox.
  */
 export function paddedToolbox(times: number): Blockly.utils.toolbox.ToolboxInfo {
   const definition = toolboxDefinition();
@@ -389,7 +401,8 @@ export function paddedToolbox(times: number): Blockly.utils.toolbox.ToolboxInfo 
   for (let copy = 2; copy <= times; copy += 1) {
     for (const category of categories) {
       if ('contents' in category && 'name' in category) {
-        copies.push({ ...category, name: `${category.name} ${String(copy)}` });
+        const contents = category.contents.filter((item) => !declaresSomething(item));
+        copies.push({ ...category, name: `${category.name} ${String(copy)}`, contents });
       }
     }
   }
