@@ -601,6 +601,37 @@ describe('the events of a showing', () => {
   });
 });
 
+describe('a showing of the displayed flyout', () => {
+  it('keeps it displayed, and leaves the drag targets to the next frame', async () => {
+    const workspace = attached();
+    await settle();
+    const flyout = workspace.getFlyout();
+    if (flyout === null) {
+      throw new Error('no flyout');
+    }
+    // The flyout's own SVG element, whose display Blockly sets.
+    const group = flyout.getWorkspace().getParentSvg();
+    expect(group.classList.contains('blocklyFlyout')).toBe(true);
+    const displays: string[] = [];
+    const observer = new MutationObserver(() => {
+      displays.push(group.style.display);
+    });
+    observer.observe(group, { attributes: true, attributeFilter: ['style'] });
+    addCount(workspace);
+    await settle();
+    const record = vi.spyOn(workspace, 'recordDragTargets');
+    publishPreview([factorial, guess, label, n]);
+    continuousToolbox(workspace).showAllCategories();
+    observer.disconnect();
+    expect(displays).not.toContain('none');
+    expect(group.style.display).not.toBe('none');
+    expect(record).not.toHaveBeenCalled();
+    // Recorded again in the next frame (the layout marked them stale).
+    await settle();
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('the time a showing takes', () => {
   /** The median of `count` runs of `run`, in milliseconds. */
   function median(count: number, run: (index: number) => void): number {

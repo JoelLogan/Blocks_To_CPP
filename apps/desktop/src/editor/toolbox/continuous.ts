@@ -20,7 +20,8 @@
  *   and draws only the blocks that changed; the plugin's own recycler (one block per block type,
  *   for blocks without mutators or variables) is never used, and stays empty instead of needing to
  *   replace Blockly's block inflater for every flyout; and it shows its contents with Blockly's
- *   events off (no one listens for the flyout's own block events);
+ *   events off (no one listens for the flyout's own block events), without hiding a displayed
+ *   flyout around the showing;
  * - showing the flyout again keeps the keyboard focus on the same item when it was in the flyout
  *   (04 §4.8), and the animated scroll to a chosen category jumps at once when the system asks for
  *   reduced motion;
@@ -398,6 +399,9 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
   /** The widest the flyout may be in the room it had when it was last fitted, in pixels. */
   private widthLimit: number = FLYOUT_WIDTH.min;
 
+  /** Whether a showing is under way that began while the flyout was displayed ({@link show}). */
+  private keepShown = false;
+
   /** Where the flyout was last placed: its x and y, width and height, in pixels. */
   private placement: readonly number[] = [];
 
@@ -421,9 +425,10 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
    *   on every showing, that is on every rebuild of a dynamic category;
    * - the canvas's record of its drag targets is marked stale after every layout, whatever the
    *   width (`sync/dragTargets.ts`): it is recorded again in the next animation frame, or at the
-   *   start of a drag that comes first. `Flyout.show` records them only while the flyout is not
-   *   displayed (its `setVisible(true)` records before it displays the flyout again), when the
-   *   flyout, and the toolbox that stands for it, end at the window's left edge. Blockly's version
+   *   start of a drag that comes first. `Flyout.show` records them only when the flyout was not
+   *   displayed before (its `setVisible(true)` records before it displays the flyout again, see
+   *   {@link setVisible}), when the flyout, and the toolbox that stands for it, end at the window's
+   *   left edge. Blockly's version
    *   recorded again because it placed the flyout every time; without a later record, a drop on
    *   the flyout or the category column deleted nothing after a rebuild until the layout changed
    *   (03 §3.3 "Placing blocks"). A record here, at once, would read the flyout's place on screen
@@ -683,21 +688,39 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
   }
 
   /**
-   * Shows `flyoutDef` (the plugin's showing) with Blockly's events off: nothing listens for the
-   * flyout's own block creations, deletions and moves, which cost Blockly two serialisations and
-   * an event for each block it builds or disposes of, and a move event for each block it places.
-   * Also left out: the viewport events of the flyout's resizing within the showing and, at the
-   * first showing only, the plugin's selection of the first category. The toolbox keeps the focus
-   * and the scroll position after the showing (`B2cContinuousToolbox.showAllCategories`), with
-   * events on.
+   * Shows `flyoutDef` (the plugin's showing) without hiding the flyout first when it is displayed
+   * ({@link setVisible}), and with Blockly's events off: nothing listens for the flyout's own
+   * block creations, deletions and moves, which cost Blockly two serialisations and an event for
+   * each block it builds or disposes of, and a move event for each block it places. Also left
+   * out: the viewport events of the flyout's resizing within the showing and, at the first
+   * showing only, the plugin's selection of the first category. The toolbox keeps the focus and
+   * the scroll position after the showing (`B2cContinuousToolbox.showAllCategories`), with events
+   * on.
    */
   override show(flyoutDef: Blockly.utils.toolbox.FlyoutDefinition | string): void {
+    this.keepShown = this.isVisible();
     Blockly.Events.disable();
     try {
       super.show(flyoutDef);
     } finally {
       Blockly.Events.enable();
+      this.keepShown = false;
     }
+  }
+
+  /**
+   * Shows or hides the flyout (Blockly's), except that a flyout shown again while it is displayed
+   * stays displayed: `Flyout.show` hides it and shows it again around building the new contents,
+   * which set `display: none` and back on the flyout's SVG (the browser then lays out and draws
+   * every block of the flyout again, kept ones included) and recorded the canvas's drag targets
+   * twice. The layout marks the drag targets stale instead ({@link reflowInternal_}). `hide()`
+   * still removes Blockly's reflow listener, and the showing adds it again.
+   */
+  override setVisible(visible: boolean): void {
+    if (this.keepShown && !visible) {
+      return;
+    }
+    super.setVisible(visible);
   }
 
   /**
