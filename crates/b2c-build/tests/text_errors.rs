@@ -3,7 +3,9 @@
 //! the editor saves them, goes through the whole front end without a
 //! diagnostic, is compiled with the `g++` on `PATH` and every
 //! `/usr/bin/g++-N` under C++17 and C++20 at the *strict* warning level with
-//! `-Werror`, and is run, and its output is compared.
+//! `-Werror`, and is run, and its output is compared. Each compiler is
+//! probed and run as builds run it: from its canonical path, through
+//! b2c-process, in the environment `compiler_env` gives it.
 //!
 //! * *text as number* reads the number at the start of a text and throws
 //!   both of its errors, which catch parts catch;
@@ -23,10 +25,13 @@ mod common;
 
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use b2c_build::{FrontendOptions, run_frontend};
 use b2c_ir::Severity;
 use b2c_ir::sast::CppStandard;
+use b2c_toolchain::env::{HostEnv, compiler_env};
+use b2c_toolchain::probe::{ProbeOptions, Toolchain, probe};
 use serde_json::{Map, Value, json};
 
 /// Warning flags of the *strict* level (spec §7.4.2) with `-Werror`.
@@ -47,26 +52,70 @@ const STRICT: &[&str] = &[
     "-Wimplicit-fallthrough",
 ];
 
-/// A command for g++ or a built test program. Production code spawns
-/// processes only through b2c-process; this test drives g++ directly.
+/// A command for a built test program. Production code spawns processes
+/// only through b2c-process; this test runs the programs it builds directly.
 #[allow(clippy::disallowed_methods)]
 fn command(program: &Path) -> std::process::Command {
     std::process::Command::new(program)
 }
 
-/// The g++ on `PATH`, then every `/usr/bin/g++-N`.
-fn compilers() -> Vec<PathBuf> {
-    let Some(gxx) = common::gxx() else {
-        return Vec::new();
-    };
-    let mut found = vec![gxx];
-    for major in 9..=20 {
-        let versioned = PathBuf::from(format!("/usr/bin/g++-{major}"));
-        if versioned.exists() {
-            found.push(versioned);
+/// The g++ on `PATH`, then every `/usr/bin/g++-N`, each probed (probed once
+/// per test binary). A probed toolchain's path is the one builds run: on
+/// Windows not the verbatim `\\?\` form, from which g++ cannot find
+/// `cc1plus`.
+fn compilers() -> &'static [Toolchain] {
+    static PROBED: OnceLock<Vec<Toolchain>> = OnceLock::new();
+    PROBED.get_or_init(|| {
+        let Some(on_path) = common::real_toolchain() else {
+            return Vec::new();
+        };
+        let mut found = vec![on_path];
+        for major in 9..=20 {
+            let versioned = PathBuf::from(format!("/usr/bin/g++-{major}"));
+            if versioned.exists() {
+                let toolchain = probe(&versioned, &ProbeOptions::default()).unwrap();
+                assert!(toolchain.is_usable(), "{:#?}", toolchain.problems);
+                found.push(toolchain);
+            }
         }
+        found
+    })
+}
+
+/// Compiles `source` into `program` with `toolchain` and `flags`, as a build
+/// runs g++ (through b2c-process, in the compiler's environment, with
+/// `dir` as its working and temporary folder). Returns g++'s messages when
+/// it fails.
+fn compile(
+    toolchain: &Toolchain,
+    flags: &[&str],
+    source: &Path,
+    program: &Path,
+    dir: &Path,
+) -> Result<(), String> {
+    let env = compiler_env(
+        toolchain.platform(),
+        toolchain.bin_dir(),
+        dir,
+        &HostEnv::from_process(&[]),
+    );
+    let mut compile = b2c_process::Command::new(toolchain.path(), dir).map_err(|error| error.to_string())?;
+    compile
+        .args(flags.iter().copied())
+        .arg(source)
+        .arg("-o")
+        .arg(program)
+        .envs(env.vars.iter().cloned());
+    let captured = b2c_process::run_captured(&compile).map_err(|error| error.to_string())?;
+    if captured.status == b2c_process::ExitStatus::Exited(0) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{:?}\n{}",
+            captured.status,
+            String::from_utf8_lossy(&captured.stderr)
+        ))
     }
-    found
 }
 
 /// Makes block nodes as the editor saves them, each with a new ID.
@@ -201,27 +250,20 @@ fn runs_and_prints(name: &str, body: Vec<Value>, expected: &str) {
         };
         let source = dir.path().join(format!("{name}.cpp"));
         std::fs::write(&source, &file.contents).unwrap();
-        for (index, gxx) in compilers.iter().enumerate() {
+        for (index, toolchain) in compilers.iter().enumerate() {
+            let gxx = toolchain.path().display();
             let program = dir.path().join(format!("{name}-{index}"));
-            let output = command(gxx)
-                .arg(flag)
-                .args(STRICT)
-                .arg(&source)
-                .arg("-o")
-                .arg(&program)
-                .output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "{} {flag} rejected {name}:\n{}\n--- source ---\n{}",
-                gxx.display(),
-                String::from_utf8_lossy(&output.stderr),
-                file.contents
-            );
+            let flags: Vec<&str> = std::iter::once(flag).chain(STRICT.iter().copied()).collect();
+            if let Err(messages) = compile(toolchain, &flags, &source, &program, dir.path()) {
+                panic!(
+                    "{gxx} {flag} rejected {name}: {messages}\n--- source ---\n{}",
+                    file.contents
+                );
+            }
             let run = command(&program).output().unwrap();
-            assert!(run.status.success(), "{name} ({flag}, {}) failed", gxx.display());
+            assert!(run.status.success(), "{name} ({flag}, {gxx}) failed");
             let stdout = String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n");
-            assert_eq!(stdout, expected, "{name} ({flag}, {})", gxx.display());
+            assert_eq!(stdout, expected, "{name} ({flag}, {gxx})");
         }
     }
 }

@@ -39,7 +39,10 @@ pub(crate) fn bytes(document: &serde_json::Value) -> Vec<u8> {
 }
 
 /// The g++ on `PATH`, if any; panics when there is none but
-/// `B2C_REQUIRE_GXX` is set (as in CI).
+/// `B2C_REQUIRE_GXX` is set (as in CI). The path is canonical as the
+/// toolchain crate makes it ([`b2c_toolchain::paths::canonical`]): on
+/// Windows not the verbatim `\\?\` form, from which g++ cannot find
+/// `cc1plus`.
 pub(crate) fn gxx() -> Option<PathBuf> {
     let name = if cfg!(windows) { "g++.exe" } else { "g++" };
     let found = std::env::var_os("PATH").and_then(|path| {
@@ -51,7 +54,7 @@ pub(crate) fn gxx() -> Option<PathBuf> {
         found.is_some() || std::env::var_os("B2C_REQUIRE_GXX").is_none(),
         "B2C_REQUIRE_GXX is set but g++ was not found"
     );
-    found.map(|path| path.canonicalize().unwrap())
+    found.map(|path| b2c_toolchain::paths::canonical(&path).unwrap())
 }
 
 /// The probed g++ on `PATH` (probed once per test binary), or `None`
