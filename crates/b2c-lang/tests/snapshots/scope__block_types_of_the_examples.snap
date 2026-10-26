@@ -52,6 +52,17 @@ matrix_sum.b2c:
   b033: "int"
 max_of_three.b2c:
   (no value blocks)
+palindrome.b2c:
+  b004: "int"
+  b005: "int"
+  b007: "std::string"
+  b008: "char"
+  b013: "std::string"
+  b016: "std::string"
+  b018: "bool"
+  b019: "std::string"
+  b031: "std::string"
+  b033: "bool"
 primes.b2c:
   (no value blocks)
 sum_to_ten.b2c:
