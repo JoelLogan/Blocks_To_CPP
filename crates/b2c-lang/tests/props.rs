@@ -369,7 +369,7 @@ fn check_invariants(document: &Document, a: &Analysis) -> Result<(), TestCaseErr
     let contract = analyze_with(document, &common::m2_sigs());
     prop_assert_eq!(render_all(&contract), render_all(a));
     prop_assert!(
-        common::without_headers(a) == contract.program,
+        common::without_headers(a) == common::without_headers(&contract),
         "the catalog's signatures and slots.md §5's give different programs"
     );
     // Every diagnostic is ours, and slot ranges are well formed.
@@ -762,9 +762,7 @@ const RECORD_CASES: usize = 400;
 /// [`common::AFTER_M2`]), which M2's rules never saw.
 fn uses_blocks_after_m2(document: &Document) -> bool {
     fn block(b: &b2c_model::Block) -> bool {
-        common::AFTER_M2
-            .iter()
-            .any(|family| b.block_type.starts_with(family))
+        common::after_m2(&b.block_type)
             || b.statements.values().any(|list| list.iter().any(block))
             || b.inputs
                 .values()

@@ -271,17 +271,61 @@ pub(crate) fn m2_sigs() -> SigTable {
     table
 }
 
-/// The families of blocks that came after M2 (w2.md §1), which slots.md §5
-/// gives no pattern: each W2 package adds its own.
-pub(crate) const AFTER_M2: &[&str] = &["coll."];
+/// The blocks that came after M2 (w2.md §1), which slots.md §5 gives no
+/// pattern. An entry ending in `.` is a family that is all W2's; any other
+/// is one block ID, for the families M2 already had blocks in (`text.`,
+/// `math.`, `io.`): a prefix there would take M2's own blocks out of the
+/// comparison and the record. Each W2 package adds its blocks here, at the
+/// end of the list (C1 and D after B), and then regenerates the record of
+/// M2's rules (`props__m2_documents…snap`), which leaves out every document
+/// with one of them.
+pub(crate) const AFTER_M2: &[&str] = &[
+    // Package A: collections.
+    "coll.",
+    // Package B: text, input and output, math and errors.
+    "error.message",
+    "error.rethrow",
+    "error.throw",
+    "error.try",
+    "io.decimals",
+    "math.abs",
+    "math.clamp",
+    "math.fn",
+    "math.fn_two",
+    "math.minmax",
+    "math.random_real",
+    "text.as_text",
+    "text.case",
+    "text.find",
+    "text.length",
+    "text.letter",
+    "text.part",
+    "text.replace",
+    "text.split",
+    "text.to_number",
+    "text.trim",
+];
+
+/// Whether `block_type` came after M2 ([`AFTER_M2`]).
+pub(crate) fn after_m2(block_type: &str) -> bool {
+    AFTER_M2.iter().any(|entry| {
+        if entry.ends_with('.') {
+            block_type.starts_with(entry)
+        } else {
+            block_type == *entry
+        }
+    })
+}
 
 /// Analyses a document with the catalog's signatures ([`analyze`]) and
 /// again with the patterns slots.md §5 gives M2's blocks ([`m2_sigs`]),
 /// checks that both give the same diagnostics, program (but for the items'
-/// catalog headers, which only the catalog's table has), block types and
-/// slot types, and returns the analysis with the catalog's signatures.
-/// W2's blocks ([`AFTER_M2`], w2.md §1) have no slots.md §5 pattern, so
-/// both analyses take the catalog's signatures for them.
+/// catalog headers, which change no diagnostic and which slots.md §5's
+/// patterns do not give), block types and slot types, and returns the
+/// analysis with the catalog's signatures. W2's blocks ([`AFTER_M2`], w2.md
+/// §1) have no slots.md §5 pattern, so both analyses take the catalog's
+/// signatures for them, headers and all: the headers are taken off both
+/// programs before they are compared.
 ///
 /// M2's own rules for these blocks went in M3's first wave (types.md §8.3);
 /// `props.rs` holds the catalog's table to a record of what they gave.
@@ -290,7 +334,7 @@ pub(crate) fn analyse(document: &Document) -> Analysis {
     let catalog = analyze(document);
     let mut contract_sigs = m2_sigs();
     for (block_type, sig) in b2c_catalog::core_catalog().sigs().iter() {
-        if AFTER_M2.iter().any(|family| block_type.starts_with(family)) {
+        if after_m2(block_type) {
             contract_sigs.insert(block_type, sig.clone());
         }
     }
@@ -301,7 +345,7 @@ pub(crate) fn analyse(document: &Document) -> Analysis {
         "the catalog's signatures and slots.md §5's give different diagnostics"
     );
     assert!(
-        without_headers(&catalog) == contract.program,
+        without_headers(&catalog) == without_headers(&contract),
         "the catalog's signatures and slots.md §5's give different programs"
     );
     assert_eq!(catalog.block_types(), contract.block_types());
