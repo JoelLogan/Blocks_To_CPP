@@ -740,14 +740,19 @@ describe('the time a showing takes', () => {
     });
   }
 
-  it('is a fraction of building every block, and hardly grows with it', { retry: 2 }, async () => {
+  it('is a fraction of building every block', { retry: 2 }, async () => {
     const workspace = attached();
     await settle();
     const kept = refreshTime(workspace, 5);
     inflaterOf(workspace).reuse = false;
     const rebuilt = refreshTime(workspace, 3);
     expect(kept).toBeLessThanOrEqual(0.35 * rebuilt);
+  });
 
+  it('hardly grows with the number of blocks', { retry: 2 }, async () => {
+    const workspace = attached();
+    await settle();
+    const kept = refreshTime(workspace, 5);
     // Every fixed category shown twice: about 50 more blocks and 10 more labels.
     disposeAll();
     const padded = attached();

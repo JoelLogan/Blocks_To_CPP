@@ -31,15 +31,7 @@ import {
   flyoutWidthLimit,
 } from './continuous';
 import { toolboxInjectOptions } from './register';
-import {
-  FLYOUT_TEST_TIMEOUT_MS,
-  disposeTestWorkspaces,
-  injectedWorkspace,
-  setUpToolboxBlocks,
-} from './testing';
-
-// Each test here shows the flyout of every catalog block (FLYOUT_TEST_TIMEOUT_MS).
-vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
+import { disposeTestWorkspaces, injectedWorkspace, setUpToolboxBlocks } from './testing';
 
 beforeAll(() => {
   setUpToolboxBlocks();

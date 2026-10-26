@@ -30,12 +30,21 @@ import { registerToolboxComponents, toolboxInjectOptions } from './register';
 import type { SymbolSource } from './scope';
 
 /**
- * The test timeout of the test files whose tests show the continuous toolbox's flyout several
- * times (`vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS })` after their imports). The flyout
- * draws every block of the catalog: W2's text, math and error blocks took it from 26 to 47 blocks
- * and one showing in happy-dom from 0.40 s to 1.09 s, so the slowest test of each of these files
- * went from 1.3–2.9 s to 3.1–8.1 s in the suite with two workers, past Vitest's default of 5 s,
- * and each W2 category adds more.
+ * The test timeout of the test files whose tests show the continuous toolbox's flyout and whose
+ * slowest test takes more than 2.5 s in the suite under coverage with two workers
+ * (`vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS })` after their imports; Vitest's default
+ * is 5 s, and CI's runners take up to 1.7 times as long as a developer's machine).
+ *
+ * Showing the flyout again builds only the blocks whose items changed and the blocks that declare
+ * something (./inflater.ts), so this no longer grows with the number of times a test shows it:
+ * what it bounds is the first showing at injection, which draws every block of the catalog (62 in
+ * W2's second round, about 1.5 s in happy-dom), and the declaring blocks of each showing. W2's
+ * package T took the slowest test of the 14 files that set it from 2.9-15.3 s to 2.2-12.4 s (on
+ * one machine, base and head runs of those files alternately, and the whole suite). The slowest
+ * left are dominated by the injection, or turn the keeping of blocks off on purpose; three times
+ * the slowest would exceed this limit, so it stays. The files whose slowest test fell to 2.5 s or
+ * less (`toolbox/continuous`, `toolbox/frozen-prototype`) no longer set it. Every category W2 fills
+ * adds blocks to the injection, so remeasure after each one.
  */
 export const FLYOUT_TEST_TIMEOUT_MS = 20_000;
 
