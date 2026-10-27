@@ -32,9 +32,12 @@ use serde::{Deserialize, Serialize};
 use crate::codes;
 use crate::target::Platform;
 
-/// Highest and lowest versioned name tried on Linux (`g++-16` … `g++-11`).
-const NEWEST_VERSIONED: u32 = 16;
+/// The oldest versioned name tried on Linux (`g++-11`); every newer one in a
+/// folder is tried too, newest first.
 const OLDEST_VERSIONED: u32 = 11;
+
+/// The most digits of a versioned name's number (`g++-999`).
+const MAX_VERSION_DIGITS: usize = 3;
 
 /// Everything discovery looks at.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -349,8 +352,9 @@ pub struct Candidate {
 ///
 /// * **Linux:** absolute `PATH` entries, then `/usr/bin`, `/usr/local/bin`,
 ///   `/opt/rh/gcc-toolset-*/root/usr/bin` (newest first) and
-///   `/home/linuxbrew/.linuxbrew/bin`; in each folder `g++`, then `g++-16`
-///   … `g++-11`. Only executable regular files count.
+///   `/home/linuxbrew/.linuxbrew/bin`; in each folder `g++`, then every
+///   `g++-N` with N from 11 (digits without a leading zero), newest first.
+///   Only executable regular files count.
 /// * **Windows:** absolute `PATH` entries, then `C:\msys64\{ucrt64,mingw64,
 ///   mingw32}\bin`, the [`DiscoveryEnv::msys2_roots`], Scoop
 ///   (`%USERPROFILE%\scoop\apps\{gcc,mingw,mingw-winlibs}\current\bin`),
@@ -390,7 +394,7 @@ pub fn search(env: &DiscoveryEnv) -> Discovery {
         };
         // An excluded folder is looked into only to say what it skipped.
         let folder_excluded = exclusions.covering_folder(&canonical_dir);
-        for name in file_names(env.platform) {
+        for name in file_names(env.platform, &dir) {
             let candidate = dir.join(&name);
             let Some(path) = accept(&candidate, env.platform) else {
                 continue;
@@ -595,18 +599,34 @@ fn read_dir_names(dir: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// File names tried in each folder.
-fn file_names(platform: Platform) -> Vec<String> {
+/// File names tried in `dir`: on Linux `g++`, then the folder's versioned
+/// names ([`gxx_version`]) newest first.
+fn file_names(platform: Platform, dir: &Path) -> Vec<String> {
     match platform {
-        Platform::Linux => std::iter::once(String::from("g++"))
-            .chain(
-                (OLDEST_VERSIONED..=NEWEST_VERSIONED)
-                    .rev()
-                    .map(|v| format!("g++-{v}")),
-            )
-            .collect(),
+        Platform::Linux => {
+            let mut versioned: Vec<(u32, String)> = read_dir_names(dir)
+                .into_iter()
+                .filter_map(|name| Some((gxx_version(&name)?, name)))
+                .collect();
+            versioned.sort_by_key(|(version, _)| std::cmp::Reverse(*version));
+            std::iter::once(String::from("g++"))
+                .chain(versioned.into_iter().map(|(_, name)| name))
+                .collect()
+        }
         Platform::Windows => vec![String::from("g++.exe")],
     }
+}
+
+/// The version of a side-by-side compiler's name, `g++-N`: N is written in
+/// at most three digits without a leading zero and is at least 11.
+fn gxx_version(name: &str) -> Option<u32> {
+    let digits = name.strip_prefix("g++-")?;
+    let well_formed = !digits.is_empty()
+        && digits.len() <= MAX_VERSION_DIGITS
+        && !digits.starts_with('0')
+        && digits.bytes().all(|b| b.is_ascii_digit());
+    let version: u32 = digits.parse().ok().filter(|_| well_formed)?;
+    (version >= OLDEST_VERSIONED).then_some(version)
 }
 
 /// Canonicalises a candidate and checks that it is an executable regular
@@ -758,6 +778,41 @@ mod tests {
         );
         assert_eq!(found[0].source, CandidateSource::Path);
         assert_eq!(found[1].source, CandidateSource::WellKnown);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn versioned_names_are_open_ended_newest_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::paths::canonical(dir.path()).unwrap();
+        for name in [
+            "g++-13", "g++-21", "g++-17", "g++-11", "g++-10", "g++-011", "g++-13.2", "g++-1x", "g++-",
+            "g++-1000", "g++-99",
+        ] {
+            tool(&root.join("usr/bin").join(name));
+        }
+        let found = discover(&linux_env(&root));
+        assert_eq!(
+            names(&found, &root),
+            [
+                "usr/bin/g++-99",
+                "usr/bin/g++-21",
+                "usr/bin/g++-17",
+                "usr/bin/g++-13",
+                "usr/bin/g++-11",
+            ]
+        );
+    }
+
+    #[test]
+    fn versions_of_side_by_side_names() {
+        assert_eq!(gxx_version("g++-11"), Some(11));
+        assert_eq!(gxx_version("g++-999"), Some(999));
+        for name in [
+            "g++", "g++-", "g++-10", "g++-011", "g++-1000", "g++-13.2", "g++-+14", "gcc-13",
+        ] {
+            assert_eq!(gxx_version(name), None, "{name}");
+        }
     }
 
     #[cfg(unix)]
