@@ -106,7 +106,10 @@ one patch, so one boolean would only lose that choice.
   machine setting outside `settings.json`, against 05 §5.9's rule that only
   the backend keeps them, so not taken.
 * CSS: `:root` holds the light tokens and `color-scheme: light`;
-  `:root[data-theme='dark']` the dark ones and `color-scheme: dark`. The
+  `:root[data-theme='dark']` the dark ones and `color-scheme: dark`. Until the
+  app has set the attribute, `@media (prefers-color-scheme: dark)
+  :root:not([data-theme])` repeats the dark tokens (a test keeps the two
+  sets equal), so a dark system shows no light frame before the bundle runs. The
   main menu's list, which sets its own `color-scheme` to escape the
   toolbar's dark one, uses the token `--b2c-color-scheme`.
 * The Blockly theme: `EditorWorkspace` calls `workspace.setTheme()` with
@@ -286,7 +289,8 @@ the tests.
 * `blocks/register.ts`: the block's `init` reads the label mode from a
   service, `services.ts` gaining `labelMode(): LabelMode` (default
   `'friendly'`), and calls `layoutFor(def, blockLabelParts(def, mode))`;
-  `blockLabelParts`, `labelParts` and `hasFullCppLabel` move from
+  `blockLabelParts`, `labelParts` (with its `cpp` option, which reads a
+  C++ template's `{ … }` as text, not as a repeated group) and `hasFullCppLabel` move from
   `apps/desktop/src/editor/gating/labels.ts` into `blocks/` (or a shared
   `text/` module) so the package does not import the app. Dropdown option
   texts go through `optionLabel` the same way (`CPP_OPTION_LABELS` covers
@@ -485,3 +489,46 @@ and the isolation allowlist if W2 or W3 changed the IPC (regenerate with
 them; `app.css` and `panels.css` if anyone added dark tokens in an
 `@media (prefers-color-scheme: dark)` block, which must move to
 `:root[data-theme='dark']` (the new style test fails otherwise).
+
+### 10.1 The coordinator's review (seven findings)
+
+Each fix has a test that fails without it.
+
+1. **[major] Console selection colour** (`c492ecf`). Fixed: the tokens are
+   `rgba(26, 86, 219, 0.22)` and `rgba(138, 180, 255, 0.35)`, which xterm.js
+   parses. Tests: `ConsolePanel.test.tsx` reads the colour xterm.js resolved
+   (it was `rgba(255, 255, 255, 0.3)` with the old form, checked), and
+   `styles.test.ts` holds every `--b2c-console-*` token in both themes to
+   xterm.js's formats.
+2. **[major] ANSI colours on the light console** (`c492ecf`). Fixed with
+   `minimumContrastRatio: 4.5` on the terminal, which covers the 16 colours,
+   256-colour, true colour and dim text in both themes. Test: the option.
+3. **[minor] `{ … }` read as a repeat part** (`91f185f`). Fixed:
+   `labelParts(template, { cpp: true })` reads a `…` that is the whole of a
+   `{ … }` as text, and `blockLabelParts` uses it; §6.1 says so. Tests:
+   `control.forever` and `control.repeat` exactly, a repeated group outside
+   braces kept, and over `BLOCK_DEFS`, no repeat part in a full C++ layout of
+   a block without a repeated part.
+4. **[minor] First-paint flash on a dark system** (`7ffd6d9`). Fixed with the
+   `:root:not([data-theme])` fallback in `app.css`, `panels.css` and
+   `drag.css` (§2.2). Tests: the media query appears only around that
+   selector, and each sheet's fallback equals its dark tokens.
+5. **[minor] AWAITED rows never re-checked** (`91f185f`). Fixed: each AWAITED
+   row's target must not exist yet, so the test fails when it lands; and every
+   option of `var.change`'s `OP` beyond `add`, `sub`, `mul`, `div`, `mod` and
+   `append` must have a row.
+6. **[nit] blockly-ext's CSS not scanned** (`7ffd6d9`). Fixed: `icons/css.ts`
+   exports its sheet as `DIAGNOSTIC_CSS` (the only change there, besides
+   `icons/index.ts`'s export); `styles.test.ts` checks it has no media query
+   of the scheme and has the `[data-theme='dark']` rule. The badges need no
+   fallback: Blockly is injected after the attribute is set.
+7. **[nit] The advanced refusal text** (`91f185f`). Now *An advanced block:
+   turn on “Show advanced blocks” in Settings to use it.*
+
+Checks after the fixes: `pnpm -r` typecheck, lint and format; desktop Vitest
+(2161 tests) and `test:isolation`; blockly-ext's tests (396); the E2E flows
+`appearance`, `console`, `settings` and `chrome` under xvfb; markdownlint. No
+Rust changed since the full Rust checks above. The merge notes gain
+`packages/blockly-ext/src/icons/css.ts` and `icons/index.ts` (W2's package:
+one exported constant). The visual-diff list is unchanged: the fallback
+shows the same colours as the attribute.
