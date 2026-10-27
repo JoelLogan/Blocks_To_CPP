@@ -6,16 +6,12 @@
  * It publishes the {@link EditorHandle} features use, and attaches the editor plugins
  * (`EDITOR_PLUGINS`: the toolbox, the diagnostics, the clipboard, the keyboard navigation).
  */
-import {
-  B2C_CHECKER_NAME,
-  B2C_PREVIEWER_NAME,
-  b2cDarkTheme,
-  b2cLightTheme,
-} from '@blocks2cpp/blockly-ext';
+import { B2C_CHECKER_NAME, B2C_PREVIEWER_NAME, b2cTheme } from '@blocks2cpp/blockly-ext';
 import * as Blockly from 'blockly/core';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { documentTheme, onThemeChange } from '../app/appearance';
 import { dialogs as appDialogs } from '../app/dialogs';
 import type { DialogService as AppDialogService } from '../app/dialogs/service';
 import {
@@ -225,9 +221,8 @@ export function EditorWorkspace() {
       return;
     }
     registerEditorBlocks();
-    const darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
-    const theme = (): Blockly.Theme => (darkScheme.matches ? b2cDarkTheme : b2cLightTheme);
-    const workspace = Blockly.inject(element, editorInjectOptions(theme()));
+    // The theme in use (the Appearance setting, on <html>, ../app/appearance), followed below.
+    const workspace = Blockly.inject(element, editorInjectOptions(b2cTheme(documentTheme())));
     const editor = attachEditor(workspace, {
       store: useAppStore,
       host: appCoreHost(),
@@ -242,15 +237,14 @@ export function EditorWorkspace() {
       editor.session.resize();
     });
     resizeObserver.observe(element);
-    const onSchemeChange = (): void => {
-      workspace.setTheme(theme());
-    };
-    darkScheme.addEventListener('change', onSchemeChange);
+    const stopFollowingTheme = onThemeChange((theme) => {
+      workspace.setTheme(b2cTheme(theme));
+    });
     setCanvas({ workspace, host: element });
 
     return () => {
       setCanvas(null);
-      darkScheme.removeEventListener('change', onSchemeChange);
+      stopFollowingTheme();
       resizeObserver.disconnect();
       editor.detach();
       // Children first and without events: Blockly's own disposal recurses along `next` chains,

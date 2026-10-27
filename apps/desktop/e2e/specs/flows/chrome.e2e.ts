@@ -111,7 +111,7 @@ async function openMainMenu(driver: WebDriver): Promise<void> {
 
 /**
  * Runs in the webview: the heights of the Debug/Release drop-down, the ► Run button and the
- * toolbar, the left edge of the status bar's toolchain link, and whether the system prefers dark.
+ * toolbar, the left edge of the status bar's toolchain link, and whether the page shows the dark theme.
  */
 const TOOLBAR_SCRIPT = `
   const height = (selector) => {
@@ -128,7 +128,7 @@ const TOOLBAR_SCRIPT = `
     linkBorders: style === null
       ? null
       : [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
-    dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
+    dark: document.documentElement.getAttribute('data-theme') === 'dark',
     devicePixelRatio: window.devicePixelRatio,
   };
 `;

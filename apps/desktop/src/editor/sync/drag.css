@@ -12,10 +12,8 @@
   --b2c-flyout-delete: #f6dcd9;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --b2c-flyout-delete: #3d2329;
-  }
+:root[data-theme='dark'] {
+  --b2c-flyout-delete: #3d2329;
 }
 
 .blocklyDragging.blocklyDraggingDelete {

@@ -46,6 +46,7 @@ import {
   type ProblemItem,
   ProblemsPanel,
 } from '../panels';
+import { useResolvedTheme } from './appearance';
 import { triggerCommand } from './commands';
 import { dialogs } from './dialogs/instance';
 import { getEditorHandle } from './editor-types';
@@ -291,6 +292,7 @@ export function ConnectedConsolePanel() {
     (state) => state.settings.value?.console.scrollbackLines ?? DEFAULT_SCROLLBACK_LINES,
   );
   const mode = useSyncExternalStore(consoleBridge.subscribe, consoleBridge.mode);
+  const theme = useResolvedTheme();
   const now = useNow(run.status === 'running');
   const header = useMemo(() => consoleHeaderFrom(run, now), [run, now]);
   const detach = useRef<(() => void) | null>(null);
@@ -314,6 +316,7 @@ export function ConnectedConsolePanel() {
       onRunAgain={runAgain}
       onClear={consoleCleared}
       mode={mode}
+      theme={theme}
       onBeforeLinkDialog={closeEditorPopups}
       ref={attach}
     />

@@ -109,6 +109,11 @@ export interface ConsolePanelProps {
    * which would otherwise be drawn over the dialog (04 §4.1).
    */
   onBeforeLinkDialog?: () => void;
+  /**
+   * The theme in use (`light` or `dark`, the Appearance setting): when it changes, the terminal
+   * reads its colours again from the console tokens (panels.css, U14d).
+   */
+  theme?: string;
   /** Receives the {@link ConsoleHandle}. */
   ref?: Ref<ConsoleHandle>;
 }
@@ -121,15 +126,16 @@ export function clampScrollback(lines: number): number {
   return Math.min(Math.max(Math.round(lines), MIN_SCROLLBACK_LINES), MAX_SCROLLBACK_LINES);
 }
 
+/** The light theme's console tokens (panels.css), for a page without them. */
 const FALLBACK_THEME = {
-  background: '#161a22',
-  foreground: '#e6e9f0',
-  cursor: '#ffc266',
-  selectionBackground: 'rgba(138, 180, 255, 0.35)',
+  background: '#fbfcfe',
+  foreground: '#1b2130',
+  cursor: '#1a56db',
+  selectionBackground: 'rgba(26, 86, 219, 0.22)',
 } as const;
 
 /** The terminal colours from the panel tokens (panels.css), or their defaults. */
-function terminalTheme(element: Element): ITheme {
+export function terminalTheme(element: Element): ITheme {
   const style = getComputedStyle(element);
   const token = (name: string, fallback: string) => {
     const value = style.getPropertyValue(name).trim();
@@ -246,6 +252,7 @@ export function consoleKeyAction(
 export function ConsolePanel({
   header,
   scrollbackLines,
+  theme,
   onStop,
   onRunAgain,
   onClear,
@@ -426,6 +433,14 @@ export function ConsolePanel({
       terminal.current.options.scrollback = clampScrollback(scrollbackLines);
     }
   }, [scrollbackLines]);
+
+  useEffect(() => {
+    const element = host.current;
+    if (terminal.current !== null && element !== null) {
+      // The tokens follow the page's theme, which has changed by now.
+      terminal.current.options.theme = terminalTheme(element);
+    }
+  }, [theme]);
 
   useEffect(() => {
     if (terminal.current !== null) {

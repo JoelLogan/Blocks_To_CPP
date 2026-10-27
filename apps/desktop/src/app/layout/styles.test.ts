@@ -99,6 +99,7 @@ const UI_PAIRS: readonly [string, string][] = [
   ['--b2c-selected', '--b2c-bg'],
   ['--b2c-selected', '--b2c-surface'],
   ['--b2c-accent', '--b2c-toolbar-bg'],
+  ['--b2c-console-cursor', '--b2c-console-bg'],
 ];
 
 function token(name: string): string {
@@ -117,6 +118,26 @@ describe('the style sheets', () => {
     );
     for (const [path, text] of Object.entries(SHEETS)) {
       expect(parseRules(text).length, path).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('the themes', () => {
+  it('are chosen by the Appearance setting, never by a media query of the system', () => {
+    for (const [path, text] of Object.entries(SHEETS)) {
+      expect(text, path).not.toMatch(/prefers-color-scheme/);
+    }
+  });
+
+  it('give the webview the scheme of the theme for what it draws itself', () => {
+    expect(TOKENS.light.get('--b2c-color-scheme')).toBe('light');
+    expect(TOKENS.dark.get('--b2c-color-scheme')).toBe('dark');
+    expect(declarationsOf(ALL_RULES, ':root').get('color-scheme')).toBe('var(--b2c-color-scheme)');
+  });
+
+  it('set every dark token over a light one', () => {
+    for (const name of TOKENS.dark.keys()) {
+      expect(TOKENS.light.has(name), name).toBe(true);
     }
   });
 });
@@ -424,10 +445,23 @@ describe('the CSS reader', () => {
 
   it('reads rules inside media blocks and skips comments', () => {
     const rules = parseRules(
-      '/* x { } */ .a { color: red; } @media (prefers-color-scheme: dark) { :root { --x: #000; } }',
+      '/* x { } */ .a { color: red; } @media (prefers-reduced-motion: reduce) { .b { --x: #000; } }',
     );
     expect(rules).toHaveLength(2);
-    expect(rules[1]?.media).toBe('(prefers-color-scheme: dark)');
-    expect(themeTokens(rules).dark.get('--x')).toBe('#000');
+    expect(rules[1]?.media).toBe('(prefers-reduced-motion: reduce)');
+  });
+
+  it("reads the dark theme's tokens from :root[data-theme='dark'], with either quote", () => {
+    const rules = parseRules(
+      ':root { --x: #fff; --y: #eee; } :root[data-theme="dark"] { --x: #000; } ' +
+        ":root[data-theme='dark'] { --z: #111; } @media (prefers-color-scheme: dark) { :root { --y: #222; } }",
+    );
+    const tokens = themeTokens(rules);
+    expect(tokens.light.get('--x')).toBe('#fff');
+    expect(tokens.light.has('--z')).toBe(false);
+    expect(tokens.dark.get('--x')).toBe('#000');
+    expect(tokens.dark.get('--z')).toBe('#111');
+    // A media query never decides a token: the Appearance setting does.
+    expect(tokens.dark.get('--y')).toBe('#eee');
   });
 });

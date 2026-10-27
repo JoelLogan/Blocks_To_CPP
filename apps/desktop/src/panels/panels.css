@@ -1,8 +1,9 @@
 /*
  * Styles of the code, Problems, console and build output panels (docs/spec/04-user-interface.md
  * §4.3–§4.5). They use the app's colour tokens from src/app/app.css where those exist, with the
- * same values as fallbacks, and add the panel tokens below. Text colours meet WCAG 2.2 AA (4.5:1)
- * on their backgrounds in both themes; severity is never shown by colour alone (§4.8).
+ * same values as fallbacks, and add the panel tokens below, light on `:root` and dark on
+ * `:root[data-theme='dark']` (app.css). Text colours meet WCAG 2.2 AA (4.5:1) on their backgrounds
+ * in both themes; severity is never shown by colour alone (§4.8).
  */
 
 :root {
@@ -34,38 +35,41 @@
   --b2c-code-function: #8250df;
   --b2c-code-hidden-char: #9a3412;
 
-  /* The console stays dark in both themes, like most terminals: programs pick colours for it. */
+  /* The console follows the theme (U14d); ConsolePanel.tsx gives these to xterm.js. */
+  --b2c-console-bg: #fbfcfe;
+  --b2c-console-fg: #1b2130;
+  --b2c-console-cursor: #1a56db;
+  --b2c-console-selection: rgb(26 86 219 / 22%);
+}
+
+:root[data-theme='dark'] {
+  --b2c-panel-error: #ff8a80;
+  --b2c-panel-warning: #ffcc66;
+  --b2c-panel-info: #8ab4ff;
+  --b2c-panel-ok: #6fd18a;
+  --b2c-panel-warning-bg: #3d2f0a;
+  --b2c-panel-warning-text: #ffd98a;
+
+  --b2c-code-bg: #11141b;
+  --b2c-code-text: #e6edf3;
+  --b2c-code-gutter-bg: #161b22;
+  --b2c-code-gutter-text: #9ba3af;
+  --b2c-code-highlight: rgb(255 214 0 / 18%);
+  --b2c-code-highlight-border: #b08800;
+  --b2c-code-keyword: #ff7b72;
+  --b2c-code-type: #ffa657;
+  --b2c-code-string: #a5d6ff;
+  --b2c-code-escape: #79c0ff;
+  --b2c-code-number: #79c0ff;
+  --b2c-code-comment: #9ba3af;
+  --b2c-code-preprocessor: #7ee787;
+  --b2c-code-function: #d2a8ff;
+  --b2c-code-hidden-char: #fdba74;
+
   --b2c-console-bg: #161a22;
   --b2c-console-fg: #e6e9f0;
   --b2c-console-cursor: #ffc266;
   --b2c-console-selection: rgb(138 180 255 / 35%);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --b2c-panel-error: #ff8a80;
-    --b2c-panel-warning: #ffcc66;
-    --b2c-panel-info: #8ab4ff;
-    --b2c-panel-ok: #6fd18a;
-    --b2c-panel-warning-bg: #3d2f0a;
-    --b2c-panel-warning-text: #ffd98a;
-
-    --b2c-code-bg: #11141b;
-    --b2c-code-text: #e6edf3;
-    --b2c-code-gutter-bg: #161b22;
-    --b2c-code-gutter-text: #9ba3af;
-    --b2c-code-highlight: rgb(255 214 0 / 18%);
-    --b2c-code-highlight-border: #b08800;
-    --b2c-code-keyword: #ff7b72;
-    --b2c-code-type: #ffa657;
-    --b2c-code-string: #a5d6ff;
-    --b2c-code-escape: #79c0ff;
-    --b2c-code-number: #79c0ff;
-    --b2c-code-comment: #9ba3af;
-    --b2c-code-preprocessor: #7ee787;
-    --b2c-code-function: #d2a8ff;
-    --b2c-code-hidden-char: #fdba74;
-  }
 }
 
 /* Shared panel frame: a bar of controls above the content, which fills the rest. */

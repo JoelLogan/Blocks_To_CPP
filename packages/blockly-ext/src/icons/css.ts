@@ -67,12 +67,10 @@ const CSS = `
   --b2c-diag-warning: #8a5300;
   --b2c-diag-info: #1a56db;
 }
-@media (prefers-color-scheme: dark) {
-  .blocklySvg {
-    --b2c-diag-error: #ff8a80;
-    --b2c-diag-warning: #ffcc66;
-    --b2c-diag-info: #8ab4ff;
-  }
+:root[data-theme='dark'] .blocklySvg {
+  --b2c-diag-error: #ff8a80;
+  --b2c-diag-warning: #ffcc66;
+  --b2c-diag-info: #8ab4ff;
 }
 .blocklyIconGroup.${C.badge},
 .blocklyIconGroup.${C.badge}:not(:hover):not(:focus) {

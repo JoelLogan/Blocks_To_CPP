@@ -77,6 +77,10 @@ function radio(name: string): HTMLInputElement {
   return screen.getByRole<HTMLInputElement>('radio', { name });
 }
 
+function checkbox(name: string): HTMLInputElement {
+  return screen.getByRole<HTMLInputElement>('checkbox', { name });
+}
+
 beforeEach(() => {
   resetAppStore();
 });
@@ -95,6 +99,10 @@ describe('the Settings page', () => {
     expect(radio('4 spaces').checked).toBe(true);
     expect(radio('2 spaces').checked).toBe(false);
     expect(radio('Disable Run').checked).toBe(true);
+    expect(radio('Follow the system').checked).toBe(true);
+    expect(radio('Friendly').checked).toBe(true);
+    expect(checkbox('Expert mode').checked).toBe(false);
+    expect(checkbox('Show advanced blocks').checked).toBe(false);
     expect(screen.getByLabelText<HTMLInputElement>('Scrollback lines').value).toBe('25,000');
     expect(screen.getByText(/none of them is saved\s+in a project file/)).toBeTruthy();
     await expectNoAxeViolations(screen.getByTestId('settings-page'));
@@ -187,6 +195,111 @@ describe('the Settings page', () => {
       enabled: true,
       onErrorsMode: 'showProblems',
     });
+  });
+
+  it('changes the appearance with a partial update', async () => {
+    const page = await showPage();
+    page.ipc.settingsUpdate.mockResolvedValue(
+      updated(settingsFixture({ appearance: { theme: 'dark' } })),
+    );
+
+    fireEvent.click(radio('Dark'));
+    await settle();
+
+    expect(page.ipc.settingsUpdate).toHaveBeenCalledWith({ appearance: { theme: 'dark' } });
+    expect(useAppStore.getState().settings.value?.appearance.theme).toBe('dark');
+    expect(radio('Dark').checked).toBe(true);
+    expect(radio('Light').checked).toBe(false);
+  });
+
+  it('turns expert mode on and off with both of its settings in one update', async () => {
+    const page = await showPage();
+    const expert = settingsFixture({ editor: { blockLabels: 'cpp', showAdvanced: true } });
+    page.ipc.settingsUpdate.mockResolvedValue(updated(expert));
+
+    fireEvent.click(checkbox('Expert mode'));
+    await settle();
+
+    expect(page.ipc.settingsUpdate).toHaveBeenLastCalledWith({
+      editor: { blockLabels: 'cpp', showAdvanced: true },
+    });
+    expect(checkbox('Expert mode').checked).toBe(true);
+    expect(radio('C++').checked).toBe(true);
+    expect(checkbox('Show advanced blocks').checked).toBe(true);
+
+    page.ipc.settingsUpdate.mockResolvedValue(updated(settingsFixture()));
+    fireEvent.click(checkbox('Expert mode'));
+    await settle();
+
+    expect(page.ipc.settingsUpdate).toHaveBeenLastCalledWith({
+      editor: { blockLabels: 'friendly', showAdvanced: false },
+    });
+    expect(checkbox('Expert mode').checked).toBe(false);
+    expect(radio('Friendly').checked).toBe(true);
+  });
+
+  it('changes each expert setting on its own, the switch showing a mixed state', async () => {
+    const page = await showPage();
+    const labelsOnly = settingsFixture({ editor: { blockLabels: 'cpp', showAdvanced: false } });
+    page.ipc.settingsUpdate.mockResolvedValue(updated(labelsOnly));
+
+    fireEvent.click(radio('C++'));
+    await settle();
+
+    expect(page.ipc.settingsUpdate).toHaveBeenLastCalledWith({ editor: { blockLabels: 'cpp' } });
+    const expert = checkbox('Expert mode');
+    expect(expert.checked).toBe(false);
+    expect(expert.indeterminate).toBe(true);
+    await expectNoAxeViolations(screen.getByTestId('settings-blocks'));
+
+    // Pressing the mixed switch turns both on.
+    page.ipc.settingsUpdate.mockResolvedValue(
+      updated(settingsFixture({ editor: { blockLabels: 'cpp', showAdvanced: true } })),
+    );
+    fireEvent.click(expert);
+    await settle();
+    expect(page.ipc.settingsUpdate).toHaveBeenLastCalledWith({
+      editor: { blockLabels: 'cpp', showAdvanced: true },
+    });
+    expect(checkbox('Expert mode').indeterminate).toBe(false);
+    expect(checkbox('Expert mode').checked).toBe(true);
+
+    page.ipc.settingsUpdate.mockResolvedValue(
+      updated(settingsFixture({ editor: { blockLabels: 'cpp', showAdvanced: false } })),
+    );
+    fireEvent.click(checkbox('Show advanced blocks'));
+    await settle();
+    expect(page.ipc.settingsUpdate).toHaveBeenLastCalledWith({ editor: { showAdvanced: false } });
+    expect(checkbox('Show advanced blocks').checked).toBe(false);
+    expect(checkbox('Expert mode').indeterminate).toBe(true);
+  });
+
+  it('puts the saved state of a check box back when an update is refused', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const page = await showPage();
+    const answer = deferred<SettingsUpdateResponse>();
+    page.ipc.settingsUpdate.mockReturnValue(answer.promise);
+
+    fireEvent.click(checkbox('Show advanced blocks'));
+    await settle();
+    // Shown while it is saved.
+    expect(checkbox('Show advanced blocks').checked).toBe(true);
+
+    await act(async () => {
+      answer.reject(
+        new IpcCallError('settings_update', {
+          code: 'invalidRequest',
+          reason: 'badEnum',
+          field: 'editor.showAdvanced',
+        }),
+      );
+      await answer.promise.catch(() => undefined);
+    });
+    await settle();
+
+    expect(checkbox('Show advanced blocks').checked).toBe(false);
+    expect(useAppStore.getState().settings.value?.editor.showAdvanced).toBe(false);
+    expect(screen.getByTestId('settings-error').textContent).toContain('not allowed');
   });
 
   it('puts the saved choice back when an update is refused', async () => {
@@ -576,6 +689,9 @@ describe('texts', () => {
     expect(settingLabel('toolchain.selectedId')).toBe('Toolchain: the default compiler');
     expect(settingLabel('run')).toBe('Run on errors');
     expect(settingLabel('ui.layout.rightDockWidth')).toBe("Layout: the C++ panel's width");
+    expect(settingLabel('appearance.theme')).toBe('Appearance: colours');
+    expect(settingLabel('editor.blockLabels')).toBe('Blocks: block labels');
+    expect(settingLabel('editor.showAdvanced')).toBe('Blocks: show advanced blocks');
     expect(noticeText({ key: 'ui.layout', reason: 'invalidValue' })).toBe(
       "The window's layout had a value that is not allowed and was reset to its default.",
     );

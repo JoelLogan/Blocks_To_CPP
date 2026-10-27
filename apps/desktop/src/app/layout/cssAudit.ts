@@ -13,12 +13,20 @@ import { contrastRatio } from '@blocks2cpp/blockly-ext';
 export interface CssRule {
   readonly selectors: readonly string[];
   readonly declarations: ReadonlyMap<string, string>;
-  /** The `@media` condition the rule is in (`prefers-color-scheme: dark`), or `null`. */
+  /** The `@media` condition the rule is in (`prefers-reduced-motion: reduce`), or `null`. */
   readonly media: string | null;
 }
 
-/** A theme: the light one, or the dark one (`prefers-color-scheme: dark`). */
+/** A theme: the light one (`:root`), or the dark one (`:root[data-theme='dark']`). */
 export type Theme = 'light' | 'dark';
+
+/** The selectors of the dark theme's tokens, with either quote. */
+const DARK_ROOTS: readonly string[] = [":root[data-theme='dark']", ':root[data-theme="dark"]'];
+
+/** Whether `selector` selects the page's root in the dark theme. */
+export function isDarkRoot(selector: string): boolean {
+  return DARK_ROOTS.includes(selector);
+}
 
 /** Removes comments. */
 function stripComments(css: string): string {
@@ -94,16 +102,17 @@ export function parseRules(css: string): CssRule[] {
   return rules;
 }
 
-/** The custom properties (`--name`) set on `:root`, per theme (dark falls back to light). */
+/**
+ * The custom properties (`--name`) set on `:root`, per theme: the light ones on `:root`, the dark
+ * ones on `:root[data-theme='dark']` (dark falls back to light). Rules inside `@media` blocks are
+ * not read: no style sheet chooses its colours by a media query (the Appearance setting does).
+ */
 export function themeTokens(rules: readonly CssRule[]): Record<Theme, Map<string, string>> {
   const light = new Map<string, string>();
   const dark = new Map<string, string>();
   for (const rule of rules) {
-    if (!rule.selectors.includes(':root')) {
-      continue;
-    }
-    const isDark = rule.media?.includes('prefers-color-scheme: dark') === true;
-    if (rule.media !== null && !isDark) {
+    const isDark = rule.selectors.some(isDarkRoot);
+    if (rule.media !== null || (!isDark && !rule.selectors.includes(':root'))) {
       continue;
     }
     for (const [name, value] of rule.declarations) {

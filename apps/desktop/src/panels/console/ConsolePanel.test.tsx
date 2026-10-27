@@ -167,6 +167,29 @@ describe('ConsolePanel', () => {
     expect(alternate.lines).toHaveLength(terminal.rows);
   });
 
+  it('reads its colours from the console tokens again when the theme changes (U14d)', () => {
+    const { terminal, rerender, props } = renderConsole({ theme: 'light' });
+    const host = terminal.element?.parentElement;
+    if (host === undefined || host === null) {
+      throw new Error('the terminal has no host');
+    }
+    // Stand-ins for the dark tokens, which the page's theme selects in the app.
+    host.style.setProperty('--b2c-console-bg', '#161a22');
+    host.style.setProperty('--b2c-console-fg', '#e6e9f0');
+    host.style.setProperty('--b2c-console-cursor', '#ffc266');
+    host.style.setProperty('--b2c-console-selection', 'rgb(138 180 255 / 35%)');
+    // The same theme: nothing is read again.
+    rerender(<ConsolePanel {...props} theme="light" />);
+    expect(terminal.options.theme?.background).not.toBe('#161a22');
+    rerender(<ConsolePanel {...props} theme="dark" />);
+    expect(terminal.options.theme).toEqual({
+      background: '#161a22',
+      foreground: '#e6e9f0',
+      cursor: '#ffc266',
+      selectionBackground: 'rgb(138 180 255 / 35%)',
+    });
+  });
+
   it('clamps the scrollback setting', () => {
     expect(clampScrollback(10)).toBe(1000);
     expect(clampScrollback(5000.4)).toBe(5000);
