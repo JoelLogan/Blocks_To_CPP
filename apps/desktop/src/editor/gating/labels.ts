@@ -22,14 +22,25 @@ export function labelTemplate(def: Pick<BlockDefJson, 'label'>, mode: LabelMode)
   return mode === 'cpp' ? def.label.cpp : def.label.friendly;
 }
 
+/** How {@link labelParts} reads a template. */
+export interface LabelPartsOptions {
+  /**
+   * A C++ template: a `…` that is the whole of a `{ … }` stands for a statement body, not for a
+   * repeated group, so it stays text (`while (true) { … }`). Statement inputs follow the label
+   * in both modes, and a repeat part there would take the label's words into a repeated group.
+   */
+  readonly cpp?: boolean;
+}
+
 /**
  * Splits a label template into text, argument and repeat parts, exactly as the catalog generator
  * splits the Friendly label (packages/catalog-gen/src/labels.ts): text parts are trimmed, runs of
  * whitespace become one space, whitespace-only text is dropped, a `%` that does not start a name is
- * text, and `…` is a repeat part only as a word of its own. Punctuation stays with its text, so
+ * text, and `…` is a repeat part only as a word of its own (and, in a C++ template, not as a
+ * statement body, {@link LabelPartsOptions.cpp}). Punctuation stays with its text, so
  * `%LIST.push_back(%VALUE);` gives `LIST`, `.push_back(`, `VALUE` and `);`.
  */
-export function labelParts(template: string): LabelPart[] {
+export function labelParts(template: string, options: LabelPartsOptions = {}): LabelPart[] {
   const parts: LabelPart[] = [];
   let text = '';
   const flush = (): void => {
@@ -49,7 +60,12 @@ export function labelParts(template: string): LabelPart[] {
       continue;
     }
     const char = template.charAt(index);
-    if (char === REPEAT && isWordEdge(template, index - 1) && isWordEdge(template, index + 1)) {
+    if (
+      char === REPEAT &&
+      isWordEdge(template, index - 1) &&
+      isWordEdge(template, index + 1) &&
+      !(options.cpp === true && isStatementBody(template, index))
+    ) {
       flush();
       parts.push({ repeat: true });
     } else {
@@ -59,6 +75,17 @@ export function labelParts(template: string): LabelPart[] {
   }
   flush();
   return parts;
+}
+
+/** Whether the `…` at `index` is the whole of a `{ … }`. */
+function isStatementBody(template: string, index: number): boolean {
+  return (
+    template.slice(0, index).trimEnd().endsWith('{') &&
+    template
+      .slice(index + 1)
+      .trimStart()
+      .startsWith('}')
+  );
 }
 
 /** Whether the position is outside the template or holds whitespace. */
@@ -77,7 +104,9 @@ type LabelledDef = Pick<BlockDefJson, 'label' | 'labelParts' | 'fields' | 'input
  * named: they follow the label in both modes.
  */
 export function blockLabelParts(def: LabelledDef, mode: LabelMode): readonly LabelPart[] {
-  return mode === 'cpp' && hasFullCppLabel(def) ? labelParts(def.label.cpp) : def.labelParts;
+  return mode === 'cpp' && hasFullCppLabel(def)
+    ? labelParts(def.label.cpp, { cpp: true })
+    : def.labelParts;
 }
 
 /** Whether the C++ template of `def` names every field and value input. */

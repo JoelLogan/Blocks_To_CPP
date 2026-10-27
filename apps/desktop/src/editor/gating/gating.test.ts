@@ -94,7 +94,7 @@ describe('gate', () => {
   it('says why something is not offered', () => {
     expect(gateText({ allowed: true })).toBeNull();
     expect(gateText({ allowed: false, reason: 'advanced' })).toBe(
-      'Shown with Show advanced blocks (Settings).',
+      'An advanced block: turn on “Show advanced blocks” in Settings to use it.',
     );
     expect(gateText({ allowed: false, reason: 'standard', needs: 'c++23' })).toBe(
       "Needs C++23 or newer (the project's C++ standard).",
@@ -125,31 +125,53 @@ describe('the requirements table', () => {
     expect(optionGate('text.format', 'ANY', 'x', old)).toEqual(blockGate('text.format', old));
   });
 
+  /** Whether the block, option or category a row names is in the catalog (`null` for a type). */
+  function targetExists(key: string): boolean | null {
+    const block = /^block:(.+)$/.exec(key);
+    const option = /^option:([^.]+\.[^.]+)\.([A-Z][A-Z0-9_]*)=(.+)$/.exec(key);
+    const category = /^category:(.+)$/.exec(key);
+    if (block?.[1] !== undefined) {
+      return catalogBlock(block[1]) !== undefined;
+    }
+    if (option?.[1] !== undefined) {
+      const field = catalogBlock(option[1])?.fields.find((f) => f.name === option[2]);
+      return field?.options.some(([, value]) => value === option[3]) === true;
+    }
+    if (category?.[1] !== undefined) {
+      return TOOLBOX.some((candidate) => candidate.id === category[1]);
+    }
+    expect(key.startsWith('type:'), key).toBe(true);
+    return null;
+  }
+
   it('names a block, option or category of the catalog in every row, or says what brings it', () => {
-    const categories = new Set<string>(TOOLBOX.map((category) => category.id));
     for (const key of REQUIREMENTS.keys()) {
-      if (AWAITED.has(key)) {
-        continue;
-      }
-      const block = /^block:(.+)$/.exec(key);
-      const option = /^option:([^.]+\.[^.]+)\.([A-Z][A-Z0-9_]*)=(.+)$/.exec(key);
-      const category = /^category:(.+)$/.exec(key);
-      if (block?.[1] !== undefined) {
-        expect(catalogBlock(block[1]), key).toBeDefined();
-      } else if (option?.[1] !== undefined) {
-        const field = catalogBlock(option[1])?.fields.find((f) => f.name === option[2]);
-        expect(
-          field?.options.some(([, value]) => value === option[3]),
-          key,
-        ).toBe(true);
-      } else if (category?.[1] !== undefined) {
-        expect(categories.has(category[1]), key).toBe(true);
-      } else {
-        expect(key.startsWith('type:'), key).toBe(true);
+      if (!AWAITED.has(key)) {
+        expect(targetExists(key), `${key} names nothing in the catalog`).not.toBe(false);
       }
     }
-    for (const key of AWAITED.keys()) {
+  });
+
+  it('awaits only what has not landed: a row whose target exists leaves AWAITED', () => {
+    for (const [key, work] of AWAITED) {
       expect(REQUIREMENTS.has(key), key).toBe(true);
+      expect(
+        targetExists(key),
+        `${key} is in the catalog now (${work}): take it out of AWAITED`,
+      ).toBe(false);
+    }
+  });
+
+  it("gates every operator of change beyond M2's and append", () => {
+    const ungated = new Set(['add', 'sub', 'mul', 'div', 'mod', 'append']);
+    const field = catalogBlock('var.change')?.fields.find((f) => f.name === 'OP');
+    expect(field).toBeDefined();
+    for (const [, value] of field?.options ?? []) {
+      if (!ungated.has(value)) {
+        expect(REQUIREMENTS.has(requirementKey('option', 'var.change', 'OP', value)), value).toBe(
+          true,
+        );
+      }
     }
   });
 
@@ -160,6 +182,14 @@ describe('the requirements table', () => {
     expect(requirementKey('type', '{"array":["int",3]}')).toBe('type:{"array":["int",3]}');
   });
 });
+
+function requireBlock(id: string): NonNullable<ReturnType<typeof catalogBlock>> {
+  const def = catalogBlock(id);
+  if (def === undefined) {
+    throw new Error(`no block ${id}`);
+  }
+  return def;
+}
 
 describe('labels', () => {
   it('splits every Friendly label as the catalog generator does', () => {
@@ -203,7 +233,39 @@ describe('labels', () => {
     expect(labelTemplate(def, 'friendly')).toBe(def.label.friendly);
     expect(labelTemplate(def, 'cpp')).toBe(def.label.cpp);
     expect(hasFullCppLabel(def)).toBe(true);
-    expect(blockLabelParts(def, 'cpp')).toEqual(labelParts(def.label.cpp));
+    expect(blockLabelParts(def, 'cpp')).toEqual(labelParts(def.label.cpp, { cpp: true }));
+  });
+
+  it("reads a C++ template's { … } as a statement body, never as a repeated group", () => {
+    expect(blockLabelParts(requireBlock('control.forever'), 'cpp')).toEqual([
+      { text: 'while (true) { … }' },
+    ]);
+    expect(blockLabelParts(requireBlock('control.repeat'), 'cpp')).toEqual([
+      { text: 'for (int i = 0; i <' },
+      { arg: 'TIMES' },
+      { text: '; ++i) { … }' },
+    ]);
+    // A repeated group outside braces stays one.
+    expect(labelParts('try { %TRY } catch { %CATCH } …', { cpp: true }).at(-1)).toEqual({
+      repeat: true,
+    });
+    // The Friendly reading is unchanged.
+    expect(labelParts('while (true) { … }')).toContainEqual({ repeat: true });
+  });
+
+  it('lays out a C++ label with a repeat part only for a block that has a repeated part', () => {
+    for (const def of BLOCK_DEFS) {
+      if (!hasFullCppLabel(def)) {
+        continue;
+      }
+      const repeated = [...def.fields, ...def.inputs, ...def.statements].some(
+        (part) => 'repeat' in part && part.repeat !== null,
+      );
+      const parts = blockLabelParts(def, 'cpp');
+      if (!repeated) {
+        expect(parts, def.id).not.toContainEqual({ repeat: true });
+      }
+    }
   });
 
   it('keeps the Friendly layout for a C++ label that stands for one form only', () => {

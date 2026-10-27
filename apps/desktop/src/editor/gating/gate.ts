@@ -132,7 +132,7 @@ export function gateText(result: Gate): string | null {
   }
   switch (result.reason) {
     case 'advanced':
-      return 'Shown with Show advanced blocks (Settings).';
+      return 'An advanced block: turn on “Show advanced blocks” in Settings to use it.';
     case 'standard':
       return `Needs ${result.needs.replace('c++', 'C++')} or newer (the project's C++ standard).`;
     case 'toolchain':
