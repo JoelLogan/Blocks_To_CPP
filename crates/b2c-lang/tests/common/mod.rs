@@ -306,6 +306,12 @@ pub(crate) const AFTER_M2: &[&str] = &[
     "text.trim",
     // Package C1: structs and enums.
     "type.",
+    // Package D: control, program and files.
+    "control.do_while",
+    "control.fallthrough",
+    "control.switch",
+    "control.wait",
+    "file.",
 ];
 
 /// Whether `block_type` came after M2 ([`AFTER_M2`]).

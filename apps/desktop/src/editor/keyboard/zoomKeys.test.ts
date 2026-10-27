@@ -5,10 +5,16 @@
  * leave the zoom alone.
  */
 import * as Blockly from 'blockly/core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
 import { KEY_MAP } from './help';
 import { type KeyboardEditor, keyboardEditor, press } from './testing';
+
+// Each test here opens an editor whose toolbox shows the flyout of every catalog block: with W2's
+// control and file blocks, the slowest took 4.4 s in the suite with two workers and coverage on a
+// busy machine, close to Vitest's default of 5 s (3.1 s alone).
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 const editors: KeyboardEditor[] = [];
 

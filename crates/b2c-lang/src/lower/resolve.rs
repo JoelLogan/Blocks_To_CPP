@@ -6,7 +6,7 @@
 //! it). When a reference does not resolve, the declaration table from pass 1
 //! explains why.
 
-use b2c_ir::diag::Location;
+use b2c_ir::diag::{Location, Part};
 use b2c_ir::ids::SymbolId;
 use b2c_ir::sast::{PassMode, SymbolKind};
 use b2c_ir::types::Type;
@@ -124,6 +124,17 @@ impl Lowerer<'_> {
             return Some(format!(
                 "{name} is the error caught by a 'catch' part, so it can't be changed. Create a variable \
                  for a value that changes."
+            ));
+        }
+        // The line of *for each line in file* (w2.md §1.8), the loop item
+        // that its block's `LINE` field declares.
+        if self.decls.get(sym).is_some_and(|decl| {
+            decl.kind == DeclKind::LoopItem
+                && matches!(&decl.location.part, Part::Field { name } if name == "LINE")
+        }) {
+            return Some(format!(
+                "{name} is read-only: it holds the line just read from the file, and the blocks inside the \
+                 loop can't change it. Create a variable set to it to change a copy."
             ));
         }
         match self.symbols.get(sym).map(|s| &s.kind)? {

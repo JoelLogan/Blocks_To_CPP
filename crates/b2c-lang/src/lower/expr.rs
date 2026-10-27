@@ -117,6 +117,8 @@ fn input_label(name: &str) -> String {
         "ARG" => format!("input {}", index + 1),
         "CODE" => String::from("an exit code"),
         "PROMPT" => String::from("a question"),
+        "CASE" => format!("the value of case {}", index + 1),
+        "PATH" => String::from("the path of a file"),
         _ => format!("a value for {}", quoted(name)),
     }
 }

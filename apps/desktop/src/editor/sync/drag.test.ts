@@ -1147,29 +1147,37 @@ describe('the delete-area feedback', () => {
     );
   });
 
-  it('marks the editor’s category column and flyout while a block over them would be deleted', () => {
-    const workspace = renderedWorkspace(editorInjectOptions(Blockly.Themes.Zelos));
-    const toolbox = present(workspace.getToolbox(), 'toolbox');
-    if (!(toolbox instanceof Blockly.Toolbox)) {
-      throw new Error('the editor has no Blockly toolbox');
-    }
-    const block = Blockly.serialization.blocks.append(
-      { type: 'control.forever' },
-      workspace,
-    ) as Blockly.BlockSvg;
-    const injection = workspace.getInjectionDiv();
-    expect(injection.querySelector(TINTED)).toBeNull();
-    expect(injection.querySelector(COLUMN_TINTED)).toBeNull();
+  // It draws the whole flyout once: with W2's control and file blocks, 4.7 s alone with two
+  // workers and 7.1 s in the whole suite on a busy machine, over Vitest's default of 5 s.
+  it(
+    'marks the editor’s category column and flyout while a block over them would be deleted',
+    {
+      timeout: TOOLBOX_TEST_TIMEOUT,
+    },
+    () => {
+      const workspace = renderedWorkspace(editorInjectOptions(Blockly.Themes.Zelos));
+      const toolbox = present(workspace.getToolbox(), 'toolbox');
+      if (!(toolbox instanceof Blockly.Toolbox)) {
+        throw new Error('the editor has no Blockly toolbox');
+      }
+      const block = Blockly.serialization.blocks.append(
+        { type: 'control.forever' },
+        workspace,
+      ) as Blockly.BlockSvg;
+      const injection = workspace.getInjectionDiv();
+      expect(injection.querySelector(TINTED)).toBeNull();
+      expect(injection.querySelector(COLUMN_TINTED)).toBeNull();
 
-    // What Blockly's dragger does while a block is dragged over the toolbox.
-    expect(toolbox.wouldDelete(block)).toBe(true);
-    toolbox.onDragEnter(block);
-    expect(injection.querySelector(TINTED)).not.toBeNull();
-    expect(injection.querySelector(COLUMN_TINTED)).not.toBeNull();
-    toolbox.onDragExit(block);
-    expect(injection.querySelector(TINTED)).toBeNull();
-    expect(injection.querySelector(COLUMN_TINTED)).toBeNull();
-  });
+      // What Blockly's dragger does while a block is dragged over the toolbox.
+      expect(toolbox.wouldDelete(block)).toBe(true);
+      toolbox.onDragEnter(block);
+      expect(injection.querySelector(TINTED)).not.toBeNull();
+      expect(injection.querySelector(COLUMN_TINTED)).not.toBeNull();
+      toolbox.onDragExit(block);
+      expect(injection.querySelector(TINTED)).toBeNull();
+      expect(injection.querySelector(COLUMN_TINTED)).toBeNull();
+    },
+  );
 });
 
 describe.skipIf(core === null)('a block dropped on the canvas', () => {

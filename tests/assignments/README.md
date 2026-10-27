@@ -16,7 +16,7 @@ green one by one as the block projects arrive.
 | --- | --- | --- | --- |
 | [`temperature_table`](temperature_table/README.md) | loops, formatting | W2 | green |
 | [`grade_average`](grade_average/README.md) | list (vector), average and maximum | W2 | green |
-| [`word_count`](word_count/README.md) | files, strings | W2 | pending |
+| [`word_count`](word_count/README.md) | files, strings | W2 | green |
 | [`student_records`](student_records/README.md) | struct, list of structs, sorting | W2 | green |
 | [`bank_menu`](bank_menu/README.md) | `switch`, enum, `do … while` | W2 | pending |
 | [`palindrome`](palindrome/README.md) | strings, reversal | W2 | green |

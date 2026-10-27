@@ -10,6 +10,7 @@ Toolbox icon: ↻. Back to [all categories](README.md).
 | --- | --- | --- | --- | --- | --- |
 | `control.repeat` (statement) | `repeat %TIMES times` | `for (int i = 0; i < %TIMES; ++i) { … }` | Repeats blocks a number of times. | — | `TIMES`: a whole number; default `10`. `BODY`: blocks. |
 | `control.while` (statement) | `repeat %MODE %COND` | `while (%COND) { … }` | Repeats blocks while a condition is true; choose until in the menu to repeat until it becomes true. | `MODE`: one of `while` or `until`, default `while`. | `COND`: a condition; default `true`. `BODY`: blocks. |
+| `control.do_while` (statement) | `do %BODY then repeat %MODE %COND` | `do { … } while (%COND);` | Runs blocks once, then again while a condition is true; choose until in the menu to repeat until it becomes true. The condition sees only what is visible before the block, not the variables its blocks create. | `MODE`: one of `while` or `until`, default `while`. | `COND`: a condition; default `true`. `BODY`: blocks. |
 | `control.for_range` (statement) | `for %VAR from %FROM %DIRECTION %TO step %STEP` | `for (int %VAR = %FROM; …; …) { … }` | Counts from one number to another, running blocks for each value. | `VAR`: the name of the new variable. `DIRECTION`: one of `to`, `through` or down to (`down_to`), default `to`. | `FROM`: a whole number; default `0`. `TO`: a whole number; default `10`. `STEP`: a whole number; optional. `BODY`: blocks. |
 | `control.forever` (statement) | `forever` | `while (true) { … }` | Repeats blocks forever (use stop or break to leave). | — | `BODY`: blocks. |
 | `control.break` (statement) | `leave loop` | `break;` | Leaves the innermost loop. | — | — |
@@ -21,9 +22,10 @@ Toolbox icon: ↻. Back to [all categories](README.md).
 
 1. `control.repeat`
 2. `control.while`
-3. `control.for_range`
-4. `control.forever`
-5. `control.break`
-6. `control.continue`
-7. `coll.for_each`
-8. `coll.for_each_pair`
+3. `control.do_while`
+4. `control.for_range`
+5. `control.forever`
+6. `control.break`
+7. `control.continue`
+8. `coll.for_each`
+9. `coll.for_each_pair`

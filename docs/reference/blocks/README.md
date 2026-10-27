@@ -15,12 +15,13 @@ Catalog version: 1.3.0.
 | [Math](math.md) | ∑ | 11 |
 | [Logic](logic.md) | ◇ | 4 |
 | [Text](text.md) | “ ” | 13 |
-| [Control](control.md) | ⑂ | 1 |
-| [Loops](loops.md) | ↻ | 8 |
+| [Control](control.md) | ⑂ | 4 |
+| [Loops](loops.md) | ↻ | 9 |
 | [Input / Output](io.md) | ⌨ | 3 |
 | [Functions](functions.md) | ƒ | 4 |
 | [Collections](collections.md) | ☰ | 13 |
 | [Types](types.md) | ◆ | 6 |
+| [Files](files.md) | 🗎 | 1 |
 | [Errors](errors.md) | ⚠ | 4 |
 
 ## How to read the tables

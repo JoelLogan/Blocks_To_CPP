@@ -1315,15 +1315,18 @@ mod tests {
             ("d.toml", "not toml at all ["),
         ];
         let (catalog, problems) = build(&files);
-        assert_eq!(catalog.blocks.len(), 7);
-        assert_eq!(problems.len(), 9, "{problems:#?}");
+        // Every block of control.toml once, and each again as a duplicate,
+        // with one problem each for c.toml and d.toml.
+        let blocks = control.matches("[[block]]").count();
+        assert_eq!(catalog.blocks.len(), blocks);
+        assert_eq!(problems.len(), blocks + 2, "{problems:#?}");
         assert!(
             problems[0]
                 .message
                 .contains("defined more than once (again in b.toml)")
         );
         assert!(
-            problems[7]
+            problems[blocks]
                 .message
                 .starts_with("c.toml is not a valid catalog file")
         );

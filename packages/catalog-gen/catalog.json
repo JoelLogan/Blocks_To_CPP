@@ -864,6 +864,77 @@
       "extra": []
     },
     {
+      "id": "control.do_while",
+      "version": 1,
+      "category": "loops",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "do %BODY then repeat %MODE %COND",
+        "cpp": "do { … } while (%COND);"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Runs blocks once, then again while a condition is true; choose until in the menu to repeat until it becomes true. The condition sees only what is visible before the block, not the variables its blocks create.",
+      "field": [
+        {
+          "name": "MODE",
+          "kind": "dropdown",
+          "options": [
+            [
+              "while",
+              "while"
+            ],
+            [
+              "until",
+              "until"
+            ]
+          ],
+          "types": [],
+          "default": "while"
+        }
+      ],
+      "input": [
+        {
+          "name": "COND",
+          "check": "bool",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "kw": "true"
+            }
+          ]
+        }
+      ],
+      "statement": [
+        {
+          "name": "BODY",
+          "repeat": null,
+          "when": null
+        }
+      ],
+      "extra": []
+    },
+    {
+      "id": "control.fallthrough",
+      "version": 1,
+      "category": "control",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "go on into the next case",
+        "cpp": "[[fallthrough]];"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Put last in a case of a switch: after this case's blocks, the next case's blocks run too, without checking its value.",
+      "field": [],
+      "input": [],
+      "statement": [],
+      "extra": []
+    },
+    {
       "id": "control.for_range",
       "version": 1,
       "category": "loops",
@@ -1068,6 +1139,134 @@
         }
       ],
       "extra": []
+    },
+    {
+      "id": "control.switch",
+      "version": 1,
+      "category": "control",
+      "shape": "statement",
+      "output": null,
+      "typeVars": {
+        "T": "switchable"
+      },
+      "label": {
+        "friendly": "switch on %VALUE case %CASE %DO case … default %DEFAULT",
+        "cpp": "switch (%VALUE) { case %CASE: { … break; } … default: { … } }"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Runs the blocks of the case whose value equals the value switched on, or the default part when no case does. The value is a whole number, a character or a value of an enum; each case value must be fixed when the program is built, and no two may be the same. Add cases and the default part with ⊕, and remove them with ⊖.",
+      "field": [],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        },
+        {
+          "name": "CASE",
+          "check": "any",
+          "optional": false,
+          "repeat": {
+            "count": "caseCount",
+            "plus": 0
+          },
+          "default": [],
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        }
+      ],
+      "statement": [
+        {
+          "name": "DO",
+          "repeat": {
+            "count": "caseCount",
+            "plus": 0
+          },
+          "when": null
+        },
+        {
+          "name": "DEFAULT",
+          "repeat": null,
+          "when": "hasDefault"
+        }
+      ],
+      "extra": [
+        {
+          "name": "caseCount",
+          "kind": "count",
+          "min": 1,
+          "max": 64,
+          "default": "2",
+          "types": []
+        },
+        {
+          "name": "hasDefault",
+          "kind": "flag",
+          "min": 0,
+          "max": 1,
+          "default": true,
+          "types": []
+        }
+      ],
+      "order": [
+        {
+          "input": "VALUE"
+        },
+        {
+          "input": "CASE"
+        }
+      ]
+    },
+    {
+      "id": "control.wait",
+      "version": 1,
+      "category": "control",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "wait %SECONDS seconds",
+        "cpp": "std::this_thread::sleep_for(std::chrono::duration<double>(%SECONDS));"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<chrono>",
+        "<thread>"
+      ],
+      "help": "Pauses the program for a number of seconds, which may have a decimal part (0.5 is half a second).",
+      "field": [],
+      "input": [
+        {
+          "name": "SECONDS",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0.5"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "double"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "SECONDS"
+        }
+      ]
     },
     {
       "id": "control.while",
@@ -1304,6 +1503,80 @@
       "order": [
         {
           "field": "NAME"
+        }
+      ]
+    },
+    {
+      "id": "file.for_each_line",
+      "version": 1,
+      "category": "files",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "for each line %LINE in file %PATH %BODY if it can't be opened %FAILED",
+        "cpp": "while (std::getline(file, %LINE)) { … }"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Reads a text file line by line and runs blocks for each line, without its line break. A path that is not a full path is looked for in the folder the program runs in: the project folder, or its sandbox folder when the run settings choose it or the project is not saved yet. Add the part that runs when the file can't be opened with ⊕; without it, nothing runs when the file can't be opened.",
+      "field": [
+        {
+          "name": "LINE",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "input": [
+        {
+          "name": "PATH",
+          "check": "text",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "str": "data.txt"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "std::string"
+          }
+        }
+      ],
+      "statement": [
+        {
+          "name": "BODY",
+          "repeat": null,
+          "when": null
+        },
+        {
+          "name": "FAILED",
+          "repeat": null,
+          "when": "hasFailed"
+        }
+      ],
+      "extra": [
+        {
+          "name": "hasFailed",
+          "kind": "flag",
+          "min": 0,
+          "max": 1,
+          "default": false,
+          "types": []
+        }
+      ],
+      "order": [
+        {
+          "field": "LINE"
+        },
+        {
+          "input": "PATH"
         }
       ]
     },
@@ -4008,6 +4281,21 @@
             "block": "control.if",
             "label": null,
             "preset": null
+          },
+          {
+            "block": "control.switch",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "control.fallthrough",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "control.wait",
+            "label": null,
+            "preset": null
           }
         ]
       },
@@ -4025,6 +4313,11 @@
           },
           {
             "block": "control.while",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "control.do_while",
             "label": null,
             "preset": null
           },
@@ -4230,7 +4523,17 @@
         "icon": "🗎",
         "colour": "files",
         "dynamic": null,
-        "entry": []
+        "entry": [
+          {
+            "block": "file.for_each_line",
+            "label": null,
+            "preset": {
+              "extra": {
+                "hasFailed": true
+              }
+            }
+          }
+        ]
       },
       {
         "id": "errors",

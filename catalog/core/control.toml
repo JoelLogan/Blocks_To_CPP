@@ -37,6 +37,75 @@ name = "ELSE"
 when = "hasElse"
 
 [[block]]
+id = "control.switch"
+version = 1
+category = "control"
+shape = "statement"
+label = { friendly = "switch on %VALUE case %CASE %DO case … default %DEFAULT", cpp = "switch (%VALUE) { case %CASE: { … break; } … default: { … } }" }
+lowering = "builtin"
+help = "Runs the blocks of the case whose value equals the value switched on, or the default part when no case does. The value is a whole number, a character or a value of an enum; each case value must be fixed when the program is built, and no two may be the same. Add cases and the default part with ⊕, and remove them with ⊖."
+where = { T = "switchable" }
+
+[[block.extra]]
+name = "caseCount"
+kind = "count"
+min = 1
+max = 64
+default = "2"
+
+[[block.extra]]
+name = "hasDefault"
+kind = "flag"
+max = 1
+default = true
+
+[[block.input]]
+name = "VALUE"
+check = "any"
+type = "T"
+
+# Case values start empty: a connection never sets a start value
+# (docs/plans/m3-contracts/w2.md §2.9).
+[[block.input]]
+name = "CASE"
+check = "any"
+type = "T"
+repeat = { count = "caseCount" }
+
+[[block.statement]]
+name = "DO"
+repeat = { count = "caseCount" }
+
+[[block.statement]]
+name = "DEFAULT"
+when = "hasDefault"
+
+[[block]]
+id = "control.fallthrough"
+version = 1
+category = "control"
+shape = "statement"
+label = { friendly = "go on into the next case", cpp = "[[fallthrough]];" }
+lowering = "builtin"
+help = "Put last in a case of a switch: after this case's blocks, the next case's blocks run too, without checking its value."
+
+[[block]]
+id = "control.wait"
+version = 1
+category = "control"
+shape = "statement"
+label = { friendly = "wait %SECONDS seconds", cpp = "std::this_thread::sleep_for(std::chrono::duration<double>(%SECONDS));" }
+lowering = "builtin"
+help = "Pauses the program for a number of seconds, which may have a decimal part (0.5 is half a second)."
+headers = ["<chrono>", "<thread>"]
+
+[[block.input]]
+name = "SECONDS"
+check = "number"
+type = "double"
+default = [{ num = "0.5" }]
+
+[[block]]
 id = "control.while"
 version = 1
 category = "loops"
@@ -58,6 +127,29 @@ default = [{ kw = "true" }]
 
 [[block.statement]]
 name = "BODY"
+
+[[block]]
+id = "control.do_while"
+version = 1
+category = "loops"
+shape = "statement"
+label = { friendly = "do %BODY then repeat %MODE %COND", cpp = "do { … } while (%COND);" }
+lowering = "builtin"
+help = "Runs blocks once, then again while a condition is true; choose until in the menu to repeat until it becomes true. The condition sees only what is visible before the block, not the variables its blocks create."
+
+[[block.statement]]
+name = "BODY"
+
+[[block.field]]
+name = "MODE"
+kind = "dropdown"
+options = [["while", "while"], ["until", "until"]]
+default = "while"
+
+[[block.input]]
+name = "COND"
+check = "bool"
+default = [{ kw = "true" }]
 
 [[block]]
 id = "control.repeat"

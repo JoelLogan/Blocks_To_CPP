@@ -320,11 +320,18 @@ describe('static categories', () => {
   });
 
   it('offer each block once: its other forms are chosen on the block (03 §3.1)', () => {
-    // *else if* and *else* come with ⊕ on the one *if*, *until* from the one loop's menu.
+    // *else if* and *else* come with ⊕ on the one *if*, more cases and the default part with ⊕ on
+    // the one *switch on*, *until* from the one loop's menu.
     const control = staticCategoryContents('control');
     expect(labelsOf(control)).toEqual([]);
-    expect(typesOf(control)).toEqual(['control.if']);
+    expect(typesOf(control)).toEqual([
+      'control.if',
+      'control.switch',
+      'control.fallthrough',
+      'control.wait',
+    ]);
     expect(blocksOf(control)[0]?.extraState).toEqual({ elseIfCount: 0, hasElse: false });
+    expect(blocksOf(control)[1]?.extraState).toEqual({ caseCount: 2, hasDefault: true });
 
     const loops = staticCategoryContents('loops');
     expect(labelsOf(loops)).toEqual([]);
@@ -332,6 +339,7 @@ describe('static categories', () => {
     expect(loopTypes.filter((type) => type === 'control.while')).toHaveLength(1);
     expect(new Set(loopTypes).size).toBe(loopTypes.length);
     expect(blocksOf(loops).find((block) => block.type === 'control.while')?.fields).toBeUndefined();
+    expect(loopTypes.filter((type) => type === 'control.do_while')).toHaveLength(1);
   });
 
   it('give the presets of the toolbox metadata', () => {

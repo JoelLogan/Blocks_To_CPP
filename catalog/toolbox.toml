@@ -151,6 +151,15 @@ colour = "control"
 [[category.entry]]
 block = "control.if"
 
+[[category.entry]]
+block = "control.switch"
+
+[[category.entry]]
+block = "control.fallthrough"
+
+[[category.entry]]
+block = "control.wait"
+
 [[category]]
 id = "loops"
 name = "Loops"
@@ -162,6 +171,9 @@ block = "control.repeat"
 
 [[category.entry]]
 block = "control.while"
+
+[[category.entry]]
+block = "control.do_while"
 
 [[category.entry]]
 block = "control.for_range"
@@ -287,6 +299,10 @@ id = "files"
 name = "Files"
 icon = "🗎"
 colour = "files"
+
+[[category.entry]]
+block = "file.for_each_line"
+preset = { extra = { hasFailed = true } }
 
 [[category]]
 id = "errors"

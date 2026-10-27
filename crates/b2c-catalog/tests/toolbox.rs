@@ -221,11 +221,13 @@ fn a_second_entry_for_a_block_is_rejected() {
                 }),
             });
     };
+    // The second entry comes after every entry Control has.
+    let after_last = category(&mut parsed(), Category::Control).entries.len();
     let problems = problems_after(if_else);
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert_eq!(
         (problems[0].category, problems[0].entry),
-        (Some(Category::Control), Some(1))
+        (Some(Category::Control), Some(after_last))
     );
     assert!(
         problems[0].message.contains("already has an entry"),

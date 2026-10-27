@@ -5,13 +5,14 @@
 import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
 import { describeBlock, describeNode, describeTarget } from './labels';
 import { type KeyboardEditor, keyboardEditor } from './testing';
-import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
 
 // Each test here injects the editor with the continuous toolbox, whose first showing draws every
 // catalog block (toolbox/testing.ts): the slowest test took 4.9 to 5.5 s under coverage with two
-// workers on a loaded machine, with happy-dom 20 and 21 alike, against Vitest's 5 s default.
+// workers on a loaded machine, with happy-dom 20 and 21 alike, and 5.1 to 5.8 s with W2's control
+// and file blocks (2.2 s alone before them), against Vitest's 5 s default.
 vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 let editor: KeyboardEditor | null = null;

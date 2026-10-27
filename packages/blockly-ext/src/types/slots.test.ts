@@ -205,10 +205,15 @@ describe('the slot fixture', () => {
       'coll.remove_value',
       'coll.set_item',
       'coll.sort',
+      // W2's switch and wait (w2.md §1.6).
+      'control.switch',
+      'control.wait',
       // W2's errors, text, input and output and math (w2.md §1.3, §1.4, §1.7).
       'error.message',
       'error.throw',
       'error.try',
+      // W2's file loop (w2.md §1.8).
+      'file.for_each_line',
       'func.call',
       'func.call_stmt',
       // What it gives back is typed from W2 (docs/plans/m3-contracts/w2.md §1.9).

@@ -109,6 +109,7 @@ export const TOOLBOX_CATEGORIES: readonly ToolboxCategory[] = [
   { id: 'functions', name: 'Functions' },
   { id: 'collections', name: 'Collections' },
   { id: 'types', name: 'Types' },
+  { id: 'files', name: 'Files' },
   { id: 'errors', name: 'Errors' },
 ];
 
