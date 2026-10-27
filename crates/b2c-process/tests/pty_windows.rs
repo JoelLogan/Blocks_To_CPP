@@ -386,10 +386,49 @@ fn close_input_ends_a_pseudo_console_programs_input() {
         let exit = wait_within(&mut child, PATIENCE);
         assert_eq!(exit.status, ExitStatus::Exited(0));
         let text = output.finish();
-        let sorted = text.rfind(last).unwrap_or_else(|| panic!("{text:?}"));
-        assert!(text[..sorted].contains("apple"), "{text:?}");
+        // Sort's own output comes after the echoed Ctrl+Z: both lines, sorted
+        // (the echo of what was typed cannot satisfy this).
+        let plain = without_escapes(&text);
+        let after = plain.rfind("^Z").unwrap_or_else(|| panic!("{text:?}"));
+        let sorted: Vec<&str> = plain[after + 2..]
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect();
+        assert_eq!(sorted, ["apple", last], "{text:?}");
         assert_eq!(writer.write(b"late").unwrap_err().kind(), ErrorKind::BrokenPipe);
     }
+}
+
+/// `text` without the terminal's control sequences (CSI, and OSC ended by
+/// BEL or ST), which `ConPTY` may put anywhere, even inside a line.
+fn without_escapes(text: &str) -> String {
+    let mut plain = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            plain.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' || (c == '\u{1b}' && chars.next_if_eq(&'\\').is_some()) {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    plain
 }
 
 #[test]

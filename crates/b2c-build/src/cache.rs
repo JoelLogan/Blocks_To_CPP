@@ -420,8 +420,8 @@ fn ignore_existing(result: io::Result<()>) -> io::Result<()> {
 /// Removes the sandbox folders of `<cache_root>/sandbox/` unused for at
 /// least `max_age` as of `now` (at startup: [`DEFAULT_MAX_AGE`]). A
 /// sandbox's last use is its lock file's modification time
-/// ([`hold_sandbox`]), or the folder's own for a sandbox without one (made
-/// before M3). A sandbox whose lock is held (a program runs in it) is kept,
+/// ([`hold_sandbox`]); a sandbox without one (made before M3) is given one
+/// and so a full `max_age` from now. A sandbox whose lock is held (a program runs in it) is kept,
 /// and so is one used again between the look and the deletion. The
 /// deletion keeps this module's safety rules: no link is followed, every
 /// level is checked to be a real folder inside the canonical `sandbox/`, the
@@ -442,9 +442,17 @@ pub fn prune_sandboxes(cache_root: &Path, max_age: Duration, now: SystemTime) ->
                 let Some(lock_path) = sandbox_lock(&item.path) else {
                     continue;
                 };
-                let lock_time = lock_modified(&lock_path);
-                if expired(lock_time.or(item.modified), now, max_age) {
-                    report.record(remove_sandbox(&layout, &item.path, &lock_path, lock_time));
+                let Some(lock_time) = lock_modified(&lock_path) else {
+                    // A sandbox from before locks (M2): its folder's time says
+                    // nothing about its use, so it gets a lock, and a full
+                    // `max_age` from now.
+                    if layout.holds_dir(&item.path, 1) {
+                        drop(open_lock_at(&lock_path, true));
+                    }
+                    continue;
+                };
+                if expired(Some(lock_time), now, max_age) {
+                    report.record(remove_sandbox(&layout, &item.path, &lock_path, Some(lock_time)));
                 }
             }
             Kind::Link => report.record(remove_stray(&layout, &item, 0)),

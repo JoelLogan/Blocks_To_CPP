@@ -210,6 +210,8 @@ fn every_error() -> Vec<IpcError> {
         IpcError::NotRunning,
         IpcError::InputClosed,
         IpcError::NoExternalTerminal,
+        IpcError::InputFileUnreadable,
+        IpcError::DefineNotExportable,
         IpcError::RateLimited,
         IpcError::Busy,
         IpcError::TooManyHandles,

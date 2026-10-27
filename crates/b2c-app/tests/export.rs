@@ -1,7 +1,8 @@
 //! `project_export_dialog` (`docs/spec/06-compiler-pipeline.md` §6.11): the
 //! folder comes from the (scripted) dialog, the export goes into a folder
-//! named after the program, an earlier export is replaced only after the
-//! user agrees, and a folder with other files is never written into.
+//! named after the project, an earlier export of the same project is
+//! replaced only after the user agrees, and a folder with other files or
+//! another project's export is never written into.
 
 // Test helpers fail the test by panicking.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -37,9 +38,11 @@ fn a_project_is_exported_into_a_folder_of_its_own() {
     app.dialogs.will_pick_export(Some(&parent));
     let response = export(&created.document).unwrap();
     assert!(!response.cancelled);
-    assert_eq!(response.folder_name.as_deref(), Some("main"));
+    let project: serde_json::Value = serde_json::from_str(&created.document).unwrap();
+    let name = b2c_build::export::folder_name(project["project"]["name"].as_str().unwrap()).unwrap();
+    assert_eq!(response.folder_name.as_deref(), Some(name.as_str()));
     assert_eq!(response.files, 5);
-    let folder = parent.join("main");
+    let folder = parent.join(&name);
     assert!(folder.join("src/main.cpp").is_file());
     assert!(folder.join("CMakeLists.txt").is_file());
 
@@ -62,15 +65,51 @@ fn a_project_is_exported_into_a_folder_of_its_own() {
 
     // A folder of the same name with other files is refused.
     let other = app.root.path().join("other");
-    std::fs::create_dir_all(other.join("main")).unwrap();
-    std::fs::write(other.join("main").join("keep.txt"), "mine").unwrap();
+    std::fs::create_dir_all(other.join(&name)).unwrap();
+    std::fs::write(other.join(&name).join("keep.txt"), "mine").unwrap();
     app.dialogs.will_pick_export(Some(&other));
     assert!(matches!(export(&created.document), Err(IpcError::Io { .. })));
     assert_eq!(
-        std::fs::read_to_string(other.join("main/keep.txt")).unwrap(),
+        std::fs::read_to_string(other.join(&name).join("keep.txt")).unwrap(),
         "mine"
+    );
+
+    // Another project of the same name (its first module also `main`) is
+    // refused without a question, and the first one's code stays.
+    let second = app
+        .backend
+        .project_new(ProjectNewRequest {
+            template: Template::HelloWorld,
+        })
+        .unwrap();
+    std::fs::write(folder.join("src/main.cpp"), "// edited").unwrap();
+    app.dialogs.will_pick_export(Some(&parent));
+    let shown = app.dialogs.calls();
+    let refused = app.backend.project_export_dialog(ProjectExportDialogRequest {
+        handle: second.handle.clone(),
+        document: second.document.clone(),
+    });
+    assert!(
+        matches!(
+            refused,
+            Err(IpcError::Io {
+                kind: b2c_ipc::IoKind::AlreadyExists
+            })
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(app.dialogs.calls(), shown + 1, "only the folder was asked for");
+    assert_eq!(
+        std::fs::read_to_string(folder.join("src/main.cpp")).unwrap(),
+        "// edited"
     );
 
     // A document that is not a project is refused before any dialog.
     assert!(export("{}").is_err());
+
+    // A text define the build files cannot pass gives its own error.
+    let mut document: serde_json::Value = serde_json::from_str(&created.document).unwrap();
+    document["project"]["build"]["defines"] =
+        serde_json::json!([{ "name": "PRICE", "value": { "string": "$5" } }]);
+    assert_eq!(export(&document.to_string()), Err(IpcError::DefineNotExportable));
 }

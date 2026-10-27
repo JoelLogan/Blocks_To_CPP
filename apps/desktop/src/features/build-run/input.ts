@@ -262,7 +262,8 @@ export class InputSender {
             this.#putBack(chunk);
             await sleep(this.#clock, retryDelay);
             retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY_MS);
-          } else if (code === 'notRunning' || code === 'unknownRun') {
+          } else if (code === 'notRunning' || code === 'unknownRun' || code === 'inputClosed') {
+            // Nothing more can reach the program.
             this.dispose();
           } else {
             console.warn('Typed input could not be sent to the program', code);

@@ -174,6 +174,12 @@ export class RunController {
       this.endInput();
       return;
     }
+    // A program whose input has ended (or that reads a file, or runs in its own window) takes no
+    // typing; before it has started, typing waits for it.
+    const run = this.#deps.store.getState().run;
+    if (run.status === 'running' && !run.inputOpen) {
+      return;
+    }
     this.#session?.typed(data);
   }
 

@@ -50,6 +50,11 @@ describe('failureMessage', () => {
     expect(failureMessage('internal', 'run').message).toBe(
       'Something went wrong. The details are in the log file.',
     );
+    // A lost input file says what to do about the file, not to build again.
+    const input = failureMessage('inputFileUnreadable', 'run').message;
+    expect(input).toContain('input file can no longer be read');
+    expect(input).toContain('Project settings');
+    expect(input).not.toContain('Build');
   });
 });
 

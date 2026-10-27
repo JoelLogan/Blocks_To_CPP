@@ -152,6 +152,15 @@ pub enum IpcError {
     /// (`docs/spec/07-toolchain-build-run.md` §7.6.2).
     #[error("no external terminal")]
     NoExternalTerminal,
+    /// The input file chosen for the run (`run_input_file`) cannot be read:
+    /// it was moved, deleted or replaced by something that is not a file.
+    #[error("input file unreadable")]
+    InputFileUnreadable,
+    /// A text define holds `#`, `;` or `$`, which the exported CMake and
+    /// make files cannot pass to the compiler (`B2C-T1019`), so nothing was
+    /// exported. A build takes such a define.
+    #[error("define not exportable")]
+    DefineNotExportable,
     /// Too many calls in a short time; try again later.
     #[error("rate limited")]
     RateLimited,
@@ -213,6 +222,8 @@ impl IpcError {
         "notRunning",
         "inputClosed",
         "noExternalTerminal",
+        "inputFileUnreadable",
+        "defineNotExportable",
         "rateLimited",
         "busy",
         "tooManyHandles",
@@ -245,6 +256,8 @@ impl IpcError {
             Self::NotRunning => "notRunning",
             Self::InputClosed => "inputClosed",
             Self::NoExternalTerminal => "noExternalTerminal",
+            Self::InputFileUnreadable => "inputFileUnreadable",
+            Self::DefineNotExportable => "defineNotExportable",
             Self::RateLimited => "rateLimited",
             Self::Busy => "busy",
             Self::TooManyHandles => "tooManyHandles",

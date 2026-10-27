@@ -114,6 +114,14 @@ expression: render(&values)
 {
   "code": "noExternalTerminal"
 }
+--- inputFileUnreadable
+{
+  "code": "inputFileUnreadable"
+}
+--- defineNotExportable
+{
+  "code": "defineNotExportable"
+}
 --- rateLimited
 {
   "code": "rateLimited"

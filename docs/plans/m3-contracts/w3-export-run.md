@@ -164,12 +164,16 @@ and stay in it.
   <args…>`: the program and its arguments are positional parameters, never
   part of the script, so no argument is ever parsed by a shell. The script
   runs the program, writes its exit status into the status file (in a new
-  owner-only folder in the cache's `run-tmp/`) and waits for Enter. The run
-  is contained like any other (the terminal is inside the cgroup scope or
-  process group, so Stop closes its window). The exit event reports the
-  program's status from the file, or _Finished in the external terminal_
-  without a code when the file is missing (a terminal that hands the window
-  to a server process; `gnome-terminal` needs `--wait` for this reason).
+  owner-only folder) and waits for Enter; when the working folder cannot be
+  opened it says so in the window and writes no status. The terminal is in
+  the run's cgroup scope, so Stop ends it and the program, which terminals
+  start in a session of their own. With process-group containment only,
+  Stop could reach the terminal but not the program, so no terminal is used
+  there (`noExternalTerminal`). The exit event reports the program's status
+  from the file, or, when the file is missing (the window was closed first,
+  or a terminal handed the window to a server process; `gnome-terminal`
+  needs `--wait` for this reason), _how the program ended is not known_
+  with the neutral `stopped` status, never the terminal's own.
 * **Windows:** the program is created with `CREATE_NEW_CONSOLE` (a `conhost`
   window, or the user's default terminal), suspended, put in its Job Object
   and resumed, so Stop and closing the app end it. The IDE init unit, which
@@ -186,15 +190,23 @@ and stay in it.
 ### 4.1 What is written
 
 ```text
-<chosen folder>/<project-slug>/
+<chosen folder>/<project-folder-name>/
 ├── src/                 the generated .cpp/.hpp, without the banner
-├── CMakeLists.txt       CMake ≥ 3.20
-├── Makefile             g++ and GNU make
+├── CMakeLists.txt       CMake ≥ 3.20 (target b2c_program, OUTPUT_NAME the program)
+├── Makefile             g++ and GNU make; the program in bin/<config>[-nosanitize][-noharden]/
 ├── README.md            how to build, what the flags are
-└── .b2c-export.json     { format, formatVersion: 1, files: [...] }
+└── .b2c-export.json     { format, formatVersion: 2, projectId, files: [...] }
 ```
 
-`<project-slug>` is the build's executable slug. The generated code is what
+`<project-folder-name>` is the project's name in lower-case ASCII letters,
+digits and `-` (`export::folder_name`), or the program's name when nothing
+is left of it. The manifest records the project's ID (format 2; format 1,
+which did not, is read as "unknown project"), and a replacement is refused
+when it names another project. The CMake target has a fixed name so that a
+program called `install`, `test` or `clean` builds; C++26 is given as a
+compile flag (`-std=c++2c`, `/std:c++latest`) since CMake before 3.25 knows
+no C++26. `check_cxx_compiler_flag` links with the flag it checks, so a
+sanitizer is found where the compiler can link it. The generated code is what
 the app compiles minus the IDE init unit (06 §6.11). Flags come from the
 same lists `b2c-toolchain` builds the app's command lines from (one
 function per group: standard, encoding, warnings, optimisation and
@@ -236,10 +248,12 @@ assertions, sanitizers, hardening), so they cannot drift:
   the layout (M2's meaning) is gone.
 * App: `project_export_dialog { handle, document }` → `{ cancelled: true }`
   or `{ cancelled: false, folderName, files }`. The backend raises a native
-  folder dialog, creates `<slug>/` in the chosen folder; when that already
-  holds an earlier export it asks in a native dialog whether to replace it
-  (default _Cancel_); a non-empty folder that is not an export gives `io`
-  (`alreadyExists`). Allowed in Restricted Mode (it only writes code, as
+  folder dialog, creates `<project-folder-name>/` in the chosen folder; when
+  that already holds an earlier export of this project it asks in a native
+  dialog whether to replace it (default _Cancel_); a non-empty folder that is
+  not an export, or another project's export, gives `io` (`alreadyExists`)
+  before any question, and a define only the export cannot use gives
+  `defineNotExportable`. Allowed in Restricted Mode (it only writes code, as
   the code view shows it; 08 §8.3 disables Export-and-build, which does not
   exist yet). Menu: _Export as C++ project…_ in `≡`.
 * Tests: unit tests of both files' text for each configuration, defines with
@@ -286,7 +300,7 @@ which also moves the focus to the first one.
 | `project_export_dialog` response | `{ cancelled, folderName, files }` (`folderName` `null` when cancelled) |
 | `project_export_dialog` | new: `{ handle, document }` → `{ cancelled, folderName?, files? }` |
 | `RunEvent.started` | adds `inputFile: boolean` and `externalTerminal: boolean` |
-| `IpcError` | adds `inputClosed` and `noExternalTerminal` |
+| `IpcError` | adds `inputClosed`, `noExternalTerminal`, `inputFileUnreadable` (`run_start` with an input file that is gone) and `defineNotExportable` (`project_export_dialog`) |
 | settings `run` | adds `externalTerminal: boolean` (get and patch) |
 
 Each new command goes into the command table, the desktop's handler list,
@@ -393,6 +407,83 @@ format 2) is W2's and W4's; the dialog leaves room for it.
   replacement export writing over a file the earlier export did not list,
   `x-terminal-emulator` standing for a terminal with a server process
   (`tilix`, `terminator`), and input to a program that reads none.
+
+### The coordinator's review (17 findings)
+
+Each is fixed with a test written to fail without the fix (checked by removing the fix for 1; 8 runs on Windows only, in CI).
+
+1. CMake never enabled AddressSanitizer: `b2c_flags` sets
+   `CMAKE_REQUIRED_LINK_OPTIONS` to the flag it checks.
+   `exported_examples_build_with_cmake` checks that the compile check
+   agrees with the link check and that the Debug flags have
+   `-fsanitize=address,undefined` (it failed without the fix).
+2. Every project exported into `<folder>/main`: the folder is now named
+   after the project (`export::folder_name`), the manifest records the
+   project's ID (format 2, additive; format 1 is read as unknown), and the
+   app refuses another project's export with `io` (`alreadyExists`) before
+   any question, `write()` with `OtherProject`. Tests:
+   `an_export_is_never_replaced_by_another_projects` (b2c-build) and the
+   second project in `a_project_is_exported_into_a_folder_of_its_own`
+   (b2c-app). The confirmation's wording is now true. **For the owner:** the
+   export manifest gained `projectId` (`formatVersion` 2); it is the
+   export's own file, not the project format.
+3. The Makefile builds into `bin/<config>[-nosanitize][-noharden]/`, so
+   changing the configuration builds again; the README says where the
+   program is. `exported_examples_build_with_make` runs without `-B` and
+   checks that each configuration compiles.
+4. C++26 in CMake: no `CMAKE_CXX_STANDARD 26`; the flag is given per
+   compiler (`-std=c++2c`, MSVC `/std:c++latest`). Unit test of the text;
+   `exports_with_reserved_names_build` builds a C++26 export when g++ takes
+   `-std=c++2c` (GCC 14 and newer; this container's GCC 13 does not, CI's
+   g++ decides). `std_flag`'s comment said GCC 13 took `c++2c`; it does not.
+5. Reserved program names: the CMake target is `b2c_program` with
+   `OUTPUT_NAME`; the Makefile's program is under `bin/`, so `clean` no
+   longer collides. Tests for `install`, `clean` and `all` (text), and
+   CMake and make builds of `install` and `clean`.
+6. A terminal that ran nothing reported its own status: the status is now
+   `stopped` (neutral), with no crash or sanitizer report; the script says
+   in the window when the working folder cannot be opened and writes no
+   status. Tests: `an_external_terminal_that_ran_nothing_reports_no_status_of_its_own`
+   and the script's unit test.
+7. A sandbox without a lock (M2) is given one at the first prune and a full
+   30 days from then, never judged by its folder's time.
+   `a_sandbox_without_a_lock_gets_one_and_a_full_period`.
+8. The `ConPTY` close-input test now checks sort's own output after the
+   echoed `^Z` (both lines, sorted), which the echo cannot satisfy;
+   control sequences are left out first. Runs on Windows in CI only.
+9. `b2c generate --export` creates the missing parents of `--out`; CLI test
+   with `<tmp>/a/b`.
+10. Replace checks that every folder it writes into or removes from is a
+    real folder (or missing) before it touches anything.
+    `a_linked_source_folder_is_never_followed_to_remove_a_file` (Unix).
+11. A define only the export cannot use gives the new error
+    `defineNotExportable` (backend: `ExportError::DefineNotExportable`), whose
+    message names the setting and the Project settings page; the page notes
+    such a text define under its value (`aria-describedby`) without blocking
+    saving. Tests in b2c-app, the export feature and the page.
+12. A missing or replaced input file gives the new error
+    `inputFileUnreadable` with its own message (choose it again or clear it).
+    `a_program_reads_its_input_file_with_pipes` and a messages test.
+13. Process-group containment on Linux: no terminal window is used there
+    (`ExternalTerminal::find` gives `None`, so `noExternalTerminal`, whose
+    message now says why), as Stop could not reach a program the terminal
+    starts in a session of its own. Unit test of the rule; the module
+    documentation and §3.3 say it.
+14. Focus and announcements: _End input_ uses `aria-disabled` and moves the
+    focus to the terminal; the status line (`role="status"`) says _Running,
+    input ended_. The input-file buttons use `aria-disabled` with a guard,
+    the _Input: …_ line is a status, and removing or moving a row moves the
+    focus to the next row or to the button that is still usable. Tests in
+    the console panel and the page.
+15. Visible labels: a Name / Type / Value header above the defines and a
+    visible label on each row (_Define 1_, _Argument 1_), which name the
+    fields (`aria-labelledby`); an axe check of the page.
+16. _End input_ is not shown for a program that reads a file or runs in its
+    own window; typing then makes no `run_input` call, and the input sender
+    stops at `inputClosed`. Tests in the console panel and the feature.
+17. A failed input file is logged by its file name and the error's kind
+    only; `a_program_reads_its_input_file_with_pipes` captures the log and
+    checks that the folder is not in it.
 
 ### Not done, and why
 

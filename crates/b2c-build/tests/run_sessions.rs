@@ -1210,10 +1210,14 @@ fn a_program_reads_its_input_file_with_pipes() {
     missing.input_file = Some(dir.path().join("missing.txt"));
     let output: Arc<dyn ByteSink> = Arc::new(Console::default());
     let events: Arc<dyn EventSink<RunEvent>> = Arc::new(Console::default());
-    assert!(matches!(
-        sessions.start(missing, output, events),
-        Err(IpcError::Io { .. })
-    ));
+    let log = LogText::default();
+    let started = tracing::subscriber::with_default(log.clone(), || sessions.start(missing, output, events));
+    assert!(matches!(started, Err(IpcError::InputFileUnreadable)));
+    // The log names the file, never the folder it is in.
+    let log = log.0.lock().unwrap();
+    assert!(log.contains("missing.txt"), "{log}");
+    let folder = dir.path().to_string_lossy();
+    assert!(!log.contains(folder.as_ref()), "{log}");
 }
 
 #[cfg(unix)]
@@ -1255,4 +1259,67 @@ fn an_external_terminal_shows_nothing_here_and_reports_the_programs_status() {
             ..
         }
     ));
+}
+
+/// The text of every log event and span field, for checking what is logged.
+#[derive(Clone, Default)]
+struct LogText(Arc<Mutex<String>>);
+
+/// Writes ` name=value` for each field.
+struct FieldText<'a>(&'a mut String);
+
+impl tracing::field::Visit for FieldText<'_> {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        use std::fmt::Write as _;
+        let _ = write!(self.0, " {}={value:?}", field.name());
+    }
+}
+
+impl tracing::Subscriber for LogText {
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        span.record(&mut FieldText(&mut self.0.lock().unwrap()));
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _: &tracing::span::Id, values: &tracing::span::Record<'_>) {
+        values.record(&mut FieldText(&mut self.0.lock().unwrap()));
+    }
+
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        event.record(&mut FieldText(&mut self.0.lock().unwrap()));
+    }
+
+    fn enter(&self, _: &tracing::span::Id) {}
+
+    fn exit(&self, _: &tracing::span::Id) {}
+}
+
+/// A terminal that ends without running the script (closed at once, or one
+/// that handed the window elsewhere): how the program ended is not known,
+/// which is neither a success nor a crash.
+#[cfg(unix)]
+#[test]
+fn an_external_terminal_that_ran_nothing_reports_no_status_of_its_own() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let Some(program) = helper(Flavour::Release) else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let terminal = dir.path().join("term");
+    std::fs::write(&terminal, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&terminal, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let sessions = RunSessions::new();
+    let mut external = spec(program, &["exit"]);
+    external.external = Some(b2c_build::ExternalTerminal::emulator_for_tests(terminal));
+    let (_id, console) = start(&sessions, external);
+    let exit = console.wait_for_exit();
+    assert_eq!(exit.status, ExitStatus::Stopped, "{exit:?}");
+    assert_eq!(exit.crash, None);
+    assert!(exit.message.contains("not known"), "{exit:?}");
 }

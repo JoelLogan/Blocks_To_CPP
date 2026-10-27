@@ -11,6 +11,7 @@ import {
   NOTICE_DETAIL,
   NOTICE_TEXT,
   skippedMarker,
+  takesTyping,
   type ConsoleHeader,
 } from './header';
 import { LinkDialog } from './LinkDialog';
@@ -519,12 +520,18 @@ export function ConsolePanel({
           <button type="button" disabled={!running} onClick={onStop} data-testid="console-stop">
             <span aria-hidden="true">■ </span>Stop
           </button>{' '}
-          {running && onEndInput !== undefined && (
+          {running && onEndInput !== undefined && takesTyping(header) && (
             <>
+              {/* aria-disabled, so the button keeps the focus; the status line says it ended. */}
               <button
                 type="button"
-                disabled={header.inputOpen !== true}
-                onClick={onEndInput}
+                aria-disabled={header.inputOpen !== true}
+                onClick={() => {
+                  if (header.inputOpen === true) {
+                    onEndInput();
+                    terminal.current?.focus();
+                  }
+                }}
                 title="Tell the program that nothing more will be typed: its next read ends."
                 data-testid="console-end-input"
               >

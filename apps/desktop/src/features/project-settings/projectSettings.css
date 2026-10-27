@@ -27,3 +27,24 @@
 .project-settings-row .feature-input {
   width: 14em;
 }
+
+/* The column names above the define rows, and each row's own label. */
+.project-settings-header {
+  margin-bottom: 0;
+  font-weight: 600;
+}
+
+.project-settings-row-label {
+  width: 6em;
+  padding-top: 4px;
+}
+
+.project-settings-header .project-settings-column {
+  width: 14em;
+}
+
+/* A button that keeps the focus while it cannot be used (aria-disabled). */
+.feature-actions .button[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}

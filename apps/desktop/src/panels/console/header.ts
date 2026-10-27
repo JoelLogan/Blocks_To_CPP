@@ -63,13 +63,24 @@ export const NOTICE_DETAIL: Readonly<Record<ConsoleNotice, string>> = {
     'The program runs in a terminal window of its own (Settings); its output is there, and this console shows how it ended.',
 };
 
+/** Whether the running program reads what is typed in the console (not a file, not a window). */
+export function takesTyping(header: ConsoleHeader): boolean {
+  return !header.notices.includes('inputFile') && !header.notices.includes('externalTerminal');
+}
+
 /** The state line for a header. */
 export function headerStatus(header: ConsoleHeader): HeaderStatus {
   switch (header.state) {
     case 'idle':
       return { text: 'Not running', tone: 'neutral', icon: '' };
     case 'running':
-      return { text: 'Running', tone: 'neutral', icon: '▶' };
+      // Said here, in the status line that is announced, once End input has ended it.
+      return {
+        text:
+          header.inputOpen === false && takesTyping(header) ? 'Running, input ended' : 'Running',
+        tone: 'neutral',
+        icon: '▶',
+      };
     case 'exited':
       return header.exit === null
         ? { text: 'Finished', tone: 'neutral', icon: '' }

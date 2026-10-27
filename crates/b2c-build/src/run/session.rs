@@ -688,13 +688,23 @@ fn spawn(command: &Command, size: PtySize, connection: Connection) -> Result<Pty
         Connection::Pipes => b2c_process::spawn_piped(command),
         Connection::NewConsole => b2c_process::spawn_in_new_console(command),
     };
-    started.map_err(|error| {
-        tracing::debug!(%error, "cannot start the program");
-        match error {
-            ProcessError::Spawn { source, .. } | ProcessError::StdinFile { source, .. } => {
-                IpcError::io(&source)
-            }
-            _ => IpcError::Internal,
+    started.map_err(|error| match error {
+        // The input file is the user's: only its name is logged.
+        ProcessError::StdinFile { path, source } => {
+            tracing::debug!(
+                file = %path.file_name().unwrap_or_default().to_string_lossy(),
+                kind = ?source.kind(),
+                "cannot open the input file"
+            );
+            IpcError::InputFileUnreadable
+        }
+        ProcessError::Spawn { program, source } => {
+            tracing::debug!(program = %program.display(), %source, "cannot start the program");
+            IpcError::io(&source)
+        }
+        error => {
+            tracing::debug!(%error, "cannot start the program");
+            IpcError::Internal
         }
     })
 }
@@ -798,6 +808,10 @@ impl Pump {
         }
         let mut report = exit::decode(&exit, detector.report().as_ref());
         if unknown {
+            // The terminal's own status says nothing about the program.
+            report.status = IpcStatus::Stopped;
+            report.crash = None;
+            report.sanitizer = None;
             report.message = String::from("The terminal window closed; how the program ended is not known");
         }
         report

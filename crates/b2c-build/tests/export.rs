@@ -60,6 +60,16 @@ fn program(folder: &Path, name: &str) -> PathBuf {
     folder.join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
 }
 
+/// `example` with its first module renamed to `module` and its standard set
+/// to `standard`, as a project file.
+fn changed_example(example: &str, module: &str, standard: &str) -> Vec<u8> {
+    let bytes = std::fs::read(repo_root().join("examples").join(format!("{example}.b2c"))).unwrap();
+    let mut project: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    project["modules"][0]["name"] = serde_json::Value::from(module);
+    project["project"]["language"]["standard"] = serde_json::Value::from(standard);
+    project.to_string().into_bytes()
+}
+
 #[test]
 fn exported_examples_build_with_make() {
     if common::gxx().is_none() || !available("make") {
@@ -69,18 +79,21 @@ fn exported_examples_build_with_make() {
         let dir = tempfile::tempdir().unwrap();
         let folder = dir.path().join("export");
         let export = exported(name, &folder);
+        // Each configuration is built in its own folder: `make` and then
+        // `make CONFIG=release` compiles again.
         for config in ["debug", "release"] {
-            run(
-                &tool("make")
-                    .arg("-C")
-                    .arg(&folder)
-                    .arg(format!("CONFIG={config}"))
-                    .arg("-B")
-                    .output()
-                    .unwrap(),
-                &format!("make {name} {config}"),
+            let output = tool("make")
+                .arg("-C")
+                .arg(&folder)
+                .arg(format!("CONFIG={config}"))
+                .output()
+                .unwrap();
+            run(&output, &format!("make {name} {config}"));
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains(&format!("-o bin/{config}/")),
+                "make {name} {config} did not compile"
             );
-            check(name, &program(&folder, &export.name));
+            check(name, &program(&folder.join("bin").join(config), &export.name));
         }
     }
 }
@@ -109,6 +122,9 @@ fn exported_examples_build_with_cmake() {
                     .unwrap(),
                 &format!("cmake configure {name} {config}"),
             );
+            if config == "Debug" {
+                sanitizers_reach_the_build(&build);
+            }
             run(
                 &tool("cmake").arg("--build").arg(&build).output().unwrap(),
                 &format!("cmake build {name} {config}"),
@@ -116,6 +132,175 @@ fn exported_examples_build_with_cmake() {
             check(name, &build.join(&export.name));
         }
     }
+}
+
+/// The debug configuration's sanitizers are on wherever this g++ can link
+/// them: CMake's compile check of a sanitizer passes exactly when its link
+/// check does, and the target's flags have it.
+#[cfg(unix)]
+fn sanitizers_reach_the_build(build: &Path) {
+    let cache = std::fs::read_to_string(build.join("CMakeCache.txt")).unwrap();
+    let result = |name: &str| {
+        cache
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}:INTERNAL=")))
+            .map(str::to_owned)
+    };
+    let flag = "B2C_HAS__fsanitize_address_undefined";
+    let link = result(&format!("{flag}_LINK"));
+    assert_eq!(result(&format!("{flag}_COMPILE")), link, "{cache}");
+    if link.as_deref() == Some("1") {
+        let flags = std::fs::read_to_string(build.join("CMakeFiles/b2c_program.dir/flags.make")).unwrap();
+        assert!(flags.contains("-fsanitize=address,undefined"), "{flags}");
+    }
+}
+
+#[test]
+fn reserved_program_names_and_cpp26_are_written_for_both_tools() {
+    for (module, standard) in [("install", "c++26"), ("clean", "c++20"), ("all", "c++17")] {
+        let export =
+            export::prepare(&changed_example("hello_world", module, standard), 4, "0.0.0-test").unwrap();
+        let file = |path: &str| {
+            export
+                .files
+                .iter()
+                .find(|file| file.path == path)
+                .map(|file| file.contents.clone())
+                .unwrap()
+        };
+        let cmake = file("CMakeLists.txt");
+        assert!(cmake.contains("add_executable(b2c_program"), "{cmake}");
+        assert!(cmake.contains(&format!("OUTPUT_NAME {module})")), "{cmake}");
+        assert!(!cmake.contains(&format!("({module} PRIVATE")), "{cmake}");
+        let make = file("Makefile");
+        assert!(make.contains(&format!("PROGRAM := {module}$(EXE)")), "{make}");
+        assert!(make.contains("$(OUT): $(SOURCES)"), "{make}");
+        if standard == "c++26" {
+            assert!(!cmake.contains("CMAKE_CXX_STANDARD"), "{cmake}");
+            assert!(cmake.contains("PRIVATE -std=c++2c)"), "{cmake}");
+            assert!(make.contains("-std=c++2c"), "{make}");
+        }
+    }
+}
+
+/// A program named after a target CMake reserves, or after the Makefile's
+/// own `clean`, builds with both tools; so does a C++26 project, where g++
+/// takes `-std=c++2c` (GCC 14 and newer).
+#[cfg(unix)]
+#[test]
+fn exports_with_reserved_names_build() {
+    if common::gxx().is_none() {
+        return;
+    }
+    let cpp26 = tool("g++")
+        .args(["-std=c++2c", "-x", "c++", "-fsyntax-only", "-"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .is_ok_and(|output| output.status.success());
+    for (module, standard) in [("install", "c++20"), ("clean", "c++20"), ("install", "c++26")] {
+        if standard == "c++26" && !cpp26 {
+            continue;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("export");
+        let export =
+            export::prepare(&changed_example("hello_world", module, standard), 4, "0.0.0-test").unwrap();
+        export::write(&folder, &export, ExportMode::New).unwrap();
+        if available("cmake") {
+            let build = folder.join("build");
+            run(
+                &tool("cmake")
+                    .arg("-S")
+                    .arg(&folder)
+                    .arg("-B")
+                    .arg(&build)
+                    .arg("-DCMAKE_CXX_COMPILER=g++")
+                    .output()
+                    .unwrap(),
+                &format!("cmake configure {module} {standard}"),
+            );
+            run(
+                &tool("cmake").arg("--build").arg(&build).output().unwrap(),
+                &format!("cmake build {module} {standard}"),
+            );
+            check("hello_world", &build.join(module));
+        }
+        if available("make") {
+            run(
+                &tool("make").arg("-C").arg(&folder).output().unwrap(),
+                &format!("make {module} {standard}"),
+            );
+            check("hello_world", &folder.join("bin/debug").join(module));
+            run(
+                &tool("make").arg("-C").arg(&folder).arg("clean").output().unwrap(),
+                &format!("make clean {module}"),
+            );
+            assert!(!folder.join("bin").exists());
+        }
+    }
+}
+
+#[test]
+fn an_export_is_never_replaced_by_another_projects() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("export");
+    let first = exported("hello_world", &folder);
+    assert_eq!(
+        export::earlier_export_project(&folder),
+        Some(Some(first.project_id.clone()))
+    );
+    let main = std::fs::read_to_string(folder.join("src/main.cpp")).unwrap();
+    let bytes = std::fs::read(repo_root().join("examples/greeting.b2c")).unwrap();
+    let second = export::prepare(&bytes, 4, "0.0.0-test").unwrap();
+    assert_ne!(first.project_id, second.project_id);
+    assert!(matches!(
+        export::write(&folder, &second, ExportMode::Replace),
+        Err(export::ExportError::OtherProject)
+    ));
+    assert_eq!(
+        std::fs::read_to_string(folder.join("src/main.cpp")).unwrap(),
+        main
+    );
+    // The same project replaces its own; a format 1 manifest (no project)
+    // counts as this project's.
+    export::write(&folder, &first, ExportMode::Replace).unwrap();
+    let manifest = std::fs::read_to_string(folder.join(EXPORT_MANIFEST)).unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+    value["formatVersion"] = serde_json::Value::from(1);
+    value.as_object_mut().unwrap().remove("projectId");
+    std::fs::write(folder.join(EXPORT_MANIFEST), value.to_string()).unwrap();
+    assert_eq!(export::earlier_export_project(&folder), Some(None));
+    export::write(&folder, &second, ExportMode::Replace).unwrap();
+    // The folder is named after the project.
+    assert_eq!(first.folder_name, "hello-world");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_linked_source_folder_is_never_followed_to_remove_a_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("export");
+    let export = exported("hello_world", &folder);
+    // The earlier export also wrote src/old.cpp, which this one does not.
+    let manifest = std::fs::read_to_string(folder.join(EXPORT_MANIFEST)).unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+    value["files"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::Value::from("src/old.cpp"));
+    std::fs::write(folder.join(EXPORT_MANIFEST), value.to_string()).unwrap();
+    std::fs::remove_dir_all(folder.join("src")).unwrap();
+    std::fs::write(outside.path().join("old.cpp"), "keep").unwrap();
+    std::os::unix::fs::symlink(outside.path(), folder.join("src")).unwrap();
+    assert!(matches!(
+        export::write(&folder, &export, ExportMode::Replace),
+        Err(export::ExportError::NotAPlainFile)
+    ));
+    assert_eq!(
+        std::fs::read_to_string(outside.path().join("old.cpp")).unwrap(),
+        "keep"
+    );
 }
 
 #[test]
@@ -230,7 +415,7 @@ fn a_text_define_the_build_tools_cannot_pass_is_refused() {
         let result = export::prepare(project.to_string().as_bytes(), 4, "0.0.0-test");
         match result {
             Ok(_) => assert!(exportable, "{text}"),
-            Err(export::ExportError::ProjectErrors(problems)) => {
+            Err(export::ExportError::DefineNotExportable(problems)) => {
                 assert!(!exportable, "{text}");
                 assert_eq!(problems.len(), 1);
                 assert_eq!(problems[0].code, b2c_ir::DiagCode::new("B2C-T1019"));

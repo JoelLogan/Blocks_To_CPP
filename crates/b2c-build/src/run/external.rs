@@ -11,10 +11,13 @@
 //!   program and its arguments are the script's positional parameters, so no
 //!   argument is ever read by a shell. The script runs the program, writes
 //!   its exit status into the status file (in a new owner-only folder) and
-//!   waits for Enter. The terminal runs in the run's containment (its
-//!   process group or cgroup scope), so Stop closes its window; a terminal
-//!   that hands its windows to a server process (`gnome-terminal`, used
-//!   last and with `--wait`) keeps the program outside it.
+//!   waits for Enter. The terminal runs in the run's cgroup scope, so Stop
+//!   ends it and the program, which the terminal starts in a session of its
+//!   own. Without a scope (process-group containment) Stop could reach the
+//!   terminal only, so no terminal is used there ([`ExternalTerminal::find`]
+//!   gives `None`). A terminal that hands its windows to a server process
+//!   (`gnome-terminal`, used last and with `--wait`) keeps the program
+//!   outside the scope too (W3-D9).
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -26,9 +29,14 @@ pub const EXTERNAL_TERMINAL_VAR: &str = "B2C_EXTERNAL_TERMINAL";
 
 /// The script the terminal runs: `cd` to `$1`, run `$3…` (the program and its
 /// arguments), write the exit status into the file `$2`, say how it ended and
-/// wait for Enter. Constant: nothing from the project or the user is part of
-/// it.
-pub(super) const SCRIPT: &str = r#"cd -- "$1" || exit 126
+/// wait for Enter. When the folder cannot be opened it says so and writes no
+/// status (the run then reports that how the program ended is not known).
+/// Constant: nothing from the project or the user is part of it.
+pub(super) const SCRIPT: &str = r#"if ! cd -- "$1"; then
+  printf '\n[The working folder cannot be opened, so the program did not run. Press Enter to close this window.]'
+  read -r _
+  exit 126
+fi
 status_file=$2
 shift 2
 "$@"
@@ -86,12 +94,16 @@ enum Kind {
 impl ExternalTerminal {
     /// The terminal of this system: on Windows a new console window; on
     /// Linux the first terminal program found (see the module
-    /// documentation), or `None` when there is none.
+    /// documentation), or `None` when there is none or programs are
+    /// contained by process group only.
     pub fn find() -> Option<Self> {
         if cfg!(windows) {
             return Some(Self {
                 kind: Kind::NewConsole,
             });
+        }
+        if !holds_a_terminal(b2c_process::containment_level()) {
+            return None;
         }
         Self::find_in(&TERMINAL_DIRS.map(Path::new))
     }
@@ -175,6 +187,15 @@ fn is_executable_file(path: &Path) -> bool {
     {
         metadata.is_file()
     }
+}
+
+/// Whether a Linux run with containment `level` keeps a program in a
+/// terminal window under control: a terminal starts its command in a new
+/// session, outside the terminal's process group, which only a cgroup scope
+/// still holds.
+#[cfg_attr(windows, allow(dead_code))]
+fn holds_a_terminal(level: b2c_process::ContainmentLevel) -> bool {
+    level == b2c_process::ContainmentLevel::Cgroup
 }
 
 /// Whether the link `x-terminal-emulator` leads to one of
@@ -261,6 +282,12 @@ mod tests {
         std::fs::create_dir_all(&other).unwrap();
         std::fs::write(other.join("xterm"), "").unwrap();
         assert_eq!(ExternalTerminal::find_in(&[&other]), None);
+    }
+
+    #[test]
+    fn a_terminal_is_used_only_where_a_cgroup_scope_holds_it() {
+        assert!(holds_a_terminal(b2c_process::ContainmentLevel::Cgroup));
+        assert!(!holds_a_terminal(b2c_process::ContainmentLevel::ProcessGroupOnly));
     }
 
     #[test]
@@ -355,5 +382,25 @@ mod tests {
             work.to_str().unwrap()
         );
         assert!(String::from_utf8_lossy(&captured.stdout).contains("exit status 7"));
+
+        // A working folder that cannot be opened: said, and no status.
+        std::fs::remove_file(&status).unwrap();
+        let mut command = b2c_process::Command::new("/bin/sh", dir.path()).unwrap();
+        command
+            .args(["-c", SCRIPT, SCRIPT_NAME])
+            .arg(dir.path().join("missing"))
+            .arg(&status)
+            .args(["/bin/sh", "-c", "touch ran.txt"])
+            .env("PATH", "/usr/bin:/bin")
+            .stdin(b2c_process::Stdin::Bytes(b"\n".to_vec()));
+        let captured = b2c_process::run_captured(&command).unwrap();
+        assert_eq!(
+            captured.status,
+            b2c_process::ExitStatus::Exited(126),
+            "{captured:?}"
+        );
+        assert_eq!(read_status(&status), None);
+        assert!(!dir.path().join("ran.txt").exists());
+        assert!(String::from_utf8_lossy(&captured.stdout).contains("cannot be opened"));
     }
 }

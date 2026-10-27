@@ -60,6 +60,11 @@ describe('Export as C++ project', () => {
     await ctx.commands.runCommand('project.export');
     expect(dialogs.alert).toHaveBeenCalledWith(exportFailureMessage('io'));
     expect(exportFailureMessage('projectErrors').message).toContain('errors');
+    // A define only the export cannot use names the setting, not the blocks.
+    const define = exportFailureMessage('defineNotExportable').message;
+    expect(define).toContain('#, ; or $');
+    expect(define).toContain('Project settings');
+    expect(define).not.toContain('blocks');
   });
 
   it('does nothing without a project', async () => {

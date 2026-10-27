@@ -242,6 +242,16 @@ export function defineValueProblem(type: DefineType, value: string): string | nu
   }
 }
 
+/**
+ * A remark on a text define that builds but cannot be exported: CMake and make cannot pass `#`, `;`
+ * or `$` to the compiler (`B2C-T1019` at export). `null` when there is nothing to say.
+ */
+export function defineExportNote(type: DefineType, value: string): string | null {
+  return type === 'string' && /[#;$]/.test(value)
+    ? 'The project builds with this text, but cannot be exported as a C++ project: CMake and make cannot pass #, ; or $.'
+    : null;
+}
+
 /** Why `text` cannot be a run argument, or `null`. */
 export function argProblem(text: string): string | null {
   if (text.length > MAX_ARG_LENGTH) {

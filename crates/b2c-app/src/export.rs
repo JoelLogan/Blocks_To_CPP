@@ -3,10 +3,12 @@
 //! `docs/plans/m3-contracts/w3-export-run.md` §4).
 //!
 //! The backend generates the C++ itself from the document, as for a build,
-//! and writes the export into `<chosen folder>/<program name>/`, never
-//! anywhere else: a new or empty folder, or, after the user confirms in a
-//! native dialog, an earlier export (whose own files only are replaced). A
-//! folder with other files gives `io` (`alreadyExists`). Export is allowed
+//! and writes the export into `<chosen folder>/<folder name>/` (the
+//! project's name made a file name, else the program's), never anywhere
+//! else: a new or empty folder, or, after the user confirms in a native
+//! dialog, an earlier export of the same project (whose own files only are
+//! replaced). A folder with other files, or another project's export, gives
+//! `io` (`alreadyExists`) before any question. Export is allowed
 //! in Restricted Mode: it runs nothing (`docs/spec/08-security.md` §8.3
 //! disables building and running).
 
@@ -42,6 +44,8 @@ impl Backend {
     /// The document's errors (`payloadTooLarge`, `invalidDocument`,
     /// `newerFormat`); [`IpcError::UnknownHandle`];
     /// [`IpcError::ProjectErrors`] when the project has errors;
+    /// [`IpcError::DefineNotExportable`] for a define only the export
+    /// cannot use;
     /// [`IpcError::Busy`] while another native dialog is open;
     /// [`IpcError::Io`] (`alreadyExists` for a folder with other files in
     /// it, otherwise the failure's kind).
@@ -70,13 +74,23 @@ impl Backend {
             tracing::debug!(%error, "the chosen export folder cannot be found");
             IpcError::io(&error)
         })?;
-        let target = parent.join(&export.name);
+        let target = parent.join(&export.folder_name);
         let mode = match export::folder_state(&target) {
             FolderState::Empty => ExportMode::New,
+            FolderState::EarlierExport
+                if export::earlier_export_project(&target)
+                    .flatten()
+                    .is_some_and(|id| id != export.project_id) =>
+            {
+                tracing::info!("export refused: the folder holds another project's export");
+                return Err(IpcError::Io {
+                    kind: IoKind::AlreadyExists,
+                });
+            }
             FolderState::EarlierExport => {
                 let replace = {
                     let _dialog = self.dialog_gate.enter()?;
-                    self.dialogs.confirm_replace_export(&export.name)
+                    self.dialogs.confirm_replace_export(&export.folder_name)
                 };
                 if !replace {
                     return Ok(cancelled());
@@ -94,7 +108,7 @@ impl Backend {
         tracing::info!(files = written.len(), "project exported");
         Ok(ProjectExportDialogResponse {
             cancelled: false,
-            folder_name: Some(display_text(&export.name, MAX_FOLDER_NAME_CHARS)),
+            folder_name: Some(display_text(&export.folder_name, MAX_FOLDER_NAME_CHARS)),
             files: u32::try_from(written.len()).unwrap_or(u32::MAX),
         })
     }
@@ -113,11 +127,13 @@ fn export_error(error: &ExportError) -> IpcError {
                 count: u32::try_from(errors.max(1)).unwrap_or(u32::MAX),
             }
         }
-        ExportError::NotEmpty | ExportError::NoEarlierExport | ExportError::NotWrittenByExport(_) => {
-            IpcError::Io {
-                kind: IoKind::AlreadyExists,
-            }
-        }
+        ExportError::DefineNotExportable(_) => IpcError::DefineNotExportable,
+        ExportError::NotEmpty
+        | ExportError::NoEarlierExport
+        | ExportError::OtherProject
+        | ExportError::NotWrittenByExport(_) => IpcError::Io {
+            kind: IoKind::AlreadyExists,
+        },
         ExportError::NotAPlainFile => IpcError::Io { kind: IoKind::Other },
         ExportError::Io { source, .. } => IpcError::io(source),
     }

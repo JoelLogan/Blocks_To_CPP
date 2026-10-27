@@ -238,7 +238,7 @@ describe('errors', () => {
     for (const code of IPC_ERROR_CODES) {
       expect(isIpcError({ code })).toBe(true);
     }
-    expect(IPC_ERROR_CODES).toHaveLength(27);
+    expect(IPC_ERROR_CODES).toHaveLength(29);
     for (const value of [null, undefined, 'internal', { code: 'transport' }, {}, { reason: 'x' }]) {
       expect(isIpcError(value)).toBe(false);
     }

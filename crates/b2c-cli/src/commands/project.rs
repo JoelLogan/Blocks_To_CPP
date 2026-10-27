@@ -103,7 +103,10 @@ pub(crate) fn export(path: &Path, out_dir: &Path, replace: bool) -> Status {
     let file = shown(path);
     let export = match b2c_build::export::prepare(&bytes, 4, env!("CARGO_PKG_VERSION")) {
         Ok(export) => export,
-        Err(b2c_build::export::ExportError::ProjectErrors(diagnostics)) => {
+        Err(
+            b2c_build::export::ExportError::ProjectErrors(diagnostics)
+            | b2c_build::export::ExportError::DefineNotExportable(diagnostics),
+        ) => {
             let document = b2c_model::load(&bytes).ok();
             err(&report::render_text(
                 &file,
@@ -123,6 +126,13 @@ pub(crate) fn export(path: &Path, out_dir: &Path, replace: bool) -> Status {
     } else {
         b2c_build::export::ExportMode::New
     };
+    // `--out` is created if missing (export::write makes its last level).
+    if let Some(parent) = out_dir.parent().filter(|parent| !parent.as_os_str().is_empty())
+        && let Err(error) = std::fs::create_dir_all(parent)
+    {
+        fail(&format!("cannot create {}: {error}", shown(parent)));
+        return Status::Usage;
+    }
     match b2c_build::export::write(out_dir, &export, mode) {
         Ok(written) => {
             for name in written {

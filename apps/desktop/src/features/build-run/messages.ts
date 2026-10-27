@@ -56,11 +56,17 @@ export function failureMessage(code: FailureCode, action: 'build' | 'run'): Fail
     case 'buildNotSuccessful':
     case 'unknownBuild':
       return { title, message: 'The program is out of date. Build the project, then try again.' };
+    case 'inputFileUnreadable':
+      return {
+        title,
+        message:
+          'The input file can no longer be read: it was moved, deleted or replaced. Choose it again on the Project settings page (≡ → Project settings…), or clear it to type the input in the console.',
+      };
     case 'noExternalTerminal':
       return {
         title,
         message:
-          'No terminal program was found to run it in a separate window. Install one (such as xterm), or choose “In the console” under Where programs run in Settings.',
+          'The program cannot run in a separate window here: no terminal program was found, or this system cannot keep a program in one under the app’s control (Stop could not end it). Install a terminal (such as xterm), or choose “In the console” under Where programs run in Settings.',
       };
     case 'io':
       return {

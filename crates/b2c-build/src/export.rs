@@ -5,9 +5,9 @@
 //! <folder>/
 //! ├── src/              the generated .cpp/.hpp, without the banner
 //! ├── CMakeLists.txt    CMake 3.20 or newer
-//! ├── Makefile          g++ and GNU make
+//! ├── Makefile          g++ and GNU make (the program in bin/<config>/)
 //! ├── README.md         how to build it
-//! └── .b2c-export.json  the files this export wrote
+//! └── .b2c-export.json  the project's ID and the files this export wrote
 //! ```
 //!
 //! * [`prepare`] runs the front end with the export's options and makes
@@ -24,10 +24,11 @@
 //!   profiles, the diagnostics format, `-iquote`, `-pipe`) are never
 //!   written.
 //! * [`write()`] writes the files into a folder: a new one (missing or empty),
-//!   or, with [`ExportMode::Replace`], one that holds an earlier export,
-//!   where only the files its `.b2c-export.json` lists are replaced or
-//!   removed. It never follows a link, writes each file through a temporary
-//!   file and a rename, and writes the manifest last.
+//!   or, with [`ExportMode::Replace`], one that holds an earlier export of
+//!   the same project, where only the files its `.b2c-export.json` lists are
+//!   replaced or removed. It never follows a link (it checks the folders
+//!   before it removes or writes anything), writes each file through a
+//!   temporary file and a rename, and writes the manifest last.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -36,6 +37,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use b2c_ir::sast::CppStandard;
+use b2c_ir::text::is_device_name;
 use b2c_ir::{DiagSource, Diagnostic, Location};
 use b2c_model::{BuildConfiguration, Define, DefineValue, Document, Sanitizer};
 use b2c_toolchain::codes;
@@ -54,8 +56,20 @@ const MANIFEST_FORMAT: &str = "blocks2cpp/export";
 /// The largest manifest read back (it lists a few file names).
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 
+/// The manifest's `formatVersion`: 2 names the project; 1 (read only) did
+/// not.
+const MANIFEST_VERSION: u32 = 2;
+
 /// The folder of the generated sources.
 const SOURCE_DIR: &str = "src";
+
+/// The CMake target. CMake reserves some names a program may have (`install`,
+/// `test`, `all`), so the target has its own and `OUTPUT_NAME` names the
+/// program.
+const CMAKE_TARGET: &str = "b2c_program";
+
+/// The longest folder name made from the project's name.
+const MAX_FOLDER_NAME: usize = 64;
 
 /// One file of an export: its path in the export folder (`/`-separated) and
 /// its text.
@@ -70,9 +84,15 @@ pub struct ExportFile {
 /// An export, ready to be written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Export {
-    /// The program's name, which is also the suggested folder name (from
-    /// the first module's name, as the app's builds name the program).
+    /// The program's name (from the first module's name, as the app's builds
+    /// name the program).
     pub name: String,
+    /// The suggested folder name: the project's name made a plain file name
+    /// ([`folder_name`]), or the program's name.
+    pub folder_name: String,
+    /// The project's ID, which the manifest records so that a replacement
+    /// is only ever of the same project's export.
+    pub project_id: String,
     /// The files, the manifest not included.
     pub files: Vec<ExportFile>,
 }
@@ -84,6 +104,11 @@ pub enum ExportError {
     /// written.
     #[error("the project has errors")]
     ProjectErrors(Vec<Diagnostic>),
+    /// A text define holds `#`, `;` or `$`, which a build takes but the two
+    /// build files cannot pass (one `B2C-T1019` error each); nothing is
+    /// written.
+    #[error("a define cannot be exported")]
+    DefineNotExportable(Vec<Diagnostic>),
     /// The folder is not empty and holds no earlier export (or one that
     /// cannot be read), so nothing is written.
     #[error("the folder is not empty and holds no earlier export")]
@@ -96,6 +121,10 @@ pub enum ExportError {
     /// the earlier export did not write; nothing is written.
     #[error("the folder holds {0}, which the earlier export did not write")]
     NotWrittenByExport(String),
+    /// [`ExportMode::Replace`] was asked for a folder that holds the export
+    /// of another project; nothing is written.
+    #[error("the folder holds the export of another project")]
+    OtherProject,
     /// The folder, or a file or folder in it, is a link or not what it
     /// should be; nothing more is written.
     #[error("refusing to write through a link or over something that is not a file")]
@@ -136,6 +165,9 @@ pub enum FolderState {
 struct Manifest {
     format: String,
     format_version: u32,
+    /// The project's ID (format 2; format 1 did not record it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    project_id: Option<String>,
     files: Vec<String>,
 }
 
@@ -144,7 +176,9 @@ struct Manifest {
 ///
 /// # Errors
 /// [`ExportError::ProjectErrors`] with every problem when the project has
-/// errors or a define that cannot be used.
+/// errors or a define that cannot be used, and
+/// [`ExportError::DefineNotExportable`] for a define only the export cannot
+/// use.
 pub fn prepare(bytes: &[u8], indent_width: u8, app_version: &str) -> Result<Export, ExportError> {
     let options = FrontendOptions {
         do_not_edit_banner: false,
@@ -160,6 +194,7 @@ pub fn prepare(bytes: &[u8], indent_width: u8, app_version: &str) -> Result<Expo
         return Err(ExportError::ProjectErrors(frontend.diagnostics));
     };
     let mut problems = Vec::new();
+    let mut not_exportable = Vec::new();
     let defines: Vec<ValidDefine> = document
         .project
         .build
@@ -167,13 +202,20 @@ pub fn prepare(bytes: &[u8], indent_width: u8, app_version: &str) -> Result<Expo
         .iter()
         .filter_map(|define| {
             ValidDefine::new(define)
-                .and_then(|valid| exportable(define).map(|()| valid))
                 .map_err(|problem| problems.push(problem))
                 .ok()
+                .filter(|_| {
+                    exportable(define)
+                        .map_err(|problem| not_exportable.push(problem))
+                        .is_ok()
+                })
         })
         .collect();
     if !problems.is_empty() {
         return Err(ExportError::ProjectErrors(problems));
+    }
+    if !not_exportable.is_empty() {
+        return Err(ExportError::DefineNotExportable(not_exportable));
     }
     let name = crate::compile::program_name(document);
     let sources: Vec<String> = generated
@@ -207,7 +249,37 @@ pub fn prepare(bytes: &[u8], indent_width: u8, app_version: &str) -> Result<Expo
         path: String::from("README.md"),
         contents: readme(&document.project.name, &name, app_version),
     });
-    Ok(Export { name, files })
+    Ok(Export {
+        folder_name: folder_name(&document.project.name).unwrap_or_else(|| name.clone()),
+        name,
+        project_id: document.project.id.to_string(),
+        files,
+    })
+}
+
+/// `project_name` as a folder name: lower-case ASCII letters and digits, with
+/// one `-` for each run of anything else, at most 64 characters; `None` when
+/// nothing is left or it is a Windows device name (`con`, `com1`, …).
+///
+/// ```
+/// use b2c_build::export::folder_name;
+///
+/// assert_eq!(folder_name("My Game 2!").as_deref(), Some("my-game-2"));
+/// assert_eq!(folder_name("¿¿¿"), None);
+/// assert_eq!(folder_name("Con"), None);
+/// ```
+pub fn folder_name(project_name: &str) -> Option<String> {
+    let mut name = String::new();
+    for c in project_name.chars() {
+        if c.is_ascii_alphanumeric() {
+            name.push(c.to_ascii_lowercase());
+        } else if !name.is_empty() && !name.ends_with('-') {
+            name.push('-');
+        }
+    }
+    name.truncate(MAX_FOLDER_NAME);
+    let name = name.trim_end_matches('-');
+    (!name.is_empty() && !is_device_name(name)).then(|| name.to_owned())
 }
 
 /// What both build files need.
@@ -249,7 +321,7 @@ fn standard_number(standard: CppStandard) -> &'static str {
 /// The `-std=` value every supported g++ (11 to 15) accepts.
 fn std_flag(standard: CppStandard, gnu: bool) -> String {
     let version = match standard {
-        // GCC before 14 knows C++26 only as c++2c, which GCC 14 and 15 also take.
+        // C++26 needs GCC 14 or newer, which all take c++2c (15 also c++26).
         CppStandard::Cpp26 => "2c",
         other => standard_number(other),
     };
@@ -358,27 +430,42 @@ fn cmake_lists(name: &str, sources: &[String], flags: &Flags<'_>, app_version: &
     );
     text.push_str("cmake_minimum_required(VERSION 3.20)\n");
     let _ = writeln!(text, "project({name} LANGUAGES CXX)\n");
-    let _ = writeln!(
-        text,
-        "set(CMAKE_CXX_STANDARD {})",
-        standard_number(flags.standard)
-    );
-    text.push_str("set(CMAKE_CXX_STANDARD_REQUIRED ON)\n");
-    let _ = writeln!(
-        text,
-        "set(CMAKE_CXX_EXTENSIONS {})\n",
-        if flags.gnu { "ON" } else { "OFF" }
-    );
+    // CMake before 3.25 knows no C++26, and later ones know no flag for it
+    // with GCC 13 and older: the flag is given below instead.
+    if flags.standard != CppStandard::Cpp26 {
+        let _ = writeln!(
+            text,
+            "set(CMAKE_CXX_STANDARD {})",
+            standard_number(flags.standard)
+        );
+        text.push_str("set(CMAKE_CXX_STANDARD_REQUIRED ON)\n");
+        let _ = writeln!(
+            text,
+            "set(CMAKE_CXX_EXTENSIONS {})\n",
+            if flags.gnu { "ON" } else { "OFF" }
+        );
+    }
     text.push_str(
         "if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)\n  set(CMAKE_BUILD_TYPE Debug CACHE STRING \"Debug or Release\" FORCE)\nendif()\n\n",
     );
-    let _ = writeln!(text, "add_executable({name}");
+    let _ = writeln!(text, "add_executable({CMAKE_TARGET}");
     for source in sources {
         let _ = writeln!(text, "  {source}");
     }
     text.push_str(")\n");
+    let _ = writeln!(
+        text,
+        "set_target_properties({CMAKE_TARGET} PROPERTIES OUTPUT_NAME {name})"
+    );
+    if flags.standard == CppStandard::Cpp26 {
+        let _ = writeln!(
+            text,
+            "if(MSVC)\n  target_compile_options({CMAKE_TARGET} PRIVATE /std:c++latest)\nelse()\n  target_compile_options({CMAKE_TARGET} PRIVATE {})\nendif()",
+            std_flag(flags.standard, flags.gnu)
+        );
+    }
     if !flags.defines.is_empty() {
-        let _ = writeln!(text, "target_compile_definitions({name} PRIVATE");
+        let _ = writeln!(text, "target_compile_definitions({CMAKE_TARGET} PRIVATE");
         for define in flags.defines {
             let _ = writeln!(text, "  {}", cmake_literal(define));
         }
@@ -387,7 +474,7 @@ fn cmake_lists(name: &str, sources: &[String], flags: &Flags<'_>, app_version: &
     text.push_str("\nif(MSVC)\n  # MSVC's default mode skips the two-phase lookup this code relies on.\n");
     let _ = writeln!(
         text,
-        "  target_compile_options({name} PRIVATE /utf-8 /permissive- /Zc:__cplusplus /W4)"
+        "  target_compile_options({CMAKE_TARGET} PRIVATE /utf-8 /permissive- /Zc:__cplusplus /W4)"
     );
     text.push_str("  return()\nendif()\n\n");
     text.push_str(
@@ -395,7 +482,7 @@ fn cmake_lists(name: &str, sources: &[String], flags: &Flags<'_>, app_version: &
     );
     let _ = writeln!(
         text,
-        "target_compile_options({name} PRIVATE {})",
+        "target_compile_options({CMAKE_TARGET} PRIVATE {})",
         ENCODING_FLAGS.join(" ")
     );
     for (config, settings) in flags.configurations() {
@@ -403,7 +490,7 @@ fn cmake_lists(name: &str, sources: &[String], flags: &Flags<'_>, app_version: &
         list.extend(optimisation_flags(settings));
         let _ = writeln!(
             text,
-            "target_compile_options({name} PRIVATE \"$<$<CONFIG:{config}>:{}>\")",
+            "target_compile_options({CMAKE_TARGET} PRIVATE \"$<$<CONFIG:{config}>:{}>\")",
             list.join(";")
         );
     }
@@ -416,14 +503,17 @@ include(CheckLinkerFlag)
 function(b2c_flags config where)
   foreach(flag IN LISTS ARGN)
     string(MAKE_C_IDENTIFIER "B2C_HAS_${{flag}}" ok)
+    # The test program is linked too, so a sanitizer must reach the link.
+    set(CMAKE_REQUIRED_LINK_OPTIONS "${{flag}}")
     check_cxx_compiler_flag("${{flag}}" ${{ok}}_COMPILE)
+    unset(CMAKE_REQUIRED_LINK_OPTIONS)
     check_linker_flag(CXX "${{flag}}" ${{ok}}_LINK)
     if(${{ok}}_COMPILE AND ${{ok}}_LINK)
       if(NOT where STREQUAL "link")
-        target_compile_options({name} PRIVATE "$<$<CONFIG:${{config}}>:${{flag}}>")
+        target_compile_options({CMAKE_TARGET} PRIVATE "$<$<CONFIG:${{config}}>:${{flag}}>")
       endif()
       if(NOT where STREQUAL "compile")
-        target_link_options({name} PRIVATE "$<$<CONFIG:${{config}}>:${{flag}}>")
+        target_link_options({CMAKE_TARGET} PRIVATE "$<$<CONFIG:${{config}}>:${{flag}}>")
       endif()
     endif()
   endforeach()
@@ -431,7 +521,7 @@ endfunction()
 "#
     );
     text.push_str("\nif(WIN32)\n");
-    let _ = writeln!(text, "  target_link_options({name} PRIVATE -static)");
+    let _ = writeln!(text, "  target_link_options({CMAKE_TARGET} PRIVATE -static)");
     for (config, settings) in flags.configurations() {
         let (_, sanitizers) = sanitizer_flags(settings);
         let (both, link) = windows_hardening(settings);
@@ -472,7 +562,7 @@ fn makefile(name: &str, sources: &[String], flags: &Flags<'_>, app_version: &str
     let mut text = String::new();
     let _ = writeln!(
         text,
-        "# Generated by Blocks2Cpp {app_version}. Build with `make` (debug) or\n# `make CONFIG=release`; `make SANITIZE=0` builds without the sanitizers and\n# `make HARDEN=0` without the hardening flags, for a g++ that lacks them.\n"
+        "# Generated by Blocks2Cpp {app_version}. Build with `make` (debug) or\n# `make CONFIG=release`; `make SANITIZE=0` builds without the sanitizers and\n# `make HARDEN=0` without the hardening flags, for a g++ that lacks them.\n# Each choice has its own folder in bin/, so changing one builds again.\n"
     );
     text.push_str("CXX ?= g++\nCONFIG ?= debug\nSANITIZE ?= 1\nHARDEN ?= 1\n\n");
     text.push_str("ifeq ($(OS),Windows_NT)\n  EXE := .exe\n  PLATFORM := windows\nelse\n  EXE :=\n  PLATFORM := linux\n  CF_PROTECTION := $(if $(filter x86_64 i%86,$(shell uname -m)),-fcf-protection)\nendif\n\n");
@@ -569,11 +659,14 @@ ifeq ($(PLATFORM),windows)
   ALL_LDFLAGS += -static
 endif
 
-$(PROGRAM): $(SOURCES) $(HEADERS)
+OUT := bin/$(CONFIG)$(if $(filter 0,$(SANITIZE)),-nosanitize)$(if $(filter 0,$(HARDEN)),-noharden)/$(PROGRAM)
+
+$(OUT): $(SOURCES) $(HEADERS)
+	@mkdir -p $(dir $@)
 	$(CXX) $(ALL_CXXFLAGS) $(CXXFLAGS) $(SOURCES) -o $@ $(ALL_LDFLAGS) $(LDFLAGS)
 
 clean:
-	rm -f $(PROGRAM)
+	rm -rf bin
 
 .PHONY: clean
 ",
@@ -624,10 +717,11 @@ CMake checks which sanitizers and hardening flags your compiler supports.
 
 ```sh
 make
-./{name}
+./bin/debug/{name}
 ```
 
-`make CONFIG=release` builds the optimised program. Debug builds use the
+`make CONFIG=release` builds the optimised program, `bin/release/{name}`.
+Debug builds use the
 sanitizers (AddressSanitizer and UndefinedBehaviorSanitizer on Linux); if
 your g++ lacks them, build with `make SANITIZE=0`, and with `make HARDEN=0`
 if it lacks the hardening flags.
@@ -660,14 +754,22 @@ pub fn folder_state(folder: &Path) -> FolderState {
 /// # Errors
 /// [`ExportError::NotEmpty`] for [`ExportMode::New`] and a folder that is
 /// not empty, [`ExportError::NoEarlierExport`] for [`ExportMode::Replace`]
-/// without one, [`ExportError::NotAPlainFile`] for a link (the folder or
+/// without one, [`ExportError::OtherProject`] when it is another project's,
+/// [`ExportError::NotWrittenByExport`] for a file in the way that the earlier
+/// export did not write, [`ExportError::NotAPlainFile`] for a link (the folder or
 /// anything to be written or removed), and [`ExportError::Io`].
 pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Vec<String>, ExportError> {
     let io = |action: &'static str| move |source: io::Error| ExportError::Io { action, source };
     let earlier = match (mode, folder_state(folder)) {
         (ExportMode::New, FolderState::Empty) => Vec::new(),
         (ExportMode::New, _) => return Err(ExportError::NotEmpty),
-        (ExportMode::Replace, FolderState::EarlierExport) => read_manifest(folder).unwrap_or_default(),
+        (ExportMode::Replace, FolderState::EarlierExport) => {
+            let manifest = read_manifest(folder).ok_or(ExportError::NoEarlierExport)?;
+            if manifest.project_id.is_some_and(|id| id != export.project_id) {
+                return Err(ExportError::OtherProject);
+            }
+            manifest.files
+        }
         (ExportMode::Replace, _) => return Err(ExportError::NoEarlierExport),
     };
     if !folder.exists() {
@@ -677,6 +779,18 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Vec<Str
         return Err(ExportError::NotAPlainFile);
     }
     let new: BTreeSet<&str> = export.files.iter().map(|file| file.path.as_str()).collect();
+    // Every folder a file is written into or removed from is a real one (or
+    // missing) before anything is touched: a linked `src` is never followed.
+    for path in new.iter().copied().chain(earlier.iter().map(String::as_str)) {
+        let path = target(folder, path).ok_or(ExportError::NotAPlainFile)?;
+        if let Some(parent) = path.parent()
+            && parent != folder
+            && fs::symlink_metadata(parent).is_ok()
+            && !is_plain_dir(parent)
+        {
+            return Err(ExportError::NotAPlainFile);
+        }
+    }
     // A file someone added after the earlier export is never written over.
     for path in new.iter().filter(|path| !earlier.iter().any(|old| old == *path)) {
         let target = target(folder, path).ok_or(ExportError::NotAPlainFile)?;
@@ -716,7 +830,8 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Vec<Str
     }
     let manifest = Manifest {
         format: String::from(MANIFEST_FORMAT),
-        format_version: 1,
+        format_version: MANIFEST_VERSION,
+        project_id: Some(export.project_id.clone()),
         files: written.clone(),
     };
     let mut text = serde_json::to_string_pretty(&manifest)
@@ -727,9 +842,16 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Vec<Str
     Ok(written)
 }
 
-/// The file names an earlier export's manifest lists, when it is a regular
-/// file that reads as one and every name is one an export writes.
-fn read_manifest(folder: &Path) -> Option<Vec<String>> {
+/// The project an earlier export in `folder` was made from: `Some(None)`
+/// for an export that did not record it (manifest format 1), `None` when
+/// `folder` holds no export.
+pub fn earlier_export_project(folder: &Path) -> Option<Option<String>> {
+    read_manifest(folder).map(|manifest| manifest.project_id)
+}
+
+/// An earlier export's manifest, when it is a regular file that reads as
+/// one and every name in it is one an export writes.
+fn read_manifest(folder: &Path) -> Option<Manifest> {
     let path = folder.join(EXPORT_MANIFEST);
     let metadata = fs::symlink_metadata(&path).ok()?;
     if !metadata.is_file() || is_link(&metadata) || metadata.len() > MAX_MANIFEST_BYTES {
@@ -737,9 +859,10 @@ fn read_manifest(folder: &Path) -> Option<Vec<String>> {
     }
     let manifest: Manifest = serde_json::from_slice(&fs::read(&path).ok()?).ok()?;
     let valid = manifest.format == MANIFEST_FORMAT
-        && manifest.format_version == 1
+        && (1..=MANIFEST_VERSION).contains(&manifest.format_version)
+        && (manifest.format_version >= 2) == manifest.project_id.is_some()
         && manifest.files.iter().all(|file| is_export_path(file));
-    valid.then_some(manifest.files)
+    valid.then_some(manifest)
 }
 
 /// Whether `path` is a name an export writes: one of the build files, or

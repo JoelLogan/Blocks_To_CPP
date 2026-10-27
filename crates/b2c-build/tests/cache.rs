@@ -759,14 +759,21 @@ fn sandboxes_unused_for_30_days_are_pruned() {
 
 #[cfg(unix)]
 #[test]
-fn a_sandbox_without_a_lock_counts_from_its_folder() {
+fn a_sandbox_without_a_lock_gets_one_and_a_full_period() {
+    // A sandbox from before locks: its folder's time says nothing about its
+    // use (files rewritten in place leave it alone).
     let cache = Cache::new();
     let old = plant_sandbox(&cache, "prj_old-00000001", 40 * DAY, false);
-    let recent = plant_sandbox(&cache, "prj_new-00000002", DAY, false);
+    let lock = old.with_file_name("prj_old-00000001.lock");
     let report = prune_sandboxes(cache.root(), 30 * DAY, cache.now).unwrap();
+    assert_eq!(report.removed, 0);
+    assert!(exists(&old));
+    assert!(lock.is_file());
+    let report = prune_sandboxes(cache.root(), 30 * DAY, cache.now + 29 * DAY).unwrap();
+    assert_eq!(report.removed, 0);
+    let report = prune_sandboxes(cache.root(), 30 * DAY, cache.now + 31 * DAY).unwrap();
     assert_eq!(report.removed, 1);
     assert!(!exists(&old));
-    assert!(exists(&recent));
 }
 
 #[test]

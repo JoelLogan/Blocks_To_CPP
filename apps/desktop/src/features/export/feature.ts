@@ -17,6 +17,12 @@ export function exportFailureMessage(code: FailureCode): FailureMessage {
   switch (code) {
     case 'projectErrors':
       return { title, message: 'The blocks have errors. Fix them, then export again.' };
+    case 'defineNotExportable':
+      return {
+        title,
+        message:
+          'A text define holds #, ; or $, which CMake and make cannot pass to the compiler. Change it on the Project settings page (≡ → Project settings…), then export again.',
+      };
     case 'io':
       return {
         title,

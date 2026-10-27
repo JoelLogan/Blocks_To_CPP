@@ -781,6 +781,29 @@ describe('Run', () => {
 });
 
 describe('End input', () => {
+  it('sends nothing typed to a program that reads a file or runs in its own window', async () => {
+    const runs = [
+      { ...STARTED, mode: 'pipes', inputFile: true },
+      { ...STARTED, externalTerminal: true },
+    ] as const;
+    for (const [index, started] of runs.entries()) {
+      if (index === 0) {
+        await run('run.start');
+        await finishBuild(0);
+      } else {
+        await run('run.again');
+      }
+      backend.runs.at(-1)?.send(started);
+      await settle();
+      expect(state().run.inputOpen).toBe(false);
+      terminal.type('typed\r');
+      await settle();
+      expect(backend.ipc.runInput).not.toHaveBeenCalled();
+      backend.runs.at(-1)?.send(exitEvent(0));
+      await settle();
+    }
+  });
+
   it('ends the input after what was typed, and drops what is typed after it', async () => {
     await run('run.start');
     await finishBuild(0);

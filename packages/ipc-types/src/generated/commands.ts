@@ -131,6 +131,8 @@ export const IPC_ERROR_CODES = [
   'notRunning',
   'inputClosed',
   'noExternalTerminal',
+  'inputFileUnreadable',
+  'defineNotExportable',
   'rateLimited',
   'busy',
   'tooManyHandles',

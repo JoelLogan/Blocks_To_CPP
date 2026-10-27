@@ -11,6 +11,7 @@ import {
   type ArgRow,
   type DefineRow,
   type DefineType,
+  defineExportNote,
   type Draft,
   draftFrom,
   draftProblems,
@@ -478,6 +479,21 @@ function ConfigurationFields({
   );
 }
 
+/**
+ * Moves the focus to the element with the ID it is given, once React has drawn the change that
+ * made it (a removed or moved row): the focus never drops to the page.
+ */
+function useFocusLater(): (id: string) => void {
+  const [target, setTarget] = useState<string | null>(null);
+  useEffect(() => {
+    if (target !== null) {
+      document.getElementById(target)?.focus();
+      setTarget(null);
+    }
+  }, [target]);
+  return setTarget;
+}
+
 /** A field's problem, tied to the field by `id`. */
 function Problem({ id, message }: { id: string; message: string }) {
   return (
@@ -490,22 +506,30 @@ function Problem({ id, message }: { id: string; message: string }) {
 /** A text field of a list row, with its problem. */
 function RowInput({
   id,
-  label,
+  labelledBy,
   value,
   maxLength,
   problem,
+  note,
   onChange,
   testId,
 }: {
   id: string;
-  label: string;
+  /** The IDs of the visible texts that name it (the row's label and the column's). */
+  labelledBy: string;
   value: string;
   maxLength: number;
   problem: string | null;
+  /** A remark that does not block saving. */
+  note?: string | null;
   onChange: (value: string) => void;
   testId: string;
 }): ReactNode {
   const problemId = `${id}-problem`;
+  const noteId = `${id}-note`;
+  const describedBy = [problem === null ? null : problemId, note == null ? null : noteId]
+    .filter((part) => part !== null)
+    .join(' ');
   return (
     <span className="project-settings-cell">
       <input
@@ -514,17 +538,22 @@ function RowInput({
         type="text"
         autoComplete="off"
         spellCheck={false}
-        aria-label={label}
+        aria-labelledby={labelledBy}
         maxLength={maxLength}
         value={value}
         aria-invalid={problem !== null}
-        aria-describedby={problem === null ? undefined : problemId}
+        aria-describedby={describedBy === '' ? undefined : describedBy}
         data-testid={testId}
         onChange={(event) => {
           onChange(event.target.value);
         }}
       />
       {problem !== null && <Problem id={problemId} message={problem} />}
+      {note != null && (
+        <p id={noteId} className="feature-muted" data-testid={`${testId}-note`}>
+          {note}
+        </p>
+      )}
     </span>
   );
 }
@@ -542,9 +571,18 @@ function DefinesField({
   onChange: (rows: DefineRow[]) => void;
 }) {
   const [touched, setTouched] = useState<ReadonlySet<number>>(new Set());
+  const focusLater = useFocusLater();
+  const header = useId();
   const replace = (key: number, patch: Partial<DefineRow>) => {
     setTouched((current) => new Set(current).add(key));
     onChange(rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  };
+  const remove = (index: number) => {
+    const next = rows[index + 1] ?? rows[index - 1];
+    onChange(rows.filter((_, other) => other !== index));
+    focusLater(
+      next === undefined ? 'project-settings-add-define' : `define-name-${String(next.key)}`,
+    );
   };
   return (
     <fieldset className="feature-field" data-testid="project-settings-defines">
@@ -553,14 +591,35 @@ function DefinesField({
         Names the program’s C++ can use, each with a value (-DNAME=value). Raw C++ blocks see them.
       </p>
       {rows.length === 0 && <p className="feature-muted">No defines.</p>}
+      {rows.length > 0 && (
+        <div
+          className="project-settings-row project-settings-header"
+          data-testid="project-settings-define-header"
+        >
+          <span className="project-settings-row-label" />
+          <span id={`${header}-name`} className="project-settings-column">
+            Name
+          </span>
+          <span id={`${header}-type`} className="project-settings-column">
+            Type
+          </span>
+          <span id={`${header}-value`} className="project-settings-column">
+            Value
+          </span>
+        </div>
+      )}
       {rows.map((row, index) => {
         const shown = showAll || touched.has(row.key);
         const typeId = `define-type-${String(row.key)}`;
+        const rowLabel = `define-row-${String(row.key)}`;
         return (
           <div key={row.key} className="project-settings-row" data-testid="project-settings-define">
+            <span id={rowLabel} className="project-settings-row-label">
+              Define {index + 1}
+            </span>
             <RowInput
               id={`define-name-${String(row.key)}`}
-              label={`Define ${String(index + 1)}: name`}
+              labelledBy={`${rowLabel} ${header}-name`}
               value={row.name}
               maxLength={MAX_DEFINE_NAME}
               problem={shown ? problemOf(`define-name-${String(row.key)}`) : null}
@@ -572,7 +631,7 @@ function DefinesField({
             <select
               id={typeId}
               className="feature-input"
-              aria-label={`Define ${String(index + 1)}: type`}
+              aria-labelledby={`${rowLabel} ${header}-type`}
               value={row.type}
               onChange={(event) => {
                 const type = DEFINE_TYPES.find((option) => option.value === event.target.value);
@@ -594,7 +653,7 @@ function DefinesField({
               <select
                 id={`define-value-${String(row.key)}`}
                 className="feature-input"
-                aria-label={`Define ${String(index + 1)}: value`}
+                aria-labelledby={`${rowLabel} ${header}-value`}
                 value={row.value}
                 onChange={(event) => {
                   replace(row.key, { value: event.target.value });
@@ -606,10 +665,11 @@ function DefinesField({
             ) : (
               <RowInput
                 id={`define-value-${String(row.key)}`}
-                label={`Define ${String(index + 1)}: value`}
+                labelledBy={`${rowLabel} ${header}-value`}
                 value={row.value}
                 maxLength={row.type === 'int' ? 20 : MAX_DEFINE_TEXT}
                 problem={shown ? problemOf(`define-value-${String(row.key)}`) : null}
+                note={defineExportNote(row.type, row.value)}
                 onChange={(value) => {
                   replace(row.key, { value });
                 }}
@@ -621,7 +681,7 @@ function DefinesField({
               className="button"
               aria-label={`Remove define ${String(index + 1)}`}
               onClick={() => {
-                onChange(rows.filter((other) => other.key !== row.key));
+                remove(index);
               }}
             >
               Remove
@@ -633,6 +693,7 @@ function DefinesField({
         <button
           type="button"
           className="button"
+          id="project-settings-add-define"
           disabled={rows.length >= MAX_DEFINES}
           data-testid="project-settings-add-define"
           onClick={() => {
@@ -658,13 +719,24 @@ function ArgsField({
   showAll: boolean;
   onChange: (rows: ArgRow[]) => void;
 }) {
+  const focusLater = useFocusLater();
   const move = (index: number, by: -1 | 1) => {
     const next = [...rows];
     const [row] = next.splice(index, 1);
     if (row !== undefined) {
-      next.splice(index + by, 0, row);
+      const to = index + by;
+      next.splice(to, 0, row);
       onChange(next);
+      // The same button, unless the row is now at that end of the list.
+      const atEnd = by === -1 ? to === 0 : to === next.length - 1;
+      const button = (by === -1) !== atEnd ? 'up' : 'down';
+      focusLater(`arg-${button}-${String(row.key)}`);
     }
+  };
+  const remove = (index: number) => {
+    const next = rows[index + 1] ?? rows[index - 1];
+    onChange(rows.filter((_, other) => other !== index));
+    focusLater(next === undefined ? 'project-settings-add-arg' : `arg-${String(next.key)}`);
   };
   return (
     <fieldset className="feature-field" data-testid="project-settings-args">
@@ -676,9 +748,12 @@ function ArgsField({
       {rows.length === 0 && <p className="feature-muted">No arguments.</p>}
       {rows.map((row, index) => (
         <div key={row.key} className="project-settings-row" data-testid="project-settings-arg">
+          <span id={`arg-row-${String(row.key)}`} className="project-settings-row-label">
+            Argument {index + 1}
+          </span>
           <RowInput
             id={`arg-${String(row.key)}`}
-            label={`Argument ${String(index + 1)}`}
+            labelledBy={`arg-row-${String(row.key)}`}
             value={row.text}
             maxLength={MAX_ARG_LENGTH}
             problem={showAll ? problemOf(`arg-${String(row.key)}`) : null}
@@ -690,6 +765,7 @@ function ArgsField({
           <button
             type="button"
             className="button"
+            id={`arg-up-${String(row.key)}`}
             aria-label={`Move argument ${String(index + 1)} up`}
             disabled={index === 0}
             onClick={() => {
@@ -701,6 +777,7 @@ function ArgsField({
           <button
             type="button"
             className="button"
+            id={`arg-down-${String(row.key)}`}
             aria-label={`Move argument ${String(index + 1)} down`}
             disabled={index === rows.length - 1}
             onClick={() => {
@@ -714,7 +791,7 @@ function ArgsField({
             className="button"
             aria-label={`Remove argument ${String(index + 1)}`}
             onClick={() => {
-              onChange(rows.filter((other) => other.key !== row.key));
+              remove(index);
             }}
           >
             Remove
@@ -725,6 +802,7 @@ function ArgsField({
         <button
           type="button"
           className="button"
+          id="project-settings-add-arg"
           disabled={rows.length >= MAX_ARGS}
           data-testid="project-settings-add-arg"
           onClick={() => {
@@ -796,17 +874,20 @@ function MachineRunOptions({ ctx }: { ctx: FeatureContext }) {
       <p className="feature-muted">
         These apply at once and are not saved in the project, which never names a file of yours.
       </p>
-      <p data-testid="project-settings-input-file">
+      <p role="status" data-testid="project-settings-input-file">
         Input: {fileName === null ? 'typed in the console' : `read from the file “${fileName}”`}
       </p>
+      {/* aria-disabled, not disabled: a button keeps the focus while its dialog is open. */}
       <div className="feature-actions">
         <button
           type="button"
           className="button"
-          disabled={busy}
+          aria-disabled={busy}
           data-testid="project-settings-choose-input"
           onClick={() => {
-            void ask('choose');
+            if (!busy) {
+              void ask('choose');
+            }
           }}
         >
           Choose an input file…
@@ -814,10 +895,12 @@ function MachineRunOptions({ ctx }: { ctx: FeatureContext }) {
         <button
           type="button"
           className="button"
-          disabled={busy || fileName === null}
+          aria-disabled={busy || fileName === null}
           data-testid="project-settings-clear-input"
           onClick={() => {
-            void ask('clear');
+            if (!busy && fileName !== null) {
+              void ask('clear');
+            }
           }}
         >
           Type input in the console
