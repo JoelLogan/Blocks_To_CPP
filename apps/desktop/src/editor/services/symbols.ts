@@ -83,7 +83,9 @@ export function analysisScope(deps: Pick<SymbolServiceDeps, 'core' | 'preview'>)
  * analysis (a block of the canvas the analysis has not seen yet gets what its place gives it; any
  * other block, such as one in the toolbox's flyout, gets the scope query's own answer, or nothing),
  * the current name of a symbol (from the document, then the last-known names, then the analysis),
- * and the parameters of the function a call names ({@link calledFunctionParams}).
+ * the parameters of the function a call names ({@link calledFunctionParams}), the fields of the
+ * struct a *new … with* names ({@link namedStructFields}), and the module's structs and enums for
+ * the type fields' menus.
  */
 export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
   const scope = analysisScope(deps);
@@ -104,7 +106,36 @@ export function createSymbolProvider(deps: SymbolServiceDeps): SymbolProvider {
       return preview === null ? null : (symbolsById(preview).get(symId)?.name ?? null);
     },
     functionParams: (blockId, funcId) => calledFunctionParams(deps, blockId, funcId),
+    structFields: (blockId, structId) => namedStructFields(deps, blockId, structId),
+    userTypes: () => userTypesOf(deps),
   };
+}
+
+/**
+ * The fields (symbol IDs, in row order) of struct `structId` for a *new … with* block `blockId` of
+ * the canvas, from the latest preview's symbols by ID, as {@link calledFunctionParams} answers for
+ * a call (docs/plans/m3-contracts/w2.md §2.1): `null` when there is no preview, the block is not
+ * on the canvas, or `structId` is not a struct of the analysis. A struct is visible everywhere in
+ * its module, so the answer does not depend on where the block is.
+ */
+function namedStructFields(
+  deps: Pick<SymbolServiceDeps, 'preview' | 'workspace'>,
+  blockId: string,
+  structId: string,
+): readonly string[] | null {
+  const preview = deps.preview();
+  if (preview === null || deps.workspace.getBlockById(blockId) === null) {
+    return null;
+  }
+  const struct = symbolsById(preview).get(structId);
+  return struct?.kind === 'struct' ? struct.fields : null;
+}
+
+/** The structs and enums of the latest preview, which the type fields list (w2.md §2.3). */
+function userTypesOf(deps: Pick<SymbolServiceDeps, 'preview'>): readonly SymbolInfo[] {
+  return (deps.preview()?.symbols ?? []).filter(
+    (symbol) => symbol.kind === 'struct' || symbol.kind === 'enum',
+  );
 }
 
 /**

@@ -13,6 +13,11 @@
  *   symbols whose type binds the pattern on its own (class and shape), without looking at the
  *   block's inputs, which are checked against the field and not the reverse. A type the editor
  *   cannot read, or whose class membership is not known, is listed.
+ * - A `members` field (the struct field of *… of*, the value of *enum value*; slots.md §4.3,
+ *   docs/plans/m3-contracts/w2.md §2.3) lists the members of the user type bound to its variable
+ *   (from what is plugged in or chosen elsewhere on the block), in row order, whatever its kinds.
+ *   While nothing binds the variable it lists nothing and shows *choose a struct first* (or *an
+ *   enum*).
  * - A reference that is out of scope, or no longer of the field's kinds, stays selected and shown
  *   (first in its menu); this field never changes or drops it. (The editor's toolbox gives a
  *   *set* or *change* block just dragged from it another variable when the one it came with is
@@ -24,6 +29,8 @@
 import * as Blockly from 'blockly/core';
 
 import { blockDef } from '../checker/catalog';
+import { checkerTypeOracle } from '../checker/oracle';
+import { blockTyping } from '../checker/slots';
 import { isProjectId } from '../ids';
 import {
   getEditorServices,
@@ -144,6 +151,15 @@ export function missingSymbolLabel(symId: string): string {
 /** The value of the menu entry shown when there is nothing to choose; it is never accepted. */
 const NOTHING = '';
 
+/** What a `members` field shows while nothing binds its variable, by the variable's class. */
+export const NO_OWNER_LABELS = Object.freeze({
+  struct: 'choose a struct first',
+  enum: 'choose an enum first',
+});
+
+/** What a `members` field shows when its type has no members. */
+const NO_MEMBER_LABELS = Object.freeze({ struct: 'no fields yet', enum: 'no values yet' });
+
 /** A symbol reference field. */
 export class B2cSymbolRefField extends Blockly.FieldDropdown {
   /** Which symbols the menu lists. */
@@ -245,10 +261,107 @@ export class B2cSymbolRefField extends Blockly.FieldDropdown {
   }
 
   /**
+   * The type variable whose members the field lists, and whether it is an enum's, when the field
+   * is a `members` field of its block's signature; otherwise `null`.
+   */
+  private membersOf(): { variable: string; kind: 'struct' | 'enum' } | null {
+    const block = this.getSourceBlock();
+    const def = block === null ? undefined : blockDef(block.type);
+    const name = this.name ?? '';
+    if (def === undefined || !Object.hasOwn(def.members, name)) {
+      return null;
+    }
+    const variable = def.members[name];
+    if (variable === undefined) {
+      return null;
+    }
+    const cls = Object.hasOwn(def.typeVars, variable) ? def.typeVars[variable] : undefined;
+    return { variable, kind: cls === 'enum' ? 'enum' : 'struct' };
+  }
+
+  /**
+   * The members of the user type bound to `variable` at the block, in row order: `null` while
+   * nothing binds it to a struct or enum the analysis knows.
+   */
+  private boundMembers(variable: string): readonly string[] | null {
+    const block = this.getSourceBlock();
+    if (block === null) {
+      return null;
+    }
+    const oracle = checkerTypeOracle();
+    let owner = null;
+    try {
+      owner = blockTyping(block, oracle)?.bound.get(variable)?.type ?? null;
+    } catch {
+      owner = null;
+    }
+    if (owner?.kind !== 'named') {
+      return null;
+    }
+    let info: SymbolInfo | null;
+    try {
+      info = oracle.symbol?.(owner.id) ?? null;
+    } catch {
+      info = null;
+    }
+    if (info?.kind === 'struct') {
+      return info.fields ?? [];
+    }
+    if (info?.kind === 'enum') {
+      return info.values ?? [];
+    }
+    // Without the analysis's symbol, the scope query lists each member with its owner.
+    const anchor = this.scopeAnchor();
+    const found =
+      anchor === null
+        ? []
+        : symbolsAt(anchor.blockId, anchor.input).filter(
+            (symbol) =>
+              (symbol.kind === 'field' || symbol.kind === 'enumerator') &&
+              symbol.owner === owner.id,
+          );
+    return found.length === 0 ? null : found.map((symbol) => symbol.id);
+  }
+
+  /**
+   * A `members` field's menu (w2.md §2.3): the members of the bound type in row order, the current
+   * member first when it is not one of them (it stays shown, also when it no longer fits; the
+   * analyser reports `B2C-E0207`), and *choose a struct first* while nothing is bound.
+   */
+  private memberOptions(of: { variable: string; kind: 'struct' | 'enum' }): Blockly.MenuOption[] {
+    const options: Blockly.MenuOption[] = [];
+    const members = this.boundMembers(of.variable);
+    const current = this.getValue();
+    const seenNames = new Map<string, number>();
+    for (const id of members ?? []) {
+      if (!isProjectId(id)) {
+        continue;
+      }
+      const label = this.labelFor(id);
+      const count = (seenNames.get(label) ?? 0) + 1;
+      seenNames.set(label, count);
+      options.push([count === 1 ? label : `${label} (${String(count)})`, id]);
+    }
+    if (current !== null && !(members ?? []).includes(current)) {
+      options.unshift([this.labelFor(current), current]);
+    }
+    if (options.length === 0) {
+      const empty = members === null ? NO_OWNER_LABELS[of.kind] : NO_MEMBER_LABELS[of.kind];
+      options.push([empty, NOTHING]);
+    }
+    return options;
+  }
+
+  /**
    * The menu: the matching symbols in scope (for a block in the toolbox's flyout, the module's,
-   * with a separator between groups), the current reference first when it is not one of them.
+   * with a separator between groups), the current reference first when it is not one of them; for
+   * a `members` field, the members of the bound type ({@link memberOptions}).
    */
   menuOptions(): Blockly.MenuOption[] {
+    const members = this.membersOf();
+    if (members !== null) {
+      return this.memberOptions(members);
+    }
     const options: Blockly.MenuOption[] = [];
     const seenNames = new Map<string, number>();
     const current = this.getValue();

@@ -153,9 +153,26 @@ impl Lowerer<'_> {
 
     /// Reports a value that cannot be printed or joined in one go
     /// (`B2C-E0314`): a container, a stream, an error, or a struct not
-    /// ticked *printable*.
+    /// ticked *printable*. *join* refuses every struct, also a printable one
+    /// (w2.md §2.10): C++ cannot add one to text.
     pub(super) fn check_printable(&mut self, value: &Expr, output: Output) {
-        if !self.checking() || value.ty.is_in(TypeClass::Printable, &self.symbols) != Some(false) {
+        if !self.checking() {
+            return;
+        }
+        let is_struct = matches!(
+            &value.ty,
+            Type::Named(id) if matches!(self.symbols.get(id).map(|s| &s.kind), Some(SymbolKind::Struct { .. }))
+        );
+        if output == Output::Joined && is_struct {
+            let message = format!(
+                "{} can't be joined into text in one go. Join its fields instead.",
+                self.type_name(&value.ty)
+            );
+            self.diags
+                .error(codes::NOT_PRINTABLE, value.origin.location(), message);
+            return;
+        }
+        if value.ty.is_in(TypeClass::Printable, &self.symbols) != Some(false) {
             return;
         }
         let verb = match output {

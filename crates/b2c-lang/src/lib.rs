@@ -67,6 +67,7 @@ mod flow;
 mod lower;
 mod messages;
 mod nesting;
+mod order;
 mod parser;
 mod query;
 mod scope;

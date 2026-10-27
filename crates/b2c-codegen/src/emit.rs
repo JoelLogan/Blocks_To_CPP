@@ -322,6 +322,12 @@ impl Emitter {
     /// A user type's definition and the free functions generated for it.
     fn type_def(&mut self, def: &CTypeDef) {
         match def {
+            CTypeDef::Forward(name) => {
+                self.p.fixed("struct ");
+                self.p.ident(name);
+                self.p.fixed(";");
+                self.p.newline();
+            }
             CTypeDef::Struct(def) => self.struct_def(def),
             CTypeDef::Enum(def) => self.enum_def(def),
         }
@@ -393,7 +399,20 @@ impl Emitter {
         self.p.newline();
         for function in &def.functions {
             self.p.section();
-            self.generated(function, &def.name);
+            if function.kind == Generated::EnumToString {
+                // Beside the decimal helper of that name, in the global
+                // `b2c` namespace (w2.md §2.11).
+                self.p.fixed("namespace b2c {");
+                self.p.newline();
+                self.p.section();
+                self.p.fixed("inline ");
+                self.generated(function, &def.name);
+                self.p.section();
+                self.p.fixed("}  // namespace b2c");
+                self.p.newline();
+            } else {
+                self.generated(function, &def.name);
+            }
         }
     }
 

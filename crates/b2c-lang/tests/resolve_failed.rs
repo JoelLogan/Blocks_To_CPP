@@ -61,7 +61,12 @@ fn exercise(document: &Document, what: &str) -> Analysis {
                 "{what}: {} {input:?} lists a symbol the program does not have",
                 block.id
             );
-            let item = matches!(block.block_type.as_str(), "program.main" | "func.define");
+            // A definition is an item of its own: it sees the module, not `main`'s
+            // variables (a struct's or an enum's, w2.md §2.2).
+            let item = matches!(
+                block.block_type.as_str(),
+                "program.main" | "func.define" | "type.struct" | "type.enum"
+            );
             assert!(
                 !*top || item || found == parked,
                 "{what}: the parked block {} does not see the parked scope",

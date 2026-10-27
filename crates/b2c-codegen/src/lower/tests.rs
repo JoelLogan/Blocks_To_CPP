@@ -528,7 +528,9 @@ std::ostream& operator<<(std::ostream& out, Color value) {
     return out;
 }
 
-std::string to_string(Color value) {
+namespace b2c {
+
+inline std::string to_text(Color value) {
     switch (value) {
         case Color::Red:
             return \"Red\";
@@ -537,6 +539,8 @@ std::string to_string(Color value) {
     }
     return \"\";
 }
+
+}  // namespace b2c
 "
     );
     assert_eq!(lowerer.item_headers.decl, headers(&["<ostream>", "<string>"]));
@@ -553,9 +557,13 @@ std::ostream& operator<<(std::ostream& out, None) {
     return out;
 }
 
-std::string to_string(None) {
+namespace b2c {
+
+inline std::string to_text(None) {
     return \"\";
 }
+
+}  // namespace b2c
 "
     );
 }
@@ -742,8 +750,8 @@ fn forms_program(standard: CppStandard) -> String {
     let e = sast.var("e", Type::Named(empty.clone()));
     let f = sast.var("f", Type::Named(empty.clone()));
     let i = sast.var("i", Type::Int);
-    // A variable named like the enum's generated function: the join below
-    // still calls the function (`::to_string(c)`).
+    // A variable named `to_string`, as W1 named the enum's text function: the
+    // join below calls `b2c::to_text(c)`, which no user name can hide.
     let hiding = sast.var("to_string", Type::Int);
     let label = sast.var("label", Type::String);
     let name = sast.var("name", Type::String);

@@ -10,7 +10,7 @@
  */
 import * as Blockly from 'blockly/core';
 
-import type { FieldDefJson } from '../generated/catalog';
+import type { FieldDefJson, TypeClass } from '../generated/catalog';
 import { PARAM_MODES, type ParamMode } from './types';
 
 function isRegistered(type: string): boolean {
@@ -43,12 +43,19 @@ export function friendlyModeName(mode: ParamMode): string {
 /**
  * A field choosing one of `types` (a `b2c_type`), set to `value`, which may be a type term's key
  * that is not in the menu (a row's library or user type): the `b2c_type` field keeps it, and the
- * plain dropdown used without one gets it as an extra option.
+ * plain dropdown used without one gets it as an extra option. `typeClass` is the class of the
+ * other types the row takes: the `b2c_type` field lists the module's structs and enums it allows
+ * (docs/plans/m3-contracts/w2.md §2.3).
  */
-export function createTypeField(types: readonly string[], value: string): Blockly.Field {
+export function createTypeField(
+  types: readonly string[],
+  value: string,
+  ariaLabel = 'Parameter type',
+  typeClass: TypeClass | null = null,
+): Blockly.Field {
   const options = types.includes(value) ? types : [...types, value];
   const field =
-    fromRegistry('b2c_type', { types: [...types], value, ariaLabel: 'Parameter type' }) ??
+    fromRegistry('b2c_type', { types: [...types], value, ariaLabel, typeClass }) ??
     new Blockly.FieldDropdown(options.map((type) => [friendlyTypeName(type), type]));
   field.setValue(value);
   return field;

@@ -262,7 +262,11 @@ fn a_parked_block_with_nothing_chosen_yet_is_only_a_warning() {
             }
         }
         if def.shape == Shape::Definition {
-            block["extra"] = json!({"params": []});
+            // A new definition's rows (`params`, `fields`, `values`) start
+            // empty.
+            for extra in def.extra.iter().filter(|extra| extra.kind.is_rows()) {
+                block["extra"][&extra.name] = json!([]);
+            }
             assert_eq!(checked(vec![main(vec![]), block.clone()]), missing, "{}", def.id);
             block["disabled"] = json!(true);
             let found = checked(vec![main(vec![]), block]);

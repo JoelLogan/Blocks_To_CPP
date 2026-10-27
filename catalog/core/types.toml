@@ -1,2 +1,169 @@
-# Types (docs/spec/03-block-language.md §3.7.9): structs and enums. Empty until milestone M3's
-# second wave fills it (package C1, docs/plans/m3-contracts/w2.md §1.5).
+# Types (docs/spec/03-block-language.md §3.7.9): structs and enums
+# (docs/plans/m3-contracts/w2.md §1.5, §2.2). A struct or an enum is a
+# definition of its module, like a function, so canvas order never matters.
+
+[[block]]
+id = "type.struct"
+version = 1
+category = "types"
+shape = "definition"
+label = { friendly = "struct %NAME has … comparable %COMPARABLE printable %PRINTABLE share with other modules %SHARED", cpp = "struct %NAME { … };" }
+lowering = "builtin"
+help = "Defines a struct: a new type whose values hold one value of each of its fields. Add fields with ⊕ and remove them with ⊖; each starts empty (0, false or empty text). Tick comparable to compare and sort its values, and printable to print them."
+
+[[block.field]]
+name = "NAME"
+kind = "symbol_decl"
+
+# A field row offers these types first and takes any type a variable can
+# hold, such as another struct or an enum (w2.md §2.2).
+[[block.extra]]
+name = "fields"
+kind = "fields"
+max = 64
+types = ["int", "double", "bool", "char", "std::string"]
+type_class = "value"
+
+[[block.field]]
+name = "COMPARABLE"
+kind = "checkbox"
+default = false
+
+[[block.field]]
+name = "PRINTABLE"
+kind = "checkbox"
+default = false
+
+# Shown once projects have several modules (milestone M3's third wave).
+[[block.field]]
+name = "SHARED"
+kind = "checkbox"
+default = false
+
+[[block]]
+id = "type.new"
+version = 1
+category = "types"
+shape = "reporter"
+output = "S"
+label = { friendly = "new %TYPE with %FIELD …", cpp = "%TYPE{%FIELD, …}" }
+lowering = "builtin"
+help = "Makes a value of a struct from a value for each of its fields, in the order the struct lists them. An empty part leaves its field empty (0, false or empty text)."
+# The menu lists the module's structs (w2.md §2.1, §2.3).
+where = { S = "struct" }
+
+[[block.field]]
+name = "TYPE"
+kind = "type"
+types = []
+type = "S"
+
+[[block.extra]]
+name = "fieldCount"
+kind = "count"
+min = 0
+max = 64
+default = "0"
+
+# Part i takes the type of field i of the chosen struct.
+[[block.input]]
+name = "FIELD"
+check = "any"
+optional = true
+repeat = { count = "fieldCount" }
+type = "member:TYPE"
+
+[[block]]
+id = "type.field"
+version = 1
+category = "types"
+shape = "reporter"
+output = "symbol:MEMBER"
+label = { friendly = "%MEMBER of %OBJ", cpp = "%OBJ.%MEMBER" }
+lowering = "builtin"
+help = "The value of one field of a struct value."
+# The menu lists the fields of the struct plugged in (w2.md §2.3).
+where = { S = "struct" }
+
+[[block.field]]
+name = "MEMBER"
+kind = "symbol_ref"
+members = "S"
+
+[[block.input]]
+name = "OBJ"
+check = "any"
+type = "S"
+
+[[block]]
+id = "type.set_field"
+version = 1
+category = "types"
+shape = "statement"
+label = { friendly = "set %MEMBER of %VAR to %VALUE", cpp = "%VAR.%MEMBER = %VALUE;" }
+lowering = "builtin"
+help = "Gives one field of a struct variable a new value."
+where = { S = "struct" }
+
+[[block.field]]
+name = "MEMBER"
+kind = "symbol_ref"
+members = "S"
+
+[[block.field]]
+name = "VAR"
+kind = "symbol_ref"
+type = "S"
+
+[[block.input]]
+name = "VALUE"
+check = "any"
+type = "symbol:MEMBER"
+assign = true
+
+[[block]]
+id = "type.enum"
+version = 1
+category = "types"
+shape = "definition"
+label = { friendly = "enum %NAME values … share with other modules %SHARED", cpp = "enum class %NAME { … };" }
+lowering = "builtin"
+help = "Defines an enum: a new type whose values are the names listed here, such as the choices of a menu. Add values with ⊕ and remove them with ⊖."
+
+[[block.field]]
+name = "NAME"
+kind = "symbol_decl"
+
+[[block.extra]]
+name = "values"
+kind = "values"
+max = 64
+
+# Shown once projects have several modules (milestone M3's third wave).
+[[block.field]]
+name = "SHARED"
+kind = "checkbox"
+default = false
+
+[[block]]
+id = "type.enum_value"
+version = 1
+category = "types"
+shape = "reporter"
+output = "E"
+label = { friendly = "%ENUM %VALUE", cpp = "%ENUM::%VALUE" }
+lowering = "builtin"
+help = "One value of an enum."
+# The first menu lists the module's enums, the second that enum's values
+# (w2.md §2.3).
+where = { E = "enum" }
+
+[[block.field]]
+name = "ENUM"
+kind = "symbol_ref"
+type = "E"
+
+[[block.field]]
+name = "VALUE"
+kind = "symbol_ref"
+members = "E"

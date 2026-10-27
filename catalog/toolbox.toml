@@ -264,6 +264,24 @@ name = "Types"
 icon = "◆"
 colour = "types"
 
+[[category.entry]]
+block = "type.struct"
+
+[[category.entry]]
+block = "type.new"
+
+[[category.entry]]
+block = "type.field"
+
+[[category.entry]]
+block = "type.set_field"
+
+[[category.entry]]
+block = "type.enum"
+
+[[category.entry]]
+block = "type.enum_value"
+
 [[category]]
 id = "files"
 name = "Files"

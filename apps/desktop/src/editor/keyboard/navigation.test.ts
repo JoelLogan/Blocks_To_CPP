@@ -23,6 +23,14 @@ import { focused, type KeyboardEditor, keyboardEditor, press } from './testing';
 // Each test here shows the toolbox's flyout of every catalog block (toolbox/testing.ts).
 vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
+/**
+ * The limit of the tests below that draw the flyout most often (a rebuilt flyout, every heading and
+ * note walked). Each test here takes longer than the one before it, and W2's Types category
+ * (package C1, six more blocks in the flyout) took the last one from 10.4 s alone to 15.1–22.0 s
+ * in five runs of this file on a machine busy with other work, past 20 s.
+ */
+const SLOW_FLYOUT_TEST_TIMEOUT_MS = 40_000;
+
 let editor: KeyboardEditor | null = null;
 
 function open(): KeyboardEditor {
@@ -344,7 +352,7 @@ describe('the toolbox’s blocks rebuilt while the keyboard is in them', () => {
   // The toolbox plugin rebuilds the flyout twice here, which is slow on a busy machine.
   it(
     'keep the keyboard when an analysis adds a category’s block',
-    { timeout: 20_000 },
+    { timeout: SLOW_FLYOUT_TEST_TIMEOUT_MS },
     async () => {
       editor = keyboardEditor({ plugins: [createToolboxPlugin()] });
       const { block, keyboard } = editor;
@@ -450,58 +458,66 @@ describe('the toolbox’s buttons, headings and notes', () => {
     expect(keyboard.announcer.last).toBe('category “Program”');
   }
 
-  it('are reached with ↓ and ↑ and announced for what they are', { timeout: 20_000 }, async () => {
-    const opened = await withToolbox();
-    intoToolbox(opened);
-    const { keyboard } = opened;
-    expect(walk(keyboard, 'ArrowDown', 12)).toEqual([
-      // A note of two lines is one stop, read as a whole.
-      'note: Your program starts at “when program starts”.',
-      'block “stop program with exit code”',
-      'category “Variables”',
-      'button “Make a variable”',
-      'block “create int variable value”',
-      'block “set”',
-      'block “change”',
-      // The getters' group headings, and each getter named with its group.
-      'heading “In when program starts”',
-      'block “guess”, in when program starts',
-      'heading “In factorial”',
-      'block “n”, in factorial',
-      'category “Math”',
-    ]);
-    expect(walk(keyboard, 'ArrowUp', 3)).toEqual([
-      'block “n”, in factorial',
-      'heading “In factorial”',
-      'block “guess”, in when program starts',
-    ]);
-    expect(nameOf(focused())).toMatch(/^block:/);
-    // Enter on a heading or a note does nothing but say where ↓ goes.
-    press('ArrowUp');
-    press('Enter');
-    expect(keyboard.announcer.last).toBe('Down arrow goes to the next block.');
-  });
+  it(
+    'are reached with ↓ and ↑ and announced for what they are',
+    { timeout: SLOW_FLYOUT_TEST_TIMEOUT_MS },
+    async () => {
+      const opened = await withToolbox();
+      intoToolbox(opened);
+      const { keyboard } = opened;
+      expect(walk(keyboard, 'ArrowDown', 12)).toEqual([
+        // A note of two lines is one stop, read as a whole.
+        'note: Your program starts at “when program starts”.',
+        'block “stop program with exit code”',
+        'category “Variables”',
+        'button “Make a variable”',
+        'block “create int variable value”',
+        'block “set”',
+        'block “change”',
+        // The getters' group headings, and each getter named with its group.
+        'heading “In when program starts”',
+        'block “guess”, in when program starts',
+        'heading “In factorial”',
+        'block “n”, in factorial',
+        'category “Math”',
+      ]);
+      expect(walk(keyboard, 'ArrowUp', 3)).toEqual([
+        'block “n”, in factorial',
+        'heading “In factorial”',
+        'block “guess”, in when program starts',
+      ]);
+      expect(nameOf(focused())).toMatch(/^block:/);
+      // Enter on a heading or a note does nothing but say where ↓ goes.
+      press('ArrowUp');
+      press('Enter');
+      expect(keyboard.announcer.last).toBe('Down arrow goes to the next block.');
+    },
+  );
 
-  it('include Make a variable, which Enter presses', { timeout: 20_000 }, async () => {
-    const prompt = vi.fn<DialogService['prompt']>(() => Promise.resolve(null));
-    const opened = await withToolbox({
-      dialogs: {
-        prompt,
-        alert: vi.fn<DialogService['alert']>(() => Promise.resolve()),
-        choose: vi.fn((options: ChoiceOptions<string>) =>
-          Promise.resolve(options.cancel),
-        ) as DialogService['choose'],
-      },
-    });
-    intoToolbox(opened);
-    walk(opened.keyboard, 'ArrowDown', 4);
-    expect(opened.keyboard.announcer.last).toBe('button “Make a variable”');
-    expect(nameOf(focused())).toBe('button:Make a variable');
-    press('Enter');
-    await vi.waitFor(() => {
-      expect(prompt).toHaveBeenCalledTimes(1);
-    });
-  });
+  it(
+    'include Make a variable, which Enter presses',
+    { timeout: SLOW_FLYOUT_TEST_TIMEOUT_MS },
+    async () => {
+      const prompt = vi.fn<DialogService['prompt']>(() => Promise.resolve(null));
+      const opened = await withToolbox({
+        dialogs: {
+          prompt,
+          alert: vi.fn<DialogService['alert']>(() => Promise.resolve()),
+          choose: vi.fn((options: ChoiceOptions<string>) =>
+            Promise.resolve(options.cancel),
+          ) as DialogService['choose'],
+        },
+      });
+      intoToolbox(opened);
+      walk(opened.keyboard, 'ArrowDown', 4);
+      expect(opened.keyboard.announcer.last).toBe('button “Make a variable”');
+      expect(nameOf(focused())).toBe('button:Make a variable');
+      press('Enter');
+      await vi.waitFor(() => {
+        expect(prompt).toHaveBeenCalledTimes(1);
+      });
+    },
+  );
 });
 
 /** A document whose only module is empty. */

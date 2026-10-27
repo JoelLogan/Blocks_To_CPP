@@ -116,11 +116,17 @@ fn every_block_has_a_signature_in_catalog_order() {
         let headers: Vec<&str> = sig.headers.iter().map(|h| h.as_str()).collect();
         assert_eq!(headers, def.headers, "{id}");
         assert_eq!(sig.output.is_some(), def.shape.is_value(), "{id}");
-        // Only *list of* takes its type from its place (slots.md §3); no
-        // block lists members before W2's struct blocks.
+        // Only *list of* takes its type from its place (slots.md §3); only
+        // the struct and enum blocks list members (w2.md §1.5), each of the
+        // user type its own variable binds.
         let place = (id == "coll.list_of").then(|| TypeVar::new("C").unwrap());
         assert_eq!(sig.place_var, place, "{id}");
-        assert!(sig.members.is_empty(), "{id}");
+        let members: BTreeMap<String, TypeVar> = match id.as_str() {
+            "type.field" | "type.set_field" => BTreeMap::from([(String::from("MEMBER"), var("S"))]),
+            "type.enum_value" => BTreeMap::from([(String::from("VALUE"), var("E"))]),
+            _ => BTreeMap::new(),
+        };
+        assert_eq!(sig.members, members, "{id}");
         assert!(sig.option_headers.is_empty(), "{id}");
     }
 }

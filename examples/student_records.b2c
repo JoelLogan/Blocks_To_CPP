@@ -1,0 +1,1029 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 2,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.3.0"
+  },
+  "project": {
+    "id": "prj_student_records",
+    "name": "Student Records",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b001",
+            "type": "type.struct",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "extra": {
+              "fields": [
+                {
+                  "name": "name",
+                  "sym": "s_Student_name",
+                  "type": "std::string"
+                },
+                {
+                  "name": "mark",
+                  "sym": "s_Student_mark",
+                  "type": "int"
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Student",
+                "name": "Student"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b002",
+            "type": "func.define",
+            "v": 1,
+            "x": 40,
+            "y": 200,
+            "extra": {
+              "params": [
+                {
+                  "mode": "editable",
+                  "name": "students",
+                  "sym": "s_sort_students",
+                  "type": {
+                    "std::vector": {
+                      "ref": "s_Student"
+                    }
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_sort_by_mark",
+                "name": "sort_by_mark"
+              },
+              "RETURNS": "void"
+            },
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b003",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_sort_count",
+                      "name": "count"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "block": {
+                        "id": "b004",
+                        "type": "coll.length",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_sort_students"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b005",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "DIRECTION": "to",
+                    "VAR": {
+                      "sym": "s_sort_i",
+                      "name": "i"
+                    }
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "ref": "s_sort_count"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b006",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "CONST": false,
+                          "NAME": {
+                            "sym": "s_sort_best",
+                            "name": "best"
+                          },
+                          "TYPE": "int"
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "ref": "s_sort_i"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b007",
+                        "type": "control.for_range",
+                        "v": 1,
+                        "fields": {
+                          "DIRECTION": "to",
+                          "VAR": {
+                            "sym": "s_sort_j",
+                            "name": "j"
+                          }
+                        },
+                        "inputs": {
+                          "FROM": {
+                            "expr": [
+                              {
+                                "ref": "s_sort_i"
+                              },
+                              {
+                                "op": "+"
+                              },
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          },
+                          "TO": {
+                            "expr": [
+                              {
+                                "ref": "s_sort_count"
+                              }
+                            ]
+                          }
+                        },
+                        "statements": {
+                          "BODY": [
+                            {
+                              "id": "b008",
+                              "type": "control.if",
+                              "v": 1,
+                              "inputs": {
+                                "COND0": {
+                                  "block": {
+                                    "id": "b010",
+                                    "type": "math.compare",
+                                    "v": 1,
+                                    "fields": {
+                                      "OP": "gt"
+                                    },
+                                    "inputs": {
+                                      "A": {
+                                        "block": {
+                                          "id": "b011",
+                                          "type": "type.field",
+                                          "v": 1,
+                                          "fields": {
+                                            "MEMBER": {
+                                              "ref": "s_Student_mark"
+                                            }
+                                          },
+                                          "inputs": {
+                                            "OBJ": {
+                                              "block": {
+                                                "id": "b012",
+                                                "type": "coll.item",
+                                                "v": 1,
+                                                "fields": {
+                                                  "LIST": {
+                                                    "ref": "s_sort_students"
+                                                  }
+                                                },
+                                                "inputs": {
+                                                  "INDEX": {
+                                                    "expr": [
+                                                      {
+                                                        "ref": "s_sort_j"
+                                                      }
+                                                    ]
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "B": {
+                                        "block": {
+                                          "id": "b013",
+                                          "type": "type.field",
+                                          "v": 1,
+                                          "fields": {
+                                            "MEMBER": {
+                                              "ref": "s_Student_mark"
+                                            }
+                                          },
+                                          "inputs": {
+                                            "OBJ": {
+                                              "block": {
+                                                "id": "b014",
+                                                "type": "coll.item",
+                                                "v": 1,
+                                                "fields": {
+                                                  "LIST": {
+                                                    "ref": "s_sort_students"
+                                                  }
+                                                },
+                                                "inputs": {
+                                                  "INDEX": {
+                                                    "expr": [
+                                                      {
+                                                        "ref": "s_sort_best"
+                                                      }
+                                                    ]
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              "statements": {
+                                "DO0": [
+                                  {
+                                    "id": "b009",
+                                    "type": "var.set",
+                                    "v": 1,
+                                    "fields": {
+                                      "VAR": {
+                                        "ref": "s_sort_best"
+                                      }
+                                    },
+                                    "inputs": {
+                                      "VALUE": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_sort_j"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "id": "b015",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "CONST": false,
+                          "NAME": {
+                            "sym": "s_sort_swapped",
+                            "name": "swapped"
+                          },
+                          "TYPE": {
+                            "ref": "s_Student"
+                          }
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "block": {
+                              "id": "b016",
+                              "type": "coll.item",
+                              "v": 1,
+                              "fields": {
+                                "LIST": {
+                                  "ref": "s_sort_students"
+                                }
+                              },
+                              "inputs": {
+                                "INDEX": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_sort_i"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "id": "b017",
+                        "type": "coll.set_item",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_sort_students"
+                          }
+                        },
+                        "inputs": {
+                          "INDEX": {
+                            "expr": [
+                              {
+                                "ref": "s_sort_i"
+                              }
+                            ]
+                          },
+                          "VALUE": {
+                            "block": {
+                              "id": "b018",
+                              "type": "coll.item",
+                              "v": 1,
+                              "fields": {
+                                "LIST": {
+                                  "ref": "s_sort_students"
+                                }
+                              },
+                              "inputs": {
+                                "INDEX": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_sort_best"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "id": "b019",
+                        "type": "coll.set_item",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_sort_students"
+                          }
+                        },
+                        "inputs": {
+                          "INDEX": {
+                            "expr": [
+                              {
+                                "ref": "s_sort_best"
+                              }
+                            ]
+                          },
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "ref": "s_sort_swapped"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "b020",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 700,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b021",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_count",
+                      "name": "count"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b022",
+                  "type": "io.ask",
+                  "v": 1,
+                  "fields": {
+                    "MODE": "keep_asking",
+                    "VAR": {
+                      "ref": "s_count"
+                    }
+                  },
+                  "inputs": {
+                    "PROMPT": {
+                      "expr": [
+                        {
+                          "str": "How many students? "
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b023",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_students",
+                      "name": "students"
+                    },
+                    "TYPE": {
+                      "std::vector": {
+                        "ref": "s_Student"
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b024",
+                  "type": "control.for_range",
+                  "v": 1,
+                  "fields": {
+                    "DIRECTION": "to",
+                    "VAR": {
+                      "sym": "s_i",
+                      "name": "i"
+                    }
+                  },
+                  "inputs": {
+                    "FROM": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    },
+                    "TO": {
+                      "expr": [
+                        {
+                          "ref": "s_count"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b025",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "CONST": false,
+                          "NAME": {
+                            "sym": "s_name",
+                            "name": "name"
+                          },
+                          "TYPE": "std::string"
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "str": ""
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b026",
+                        "type": "var.declare",
+                        "v": 1,
+                        "fields": {
+                          "CONST": false,
+                          "NAME": {
+                            "sym": "s_mark",
+                            "name": "mark"
+                          },
+                          "TYPE": "int"
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "expr": [
+                              {
+                                "num": "0"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b027",
+                        "type": "io.ask",
+                        "v": 1,
+                        "fields": {
+                          "MODE": "keep_asking",
+                          "VAR": {
+                            "ref": "s_name"
+                          }
+                        },
+                        "inputs": {
+                          "PROMPT": {
+                            "expr": [
+                              {
+                                "str": "Name: "
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b028",
+                        "type": "io.ask",
+                        "v": 1,
+                        "fields": {
+                          "MODE": "keep_asking",
+                          "VAR": {
+                            "ref": "s_mark"
+                          }
+                        },
+                        "inputs": {
+                          "PROMPT": {
+                            "expr": [
+                              {
+                                "str": "Mark: "
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b029",
+                        "type": "coll.add",
+                        "v": 1,
+                        "fields": {
+                          "LIST": {
+                            "ref": "s_students"
+                          }
+                        },
+                        "inputs": {
+                          "VALUE": {
+                            "block": {
+                              "id": "b030",
+                              "type": "type.new",
+                              "v": 1,
+                              "extra": {
+                                "fieldCount": 2
+                              },
+                              "fields": {
+                                "TYPE": {
+                                  "ref": "s_Student"
+                                }
+                              },
+                              "inputs": {
+                                "FIELD0": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_name"
+                                    }
+                                  ]
+                                },
+                                "FIELD1": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_mark"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b031",
+                  "type": "func.call_stmt",
+                  "v": 1,
+                  "extra": {
+                    "argCount": 1
+                  },
+                  "fields": {
+                    "FUNC": {
+                      "ref": "s_sort_by_mark"
+                    }
+                  },
+                  "inputs": {
+                    "ARG0": {
+                      "expr": [
+                        {
+                          "ref": "s_students"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b032",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": ""
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b033",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Ranking:"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b034",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_place",
+                      "name": "place"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b035",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_passed",
+                      "name": "passed"
+                    },
+                    "TYPE": "int"
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "num": "0"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "id": "b036",
+                  "type": "coll.for_each",
+                  "v": 1,
+                  "fields": {
+                    "ITEM": {
+                      "sym": "s_student",
+                      "name": "student"
+                    },
+                    "MODE": "read_only"
+                  },
+                  "inputs": {
+                    "LIST": {
+                      "expr": [
+                        {
+                          "ref": "s_students"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "BODY": [
+                      {
+                        "id": "b037",
+                        "type": "var.change",
+                        "v": 1,
+                        "fields": {
+                          "OP": "add",
+                          "VAR": {
+                            "ref": "s_place"
+                          }
+                        },
+                        "inputs": {
+                          "BY": {
+                            "expr": [
+                              {
+                                "num": "1"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "id": "b038",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 5
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "ref": "s_place"
+                              }
+                            ]
+                          },
+                          "ITEM1": {
+                            "expr": [
+                              {
+                                "str": ". "
+                              }
+                            ]
+                          },
+                          "ITEM2": {
+                            "block": {
+                              "id": "b039",
+                              "type": "type.field",
+                              "v": 1,
+                              "fields": {
+                                "MEMBER": {
+                                  "ref": "s_Student_name"
+                                }
+                              },
+                              "inputs": {
+                                "OBJ": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_student"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "ITEM3": {
+                            "expr": [
+                              {
+                                "str": ": "
+                              }
+                            ]
+                          },
+                          "ITEM4": {
+                            "block": {
+                              "id": "b040",
+                              "type": "type.field",
+                              "v": 1,
+                              "fields": {
+                                "MEMBER": {
+                                  "ref": "s_Student_mark"
+                                }
+                              },
+                              "inputs": {
+                                "OBJ": {
+                                  "expr": [
+                                    {
+                                      "ref": "s_student"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "id": "b041",
+                        "type": "control.if",
+                        "v": 1,
+                        "inputs": {
+                          "COND0": {
+                            "block": {
+                              "id": "b043",
+                              "type": "math.compare",
+                              "v": 1,
+                              "fields": {
+                                "OP": "ge"
+                              },
+                              "inputs": {
+                                "A": {
+                                  "block": {
+                                    "id": "b044",
+                                    "type": "type.field",
+                                    "v": 1,
+                                    "fields": {
+                                      "MEMBER": {
+                                        "ref": "s_Student_mark"
+                                      }
+                                    },
+                                    "inputs": {
+                                      "OBJ": {
+                                        "expr": [
+                                          {
+                                            "ref": "s_student"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                },
+                                "B": {
+                                  "expr": [
+                                    {
+                                      "num": "50"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "statements": {
+                          "DO0": [
+                            {
+                              "id": "b042",
+                              "type": "var.change",
+                              "v": 1,
+                              "fields": {
+                                "OP": "add",
+                                "VAR": {
+                                  "ref": "s_passed"
+                                }
+                              },
+                              "inputs": {
+                                "BY": {
+                                  "expr": [
+                                    {
+                                      "num": "1"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "b045",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 4
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "expr": [
+                        {
+                          "str": "Passed (50 or more): "
+                        }
+                      ]
+                    },
+                    "ITEM1": {
+                      "expr": [
+                        {
+                          "ref": "s_passed"
+                        }
+                      ]
+                    },
+                    "ITEM2": {
+                      "expr": [
+                        {
+                          "str": " of "
+                        }
+                      ]
+                    },
+                    "ITEM3": {
+                      "expr": [
+                        {
+                          "ref": "s_count"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

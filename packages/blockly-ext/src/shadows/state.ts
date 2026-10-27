@@ -6,6 +6,7 @@ import * as Blockly from 'blockly/core';
 
 import { B2C_CSS_CLASS } from '../blocks/css';
 import { B2cSymbolRefField } from '../fields/symbol-ref';
+import { B2cTypeField } from '../fields/type';
 import type { TokenJson, TypeClass } from '../generated/catalog';
 import { renderTokens, isTokenRange, type ExprShadowBlock } from './register';
 import {
@@ -172,7 +173,10 @@ export function getTokenHighlight(block: Blockly.Block): TokenRange | null {
   return shadowOf(block)?.b2cHighlight ?? null;
 }
 
-/** Redraws every reference field and every read-only expression of one workspace. */
+/**
+ * Redraws every reference field, every type field naming a user type and every read-only
+ * expression of one workspace.
+ */
 function relabelBlocks(workspace: Blockly.Workspace): void {
   for (const block of workspace.getAllBlocks(false)) {
     if (block.type === EXPR_SHADOW_TYPE.tokens) {
@@ -184,7 +188,7 @@ function relabelBlocks(workspace: Blockly.Workspace): void {
     }
     for (const input of block.inputList) {
       for (const field of input.fieldRow) {
-        if (field instanceof B2cSymbolRefField) {
+        if (field instanceof B2cSymbolRefField || isUserTypeField(field)) {
           field.forceRerender();
         }
       }
@@ -192,9 +196,18 @@ function relabelBlocks(workspace: Blockly.Workspace): void {
   }
 }
 
+/** Whether a field is a type field holding a type term (a user type, or a list of one). */
+function isUserTypeField(field: Blockly.Field): boolean {
+  if (!(field instanceof B2cTypeField)) {
+    return false;
+  }
+  const value = field.getValue();
+  return value?.includes('"ref"') === true;
+}
+
 /**
  * Shows the current symbol names everywhere in a workspace and in the flyout of its toolbox: every
- * reference field and every read-only expression. Call it after each analysis, so a rename shows
+ * reference field, every type field naming a struct or an enum, and every read-only expression. Call it after each analysis, so a rename shows
  * on every reference.
  *
  * A flyout keeps its blocks while what it lists stays the same, and a renamed symbol is still the

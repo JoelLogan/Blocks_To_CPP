@@ -3217,6 +3217,337 @@
       ]
     },
     {
+      "id": "type.enum",
+      "version": 1,
+      "category": "types",
+      "shape": "definition",
+      "output": null,
+      "label": {
+        "friendly": "enum %NAME values … share with other modules %SHARED",
+        "cpp": "enum class %NAME { … };"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Defines an enum: a new type whose values are the names listed here, such as the choices of a menu. Add values with ⊕ and remove them with ⊖.",
+      "field": [
+        {
+          "name": "NAME",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null
+        },
+        {
+          "name": "SHARED",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": false
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [
+        {
+          "name": "values",
+          "kind": "values",
+          "min": 0,
+          "max": 64,
+          "default": null,
+          "types": []
+        }
+      ]
+    },
+    {
+      "id": "type.enum_value",
+      "version": 1,
+      "category": "types",
+      "shape": "reporter",
+      "output": "E",
+      "typeVars": {
+        "E": "enum"
+      },
+      "label": {
+        "friendly": "%ENUM %VALUE",
+        "cpp": "%ENUM::%VALUE"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "One value of an enum.",
+      "field": [
+        {
+          "name": "ENUM",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "E"
+          }
+        },
+        {
+          "name": "VALUE",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "ENUM"
+        }
+      ],
+      "members": {
+        "VALUE": "E"
+      }
+    },
+    {
+      "id": "type.field",
+      "version": 1,
+      "category": "types",
+      "shape": "reporter",
+      "output": "symbol:MEMBER",
+      "typeVars": {
+        "S": "struct"
+      },
+      "label": {
+        "friendly": "%MEMBER of %OBJ",
+        "cpp": "%OBJ.%MEMBER"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "The value of one field of a struct value.",
+      "field": [
+        {
+          "name": "MEMBER",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null
+        }
+      ],
+      "input": [
+        {
+          "name": "OBJ",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "kind": "var",
+            "name": "S"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "OBJ"
+        }
+      ],
+      "members": {
+        "MEMBER": "S"
+      }
+    },
+    {
+      "id": "type.new",
+      "version": 1,
+      "category": "types",
+      "shape": "reporter",
+      "output": "S",
+      "typeVars": {
+        "S": "struct"
+      },
+      "label": {
+        "friendly": "new %TYPE with %FIELD …",
+        "cpp": "%TYPE{%FIELD, …}"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Makes a value of a struct from a value for each of its fields, in the order the struct lists them. An empty part leaves its field empty (0, false or empty text).",
+      "field": [
+        {
+          "name": "TYPE",
+          "kind": "type",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "S"
+          }
+        }
+      ],
+      "input": [
+        {
+          "name": "FIELD",
+          "check": "any",
+          "optional": true,
+          "repeat": {
+            "count": "fieldCount",
+            "plus": 0
+          },
+          "default": [],
+          "type": {
+            "field": "TYPE",
+            "kind": "member"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [
+        {
+          "name": "fieldCount",
+          "kind": "count",
+          "min": 0,
+          "max": 64,
+          "default": "0",
+          "types": []
+        }
+      ],
+      "order": [
+        {
+          "field": "TYPE"
+        },
+        {
+          "input": "FIELD"
+        }
+      ]
+    },
+    {
+      "id": "type.set_field",
+      "version": 1,
+      "category": "types",
+      "shape": "statement",
+      "output": null,
+      "typeVars": {
+        "S": "struct"
+      },
+      "label": {
+        "friendly": "set %MEMBER of %VAR to %VALUE",
+        "cpp": "%VAR.%MEMBER = %VALUE;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Gives one field of a struct variable a new value.",
+      "field": [
+        {
+          "name": "MEMBER",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null
+        },
+        {
+          "name": "VAR",
+          "kind": "symbol_ref",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "S"
+          }
+        }
+      ],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "any",
+          "optional": false,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "field": "MEMBER",
+            "kind": "symbol"
+          },
+          "assign": true
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "VAR"
+        },
+        {
+          "input": "VALUE"
+        }
+      ],
+      "members": {
+        "MEMBER": "S"
+      }
+    },
+    {
+      "id": "type.struct",
+      "version": 1,
+      "category": "types",
+      "shape": "definition",
+      "output": null,
+      "label": {
+        "friendly": "struct %NAME has … comparable %COMPARABLE printable %PRINTABLE share with other modules %SHARED",
+        "cpp": "struct %NAME { … };"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Defines a struct: a new type whose values hold one value of each of its fields. Add fields with ⊕ and remove them with ⊖; each starts empty (0, false or empty text). Tick comparable to compare and sort its values, and printable to print them.",
+      "field": [
+        {
+          "name": "NAME",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null
+        },
+        {
+          "name": "COMPARABLE",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": false
+        },
+        {
+          "name": "PRINTABLE",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": false
+        },
+        {
+          "name": "SHARED",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": false
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": [
+        {
+          "name": "fields",
+          "kind": "fields",
+          "min": 0,
+          "max": 64,
+          "default": null,
+          "types": [
+            "int",
+            "double",
+            "bool",
+            "char",
+            "std::string"
+          ],
+          "typeClass": "value"
+        }
+      ]
+    },
+    {
       "id": "var.change",
       "version": 1,
       "category": "variables",
@@ -3860,7 +4191,38 @@
         "icon": "◆",
         "colour": "types",
         "dynamic": null,
-        "entry": []
+        "entry": [
+          {
+            "block": "type.struct",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "type.new",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "type.field",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "type.set_field",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "type.enum",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "type.enum_value",
+            "label": null,
+            "preset": null
+          }
+        ]
       },
       {
         "id": "files",
