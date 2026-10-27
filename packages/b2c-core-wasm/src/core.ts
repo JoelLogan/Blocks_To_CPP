@@ -32,9 +32,26 @@ export const MAX_DOCUMENT_BYTES = 32 * 1024 * 1024;
 /** The glue functions a core needs (everything but `init`). */
 export type GlueFunctions = Omit<Glue, 'init'>;
 
+/**
+ * The calls whose answer the preview worker (ADR-0016) posts as the core's text, unparsed, for the
+ * page to parse once with {@link parseUpdate} and {@link parseVersion}. They bound their arguments
+ * and turn a trap into `CoreTrap` exactly as the `CoreWasm` methods of the same name do.
+ */
+export interface RawCore {
+  /** `version()`'s JSON text. */
+  version(): string;
+  /**
+   * `update()`'s JSON text: a result or an error envelope. `optionsJson` goes to the core as it is
+   * (bounded), and the core refuses options it does not know; see {@link previewOptionsJson}.
+   */
+  update(documentJson: string, optionsJson: string): string;
+}
+
 /** A core and the state the loader needs to know about it. */
 export interface CoreHandle {
   readonly core: CoreWasm;
+  /** The same instance's calls that answer with the core's text. */
+  readonly raw: RawCore;
   /** Whether the instance has stopped; a stopped instance is never called again. */
   readonly trapped: boolean;
 }
@@ -111,8 +128,31 @@ function parseListOrNull(operation: string, text: string): unknown[] | null {
  * Cuts text that is certainly over the size limit (its UTF-8 form is at least as long as its
  * UTF-16 length) to one code unit over it.
  */
-function boundText(text: string): string {
+export function boundText(text: string): string {
   return text.length > MAX_DOCUMENT_BYTES ? text.slice(0, MAX_DOCUMENT_BYTES + 1) : text;
+}
+
+/**
+ * Parses `update()`'s text as `CoreWasm.update` does.
+ *
+ * @throws CoreError for an error envelope (`invalidOptions`, …) or text that is not an object.
+ */
+export function parseUpdate(text: string): UpdateResult {
+  return parseObject('update', text) as UpdateResult;
+}
+
+/**
+ * Parses `version()`'s text as `CoreWasm.version` does.
+ *
+ * @throws CoreError for an error envelope or text that is not an object.
+ */
+export function parseVersion(text: string): CoreVersion {
+  return parseObject('version', text) as CoreVersion;
+}
+
+/** The preview options as the core takes them: only the known key, whatever else the object carries. */
+export function previewOptionsJson(options: PreviewOptions): string {
+  return JSON.stringify({ indentWidth: options.indentWidth });
 }
 
 /** Wraps one instance's glue functions. */
@@ -140,8 +180,17 @@ export function createCore(glue: GlueFunctions): CoreHandle {
   const list = (operation: string, run: () => string): unknown[] =>
     parseList(operation, call(operation, run));
 
+  const raw: RawCore = {
+    version: () => call('version', () => glue.version()),
+    update: (documentJson, optionsJson) => {
+      const bounded = boundText(documentJson);
+      const options = boundText(optionsJson);
+      return call('update', () => glue.update(bounded, options));
+    },
+  };
+
   const core: CoreWasm = {
-    version: () => object('version', () => glue.version()) as CoreVersion,
+    version: () => parseVersion(raw.version()),
     load: (bytes) => {
       const bounded =
         bytes.length > MAX_DOCUMENT_BYTES ? bytes.subarray(0, MAX_DOCUMENT_BYTES + 1) : bytes;
@@ -151,12 +200,8 @@ export function createCore(glue: GlueFunctions): CoreHandle {
       const bounded = boundText(documentJson);
       return object('canonical', () => glue.canonical(bounded)) as CanonicalResult;
     },
-    update: (documentJson, options: PreviewOptions) => {
-      const bounded = boundText(documentJson);
-      // Only the known key crosses, whatever else the object carries.
-      const optionsJson = JSON.stringify({ indentWidth: options.indentWidth });
-      return object('update', () => glue.update(bounded, optionsJson)) as UpdateResult;
-    },
+    update: (documentJson, options: PreviewOptions) =>
+      parseUpdate(raw.update(documentJson, previewOptionsJson(options))),
     symbolsInScope: (blockId, input) => {
       const block = boundText(blockId);
       const name = input === null ? null : boundText(input);
@@ -188,6 +233,7 @@ export function createCore(glue: GlueFunctions): CoreHandle {
 
   return {
     core,
+    raw,
     get trapped() {
       return trapped;
     },

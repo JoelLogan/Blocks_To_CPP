@@ -11,23 +11,13 @@
 
 import type { CoreWasm } from './api';
 import { decodeBase64 } from './base64';
-import { type CoreHandle, createCore } from './core';
-import { CoreError } from './errors';
+import type { CoreHandle } from './core';
+import { instantiate, startFailed } from './instance';
 
 /** The compiled embedded module, kept across instances; forgotten if compiling failed. */
 let compiled: Promise<WebAssembly.Module> | undefined;
 /** The current instance (starting or started); forgotten if starting failed. */
 let current: Promise<CoreHandle> | undefined;
-
-function startFailed(error: unknown): CoreError {
-  if (error instanceof CoreError) {
-    return error;
-  }
-  const reason = error instanceof Error ? error.message : String(error);
-  return new CoreError('init', `the compiler core could not be started: ${reason}`, {
-    cause: error,
-  });
-}
 
 async function compileEmbedded(): Promise<WebAssembly.Module> {
   const { WASM_BASE64 } = await import('#pkg-bytes');
@@ -47,26 +37,23 @@ function embeddedModule(): Promise<WebAssembly.Module> {
   return compiled;
 }
 
-/** Instantiates a compiled module with fresh glue state. */
-async function instantiate(module: WebAssembly.Module): Promise<CoreHandle> {
-  try {
-    const { createGlue } = await import('#glue');
-    const glue = createGlue();
-    await glue.init({ module_or_path: module });
-    return createCore(glue);
-  } catch (error) {
-    throw startFailed(error);
-  }
+async function start(): Promise<CoreHandle> {
+  return instantiate(await coreModule());
 }
 
-async function start(): Promise<CoreHandle> {
-  let module: WebAssembly.Module;
+/**
+ * The compiled embedded module, compiling it on first use: the module `initCore()` instantiates,
+ * which the page posts to the preview worker (ADR-0016) so that the worker never loads the bytes.
+ * A failed compile is not remembered, so calling again retries.
+ *
+ * @throws CoreError with kind `init` when the module cannot be loaded or compiled.
+ */
+export async function coreModule(): Promise<WebAssembly.Module> {
   try {
-    module = await embeddedModule();
+    return await embeddedModule();
   } catch (error) {
     throw startFailed(error);
   }
-  return instantiate(module);
 }
 
 /**
