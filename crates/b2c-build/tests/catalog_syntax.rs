@@ -583,6 +583,7 @@ const HEADERS: &[(&str, &[&str])] = &[
     ("std::getline", &["<string>"]),
     ("std::greater", &["<functional>"]),
     ("std::hypot", &["<cmath>"]),
+    ("std::ifstream", &["<fstream>"]),
     ("std::invalid_argument", &["<stdexcept>"]),
     ("std::isspace", &["<cctype>"]),
     ("std::istream", &["<istream>", "<iostream>"]),

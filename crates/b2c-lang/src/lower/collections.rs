@@ -404,7 +404,7 @@ impl Lowerer<'_> {
 
     /// Declares a name a loop over items gives its body, in the loop's item
     /// scope.
-    fn declare_loop_item(
+    pub(super) fn declare_loop_item(
         &mut self,
         block: &Block,
         part: &str,

@@ -225,7 +225,8 @@ fn a_second_entry_for_a_block_is_rejected() {
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert_eq!(
         (problems[0].category, problems[0].entry),
-        (Some(Category::Control), Some(1))
+        // After *if* and *switch on*.
+        (Some(Category::Control), Some(2))
     );
     assert!(
         problems[0].message.contains("already has an entry"),

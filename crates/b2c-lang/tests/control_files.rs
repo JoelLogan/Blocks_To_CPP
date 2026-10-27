@@ -1,0 +1,424 @@
+//! W2's control and file blocks in the analyser
+//! (docs/plans/m3-contracts/w2.md §1.6, §1.8, §2.4, §2.9; package D): *switch
+//! on* an `int` and a `char`, its labels and parts, *leave loop* in a case,
+//! the paths through a switch; *do … then repeat*; *for each line in file*.
+//! The blocks come as the project file holds them, analysed with the
+//! catalog's signatures. The switch on an enum and `B2C-W0508` are tested
+//! with the enum blocks (package C1).
+
+// Test code: unwrap/expect/panic and builders that take JSON by value are
+// fine here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stderr,
+    clippy::needless_pass_by_value
+)]
+
+mod common;
+
+use b2c_ir::ids::BlockId;
+use b2c_ir::types::Type;
+use common::*;
+use serde_json::{Map, Value, json};
+
+/// The rendered diagnostics, one per line.
+fn reported(a: &b2c_lang::Analysis) -> Vec<String> {
+    a.diagnostics.iter().map(render).collect()
+}
+
+/// *switch on (value)* with one case per `(label, statements)` (`None` for
+/// an empty label), and a default part when `default` is given.
+fn switch(value: Value, cases: Vec<(Option<Value>, Vec<Value>)>, default: Option<Vec<Value>>) -> Value {
+    let mut inputs = Map::new();
+    let mut statements = Map::new();
+    inputs.insert(String::from("VALUE"), value);
+    let count = cases.len();
+    for (index, (label, body)) in cases.into_iter().enumerate() {
+        if let Some(label) = label {
+            inputs.insert(format!("CASE{index}"), label);
+        }
+        statements.insert(format!("DO{index}"), Value::Array(body));
+    }
+    let has_default = default.is_some();
+    if let Some(body) = default {
+        statements.insert(String::from("DEFAULT"), Value::Array(body));
+    }
+    json!({"id": id(), "type": "control.switch", "v": 1,
+           "extra": {"caseCount": count, "hasDefault": has_default},
+           "inputs": inputs, "statements": statements})
+}
+
+/// *switch on* with labelled cases only.
+fn switch_cases(value: Value, cases: Vec<(Value, Vec<Value>)>, default: Option<Vec<Value>>) -> Value {
+    switch(
+        value,
+        cases
+            .into_iter()
+            .map(|(label, body)| (Some(label), body))
+            .collect(),
+        default,
+    )
+}
+
+/// *do (body) then repeat while/until (cond)*.
+fn do_while(mode: &str, cond: Value, body: Vec<Value>) -> Value {
+    json!({"id": id(), "type": "control.do_while", "v": 1, "fields": {"MODE": mode},
+           "inputs": {"COND": cond}, "statements": {"BODY": body}})
+}
+
+/// *for each line [name] in file (path)* with `body`, and its *if it can't
+/// be opened* part when `failed` is given.
+fn file_lines(name: &str, path: Value, body: Vec<Value>, failed: Option<Vec<Value>>) -> Value {
+    let mut block = json!({"id": id(), "type": "file.for_each_line", "v": 1,
+                           "extra": {"hasFailed": failed.is_some()},
+                           "fields": {"LINE": {"sym": sym(name), "name": name}},
+                           "inputs": {"PATH": path}, "statements": {"BODY": body}});
+    if let Some(failed) = failed {
+        block["statements"]["FAILED"] = Value::Array(failed);
+    }
+    block
+}
+
+// --- switch on ----------------------------------------------------------------------
+
+#[test]
+fn a_switch_on_a_whole_number_or_a_character_is_clean() {
+    let a = run_main(vec![
+        declare("int", "n", Some(e("2"))),
+        switch_cases(
+            e("n"),
+            vec![
+                (e("1"), vec![print(vec![e("\"one\"")])]),
+                (e("'A'"), vec![]),
+                (e("1 + 2"), vec![print(vec![e("n")])]),
+            ],
+            Some(vec![print(vec![e("\"other\"")])]),
+        ),
+        declare("char", "c", Some(e("'x'"))),
+        switch_cases(e("c"), vec![(e("'x'"), vec![]), (e("'y'"), vec![])], None),
+    ]);
+    assert_clean(&a);
+    let stmts = main_json(&a);
+    let cases = stmts[1]["kind"]["switch"]["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 3);
+    assert!(stmts[1]["kind"]["switch"]["default"].is_object());
+    assert!(stmts[3]["kind"]["switch"]["default"].is_null());
+}
+
+#[test]
+fn a_switch_takes_whole_numbers_characters_and_enums_only() {
+    for (ty, value, shown) in [
+        ("bool", "true", "a true/false value"),
+        ("double", "1.5", "a decimal number"),
+        ("std::string", "\"a\"", "text"),
+    ] {
+        let a = run_main(vec![
+            declare(ty, "v", Some(e(value))),
+            switch_cases(e("v"), vec![(e("1"), vec![])], Some(vec![])),
+        ]);
+        let reported = reported(&a);
+        assert_eq!(codes(&a)[0], "B2C-E0301", "{reported:?}");
+        assert!(reported[0].contains(shown), "{reported:?}");
+    }
+}
+
+#[test]
+fn case_labels_are_typed_by_the_value_switched_on() {
+    let a = run_main(vec![
+        declare("int", "n", Some(e("2"))),
+        switch_cases(e("n"), vec![(e("\"one\""), vec![])], None),
+    ]);
+    // Refused as text, and not again as a value that is not fixed.
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0301 at b0002 CASE0[0..1]: The value of case 1 needs a whole number, but this is text. Text \
+          is not turned into a number automatically."
+        ],
+    );
+}
+
+#[test]
+fn an_empty_case_label_is_reported_and_its_part_still_lowered() {
+    let a = run_main(vec![
+        declare("int", "n", Some(e("2"))),
+        switch(
+            e("n"),
+            vec![(Some(e("1")), vec![]), (None, vec![print(vec![e("missing")])])],
+            None,
+        ),
+    ]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0430 at b0003 input CASE1: This block needs the value of case 2.",
+            "error B2C-E0201 at b0002 ITEM0[0..1]: This refers to a variable or function that doesn't exist (any \
+             more). Choose another one, or create it again.",
+        ]
+    );
+}
+
+#[test]
+fn case_labels_must_be_fixed_and_different() {
+    let a = run_main(vec![
+        declare("int", "n", Some(e("2"))),
+        declare_const("int", "k", e("65")),
+        switch_cases(
+            e("n"),
+            vec![
+                (e("n"), vec![]),
+                (e("'A'"), vec![]),
+                (e("k"), vec![]),
+                (e("k + 1"), vec![]),
+            ],
+            None,
+        ),
+    ]);
+    // `n` is a variable; 'A' and the constant `k` are both 65; `k + 1` is
+    // a calculation of constants, which C++ takes.
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0424 at b0003 CASE0[0..1]: A 'case' label must be a value that is fixed when the program \
+             is built: a whole number, a character, a value of an enum, or a constant whole number or character \
+             with a fixed value.",
+            "error B2C-E0425 at b0003 CASE2[0..1]: Another 'case' of this switch has the same value (65). Each \
+             case needs its own value: remove one of them, or put their blocks together in one case.",
+        ]
+    );
+}
+
+#[test]
+fn each_case_is_a_scope_of_its_own() {
+    // A second `amount`, with a symbol of its own, read by the name its
+    // symbol gives in the tokens (`amount2` is its symbol's key).
+    let mut second_amount = declare("int", "amount", Some(e("2")));
+    second_amount["fields"]["NAME"]["sym"] = json!(sym("amount2"));
+    let a = run_main(vec![
+        declare("int", "n", Some(e("2"))),
+        switch_cases(
+            e("n"),
+            vec![
+                (e("1"), vec![declare("int", "amount", Some(e("1")))]),
+                (e("2"), vec![second_amount, print(vec![e("amount2")])]),
+            ],
+            Some(vec![print(vec![e("amount")])]),
+        ),
+    ]);
+    // Both cases create `amount`; the default part sees neither.
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0203 at b0005 ITEM0[0..1]: `amount` can't be used here: it only exists from the block that \
+          creates it to the end of that group of blocks (including the blocks nested inside them)."
+        ]
+    );
+}
+
+#[test]
+fn leave_loop_in_a_case_would_only_leave_the_switch() {
+    let message = "error B2C-E0401";
+    // Directly in a case, and inside an `if` in a case.
+    for body in [vec![brk()], vec![if_then(e("true"), vec![brk()])]] {
+        let a = run_main(vec![
+            declare("int", "n", Some(e("2"))),
+            repeat(
+                e("3"),
+                vec![switch_cases(e("n"), vec![(e("1"), body)], Some(vec![]))],
+            ),
+        ]);
+        assert_eq!(codes(&a), ["B2C-E0401"], "{}", render_all(&a));
+        assert!(reported(&a)[0].starts_with(message));
+        assert!(
+            reported(&a)[0]
+                .contains("In C++ 'leave loop' here would only leave the switch, not the loop around it.")
+        );
+    }
+    // In the default part too.
+    let a = run_main(vec![
+        declare("int", "n", Some(e("2"))),
+        repeat(
+            e("3"),
+            vec![switch_cases(e("n"), vec![(e("1"), vec![])], Some(vec![brk()]))],
+        ),
+    ]);
+    assert_codes(&a, &["B2C-E0401"]);
+    // Inside a loop in a case it leaves that loop; *skip to next round*
+    // reaches the loop around the switch.
+    let a = run_main(vec![
+        declare("int", "n", Some(e("2"))),
+        forever(vec![
+            switch_cases(
+                e("n"),
+                vec![(e("1"), vec![forever(vec![brk()])]), (e("2"), vec![cont()])],
+                Some(vec![]),
+            ),
+            brk(),
+        ]),
+    ]);
+    assert_clean(&a);
+}
+
+#[test]
+fn a_switch_whose_parts_all_return_ends_every_path_only_with_a_default() {
+    let returning = |default: Option<Vec<Value>>| {
+        func(
+            "pick",
+            "int",
+            &[("n", "int", "copy")],
+            vec![switch_cases(
+                e("n"),
+                vec![
+                    (e("1"), vec![ret(Some(e("10")))]),
+                    (e("2"), vec![ret(Some(e("20")))]),
+                ],
+                default,
+            )],
+        )
+    };
+    let a = run(vec![returning(Some(vec![ret(Some(e("0")))])), main(vec![])]);
+    assert_clean(&a);
+    let a = run(vec![returning(None), main(vec![])]);
+    assert_codes(&a, &["B2C-E0410"]);
+}
+
+// --- do … then repeat -----------------------------------------------------------------
+
+#[test]
+fn do_while_runs_its_body_before_the_condition() {
+    let a = run_main(vec![
+        declare("int", "count", Some(e("0"))),
+        do_while("while", e("count < 3"), vec![change("count", e("1"))]),
+        do_while("until", e("count >= 6"), vec![change("count", e("1"))]),
+        print(vec![e("count")]),
+    ]);
+    assert_clean(&a);
+    let stmts = main_json(&a);
+    assert_eq!(stmts[1]["kind"]["do_while"]["until"], json!(false));
+    assert_eq!(stmts[2]["kind"]["do_while"]["until"], json!(true));
+    // A variable without a value, set in the body, has one in the
+    // condition: the body runs at least once.
+    let a = run_main(vec![
+        declare("int", "answer", None),
+        do_while("until", e("answer > 0"), vec![set("answer", e("5"))]),
+    ]);
+    assert_clean(&a);
+}
+
+#[test]
+fn the_condition_of_do_while_does_not_see_the_bodys_variables() {
+    let a = run_main(vec![do_while(
+        "while",
+        e("inner < 3"),
+        vec![declare("int", "inner", Some(e("1")))],
+    )]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0203 at b0002 COND[0..1]: `inner` can't be used here: it only exists from the block that \
+          creates it to the end of that group of blocks (including the blocks nested inside them)."
+        ]
+    );
+}
+
+#[test]
+fn leave_loop_in_do_while_leaves_it() {
+    let a = run_main(vec![
+        do_while("while", e("true"), vec![brk()]),
+        print(vec![e("1")]),
+    ]);
+    assert_clean(&a);
+}
+
+// --- for each line in file ------------------------------------------------------------
+
+#[test]
+fn a_file_loop_gives_its_body_a_text_line() {
+    let a = run_main(vec![
+        declare("int", "count", Some(e("0"))),
+        file_lines(
+            "line",
+            e("\"poem.txt\""),
+            vec![change("count", e("1")), print(vec![e("line")])],
+            Some(vec![exit(e("1"))]),
+        ),
+        print(vec![e("count")]),
+    ]);
+    assert_clean(&a);
+    let stmts = main_json(&a);
+    let lines = &stmts[1]["kind"]["file_lines"];
+    assert!(lines["failed"].is_object(), "{lines}");
+    let line = lines["line"].as_str().unwrap();
+    let symbol = &a.program.symbols.symbols[&b2c_ir::ids::SymbolId::new(line).unwrap()];
+    assert_eq!(symbol.ty, Type::String);
+    let _ = BlockId::new("main").unwrap();
+}
+
+#[test]
+fn the_line_is_visible_in_the_body_only_and_cannot_be_changed() {
+    // After the loop, and in the part for a file that can't be opened.
+    let a = run_main(vec![
+        file_lines(
+            "line",
+            e("\"poem.txt\""),
+            vec![],
+            Some(vec![print(vec![e("line")])]),
+        ),
+        print(vec![e("line")]),
+    ]);
+    let outside = "`line` belongs to the loop that creates it and only exists inside that loop.";
+    assert_eq!(
+        reported(&a),
+        [
+            format!("error B2C-E0203 at b0001 ITEM0[0..1]: {outside}"),
+            format!("error B2C-E0203 at b0003 ITEM0[0..1]: {outside}"),
+        ]
+    );
+    let a = run_main(vec![file_lines(
+        "line",
+        e("\"poem.txt\""),
+        vec![set("line", e("\"x\""))],
+        None,
+    )]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0308 at b0004 field VAR: `line` is read-only: it holds the line just read from the file, \
+          and the blocks inside the loop can't change it. Create a variable set to it to change a copy."
+        ]
+    );
+}
+
+#[test]
+fn the_path_is_text_and_file_loops_nest() {
+    let a = run_main(vec![file_lines("line", e("42"), vec![], None)]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0301 at b0001 PATH[0..1]: This is a whole number, but this block needs text or a character."
+        ]
+    );
+    let a = run_main(vec![
+        declare("std::string", "name", Some(e("\"words.txt\""))),
+        file_lines(
+            "line",
+            e("name"),
+            vec![file_lines("word", e("line"), vec![print(vec![e("word")])], None)],
+            None,
+        ),
+    ]);
+    assert_clean(&a);
+}
+
+#[test]
+fn a_file_loop_without_a_name_for_its_line_is_incomplete() {
+    let mut block = file_lines("line", e("\"poem.txt\""), vec![], None);
+    block["fields"] = json!({});
+    let a = run_main(vec![block]);
+    assert_eq!(
+        reported(&a),
+        ["error B2C-E0430 at b0001 field LINE: This 'for each line' loop needs a name for its line."]
+    );
+}

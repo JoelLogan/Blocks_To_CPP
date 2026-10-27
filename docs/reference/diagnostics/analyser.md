@@ -890,6 +890,10 @@ Codes by area:
   and forgotten here.
 * **Example:** a switch on an `Action` with cases for `Add` and `Quit` but not
   `List`.
+* **Message:** "This switch on `Action` has no case for `List`, and no default
+  part, so for that value none of its parts runs. Add a case for each value,
+  or a default part." The generated code then gets an empty `default` part,
+  so g++ does not warn as well.
 * **How to fix:** add the missing cases, or a `default` part.
 
 ## B2C-W0510 Whole-number division where a decimal is expected
