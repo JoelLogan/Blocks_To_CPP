@@ -371,6 +371,33 @@ export interface FlyoutScrollAnchor {
 }
 
 /**
+ * A copy of a block's saved state without the IDs of the block and of the blocks and shadows in
+ * its inputs and after it. A shadow's state is the one its connection keeps (Blockly saves it with
+ * its ID whatever it is asked), so the state is copied, never changed.
+ */
+export function withoutIds(
+  state: Blockly.serialization.blocks.State,
+): Blockly.serialization.blocks.State {
+  const connection = (
+    held: Blockly.serialization.blocks.ConnectionState,
+  ): Blockly.serialization.blocks.ConnectionState => ({
+    ...(held.shadow === undefined ? {} : { shadow: withoutIds(held.shadow) }),
+    ...(held.block === undefined ? {} : { block: withoutIds(held.block) }),
+  });
+  const copy: Blockly.serialization.blocks.State = { ...state };
+  delete copy.id;
+  if (state.inputs !== undefined) {
+    copy.inputs = Object.fromEntries(
+      Object.entries(state.inputs).map(([name, held]) => [name, connection(held)]),
+    );
+  }
+  if (state.next !== undefined) {
+    copy.next = connection(state.next);
+  }
+  return copy;
+}
+
+/**
  * The continuous flyout, keeping its toolbox blocks across showings (./inflater.ts) instead of the
  * plugin's block recycling, without its scroll animation on request, landing on a chosen category
  * at every zoom level, keeping the category in view when its contents are shown again, with a
@@ -784,6 +811,19 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
     const block = super.createBlock(original);
     noteCreatedFromToolbox(original, block);
     return block;
+  }
+
+  /**
+   * The state a block taken out of this flyout is created from on the canvas: Blockly's, without
+   * the IDs of the block and of the blocks and shadows in it, so they all get IDs of their own.
+   * Blockly copies the flyout block's IDs, which the canvas takes while they are free there; a
+   * flyout block is kept from one showing to the next (./inflater.ts), so it would go on sharing
+   * its IDs with the block taken from it, and whatever looks a block up by ID on the canvas and in
+   * the flyout alike (the end-to-end tests' hooks, ../../e2e/locate.ts) would find the canvas's
+   * block for the flyout's.
+   */
+  protected override serializeBlock(block: Blockly.BlockSvg): Blockly.serialization.blocks.State {
+    return withoutIds(super.serializeBlock(block));
   }
 
   /**

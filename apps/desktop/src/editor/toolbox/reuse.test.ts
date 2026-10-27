@@ -589,6 +589,34 @@ describe('a block changed in the flyout', () => {
   });
 });
 
+describe('a block taken out of the flyout', () => {
+  it('gets IDs of its own, which the kept flyout block does not share', async () => {
+    const workspace = attached();
+    await settle();
+    const flyout = workspace.getFlyout();
+    if (!(flyout instanceof B2cContinuousFlyout)) {
+      throw new Error('not the continuous flyout');
+    }
+    // A block with a block in it: print's item holds a text shadow.
+    const original = flyoutBlocks(workspace).find((block) => block.type === 'io.print');
+    if (original === undefined) {
+      throw new Error('no print block in the flyout');
+    }
+    const flyoutIds = new Set(original.getDescendants(false).map((block) => block.id));
+    const created = flyout.createBlock(original);
+    const createdIds = created.getDescendants(false).map((block) => block.id);
+    expect(createdIds.length).toBe(flyoutIds.size);
+    expect(createdIds.filter((id) => flyoutIds.has(id))).toEqual([]);
+    // The canvas changed: the next showing keeps the print block, IDs and all.
+    await settle();
+    continuousToolbox(workspace).showAllCategories();
+    expect(flyoutBlocks(workspace)).toContain(original);
+    for (const id of flyoutIds) {
+      expect(workspace.getBlockById(id)).toBeNull();
+    }
+  });
+});
+
 describe('a kept block', () => {
   it('has its pointer listeners once, however often it was kept', async () => {
     const workspace = attached();
