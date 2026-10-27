@@ -365,3 +365,84 @@ format 2) is W2's and W4's; the dialog leaves room for it.
 | W3-D7 | Close-input on Windows with a partly typed line | Accept that the line arrives with a line break (Linux: without) |
 | W3-D8 | Project settings as a page or a modal dialog | A page, as built (the spec says dialog); a modal can follow if usability tests ask for one |
 | W3-D9 | Linux terminals with a server process (`gnome-terminal`) | Used last, with `--wait`; the program then runs outside the app's containment, which the contract states |
+
+## 13. Status
+
+### Done
+
+* **Close-input** (§1): `PtyWriter::close_input` in `b2c-process` (pipes,
+  Linux PTY, `ConPTY`), `RunSessions::close_input`, `run_close_input`,
+  `inputClosed`; the console's _End input_ button and `Ctrl+D` with pipes.
+  Tested on Linux (PTY and pipes) and on Windows (`ConPTY` and pipes) in CI.
+* **S7-8, S7-7, S7-5** (§2): open-ended `g++-N` discovery; sandbox folders
+  held by a shared lock while a program runs and pruned at start-up under an
+  exclusive one; `run_start` reuses the build's analysis
+  (`BuildRecord.analysed_with`).
+* **Run options** (§3): arguments and working folder in the project; the
+  input file per project for the app session (`run_input_file`, native
+  dialog); the external terminal as `run.externalTerminal` in
+  `settings.json` (new console window on Windows, a terminal from a fixed
+  list on Linux), on the Settings page and the project settings page.
+* **Export** (§4): `b2c-build::export`, `b2c generate --export [--replace]`,
+  `project_export_dialog` and _Export as C++ project…_; `tests/export.rs`
+  builds four examples with `make` (debug and release) and two with
+  `cmake`, and compares their output with the golden run data.
+* **Project settings** (§5): a page (W3-D8), saved as one edit.
+* A review of the whole branch found, and this branch fixed: text defines
+  that CMake or make cannot pass (now refused with `B2C-T1019`), a
+  replacement export writing over a file the earlier export did not list,
+  `x-terminal-emulator` standing for a terminal with a server process
+  (`tilix`, `terminator`), and input to a program that reads none.
+
+### Not done, and why
+
+* No E2E flow for _End input_, the input file or the external terminal; the
+  Rust tests cover the three on both systems, and the console's button and
+  the pages have Vitest tests. An E2E flow can follow with W5's sweep.
+* Known limits, kept as they are: on Windows the external window closes at
+  once after a crash or `abort` (the key wait is an `atexit` handler of the
+  IDE init unit); the input file is keyed by project ID, so two open copies
+  of one project share it; the exported Makefile quotes defines for a POSIX
+  shell (MSYS2's `make` uses one; `cmd.exe` does not).
+* The WebAssembly core was built locally without `wasm-opt`
+  (`B2C_SKIP_WASM_OPT=1`): this container has binaryen 108, not CI's 133.
+
+### CI on the branch head
+
+* CI (Rust on Linux and Windows, including `ConPTY` close-input): green on
+  the first push; the Windows run of `b5afb1b` failed only in
+  `close_input_ends_a_programs_input`, where `ConPTY` put a title sequence
+  inside the checked line; fixed by comparing text without control
+  sequences.
+* Desktop: Vitest failed on `b5afb1b` only on the isolation tests' command
+  count (fixed). E2E flows pass on Linux and Windows. The visual diff fails:
+  * `chrome-menu-open` (Linux, Windows) and `chrome-menu-open-dark` (Linux):
+    **this branch**, the menu's two new items (_Project settings…_,
+    _Export as C++ project…_). Baselines not updated, as asked.
+  * `chrome-toolbox-*` scenes: the branch's merge base (`df4b4f5`) predates
+    W2's new toolbox baselines (`8cbdb24`); not this branch's.
+  * `canvas-guessing-game` (Windows): red on the base branch too.
+* OSV-Scanner: red before this branch; no lockfile changed here.
+
+### Merge notes
+
+* Expected conflicts: the generated IPC files (`packages/ipc-types`
+  generated files, `apps/desktop/src-tauri/isolation/allowlist.generated.js`,
+  `isolation-tests/samples.generated.json`, the permissions and the
+  capability, `crates/b2c-ipc/tests/snapshots/*`) and the command and error
+  counts (`crates/b2c-ipc/tests/schema.rs`,
+  `apps/desktop/src-tauri/tests/consistency.rs`,
+  `packages/ipc-types/src/client.test.ts`,
+  `apps/desktop/src-tauri/isolation-tests/{index,validate}.test.js`) if
+  another wave adds commands: regenerate with `B2C_UPDATE_IPC=1` and add
+  the counts.
+* Files touched outside this contract's own list: `clippy.toml` (`CMake`
+  as a doc identifier), `docs/manual-tests/m2-toolchains.md`,
+  `docs/reference/cli.md`, `docs/reference/diagnostics/toolchain.md`,
+  `apps/desktop/e2e/support/app.ts`, `apps/desktop/src-tauri/src/{lib.rs,
+  dialogs.rs, e2e.rs}`, `apps/desktop/src/app/{App.tsx, commands.ts,
+  editor-types.ts, panels.tsx, layout/MainMenu.tsx, store/state.ts,
+  testing/fixtures.ts}` and three of its tests,
+  `apps/desktop/src/editor/sync/session.ts`, `apps/desktop/src/features/index.ts`,
+  `apps/desktop/src/features/settings/*`, `apps/desktop/src/panels/console/*`.
+  No W2-owned path was changed.
