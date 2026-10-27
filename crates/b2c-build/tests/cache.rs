@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime};
 
 use b2c_build::cache::{
     CacheError, ClearReport, EvictionPolicy, EvictionReport, clear, evict_to_cap, evict_to_cap_keeping,
-    hold_for_run, prune_and_evict, prune_and_evict_keeping, usage,
+    hold_for_run, hold_sandbox, prune_and_evict, prune_and_evict_keeping, prune_sandboxes, usage,
 };
 use proptest::prelude::*;
 use tempfile::TempDir;
@@ -720,4 +720,113 @@ proptest! {
             prop_assert!(after + bytes > cap);
         }
     }
+}
+
+/// Plants `sandbox/<name>/` holding `scores.txt`, with its lock file last
+/// touched `age` before `cache.now` (or no lock file, the folder itself that
+/// old, when `with_lock` is false).
+fn plant_sandbox(cache: &Cache, name: &str, age: Duration, with_lock: bool) -> PathBuf {
+    let sandbox = cache.root().join("sandbox").join(name);
+    fs::create_dir_all(&sandbox).unwrap();
+    fs::write(sandbox.join("scores.txt"), "42").unwrap();
+    if with_lock {
+        let lock = File::create(sandbox.with_file_name(format!("{name}.lock"))).unwrap();
+        lock.set_modified(cache.now - age).unwrap();
+    } else {
+        File::open(&sandbox)
+            .and_then(|dir| dir.set_modified(cache.now - age))
+            .ok();
+    }
+    sandbox
+}
+
+#[test]
+fn sandboxes_unused_for_30_days_are_pruned() {
+    let cache = Cache::new();
+    let old = plant_sandbox(&cache, "prj_old-00000001", 31 * DAY, true);
+    let recent = plant_sandbox(&cache, "prj_new-00000002", 2 * DAY, true);
+    let report = prune_sandboxes(cache.root(), 30 * DAY, cache.now).unwrap();
+    assert_eq!(report.removed, 1);
+    assert_eq!(report.freed_bytes, 2);
+    assert!(!exists(&old));
+    assert!(!exists(&old.with_file_name("prj_old-00000001.lock")));
+    assert_eq!(fs::read_to_string(recent.join("scores.txt")).unwrap(), "42");
+    // The build cache's functions never touch sandboxes.
+    cache.entry("prj_new-00000002", "debug-00000001", 10, 40 * DAY);
+    clear(cache.root()).unwrap();
+    assert!(exists(&recent.join("scores.txt")));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_sandbox_without_a_lock_counts_from_its_folder() {
+    let cache = Cache::new();
+    let old = plant_sandbox(&cache, "prj_old-00000001", 40 * DAY, false);
+    let recent = plant_sandbox(&cache, "prj_new-00000002", DAY, false);
+    let report = prune_sandboxes(cache.root(), 30 * DAY, cache.now).unwrap();
+    assert_eq!(report.removed, 1);
+    assert!(!exists(&old));
+    assert!(exists(&recent));
+}
+
+#[test]
+fn a_sandbox_a_program_runs_in_is_kept() {
+    let cache = Cache::new();
+    let sandbox = plant_sandbox(&cache, "prj_a-00000001", 45 * DAY, true);
+    let before = SystemTime::now();
+    let hold = hold_sandbox(&sandbox).unwrap();
+    // Touched: no longer 45 days old.
+    assert!(modified(&sandbox.with_file_name("prj_a-00000001.lock")) >= before - Duration::from_secs(2));
+    let report = prune_sandboxes(cache.root(), 30 * DAY, cache.now + 60 * DAY).unwrap();
+    assert_eq!(report.removed, 0);
+    assert_eq!(report.skipped_locked, 1);
+    assert!(exists(&sandbox.join("scores.txt")));
+    drop(hold);
+    let report = prune_sandboxes(cache.root(), 30 * DAY, cache.now + 60 * DAY).unwrap();
+    assert_eq!(report.removed, 1);
+    assert!(!exists(&sandbox));
+}
+
+#[test]
+fn holding_a_sandbox_makes_it_again_and_checks_its_input() {
+    let cache = Cache::new();
+    let sandbox = cache.root().join("sandbox").join("prj_a-00000001");
+    fs::create_dir_all(sandbox.parent().unwrap()).unwrap();
+    // The folder was pruned (or never made): the hold makes it.
+    let hold = hold_sandbox(&sandbox).unwrap();
+    assert!(sandbox.is_dir());
+    drop(hold);
+    let error = hold_sandbox(Path::new("sandbox/prj_a-00000001")).unwrap_err();
+    assert_eq!(cache_error(&error), Some(CacheError::RelativePath));
+    fs::write(cache.root().join("sandbox").join("prj_b-00000002"), "x").unwrap();
+    let error = hold_sandbox(&cache.root().join("sandbox").join("prj_b-00000002")).unwrap_err();
+    assert_eq!(
+        cache_error(&error),
+        Some(CacheError::NotAFolder("sandbox folder"))
+    );
+}
+
+#[test]
+fn links_in_the_sandbox_folder_are_removed_as_links() {
+    let cache = Cache::new();
+    let outside = Outside::new();
+    fs::create_dir_all(cache.root().join("sandbox")).unwrap();
+    let link = cache.root().join("sandbox").join("prj_x-00000001");
+    link_dir(&outside.path().join("sub"), &link);
+    prune_sandboxes(cache.root(), 30 * DAY, cache.now + 60 * DAY).unwrap();
+    assert!(!exists(&link));
+    outside.assert_untouched();
+}
+
+#[test]
+fn a_sandbox_folder_that_is_a_link_is_refused() {
+    let cache = Cache::new();
+    let outside = Outside::new();
+    link_dir(&outside.path().join("sub"), &cache.root().join("sandbox"));
+    let error = prune_sandboxes(cache.root(), 30 * DAY, cache.now + 60 * DAY).unwrap_err();
+    assert_eq!(
+        cache_error(&error),
+        Some(CacheError::NotAFolder("sandbox folder"))
+    );
+    outside.assert_untouched();
 }

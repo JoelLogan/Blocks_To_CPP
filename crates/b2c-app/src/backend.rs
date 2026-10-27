@@ -411,8 +411,9 @@ impl Backend {
     }
 
     /// Startup maintenance on a background thread: containment detection
-    /// (which can take seconds), stale cgroup scopes of crashed instances, and
-    /// the 30-day prune and size-cap eviction of the build cache
+    /// (which can take seconds), stale cgroup scopes of crashed instances, the
+    /// 30-day prune of sandbox folders, and the 30-day prune and size-cap
+    /// eviction of the build cache
     /// (`docs/spec/07-toolchain-build-run.md` §7.5.1, `docs/spec/08-security.md`
     /// §8.14).
     fn start_maintenance(self: &Arc<Self>) {
@@ -434,6 +435,14 @@ impl Backend {
                         "build cache pruned"
                     ),
                     Err(error) => tracing::warn!(%error, "build cache pruning failed"),
+                }
+                match cache::prune_sandboxes(&cache_root, cache::DEFAULT_MAX_AGE, SystemTime::now()) {
+                    Ok(report) => tracing::info!(
+                        removed = report.removed,
+                        freed_bytes = report.freed_bytes,
+                        "sandbox folders pruned"
+                    ),
+                    Err(error) => tracing::warn!(%error, "sandbox pruning failed"),
                 }
             });
         if let Err(error) = spawned {

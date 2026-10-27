@@ -168,10 +168,17 @@ fn a_new_project_builds_and_runs_in_its_sandbox() {
     assert_eq!(exit_status(&all), ExitStatus::Exited { code: 0 });
     let text = String::from_utf8_lossy(&output.concat()).into_owned();
     assert!(text.contains("Hello, world!"), "{text:?}");
-    // A project that was never saved runs in its sandbox folder.
+    // A project that was never saved runs in its sandbox folder, whose lock
+    // file lies next to it and marks it used.
     let sandbox = app.dirs.sandbox();
-    let folders: Vec<_> = std::fs::read_dir(&sandbox).unwrap().collect();
-    assert_eq!(folders.len(), 1);
+    let mut names: Vec<String> = std::fs::read_dir(&sandbox)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert!(std::path::Path::new(&sandbox).join(&names[0]).is_dir(), "{names:?}");
+    assert_eq!(names[1], format!("{}.lock", names[0]));
     // A second build of the same content is up to date.
     let (_, again, _) = build(&app, &created.handle, &created.document);
     assert_eq!(again, BuildOutcome::UpToDate);

@@ -106,6 +106,10 @@ pub struct RunSpec {
     /// kept until the program has ended so eviction and *Clear build cache*
     /// leave the folder alone.
     pub hold: Option<RunHold>,
+    /// The program's claim on its sandbox folder when it runs in one
+    /// ([`crate::cache::hold_sandbox`]), kept until it has ended so the
+    /// sandbox is not pruned under it.
+    pub sandbox_hold: Option<RunHold>,
 }
 
 impl fmt::Debug for RunSpec {
@@ -121,6 +125,7 @@ impl fmt::Debug for RunSpec {
             .field("ide_helpers", &self.ide_helpers)
             .field("prefer_pty", &self.prefer_pty)
             .field("hold", &self.hold.is_some())
+            .field("sandbox_hold", &self.sandbox_hold.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -213,6 +218,7 @@ struct Run {
     /// Whether the `exit` event has been sent.
     done: AtomicBool,
     hold: Mutex<Option<RunHold>>,
+    sandbox_hold: Mutex<Option<RunHold>>,
 }
 
 impl fmt::Debug for Run {
@@ -242,6 +248,7 @@ impl Run {
         self.done.store(true, Ordering::Release);
         lock(&self.input).take();
         lock(&self.hold).take();
+        lock(&self.sandbox_hold).take();
     }
 }
 
@@ -318,6 +325,7 @@ impl RunSessions {
             acked: AtomicU64::new(0),
             done: AtomicBool::new(false),
             hold: Mutex::new(spec.hold),
+            sandbox_hold: Mutex::new(spec.sandbox_hold),
         });
         let span = tracing::info_span!(
             "run",

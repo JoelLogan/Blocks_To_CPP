@@ -265,6 +265,7 @@ fn spec(program: &Path, args: &[&str]) -> RunSpec {
         ide_helpers: false,
         prefer_pty: true,
         hold: None,
+        sandbox_hold: None,
     }
 }
 

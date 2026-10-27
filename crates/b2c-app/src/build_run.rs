@@ -271,16 +271,24 @@ impl Backend {
         if self.is_shut_down() {
             return Err(IpcError::Internal);
         }
-        let working_dir = match (built.project.run.working_directory, project_path) {
+        let (working_dir, sandbox_hold) = match (built.project.run.working_directory, project_path) {
             (WorkingDirectory::Project, Some(path)) => {
-                path.parent().map(PathBuf::from).ok_or(IpcError::Internal)?
+                (path.parent().map(PathBuf::from).ok_or(IpcError::Internal)?, None)
             }
-            _ => sandbox_dir(self.cache_root(), &built.project.id).map_err(|error| {
-                tracing::debug!(%error, "cannot prepare the sandbox folder");
-                IpcError::Io {
-                    kind: b2c_ipc::IoKind::Other,
-                }
-            })?,
+            _ => {
+                let sandbox_error = |error: &dyn std::fmt::Display| {
+                    tracing::debug!(%error, "cannot prepare the sandbox folder");
+                    IpcError::Io {
+                        kind: b2c_ipc::IoKind::Other,
+                    }
+                };
+                let dir = sandbox_dir(self.cache_root(), &built.project.id)
+                    .map_err(|error| sandbox_error(&error))?;
+                // Marks the sandbox used, so startup pruning leaves it alone
+                // while the program runs (and for 30 days after).
+                let hold = cache::hold_sandbox(&dir).map_err(|error| sandbox_error(&error))?;
+                (dir, Some(hold))
+            }
         };
         let env = run_environment(
             std::env::vars_os(),
@@ -305,6 +313,7 @@ impl Backend {
             ide_helpers: record.ide,
             prefer_pty: true,
             hold,
+            sandbox_hold,
         };
         let run_id = self.runs.start(spec, output, events)?;
         if let Err(error) = self.still_open(&handle, IpcError::UnknownBuild) {
