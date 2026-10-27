@@ -19,10 +19,17 @@ import { By, type WebElement } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
 
 import { type BlockNode, moduleNodes, NodeIds, type ProjectDocument } from '../../support/bdm';
-import { bringIntoView } from '../../support/canvas';
-import { centerOn, currentDocument, fieldOf, foldCodePanel } from '../../support/editor';
+import { bringIntoView, visibleCanvas } from '../../support/canvas';
+import { drag } from '../../support/drag';
+import {
+  centerOn,
+  currentDocument,
+  fieldOf,
+  foldCodePanel,
+  grabPointOf,
+} from '../../support/editor';
 import { clickMiddle, middleOf, textContent, typeIntoField } from '../../support/ui';
-import { waitFor } from '../../support/wait';
+import { sleep, waitFor } from '../../support/wait';
 import { closeMenu, dropOnCanvas, menuLabels } from './lib/editor';
 import { type FlowApp, startFlow } from './lib/launch';
 import { newEmptyProject } from './lib/project';
@@ -126,6 +133,62 @@ async function clickAdd(app: FlowApp, id: string): Promise<void> {
   await clickMiddle(app.driver, await findAddButton(app, id));
 }
 
+/** A block's SVG group on the page, its nested blocks' included, in viewport pixels. */
+async function blockBox(
+  app: FlowApp,
+  id: string,
+): Promise<{ left: number; top: number; right: number; bottom: number }> {
+  const group = await app.hook.blockElement(id);
+  if (group === null) {
+    throw new Error(`block ${id} is not on the canvas`);
+  }
+  // WebKitWebDriver gives no rectangle for an SVG group: the page measures it.
+  const box: unknown = await app.driver.executeScript(
+    'const r = arguments[0].getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom];',
+    group,
+  );
+  if (!Array.isArray(box) || box.length !== 4 || !box.every((n) => typeof n === 'number')) {
+    throw new Error(`block ${id} has no box on the page`);
+  }
+  const [left, top, right, bottom] = box as [number, number, number, number];
+  return { left, top, right, bottom };
+}
+
+/** The most drags {@link moveBelow} makes before it gives up. */
+const MAX_MOVES = 6;
+
+/**
+ * Drags the definition `id` below block `other` while the two overlap, with real pointer input. In
+ * a small window (800 × 560) the definition is dropped just below the empty `main`, which then grows
+ * over it when the test puts statements in it, and a click on those statements lands on the
+ * definition. Each drag starts with the definition's grab point near the top of the visible canvas
+ * and goes down as far as the canvas shows.
+ */
+async function moveBelow(app: FlowApp, id: string, other: string): Promise<void> {
+  for (let move = 0; move < MAX_MOVES; move += 1) {
+    const block = await blockBox(app, id);
+    const below = await blockBox(app, other);
+    if (
+      block.right <= below.left ||
+      below.right <= block.left ||
+      block.bottom <= below.top ||
+      below.bottom <= block.top
+    ) {
+      return;
+    }
+    const rect = await visibleCanvas(app.driver);
+    const start = await grabPointOf(app, id);
+    await app.hook.scrollCanvasBy(0, Math.round(rect.top + 60 - start.y));
+    await sleep(100);
+    const grab = await grabPointOf(app, id);
+    const room = rect.bottom - 60 - grab.y;
+    const needed = below.bottom - block.top + 24;
+    await drag(app.driver, grab, { x: grab.x, y: grab.y + Math.max(16, Math.min(room, needed)) });
+    await sleep(400);
+  }
+  throw new Error(`block ${id} still overlaps block ${other}`);
+}
+
 /** The text a block's SVG group shows, its nested blocks' included. */
 async function blockText(app: FlowApp, id: string): Promise<string> {
   const group = await app.hook.blockElement(id);
@@ -183,6 +246,7 @@ describe('Structs and enums', () => {
       inputs: { ITEM0: { block: read } },
     };
     await app.hook.insertBlocks(mainId, 'BODY', [create, print]);
+    await moveBelow(app, struct.id, mainId);
 
     // new … with offers ⊕ until it has a part for each field, each labelled by its field.
     await clickAdd(app, made.id);
@@ -272,6 +336,7 @@ describe('Structs and enums', () => {
       inputs: { ITEM0: { block: value } },
     };
     await app.hook.insertBlocks(mainId, 'BODY', [colour, count, print]);
+    await moveBelow(app, definition.id, mainId);
 
     // Its value menu lists the enum's values only, not the variables in scope.
     const menuOf = async (field: string, expected: string): Promise<string[]> =>
