@@ -1,0 +1,343 @@
+# M3 contracts: W5's first item, the worker spike and M3-1's first part
+
+What wave W5 starts with ([next steps §3.4](../next-steps.md#34-waves)):
+the spike that [ADR-0016](../../adr/0016-preview-in-a-web-worker.md) §2
+asks for before anything else ("Verify first"), and then the parts of
+M3-1 (the preview in a Web Worker) that do not depend on W2's blocks. It
+refines [worker.md](worker.md) for what the spike found; where the two
+differ, §9 proposes the correction to worker.md, and worker.md itself is
+not rewritten here. If this file and the ADR disagree, the ADR wins.
+
+Written on 2026-10-27 from `df4b4f5` of `ccr-01f82d9b-v70u20`, on the
+branch `m3/w5-worker-spike`, while W2 builds the language blocks on the
+coordinating branch.
+
+## 1. Scope
+
+**In:**
+
+1. **The spike** (ADR-0016 §2, items a to d): a dedicated module worker
+   starts from the app's origin on WebKitGTK (`tauri://localhost`) and on
+   WebView2 (`http://tauri.localhost`); the page's compiled
+   `WebAssembly.Module` can be posted to it; which policy it runs under
+   (the probe of ADR-0016 §6); what the Trusted Types trial reports for
+   `new Worker` with and without the `b2c-core-worker` policy. Measured on
+   Linux at 1,000 blocks: the worker's start-up, a preview's round trip
+   through `postMessage` against the main-thread call, and the
+   structured-clone cost of the largest messages. Windows is proved by the
+   E2E job of `desktop.yml` on this branch, which runs the same check.
+2. **M3-1, the parts that need nothing from W2:** building and loading the
+   worker (worker.md §2), the message protocol and its validation (§3), the
+   client and the host (§3), the service wrapper with its fallback to the
+   main thread (§6), the worker's policy in the backend (§2), the Trusted
+   Types policy (§2), the frozen prototype and the probe (§2), and their
+   tests (§8). Behind a build flag that stays off (§4).
+
+**Out, and why:**
+
+* **The scope index** (worker.md §4): it needs
+  `Analysis::scope_index_parts()` in `crates/b2c-lang`, which W2 owns, and
+  a `scope_index()` export of `crates/b2c-core-wasm` whose content W2's
+  blocks change (new symbol kinds, members). The protocol carries
+  `scopeJson` already; the worker sends `null` until the export exists.
+  So `AnalysisState.scope` and `analysisScope` reading the index
+  (`services/symbols.ts`, W2's) wait too.
+* **The clipboard arguments** (worker.md §5): new arguments of
+  `clipboard_make` and `paste_prepare`, which depend on the index, and the
+  spike's copy, paste and duplicate measurements, which only mean something
+  with W2's blocks in the documents. The Rust API of `b2c-core-wasm` stays
+  unchanged here.
+* **The pipeline's full apply rule and the drag hold** (worker.md §6): this
+  branch adds the half of the apply rule that keeps an answer from undoing
+  a rename or an adopted save (§5.4); the rest (an older answer applied
+  while a newer run waits, the hold during a pointer drag, `release()`)
+  belongs with switching the flag on, because only then can an answer
+  arrive in another task than its read.
+* **The benchmarks' metrics** (worker.md §9) and **the specification**
+  (worker.md §11, `docs/spec/` is W2's while W2 runs): §10.
+
+## 2. The spike
+
+### 2.1 What runs
+
+The check is an E2E-build-only part of the test hook
+(`apps/desktop/src/e2e/workerCheck.ts`), started with
+`startWorkerCheck(rounds)` and polled with `workerCheck()` (a hook call
+cannot wait for a promise on every driver). On the open project it:
+
+1. creates a worker from the plain string URL, without the Trusted Types
+   policy, terminates it, and counts the page's new violations;
+2. creates the app's worker through the `b2c-core-worker` policy with the
+   client of §5.2 (the page's compiled `Module` posted in `start`; the
+   worker's core version must equal the main instance's) and times it
+   until `started`; counts the page's new violations;
+3. runs the project's `update()` in the worker and on the main thread and
+   compares the two answers (JSON of the parsed results);
+4. runs `rounds` more updates through the worker, timing each round trip
+   (from posting to the parsed answer, on the page's clock) and `update()`
+   alone in the worker, and the same `update()` on the main thread;
+5. times `structuredClone` of the update request (the document) and of its
+   reply (the core's answer), the median of five;
+6. asks the worker's probe whether `eval('1')` ran and whether a request to
+   `http://ipc.localhost/` was blocked by its policy.
+
+The E2E spec `e2e/specs/flows/preview-worker.e2e.ts` runs it on the
+guessing game (3 rounds; every check must hold) and on the benchmarks'
+1,000-block document (20 rounds; the numbers go to standard output). Both
+run in the PR job on Linux and Windows, so Windows is checked on every push.
+
+### 2.2 Verdict and numbers
+
+Filled in from the runs (§11 has their commits and jobs).
+
+## 3. Design
+
+### 3.1 Where the code lives
+
+As worker.md §7 has it, with two refinements:
+
+* **A package entry of its own.** `@blocks2cpp/b2c-core-wasm/worker`
+  (`src/worker/index.ts`) exports the protocol, the client and the host.
+  The worker imports only it; nothing it reaches imports `#pkg-bytes`
+  (`src/instance.ts` holds `instantiate`, moved out of `loader.ts`), so
+  the worker's bundle never holds the embedded bytes. *Alternative:* the
+  worker imports the package's main entry and relies on tree-shaking to
+  drop the loader. Rejected: `loader.ts`'s dynamic import of `#pkg-bytes`
+  would still be a chunk of the worker's build.
+* **Raw calls.** The worker posts the core's JSON unparsed (worker.md §3).
+  `createCore` now returns, beside the `CoreWasm`, a `RawCore` with
+  `version()` and `update(documentJson, optionsJson)` that return the
+  core's text with the same bounds and trap handling; `parseUpdate` and
+  `parseVersion` are the parses `CoreWasm` uses, exported for the client.
+  `CoreWasm` itself is unchanged.
+
+### 3.2 Building and loading
+
+* `apps/desktop/vite.config.ts`: `worker.format: 'es'` and the worker
+  build's entry, chunk and asset names under `workers/`. Vite 8.3.4 emits
+  `workers/core.worker-<hash>.js` and `workers/glue-<hash>.js` (the glue is
+  a dynamic import of `instance.ts`); neither holds `WASM_BASE64` or
+  `@tauri-apps` code.
+* `src/editor/preview/worker/core.worker.ts` imports `./freeze` first, then
+  serves the protocol; the probe (`./probe.ts`) is passed only when
+  `import.meta.env.MODE === 'e2e'`, and the release build leaves it out.
+* `src/editor/preview/worker/spawn.ts` creates the worker from
+  `core.worker.ts?worker&url` made absolute against `document.baseURI`,
+  through `coreWorkerScriptUrl` of `src/lib/trustedTypes.ts`: the
+  `b2c-core-worker` policy, created once, only when `globalThis.trustedTypes`
+  exists, accepting exactly that URL.
+* `apps/desktop/src-tauri/src/window.rs`: `WORKER_CSP` and
+  `add_worker_csp`, called from the same `on_web_resource_request` handler
+  as the Trusted Types header: added to app responses under `/workers/`
+  whose type is `text/javascript` or `application/javascript`, never twice,
+  keeping a policy already there.
+
+### 3.3 The protocol
+
+As worker.md §3. The checks (`parseRequest`, `parseReply`): a
+structured-cloned plain object (its prototype `Object.prototype` or none)
+with `p: 1`, a known `kind` and exactly that kind's keys, each of the right
+type: IDs positive safe integers, times finite and not negative, messages
+at most 512 characters, a probe's directives at most 32 names of the
+collector's form, `module` a `WebAssembly.Module`. An extra key is a
+protocol error too, so nothing unexpected crosses unnoticed.
+
+The host chains requests, so a `probe` or an `update` that arrives while it
+replaces a trapped instance waits for it. After a trap it instantiates a
+fresh instance from its `Module` first and then replies `trapped`; when that
+fails it replies `startFailed`, which the client treats as a failed start.
+Its log lines name no project text, only the error's name and message from
+the runtime.
+
+### 3.4 The client
+
+`createCoreWorkerClient` as worker.md §3, with an `acceptVersion` option
+(the page passes "equal to the main instance's `version()`"; a mismatch is
+a protocol error, so a stale worker script fails three starts and the
+preview falls back) and a `log` option. Two cases worker.md leaves open:
+
+* **A webview that cannot post a `Module`.** `postMessage` throws a
+  `DataCloneError` at once; that cannot change by retrying, so the client
+  fails at once (no three attempts) and the service falls back.
+* **The page's own compile fails.** The main instance fails the same way
+  and reports it; the client fails at once.
+
+`update` resolves `null` for a request a newer one replaced and after
+`dispose()`; it rejects `CoreTrap` for a trap or a replacement while the
+request ran, `CoreError` for an error envelope, and `CoreError` (`init`)
+once the client has failed. `WorkerUpdate` carries `scopeJson` unparsed
+until `ScopeIndex` exists (§1).
+
+### 3.5 The service and the pipeline
+
+`PreviewService` becomes worker.md §6's interface: `update` resolves a
+`PreviewAnswer` (the result, the index, the timing) or `null`, `thread()`
+says where the next update runs, and `recover()` gets a fresh instance
+after a `CoreTrap`. `mainThreadPreviewService` keeps M2's behaviour (with
+`recover()` = `host.restart()`). `workerPreviewService`
+(`preview/workerService.ts`):
+
+* runs updates on the main instance until its client's first `started`,
+  and starts the client after the first main-thread update, so a project's
+  first preview and the cold start do not wait for it;
+* runs them in the worker once it has started, also while it is replaced;
+* falls back to the main instance for good when the client fails, logging
+  once, with no banner (ADR-0016 owner point 4);
+* `recover()`: after a trap in the worker, waits for the worker (it has
+  replaced its own instance, or the client is starting a new worker), and
+  never restarts one; after a trap on the main instance, `host.restart()`.
+
+The pipeline (`preview/pipeline.ts`) takes `null` as an overtaken run,
+calls `service.recover()` instead of `host.restart()` before the retry, and
+applies an answer only when the project's document is still the one the
+run read or the one the pipeline's last commit wrote (§5.4).
+
+## 4. The flag
+
+**A build flag, `B2C_PREVIEW_WORKER`, off.** `vite.config.ts` turns the
+environment variable `B2C_PREVIEW_WORKER=1` at build time into
+`import.meta.env.B2C_PREVIEW_WORKER`, which the editor reads to pick
+`workerPreviewService` instead of the main-thread service. Every build in
+CI, and every shipped build, leaves it off; the worker's script is still
+built and served (it is what the spike's E2E check loads).
+
+Why a build flag and not a setting:
+
+* A setting is user-visible and lives in `settings.json` (the IPC
+  contract, `crates/b2c-ipc`, regenerated types, a format to migrate);
+  this switch exists only until the worker is integrated, and nobody but a
+  developer should turn it on before then.
+* Off is the M2 code path, unchanged, so W2's blocks are integrated on a
+  main thread whose behaviour is known.
+* Until the rest of the apply rule and the drag hold land (§1), an answer
+  from the worker could arrive while a block is being dragged. The flag
+  must stay off in shipped builds until then; W5's integration step after
+  W2 removes the flag and makes the worker the default.
+
+## 5. Changes
+
+### 5.1 Files this branch owns
+
+| Path | What |
+| --- | --- |
+| `packages/b2c-core-wasm/src/instance.ts` (new) | `instantiate(module)`, `startFailed`, moved out of `loader.ts` |
+| `packages/b2c-core-wasm/src/loader.ts` | `coreModule()` |
+| `packages/b2c-core-wasm/src/core.ts` | `RawCore`, `parseUpdate`, `parseVersion`, `previewOptionsJson`, `boundText` exported |
+| `packages/b2c-core-wasm/src/worker/{index,protocol,host,client}.ts` (new) | §3.3, §3.4 |
+| `packages/b2c-core-wasm/package.json` | the `./worker` export |
+| `packages/b2c-core-wasm/test/worker*.test.ts` (new) | §7 |
+| `apps/desktop/src/editor/preview/worker/{core.worker,freeze,probe,spawn}.ts` (new) | §3.2 |
+| `apps/desktop/src/editor/preview/{service,workerService,pipeline,index}.ts` | §3.5 |
+| `apps/desktop/src/editor/EditorWorkspace.tsx` | picks the service by the flag |
+| `apps/desktop/src/lib/trustedTypes.ts` | the `b2c-core-worker` policy |
+| `apps/desktop/src/e2e/{contract,index,workerCheck}.ts`, `src/main.tsx` | the spike's check and the worker hooks |
+| `apps/desktop/vite.config.ts` | the worker build, the flag |
+| `apps/desktop/src-tauri/src/window.rs` | `WORKER_CSP`, `add_worker_csp` |
+| `apps/desktop/e2e/specs/flows/preview-worker.e2e.ts` (new) | §2.1, §7 |
+
+### 5.2 IPC, formats, versions
+
+No IPC command, no change to `crates/b2c-ipc`, the project format, the
+clipboard format or the settings. The Rust API of `b2c-core-wasm` is
+unchanged (no export added or changed; `EXPECTED_EXPORTS` is the same).
+The worker protocol is version 1 and never leaves one running app.
+
+### 5.3 Dependencies
+
+None.
+
+### 5.4 The apply rule's first half
+
+At the read a run notes the project's `document`; its answer (and the
+commit of an update that failed) applies only when the project's document
+is still that one or the one the pipeline's own last commit wrote, and is
+dropped otherwise, with a new run scheduled when the dropped run was the
+latest. On the main thread this never drops anything (the read, `update()`
+and the commit are one task, as in M2); with the worker it keeps an answer
+from undoing a rename or a save adopted while the update ran.
+
+## 6. Security and accessibility
+
+* **Security.** The worker that loads untrusted project JSON on every edit
+  has no DOM, no IPC (no `Tauri-Invoke-Key`, no isolation frame), no
+  network and no `eval` under `WORKER_CSP`, and runs with
+  `Object.prototype` frozen. Its files hold no `@tauri-apps` code and no
+  embedded bytes. Every reply is checked before use and a misbehaving
+  worker is replaced, never trusted. The page's CSP is unchanged: no
+  `blob:` or `data:` worker. The worker's URL goes through a Trusted Types
+  policy that accepts exactly that URL. Logs and errors carry error names
+  and runtime messages, never project text. The probe exists only in E2E
+  builds.
+* **Accessibility.** Nothing visible changes: no new control, message or
+  banner; a worker that fails falls back silently (logged).
+
+## 7. Tests
+
+* **Package** (`packages/b2c-core-wasm/test/`, Vitest under Node):
+  * `worker-protocol.test.ts`: every request and reply kind accepted;
+    another version, an unknown kind, a missing, extra or mistyped field,
+    a class instance, an array, a probe with a bad directive refused.
+  * `worker.test.ts`: client and host joined by Node's `MessageChannel`
+    (real structured cloning, the `Module` included), with the real core
+    when it is built (skipped without it unless `B2C_REQUIRE_WASM` is set,
+    as `wasm.test.ts`) and with a fake glue otherwise: the handshake and
+    the version check; answers equal to the main-thread `update()` for every
+    example; three updates while one runs (the second resolves `null`, the
+    third runs); a reply with another ID; a trap with a request waiting
+    (`CoreTrap`, a fresh instance in the same worker, the waiting request
+    answered, no new worker); an `error` with a request waiting (a new
+    worker, the request posted to it); a hang (fake timers: replaced, not
+    counted as a failed start); garbage replies; three failed starts
+    (`failed`); a `DataCloneError` (failed at once); an `error` after
+    answers (not counted); the host with `Object.prototype` frozen.
+* **App** (Vitest, happy-dom): `workerService.test.ts` (the main instance
+  before the first `started` and after `failed`; `recover()` never restarts
+  a worker; the timing), `pipeline.test.ts` (an answer dropped after a
+  rename or an adopted save, and the next run commits; `null` answers;
+  `recover()` used for the retry), `trustedTypes.test.ts` (the policy
+  accepts only the worker's URL, is created once), `e2e/workerCheck.test.ts`.
+* **Build:** `vite/worker.test.ts` beside `vite/wasmCore.test.ts`: a
+  production build has exactly one worker entry under `workers/`, and
+  nothing under `workers/` contains `WASM_BASE64`, `@tauri-apps` or the
+  probe.
+* **Backend:** `window.rs` unit tests: the policy on `/workers/*.js` app
+  responses only (not HTML, `/assets/` scripts, other paths, hosts or
+  types), once, keeping an existing policy.
+* **End to end:** `preview-worker.e2e.ts` on both webviews (§2.1).
+
+## 8. Decisions for the owner
+
+1. **The flag is a build flag, off** (§4). *Recommendation:* keep it off
+   until W5's integration step after W2, which removes it.
+2. **A webview that cannot post a `Module` falls back at once** (§3.4)
+   instead of after three failed starts. *Recommendation:* yes; retrying
+   cannot change it.
+3. **An extra key in a message is a protocol error** (§3.3).
+   *Recommendation:* yes; both sides ship in one build.
+
+The decisions the spike informs are in §2.2.
+
+## 9. Proposed corrections to worker.md
+
+Filled in from the spike.
+
+## 10. Needs from W2, and later
+
+* **Needs from W2** (paths W2 owns): `Analysis::scope_index_parts()` in
+  `crates/b2c-lang/src/query.rs` (worker.md §4) once W2's symbol kinds and
+  members are in; then W5 adds the `scope_index()` export and the
+  `ScopeIndex` lookup. `analysisScope` in
+  `apps/desktop/src/editor/services/symbols.ts` reads the index (worker.md
+  §4, "Store").
+* **The specification** (W2 owns `docs/spec/` while it runs): the sections
+  of worker.md §11, plus 08 §8.8's text for `WORKER_CSP` (and then
+  `tests/consistency.rs` checks it against the spec), with the integration.
+* **The integration step after W2:** the scope index and the clipboard
+  arguments; the rest of the apply rule and the drag hold; the spans and
+  metrics of worker.md §6 and §9; `previewThread()`,
+  `stopPreviewWorker()`, `probePreviewWorker()` and `coreMemory()` hooks
+  and the E2E flows of worker.md §8 with the worker on; removing the flag.
+
+## 11. Status
+
+Filled in when the branch stops.
