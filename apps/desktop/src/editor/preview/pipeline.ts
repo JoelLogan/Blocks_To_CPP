@@ -17,9 +17,8 @@
  * src/lib/timing.ts).
  *
  * A sequence number discards results that a newer run has overtaken. An answer is also dropped
- * when the project's document changed after the run read the canvas, other than by this pipeline's
- * own commit (a rename, an adopted save): it was computed for a document the project no longer
- * holds, so the canvas is read again instead (ADR-0016 §5; on the main thread the read, `update()`
+ * when something else (a rename, an adopted save) wrote the project's document after the run read
+ * the canvas: it was computed for a document the project no longer holds, so the canvas is read again instead (ADR-0016 §5; on the main thread the read, `update()`
  * and the commit are one task and this never happens, with the preview worker it can). When the
  * core traps, the service gets a fresh instance (`PreviewService.recover`), the run is tried once
  * more on it, and the analysis gets the notice `trapRecovered`. When the update fails even so (the
@@ -109,8 +108,6 @@ export class PreviewPipeline {
   private latest = 0;
   /** The sequence number of the run whose read of the canvas was committed last; -1 before any. */
   private committed = -1;
-  /** The document this pipeline's last commit made the project's, or `null` before any. */
-  private written: BdmDocument | null = null;
   private disposed = false;
   private readonly unsubscribe: () => void;
 
@@ -351,19 +348,19 @@ export class PreviewPipeline {
       analysis.notice === 'syncFailed' ? { seq, notice: null } : { seq },
     );
     this.committed = seq;
-    this.written = doc;
     this.options.onCommitted?.(doc);
   }
 
   /**
    * Drops a run's answer (throws {@link Abandoned}) when the project's document is no longer the
-   * one the run read against, nor the one this pipeline's own last commit wrote: something else
-   * (a rename, an adopted save) wrote it since, and committing the run's document would undo
-   * that. When the run is the latest, the canvas is read again.
+   * one the run read against: something else (a rename, an adopted save) wrote it since, and
+   * committing the run's document would undo that. When the run is the latest, the canvas is read
+   * again. (The pipeline's own commits never trip it: a run reads its base after every older run
+   * has been overtaken, and only the latest run commits.)
    */
   private checkBase(seq: number, read: ReadDocument): void {
     const current = this.options.store.getState().project?.document ?? null;
-    if (current === read.base || (current !== null && current === this.written)) {
+    if (current === read.base) {
       return;
     }
     if (seq === this.latest) {

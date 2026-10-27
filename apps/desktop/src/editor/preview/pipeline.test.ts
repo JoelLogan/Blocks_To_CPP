@@ -323,7 +323,7 @@ describe('the preview pipeline', () => {
     pipeline.dispose();
   });
 
-  it('applies an answer read against the document of its own last commit', async () => {
+  it('applies an answer when nothing else wrote the document', async () => {
     openProject();
     const service = manualService();
     const pipeline = new PreviewPipeline({
@@ -345,6 +345,38 @@ describe('the preview pipeline', () => {
     await second;
     expect(useAppStore.getState().project?.document.project.name).toBe('Edit 2');
     expect(pipeline.pending).toBe(false);
+    pipeline.dispose();
+  });
+
+  it('does not keep an edit without a preview when a save or rename wrote the document meanwhile', async () => {
+    openProject();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const stub = stubCore();
+    const canonical = vi.spyOn(stub, 'canonical');
+    let renamed: BdmDocument | null = null;
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stub),
+      read: readDocument,
+      service: {
+        thread: () => 'worker',
+        update: () => {
+          // While the update runs, a rename writes the project's document.
+          const project = useAppStore.getState().project;
+          renamed = { ...documentFixture('Renamed'), modules: project?.document.modules ?? [] };
+          useAppStore.getState().actions.updateProject({ document: renamed, dirty: true });
+          return Promise.reject(new Error('the preview failed'));
+        },
+        recover: () => Promise.resolve(),
+      },
+    });
+    docVersion = 1;
+    await pipeline.runNow();
+    // The failed update's canonical-only commit would have undone the rename.
+    expect(canonical).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().project?.document).toBe(renamed);
+    expect(useAppStore.getState().project?.document.project.name).toBe('Renamed');
+    expect(pipeline.pending).toBe(true);
     pipeline.dispose();
   });
 

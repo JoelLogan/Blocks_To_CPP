@@ -251,7 +251,7 @@ after a `CoreTrap`. `mainThreadPreviewService` keeps M2's behaviour (with
 The pipeline (`preview/pipeline.ts`) takes `null` as an overtaken run,
 calls `service.recover()` instead of `host.restart()` before the retry, and
 applies an answer only when the project's document is still the one the
-run read or the one the pipeline's last commit wrote (§5.4).
+run read (§5.4).
 
 ## 4. The flag
 
@@ -322,9 +322,12 @@ None.
 
 At the read a run notes the project's `document`; its answer (and the
 commit of an update that failed) applies only when the project's document
-is still that one or the one the pipeline's own last commit wrote, and is
-dropped otherwise, with a new run scheduled when the dropped run was the
-latest. On the main thread this never drops anything (the read, `update()`
+is still that one, and is dropped otherwise, with a new run scheduled when
+the dropped run was the latest. worker.md §6 also allows "the document the
+pipeline's own last commit wrote"; with only the latest run committing, a
+run reads its base after every older run has been overtaken, so that case
+cannot arise until older answers may apply (the second half), and this
+branch leaves it out. On the main thread this never drops anything (the read, `update()`
 and the commit are one task, as in M2); with the worker it keeps an answer
 from undoing a rename or a save adopted while the update ran.
 
