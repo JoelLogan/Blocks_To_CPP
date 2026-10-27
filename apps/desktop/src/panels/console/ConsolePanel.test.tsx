@@ -190,6 +190,36 @@ describe('ConsolePanel', () => {
     });
   });
 
+  it('reads its colours again when it is shown, as the theme may have changed while hidden', () => {
+    let resized: () => void = () => undefined;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resized = callback;
+        }
+        observe(): void {
+          // The test calls `resized` itself.
+        }
+        disconnect(): void {
+          // Nothing to stop.
+        }
+      },
+    );
+    const { terminal } = renderConsole({ theme: 'light' });
+    const host = terminal.element?.parentElement;
+    if (host === undefined || host === null) {
+      throw new Error('the terminal has no host');
+    }
+    const before = terminal.options.theme;
+    // Unchanged tokens: the theme object is kept, so xterm.js redraws nothing.
+    resized();
+    expect(terminal.options.theme).toBe(before);
+    host.style.setProperty('--b2c-console-bg', '#161a22');
+    resized();
+    expect(terminal.options.theme?.background).toBe('#161a22');
+  });
+
   it('clamps the scrollback setting', () => {
     expect(clampScrollback(10)).toBe(1000);
     expect(clampScrollback(5000.4)).toBe(5000);

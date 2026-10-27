@@ -134,6 +134,20 @@ const FALLBACK_THEME = {
   selectionBackground: 'rgba(26, 86, 219, 0.22)',
 } as const;
 
+/**
+ * Gives `term` the colours of the console tokens now in effect on `element`, unless it has them.
+ * WebKitGTK answers stale values for an element inside a hidden subtree (the editor is hidden while
+ * a full-window page such as Settings shows), so this runs again when the terminal is shown.
+ */
+function followTokens(term: Terminal, element: Element): void {
+  const next = terminalTheme(element);
+  const current = term.options.theme ?? {};
+  const keys = Object.keys(next) as (keyof ITheme)[];
+  if (keys.some((key) => current[key] !== next[key])) {
+    term.options.theme = next;
+  }
+}
+
 /** The terminal colours from the panel tokens (panels.css), or their defaults. */
 export function terminalTheme(element: Element): ITheme {
   const style = getComputedStyle(element);
@@ -359,6 +373,8 @@ export function ConsolePanel({
         ? null
         : new ResizeObserver(() => {
             refitter.request();
+            // Shown again after a page: the tokens may have changed meanwhile.
+            followTokens(term, element);
           });
     observer?.observe(element);
     const screenReader = new ScreenReaderSupport((on) => {
@@ -438,7 +454,7 @@ export function ConsolePanel({
     const element = host.current;
     if (terminal.current !== null && element !== null) {
       // The tokens follow the page's theme, which has changed by now.
-      terminal.current.options.theme = terminalTheme(element);
+      followTokens(terminal.current, element);
     }
   }, [theme]);
 

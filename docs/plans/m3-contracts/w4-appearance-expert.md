@@ -216,10 +216,7 @@ export function gateText(gate: Gate): string | null;   // "Needs C++20 or newer.
 
 * `apps/desktop/src/app/appearance/` (`appearance.ts`, `index.ts`, tests).
 * `apps/desktop/src/editor/gating/` (`gate.ts`, `table.ts`, `labels.ts`,
-  `mode.ts`, `index.ts`, tests).
-* `apps/desktop/src/features/settings/EditorSection.tsx`,
-  `AppearanceSection.tsx` (or inside `SettingsPage.tsx`, as its other
-  sections are).
+  `mode.ts`, `index.ts`, `gating.test.ts`).
 * `apps/desktop/e2e/specs/flows/appearance.e2e.ts`.
 * This contract.
 
@@ -234,7 +231,9 @@ export function gateText(gate: Gate): string | null;   // "Needs C++20 or newer.
 * TS: `apps/desktop/src/main.tsx`, `apps/desktop/src/app/layout/cssAudit.ts`
   and the tests that read it, `apps/desktop/src/editor/EditorWorkspace.tsx`,
   `apps/desktop/src/panels/console/ConsolePanel.tsx`, the settings feature
-  (`SettingsPage.tsx`, `texts.ts`, tests), the test fixtures of the settings
+  (`SettingsPage.tsx` gains the *Appearance* and *Blocks* sections beside
+  its others, `texts.ts`, tests), `apps/desktop/src/app/panels.tsx` (the
+  console's `theme` prop), the test fixtures of the settings
   (`apps/desktop/src/app/testing/fixtures.ts`).
 * The visual harness's checks that read `prefers-color-scheme` read the
   page's `data-theme` too (`e2e/visual/settle.ts`), so a scene still checks
