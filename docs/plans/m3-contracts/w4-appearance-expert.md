@@ -421,3 +421,67 @@ the tests.
 | W4A-5 | A *View* menu | Not in M3: the toggles live on the Settings page; a *View* section of the main menu comes with M5's command palette |
 | W4A-6 | Blocks already in a project that the mode or the standard would hide | Kept, shown and generated as they are; only the toolbox and the menus hide them, and the build reports what the standard or toolchain cannot compile (`E0703`) |
 | W4A-7 | A label-mode change | Rebuilds the visible blocks without an undo step and without changing the project (§6.1) |
+
+## 10. Status
+
+On `m3/w4-appearance-expert`, from `df4b4f5`, on 2026-10-27.
+
+**Done.**
+
+* The contract (`2ec2c27`; later commits correct it as the code was
+  written).
+* The settings (`3ada984`): `appearance.theme`, `editor.blockLabels` and
+  `editor.showAdvanced` in `b2c-store`, `b2c-ipc` and `b2c-app`, with tests;
+  the TypeScript types, the isolation allowlist and its samples regenerated.
+* Appearance (`fcf6d96`): the `[data-theme]` refactor of every style sheet
+  and of the badges' CSS, `cssAudit` reading `:root[data-theme='dark']`, a test
+  that no style sheet uses `prefers-color-scheme`, `src/app/appearance/`, the
+  Blockly theme and the console following the theme, light console tokens
+  (U14d), and the Settings page's *Appearance* and *Blocks* sections (the
+  expert-mode switch and its two settings), with tests and axe.
+* Gating (`583aeee`): `src/editor/gating/`, with its tests (§2.4, §6.1's
+  C++-label finding).
+* E2E (`a346951`): `specs/flows/appearance.e2e.ts`. It found a real bug,
+  fixed in the same commit: WebKitGTK gives stale computed values inside the
+  editor while a page hides it, so the console now reads its tokens again when
+  it is shown.
+
+**Not done, and why.**
+
+* Everything in §6 (labels, toolbox, menus, catalog): W2's files, to apply
+  after W2's integration. Until then the *Blocks* settings are saved and read
+  but change nothing in the editor.
+* W4A-4 (title bar), W4A-5 (*View* menu): decisions for the owner.
+* The spec sections of §8: `docs/spec/` is W2's.
+
+**Checks.** Locally: `cargo fmt`, workspace clippy (Linux, and the Windows
+target with CI's clang settings), `cargo doc`, the whole workspace's
+`cargo test` with `B2C_REQUIRE_GXX=1`, the four `tools/check-*.py`,
+markdownlint; `pnpm -r` typecheck, lint and format; desktop Vitest (2151
+tests) and `test:isolation`; blockly-ext's tests; the E2E flows
+`appearance`, `settings`, `console` and `chrome` under xvfb. The WASM core
+was built without wasm-opt.
+
+**CI on `a346951`.** CI: green. Desktop: green except the visual-diff step on
+both systems. The E2E flows pass on Linux and Windows, `appearance` included.
+
+**Visual diff, for the coordinator to rebaseline.** Changed by this branch
+(the console is light in the light theme, U14d): `chrome-console-scrolled`,
+`chrome-console-two-runs`, `chrome-window-smallest` and `chrome-menu-open`
+(72,000 px each, the console in the bottom dock), all light, on Linux and
+expectedly on Windows. Not this branch's: the toolbox scenes
+(`chrome-toolbox-math`, `-text`, `-io`, `-functions`, and in the dark theme
+also `-logic` and `-loops`), which W2's blocks changed; the base branch's
+Desktop runs fail the same step. No baseline was updated.
+
+**Merge notes.** No file of W2's list is touched. Files outside this
+contract's own new ones: §3.2's list, plus
+`apps/desktop/e2e/specs/flows/README.md`, `e2e/specs/flows/chrome.e2e.ts`,
+`e2e/visual/canvas.visual.e2e.ts` and `e2e/visual/settle.ts` (they read the
+page's `data-theme`). Expected conflicts: `packages/ipc-types/src/generated/`
+and the isolation allowlist if W2 or W3 changed the IPC (regenerate with
+`B2C_UPDATE_IPC=1 cargo test -p b2c-ipc --features ts --test generate`);
+`settings.test.tsx` and `SettingsPage.tsx` if W3's settings dialog edits
+them; `app.css` and `panels.css` if anyone added dark tokens in an
+`@media (prefers-color-scheme: dark)` block, which must move to
+`:root[data-theme='dark']` (the new style test fails otherwise).
