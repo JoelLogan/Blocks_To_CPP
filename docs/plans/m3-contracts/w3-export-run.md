@@ -354,7 +354,7 @@ format 2) is W2's and W4's; the dialog leaves room for it.
 | W3-D1 | Where the input file is kept | In memory per project for the app session (this contract); persisting it per project in a machine file can follow in M4 if users ask |
 | W3-D2 | External terminal per project or per computer | Per computer (`settings.json`), as here; the spec's "persisted per project" changes |
 | W3-D3 | Linux terminal list | As §3.3; `x-terminal-emulator` first (Debian's choice) |
-| W3-D4 | Windows window after the program ends | The init unit waits for Enter (only in the external window) |
+| W3-D4 | Windows window after the program ends | The init unit waits for a key (`_getch`, only in the external window) |
 | W3-D5 | Export in Restricted Mode | Allowed (it runs nothing) |
 | W3-D6 | Makefile defaults | Sanitizers in debug on Linux and hardening on, both switchable (`SANITIZE=0`, `HARDEN=0`) |
 | W3-D7 | Close-input on Windows with a partly typed line | Accept that the line arrives with a line break (Linux: without) |
