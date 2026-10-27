@@ -70,7 +70,7 @@ function accepts(cmd, payload) {
 describe('the allowlist', () => {
   test('covers exactly the commands with samples, and is frozen at every level', () => {
     assert.deepEqual(Object.keys(allowlist).sort(), Object.keys(samples).sort());
-    assert.equal(Object.keys(allowlist).length, 36);
+    assert.equal(Object.keys(allowlist).length, 39);
     const visit = (value) => {
       if (typeof value === 'object' && value !== null) {
         assert.ok(Object.isFrozen(value));
