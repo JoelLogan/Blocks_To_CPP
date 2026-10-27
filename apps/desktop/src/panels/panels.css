@@ -39,7 +39,8 @@
   --b2c-console-bg: #fbfcfe;
   --b2c-console-fg: #1b2130;
   --b2c-console-cursor: #1a56db;
-  --b2c-console-selection: rgb(26 86 219 / 22%);
+  /* xterm.js reads only hex and comma-separated rgba() colours (styles.test.ts checks). */
+  --b2c-console-selection: rgba(26, 86, 219, 0.22);
 }
 
 :root[data-theme='dark'] {
@@ -69,7 +70,44 @@
   --b2c-console-bg: #161a22;
   --b2c-console-fg: #e6e9f0;
   --b2c-console-cursor: #ffc266;
-  --b2c-console-selection: rgb(138 180 255 / 35%);
+  --b2c-console-selection: rgba(138, 180, 255, 0.35);
+}
+
+/*
+ * Until the app sets `data-theme` (src/app/appearance/, before the first render), the system's
+ * scheme decides, so a dark system never sees a light frame. The same tokens as above
+ * (styles.test.ts keeps them equal).
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --b2c-panel-error: #ff8a80;
+    --b2c-panel-warning: #ffcc66;
+    --b2c-panel-info: #8ab4ff;
+    --b2c-panel-ok: #6fd18a;
+    --b2c-panel-warning-bg: #3d2f0a;
+    --b2c-panel-warning-text: #ffd98a;
+
+    --b2c-code-bg: #11141b;
+    --b2c-code-text: #e6edf3;
+    --b2c-code-gutter-bg: #161b22;
+    --b2c-code-gutter-text: #9ba3af;
+    --b2c-code-highlight: rgb(255 214 0 / 18%);
+    --b2c-code-highlight-border: #b08800;
+    --b2c-code-keyword: #ff7b72;
+    --b2c-code-type: #ffa657;
+    --b2c-code-string: #a5d6ff;
+    --b2c-code-escape: #79c0ff;
+    --b2c-code-number: #79c0ff;
+    --b2c-code-comment: #9ba3af;
+    --b2c-code-preprocessor: #7ee787;
+    --b2c-code-function: #d2a8ff;
+    --b2c-code-hidden-char: #fdba74;
+
+    --b2c-console-bg: #161a22;
+    --b2c-console-fg: #e6e9f0;
+    --b2c-console-cursor: #ffc266;
+    --b2c-console-selection: rgba(138, 180, 255, 0.35);
+  }
 }
 
 /* Shared panel frame: a bar of controls above the content, which fills the rest. */

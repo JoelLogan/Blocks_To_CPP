@@ -220,6 +220,32 @@ describe('ConsolePanel', () => {
     expect(terminal.options.theme?.background).toBe('#161a22');
   });
 
+  it('gives xterm.js a selection colour it can read, in the form the tokens use', () => {
+    const { terminal, rerender, props } = renderConsole({ theme: 'light' });
+    const host = terminal.element?.parentElement;
+    if (host === undefined || host === null) {
+      throw new Error('the terminal has no host');
+    }
+    /** The colours xterm.js resolved (its theme service; not part of its public API). */
+    const resolved = () =>
+      (
+        terminal as unknown as {
+          _core: { _themeService: { colors: { selectionBackgroundTransparent: { css: string } } } };
+        }
+      )._core._themeService.colors.selectionBackgroundTransparent.css;
+    // The tokens of panels.css: xterm.js reads the comma form; with a space-separated rgb() and
+    // an alpha it throws and uses its own white at 30 %.
+    host.style.setProperty('--b2c-console-selection', 'rgba(138, 180, 255, 0.35)');
+    rerender(<ConsolePanel {...props} theme="dark" />);
+    expect(resolved()).not.toBe('rgba(255, 255, 255, 0.3)');
+    expect(resolved()).toMatch(/^(rgba\(138, 180, 255|#8ab4ff)/);
+  });
+
+  it('keeps program colours readable on either console background (WCAG 1.4.3)', () => {
+    const { terminal } = renderConsole();
+    expect(terminal.options.minimumContrastRatio).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('clamps the scrollback setting', () => {
     expect(clampScrollback(10)).toBe(1000);
     expect(clampScrollback(5000.4)).toBe(5000);

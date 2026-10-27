@@ -304,6 +304,9 @@ export function ConsolePanel({
         "ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', 'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace",
       fontSize: 13,
       theme: terminalTheme(element),
+      // Programs choose their colours for a dark terminal (ASan's bold green, bright yellow): in
+      // the light console xterm.js darkens any text below 4.5:1 on its background (WCAG 1.4.3).
+      minimumContrastRatio: 4.5,
       linkHandler: {
         allowNonHttpProtocols: false,
         activate: (_event, target) => {
