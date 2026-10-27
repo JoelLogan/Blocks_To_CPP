@@ -917,6 +917,24 @@
       "extra": []
     },
     {
+      "id": "control.fallthrough",
+      "version": 1,
+      "category": "control",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "go on into the next case",
+        "cpp": "[[fallthrough]];"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Put last in a case of a switch: after this case's blocks, the next case's blocks run too, without checking its value.",
+      "field": [],
+      "input": [],
+      "statement": [],
+      "extra": []
+    },
+    {
       "id": "control.for_range",
       "version": 1,
       "category": "loops",
@@ -1205,6 +1223,48 @@
         },
         {
           "input": "CASE"
+        }
+      ]
+    },
+    {
+      "id": "control.wait",
+      "version": 1,
+      "category": "control",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "wait %SECONDS seconds",
+        "cpp": "std::this_thread::sleep_for(std::chrono::duration<double>(%SECONDS));"
+      },
+      "lowering": "builtin",
+      "headers": [
+        "<chrono>",
+        "<thread>"
+      ],
+      "help": "Pauses the program for a number of seconds, which may have a decimal part (0.5 is half a second).",
+      "field": [],
+      "input": [
+        {
+          "name": "SECONDS",
+          "check": "number",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "num": "0.5"
+            }
+          ],
+          "type": {
+            "kind": "type",
+            "type": "double"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "input": "SECONDS"
         }
       ]
     },
@@ -3893,6 +3953,16 @@
           },
           {
             "block": "control.switch",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "control.fallthrough",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "control.wait",
             "label": null,
             "preset": null
           }

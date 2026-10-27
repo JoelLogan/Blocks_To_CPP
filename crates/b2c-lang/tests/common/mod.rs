@@ -306,7 +306,9 @@ pub(crate) const AFTER_M2: &[&str] = &[
     "text.trim",
     // Package D: control, program and files.
     "control.do_while",
+    "control.fallthrough",
     "control.switch",
+    "control.wait",
     "file.",
 ];
 

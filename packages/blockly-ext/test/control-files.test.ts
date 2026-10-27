@@ -1,7 +1,8 @@
 /**
  * W2's control and file blocks in the editor, from the generated catalog (package D,
  * docs/plans/m3-contracts/w2.md §1.6, §1.8, §2.1, §5.2): *switch on* drawn by the *branches*
- * mutator, its second *case* word joining the copies as *else if* does; *do … then repeat*; and
+ * mutator, its second *case* word joining the copies as *else if* does; *go on into the next case*
+ * and *wait*; *do … then repeat*; and
  * *for each line in file*, a block with a flag and no repeated group, whose *if it can't be
  * opened* part comes and goes with ⊕ and ⊖.
  */
@@ -130,6 +131,18 @@ describe('switch on', () => {
     const block = mutatorBlock('control.switch');
     block.b2cSetExtra({ caseCount: 1, hasDefault: true });
     expect(buttons(block)).not.toContain('count:remove');
+  });
+});
+
+describe('go on into the next case and wait', () => {
+  it('are a plain statement and one with a number of seconds', () => {
+    const fallthrough = workspace.newBlock('control.fallthrough');
+    expect(labelTexts(fallthrough)).toEqual(['go on into the next case']);
+    expect(fallthrough.previousConnection).not.toBeNull();
+    expect(fallthrough.nextConnection).not.toBeNull();
+    const wait = workspace.newBlock('control.wait');
+    expect(inputNames(wait)).toEqual(['SECONDS', 'b2c_row0']);
+    expect(labelTexts(wait)).toEqual(['wait', 'seconds']);
   });
 });
 

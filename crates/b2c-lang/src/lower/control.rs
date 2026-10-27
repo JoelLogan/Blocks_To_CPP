@@ -11,6 +11,8 @@
 //!   without a default part that misses some of its values is `B2C-W0508`.
 //! * *do … then repeat* lowers its body as a loop's, then its condition,
 //!   which sees only what is visible before the block.
+//! * *wait … seconds* takes a decimal number; *go on into the next case* is
+//!   a statement whose place `flow.rs` checks (`B2C-E0427`).
 
 use b2c_ir::diag::Part;
 use b2c_ir::ids::SymbolId;
@@ -26,11 +28,26 @@ use crate::codes;
 use crate::messages::quoted;
 
 impl Lowerer<'_> {
-    /// *switch on*, *do … then repeat*.
+    /// *switch on*, *do … then repeat*, *wait*, *go on into the next case*.
     pub(super) fn control_statement(&mut self, block: &Block) -> Option<StmtKind> {
         match block.block_type.as_str() {
             "control.switch" => Some(self.switch(block)),
             "control.do_while" => Some(self.do_while(block)),
+            "control.wait" => {
+                let [seconds] = self.typed_values(
+                    block,
+                    [(
+                        "SECONDS",
+                        Subject::Phrase {
+                            text: String::from("The time to wait"),
+                            stores: false,
+                        },
+                    )],
+                );
+                Some(StmtKind::Wait { seconds })
+            }
+            // Where it may stand is `flow.rs`'s rule (`B2C-E0427`).
+            "control.fallthrough" => Some(StmtKind::FallThrough),
             _ => None,
         }
     }

@@ -154,6 +154,12 @@ block = "control.if"
 [[category.entry]]
 block = "control.switch"
 
+[[category.entry]]
+block = "control.fallthrough"
+
+[[category.entry]]
+block = "control.wait"
+
 [[category]]
 id = "loops"
 name = "Loops"

@@ -422,3 +422,64 @@ fn a_file_loop_without_a_name_for_its_line_is_incomplete() {
         ["error B2C-E0430 at b0001 field LINE: This 'for each line' loop needs a name for its line."]
     );
 }
+
+// --- go on into the next case, wait ----------------------------------------------------
+
+fn fallthrough() -> Value {
+    json!({"id": id(), "type": "control.fallthrough", "v": 1})
+}
+
+fn wait(seconds: Value) -> Value {
+    json!({"id": id(), "type": "control.wait", "v": 1, "inputs": {"SECONDS": seconds}})
+}
+
+#[test]
+fn go_on_into_the_next_case_stands_last_in_a_case_before_another() {
+    let a = run_main(vec![
+        declare("int", "n", Some(e("2"))),
+        switch_cases(
+            e("n"),
+            vec![
+                (e("1"), vec![print(vec![e("n")]), fallthrough()]),
+                (e("2"), vec![print(vec![e("n")])]),
+            ],
+            None,
+        ),
+    ]);
+    assert_clean(&a);
+    // Not the last block of its case, in the last part, and outside a switch.
+    let a = run_main(vec![
+        declare("int", "n", Some(e("2"))),
+        switch_cases(
+            e("n"),
+            vec![
+                (e("1"), vec![fallthrough(), print(vec![e("n")])]),
+                (e("2"), vec![fallthrough()]),
+            ],
+            None,
+        ),
+        fallthrough(),
+    ]);
+    let misplaced = "'go on into the next case' must be the last block of a case, directly in the case (not \
+                     inside another block). Move it to the end of the case.";
+    let last = "'go on into the next case' can't be used in the last part of a switch: there is no next case \
+                to go on into. Remove it.";
+    assert_eq!(
+        reported(&a),
+        [
+            format!("error B2C-E0427 at b0007: {misplaced}"),
+            format!("error B2C-E0427 at b0009: {last}"),
+            format!("error B2C-E0427 at b0011: {misplaced}"),
+        ]
+    );
+}
+
+#[test]
+fn wait_takes_a_number_of_seconds() {
+    let a = run_main(vec![wait(e("0.25")), wait(e("2"))]);
+    assert_clean(&a);
+    let stmts = main_json(&a);
+    assert!(stmts[0]["kind"]["wait"].is_object(), "{stmts}");
+    let a = run_main(vec![wait(e("\"soon\""))]);
+    assert_eq!(codes(&a), ["B2C-E0301"], "{}", render_all(&a));
+}

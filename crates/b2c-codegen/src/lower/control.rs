@@ -10,14 +10,15 @@
 //!   (the analyser warns, `B2C-W0508`).
 //! * *do … then repeat* is `do { … } while (c);`, with *until* inverting the
 //!   condition as *repeat until* does.
-//!
-//! *wait* is an if-time block (w2.md §1.6) that is not in the catalog yet.
+//! * *wait … seconds* is
+//!   `std::this_thread::sleep_for(std::chrono::duration<double>(s));` and
+//!   *go on into the next case* `[[fallthrough]];`.
 
 use b2c_ir::sast::{Block, Expr, ExprKind, StmtKind, SwitchCase, SymbolKind};
 use b2c_ir::types::Type;
 
 use super::Lowerer;
-use crate::cast::{CBlock, CCase, CStmt, CStmtKind};
+use crate::cast::{CBlock, CCase, CExpr, CStmt, CStmtKind};
 
 /// Whether a case's statements end in one that leaves the case, so no
 /// `break;` follows it (w2.md §2.9).
@@ -55,6 +56,12 @@ impl Lowerer<'_> {
                 CStmtKind::DoWhile { body, cond }
             }
             StmtKind::FallThrough => CStmtKind::FallThrough,
+            // `<chrono>` and `<thread>` are the block's catalog headers.
+            StmtKind::Wait { seconds } => {
+                let seconds = self.expr(seconds);
+                let duration = CExpr::call_fixed("std::chrono::duration<double>", vec![seconds]);
+                CStmtKind::Expr(CExpr::call_fixed("std::this_thread::sleep_for", vec![duration]))
+            }
             _ => CStmtKind::Error,
         }
     }

@@ -324,7 +324,12 @@ describe('static categories', () => {
     // the one *switch on*, *until* from the one loop's menu.
     const control = staticCategoryContents('control');
     expect(labelsOf(control)).toEqual([]);
-    expect(typesOf(control)).toEqual(['control.if', 'control.switch']);
+    expect(typesOf(control)).toEqual([
+      'control.if',
+      'control.switch',
+      'control.fallthrough',
+      'control.wait',
+    ]);
     expect(blocksOf(control)[0]?.extraState).toEqual({ elseIfCount: 0, hasElse: false });
     expect(blocksOf(control)[1]?.extraState).toEqual({ caseCount: 2, hasDefault: true });
 

@@ -5,8 +5,14 @@
 import * as Blockly from 'blockly/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
 import { describeBlock, describeNode, describeTarget } from './labels';
 import { type KeyboardEditor, keyboardEditor } from './testing';
+
+// Each test here opens an editor whose toolbox shows the flyout of every catalog block: with W2's
+// control and file blocks, the slowest took 5.1–5.8 s in the suite with two workers and coverage on
+// a busy machine, over Vitest's default of 5 s (2.2 s alone before W2's R2 blocks).
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 let editor: KeyboardEditor | null = null;
 

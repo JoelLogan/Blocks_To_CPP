@@ -81,6 +81,31 @@ name = "DEFAULT"
 when = "hasDefault"
 
 [[block]]
+id = "control.fallthrough"
+version = 1
+category = "control"
+shape = "statement"
+label = { friendly = "go on into the next case", cpp = "[[fallthrough]];" }
+lowering = "builtin"
+help = "Put last in a case of a switch: after this case's blocks, the next case's blocks run too, without checking its value."
+
+[[block]]
+id = "control.wait"
+version = 1
+category = "control"
+shape = "statement"
+label = { friendly = "wait %SECONDS seconds", cpp = "std::this_thread::sleep_for(std::chrono::duration<double>(%SECONDS));" }
+lowering = "builtin"
+help = "Pauses the program for a number of seconds, which may have a decimal part (0.5 is half a second)."
+headers = ["<chrono>", "<thread>"]
+
+[[block.input]]
+name = "SECONDS"
+check = "number"
+type = "double"
+default = [{ num = "0.5" }]
+
+[[block]]
 id = "control.while"
 version = 1
 category = "loops"

@@ -307,7 +307,8 @@ describe('the toolbox’s blocks rebuilt while the keyboard is in them', () => {
     expect(onLiveNode()).toBe(true);
   });
 
-  it('leave a keyboard that is elsewhere alone', () => {
+  // 19–21 s in the suite with W2's control and file blocks on a busy machine.
+  it('leave a keyboard that is elsewhere alone', { timeout: SLOW_FLYOUT_TEST_TIMEOUT_MS }, () => {
     const { block, workspace } = open();
     const print = block('print');
     focus(print);

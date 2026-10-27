@@ -15,7 +15,7 @@ Catalog version: 1.3.0.
 | [Math](math.md) | ∑ | 11 |
 | [Logic](logic.md) | ◇ | 4 |
 | [Text](text.md) | “ ” | 13 |
-| [Control](control.md) | ⑂ | 2 |
+| [Control](control.md) | ⑂ | 4 |
 | [Loops](loops.md) | ↻ | 9 |
 | [Input / Output](io.md) | ⌨ | 3 |
 | [Functions](functions.md) | ƒ | 4 |

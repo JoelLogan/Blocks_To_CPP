@@ -118,6 +118,23 @@ pub(super) fn cases(b: &Blocks) -> Vec<Case> {
                 ),
             ])],
         ),
+        Case::new(
+            "control.fallthrough",
+            "the last block of case 1 of a switch on x (an int) after a print of x, before case 2, which \
+             prints x",
+            vec![b.main(&[
+                b.create_x(&json!({})),
+                switch_on_x(
+                    b,
+                    vec![
+                        (number("1"), vec![b.print_x(), b.plain("control.fallthrough")]),
+                        (number("2"), vec![b.print_x()]),
+                    ],
+                    None,
+                ),
+            ])],
+        ),
+        only_step(b, "control.wait"),
         only_step(b, "control.while"),
         Case::new(
             "control.do_while",

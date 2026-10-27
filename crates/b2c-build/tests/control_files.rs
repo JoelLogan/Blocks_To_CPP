@@ -11,6 +11,8 @@
 //! * *switch on* a whole number and a character: the case that matches
 //!   runs, the default part when none does, and a case that goes on into
 //!   the next one only when its blocks say so;
+//! * *go on into the next case* runs the next case's blocks too, and *wait*
+//!   pauses;
 //! * *do … then repeat* runs its body once although its condition is false;
 //! * *for each line in file* reads a file named by a relative path from the
 //!   folder the program runs in, line by line (an empty line, a last line
@@ -495,4 +497,32 @@ fn a_missing_file_runs_the_part_for_it_or_no_line() {
             code: Some(1),
         },
     );
+}
+
+#[test]
+fn a_case_goes_on_into_the_next_one_and_wait_pauses() {
+    let b = Blocks::default();
+    let body = vec![
+        b.create("int", "n", number("1")),
+        b.block(
+            "control.wait",
+            &json!({ "inputs": { "SECONDS": json!({ "expr": [{ "num": "0.01" }] }) } }),
+        ),
+        b.switch(
+            tokens(&["n"]),
+            vec![
+                (
+                    number("1"),
+                    vec![
+                        b.print(vec![text("one")]),
+                        b.block("control.fallthrough", &json!({})),
+                    ],
+                ),
+                (number("2"), vec![b.print(vec![text("two")])]),
+                (number("3"), vec![b.print(vec![text("three")])]),
+            ],
+            None,
+        ),
+    ];
+    runs_and_gives("fallthrough", body, &[], &printed("one\ntwo\n"));
 }
