@@ -244,9 +244,20 @@ Why a build flag and not a setting:
 * Off is the M2 code path, unchanged, so W2's blocks are integrated on a
   main thread whose behaviour is known.
 * Until the rest of the apply rule and the drag hold land (§1), an answer
-  from the worker could arrive while a block is being dragged. The flag
-  must stay off in shipped builds until then; W5's integration step after
-  W2 removes the flag and makes the worker the default.
+  from the worker could arrive while a block is being dragged.
+* **Until the scope index lands, menus go stale with the flag on.** The
+  field menus, the landing and *Make a variable* ask the main instance's
+  `symbolsInScope`, which answers from that instance's last `update()`;
+  once the worker previews, the main instance stops updating. Measured: with
+  `B2C_PREVIEW_WORKER=1`, 15 of 16 local Linux E2E tests pass (editor,
+  rename, save and reload, clipboard, errors, typed slots, selection, crash
+  recovery, the worker flow), and the M2 exit flow fails because the menu
+  of a *set* block lacks the variable `guess` made after the worker started.
+  worker.md §4's index is the fix.
+
+So the flag must stay off in every build until W5's integration step after
+W2, which adds the index and the rest of the apply rule and then removes the
+flag, making the worker the default.
 
 ## 5. Changes
 
@@ -353,7 +364,44 @@ The decisions the spike informs are in §2.2.
 
 ## 9. Proposed corrections to worker.md
 
-Filled in from the spike.
+For the owner of worker.md to apply (this branch does not edit it):
+
+1. **§2, the probe's request.** The IPC endpoint is `ipc://localhost/` on
+   WebKitGTK and `http://ipc.localhost/` on WebView2; the probe tries both.
+   WebKitGTK refuses a worker's request under its policy without a
+   `securitypolicyviolation` event in the worker, so the probe cannot say
+   `blocked` there. Proposed: the probe also makes the request from the page
+   as a control, and the check is "the page reaches the endpoint, the worker
+   does not" (`WorkerProbe.request` is then `blocked` or `failed`).
+2. **§2 and §8, Trusted Types.** WebKitGTK 2.52 has Trusted Types as well:
+   the trial reports `new Worker` from a plain string there too, and nothing
+   through the policy. "The Trusted Types table stays at no violation"
+   applies to both webviews, not only WebView2.
+3. **§2, the build.** Vite 8.3.4 names the worker build's options
+   `worker.rolldownOptions` (`rollupOptions` is a deprecated alias), and the
+   worker is two files: `workers/core.worker-<hash>.js` and the glue's
+   chunk (`instance.ts` imports `#glue` dynamically). The build test of §8
+   is "exactly one *entry* under `workers/`".
+4. **§2, the probe's `eval`.** A direct `eval` makes the bundler warn
+   (and deoptimise the module); the probe uses an indirect one, which a
+   policy without `'unsafe-eval'` refuses the same way.
+5. **§3, the client.** Add `acceptVersion` (the page passes "equal to the
+   main instance's `version()`") and `log`; a `DataCloneError` when posting
+   the `Module`, a worker that cannot be created and a failed compile on the
+   page make the client fail at once rather than after three starts.
+   `WorkerUpdate.scope` is `scopeJson: string | null` until `ScopeIndex`
+   exists, and `PreviewAnswer.scope` likewise.
+6. **§3, extra keys.** A message with a key its kind does not have is a
+   protocol error, like a missing one.
+7. **§6, the pipeline.** The apply rule can land in two halves: the
+   document check (this branch) first, and the rest (an older answer applied
+   while a newer run waits, the drag hold, `release()`) with the flag's
+   removal, since only then can an answer arrive in another task than its
+   read.
+8. **§9, measurements.** On WebKitGTK `performance.now()` counts whole
+   milliseconds here, so a single clone cannot be timed; the spike times a
+   clone as the mean of 20. The copy, paste and duplicate measurements of
+   ADR-0016 §1 wait for W2's blocks and the clipboard arguments (§1).
 
 ## 10. Needs from W2, and later
 
