@@ -15,9 +15,13 @@
  *   or a menu is open or the flyout scrolls to a category, and then keeps the category in view
  *   and the selected category (04 §4.2); its delayed refresh is cancelled when the toolbox is
  *   disposed;
- * - the flyout never recycles blocks (the toolbox's blocks change between showings: default names,
- *   fresh symbol IDs), so it keeps a recycler of its own that stays empty instead of needing the
- *   plugin's recycler to replace Blockly's block inflater for every flyout;
+ * - the flyout keeps each toolbox block and label whose item is unchanged from one showing to the
+ *   next (./inflater.ts) and only moves it where the new contents put it, so showing it again
+ *   builds and draws only what changed; the plugin's own recycler (one block per block type,
+ *   for blocks without mutators or variables) is never used, and stays empty instead of needing to
+ *   replace Blockly's block inflater for every flyout; and it shows its contents with Blockly's
+ *   events off (no one listens for the flyout's own block events), without hiding a displayed
+ *   flyout around the showing;
  * - showing the flyout again keeps the keyboard focus on the same item when it was in the flyout
  *   (04 §4.8), and the animated scroll to a chosen category jumps at once when the system asks for
  *   reduced motion;
@@ -49,7 +53,9 @@ import { timed } from '../../lib/timing';
 import { keepFlyoutFocus } from '../keyboard/keepFocus';
 import { prefersReducedMotion } from '../keyboard/motion';
 import { markDragTargetsStale } from '../sync/dragTargets';
+import { B2cBlockInflater, B2cLabelInflater, LABEL_KIND } from './inflater';
 import { noteCreatedFromToolbox } from './landing';
+import { B2C_BLOCK_KIND } from './presets';
 
 /** How long the toolbox waits after the last change before it rebuilds the flyout. */
 export const CONTINUOUS_REFRESH_DELAY_MS = 100;
@@ -365,11 +371,12 @@ export interface FlyoutScrollAnchor {
 }
 
 /**
- * The continuous flyout, without block recycling, without its scroll animation on request, landing
- * on a chosen category at every zoom level, keeping the category in view when its contents are
- * shown again, with a fixed block scale and a width the user can choose, recorded as a drop target
- * wherever it is (without laying the page out for it), telling the window's layout where it is,
- * and telling the toolbox which blocks it creates on the canvas (./landing.ts).
+ * The continuous flyout, keeping its toolbox blocks across showings (./inflater.ts) instead of the
+ * plugin's block recycling, without its scroll animation on request, landing on a chosen category
+ * at every zoom level, keeping the category in view when its contents are shown again, with a
+ * fixed block scale and a width the user can choose, recorded as a drop target wherever it is
+ * (without laying the page out for it), telling the window's layout where it is, and telling the
+ * toolbox which blocks it creates on the canvas (./landing.ts).
  */
 export class B2cContinuousFlyout extends ContinuousFlyout {
   /**
@@ -391,6 +398,9 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
 
   /** The widest the flyout may be in the room it had when it was last fitted, in pixels. */
   private widthLimit: number = FLYOUT_WIDTH.min;
+
+  /** Whether a showing is under way that began while the flyout was displayed ({@link show}). */
+  private keepShown = false;
 
   /** Where the flyout was last placed: its x and y, width and height, in pixels. */
   private placement: readonly number[] = [];
@@ -415,9 +425,10 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
    *   on every showing, that is on every rebuild of a dynamic category;
    * - the canvas's record of its drag targets is marked stale after every layout, whatever the
    *   width (`sync/dragTargets.ts`): it is recorded again in the next animation frame, or at the
-   *   start of a drag that comes first. `Flyout.show` records them only while the flyout is not
-   *   displayed (its `setVisible(true)` records before it displays the flyout again), when the
-   *   flyout, and the toolbox that stands for it, end at the window's left edge. Blockly's version
+   *   start of a drag that comes first. `Flyout.show` records them only when the flyout was not
+   *   displayed before (its `setVisible(true)` records before it displays the flyout again, see
+   *   {@link setVisible}), when the flyout, and the toolbox that stands for it, end at the window's
+   *   left edge. Blockly's version
    *   recorded again because it placed the flyout every time; without a later record, a drop on
    *   the flyout or the category column deleted nothing after a rebuild until the layout changed
    *   (03 §3.3 "Placing blocks"). A record here, at once, would read the flyout's place on screen
@@ -677,6 +688,95 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
   }
 
   /**
+   * Shows `flyoutDef` (the plugin's showing) without hiding the flyout first when it is displayed
+   * ({@link setVisible}), and with Blockly's events off: nothing listens for the flyout's own
+   * block creations, deletions and moves, which cost Blockly two serialisations and an event for
+   * each block it builds or disposes of, and a move event for each block it places. Also left
+   * out: the viewport events of the flyout's resizing within the showing and, at the first
+   * showing only, the plugin's selection of the first category. The toolbox keeps the focus and
+   * the scroll position after the showing (`B2cContinuousToolbox.showAllCategories`), with events
+   * on.
+   */
+  override show(flyoutDef: Blockly.utils.toolbox.FlyoutDefinition | string): void {
+    this.keepShown = this.isVisible();
+    Blockly.Events.disable();
+    try {
+      super.show(flyoutDef);
+    } finally {
+      Blockly.Events.enable();
+      this.keepShown = false;
+    }
+  }
+
+  /**
+   * Shows or hides the flyout (Blockly's), except that a flyout shown again while it is displayed
+   * stays displayed: `Flyout.show` hides it and shows it again around building the new contents,
+   * which set `display: none` and back on the flyout's SVG (the browser then lays out and draws
+   * every block of the flyout again, kept ones included) and recorded the canvas's drag targets
+   * twice. The layout marks the drag targets stale instead ({@link reflowInternal_}). `hide()`
+   * still removes Blockly's reflow listener, and the showing adds it again.
+   */
+  override setVisible(visible: boolean): void {
+    if (this.keepShown && !visible) {
+      return;
+    }
+    super.setVisible(visible);
+  }
+
+  /**
+   * Places the items of the flyout's new contents one below the other: Blockly 12.5.1's
+   * `VerticalFlyout.layout_`, with three changes:
+   *
+   * - first, the toolbox blocks and labels parked by the last showing that no item claimed are
+   *   disposed of (`B2cBlockInflater.sweep`, `B2cLabelInflater.sweep`), so the contents' bounds,
+   *   measured next, count only what is shown;
+   * - an item is placed where it goes, not moved by that much: a block kept from the last showing
+   *   is already somewhere, and it is moved only when its place changed;
+   * - the scale is left as it is: {@link reflowInternal_} sets the flyout's own scale next
+   *   (Blockly's set the canvas's, only for it to be replaced).
+   *
+   * The inflaters are read from the flyout's own map, so the trash can's flyout, which has no
+   * toolbox blocks, gets none.
+   */
+  protected override layout_(contents: Blockly.FlyoutItem[]): void {
+    const blocks = this.inflaters.get(B2C_BLOCK_KIND);
+    if (blocks instanceof B2cBlockInflater) {
+      blocks.sweep();
+    }
+    const labels = this.inflaters.get(LABEL_KIND);
+    if (labels instanceof B2cLabelInflater) {
+      labels.sweep();
+    }
+    const x = this.RTL ? this.MARGIN : this.MARGIN + this.tabWidth_;
+    let y = this.MARGIN;
+    for (const item of contents) {
+      const element = item.getElement();
+      const at = placeOf(element);
+      if (at.x !== x || at.y !== y) {
+        element.moveBy(x - at.x, y - at.y);
+      }
+      y += element.getBoundingRectangle().getHeight();
+    }
+  }
+
+  /**
+   * The inflater of a kind of flyout item (Blockly's), with this flyout's own label inflater, which
+   * keeps labels across showings (`B2cLabelInflater`), instead of the one registered for every
+   * flyout.
+   */
+  protected override getInflaterForType(type: string): Blockly.IFlyoutInflater | null {
+    if (type !== LABEL_KIND) {
+      return super.getInflaterForType(type);
+    }
+    let inflater = this.inflaters.get(type);
+    if (!(inflater instanceof B2cLabelInflater)) {
+      inflater = new B2cLabelInflater();
+      this.inflaters.set(type, inflater);
+    }
+    return inflater;
+  }
+
+  /**
    * Creates a block on the canvas from `original`, a block of this flyout (Blockly's), and tells
    * the toolbox, which settles a block taken from it where it is dropped (./landing.ts).
    */
@@ -701,6 +801,18 @@ export class B2cContinuousFlyout extends ContinuousFlyout {
     recycler.recyclingEnabled = false;
     return recycler;
   }
+}
+
+/** Where a flyout item is now (its top-left corner, in flyout workspace units). */
+function placeOf(element: Blockly.IBoundedElement): Blockly.utils.Coordinate {
+  if (element instanceof Blockly.BlockSvg) {
+    return element.getRelativeToSurfaceXY();
+  }
+  if (element instanceof Blockly.FlyoutButton) {
+    return element.getPosition();
+  }
+  const bounds = element.getBoundingRectangle();
+  return new Blockly.utils.Coordinate(bounds.left, bounds.top);
 }
 
 /** Registers `cls` as `name` of `type`, replacing a different class of that name. */

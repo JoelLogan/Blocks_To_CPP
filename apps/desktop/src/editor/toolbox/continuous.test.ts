@@ -31,15 +31,7 @@ import {
   flyoutWidthLimit,
 } from './continuous';
 import { toolboxInjectOptions } from './register';
-import {
-  FLYOUT_TEST_TIMEOUT_MS,
-  disposeTestWorkspaces,
-  injectedWorkspace,
-  setUpToolboxBlocks,
-} from './testing';
-
-// Each test here shows the flyout of every catalog block (FLYOUT_TEST_TIMEOUT_MS).
-vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
+import { disposeTestWorkspaces, injectedWorkspace, setUpToolboxBlocks } from './testing';
 
 beforeAll(() => {
   setUpToolboxBlocks();
@@ -455,8 +447,11 @@ describe('the flyout as a place where a drop deletes', () => {
     flyout.show(contents);
     await afterNextFrame();
 
+    // Shown again from hidden: Blockly recorded the flyout while it was not displayed, as ending
+    // at the window's edge (a flyout shown again while displayed stays displayed, and Blockly
+    // records nothing then).
+    flyout.hide();
     flyout.show(contents);
-    // Blockly recorded the flyout while it was not displayed, as ending at the window's edge.
     expect(dropTargetAt(workspace, COLUMN + 1)).toBeNull();
     // What the editor's block dragger does when a drag starts.
     expect(recordDragTargetsIfStale(workspace)).toBe(true);
@@ -477,23 +472,22 @@ describe('the flyout as a place where a drop deletes', () => {
     reads.shown = 0;
     reads.hidden = 0;
 
-    // Two rebuilds in one task (a refresh after an edit shows the flyout once).
+    // Two rebuilds in one task (a refresh after an edit shows the flyout once). The flyout stays
+    // displayed, so Blockly's hide() and setVisible(true) record nothing.
     flyout.show(contents);
     flyout.show(contents);
-    // Only Blockly's own records: each showing's hide() and setVisible(true), which read the
-    // flyout only while it is not displayed (hide() leaves it out).
-    expect(record).toHaveBeenCalledTimes(4);
+    expect(record).not.toHaveBeenCalled();
     expect(reads.shown).toBe(0);
-    expect(reads.hidden).toBe(4);
+    expect(reads.hidden).toBe(0);
 
     // One record in the next frame: the toolbox and the flyout each read the flyout once.
     await afterNextFrame();
-    expect(record).toHaveBeenCalledTimes(5);
+    expect(record).toHaveBeenCalledTimes(1);
     expect(reads.shown).toBe(2);
     // A drag that starts now records nothing.
     expect(recordDragTargetsIfStale(workspace)).toBe(false);
     await afterNextFrame();
-    expect(record).toHaveBeenCalledTimes(5);
+    expect(record).toHaveBeenCalledTimes(1);
   });
 
   it('is recorded again where it moves to, also with the same width', async () => {

@@ -23,16 +23,28 @@ import * as Blockly from 'blockly/core';
 import type { EditorContext } from '../../app/editor-types';
 import { useAppStore } from '../../app/store';
 import { documentFixture, projectFixture } from '../../app/testing/fixtures';
+import { toolboxDefinition } from './contents';
+import { B2cBlockInflater } from './inflater';
+import { B2C_BLOCK_KIND } from './presets';
 import { registerToolboxComponents, toolboxInjectOptions } from './register';
 import type { SymbolSource } from './scope';
 
 /**
- * The test timeout of the test files whose tests show the continuous toolbox's flyout several
- * times (`vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS })` after their imports). The flyout
- * draws every block of the catalog: W2's text, math and error blocks took it from 26 to 47 blocks
- * and one showing in happy-dom from 0.40 s to 1.09 s, so the slowest test of each of these files
- * went from 1.3–2.9 s to 3.1–8.1 s in the suite with two workers, past Vitest's default of 5 s,
- * and each W2 category adds more.
+ * The test timeout of the test files whose tests show the continuous toolbox's flyout and whose
+ * slowest test takes more than 2.5 s in the suite under coverage with two workers
+ * (`vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS })` after their imports; Vitest's default
+ * is 5 s, and CI's runners take up to 1.7 times as long as a developer's machine).
+ *
+ * Showing the flyout again builds only the blocks whose items changed and the blocks that declare
+ * something (./inflater.ts), so this no longer grows with the number of times a test shows it:
+ * what it bounds is the first showing at injection, which draws every block of the catalog (62 in
+ * W2's second round, about 1.5 s in happy-dom), and the declaring blocks of each showing. W2's
+ * package T took the slowest test of the 14 files that set it from 2.9-15.3 s to 2.2-12.4 s (on
+ * one machine, base and head runs of those files alternately, and the whole suite). The slowest
+ * left are dominated by the injection, or turn the keeping of blocks off on purpose; three times
+ * the slowest would exceed this limit, so it stays. The files whose slowest test fell to 2.5 s or
+ * less (`toolbox/continuous`, `toolbox/frozen-prototype`) no longer set it. Every category W2 fills
+ * adds blocks to the injection, so remeasure after each one.
  */
 export const FLYOUT_TEST_TIMEOUT_MS = 20_000;
 
@@ -356,4 +368,52 @@ export function editorContext(workspace: Blockly.WorkspaceSvg, core: CoreWasm): 
     selectBlock: () => undefined,
     activeModuleId: () => useAppStore.getState().project?.activeModuleId ?? 'mod_main',
   };
+}
+
+/**
+ * The inflater of the toolbox blocks of `workspace`'s flyout (its `stats()` count the blocks it
+ * built, kept and disposed of), or `null` before the flyout has shown one.
+ */
+export function flyoutInflater(workspace: Blockly.WorkspaceSvg): B2cBlockInflater | null {
+  const flyout = workspace.getFlyout();
+  if (flyout === null) {
+    return null;
+  }
+  // The flyout's inflaters are protected: read the map the way a subclass would.
+  const inflater = (flyout as unknown as { inflaters: Map<string, unknown> }).inflaters.get(
+    B2C_BLOCK_KIND,
+  );
+  return inflater instanceof B2cBlockInflater ? inflater : null;
+}
+
+/** Whether a flyout item is a block with a declaration field (`symbol_decl`). */
+function declaresSomething(item: Blockly.utils.toolbox.ToolboxItemInfo): boolean {
+  const type = (item as { type?: unknown }).type;
+  return (
+    typeof type === 'string' &&
+    (catalogBlock(type)?.fields.some((field) => field.kind === 'symbol_decl') ?? false)
+  );
+}
+
+/**
+ * The full toolbox ({@link toolboxDefinition}) with every category whose contents are fixed shown
+ * `times` times, the copies named `Logic 2`, `Logic 3` and so on, for tests of how the cost of
+ * showing the flyout grows with the number of blocks. The copies leave out the blocks that declare
+ * something (a block with a declaration field), which every showing builds again
+ * (./inflater.ts), so a showing of the larger toolbox builds as many blocks as one of the full
+ * toolbox.
+ */
+export function paddedToolbox(times: number): Blockly.utils.toolbox.ToolboxInfo {
+  const definition = toolboxDefinition();
+  const categories = definition.contents;
+  const copies = [];
+  for (let copy = 2; copy <= times; copy += 1) {
+    for (const category of categories) {
+      if ('contents' in category && 'name' in category) {
+        const contents = category.contents.filter((item) => !declaresSomething(item));
+        copies.push({ ...category, name: `${category.name} ${String(copy)}`, contents });
+      }
+    }
+  }
+  return { ...definition, contents: [...categories, ...copies] };
 }

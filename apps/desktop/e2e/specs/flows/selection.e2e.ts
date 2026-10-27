@@ -1,12 +1,14 @@
 /**
  * The toolbox does not follow the selection (docs/spec/04-user-interface.md §4.2, decision D2 of
  * the M2 polish plan), in the real webview: the Variables category lists every variable of the
- * module, whatever block is selected, and selecting a block never shows the flyout again (which
- * would replace its blocks, so a getter in it would get a new ID). Blockly selects a block when
- * the button is pressed, and a person's click holds the button for a moment, so the blocks of the
- * guessing game (examples/guessing_game.b2c) are clicked with the button held for 100 ms, each
- * scrolled into view first through the test hook, which keeps the selection. A new variable does
- * show the flyout again, with its getter.
+ * module, whatever block is selected, and selecting a block never shows the flyout again. A
+ * showing keeps the blocks whose items did not change (src/editor/toolbox/inflater.ts) but builds
+ * a declaring block, such as *create*, again, so the ID of the flyout's *create* block tells
+ * whether the flyout was shown again. Blockly selects a block when the button is pressed, and a
+ * person's click holds the button for a moment, so the blocks of the guessing game
+ * (examples/guessing_game.b2c) are clicked with the button held for 100 ms, each scrolled into view
+ * first through the test hook, which keeps the selection. A new variable does show the flyout
+ * again, with its getter, and keeps the getters of the others.
  */
 import { Button, Origin } from 'selenium-webdriver';
 import { describe, expect, it } from 'vitest';
@@ -38,11 +40,15 @@ const SETTLE_MS = 1_000;
 
 /**
  * The flyout block IDs of the getters of `syms` (`null` for a getter the toolbox does not list),
- * read in one call of the hook: the toolbox shows its flyout again from a timer, which could run
- * between separate calls and mix the IDs of two showings.
+ * and last of its first *create* block, which each showing builds again, read in one call of the
+ * hook: the toolbox shows its flyout again from a timer, which could run between separate calls
+ * and mix the IDs of two showings.
  */
 function getterIds(app: FlowApp, syms: readonly string[]): Promise<(string | null)[]> {
-  return app.hook.flyoutBlockIds(syms.map((sym) => ({ type: 'var.get', fields: { VAR: sym } })));
+  return app.hook.flyoutBlockIds([
+    ...syms.map((sym) => ({ type: 'var.get', fields: { VAR: sym } })),
+    { type: 'var.declare' },
+  ]);
 }
 
 /**
@@ -91,7 +97,8 @@ describe('Selecting blocks with the mouse', () => {
       );
     }
 
-    // A new variable is listed: the flyout is shown again, with new blocks.
+    // A new variable is listed: the flyout is shown again (a new *create* block), with its getter,
+    // and keeps the getters whose items did not change.
     await app.hook.insertBlocks(MAIN, 'BODY', [
       declareInt(new NodeIds('select'), 's_e2e_tries', 'tries', 0),
     ]);
@@ -102,6 +109,7 @@ describe('Selecting blocks with the mouse', () => {
       },
       { timeout: UI_TIMEOUT_MS, message: 'the getter of the new variable in the toolbox' },
     );
-    expect(after.slice(0, 2)).not.toEqual(shown);
+    expect(after.slice(0, 2)).toEqual(shown.slice(0, 2));
+    expect(after[3]).not.toBe(shown[2]);
   }, 120_000);
 });
