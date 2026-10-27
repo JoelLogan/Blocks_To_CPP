@@ -7,6 +7,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { describeBlock, describeNode, describeTarget } from './labels';
 import { type KeyboardEditor, keyboardEditor } from './testing';
+import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
+
+// Each test here injects the editor with the continuous toolbox, whose first showing draws every
+// catalog block (toolbox/testing.ts): the slowest test took 4.9 to 5.5 s under coverage with two
+// workers on a loaded machine, with happy-dom 20 and 21 alike, against Vitest's 5 s default.
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 let editor: KeyboardEditor | null = null;
 
