@@ -62,6 +62,30 @@ platform: Platform,
 catalogVersion: string, };
 
 /**
+ * A change to `AppearanceSettings`.
+ */
+export type AppearancePatch = {
+/**
+ * The new colour scheme, when it changes.
+ */
+theme?: Theme, };
+
+/**
+ * The app's appearance.
+ */
+export type AppearanceSettings = {
+/**
+ * The colour scheme.
+ */
+theme: Theme, };
+
+/**
+ * How blocks read (`docs/spec/03-block-language.md` §3.5.2); both give
+ * the same code.
+ */
+export type BlockLabels = "friendly" | "cpp";
+
+/**
  * The response of `build_cache_clear`.
  */
 export type BuildCacheClearResponse = {
@@ -275,6 +299,32 @@ id: string,
  * `ID_LIKE`, split at spaces, for example `["debian"]`.
  */
 idLike: Array<string>, };
+
+/**
+ * A change to `EditorSettings`.
+ */
+export type EditorPatch = {
+/**
+ * The new block labels, when they change.
+ */
+blockLabels?: BlockLabels,
+/**
+ * Whether advanced blocks are now shown.
+ */
+showAdvanced?: boolean, };
+
+/**
+ * The editor's mode; expert mode is C++ labels with advanced blocks shown.
+ */
+export type EditorSettings = {
+/**
+ * The block labels.
+ */
+blockLabels: BlockLabels,
+/**
+ * Whether the toolbox shows advanced categories and blocks.
+ */
+showAdvanced: boolean, };
 
 /**
  * The empty response `{}` of commands that return nothing.
@@ -1144,6 +1194,14 @@ newProject: NewProjectSettings,
  */
 buildCache: BuildCacheSettings,
 /**
+ * The app's appearance.
+ */
+appearance: AppearanceSettings,
+/**
+ * The editor's mode.
+ */
+editor: EditorSettings,
+/**
  * The window's own state.
  */
 ui: UiSettings, };
@@ -1191,6 +1249,14 @@ run?: RunSettingsPatch,
  * Console changes.
  */
 console?: ConsolePatch,
+/**
+ * Appearance changes.
+ */
+appearance?: AppearancePatch,
+/**
+ * Changes to the editor's mode.
+ */
+editor?: EditorPatch,
 /**
  * Changes to the window's own state (the editor's layout).
  */
@@ -1403,6 +1469,11 @@ owner: string, };
  * The bundled templates a new project can start from.
  */
 export type Template = "empty" | "helloWorld";
+
+/**
+ * The app's colour scheme.
+ */
+export type Theme = "system" | "light" | "dark";
 
 /**
  * A compiler toolchain the backend found or the user added.

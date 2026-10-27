@@ -22,6 +22,7 @@ use b2c_ipc::dto::{
     ToolchainAddDialogResponse, ToolchainCapabilities, ToolchainListResponse, ToolchainSettings,
     ToolchainSetupInfo, ToolchainSource, Trust, TrustResponse, TrustSource, TrustState, UiSettings,
 };
+use b2c_ipc::dto::{AppearanceSettings, BlockLabels, EditorSettings, Theme};
 use b2c_ipc::{BuildId, Handle, InvalidReason, IoKind, IpcError, RecentId, RunId, SnapshotId, ToolchainId};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -170,6 +171,11 @@ fn settings() -> Settings {
         },
         build_cache: BuildCacheSettings {
             max_bytes: 2 * 1024 * 1024 * 1024,
+        },
+        appearance: AppearanceSettings { theme: Theme::Dark },
+        editor: EditorSettings {
+            block_labels: BlockLabels::Friendly,
+            show_advanced: true,
         },
         ui: UiSettings {
             layout: LayoutSettings {

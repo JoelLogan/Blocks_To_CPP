@@ -93,7 +93,8 @@ pub use read::read_bounded;
 pub use recent::{RecentEntry, RecentStore};
 pub use recovery::{RecoveryStore, SnapshotListing, SnapshotMeta};
 pub use settings::{
-    CodeStyle, NoticeReason, OnErrors, Settings, SettingsNotice, SettingsPatch, SettingsStore,
+    BlockLabels, CodeStyle, NoticeReason, OnErrors, Settings, SettingsNotice, SettingsPatch, SettingsStore,
+    Theme,
 };
 pub use time::{parse_rfc3339_utc, rfc3339_utc};
 pub use trust::{ProjectIdentity, RestrictedReason, TrustFileProblem, TrustSource, TrustStore, TrustVerdict};

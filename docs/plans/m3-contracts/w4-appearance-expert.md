@@ -247,7 +247,10 @@ export function gateText(gate: Gate): string | null;   // "Needs C++20 or newer.
   blockLabels?: BlockLabels, showAdvanced?: boolean }`, with their schemas
   (unknown keys and other values refused, `invalidRequest`). `Theme` is
   `"system" | "light" | "dark"`, `BlockLabels` `"friendly" | "cpp"`. No new
-  command, so the isolation allowlist does not change.
+  command; the isolation hook's generated allowlist and its samples gain the
+  two patch objects (`apps/desktop/src-tauri/isolation/allowlist.generated.js`,
+  `isolation-tests/samples.generated.json`), so the hook refuses any other
+  value before the backend sees it.
 * **Project format:** none. The project's `options.showAdvanced` is read, not
   written.
 

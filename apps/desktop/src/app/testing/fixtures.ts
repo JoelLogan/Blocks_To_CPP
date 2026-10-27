@@ -52,6 +52,8 @@ export function settingsFixture(overrides: Partial<Settings> = {}): Settings {
     toolchain: { selectedId: null },
     newProject: { standard: 'c++20' },
     buildCache: { maxBytes: 2 * 1024 * 1024 * 1024 },
+    appearance: { theme: 'system' },
+    editor: { blockLabels: 'friendly', showAdvanced: false },
     ui: { layout: {} },
     ...overrides,
   };

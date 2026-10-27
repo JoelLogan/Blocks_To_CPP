@@ -48,10 +48,10 @@ pub use run::{
     SanitizerTool,
 };
 pub use settings::{
-    BuildCacheSettings, CodeStyle, CodeStylePatch, ConsolePatch, ConsoleSettings, IndentWidth, LayoutPatch,
-    LayoutSettings, NewProjectSettings, NoticeReason, OnErrors, RunSettings, RunSettingsPatch, Settings,
-    SettingsGetResponse, SettingsNotice, SettingsPatch, SettingsUpdateResponse, ToolchainSettings, UiPatch,
-    UiSettings,
+    AppearancePatch, AppearanceSettings, BlockLabels, BuildCacheSettings, CodeStyle, CodeStylePatch,
+    ConsolePatch, ConsoleSettings, EditorPatch, EditorSettings, IndentWidth, LayoutPatch, LayoutSettings,
+    NewProjectSettings, NoticeReason, OnErrors, RunSettings, RunSettingsPatch, Settings, SettingsGetResponse,
+    SettingsNotice, SettingsPatch, SettingsUpdateResponse, Theme, ToolchainSettings, UiPatch, UiSettings,
 };
 pub use toolchain::{
     CppStandard, Distro, SkipReason, SkippedToolchain, Toolchain, ToolchainAddDialogResponse,

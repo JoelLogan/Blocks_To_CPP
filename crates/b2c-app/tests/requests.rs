@@ -194,6 +194,12 @@ fn settings_updates_with_unknown_keys_leave_the_file_unchanged() {
         json!({"console": {"scrollbackLines": 999}}),
         json!({"run": {"onErrors": "explode"}}),
         json!({"console": null}),
+        json!({"appearance": {"theme": "sepia"}}),
+        json!({"appearance": {"theme": null}}),
+        json!({"appearance": {"accent": "teal"}}),
+        json!({"editor": {"blockLabels": "c++"}}),
+        json!({"editor": {"showAdvanced": 1}}),
+        json!({"editor": {"expertMode": true}}),
     ] {
         let error = decode::<SettingsPatch>(bad.clone()).unwrap_err();
         assert!(

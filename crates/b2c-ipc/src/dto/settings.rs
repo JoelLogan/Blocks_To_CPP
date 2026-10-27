@@ -1,7 +1,8 @@
 //! Machine-local settings: `settings_get` and `settings_update`.
 //!
 //! `settings_update` takes a strict partial patch of the keys the settings page
-//! edits (code style, run behaviour, console) and of the editor's layout (`ui`).
+//! edits (code style, run behaviour, console, appearance, the editor's mode)
+//! and of the editor's layout (`ui`).
 //! The other keys are changed only by their own commands (`toolchain_select`) or
 //! not over IPC at all, so a patch that names them is rejected.
 
@@ -74,6 +75,29 @@ string_enum! {
 }
 
 string_enum! {
+    /// The app's colour scheme.
+    pub enum Theme {
+        /// The system's light or dark setting, followed while the app runs.
+        System = "system",
+        /// Always light.
+        Light = "light",
+        /// Always dark.
+        Dark = "dark",
+    }
+}
+
+string_enum! {
+    /// How blocks read (`docs/spec/03-block-language.md` §3.5.2); both give
+    /// the same code.
+    pub enum BlockLabels {
+        /// Plain words, such as `add (x) to [v]`.
+        Friendly = "friendly",
+        /// The C++ the block stands for, such as `v.push_back(x)`.
+        Cpp = "cpp",
+    }
+}
+
+string_enum! {
     /// What happened to a settings key when the settings were read.
     pub enum NoticeReason {
         /// The value was invalid and was reset to its default.
@@ -141,6 +165,26 @@ pub struct BuildCacheSettings {
     pub max_bytes: u64,
 }
 
+/// The app's appearance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct AppearanceSettings {
+    /// The colour scheme.
+    pub theme: Theme,
+}
+
+/// The editor's mode; expert mode is C++ labels with advanced blocks shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct EditorSettings {
+    /// The block labels.
+    pub block_labels: BlockLabels,
+    /// Whether the toolbox shows advanced categories and blocks.
+    pub show_advanced: bool,
+}
+
 /// The layout of the editor (`docs/spec/04-user-interface.md` §4.1), as the
 /// user last left it. An absent value was never set: the first-start size
 /// applies.
@@ -201,6 +245,10 @@ pub struct Settings {
     pub new_project: NewProjectSettings,
     /// The build cache.
     pub build_cache: BuildCacheSettings,
+    /// The app's appearance.
+    pub appearance: AppearanceSettings,
+    /// The editor's mode.
+    pub editor: EditorSettings,
     /// The window's own state.
     pub ui: UiSettings,
 }
@@ -269,6 +317,32 @@ pub struct ConsolePatch {
     pub scrollback_lines: Option<u32>,
 }
 
+/// A change to [`AppearanceSettings`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct AppearancePatch {
+    /// The new colour scheme, when it changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub theme: Option<Theme>,
+}
+
+/// A change to [`EditorSettings`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct EditorPatch {
+    /// The new block labels, when they change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub block_labels: Option<BlockLabels>,
+    /// Whether advanced blocks are now shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub show_advanced: Option<bool>,
+}
+
 /// A change to [`LayoutSettings`]: each value given replaces the stored one.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -325,6 +399,14 @@ pub struct SettingsPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub console: Option<ConsolePatch>,
+    /// Appearance changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub appearance: Option<AppearancePatch>,
+    /// Changes to the editor's mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub editor: Option<EditorPatch>,
     /// Changes to the window's own state (the editor's layout).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -360,6 +442,27 @@ static CONSOLE_PATCH: ObjectSchema = ObjectSchema {
     fields: &[FieldSpec::optional("scrollbackLines", SCROLLBACK)],
 };
 
+static APPEARANCE_PATCH: ObjectSchema = ObjectSchema {
+    fields: &[FieldSpec::optional(
+        "theme",
+        FieldSchema::Enum {
+            values: Theme::VALUES,
+        },
+    )],
+};
+
+static EDITOR_PATCH: ObjectSchema = ObjectSchema {
+    fields: &[
+        FieldSpec::optional(
+            "blockLabels",
+            FieldSchema::Enum {
+                values: BlockLabels::VALUES,
+            },
+        ),
+        FieldSpec::optional("showAdvanced", FieldSchema::Bool),
+    ],
+};
+
 /// A whole number of pixels in `range`, as a schema.
 // `i64::from` cannot be called in a constant; u32 always fits in i64.
 #[allow(clippy::cast_lossless)]
@@ -393,6 +496,8 @@ impl IpcRequest for SettingsPatch {
                 FieldSpec::optional("codeStyle", FieldSchema::Object(&CODE_STYLE_PATCH)),
                 FieldSpec::optional("run", FieldSchema::Object(&RUN_SETTINGS_PATCH)),
                 FieldSpec::optional("console", FieldSchema::Object(&CONSOLE_PATCH)),
+                FieldSpec::optional("appearance", FieldSchema::Object(&APPEARANCE_PATCH)),
+                FieldSpec::optional("editor", FieldSchema::Object(&EDITOR_PATCH)),
                 FieldSpec::optional("ui", FieldSchema::Object(&UI_PATCH)),
             ],
         };
@@ -409,6 +514,13 @@ impl IpcRequest for SettingsPatch {
             }),
             console: Some(ConsolePatch {
                 scrollback_lines: Some(20_000),
+            }),
+            appearance: Some(AppearancePatch {
+                theme: Some(Theme::Dark),
+            }),
+            editor: Some(EditorPatch {
+                block_labels: Some(BlockLabels::Cpp),
+                show_advanced: Some(true),
             }),
             ui: Some(UiPatch {
                 layout: Some(LayoutPatch {

@@ -250,6 +250,29 @@ const B2C_IPC_ALLOWLIST = Object.freeze({
           }),
           optional: true,
         }),
+        appearance: Object.freeze({
+          type: 'object',
+          fields: Object.freeze({
+            theme: Object.freeze({
+              type: 'enum',
+              values: Object.freeze(['system', 'light', 'dark']),
+              optional: true,
+            }),
+          }),
+          optional: true,
+        }),
+        editor: Object.freeze({
+          type: 'object',
+          fields: Object.freeze({
+            blockLabels: Object.freeze({
+              type: 'enum',
+              values: Object.freeze(['friendly', 'cpp']),
+              optional: true,
+            }),
+            showAdvanced: Object.freeze({ type: 'bool', optional: true }),
+          }),
+          optional: true,
+        }),
         ui: Object.freeze({
           type: 'object',
           fields: Object.freeze({

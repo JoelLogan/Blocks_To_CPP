@@ -4,23 +4,25 @@
 //!
 //! `settings.json` is kept by [`b2c_store::SettingsStore`]; this module maps
 //! its storage types to the IPC types and back. `settings_update` changes only
-//! the code style, Run on errors, the console and the editor's layout
-//! (`ui.layout`): its request type rejects every other key when it is decoded,
+//! the code style, Run on errors, the console, the appearance, the editor's
+//! mode and the editor's layout (`ui.layout`): its request type rejects every other key when it is decoded,
 //! and the selected toolchain changes only through `toolchain_select`.
 
 use b2c_ipc::dto::{
-    BuildCacheSettings, CodeStyle, ConsoleSettings, CppStandard as DtoStandard, IndentWidth,
+    AppearanceSettings as DtoAppearance, BlockLabels as DtoLabels, BuildCacheSettings, CodeStyle,
+    ConsoleSettings, CppStandard as DtoStandard, EditorSettings as DtoEditor, IndentWidth,
     LayoutSettings as DtoLayout, NewProjectSettings, NoticeReason as DtoReason, OnErrors as DtoOnErrors,
     RunSettings, Settings as DtoSettings, SettingsGetResponse, SettingsNotice as DtoNotice,
-    SettingsPatch as DtoPatch, SettingsUpdateResponse, ToolchainSettings, UiSettings as DtoUi,
+    SettingsPatch as DtoPatch, SettingsUpdateResponse, Theme as DtoTheme, ToolchainSettings,
+    UiSettings as DtoUi,
 };
 use b2c_ipc::{IpcError, ToolchainId};
 use b2c_ir::sast::CppStandard;
 use b2c_store::settings::{
-    CodeStylePatch, ConsolePatch, LayoutPatch, RunPatch, SETTINGS_FORMAT_VERSION, Settings, SettingsNotice,
-    SettingsPatch, UiPatch,
+    AppearancePatch, CodeStylePatch, ConsolePatch, EditorPatch, LayoutPatch, RunPatch,
+    SETTINGS_FORMAT_VERSION, Settings, SettingsNotice, SettingsPatch, UiPatch,
 };
-use b2c_store::{NoticeReason, OnErrors};
+use b2c_store::{BlockLabels, NoticeReason, OnErrors, Theme};
 
 use crate::backend::{Backend, command_span};
 use crate::errors::store_error;
@@ -32,6 +34,40 @@ pub(crate) fn standard_to_dto(standard: CppStandard) -> DtoStandard {
         CppStandard::Cpp20 => DtoStandard::Cpp20,
         CppStandard::Cpp23 => DtoStandard::Cpp23,
         CppStandard::Cpp26 => DtoStandard::Cpp26,
+    }
+}
+
+/// The IPC form of a colour scheme.
+fn theme_to_dto(theme: Theme) -> DtoTheme {
+    match theme {
+        Theme::System => DtoTheme::System,
+        Theme::Light => DtoTheme::Light,
+        Theme::Dark => DtoTheme::Dark,
+    }
+}
+
+/// The store's form of a colour scheme.
+fn theme_from_dto(theme: DtoTheme) -> Theme {
+    match theme {
+        DtoTheme::System => Theme::System,
+        DtoTheme::Light => Theme::Light,
+        DtoTheme::Dark => Theme::Dark,
+    }
+}
+
+/// The IPC form of the block labels.
+fn labels_to_dto(labels: BlockLabels) -> DtoLabels {
+    match labels {
+        BlockLabels::Friendly => DtoLabels::Friendly,
+        BlockLabels::Cpp => DtoLabels::Cpp,
+    }
+}
+
+/// The store's form of the block labels.
+fn labels_from_dto(labels: DtoLabels) -> BlockLabels {
+    match labels {
+        DtoLabels::Friendly => BlockLabels::Friendly,
+        DtoLabels::Cpp => BlockLabels::Cpp,
     }
 }
 
@@ -63,6 +99,13 @@ pub(crate) fn settings_to_dto(settings: &Settings) -> DtoSettings {
         },
         build_cache: BuildCacheSettings {
             max_bytes: settings.build_cache.max_bytes,
+        },
+        appearance: DtoAppearance {
+            theme: theme_to_dto(settings.appearance.theme),
+        },
+        editor: DtoEditor {
+            block_labels: labels_to_dto(settings.editor.block_labels),
+            show_advanced: settings.editor.show_advanced,
         },
         ui: DtoUi {
             layout: DtoLayout {
@@ -105,6 +148,13 @@ pub(crate) fn patch_from_dto(patch: &DtoPatch) -> SettingsPatch {
         }),
         console: patch.console.map(|console| ConsolePatch {
             scrollback_lines: console.scrollback_lines,
+        }),
+        appearance: patch.appearance.map(|appearance| AppearancePatch {
+            theme: appearance.theme.map(theme_from_dto),
+        }),
+        editor: patch.editor.map(|editor| EditorPatch {
+            block_labels: editor.block_labels.map(labels_from_dto),
+            show_advanced: editor.show_advanced,
         }),
         ui: patch.ui.map(|ui| UiPatch {
             layout: ui.layout.map(|layout| LayoutPatch {
@@ -173,8 +223,9 @@ impl Backend {
 #[cfg(test)]
 mod tests {
     use b2c_ipc::dto::{
-        CodeStylePatch as DtoStyle, ConsolePatch as DtoConsole, LayoutPatch as DtoLayoutPatch,
-        RunSettingsPatch, UiPatch as DtoUiPatch,
+        AppearancePatch as DtoAppearancePatch, CodeStylePatch as DtoStyle, ConsolePatch as DtoConsole,
+        EditorPatch as DtoEditorPatch, LayoutPatch as DtoLayoutPatch, RunSettingsPatch,
+        UiPatch as DtoUiPatch,
     };
     use b2c_store::settings::LayoutSettings;
 
@@ -194,6 +245,8 @@ mod tests {
                 "toolchain": {"selectedId": null},
                 "newProject": {"standard": "c++20"},
                 "buildCache": {"maxBytes": 2_147_483_648_u64},
+                "appearance": {"theme": "system"},
+                "editor": {"blockLabels": "friendly", "showAdvanced": false},
                 "ui": {"layout": {}}
             })
         );
@@ -250,6 +303,26 @@ mod tests {
         assert_eq!(
             b2c_store::settings::BOTTOM_DOCK_HEIGHT,
             b2c_ipc::limits::BOTTOM_DOCK_HEIGHT
+        );
+    }
+
+    #[test]
+    fn the_appearance_and_the_editor_mode_map_both_ways() {
+        for theme in DtoTheme::ALL {
+            assert_eq!(theme_to_dto(theme_from_dto(*theme)), *theme);
+        }
+        for labels in DtoLabels::ALL {
+            assert_eq!(labels_to_dto(labels_from_dto(*labels)), *labels);
+        }
+        let mut settings = Settings::default();
+        settings.appearance.theme = Theme::Dark;
+        settings.editor.block_labels = BlockLabels::Cpp;
+        settings.editor.show_advanced = true;
+        let json = serde_json::to_value(settings_to_dto(&settings)).unwrap();
+        assert_eq!(json["appearance"], serde_json::json!({"theme": "dark"}));
+        assert_eq!(
+            json["editor"],
+            serde_json::json!({"blockLabels": "cpp", "showAdvanced": true})
         );
     }
 
@@ -317,11 +390,21 @@ mod tests {
             console: Some(DtoConsole {
                 scrollback_lines: Some(5000),
             }),
+            appearance: Some(DtoAppearancePatch {
+                theme: Some(DtoTheme::Light),
+            }),
+            editor: Some(DtoEditorPatch {
+                block_labels: Some(DtoLabels::Cpp),
+                show_advanced: None,
+            }),
             ui: None,
         });
         assert_eq!(patch.code_style.and_then(|s| s.indent_width), Some(2));
         assert_eq!(patch.run.and_then(|r| r.on_errors), Some(OnErrors::ShowProblems));
         assert_eq!(patch.console.and_then(|c| c.scrollback_lines), Some(5000));
+        assert_eq!(patch.appearance.and_then(|a| a.theme), Some(Theme::Light));
+        assert_eq!(patch.editor.and_then(|e| e.block_labels), Some(BlockLabels::Cpp));
+        assert_eq!(patch.editor.and_then(|e| e.show_advanced), None);
         assert_eq!(patch_from_dto(&DtoPatch::default()), SettingsPatch::default());
     }
 }
