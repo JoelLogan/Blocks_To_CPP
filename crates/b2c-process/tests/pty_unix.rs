@@ -597,6 +597,11 @@ fn bad_requests_are_refused_before_anything_starts() {
         spawn_piped(&with_input),
         Err(ProcessError::InvalidCommand { .. })
     ));
+    // A console window of its own exists only on Windows.
+    assert!(matches!(
+        b2c_process::spawn_in_new_console(&sh("exit 0")),
+        Err(ProcessError::Pty(error)) if error.kind() == ErrorKind::Unsupported
+    ));
     let missing = Command::new("/nonexistent/b2c-no-such-program", std::env::temp_dir()).unwrap();
     assert!(matches!(
         spawn_pty(&missing, SIZE),

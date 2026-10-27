@@ -42,8 +42,8 @@ use windows_sys::Win32::System::Console::{
     COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON, ResizePseudoConsole,
 };
 use windows_sys::Win32::System::Threading::{
-    CREATE_NO_WINDOW, INFINITE, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-    STARTF_USESTDHANDLES,
+    CREATE_NEW_CONSOLE, CREATE_NO_WINDOW, INFINITE, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+    PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, STARTF_USESTDHANDLES,
 };
 
 use super::session::{Shared, Supervised};
@@ -87,6 +87,7 @@ pub(super) fn spawn(command: &Command, io: Io, input_file: Option<File>) -> Resu
     let connected = match io {
         Io::Pty(size) => in_console(&mut launch, size),
         Io::Pipes => with_pipes(&mut launch, input_file),
+        Io::NewConsole => in_new_console(&mut launch),
     };
     let Connected {
         created,
@@ -230,6 +231,27 @@ fn with_pipes(launch: &mut Launch, input_file: Option<File>) -> Result<Connected
     // sees end-of-file when the program's tree has ended.
     drop(child_input);
     drop(child_output);
+    Ok(Connected {
+        created: created.map_err(Failure::Spawn)?,
+        output,
+        input,
+        console: None,
+    })
+}
+
+/// Creates the program in a console window of its own, inheriting no
+/// handle: it gets its standard handles from the new console. This process
+/// keeps ends of two pipes nobody else holds, so the reader sees end-of-file
+/// at once and writes fail.
+fn in_new_console(launch: &mut Launch) -> Result<Connected, Failure> {
+    let (unused_input, input) = create::pipe(PIPE_BUFFER).map_err(Failure::Spawn)?;
+    let (output, unused_output) = create::pipe(PIPE_BUFFER).map_err(Failure::Spawn)?;
+    drop(unused_input);
+    drop(unused_output);
+    let created = AttributeList::new().and_then(|mut attributes| {
+        let startup = create::startup_info(&mut attributes);
+        launch.create(&startup, false, CREATE_NEW_CONSOLE)
+    });
     Ok(Connected {
         created: created.map_err(Failure::Spawn)?,
         output,

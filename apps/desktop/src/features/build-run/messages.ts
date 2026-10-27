@@ -56,6 +56,12 @@ export function failureMessage(code: FailureCode, action: 'build' | 'run'): Fail
     case 'buildNotSuccessful':
     case 'unknownBuild':
       return { title, message: 'The program is out of date. Build the project, then try again.' };
+    case 'noExternalTerminal':
+      return {
+        title,
+        message:
+          'No terminal program was found to run it in a separate window. Install one (such as xterm), or choose “In the console” under Where programs run in Settings.',
+      };
     case 'io':
       return {
         title,

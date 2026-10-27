@@ -246,7 +246,9 @@ export function checkRunEvent(message: unknown): RunEvent | null {
       valid =
         isOneOf(CONTAINMENTS, message['containment']) &&
         isOneOf(RUN_MODES, message['mode']) &&
-        typeof message['ideHelpers'] === 'boolean';
+        typeof message['ideHelpers'] === 'boolean' &&
+        typeof message['inputFile'] === 'boolean' &&
+        typeof message['externalTerminal'] === 'boolean';
       break;
     case 'skipped':
       valid = isCount(message['lines']) && isCount(message['afterSeq']);

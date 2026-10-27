@@ -4,7 +4,7 @@
  * through it. Editor plugins (the toolbox, diagnostics, the clipboard) receive an
  * {@link EditorContext} when the workspace exists and return their clean-up function.
  */
-import type { BdmDocument, CoreWasm } from '@blocks2cpp/b2c-core-wasm';
+import type { BdmDocument, BdmProject, CoreWasm } from '@blocks2cpp/b2c-core-wasm';
 import type * as Blockly from 'blockly/core';
 
 import type { useAppStore } from './store';
@@ -15,10 +15,18 @@ export interface SelectBlockOptions {
   center?: boolean;
 }
 
+/**
+ * The project settings of the project settings page (05 §5.3): the language, the generator
+ * options, the build configurations and defines, and the run arguments and working folder.
+ */
+export type ProjectSettings = Pick<BdmProject, 'language' | 'options' | 'build' | 'run'>;
+
 /** The project's own data that the editor changes outside the canvas (05 §5.3). */
 export interface ProjectInfo {
   /** The project's display name, already checked (04 §4.1: 1–100 characters on one line). */
   name: string;
+  /** New project settings, already checked; absent leaves them as they are. */
+  settings?: ProjectSettings;
 }
 
 /** What the rest of the app may do with the block editor. */

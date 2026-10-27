@@ -41,6 +41,7 @@
 pub mod build_dir;
 pub mod cache;
 mod compile;
+pub mod export;
 pub mod frontend;
 pub mod ide;
 mod manifest;
@@ -59,9 +60,9 @@ pub use frontend::{
     DEFAULT_INDENT_WIDTH, Frontend, FrontendOptions, GENERATOR_INCOMPLETE, INDENT_WIDTHS, Stage, run_frontend,
 };
 pub use run::{
-    ASAN_OPTIONS, ASAN_OPTIONS_NO_LEAKS, CapturedRun, ProgramExit, ProgramInput, PtySize, RunEnvOptions,
-    RunError, RunRequest, RunSessions, RunSpec, TERM, UBSAN_OPTIONS, run_environment, run_program,
-    run_program_captured,
+    ASAN_OPTIONS, ASAN_OPTIONS_NO_LEAKS, CapturedRun, EXTERNAL_TERMINAL_VAR, ExternalTerminal, ProgramExit,
+    ProgramInput, PtySize, RunEnvOptions, RunError, RunRequest, RunSessions, RunSpec, TERM, UBSAN_OPTIONS,
+    run_environment, run_program, run_program_captured,
 };
 pub use session::{BuildJob, BuildRecord, BuildSessions, RecordOutcome, StaleReason, ToolchainForBuild};
 pub use toolchains::{ToolchainChoice, ToolchainReport, list_toolchains};

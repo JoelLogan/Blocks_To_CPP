@@ -1,6 +1,7 @@
 /**
  * The toolbar's main menu, `≡` (docs/spec/04-user-interface.md §4.1, §4.10): *New project…*,
- * *Open…*, *Save*, *Save as…*, *Rename project…*, *Undo*, *Redo* and *Close project*. Like the
+ * *Open…*, *Save*, *Save as…*, *Rename project…*, *Project settings…*, *Export as C++ project…*,
+ * *Undo*, *Redo* and *Close project*. Like the
  * rest of the toolbar it only runs commands: an item is listed only while a feature has registered
  * its command, and the items about the open project only while one is open, so the menu never
  * offers something that does nothing (§4.13). Without any item the button is not shown. *Undo* and
@@ -70,6 +71,13 @@ export const MAIN_MENU_ITEMS: readonly MenuItem[] = [
   },
   { command: 'project.saveAs', label: 'Save as…', needsProject: true, group: 1 },
   { command: 'project.rename', label: 'Rename project…', needsProject: true, group: 1 },
+  { command: 'project.settings', label: 'Project settings…', needsProject: true, group: 1 },
+  {
+    command: 'project.export',
+    label: 'Export as C++ project…',
+    needsProject: true,
+    group: 1,
+  },
   {
     command: 'edit.undo',
     label: 'Undo',

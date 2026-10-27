@@ -81,6 +81,8 @@ const STARTED = {
   containment: 'cgroup',
   mode: 'pty',
   ideHelpers: true,
+  inputFile: false,
+  externalTerminal: false,
 } as const;
 
 /** Runs `id` and lets everything it starts settle. */
@@ -1029,7 +1031,9 @@ describe('the run gate', () => {
   it.each(['disableRun', 'showProblems'] as const)(
     'shows the first error instead of running with errors (%s)',
     async (onErrors) => {
-      state().actions.setSettings({ value: settingsFixture({ run: { onErrors } }) });
+      state().actions.setSettings({
+        value: settingsFixture({ run: { onErrors, externalTerminal: false } }),
+      });
       state().actions.setAnalysis({ preview: previewFixture([diagnosticFixture()]) });
       state().actions.setUi({ bottomTab: 'console', bottomCollapsed: true });
       const selectBlock = vi.fn();

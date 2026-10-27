@@ -128,6 +128,8 @@ pub struct Backend {
     /// upgraded with (`docs/spec/05-project-format.md` §5.7).
     pub(crate) block_upgrades: BlockUpgrades<'static>,
     pub(crate) shut_down: AtomicBool,
+    /// The input files chosen for projects (`run_input_file`).
+    pub(crate) input_files: crate::run_options::InputFiles,
     /// How often `run_start` analysed a project again (S7-5), for tests.
     pub(crate) run_analyses: std::sync::atomic::AtomicUsize,
 }
@@ -255,6 +257,7 @@ impl Backend {
             events,
             block_upgrades,
             shut_down: AtomicBool::new(false),
+            input_files: crate::run_options::InputFiles::default(),
             run_analyses: std::sync::atomic::AtomicUsize::new(0),
         });
         backend.install_build_hook();

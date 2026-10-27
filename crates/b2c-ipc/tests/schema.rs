@@ -10,12 +10,12 @@ use std::collections::BTreeSet;
 use b2c_ipc::commands::{COMMANDS, IpcRequest};
 use b2c_ipc::decode;
 use b2c_ipc::dto::{
-    BuildCancelRequest, BuildStartRequest, OpenHelpLinkRequest, ProjectCloseRequest, ProjectNewRequest,
-    ProjectOpenRecentRequest, ProjectReloadRequest, ProjectSaveAsDialogRequest, ProjectSaveRequest,
-    ProjectSetDirtyRequest, RecentRemoveRequest, RecoveryDiscardRequest, RecoveryRestoreRequest,
-    RecoverySaveRequest, RunAckRequest, RunCloseInputRequest, RunInputRequest, RunResizeRequest,
-    RunStartRequest, RunStopRequest, SettingsPatch, ToolchainSelectRequest, TrustGetRequest,
-    TrustGrantRequest, TrustRevokeRequest,
+    BuildCancelRequest, BuildStartRequest, OpenHelpLinkRequest, ProjectCloseRequest,
+    ProjectExportDialogRequest, ProjectNewRequest, ProjectOpenRecentRequest, ProjectReloadRequest,
+    ProjectSaveAsDialogRequest, ProjectSaveRequest, ProjectSetDirtyRequest, RecentRemoveRequest,
+    RecoveryDiscardRequest, RecoveryRestoreRequest, RecoverySaveRequest, RunAckRequest, RunCloseInputRequest,
+    RunInputFileRequest, RunInputRequest, RunResizeRequest, RunStartRequest, RunStopRequest, SettingsPatch,
+    ToolchainSelectRequest, TrustGetRequest, TrustGrantRequest, TrustRevokeRequest,
 };
 use b2c_ipc::schema::{FieldSchema, ObjectSchema};
 use serde_json::Value;
@@ -30,6 +30,7 @@ macro_rules! for_every_request {
         $check::<ProjectSaveAsDialogRequest>();
         $check::<ProjectCloseRequest>();
         $check::<ProjectSetDirtyRequest>();
+        $check::<ProjectExportDialogRequest>();
         $check::<RecentRemoveRequest>();
         $check::<RecoverySaveRequest>();
         $check::<RecoveryRestoreRequest>();
@@ -46,6 +47,7 @@ macro_rules! for_every_request {
         $check::<RunResizeRequest>();
         $check::<RunStopRequest>();
         $check::<RunAckRequest>();
+        $check::<RunInputFileRequest>();
         $check::<SettingsPatch>();
         $check::<OpenHelpLinkRequest>();
     };
@@ -81,7 +83,7 @@ fn every_schema_has_exactly_the_serde_keys() {
         assert_eq!(spec.sample.unwrap()(), sample, "{}", T::COMMAND);
     }
     for_every_request!(check);
-    assert_eq!(COMMANDS.iter().filter(|c| c.request.is_some()).count(), 25);
+    assert_eq!(COMMANDS.iter().filter(|c| c.request.is_some()).count(), 27);
 }
 
 /// Every enum value and integer bound the schema allows is one serde accepts, so

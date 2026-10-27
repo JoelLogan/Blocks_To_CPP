@@ -426,14 +426,23 @@ export class RunController {
     }
   }
 
-  #started(started: { containment: Containment; ideHelpers: boolean; at: number }): void {
+  #started(started: {
+    containment: Containment;
+    ideHelpers: boolean;
+    inputFile: boolean;
+    externalTerminal: boolean;
+    at: number;
+  }): void {
     this.#deps.store.getState().actions.setRun({
       status: 'running',
       startedAt: started.at,
       exit: null,
       containment: started.containment,
       ideHelpers: started.ideHelpers,
-      inputOpen: true,
+      inputFile: started.inputFile,
+      externalTerminal: started.externalTerminal,
+      // A program that reads a file or its own window takes no typing here.
+      inputOpen: !started.inputFile && !started.externalTerminal,
     });
     this.#showTab('console');
     // Typing goes to the program: move the focus into the terminal once it is shown, unless a

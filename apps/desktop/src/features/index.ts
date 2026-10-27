@@ -11,8 +11,10 @@
 import { type Feature, type FeatureContext, installAll } from '../app/features';
 import { analysisNoticeFeature } from './analysis';
 import { buildRunFeature } from './build-run';
+import { exportFeature } from './export';
 import { createExternalChangeFeature } from './external-change';
 import { createProjectFeature, ProjectLink, registerStartPageSection } from './project';
+import { projectSettingsFeature } from './project-settings';
 import { createRecoveryFeature } from './recovery';
 import { settingsFeature } from './settings';
 import { toolchainFeature } from './toolchain';
@@ -25,6 +27,8 @@ const projectLink = new ProjectLink();
 const FEATURES: Feature[] = [
   createProjectFeature({ link: projectLink }),
   buildRunFeature,
+  exportFeature,
+  projectSettingsFeature,
   analysisNoticeFeature,
   toolchainFeature,
   settingsFeature,

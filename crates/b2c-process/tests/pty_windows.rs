@@ -428,3 +428,23 @@ fn pipe_mode_reads_its_input_from_a_file() {
         Err(ProcessError::StdinFile { .. })
     ));
 }
+
+#[test]
+fn a_console_window_of_its_own_is_contained_and_reports_the_exit() {
+    let mut child = b2c_process::spawn_in_new_console(&cmd("exit 5")).unwrap();
+    assert_eq!(child.mode(), IoMode::NewConsole);
+    assert_eq!(child.containment(), ContainmentLevel::JobObject);
+    let output = Collector::start(&mut child);
+    assert_eq!(output.finish(), "");
+    let exit = wait_within(&mut child, PATIENCE);
+    assert_eq!(exit.status, ExitStatus::Exited(5));
+    assert_eq!(
+        child.writer().write(b"x").unwrap_err().kind(),
+        ErrorKind::BrokenPipe
+    );
+
+    let mut waiting =
+        b2c_process::spawn_in_new_console(&system_program("ping.exe", &["-n", "600", "127.0.0.1"])).unwrap();
+    waiting.stop();
+    assert!(wait_within(&mut waiting, PATIENCE).stopped);
+}

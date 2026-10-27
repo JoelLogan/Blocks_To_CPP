@@ -1,6 +1,6 @@
 //! Running: `run_start` with its two channels, `run_input`,
-//! `run_close_input`, `run_resize`, `run_stop` and `run_ack`
-//! (`docs/spec/02-architecture.md` §2.4.3).
+//! `run_close_input`, `run_resize`, `run_stop`, `run_ack`, and the input
+//! file of `run_input_file` (`docs/spec/02-architecture.md` §2.4.3).
 //!
 //! **Channels.** `onOutput` carries the program's output as raw byte batches,
 //! numbered from 1 in send order. `onEvent` carries [`RunEvent`]s as JSON; each
@@ -20,7 +20,7 @@ use crate::commands::IpcRequest;
 use crate::decode::decode_base64;
 use crate::dto::id_request;
 use crate::error::{InvalidReason, IpcError};
-use crate::ids::{BuildId, RunId};
+use crate::ids::{BuildId, Handle, RunId};
 use crate::limits::{MAX_RUN_INPUT_BASE64, MAX_RUN_INPUT_BYTES, MAX_SAFE_INTEGER, RUN_COLS, RUN_ROWS};
 use crate::macros::string_enum;
 use crate::schema::{FieldSchema, FieldSpec, ObjectSchema};
@@ -286,6 +286,77 @@ impl IpcRequest for RunAckRequest {
 }
 
 string_enum! {
+    /// What `run_input_file` does.
+    pub enum RunInputFileAction {
+        /// Says which file is chosen, if any.
+        Get = "get",
+        /// Asks for a file in a native dialog; a cancelled dialog keeps the
+        /// file chosen before.
+        Choose = "choose",
+        /// Forgets the chosen file: programs read the console again.
+        Clear = "clear",
+    }
+}
+
+/// The request of `run_input_file`: the file the project's programs read as
+/// their standard input, chosen in a native dialog and kept by the backend
+/// for the project (by its ID) until the app ends. The path never crosses
+/// IPC.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RunInputFileRequest {
+    /// The project.
+    pub handle: Handle,
+    /// What to do.
+    pub action: RunInputFileAction,
+}
+
+impl IpcRequest for RunInputFileRequest {
+    const COMMAND: &'static str = "run_input_file";
+
+    fn schema() -> &'static ObjectSchema {
+        static SCHEMA: ObjectSchema = ObjectSchema {
+            fields: &[
+                FieldSpec::required("handle", Handle::SCHEMA),
+                FieldSpec::required(
+                    "action",
+                    FieldSchema::Enum {
+                        values: RunInputFileAction::VALUES,
+                    },
+                ),
+            ],
+        };
+        &SCHEMA
+    }
+
+    fn sample() -> Self {
+        Self {
+            handle: Handle::example(),
+            action: RunInputFileAction::Choose,
+        }
+    }
+
+    fn validate(&self) -> Result<(), IpcError> {
+        Ok(())
+    }
+}
+
+/// The response of `run_input_file`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct RunInputFileResponse {
+    /// The chosen file's name for display (never its folder), with hidden
+    /// characters made visible and cut to 100 characters; `null` when
+    /// programs read the console.
+    pub file_name: Option<String>,
+    /// Whether the dialog was cancelled (`choose` only); the file chosen
+    /// before is kept.
+    pub cancelled: bool,
+}
+
+string_enum! {
     /// How the program's process tree is contained.
     pub enum Containment {
         /// A Windows Job Object.
@@ -447,6 +518,12 @@ pub enum RunEvent {
         mode: RunMode,
         /// Whether the IDE helper unit was linked in (UTF-8 console on Windows).
         ide_helpers: bool,
+        /// Whether the program reads its input from the project's input file
+        /// (`run_input_file`); its input is then closed for the console.
+        input_file: bool,
+        /// Whether the program runs in a terminal window of its own; the
+        /// console then shows no output, only how it ended.
+        external_terminal: bool,
     },
     /// Output was dropped because the terminal fell too far behind.
     Skipped {

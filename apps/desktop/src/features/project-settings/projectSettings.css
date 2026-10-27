@@ -1,0 +1,29 @@
+/*
+ * The project settings page (docs/spec/04-user-interface.md §4.1), on the frame of the feature
+ * pages (../settings/page/page.css): rows of list fields (defines, arguments) and the two build
+ * configurations.
+ */
+
+.project-settings-configuration {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--b2c-border);
+  border-radius: 6px;
+}
+
+.project-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.project-settings-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+.project-settings-row .feature-input {
+  width: 14em;
+}

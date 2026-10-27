@@ -7,7 +7,7 @@ limits, compiler arguments and safety rules as the app
 
 ```text
 b2c check      <project.b2c> [--format text|json]
-b2c generate   <project.b2c> --out <dir> [--export]
+b2c generate   <project.b2c> --out <dir> [--export [--replace]]
 b2c build      <project.b2c> [--config debug|release] [--toolchain <g++>] [--out <file>] [--cache-dir <dir>]
 b2c run        <project.b2c> [--config debug|release] [--toolchain <g++>] [--stdin <file>]
                              [--timeout <duration>] [--cache-dir <dir>] [-- <program args>…]
@@ -37,10 +37,18 @@ errors and accept the same warnings.
 ### `b2c generate`
 
 Writes the generated C++ files into the `--out` folder, creating it if
-needed. Each file is rewritten only when its content changed. `--export`
-leaves out the "edit the blocks, not this file" banner. The project must have
-no errors. The C++ is always indented with 4 spaces: `b2c` does not read the
-app's code style setting.
+needed. Each file is rewritten only when its content changed. The project must
+have no errors. The C++ is always indented with 4 spaces: `b2c` does not read
+the app's code style setting.
+
+`--export` exports the project as an ordinary C++ project instead, as the
+app's *Export as C++ project…* does: the generated files without the "edit
+the blocks, not this file" banner in `src/`, a `CMakeLists.txt` (CMake 3.20
+or newer), a `Makefile` (g++ and GNU make) and a `README.md` that says how to
+build it, with the same flags the app uses, and `.b2c-export.json`, which
+lists the files the export wrote. The folder must be missing or empty;
+`--replace` replaces an earlier export there instead, rewriting or removing
+only the files it lists and keeping every other file.
 
 ### `b2c build`
 

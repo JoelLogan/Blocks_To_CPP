@@ -13,6 +13,8 @@ import type {
   IpcError,
   OpenHelpLinkRequest,
   ProjectCloseRequest,
+  ProjectExportDialogRequest,
+  ProjectExportDialogResponse,
   ProjectNewRequest,
   ProjectNewResponse,
   ProjectOpenDialogResponse,
@@ -35,6 +37,8 @@ import type {
   RunAckRequest,
   RunCloseInputRequest,
   RunEvent,
+  RunInputFileRequest,
+  RunInputFileResponse,
   RunInputRequest,
   RunResizeRequest,
   RunStartRequest,
@@ -72,6 +76,7 @@ export const COMMAND_NAMES = [
   'project_save_as_dialog',
   'project_close',
   'project_set_dirty',
+  'project_export_dialog',
   'recent_list',
   'recent_remove',
   'recovery_save',
@@ -95,6 +100,7 @@ export const COMMAND_NAMES = [
   'run_resize',
   'run_stop',
   'run_ack',
+  'run_input_file',
   'settings_get',
   'settings_update',
   'open_help_link',
@@ -233,6 +239,8 @@ export interface IpcClient {
   projectClose(request: ProjectCloseRequest): Promise<Empty>;
   /** Calls `project_set_dirty`. */
   projectSetDirty(request: ProjectSetDirtyRequest): Promise<Empty>;
+  /** Calls `project_export_dialog`. */
+  projectExportDialog(request: ProjectExportDialogRequest): Promise<ProjectExportDialogResponse>;
   /** Calls `recent_list`. */
   recentList(): Promise<RecentListResponse>;
   /** Calls `recent_remove`. */
@@ -286,6 +294,8 @@ export interface IpcClient {
   runStop(request: RunStopRequest): Promise<Empty>;
   /** Calls `run_ack`. */
   runAck(request: RunAckRequest): Promise<Empty>;
+  /** Calls `run_input_file`. */
+  runInputFile(request: RunInputFileRequest): Promise<RunInputFileResponse>;
   /** Calls `settings_get`. */
   settingsGet(): Promise<SettingsGetResponse>;
   /** Calls `settings_update`. */
@@ -317,6 +327,8 @@ export function createIpcClient(t: IpcTransport): IpcClient {
       call(t, 'project_save_as_dialog', { request }) as Promise<ProjectSaveAsDialogResponse>,
     projectClose: (request) => call(t, 'project_close', { request }) as Promise<Empty>,
     projectSetDirty: (request) => call(t, 'project_set_dirty', { request }) as Promise<Empty>,
+    projectExportDialog: (request) =>
+      call(t, 'project_export_dialog', { request }) as Promise<ProjectExportDialogResponse>,
     recentList: () => call(t, 'recent_list', {}) as Promise<RecentListResponse>,
     recentRemove: (request) => call(t, 'recent_remove', { request }) as Promise<Empty>,
     recoverySave: (request) => call(t, 'recovery_save', { request }) as Promise<Empty>,
@@ -360,6 +372,8 @@ export function createIpcClient(t: IpcTransport): IpcClient {
     runResize: (request) => call(t, 'run_resize', { request }) as Promise<Empty>,
     runStop: (request) => call(t, 'run_stop', { request }) as Promise<Empty>,
     runAck: (request) => call(t, 'run_ack', { request }) as Promise<Empty>,
+    runInputFile: (request) =>
+      call(t, 'run_input_file', { request }) as Promise<RunInputFileResponse>,
     settingsGet: () => call(t, 'settings_get', {}) as Promise<SettingsGetResponse>,
     settingsUpdate: (request) =>
       call(t, 'settings_update', { request }) as Promise<SettingsUpdateResponse>,

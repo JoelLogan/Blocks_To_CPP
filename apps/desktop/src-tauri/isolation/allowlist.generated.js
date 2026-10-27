@@ -72,6 +72,15 @@ const B2C_IPC_ALLOWLIST = Object.freeze({
       }),
     }),
   }),
+  project_export_dialog: Object.freeze({
+    request: Object.freeze({
+      type: 'object',
+      fields: Object.freeze({
+        handle: Object.freeze({ type: 'id', prefix: 'ph_', hexLength: 32 }),
+        document: Object.freeze({ type: 'string', maxLength: 33554432 }),
+      }),
+    }),
+  }),
   recent_list: Object.freeze({}),
   recent_remove: Object.freeze({
     request: Object.freeze({
@@ -224,6 +233,15 @@ const B2C_IPC_ALLOWLIST = Object.freeze({
       }),
     }),
   }),
+  run_input_file: Object.freeze({
+    request: Object.freeze({
+      type: 'object',
+      fields: Object.freeze({
+        handle: Object.freeze({ type: 'id', prefix: 'ph_', hexLength: 32 }),
+        action: Object.freeze({ type: 'enum', values: Object.freeze(['get', 'choose', 'clear']) }),
+      }),
+    }),
+  }),
   settings_get: Object.freeze({}),
   settings_update: Object.freeze({
     request: Object.freeze({
@@ -248,6 +266,7 @@ const B2C_IPC_ALLOWLIST = Object.freeze({
               values: Object.freeze(['disableRun', 'showProblems']),
               optional: true,
             }),
+            externalTerminal: Object.freeze({ type: 'bool', optional: true }),
           }),
           optional: true,
         }),

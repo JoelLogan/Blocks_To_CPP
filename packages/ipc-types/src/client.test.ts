@@ -70,7 +70,7 @@ function method(client: IpcClient, command: string): AnyMethod {
 describe('the command table', () => {
   it('carries the IPC version and every command once', () => {
     expect(IPC_VERSION).toBe(1);
-    expect(COMMAND_NAMES).toHaveLength(37);
+    expect(COMMAND_NAMES).toHaveLength(39);
     expect(new Set(COMMAND_NAMES).size).toBe(COMMAND_NAMES.length);
     expect(COMMAND_NAMES).toContain('build_start');
     expect(COMMAND_NAMES).not.toContain('app_version');

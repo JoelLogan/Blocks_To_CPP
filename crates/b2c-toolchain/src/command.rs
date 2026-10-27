@@ -137,6 +137,68 @@ impl<'a> BuildInputs<'a> {
     }
 }
 
+/// The source-encoding flags every build uses (§7.4.1).
+pub const ENCODING_FLAGS: [&str; 2] = ["-finput-charset=UTF-8", "-fexec-charset=UTF-8"];
+
+/// The warning flags of `config`'s warning level and *warnings as errors*
+/// (§7.4.2), as builds and exports use them.
+///
+/// ```
+/// use b2c_model::{BuildConfiguration, Optimization, WarningLevel};
+/// use b2c_toolchain::command::warning_flags;
+///
+/// let config = BuildConfiguration {
+///     optimization: Optimization::None,
+///     debug_info: true,
+///     sanitizers: Vec::new(),
+///     warnings: WarningLevel::Minimal,
+///     warnings_as_errors: true,
+///     hardening: true,
+/// };
+/// assert_eq!(warning_flags(&config), ["-Wall", "-Werror"]);
+/// ```
+pub fn warning_flags(config: &BuildConfiguration) -> Vec<&'static str> {
+    let mut flags = vec!["-Wall"];
+    if matches!(config.warnings, WarningLevel::Helpful | WarningLevel::Strict) {
+        flags.extend(["-Wextra", "-Wpedantic"]);
+    }
+    if config.warnings == WarningLevel::Strict {
+        flags.extend(STRICT_WARNINGS);
+    }
+    if config.warnings_as_errors {
+        flags.push("-Werror");
+    }
+    flags
+}
+
+/// Whether `config` is unoptimised (`-O0` or `-Og`), as debug builds are.
+pub fn is_debug_like(config: &BuildConfiguration) -> bool {
+    matches!(config.optimization, Optimization::None | Optimization::Debug)
+}
+
+/// The optimisation, debug-information and assertion flags of `config`
+/// (§7.4.3), as builds and exports use them.
+pub fn optimisation_flags(config: &BuildConfiguration) -> Vec<&'static str> {
+    let mut flags = vec![match config.optimization {
+        Optimization::None => "-O0",
+        Optimization::Debug => "-Og",
+        Optimization::Speed => "-O2",
+        Optimization::Size => "-Os",
+    }];
+    if config.debug_info {
+        flags.push("-g");
+    }
+    if config.debug_info || !config.sanitizers.is_empty() {
+        flags.push("-fno-omit-frame-pointer");
+    }
+    flags.push(if is_debug_like(config) {
+        "-D_GLIBCXX_ASSERTIONS"
+    } else {
+        "-DNDEBUG"
+    });
+    flags
+}
+
 /// The resolved flags for one build, from which each step's command is made.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandPlan {
@@ -214,7 +276,7 @@ impl CommandPlan {
             spelling.to_owned()
         };
         plan.compile_flag(format!("-std={std}"));
-        plan.compile_flags(["-finput-charset=UTF-8", "-fexec-charset=UTF-8"]);
+        plan.compile_flags(ENCODING_FLAGS);
         plan.compile_flags(STABLE_OUTPUT);
         match format {
             // The file name is per source; added by each step.
@@ -275,40 +337,14 @@ impl CommandPlan {
 
     /// §7.4.2: the warning flags of the configuration's warning level.
     fn warning_flags(&mut self, config: &BuildConfiguration) {
-        self.compile_flag("-Wall");
-        if matches!(config.warnings, WarningLevel::Helpful | WarningLevel::Strict) {
-            self.compile_flags(["-Wextra", "-Wpedantic"]);
-        }
-        if config.warnings == WarningLevel::Strict {
-            self.compile_flags(STRICT_WARNINGS);
-        }
-        if config.warnings_as_errors {
-            self.compile_flag("-Werror");
-        }
+        self.compile_flags(warning_flags(config));
     }
 
     /// §7.4.3: optimisation, debug information and assertion flags. Returns
     /// whether this is a debug-like (unoptimised) configuration.
     fn optimisation_flags(&mut self, config: &BuildConfiguration) -> bool {
-        let debug_like = matches!(config.optimization, Optimization::None | Optimization::Debug);
-        self.compile_flag(match config.optimization {
-            Optimization::None => "-O0",
-            Optimization::Debug => "-Og",
-            Optimization::Speed => "-O2",
-            Optimization::Size => "-Os",
-        });
-        if config.debug_info {
-            self.compile_flag("-g");
-        }
-        if config.debug_info || !config.sanitizers.is_empty() {
-            self.compile_flag("-fno-omit-frame-pointer");
-        }
-        if debug_like {
-            self.compile_flag("-D_GLIBCXX_ASSERTIONS");
-        } else {
-            self.compile_flag("-DNDEBUG");
-        }
-        debug_like
+        self.compile_flags(optimisation_flags(config));
+        is_debug_like(config)
     }
 
     /// §7.4.4: include folders, compile flags, library folders and link

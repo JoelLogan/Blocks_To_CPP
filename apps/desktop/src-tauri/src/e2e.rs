@@ -133,6 +133,12 @@ pub struct DialogScript {
     pub pick_compiler: Vec<Option<PathBuf>>,
     /// Answers to the trust dialog.
     pub trust: Vec<ScriptedTrust>,
+    /// Answers to "Choose the program's input".
+    pub input_file: Vec<Option<PathBuf>>,
+    /// Answers to "Export as C++ project".
+    pub export_folder: Vec<Option<PathBuf>>,
+    /// Answers to "Replace the earlier export?" (missing: no).
+    pub replace_export: Vec<bool>,
 }
 
 impl DialogScript {
@@ -154,6 +160,8 @@ impl DialogScript {
             ("open", &script.open),
             ("saveAs", &script.save_as),
             ("pickCompiler", &script.pick_compiler),
+            ("inputFile", &script.input_file),
+            ("exportFolder", &script.export_folder),
         ];
         for (name, answers) in lists {
             if answers.len() > MAX_SCRIPT_ANSWERS {
@@ -166,6 +174,11 @@ impl DialogScript {
         if script.trust.len() > MAX_SCRIPT_ANSWERS {
             return Err(E2eError::ScriptInvalid(String::from(
                 "trust has too many answers",
+            )));
+        }
+        if script.replace_export.len() > MAX_SCRIPT_ANSWERS {
+            return Err(E2eError::ScriptInvalid(String::from(
+                "replaceExport has too many answers",
             )));
         }
         Ok(script)
@@ -328,6 +341,9 @@ pub struct ScriptedDialogs {
     save_as: Mutex<VecDeque<Option<PathBuf>>>,
     pick_compiler: Mutex<VecDeque<Option<PathBuf>>>,
     trust: Mutex<VecDeque<ScriptedTrust>>,
+    input_file: Mutex<VecDeque<Option<PathBuf>>>,
+    export_folder: Mutex<VecDeque<Option<PathBuf>>>,
+    replace_export: Mutex<VecDeque<bool>>,
 }
 
 impl ScriptedDialogs {
@@ -338,6 +354,9 @@ impl ScriptedDialogs {
             save_as: Mutex::new(script.save_as.into()),
             pick_compiler: Mutex::new(script.pick_compiler.into()),
             trust: Mutex::new(script.trust.into()),
+            input_file: Mutex::new(script.input_file.into()),
+            export_folder: Mutex::new(script.export_folder.into()),
+            replace_export: Mutex::new(script.replace_export.into()),
         }
     }
 }
@@ -363,6 +382,18 @@ impl Dialogs for ScriptedDialogs {
         lock(&self.trust)
             .pop_front()
             .map_or(TrustChoice::StayRestricted, TrustChoice::from)
+    }
+
+    fn pick_input_file(&self, _folder: Option<&Path>) -> Option<PathBuf> {
+        lock(&self.input_file).pop_front().flatten()
+    }
+
+    fn pick_export_folder(&self, _folder: Option<&Path>) -> Option<PathBuf> {
+        lock(&self.export_folder).pop_front().flatten()
+    }
+
+    fn confirm_replace_export(&self, _folder_name: &str) -> bool {
+        lock(&self.replace_export).pop_front().unwrap_or(false)
     }
 }
 

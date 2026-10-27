@@ -144,6 +144,10 @@ export interface RunState {
    * (`run_close_input`). `false` before it starts and once its input was ended.
    */
   inputOpen: boolean;
+  /** Whether the program reads its input from the project's input file. */
+  inputFile: boolean;
+  /** Whether the program runs in a terminal window of its own. */
+  externalTerminal: boolean;
 }
 
 /** The compilers the backend found (07 §7.2). */
@@ -168,7 +172,7 @@ export interface SettingsState {
 export type BottomTab = 'console' | 'problems' | 'buildOutput';
 
 /** The full-window pages; `editor` is the block editor itself. */
-export type ScreenId = 'start' | 'editor' | 'toolchainSetup' | 'settings';
+export type ScreenId = 'start' | 'editor' | 'toolchainSetup' | 'settings' | 'projectSettings';
 
 /** Window-level user-interface state. */
 export interface UiState {
@@ -231,6 +235,8 @@ export function initialRun(): RunState {
     containment: null,
     ideHelpers: false,
     inputOpen: false,
+    inputFile: false,
+    externalTerminal: false,
   };
 }
 

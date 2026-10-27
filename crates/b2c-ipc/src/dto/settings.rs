@@ -101,6 +101,9 @@ pub struct CodeStyle {
 pub struct RunSettings {
     /// What Run does while the project has errors.
     pub on_errors: OnErrors,
+    /// Whether programs run in a terminal window of their own rather than
+    /// the console (`docs/spec/07-toolchain-build-run.md` §7.6.2).
+    pub external_terminal: bool,
 }
 
 /// The console.
@@ -256,6 +259,10 @@ pub struct RunSettingsPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub on_errors: Option<OnErrors>,
+    /// Whether to run programs in an external terminal, when it changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub external_terminal: Option<bool>,
 }
 
 /// A change to [`ConsoleSettings`].
@@ -348,12 +355,15 @@ static CODE_STYLE_PATCH: ObjectSchema = ObjectSchema {
 };
 
 static RUN_SETTINGS_PATCH: ObjectSchema = ObjectSchema {
-    fields: &[FieldSpec::optional(
-        "onErrors",
-        FieldSchema::Enum {
-            values: OnErrors::VALUES,
-        },
-    )],
+    fields: &[
+        FieldSpec::optional(
+            "onErrors",
+            FieldSchema::Enum {
+                values: OnErrors::VALUES,
+            },
+        ),
+        FieldSpec::optional("externalTerminal", FieldSchema::Bool),
+    ],
 };
 
 static CONSOLE_PATCH: ObjectSchema = ObjectSchema {
@@ -406,6 +416,7 @@ impl IpcRequest for SettingsPatch {
             }),
             run: Some(RunSettingsPatch {
                 on_errors: Some(OnErrors::ShowProblems),
+                external_terminal: Some(true),
             }),
             console: Some(ConsolePatch {
                 scrollback_lines: Some(20_000),

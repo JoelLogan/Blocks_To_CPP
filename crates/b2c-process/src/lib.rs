@@ -109,6 +109,6 @@ pub use cancel::CancelToken;
 pub use command::{Command, DEFAULT_INTERACTIVE_GRACE, DEFAULT_OUTPUT_CAP, Limits, ProcessGroup, Stdin};
 pub use containment::{Containment, ContainmentLevel, cleanup_stale_scopes, containment_level};
 pub use error::ProcessError;
-pub use pty::{IoMode, PtyChild, PtyExit, PtySize, PtyWriter, spawn_piped, spawn_pty};
+pub use pty::{IoMode, PtyChild, PtyExit, PtySize, PtyWriter, spawn_in_new_console, spawn_piped, spawn_pty};
 pub use run::{Captured, Finished, run_captured, run_interactive};
 pub use status::{Crash, ExitStatus};

@@ -539,7 +539,9 @@ describe('activateGated', () => {
     actions.setAnalysis({ preview: previewFixture([diagnosticFixture()]) });
 
     activateGated('run', ctx);
-    actions.setSettings({ value: settingsFixture({ run: { onErrors: 'showProblems' } }) });
+    actions.setSettings({
+      value: settingsFixture({ run: { onErrors: 'showProblems', externalTerminal: false } }),
+    });
     activateGated('run', ctx);
     activateGated('build', ctx);
     expect(ran).toEqual([

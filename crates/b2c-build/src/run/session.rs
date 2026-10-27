@@ -53,6 +53,7 @@ use b2c_toolchain::sanitizer::Detector;
 
 use super::coalesce::{Coalescer, Emit, FlowLimits, SystemClock};
 use super::exit::{self, ExitReport};
+use super::external::{self, EXTERNAL_TERMINAL_VAR, ExternalTerminal};
 use super::rate::InputLimiter;
 use crate::cache::RunHold;
 
@@ -106,6 +107,14 @@ pub struct RunSpec {
     /// kept until the program has ended so eviction and *Clear build cache*
     /// leave the folder alone.
     pub hold: Option<RunHold>,
+    /// The file the program reads as its standard input (`run_input_file`),
+    /// or `None` for the console. With a file the program runs with pipes
+    /// and its input is closed for the console.
+    pub input_file: Option<PathBuf>,
+    /// The terminal window of its own the program runs in, or `None` for the
+    /// console. Its output then never reaches the console. An input file
+    /// takes precedence: the caller leaves this `None` with one.
+    pub external: Option<ExternalTerminal>,
     /// The program's claim on its sandbox folder when it runs in one
     /// ([`crate::cache::hold_sandbox`]), kept until it has ended so the
     /// sandbox is not pruned under it.
@@ -126,6 +135,8 @@ impl fmt::Debug for RunSpec {
             .field("prefer_pty", &self.prefer_pty)
             .field("hold", &self.hold.is_some())
             .field("sandbox_hold", &self.sandbox_hold.is_some())
+            .field("input_file", &self.input_file.is_some())
+            .field("external", &self.external)
             .finish_non_exhaustive()
     }
 }
@@ -219,6 +230,9 @@ struct Run {
     done: AtomicBool,
     hold: Mutex<Option<RunHold>>,
     sandbox_hold: Mutex<Option<RunHold>>,
+    /// The owner-only folder of an external terminal's status file, removed
+    /// when the run ends.
+    status_dir: Mutex<Option<tempfile::TempDir>>,
 }
 
 impl fmt::Debug for Run {
@@ -249,6 +263,7 @@ impl Run {
         lock(&self.input).take();
         lock(&self.hold).take();
         lock(&self.sandbox_hold).take();
+        lock(&self.status_dir).take();
     }
 }
 
@@ -283,7 +298,9 @@ impl RunSessions {
         events: Arc<dyn EventSink<RunEvent>>,
     ) -> Result<RunId, IpcError> {
         check_size(spec.size.cols, spec.size.rows, "runOptions.")?;
-        let command = command(&spec)?;
+        let status_dir = status_dir(&spec)?;
+        let status_file = status_dir.as_ref().map(|dir| dir.path().join("status"));
+        let command = command(&spec, status_file.as_deref())?;
         let mut runs = self.shared.lock();
         let (others, same_project): (Vec<Arc<Run>>, Vec<Arc<Run>>) = runs
             .live()
@@ -302,7 +319,7 @@ impl RunSessions {
             old.child.stop();
         }
 
-        let mut child = spawn(&command, spec.size, spec.prefer_pty)?;
+        let mut child = spawn(&command, spec.size, Connection::of(&spec))?;
         let Some(reader) = child.take_reader() else {
             // Impossible for a new child; dropping it kills the program.
             tracing::warn!("a new program had no output reader");
@@ -312,8 +329,10 @@ impl RunSessions {
         let containment = ipc_containment(child.containment());
         let mode = match child.mode() {
             IoMode::Pty => RunMode::Pty,
-            IoMode::Pipes => RunMode::Pipes,
+            IoMode::Pipes | IoMode::NewConsole => RunMode::Pipes,
         };
+        let input_file = spec.input_file.is_some();
+        let external = spec.external.is_some() && !input_file;
         let (input_tx, input_rx) = mpsc::sync_channel(INPUT_QUEUE);
         let run = Arc::new(Run {
             project_key: spec.project_key,
@@ -326,6 +345,7 @@ impl RunSessions {
             done: AtomicBool::new(false),
             hold: Mutex::new(spec.hold),
             sandbox_hold: Mutex::new(spec.sandbox_hold),
+            status_dir: Mutex::new(status_dir),
         });
         let span = tracing::info_span!(
             "run",
@@ -346,7 +366,11 @@ impl RunSessions {
                 containment,
                 mode,
                 ide_helpers: spec.ide_helpers,
+                input_file,
+                external_terminal: external,
             },
+            discard_output: external,
+            status_file,
             limits: FlowLimits::for_scrollback(
                 spec.scrollback_lines
                     .clamp(*SCROLLBACK_LINES.start(), *SCROLLBACK_LINES.end()),
@@ -581,38 +605,92 @@ fn check_size(cols: u16, rows: u16, prefix: &str) -> Result<(), IpcError> {
 }
 
 /// The command for a run: no shell, the given environment only, input
-/// through the session's writer, no time limit, and the default 2 s between
-/// the polite stop and the kill.
-fn command(spec: &RunSpec) -> Result<Command, IpcError> {
-    let mut command = Command::new(&spec.executable, &spec.working_dir).map_err(|error| {
+/// through the session's writer (or from the input file), no time limit,
+/// and the default 2 s between the polite stop and the kill. In an external
+/// terminal it is the terminal's command line
+/// ([`ExternalTerminal::command_line`]), writing the exit status into
+/// `status_file`; in a console window of its own (Windows) the program also
+/// gets [`EXTERNAL_TERMINAL_VAR`], so the IDE init unit waits for a key
+/// before the window closes.
+fn command(spec: &RunSpec, status_file: Option<&std::path::Path>) -> Result<Command, IpcError> {
+    let external = spec.external.as_ref().filter(|_| spec.input_file.is_none());
+    let (program, args) = match (external, status_file) {
+        (Some(external), Some(status_file)) => {
+            external.command_line(&spec.executable, &spec.args, &spec.working_dir, status_file)
+        }
+        _ => (spec.executable.clone(), spec.args.clone()),
+    };
+    let mut command = Command::new(&program, &spec.working_dir).map_err(|error| {
         tracing::debug!(%error, "cannot run the program");
         IpcError::Internal
     })?;
-    command
-        .args(spec.args.iter().cloned())
-        .envs(spec.env.iter().cloned())
-        .stdin(Stdin::Null);
+    command.args(args).envs(spec.env.iter().cloned());
+    if external.is_some_and(ExternalTerminal::is_new_console) {
+        command.env(EXTERNAL_TERMINAL_VAR, "1");
+    }
+    command.stdin(match &spec.input_file {
+        Some(file) => Stdin::File(file.clone()),
+        None => Stdin::Null,
+    });
     Ok(command)
 }
 
-/// Starts the program in a terminal (or with pipes when no terminal can be
-/// created, or when `prefer_pty` is false).
-fn spawn(command: &Command, size: PtySize, prefer_pty: bool) -> Result<PtyChild, IpcError> {
-    let started = if prefer_pty {
-        match b2c_process::spawn_pty(command, size) {
+/// How a run's program is connected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Connection {
+    /// A terminal, falling back to pipes when none can be created.
+    Pty,
+    /// Pipes (an input file, an external terminal program, or asked for).
+    Pipes,
+    /// A console window of its own (Windows).
+    NewConsole,
+}
+
+impl Connection {
+    /// How `spec`'s program is connected: with pipes to read an input file
+    /// or to run a terminal program, in a console window of its own, or in
+    /// a terminal unless pipes are asked for.
+    fn of(spec: &RunSpec) -> Self {
+        match (&spec.external, &spec.input_file) {
+            (Some(external), None) if external.is_new_console() => Self::NewConsole,
+            (None, None) if spec.prefer_pty => Self::Pty,
+            _ => Self::Pipes,
+        }
+    }
+}
+
+/// The owner-only folder for an external terminal program's status file, or
+/// `None` when the program does not run in one.
+fn status_dir(spec: &RunSpec) -> Result<Option<tempfile::TempDir>, IpcError> {
+    match &spec.external {
+        Some(external) if !external.is_new_console() && spec.input_file.is_none() => tempfile::Builder::new()
+            .prefix("b2c-run-")
+            .tempdir()
+            .map(Some)
+            .map_err(|error| IpcError::io(&error)),
+        _ => Ok(None),
+    }
+}
+
+/// Starts the program as `connection` says.
+fn spawn(command: &Command, size: PtySize, connection: Connection) -> Result<PtyChild, IpcError> {
+    let started = match connection {
+        Connection::Pty => match b2c_process::spawn_pty(command, size) {
             Err(ProcessError::Pty(error)) => {
                 tracing::info!(%error, "no terminal could be created; running the program with pipes");
                 b2c_process::spawn_piped(command)
             }
             other => other,
-        }
-    } else {
-        b2c_process::spawn_piped(command)
+        },
+        Connection::Pipes => b2c_process::spawn_piped(command),
+        Connection::NewConsole => b2c_process::spawn_in_new_console(command),
     };
     started.map_err(|error| {
         tracing::debug!(%error, "cannot start the program");
         match error {
-            ProcessError::Spawn { source, .. } => IpcError::io(&source),
+            ProcessError::Spawn { source, .. } | ProcessError::StdinFile { source, .. } => {
+                IpcError::io(&source)
+            }
             _ => IpcError::Internal,
         }
     })
@@ -685,6 +763,11 @@ fn read_output(mut reader: Box<dyn Read + Send>, chunks: &SyncSender<Vec<u8>>, r
 
 /// The pump thread's state: the only sender on the run's channels.
 struct Pump {
+    /// Whether the output is dropped (an external terminal program's own
+    /// messages; the program writes to its window).
+    discard_output: bool,
+    /// Where an external terminal's script wrote the program's exit status.
+    status_file: Option<PathBuf>,
     run: Arc<Run>,
     sessions: Weak<Shared>,
     id: RunId,
@@ -696,6 +779,27 @@ struct Pump {
 }
 
 impl Pump {
+    /// How the program ended. In an external terminal program, the status
+    /// its script wrote replaces the terminal's own; without one (the window
+    /// was closed first, or the terminal handed the program to a server
+    /// process) the message says that it is not known.
+    fn decode(&self, mut exit: b2c_process::PtyExit, detector: &Detector) -> ExitReport {
+        let mut unknown = false;
+        if let Some(file) = &self.status_file
+            && !exit.stopped
+        {
+            match external::read_status(file) {
+                Some(status) => exit.status = status,
+                None => unknown = true,
+            }
+        }
+        let mut report = exit::decode(&exit, detector.report().as_ref());
+        if unknown {
+            report.message = String::from("The terminal window closed; how the program ended is not known");
+        }
+        report
+    }
+
     fn run(self, chunks: &Receiver<Vec<u8>>) {
         let span = self.span.clone();
         let _entered = span.enter();
@@ -713,6 +817,7 @@ impl Pump {
                 Some(at) => chunks.recv_timeout(at.saturating_duration_since(Instant::now())),
             };
             match next {
+                Ok(chunk) if self.discard_output => drop(chunk),
                 Ok(chunk) => {
                     detector.feed(&chunk);
                     if output_open {
@@ -729,10 +834,7 @@ impl Pump {
         self.deliver(&mut emits, &mut output_open);
 
         let (report, elapsed_ms) = match self.run.child.wait() {
-            Ok(exit) => (
-                exit::decode(&exit, detector.report().as_ref()),
-                millis(exit.duration),
-            ),
+            Ok(exit) => (self.decode(exit, &detector), millis(exit.duration)),
             Err(error) => {
                 // The error names the program's path: debug level only.
                 tracing::warn!("lost track of a program");
@@ -840,6 +942,9 @@ mod tests {
             ide_helpers: true,
             prefer_pty: true,
             hold: None,
+            sandbox_hold: None,
+            input_file: None,
+            external: None,
         }
     }
 

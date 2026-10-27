@@ -94,7 +94,9 @@ expression: render(&values)
 --- RunEvent
 {
   "containment": "processGroupOnly",
+  "externalTerminal": false,
   "ideHelpers": true,
+  "inputFile": false,
   "kind": "started",
   "mode": "pty"
 }

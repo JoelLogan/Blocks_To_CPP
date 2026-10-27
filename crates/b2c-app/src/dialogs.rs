@@ -51,6 +51,31 @@ pub trait Dialogs: Send + Sync {
     /// The trust dialog (see [`trust_dialog_text`] for its text). Closing it
     /// counts as [`TrustChoice::StayRestricted`].
     fn confirm_trust(&self, prompt: &TrustPrompt) -> TrustChoice;
+
+    /// "Choose the program's input": the file a program reads as its
+    /// standard input (`run_input_file`), starting in `folder` (the
+    /// project's folder) when given, else as "Open project" does. The
+    /// default cancels.
+    fn pick_input_file(&self, folder: Option<&Path>) -> Option<PathBuf> {
+        let _ = folder;
+        None
+    }
+
+    /// "Export as C++ project": the folder to export into
+    /// (`project_export_dialog`), starting in `folder` when given, else as
+    /// "Open project" does. The default cancels.
+    fn pick_export_folder(&self, folder: Option<&Path>) -> Option<PathBuf> {
+        let _ = folder;
+        None
+    }
+
+    /// Whether to replace the earlier export in the folder `folder_name`
+    /// (only the files that export wrote are replaced). The default, and
+    /// closing the dialog, answer no.
+    fn confirm_replace_export(&self, folder_name: &str) -> bool {
+        let _ = folder_name;
+        false
+    }
 }
 
 /// What the trust dialog shows (`docs/spec/08-security.md` §8.3): the

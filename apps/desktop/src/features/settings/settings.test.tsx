@@ -176,7 +176,7 @@ describe('the Settings page', () => {
     });
     expect(runGate(useAppStore.getState()).enabled).toBe(false);
     page.ipc.settingsUpdate.mockResolvedValue(
-      updated(settingsFixture({ run: { onErrors: 'showProblems' } })),
+      updated(settingsFixture({ run: { onErrors: 'showProblems', externalTerminal: false } })),
     );
 
     fireEvent.click(radio('Show problems'));
@@ -187,6 +187,19 @@ describe('the Settings page', () => {
       enabled: true,
       onErrorsMode: 'showProblems',
     });
+  });
+
+  it('runs programs in a separate terminal window when chosen', async () => {
+    const page = await showPage();
+    page.ipc.settingsUpdate.mockResolvedValue(
+      updated(settingsFixture({ run: { onErrors: 'disableRun', externalTerminal: true } })),
+    );
+    expect(radio('In the console').checked).toBe(true);
+    fireEvent.click(radio('In a separate terminal window'));
+    await settle();
+    expect(page.ipc.settingsUpdate).toHaveBeenCalledWith({ run: { externalTerminal: true } });
+    expect(useAppStore.getState().settings.value?.run.externalTerminal).toBe(true);
+    expect(radio('In a separate terminal window').checked).toBe(true);
   });
 
   it('puts the saved choice back when an update is refused', async () => {
@@ -250,13 +263,14 @@ describe('the Settings page', () => {
   it('sends updates one after the other, in order', async () => {
     const page = await showPage();
     const first = deferred<SettingsUpdateResponse>();
-    page.ipc.settingsUpdate
-      .mockReturnValueOnce(first.promise)
-      .mockResolvedValueOnce(
-        updated(
-          settingsFixture({ codeStyle: { indentWidth: 2 }, run: { onErrors: 'showProblems' } }),
-        ),
-      );
+    page.ipc.settingsUpdate.mockReturnValueOnce(first.promise).mockResolvedValueOnce(
+      updated(
+        settingsFixture({
+          codeStyle: { indentWidth: 2 },
+          run: { onErrors: 'showProblems', externalTerminal: false },
+        }),
+      ),
+    );
 
     fireEvent.click(radio('2 spaces'));
     fireEvent.click(radio('Show problems'));
@@ -272,7 +286,7 @@ describe('the Settings page', () => {
     expect(page.ipc.settingsUpdate).toHaveBeenCalledTimes(2);
     expect(useAppStore.getState().settings.value).toMatchObject({
       codeStyle: { indentWidth: 2 },
-      run: { onErrors: 'showProblems' },
+      run: { onErrors: 'showProblems', externalTerminal: false },
     });
   });
 

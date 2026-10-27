@@ -2,9 +2,11 @@
 //!
 //! Programs that the app builds and runs get one extra translation unit,
 //! `<build>/ide/b2c_ide_init.cpp`, compiled in the same g++ invocation as
-//! `main.cpp`. In M2 its static initialiser only sets the Windows console's
-//! input and output code pages to UTF-8, so `std::cout << "héllo ✓"` shows
-//! correctly; on other systems it compiles to nothing. It never reads
+//! `main.cpp`. Its static initialiser sets the Windows console's input and
+//! output code pages to UTF-8, so `std::cout << "héllo ✓"` shows correctly,
+//! and, when the app runs the program in a console window of its own
+//! ([`crate::EXTERNAL_TERMINAL_VAR`]), waits for a key before that window
+//! closes; on other systems it compiles to nothing. It never reads
 //! `B2C_EVENTS`: the terminate handler and the event channel arrive in M5.
 //!
 //! The unit is never part of the generated project: it is not in the code
@@ -36,6 +38,10 @@ pub const INIT_UNIT_SOURCE: &str = r#"// Blocks2Cpp IDE init unit (docs/spec/07-
 #define B2C_IDE_WINAPI __stdcall
 #endif
 
+#include <conio.h>
+#include <cstdio>
+#include <cstdlib>
+
 // Declared here instead of including <windows.h>, which is large and would
 // bring warnings and macros into this file.
 extern "C" __declspec(dllimport) int B2C_IDE_WINAPI SetConsoleCP(unsigned int code_page);
@@ -43,12 +49,28 @@ extern "C" __declspec(dllimport) int B2C_IDE_WINAPI SetConsoleOutputCP(unsigned 
 
 namespace {
 
+// In a console window of its own (the IDE's external terminal), the window
+// closes with the program: once the program ends, wait for a key so its
+// output can be read.
+void b2c_ide_wait_for_a_key() {
+    std::fputs("\n[The program has ended. Press a key to close this window.]", stdout);
+    std::fflush(stdout);
+    static_cast<void>(_getch());
+}
+
 // Before main() runs, switches the console's input and output code pages to
-// UTF-8, so text the program reads and prints shows correctly in the IDE.
+// UTF-8, so text the program reads and prints shows correctly in the IDE. When
+// the IDE runs the program in a window of its own (B2C_EXTERNAL_TERMINAL), it
+// arranges the wait above and removes the variable, so programs this one
+// starts never see it.
 struct B2cIdeInit {
     B2cIdeInit() noexcept {
         static_cast<void>(SetConsoleCP(65001u));
         static_cast<void>(SetConsoleOutputCP(65001u));
+        if (std::getenv("B2C_EXTERNAL_TERMINAL") != nullptr) {
+            static_cast<void>(_putenv("B2C_EXTERNAL_TERMINAL="));
+            static_cast<void>(std::atexit(b2c_ide_wait_for_a_key));
+        }
     }
 };
 
@@ -98,13 +120,22 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), INIT_UNIT_SOURCE);
     }
 
-    /// Only Windows code, and nothing that reads the environment (M2 never
-    /// opens the event channel).
+    /// Only Windows code, which never opens the event channel (M5): the one
+    /// variable it reads is the external terminal's, and it includes only
+    /// the C runtime headers its wait needs.
     #[test]
     fn the_unit_is_windows_only_and_never_reads_the_event_channel() {
         assert!(!INIT_UNIT_SOURCE.contains("B2C_EVENTS"));
-        assert!(!INIT_UNIT_SOURCE.contains("getenv"));
-        assert!(!INIT_UNIT_SOURCE.contains("#include"));
+        assert_eq!(INIT_UNIT_SOURCE.matches("getenv(").count(), 1);
+        assert!(INIT_UNIT_SOURCE.contains(&format!("std::getenv(\"{}\")", crate::EXTERNAL_TERMINAL_VAR)));
+        let includes: Vec<&str> = INIT_UNIT_SOURCE
+            .lines()
+            .filter(|line| line.contains("#include"))
+            .collect();
+        assert_eq!(
+            includes,
+            ["#include <conio.h>", "#include <cstdio>", "#include <cstdlib>"]
+        );
         let code: Vec<&str> = INIT_UNIT_SOURCE
             .lines()
             .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with("//"))

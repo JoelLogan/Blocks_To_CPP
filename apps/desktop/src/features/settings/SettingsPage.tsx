@@ -119,7 +119,7 @@ function NoticeList({ notices }: { notices: Parameters<typeof shownNotices>[0] }
   );
 }
 
-/** The code style, Run on errors and console sections. */
+/** The code style, Run on errors, where programs run and console sections. */
 function SettingsForm({
   controller,
   settings,
@@ -164,6 +164,33 @@ function SettingsForm({
           testId="settings-on-errors"
         />
         <p className="feature-muted">Either way, a project with errors is never built or run.</p>
+      </PageSection>
+
+      <PageSection title="Where programs run" testId="settings-program-window">
+        <ChoiceField<'console' | 'external'>
+          legend="Run programs"
+          value={settings.run.externalTerminal ? 'external' : 'console'}
+          options={[
+            {
+              value: 'console',
+              label: 'In the console',
+              description: 'The program’s output and input are in the Console tab.',
+            },
+            {
+              value: 'external',
+              label: 'In a separate terminal window',
+              description:
+                'Each run opens a terminal window of its own; the Console tab shows how it ended.',
+            },
+          ]}
+          onChange={(where) =>
+            controller.update({ run: { externalTerminal: where === 'external' } })
+          }
+          testId="settings-external-terminal"
+        />
+        <p className="feature-muted">
+          A program that reads its input from a file always runs in the console.
+        </p>
       </PageSection>
 
       <PageSection title="Console" testId="settings-console">

@@ -598,6 +598,42 @@ export type ProjectCloseRequest = {
 handle: Handle, };
 
 /**
+ * The request of `project_export_dialog`: export the document as a C++
+ * project (generated sources, `CMakeLists.txt`, `Makefile`,
+ * `README.md`) into a folder named after the program, inside a folder
+ * the user picks in a native dialog
+ * (`docs/spec/06-compiler-pipeline.md` §6.11).
+ */
+export type ProjectExportDialogRequest = {
+/**
+ * The project.
+ */
+handle: Handle,
+/**
+ * The project as BDM JSON text.
+ */
+document: string, };
+
+/**
+ * The response of `project_export_dialog`.
+ */
+export type ProjectExportDialogResponse = {
+/**
+ * Whether the user cancelled a dialog (the folder picker or the question
+ * whether to replace an earlier export); nothing was written.
+ */
+cancelled: boolean,
+/**
+ * The name of the folder the export was written into (never its path),
+ * with hidden characters made visible; `null` when cancelled.
+ */
+folderName: string | null,
+/**
+ * How many files were written, the manifest included.
+ */
+files: number, };
+
+/**
  * The request of `project_new`.
  */
 export type ProjectNewRequest = {
@@ -955,7 +991,17 @@ mode: RunMode,
 /**
  * Whether the IDE helper unit was linked in (UTF-8 console on Windows).
  */
-ideHelpers: boolean, } | { "kind": "skipped",
+ideHelpers: boolean,
+/**
+ * Whether the program reads its input from the project's input file
+ * (`run_input_file`); its input is then closed for the console.
+ */
+inputFile: boolean,
+/**
+ * Whether the program runs in a terminal window of its own; the
+ * console then shows no output, only how it ended.
+ */
+externalTerminal: boolean, } | { "kind": "skipped",
 /**
  * How many lines were dropped.
  */
@@ -993,6 +1039,43 @@ message: string, };
  * A run session.
  */
 export type RunId = `rn_${string}`;
+
+/**
+ * What `run_input_file` does.
+ */
+export type RunInputFileAction = "get" | "choose" | "clear";
+
+/**
+ * The request of `run_input_file`: the file the project's programs read as
+ * their standard input, chosen in a native dialog and kept by the backend
+ * for the project (by its ID) until the app ends. The path never crosses
+ * IPC.
+ */
+export type RunInputFileRequest = {
+/**
+ * The project.
+ */
+handle: Handle,
+/**
+ * What to do.
+ */
+action: RunInputFileAction, };
+
+/**
+ * The response of `run_input_file`.
+ */
+export type RunInputFileResponse = {
+/**
+ * The chosen file's name for display (never its folder), with hidden
+ * characters made visible and cut to 100 characters; `null` when
+ * programs read the console.
+ */
+fileName: string | null,
+/**
+ * Whether the dialog was cancelled (`choose` only); the file chosen
+ * before is kept.
+ */
+cancelled: boolean, };
 
 /**
  * The request of `run_input`: bytes typed into the program's terminal.
@@ -1050,7 +1133,12 @@ export type RunSettings = {
 /**
  * What Run does while the project has errors.
  */
-onErrors: OnErrors, };
+onErrors: OnErrors,
+/**
+ * Whether programs run in a terminal window of their own rather than
+ * the console (`docs/spec/07-toolchain-build-run.md` §7.6.2).
+ */
+externalTerminal: boolean, };
 
 /**
  * A change to `RunSettings`.
@@ -1059,7 +1147,11 @@ export type RunSettingsPatch = {
 /**
  * The new behaviour, when it changes.
  */
-onErrors?: OnErrors, };
+onErrors?: OnErrors,
+/**
+ * Whether to run programs in an external terminal, when it changes.
+ */
+externalTerminal?: boolean, };
 
 /**
  * The request of `run_start`: run the program of a successful build whose

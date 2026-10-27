@@ -1,5 +1,5 @@
 //! Project commands: new, open (dialog and recent), reload, save, save as,
-//! close and the dirty flag (`docs/spec/02-architecture.md` §2.5.2,
+//! close, the dirty flag and export (`docs/spec/02-architecture.md` §2.5.2,
 //! `docs/spec/05-project-format.md` §5.10).
 //!
 //! The document crosses IPC as BDM JSON text in both directions; the backend
@@ -9,8 +9,8 @@
 
 use b2c_ipc::IpcError;
 use b2c_ipc::dto::{
-    Empty, ProjectNewResponse, ProjectOpenDialogResponse, ProjectOpened, ProjectReloadResponse,
-    ProjectSaveAsDialogResponse, ProjectSaveResponse,
+    Empty, ProjectExportDialogResponse, ProjectNewResponse, ProjectOpenDialogResponse, ProjectOpened,
+    ProjectReloadResponse, ProjectSaveAsDialogResponse, ProjectSaveResponse,
 };
 use serde_json::Value;
 
@@ -114,6 +114,22 @@ pub(crate) async fn project_set_dirty(
     let backend = shared(&backend);
     blocking("project_set_dirty", move || {
         backend.project_set_dirty(decode(request)?)
+    })
+    .await
+}
+
+/// `project_export_dialog`
+/// ([`Backend::project_export_dialog`](b2c_app::Backend::project_export_dialog)):
+/// exports the document as a C++ project into a folder picked in a native
+/// dialog.
+#[tauri::command]
+pub(crate) async fn project_export_dialog(
+    backend: BackendState<'_>,
+    request: Option<Value>,
+) -> Result<ProjectExportDialogResponse, IpcError> {
+    let backend = shared(&backend);
+    blocking("project_export_dialog", move || {
+        backend.project_export_dialog(decode(request)?)
     })
     .await
 }

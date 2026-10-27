@@ -247,6 +247,9 @@ pub struct FakeDialogs {
     prompts: Mutex<Vec<TrustPrompt>>,
     suggestions: Mutex<Vec<String>>,
     save_folders: Mutex<Vec<Option<PathBuf>>>,
+    input_files: Mutex<VecDeque<Option<PathBuf>>>,
+    export_folders: Mutex<VecDeque<Option<PathBuf>>>,
+    replace_exports: Mutex<VecDeque<bool>>,
     calls: AtomicUsize,
     hold: Mutex<bool>,
     inside: AtomicUsize,
@@ -262,6 +265,27 @@ impl FakeDialogs {
     /// The next open dialog picks `path`.
     pub fn will_open(&self, path: &Path) {
         self.open.lock().unwrap().push_back(Some(path.to_path_buf()));
+    }
+
+    /// The next input-file dialog picks `path` (`None`: cancelled).
+    pub fn will_pick_input(&self, path: Option<&Path>) {
+        self.input_files
+            .lock()
+            .unwrap()
+            .push_back(path.map(Path::to_path_buf));
+    }
+
+    /// The next export dialog picks `path` (`None`: cancelled).
+    pub fn will_pick_export(&self, path: Option<&Path>) {
+        self.export_folders
+            .lock()
+            .unwrap()
+            .push_back(path.map(Path::to_path_buf));
+    }
+
+    /// The next "replace the export?" question is answered `replace`.
+    pub fn will_replace_export(&self, replace: bool) {
+        self.replace_exports.lock().unwrap().push_back(replace);
     }
 
     /// The next save dialog picks `path`.
@@ -350,6 +374,21 @@ impl Dialogs for FakeDialogs {
     fn pick_compiler(&self) -> Option<PathBuf> {
         self.shown();
         self.compilers.lock().unwrap().pop_front().flatten()
+    }
+
+    fn pick_input_file(&self, _folder: Option<&Path>) -> Option<PathBuf> {
+        self.shown();
+        self.input_files.lock().unwrap().pop_front().flatten()
+    }
+
+    fn pick_export_folder(&self, _folder: Option<&Path>) -> Option<PathBuf> {
+        self.shown();
+        self.export_folders.lock().unwrap().pop_front().flatten()
+    }
+
+    fn confirm_replace_export(&self, _folder_name: &str) -> bool {
+        self.shown();
+        self.replace_exports.lock().unwrap().pop_front().unwrap_or(false)
     }
 
     fn confirm_trust(&self, prompt: &TrustPrompt) -> TrustChoice {

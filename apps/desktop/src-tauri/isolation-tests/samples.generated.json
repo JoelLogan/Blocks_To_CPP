@@ -43,6 +43,12 @@
       "handle": "ph_0123456789abcdef0123456789abcdef"
     }
   },
+  "project_export_dialog": {
+    "request": {
+      "document": "{\n  \"format\": \"blocks2cpp/project\",\n  \"formatVersion\": 1,\n  \"generator\": {\n    \"app\": \"0.1.0\",\n    \"catalog\": \"1.0.0\"\n  },\n  \"project\": {\n    \"id\": \"prj_sample\",\n    \"name\": \"Sample\",\n    \"language\": {\n      \"standard\": \"c++20\"\n    },\n    \"options\": {\n      \"showAdvanced\": false,\n      \"manualMemory\": false,\n      \"preferPlainStd\": false,\n      \"formattingStyle\": \"stream\",\n      \"checkedIndexing\": true\n    },\n    \"build\": {\n      \"configurations\": {\n        \"debug\": {\n          \"optimization\": \"none\",\n          \"debugInfo\": true,\n          \"sanitizers\": [\n            \"address\",\n            \"undefined\"\n          ],\n          \"warnings\": \"helpful\",\n          \"hardening\": true\n        },\n        \"release\": {\n          \"optimization\": \"speed\",\n          \"debugInfo\": false,\n          \"sanitizers\": [],\n          \"warnings\": \"helpful\",\n          \"hardening\": true\n        }\n      }\n    },\n    \"run\": {\n      \"workingDirectory\": \"project\"\n    }\n  },\n  \"modules\": [\n    {\n      \"id\": \"mod_main\",\n      \"name\": \"main\",\n      \"workspace\": {\n        \"blocks\": [\n          {\n            \"id\": \"b001\",\n            \"type\": \"program.main\",\n            \"v\": 1,\n            \"x\": 40,\n            \"y\": 40,\n            \"statements\": {\n              \"BODY\": []\n            }\n          }\n        ]\n      }\n    }\n  ]\n}\n",
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
   "recent_list": {},
   "recent_remove": {
     "request": {
@@ -144,6 +150,12 @@
       "seq": 7
     }
   },
+  "run_input_file": {
+    "request": {
+      "action": "choose",
+      "handle": "ph_0123456789abcdef0123456789abcdef"
+    }
+  },
   "settings_get": {},
   "settings_update": {
     "request": {
@@ -154,6 +166,7 @@
         "scrollbackLines": 20000
       },
       "run": {
+        "externalTerminal": true,
         "onErrors": "showProblems"
       },
       "ui": {

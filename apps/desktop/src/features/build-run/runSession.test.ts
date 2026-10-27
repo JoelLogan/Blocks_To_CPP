@@ -57,11 +57,20 @@ afterEach(() => {
 describe('RunSession', () => {
   it('applies started at once and the exit only after afterSeq batches are written', async () => {
     const run = session();
-    run.onEvent({ kind: 'started', containment: 'jobObject', mode: 'pipes', ideHelpers: false });
+    run.onEvent({
+      kind: 'started',
+      containment: 'jobObject',
+      mode: 'pipes',
+      ideHelpers: false,
+      inputFile: false,
+      externalTerminal: false,
+    });
     expect(onStarted).toHaveBeenCalledWith({
       containment: 'jobObject',
       mode: 'pipes',
       ideHelpers: false,
+      inputFile: false,
+      externalTerminal: false,
       at: Date.now(),
     });
     expect(bridge.mode()).toBe('pipes');
@@ -100,13 +109,27 @@ describe('RunSession', () => {
     terminal.autoResolve = true;
     const run = session('--sep--');
     run.onOutput(batch('first'));
-    run.onEvent({ kind: 'started', containment: 'cgroup', mode: 'pty', ideHelpers: true });
+    run.onEvent({
+      kind: 'started',
+      containment: 'cgroup',
+      mode: 'pty',
+      ideHelpers: true,
+      inputFile: false,
+      externalTerminal: false,
+    });
     run.onOutput(batch('second'));
     await settle();
     expect(terminal.text).toBe('--sep--firstsecond');
 
     const quiet = session('==');
-    quiet.onEvent({ kind: 'started', containment: 'cgroup', mode: 'pty', ideHelpers: true });
+    quiet.onEvent({
+      kind: 'started',
+      containment: 'cgroup',
+      mode: 'pty',
+      ideHelpers: true,
+      inputFile: false,
+      externalTerminal: false,
+    });
     expect(terminal.text).toBe('--sep--firstsecond==');
   });
 

@@ -99,6 +99,12 @@ pub(super) fn spawn(command: &Command, io: Io, input_file: Option<File>) -> Resu
             let master = Arc::new(master);
             (Arc::clone(&master), Arc::clone(&master), Some(master))
         }
+        Io::NewConsole => {
+            return Err(ProcessError::Pty(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "a console window of its own exists only on Windows",
+            )));
+        }
         Io::Pipes => {
             let (output_read, output_write) = io::pipe().map_err(spawn_error)?;
             let (input_read, input_write) = io::pipe().map_err(spawn_error)?;

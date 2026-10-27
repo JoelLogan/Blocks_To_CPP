@@ -395,6 +395,7 @@ pub fn hold_sandbox(sandbox: &Path) -> io::Result<RunHold> {
     let lock = open_lock_at(&lock_path, true)?;
     lock.lock_shared()?;
     lock.set_modified(SystemTime::now())?;
+    #[allow(unused_mut)] // set owner-only on Unix
     let mut builder = fs::DirBuilder::new();
     #[cfg(unix)]
     {

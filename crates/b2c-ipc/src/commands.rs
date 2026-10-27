@@ -147,6 +147,11 @@ pub const COMMANDS: &[CommandSpec] = &[
     ),
     with_request::<dto::ProjectCloseRequest>("ProjectCloseRequest", NO_CHANNELS, "Empty"),
     with_request::<dto::ProjectSetDirtyRequest>("ProjectSetDirtyRequest", NO_CHANNELS, "Empty"),
+    with_request::<dto::ProjectExportDialogRequest>(
+        "ProjectExportDialogRequest",
+        NO_CHANNELS,
+        "ProjectExportDialogResponse",
+    ),
     plain("recent_list", NO_CHANNELS, "RecentListResponse"),
     with_request::<dto::RecentRemoveRequest>("RecentRemoveRequest", NO_CHANNELS, "Empty"),
     with_request::<dto::RecoverySaveRequest>("RecoverySaveRequest", NO_CHANNELS, "Empty"),
@@ -174,6 +179,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     with_request::<dto::RunResizeRequest>("RunResizeRequest", NO_CHANNELS, "Empty"),
     with_request::<dto::RunStopRequest>("RunStopRequest", NO_CHANNELS, "Empty"),
     with_request::<dto::RunAckRequest>("RunAckRequest", NO_CHANNELS, "Empty"),
+    with_request::<dto::RunInputFileRequest>("RunInputFileRequest", NO_CHANNELS, "RunInputFileResponse"),
     plain("settings_get", NO_CHANNELS, "SettingsGetResponse"),
     with_request::<dto::SettingsPatch>("SettingsPatch", NO_CHANNELS, "SettingsUpdateResponse"),
     with_request::<dto::OpenHelpLinkRequest>("OpenHelpLinkRequest", NO_CHANNELS, "Empty"),
@@ -192,6 +198,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "project_save_as_dialog",
     "project_close",
     "project_set_dirty",
+    "project_export_dialog",
     "recent_list",
     "recent_remove",
     "recovery_save",
@@ -215,6 +222,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "run_resize",
     "run_stop",
     "run_ack",
+    "run_input_file",
     "settings_get",
     "settings_update",
     "open_help_link",
@@ -233,7 +241,7 @@ mod tests {
 
     #[test]
     fn names_are_unique_and_in_table_order() {
-        assert_eq!(COMMANDS.len(), 37);
+        assert_eq!(COMMANDS.len(), 39);
         let names: Vec<&str> = COMMANDS.iter().map(|c| c.name).collect();
         assert_eq!(names, COMMAND_NAMES);
         let unique: HashSet<&str> = names.iter().copied().collect();
@@ -246,7 +254,6 @@ mod tests {
             assert_eq!(command(name).map(|c| c.name), Some(*name));
         }
         assert!(command("app_version").is_none());
-        assert!(command("project_export_dialog").is_none());
     }
 
     #[test]

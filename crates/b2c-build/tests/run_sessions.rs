@@ -266,6 +266,8 @@ fn spec(program: &Path, args: &[&str]) -> RunSpec {
         prefer_pty: true,
         hold: None,
         sandbox_hold: None,
+        input_file: None,
+        external: None,
     }
 }
 
@@ -484,7 +486,10 @@ fn an_echo_program_reads_a_line_through_the_terminal() {
             containment,
             mode,
             ide_helpers,
+            input_file,
+            external_terminal,
         } => {
+            assert!(!input_file && !external_terminal);
             assert_eq!(mode, RunMode::Pty);
             assert!(ide_helpers);
             // The cgroup scope (w2-containment) may report `cgroup` instead.
@@ -1120,4 +1125,91 @@ mod linux {
             other => panic!("{other:?}"),
         }
     }
+}
+
+#[test]
+fn a_program_reads_its_input_file_with_pipes() {
+    let Some(program) = helper(Flavour::Release) else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.txt");
+    std::fs::write(&input, "x\ny\nlast").unwrap();
+    let sessions = RunSessions::new();
+    let mut with_file = spec(program, &["count"]);
+    with_file.input_file = Some(input.clone());
+    // An input file wins over an external terminal.
+    with_file.external = Some(b2c_build::ExternalTerminal::emulator_for_tests(PathBuf::from(
+        "/nowhere/term",
+    )));
+    let (id, console) = start(&sessions, with_file);
+    let exit = console.wait_for_exit();
+    assert_eq!(exit.status, ExitStatus::Exited { code: 0 });
+    assert!(
+        console.text().contains("lines 3 last [last]"),
+        "{:?}",
+        console.text()
+    );
+    match console.started() {
+        RunEvent::Started {
+            mode,
+            input_file,
+            external_terminal,
+            ..
+        } => {
+            assert_eq!(mode, RunMode::Pipes);
+            assert!(input_file && !external_terminal);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(
+        sessions.input(&id, b"more"),
+        Err(IpcError::NotRunning | IpcError::InputClosed)
+    ));
+    // A missing file stops the program from starting.
+    let mut missing = spec(program, &["count"]);
+    missing.input_file = Some(dir.path().join("missing.txt"));
+    let output: Arc<dyn ByteSink> = Arc::new(Console::default());
+    let events: Arc<dyn EventSink<RunEvent>> = Arc::new(Console::default());
+    assert!(matches!(
+        sessions.start(missing, output, events),
+        Err(IpcError::Io { .. })
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn an_external_terminal_shows_nothing_here_and_reports_the_programs_status() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let Some(program) = helper(Flavour::Release) else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    // A "terminal" that drops `-e` and runs the command, saying something of
+    // its own first (which must not reach the console).
+    let terminal = dir.path().join("term");
+    std::fs::write(
+        &terminal,
+        "#!/bin/sh\necho terminal-chatter >&2\nshift\nexec \"$@\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&terminal, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let sessions = RunSessions::new();
+    let mut external = spec(program, &["exit"]);
+    external.external = Some(b2c_build::ExternalTerminal::emulator_for_tests(terminal));
+    let (id, console) = start(&sessions, external);
+    // The script waits for Enter once the program has ended.
+    sessions.input(&id, b"\n").unwrap();
+    let exit = console.wait_for_exit();
+    assert_eq!(exit.status, ExitStatus::Exited { code: 42 }, "{exit:?}");
+    assert_eq!(exit.message, "Finished with exit code 42");
+    assert!(console.text().is_empty(), "{:?}", console.text());
+    assert!(matches!(
+        console.started(),
+        RunEvent::Started {
+            external_terminal: true,
+            input_file: false,
+            ..
+        }
+    ));
 }

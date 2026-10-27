@@ -170,9 +170,11 @@ and stay in it.
 * **Windows:** the program is created with `CREATE_NEW_CONSOLE` (a `conhost`
   window, or the user's default terminal), suspended, put in its Job Object
   and resumed, so Stop and closing the app end it. The IDE init unit, which
-  only IDE builds contain, waits for Enter before the window closes when the
-  app set `B2C_EXTERNAL_TERMINAL=1` (it removes the variable first, so the
-  program's own children never see it). The exit status is the program's.
+  only IDE builds contain, waits for a key (`_getch`) before the window
+  closes when the app set `B2C_EXTERNAL_TERMINAL=1` (it removes the variable
+  first, so the program's own children never see it); a program that
+  crashes closes its window at once, and the console says how it ended. The
+  exit status is the program's.
 * No terminal found: `run_start` gives the new error `noExternalTerminal`,
   and the console offers to run in the app instead.
 
@@ -225,7 +227,8 @@ assertions, sanitizers, hardening), so they cannot drift:
   replaced or removed, anything else is kept).
 * CLI: `b2c generate <project> --out <dir> --export` writes the layout into
   `<dir>` (`--replace` to replace an earlier export). Without `--export` it
-  is unchanged.
+  writes the generated files as before, with the banner; `--export` without
+  the layout (M2's meaning) is gone.
 * App: `project_export_dialog { handle, document }` → `{ cancelled: true }`
   or `{ cancelled: false, folderName, files }`. The backend raises a native
   folder dialog, creates `<slug>/` in the chosen folder; when that already
@@ -242,11 +245,12 @@ assertions, sanitizers, hardening), so they cannot drift:
   `B2C_REQUIRE_GXX`, `make` being in every CI image; `cmake` checked when
   present).
 
-## 5. Project settings dialog
+## 5. Project settings page
 
-A modal dialog (`≡` → _Project settings…_, and from the code view's
-standard notice) with four sections, each a native form control with a
-label:
+A full-window page like Settings (`≡` → _Project settings…_; the
+`projectSettings` screen), rather than a modal dialog: it reuses the pages'
+frame (a heading that takes the focus, _Back_), and the editor stays mounted
+under it. Three sections, each a native form control with a label:
 
 * **Language:** C++ standard (`c++17`…`c++26`), _GNU extensions_.
 * **Build:** for _Debug_ and _Release_: optimisation, debug information,
@@ -259,13 +263,14 @@ label:
   sandbox), input file (_Choose…_, _Clear_; this computer), _Run in a
   separate terminal window_ (this computer).
 * Options that M3's generator reads (`checkedIndexing`, `formattingStyle`)
-  appear when the generator uses them; the dialog shows none it ignores.
+  appear when the generator uses them; the page shows none it ignores yet.
 
-OK applies the project changes as one edit (an unsaved change, `•`), like
-renaming; Cancel and Escape discard them. Machine settings apply at once (as
-on the Settings page). Focus: the first field on open, back to the menu
-button on close; `Tab` cycles inside; every error is announced
-(`role="alert"`) and tied to its field (`aria-describedby`).
+_Save changes_ applies the project changes as one edit (an unsaved change,
+`•`), like renaming, and closes the page; _Cancel_ and _Back_ discard them.
+The machine settings apply at once (as on the Settings page). Every problem
+is shown under its field (`aria-invalid`, `aria-describedby`, `role="alert"`)
+once the field is changed, or for all fields after a refused _Save changes_,
+which also moves the focus to the first one.
 
 ## 6. IPC changes (all additive; mirrored in `b2c-ipc`, `packages/ipc-types` regenerated)
 
@@ -273,6 +278,7 @@ button on close; `Tab` cycles inside; every error is announced
 | --- | --- |
 | `run_close_input` | new: `{ runId }` → `{}` |
 | `run_input_file` | new: `{ handle, action }` → `{ fileName, cancelled }` |
+| `project_export_dialog` response | `{ cancelled, folderName, files }` (`folderName` `null` when cancelled) |
 | `project_export_dialog` | new: `{ handle, document }` → `{ cancelled, folderName?, files? }` |
 | `RunEvent.started` | adds `inputFile: boolean` and `externalTerminal: boolean` |
 | `IpcError` | adds `inputClosed` and `noExternalTerminal` |
@@ -352,3 +358,5 @@ format 2) is W2's and W4's; the dialog leaves room for it.
 | W3-D5 | Export in Restricted Mode | Allowed (it runs nothing) |
 | W3-D6 | Makefile defaults | Sanitizers in debug on Linux and hardening on, both switchable (`SANITIZE=0`, `HARDEN=0`) |
 | W3-D7 | Close-input on Windows with a partly typed line | Accept that the line arrives with a line break (Linux: without) |
+| W3-D8 | Project settings as a page or a modal dialog | A page, as built (the spec says dialog); a modal can follow if usability tests ask for one |
+| W3-D9 | Linux terminals with a server process (`gnome-terminal`) | Used last, with `--wait`; the program then runs outside the app's containment, which the contract states |

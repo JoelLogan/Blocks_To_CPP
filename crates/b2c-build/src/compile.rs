@@ -875,7 +875,7 @@ fn config_key(
 /// already restricts to `[a-z][a-z0-9_-]{0,63}`. A name that Windows
 /// reserves for a device (`con`, `nul`, …) and anything unexpected become
 /// `program`.
-fn program_name(document: &Document) -> String {
+pub(crate) fn program_name(document: &Document) -> String {
     document
         .modules
         .first()

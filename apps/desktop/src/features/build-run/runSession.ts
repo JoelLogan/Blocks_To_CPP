@@ -46,6 +46,8 @@ export interface RunSessionHooks {
     containment: Containment;
     mode: RunMode;
     ideHelpers: boolean;
+    inputFile: boolean;
+    externalTerminal: boolean;
     at: number;
   }): void;
   /** The program ended (`exit`, applied once its output is written). */
@@ -322,6 +324,8 @@ export class RunSession {
           containment: event.containment,
           mode: event.mode,
           ideHelpers: event.ideHelpers,
+          inputFile: event.inputFile,
+          externalTerminal: event.externalTerminal,
           at: this.#clock.now(),
         });
         return;

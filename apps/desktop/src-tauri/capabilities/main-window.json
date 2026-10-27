@@ -16,6 +16,7 @@
     "allow-project-save-as-dialog",
     "allow-project-close",
     "allow-project-set-dirty",
+    "allow-project-export-dialog",
     "allow-recent-list",
     "allow-recent-remove",
     "allow-recovery-save",
@@ -39,6 +40,7 @@
     "allow-run-resize",
     "allow-run-stop",
     "allow-run-ack",
+    "allow-run-input-file",
     "allow-settings-get",
     "allow-settings-update",
     "allow-open-help-link"

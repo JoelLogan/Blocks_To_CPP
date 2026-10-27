@@ -98,6 +98,9 @@ pub enum IoMode {
     /// Pipes: standard output and error merged, standard input a pipe. The
     /// fallback when no terminal can be created.
     Pipes,
+    /// A console window of its own (Windows, [`spawn_in_new_console`]): the
+    /// reader gives end-of-file at once and the writer's input is closed.
+    NewConsole,
 }
 
 /// How a session's program ended.
@@ -363,11 +366,26 @@ fn open_input_file(path: &std::path::Path) -> Result<std::fs::File, ProcessError
     Ok(file)
 }
 
+/// Starts `command` in a console window of its own (Windows only:
+/// `CREATE_NEW_CONSOLE`, the user's default terminal), contained like any
+/// session (suspended, put in its Job Object, then resumed), so stopping the
+/// session or closing the app ends it. The program reads and writes its own
+/// window: [`PtyChild::take_reader`] gives end-of-file at once, and the
+/// writer's input is closed. Its standard input must be [`Stdin::Null`].
+///
+/// # Errors
+/// [`ProcessError::Pty`] (kind [`std::io::ErrorKind::Unsupported`]) on
+/// other systems; otherwise as for [`spawn_piped`].
+pub fn spawn_in_new_console(command: &Command) -> Result<PtyChild, ProcessError> {
+    start(command, Io::NewConsole)
+}
+
 /// How the platform modules connect the program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Io {
     Pty(PtySize),
     Pipes,
+    NewConsole,
 }
 
 fn start(command: &Command, io: Io) -> Result<PtyChild, ProcessError> {
@@ -385,7 +403,7 @@ fn start(command: &Command, io: Io) -> Result<PtyChild, ProcessError> {
             });
         }
     };
-    let from_file = input_file.is_some();
+    let closed_from_start = input_file.is_some() || io == Io::NewConsole;
     let spawned = platform::spawn(command, io, input_file)?;
     let limits = command.get_limits();
     let grace = limits.grace.unwrap_or(DEFAULT_INTERACTIVE_GRACE);
@@ -394,8 +412,8 @@ fn start(command: &Command, io: Io) -> Result<PtyChild, ProcessError> {
     let writer = PtyWriter {
         inner: Arc::new(spawned.input.into_writer(&shared)),
     };
-    if from_file {
-        // The program reads the file; nothing is ever written.
+    if closed_from_start {
+        // The program reads the file or its own window; nothing is written.
         let _ = writer.close_input();
     }
     let supervision = session::Supervision {
@@ -414,6 +432,7 @@ fn start(command: &Command, io: Io) -> Result<PtyChild, ProcessError> {
         mode: match io {
             Io::Pty(_) => IoMode::Pty,
             Io::Pipes => IoMode::Pipes,
+            Io::NewConsole => IoMode::NewConsole,
         },
         pid: spawned.pid,
         containment: spawned.level,
