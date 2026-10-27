@@ -121,8 +121,35 @@ in line with ADR-0016's estimate (a receipt of 2–5 ms). The parse of the
 answer is now the main thread's largest part of the receipt; the compact
 source map (M3-5) shrinks it.
 
-**WebView2 (Windows, `http://tauri.localhost`):** the same check in the
-E2E job of `desktop.yml` on this branch; §11 records the run.
+**WebView2 (Windows, `windows-2025`, `http://tauri.localhost`): clean.**
+From the E2E job of `desktop.yml` on this branch (run 40572876535, job
+122431463376, commit `c1df203`).
+
+| Item (ADR-0016 §2) | Found |
+| --- | --- |
+| (a) a module worker from `http://tauri.localhost` | Starts; WebView2's resource requests for the worker's scripts reach the same handler, so it gets `WORKER_CSP` |
+| (b) posting the `Module` | Works; answers equal the main thread's for both documents |
+| (c) the worker's policy | Its own: `eval` refused, and the IPC request refused with `connect-src` reported in the worker (WebView2 fires the event there, so the probe says `blocked`; directives seen: `connect-src`, `script-src`), while the page reaches the endpoint |
+| (d) Trusted Types | One violation for a plain string URL, none through the policy |
+
+| Measure, 1,000 blocks, 20 rounds | Result |
+| --- | --- |
+| Worker start-up | 14.7 ms (17.5 ms for the guessing game) |
+| First update in a fresh worker | 73.9 ms (9.4 ms for the guessing game) |
+| Round trip | median 55.3 ms, p95 59.3 ms |
+| `update()` alone in the worker | median 52.0 ms, p95 56 ms |
+| `update()` on the main thread, with its parse | median 54.1 ms, p95 58.9 ms |
+| Round trip less the worker's `update()` | median 3.2 ms, p95 3.6 ms (3.0 to 3.8) |
+| `structuredClone` of the request / the reply | 0.16 ms / 0.42 ms |
+
+**Verdict: clean on both webviews.** Under the app's real policy, with no
+`unsafe-eval` and the WebAssembly delivered as ADR-0010 has it (the page
+compiles the embedded bytes, the worker only instantiates the posted
+`Module`), the core loads and runs in a dedicated module worker on
+WebKitGTK and on WebView2, under the worker's own stricter policy. The
+main thread's share of a 1,000-block preview falls to the receipt (3 ms on
+the Windows runner, about 7 ms on this slower Linux container), and the
+latency grows by the same amount. So step 2 of the brief went ahead (§3).
 
 ## 3. Design
 
@@ -422,4 +449,82 @@ For the owner of worker.md to apply (this branch does not edit it):
 
 ## 11. Status
 
-Filled in when the branch stops.
+As of 2026-10-27, branch `m3/w5-worker-spike`.
+
+**Done:**
+
+* **The spike: clean on both webviews** (§2.2). WebKitGTK 2.52.6 locally
+  under xvfb (three runs, a control build for the policy) and WebView2 on
+  `windows-2025` in CI (Desktop run 40572876535, E2E job 122431463376 at
+  `c1df203`; again at `ca84c2e`, run 40574017390). The worker loads from the
+  packaged script, takes the posted `Module`, previews exactly as the main
+  thread does, and runs under `WORKER_CSP`.
+* **M3-1's first part** (§3), behind the build flag `B2C_PREVIEW_WORKER`,
+  off in every build (§4): the package's `./worker` entry (protocol and
+  checks, client, host), `instance.ts` and `coreModule()`, the worker's
+  entry with the frozen prototype and the E2E-only probe, the Vite worker
+  build under `workers/`, the `b2c-core-worker` Trusted Types policy,
+  `WORKER_CSP` in the backend, `PreviewService` as worker.md §6 has it,
+  `workerPreviewService` with its fallback, the pipeline's `null`
+  answers, `recover()` and the first half of the apply rule, and the E2E
+  hooks `startWorkerCheck`, `workerCheck`, `previewThread` and
+  `stopPreviewWorker`.
+* **Tests** (§7): package 316 tests, 96 % of lines (the worker's client and
+  host at 95 %, every example through the worker with the real core, the
+  host with `Object.prototype` frozen); desktop 2,127 tests, 94.9 % of
+  lines; the backend's `window.rs` tests; the worker build test; the
+  `preview-worker` E2E flow (3 tests) on Linux and Windows, and locally also
+  in a build with the flag on.
+* Checks run before the last code push: `cargo fmt`, the desktop crate's
+  clippy (both feature sets), `cargo doc` with `-D warnings`,
+  `B2C_REQUIRE_GXX=1 cargo test --workspace` (117 test binaries pass),
+  every package's typecheck, lint and format check, the four
+  `tools/check-*.py`, markdownlint. The Windows-target clippy of `ci.yml`
+  was not run locally: no crate of the workspace changed, and `ci.yml`
+  passed on the branch.
+
+**Not done, and why:**
+
+* The scope index, the clipboard arguments, `AnalysisState.scope` and
+  `analysisScope` reading the index (§1, §10): they need W2's
+  `crates/b2c-lang` and `services/symbols.ts`. Until they land, the flag
+  must stay off: with it on, menus go stale (§4, measured).
+* The second half of the apply rule and the drag hold (§1): with the
+  flag's removal.
+* The spans and benchmark metrics of worker.md §6 and §9, the
+  specification changes of worker.md §11 and 08 §8.8's text for
+  `WORKER_CSP` (W2 owns `docs/spec/` while it runs), `coreMemory()`, the
+  nightly security case: with the integration step.
+* The copy, paste and duplicate measurements of ADR-0016 §1: with the
+  clipboard arguments, on W2's blocks.
+
+**CI on the branch's head** (`ca84c2e`; the commit adding this section
+changes only this file): `ci.yml` green. `desktop.yml`: frontend, frontend
+tests, the app on both systems, and the E2E tests on both systems green;
+the visual-diff steps fail on Linux and Windows (the canvas scene and the
+toolbox scenes math, text, io and functions), exactly as on the
+coordinating branch's `df4b4f5` (run 40257310666) and its later W2 runs:
+the baselines predate W2's blocks. This branch changes no drawing, so no
+scene is its own and no baseline was touched. `osv-scanner.yml` fails on
+the branch and on the coordinating branch's latest run alike; this branch
+changes no lockfile and adds no dependency.
+
+**Merge notes for the coordinator:**
+
+* No file of W2's list is touched. Files outside this document's own
+  list (§5.1) that changed: `apps/desktop/src/editor/sync/drag.test.ts`
+  (its preview service adapted to the new `PreviewService` interface),
+  `apps/desktop/src/editor/preview/coreHost.test.ts`,
+  `apps/desktop/src/e2e/index.test.ts` (new hook dependencies) and
+  `apps/desktop/src/lib/trustedTypes.test.ts`.
+* Expected conflicts: none textual unless W2 also changed
+  `src/e2e/contract.ts`, `src/e2e/index.ts` or its test (both add hook
+  methods at the end; keep both), `EditorWorkspace.tsx`, `main.tsx`,
+  `vite.config.ts`, `pipeline.ts` or its tests. A W2 test that builds its
+  own `PreviewService` needs `thread`, `recover` and answers of the
+  `PreviewAnswer` shape (see `drag.test.ts`).
+* Nothing changes at run time in any build of CI or of a release: the
+  editor's preview stays on the main thread unless the build sets
+  `B2C_PREVIEW_WORKER=1`. What does run everywhere is serving the worker's
+  two scripts (only the E2E hook starts the worker) and the backend's
+  `WORKER_CSP` on them.
