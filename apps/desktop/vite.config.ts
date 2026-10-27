@@ -40,12 +40,27 @@ export default defineConfig({
   plugins: [react(), blocklyMedia(), wasmCore()],
   // Keep Rust compiler errors from `tauri dev` visible.
   clearScreen: false,
+  // Besides Vite's own, the build flag of the preview worker: B2C_PREVIEW_WORKER=1 at build time
+  // previews in the worker (src/editor/preview/workerService.ts; off until it is the default).
+  envPrefix: ['VITE_', 'B2C_PREVIEW_WORKER'],
   server: {
     // tauri.conf.json's devUrl expects exactly this port.
     port: 1420,
     strictPort: true,
     host: 'localhost',
     watch: { ignored: ['**/src-tauri/**'] },
+  },
+  // The preview worker (ADR-0016): an ES module worker whose files go under workers/, where the
+  // backend serves them with the worker's own policy (WORKER_CSP, src-tauri/src/window.rs).
+  worker: {
+    format: 'es',
+    rolldownOptions: {
+      output: {
+        entryFileNames: 'workers/[name]-[hash].js',
+        chunkFileNames: 'workers/[name]-[hash].js',
+        assetFileNames: 'workers/[name]-[hash][extname]',
+      },
+    },
   },
   build: {
     // WebView2 on Windows (Chromium) and WebKitGTK 2.40+ on Linux.

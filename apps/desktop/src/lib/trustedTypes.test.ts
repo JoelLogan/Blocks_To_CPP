@@ -2,11 +2,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  CORE_WORKER_POLICY,
+  coreWorkerScriptUrl,
   directiveOf,
   MAX_DIRECTIVES,
   OTHER_DIRECTIVE,
   startTrustedTypesCollector,
   type TrustedTypesCollector,
+  type TrustedTypesFactoryLike,
 } from './trustedTypes';
 
 /** A `securitypolicyviolation` event with the given fields (happy-dom has no such event class). */
@@ -135,5 +138,54 @@ describe('startTrustedTypesCollector', () => {
       ['Content Security Policy violation (reported only): require-trusted-types-for'],
       ['Content Security Policy violation (blocked): img-src'],
     ]);
+  });
+});
+
+describe('coreWorkerScriptUrl', () => {
+  const URL_TEXT = 'tauri://localhost/workers/core.worker-abc.js';
+
+  /** A Trusted Types factory that wraps what its policies accept. */
+  function factory(): TrustedTypesFactoryLike & { readonly names: string[] } {
+    const names: string[] = [];
+    return {
+      names,
+      createPolicy(name, rules) {
+        names.push(name);
+        return { createScriptURL: (input) => ({ trusted: rules.createScriptURL(input) }) };
+      },
+    };
+  }
+
+  it('is the plain URL where the webview has no Trusted Types', () => {
+    expect(coreWorkerScriptUrl(URL_TEXT, undefined)).toBe(URL_TEXT);
+  });
+
+  it('goes through the b2c-core-worker policy, created once per factory', () => {
+    const types = factory();
+    expect(coreWorkerScriptUrl(URL_TEXT, types)).toEqual({ trusted: URL_TEXT });
+    expect(coreWorkerScriptUrl(URL_TEXT, types)).toEqual({ trusted: URL_TEXT });
+    expect(types.names).toEqual([CORE_WORKER_POLICY]);
+    expect(CORE_WORKER_POLICY).toBe('b2c-core-worker');
+  });
+
+  it('accepts exactly the worker’s URL', () => {
+    let rules: { createScriptURL: (input: string) => string } | undefined;
+    const capturing: TrustedTypesFactoryLike = {
+      createPolicy(_name, given) {
+        rules = given;
+        return { createScriptURL: given.createScriptURL };
+      },
+    };
+    coreWorkerScriptUrl(URL_TEXT, capturing);
+    for (const other of [
+      'tauri://localhost/workers/other.js',
+      `${URL_TEXT}?x`,
+      'blob:tauri://localhost/1',
+      'data:text/javascript,1',
+      '',
+    ]) {
+      expect(() => rules?.createScriptURL(other)).toThrow(TypeError);
+    }
+    expect(rules?.createScriptURL(URL_TEXT)).toBe(URL_TEXT);
   });
 });

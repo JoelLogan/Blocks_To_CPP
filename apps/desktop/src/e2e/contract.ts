@@ -58,6 +58,53 @@ export interface E2eConsoleScreen {
  */
 export type E2eTimings = Readonly<Record<string, number | null>>;
 
+/** What the preview worker's probe found (packages/b2c-core-wasm/src/worker/protocol.ts). */
+export interface E2eWorkerProbe {
+  readonly eval: 'blocked' | 'allowed';
+  readonly request: 'blocked' | 'allowed' | 'failed';
+  readonly directives: string[];
+}
+
+/**
+ * The result of {@link E2eHookContract.startWorkerCheck} (src/e2e/workerCheck.ts): a preview worker
+ * started beside the editor's preview, the open project previewed in it and on the main thread.
+ * Times are in milliseconds on the page's clock.
+ */
+export type E2eWorkerCheck =
+  | {
+      readonly ok: true;
+      readonly error: null;
+      /** The page's origin (`tauri://localhost`, `http://tauri.localhost`). */
+      readonly origin: string;
+      /** From creating the worker until it answered `started`. */
+      readonly startupMs: number;
+      /** The first update's round trip (the worker's instance runs it cold). */
+      readonly firstUpdateMs: number;
+      /** Whether the worker's first answer equals the main thread's `update()` of the document. */
+      readonly sameAsMain: boolean;
+      readonly contentHash: string | null;
+      /** Each round's update through `postMessage`, from posting to the answer, parsed. */
+      readonly roundTripMs: number[];
+      /** Each round's `update()` alone, timed in the worker. */
+      readonly workerUpdateMs: number[];
+      /** Each round's `update()` called on the main thread, with its parse. */
+      readonly mainUpdateMs: number[];
+      /** The UTF-16 length of the update request's document and of the reply's answer. */
+      readonly requestChars: number;
+      readonly replyChars: number;
+      /** One `structuredClone` of the update request and of its reply (the mean of 20). */
+      readonly requestCloneMs: number;
+      readonly replyCloneMs: number;
+      readonly probe: E2eWorkerProbe;
+      /** The probe's request made from the page, whose policy allows it: the control. */
+      readonly pageRequest: E2eWorkerProbe['request'];
+      /** Violations the page saw for a worker made from a plain string URL. */
+      readonly unwrappedViolations: number;
+      /** Violations the page saw for the worker made through the `b2c-core-worker` policy. */
+      readonly policyViolations: number;
+    }
+  | { readonly ok: false; readonly error: string };
+
 /**
  * `window.__B2C_E2E__`: what the end-to-end tests can call through WebDriver's `executeScript`.
  * Every call throws (a JavaScript error in WebDriver) when its arguments are not valid.
@@ -139,4 +186,22 @@ export interface E2eHookContract {
    * whether the trial's header reached the page. Parsing into a detached document runs nothing.
    */
   probeTrustedTypes(): void;
+  /**
+   * Starts the preview worker's check with `rounds` round trips (1 to 50) on the open project:
+   * a worker of its own, beside the editor's preview. Poll {@link workerCheck} for its result.
+   */
+  startWorkerCheck(rounds: number): void;
+  /** The result of the latest {@link startWorkerCheck}, or `null` while it runs or before one. */
+  workerCheck(): E2eWorkerCheck | null;
+  /**
+   * Where the editor's next preview runs: `worker` or `main` in a build made with
+   * `B2C_PREVIEW_WORKER=1` (the main thread until the worker has started, and after it has
+   * failed), `off` in a build without it, and `null` when no editor is open.
+   */
+  previewThread(): 'worker' | 'main' | 'off' | null;
+  /**
+   * Terminates the editor's preview worker as if it had raised an error, so that its client
+   * starts a new one. Throws when the editor has no worker.
+   */
+  stopPreviewWorker(): void;
 }

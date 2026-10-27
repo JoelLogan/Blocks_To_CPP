@@ -27,7 +27,7 @@ import {
 import { latestTimings, resetTimings } from '../../lib/timing';
 import { type CoreHost, createCoreHost } from './coreHost';
 import { PreviewPipeline } from './pipeline';
-import type { PreviewService } from './service';
+import type { PreviewAnswer, PreviewService } from './service';
 
 /** The content hash the stand-in cores report. */
 const CONTENT_HASH = 'b'.repeat(64);
@@ -129,11 +129,24 @@ function manualService(): PreviewService & {
   }[] = [];
   return {
     calls,
+    thread: () => 'main',
     update: (json, options) =>
       new Promise((resolve) => {
-        calls.push({ json, options, resolve });
+        calls.push({
+          json,
+          options,
+          resolve: (result) => {
+            resolve(answerOf(result));
+          },
+        });
       }),
+    recover: () => Promise.resolve(),
   };
+}
+
+/** An answer of a preview service with `result`. */
+function answerOf(result: UpdateResult): PreviewAnswer {
+  return { result, scopeJson: null, timing: { startedAt: 0, updateMs: 0, indexMs: 0 } };
 }
 
 let docVersion = 0;
@@ -272,6 +285,123 @@ describe('the preview pipeline', () => {
     expect(useAppStore.getState().analysis.seq).toBe(2);
     expect(useAppStore.getState().project?.document.project.name).toBe('Edit 1');
     expect(onPreviewed).toHaveBeenCalledTimes(1);
+    pipeline.dispose();
+  });
+
+  it('drops an answer computed while a rename wrote the document, and reads the canvas again', async () => {
+    openProject();
+    const service = manualService();
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      read: readDocument,
+      service,
+    });
+    docVersion = 1;
+    const run = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(service.calls).toHaveLength(1);
+    // A rename writes the project's document without asking the pipeline (sync/session.ts).
+    const project = useAppStore.getState().project;
+    const renamed: BdmDocument = {
+      ...documentFixture('Renamed'),
+      modules: project?.document.modules ?? [],
+    };
+    useAppStore.getState().actions.updateProject({ document: renamed, dirty: true });
+    service.calls[0]?.resolve(updateFixture(service.calls[0].json));
+    await run;
+    expect(useAppStore.getState().project?.document).toBe(renamed);
+    expect(useAppStore.getState().analysis.preview).toBeNull();
+    // The run was the latest, so the canvas is read again (here: the edit, as the canvas has it).
+    expect(pipeline.pending).toBe(true);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(service.calls).toHaveLength(2);
+    service.calls[1]?.resolve(updateFixture(service.calls[1].json));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useAppStore.getState().project?.document.project.name).toBe('Edit 1');
+    expect(useAppStore.getState().analysis.preview).not.toBeNull();
+    pipeline.dispose();
+  });
+
+  it('applies an answer read against the document of its own last commit', async () => {
+    openProject();
+    const service = manualService();
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      read: readDocument,
+      service,
+    });
+    docVersion = 1;
+    const first = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    service.calls[0]?.resolve(updateFixture(service.calls[0].json));
+    await first;
+    expect(useAppStore.getState().project?.document.project.name).toBe('Edit 1');
+    docVersion = 2;
+    const second = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    service.calls[1]?.resolve(updateFixture(service.calls[1].json));
+    await second;
+    expect(useAppStore.getState().project?.document.project.name).toBe('Edit 2');
+    expect(pipeline.pending).toBe(false);
+    pipeline.dispose();
+  });
+
+  it('stops quietly when the service answers null (a newer request replaced this one)', async () => {
+    openProject();
+    const onPreviewed = vi.fn();
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      read: readDocument,
+      service: {
+        thread: () => 'worker',
+        update: () => Promise.resolve(null),
+        recover: () => Promise.resolve(),
+      },
+      onPreviewed,
+    });
+    const before = useAppStore.getState().project?.document;
+    docVersion = 1;
+    await pipeline.runNow();
+    expect(useAppStore.getState().analysis.preview).toBeNull();
+    expect(useAppStore.getState().project?.document).toBe(before);
+    expect(onPreviewed).not.toHaveBeenCalled();
+    pipeline.dispose();
+  });
+
+  it('after a trap, lets the service recover and retries there, without restarting the host', async () => {
+    openProject();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const host = hostOf(stubCore());
+    const recover = vi.fn(() => Promise.resolve());
+    let calls = 0;
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host,
+      read: readDocument,
+      service: {
+        thread: () => 'worker',
+        update: (json) => {
+          calls += 1;
+          return calls === 1
+            ? Promise.reject(new CoreTrap('stopped in the worker'))
+            : Promise.resolve({
+                result: updateFixture(json),
+                scopeJson: null,
+                timing: { startedAt: 0, updateMs: 1, indexMs: 0 },
+              });
+        },
+        recover,
+      },
+    });
+    docVersion = 1;
+    await pipeline.runNow();
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(host.restarts).toBe(0);
+    expect(useAppStore.getState().analysis.notice).toBe('trapRecovered');
+    expect(useAppStore.getState().project?.document.project.name).toBe('Edit 1');
     pipeline.dispose();
   });
 
@@ -416,7 +546,11 @@ describe('the preview pipeline', () => {
       store: useAppStore,
       host: hostOf(stubCore()),
       read: readDocument,
-      service: { update: () => Promise.reject(new Error('the preview failed')) },
+      service: {
+        thread: () => 'main',
+        update: () => Promise.reject(new Error('the preview failed')),
+        recover: () => Promise.resolve(),
+      },
     });
     docVersion = 1;
     await pipeline.runNow();

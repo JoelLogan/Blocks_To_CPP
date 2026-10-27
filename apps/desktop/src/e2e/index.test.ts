@@ -73,6 +73,15 @@ function deps(overrides: Partial<E2eHookDeps> = {}): E2eHookDeps {
     trustedTypes: () => report,
     elementAt: () => null,
     parseHtml: vi.fn(),
+    workerClient: () => {
+      throw new Error('no worker in this test');
+    },
+    spawnUnwrappedWorker: () => {
+      throw new Error('no worker in this test');
+    },
+    pageRequest: () => Promise.resolve('failed'),
+    previewWorkerEnabled: () => false,
+    previewService: () => null,
     ...overrides,
   };
 }

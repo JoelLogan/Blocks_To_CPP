@@ -131,3 +131,51 @@ export function startTrustedTypesCollector(
     },
   };
 }
+
+/** The Trusted Types policy through which the page creates the preview worker (ADR-0016 §6). */
+export const CORE_WORKER_POLICY = 'b2c-core-worker';
+
+/** The members of `globalThis.trustedTypes` the worker policy uses. */
+export interface TrustedTypesFactoryLike {
+  createPolicy(
+    name: string,
+    rules: { createScriptURL: (input: string) => string },
+  ): { createScriptURL(input: string): unknown };
+}
+
+/**
+ * Makes the script URL of the preview worker: through the `b2c-core-worker` policy when the
+ * webview has Trusted Types, which accepts exactly `workerUrl` and throws for anything else, and
+ * the plain URL otherwise. The policy is created once per factory.
+ *
+ * @param workerUrl the worker's URL, absolute.
+ */
+export function coreWorkerScriptUrl(
+  workerUrl: string,
+  factory: TrustedTypesFactoryLike | undefined = (
+    globalThis as { trustedTypes?: TrustedTypesFactoryLike }
+  ).trustedTypes,
+): string | URL {
+  if (factory === undefined) {
+    return workerUrl;
+  }
+  let policy = workerPolicies.get(factory);
+  if (policy === undefined) {
+    policy = factory.createPolicy(CORE_WORKER_POLICY, {
+      createScriptURL: (input) => {
+        if (input !== workerUrl) {
+          throw new TypeError(`${CORE_WORKER_POLICY} accepts only the preview worker's URL`);
+        }
+        return input;
+      },
+    });
+    workerPolicies.set(factory, policy);
+  }
+  // A TrustedScriptURL, which `new Worker()` takes like a string.
+  return policy.createScriptURL(workerUrl) as string;
+}
+
+const workerPolicies = new WeakMap<
+  TrustedTypesFactoryLike,
+  { createScriptURL(input: string): unknown }
+>();
