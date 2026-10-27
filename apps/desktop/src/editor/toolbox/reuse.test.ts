@@ -719,6 +719,11 @@ describe('the canvas’s block limits', () => {
 });
 
 describe('the time a showing takes', () => {
+  // These measure many showings, several of every block built again: with W2's structs, enums,
+  // control and file blocks, one try of the padded test took 27.5 s and of the other 16.5 s without
+  // coverage on a loaded machine (load 3.7 on 4 cores), over the file's flyout limit.
+  const TIMING_TEST_TIMEOUT_MS = 60_000;
+
   /** The median of `count` runs of `run`, in milliseconds. */
   function median(count: number, run: (index: number) => void): number {
     const times: number[] = [];
@@ -740,14 +745,18 @@ describe('the time a showing takes', () => {
     });
   }
 
-  it('is a fraction of building every block', { retry: 2 }, async () => {
-    const workspace = attached();
-    await settle();
-    const kept = refreshTime(workspace, 5);
-    inflaterOf(workspace).reuse = false;
-    const rebuilt = refreshTime(workspace, 3);
-    expect(kept).toBeLessThanOrEqual(0.35 * rebuilt);
-  });
+  it(
+    'is a fraction of building every block',
+    { retry: 2, timeout: TIMING_TEST_TIMEOUT_MS },
+    async () => {
+      const workspace = attached();
+      await settle();
+      const kept = refreshTime(workspace, 5);
+      inflaterOf(workspace).reuse = false;
+      const rebuilt = refreshTime(workspace, 3);
+      expect(kept).toBeLessThanOrEqual(0.35 * rebuilt);
+    },
+  );
 
   // A showing still lays out and checks every kept block, so its time grows with the blocks shown:
   // with every fixed category shown twice it came out 1.7 to 2.0 times as long on a loaded machine,
@@ -755,7 +764,7 @@ describe('the time a showing takes', () => {
   // that no block is built again however many there are is counted exactly above.
   it(
     'costs a fraction of building a block for each block more it shows',
-    { retry: 2 },
+    { retry: 2, timeout: TIMING_TEST_TIMEOUT_MS },
     async () => {
       const workspace = attached();
       await settle();
