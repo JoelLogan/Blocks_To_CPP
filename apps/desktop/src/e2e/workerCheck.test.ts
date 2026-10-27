@@ -3,6 +3,7 @@ import type { CoreWasm, UpdateResult } from '@blocks2cpp/b2c-core-wasm';
 import type { CoreWorkerClient, WorkerLike } from '@blocks2cpp/b2c-core-wasm/worker';
 import { describe, expect, it, vi } from 'vitest';
 
+import { startTrustedTypesCollector } from '../lib/trustedTypes';
 import { MAX_WORKER_CHECK_ROUNDS, startWorkerCheck, type WorkerCheckDeps } from './workerCheck';
 
 const RESULT = { stage: 'generate', contentHash: 'a'.repeat(64) } as unknown as UpdateResult;
@@ -33,18 +34,29 @@ function fakeClient(result: UpdateResult = RESULT): CoreWorkerClient & { dispose
   return client;
 }
 
+/** A violation event of `directive`, as the webview fires it at the document. */
+function violation(directive: string): Event {
+  return Object.assign(new Event('securitypolicyviolation'), { effectiveDirective: directive });
+}
+
 function deps(overrides: Partial<WorkerCheckDeps> = {}): WorkerCheckDeps {
-  let violations = 0;
+  // The page's real collector: other directives' reports at the same moment must not count.
+  const page = new EventTarget();
+  const collector = startTrustedTypesCollector(page, { onNewDirective: () => undefined });
   return {
     documentJson: () => '{"doc":1}',
     core: () => fakeCore(),
     options: () => ({ indentWidth: 4 }),
-    client: () => fakeClient(),
+    client: () => {
+      page.dispatchEvent(violation('img-src'));
+      return fakeClient();
+    },
     spawnUnwrapped: () => {
-      violations += 1;
+      page.dispatchEvent(violation('require-trusted-types-for'));
+      page.dispatchEvent(violation('connect-src'));
       return { terminate: vi.fn() } as unknown as WorkerLike;
     },
-    violations: () => violations,
+    trustedTypesViolations: () => collector.trustedTypesCount(),
     pageRequest: () => Promise.resolve('allowed'),
     ...overrides,
   };

@@ -111,7 +111,17 @@ const OPTIONS = { indentWidth: 4 } as const;
 
 describe('the worker preview service', () => {
   it('is off unless the build was made with B2C_PREVIEW_WORKER=1', () => {
-    expect(previewWorkerEnabled()).toBe(false);
+    // Whatever the shell running the tests exports.
+    try {
+      vi.stubEnv('B2C_PREVIEW_WORKER', '');
+      expect(previewWorkerEnabled()).toBe(false);
+      vi.stubEnv('B2C_PREVIEW_WORKER', 'yes');
+      expect(previewWorkerEnabled()).toBe(false);
+      vi.stubEnv('B2C_PREVIEW_WORKER', '1');
+      expect(previewWorkerEnabled()).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('runs on the main instance until the worker has started, starting it after the first update', async () => {

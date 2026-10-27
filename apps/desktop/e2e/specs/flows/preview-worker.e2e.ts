@@ -98,7 +98,14 @@ describe('The preview worker', () => {
       timeout: 30_000,
       message: 'the first preview',
     });
-    expectWorkerWorks(await checkWorker(app, 'guessing game', 3));
+    const result = await checkWorker(app, 'guessing game', 3);
+    expectWorkerWorks(result);
+    // Trusted Types (both webviews have them): the trial reports a worker made from a plain
+    // string, and nothing for the app's worker made through the b2c-core-worker policy.
+    if (result.ok) {
+      expect(result.unwrappedViolations).toBeGreaterThanOrEqual(1);
+      expect(result.policyViolations).toBe(0);
+    }
   });
 
   it('is measured at 1,000 blocks', async (context) => {

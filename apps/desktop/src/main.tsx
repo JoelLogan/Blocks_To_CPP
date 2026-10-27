@@ -68,6 +68,7 @@ if (import.meta.env.MODE === 'e2e') {
       core: getCore,
       console: consoleBridge,
       trustedTypes: () => trustedTypes.report(),
+      trustedTypesCount: () => trustedTypes.trustedTypesCount(),
       workerClient: (acceptVersion) =>
         createCoreWorkerClient({
           spawn: spawn.spawnPreviewWorker,

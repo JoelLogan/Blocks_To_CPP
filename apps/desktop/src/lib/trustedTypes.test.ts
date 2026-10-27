@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CORE_WORKER_POLICY,
+  TRUSTED_TYPES_DIRECTIVE,
   coreWorkerScriptUrl,
   directiveOf,
   MAX_DIRECTIVES,
@@ -138,6 +139,19 @@ describe('startTrustedTypesCollector', () => {
       ['Content Security Policy violation (reported only): require-trusted-types-for'],
       ['Content Security Policy violation (blocked): img-src'],
     ]);
+  });
+});
+
+describe('the Trusted Types count', () => {
+  it('counts require-trusted-types-for events only', () => {
+    const target = new EventTarget();
+    const collector = collect(target);
+    target.dispatchEvent(violation({ effectiveDirective: 'img-src' }));
+    target.dispatchEvent(violation({ effectiveDirective: TRUSTED_TYPES_DIRECTIVE }));
+    target.dispatchEvent(violation({ violatedDirective: "require-trusted-types-for 'script'" }));
+    target.dispatchEvent(violation({ effectiveDirective: 'connect-src' }));
+    expect(collector.trustedTypesCount()).toBe(2);
+    expect(collector.report().count).toBe(4);
   });
 });
 

@@ -53,6 +53,8 @@ export interface E2eHookDeps {
   /** The console bridge, whose output the transcript records. */
   readonly console: ConsoleBridge;
   readonly trustedTypes: () => TrustedTypesReport;
+  /** How many of those violations were Trusted Types' own (`require-trusted-types-for`). */
+  readonly trustedTypesCount: () => number;
   /** `document.elementFromPoint`, by default. */
   readonly elementAt?: ElementAtPoint;
   /** Parses HTML for {@link E2eHook.probeTrustedTypes}; a `DOMParser` by default. */
@@ -227,7 +229,7 @@ export function createE2eHook(deps: E2eHookDeps, transcript: ConsoleTranscript):
           }),
           client: deps.workerClient,
           spawnUnwrapped: deps.spawnUnwrappedWorker,
-          violations: () => deps.trustedTypes().count,
+          trustedTypesViolations: deps.trustedTypesCount,
           pageRequest: deps.pageRequest,
         },
         rounds,

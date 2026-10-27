@@ -71,6 +71,7 @@ function deps(overrides: Partial<E2eHookDeps> = {}): E2eHookDeps {
     core: () => null,
     console: new ConsoleBridge(),
     trustedTypes: () => report,
+    trustedTypesCount: () => 1,
     elementAt: () => null,
     parseHtml: vi.fn(),
     workerClient: () => {

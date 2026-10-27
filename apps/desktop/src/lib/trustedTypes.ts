@@ -28,6 +28,9 @@ export const MAX_DIRECTIVES = 32;
  */
 const DIRECTIVE_NAME = /^[a-z][a-z-]{0,63}$/;
 
+/** The directive of a Trusted Types violation. */
+export const TRUSTED_TYPES_DIRECTIVE = 'require-trusted-types-for';
+
 /** The name recorded for a directive that does not look like one. */
 export const OTHER_DIRECTIVE = 'other';
 
@@ -65,6 +68,12 @@ export interface TrustedTypesCollectorOptions {
 export interface TrustedTypesCollector {
   /** The counts so far. */
   report(): TrustedTypesReport;
+  /**
+   * How many of the violations were Trusted Types' own (`require-trusted-types-for`): a string
+   * that reached a sink without a policy. The preview worker's check reads it, so that other
+   * directives' reports in the same moment do not count.
+   */
+  trustedTypesCount(): number;
   /** Stops listening; the counts stay readable. */
   stop(): void;
 }
@@ -104,10 +113,14 @@ export function startTrustedTypesCollector(
   const onNewDirective = options.onNewDirective ?? logNewDirective;
   const directives = new Set<string>();
   let count = 0;
+  let trustedTypesCount = 0;
 
   const listener = (event: Event): void => {
     count = Math.min(count + 1, Number.MAX_SAFE_INTEGER);
     const directive = directiveOf(event as ViolationEventLike);
+    if (directive === TRUSTED_TYPES_DIRECTIVE) {
+      trustedTypesCount = Math.min(trustedTypesCount + 1, Number.MAX_SAFE_INTEGER);
+    }
     if (directives.has(directive) || directives.size >= MAX_DIRECTIVES) {
       return;
     }
@@ -123,6 +136,7 @@ export function startTrustedTypesCollector(
   let listening = true;
   return {
     report: () => ({ count, directives: [...directives].sort() }),
+    trustedTypesCount: () => trustedTypesCount,
     stop: () => {
       if (listening) {
         listening = false;

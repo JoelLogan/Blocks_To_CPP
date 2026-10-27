@@ -40,8 +40,11 @@ export interface WorkerCheckDeps {
   readonly client: (acceptVersion: (version: CoreVersion) => boolean) => CoreWorkerClient;
   /** Creates a worker from a plain string URL, without the Trusted Types policy. */
   readonly spawnUnwrapped: () => WorkerLike;
-  /** How many Content Security Policy violations the page has seen. */
-  readonly violations: () => number;
+  /**
+   * How many Trusted Types violations (`require-trusted-types-for`) the page has seen; other
+   * directives' reports do not count.
+   */
+  readonly trustedTypesViolations: () => number;
   /** The probe's request to the IPC endpoint, made from the page: the control of the worker's. */
   readonly pageRequest: () => Promise<WorkerProbe['request']>;
   /** The page's clock. */
@@ -72,7 +75,11 @@ function settle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 100));
 }
 
-/** The name and nothing else of a failure: messages could quote project text. */
+/**
+ * A failure as its name and the first 200 characters of its message. Its sources are the check's
+ * own errors, the worker client's (which name no project text) and the webview's; and the check
+ * runs in end-to-end builds only, on the tests' fixture projects.
+ */
 function describe(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message.slice(0, 200)}` : 'unknown error';
 }
@@ -88,10 +95,10 @@ async function run(deps: WorkerCheckDeps, rounds: number): Promise<E2eWorkerChec
   const mainVersion = core.version();
 
   // Trusted Types: what the trial reports for a worker made from a plain string.
-  const before = deps.violations();
+  const before = deps.trustedTypesViolations();
   deps.spawnUnwrapped().terminate();
   await settle();
-  const unwrappedViolations = deps.violations() - before;
+  const unwrappedViolations = deps.trustedTypesViolations() - before;
 
   const started = now();
   const client = deps.client((version) => JSON.stringify(version) === JSON.stringify(mainVersion));
@@ -99,7 +106,7 @@ async function run(deps: WorkerCheckDeps, rounds: number): Promise<E2eWorkerChec
     await client.ready();
     const startupMs = now() - started;
     await settle();
-    const policyViolations = deps.violations() - before - unwrappedViolations;
+    const policyViolations = deps.trustedTypesViolations() - before - unwrappedViolations;
 
     const firstStarted = now();
     const first = await client.update(documentJson, options);
