@@ -482,7 +482,12 @@ function hostOn(options: Parameters<typeof serveCoreWorker>[1] = {}) {
         port2.postMessage(message);
       },
       set onmessage(handler: ((event: { readonly data: unknown }) => void) | null) {
-        port2.onmessage = handler as ((event: unknown) => void) | null;
+        port2.removeAllListeners('message');
+        if (handler !== null) {
+          port2.on('message', (data: unknown) => {
+            handler({ data });
+          });
+        }
       },
       get onmessage() {
         return null;
@@ -492,10 +497,10 @@ function hostOn(options: Parameters<typeof serveCoreWorker>[1] = {}) {
   );
   const replies: WorkerReply[] = [];
   let wake: (() => void) | null = null;
-  port1.onmessage = (event: { data: unknown }) => {
-    replies.push(event.data as WorkerReply);
+  port1.on('message', (data: unknown) => {
+    replies.push(data as WorkerReply);
     wake?.();
-  };
+  });
   const next = async (): Promise<WorkerReply> => {
     while (replies.length === 0) {
       await new Promise<void>((resolve) => {
@@ -659,7 +664,12 @@ describe('the client and the host', () => {
                 port2.postMessage(message);
               },
               set onmessage(handler: ((event: { readonly data: unknown }) => void) | null) {
-                port2.onmessage = handler as ((event: unknown) => void) | null;
+                port2.removeAllListeners('message');
+                if (handler !== null) {
+                  port2.on('message', (data: unknown) => {
+                    handler({ data });
+                  });
+                }
               },
               get onmessage() {
                 return null;
@@ -683,7 +693,7 @@ describe('the client and the host', () => {
               port1.close();
             },
           };
-          port1.onmessage = (event: { data: unknown }) => worker.onmessage?.(event);
+          port1.on('message', (data: unknown) => worker.onmessage?.({ data }));
           return worker;
         },
         module: () => Promise.resolve(MODULE),

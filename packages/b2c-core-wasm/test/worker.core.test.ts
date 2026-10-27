@@ -48,7 +48,12 @@ function channelWorker(): WorkerLike {
       port2.postMessage(message);
     },
     set onmessage(handler: ((event: { readonly data: unknown }) => void) | null) {
-      port2.onmessage = handler as ((event: unknown) => void) | null;
+      port2.removeAllListeners('message');
+      if (handler !== null) {
+        port2.on('message', (data: unknown) => {
+          handler({ data });
+        });
+      }
     },
     get onmessage() {
       return null;
@@ -66,7 +71,7 @@ function channelWorker(): WorkerLike {
       port2.close();
     },
   };
-  port1.onmessage = (event: { data: unknown }) => worker.onmessage?.(event);
+  port1.on('message', (data: unknown) => worker.onmessage?.({ data }));
   return worker;
 }
 
