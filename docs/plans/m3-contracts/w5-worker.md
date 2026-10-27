@@ -512,6 +512,57 @@ scene is its own and no baseline was touched. `osv-scanner.yml` fails on
 the branch and on the coordinating branch's latest run alike; this branch
 changes no lockfile and adds no dependency.
 
+**The coordinator's review of 2026-10-27** (five findings, each fixed with
+a test that fails without the fix; none refuted):
+
+1. *`acceptVersion` asked the live main core* (`7fbab0a`). Confirmed: a
+   main instance that trapped while the worker previews threw out of the
+   client's message handler and left a healthy worker `starting` until the
+   start timeout. The client now treats a check that throws as a refusal
+   (`worker.test.ts`, "treats an acceptVersion that throws as a refusal":
+   three refusals at once, no timer, then `failed`), and
+   `appWorkerPreviewService` reads the main version once, when it creates
+   the client after a successful main-thread update (`spawn.test.ts`: a
+   worker of that version is accepted after the main instance trapped, and
+   while the host has no instance). `appWorkerPreviewService` takes the
+   worker and module as optional dependencies for that test.
+2. *The base check of the commit without a preview was untested; the
+   "own last commit" clause never decides* (`fdcd05a`). Confirmed, both.
+   New test "does not keep an edit without a preview when a save or rename
+   wrote the document meanwhile"; the clause and its `written` field are
+   gone (a run reads its base after every older run has been overtaken,
+   and only the latest commits), the old test is renamed "applies an
+   answer when nothing else wrote the document", and §3.5 and §5.4 say so.
+3. *The E2E check asserted nothing about Trusted Types* (`ebbc5fc`).
+   Confirmed. The collector counts `require-trusted-types-for` events on
+   their own (`trustedTypesCount()`), the check reads that count, and the
+   guessing-game flow asserts at least one report for a worker from a plain
+   string and none through the policy (local Linux run: 1 and 0).
+   `workerCheck.test.ts` fires other directives' reports in the same
+   windows and expects them not counted.
+4. *The flag test read the developer's environment* (`ebbc5fc`).
+   Confirmed (it failed with `B2C_PREVIEW_WORKER=1` exported); it now
+   stubs the variable and checks off, a wrong value and on.
+5. *The failure text's comment* (`ebbc5fc`). The comment now says the name
+   and the first 200 characters of the message are reported, and where
+   they come from; the message stays, since it is what makes a failed E2E
+   check diagnosable.
+
+Checks before the push of these fixes: every package's typecheck, lint
+and format check; the package's tests (317, 96 % of lines); the desktop
+suite with coverage (2,133 of 2,134 pass; `navigation.test.ts`'s "include
+Make a variable, which Enter presses", in the toolbox's keyboard code this
+branch does not touch, timed out at its 20 s under coverage on this
+container, as it did once before, and passes run on its own, twice);
+the isolation tests; the four `tools/check-*.py`; `cargo fmt`; the
+`preview-worker` E2E flow on Linux (3 of 3). No Rust changed in this
+round.
+
+The OSV-Scanner failure is GHSA-qwgh-2vcv-g2f7 (block-buffer 0.10.4 via
+Tauri's sha2), excepted on the coordinating branch in `c22ae1c`; this
+branch does not merge that branch, so the failure stays here until the
+coordinator merges.
+
 **Merge notes for the coordinator:**
 
 * No file of W2's list is touched. Files outside this document's own
