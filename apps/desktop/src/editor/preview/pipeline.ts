@@ -22,15 +22,16 @@
  * holds, so the canvas is read again instead (ADR-0016 §5; on the main thread the read, `update()`
  * and the commit are one task and this never happens, with the preview worker it can). When the
  * core traps, the service gets a fresh instance (`PreviewService.recover`), the run is tried once
- * more on it, and the analysis gets the notice `trapRecovered`. When the update fails even so (the new instance trapped too, or the core
- * failed in another way), the document is still made the project's through `canonical()` alone
- * (on a fresh instance after a trap), and the last good preview stays: an edit the analysis cannot
- * handle still counts as unsaved, and autosave still keeps it. When the document read from the
- * canvas does not load (blocks nested deeper than a project may be, B2C-E0104, or a bug in the
- * sync), nothing is committed: the project and the last good preview stay, and the analysis gets
- * the notice `syncFailed` (with the loader's codes) until the canvas loads again. The window shows
- * both notices in a banner (src/features/analysis), and Build and Run refuse such a canvas instead
- * of building the older document (src/features/build-run).
+ * more on it, and the analysis gets the notice `trapRecovered`. When the update fails even so (the
+ * new instance trapped too, or the core failed in another way), the document is still made the
+ * project's through `canonical()` alone (on a fresh instance after a trap), and the last good
+ * preview stays: an edit the analysis cannot handle still counts as unsaved, and autosave still
+ * keeps it. When the document read from the canvas does not load (blocks nested deeper than a
+ * project may be, B2C-E0104, or a bug in the sync), nothing is committed: the project and the last
+ * good preview stay, and the analysis gets the notice `syncFailed` (with the loader's codes) until
+ * the canvas loads again. The window shows both notices in a banner (src/features/analysis), and
+ * Build and Run refuse such a canvas instead of building the older document
+ * (src/features/build-run).
  */
 import {
   type BdmDocument,

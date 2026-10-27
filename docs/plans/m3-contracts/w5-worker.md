@@ -88,7 +88,41 @@ run in the PR job on Linux and Windows, so Windows is checked on every push.
 
 ### 2.2 Verdict and numbers
 
-Filled in from the runs (§11 has their commits and jobs).
+**WebKitGTK 2.52.6 (Ubuntu 24.04, the E2E app under xvfb): clean.**
+
+| Item (ADR-0016 §2) | Found |
+| --- | --- |
+| (a) a module worker from `tauri://localhost` | Starts from `workers/core.worker-<hash>.js`; Tauri's protocol serves it and its glue chunk, and `on_web_resource_request` is called for both (the debug log shows `WORKER_CSP` added to each) |
+| (b) posting the `Module` | Works; the worker instantiates it with its own glue, and its answers equal the main thread's for the guessing game and the 1,000-block document (`sameAsMain`) |
+| (c) the worker's policy | Its own. `eval` is refused. The page reaches the IPC endpoint (`ipc://localhost/`) and the worker does not. A control build whose `WORKER_CSP` also allowed `connect-src ipc: http://ipc.localhost` let the worker's request through, so it is the worker's policy that refuses it, not the page's and not the platform. WebKitGTK fires no `securitypolicyviolation` event in the worker, so the probe reports `failed`, not `blocked`, there |
+| (d) Trusted Types | WebKitGTK 2.52 has Trusted Types: the trial reports one violation for `new Worker` from a plain string URL, and none through the `b2c-core-worker` policy |
+
+Measured on this container (a slower CPU than CI's runners: the main
+thread's `update()` at 1,000 blocks takes 65–107 ms here, against 42.5–44
+ms in the M2 measurements), three runs of 20 rounds at 1,000 blocks
+(152,004 characters of document, 466,399 of answer). WebKit's clock counts
+whole milliseconds here.
+
+| Measure | Result |
+| --- | --- |
+| Worker start-up (creating it until `started`, the `Module` posted) | 15, 15 and 37 ms (the first run's disk cache was cold); 16–19 ms for the guessing game |
+| First update in a fresh worker | 116–151 ms (the instance grows its memory); 18–22 ms for the guessing game |
+| Round trip (posting the request until the answer is parsed on the page) | median 81 ms, p95 108 ms |
+| `update()` alone in the worker | median 73.5 ms, p95 101 ms |
+| `update()` on the main thread, with its parse | median 75 ms, p95 95 ms |
+| Round trip less the worker's `update()` | median 7 ms, p95 10 ms, 5 to 12 ms (posting, the reply's clone and the main thread's `JSON.parse` of the answer) |
+| `structuredClone` of the update request | 0.15 ms (mean of 20) |
+| `structuredClone` of the reply | 0.65–0.8 ms (mean of 20) |
+
+So per edit at 1,000 blocks the main thread keeps about 7 ms of the
+preview's work instead of all of it, and the latency grows by about the
+same 7 ms; the largest message costs under a millisecond to clone. This is
+in line with ADR-0016's estimate (a receipt of 2–5 ms). The parse of the
+answer is now the main thread's largest part of the receipt; the compact
+source map (M3-5) shrinks it.
+
+**WebView2 (Windows, `http://tauri.localhost`):** the same check in the
+E2E job of `desktop.yml` on this branch; §11 records the run.
 
 ## 3. Design
 
