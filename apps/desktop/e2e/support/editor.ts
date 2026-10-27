@@ -184,9 +184,9 @@ export function grabPointOf(app: App, blockId: string): Promise<E2ePoint> {
 }
 
 /**
- * Runs in the webview: the middle of the handle of the toolbox flyout's vertical scrollbar and how
- * far the handle can still move down, in viewport pixels, or `null` when no flyout shows one (the
- * trash can's flyout, hidden, has a scrollbar of no size).
+ * Runs in the webview: the middle of the handle of the toolbox flyout's vertical scrollbar, how
+ * far the handle can still move down and the handle's height, in viewport pixels, or `null` when no
+ * flyout shows one (the trash can's flyout, hidden, has a scrollbar of no size).
  */
 const FLYOUT_SCROLLBAR = `
   for (const bar of document.querySelectorAll('.blocklyFlyoutScrollbar.blocklyScrollbarVertical')) {
@@ -198,13 +198,20 @@ const FLYOUT_SCROLLBAR = `
     const h = handle.getBoundingClientRect();
     const t = track.getBoundingClientRect();
     if (h.width > 0 && h.height > 0) {
-      return [h.left + h.width / 2, h.top + h.height / 2, Math.max(0, t.bottom - h.bottom)];
+      return [h.left + h.width / 2, h.top + h.height / 2, Math.max(0, t.bottom - h.bottom), h.height];
     }
   }
   return null;
 `;
 
-/** How far one step of {@link flyoutGrabPoint} moves the flyout's scrollbar handle, in pixels. */
+/**
+ * The most one step of {@link flyoutGrabPoint} moves the flyout's scrollbar handle, in pixels. A
+ * step moves it by at most half its height as well: the handle is as much shorter than its track
+ * as the flyout's visible part is than its blocks, so half its height scrolls the blocks by half a
+ * view. A fixed step skips blocks once the toolbox is long: with W2's Types and Files categories
+ * the handle is 9 pixels high on a 222-pixel track at 800 × 560, and 40 pixels of it scroll the
+ * blocks by about four views.
+ */
 const FLYOUT_SCROLL_STEP = 40;
 
 /** The most steps {@link flyoutGrabPoint} scrolls the flyout before it gives up. */
@@ -223,14 +230,15 @@ export async function flyoutGrabPoint(app: App, blockId: string): Promise<E2ePoi
       return grab;
     }
     const bar: unknown = await app.driver.executeScript(FLYOUT_SCROLLBAR);
-    if (!Array.isArray(bar) || bar.length !== 3 || !bar.every((n) => typeof n === 'number')) {
+    if (!Array.isArray(bar) || bar.length !== 4 || !bar.every((n) => typeof n === 'number')) {
       break;
     }
-    const [x = 0, y = 0, room = 0] = bar.map(Number);
+    const [x = 0, y = 0, room = 0, handle = 0] = bar.map(Number);
     if (room < 1) {
       break;
     }
-    await drag(app.driver, { x, y }, { x, y: y + Math.min(FLYOUT_SCROLL_STEP, room) });
+    const step = Math.max(2, Math.min(FLYOUT_SCROLL_STEP, Math.floor(handle / 2)));
+    await drag(app.driver, { x, y }, { x, y: y + Math.min(step, room) });
     await waitForFlyout(app.driver);
   }
   return grabPointOf(app, blockId);
