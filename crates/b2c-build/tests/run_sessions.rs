@@ -500,6 +500,45 @@ fn an_echo_program_reads_a_line_through_the_terminal() {
     assert!(!sessions.is_running("project"));
 }
 
+/// `text` without the terminal's control sequences (CSI, and OSC ended by
+/// BEL or ST), which `ConPTY` may put anywhere, even inside a line.
+fn without_escapes(text: &str) -> String {
+    let mut plain = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            plain.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' || (c == '\u{1b}' && chars.next_if_eq(&'\\').is_some()) {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    plain
+}
+
+#[test]
+fn escapes_are_left_out_of_the_text_compared() {
+    assert_eq!(
+        without_escapes("a\u{1b}[?25lb\r\nlines 2\u{1b}]0;C:\\x.exe\u{7}\u{1b}[?25h last\u{1b}]0;t\u{1b}\\!"),
+        "ab\r\nlines 2 last!"
+    );
+}
+
 #[test]
 fn close_input_ends_a_programs_input() {
     let Some(program) = helper(Flavour::Release) else {
@@ -530,7 +569,7 @@ fn close_input_ends_a_programs_input() {
             console.text()
         );
         assert!(
-            console.text().contains("lines 2 last [b]"),
+            without_escapes(&console.text()).contains("lines 2 last [b]"),
             "pty {prefer_pty}, {typed:?}: {:?}",
             console.text()
         );
