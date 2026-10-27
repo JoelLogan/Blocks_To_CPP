@@ -398,7 +398,15 @@ describe('showing the flyout again', () => {
     continuousToolbox(workspace).showAllCategories();
     const second = declarations();
     expect(second.map((entry) => entry.block.type)).toEqual(
-      expect.arrayContaining(['var.declare', 'control.for_range', 'func.define', 'error.try']),
+      expect.arrayContaining([
+        'var.declare',
+        'control.for_range',
+        'func.define',
+        'error.try',
+        'type.struct',
+        'type.enum',
+        'file.for_each_line',
+      ]),
     );
     expect(second).toHaveLength(first.length);
     second.forEach((entry, index) => {
@@ -410,6 +418,51 @@ describe('showing the flyout again', () => {
         expect(decl?.sym).not.toBe(before?.decls[at]?.sym);
       });
     });
+  });
+  it('shows the structs and enums of the latest analysis as a block built from its item would', async () => {
+    const workspace = attached();
+    await settle();
+    const looks = () =>
+      shownItems(workspace).map(({ info, block }) => ({
+        type: info.type,
+        state: JSON.stringify(stateOf(block)).replace(/"sym":"sym_\w+"/g, '"sym":"(new)"'),
+        text: block.toString(),
+        path: block.pathObject.svgPath.getAttribute('d'),
+      }));
+    // A struct and an enum declared on the canvas, then the struct renamed: each analysis changes
+    // the user types the type fields list, and every kept block must look as one built now.
+    const struct = (name: string): SymbolInfo =>
+      symbolFixture('s_pt', name, {
+        kind: 'struct',
+        fields: [],
+        comparable: false,
+        printable: false,
+        type: { ref: 's_pt' },
+      });
+    const colour = symbolFixture('s_col', 'Colour', {
+      kind: 'enum',
+      values: [],
+      type: { ref: 's_col' },
+    });
+    // Declared, then the struct renamed: every block not declaring anything is kept both times.
+    for (const symbols of [
+      [factorial, guess, n, struct('Point'), colour],
+      [factorial, guess, n, struct('Place'), colour],
+    ]) {
+      const stats = await statsOf(inflaterOf(workspace), async () => {
+        publishPreview(symbols);
+        await settle();
+        continuousToolbox(workspace).showAllCategories();
+      });
+      expect(stats.reused).toBeGreaterThan(30);
+    }
+    const kept = looks();
+    expect(kept.map((look) => look.type)).toEqual(
+      expect.arrayContaining(['type.new', 'type.enum_value', 'type.struct', 'type.enum']),
+    );
+    inflaterOf(workspace).reuse = false;
+    continuousToolbox(workspace).showAllCategories();
+    expect(looks()).toEqual(kept);
   });
 });
 
