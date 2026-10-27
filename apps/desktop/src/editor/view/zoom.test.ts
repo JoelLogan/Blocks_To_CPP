@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { editorInjectOptions } from '../EditorWorkspace';
 import { disposeWorkspaces, renderedWorkspace, setViewSize } from '../sync/testing';
+import { FLYOUT_TEST_TIMEOUT_MS } from '../toolbox/testing';
 import {
   RESET_SCALE,
   resetZoom,
@@ -19,6 +20,11 @@ import {
   zoomPercent,
   zoomStep,
 } from './zoom';
+
+// Each test here injects the editor with the continuous toolbox, whose flyout draws every catalog
+// block (toolbox/testing.ts): with W2's control and file blocks, the slowest took 5.2 s in the suite
+// with two workers and coverage on a busy machine, over Vitest's default of 5 s (2.8 s alone).
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 afterEach(() => {
   disposeWorkspaces();
