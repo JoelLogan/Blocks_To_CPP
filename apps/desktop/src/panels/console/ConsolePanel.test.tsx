@@ -403,6 +403,21 @@ describe('ConsolePanel', () => {
     expect(props.onRunAgain).toHaveBeenCalledTimes(1);
   });
 
+  it('offers End input while a program runs with its input open', () => {
+    const onEndInput = vi.fn();
+    const { rerender, props } = renderConsole({
+      header: { ...RUNNING, inputOpen: true },
+      onEndInput,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'End input' }));
+    expect(onEndInput).toHaveBeenCalledTimes(1);
+    rerender(<ConsolePanel {...props} header={{ ...RUNNING, inputOpen: false }} />);
+    const ended = screen.getByRole('button', { name: 'Input ended' });
+    expect((ended as HTMLButtonElement).disabled).toBe(true);
+    rerender(<ConsolePanel {...props} header={{ ...RUNNING, state: 'idle', inputOpen: false }} />);
+    expect(screen.queryByTestId('console-end-input')).toBeNull();
+  });
+
   it('shows the header text for each kind of exit, highlighting a non-zero exit', () => {
     const { rerender, props } = renderConsole();
     const cases: [ConsoleHeader, string, string][] = [

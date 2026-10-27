@@ -97,6 +97,11 @@ export interface ConsolePanelProps {
   onStop: () => void;
   /** ⟲ Run again. */
   onRunAgain: () => void;
+  /**
+   * *End input*: the program's next read gives end-of-file (shown while a program runs). Without
+   * it the button is not shown.
+   */
+  onEndInput?: () => void;
   /** Clear (the terminal is cleared as well). */
   onClear: () => void;
   /**
@@ -248,6 +253,7 @@ export function ConsolePanel({
   scrollbackLines,
   onStop,
   onRunAgain,
+  onEndInput,
   onClear,
   mode = 'pty',
   onBeforeLinkDialog,
@@ -513,6 +519,19 @@ export function ConsolePanel({
           <button type="button" disabled={!running} onClick={onStop} data-testid="console-stop">
             <span aria-hidden="true">■ </span>Stop
           </button>{' '}
+          {running && onEndInput !== undefined && (
+            <>
+              <button
+                type="button"
+                disabled={header.inputOpen !== true}
+                onClick={onEndInput}
+                title="Tell the program that nothing more will be typed: its next read ends."
+                data-testid="console-end-input"
+              >
+                {header.inputOpen === true ? 'End input' : 'Input ended'}
+              </button>{' '}
+            </>
+          )}
           <button
             type="button"
             disabled={header.state === 'idle'}

@@ -19,6 +19,11 @@ export interface ConsoleHeader {
   /** How long the current or last run took. */
   elapsedMs: number;
   notices: readonly ConsoleNotice[];
+  /**
+   * While a program runs: whether its input is still open, so *End input* can end it. Absent
+   * means closed.
+   */
+  inputOpen?: boolean;
 }
 
 /** How an exit is highlighted; the icon and the text always say the same as the colour. */

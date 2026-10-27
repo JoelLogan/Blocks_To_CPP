@@ -21,6 +21,7 @@ export type CommandId =
   | 'run.start'
   | 'run.stop'
   | 'run.again'
+  | 'run.endInput'
   | 'settings.open'
   | 'problems.focusFirstError'
   | 'edit.copy'

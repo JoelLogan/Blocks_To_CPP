@@ -84,7 +84,9 @@ const STARTED = {
 } as const;
 
 /** Runs `id` and lets everything it starts settle. */
-async function run(id: 'run.start' | 'run.again' | 'build.start' | 'run.stop'): Promise<void> {
+async function run(
+  id: 'run.start' | 'run.again' | 'build.start' | 'run.stop' | 'run.endInput',
+): Promise<void> {
   void ctx.commands.runCommand(id);
   await settle();
 }
@@ -773,6 +775,57 @@ describe('Run', () => {
     terminal.type('ignored');
     await settle();
     expect(backend.inputs().join('')).not.toContain('ignored');
+  });
+});
+
+describe('End input', () => {
+  it('ends the input after what was typed, and drops what is typed after it', async () => {
+    await run('run.start');
+    await finishBuild(0);
+    const program = backend.runs[0];
+    program?.send(STARTED);
+    await settle();
+    expect(state().run.inputOpen).toBe(true);
+
+    terminal.type('a\r');
+    await run('run.endInput');
+    expect(state().run.inputOpen).toBe(false);
+    expect(backend.ipc.runCloseInput).toHaveBeenCalledWith({ runId: program?.runId });
+    const order = [
+      ...backend.ipc.runInput.mock.invocationCallOrder,
+      ...backend.ipc.runCloseInput.mock.invocationCallOrder,
+    ];
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    terminal.type('b\r');
+    await run('run.endInput');
+    expect(backend.inputs()).toEqual(['a\r']);
+    expect(backend.ipc.runCloseInput).toHaveBeenCalledTimes(1);
+
+    program?.send(exitEvent(0));
+    await settle();
+    expect(state().run.inputOpen).toBe(false);
+  });
+
+  it('turns Ctrl+D into End input with pipes only', async () => {
+    await run('run.start');
+    await finishBuild(0);
+    backend.runs[0]?.send(STARTED);
+    await settle();
+    terminal.type('\u0004');
+    await settle();
+    expect(backend.inputs()).toEqual(['\u0004']);
+    expect(backend.ipc.runCloseInput).not.toHaveBeenCalled();
+
+    await run('run.again');
+    backend.runs[0]?.send(exitEvent(0));
+    await settle();
+    const piped = backend.runs[1];
+    piped?.send({ ...STARTED, mode: 'pipes' });
+    await settle();
+    terminal.type('\u0004');
+    await settle();
+    expect(backend.ipc.runCloseInput).toHaveBeenCalledWith({ runId: piped?.runId });
+    expect(state().run.inputOpen).toBe(false);
   });
 });
 

@@ -189,7 +189,7 @@ export function fromBase64(data: string): Uint8Array {
 
 /**
  * A fake IPC client whose `buildStart` and `runStart` succeed with fresh IDs and record their
- * channels, and whose acknowledgement, input, resize, stop and cancel calls succeed.
+ * channels, and whose acknowledgement, input, close-input, resize, stop and cancel calls succeed.
  */
 export function createFakeBackend(): FakeBackend {
   const ipc = createFakeIpc();
@@ -224,6 +224,7 @@ export function createFakeBackend(): FakeBackend {
     ipc.buildCancel,
     ipc.runAck,
     ipc.runInput,
+    ipc.runCloseInput,
     ipc.runResize,
     ipc.runStop,
   ] as const) {

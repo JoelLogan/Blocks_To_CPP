@@ -43,6 +43,9 @@ const MAX_BUILD_ATTEMPTS = 3;
 const COLS = { min: 2, max: 1000 } as const;
 const ROWS = { min: 1, max: 1000 } as const;
 
+/** What the terminal sends for Ctrl+D. */
+const CTRL_D = '\u0004';
+
 /** A run ID as the backend makes them (02 §2.5.4). */
 const RUN_ID = /^rn_[0-9a-f]{32}$/;
 
@@ -162,9 +165,30 @@ export class RunController {
     this.#session?.stop();
   }
 
-  /** What the person typed into the console goes to the running program. */
+  /**
+   * What the person typed into the console goes to the running program. With pipes, where no
+   * terminal turns Ctrl+D into the end of the input, Ctrl+D alone ends it ({@link endInput}).
+   */
   input(data: string): void {
+    if (data === CTRL_D && this.#deps.bridge.mode() === 'pipes') {
+      this.endInput();
+      return;
+    }
     this.#session?.typed(data);
+  }
+
+  /**
+   * *End input*: once what was typed before has gone, the running program's input ends, so its
+   * next read gives end-of-file (`run_close_input`). Typing then goes nowhere.
+   */
+  endInput(): void {
+    const session = this.#session;
+    const { store } = this.#deps;
+    if (session === null || session.hasEnded || !store.getState().run.inputOpen) {
+      return;
+    }
+    session.endInput();
+    store.getState().actions.setRun({ inputOpen: false });
   }
 
   /** The console's new size goes to the running program. */
@@ -409,6 +433,7 @@ export class RunController {
       exit: null,
       containment: started.containment,
       ideHelpers: started.ideHelpers,
+      inputOpen: true,
     });
     this.#showTab('console');
     // Typing goes to the program: move the focus into the terminal once it is shown, unless a
@@ -421,6 +446,6 @@ export class RunController {
   }
 
   #exited(exit: Extract<RunEvent, { kind: 'exit' }>): void {
-    this.#deps.store.getState().actions.setRun({ status: 'exited', exit });
+    this.#deps.store.getState().actions.setRun({ status: 'exited', exit, inputOpen: false });
   }
 }

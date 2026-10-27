@@ -13,8 +13,8 @@
  *   many batches have been written, so its text shows once all the output is on screen. Should
  *   batches go missing (they never do), the events are applied after
  *   {@link MISSING_OUTPUT_WAIT_MS} anyway, so the console never stays *Running*.
- * * **Input**: what the person types goes to `run_input` (./input.ts); the terminal's size to
- *   `run_resize`.
+ * * **Input**: what the person types goes to `run_input` (./input.ts), and *End input* to
+ *   `run_close_input` after it; the terminal's size to `run_resize`.
  */
 import type {
   Containment,
@@ -100,7 +100,11 @@ export class RunSession {
     this.#hooks = options.hooks;
     this.#prelude = options.prelude ?? null;
     this.#acks = new AckPacer((seq) => this.#sendAck(seq), options.clock);
-    this.#input = new InputSender((data) => this.#sendInput(data), options.clock);
+    this.#input = new InputSender(
+      (data) => this.#sendInput(data),
+      options.clock,
+      () => this.#sendCloseInput(),
+    );
     this.#endedPromise = new Promise((resolve) => {
       this.#resolveEnded = resolve;
     });
@@ -185,6 +189,16 @@ export class RunSession {
     this.#stopRequested = true;
     if (this.#runId !== null) {
       this.#sendStop(this.#runId);
+    }
+  }
+
+  /**
+   * Ends the program's input (`run_close_input`) once everything typed before has been sent;
+   * typing afterwards goes nowhere.
+   */
+  endInput(): void {
+    if (!this.#ended && !this.#detached) {
+      this.#input.close();
     }
   }
 
@@ -344,6 +358,11 @@ export class RunSession {
   #sendInput(data: string): Promise<unknown> {
     const runId = this.#runId;
     return runId === null ? Promise.resolve() : this.#ipc.runInput({ runId, data });
+  }
+
+  #sendCloseInput(): Promise<unknown> {
+    const runId = this.#runId;
+    return runId === null ? Promise.resolve() : this.#ipc.runCloseInput({ runId });
   }
 
   #sendStop(runId: RunId): void {

@@ -34,6 +34,7 @@ export function consoleHeaderFrom(run: RunState, now: number): ConsoleHeader {
         exit: null,
         elapsedMs: run.startedAt === null ? 0 : Math.max(0, now - run.startedAt),
         notices: noticesOf(run),
+        inputOpen: run.inputOpen,
       };
     case 'exited':
     case 'starting':
