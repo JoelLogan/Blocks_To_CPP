@@ -411,6 +411,28 @@ describe('the client', () => {
     expect(client.everStarted).toBe(false);
   });
 
+  it('treats an acceptVersion that throws as a refusal', async () => {
+    vi.useFakeTimers();
+    const { client, current, workers, log } = scripted({
+      acceptVersion: () => {
+        throw new CoreTrap('version: the compiler core stopped');
+      },
+      startTimeoutMs: 20_000,
+    });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await flush();
+      // Refused at once, with no time passing: the start timeout plays no part.
+      expect(() => {
+        current().started();
+      }).not.toThrow();
+      expect(workers[attempt]?.terminated).toBe(true);
+    }
+    expect(log).toHaveBeenCalledWith('The preview worker is replaced (protocol).');
+    expect(workers).toHaveLength(3);
+    expect(client.state).toBe('failed');
+    expect(client.everStarted).toBe(false);
+  });
+
   it('probes, one request at a time', async () => {
     const { client, current } = await startedClient();
     const running = client.update('1', { indentWidth: 4 });

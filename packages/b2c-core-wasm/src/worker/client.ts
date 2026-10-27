@@ -80,7 +80,7 @@ export interface CoreWorkerClientOptions {
   readonly module: () => Promise<WebAssembly.Module>;
   /**
    * Whether the worker's core may serve this page: its version must equal the main instance's.
-   * Every version is accepted without it.
+   * Every version is accepted without it; one that throws refuses.
    */
   readonly acceptVersion?: (version: CoreVersion) => boolean;
   /** From `start` to `started`, in milliseconds: 20,000 by default. */
@@ -351,7 +351,14 @@ export function createCoreWorkerClient(options: CoreWorkerClientOptions): CoreWo
           replace('protocol');
           return;
         }
-        if (options.acceptVersion !== undefined && !options.acceptVersion(started)) {
+        let accepted: boolean;
+        try {
+          accepted = options.acceptVersion?.(started) ?? true;
+        } catch {
+          // Nothing may escape the message handler: a check that cannot answer refuses.
+          accepted = false;
+        }
+        if (!accepted) {
           log('The preview worker runs another version of the compiler core.');
           replace('protocol');
           return;

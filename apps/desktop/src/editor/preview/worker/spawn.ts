@@ -47,20 +47,29 @@ export function currentWorkerPreviewService(): WorkerPreviewService | null {
 
 /**
  * The editor's worker preview service: the app's worker, posted the page's compiled module, whose
- * core must be the main instance's version.
+ * core must be the version of the main instance when the client was created. Tests pass `deps` in
+ * place of the app's worker and module.
  */
-export function appWorkerPreviewService(host: CoreHost): WorkerPreviewService {
+export function appWorkerPreviewService(
+  host: CoreHost,
+  deps: {
+    readonly spawn?: () => WorkerLike;
+    readonly module?: () => Promise<WebAssembly.Module>;
+  } = {},
+): WorkerPreviewService {
   const service = workerPreviewService({
     host,
-    createClient: () =>
-      createCoreWorkerClient({
-        spawn: spawnPreviewWorker,
-        module: coreModule,
-        acceptVersion: (version) => {
-          const main = host.current();
-          return main !== null && sameVersion(main.version(), version);
-        },
-      }),
+    createClient: () => {
+      // Read once, now: the service creates the client right after a main-thread update
+      // succeeded, so the main instance is healthy. Asking it on every start would throw once it
+      // has trapped (or find none while the host restarts it) and refuse a healthy worker.
+      const expected = host.current()?.version();
+      return createCoreWorkerClient({
+        spawn: deps.spawn ?? spawnPreviewWorker,
+        module: deps.module ?? coreModule,
+        acceptVersion: (version) => expected !== undefined && sameVersion(expected, version),
+      });
+    },
   });
   current = service;
   return {
