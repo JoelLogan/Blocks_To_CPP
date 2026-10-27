@@ -681,7 +681,7 @@ fn the_input_file_is_chosen_in_a_dialog_and_read_by_the_program() {
 
     // A file that is gone stops the program from starting.
     std::fs::remove_file(&file).unwrap();
-    assert!(matches!(run(&app, &build_id), Err(IpcError::Io { .. })));
+    assert!(matches!(run(&app, &build_id), Err(IpcError::InputFileUnreadable)));
     let cleared = ask(RunInputFileAction::Clear).unwrap();
     assert_eq!(cleared.file_name, None);
     let (_, _, again) = run(&app, &build_id).unwrap();
