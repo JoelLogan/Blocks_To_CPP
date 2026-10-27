@@ -65,8 +65,9 @@ cooked mode until Enter.
   `ConPTY` and with pipes), Windows through CI.
 * `b2c-build`: `RunSessions::close_input(run_id)` queues the close behind the
   input already queued (the writer thread does both, in order). Later
-  `run_input` calls give the new error `inputClosed`; a second close
-  succeeds. Tests in `tests/run_sessions.rs` with a compiled C++ program that
+  `run_input` calls give the new error `inputClosed` (from the start for a
+  program that reads an input file or runs in a window of its own); a
+  second close succeeds. Tests in `tests/run_sessions.rs` with a compiled C++ program that
   counts lines until end-of-file, in PTY and pipe mode, on both systems
   (Windows through CI, with `B2C_REQUIRE_GXX`).
 * IPC: `run_close_input { runId }` → `{}`; errors `unknownRun`,
@@ -153,10 +154,12 @@ and stay in it.
 
 * Setting `run.externalTerminal` (default `false`), on the Settings page and
   in the project settings dialog's run section (marked _this computer_).
-* **Linux:** the first of `x-terminal-emulator`, then a fixed list
-  (`gnome-terminal --wait --`, `konsole -e`, `xfce4-terminal -x`,
-  `mate-terminal -x`, `kitty`, `alacritty -e`, `foot`, `xterm -e`), each
-  found only in `/usr/bin` and `/bin` (never `PATH` or the project). The
+* **Linux:** the first of `x-terminal-emulator -e` (only when it leads to
+  `xterm`, `uxterm`, `lxterm`, `kitty`, `alacritty`, `foot` or `urxvt`,
+  terminals that keep the window in the process started), then a fixed list
+  (`konsole --nofork -e`, `xfce4-terminal --disable-server -x`, `kitty`,
+  `alacritty -e`, `foot`, `xterm -e`, and last `gnome-terminal --wait --`),
+  each found only in `/usr/bin` and `/bin` (never `PATH` or the project). The
   terminal runs `/bin/sh -c <fixed script> b2c-run <status file> <program>
   <args…>`: the program and its arguments are positional parameters, never
   part of the script, so no argument is ever parsed by a shell. The script
@@ -201,8 +204,9 @@ assertions, sanitizers, hardening), so they cannot drift:
   input and execution character sets, the warning level and _warnings as
   errors_, `-O*`, `-g`, `-fno-omit-frame-pointer`,
   `-D_GLIBCXX_ASSERTIONS` or `-DNDEBUG`, the project's defines (each
-  validated as for a build, `B2C-T1019`), `-pthread` when the program uses
-  threads;
+  validated as for a build, `B2C-T1019`; a text define holding `#`, `;` or
+  `$` is refused with `B2C-T1019` too, as CMake and make cannot pass those
+  unchanged), `-pthread` when the program uses threads;
 * CMake: `Debug` and `Release` from the project's two configurations
   (default `Debug`, as the app); sanitizers and hardening flags only where
   `check_cxx_compiler_flag` / `check_linker_flag` accept them (the app's
@@ -224,7 +228,8 @@ assertions, sanitizers, hardening), so they cannot drift:
   folder's file rules (no link followed, names only from validated module
   names). `mode` is `New` (the folder must be missing or empty) or `Replace`
   (the folder must hold a `.b2c-export.json`; only the files it lists are
-  replaced or removed, anything else is kept).
+  replaced or removed, anything else is kept, and a file the new export
+  would write that the earlier one did not list refuses the export).
 * CLI: `b2c generate <project> --out <dir> --export` writes the layout into
   `<dir>` (`--replace` to replace an earlier export). Without `--export` it
   writes the generated files as before, with the banner; `--export` without
@@ -238,8 +243,8 @@ assertions, sanitizers, hardening), so they cannot drift:
   the code view shows it; 08 §8.3 disables Export-and-build, which does not
   exist yet). Menu: _Export as C++ project…_ in `≡`.
 * Tests: unit tests of both files' text for each configuration, defines with
-  quotes, `$`, `#` and backslashes; replace keeps foreign files; refuses a
-  link as target; `tests/export.rs` builds an exported example with `make`
+  quotes and backslashes, refused with `#`, `;` and `$`; replace keeps
+  foreign files and never writes over one; refuses a link as target; `tests/export.rs` builds an exported example with `make`
   and, when present, `cmake --build` and runs it, comparing its output with
   the app's build (run when the tools exist, required with
   `B2C_REQUIRE_GXX`, `make` being in every CI image; `cmake` checked when

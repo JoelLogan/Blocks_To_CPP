@@ -338,7 +338,9 @@ impl RunSessions {
             project_key: spec.project_key,
             child,
             input: Mutex::new(Some(input_tx)),
-            input_closed: AtomicBool::new(false),
+            // With an input file, or in a window of its own, the program
+            // reads nothing the console sends.
+            input_closed: AtomicBool::new(input_file || external),
             limiter: Mutex::new(InputLimiter::new()),
             sent: AtomicU64::new(0),
             acked: AtomicU64::new(0),
@@ -405,7 +407,8 @@ impl RunSessions {
     /// [`IpcError::PayloadTooLarge`] above [`MAX_RUN_INPUT_BYTES`],
     /// [`IpcError::UnknownRun`], [`IpcError::NotRunning`] once the program
     /// has ended, [`IpcError::InputClosed`] once its input was ended
-    /// ([`RunSessions::close_input`]), and [`IpcError::RateLimited`] above
+    /// ([`RunSessions::close_input`]) or from the start for a program that
+    /// reads an input file or runs in a window of its own, and [`IpcError::RateLimited`] above
     /// 200 calls or 1 MiB a second, or while 64 calls still wait for the
     /// program to read them.
     pub fn input(&self, id: &RunId, bytes: &[u8]) -> Result<(), IpcError> {

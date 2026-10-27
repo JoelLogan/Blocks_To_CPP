@@ -1186,11 +1186,12 @@ fn an_external_terminal_shows_nothing_here_and_reports_the_programs_status() {
     };
     let dir = tempfile::tempdir().unwrap();
     // A "terminal" that drops `-e` and runs the command, saying something of
-    // its own first (which must not reach the console).
+    // its own first (which must not reach the console). Its window's
+    // keyboard is /dev/null: the script's wait for Enter ends at once.
     let terminal = dir.path().join("term");
     std::fs::write(
         &terminal,
-        "#!/bin/sh\necho terminal-chatter >&2\nshift\nexec \"$@\"\n",
+        "#!/bin/sh\necho terminal-chatter >&2\nshift\nexec \"$@\" </dev/null\n",
     )
     .unwrap();
     std::fs::set_permissions(&terminal, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -1198,8 +1199,11 @@ fn an_external_terminal_shows_nothing_here_and_reports_the_programs_status() {
     let mut external = spec(program, &["exit"]);
     external.external = Some(b2c_build::ExternalTerminal::emulator_for_tests(terminal));
     let (id, console) = start(&sessions, external);
-    // The script waits for Enter once the program has ended.
-    sessions.input(&id, b"\n").unwrap();
+    // What is typed in the console never reaches a program in a window.
+    assert!(matches!(
+        sessions.input(&id, b"\n"),
+        Err(IpcError::InputClosed | IpcError::NotRunning)
+    ));
     let exit = console.wait_for_exit();
     assert_eq!(exit.status, ExitStatus::Exited { code: 42 }, "{exit:?}");
     assert_eq!(exit.message, "Finished with exit code 42");

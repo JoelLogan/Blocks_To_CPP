@@ -193,3 +193,49 @@ fn a_project_with_errors_is_not_exported() {
     let error = export::prepare(b"{ not a project", 4, "0.0.0-test").unwrap_err();
     assert!(matches!(error, export::ExportError::ProjectErrors(problems) if !problems.is_empty()));
 }
+
+#[test]
+fn a_replacement_never_writes_over_a_file_the_earlier_export_did_not_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("export");
+    let export = exported("hello_world", &folder);
+    // As if the earlier export had no Makefile and someone wrote their own.
+    let manifest = std::fs::read_to_string(folder.join(EXPORT_MANIFEST)).unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+    value["files"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|file| file != "Makefile");
+    std::fs::write(folder.join(EXPORT_MANIFEST), value.to_string()).unwrap();
+    std::fs::write(folder.join("Makefile"), "mine").unwrap();
+    assert!(matches!(
+        export::write(&folder, &export, ExportMode::Replace),
+        Err(export::ExportError::NotWrittenByExport(path)) if path == "Makefile"
+    ));
+    assert_eq!(std::fs::read_to_string(folder.join("Makefile")).unwrap(), "mine");
+}
+
+#[test]
+fn a_text_define_the_build_tools_cannot_pass_is_refused() {
+    let bytes = std::fs::read(repo_root().join("examples/hello_world.b2c")).unwrap();
+    let mut project: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    for (text, exportable) in [
+        ("a b \"c\" \\ d", true),
+        ("a;b", false),
+        ("x#y", false),
+        ("q $<1:z>", false),
+    ] {
+        project["project"]["build"]["defines"] =
+            serde_json::json!([{ "name": "GREETING", "value": { "string": text } }]);
+        let result = export::prepare(project.to_string().as_bytes(), 4, "0.0.0-test");
+        match result {
+            Ok(_) => assert!(exportable, "{text}"),
+            Err(export::ExportError::ProjectErrors(problems)) => {
+                assert!(!exportable, "{text}");
+                assert_eq!(problems.len(), 1);
+                assert_eq!(problems[0].code, b2c_ir::DiagCode::new("B2C-T1019"));
+            }
+            Err(error) => panic!("{text}: {error}"),
+        }
+    }
+}

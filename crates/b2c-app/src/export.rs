@@ -113,9 +113,11 @@ fn export_error(error: &ExportError) -> IpcError {
                 count: u32::try_from(errors.max(1)).unwrap_or(u32::MAX),
             }
         }
-        ExportError::NotEmpty | ExportError::NoEarlierExport => IpcError::Io {
-            kind: IoKind::AlreadyExists,
-        },
+        ExportError::NotEmpty | ExportError::NoEarlierExport | ExportError::NotWrittenByExport(_) => {
+            IpcError::Io {
+                kind: IoKind::AlreadyExists,
+            }
+        }
         ExportError::NotAPlainFile => IpcError::Io { kind: IoKind::Other },
         ExportError::Io { source, .. } => IpcError::io(source),
     }

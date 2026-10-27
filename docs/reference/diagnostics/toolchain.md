@@ -221,7 +221,9 @@ choose it again in the library settings."
 ## B2C-T1019: a define cannot be used
 
 A project define has a name that is not a valid identifier or a value that
-cannot be written safely on the command line.
+cannot be written safely on the command line. Exporting the project as a C++
+project (CMake and Make) also refuses a text define that holds `#`, `;` or
+`$`, which those two tools cannot pass to the compiler unchanged.
 
 **How to fix:** rename the define, or simplify its value, in the project's
 build settings.

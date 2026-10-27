@@ -35,9 +35,10 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
-use b2c_ir::Diagnostic;
 use b2c_ir::sast::CppStandard;
-use b2c_model::{BuildConfiguration, Document, Sanitizer};
+use b2c_ir::{DiagSource, Diagnostic, Location};
+use b2c_model::{BuildConfiguration, Define, DefineValue, Document, Sanitizer};
+use b2c_toolchain::codes;
 use b2c_toolchain::command::{ENCODING_FLAGS, is_debug_like, optimisation_flags, warning_flags};
 use b2c_toolchain::flags::ValidDefine;
 use serde::{Deserialize, Serialize};
@@ -91,6 +92,10 @@ pub enum ExportError {
     /// export.
     #[error("the folder holds no earlier export")]
     NoEarlierExport,
+    /// [`ExportMode::Replace`] would write over a file (the path given) that
+    /// the earlier export did not write; nothing is written.
+    #[error("the folder holds {0}, which the earlier export did not write")]
+    NotWrittenByExport(String),
     /// The folder, or a file or folder in it, is a link or not what it
     /// should be; nothing more is written.
     #[error("refusing to write through a link or over something that is not a file")]
@@ -162,6 +167,7 @@ pub fn prepare(bytes: &[u8], indent_width: u8, app_version: &str) -> Result<Expo
         .iter()
         .filter_map(|define| {
             ValidDefine::new(define)
+                .and_then(|valid| exportable(define).map(|()| valid))
                 .map_err(|problem| problems.push(problem))
                 .ok()
         })
@@ -308,6 +314,29 @@ fn windows_hardening(config: &BuildConfiguration) -> (Vec<&'static str>, Vec<&'s
         )
     } else {
         (Vec::new(), Vec::new())
+    }
+}
+
+/// The characters a text define may not hold in an export: CMake reads `;`
+/// as a list separator and `$<` as a generator expression in a define, its
+/// Makefile generators cannot pass `#`, and make reads `$` and `#` itself.
+const NOT_EXPORTABLE: [char; 3] = ['#', ';', '$'];
+
+/// `Ok` when `define` can be written into both build files unchanged, else a
+/// `B2C-T1019` error (a build passes such a define as one argument; only the
+/// two build tools cannot).
+fn exportable(define: &Define) -> Result<(), Diagnostic> {
+    match &define.value {
+        DefineValue::String(text) if text.contains(NOT_EXPORTABLE) => Err(Diagnostic::error(
+            codes::BAD_DEFINE,
+            DiagSource::Toolchain,
+            Location::project(),
+            format!(
+                "The value of the define `{}` cannot be exported: CMake and make cannot pass `#`, `;` or `$` in a define. Put the text in a constant instead.",
+                define.name
+            ),
+        )),
+        _ => Ok(()),
     }
 }
 
@@ -648,6 +677,13 @@ pub fn write(folder: &Path, export: &Export, mode: ExportMode) -> Result<Vec<Str
         return Err(ExportError::NotAPlainFile);
     }
     let new: BTreeSet<&str> = export.files.iter().map(|file| file.path.as_str()).collect();
+    // A file someone added after the earlier export is never written over.
+    for path in new.iter().filter(|path| !earlier.iter().any(|old| old == *path)) {
+        let target = target(folder, path).ok_or(ExportError::NotAPlainFile)?;
+        if fs::symlink_metadata(&target).is_ok() {
+            return Err(ExportError::NotWrittenByExport((*path).to_owned()));
+        }
+    }
     // Files of the earlier export that this one does not write.
     for old in earlier.iter().filter(|old| !new.contains(old.as_str())) {
         let path = target(folder, old).ok_or(ExportError::NotAPlainFile)?;

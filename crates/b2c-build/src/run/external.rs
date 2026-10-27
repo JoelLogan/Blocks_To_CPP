@@ -46,8 +46,9 @@ const TERMINAL_DIRS: [&str; 2] = ["/usr/bin", "/bin"];
 
 /// The terminals tried, in order, with the arguments that come before the
 /// command they run. `x-terminal-emulator` is Debian's choice of the
-/// user's terminal; it is skipped when it is a terminal with a server
-/// process, which comes later with the flags that make it wait.
+/// user's terminal; it is used only when it leads to a terminal known to
+/// keep its window in its own process ([`LINKABLE_TERMINALS`]), as others
+/// (with a server process) come later with the flags that make them wait.
 const TERMINALS: [(&str, &[&str]); 8] = [
     ("x-terminal-emulator", &["-e"]),
     ("konsole", &["--nofork", "-e"]),
@@ -59,9 +60,11 @@ const TERMINALS: [(&str, &[&str]); 8] = [
     ("gnome-terminal", &["--wait", "--"]),
 ];
 
-/// Names that `x-terminal-emulator` must not stand for: terminals whose
-/// windows belong to a server process unless told otherwise.
-const SERVER_TERMINALS: [&str; 3] = ["gnome-terminal", "xfce4-terminal", "mate-terminal"];
+/// The terminals `x-terminal-emulator` may stand for: ones whose window
+/// belongs to the process started, with no flag needed. Others (`konsole`,
+/// `gnome-terminal`, `tilix`, `terminator`, …) may hand the window to a
+/// running instance, so the program would run outside the run's containment.
+const LINKABLE_TERMINALS: [&str; 7] = ["xterm", "uxterm", "lxterm", "kitty", "alacritty", "foot", "urxvt"];
 
 /// How a program is put in a window of its own on this system.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,7 +105,7 @@ impl ExternalTerminal {
                 if !is_executable_file(&program) {
                     continue;
                 }
-                if name == "x-terminal-emulator" && stands_for_a_server_terminal(&program) {
+                if name == "x-terminal-emulator" && !stands_for_a_linkable_terminal(&program) {
                     continue;
                 }
                 return Some(Self {
@@ -174,15 +177,15 @@ fn is_executable_file(path: &Path) -> bool {
     }
 }
 
-/// Whether the link `x-terminal-emulator` leads to a terminal with a server
-/// process (Debian's alternatives link to `gnome-terminal.wrapper` and
-/// similar).
-fn stands_for_a_server_terminal(program: &Path) -> bool {
+/// Whether the link `x-terminal-emulator` leads to one of
+/// [`LINKABLE_TERMINALS`] (Debian's alternatives link to the program, or to
+/// a wrapper such as `gnome-terminal.wrapper`, which is not one).
+fn stands_for_a_linkable_terminal(program: &Path) -> bool {
     std::fs::canonicalize(program).is_ok_and(|target| {
         target
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(|name| SERVER_TERMINALS.iter().any(|server| name.starts_with(server)))
+            .is_some_and(|name| LINKABLE_TERMINALS.contains(&name))
     })
 }
 
@@ -214,7 +217,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn terminals_are_tried_in_order_and_server_links_skipped() {
+    fn terminals_are_tried_in_order_and_links_to_others_skipped() {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("bin");
         assert_eq!(ExternalTerminal::find_in(&[&bin]), None);
@@ -228,13 +231,21 @@ mod tests {
                 before: &["-e"]
             }
         );
-        // x-terminal-emulator that is gnome-terminal's wrapper is skipped.
+        // x-terminal-emulator that is gnome-terminal's wrapper, or tilix, is
+        // skipped.
         tool(&bin.join("gnome-terminal.wrapper"));
         std::os::unix::fs::symlink(
             bin.join("gnome-terminal.wrapper"),
             bin.join("x-terminal-emulator"),
         )
         .unwrap();
+        assert!(matches!(
+            ExternalTerminal::find_in(&[&bin]).unwrap().kind,
+            Kind::Emulator { program, .. } if program == bin.join("xterm")
+        ));
+        std::fs::remove_file(bin.join("x-terminal-emulator")).unwrap();
+        tool(&bin.join("tilix"));
+        std::os::unix::fs::symlink(bin.join("tilix"), bin.join("x-terminal-emulator")).unwrap();
         assert!(matches!(
             ExternalTerminal::find_in(&[&bin]).unwrap().kind,
             Kind::Emulator { program, .. } if program == bin.join("xterm")
