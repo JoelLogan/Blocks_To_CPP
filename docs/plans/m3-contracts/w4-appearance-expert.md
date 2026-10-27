@@ -199,7 +199,9 @@ export function gateText(gate: Gate): string | null;   // "Needs C++20 or newer.
   TOML), read by `b2c-lang` for `E0703` too. That is the right end state, but
   `catalog/` and `b2c-catalog` are W2's; §6.4 proposes it, and the table then
   becomes generated.
-* Labels: `labelTemplate(def, mode)` gives `def.label.friendly` or
+* Labels (`gating/labels.ts`): `blockLabelParts(def, mode)` gives the parts a
+  block is laid out from (the C++ template's only when it names every field
+  and value input, §6.1); `labelTemplate(def, mode)` gives `def.label.friendly` or
   `def.label.cpp`; `labelParts(template)` splits a template into text and
   `%NAME` parts as the catalog generator does for the Friendly label, but
   keeping punctuation next to a part (`%LIST.push_back(%VALUE);` gives
@@ -284,11 +286,25 @@ the tests.
   C++ template's parts; nothing else changes in it.
 * `blocks/register.ts`: the block's `init` reads the label mode from a
   service, `services.ts` gaining `labelMode(): LabelMode` (default
-  `'friendly'`), and calls `layoutFor(def, mode === 'cpp' ?
-  labelParts(def.label.cpp) : def.labelParts)`; `labelParts` moves from
-  `apps/desktop/src/editor/gating/labels.ts` into `blocks/` (or is imported
-  from a shared `text/` module) so the package does not import the app.
-  Dropdown option texts go through `optionLabel` the same way.
+  `'friendly'`), and calls `layoutFor(def, blockLabelParts(def, mode))`;
+  `blockLabelParts`, `labelParts` and `hasFullCppLabel` move from
+  `apps/desktop/src/editor/gating/labels.ts` into `blocks/` (or a shared
+  `text/` module) so the package does not import the app. Dropdown option
+  texts go through `optionLabel` the same way (`CPP_OPTION_LABELS` covers
+  every option of the operator and function menus; a test keeps it so).
+* **The catalog's C++ labels.** A C++ template is laid out only when it names
+  every field and value input (`hasFullCppLabel`); otherwise the block keeps
+  its Friendly layout, with the options' C++ texts. At `df4b4f5` these
+  templates leave out a field or a value input, so they stand for one form
+  of the block only (statement inputs left out are fine: `{ … }` stands for
+  them): `coll.for_each` (`MODE`), `coll.sort` (`ORDER`),
+  `control.for_range` (`DIRECTION`, `TO`, `STEP`), `control.while` (`MODE`),
+  `io.ask` (`MODE`, `PROMPT`), `io.print` (`SEP`, `NEWLINE`, `STREAM`),
+  `logic.operation` (`OP`), `math.fn`, `math.fn_two`, `math.minmax` (`FN`),
+  `text.case` (`CASE`), `text.find` (`OP`), `text.to_number` (`TO`),
+  `var.declare` (`CONST`). Proposal for W2: either rewrite each so it names
+  its parts (`%FN(%VALUE)` with the C++ option texts `std::round`, …), or keep
+  them as documentation; the fallback keeps both working.
 * `apps/desktop/src/editor/` (the editor's attach code, not W2's): on a mode
   change, rebuild the visible module's blocks without an undo step and
   without marking the project changed: serialise the module
