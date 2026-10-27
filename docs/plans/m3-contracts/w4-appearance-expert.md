@@ -532,3 +532,10 @@ Rust changed since the full Rust checks above. The merge notes gain
 `packages/blockly-ext/src/icons/css.ts` and `icons/index.ts` (W2's package:
 one exported constant). The visual-diff list is unchanged: the fallback
 shows the same colours as the attribute.
+
+**CI on `f642acf`** (the review fixes). CI: green. Desktop: every job green
+except the visual-diff step on Linux and Windows (the E2E flows pass on both,
+`appearance` included); the scenes are those listed above. OSV-Scanner fails
+with no lockfile changed on this branch since `df4b4f5`: `Cargo.lock` holds
+`block-buffer 0.10.4`, the advisory GHSA-qwgh-2vcv-g2f7 that the coordinating
+branch excepts in `c22ae1c`, not this branch's change.
