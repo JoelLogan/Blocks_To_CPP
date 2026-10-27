@@ -1,5 +1,6 @@
-//! Running: `run_start` with its two channels, `run_input`, `run_resize`,
-//! `run_stop` and `run_ack` (`docs/spec/02-architecture.md` §2.4.3).
+//! Running: `run_start` with its two channels, `run_input`,
+//! `run_close_input`, `run_resize`, `run_stop` and `run_ack`
+//! (`docs/spec/02-architecture.md` §2.4.3).
 //!
 //! **Channels.** `onOutput` carries the program's output as raw byte batches,
 //! numbered from 1 in send order. `onEvent` carries [`RunEvent`]s as JSON; each
@@ -221,6 +222,14 @@ impl IpcRequest for RunResizeRequest {
         check_size(self.cols, self.rows, "")
     }
 }
+
+id_request!(
+    /// The request of `run_close_input`: end the program's input, so its next
+    /// read gives end-of-file. Later `run_input` calls give `inputClosed`.
+    RunCloseInputRequest, command = "run_close_input",
+    /// The run.
+    run_id: RunId = "runId"
+);
 
 id_request!(
     /// The request of `run_stop`: kill the program's whole process tree.

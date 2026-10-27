@@ -35,6 +35,7 @@
     "allow-build-cache-clear",
     "allow-run-start",
     "allow-run-input",
+    "allow-run-close-input",
     "allow-run-resize",
     "allow-run-stop",
     "allow-run-ack",

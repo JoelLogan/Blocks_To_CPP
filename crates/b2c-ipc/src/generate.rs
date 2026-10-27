@@ -181,7 +181,7 @@ pub fn type_decls() -> Vec<TypeDecl> {
         BuildConfig, BuildStartRequest, BuildStartResponse, BuildCancelRequest,
         BuildCacheClearResponse, BuildStage, BuildOutcome, BuildEvent,
         // Runs.
-        RunOptions, RunStartRequest, RunStartResponse, RunInputRequest, RunResizeRequest,
+        RunOptions, RunStartRequest, RunStartResponse, RunInputRequest, RunCloseInputRequest, RunResizeRequest,
         RunStopRequest, RunAckRequest, Containment, RunMode, ExitStatus, Crash, SanitizerTool,
         SanitizerKind, SanitizerReport, RunEvent,
         // Settings and help.
@@ -222,6 +222,7 @@ pub fn request_types() -> Vec<(&'static str, String)> {
         entry::<BuildCancelRequest>(&cfg),
         entry::<RunStartRequest>(&cfg),
         entry::<RunInputRequest>(&cfg),
+        entry::<RunCloseInputRequest>(&cfg),
         entry::<RunResizeRequest>(&cfg),
         entry::<RunStopRequest>(&cfg),
         entry::<RunAckRequest>(&cfg),

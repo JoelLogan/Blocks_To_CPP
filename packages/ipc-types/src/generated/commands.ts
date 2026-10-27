@@ -33,6 +33,7 @@ import type {
   RecoveryRestoreResponse,
   RecoverySaveRequest,
   RunAckRequest,
+  RunCloseInputRequest,
   RunEvent,
   RunInputRequest,
   RunResizeRequest,
@@ -90,6 +91,7 @@ export const COMMAND_NAMES = [
   'build_cache_clear',
   'run_start',
   'run_input',
+  'run_close_input',
   'run_resize',
   'run_stop',
   'run_ack',
@@ -121,6 +123,8 @@ export const IPC_ERROR_CODES = [
   'buildNotSuccessful',
   'projectErrors',
   'notRunning',
+  'inputClosed',
+  'noExternalTerminal',
   'rateLimited',
   'busy',
   'tooManyHandles',
@@ -274,6 +278,8 @@ export interface IpcClient {
   ): Promise<RunStartResponse>;
   /** Calls `run_input`. */
   runInput(request: RunInputRequest): Promise<Empty>;
+  /** Calls `run_close_input`. */
+  runCloseInput(request: RunCloseInputRequest): Promise<Empty>;
   /** Calls `run_resize`. */
   runResize(request: RunResizeRequest): Promise<Empty>;
   /** Calls `run_stop`. */
@@ -350,6 +356,7 @@ export function createIpcClient(t: IpcTransport): IpcClient {
         }),
       }) as Promise<RunStartResponse>,
     runInput: (request) => call(t, 'run_input', { request }) as Promise<Empty>,
+    runCloseInput: (request) => call(t, 'run_close_input', { request }) as Promise<Empty>,
     runResize: (request) => call(t, 'run_resize', { request }) as Promise<Empty>,
     runStop: (request) => call(t, 'run_stop', { request }) as Promise<Empty>,
     runAck: (request) => call(t, 'run_ack', { request }) as Promise<Empty>,

@@ -396,7 +396,7 @@ needs: string | null, } | { "code": "restricted" } | { "code": "changedOnDisk" }
 /**
  * How many errors.
  */
-count: number, } | { "code": "notRunning" } | { "code": "rateLimited" } | { "code": "busy" } | { "code": "tooManyHandles" } | { "code": "tooManySessions" } | { "code": "toolchainRejected",
+count: number, } | { "code": "notRunning" } | { "code": "inputClosed" } | { "code": "noExternalTerminal" } | { "code": "rateLimited" } | { "code": "busy" } | { "code": "tooManyHandles" } | { "code": "tooManySessions" } | { "code": "toolchainRejected",
 /**
  * The `B2C-T1xxx` problems found. Their messages may name the picked
  * file, for display only, like a toolchain's `displayPath`.
@@ -928,6 +928,16 @@ runId: RunId,
  * The highest output batch written, at most `MAX_SAFE_INTEGER`.
  */
 seq: number, };
+
+/**
+ * The request of `run_close_input`: end the program's input, so its next
+ * read gives end-of-file. Later `run_input` calls give `inputClosed`.
+ */
+export type RunCloseInputRequest = {
+/**
+ * The run.
+ */
+runId: RunId, };
 
 /**
  * A message on the `onEvent` channel of `run_start`. `RunEvent::Started` comes

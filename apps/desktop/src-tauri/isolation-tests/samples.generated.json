@@ -121,6 +121,11 @@
       "runId": "rn_0123456789abcdef0123456789abcdef"
     }
   },
+  "run_close_input": {
+    "request": {
+      "runId": "rn_0123456789abcdef0123456789abcdef"
+    }
+  },
   "run_resize": {
     "request": {
       "cols": 120,

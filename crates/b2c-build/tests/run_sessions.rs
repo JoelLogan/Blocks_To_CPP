@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use b2c_build::{PtySize, RunEnvOptions, RunSessions, RunSpec, run_environment};
 use b2c_ipc::dto::{Containment, Crash, ExitStatus, RunEvent, RunMode, SanitizerReport};
-use b2c_ipc::{ByteSink, EventSink, RunId};
+use b2c_ipc::{ByteSink, EventSink, IpcError, RunId};
 use b2c_toolchain::target::Platform;
 
 /// The longest any test waits for something a program does.
@@ -354,6 +354,17 @@ int main(int argc, char** argv) {
         std::cout << "hello " << line << std::endl;
         return 0;
     }
+    if (std::strcmp(what, "count") == 0) {
+        std::string line;
+        std::string last;
+        int lines = 0;
+        while (std::getline(std::cin, line)) {
+            ++lines;
+            last = line;
+        }
+        std::cout << "lines " << lines << " last [" << last << "]" << std::endl;
+        return 0;
+    }
     if (std::strcmp(what, "null") == 0) {
         int* volatile pointer = nullptr;
         return *pointer;
@@ -481,6 +492,48 @@ fn an_echo_program_reads_a_line_through_the_terminal() {
         other => panic!("{other:?}"),
     }
     assert!(!sessions.is_running("project"));
+}
+
+#[test]
+fn close_input_ends_a_programs_input() {
+    let Some(program) = helper(Flavour::Release) else {
+        return;
+    };
+    // Whole lines, then a partly typed one, in a terminal (Enter is a
+    // carriage return there) and with pipes.
+    for (prefer_pty, typed) in [
+        (true, &b"a\rb\r"[..]),
+        (true, &b"a\rb"[..]),
+        (false, &b"a\nb\n"[..]),
+        (false, &b"a\nb"[..]),
+    ] {
+        let sessions = RunSessions::new();
+        let mut spec = spec(program, &["count"]);
+        spec.prefer_pty = prefer_pty;
+        let (id, console) = start(&sessions, spec);
+        sessions.input(&id, typed).unwrap();
+        sessions.close_input(&id).unwrap();
+        // Ending it again does nothing; more input is refused.
+        sessions.close_input(&id).unwrap();
+        assert_eq!(sessions.input(&id, b"c\r"), Err(IpcError::InputClosed));
+        let exit = console.wait_for_exit();
+        assert_eq!(
+            exit.status,
+            ExitStatus::Exited { code: 0 },
+            "{:?}",
+            console.text()
+        );
+        assert!(
+            console.text().contains("lines 2 last [b]"),
+            "pty {prefer_pty}, {typed:?}: {:?}",
+            console.text()
+        );
+        assert_eq!(sessions.close_input(&id), Err(IpcError::NotRunning));
+    }
+    assert_eq!(
+        RunSessions::new().close_input(&RunId::example()),
+        Err(IpcError::UnknownRun)
+    );
 }
 
 #[test]

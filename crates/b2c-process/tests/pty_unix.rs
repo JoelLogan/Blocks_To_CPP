@@ -791,3 +791,121 @@ fn the_environment_is_exactly_the_commands() {
     lines.sort_unstable();
     assert_eq!(lines, ["ONLY_THIS=yes", "TERM=xterm-256color"]);
 }
+
+/// Counts the lines it reads until end-of-file, then prints the count and
+/// any partly typed last line.
+const COUNT_LINES: &str = "n=0; while IFS= read -r l; do n=$((n+1)); done; echo \"lines:$n rest:$l.\"";
+
+#[test]
+fn close_input_ends_a_terminal_programs_input() {
+    let mut child = spawn_pty(&sh(COUNT_LINES), SIZE).unwrap();
+    let output = Collector::start(&mut child);
+    let mut writer = child.writer();
+    writer.write_all(b"a\nb\n").unwrap();
+    writer.close_input().unwrap();
+    // Again, and through a clone: nothing more happens.
+    child.writer().close_input().unwrap();
+    output.wait_for("lines:2 rest:.");
+    assert!(wait_within(&mut child, PATIENCE).status.success());
+    output.finish();
+}
+
+#[test]
+fn close_input_hands_over_a_partly_typed_line_first() {
+    let mut child = spawn_pty(&sh(COUNT_LINES), SIZE).unwrap();
+    let output = Collector::start(&mut child);
+    let mut writer = child.writer();
+    writer.write_all(b"a\nb").unwrap();
+    output.wait_for("a\r\nb");
+    writer.close_input().unwrap();
+    output.wait_for("lines:1 rest:b.");
+    assert!(wait_within(&mut child, PATIENCE).status.success());
+    output.finish();
+}
+
+#[test]
+fn writes_fail_once_the_input_is_closed() {
+    for pty in [true, false] {
+        let command = sh("sleep 600");
+        let mut child = if pty {
+            spawn_pty(&command, SIZE).unwrap()
+        } else {
+            spawn_piped(&command).unwrap()
+        };
+        let output = Collector::start(&mut child);
+        let mut writer = child.writer();
+        writer.close_input().unwrap();
+        assert_eq!(
+            writer.write_all(b"late\n").unwrap_err().kind(),
+            ErrorKind::BrokenPipe,
+            "pty: {pty}"
+        );
+        assert_eq!(
+            child.writer().write(b"x").unwrap_err().kind(),
+            ErrorKind::BrokenPipe
+        );
+        child.kill();
+        wait_within(&mut child, PATIENCE);
+        output.finish();
+    }
+}
+
+#[test]
+fn close_input_closes_a_pipe() {
+    let mut child = spawn_piped(&sh(COUNT_LINES)).unwrap();
+    let output = Collector::start(&mut child);
+    let mut writer = child.writer();
+    writer.write_all(b"one\ntwo\nthree").unwrap();
+    writer.close_input().unwrap();
+    output.wait_for("lines:2 rest:three.");
+    assert!(wait_within(&mut child, PATIENCE).status.success());
+    output.finish();
+}
+
+#[test]
+fn pipe_mode_reads_its_input_from_a_file() {
+    let folder = tempfile::tempdir().unwrap();
+    let input = folder.path().join("input.txt");
+    std::fs::write(&input, "x\ny\nz\n").unwrap();
+    let mut command = sh(COUNT_LINES);
+    command.stdin(Stdin::File(input.clone()));
+    let mut child = spawn_piped(&command).unwrap();
+    let output = Collector::start(&mut child);
+    output.wait_for("lines:3 rest:.");
+    assert!(wait_within(&mut child, PATIENCE).status.success());
+    // The writer's input is closed from the start.
+    assert_eq!(
+        child.writer().write(b"more\n").unwrap_err().kind(),
+        ErrorKind::BrokenPipe
+    );
+    output.finish();
+    // A terminal session takes no file.
+    assert!(matches!(
+        spawn_pty(&command, SIZE),
+        Err(ProcessError::InvalidCommand { .. })
+    ));
+}
+
+#[test]
+fn an_input_file_must_be_a_regular_file() {
+    let folder = tempfile::tempdir().unwrap();
+    let fifo = folder.path().join("fifo");
+    rustix::fs::mkfifoat(
+        rustix::fs::CWD,
+        &fifo,
+        rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+    )
+    .unwrap();
+    for path in [fifo, folder.path().to_path_buf(), folder.path().join("missing")] {
+        let mut command = sh(COUNT_LINES);
+        command.stdin(Stdin::File(path.clone()));
+        let started = Instant::now();
+        assert!(
+            matches!(spawn_piped(&command), Err(ProcessError::StdinFile { .. })),
+            "{}",
+            path.display()
+        );
+        // A FIFO without a writer never holds up the open.
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+}

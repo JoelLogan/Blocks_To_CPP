@@ -1,5 +1,6 @@
 //! Building and running: `build_start`, `build_cancel`, `build_cache_clear`,
-//! `run_start`, `run_input`, `run_resize`, `run_stop` and `run_ack`
+//! `run_start`, `run_input`, `run_close_input`, `run_resize`, `run_stop` and
+//! `run_ack`
 //! (`docs/spec/02-architecture.md` §2.4.2–§2.4.3 and §2.5,
 //! `docs/spec/07-toolchain-build-run.md` §7.5–§7.6, `docs/spec/08-security.md`
 //! §8.3 and §8.7).
@@ -24,8 +25,8 @@ use b2c_build::{
 };
 use b2c_ipc::dto::{
     BuildCacheClearResponse, BuildCancelRequest, BuildEvent, BuildStartRequest, BuildStartResponse, Empty,
-    RunAckRequest, RunEvent, RunInputRequest, RunResizeRequest, RunStartRequest, RunStartResponse,
-    RunStopRequest,
+    RunAckRequest, RunCloseInputRequest, RunEvent, RunInputRequest, RunResizeRequest, RunStartRequest,
+    RunStartResponse, RunStopRequest,
 };
 use b2c_ipc::{ByteSink, EventSink, Handle, IpcError};
 use b2c_model::{Document, WorkingDirectory};
@@ -329,6 +330,19 @@ impl Backend {
         let _span = command_span("run_input");
         let bytes = request.bytes()?;
         self.runs.input(&request.run_id, &bytes)?;
+        Ok(Empty {})
+    }
+
+    /// `run_close_input`: ends the program's input after the input sent
+    /// before it, so its next read gives end-of-file. Later `run_input`
+    /// calls give `inputClosed`; ending it again does nothing.
+    ///
+    /// # Errors
+    /// [`IpcError::UnknownRun`], [`IpcError::NotRunning`],
+    /// [`IpcError::RateLimited`] while 64 input calls wait for the program.
+    pub fn run_close_input(&self, request: RunCloseInputRequest) -> Result<Empty, IpcError> {
+        let _span = command_span("run_close_input");
+        self.runs.close_input(&request.run_id)?;
         Ok(Empty {})
     }
 

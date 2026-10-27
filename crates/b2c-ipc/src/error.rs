@@ -144,6 +144,14 @@ pub enum IpcError {
     /// The program is not running any more.
     #[error("program not running")]
     NotRunning,
+    /// The program's input was ended (`run_close_input`), so nothing more can
+    /// be sent to it.
+    #[error("program input closed")]
+    InputClosed,
+    /// No terminal program was found for running in an external terminal
+    /// (`docs/spec/07-toolchain-build-run.md` §7.6.2).
+    #[error("no external terminal")]
+    NoExternalTerminal,
     /// Too many calls in a short time; try again later.
     #[error("rate limited")]
     RateLimited,
@@ -203,6 +211,8 @@ impl IpcError {
         "buildNotSuccessful",
         "projectErrors",
         "notRunning",
+        "inputClosed",
+        "noExternalTerminal",
         "rateLimited",
         "busy",
         "tooManyHandles",
@@ -233,6 +243,8 @@ impl IpcError {
             Self::BuildNotSuccessful => "buildNotSuccessful",
             Self::ProjectErrors { .. } => "projectErrors",
             Self::NotRunning => "notRunning",
+            Self::InputClosed => "inputClosed",
+            Self::NoExternalTerminal => "noExternalTerminal",
             Self::RateLimited => "rateLimited",
             Self::Busy => "busy",
             Self::TooManyHandles => "tooManyHandles",

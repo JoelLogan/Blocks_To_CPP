@@ -1,4 +1,5 @@
-//! Running: `run_start`, `run_input`, `run_resize`, `run_stop` and `run_ack`
+//! Running: `run_start`, `run_input`, `run_close_input`, `run_resize`,
+//! `run_stop` and `run_ack`
 //! (`docs/spec/02-architecture.md` §2.4.3, `docs/spec/07-toolchain-build-run.md`
 //! §7.6).
 
@@ -38,6 +39,20 @@ pub(crate) async fn run_start(
 pub(crate) async fn run_input(backend: BackendState<'_>, request: Option<Value>) -> Result<Empty, IpcError> {
     let backend = shared(&backend);
     blocking("run_input", move || backend.run_input(decode(request)?)).await
+}
+
+/// `run_close_input` ([`Backend::run_close_input`](b2c_app::Backend::run_close_input)):
+/// ends the program's input, so its next read gives end-of-file.
+#[tauri::command]
+pub(crate) async fn run_close_input(
+    backend: BackendState<'_>,
+    request: Option<Value>,
+) -> Result<Empty, IpcError> {
+    let backend = shared(&backend);
+    blocking("run_close_input", move || {
+        backend.run_close_input(decode(request)?)
+    })
+    .await
 }
 
 /// `run_resize` ([`Backend::run_resize`](b2c_app::Backend::run_resize)): the

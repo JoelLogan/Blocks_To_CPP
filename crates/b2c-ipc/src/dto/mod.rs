@@ -43,9 +43,9 @@ pub use recovery::{
     RecoverySaveRequest, SnapshotInfo,
 };
 pub use run::{
-    Containment, Crash, ExitStatus, RunAckRequest, RunEvent, RunInputRequest, RunMode, RunOptions,
-    RunResizeRequest, RunStartRequest, RunStartResponse, RunStopRequest, SanitizerKind, SanitizerReport,
-    SanitizerTool,
+    Containment, Crash, ExitStatus, RunAckRequest, RunCloseInputRequest, RunEvent, RunInputRequest, RunMode,
+    RunOptions, RunResizeRequest, RunStartRequest, RunStartResponse, RunStopRequest, SanitizerKind,
+    SanitizerReport, SanitizerTool,
 };
 pub use settings::{
     BuildCacheSettings, CodeStyle, CodeStylePatch, ConsolePatch, ConsoleSettings, IndentWidth, LayoutPatch,

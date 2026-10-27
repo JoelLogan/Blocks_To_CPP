@@ -189,6 +189,14 @@ const B2C_IPC_ALLOWLIST = Object.freeze({
       }),
     }),
   }),
+  run_close_input: Object.freeze({
+    request: Object.freeze({
+      type: 'object',
+      fields: Object.freeze({
+        runId: Object.freeze({ type: 'id', prefix: 'rn_', hexLength: 32 }),
+      }),
+    }),
+  }),
   run_resize: Object.freeze({
     request: Object.freeze({
       type: 'object',

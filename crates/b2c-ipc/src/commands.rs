@@ -170,6 +170,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     plain("build_cache_clear", NO_CHANNELS, "BuildCacheClearResponse"),
     with_request::<dto::RunStartRequest>("RunStartRequest", RUN_CHANNELS, "RunStartResponse"),
     with_request::<dto::RunInputRequest>("RunInputRequest", NO_CHANNELS, "Empty"),
+    with_request::<dto::RunCloseInputRequest>("RunCloseInputRequest", NO_CHANNELS, "Empty"),
     with_request::<dto::RunResizeRequest>("RunResizeRequest", NO_CHANNELS, "Empty"),
     with_request::<dto::RunStopRequest>("RunStopRequest", NO_CHANNELS, "Empty"),
     with_request::<dto::RunAckRequest>("RunAckRequest", NO_CHANNELS, "Empty"),
@@ -210,6 +211,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "build_cache_clear",
     "run_start",
     "run_input",
+    "run_close_input",
     "run_resize",
     "run_stop",
     "run_ack",
@@ -231,7 +233,7 @@ mod tests {
 
     #[test]
     fn names_are_unique_and_in_table_order() {
-        assert_eq!(COMMANDS.len(), 36);
+        assert_eq!(COMMANDS.len(), 37);
         let names: Vec<&str> = COMMANDS.iter().map(|c| c.name).collect();
         assert_eq!(names, COMMAND_NAMES);
         let unique: HashSet<&str> = names.iter().copied().collect();

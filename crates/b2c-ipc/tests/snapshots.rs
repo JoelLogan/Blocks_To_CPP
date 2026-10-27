@@ -207,6 +207,8 @@ fn every_error() -> Vec<IpcError> {
         IpcError::BuildNotSuccessful,
         IpcError::ProjectErrors { count: 3 },
         IpcError::NotRunning,
+        IpcError::InputClosed,
+        IpcError::NoExternalTerminal,
         IpcError::RateLimited,
         IpcError::Busy,
         IpcError::TooManyHandles,

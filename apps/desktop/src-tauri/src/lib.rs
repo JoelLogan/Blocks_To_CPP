@@ -162,6 +162,7 @@ pub fn configure<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
             commands::build::build_cache_clear,
             commands::run::run_start,
             commands::run::run_input,
+            commands::run::run_close_input,
             commands::run::run_resize,
             commands::run::run_stop,
             commands::run::run_ack,

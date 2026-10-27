@@ -315,10 +315,9 @@ fn exit_codes_and_stop_are_reported() {
 
 #[test]
 fn pipe_mode_delivers_input() {
-    // The program must answer while it runs: a session cannot end its input
-    // yet (that comes with M3), so a program that only writes at the end of
-    // its input would never answer. findstr, for example, buffers its output
-    // when it goes to a pipe. cmd.exe does no such buffering: `set /p` reads
+    // The program answers while it runs, without its input ending (the
+    // close-input tests below end it). findstr, for example, buffers its
+    // output when it goes to a pipe. cmd.exe does no such buffering: `set /p` reads
     // one line from standard input and `echo` writes the answer straight to
     // the pipe, then cmd exits. The builder quotes the script as one argument
     // without escapes, `"set /p line=& echo got !line!"`, and since `&`
@@ -362,5 +361,70 @@ fn commands_windows_cannot_represent_are_refused() {
     assert!(matches!(
         spawn_pty(&cmd("echo x"), PtySize { cols: 0, rows: 1 }),
         Err(ProcessError::InvalidPtySize { .. })
+    ));
+}
+
+/// `sort.exe`, which reads its whole input before it prints anything, so it
+/// answers only once its input has ended.
+fn sort() -> Command {
+    system_program("sort.exe", &[])
+}
+
+#[test]
+fn close_input_ends_a_pseudo_console_programs_input() {
+    // A whole line, then a partly typed one: close-input ends that line
+    // with an Enter of its own before Ctrl+Z.
+    for (typed, last) in [(&b"pear\rapple\r"[..], "pear"), (&b"pear\rapple"[..], "pear")] {
+        let mut child = spawn_pty(&sort(), SIZE).unwrap();
+        let output = Collector::start(&mut child);
+        // Give the program time to attach to the console and wait for input.
+        thread::sleep(Duration::from_millis(500));
+        let mut writer = child.writer();
+        writer.write_all(typed).unwrap();
+        writer.close_input().unwrap();
+        writer.close_input().unwrap();
+        let exit = wait_within(&mut child, PATIENCE);
+        assert_eq!(exit.status, ExitStatus::Exited(0));
+        let text = output.finish();
+        let sorted = text.rfind(last).unwrap_or_else(|| panic!("{text:?}"));
+        assert!(text[..sorted].contains("apple"), "{text:?}");
+        assert_eq!(writer.write(b"late").unwrap_err().kind(), ErrorKind::BrokenPipe);
+    }
+}
+
+#[test]
+fn close_input_closes_a_pipe() {
+    let mut child = spawn_piped(&sort()).unwrap();
+    let output = Collector::start(&mut child);
+    let mut writer = child.writer();
+    writer.write_all(b"pear\r\napple\r\n").unwrap();
+    writer.close_input().unwrap();
+    assert_eq!(writer.write(b"late").unwrap_err().kind(), ErrorKind::BrokenPipe);
+    let exit = wait_within(&mut child, PATIENCE);
+    assert_eq!(exit.status, ExitStatus::Exited(0));
+    assert_eq!(output.finish(), "apple\r\npear\r\n");
+}
+
+#[test]
+fn pipe_mode_reads_its_input_from_a_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.txt");
+    std::fs::write(&input, "pear\r\napple\r\n").unwrap();
+    let mut command = sort();
+    command.stdin(b2c_process::Stdin::File(input));
+    let mut child = spawn_piped(&command).unwrap();
+    let output = Collector::start(&mut child);
+    let exit = wait_within(&mut child, PATIENCE);
+    assert_eq!(exit.status, ExitStatus::Exited(0));
+    assert_eq!(output.finish(), "apple\r\npear\r\n");
+    assert_eq!(
+        child.writer().write(b"late").unwrap_err().kind(),
+        ErrorKind::BrokenPipe
+    );
+    let mut folder = sort();
+    folder.stdin(b2c_process::Stdin::File(dir.path().to_path_buf()));
+    assert!(matches!(
+        spawn_piped(&folder),
+        Err(ProcessError::StdinFile { .. })
     ));
 }

@@ -12,7 +12,8 @@
 //!   the [`Coalescer`], scans it for sanitizer reports, and sends the
 //!   `started`, `skipped` and `exit` events in order) and an input writer
 //!   (writes queued `run_input` data, which may block while the program
-//!   does not read, so IPC calls never block).
+//!   does not read, so IPC calls never block, and ends the input after it
+//!   for `run_close_input`).
 //! * **Events.** `started` comes first, then output batches numbered from 1
 //!   and any `skipped` events, then exactly one `exit` once the output has
 //!   ended and its last batch was sent, with `afterSeq` naming the batches
@@ -200,7 +201,10 @@ struct Run {
     project_key: String,
     child: PtyChild,
     /// Input waiting for the writer thread; `None` once the run has ended.
-    input: Mutex<Option<SyncSender<Vec<u8>>>>,
+    /// Its lock also orders `run_input` against `run_close_input`.
+    input: Mutex<Option<SyncSender<Input>>>,
+    /// Whether the program's input has been ended (`run_close_input`).
+    input_closed: AtomicBool,
     limiter: Mutex<InputLimiter>,
     /// The number of the last output batch sent (set before it is sent).
     sent: AtomicU64,
@@ -308,6 +312,7 @@ impl RunSessions {
             project_key: spec.project_key,
             child,
             input: Mutex::new(Some(input_tx)),
+            input_closed: AtomicBool::new(false),
             limiter: Mutex::new(InputLimiter::new()),
             sent: AtomicU64::new(0),
             acked: AtomicU64::new(0),
@@ -367,24 +372,61 @@ impl RunSessions {
     /// # Errors
     /// [`IpcError::PayloadTooLarge`] above [`MAX_RUN_INPUT_BYTES`],
     /// [`IpcError::UnknownRun`], [`IpcError::NotRunning`] once the program
-    /// has ended, and [`IpcError::RateLimited`] above 200 calls or 1 MiB a
-    /// second, or while 64 calls still wait for the program to read them.
+    /// has ended, [`IpcError::InputClosed`] once its input was ended
+    /// ([`RunSessions::close_input`]), and [`IpcError::RateLimited`] above
+    /// 200 calls or 1 MiB a second, or while 64 calls still wait for the
+    /// program to read them.
     pub fn input(&self, id: &RunId, bytes: &[u8]) -> Result<(), IpcError> {
         if bytes.len() > MAX_RUN_INPUT_BYTES {
             return Err(IpcError::too_large(MAX_RUN_INPUT_BYTES));
         }
         let run = self.live(id)?;
+        if run.input_closed.load(Ordering::Acquire) {
+            return Err(IpcError::InputClosed);
+        }
         if !lock(&run.limiter).admit(bytes.len(), Instant::now()) {
             return Err(IpcError::RateLimited);
         }
         if bytes.is_empty() {
             return Ok(());
         }
-        let Some(queue) = lock(&run.input).clone() else {
+        let queue = lock(&run.input);
+        if run.input_closed.load(Ordering::Acquire) {
+            return Err(IpcError::InputClosed);
+        }
+        let Some(queue) = queue.as_ref() else {
             return Err(IpcError::NotRunning);
         };
-        match queue.try_send(bytes.to_vec()) {
+        match queue.try_send(Input::Bytes(bytes.to_vec())) {
             Ok(()) => Ok(()),
+            Err(TrySendError::Full(_)) => Err(IpcError::RateLimited),
+            Err(TrySendError::Disconnected(_)) => Err(IpcError::NotRunning),
+        }
+    }
+
+    /// Ends the program's input once the input queued before it has been
+    /// written: its next read gives end-of-file (see
+    /// [`b2c_process::PtyWriter::close_input`] for how, per terminal kind).
+    /// Returns once the end is queued; ending it again does nothing.
+    ///
+    /// # Errors
+    /// [`IpcError::UnknownRun`], [`IpcError::NotRunning`] once the program
+    /// has ended, and [`IpcError::RateLimited`] while 64 input calls still
+    /// wait for the program to read them.
+    pub fn close_input(&self, id: &RunId) -> Result<(), IpcError> {
+        let run = self.live(id)?;
+        let queue = lock(&run.input);
+        if run.input_closed.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let Some(queue) = queue.as_ref() else {
+            return Err(IpcError::NotRunning);
+        };
+        match queue.try_send(Input::Close) {
+            Ok(()) => {
+                run.input_closed.store(true, Ordering::Release);
+                Ok(())
+            }
             Err(TrySendError::Full(_)) => Err(IpcError::RateLimited),
             Err(TrySendError::Disconnected(_)) => Err(IpcError::NotRunning),
         }
@@ -583,11 +625,24 @@ fn spawn_thread(name: &str, body: impl FnOnce() + Send + 'static) -> std::io::Re
         .map(|_| ())
 }
 
-/// The input writer thread: writes queued input until the queue closes or
-/// the program has ended.
-fn write_input(mut writer: PtyWriter, queue: &Receiver<Vec<u8>>) {
-    for bytes in queue {
-        if let Err(error) = writer.write_all(&bytes) {
+/// What the input writer thread is given, in order.
+#[derive(Debug)]
+enum Input {
+    /// Bytes for the program (`run_input`).
+    Bytes(Vec<u8>),
+    /// End the program's input (`run_close_input`).
+    Close,
+}
+
+/// The input writer thread: writes queued input, and ends it when asked,
+/// until the queue closes or the program has ended.
+fn write_input(mut writer: PtyWriter, queue: &Receiver<Input>) {
+    for input in queue {
+        let written = match input {
+            Input::Bytes(bytes) => writer.write_all(&bytes),
+            Input::Close => writer.close_input(),
+        };
+        if let Err(error) = written {
             if error.kind() != ErrorKind::BrokenPipe {
                 tracing::debug!(%error, "cannot write a program's input");
             }
