@@ -12,7 +12,9 @@
 //! (`unknownBuild`), the project is trusted now (`restricted`), the build
 //! succeeded (`buildNotSuccessful`), it is of the latest document the backend
 //! received for the project and its program still matches its build manifest
-//! (`staleBuild`), and the analyser reports no errors (`projectErrors`).
+//! (`staleBuild`), and the analyser reports no errors (`projectErrors`); the
+//! build's own analysis of that document is reused unless the generator
+//! options changed since (S7-5).
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -262,11 +264,19 @@ impl Backend {
                 _ => IpcError::StaleBuild,
             }
         })?;
-        let errors = analyser_errors(&latest, self.frontend_options().indent_width);
-        if errors > 0 {
-            return Err(IpcError::ProjectErrors {
-                count: u32::try_from(errors).unwrap_or(u32::MAX),
-            });
+        // The build's own analysis found no errors in this very document;
+        // only when what the analysis depends on has changed since is it
+        // run again (S7-5).
+        let options = self.frontend_options();
+        if record.analysed_with.as_ref() != Some(&options) {
+            self.run_analyses
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let errors = analyser_errors(&latest, options.indent_width);
+            if errors > 0 {
+                return Err(IpcError::ProjectErrors {
+                    count: u32::try_from(errors).unwrap_or(u32::MAX),
+                });
+            }
         }
         if self.is_shut_down() {
             return Err(IpcError::Internal);
@@ -326,6 +336,13 @@ impl Backend {
         }
         tracing::debug!(%run_id, "program started");
         Ok(RunStartResponse { run_id })
+    }
+
+    /// How often `run_start` has analysed a project again because the
+    /// generator options changed after its build (S7-5). For tests.
+    #[doc(hidden)]
+    pub fn run_analyses(&self) -> usize {
+        self.run_analyses.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// `run_input`: sends bytes to the program's terminal.

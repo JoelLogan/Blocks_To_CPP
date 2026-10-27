@@ -177,11 +177,22 @@ fn a_new_project_builds_and_runs_in_its_sandbox() {
         .collect();
     names.sort();
     assert_eq!(names.len(), 2, "{names:?}");
-    assert!(std::path::Path::new(&sandbox).join(&names[0]).is_dir(), "{names:?}");
+    assert!(
+        std::path::Path::new(&sandbox).join(&names[0]).is_dir(),
+        "{names:?}"
+    );
     assert_eq!(names[1], format!("{}.lock", names[0]));
     // A second build of the same content is up to date.
     let (_, again, _) = build(&app, &created.handle, &created.document);
     assert_eq!(again, BuildOutcome::UpToDate);
+    // The run reused the build's analysis (S7-5); after a change of the
+    // generator options, a run analyses the project again.
+    assert_eq!(app.backend.run_analyses(), 0);
+    let patch = decode::<SettingsPatch>(json!({"codeStyle": {"indentWidth": 2}})).unwrap();
+    app.backend.settings_update(patch).unwrap();
+    let (_, _, rerun) = run(&app, &build_id).unwrap();
+    assert_eq!(exit_status(&wait_exit(&rerun)), ExitStatus::Exited { code: 0 });
+    assert_eq!(app.backend.run_analyses(), 1);
 
     // The empty template builds and runs too.
     let empty = app

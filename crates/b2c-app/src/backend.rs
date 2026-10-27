@@ -128,6 +128,8 @@ pub struct Backend {
     /// upgraded with (`docs/spec/05-project-format.md` §5.7).
     pub(crate) block_upgrades: BlockUpgrades<'static>,
     pub(crate) shut_down: AtomicBool,
+    /// How often `run_start` analysed a project again (S7-5), for tests.
+    pub(crate) run_analyses: std::sync::atomic::AtomicUsize,
 }
 
 impl std::fmt::Debug for Backend {
@@ -253,6 +255,7 @@ impl Backend {
             events,
             block_upgrades,
             shut_down: AtomicBool::new(false),
+            run_analyses: std::sync::atomic::AtomicUsize::new(0),
         });
         backend.install_build_hook();
         backend.watch_toolchain_rechecks();

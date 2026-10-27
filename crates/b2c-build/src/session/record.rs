@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use b2c_ipc::BuildId;
 use b2c_model::Document;
 
+use crate::frontend::FrontendOptions;
 use crate::manifest;
 
 /// How a build ended (the `finished` event's outcome, 02 §2.5.3).
@@ -114,6 +115,11 @@ pub struct BuildRecord {
     pub toolchain_bin: Option<PathBuf>,
     /// Whether the program contains the IDE init unit.
     pub ide: bool,
+    /// For a successful build, the generator options its analysis ran with
+    /// (it found no errors, or the build would not have succeeded); `None`
+    /// otherwise. `run_start` analyses the project again only when the
+    /// options now differ (S7-5; from M5 the lint levels join them).
+    pub analysed_with: Option<FrontendOptions>,
 }
 
 impl BuildRecord {
@@ -187,6 +193,7 @@ mod tests {
             leak_detection: false,
             toolchain_bin: None,
             ide: true,
+            analysed_with: None,
         }
     }
 

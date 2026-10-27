@@ -441,6 +441,7 @@ fn run_session(
         leak_detection: result.leak_detection,
         toolchain_bin: result.toolchain_bin,
         ide,
+        analysed_with: result.outcome.is_success().then_some(frontend),
     });
     store_record(shared, id, &record);
     // The record is stored first, so a run started as soon as `finished`
