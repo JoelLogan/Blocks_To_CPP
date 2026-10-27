@@ -31,7 +31,17 @@ import {
   flyoutWidthLimit,
 } from './continuous';
 import { toolboxInjectOptions } from './register';
-import { disposeTestWorkspaces, injectedWorkspace, setUpToolboxBlocks } from './testing';
+import {
+  FLYOUT_TEST_TIMEOUT_MS,
+  disposeTestWorkspaces,
+  injectedWorkspace,
+  setUpToolboxBlocks,
+} from './testing';
+
+// Each test here shows the flyout of every catalog block (FLYOUT_TEST_TIMEOUT_MS): with W2's
+// structs, enums, control and file blocks (73 toolbox blocks), the slowest took 5.4 s in the suite
+// under coverage with two workers, over Vitest's 5 s default.
+vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
 
 beforeAll(() => {
   setUpToolboxBlocks();

@@ -43,8 +43,9 @@ import type { SymbolSource } from './scope';
  * one machine, base and head runs of those files alternately, and the whole suite). The slowest
  * left are dominated by the injection, or turn the keeping of blocks off on purpose; three times
  * the slowest would exceed this limit, so it stays. The files whose slowest test fell to 2.5 s or
- * less (`toolbox/continuous`, `toolbox/frozen-prototype`) no longer set it. Every category W2 fills
- * adds blocks to the injection, so remeasure after each one.
+ * less (`toolbox/continuous`, `toolbox/frozen-prototype`) stopped setting it, and set it again
+ * once W2's structs, enums, control and file blocks (73 toolbox blocks) took their slowest to 5.4 s
+ * and 3.9 s. Every category W2 fills adds blocks to the injection, so remeasure after each one.
  */
 export const FLYOUT_TEST_TIMEOUT_MS = 20_000;
 
