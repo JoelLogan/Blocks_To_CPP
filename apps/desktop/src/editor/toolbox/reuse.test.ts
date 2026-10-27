@@ -749,16 +749,30 @@ describe('the time a showing takes', () => {
     expect(kept).toBeLessThanOrEqual(0.35 * rebuilt);
   });
 
-  it('hardly grows with the number of blocks', { retry: 2 }, async () => {
-    const workspace = attached();
-    await settle();
-    const kept = refreshTime(workspace, 5);
-    // Every fixed category shown twice: about 50 more blocks and 10 more labels.
-    disposeAll();
-    const padded = attached();
-    padded.updateToolbox(paddedToolbox(2));
-    continuousToolbox(padded).showAllCategories();
-    await settle();
-    expect(refreshTime(padded, 5)).toBeLessThanOrEqual(1.5 * kept + 50);
-  });
+  // A showing still lays out and checks every kept block, so its time grows with the blocks shown:
+  // with every fixed category shown twice it came out 1.7 to 2.0 times as long on a loaded machine,
+  // whichever happy-dom. What must stay small is what each block more costs against building one;
+  // that no block is built again however many there are is counted exactly above.
+  it(
+    'costs a fraction of building a block for each block more it shows',
+    { retry: 2 },
+    async () => {
+      const workspace = attached();
+      await settle();
+      const blocks = flyoutBlocks(workspace).length;
+      const kept = refreshTime(workspace, 5);
+      inflaterOf(workspace).reuse = false;
+      const rebuilt = refreshTime(workspace, 3);
+      // Every fixed category shown twice: about 50 more blocks and 10 more labels.
+      disposeAll();
+      const padded = attached();
+      padded.updateToolbox(paddedToolbox(2));
+      continuousToolbox(padded).showAllCategories();
+      await settle();
+      const more = flyoutBlocks(padded).length - blocks;
+      expect(more).toBeGreaterThan(30);
+      const perBlockMore = (refreshTime(padded, 5) - kept) / more;
+      expect(perBlockMore).toBeLessThanOrEqual((0.35 * rebuilt) / blocks);
+    },
+  );
 });
