@@ -81,3 +81,8 @@ weather.b2c:
   b003: "std::string"
   b004: "bool"
   b005: "bool"
+word_count.b2c:
+  b014: "int"
+  b020: {"std::vector":"std::string"}
+  b022: "bool"
+  b023: "int"

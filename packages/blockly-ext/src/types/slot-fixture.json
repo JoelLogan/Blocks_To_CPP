@@ -87690,7 +87690,7 @@
           }
         ],
         "headers": [],
-        "help": "Reads a text file line by line and runs blocks for each line, without its line break. A path that is not a full path is looked for in the folder the program runs in: the project folder, or its sandbox folder when the run settings choose it or the project is not saved yet. Add the part that runs when the file can't be opened with ⊕; without it, the blocks run for no line.",
+        "help": "Reads a text file line by line and runs blocks for each line, without its line break. A path that is not a full path is looked for in the folder the program runs in: the project folder, or its sandbox folder when the run settings choose it or the project is not saved yet. Add the part that runs when the file can't be opened with ⊕; without it, nothing runs when the file can't be opened.",
         "id": "file.for_each_line",
         "input": [
           {

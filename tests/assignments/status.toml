@@ -13,7 +13,7 @@
 [assignments]
 temperature_table = "green"
 grade_average = "green"
-word_count = "pending"
+word_count = "green"
 student_records = "pending"
 bank_menu = "pending"
 palindrome = "green"

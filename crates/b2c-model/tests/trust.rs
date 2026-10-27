@@ -74,14 +74,26 @@ fn hash_vectors_are_pinned() {
     assert_eq!(hash(&fixture()), FIXTURE_HASH);
 }
 
+/// The examples that read a file, with their file-system blocks: the trust
+/// dialog lists these, though they leave the hash as it is.
+const EXAMPLES_READING_FILES: &[(&str, &[&str])] = &[("word_count.b2c", &["b011"])];
+
 #[test]
-fn examples_have_nothing_security_relevant() {
+fn examples_have_nothing_security_relevant_but_their_file_blocks() {
     for path in example_paths() {
         let document = load(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(hash(&document), EMPTY_CONTENT_HASH, "{}", path.display());
+        let name = path.file_name().unwrap().to_str().unwrap();
+        let file_blocks = EXAMPLES_READING_FILES
+            .iter()
+            .find(|(example, _)| *example == name)
+            .map_or(&[][..], |(_, ids)| *ids);
         assert_eq!(
             security_summary(&document),
-            SecuritySummary::default(),
+            SecuritySummary {
+                file_system_blocks: file_blocks.iter().map(|id| BlockId::new(id).unwrap()).collect(),
+                ..SecuritySummary::default()
+            },
             "{}",
             path.display()
         );
