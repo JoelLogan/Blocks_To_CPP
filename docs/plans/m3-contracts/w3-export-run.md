@@ -409,13 +409,13 @@ format 2) is W2's and W4's; the dialog leaves room for it.
 
 ### CI on the branch head
 
-* CI (Rust on Linux and Windows, including `ConPTY` close-input): green on
-  the first push; the Windows run of `b5afb1b` failed only in
-  `close_input_ends_a_programs_input`, where `ConPTY` put a title sequence
-  inside the checked line; fixed by comparing text without control
-  sequences.
-* Desktop: Vitest failed on `b5afb1b` only on the isolation tests' command
-  count (fixed). E2E flows pass on Linux and Windows. The visual diff fails:
+* CI on the head (`3fd1ef2`): green, Linux and Windows (including `ConPTY`
+  close-input). An earlier Windows failure in
+  `close_input_ends_a_programs_input` (`ConPTY` put a title sequence inside
+  the checked line) was fixed by comparing text without control sequences.
+* Desktop on `fd1101d` (the last commit with code; the head only changes
+  this contract): the App jobs, Frontend, Vitest with the coverage gate and
+  every E2E flow on Linux and Windows pass. Only the visual diff fails:
   * `chrome-menu-open` (Linux, Windows) and `chrome-menu-open-dark` (Linux):
     **this branch**, the menu's two new items (_Project settings…_,
     _Export as C++ project…_). Baselines not updated, as asked.
