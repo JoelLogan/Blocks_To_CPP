@@ -22,16 +22,3 @@ reason = "Unsound glib::VariantStrIter, unused in the dependency tree; glib 0.18
 id = "RUSTSEC-2024-0370"
 ignoreUntil = 2027-01-04T00:00:00Z
 reason = "Unmaintained build-time proc-macro helper used by gtk-rs 0.18 macros; not a vulnerability."
-
-# happy-dom <=21.0.3: host code execution through an unsanitised import
-# alias (high; an incomplete fix of CVE-2026-33943). happy-dom is a
-# development dependency only: the DOM of the desktop app's and blockly-ext's
-# tests and of the isolation tests, which load our own code; it is never
-# shipped. The only fixed release, 21.0.4 (a new major), is younger than the
-# 7-day minimum release age until 2026-10-27 18:05 UTC (checked 2026-10-24).
-# Remove this entry, with the one in pnpm-workspace.yaml (auditConfig), when
-# happy-dom moves to 21.0.4.
-[[IgnoredVulns]]
-id = "GHSA-834v-8h66-3h79"
-ignoreUntil = 2026-11-03T00:00:00Z
-reason = "happy-dom import-alias code execution; dev-only test DOM running our own code; the fixed 21.0.4 is under the 7-day release age until 2026-10-27."

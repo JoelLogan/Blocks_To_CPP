@@ -41,7 +41,7 @@ to the Cargo workspace.
 | `prettier` (dev)                         | 3.9.10 (2026-10-10)  | MIT               | Formatting                                                                                                                                                                                                                                                                                                                                      |
 | `vitest` (dev)                           | 4.1.12 (2026-10-15)  | MIT               | Unit and component tests (§9.2); uses the app's Vite configuration                                                                                                                                                                                                                                                                              |
 | `@vitest/coverage-v8` (dev)              | 4.1.12 (2026-10-15)  | MIT               | Line coverage and the 75% frontend gate (§9.2)                                                                                                                                                                                                                                                                                                  |
-| `happy-dom` (dev)                        | 20.14.5 (2026-09-12) | MIT               | The DOM the tests run in, headless; Blockly runs in it. The isolation tests parse `index.html` with it. Its advisory GHSA-834v-8h66-3h79 is excepted until 21.0.4 is old enough (see the notes)                                                                                                                                                 |
+| `happy-dom` (dev)                        | 21.0.4 (2026-10-20)  | MIT               | The DOM the tests run in, headless; Blockly runs in it. The isolation tests parse `index.html` with it. 21.0.4 fixes GHSA-834v-8h66-3h79 (see the notes)                                                                                                                                                                                        |
 | `@testing-library/react` (dev)           | 16.3.3 (2026-08-27)  | MIT               | Renders components in tests and finds elements by role and name                                                                                                                                                                                                                                                                                 |
 | `@testing-library/dom` (dev)             | 10.4.2 (2026-09-13)  | MIT               | The DOM queries behind `@testing-library/react` (its peer dependency)                                                                                                                                                                                                                                                                           |
 | `axe-core` (dev)                         | 4.14.0 (2026-10-05)  | MPL-2.0           | Automated accessibility checks in component tests (`src/test/axe.ts`); no dependencies                                                                                                                                                                                                                                                          |
@@ -151,12 +151,14 @@ build needs.
 - **Test tooling** (`vitest`, `@vitest/coverage-v8`, `happy-dom`, Testing Library, `axe-core`) adds
   about 70 development-only packages; none of it reaches the app bundle. Vitest 4.1.12 fixes
   GHSA-qxg6-89mg-rqv8 and GHSA-xp26-3454-mjgp in `@vitest/mocker`.
-- **`happy-dom` 20.14.5** has GHSA-834v-8h66-3h79 (high: host code execution through an
-  unsanitised import alias), which no 20.x release fixes. The fix is 21.0.4, a new major
-  (published 2026-10-20 18:05 UTC, so old enough on 2026-10-27); 21.0 no longer loads CSS files
-  and iframe pages by default, which the tests do not appear to rely on. Until then the advisory is
-  a tracked exception in `osv-scanner.toml` and `auditConfig` (review by 2026-11-03): happy-dom is
-  never shipped and runs only our own tests.
+- **`happy-dom` 21.0.4** (published 2026-10-20 18:05 UTC) fixes GHSA-834v-8h66-3h79 (high: host
+  code execution through an unsanitised import alias in its ECMAScript module compiler), which no
+  20.x release fixes. It is a new major: since 21.0.0 CSS files and iframe pages no longer load
+  unless `enableCSSFileLoading` or `enableIframePageLoading` is set, which no test relied on (the
+  tests load no style sheet or iframe page; `accessibility.test.tsx` adds the style sheets itself).
+  The other changes since 20.14.5 are security fixes (cookie scope, the server renderer's proxy
+  and redirects, opaque-origin iframes) and a server-renderer option. The tests pass unchanged, and
+  the tracked exceptions are gone.
 - **`pixelmatch` 8.0.0** (Dependabot's pull request #22) measures a pixel's colour difference as an
   OKLab HyAB distance instead of a YIQ one, on the same 0-to-1 scale, so the visual diff's threshold
   of 0.1 (`e2e/visual/compare.ts`) is now a perceptual distance. On all 47 committed baselines (31

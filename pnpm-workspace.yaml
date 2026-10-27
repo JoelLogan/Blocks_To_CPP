@@ -36,11 +36,5 @@ overrides:
 # Tracked `pnpm audit` exceptions (docs/spec/08-security.md §8.9). Each one names the
 # only path that reaches the package and is reviewed by its date.
 auditConfig:
-  ignoreGhsas:
-    # happy-dom <=21.0.3 host code execution through an unsanitised import alias (high). Only
-    # the tests use happy-dom (the desktop app's and blockly-ext's test DOM, and the isolation
-    # tests, all on our own code); it is never shipped. The only fixed release, 21.0.4, is a
-    # new major that is younger than the 7-day minimum release age until 2026-10-27 18:05 UTC.
-    # Remove this, with the entry in osv-scanner.toml, when happy-dom moves to 21.0.4; review
-    # by 2026-11-03.
-    - GHSA-834v-8h66-3h79
+  # None at present.
+  ignoreGhsas: []
