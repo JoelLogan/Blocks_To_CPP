@@ -61,7 +61,8 @@ const C = DIAGNOSTIC_CSS_CLASS;
 /** Blockly's selection outline is a copy of the block's path; it keeps its own look. */
 const OWN_PATH = '> .blocklyPath:not(.blocklyPathSelected)';
 
-const CSS = `
+/** The diagnostics' style sheet (the app's style tests read it). */
+export const DIAGNOSTIC_CSS = `
 .blocklySvg {
   --b2c-diag-error: #b42318;
   --b2c-diag-warning: #8a5300;
@@ -168,12 +169,12 @@ export function registerDiagnosticCss(): void {
   }
   registered = true;
   try {
-    Blockly.Css.register(CSS);
+    Blockly.Css.register(DIAGNOSTIC_CSS);
   } catch {
     if (typeof document !== 'undefined') {
       const style = document.createElement('style');
       style.dataset['b2c'] = 'diagnostics';
-      style.textContent = CSS;
+      style.textContent = DIAGNOSTIC_CSS;
       document.head.append(style);
     }
   }

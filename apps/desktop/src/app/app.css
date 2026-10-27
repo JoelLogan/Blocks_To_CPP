@@ -20,8 +20,9 @@
  * over a dialog or a page (§4.1).
  *
  * Themes: `:root` holds the light tokens and `:root[data-theme='dark']` the dark ones. The
- * Appearance setting decides the attribute (src/app/appearance/, light, dark or the system's), so
- * no style sheet asks the system for its colour scheme with a media query.
+ * Appearance setting decides the attribute (src/app/appearance/, light, dark or the system's); a
+ * media query of the system's scheme only fills the moment before the app has set it
+ * (`:root:not([data-theme])`).
  */
 
 :root {
@@ -83,6 +84,38 @@
   --b2c-toolbar-hover: #24304f;
   --b2c-overlay: rgb(0 0 0 / 60%);
   --b2c-canvas: #191d26;
+}
+
+/*
+ * Until the app sets `data-theme` (src/app/appearance/, before the first render), the system's
+ * scheme decides, so a dark system never sees a light frame. The same tokens as above
+ * (styles.test.ts keeps them equal).
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --b2c-color-scheme: dark;
+    --b2c-bg: #11141b;
+    --b2c-surface: #1b1f29;
+    --b2c-surface-raised: #232836;
+    --b2c-border: #3a4153;
+    --b2c-control-border: #7f889c;
+    --b2c-selected: #ff9f1c;
+    --b2c-text: #e6e9f0;
+    --b2c-text-muted: #a9b1c2;
+    --b2c-focus: #8ab4ff;
+    --b2c-primary: #8ab4ff;
+    --b2c-primary-text: #0d1424;
+    --b2c-danger: #ff8a80;
+    --b2c-danger-text: #2a0705;
+    --b2c-ok: #6fd18a;
+    --b2c-error: #ff8a80;
+    --b2c-warning-bg: #3d2f0a;
+    --b2c-warning-text: #ffd98a;
+    --b2c-toolbar-bg: #151c30;
+    --b2c-toolbar-hover: #24304f;
+    --b2c-overlay: rgb(0 0 0 / 60%);
+    --b2c-canvas: #191d26;
+  }
 }
 
 *,

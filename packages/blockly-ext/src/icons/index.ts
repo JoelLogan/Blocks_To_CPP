@@ -8,7 +8,7 @@
  * setBlockDiagnostics(block, diagnosticsOfThatBlock); // [] removes them
  * ```
  */
-export { BADGE_FILL, DIAGNOSTIC_CSS_CLASS, registerDiagnosticCss } from './css';
+export { BADGE_FILL, DIAGNOSTIC_CSS, DIAGNOSTIC_CSS_CLASS, registerDiagnosticCss } from './css';
 export {
   BADGE_SIZE,
   DIAGNOSTIC_ICON_NAME,
