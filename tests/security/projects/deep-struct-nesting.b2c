@@ -1,0 +1,2173 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.3.0"
+  },
+  "project": {
+    "id": "prj_security",
+    "name": "Security test",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_level0",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 40,
+            "extra": {
+              "fields": [
+                {
+                  "name": "f1",
+                  "sym": "s_Level0_f1",
+                  "type": "int"
+                },
+                {
+                  "name": "f2",
+                  "sym": "s_Level0_f2",
+                  "type": "int"
+                },
+                {
+                  "name": "f3",
+                  "sym": "s_Level0_f3",
+                  "type": "int"
+                },
+                {
+                  "name": "f4",
+                  "sym": "s_Level0_f4",
+                  "type": "int"
+                },
+                {
+                  "name": "f5",
+                  "sym": "s_Level0_f5",
+                  "type": "int"
+                },
+                {
+                  "name": "f6",
+                  "sym": "s_Level0_f6",
+                  "type": "int"
+                },
+                {
+                  "name": "f7",
+                  "sym": "s_Level0_f7",
+                  "type": "int"
+                },
+                {
+                  "name": "f8",
+                  "sym": "s_Level0_f8",
+                  "type": "int"
+                },
+                {
+                  "name": "f9",
+                  "sym": "s_Level0_f9",
+                  "type": "int"
+                },
+                {
+                  "name": "f10",
+                  "sym": "s_Level0_f10",
+                  "type": "int"
+                },
+                {
+                  "name": "f11",
+                  "sym": "s_Level0_f11",
+                  "type": "int"
+                },
+                {
+                  "name": "f12",
+                  "sym": "s_Level0_f12",
+                  "type": "int"
+                },
+                {
+                  "name": "f13",
+                  "sym": "s_Level0_f13",
+                  "type": "int"
+                },
+                {
+                  "name": "f14",
+                  "sym": "s_Level0_f14",
+                  "type": "int"
+                },
+                {
+                  "name": "f15",
+                  "sym": "s_Level0_f15",
+                  "type": "int"
+                },
+                {
+                  "name": "f16",
+                  "sym": "s_Level0_f16",
+                  "type": "int"
+                },
+                {
+                  "name": "f17",
+                  "sym": "s_Level0_f17",
+                  "type": "int"
+                },
+                {
+                  "name": "f18",
+                  "sym": "s_Level0_f18",
+                  "type": "int"
+                },
+                {
+                  "name": "f19",
+                  "sym": "s_Level0_f19",
+                  "type": "int"
+                },
+                {
+                  "name": "f20",
+                  "sym": "s_Level0_f20",
+                  "type": "int"
+                },
+                {
+                  "name": "f21",
+                  "sym": "s_Level0_f21",
+                  "type": "int"
+                },
+                {
+                  "name": "f22",
+                  "sym": "s_Level0_f22",
+                  "type": "int"
+                },
+                {
+                  "name": "f23",
+                  "sym": "s_Level0_f23",
+                  "type": "int"
+                },
+                {
+                  "name": "f24",
+                  "sym": "s_Level0_f24",
+                  "type": "int"
+                },
+                {
+                  "name": "f25",
+                  "sym": "s_Level0_f25",
+                  "type": "int"
+                },
+                {
+                  "name": "f26",
+                  "sym": "s_Level0_f26",
+                  "type": "int"
+                },
+                {
+                  "name": "f27",
+                  "sym": "s_Level0_f27",
+                  "type": "int"
+                },
+                {
+                  "name": "f28",
+                  "sym": "s_Level0_f28",
+                  "type": "int"
+                },
+                {
+                  "name": "f29",
+                  "sym": "s_Level0_f29",
+                  "type": "int"
+                },
+                {
+                  "name": "f30",
+                  "sym": "s_Level0_f30",
+                  "type": "int"
+                },
+                {
+                  "name": "f31",
+                  "sym": "s_Level0_f31",
+                  "type": "int"
+                },
+                {
+                  "name": "f32",
+                  "sym": "s_Level0_f32",
+                  "type": "int"
+                },
+                {
+                  "name": "f33",
+                  "sym": "s_Level0_f33",
+                  "type": "int"
+                },
+                {
+                  "name": "f34",
+                  "sym": "s_Level0_f34",
+                  "type": "int"
+                },
+                {
+                  "name": "f35",
+                  "sym": "s_Level0_f35",
+                  "type": "int"
+                },
+                {
+                  "name": "f36",
+                  "sym": "s_Level0_f36",
+                  "type": "int"
+                },
+                {
+                  "name": "f37",
+                  "sym": "s_Level0_f37",
+                  "type": "int"
+                },
+                {
+                  "name": "f38",
+                  "sym": "s_Level0_f38",
+                  "type": "int"
+                },
+                {
+                  "name": "f39",
+                  "sym": "s_Level0_f39",
+                  "type": "int"
+                },
+                {
+                  "name": "f40",
+                  "sym": "s_Level0_f40",
+                  "type": "int"
+                },
+                {
+                  "name": "f41",
+                  "sym": "s_Level0_f41",
+                  "type": "int"
+                },
+                {
+                  "name": "f42",
+                  "sym": "s_Level0_f42",
+                  "type": "int"
+                },
+                {
+                  "name": "f43",
+                  "sym": "s_Level0_f43",
+                  "type": "int"
+                },
+                {
+                  "name": "f44",
+                  "sym": "s_Level0_f44",
+                  "type": "int"
+                },
+                {
+                  "name": "f45",
+                  "sym": "s_Level0_f45",
+                  "type": "int"
+                },
+                {
+                  "name": "f46",
+                  "sym": "s_Level0_f46",
+                  "type": "int"
+                },
+                {
+                  "name": "f47",
+                  "sym": "s_Level0_f47",
+                  "type": "int"
+                },
+                {
+                  "name": "f48",
+                  "sym": "s_Level0_f48",
+                  "type": "int"
+                },
+                {
+                  "name": "f49",
+                  "sym": "s_Level0_f49",
+                  "type": "int"
+                },
+                {
+                  "name": "f50",
+                  "sym": "s_Level0_f50",
+                  "type": "int"
+                },
+                {
+                  "name": "f51",
+                  "sym": "s_Level0_f51",
+                  "type": "int"
+                },
+                {
+                  "name": "f52",
+                  "sym": "s_Level0_f52",
+                  "type": "int"
+                },
+                {
+                  "name": "f53",
+                  "sym": "s_Level0_f53",
+                  "type": "int"
+                },
+                {
+                  "name": "f54",
+                  "sym": "s_Level0_f54",
+                  "type": "int"
+                },
+                {
+                  "name": "f55",
+                  "sym": "s_Level0_f55",
+                  "type": "int"
+                },
+                {
+                  "name": "f56",
+                  "sym": "s_Level0_f56",
+                  "type": "int"
+                },
+                {
+                  "name": "f57",
+                  "sym": "s_Level0_f57",
+                  "type": "int"
+                },
+                {
+                  "name": "f58",
+                  "sym": "s_Level0_f58",
+                  "type": "int"
+                },
+                {
+                  "name": "f59",
+                  "sym": "s_Level0_f59",
+                  "type": "int"
+                },
+                {
+                  "name": "f60",
+                  "sym": "s_Level0_f60",
+                  "type": "int"
+                },
+                {
+                  "name": "f61",
+                  "sym": "s_Level0_f61",
+                  "type": "int"
+                },
+                {
+                  "name": "f62",
+                  "sym": "s_Level0_f62",
+                  "type": "int"
+                },
+                {
+                  "name": "f63",
+                  "sym": "s_Level0_f63",
+                  "type": "int"
+                },
+                {
+                  "name": "f64",
+                  "sym": "s_Level0_f64",
+                  "type": "int"
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level0",
+                "name": "Level0"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level1",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level1_inner",
+                  "type": {
+                    "ref": "s_Level0"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level1",
+                "name": "Level1"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level10",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 4040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level10_inner",
+                  "type": {
+                    "ref": "s_Level9"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level10",
+                "name": "Level10"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level11",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 4440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level11_inner",
+                  "type": {
+                    "ref": "s_Level10"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level11",
+                "name": "Level11"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level12",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 4840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level12_inner",
+                  "type": {
+                    "ref": "s_Level11"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level12",
+                "name": "Level12"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level13",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 5240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level13_inner",
+                  "type": {
+                    "ref": "s_Level12"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level13",
+                "name": "Level13"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level14",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 5640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level14_inner",
+                  "type": {
+                    "ref": "s_Level13"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level14",
+                "name": "Level14"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level15",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 6040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level15_inner",
+                  "type": {
+                    "ref": "s_Level14"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level15",
+                "name": "Level15"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level16",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 6440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level16_inner",
+                  "type": {
+                    "ref": "s_Level15"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level16",
+                "name": "Level16"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level17",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 6840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level17_inner",
+                  "type": {
+                    "ref": "s_Level16"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level17",
+                "name": "Level17"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level18",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 7240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level18_inner",
+                  "type": {
+                    "ref": "s_Level17"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level18",
+                "name": "Level18"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level19",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 7640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level19_inner",
+                  "type": {
+                    "ref": "s_Level18"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level19",
+                "name": "Level19"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level2",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level2_inner",
+                  "type": {
+                    "ref": "s_Level1"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level2",
+                "name": "Level2"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level20",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 8040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level20_inner",
+                  "type": {
+                    "ref": "s_Level19"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level20",
+                "name": "Level20"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level21",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 8440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level21_inner",
+                  "type": {
+                    "ref": "s_Level20"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level21",
+                "name": "Level21"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level22",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 8840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level22_inner",
+                  "type": {
+                    "ref": "s_Level21"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level22",
+                "name": "Level22"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level23",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 9240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level23_inner",
+                  "type": {
+                    "ref": "s_Level22"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level23",
+                "name": "Level23"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level24",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 9640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level24_inner",
+                  "type": {
+                    "ref": "s_Level23"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level24",
+                "name": "Level24"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level25",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 10040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level25_inner",
+                  "type": {
+                    "ref": "s_Level24"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level25",
+                "name": "Level25"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level26",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 10440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level26_inner",
+                  "type": {
+                    "ref": "s_Level25"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level26",
+                "name": "Level26"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level27",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 10840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level27_inner",
+                  "type": {
+                    "ref": "s_Level26"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level27",
+                "name": "Level27"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level28",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 11240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level28_inner",
+                  "type": {
+                    "ref": "s_Level27"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level28",
+                "name": "Level28"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level29",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 11640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level29_inner",
+                  "type": {
+                    "ref": "s_Level28"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level29",
+                "name": "Level29"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level3",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 1240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level3_inner",
+                  "type": {
+                    "ref": "s_Level2"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level3",
+                "name": "Level3"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level30",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 12040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level30_inner",
+                  "type": {
+                    "ref": "s_Level29"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level30",
+                "name": "Level30"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level31",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 12440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level31_inner",
+                  "type": {
+                    "ref": "s_Level30"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level31",
+                "name": "Level31"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level32",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 12840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level32_inner",
+                  "type": {
+                    "ref": "s_Level31"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level32",
+                "name": "Level32"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level33",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 13240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level33_inner",
+                  "type": {
+                    "ref": "s_Level32"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level33",
+                "name": "Level33"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level34",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 13640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level34_inner",
+                  "type": {
+                    "ref": "s_Level33"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level34",
+                "name": "Level34"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level35",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 14040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level35_inner",
+                  "type": {
+                    "ref": "s_Level34"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level35",
+                "name": "Level35"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level36",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 14440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level36_inner",
+                  "type": {
+                    "ref": "s_Level35"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level36",
+                "name": "Level36"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level37",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 14840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level37_inner",
+                  "type": {
+                    "ref": "s_Level36"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level37",
+                "name": "Level37"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level38",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 15240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level38_inner",
+                  "type": {
+                    "ref": "s_Level37"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level38",
+                "name": "Level38"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level39",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 15640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level39_inner",
+                  "type": {
+                    "ref": "s_Level38"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level39",
+                "name": "Level39"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level4",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 1640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level4_inner",
+                  "type": {
+                    "ref": "s_Level3"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level4",
+                "name": "Level4"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level40",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 16040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level40_inner",
+                  "type": {
+                    "ref": "s_Level39"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level40",
+                "name": "Level40"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level41",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 16440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level41_inner",
+                  "type": {
+                    "ref": "s_Level40"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level41",
+                "name": "Level41"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level42",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 16840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level42_inner",
+                  "type": {
+                    "ref": "s_Level41"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level42",
+                "name": "Level42"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level43",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 17240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level43_inner",
+                  "type": {
+                    "ref": "s_Level42"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level43",
+                "name": "Level43"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level44",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 17640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level44_inner",
+                  "type": {
+                    "ref": "s_Level43"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level44",
+                "name": "Level44"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level45",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 18040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level45_inner",
+                  "type": {
+                    "ref": "s_Level44"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level45",
+                "name": "Level45"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level46",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 18440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level46_inner",
+                  "type": {
+                    "ref": "s_Level45"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level46",
+                "name": "Level46"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level47",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 18840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level47_inner",
+                  "type": {
+                    "ref": "s_Level46"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level47",
+                "name": "Level47"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level48",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 19240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level48_inner",
+                  "type": {
+                    "ref": "s_Level47"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level48",
+                "name": "Level48"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level49",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 19640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level49_inner",
+                  "type": {
+                    "ref": "s_Level48"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level49",
+                "name": "Level49"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level5",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 2040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level5_inner",
+                  "type": {
+                    "ref": "s_Level4"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level5",
+                "name": "Level5"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level50",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 20040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level50_inner",
+                  "type": {
+                    "ref": "s_Level49"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level50",
+                "name": "Level50"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level51",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 20440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level51_inner",
+                  "type": {
+                    "ref": "s_Level50"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level51",
+                "name": "Level51"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level52",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 20840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level52_inner",
+                  "type": {
+                    "ref": "s_Level51"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level52",
+                "name": "Level52"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level53",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 21240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level53_inner",
+                  "type": {
+                    "ref": "s_Level52"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level53",
+                "name": "Level53"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level54",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 21640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level54_inner",
+                  "type": {
+                    "ref": "s_Level53"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level54",
+                "name": "Level54"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level55",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 22040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level55_inner",
+                  "type": {
+                    "ref": "s_Level54"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level55",
+                "name": "Level55"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level56",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 22440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level56_inner",
+                  "type": {
+                    "ref": "s_Level55"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level56",
+                "name": "Level56"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level57",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 22840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level57_inner",
+                  "type": {
+                    "ref": "s_Level56"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level57",
+                "name": "Level57"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level58",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 23240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level58_inner",
+                  "type": {
+                    "ref": "s_Level57"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level58",
+                "name": "Level58"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level59",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 23640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level59_inner",
+                  "type": {
+                    "ref": "s_Level58"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level59",
+                "name": "Level59"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level6",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 2440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level6_inner",
+                  "type": {
+                    "ref": "s_Level5"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level6",
+                "name": "Level6"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level60",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 24040,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level60_inner",
+                  "type": {
+                    "ref": "s_Level59"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level60",
+                "name": "Level60"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level61",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 24440,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level61_inner",
+                  "type": {
+                    "ref": "s_Level60"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level61",
+                "name": "Level61"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level62",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 24840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level62_inner",
+                  "type": {
+                    "ref": "s_Level61"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level62",
+                "name": "Level62"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level63",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 25240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level63_inner",
+                  "type": {
+                    "ref": "s_Level62"
+                  }
+                },
+                {
+                  "name": "depth",
+                  "sym": "s_Level63_depth",
+                  "type": "int"
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level63",
+                "name": "Level63"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            },
+            "inputs": {
+              "DEFAULT1": {
+                "expr": [
+                  {
+                    "num": "63"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "b_level7",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 2840,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level7_inner",
+                  "type": {
+                    "ref": "s_Level6"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level7",
+                "name": "Level7"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level8",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 3240,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level8_inner",
+                  "type": {
+                    "ref": "s_Level7"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level8",
+                "name": "Level8"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_level9",
+            "type": "type.struct",
+            "v": 1,
+            "x": 400,
+            "y": 3640,
+            "extra": {
+              "fields": [
+                {
+                  "name": "inner",
+                  "sym": "s_Level9_inner",
+                  "type": {
+                    "ref": "s_Level8"
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "COMPARABLE": false,
+              "NAME": {
+                "sym": "s_Level9",
+                "name": "Level9"
+              },
+              "PRINTABLE": false,
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_declare",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_deep",
+                      "name": "deep"
+                    },
+                    "TYPE": {
+                      "ref": "s_Level63"
+                    }
+                  }
+                },
+                {
+                  "id": "b_print",
+                  "type": "io.print",
+                  "v": 1,
+                  "extra": {
+                    "itemCount": 1
+                  },
+                  "fields": {
+                    "NEWLINE": true,
+                    "SEP": "none",
+                    "STREAM": "out"
+                  },
+                  "inputs": {
+                    "ITEM0": {
+                      "block": {
+                        "id": "b_depth",
+                        "type": "type.field",
+                        "v": 1,
+                        "fields": {
+                          "MEMBER": {
+                            "ref": "s_Level63_depth"
+                          }
+                        },
+                        "inputs": {
+                          "OBJ": {
+                            "expr": [
+                              {
+                                "ref": "s_deep"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -53,6 +53,7 @@ rest of the project valid, so that the file tests one thing.
 | `deep-block-nesting.b2c` | T5 | 60 loops nested inside each other (more than 128 JSON levels) | `B2C-E0104` | — |  |
 | `deep-expression.b2c` | T5 | 255 nested parentheses in one slot (within the token limit) | accepted | clean | The expression parser stops at depth 64 |
 | `deep-nesting.b2c` | T5 | 5,000 nested lists (stack exhaustion) | `B2C-E0104` | — |  |
+| `deep-struct-nesting.b2c` | T5 | 64 structs, each holding the one before it by value (a chain 64 deep), the innermost with 64 field rows, the most a rows setting may have (a 65th is `B2C-E0131`, as `huge-params-list.b2c` shows for parameters) | accepted | clean | The declaration graph orders the chain with an explicit stack (`crates/b2c-lang/src/order.rs`), so the C++ declares `Level0` first; the analyser reports nothing and the program builds |
 | `define-name-injection.b2c` | T2 | A compiler flag disguised as a `-D` define name | `B2C-E0132` | — |  |
 | `define-unsafe-integer.b2c` | T2 | A define value of 2⁵³ + 1, which the editor's JavaScript numbers would silently change (and with it the program and the security hash) | `B2C-E0112` | — |  |
 | `define-value-injection.b2c` | T3 | A define value that tries to end its string | accepted | clean | The backend passes it as one escaped string argument |
