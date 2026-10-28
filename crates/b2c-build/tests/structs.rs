@@ -35,7 +35,7 @@ use b2c_build::{FrontendOptions, run_frontend};
 use b2c_ir::Severity;
 use b2c_ir::sast::CppStandard;
 use b2c_toolchain::env::{HostEnv, compiler_env};
-use b2c_toolchain::probe::{ProbeOptions, Toolchain, probe};
+use b2c_toolchain::probe::{MIN_GCC_MAJOR, ProbeOptions, Toolchain, probe};
 use serde_json::{Map, Value, json};
 
 /// Warning flags of the *strict* level (spec §7.4.2) with `-Werror`.
@@ -63,8 +63,10 @@ fn command(program: &Path) -> std::process::Command {
     std::process::Command::new(program)
 }
 
-/// The g++ on `PATH`, then every `/usr/bin/g++-N`, each probed once per
-/// test binary, so that each runs from the path builds run it from.
+/// The g++ on `PATH`, then every `/usr/bin/g++-N` Blocks2Cpp supports
+/// (`MIN_GCC_MAJOR` and newer: an older one beside it, as in the GCC 11
+/// container, is one the app refuses too), each probed once per test binary,
+/// so that each runs from the path builds run it from.
 fn compilers() -> &'static [Toolchain] {
     static PROBED: OnceLock<Vec<Toolchain>> = OnceLock::new();
     PROBED.get_or_init(|| {
@@ -72,7 +74,7 @@ fn compilers() -> &'static [Toolchain] {
             return Vec::new();
         };
         let mut found = vec![on_path];
-        for major in 9..=20 {
+        for major in MIN_GCC_MAJOR..=20 {
             let versioned = PathBuf::from(format!("/usr/bin/g++-{major}"));
             if versioned.exists() {
                 let toolchain = probe(&versioned, &ProbeOptions::default()).unwrap();
