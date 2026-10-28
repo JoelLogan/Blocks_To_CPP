@@ -27,15 +27,15 @@ one launch of the app per theme, in the smallest window the app allows (800×560
 window-size seam), with a new project from the Empty template whose program prints three lines.
 Each scene is cut out of a screenshot of the whole window:
 
-| Scene                         | Area                       | Shows                                                                                                                          |
-| ----------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `chrome-window-smallest`      | the window                 | the editor: the program on the canvas, its C++, the console not run yet                                                        |
-| `chrome-toolbar-select`       | the toolbar                | the Debug/Release drop-down closed, nothing hovered                                                                            |
-| `chrome-toolbar-select-hover` | the toolbar                | the pointer on the drop-down (its hover colour)                                                                                |
-| `chrome-menu-open`            | the window                 | the ≡ main menu open over the editor and its toolbox                                                                           |
-| `chrome-toolbox-<category>`   | the toolbox and its flyout | one per category (`program`, `variables`, `math`, `logic`, `text`, `control`, `loops`, `io`, `functions`), after a click on it |
-| `chrome-console-scrolled`     | the bottom panel           | after two runs, scrolled up 4 lines from the end (the end of the first run and _New run_), at the panel's first height         |
-| `chrome-console-two-runs`     | the bottom panel           | after two runs, the panel at its tallest: the first run, _New run_, the second run                                             |
+| Scene                         | Area                       | Shows                                                                                                                                                                     |
+| ----------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chrome-window-smallest`      | the window                 | the editor: the program on the canvas, its C++, the console not run yet                                                                                                   |
+| `chrome-toolbar-select`       | the toolbar                | the Debug/Release drop-down closed, nothing hovered                                                                                                                       |
+| `chrome-toolbar-select-hover` | the toolbar                | the pointer on the drop-down (its hover colour)                                                                                                                           |
+| `chrome-menu-open`            | the window                 | the ≡ main menu open over the editor and its toolbox                                                                                                                      |
+| `chrome-toolbox-<category>`   | the toolbox and its flyout | one per category (`program`, `variables`, `math`, `logic`, `text`, `control`, `loops`, `io`, `functions`, `collections`, `types`, `files`, `errors`), after a click on it |
+| `chrome-console-scrolled`     | the bottom panel           | after two runs, scrolled up 4 lines from the end (the end of the first run and _New run_), at the panel's first height                                                    |
+| `chrome-console-two-runs`     | the bottom panel           | after two runs, the panel at its tallest: the first run, _New run_, the second run                                                                                        |
 
 The themes: light on both systems, and on Linux dark too, as separate scenes with their own
 baselines (`…-dark`): the app is started with `GTK_THEME=Adwaita:dark`, which WebKitGTK reports
