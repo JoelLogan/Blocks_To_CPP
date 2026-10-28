@@ -4,6 +4,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
+import { startAppearance, systemSchemeQuery } from './app/appearance';
 import { createAppRuntime } from './app/bootstrap';
 import { commands } from './app/commands';
 import { getCore } from './app/core';
@@ -22,6 +23,15 @@ import './app/app.css';
 // First, so it sees every Content Security Policy violation from the start (the Trusted Types
 // trial, docs/spec/08-security.md §8.8).
 const trustedTypes = startTrustedTypesCollector(document);
+
+// The theme before the first render (the system's), then the Appearance setting once the settings
+// are read, and the system's scheme while *Follow the system* is chosen (04 §4.8).
+startAppearance({
+  root: document.documentElement,
+  choice: () => useAppStore.getState().settings.value?.appearance.theme ?? null,
+  subscribe: (listener) => useAppStore.subscribe(listener),
+  scheme: systemSchemeQuery(window),
+});
 
 const container = document.getElementById('root');
 if (container === null) {

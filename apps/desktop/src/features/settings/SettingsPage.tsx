@@ -1,4 +1,11 @@
-import type { IndentWidth, OnErrors, Settings } from '@blocks2cpp/ipc-types';
+import type {
+  BlockLabels,
+  EditorSettings,
+  IndentWidth,
+  OnErrors,
+  Settings,
+  Theme,
+} from '@blocks2cpp/ipc-types';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
@@ -119,7 +126,7 @@ function NoticeList({ notices }: { notices: Parameters<typeof shownNotices>[0] }
   );
 }
 
-/** The code style, Run on errors and console sections. */
+/** The appearance, blocks, code style, Run on errors and console sections. */
 function SettingsForm({
   controller,
   settings,
@@ -129,6 +136,29 @@ function SettingsForm({
 }) {
   return (
     <>
+      <PageSection title="Appearance" testId="settings-appearance">
+        <ChoiceField<Theme>
+          legend="Colours"
+          value={settings.appearance.theme}
+          options={[
+            {
+              value: 'system',
+              label: 'Follow the system',
+              description: 'Light or dark, as your computer is set, and changing when it does.',
+            },
+            { value: 'light', label: 'Light' },
+            { value: 'dark', label: 'Dark' },
+          ]}
+          onChange={(theme) => controller.update({ appearance: { theme } })}
+          testId="settings-theme"
+        />
+        <p className="feature-muted">
+          The whole window changes at once: the blocks, the panels and the console.
+        </p>
+      </PageSection>
+
+      <BlocksSection controller={controller} editor={settings.editor} />
+
       <PageSection title="Code style" testId="settings-code-style">
         <ChoiceField<IndentWidth>
           legend="Indent width of the generated C++"
@@ -174,6 +204,131 @@ function SettingsForm({
         />
       </PageSection>
     </>
+  );
+}
+
+/**
+ * The expert mode (docs/spec/03-block-language.md §3.5.2, 10 §10.3 Q8): one switch for both of its
+ * settings, then each on its own. The switch shows a mixed state when only one of them is on;
+ * pressing it then turns both on.
+ */
+function BlocksSection({
+  controller,
+  editor,
+}: {
+  controller: SettingsController;
+  editor: EditorSettings;
+}) {
+  const expert = editor.blockLabels === 'cpp' && editor.showAdvanced;
+  const mixed = !expert && (editor.blockLabels === 'cpp' || editor.showAdvanced);
+  return (
+    <PageSection title="Blocks" testId="settings-blocks">
+      <CheckField
+        label="Expert mode"
+        description="C++ labels on the blocks, and the advanced blocks in the toolbox."
+        checked={expert}
+        mixed={mixed}
+        onChange={(on) =>
+          controller.update({
+            editor: { blockLabels: on ? 'cpp' : 'friendly', showAdvanced: on },
+          })
+        }
+        testId="settings-expert-mode"
+      />
+      <ChoiceField<BlockLabels>
+        legend="Block labels"
+        value={editor.blockLabels}
+        options={[
+          {
+            value: 'friendly',
+            label: 'Friendly',
+            description: 'Plain words, such as “add (x) to [scores]”.',
+          },
+          {
+            value: 'cpp',
+            label: 'C++',
+            description: 'The C++ each block stands for, such as “scores.push_back(x)”.',
+          },
+        ]}
+        onChange={(blockLabels) => controller.update({ editor: { blockLabels } })}
+        testId="settings-block-labels"
+      />
+      <CheckField
+        label="Show advanced blocks"
+        description="Adds the advanced categories and blocks to the toolbox."
+        checked={editor.showAdvanced}
+        onChange={(showAdvanced) => controller.update({ editor: { showAdvanced } })}
+        testId="settings-show-advanced"
+      />
+      <p className="feature-muted">
+        Both labels give the same C++, and blocks already in a project stay as they are.
+      </p>
+    </PageSection>
+  );
+}
+
+/**
+ * A checkbox that saves at once, as {@link ChoiceField} does: the new state is shown while it is
+ * saved, and the saved one comes back when the change is refused. `mixed` shows the native
+ * indeterminate state (announced as mixed); pressing it turns the box on.
+ */
+function CheckField({
+  label,
+  description,
+  checked,
+  mixed = false,
+  onChange,
+  testId,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  mixed?: boolean;
+  onChange: (checked: boolean) => Promise<boolean>;
+  testId: string;
+}) {
+  const id = useId();
+  const descriptionId = `${id}-description`;
+  const input = useRef<HTMLInputElement>(null);
+  const [pending, setPending] = useState<boolean | null>(null);
+  const mounted = useMounted();
+  const shown = pending ?? checked;
+  const indeterminate = pending === null && mixed;
+
+  useEffect(() => {
+    if (input.current !== null) {
+      input.current.indeterminate = indeterminate;
+    }
+  }, [indeterminate]);
+
+  return (
+    <div className="feature-field">
+      <div className="feature-option">
+        <input
+          ref={input}
+          type="checkbox"
+          id={id}
+          checked={shown}
+          aria-describedby={descriptionId}
+          data-testid={testId}
+          onChange={() => {
+            const next = indeterminate || !shown;
+            setPending(next);
+            void onChange(next).finally(() => {
+              if (mounted.current) {
+                setPending(null);
+              }
+            });
+          }}
+        />
+        <span className="feature-option-text">
+          <label htmlFor={id}>{label}</label>
+          <span id={descriptionId} className="feature-muted">
+            {description}
+          </span>
+        </span>
+      </div>
+    </div>
   );
 }
 

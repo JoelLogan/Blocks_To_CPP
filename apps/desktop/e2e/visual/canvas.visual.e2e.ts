@@ -89,7 +89,7 @@ describe('visual diff: the block canvas', () => {
       await parkPointer(app.driver);
       await hideOverlayScrollbars(app.driver);
       if (await blurAll(app.driver)) {
-        throw new Error('The visual diff needs the light theme, but the system prefers dark');
+        throw new Error('The visual diff needs the light theme, but the page shows the dark one');
       }
       await waitUntilStill(app.driver);
       const workspace = await app.driver.findElement(byTestId('workspace'));

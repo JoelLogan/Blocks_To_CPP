@@ -5,13 +5,19 @@
  * 24 px (2.5.8) and no motion when the system asks for reduced motion. The end-to-end tests and the
  * manual pass (docs/manual-tests/m2-accessibility.md) check the same in the real webviews.
  */
-import { CANVAS_COLOUR, CATEGORY_STYLE, NEUTRAL_COLOUR } from '@blocks2cpp/blockly-ext';
+import {
+  CANVAS_COLOUR,
+  CATEGORY_STYLE,
+  DIAGNOSTIC_CSS,
+  NEUTRAL_COLOUR,
+} from '@blocks2cpp/blockly-ext';
 import { describe, expect, it } from 'vitest';
 
 import {
   contrastOf,
   type CssRule,
   declarationsOf,
+  isDarkRoot,
   parseColour,
   parseRules,
   pixels,
@@ -99,6 +105,7 @@ const UI_PAIRS: readonly [string, string][] = [
   ['--b2c-selected', '--b2c-bg'],
   ['--b2c-selected', '--b2c-surface'],
   ['--b2c-accent', '--b2c-toolbar-bg'],
+  ['--b2c-console-cursor', '--b2c-console-bg'],
 ];
 
 function token(name: string): string {
@@ -117,6 +124,73 @@ describe('the style sheets', () => {
     );
     for (const [path, text] of Object.entries(SHEETS)) {
       expect(parseRules(text).length, path).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('the themes', () => {
+  it('are chosen by the Appearance setting; the system only before the app has set it', () => {
+    for (const [path, text] of Object.entries(SHEETS)) {
+      for (const rule of parseRules(text)) {
+        if (rule.media?.includes('prefers-color-scheme') === true) {
+          expect(rule.media, path).toBe('(prefers-color-scheme: dark)');
+          expect(rule.selectors, path).toEqual([':root:not([data-theme])']);
+        }
+      }
+    }
+  });
+
+  it("give the system's dark scheme, before the attribute is set, each sheet's dark tokens", () => {
+    for (const [path, text] of Object.entries(SHEETS)) {
+      const rules = parseRules(text);
+      const dark = new Map<string, string>();
+      const fallback = new Map<string, string>();
+      for (const rule of rules) {
+        const into = rule.selectors.some(isDarkRoot)
+          ? dark
+          : rule.media === '(prefers-color-scheme: dark)'
+            ? fallback
+            : null;
+        for (const [name, value] of into === null ? [] : rule.declarations) {
+          into?.set(name, value);
+        }
+      }
+      expect(fallback, path).toEqual(dark);
+    }
+    // The sheets with dark tokens have their fallback (one each).
+    expect(
+      Object.values(SHEETS).filter((text) => text.includes(':root:not([data-theme])')),
+    ).toHaveLength(3);
+  });
+
+  it("keep blockly-ext's diagnostics on the attribute too", () => {
+    expect(DIAGNOSTIC_CSS).not.toMatch(/prefers-color-scheme/);
+    expect(DIAGNOSTIC_CSS).toContain(":root[data-theme='dark'] .blocklySvg");
+  });
+
+  it('write the console colours as xterm.js reads them (hex, or rgb()/rgba() with commas)', () => {
+    // node_modules/@xterm/xterm/src/common/Color.ts, css.toColor: anything else with an alpha
+    // throws, and xterm.js falls back to its own (near-invisible) selection colour.
+    const XTERM_COLOUR =
+      /^(#[\da-f]{3,8}|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\))$/i;
+    for (const theme of THEMES) {
+      const names = [...TOKENS[theme].keys()].filter((name) => name.startsWith('--b2c-console-'));
+      expect(names.length).toBeGreaterThanOrEqual(4);
+      for (const name of names) {
+        expect(TOKENS[theme].get(name), `${name} (${theme})`).toMatch(XTERM_COLOUR);
+      }
+    }
+  });
+
+  it('give the webview the scheme of the theme for what it draws itself', () => {
+    expect(TOKENS.light.get('--b2c-color-scheme')).toBe('light');
+    expect(TOKENS.dark.get('--b2c-color-scheme')).toBe('dark');
+    expect(declarationsOf(ALL_RULES, ':root').get('color-scheme')).toBe('var(--b2c-color-scheme)');
+  });
+
+  it('set every dark token over a light one', () => {
+    for (const name of TOKENS.dark.keys()) {
+      expect(TOKENS.light.has(name), name).toBe(true);
     }
   });
 });
@@ -447,10 +521,23 @@ describe('the CSS reader', () => {
 
   it('reads rules inside media blocks and skips comments', () => {
     const rules = parseRules(
-      '/* x { } */ .a { color: red; } @media (prefers-color-scheme: dark) { :root { --x: #000; } }',
+      '/* x { } */ .a { color: red; } @media (prefers-reduced-motion: reduce) { .b { --x: #000; } }',
     );
     expect(rules).toHaveLength(2);
-    expect(rules[1]?.media).toBe('(prefers-color-scheme: dark)');
-    expect(themeTokens(rules).dark.get('--x')).toBe('#000');
+    expect(rules[1]?.media).toBe('(prefers-reduced-motion: reduce)');
+  });
+
+  it("reads the dark theme's tokens from :root[data-theme='dark'], with either quote", () => {
+    const rules = parseRules(
+      ':root { --x: #fff; --y: #eee; } :root[data-theme="dark"] { --x: #000; } ' +
+        ":root[data-theme='dark'] { --z: #111; } @media (prefers-color-scheme: dark) { :root { --y: #222; } }",
+    );
+    const tokens = themeTokens(rules);
+    expect(tokens.light.get('--x')).toBe('#fff');
+    expect(tokens.light.has('--z')).toBe(false);
+    expect(tokens.dark.get('--x')).toBe('#000');
+    expect(tokens.dark.get('--z')).toBe('#111');
+    // A media query never decides a token: the Appearance setting does.
+    expect(tokens.dark.get('--y')).toBe('#eee');
   });
 });

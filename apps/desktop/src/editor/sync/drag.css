@@ -12,8 +12,17 @@
   --b2c-flyout-delete: #f6dcd9;
 }
 
+:root[data-theme='dark'] {
+  --b2c-flyout-delete: #3d2329;
+}
+
+/*
+ * Until the app sets `data-theme` (src/app/appearance/, before the first render), the system's
+ * scheme decides, so a dark system never sees a light frame. The same tokens as above
+ * (styles.test.ts keeps them equal).
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --b2c-flyout-delete: #3d2329;
   }
 }

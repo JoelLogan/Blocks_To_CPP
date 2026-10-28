@@ -320,13 +320,19 @@ fn settings_round_trip_and_notices_reach_the_first_subscriber() {
         }]
     );
 
-    let patch = decode::<SettingsPatch>(
-        json!({"codeStyle": {"indentWidth": 2}, "run": {"onErrors": "showProblems"}}),
-    )
+    let patch = decode::<SettingsPatch>(json!({
+        "codeStyle": {"indentWidth": 2},
+        "run": {"onErrors": "showProblems"},
+        "appearance": {"theme": "dark"},
+        "editor": {"blockLabels": "cpp", "showAdvanced": true}
+    }))
     .unwrap();
     let updated = backend.settings_update(patch).unwrap().settings;
     assert_eq!(updated.code_style.indent_width, b2c_ipc::dto::IndentWidth::Two);
     assert_eq!(updated.run.on_errors, b2c_ipc::dto::OnErrors::ShowProblems);
+    assert_eq!(updated.appearance.theme, b2c_ipc::dto::Theme::Dark);
+    assert_eq!(updated.editor.block_labels, b2c_ipc::dto::BlockLabels::Cpp);
+    assert!(updated.editor.show_advanced);
     assert_eq!(backend.settings_get().unwrap().settings, updated);
     let file = std::fs::read(dirs.config.join("settings.json")).unwrap();
     // A load and save round trip is byte-stable.

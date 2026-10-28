@@ -35,8 +35,9 @@ export class PageNotStillError extends Error {
 /**
  * Runs in the webview: takes focus away from whatever has it (no focus ring, no text caret, and
  * the console's cursor drawn as the steady outline of an unfocused terminal), hides the caret
- * everywhere in case an editor opens, and answers whether the page prefers the dark theme. Inline
- * style properties set from script are allowed by the app's style-src.
+ * everywhere in case an editor opens, and answers whether the page shows the dark theme (its
+ * `data-theme`, which the Appearance setting decides; *Follow the system*, the default, follows the
+ * system's scheme). Inline style properties set from script are allowed by the app's style-src.
  */
 export const STILL_SCRIPT = `
   const active = document.activeElement;
@@ -44,7 +45,7 @@ export const STILL_SCRIPT = `
     active.blur();
   }
   document.documentElement.style.setProperty('caret-color', 'transparent');
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return document.documentElement.getAttribute('data-theme') === 'dark';
 `;
 
 /**
@@ -199,7 +200,7 @@ export async function parkPointer(driver: WebDriver): Promise<void> {
 
 /**
  * Takes the focus away and hides the caret ({@link STILL_SCRIPT}); returns whether the page
- * prefers the dark theme.
+ * shows the dark theme.
  */
 export async function blurAll(driver: WebDriver): Promise<boolean> {
   const dark: unknown = await driver.executeScript(STILL_SCRIPT);

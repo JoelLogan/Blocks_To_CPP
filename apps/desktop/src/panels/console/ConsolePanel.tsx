@@ -109,6 +109,11 @@ export interface ConsolePanelProps {
    * which would otherwise be drawn over the dialog (04 §4.1).
    */
   onBeforeLinkDialog?: () => void;
+  /**
+   * The theme in use (`light` or `dark`, the Appearance setting): when it changes, the terminal
+   * reads its colours again from the console tokens (panels.css, U14d).
+   */
+  theme?: string;
   /** Receives the {@link ConsoleHandle}. */
   ref?: Ref<ConsoleHandle>;
 }
@@ -121,15 +126,30 @@ export function clampScrollback(lines: number): number {
   return Math.min(Math.max(Math.round(lines), MIN_SCROLLBACK_LINES), MAX_SCROLLBACK_LINES);
 }
 
+/** The light theme's console tokens (panels.css), for a page without them. */
 const FALLBACK_THEME = {
-  background: '#161a22',
-  foreground: '#e6e9f0',
-  cursor: '#ffc266',
-  selectionBackground: 'rgba(138, 180, 255, 0.35)',
+  background: '#fbfcfe',
+  foreground: '#1b2130',
+  cursor: '#1a56db',
+  selectionBackground: 'rgba(26, 86, 219, 0.22)',
 } as const;
 
+/**
+ * Gives `term` the colours of the console tokens now in effect on `element`, unless it has them.
+ * WebKitGTK answers stale values for an element inside a hidden subtree (the editor is hidden while
+ * a full-window page such as Settings shows), so this runs again when the terminal is shown.
+ */
+function followTokens(term: Terminal, element: Element): void {
+  const next = terminalTheme(element);
+  const current = term.options.theme ?? {};
+  const keys = Object.keys(next) as (keyof ITheme)[];
+  if (keys.some((key) => current[key] !== next[key])) {
+    term.options.theme = next;
+  }
+}
+
 /** The terminal colours from the panel tokens (panels.css), or their defaults. */
-function terminalTheme(element: Element): ITheme {
+export function terminalTheme(element: Element): ITheme {
   const style = getComputedStyle(element);
   const token = (name: string, fallback: string) => {
     const value = style.getPropertyValue(name).trim();
@@ -246,6 +266,7 @@ export function consoleKeyAction(
 export function ConsolePanel({
   header,
   scrollbackLines,
+  theme,
   onStop,
   onRunAgain,
   onClear,
@@ -283,6 +304,9 @@ export function ConsolePanel({
         "ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', 'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace",
       fontSize: 13,
       theme: terminalTheme(element),
+      // Programs choose their colours for a dark terminal (ASan's bold green, bright yellow): in
+      // the light console xterm.js darkens any text below 4.5:1 on its background (WCAG 1.4.3).
+      minimumContrastRatio: 4.5,
       linkHandler: {
         allowNonHttpProtocols: false,
         activate: (_event, target) => {
@@ -352,6 +376,8 @@ export function ConsolePanel({
         ? null
         : new ResizeObserver(() => {
             refitter.request();
+            // Shown again after a page: the tokens may have changed meanwhile.
+            followTokens(term, element);
           });
     observer?.observe(element);
     const screenReader = new ScreenReaderSupport((on) => {
@@ -426,6 +452,14 @@ export function ConsolePanel({
       terminal.current.options.scrollback = clampScrollback(scrollbackLines);
     }
   }, [scrollbackLines]);
+
+  useEffect(() => {
+    const element = host.current;
+    if (terminal.current !== null && element !== null) {
+      // The tokens follow the page's theme, which has changed by now.
+      followTokens(terminal.current, element);
+    }
+  }, [theme]);
 
   useEffect(() => {
     if (terminal.current !== null) {

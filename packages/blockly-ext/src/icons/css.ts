@@ -61,18 +61,17 @@ const C = DIAGNOSTIC_CSS_CLASS;
 /** Blockly's selection outline is a copy of the block's path; it keeps its own look. */
 const OWN_PATH = '> .blocklyPath:not(.blocklyPathSelected)';
 
-const CSS = `
+/** The diagnostics' style sheet (the app's style tests read it). */
+export const DIAGNOSTIC_CSS = `
 .blocklySvg {
   --b2c-diag-error: #b42318;
   --b2c-diag-warning: #8a5300;
   --b2c-diag-info: #1a56db;
 }
-@media (prefers-color-scheme: dark) {
-  .blocklySvg {
-    --b2c-diag-error: #ff8a80;
-    --b2c-diag-warning: #ffcc66;
-    --b2c-diag-info: #8ab4ff;
-  }
+:root[data-theme='dark'] .blocklySvg {
+  --b2c-diag-error: #ff8a80;
+  --b2c-diag-warning: #ffcc66;
+  --b2c-diag-info: #8ab4ff;
 }
 .blocklyIconGroup.${C.badge},
 .blocklyIconGroup.${C.badge}:not(:hover):not(:focus) {
@@ -170,12 +169,12 @@ export function registerDiagnosticCss(): void {
   }
   registered = true;
   try {
-    Blockly.Css.register(CSS);
+    Blockly.Css.register(DIAGNOSTIC_CSS);
   } catch {
     if (typeof document !== 'undefined') {
       const style = document.createElement('style');
       style.dataset['b2c'] = 'diagnostics';
-      style.textContent = CSS;
+      style.textContent = DIAGNOSTIC_CSS;
       document.head.append(style);
     }
   }

@@ -142,11 +142,18 @@
   "settings_get": {},
   "settings_update": {
     "request": {
+      "appearance": {
+        "theme": "dark"
+      },
       "codeStyle": {
         "indentWidth": 2
       },
       "console": {
         "scrollbackLines": 20000
+      },
+      "editor": {
+        "blockLabels": "cpp",
+        "showAdvanced": true
       },
       "run": {
         "onErrors": "showProblems"

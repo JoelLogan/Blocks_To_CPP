@@ -167,6 +167,85 @@ describe('ConsolePanel', () => {
     expect(alternate.lines).toHaveLength(terminal.rows);
   });
 
+  it('reads its colours from the console tokens again when the theme changes (U14d)', () => {
+    const { terminal, rerender, props } = renderConsole({ theme: 'light' });
+    const host = terminal.element?.parentElement;
+    if (host === undefined || host === null) {
+      throw new Error('the terminal has no host');
+    }
+    // Stand-ins for the dark tokens, which the page's theme selects in the app.
+    host.style.setProperty('--b2c-console-bg', '#161a22');
+    host.style.setProperty('--b2c-console-fg', '#e6e9f0');
+    host.style.setProperty('--b2c-console-cursor', '#ffc266');
+    host.style.setProperty('--b2c-console-selection', 'rgb(138 180 255 / 35%)');
+    // The same theme: nothing is read again.
+    rerender(<ConsolePanel {...props} theme="light" />);
+    expect(terminal.options.theme?.background).not.toBe('#161a22');
+    rerender(<ConsolePanel {...props} theme="dark" />);
+    expect(terminal.options.theme).toEqual({
+      background: '#161a22',
+      foreground: '#e6e9f0',
+      cursor: '#ffc266',
+      selectionBackground: 'rgb(138 180 255 / 35%)',
+    });
+  });
+
+  it('reads its colours again when it is shown, as the theme may have changed while hidden', () => {
+    let resized: () => void = () => undefined;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resized = callback;
+        }
+        observe(): void {
+          // The test calls `resized` itself.
+        }
+        disconnect(): void {
+          // Nothing to stop.
+        }
+      },
+    );
+    const { terminal } = renderConsole({ theme: 'light' });
+    const host = terminal.element?.parentElement;
+    if (host === undefined || host === null) {
+      throw new Error('the terminal has no host');
+    }
+    const before = terminal.options.theme;
+    // Unchanged tokens: the theme object is kept, so xterm.js redraws nothing.
+    resized();
+    expect(terminal.options.theme).toBe(before);
+    host.style.setProperty('--b2c-console-bg', '#161a22');
+    resized();
+    expect(terminal.options.theme?.background).toBe('#161a22');
+  });
+
+  it('gives xterm.js a selection colour it can read, in the form the tokens use', () => {
+    const { terminal, rerender, props } = renderConsole({ theme: 'light' });
+    const host = terminal.element?.parentElement;
+    if (host === undefined || host === null) {
+      throw new Error('the terminal has no host');
+    }
+    /** The colours xterm.js resolved (its theme service; not part of its public API). */
+    const resolved = () =>
+      (
+        terminal as unknown as {
+          _core: { _themeService: { colors: { selectionBackgroundTransparent: { css: string } } } };
+        }
+      )._core._themeService.colors.selectionBackgroundTransparent.css;
+    // The tokens of panels.css: xterm.js reads the comma form; with a space-separated rgb() and
+    // an alpha it throws and uses its own white at 30 %.
+    host.style.setProperty('--b2c-console-selection', 'rgba(138, 180, 255, 0.35)');
+    rerender(<ConsolePanel {...props} theme="dark" />);
+    expect(resolved()).not.toBe('rgba(255, 255, 255, 0.3)');
+    expect(resolved()).toMatch(/^(rgba\(138, 180, 255|#8ab4ff)/);
+  });
+
+  it('keeps program colours readable on either console background (WCAG 1.4.3)', () => {
+    const { terminal } = renderConsole();
+    expect(terminal.options.minimumContrastRatio).toBeGreaterThanOrEqual(4.5);
+  });
+
   it('clamps the scrollback setting', () => {
     expect(clampScrollback(10)).toBe(1000);
     expect(clampScrollback(5000.4)).toBe(5000);

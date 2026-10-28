@@ -277,6 +277,9 @@ expression: render(&values)
     }
   ],
   "settings": {
+    "appearance": {
+      "theme": "dark"
+    },
     "buildCache": {
       "maxBytes": 2147483648
     },
@@ -285,6 +288,10 @@ expression: render(&values)
     },
     "console": {
       "scrollbackLines": 10000
+    },
+    "editor": {
+      "blockLabels": "friendly",
+      "showAdvanced": true
     },
     "formatVersion": 1,
     "newProject": {
@@ -307,6 +314,9 @@ expression: render(&values)
 --- SettingsUpdateResponse
 {
   "settings": {
+    "appearance": {
+      "theme": "dark"
+    },
     "buildCache": {
       "maxBytes": 2147483648
     },
@@ -315,6 +325,10 @@ expression: render(&values)
     },
     "console": {
       "scrollbackLines": 10000
+    },
+    "editor": {
+      "blockLabels": "friendly",
+      "showAdvanced": true
     },
     "formatVersion": 1,
     "newProject": {

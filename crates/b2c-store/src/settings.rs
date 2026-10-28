@@ -11,6 +11,8 @@
 //!   "toolchain": { "selectedId": null },
 //!   "newProject": { "standard": "c++20" },
 //!   "buildCache": { "maxBytes": 2147483648 },
+//!   "appearance": { "theme": "system" },
+//!   "editor": { "blockLabels": "friendly", "showAdvanced": false },
 //!   "ui": { "layout": { "toolboxWidth": 360, "rightCollapsed": true } }
 //! }
 //! ```
@@ -32,8 +34,12 @@
 //!   absent key means the app's first-start size, and `ui` is written only
 //!   once it holds something, so a file without it stays byte for byte as
 //!   it was. Each key is validated on its own like any other value.
-//! * Only [`SettingsPatch`] (code style, Run on errors, console, the
-//!   layout) changes settings from the UI; its JSON form rejects unknown
+//! * `appearance.theme` is the app's colour scheme (light, dark or the
+//!   system's), and `editor` holds the expert mode's two settings: the
+//!   block labels (Friendly or C++) and *Show advanced blocks* (03 §3.5.2,
+//!   10 §10.3 Q8).
+//! * Only [`SettingsPatch`] (code style, Run on errors, console, appearance,
+//!   the editor's mode, the layout) changes settings from the UI; its JSON form rejects unknown
 //!   keys. The selected toolchain changes only through
 //!   [`SettingsStore::set_selected_toolchain`].
 //! * Every change is validated first, then written atomically (with the
@@ -98,6 +104,10 @@ pub struct Settings {
     pub new_project: NewProjectSettings,
     /// The build cache.
     pub build_cache: BuildCacheSettings,
+    /// The app's colour scheme.
+    pub appearance: AppearanceSettings,
+    /// The editor's mode: block labels and advanced blocks.
+    pub editor: EditorSettings,
     /// The window's own state, such as the layout of the editor.
     pub ui: UiSettings,
 }
@@ -181,6 +191,48 @@ impl Default for BuildCacheSettings {
     }
 }
 
+/// The app's colour scheme (`appearance.theme`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Theme {
+    /// The system's light or dark setting, followed while the app runs
+    /// (default).
+    #[default]
+    System,
+    /// Always light.
+    Light,
+    /// Always dark.
+    Dark,
+}
+
+/// Appearance settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AppearanceSettings {
+    /// The colour scheme.
+    pub theme: Theme,
+}
+
+/// How blocks read (03 §3.5.2); both give the same code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BlockLabels {
+    /// Plain words, such as `add (x) to [v]` (default).
+    #[default]
+    Friendly,
+    /// The C++ the block stands for, such as `v.push_back(x)`.
+    Cpp,
+}
+
+/// The editor's mode: the expert-mode switch is both values at once
+/// (10 §10.3 Q8, M3-D4: a machine setting, off by default).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EditorSettings {
+    /// The block labels.
+    pub block_labels: BlockLabels,
+    /// Whether the toolbox shows advanced categories and blocks.
+    pub show_advanced: bool,
+}
+
 /// The window's own state (`ui`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct UiSettings {
@@ -206,8 +258,8 @@ pub struct LayoutSettings {
 
 /// A partial update from the Settings page and the editor's layout. Its
 /// JSON form (`{"codeStyle": {"indentWidth": 2}}`) rejects unknown keys at
-/// every level, so only code style, Run on errors, the console and the
-/// layout can change.
+/// every level, so only code style, Run on errors, the console, the
+/// appearance, the editor's mode and the layout can change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsPatch {
@@ -220,6 +272,12 @@ pub struct SettingsPatch {
     /// Console setting changes.
     #[serde(default)]
     pub console: Option<ConsolePatch>,
+    /// Appearance changes.
+    #[serde(default)]
+    pub appearance: Option<AppearancePatch>,
+    /// Changes to the editor's mode.
+    #[serde(default)]
+    pub editor: Option<EditorPatch>,
     /// Changes to the window's own state.
     #[serde(default)]
     pub ui: Option<UiPatch>,
@@ -250,6 +308,27 @@ pub struct ConsolePatch {
     /// A new scrollback length (1,000 to 100,000 lines).
     #[serde(default)]
     pub scrollback_lines: Option<u32>,
+}
+
+/// Appearance changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AppearancePatch {
+    /// A new colour scheme.
+    #[serde(default)]
+    pub theme: Option<Theme>,
+}
+
+/// Changes to the editor's mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditorPatch {
+    /// New block labels.
+    #[serde(default)]
+    pub block_labels: Option<BlockLabels>,
+    /// Whether advanced blocks are now shown.
+    #[serde(default)]
+    pub show_advanced: Option<bool>,
 }
 
 /// Changes to the window's own state.
@@ -364,13 +443,15 @@ const LAYOUT_KEYS: [&str; 5] = [
 ];
 
 /// The known sections, in file order, with their known keys in file order.
-const SECTIONS: [(&str, &[&str]); 6] = [
+const SECTIONS: [(&str, &[&str]); 8] = [
     ("codeStyle", &["indentWidth"]),
     ("run", &["onErrors"]),
     ("console", &["scrollbackLines"]),
     ("toolchain", &["selectedId"]),
     ("newProject", &["standard"]),
     ("buildCache", &["maxBytes"]),
+    ("appearance", &["theme"]),
+    ("editor", &["blockLabels", "showAdvanced"]),
 ];
 
 impl SettingsStore {
@@ -460,6 +541,15 @@ impl SettingsStore {
             }
             if let Some(lines) = patch.console.and_then(|console| console.scrollback_lines) {
                 settings.console.scrollback_lines = lines;
+            }
+            if let Some(theme) = patch.appearance.and_then(|appearance| appearance.theme) {
+                settings.appearance.theme = theme;
+            }
+            if let Some(labels) = patch.editor.and_then(|editor| editor.block_labels) {
+                settings.editor.block_labels = labels;
+            }
+            if let Some(shown) = patch.editor.and_then(|editor| editor.show_advanced) {
+                settings.editor.show_advanced = shown;
             }
             let stored = &mut settings.ui.layout;
             stored.toolbox_width = layout.toolbox_width.or(stored.toolbox_width);
@@ -665,6 +755,18 @@ fn apply(settings: &mut Settings, section: &str, key: &str, value: &Value) -> bo
             Some(bytes) if BUILD_CACHE_BYTES.contains(&bytes) => settings.build_cache.max_bytes = bytes,
             _ => return false,
         },
+        ("appearance", "theme") => match Theme::deserialize(value) {
+            Ok(theme) => settings.appearance.theme = theme,
+            Err(_) => return false,
+        },
+        ("editor", "blockLabels") => match BlockLabels::deserialize(value) {
+            Ok(labels) => settings.editor.block_labels = labels,
+            Err(_) => return false,
+        },
+        ("editor", "showAdvanced") => match value.as_bool() {
+            Some(shown) => settings.editor.show_advanced = shown,
+            None => return false,
+        },
         _ => return false,
     }
     true
@@ -690,6 +792,9 @@ fn to_json(state: &State) -> Result<Vec<u8>, StoreError> {
                 .map_or(Value::Null, Value::from),
             ("newProject", "standard") => serde_json::to_value(settings.new_project.standard)?,
             ("buildCache", "maxBytes") => Value::from(settings.build_cache.max_bytes),
+            ("appearance", "theme") => serde_json::to_value(settings.appearance.theme)?,
+            ("editor", "blockLabels") => serde_json::to_value(settings.editor.block_labels)?,
+            ("editor", "showAdvanced") => Value::from(settings.editor.show_advanced),
             _ => Value::Null,
         })
     };
@@ -813,6 +918,13 @@ mod tests {
   },
   "buildCache": {
     "maxBytes": 2147483648
+  },
+  "appearance": {
+    "theme": "system"
+  },
+  "editor": {
+    "blockLabels": "friendly",
+    "showAdvanced": false
   }
 }
 "#;
@@ -941,6 +1053,26 @@ mod tests {
                 "\"run\": \"fast\"",
                 "run",
             ),
+            ("\"system\"", "\"auto\"", "appearance.theme"),
+            ("\"system\"", "\"System\"", "appearance.theme"),
+            ("\"system\"", "null", "appearance.theme"),
+            ("\"friendly\"", "\"c++\"", "editor.blockLabels"),
+            ("\"friendly\"", "1", "editor.blockLabels"),
+            (
+                "\"showAdvanced\": false",
+                "\"showAdvanced\": 0",
+                "editor.showAdvanced",
+            ),
+            (
+                "\"showAdvanced\": false",
+                "\"showAdvanced\": \"false\"",
+                "editor.showAdvanced",
+            ),
+            (
+                "\"appearance\": {\n    \"theme\": \"system\"\n  }",
+                "\"appearance\": \"dark\"",
+                "appearance",
+            ),
         ] {
             let file = DEFAULT_FILE.replace(from, to);
             assert_ne!(file, DEFAULT_FILE, "{from}");
@@ -956,10 +1088,16 @@ mod tests {
             .replace("\"indentWidth\": 4", "\"indentWidth\": 2")
             .replace("null", "\"tc_0123456789abcdef\"")
             .replace("c++20", "c++23")
-            .replace("2147483648", "268435456");
+            .replace("2147483648", "268435456")
+            .replace("\"system\"", "\"dark\"")
+            .replace("\"friendly\"", "\"cpp\"")
+            .replace("\"showAdvanced\": false", "\"showAdvanced\": true");
         let (_dir, store, notices) = store_with(Some(file.as_bytes()));
         assert!(notices.is_empty());
         let settings = store.get();
+        assert_eq!(settings.appearance.theme, Theme::Dark);
+        assert_eq!(settings.editor.block_labels, BlockLabels::Cpp);
+        assert!(settings.editor.show_advanced);
         assert_eq!(settings.code_style.indent_width, 2);
         assert_eq!(
             settings.toolchain.selected_id.as_deref(),
@@ -984,6 +1122,17 @@ mod tests {
         let settings = store.update(&patch).unwrap();
         assert_eq!(settings.run.on_errors, OnErrors::ShowProblems);
         assert_eq!(settings.code_style.indent_width, 2);
+        let patch: SettingsPatch =
+            serde_json::from_str(r#"{"appearance": {"theme": "light"}, "editor": {"blockLabels": "cpp"}}"#)
+                .unwrap();
+        let settings = store.update(&patch).unwrap();
+        assert_eq!(settings.appearance.theme, Theme::Light);
+        assert_eq!(settings.editor.block_labels, BlockLabels::Cpp);
+        assert!(!settings.editor.show_advanced);
+        let patch: SettingsPatch = serde_json::from_str(r#"{"editor": {"showAdvanced": true}}"#).unwrap();
+        let settings = store.update(&patch).unwrap();
+        assert_eq!(settings.editor.block_labels, BlockLabels::Cpp);
+        assert!(settings.editor.show_advanced);
         // A fresh load sees the same.
         let (reloaded, notices) = SettingsStore::open(dir.path());
         assert!(notices.is_empty());
@@ -1013,6 +1162,11 @@ mod tests {
             r#"{"toolchain": {"selectedId": null}}"#,
             r#"{"buildCache": {"maxBytes": 268435456}}"#,
             r#"{"run": {"onErrors": "never"}}"#,
+            r#"{"appearance": {"theme": "sepia"}}"#,
+            r#"{"appearance": {"theme": "dark", "contrast": "high"}}"#,
+            r#"{"editor": {"blockLabels": "c++"}}"#,
+            r#"{"editor": {"showAdvanced": "yes"}}"#,
+            r#"{"editor": {"expertMode": true}}"#,
         ] {
             assert!(serde_json::from_str::<SettingsPatch>(json).is_err(), "{json}");
         }
@@ -1074,6 +1228,14 @@ mod tests {
   "buildCache": {
     "maxBytes": 1099511627776
   },
+  "appearance": {
+    "theme": "dark",
+    "accent": "teal"
+  },
+  "editor": {
+    "blockLabels": "cpp",
+    "showAdvanced": true
+  },
   "envPassthrough": [
     "LANG",
     "LC_ALL"
@@ -1094,6 +1256,23 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&file_path).unwrap(),
             file.replace("\"indentWidth\": 2", "\"indentWidth\": 4")
+        );
+    }
+
+    #[test]
+    fn a_file_from_before_the_appearance_keys_gains_their_defaults_on_save() {
+        let m2_file = DEFAULT_FILE.replace(
+            ",\n  \"appearance\": {\n    \"theme\": \"system\"\n  },\n  \"editor\": {\n    \"blockLabels\": \"friendly\",\n    \"showAdvanced\": false\n  }",
+            "",
+        );
+        assert_ne!(m2_file, DEFAULT_FILE);
+        let (dir, store, notices) = store_with(Some(m2_file.as_bytes()));
+        assert!(notices.is_empty());
+        assert_eq!(store.get(), Settings::default());
+        store.update(&SettingsPatch::default()).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.path().join(SETTINGS_FILE)).unwrap(),
+            DEFAULT_FILE
         );
     }
 

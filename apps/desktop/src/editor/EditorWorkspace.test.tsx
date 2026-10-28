@@ -6,6 +6,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { THEME_ATTRIBUTE } from '../app/appearance';
 import { getCore, setCore } from '../app/core';
 import { type EditorContext, type EditorPlugin, getEditorHandle } from '../app/editor-types';
 import { EDITOR_PLUGINS } from '../app/editorPlugins';
@@ -26,26 +27,6 @@ import { FLYOUT_TEST_TIMEOUT_MS } from './toolbox/testing';
 // block (toolbox/testing.ts): the slowest test took 2.6 s under coverage with two workers here and
 // 3.3 s in CI after W2's blocks. Package T's flyout reuse is to make this limit unneeded.
 vi.setConfig({ testTimeout: FLYOUT_TEST_TIMEOUT_MS });
-
-/** The colour-scheme media query the component reads. */
-const scheme = vi.hoisted(() => {
-  const listeners = new Set<() => void>();
-  const query = {
-    matches: false,
-    addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
-    removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
-  };
-  return {
-    listeners,
-    query,
-    set(dark: boolean) {
-      query.matches = dark;
-      for (const listener of listeners) {
-        listener();
-      }
-    },
-  };
-});
 
 class FakeResizeObserver {
   static instances: FakeResizeObserver[] = [];
@@ -95,8 +76,7 @@ function twoModuleProject(): void {
 
 beforeEach(() => {
   resetAppStore();
-  scheme.set(false);
-  window.matchMedia = () => scheme.query as unknown as MediaQueryList;
+  document.documentElement.removeAttribute(THEME_ATTRIBUTE);
   FakeResizeObserver.instances = [];
   vi.stubGlobal('ResizeObserver', FakeResizeObserver);
   // A core that never starts: these tests are about the component, not the preview.
@@ -106,6 +86,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  document.documentElement.removeAttribute(THEME_ATTRIBUTE);
   EDITOR_PLUGINS.length = 0;
   setCore(null);
 });
@@ -135,19 +116,29 @@ describe('the block editor', () => {
     expect(mainWorkspaces()).toHaveLength(0);
   });
 
-  it('follows the system colour scheme', () => {
+  it('follows the theme in use (the Appearance setting, on the page)', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    scheme.set(true);
+    const root = document.documentElement;
+    root.setAttribute(THEME_ATTRIBUTE, 'dark');
     const { unmount } = render(<EditorWorkspace />);
     const [workspace] = mainWorkspaces();
-    expect(workspace?.getTheme().name).toBe('b2c-dark');
-    act(() => {
-      scheme.set(false);
+    if (workspace === undefined) {
+      throw new Error('no workspace');
+    }
+    expect(workspace.getTheme().name).toBe('b2c-dark');
+    const setTheme = vi.spyOn(workspace, 'setTheme');
+    await act(async () => {
+      root.setAttribute(THEME_ATTRIBUTE, 'light');
+      // The attribute is observed: its records arrive in a microtask.
+      await Promise.resolve();
     });
-    expect(workspace?.getTheme().name).toBe('b2c-light');
-    expect(scheme.listeners.size).toBe(1);
+    expect(workspace.getTheme().name).toBe('b2c-light');
+    expect(setTheme).toHaveBeenCalledTimes(1);
     unmount();
-    expect(scheme.listeners.size).toBe(0);
+    root.setAttribute(THEME_ATTRIBUTE, 'dark');
+    await Promise.resolve();
+    // Closed: no longer followed.
+    expect(setTheme).toHaveBeenCalledTimes(1);
   });
 
   it('resizes the workspace with its panel and stops observing when it closes', () => {
