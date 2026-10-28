@@ -231,6 +231,9 @@ struct Lowerer<'a> {
     standard: CppStandard,
     /// Names of every function in the program (visible everywhere).
     function_names: BTreeSet<&'a str>,
+    /// The names that more than one function has (overloads, w2.md §2.8),
+    /// whose calls cast their arguments to the parameters' types.
+    overloaded: BTreeSet<&'a str>,
     /// Headers and helpers used so far.
     usage: Usage,
     /// The part of the current item that the code being lowered is printed
@@ -250,17 +253,20 @@ struct Lowerer<'a> {
 impl<'a> Lowerer<'a> {
     /// A lowerer for the modules of `program`.
     fn new(program: &'a Program) -> Self {
-        let function_names = program
-            .symbols
-            .symbols
-            .values()
-            .filter(|symbol| matches!(symbol.kind, SymbolKind::Function { .. }))
-            .map(|symbol| symbol.name.as_str())
-            .collect();
+        let mut function_names = BTreeSet::new();
+        let mut overloaded = BTreeSet::new();
+        for symbol in program.symbols.symbols.values() {
+            if matches!(symbol.kind, SymbolKind::Function { .. })
+                && !function_names.insert(symbol.name.as_str())
+            {
+                overloaded.insert(symbol.name.as_str());
+            }
+        }
         Lowerer {
             symbols: &program.symbols,
             standard: program.standard,
             function_names,
+            overloaded,
             usage: Usage::default(),
             part: ItemPart::Body,
             item_headers: ItemHeaders::default(),

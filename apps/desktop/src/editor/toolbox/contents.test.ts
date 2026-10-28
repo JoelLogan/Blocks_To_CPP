@@ -747,6 +747,37 @@ describe('the Functions category and Your functions', () => {
     expect(typesOf(empty)).toEqual(['func.define', 'func.return']);
   });
 
+  it('labels each of several functions with one name by its parameters (overloads)', () => {
+    const w = symbolFixture('s_w', 'w', { kind: 'parameter', mode: 'copy', type: 'double' });
+    const words = symbolFixture('s_words', 'words', {
+      kind: 'parameter',
+      mode: 'read_only',
+      type: { 'std::vector': 'std::string' },
+    });
+    const overload = (id: string, params: string[]) =>
+      symbolFixture(id, 'area', { kind: 'function', params, returns: 'void', type: 'void' });
+    const items = functionsContents(
+      context({
+        all: [
+          overload('s_a1', ['s_n', 's_n']),
+          overload('s_a2', ['s_w']),
+          overload('s_a3', ['s_words']),
+          factorial,
+          n,
+          w,
+          words,
+        ],
+      }),
+    );
+    // factorial has no other function of its name: no label.
+    expect(labelsOf(items)).toEqual([
+      YOUR_FUNCTIONS_HEADING,
+      'area (int, int)',
+      'area (double)',
+      'area (list of string)',
+    ]);
+  });
+
   it('shows unknown parameters unlabelled', () => {
     const lost = symbolFixture('s_lost', 'lost', {
       kind: 'function',

@@ -9,6 +9,9 @@
 //!
 //! * default values of parameters: a call leaves out the last arguments,
 //!   and the declaration alone shows the defaults;
+//! * overloads: three functions called `area` run and print each, the calls
+//!   cast their arguments to their own function's inputs, and quoted text
+//!   for an overload set with a `bool` one becomes a `std::string`;
 
 // Test code: unwrap/expect/panic and builders that take JSON by value are
 // fine here.
@@ -429,4 +432,121 @@ fn a_call_leaves_out_the_arguments_with_a_default_value() {
         "{cpp}"
     );
     assert!(cpp.contains("\nint square(int side) {"), "{cpp}");
+}
+
+#[test]
+fn three_overloads_of_area_run_and_print_each() {
+    let b = Blocks::default();
+    let define = |sym: &str, params: &[(&str, &str, &str)], body: Vec<Value>| {
+        let mut block = b.define("area", "void", params, vec![], body);
+        block["fields"]["NAME"]["sym"] = json!(format!("s_{sym}"));
+        block
+    };
+    let square = define(
+        "area_square",
+        &[("side", "int", "copy")],
+        vec![b.print(vec![text("square "), tokens(&["side", "*", "side"])])],
+    );
+    let rectangle = define(
+        "area_rect",
+        &[("w", "int", "copy"), ("h", "int", "copy")],
+        vec![b.print(vec![text("rectangle "), tokens(&["w", "*", "h"])])],
+    );
+    let real = define(
+        "area_real",
+        &[("x", "double", "copy"), ("y", "double", "copy")],
+        vec![b.print(vec![text("real "), tokens(&["x", "*", "y"])])],
+    );
+    let call = |sym: &str, args: Vec<Value>| {
+        let count = args.len();
+        let inputs: Map<String, Value> = args
+            .into_iter()
+            .enumerate()
+            .map(|(index, arg)| (format!("ARG{index}"), arg))
+            .collect();
+        b.block(
+            "func.call_stmt",
+            &json!({ "fields": { "FUNC": { "ref": format!("s_{sym}") } }, "extra": { "argCount": count },
+                     "inputs": inputs }),
+        )
+    };
+    let body = vec![
+        b.block(
+            "var.declare",
+            &json!({ "fields": { "TYPE": "int", "NAME": { "sym": "s_n", "name": "n" } },
+                     "inputs": { "VALUE": number("3") } }),
+        ),
+        call("area_square", vec![tokens(&["n"])]),
+        call("area_rect", vec![number("2"), tokens(&["n"])]),
+        // An int for the double overload: cast, so that the call means it.
+        call("area_real", vec![tokens(&["n"]), number("1.5")]),
+        // A function without overloads takes it as it is.
+        call("half", vec![tokens(&["n"])]),
+    ];
+    let half = b.define(
+        "half",
+        "void",
+        &[("value", "double", "copy")],
+        vec![],
+        vec![b.print(vec![text("half "), tokens(&["value", "/", "2"])])],
+    );
+    let cpp = builds_and_runs(
+        "overloads",
+        &[square, rectangle, real, half],
+        body,
+        &[],
+        &[],
+        &printed("square 9\nrectangle 6\nreal 4.5\nhalf 1.5\n"),
+    );
+    assert!(
+        cpp.contains("    area(n);\n    area(2, n);\n    area(static_cast<double>(n), 1.5);\n"),
+        "{cpp}"
+    );
+}
+
+/// `show(bool)` beside `show(std::string)`: quoted text would pick the bool
+/// one without `std::string(…)` (w2.md §2.8).
+#[test]
+fn quoted_text_calls_the_text_overload_beside_a_bool_one() {
+    let b = Blocks::default();
+    let mut show_bool = b.define(
+        "show",
+        "void",
+        &[("flag", "bool", "copy")],
+        vec![],
+        vec![b.print(vec![text("bool "), tokens(&["flag"])])],
+    );
+    show_bool["fields"]["NAME"]["sym"] = json!("s_show_bool");
+    let mut show_text = b.define(
+        "show",
+        "void",
+        &[("words", "std::string", "read_only")],
+        vec![],
+        vec![b.print(vec![text("text "), tokens(&["words"])])],
+    );
+    show_text["fields"]["NAME"]["sym"] = json!("s_show_text");
+    let body = vec![
+        b.block(
+            "func.call_stmt",
+            &json!({ "fields": { "FUNC": { "ref": "s_show_text" } }, "extra": { "argCount": 1 },
+                     "inputs": { "ARG0": text("hello") } }),
+        ),
+        b.block(
+            "func.call_stmt",
+            &json!({ "fields": { "FUNC": { "ref": "s_show_bool" } }, "extra": { "argCount": 1 },
+                     "inputs": { "ARG0": json!({ "expr": [{ "kw": "true" }] }) } }),
+        ),
+    ];
+    let cpp = builds_and_runs(
+        "show",
+        &[show_bool, show_text],
+        body,
+        &[],
+        &[],
+        &printed("text hello\nbool true\n"),
+    );
+    assert!(
+        cpp.contains("    show(std::string(\"hello\"));\n    show(true);\n"),
+        "{cpp}"
+    );
 }

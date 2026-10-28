@@ -604,7 +604,8 @@ export function takenNamesAtInsertion(point: InsertionPoint, source: SymbolSourc
  *   what follows (03 §3.3), and its body shares the counter's scope (a `create` there with the
  *   counter's name is `B2C-E0210`), while a counter or variable deeper in would hide it
  *   (`B2C-W0501`);
- * - a function: every other function, analysed or on the canvas (function names are unique,
+ * - a function: every other function, analysed or on the canvas (overloads are named by hand: a
+ *   new function's name stays unique, so it is never a second `area` a call can't tell apart,
  *   `B2C-E0211`);
  * - W2's declarations by the scope of their kind (./names.ts, `NAME_SCOPES`): an opened file as a
  *   variable; a loop's item, a map's key and value, a file's line and a caught error as a loop

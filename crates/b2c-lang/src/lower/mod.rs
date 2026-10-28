@@ -258,6 +258,21 @@ fn field(name: &str) -> Part {
     }
 }
 
+/// The types of the inputs two functions of one name both take for some
+/// number of arguments (w2.md §2.8), if there is such a number: each function
+/// takes from its `required` inputs to all of them. Pass modes do not tell
+/// functions apart (`f(int)` and `f(int&)` take the same `int`), and neither
+/// does an input whose type is not known.
+fn same_inputs(a: &[ParamSig], a_required: usize, b: &[ParamSig], b_required: usize) -> Option<Vec<Type>> {
+    let least = a_required.max(b_required);
+    let most = a.len().min(b.len());
+    (least..=most).find_map(|count| {
+        let (a, b) = (a.get(..count)?, b.get(..count)?);
+        let same = a.iter().zip(b).all(|(a, b)| a.ty == b.ty && a.ty != Type::Error);
+        same.then(|| a.iter().map(|param| param.ty.clone()).collect())
+    })
+}
+
 /// Whether an input holds a value: an enabled block or a slot with tokens.
 fn holds_value(block: &Block, name: &str) -> bool {
     match access::input(block, name) {
@@ -641,7 +656,7 @@ impl<'d> Lowerer<'d> {
     }
 
     /// Declares a function's symbol and parameters (before any body is lowered).
-    fn declare_function(&mut self, block: &Block, names: &mut BTreeMap<String, SymbolId>) {
+    fn declare_function(&mut self, block: &Block, names: &mut BTreeMap<String, Vec<SymbolId>>) {
         let name_loc = self.loc(&block.id, field("NAME"));
         let Ok(decl) = access::decl_field(block, "NAME") else {
             self.incomplete(name_loc, "This function needs a name.");
@@ -649,31 +664,11 @@ impl<'d> Lowerer<'d> {
         };
         let ident = self.ident(&decl.name, &name_loc, true);
         let ret = self.type_setting(block, "RETURNS", "void", TypeUse::Result);
-        if let Some(other) = names.get(&decl.name).cloned() {
-            let place = match self.decls.get(&other).map(|d| d.module) {
-                Some(module) if module != self.module_index => {
-                    let module = self.document.modules.get(module).map(|m| quoted(&m.name));
-                    format!("in module {}", module.unwrap_or_default())
-                }
-                _ => String::from("in this module"),
-            };
-            let message = format!(
-                "There is already a function called {} {place}. Functions with the same name \
-                 (overloads) aren't supported yet, so rename one of them.",
-                quoted(&decl.name)
-            );
-            self.error_with_decl(
-                codes::DUPLICATE_FUNCTION,
-                name_loc.clone(),
-                message,
-                &other,
-                "the other function",
-            );
-        } else {
-            names.insert(decl.name.clone(), decl.sym.clone());
-        }
         let params = self.declare_params(block, &decl.name);
         let required = self.check_default_order(&params, &decl.name);
+        let others = names.get(&decl.name).cloned().unwrap_or_default();
+        self.check_overloads(&others, &decl.name, &params, required, &name_loc);
+        names.entry(decl.name.clone()).or_default().push(decl.sym.clone());
         let symbol = Symbol {
             name: ident,
             kind: SymbolKind::Function {
@@ -697,6 +692,74 @@ impl<'d> Lowerer<'d> {
                 default_headers: ItemHeaders::default(),
             };
             self.functions.insert(decl.sym.clone(), sig);
+        }
+    }
+
+    /// Reports a function named like one declared before it (`others`) that
+    /// a call could not tell apart from it (`B2C-E0211`, w2.md §2.8): in
+    /// another module, any one of that name (functions have external
+    /// linkage, and other modules' functions can't be called yet); in this
+    /// module, one whose inputs give the same list of types for some number
+    /// of arguments that both take, counting default values and ignoring how
+    /// the inputs are passed.
+    fn check_overloads(
+        &mut self,
+        others: &[SymbolId],
+        name: &str,
+        params: &[ParamSig],
+        required: usize,
+        location: &Location,
+    ) {
+        for other in others {
+            let module = self.decls.get(other).map(|d| d.module);
+            let message = match module {
+                Some(module) if module != self.module_index => {
+                    let module = self.document.modules.get(module).map(|m| quoted(&m.name));
+                    format!(
+                        "There is already a function called {} in module {}. Functions of different modules \
+                         can't share a name yet, so rename one of them.",
+                        quoted(name),
+                        module.unwrap_or_default()
+                    )
+                }
+                _ => {
+                    let Some(sig) = self.functions.get(other) else {
+                        continue;
+                    };
+                    let Some(shared) = same_inputs(params, required, &sig.params, sig.required) else {
+                        continue;
+                    };
+                    let inputs: Vec<String> = shared
+                        .iter()
+                        .map(|ty| {
+                            ty.to_term()
+                                .map_or_else(|| String::from("?"), |term| term_cpp(&term, &self.symbols))
+                        })
+                        .collect();
+                    if inputs.is_empty() {
+                        format!(
+                            "Two functions called {} can both be called with no inputs, so a call could not \
+                             tell them apart.",
+                            quoted(name)
+                        )
+                    } else {
+                        format!(
+                            "Two functions called {} take the same inputs ({}), so a call could not tell them \
+                             apart.",
+                            quoted(name),
+                            inputs.join(", ")
+                        )
+                    }
+                }
+            };
+            self.error_with_decl(
+                codes::DUPLICATE_FUNCTION,
+                location.clone(),
+                message,
+                other,
+                "the other function",
+            );
+            return;
         }
     }
 

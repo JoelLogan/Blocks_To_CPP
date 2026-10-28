@@ -14,7 +14,8 @@
  *   ({@link variableGroups}), at most {@link MAX_LISTED_GETTERS}, then a note of how many more
  *   there are (03 §3.6, decision D3);
  * - **Functions**: the catalog entries, then, under *Your functions*, a call block for every
- *   function of the module shown (calls across modules are `B2C-E0206` in M2), or a hint when it
+ *   function of the module shown (each of several functions with one name under a label of its
+ *   parameters' types, w2.md §2.8) (calls across modules are `B2C-E0206` in M2), or a hint when it
  *   has none; a module heading names the module when the project has more than one.
  *
  * The other categories are static. A block that declares something (`create`, the counted loop's
@@ -32,14 +33,17 @@ import {
   TOOLBOX,
   catalogBlock,
   catalogFieldOptions,
+  parseType,
   symbolMatchesKinds,
   toolboxCategoryStyle,
   truncateForDisplay,
+  typeLabel,
   visibleInvisibles,
   type CategoryId,
   type TokenJson,
   type ToolboxCategoryJson,
   type ToolboxEntryJson,
+  type TypeFactsTs,
 } from '@blocks2cpp/blockly-ext';
 import type * as Blockly from 'blockly/core';
 
@@ -578,6 +582,29 @@ function callItem(
   );
 }
 
+/**
+ * The label above a call to one of several functions with one name (overloads, w2.md §2.8): the
+ * name and its parameters' types, `area (int, int)`, so that the calls tell them apart.
+ */
+export function overloadLabel(
+  fn: Extract<SymbolInfo, { kind: 'function' }>,
+  byId: ReadonlyMap<string, SymbolInfo>,
+): string {
+  const facts: TypeFactsTs = {
+    userType(id: string) {
+      const symbol = byId.get(id);
+      return symbol?.kind === 'struct' || symbol?.kind === 'enum'
+        ? { name: symbol.name, kind: symbol.kind, comparable: false, printable: false }
+        : null;
+    },
+  };
+  const types = parametersOf(fn, byId).map((param) => {
+    const type = param === undefined ? null : parseType(param.type);
+    return type === null ? '?' : typeLabel(type, facts, 'friendly');
+  });
+  return `${displayName(fn.name)} (${types.join(', ')})`;
+}
+
 /** The heading that names the module whose functions *Your functions* lists. */
 export function moduleHeading(name: string): string {
   return `Module: ${displayName(name)}`;
@@ -617,7 +644,15 @@ export function functionsContents(
     return items;
   }
   const byId = new Map(all.map((symbol) => [symbol.id, symbol]));
+  const counts = new Map<string, number>();
   for (const fn of functions) {
+    counts.set(fn.name, (counts.get(fn.name) ?? 0) + 1);
+  }
+  for (const fn of functions) {
+    // Overloads look alike: each gets its parameters' types above it.
+    if ((counts.get(fn.name) ?? 0) > 1) {
+      items.push(label(overloadLabel(fn, byId)));
+    }
     items.push(callItem(fn, byId));
   }
   return items;

@@ -179,18 +179,23 @@ Codes by area:
 ## B2C-E0211 Duplicate function
 
 * **Severity:** error
-* **Meaning:** the project defines two functions with the same name, in the
-  same module or in different modules. Functions with the same name but
-  different inputs (overloads) are not supported yet, and every function is
-  visible to the whole program when it is linked, so two modules can't both
-  define one with the same name either.
-* **Example:** `define [area] with ([double] r)` and `define [area] with
-  ([double] w) ([double] h)`.
-* **Message:** "There is already a function called `area` in this module.
-  Functions with the same name (overloads) aren't supported yet, so rename
-  one of them." (or "… in module `shapes`" when the other one is there)
-* **How to fix:** rename one of the functions, e.g. `circle_area` and
-  `rectangle_area`.
+* **Meaning:** two functions of a module have one name, and a call could not
+  tell them apart: some number of arguments that both take gives the same
+  list of input types (counting inputs with default values, and ignoring
+  whether an input is a copy, editable or read-only). Functions with one name
+  and different inputs (overloads) are fine: `area` of two `int`s and `area`
+  of two `double`s. Two modules can't define functions with the same name
+  yet, whatever their inputs.
+* **Example:** `define [area] with ([int] w) ([int] h)` twice, or `define
+  [show] with ([int] n)` beside `define [show] with ([int] n) ([int] width =
+  (0))`, since `show (1)` fits both.
+* **Message:** "Two functions called `area` take the same inputs (int, int),
+  so a call could not tell them apart." / "Two functions called `beep` can
+  both be called with no inputs, so a call could not tell them apart." /
+  "There is already a function called `area` in module `shapes`. Functions
+  of different modules can't share a name yet, so rename one of them."
+* **How to fix:** change the inputs of one of the functions, or rename one,
+  e.g. `circle_area` and `rectangle_area`.
 
 ## B2C-E0212 Duplicate symbol ID
 

@@ -396,8 +396,11 @@ fn duplicate_functions() {
         d.primary.block.as_ref().map(b2c_ir::BlockId::as_str),
         Some("fn_g")
     );
-    assert!(d.message.contains("overloads"), "{}", d.message);
-    assert!(d.message.contains("in this module"), "{}", d.message);
+    // Both take no inputs, so a call could not tell them apart (w2.md §2.8).
+    assert_eq!(
+        d.message,
+        "Two functions called `f` can both be called with no inputs, so a call could not tell them apart."
+    );
     assert_eq!(d.related.len(), 1, "points at the other function");
 }
 

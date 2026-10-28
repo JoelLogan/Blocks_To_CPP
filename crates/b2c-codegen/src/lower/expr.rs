@@ -1,6 +1,6 @@
 //! Desugaring of expressions.
 
-use b2c_ir::sast::{BinaryOp, Expr, ExprKind, UnaryOp};
+use b2c_ir::sast::{BinaryOp, Expr, ExprKind, SymbolKind, UnaryOp};
 use b2c_ir::text::StrLit;
 use b2c_ir::types::Type;
 
@@ -171,7 +171,25 @@ impl Lowerer<'_> {
                     // Using a returned `std::string` (e.g. printing it) needs
                     // `<string>` even if this module never names the type.
                     self.note_value_type(&symbol.ty);
-                    let args = args.iter().map(|arg| self.expr(arg)).collect();
+                    let params: &[_] = match &symbol.kind {
+                        SymbolKind::Function { params, .. }
+                            if self.overloaded.contains(symbol.name.as_str()) =>
+                        {
+                            params
+                        }
+                        _ => &[],
+                    };
+                    let args = args
+                        .iter()
+                        .enumerate()
+                        .map(|(index, arg)| {
+                            let lowered = self.expr(arg);
+                            match params.get(index).and_then(|param| self.symbol(param)) {
+                                Some(param) => self.exact_argument(arg, lowered, &param.ty),
+                                None => lowered,
+                            }
+                        })
+                        .collect();
                     CExpr::new(CExprKind::Call {
                         callee: Callee::User(symbol.name.clone()),
                         args,
@@ -260,6 +278,24 @@ impl Lowerer<'_> {
             }
         }
         CExpr::unary(UnOp::Not, self.expr(cond))
+    }
+
+    /// An argument of a call to an overloaded function (w2.md §2.8), made an
+    /// exact match for its parameter's type, so that the call can only mean
+    /// the function its block names: a number, character or `bool` of
+    /// another type is cast (`area(static_cast<double>(w), h)`), and text
+    /// that is not a `std::string` object becomes one (`show(std::string(
+    /// "hello"))`), since quoted text converts to `bool` before it converts
+    /// to `std::string`. Any other argument already has its parameter's type.
+    fn exact_argument(&mut self, arg: &Expr, lowered: CExpr, param: &Type) -> CExpr {
+        let scalar = |ty: &Type| matches!(ty, Type::Int | Type::Double | Type::Char | Type::Bool);
+        if *param == Type::String && arg.ty == Type::String {
+            self.std_string_of(arg, lowered)
+        } else if arg.ty != *param && scalar(&arg.ty) && scalar(param) {
+            CExpr::cast(self.ctype(param), lowered)
+        } else {
+            lowered
+        }
     }
 
     /// Converts a desugared expression to a `std::string` object:
