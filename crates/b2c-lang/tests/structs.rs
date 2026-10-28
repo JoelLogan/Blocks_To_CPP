@@ -218,6 +218,59 @@ fn the_scope_query_lists_user_types_with_their_members_everywhere() {
 }
 
 #[test]
+fn a_struct_or_enum_of_another_module_is_not_a_type_here_yet() {
+    // Each module is its own `.cpp` (W2), so module `main` can't name
+    // `util`'s types: as a variable's type, in a list, or as a field's type.
+    let d = doc_modules(vec![
+        (
+            "main",
+            vec![
+                structure("Pair", &[("who", user("Student"))], false, false),
+                main(vec![
+                    create(user("Student"), "s", None),
+                    create(list_of(user("Action")), "acts", None),
+                ]),
+            ],
+        ),
+        ("util", vec![student(), action()]),
+    ]);
+    let a = analyze(&d);
+    let found: Vec<&str> = a
+        .diagnostics
+        .iter()
+        .filter(|d| d.code.0 == "B2C-E0206")
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(found.len(), 3, "{}", render_all(&a));
+    assert!(
+        found.contains(
+            &"`Student` is a struct of another module (`util`). Using structs and enums from other modules \
+              isn't supported yet, so move it into this module."
+        ),
+        "{found:?}"
+    );
+    assert!(
+        found
+            .iter()
+            .any(|m| m.starts_with("`Action` is an enum of another module")),
+        "{found:?}"
+    );
+    // In their own module they are types as before.
+    let d = doc_modules(vec![
+        ("main", vec![main(vec![])]),
+        (
+            "util",
+            vec![
+                student(),
+                action(),
+                structure("Pair", &[("who", user("Student"))], false, false),
+            ],
+        ),
+    ]);
+    assert_clean(&analyze(&d));
+}
+
+#[test]
 fn names_of_structs_enums_and_rows_are_checked() {
     let mut twice = structure(
         "Pair",

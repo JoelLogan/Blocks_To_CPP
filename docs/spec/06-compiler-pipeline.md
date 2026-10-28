@@ -563,7 +563,8 @@ without an anonymous namespace, to keep student code simple.
 
 **In M2** every module is compiled on its own: functions cannot be called
 across modules (`E0206`), their names are unique in the program (`E0211`),
-and helpers are inline in each file.
+and helpers are inline in each file. Until wave W3 a type that names
+another module's struct or enum is `E0206` too.
 
 **In M3** (wave W2) step 3 is built for structs, enums, globals and function
 declarations, through the declaration graph of

@@ -973,7 +973,8 @@ Clear organisation is a core requirement, not polish:
    (`E0211`), and helpers are inline in each file. Since wave W2 of M3, two
    functions of one module may share a name as overloads
    ([§3.7.7](#377-functions)); functions of different modules still may not
-   until wave W3.
+   until wave W3. Nor may a type name another module's struct or enum
+   (`E0206`), and the type menus list only the module's own.
 2. **Order-independent definitions.** Top-level definition blocks can sit
    anywhere on the canvas. The generator sorts them by dependency and adds
    forward declarations.

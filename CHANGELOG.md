@@ -501,7 +501,8 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   file_ that reads a variable called like the file it opens is
   `B2C-E0205`; and _add_, _remove item at_, _remove_ and _clear_ on the
   collection a _for each_ loop goes through, inside that loop, are
-  `B2C-E0308`.
+  `B2C-E0308`; and a type that names another module's struct or enum is
+  `B2C-E0206` (the type menus now offer only the module's own).
 - Generated C++ fixes from the W2 review: a _copy_ item of a list of
   true/false values is a `bool` of its own (`auto` changed the list); and
   _sort_ on such a list compiles under C++20 (`std::sort` with iterators);

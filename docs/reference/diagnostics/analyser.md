@@ -146,10 +146,16 @@ Codes by area:
 * **Severity:** error
 * **Meaning:** a call refers to a function defined in another module. Sharing
   functions between modules needs headers, which arrive in a later version.
+  The same holds for a global of another module, and for a type (of a
+  variable, an input, a field or *new … with*) that names another module's
+  struct or enum.
 * **Message:** "`helper` is a function of another module (`utils`). Using
   functions from other modules isn't supported yet, so move it into this
-  module."
-* **How to fix:** move the function into the module that uses it.
+  module." For a type: "`Student` is a struct of another module (`util`).
+  Using structs and enums from other modules isn't supported yet, so move it
+  into this module."
+* **How to fix:** move the function, global, struct or enum into the module
+  that uses it.
 
 ## B2C-E0207 Wrong kind of symbol
 

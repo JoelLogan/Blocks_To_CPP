@@ -74,13 +74,15 @@ fn named_structs(ty: &Type) -> Vec<SymbolId> {
 impl Lowerer<'_> {
     /// Checks a reference to a user type in a type term: it must name a
     /// struct or an enum (`B2C-E0201` for a symbol that does not exist,
-    /// `B2C-E0207` for one that is not a type). Returns whether it does.
+    /// `B2C-E0207` for one that is not a type) of this module (`B2C-E0206`:
+    /// each module is its own `.cpp` until shared definitions arrive, as for
+    /// functions and globals). Returns whether it does.
     pub(super) fn check_type_reference(&mut self, id: &SymbolId, location: &Location) -> bool {
         let symbol = self.symbols.get(id);
-        if symbol
-            .is_some_and(|symbol| matches!(symbol.kind, SymbolKind::Struct { .. } | SymbolKind::Enum { .. }))
+        if let Some(symbol) = symbol
+            && matches!(symbol.kind, SymbolKind::Struct { .. } | SymbolKind::Enum { .. })
         {
-            return true;
+            return self.check_type_module(id, location);
         }
         if let Some(decl) = self.decls.get(id) {
             let kind = match decl.kind {
@@ -118,6 +120,35 @@ impl Lowerer<'_> {
             location.clone(),
             "This type refers to a struct or enum that doesn't exist (any more). Choose another type.",
         );
+        false
+    }
+
+    /// Whether the struct or enum `id` belongs to the module being lowered;
+    /// `B2C-E0206` when it is another module's.
+    fn check_type_module(&mut self, id: &SymbolId, location: &Location) -> bool {
+        let Some(decl) = self.decls.get(id) else {
+            return true;
+        };
+        if decl.module == self.module_index {
+            return true;
+        }
+        let what = if decl.kind == DeclKind::Enum {
+            "an enum"
+        } else {
+            "a struct"
+        };
+        let module = self
+            .document
+            .modules
+            .get(decl.module)
+            .map(|m| quoted(&m.name))
+            .unwrap_or_default();
+        let message = format!(
+            "{} is {what} of another module ({module}). Using structs and enums from other modules isn't \
+             supported yet, so move it into this module.",
+            quoted(&decl.name)
+        );
+        self.diags.error(codes::OTHER_MODULE, location.clone(), message);
         false
     }
 
