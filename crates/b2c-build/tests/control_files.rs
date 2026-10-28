@@ -11,6 +11,9 @@
 //! * *switch on* a whole number and a character: the case that matches
 //!   runs, the default part when none does, and a case that goes on into
 //!   the next one only when its blocks say so;
+//! * *switch on* an enum, with its values as labels: one that misses values
+//!   (`B2C-W0508`) gets `default: { break; }`, so g++'s `-Wswitch` stays
+//!   quiet, and one with a case for every value gets no default part;
 //! * *go on into the next case* runs the next case's blocks too, and *wait*
 //!   pauses;
 //! * *do … then repeat* runs its body once although its condition is false;
@@ -291,30 +294,57 @@ fn listing(dir: &Path) -> BTreeMap<String, Vec<u8>> {
 /// compiler, and runs it in a fresh folder holding `files`; checks that it
 /// gives `expected` and leaves the folder as it was.
 fn runs_and_gives(name: &str, body: Vec<Value>, files: &[(&str, &str)], expected: &Ran) {
+    builds_and_runs(name, &[], body, files, &[], expected);
+}
+
+/// [`runs_and_gives`] with these top-level blocks beside `main`, and the
+/// codes of the warnings the front end must report (and nothing else); a
+/// warning changes nothing g++ accepts at the *strict* level with
+/// `-Werror`. Returns the C++ generated under C++20.
+fn builds_and_runs(
+    name: &str,
+    top: &[Value],
+    body: Vec<Value>,
+    files: &[(&str, &str)],
+    warnings: &[&str],
+    expected: &Ran,
+) -> String {
     let main = json!({
         "id": "main", "type": "program.main", "v": 1, "x": 40, "y": 40, "statements": { "BODY": Value::Array(body) },
     });
+    let blocks: Vec<Value> = std::iter::once(main).chain(top.iter().cloned()).collect();
     let compilers = compilers();
     let build = tempfile::tempdir().unwrap();
+    let mut cpp20 = String::new();
     for (standard, flag) in [
         (CppStandard::Cpp17, "-std=c++17"),
         (CppStandard::Cpp20, "-std=c++20"),
     ] {
-        let frontend = run_frontend(
-            &project(standard, std::slice::from_ref(&main)),
-            &FrontendOptions::default(),
-        );
+        let frontend = run_frontend(&project(standard, &blocks), &FrontendOptions::default());
         let reported: Vec<String> = frontend
             .diagnostics
             .iter()
             .filter(|d| d.severity != Severity::Info)
             .map(|d| format!("{} {:?}: {}", d.code.0, d.primary, d.message))
             .collect();
-        assert!(reported.is_empty(), "{name} ({flag}): {reported:#?}");
+        let codes: Vec<&str> = frontend
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity != Severity::Info)
+            .map(|d| d.code.0.as_str())
+            .collect();
+        assert_eq!(codes, warnings, "{name} ({flag}): {reported:#?}");
+        assert!(
+            frontend.diagnostics.iter().all(|d| d.severity != Severity::Error),
+            "{name} ({flag}): {reported:#?}"
+        );
         let generated = frontend.generated.unwrap();
         let [file] = generated.files.as_slice() else {
             panic!("{name}: one file expected");
         };
+        if standard == CppStandard::Cpp20 {
+            cpp20.clone_from(&file.contents);
+        }
         let source = build.path().join(format!("{name}.cpp"));
         std::fs::write(&source, &file.contents).unwrap();
         for (index, toolchain) in compilers.iter().enumerate() {
@@ -342,6 +372,7 @@ fn runs_and_gives(name: &str, body: Vec<Value>, files: &[(&str, &str)], expected
             assert_eq!(listing(folder.path()), before, "{name} changed its folder");
         }
     }
+    cpp20
 }
 
 /// A run that prints `stdout` and ends with exit code 0.
@@ -392,6 +423,98 @@ fn switch_runs_the_matching_case_or_the_default_part() {
         ),
     ];
     runs_and_gives("switch", body, &[], &printed("one\ntwo\nthree\nother\ngood\n"));
+}
+
+/// The symbol of `Action`'s value `value`.
+fn action_value(value: &str) -> String {
+    format!("s_Action_{value}")
+}
+
+#[test]
+fn switch_on_an_enum_runs_the_case_of_its_value() {
+    let b = Blocks::default();
+    let values: Vec<Value> = ["Deposit", "Withdraw", "Quit"]
+        .iter()
+        .map(|value| json!({ "sym": action_value(value), "name": value }))
+        .collect();
+    let action = b.block(
+        "type.enum",
+        &json!({ "x": 440, "y": 40, "fields": { "NAME": { "sym": "s_Action", "name": "Action" } },
+                 "extra": { "values": values } }),
+    );
+    let value = |name: &str| {
+        json!({ "block": b.block(
+            "type.enum_value",
+            &json!({ "fields": { "ENUM": { "ref": "s_Action" }, "VALUE": { "ref": action_value(name) } } }),
+        ) })
+    };
+    // A function of one `Action` whose body is a switch on it, with a case
+    // printing each of `cases` and no default part.
+    let switching = |name: &str, y: u32, cases: &[(&str, &str)]| {
+        let param = format!("s_{name}_act");
+        let switch = b.switch(
+            json!({ "expr": [{ "ref": param }] }),
+            cases
+                .iter()
+                .map(|(case, printed)| (value(case), vec![b.print(vec![text(printed)])]))
+                .collect(),
+            None,
+        );
+        b.block(
+            "func.define",
+            &json!({ "x": 440, "y": y, "fields": { "NAME": { "sym": format!("s_{name}"), "name": name } },
+                     "extra": { "params": [{ "sym": param, "name": "act", "type": { "ref": "s_Action" },
+                                             "mode": "copy" }] },
+                     "statements": { "BODY": [switch] } }),
+        )
+    };
+    let call = |name: &str, act: &str| {
+        b.block(
+            "func.call_stmt",
+            &json!({ "fields": { "FUNC": { "ref": format!("s_{name}") } }, "extra": { "argCount": 1 },
+                     "inputs": { "ARG0": value(act) } }),
+        )
+    };
+    let describe = switching(
+        "describe",
+        440,
+        &[("Deposit", "deposit"), ("Withdraw", "withdraw"), ("Quit", "quit")],
+    );
+    // Withdraw and Quit have no case: B2C-W0508, and `default: { break; }`
+    // keeps g++'s -Wswitch (in -Wall) quiet under -Werror.
+    let initial = switching("initial", 840, &[("Deposit", "D")]);
+    let body = vec![
+        call("describe", "Deposit"),
+        call("describe", "Quit"),
+        call("describe", "Withdraw"),
+        call("initial", "Deposit"),
+        call("initial", "Quit"),
+    ];
+    let cpp = builds_and_runs(
+        "enum_switch",
+        &[action, describe, initial],
+        body,
+        &[],
+        &["B2C-W0508"],
+        &printed("deposit\nquit\nwithdraw\nD\n"),
+    );
+    // The case labels are the enum's own values, and only the switch that
+    // misses values gets a default part.
+    for label in [
+        "case Action::Deposit: {",
+        "case Action::Withdraw: {",
+        "case Action::Quit: {",
+    ] {
+        assert!(cpp.contains(label), "{label}\n{cpp}");
+    }
+    assert_eq!(cpp.matches("default:").count(), 1, "{cpp}");
+    assert!(
+        cpp.contains(
+            "        case Action::Deposit: {\n            std::cout << \"D\" << '\\n';\n            break;\n        }\n        \
+             default: {\n            break;\n        }\n"
+        ),
+        "{cpp}"
+    );
 }
 
 #[test]

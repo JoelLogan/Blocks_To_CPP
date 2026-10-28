@@ -1,7 +1,8 @@
 /**
  * Structs and enums on the canvas (docs/plans/m3-contracts/w2.md §2.3, slots.md §9's W2 tests):
- * the members menu, `chosenMember`, the type fields' user types, *enum value*'s `ENUM` and *new …
- * with* labelled from its struct.
+ * the members menu, `chosenMember`, the type fields' user types, *enum value*'s `ENUM`, *new …
+ * with* labelled from its struct, and *switch on* an enum taking only that enum's values as its
+ * cases (package D, w2.md §2.9).
  */
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -311,5 +312,42 @@ describe('new … with', () => {
     made.b2cSetExtra({ fieldCount: 2 });
     refreshMutatorLabels(workspace);
     expect(labels('FIELD1')).toContain('y:');
+  });
+});
+
+describe('switch on an enum', () => {
+  function enumValue(owner: string, value: string): Blockly.BlockSvg {
+    const made = block('type.enum_value');
+    ref(made, 'ENUM').setRef({ ref: owner });
+    ref(made, 'VALUE').setRef({ ref: value });
+    return made;
+  }
+
+  it('takes a variable of an enum, then only that enum’s values as its cases', () => {
+    const switched = block('control.switch');
+    const get = block('var.get');
+    ref(get, 'VAR').setRef({ ref: 'v_c' });
+    expect(canDrop(get, switched, 'VALUE')).toBe(true);
+    plug(switched, 'VALUE', get);
+    expect(canDrop(enumValue('s_Colour', 'e_red'), switched, 'CASE0')).toBe(true);
+    plug(switched, 'CASE0', enumValue('s_Colour', 'e_red'));
+    expect(canDrop(enumValue('s_Colour', 'e_green'), switched, 'CASE1')).toBe(true);
+    // A value of another enum, and a whole number, are no case of a switch on a Colour.
+    expect(canDrop(enumValue('s_Size', 'e_small'), switched, 'CASE1')).toBe(false);
+    expect(canDrop(block('math.number'), switched, 'CASE1')).toBe(false);
+  });
+
+  it('takes an enum value as its first case while nothing is switched on, and then its enum only', () => {
+    const switched = block('control.switch');
+    plug(switched, 'CASE0', enumValue('s_Colour', 'e_green'));
+    expect(canDrop(enumValue('s_Size', 'e_small'), switched, 'CASE1')).toBe(false);
+    expect(canDrop(enumValue('s_Colour', 'e_red'), switched, 'CASE1')).toBe(true);
+    const get = block('var.get');
+    ref(get, 'VAR').setRef({ ref: 'v_c' });
+    expect(canDrop(get, switched, 'VALUE')).toBe(true);
+    // A struct is no value to switch on.
+    const point = block('var.get');
+    ref(point, 'VAR').setRef({ ref: 'v_p' });
+    expect(canDrop(point, block('control.switch'), 'VALUE')).toBe(false);
   });
 });

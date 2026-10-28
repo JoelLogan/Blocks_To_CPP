@@ -299,6 +299,17 @@ mod tests {
             ]),
             None
         );
+        // The labels are the enum's own values, written in full.
+        let kind = StmtKind::Switch {
+            value: var("action", action_type.clone()),
+            cases: vec![case(value("Quit"), vec![print(text("bye"))])],
+            default: None,
+        };
+        assert_eq!(
+            emit::stmt_text(&lowerer(&program).control_stmt(&kind)),
+            "switch (action) {\n    case Action::Quit: {\n        std::cout << \"bye\" << '\\n';\n        \
+             break;\n    }\n    default: {\n        break;\n    }\n}\n"
+        );
     }
 
     #[test]

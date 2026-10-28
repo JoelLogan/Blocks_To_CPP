@@ -1,9 +1,10 @@
 //! The catalog snapshot cases of `catalog/core/control.toml`; *switch on*
-//! and *do … then repeat* are W2's (package D).
+//! and *do … then repeat* are W2's (package D). The switch on an enum takes
+//! the enum `Colour` (`Red`, `Green`) of package C1's blocks.
 
 use serde_json::{Value, json};
 
-use super::{Blocks, Case, I, ONLY_STEP, X, declaration, only_step, reference, tokens};
+use super::{Blocks, Case, I, ONLY_STEP, X, declaration, nested, only_step, reference, tokens};
 
 /// An expression input of one whole number.
 fn number(value: &str) -> Value {
@@ -45,9 +46,45 @@ fn switch_on_x(b: &Blocks, cases: Vec<(Value, Vec<Value>)>, default: Option<Vec<
     )
 }
 
+/// The enum's symbol.
+const COLOUR: &str = "s_Colour";
+
+/// The symbol of `Colour`'s value `value`.
+fn colour_value_sym(value: &str) -> String {
+    format!("{COLOUR}_{value}")
+}
+
+/// The enum `Colour` with the values `Red` and `Green`, beside `main`.
+fn colour(b: &Blocks) -> Value {
+    b.block(
+        "type.enum",
+        &json!({
+            "x": 400, "y": 40,
+            "fields": { "NAME": declaration(COLOUR, "Colour") },
+            "extra": { "values": [
+                { "sym": colour_value_sym("Red"), "name": "Red" },
+                { "sym": colour_value_sym("Green"), "name": "Green" },
+            ] },
+        }),
+    )
+}
+
+/// *Colour `value`*, in an input.
+fn colour_value(b: &Blocks, value: &str) -> Value {
+    nested(&b.block(
+        "type.enum_value",
+        &json!({ "fields": { "ENUM": reference(COLOUR), "VALUE": reference(&colour_value_sym(value)) } }),
+    ))
+}
+
+/// A print of the text `value`.
+fn print_text(b: &Blocks, value: &str) -> Value {
+    b.print(&tokens(&json!([{ "str": value }])))
+}
+
 /// The loops and *if*; *leave loop* and *skip to next round* in a loop;
-/// *switch on* an `int` and a `char`, with the `break;` each case gets or
-/// does not need; *do … then repeat* with *while* and *until*.
+/// *switch on* an `int`, a `char` and an enum, with the `break;` each case
+/// gets or does not need; *do … then repeat* with *while* and *until*.
 #[allow(
     clippy::too_many_lines,
     reason = "one case per block and variant, in catalog order"
@@ -117,6 +154,30 @@ pub(super) fn cases(b: &Blocks) -> Vec<Case> {
                     )] } }),
                 ),
             ])],
+        ),
+        Case::variant(
+            "control.switch",
+            "enum",
+            "after creating x (a Colour, Green) of the enum Colour (Red, Green), with cases Colour Red and \
+             Colour Green printing text, and no default part",
+            vec![
+                b.main(&[
+                    {
+                        let mut create = b.create_x(&json!({ "TYPE": { "ref": COLOUR } }));
+                        create["inputs"]["VALUE"] = colour_value(b, "Green");
+                        create
+                    },
+                    switch_on_x(
+                        b,
+                        vec![
+                            (colour_value(b, "Red"), vec![print_text(b, "red")]),
+                            (colour_value(b, "Green"), vec![print_text(b, "green")]),
+                        ],
+                        None,
+                    ),
+                ]),
+                colour(b),
+            ],
         ),
         Case::new(
             "control.fallthrough",

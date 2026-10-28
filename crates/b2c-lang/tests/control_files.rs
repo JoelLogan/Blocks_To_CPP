@@ -3,8 +3,9 @@
 //! on* an `int` and a `char`, its labels and parts, *leave loop* in a case,
 //! the paths through a switch; *do … then repeat*; *for each line in file*.
 //! The blocks come as the project file holds them, analysed with the
-//! catalog's signatures. The switch on an enum and `B2C-W0508` are tested
-//! with the enum blocks (package C1).
+//! catalog's signatures. The switch on an enum takes package C1's enum
+//! blocks: its labels are enum values, a repeated one is `B2C-E0425`, and
+//! without a default part a missed value is `B2C-W0508`.
 
 // Test code: unwrap/expect/panic and builders that take JSON by value are
 // fine here.
@@ -281,6 +282,227 @@ fn a_switch_whose_parts_all_return_ends_every_path_only_with_a_default() {
     let a = run(vec![returning(Some(vec![ret(Some(e("0")))])), main(vec![])]);
     assert_clean(&a);
     let a = run(vec![returning(None), main(vec![])]);
+    assert_codes(&a, &["B2C-E0410"]);
+}
+
+// --- switch on an enum ---------------------------------------------------------------
+
+/// The symbol of an enum's value.
+fn value_sym(owner: &str, name: &str) -> String {
+    sym(&format!("{owner}_{name}"))
+}
+
+/// *enum* `name` with these values.
+fn enumeration(name: &str, values: &[&str]) -> Value {
+    let rows: Vec<Value> = values
+        .iter()
+        .map(|value| json!({"sym": value_sym(name, value), "name": value}))
+        .collect();
+    json!({"id": format!("en_{name}"), "type": "type.enum", "v": 1,
+           "fields": {"NAME": {"sym": sym(name), "name": name}}, "extra": {"values": rows}})
+}
+
+/// *`owner` `value`*, an enum value block in an input.
+fn enum_value(owner: &str, value: &str) -> Value {
+    input(json!({"id": id(), "type": "type.enum_value", "v": 1,
+                 "fields": {"ENUM": {"ref": sym(owner)}, "VALUE": {"ref": value_sym(owner, value)}}}))
+}
+
+/// *create* `name` of the enum `owner`, set to its value `value`.
+fn create_enum(owner: &str, name: &str, value: &str) -> Value {
+    let mut block = declare("int", name, Some(enum_value(owner, value)));
+    block["fields"]["TYPE"] = json!({"ref": sym(owner)});
+    block
+}
+
+/// The enum `Action` of the bank menu assignment, short of its last value.
+fn action() -> Value {
+    enumeration("Action", &["Deposit", "Withdraw", "ShowBalance", "Quit"])
+}
+
+/// A program with `Action` and a `main` that creates `act` (`Deposit`) and
+/// switches on it with a case for each of `values`, and a default part when
+/// `default` is given.
+fn switch_on_action(values: &[&str], default: Option<Vec<Value>>) -> b2c_lang::Analysis {
+    let cases = values
+        .iter()
+        .map(|value| (enum_value("Action", value), vec![print(vec![text(value)])]))
+        .collect();
+    run(vec![
+        action(),
+        main(vec![
+            create_enum("Action", "act", "Deposit"),
+            switch_cases(e("act"), cases, default),
+        ]),
+    ])
+}
+
+#[test]
+fn a_switch_on_an_enum_takes_its_values_as_labels() {
+    let a = switch_on_action(&["Deposit", "Withdraw", "ShowBalance", "Quit"], None);
+    assert_clean(&a);
+    // Each label is the enumerator itself, typed by its enum.
+    let stmts = main_json(&a);
+    let cases = stmts[1]["kind"]["switch"]["cases"].as_array().unwrap();
+    let labels: Vec<&Value> = cases
+        .iter()
+        .map(|case| &case["label"]["kind"]["enumerator"])
+        .collect();
+    let expected: Vec<Value> = ["Deposit", "Withdraw", "ShowBalance", "Quit"]
+        .iter()
+        .map(|value| json!(value_sym("Action", value)))
+        .collect();
+    assert_eq!(labels, expected.iter().collect::<Vec<_>>(), "{stmts}");
+    assert!(stmts[1]["kind"]["switch"]["default"].is_null());
+    for case in cases {
+        assert_eq!(case["label"]["ty"], json!({"ref": sym("Action")}), "{case}");
+    }
+}
+
+#[test]
+fn a_label_of_an_enum_switch_is_a_value_of_that_enum() {
+    // A whole number, a value of another enum, and a variable of the enum.
+    let a = run(vec![
+        action(),
+        enumeration("Size", &["Small"]),
+        main(vec![
+            create_enum("Action", "act", "Deposit"),
+            create_enum("Action", "other", "Quit"),
+            switch_cases(
+                e("act"),
+                vec![
+                    (e("1"), vec![]),
+                    (enum_value("Size", "Small"), vec![]),
+                    (e("other"), vec![]),
+                ],
+                Some(vec![]),
+            ),
+        ]),
+    ]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0301 at b0006 CASE0[0..1]: The value of case 1 needs an `Action`, but this is a whole \
+             number.",
+            "error B2C-E0301 at b0005: The value of case 2 needs an `Action`, but this is a `Size`.",
+            "error B2C-E0424 at b0006 CASE2[0..1]: A 'case' label must be a value that is fixed when the program \
+             is built: a whole number, a character, a value of an enum, or a constant whole number or character \
+             with a fixed value.",
+        ]
+    );
+}
+
+#[test]
+fn a_repeated_enum_value_is_one_case_too_many() {
+    let a = switch_on_action(&["Deposit", "Withdraw", "Deposit"], Some(vec![]));
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0425 at b0007: Another 'case' of this switch has the same value (Deposit). Each case \
+             needs its own value: remove one of them, or put their blocks together in one case."
+        ]
+    );
+}
+
+#[test]
+fn a_switch_on_an_enum_that_misses_one_value_warns_without_a_default_part() {
+    let a = switch_on_action(&["Deposit", "Withdraw", "ShowBalance"], None);
+    assert_eq!(
+        reported(&a),
+        [
+            "warning B2C-W0508 at b0012: This switch on `Action` has no case for `Quit`, and no default part, \
+             so for that value none of its parts runs. Add a case for each value, or a default part."
+        ]
+    );
+}
+
+#[test]
+fn a_switch_on_an_enum_that_misses_several_values_names_them_all() {
+    let a = switch_on_action(&["Withdraw"], None);
+    assert_eq!(
+        reported(&a),
+        [
+            "warning B2C-W0508 at b0006: This switch on `Action` has no case for `Deposit`, `ShowBalance` and \
+             `Quit`, and no default part, so for those values none of its parts runs. Add a case for each \
+             value, or a default part."
+        ]
+    );
+    let a = switch_on_action(&["Withdraw", "ShowBalance"], None);
+    assert_eq!(codes(&a), ["B2C-W0508"]);
+    assert!(
+        reported(&a)[0]
+            .contains("has no case for `Deposit` and `Quit`, and no default part, so for those values"),
+        "{:?}",
+        reported(&a)
+    );
+}
+
+#[test]
+fn a_default_part_or_every_value_leaves_nothing_missed() {
+    let a = switch_on_action(&["Deposit"], Some(vec![print(vec![text("other")])]));
+    assert_clean(&a);
+    // An empty default part counts too.
+    let a = switch_on_action(&["Deposit"], Some(vec![]));
+    assert_clean(&a);
+    let a = switch_on_action(&["Quit", "ShowBalance", "Withdraw", "Deposit"], None);
+    assert_clean(&a);
+    // A switch on a whole number never misses values.
+    let a = run_main(vec![
+        declare("int", "n", Some(e("2"))),
+        switch_cases(e("n"), vec![(e("1"), vec![])], None),
+    ]);
+    assert_clean(&a);
+}
+
+#[test]
+fn cases_that_return_end_every_path_only_with_a_default_part() {
+    // bank_menu's to_action: a switch on a whole number whose parts all
+    // return a value of the enum.
+    let to_action = |default: Option<Vec<Value>>| {
+        let mut define = func(
+            "to_action",
+            "int",
+            &[("choice", "int", "copy")],
+            vec![switch_cases(
+                e("choice"),
+                vec![
+                    (e("1"), vec![ret(Some(enum_value("Action", "Deposit")))]),
+                    (e("2"), vec![ret(Some(enum_value("Action", "Withdraw")))]),
+                    (e("3"), vec![ret(Some(enum_value("Action", "ShowBalance")))]),
+                    (e("4"), vec![ret(Some(enum_value("Action", "Quit")))]),
+                ],
+                default,
+            )],
+        );
+        define["fields"]["RETURNS"] = json!({"ref": sym("Action")});
+        define
+    };
+    let a = run(vec![
+        action(),
+        to_action(Some(vec![ret(Some(enum_value("Action", "Deposit")))])),
+        main(vec![]),
+    ]);
+    assert_clean(&a);
+    let a = run(vec![action(), to_action(None), main(vec![])]);
+    assert_codes(&a, &["B2C-E0410"]);
+    // A switch on an enum with a case for every value that returns still
+    // has a path past it without a default part, as in C++: the value may
+    // be none of the enum's values.
+    let mut name_of = func(
+        "name_of",
+        "std::string",
+        &[("act", "int", "copy")],
+        vec![switch_cases(
+            e("act"),
+            ["Deposit", "Withdraw", "ShowBalance", "Quit"]
+                .iter()
+                .map(|value| (enum_value("Action", value), vec![ret(Some(text(value)))]))
+                .collect(),
+            None,
+        )],
+    );
+    name_of["extra"]["params"][0]["type"] = json!({"ref": sym("Action")});
+    let a = run(vec![action(), name_of, main(vec![])]);
     assert_codes(&a, &["B2C-E0410"]);
 }
 

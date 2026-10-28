@@ -1,0 +1,227 @@
+{
+  "format": "blocks2cpp/project",
+  "formatVersion": 1,
+  "generator": {
+    "app": "0.1.0",
+    "catalog": "1.3.0"
+  },
+  "project": {
+    "id": "prj_e2e_enum_switch",
+    "name": "Enum switch",
+    "language": {
+      "standard": "c++20"
+    },
+    "options": {
+      "showAdvanced": false,
+      "manualMemory": false,
+      "preferPlainStd": false,
+      "formattingStyle": "stream",
+      "checkedIndexing": true
+    },
+    "build": {
+      "configurations": {
+        "debug": {
+          "optimization": "none",
+          "debugInfo": true,
+          "sanitizers": [
+            "address",
+            "undefined"
+          ],
+          "warnings": "helpful",
+          "hardening": true
+        },
+        "release": {
+          "optimization": "speed",
+          "debugInfo": false,
+          "sanitizers": [],
+          "warnings": "helpful",
+          "hardening": true
+        }
+      }
+    },
+    "run": {
+      "workingDirectory": "project"
+    }
+  },
+  "modules": [
+    {
+      "id": "mod_main",
+      "name": "main",
+      "workspace": {
+        "blocks": [
+          {
+            "id": "b_enum",
+            "type": "type.enum",
+            "v": 1,
+            "x": 40,
+            "y": 40,
+            "extra": {
+              "values": [
+                {
+                  "name": "Deposit",
+                  "sym": "s_Action_Deposit"
+                },
+                {
+                  "name": "Withdraw",
+                  "sym": "s_Action_Withdraw"
+                },
+                {
+                  "name": "Quit",
+                  "sym": "s_Action_Quit"
+                }
+              ]
+            },
+            "fields": {
+              "NAME": {
+                "sym": "s_Action",
+                "name": "Action"
+              },
+              "SHARED": false
+            }
+          },
+          {
+            "id": "b_main",
+            "type": "program.main",
+            "v": 1,
+            "x": 40,
+            "y": 240,
+            "statements": {
+              "BODY": [
+                {
+                  "id": "b_act",
+                  "type": "var.declare",
+                  "v": 1,
+                  "fields": {
+                    "CONST": false,
+                    "NAME": {
+                      "sym": "s_act",
+                      "name": "act"
+                    },
+                    "TYPE": {
+                      "ref": "s_Action"
+                    }
+                  },
+                  "inputs": {
+                    "VALUE": {
+                      "block": {
+                        "id": "b_start",
+                        "type": "type.enum_value",
+                        "v": 1,
+                        "fields": {
+                          "ENUM": {
+                            "ref": "s_Action"
+                          },
+                          "VALUE": {
+                            "ref": "s_Action_Deposit"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "b_switch",
+                  "type": "control.switch",
+                  "v": 1,
+                  "extra": {
+                    "caseCount": 2,
+                    "hasDefault": false
+                  },
+                  "inputs": {
+                    "CASE0": {
+                      "block": {
+                        "id": "b_first",
+                        "type": "type.enum_value",
+                        "v": 1,
+                        "fields": {
+                          "ENUM": {
+                            "ref": "s_Action"
+                          },
+                          "VALUE": {
+                            "ref": "s_Action_Deposit"
+                          }
+                        }
+                      }
+                    },
+                    "CASE1": {
+                      "block": {
+                        "id": "b_second",
+                        "type": "type.enum_value",
+                        "v": 1,
+                        "fields": {
+                          "ENUM": {
+                            "ref": "s_Action"
+                          },
+                          "VALUE": {
+                            "ref": "s_Action_Withdraw"
+                          }
+                        }
+                      }
+                    },
+                    "VALUE": {
+                      "expr": [
+                        {
+                          "ref": "s_act"
+                        }
+                      ]
+                    }
+                  },
+                  "statements": {
+                    "DO0": [
+                      {
+                        "id": "b_in",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 1
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "in"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "DO1": [
+                      {
+                        "id": "b_out",
+                        "type": "io.print",
+                        "v": 1,
+                        "extra": {
+                          "itemCount": 1
+                        },
+                        "fields": {
+                          "NEWLINE": true,
+                          "SEP": "none",
+                          "STREAM": "out"
+                        },
+                        "inputs": {
+                          "ITEM0": {
+                            "expr": [
+                              {
+                                "str": "out"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
