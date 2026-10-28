@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 use b2c_ir::diag::{Location, Part};
 use b2c_ir::ids::SymbolId;
 use b2c_ir::sast::{
-    EnumDef, Expr, ExprKind, Item, ItemKind, Origin, StmtKind, StructDef, Symbol, SymbolKind,
+    CppStandard, EnumDef, Expr, ExprKind, Item, ItemKind, Origin, StmtKind, StructDef, Symbol, SymbolKind,
 };
 use b2c_ir::sig::PartType;
 use b2c_ir::types::{Type, TypeTerm};
@@ -28,7 +28,7 @@ use b2c_model::Block;
 
 use super::convert::Subject;
 use super::expr::error_expr;
-use super::{ItemCtx, Lowerer, TypeUse, field, sorted_blocks};
+use super::{ItemCtx, Lowerer, TypeUse, field, holds_value, sorted_blocks};
 use crate::access;
 use crate::codes;
 use crate::messages::quoted;
@@ -202,6 +202,9 @@ impl Lowerer<'_> {
                 origin: self.origin(&block.id, part),
             };
             if self.insert_symbol(&row.sym, &row.name, symbol, loc) {
+                if holds_value(block, &format!("DEFAULT{i}")) {
+                    self.defaulted_fields.insert(row.sym.clone());
+                }
                 fields.push(row.sym);
             }
         }
@@ -498,9 +501,42 @@ impl Lowerer<'_> {
             .map_or_else(|| self.name_of(sym), |symbol| quoted(symbol.name.as_str()))
     }
 
+    /// In C++17, an empty part of *new … with* before a filled one whose
+    /// field has a default value (w2.md §1.5, §1.9): C++17 has no
+    /// designated initialisers, so the part is printed as `{}`, which
+    /// value-initialises the field and skips its default (`P{{}, 5}` makes
+    /// `x` 0 where `int x = 10;`), while C++20 leaves the field out and
+    /// keeps it. An empty part after the last filled one keeps it in both.
+    fn check_cpp17_gaps(&mut self, block: &Block, parts: &[Option<Expr>], fields: &[SymbolId]) {
+        if self.document.project.language.standard >= CppStandard::Cpp20 || !self.checking() {
+            return;
+        }
+        let Some(last) = parts.iter().rposition(Option::is_some) else {
+            return;
+        };
+        for (i, member) in fields.iter().enumerate().take(last) {
+            if parts.get(i).is_some_and(Option::is_none) && self.defaulted_fields.contains(member) {
+                let message = format!(
+                    "In C++17, an empty part before a filled one sets its field to an empty value, so {} would not \
+                     get its default value. Fill in this part, or choose C++20 in the project's settings.",
+                    self.member_name(member)
+                );
+                let location = self.loc(
+                    &block.id,
+                    Part::Input {
+                        name: format!("FIELD{i}"),
+                    },
+                );
+                self.incomplete(location, message);
+            }
+        }
+    }
+
     /// *new [S] with (a) (b) …*: a struct value from one part per field, in
-    /// row order; an empty part leaves its field value-initialised. A number
-    /// of parts other than the struct's fields is `B2C-E0306`.
+    /// row order; an empty part leaves its field value-initialised, or in
+    /// C++20 at its default value, if it has one (in C++17 that is
+    /// `B2C-E0430` before a filled part). A number of parts other than the
+    /// struct's fields is `B2C-E0306`.
     fn new_struct(&mut self, block: &Block, origin: Origin) -> Expr {
         let mut typed = self.typed(self.block_sig(&block.block_type));
         let location = self.loc(&block.id, field("TYPE"));
@@ -553,6 +589,7 @@ impl Lowerer<'_> {
                 self.report_fit(&typed, &typing, &format!("FIELD{i}"), value, &subject);
             }
         }
+        self.check_cpp17_gaps(block, &parts, &fields);
         Expr {
             kind: ExprKind::New {
                 ty: id.clone(),

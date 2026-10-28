@@ -887,3 +887,79 @@ fn struct_defaults_run_when_a_value_is_made_and_follow_the_globals_they_read() {
     assert!(at("int next_id();") < at("struct Config"), "{cpp}");
     assert!(at("int start = 41;") < at("Config config{};"), "{cpp}");
 }
+
+/// *new P with* an empty part before a filled one, over a field with a
+/// default (`int x = 10;`): C++20 leaves the field out (`P{.y = 5}`), so it
+/// keeps its default; C++17 would print `P{{}, 5}`, which makes it 0, so
+/// the front end refuses it there (`B2C-E0430`).
+#[test]
+fn new_with_an_empty_part_keeps_the_fields_default() {
+    let b = Blocks::default();
+    let rows = json!([
+        { "sym": "s_P_x", "name": "x", "type": "int" },
+        { "sym": "s_P_y", "name": "y", "type": "int" },
+    ]);
+    let point = b.block(
+        "type.struct",
+        &json!({ "x": 440, "y": 400, "fields": { "NAME": { "sym": "s_P", "name": "P" } },
+                 "extra": { "fields": rows }, "inputs": { "DEFAULT0": number("10") } }),
+    );
+    let made = b.block(
+        "type.new",
+        &json!({ "fields": { "TYPE": { "ref": "s_P" } }, "extra": { "fieldCount": 2 },
+                 "inputs": { "FIELD1": number("5") } }),
+    );
+    let field = |member: &str| {
+        json!({ "block": b.block(
+            "type.field",
+            &json!({ "fields": { "MEMBER": { "ref": format!("s_P_{member}") } }, "inputs": { "OBJ": tokens(&["p"]) } }),
+        ) })
+    };
+    let main = json!({
+        "id": "main", "type": "program.main", "v": 1, "x": 40, "y": 40,
+        "statements": { "BODY": [
+            b.block(
+                "var.declare",
+                &json!({ "fields": { "TYPE": { "ref": "s_P" }, "NAME": { "sym": "s_p", "name": "p" } },
+                         "inputs": { "VALUE": { "block": made } } }),
+            ),
+            b.print(vec![field("x"), text(" "), field("y")]),
+        ] },
+    });
+    let blocks = [main, point];
+    let cpp17 = run_frontend(&project(CppStandard::Cpp17, &blocks), &FrontendOptions::default());
+    let codes: Vec<&str> = cpp17.diagnostics.iter().map(|d| d.code.0.as_str()).collect();
+    assert_eq!(codes, ["B2C-E0430"], "{:#?}", cpp17.diagnostics);
+    let cpp20 = run_frontend(&project(CppStandard::Cpp20, &blocks), &FrontendOptions::default());
+    assert!(
+        cpp20.diagnostics.iter().all(|d| d.severity == Severity::Info),
+        "{:#?}",
+        cpp20.diagnostics
+    );
+    let generated = cpp20.generated.unwrap();
+    let [file] = generated.files.as_slice() else {
+        panic!("one file expected");
+    };
+    assert!(file.contents.contains("P p = P{.y = 5};"), "{}", file.contents);
+    let build = tempfile::tempdir().unwrap();
+    let source = build.path().join("gap.cpp");
+    std::fs::write(&source, &file.contents).unwrap();
+    for (index, toolchain) in compilers().iter().enumerate() {
+        let program = build.path().join(format!("gap-{index}"));
+        let flags: Vec<&str> = std::iter::once("-std=c++20")
+            .chain(STRICT.iter().copied())
+            .collect();
+        if let Err(messages) = compile(toolchain, &flags, &source, &program, build.path()) {
+            panic!(
+                "{} rejected gap: {messages}\n{}",
+                toolchain.path().display(),
+                file.contents
+            );
+        }
+        let run = command(&program, build.path()).output().unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&run.stdout).replace("\r\n", "\n"),
+            "10 5\n"
+        );
+    }
+}

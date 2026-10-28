@@ -745,12 +745,19 @@ Codes by area:
   and inputs of a block the catalog kept as it is (made by a newer version,
   `B2C-E0602`, or too old to upgrade, `B2C-E0603`), are not reported again
   ([spec §6.1](../../spec/06-compiler-pipeline.md#61-overview)).
+  In C++17 also reported for an empty part of `new … with` before a filled
+  one when its field has a default value: C++17 has no designated
+  initialisers, so the field would be set to an empty value (`P{{}, 5}`),
+  not to its default as in C++20 (`P{.y = 5}`).
 * **Example:** an `if` block whose condition slot is empty, or a `set` block
   with no variable chosen.
 * **Message:** "This block needs a condition." / "Choose a variable in this
   block." / "Choose a collection in this block." / "`pow` is not one of the
   choices for this setting." / "`kMax` is a constant, so it needs a value: give it
-  one, or choose 'variable'." / "The program's arguments need a name."
+  one, or choose 'variable'." / "The program's arguments need a name." /
+  "In C++17, an empty part before a filled one sets its field to an empty
+  value, so `x` would not get its default value. Fill in this part, or
+  choose C++20 in the project's settings."
 * **How to fix:** fill in the missing part, or choose the setting again.
 
 ## B2C-E0431 Blocks nested too deeply

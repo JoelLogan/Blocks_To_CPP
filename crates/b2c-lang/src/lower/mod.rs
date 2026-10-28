@@ -258,6 +258,9 @@ struct Lowerer<'d> {
     /// Whether a function's default values are being lowered, which see the
     /// module's definitions but not the function's parameters (w2.md §2.8).
     in_defaults: bool,
+    /// The struct fields whose row holds a default value (w2.md §1.9),
+    /// known before any *new … with* is lowered.
+    defaulted_fields: BTreeSet<SymbolId>,
 }
 
 /// A field part.
@@ -403,6 +406,7 @@ impl<'d> Lowerer<'d> {
             slot_types: BTreeMap::new(),
             constants: BTreeMap::new(),
             in_defaults: false,
+            defaulted_fields: BTreeSet::new(),
         }
     }
 

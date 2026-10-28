@@ -1114,6 +1114,59 @@ fn a_fields_default_cannot_name_a_global_or_function_called_like_a_field() {
     );
 }
 
+/// *new P with* these parts (`FIELD<i>`, `None` for an empty one), as the
+/// value of `create P p`.
+fn create_new_p(parts: Vec<Option<Value>>) -> Value {
+    let count = parts.len();
+    let inputs: serde_json::Map<String, Value> = parts
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, part)| part.map(|part| (format!("FIELD{index}"), part)))
+        .collect();
+    let made = serde_json::json!({"id": "new_p", "type": "type.new", "v": 1,
+                                  "fields": {"TYPE": {"ref": sym("P")}},
+                                  "extra": {"fieldCount": count}, "inputs": inputs});
+    serde_json::json!({"id": id(), "type": "var.declare", "v": 1,
+                       "fields": {"TYPE": {"ref": sym("P")}, "NAME": {"sym": sym("p"), "name": "p"}},
+                       "inputs": {"VALUE": {"block": made}}})
+}
+
+#[test]
+fn in_cpp17_new_cannot_leave_a_defaulted_field_empty_before_a_filled_one() {
+    use b2c_ir::sast::CppStandard::{Cpp17, Cpp20};
+    // `struct P { int x = 10; int y{}; int z = 3; };`
+    let p = || {
+        struct_with_defaults(
+            "P",
+            &[
+                ("x", "int", Some(e("10"))),
+                ("y", "int", None),
+                ("z", "int", Some(e("3"))),
+            ],
+        )
+    };
+    let analyse = |standard: b2c_ir::sast::CppStandard, parts: Vec<Option<Value>>| {
+        let mut document = doc(vec![p(), main(vec![create_new_p(parts)])]);
+        document.project.language.standard = standard;
+        analyze(&document)
+    };
+    // `P{{}, 5}` would make x 0 in C++17; `P{.y = 5}` keeps 10 in C++20.
+    let a = analyse(Cpp17, vec![None, Some(e("5")), None]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0430 at new_p input FIELD0: In C++17, an empty part before a filled one sets its field to an \
+             empty value, so `x` would not get its default value. Fill in this part, or choose C++20 in the \
+             project's settings."
+        ]
+    );
+    assert_clean(&analyse(Cpp20, vec![None, Some(e("5")), None]));
+    // Empty parts after the last filled one, and a gap over a field
+    // without a default, are the same in both standards.
+    assert_clean(&analyse(Cpp17, vec![Some(e("1")), None, None]));
+    assert_clean(&analyse(Cpp17, vec![Some(e("1")), None, Some(e("4"))]));
+}
+
 #[test]
 fn a_global_built_with_a_structs_defaults_follows_the_globals_they_read() {
     // `Config a{};` runs `int limit = next();`, and `next` reads `z`: `z`
