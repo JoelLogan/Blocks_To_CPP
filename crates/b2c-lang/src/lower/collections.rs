@@ -296,6 +296,9 @@ impl Lowerer<'_> {
         let decl = decl.clone();
         self.scopes.push(ListKey::new(&block.id, ITEM_LIST), false);
         self.declare_loop_item(block, "ITEM", &decl, kind, item_ty);
+        // A copy or an editable item is a variable, which the scope query
+        // would otherwise count as visible after the loop.
+        self.index.record_part_variable(&decl.sym);
         let body = self.loop_body(block, true);
         self.scopes.pop();
         Some(StmtKind::RangeFor {

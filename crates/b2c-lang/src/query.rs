@@ -97,8 +97,9 @@ pub(crate) struct ScopeIndex {
     /// first one lowered there), by module index.
     main_ends: BTreeMap<usize, Point>,
     /// The variables a block declares for one of its own statement lists
-    /// only: a catch part's error (w2.md §2.5), which is not visible after
-    /// the block ([`Analysis::scope_after`]).
+    /// only: a catch part's error (w2.md §2.5) and a *for each* item (a copy
+    /// or an editable one is a variable), which are not visible after the
+    /// block ([`Analysis::scope_after`]).
     part_variables: BTreeSet<SymbolId>,
 }
 
@@ -113,8 +114,8 @@ impl ScopeIndex {
     }
 
     /// Records a variable that a block declares for one of its own
-    /// statement lists only (a catch part's error), so that it is not
-    /// visible after the block.
+    /// statement lists only (a catch part's error, a *for each* item), so
+    /// that it is not visible after the block.
     pub(crate) fn record_part_variable(&mut self, sym: &SymbolId) {
         self.part_variables.insert(sym.clone());
     }
@@ -332,10 +333,10 @@ impl Analysis {
     /// block, plus the variable the block creates if the analyser accepted
     /// that declaration (it hides any other symbol with its name). A
     /// disabled or parked `create` declares nothing, and a `for` loop's
-    /// counter and a catch part's error are visible only inside their block,
-    /// so for those it is what is visible at the block. `None` when the
-    /// analysis has no answer for the block ([`Self::scope_at`]). Sorted like
-    /// [`Self::symbols_in_scope`].
+    /// counter, a *for each* item and a catch part's error are visible only
+    /// inside their block, so for those it is what is visible at the block.
+    /// `None` when the analysis has no answer for the block
+    /// ([`Self::scope_at`]). Sorted like [`Self::symbols_in_scope`].
     pub fn scope_after(&self, block: &BlockId) -> Option<Vec<SymbolInfo>> {
         let mut visible = self.scope_at(block, None)?;
         let created = self

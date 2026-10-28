@@ -708,6 +708,37 @@ fn loop_names_exist_only_inside_their_loop() {
 }
 
 #[test]
+fn a_loop_item_is_not_visible_after_its_loop_in_any_mode() {
+    // What is visible after a block (where a pasted block or a dropped
+    // preset binds its names) holds no loop item, whatever the mode, and an
+    // item named like an outer variable does not hide it there.
+    for mode in ["read_only", "copy", "editable"] {
+        for name in ["n", "x"] {
+            let mut each = for_each("x", mode, e("xs"), Vec::new());
+            each["fields"]["ITEM"] = json!({"sym": "sym_item", "name": name});
+            let each_id = b2c_ir::BlockId::new(each["id"].as_str().unwrap()).unwrap();
+            let a = check(vec![
+                create("int", "n", Some(num("1"))),
+                create("vector<int>", "xs", None),
+                each,
+            ]);
+            let after = a.scope_after(&each_id).unwrap();
+            assert_eq!(Some(&after), a.scope_at(&each_id, None).as_ref(), "{mode} {name}");
+            let outer: Vec<&str> = after
+                .iter()
+                .filter(|info| info.name == "n")
+                .map(|info| info.id.as_str())
+                .collect();
+            assert_eq!(outer, [sym("n").as_str()], "{mode} {name}");
+            assert!(
+                after.iter().all(|info| info.id.as_str() != "sym_item"),
+                "{mode} {name}"
+            );
+        }
+    }
+}
+
+#[test]
 fn a_block_without_its_collection_or_names_is_incomplete() {
     let a = check(vec![
         json!({"id": id(), "type": "coll.add", "v": 1, "inputs": {"VALUE": e("1")}}),
