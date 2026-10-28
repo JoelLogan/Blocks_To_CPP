@@ -124,16 +124,25 @@ function ownerOf(block: Blockly.Block): Blockly.Block | null {
   return parent;
 }
 
-/** The words shown on an input's row (`else`, `then`), or `''`. */
-function inputCaption(input: Blockly.Input): string {
+/**
+ * The words shown on an input's row (`else`, `then`), or `''`; with `editable`, also the text of
+ * the fields a user sets there (`catch std::exception as e`, `int x =`).
+ */
+function inputCaption(input: Blockly.Input, editable = false): string {
   const words = input.fieldRow
-    .filter((field) => !field.EDITABLE)
+    .filter((field) => editable || !field.EDITABLE)
     .map((field) => field.getText().trim())
     .filter((text) => text !== '');
   return shownText(words.join(' '));
 }
 
-/** Which of a block's inputs of one kind `name` is, when it has more than one: ` (“else” part)`. */
+/**
+ * Which of a block's inputs of one kind `name` is, when it has more than one: ` (“else” part)`.
+ * Repeated parts show the same words (each case of *switch on*, each catch of *try*, each row's
+ * default value), so a caption another input of the kind shares takes the text of the row's fields
+ * too (` (“catch int as e” part)`), or else a number among those that share it (` (“case” part
+ * 2)`).
+ */
 function whichInput(owner: Blockly.Block, name: string, kind: Blockly.ConnectionType): string {
   const inputs = owner.inputList.filter((input) => input.connection?.type === kind);
   if (inputs.length < 2) {
@@ -144,8 +153,27 @@ function whichInput(owner: Blockly.Block, name: string, kind: Blockly.Connection
   if (input === undefined) {
     return '';
   }
+  const unique = (caption: string, of: (other: Blockly.Input) => string): boolean =>
+    caption !== '' && inputs.every((other) => other === input || of(other) !== caption);
   const caption = inputCaption(input);
-  return caption === '' ? ` (part ${String(index + 1)})` : ` (${quoted(caption)} part)`;
+  const captions = inputs.map((other) => inputCaption(other));
+  // A block with repeated parts names each of them by its fields, the first one included.
+  const repeated = new Set(captions).size < captions.length;
+  if (!repeated && unique(caption, (other) => inputCaption(other))) {
+    return ` (${quoted(caption)} part)`;
+  }
+  const full = inputCaption(input, true);
+  if (unique(full, (other) => inputCaption(other, true))) {
+    return ` (${quoted(full)} part)`;
+  }
+  if (unique(caption, (other) => inputCaption(other))) {
+    return ` (${quoted(caption)} part)`;
+  }
+  if (caption === '') {
+    return ` (part ${String(index + 1)})`;
+  }
+  const same = inputs.filter((other) => inputCaption(other) === caption);
+  return ` (${quoted(caption)} part ${String(same.indexOf(input) + 1)})`;
 }
 
 /**

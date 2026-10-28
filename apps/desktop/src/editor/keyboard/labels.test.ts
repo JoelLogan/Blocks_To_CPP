@@ -151,4 +151,67 @@ describe('place names', () => {
     expect(text).toMatch(/^into “.*” \((?:part 2|“.+” part)\)$/);
     expect(describeTarget({ kind: 'canvas' })).toBe('loose on the canvas');
   });
+
+  it('tell apart the repeated parts of switch, try and a struct’s defaults', () => {
+    const { workspace } = open();
+    const where = (
+      block: Blockly.Block,
+      input: string,
+      kind: 'value' | 'statements' = 'value',
+    ): string => {
+      const connection = block.getInput(input)?.connection;
+      if (connection === null || connection === undefined) {
+        throw new Error(`no input ${input}`);
+      }
+      return describeTarget({
+        kind,
+        owner: block as Blockly.BlockSvg,
+        input,
+        connection: connection as Blockly.RenderedConnection,
+      });
+    };
+    const cases = Blockly.serialization.blocks.append(
+      { type: 'control.switch', extraState: { caseCount: 3, hasDefault: true } },
+      workspace,
+    );
+    const caseTargets = ['CASE0', 'CASE1', 'CASE2'].map((input) => where(cases, input));
+    expect(new Set(caseTargets).size).toBe(3);
+    expect(caseTargets[1]).toMatch(/\(“case” part 2\)$/);
+
+    const tried = Blockly.serialization.blocks.append(
+      {
+        type: 'error.try',
+        extraState: { catchCount: 2 },
+        fields: {
+          ERROR0: 'std::exception',
+          NAME0: { sym: 's_e', name: 'e' },
+          ERROR1: 'std::exception',
+          NAME1: { sym: 's_e2', name: 'e2' },
+        },
+      },
+      workspace,
+    );
+    const catches = ['CATCH0', 'CATCH1'].map((input) => where(tried, input, 'statements'));
+    expect(catches[0]).not.toBe(catches[1]);
+    expect(catches[1]).toContain('e2');
+
+    const point = Blockly.serialization.blocks.append(
+      {
+        type: 'type.struct',
+        fields: { NAME: { sym: 's_P', name: 'Point' } },
+        extraState: {
+          fields: [
+            { sym: 's_x', name: 'x', type: 'int' },
+            { sym: 's_y', name: 'y', type: 'int' },
+            { sym: 's_z', name: 'z', type: 'int' },
+          ],
+        },
+      },
+      workspace,
+    );
+    const defaults = ['DEFAULT0', 'DEFAULT1', 'DEFAULT2'].map((input) => where(point, input));
+    expect(new Set(defaults).size).toBe(3);
+    expect(defaults[0]).toContain('x');
+    expect(defaults[2]).toContain('z');
+  });
 });
