@@ -38,6 +38,48 @@ optional = true
 type = "T"
 
 [[block]]
+id = "var.global"
+version = 1
+category = "variables"
+shape = "definition"
+label = { friendly = "global %KIND %TYPE %NAME = %VALUE share with other modules %SHARED", cpp = "%TYPE %NAME = %VALUE;" }
+lowering = "builtin"
+help = "Creates a variable, or a constant, that every function of the module can use, wherever the block is. A constant needs a value and never changes."
+# Like *create*, the type field binds T and the name is declared with it; a
+# global has no `auto` (docs/plans/m3-contracts/w2.md §1.9, §2.7).
+where = { T = "value" }
+
+[[block.field]]
+name = "KIND"
+kind = "dropdown"
+options = [["variable", "variable"], ["constant", "constant"]]
+default = "variable"
+
+[[block.field]]
+name = "TYPE"
+kind = "type"
+types = ["int", "double", "bool", "char", "std::string", "std::vector<int>", "std::vector<double>", "std::vector<std::string>"]
+default = "int"
+type = "T"
+
+[[block.field]]
+name = "NAME"
+kind = "symbol_decl"
+type = "T"
+
+[[block.input]]
+name = "VALUE"
+check = "any"
+optional = true
+type = "T"
+
+# Shown once projects have several modules (milestone M3's third wave).
+[[block.field]]
+name = "SHARED"
+kind = "checkbox"
+default = false
+
+[[block]]
 id = "var.set"
 version = 1
 category = "variables"

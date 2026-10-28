@@ -2,16 +2,16 @@
 //! §2.7): package C2.
 //!
 //! P0 routes the nodes here (the dispatch in `mod.rs`, `stmt.rs` and
-//! `expr.rs`) and leaves their C++ to the package: until it fills this module
-//! in, a node prints as an error placeholder (`/* error */`). No analysis
-//! makes these nodes before the package's blocks exist, so no program
-//! changes. The forms they share are in `forms.rs` (P0's), the C++ nodes in
-//! `cast.rs`, the helpers in `helpers.rs`.
+//! `expr.rs`). A global is a `cast::CGlobal`, printed with the module's
+//! declarations in the declaration graph's order; *flip* prints as an error
+//! placeholder (`/* error */`) until its block exists. The forms they share
+//! are in `forms.rs` (P0's), the C++ nodes in `cast.rs`, the helpers in
+//! `helpers.rs`.
 
-use b2c_ir::sast::{GlobalDef, Item, StmtKind};
+use b2c_ir::sast::{GlobalDef, Item, StmtKind, SymbolKind};
 
 use super::Lowerer;
-use crate::cast::{CGlobal, CStmtKind};
+use crate::cast::{CGlobal, CStmtKind, Init, Qualifier};
 
 impl Lowerer<'_> {
     /// *flip* (`StmtKind::Flip`).
@@ -22,12 +22,35 @@ impl Lowerer<'_> {
     }
 
     /// A global variable or constant (`ItemKind::Global`, w2.md §2.7):
-    /// `cast::CGlobal`, printed by `emit` before the functions. Package C2
-    /// fills this in; until then the item prints nothing, and no analysis
-    /// makes one.
-    #[allow(clippy::unused_self, reason = "a stub until package C2 lowers the items")]
+    /// `int count = 0;`, `constexpr double kGravity = 9.81;`, `const
+    /// std::string kName = "Ann";`, or `int count{};` without a starting
+    /// value. It is printed where the declaration graph puts it, with the
+    /// module's other declarations.
     pub(super) fn global_item(&mut self, def: &GlobalDef, item: &Item) -> Option<CGlobal> {
-        let _ = (def, item);
-        None
+        let symbol = self.symbol(&def.symbol)?;
+        let SymbolKind::Global { is_const } = symbol.kind else {
+            return None;
+        };
+        self.start_item();
+        let ty = self.ctype(&symbol.ty);
+        self.note_type(&ty);
+        let init = match &def.init {
+            Some(value) => Init::Value(self.expr(value)),
+            None => Init::Braces,
+        };
+        self.finish_item(&item.headers);
+        let qualifier = match (is_const, def.constexpr) {
+            (_, true) => Qualifier::Constexpr,
+            (true, false) => Qualifier::Const,
+            (false, false) => Qualifier::None,
+        };
+        Some(CGlobal {
+            qualifier,
+            ty,
+            name: symbol.name.clone(),
+            init,
+            origin: item.origin.clone(),
+            comment: item.comment.clone(),
+        })
     }
 }

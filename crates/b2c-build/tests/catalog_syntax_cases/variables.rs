@@ -1,4 +1,5 @@
-//! The catalog snapshot cases of `catalog/core/variables.toml`.
+//! The catalog snapshot cases of `catalog/core/variables.toml`, with
+//! package C2's globals (w2.md §2.7).
 
 use serde_json::{Map, Value, json};
 
@@ -40,6 +41,29 @@ pub(super) fn cases(b: &Blocks) -> Vec<Case> {
             ])],
         ),
         library_types(b),
+        Case::new(
+            "var.global",
+            "the global variable count (the toolbox's: an int set to 0) and the global constant kMax = 3, \
+             both printed in main",
+            vec![
+                b.main(&[
+                    b.print(&tokens(&json!([reference("s_count")]))),
+                    b.print(&tokens(&json!([reference("s_kMax")]))),
+                ]),
+                b.block(
+                    "var.global",
+                    &json!({ "x": 400, "y": 40, "fields": { "NAME": declaration("s_count", "count") } }),
+                ),
+                b.block(
+                    "var.global",
+                    &json!({
+                        "x": 400, "y": 120,
+                        "fields": { "KIND": "constant", "NAME": declaration("s_kMax", "kMax") },
+                        "inputs": { "VALUE": tokens(&json!([{ "num": "3" }])) },
+                    }),
+                ),
+            ],
+        ),
     ]
 }
 

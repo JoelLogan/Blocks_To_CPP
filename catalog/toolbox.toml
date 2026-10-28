@@ -40,6 +40,10 @@ dynamic = "variables"
 block = "var.declare"
 preset = { fields = { TYPE = "int" }, inputs = { VALUE = [{ num = "0" }] } }
 
+[[category.entry]]
+block = "var.global"
+preset = { fields = { TYPE = "int" }, inputs = { VALUE = [{ num = "0" }] } }
+
 [[category]]
 id = "math"
 name = "Math"

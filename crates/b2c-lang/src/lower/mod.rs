@@ -87,15 +87,18 @@ pub(crate) fn run(document: &Document, sigs: &SigTable, unchecked: &BTreeSet<Blo
     lowerer.index.record_unlowered(document);
     let trail = lowerer.scopes.take_trail();
     // A module's definitions are visible everywhere in it: its functions,
-    // structs and enums.
+    // structs, enums and globals.
     let functions = lowerer
         .functions
         .iter()
         .map(|(sym, sig)| (sig.module, sig.name.as_str(), sym));
     let user_types = lowerer.symbols.symbols.iter().filter_map(|(sym, symbol)| {
         let module = lowerer.decls.get(sym)?.module;
-        matches!(symbol.kind, SymbolKind::Struct { .. } | SymbolKind::Enum { .. })
-            .then(|| (module, symbol.name.as_str(), sym))
+        matches!(
+            symbol.kind,
+            SymbolKind::Struct { .. } | SymbolKind::Enum { .. } | SymbolKind::Global { .. }
+        )
+        .then(|| (module, symbol.name.as_str(), sym))
     });
     lowerer
         .index
@@ -213,6 +216,12 @@ struct Lowerer<'d> {
     decls: BTreeMap<SymbolId, DeclInfo>,
     /// Active functions of each module, by name (the first one for duplicates).
     module_functions: Vec<BTreeMap<String, SymbolId>>,
+    /// The globals of each module that were declared, by name (w2.md §2.7):
+    /// visible in every item of their module.
+    module_globals: Vec<BTreeMap<String, SymbolId>>,
+    /// The globals' items, lowered before any body so that a constant's
+    /// value is known wherever it is used, by defining block.
+    global_items: BTreeMap<BlockId, Item>,
     /// Signatures of the functions that were declared successfully.
     functions: BTreeMap<SymbolId, FuncSig>,
     symbols: SymbolTable,
@@ -371,6 +380,8 @@ impl<'d> Lowerer<'d> {
             document,
             decls,
             module_functions,
+            module_globals: vec![BTreeMap::new(); document.modules.len()],
+            global_items: BTreeMap::new(),
             functions: BTreeMap::new(),
             symbols: SymbolTable::default(),
             diags: Diags::default(),
@@ -405,6 +416,9 @@ impl<'d> Lowerer<'d> {
         let fields = self.declare_user_types();
         self.settle_ticks();
         self.check_field_requirements(fields);
+        // Globals next: their types may be user types, and every function's
+        // parameters, defaults and body see them (w2.md §2.7).
+        let globals = self.declare_globals();
         // Function names are unique in the whole program: every function is
         // generated with external linkage, so two modules defining the same
         // name would not link.
@@ -427,6 +441,10 @@ impl<'d> Lowerer<'d> {
                 }
             }
         }
+        // The globals' starting values, which may call any function and
+        // read other globals, before any body: a constant's value is then
+        // known wherever it is used (a `case` label).
+        self.lower_globals(&globals);
         let chosen_main = self.check_mains();
         let mut modules = Vec::with_capacity(document.modules.len());
         for (index, module) in document.modules.iter().enumerate() {
@@ -440,7 +458,7 @@ impl<'d> Lowerer<'d> {
                     "program.main" => (Some(self.main(block)), chosen_main.as_ref() == Some(&block.id)),
                     "func.define" => (self.function(block), true),
                     "type.struct" | "type.enum" => (self.type_definition(block), true),
-                    "var.global" => (self.global(block), true),
+                    "var.global" => (self.global_items.remove(&block.id), true),
                     "program.use_header" => (self.use_header(block), true),
                     _ => {
                         self.report_parked(block);
@@ -448,7 +466,9 @@ impl<'d> Lowerer<'d> {
                     }
                 };
                 if let Some(item) = item {
-                    if self.check_nesting(&item) {
+                    // A global was checked with the others (`lower_globals`).
+                    let checked = matches!(item.kind, ItemKind::Global(_));
+                    if !checked && self.check_nesting(&item) {
                         flow::check_item(&item, &self.symbols, &mut self.diags);
                         consts::check_item(
                             &item,
@@ -539,6 +559,9 @@ impl<'d> Lowerer<'d> {
     fn enter_module(&mut self, index: usize, id: &ModuleId) {
         self.module_index = index;
         self.module = id.clone();
+        if let Some(globals) = self.module_globals.get(index) {
+            self.scopes.set_globals(globals);
+        }
     }
 
     /// Reports missing or extra `when program starts` blocks and returns the
@@ -803,7 +826,7 @@ impl<'d> Lowerer<'d> {
                     "the other input",
                 );
             }
-            self.warn_if_function_name(&row.name, &loc);
+            self.warn_if_hides_definition(&row.name, &loc);
             let origin = self.origin(&block.id, part);
             let symbol = Symbol {
                 name: ident,
@@ -1124,8 +1147,36 @@ impl<'d> Lowerer<'d> {
         }
     }
 
-    /// Warns when a local name hides a function of the module.
-    fn warn_if_function_name(&mut self, name: &str, location: &Location) {
+    /// Warns when a local name hides a function or a global of the module
+    /// (`B2C-W0501`).
+    fn warn_if_hides_definition(&mut self, name: &str, location: &Location) {
+        let global = self
+            .module_globals
+            .get(self.module_index)
+            .and_then(|globals| globals.get(name))
+            .cloned();
+        if let Some(global) = global {
+            let what = if matches!(
+                self.symbols.get(&global).map(|symbol| &symbol.kind),
+                Some(SymbolKind::Global { is_const: true })
+            ) {
+                "global constant"
+            } else {
+                "global variable"
+            };
+            let message = format!(
+                "{name} has the same name as a {what}, so that {what} can't be used where {name} exists. This \
+                 works, but it is easy to mix them up, so consider another name.",
+                name = quoted(name)
+            );
+            self.warning_with_decl(
+                codes::SHADOWING,
+                location.clone(),
+                message,
+                &global,
+                &format!("the {what}"),
+            );
+        }
         let function = self
             .module_functions
             .get(self.module_index)

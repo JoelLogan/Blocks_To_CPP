@@ -138,6 +138,10 @@ impl Lowerer<'_> {
             ));
         }
         match self.symbols.get(sym).map(|s| &s.kind)? {
+            SymbolKind::Global { is_const: true } => Some(format!(
+                "{name} is a global constant, so it can't be changed. Choose 'variable' in its 'global' block \
+                 if it needs to change."
+            )),
             SymbolKind::Variable { is_const: true } => Some(format!(
                 "{name} was created as a constant, so it can't be changed. Untick 'const' in its 'create' block \
                  if it needs to change."
@@ -345,7 +349,7 @@ impl Lowerer<'_> {
 
     /// Checks a new local name (variable or counter) against the names
     /// visible here: a redeclaration in the same scope is an error, hiding an
-    /// outer variable or a function is a warning.
+    /// outer variable, a function or a global is a warning.
     pub(super) fn check_new_name(&mut self, name: &str, location: &Location) {
         if let Some(other) = self.scopes.in_same_scope(name).cloned() {
             let message = format!(
@@ -359,7 +363,12 @@ impl Lowerer<'_> {
                 &other,
                 "the other one",
             );
-        } else if let Some(other) = self.scopes.lookup(name).cloned() {
+        } else if let Some(other) = self
+            .scopes
+            .lookup(name)
+            .filter(|other| !self.scopes.is_global(other))
+            .cloned()
+        {
             let message = format!(
                 "{name} hides another variable called {name} from an enclosing block. This works, but it is easy \
                  to mix them up, so consider another name.",
@@ -373,6 +382,6 @@ impl Lowerer<'_> {
                 "the hidden variable",
             );
         }
-        self.warn_if_function_name(name, location);
+        self.warn_if_hides_definition(name, location);
     }
 }

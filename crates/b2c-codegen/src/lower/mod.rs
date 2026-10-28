@@ -234,6 +234,9 @@ struct Lowerer<'a> {
     /// The names that more than one function has (overloads, w2.md §2.8),
     /// whose calls cast their arguments to the parameters' types.
     overloaded: BTreeSet<&'a str>,
+    /// Names of every global in the program (visible in their module, and a
+    /// fresh name must not hide one).
+    global_names: BTreeSet<&'a str>,
     /// Headers and helpers used so far.
     usage: Usage,
     /// The part of the current item that the code being lowered is printed
@@ -255,6 +258,13 @@ impl<'a> Lowerer<'a> {
     fn new(program: &'a Program) -> Self {
         let mut function_names = BTreeSet::new();
         let mut overloaded = BTreeSet::new();
+        let global_names = program
+            .symbols
+            .symbols
+            .values()
+            .filter(|symbol| matches!(symbol.kind, SymbolKind::Global { .. }))
+            .map(|symbol| symbol.name.as_str())
+            .collect();
         for symbol in program.symbols.symbols.values() {
             if matches!(symbol.kind, SymbolKind::Function { .. })
                 && !function_names.insert(symbol.name.as_str())
@@ -267,6 +277,7 @@ impl<'a> Lowerer<'a> {
             standard: program.standard,
             function_names,
             overloaded,
+            global_names,
             usage: Usage::default(),
             part: ItemPart::Body,
             item_headers: ItemHeaders::default(),
@@ -281,12 +292,16 @@ impl<'a> Lowerer<'a> {
         self.symbols.get(id)
     }
 
-    /// Looks up a symbol that holds a value (variable, parameter or loop counter).
+    /// Looks up a symbol that holds a value (variable, parameter, loop
+    /// counter or global).
     fn variable(&self, id: &SymbolId) -> Option<&'a Symbol> {
         self.symbol(id).filter(|symbol| {
             matches!(
                 symbol.kind,
-                SymbolKind::Variable { .. } | SymbolKind::Parameter { .. } | SymbolKind::LoopVariable
+                SymbolKind::Variable { .. }
+                    | SymbolKind::Parameter { .. }
+                    | SymbolKind::LoopVariable
+                    | SymbolKind::Global { .. }
             )
         })
     }
@@ -392,12 +407,14 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    /// Every name visible at the current point: functions, parameters, and
-    /// variables and counters of the enclosing scopes declared so far.
+    /// Every name visible at the current point: functions, globals,
+    /// parameters, and variables and counters of the enclosing scopes
+    /// declared so far.
     fn visible_names(&self) -> BTreeSet<String> {
         let mut names: BTreeSet<String> = self
             .function_names
             .iter()
+            .chain(&self.global_names)
             .map(|name| (*name).to_owned())
             .collect();
         names.extend(self.scopes.iter().flatten().map(|name| name.as_str().to_owned()));

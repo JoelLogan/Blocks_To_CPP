@@ -183,7 +183,6 @@ impl Lowerer<'_> {
         let declared = if let Ok(decl) = access::decl_field(block, &name_field) {
             let ident = self.ident(&decl.name, &location, false);
             self.check_new_name(&decl.name, &location);
-            self.warn_if_function_name(&decl.name, &location);
             let symbol = Symbol {
                 name: ident,
                 kind: SymbolKind::Variable { is_const: true },

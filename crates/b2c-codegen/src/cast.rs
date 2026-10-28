@@ -725,7 +725,6 @@ pub(crate) enum Init {
 
 /// What comes before a declaration's type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code, reason = "made for W2's globals"))]
 pub(crate) enum Qualifier {
     /// Nothing: a variable.
     None,

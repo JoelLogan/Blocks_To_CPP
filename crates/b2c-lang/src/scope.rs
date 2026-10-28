@@ -16,7 +16,7 @@
 //! enough to answer "what is visible here" later, in memory linear in the
 //! number of declarations.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use b2c_ir::ids::{BlockId, SymbolId};
 
@@ -90,6 +90,13 @@ pub(crate) struct Scopes {
     trail: Trail,
     /// The current node of the trail (`None`: nothing is visible).
     head: Option<NodeId>,
+    /// The globals of the module being lowered (w2.md §2.7), by name: seen
+    /// beneath every scope of every item, whatever their canvas position.
+    /// They are not on the trail: the scope query lists them with the
+    /// module's other definitions. Kept across [`Scopes::reset`].
+    globals: BTreeMap<String, SymbolId>,
+    /// The same globals, by symbol.
+    global_syms: BTreeSet<SymbolId>,
 }
 
 /// What [`Scopes::hide`] replaced, to give back to [`Scopes::unhide`].
@@ -103,6 +110,18 @@ impl Scopes {
         self.by_sym.clear();
         self.by_name.clear();
         self.head = None;
+    }
+
+    /// Makes `globals` the module's globals, seen beneath every scope (see
+    /// [`Scopes::globals`]).
+    pub(crate) fn set_globals(&mut self, globals: &BTreeMap<String, SymbolId>) {
+        self.globals.clone_from(globals);
+        self.global_syms = globals.values().cloned().collect();
+    }
+
+    /// Whether a symbol is one of the module's globals.
+    pub(crate) fn is_global(&self, sym: &SymbolId) -> bool {
+        self.global_syms.contains(sym)
     }
 
     /// The current trail node: what is visible here (see [`Trail`]).
@@ -188,17 +207,20 @@ impl Scopes {
             .push((index, sym.clone()));
     }
 
-    /// Whether a symbol is visible here.
+    /// Whether a symbol is visible here: declared in an enclosing scope, or
+    /// one of the module's globals.
     pub(crate) fn contains(&self, sym: &SymbolId) -> bool {
-        self.by_sym.contains_key(sym)
+        self.by_sym.contains_key(sym) || self.global_syms.contains(sym)
     }
 
-    /// The symbol C++ finds for a name here (the innermost declaration).
+    /// The symbol C++ finds for a name here: the innermost declaration, else
+    /// the module's global with that name.
     pub(crate) fn lookup(&self, name: &str) -> Option<&SymbolId> {
         self.by_name
             .get(name)
             .and_then(|stack| stack.last())
             .map(|(_, sym)| sym)
+            .or_else(|| self.globals.get(name))
     }
 
     /// A symbol with this name declared in the same C++ scope as the

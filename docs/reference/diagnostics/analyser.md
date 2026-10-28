@@ -160,8 +160,9 @@ Codes by area:
   the same scope, which C++ does not allow. A function's body counts as the
   same scope as its inputs, and a `for` loop's body as the same scope as its
   counter. Also two fields of a struct, or two values of an enum, with the
-  same name; a field named like its struct; and a struct or enum named like
-  another struct, enum or function.
+  same name; a field named like its struct; a struct or enum named like
+  another struct, enum or function; and a global named like another global,
+  a struct, an enum or a function of the program.
 * **Example:**
 
   ```text
@@ -173,7 +174,9 @@ Codes by area:
   another name." / "Two fields of `Student` are called `mark`. Rename one of
   them." / "A field can't have the name of its struct (`Student`). Rename
   the field." / "There is already a struct or enum called `Student`. Rename
-  one of them."
+  one of them." / "There is already a global called `total`. Rename one of
+  them." / "There is already a function called `area`, and C++ would not
+  know which of the two the name means. Rename the global or the other one."
 * **How to fix:** rename one of them.
 
 ## B2C-E0211 Duplicate function
@@ -345,8 +348,9 @@ Codes by area:
 ## B2C-E0308 Can't be changed
 
 * **Severity:** error
-* **Meaning:** a block changes something that may not change: a constant, the
-  counter of a `for` loop, the item of a `for each` loop in *read-only* mode
+* **Meaning:** a block changes something that may not change: a constant (a
+  `create` block with *const* ticked, or a global constant), the counter of a
+  `for` loop, the item of a `for each` loop in *read-only* mode
   (or the key or value of `for each key, value`), a read-only function input,
   or the error a `catch` part caught. A `for each` loop in *editable* mode
   changes the items of its collection, so the collection must be a variable
@@ -359,8 +363,10 @@ Codes by area:
   'copy' to change a copy of each item, or 'editable' to change the items
   themselves." / for a caught error, "`e` is the error caught by a 'catch'
   part, so it can't be changed. Create a variable for a value that changes."
-* **How to fix:** untick *const*, use another variable, or change the input's
-  or the loop's mode.
+  / for a global constant, "`kMax` is a global constant, so it can't be
+  changed. Choose 'variable' in its 'global' block if it needs to change."
+* **How to fix:** untick *const*, choose *variable* in a *global* block, use
+  another variable, or change the input's or the loop's mode.
 
 ## B2C-E0309 auto without a starting value
 
@@ -618,7 +624,15 @@ Codes by area:
   that C++ cannot order, such as two globals whose starting values are each
   worked out from the other. Each definition must come after the ones it
   uses.
+  A global's starting value also needs every global that the functions it
+  calls read (through every call), and a default value of a function input
+  needs the functions it calls declared first.
 * **Example:** `global [int] [a] = (b + 1)` and `global [int] [b] = (a + 1)`.
+* **Message:** "These definitions each need the next one first, in a circle
+  that C++ cannot put in order: `a` needs `b` needs `a`. Change one of them
+  so that it no longer needs the next." / for a global set from its own
+  value, "`z` needs its own value to be set first, which C++ cannot do.
+  Change it so that it no longer needs itself."
 * **How to fix:** give one of them a starting value that does not use the
   other, and set it later in `when program starts`.
 
@@ -697,7 +711,7 @@ Codes by area:
 
 * **Severity:** error
 * **Meaning:** a block lacks something the analyser needs: a value in a value
-  input, a name, a chosen variable or function, or a valid setting (type,
+  input (a global constant's starting value included), a name, a chosen variable or function, or a valid setting (type,
   dropdown choice, checkbox, function input row). A type setting or a
   function input's type must be one a variable can hold, so a file or an
   error type is refused there, and `nothing` (void) is allowed only as what a
@@ -713,7 +727,8 @@ Codes by area:
   with no variable chosen.
 * **Message:** "This block needs a condition." / "Choose a variable in this
   block." / "Choose a collection in this block." / "`pow` is not one of the
-  choices for this setting."
+  choices for this setting." / "`kMax` is a constant, so it needs a value: give it
+  one, or choose 'variable'."
 * **How to fix:** fill in the missing part, or choose the setting again.
 
 ## B2C-E0431 Blocks nested too deeply
@@ -793,11 +808,15 @@ Codes by area:
 
 * **Severity:** warning
 * **Meaning:** a new variable (or loop counter, or function input) has the
-  same name as a variable from an enclosing block, or as a function. This is
-  legal C++, but it is easy to mix the two up, and the hidden function can't
-  be called where the variable exists.
+  same name as a variable from an enclosing block, as a function, or as a
+  global of the module. This is legal C++, but it is easy to mix the two up,
+  and the hidden function can't be called, nor the hidden global used, where
+  the variable exists.
 * **Message:** "`x` hides another variable called `x` from an enclosing block.
-  This works, but it is easy to mix them up, so consider another name."
+  This works, but it is easy to mix them up, so consider another name." /
+  "`count` has the same name as a global variable, so that global variable
+  can't be used where `count` exists. This works, but it is easy to mix them
+  up, so consider another name."
 * **How to fix:** choose a different name.
 
 ## B2C-W0502 Unreachable block

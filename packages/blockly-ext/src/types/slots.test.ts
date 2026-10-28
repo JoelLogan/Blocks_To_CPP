@@ -236,6 +236,8 @@ describe('the slot fixture', () => {
       'type.new',
       'type.set_field',
       'var.declare',
+      // W2's globals (w2.md §2.7).
+      'var.global',
       'var.set',
     ]);
   });

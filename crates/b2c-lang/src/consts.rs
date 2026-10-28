@@ -216,17 +216,29 @@ pub(crate) fn check_item(
         ItemKind::Main(main) => (&main.body, Type::Int),
         ItemKind::Function(function) => (&function.body, function.ret.clone()),
         ItemKind::Global(global) => {
-            // A global's starting value converts to its type; recording a
-            // constant global's value is W2's globals' (package C2).
+            // A global's starting value converts to its type; a constant's
+            // value is recorded, as a `const` variable's (w2.md §2.7).
             let mut checker = Checker {
                 context: Context { symbols, unchecked },
                 diags,
                 constants,
                 ret: Type::Void,
             };
-            if let Some(init) = &global.init {
-                let ty = symbols.get(&global.symbol).map(|symbol| symbol.ty.clone());
-                checker.eval_into(init, ty.as_ref());
+            let Some(init) = &global.init else { return };
+            let symbol = symbols.get(&global.symbol);
+            let ty = symbol.map(|symbol| symbol.ty.clone());
+            let value = checker.eval_into(init, ty.as_ref());
+            if let (Some(symbol), Some(value)) = (symbol, value)
+                && matches!(symbol.kind, SymbolKind::Global { is_const: true })
+                && let Some(converted) = value.value.convert(&symbol.ty)
+            {
+                checker.constants.insert(
+                    global.symbol.clone(),
+                    Constant {
+                        value: converted,
+                        constant_expression: value.constant_expression,
+                    },
+                );
             }
             return;
         }

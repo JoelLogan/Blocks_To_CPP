@@ -382,14 +382,19 @@ describe('the Variables category', () => {
     declarations: { main: ['d_secret', 'd_guess', 'd_label'], fn_greet: ['d_count'] },
   };
 
-  it('offers Make a variable, the create block named value, and one set', () => {
+  it('offers Make a variable, the create and global blocks named value, and one set', () => {
     const items = variablesContents(context());
     expect(items[0]).toEqual({
       kind: 'button',
       text: 'Make a variable',
       callbackkey: MAKE_VARIABLE_BUTTON,
     });
-    const [create, set, ...rest] = blocksOf(items);
+    const [create, global, set, ...rest] = blocksOf(items);
+    // A global, right after create (w2.md §2.7): an int variable starting at 0.
+    expect(global?.type).toBe('var.global');
+    expect(global?.declares).toEqual({ NAME: 'value' });
+    expect(global?.fields?.['TYPE']).toBe('int');
+    expect(shadowOf(global, 'VALUE')).toMatchObject({ value: '0', absent: false });
     expect(create?.type).toBe('var.declare');
     // The flyout shows the first default name: a free one is chosen where the block lands.
     expect(create?.declares).toEqual({ NAME: 'value' });
@@ -466,7 +471,7 @@ describe('the Variables category', () => {
     const items = variablesContents(context({ ...game, all: [label, count] }));
     expect(
       blocksOf(items)
-        .filter((block) => block.type !== 'var.get' && block.type !== 'var.declare')
+        .filter((block) => !['var.get', 'var.declare', 'var.global'].includes(block.type))
         .map((block) => [block.type, varOf(block)]),
     ).toEqual([
       ['var.set', 's_label'],
@@ -575,6 +580,57 @@ describe('the Variables category', () => {
     expect(JSON.stringify(variablesContents(reordered))).toBe(
       JSON.stringify(variablesContents(ctx)),
     );
+  });
+});
+
+describe('the globals of the Variables category', () => {
+  it('lists them first, under Everywhere, before main’s and each function’s variables', () => {
+    const ctx = context({
+      functions: ['fn_greet'],
+      declarations: { main: ['d_a'] },
+      all: [
+        variable('s_a', 'a', 'd_a'),
+        symbolFixture('s_n', 'n', { kind: 'parameter', mode: 'copy', declBlock: 'fn_greet' }),
+        symbolFixture('s_greet', 'greet', {
+          kind: 'function',
+          params: ['s_n'],
+          returns: 'void',
+          declBlock: 'fn_greet',
+        }),
+        symbolFixture('s_total', 'total', { kind: 'global', declBlock: 'gl_total' }),
+        symbolFixture('s_max', 'kMax', { kind: 'global', isConst: true, declBlock: 'gl_max' }),
+      ],
+    });
+    expect(
+      variableGroups(ctx.workspace, ctx.symbols, 'mod_main').map((group) => [
+        group.owner.kind,
+        group.symbols.map((symbol) => symbol.id),
+      ]),
+    ).toEqual([
+      ['everywhere', ['s_max', 's_total']],
+      ['main', ['s_a']],
+      ['function', ['s_n']],
+    ]);
+    const items = variablesContents(ctx);
+    expect(labelsOf(items)).toEqual(['Everywhere', 'In when program starts', 'In greet']);
+    // set and change are preset to main's variable first; a global constant is never preset.
+    expect(
+      blocksOf(items)
+        .filter((block) => block.type === 'var.set' || block.type === 'var.change')
+        .map((block) => varOf(block)),
+    ).toEqual(['s_a', 's_a']);
+    // With main's variable gone, set takes the global variable, never the constant.
+    const globals = context({
+      all: [
+        symbolFixture('s_total', 'total', { kind: 'global', declBlock: 'gl_total' }),
+        symbolFixture('s_max', 'kMax', { kind: 'global', isConst: true, declBlock: 'gl_max' }),
+      ],
+    });
+    expect(
+      blocksOf(variablesContents(globals))
+        .filter((block) => block.type === 'var.set')
+        .map((block) => varOf(block)),
+    ).toEqual(['s_total']);
   });
 });
 

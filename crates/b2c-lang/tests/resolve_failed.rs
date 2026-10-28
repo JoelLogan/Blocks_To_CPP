@@ -62,10 +62,10 @@ fn exercise(document: &Document, what: &str) -> Analysis {
                 block.id
             );
             // A definition is an item of its own: it sees the module, not `main`'s
-            // variables (a struct's or an enum's, w2.md §2.2).
+            // variables (a struct's or an enum's, w2.md §2.2; a global's, §2.7).
             let item = matches!(
                 block.block_type.as_str(),
-                "program.main" | "func.define" | "type.struct" | "type.enum"
+                "program.main" | "func.define" | "type.struct" | "type.enum" | "var.global"
             );
             assert!(
                 !*top || item || found == parked,

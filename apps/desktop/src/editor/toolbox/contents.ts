@@ -10,7 +10,8 @@
  *   whole-number, decimal or character type exists, one *change* (whose menu also gives the other
  *   update operators), each preset to the first variable of `main` it fits (by name), or else to
  *   the first one of the module it fits; then a getter for each variable of the module, grouped
- *   by the function that declares it (`main` first, then the functions by name) and sorted by name
+ *   by where it is seen (the module's globals under *Everywhere*, w2.md §2.7, then by the function
+ *   that declares it, `main` first, then the functions by name) and sorted by name
  *   ({@link variableGroups}), at most {@link MAX_LISTED_GETTERS}, then a note of how many more
  *   there are (03 §3.6, decision D3);
  * - **Functions**: the catalog entries, then, under *Your functions*, a call block for every
@@ -279,6 +280,8 @@ export function staticCategoryContents(id: CategoryId): Blockly.utils.toolbox.Fl
 
 /** The function that declares a variable, as the Variables category groups it. */
 export type VariableOwner =
+  /** The module itself: its globals, seen everywhere in it (w2.md §2.7). */
+  | { readonly kind: 'everywhere' }
   /** *when program starts*. */
   | { readonly kind: 'main' }
   /** A function definition (its block ID and name). */
@@ -292,6 +295,7 @@ export interface VariableGroup {
   readonly symbols: readonly SymbolInfo[];
 }
 
+const EVERYWHERE_OWNER: VariableOwner = Object.freeze({ kind: 'everywhere' });
 const MAIN_OWNER: VariableOwner = Object.freeze({ kind: 'main' });
 const OTHER_OWNER: VariableOwner = Object.freeze({ kind: 'other' });
 
@@ -337,6 +341,9 @@ function ownerOf(
   functionNames: ReadonlyMap<string, string>,
   rootOf: (block: Blockly.Block) => Blockly.Block,
 ): VariableOwner {
+  if (symbol.kind === 'global') {
+    return EVERYWHERE_OWNER;
+  }
   const declaration = workspace.getBlockById(symbol.declBlock);
   const root = declaration === null ? null : rootOf(declaration);
   if (root?.type === MAIN_TYPE) {
@@ -352,10 +359,18 @@ function ownerOf(
   return OTHER_OWNER;
 }
 
-/** The order of groups: `main`, then the functions by name (then block ID), then the others. */
+/**
+ * The order of groups: the globals, `main`, then the functions by name (then block ID), then the
+ * others.
+ */
 function byOwnerOrder(a: VariableGroup, b: VariableGroup): number {
-  const rank = (owner: VariableOwner): number =>
-    owner.kind === 'main' ? 0 : owner.kind === 'function' ? 1 : 2;
+  const ranks: Readonly<Record<VariableOwner['kind'], number>> = {
+    everywhere: 0,
+    main: 1,
+    function: 2,
+    other: 3,
+  };
+  const rank = (owner: VariableOwner): number => ranks[owner.kind];
   const difference = rank(a.owner) - rank(b.owner);
   if (difference !== 0 || a.owner.kind !== 'function' || b.owner.kind !== 'function') {
     return difference;
@@ -368,9 +383,10 @@ function byOwnerOrder(a: VariableGroup, b: VariableGroup): number {
 }
 
 /**
- * Every variable of module `moduleId` the latest analysis knows (variables, parameters and loop
- * counters), grouped by the function that declares it: `main` first, then the functions by name,
- * then anything else; each group sorted by name, then ID. Empty groups are left out. It follows
+ * Every variable of module `moduleId` the latest analysis knows (globals, variables, parameters
+ * and loop counters), grouped by where it is seen: the globals first (*Everywhere*), then by the
+ * function that declares it, `main` first, then the functions by name, then anything else; each
+ * group sorted by name, then ID. Empty groups are left out. It follows
  * each parent link of the canvas at most once ({@link rootFinder}), so it takes time linear in the
  * program's length: the toolbox's contents key computes it after every edit.
  */
@@ -400,9 +416,11 @@ export function variableGroups(
     .sort(byOwnerOrder);
 }
 
-/** The heading of a group of getters: *In when program starts*, *In greet*. */
+/** The heading of a group of getters: *Everywhere*, *In when program starts*, *In greet*. */
 export function groupHeading(owner: VariableOwner): string | null {
   switch (owner.kind) {
+    case 'everywhere':
+      return EVERYWHERE_HEADING;
     case 'main':
       return `In ${PROGRAM_LABEL}`;
     case 'function':
@@ -411,6 +429,9 @@ export function groupHeading(owner: VariableOwner): string | null {
       return null;
   }
 }
+
+/** The heading of the module's globals in the Variables category (w2.md §2.7). */
+export const EVERYWHERE_HEADING = 'Everywhere';
 
 /** The note after the getters when there are more variables than the category lists. */
 export function moreVariablesNote(count: number): string {

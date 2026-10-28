@@ -4021,6 +4021,111 @@
       "extra": []
     },
     {
+      "id": "var.global",
+      "version": 1,
+      "category": "variables",
+      "shape": "definition",
+      "output": null,
+      "typeVars": {
+        "T": "value"
+      },
+      "label": {
+        "friendly": "global %KIND %TYPE %NAME = %VALUE share with other modules %SHARED",
+        "cpp": "%TYPE %NAME = %VALUE;"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Creates a variable, or a constant, that every function of the module can use, wherever the block is. A constant needs a value and never changes.",
+      "field": [
+        {
+          "name": "KIND",
+          "kind": "dropdown",
+          "options": [
+            [
+              "variable",
+              "variable"
+            ],
+            [
+              "constant",
+              "constant"
+            ]
+          ],
+          "types": [],
+          "default": "variable"
+        },
+        {
+          "name": "TYPE",
+          "kind": "type",
+          "options": [],
+          "types": [
+            "int",
+            "double",
+            "bool",
+            "char",
+            "std::string",
+            {
+              "std::vector": "int"
+            },
+            {
+              "std::vector": "double"
+            },
+            {
+              "std::vector": "std::string"
+            }
+          ],
+          "default": "int",
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        },
+        {
+          "name": "NAME",
+          "kind": "symbol_decl",
+          "options": [],
+          "types": [],
+          "default": null,
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        },
+        {
+          "name": "SHARED",
+          "kind": "checkbox",
+          "options": [],
+          "types": [],
+          "default": false
+        }
+      ],
+      "input": [
+        {
+          "name": "VALUE",
+          "check": "any",
+          "optional": true,
+          "repeat": null,
+          "default": [],
+          "type": {
+            "kind": "var",
+            "name": "T"
+          }
+        }
+      ],
+      "statement": [],
+      "extra": [],
+      "order": [
+        {
+          "field": "TYPE"
+        },
+        {
+          "field": "NAME"
+        },
+        {
+          "input": "VALUE"
+        }
+      ]
+    },
+    {
       "id": "var.set",
       "version": 1,
       "category": "variables",
@@ -4105,6 +4210,22 @@
         "entry": [
           {
             "block": "var.declare",
+            "label": null,
+            "preset": {
+              "fields": {
+                "TYPE": "int"
+              },
+              "inputs": {
+                "VALUE": [
+                  {
+                    "num": "0"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "block": "var.global",
             "label": null,
             "preset": {
               "fields": {

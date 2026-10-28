@@ -35,7 +35,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use b2c_ir::diag::Location;
 use b2c_ir::ids::{BlockId, SymbolId};
 use b2c_ir::layout::Layout;
-use b2c_ir::sast::{Expr, ExprKind, ItemKind, Module, SymbolKind, SymbolTable};
+use b2c_ir::sast::{Block, Expr, ExprKind, GlobalDef, ItemKind, Module, SymbolKind, SymbolTable};
 use b2c_ir::types::{LibType, Type};
 
 use crate::codes;
@@ -55,7 +55,6 @@ pub(crate) enum Need {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum NodeKind {
     /// A global constant (w2.md §2.7).
-    #[expect(dead_code, reason = "globals join the graph in the next commit")]
     Constant,
     /// A struct.
     Struct,
@@ -64,10 +63,6 @@ pub(crate) enum NodeKind {
     /// A function's declaration.
     Function,
     /// A global variable, or any other declaration.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "globals join the graph in the next commit")
-    )]
     Other,
 }
 
@@ -359,6 +354,17 @@ impl Graph {
 
     /// `B2C-E0421`'s message for `node`, round `path`.
     fn declaration_cycle(&self, node: usize, path: &[&Dep]) -> String {
+        if let [only] = path
+            && only.on == node
+        {
+            // A global set from its own value, directly or through a
+            // function it calls.
+            return format!(
+                "{} needs its own value to be set first, which C++ cannot do. Change it so that it no longer \
+                 needs itself.",
+                quoted(&self.nodes[node].name)
+            );
+        }
         let mut names = vec![quoted(&self.nodes[node].name)];
         names.extend(
             path.iter()
@@ -479,6 +485,18 @@ pub(crate) fn module_graph(module: &Module, symbols: &SymbolTable) -> Graph {
             ItemKind::Struct(def) => (&def.symbol, NodeKind::Struct),
             ItemKind::Enum(def) => (&def.symbol, NodeKind::Enum),
             ItemKind::Function(def) => (&def.symbol, NodeKind::Function),
+            ItemKind::Global(def) => {
+                let constant = matches!(
+                    symbols.get(&def.symbol).map(|symbol| &symbol.kind),
+                    Some(SymbolKind::Global { is_const: true })
+                );
+                let kind = if constant {
+                    NodeKind::Constant
+                } else {
+                    NodeKind::Other
+                };
+                (&def.symbol, kind)
+            }
             _ => continue,
         };
         let Some(found) = symbols.get(symbol) else {
@@ -509,35 +527,16 @@ pub(crate) fn module_graph(module: &Module, symbols: &SymbolTable) -> Graph {
                 *comparable || *printable,
             ),
             Some(SymbolKind::Function { params, .. }) => {
-                // The parameters' and the result's types: a forward
-                // declaration of a struct is enough, an enum is complete.
-                let ret = symbols.get(symbol).map(|s| &s.ty);
-                let mut named = Vec::new();
-                for ty in params
-                    .iter()
-                    .filter_map(|p| symbols.get(p))
-                    .map(|p| &p.ty)
-                    .chain(ret)
-                {
-                    user_types_in(ty, &mut named);
-                }
                 let location = graph.nodes[node].location(module);
-                for id in named {
-                    let Some(&on) = by_symbol.get(id) else {
-                        continue;
-                    };
-                    let need = if graph.nodes[on].kind == NodeKind::Struct {
-                        Need::Forward
-                    } else {
-                        Need::Complete
-                    };
-                    graph.need(node, on, need, location.clone());
-                }
+                signature_needs(&mut graph, &by_symbol, symbols, node, symbol, params, &location);
             }
             _ => {}
         }
     }
-    // Default values: a parameter's, a field's.
+    // Default values, a parameter's and a field's: the declaration of each
+    // function they call and of each global they name, every user type
+    // their values have.
+    let reach = Reach::new(module);
     for (index, item) in module.items.iter().enumerate() {
         let Some(&node) = by_item.get(&index) else {
             continue;
@@ -546,10 +545,22 @@ pub(crate) fn module_graph(module: &Module, symbols: &SymbolTable) -> Graph {
         match &item.kind {
             ItemKind::Function(def) => uses.exprs(def.params.iter().filter_map(|p| p.default.as_ref())),
             ItemKind::Struct(def) => uses.exprs(def.defaults.values()),
+            ItemKind::Global(def) => {
+                global_needs(
+                    &mut graph,
+                    &by_symbol,
+                    symbols,
+                    &reach,
+                    node,
+                    def,
+                    &item.origin.location(),
+                );
+                continue;
+            }
             _ => continue,
         }
         let location = item.origin.location();
-        for id in uses.calls.iter().chain(&uses.types) {
+        for id in uses.calls.iter().chain(&uses.symbols).chain(&uses.types) {
             if let Some(&on) = by_symbol.get(id)
                 && on != node
             {
@@ -558,6 +569,163 @@ pub(crate) fn module_graph(module: &Module, symbols: &SymbolTable) -> Graph {
         }
     }
     graph
+}
+
+/// The needs of a function's declaration on the types of its parameters and
+/// result: a forward declaration of a struct is enough, an enum is needed
+/// complete.
+fn signature_needs(
+    graph: &mut Graph,
+    by_symbol: &BTreeMap<&SymbolId, usize>,
+    symbols: &SymbolTable,
+    node: usize,
+    function: &SymbolId,
+    params: &[SymbolId],
+    location: &Location,
+) {
+    let ret = symbols.get(function).map(|s| &s.ty);
+    let mut named = Vec::new();
+    for ty in params
+        .iter()
+        .filter_map(|p| symbols.get(p))
+        .map(|p| &p.ty)
+        .chain(ret)
+    {
+        user_types_in(ty, &mut named);
+    }
+    for id in named {
+        let Some(&on) = by_symbol.get(id) else {
+            continue;
+        };
+        let need = if graph.nodes[on].kind == NodeKind::Struct {
+            Need::Forward
+        } else {
+            Need::Complete
+        };
+        graph.need(node, on, need, location.clone());
+    }
+}
+
+/// What running each function, and building each struct, of a module uses
+/// (modules.md §4.1, *initialised*): a function's body and the default
+/// values of its parameters, a struct's default member initialisers.
+struct Reach<'p> {
+    functions: BTreeMap<&'p SymbolId, Uses<'p>>,
+    structs: BTreeMap<&'p SymbolId, Uses<'p>>,
+}
+
+impl<'p> Reach<'p> {
+    fn new(module: &'p Module) -> Self {
+        let mut functions = BTreeMap::new();
+        let mut structs = BTreeMap::new();
+        for item in &module.items {
+            match &item.kind {
+                ItemKind::Function(def) => {
+                    let mut uses = Uses::default();
+                    uses.exprs(def.params.iter().filter_map(|p| p.default.as_ref()));
+                    uses.exprs(body_exprs(&def.body));
+                    functions.insert(&def.symbol, uses);
+                }
+                ItemKind::Struct(def) => {
+                    let mut uses = Uses::default();
+                    uses.exprs(def.defaults.values());
+                    structs.insert(&def.symbol, uses);
+                }
+                _ => {}
+            }
+        }
+        Reach { functions, structs }
+    }
+
+    /// The symbols that setting a value from `start` reads: directly, in the
+    /// body of each function it calls (through every call, transitively), in
+    /// the default values of those calls, and in the default member
+    /// initialisers of each struct it builds, directly or as a field. The
+    /// walk is conservative: a function that reads a symbol on any path
+    /// counts. Each function and struct is walked once.
+    fn reads(&self, start: &Uses<'p>, symbols: &SymbolTable) -> BTreeSet<&'p SymbolId> {
+        let mut read: BTreeSet<&SymbolId> = start.symbols.iter().copied().collect();
+        let mut seen: BTreeSet<&SymbolId> = BTreeSet::new();
+        let mut queue: Vec<&SymbolId> = start.calls.iter().chain(&start.types).copied().collect();
+        while let Some(id) = queue.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            if let Some(uses) = self.functions.get(id).or_else(|| self.structs.get(id)) {
+                read.extend(uses.symbols.iter().copied());
+                queue.extend(uses.calls.iter().chain(&uses.types).copied());
+            }
+            // A struct built also builds its fields.
+            if let Some(SymbolKind::Struct { fields, .. }) = symbols.get(id).map(|symbol| &symbol.kind) {
+                for field in fields.iter().filter_map(|field| symbols.get(field)) {
+                    let mut named = Vec::new();
+                    user_types_in(&field.ty, &mut named);
+                    queue.extend(
+                        named
+                            .into_iter()
+                            .filter_map(|named| self.structs.get_key_value(named).map(|(key, _)| *key)),
+                    );
+                }
+            }
+        }
+        read
+    }
+}
+
+/// The needs of a global (modules.md §4.1): its type's definitions
+/// (complete), the declaration of each function its starting value calls
+/// and of each user type its values have, and the definition of every
+/// global the value reads when it is set (*initialised*), itself included:
+/// a global set from its own value is a circle (`B2C-E0421`).
+fn global_needs(
+    graph: &mut Graph,
+    by_symbol: &BTreeMap<&SymbolId, usize>,
+    symbols: &SymbolTable,
+    reach: &Reach<'_>,
+    node: usize,
+    def: &GlobalDef,
+    location: &Location,
+) {
+    let mut uses = Uses::default();
+    uses.exprs(def.init.iter());
+    let mut named = Vec::new();
+    if let Some(symbol) = symbols.get(&def.symbol) {
+        user_types_in(&symbol.ty, &mut named);
+    }
+    let read = reach.reads(&uses, symbols);
+    let globals = read.into_iter().filter(|id| {
+        matches!(
+            symbols.get(id).map(|symbol| &symbol.kind),
+            Some(SymbolKind::Global { .. })
+        )
+    });
+    let mut needed: BTreeSet<usize> = BTreeSet::new();
+    for id in named
+        .into_iter()
+        .chain(uses.calls.iter().copied())
+        .chain(uses.types.iter().copied())
+        .chain(globals)
+    {
+        if let Some(&on) = by_symbol.get(id)
+            && needed.insert(on)
+        {
+            graph.need(node, on, Need::Complete, location.clone());
+        }
+    }
+}
+
+/// Every expression of a statement list, at any depth.
+fn body_exprs(body: &Block) -> Vec<&Expr> {
+    let mut exprs = Vec::new();
+    let mut lists = vec![body];
+    while let Some(list) = lists.pop() {
+        for stmt in &list.stmts {
+            let (values, nested) = crate::nesting::parts(stmt);
+            exprs.extend(values);
+            lists.extend(nested);
+        }
+    }
+    exprs
 }
 
 impl Graph {

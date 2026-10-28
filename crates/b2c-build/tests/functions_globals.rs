@@ -12,6 +12,9 @@
 //! * overloads: three functions called `area` run and print each, the calls
 //!   cast their arguments to their own function's inputs, and quoted text
 //!   for an overload set with a `bool` one becomes a `std::string`;
+//! * globals and constants: `constexpr` or `const`, a constant as a `case`
+//!   label beside a switch on an enum, and a global set from a function
+//!   printed after the global that function reads;
 
 // Test code: unwrap/expect/panic and builders that take JSON by value are
 // fine here.
@@ -210,6 +213,36 @@ impl Blocks {
     /// *return* `value`.
     fn ret(&self, value: Value) -> Value {
         self.block("func.return", &json!({ "inputs": { "VALUE": value } }))
+    }
+}
+
+impl Blocks {
+    /// *global* `name` (symbol `s_<name>`): a `variable` or `constant` of
+    /// type `ty`, set to `value` when one is given.
+    fn global(&self, kind: &str, ty: &str, name: &str, value: Option<Value>) -> Value {
+        let mut parts = json!({ "x": 800, "y": 40, "fields": { "KIND": kind, "TYPE": ty,
+                                "NAME": { "sym": format!("s_{name}"), "name": name } } });
+        if let Some(value) = value {
+            parts["inputs"] = json!({ "VALUE": value });
+        }
+        self.block("var.global", &parts)
+    }
+
+    /// *switch on (value)* with one case per `(label, statements)`.
+    fn switch(&self, value: Value, cases: Vec<(Value, Vec<Value>)>) -> Value {
+        let mut inputs = Map::new();
+        let mut statements = Map::new();
+        inputs.insert(String::from("VALUE"), value);
+        let count = cases.len();
+        for (index, (label, body)) in cases.into_iter().enumerate() {
+            inputs.insert(format!("CASE{index}"), label);
+            statements.insert(format!("DO{index}"), Value::Array(body));
+        }
+        self.block(
+            "control.switch",
+            &json!({ "extra": { "caseCount": count, "hasDefault": false },
+                     "inputs": inputs, "statements": statements }),
+        )
     }
 }
 
@@ -549,4 +582,100 @@ fn quoted_text_calls_the_text_overload_beside_a_bool_one() {
         cpp.contains("    show(std::string(\"hello\"));\n    show(true);\n"),
         "{cpp}"
     );
+}
+
+#[test]
+fn globals_and_constants_run_in_the_order_they_need() {
+    let b = Blocks::default();
+    let values: Vec<Value> = ["Fast", "Slow"]
+        .iter()
+        .map(|value| json!({ "sym": format!("s_Mode_{value}"), "name": value }))
+        .collect();
+    let mode = b.block(
+        "type.enum",
+        &json!({ "x": 440, "y": 400, "fields": { "NAME": { "sym": "s_Mode", "name": "Mode" } },
+                 "extra": { "values": values } }),
+    );
+    let mode_value = |name: &str| {
+        json!({ "block": b.block(
+            "type.enum_value",
+            &json!({ "fields": { "ENUM": { "ref": "s_Mode" }, "VALUE": { "ref": format!("s_Mode_{name}") } } }),
+        ) })
+    };
+    let top = vec![
+        mode,
+        // `kLimit` reads `kBase`, which comes after it by block ID.
+        b.global("constant", "int", "kLimit", Some(tokens(&["kBase", "*", "2"]))),
+        b.global("constant", "int", "kBase", Some(number("5"))),
+        b.global(
+            "constant",
+            "double",
+            "kRate",
+            Some(json!({ "expr": [{ "num": "1.5" }] })),
+        ),
+        b.global("constant", "std::string", "kName", Some(text("Ann"))),
+        // `counter` is set from `next_id`, which reads `start`: `start` is
+        // printed first, though `counter` comes first by name.
+        b.global("variable", "int", "counter", Some(b.call("next_id", vec![]))),
+        b.global("variable", "int", "start", Some(number("41"))),
+        b.define(
+            "next_id",
+            "int",
+            &[],
+            vec![],
+            vec![b.ret(tokens(&["start", "+", "1"]))],
+        ),
+    ];
+    let body = vec![
+        b.block(
+            "var.declare",
+            &json!({ "fields": { "TYPE": "int", "NAME": { "sym": "s_n", "name": "n" } },
+                     "inputs": { "VALUE": number("10") } }),
+        ),
+        b.switch(
+            tokens(&["n"]),
+            vec![
+                (tokens(&["kLimit"]), vec![b.print(vec![text("limit")])]),
+                (tokens(&["kBase"]), vec![b.print(vec![text("base")])]),
+            ],
+        ),
+        b.block(
+            "var.declare",
+            &json!({ "fields": { "TYPE": { "ref": "s_Mode" }, "NAME": { "sym": "s_m", "name": "m" } },
+                     "inputs": { "VALUE": mode_value("Slow") } }),
+        ),
+        b.switch(
+            tokens(&["m"]),
+            vec![
+                (mode_value("Fast"), vec![b.print(vec![text("fast")])]),
+                (mode_value("Slow"), vec![b.print(vec![text("slow")])]),
+            ],
+        ),
+        b.print(vec![tokens(&["counter"])]),
+        b.print(vec![tokens(&["kName"])]),
+        b.print(vec![tokens(&["kRate"])]),
+        b.block(
+            "var.set",
+            &json!({ "fields": { "VAR": { "ref": "s_counter" } }, "inputs": { "VALUE": tokens(&["counter", "+", "kBase"]) } }),
+        ),
+        b.print(vec![tokens(&["counter"])]),
+    ];
+    let cpp = builds_and_runs(
+        "globals",
+        &top,
+        body,
+        &[],
+        &[],
+        &printed("limit\nslow\n42\nAnn\n1.5\n47\n"),
+    );
+    for expected in [
+        "constexpr int kBase = 5;\nconstexpr int kLimit = kBase * 2;\nconst std::string kName = \"Ann\";\nconstexpr double kRate = 1.5;\n",
+        "int next_id();\n",
+        "int start = 41;\nint counter = next_id();\n",
+    ] {
+        assert!(cpp.contains(expected), "{expected}\n{cpp}");
+    }
+    let at = |text: &str| cpp.find(text).unwrap();
+    assert!(at("enum class Mode") < at("int next_id();"), "{cpp}");
+    assert!(at("int next_id();") < at("int start = 41;"), "{cpp}");
 }

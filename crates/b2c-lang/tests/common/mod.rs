@@ -312,6 +312,9 @@ pub(crate) const AFTER_M2: &[&str] = &[
     "control.switch",
     "control.wait",
     "file.",
+    // Package C2: functions and globals.
+    "var.global",
+    "var.flip",
 ];
 
 /// Whether `block_type` came after M2 ([`AFTER_M2`]).

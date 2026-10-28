@@ -454,13 +454,14 @@ describe('the toolbox’s buttons, headings and notes', () => {
     const opened = await withToolbox();
     intoToolbox(opened);
     const { keyboard } = opened;
-    expect(walk(keyboard, 'ArrowDown', 12)).toEqual([
+    expect(walk(keyboard, 'ArrowDown', 13)).toEqual([
       // A note of two lines is one stop, read as a whole.
       'note: Your program starts at “when program starts”.',
       'block “stop program with exit code”',
       'category “Variables”',
       'button “Make a variable”',
       'block “create int variable value”',
+      'block “global variable int value”',
       'block “set”',
       'block “change”',
       // The getters' group headings, and each getter named with its group.

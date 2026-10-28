@@ -437,3 +437,262 @@ fn a_call_names_its_overload_by_symbol() {
         "{found:#?}"
     );
 }
+
+// --- Globals and constants (w2.md §2.7) -------------------------------------------
+
+/// *global `kind` `ty` `name` = `value`* (`kind`: `variable` or `constant`).
+fn global(kind: &str, ty: &str, name: &str, value: Option<Value>) -> Value {
+    let mut block = serde_json::json!({
+        "id": format!("gl_{name}"), "type": "var.global", "v": 1,
+        "fields": {"KIND": kind, "TYPE": ty, "NAME": {"sym": sym(name), "name": name}}
+    });
+    if let Some(value) = value {
+        block["inputs"] = serde_json::json!({ "VALUE": value });
+    }
+    block
+}
+
+/// The global items of the first module, by their symbol: (`init` present,
+/// `constexpr`).
+fn globals_json(a: &b2c_lang::Analysis) -> Vec<(String, bool, bool)> {
+    let program = serde_json::to_value(&a.program).unwrap();
+    program["modules"][0]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| {
+            let def = item["kind"].get("global")?;
+            Some((
+                def["symbol"].as_str().unwrap().to_owned(),
+                !def["init"].is_null(),
+                def["constexpr"].as_bool().unwrap(),
+            ))
+        })
+        .collect()
+}
+
+/// The names of the first module's declarations, in the order the layout
+/// prints them.
+fn declaration_order(a: &b2c_lang::Analysis) -> Vec<String> {
+    let module = &a.program.modules[0];
+    a.program.layout.modules[0]
+        .source_order
+        .iter()
+        .map(|&item| {
+            let symbol = match &module.items[item].kind {
+                b2c_ir::sast::ItemKind::Global(def) => &def.symbol,
+                b2c_ir::sast::ItemKind::Function(def) => &def.symbol,
+                b2c_ir::sast::ItemKind::Struct(def) => &def.symbol,
+                b2c_ir::sast::ItemKind::Enum(def) => &def.symbol,
+                other => panic!("not a declaration: {other:?}"),
+            };
+            a.program.symbols.get(symbol).unwrap().name.as_str().to_owned()
+        })
+        .collect()
+}
+
+#[test]
+fn globals_are_seen_everywhere_in_their_module() {
+    let a = analyze(&doc(vec![
+        // `main` and the function come before the globals by block ID.
+        main(vec![
+            set("count", e("count + kStep")),
+            call_stmt("report", vec![]),
+        ]),
+        func("report", "void", &[], vec![print(vec![e("count"), e("kName")])]),
+        global("variable", "int", "count", Some(e("0"))),
+        global("constant", "int", "kStep", Some(e("2"))),
+        global("constant", "double", "kRate", Some(e("1.5"))),
+        global("constant", "std::string", "kName", Some(e("\"Ann\""))),
+        global("variable", "bool", "done", None),
+    ]));
+    assert_clean(&a);
+    // A constant of a scalar type with a constant value is `constexpr`;
+    // text is `const`, a variable neither.
+    assert_eq!(
+        globals_json(&a),
+        [
+            (sym("count"), true, false),
+            (sym("done"), false, false),
+            (sym("kName"), true, false),
+            (sym("kRate"), true, true),
+            (sym("kStep"), true, true),
+        ]
+    );
+    let symbols = serde_json::to_value(&a.program.symbols).unwrap();
+    assert_eq!(
+        symbols["symbols"][sym("kStep")]["kind"],
+        serde_json::json!({"global": {"is_const": true}})
+    );
+    // The scope query lists them in the function, with the module's
+    // functions.
+    let block = b2c_ir::BlockId::new("fn_report").unwrap();
+    let names: Vec<String> = a
+        .symbols_in_scope(&block, None)
+        .into_iter()
+        .map(|info| info.name)
+        .collect();
+    assert_eq!(names, ["count", "done", "kName", "kRate", "kStep", "report"]);
+}
+
+#[test]
+fn a_constant_folds_into_a_case_label_beside_an_enum_switch() {
+    let a = analyze(&doc(vec![
+        serde_json::json!({"id": "en_Mode", "type": "type.enum", "v": 1,
+                           "fields": {"NAME": {"sym": sym("Mode"), "name": "Mode"}},
+                           "extra": {"values": [{"sym": sym("Mode_Fast"), "name": "Fast"},
+                                                {"sym": sym("Mode_Slow"), "name": "Slow"}]}}),
+        global("constant", "int", "kLimit", Some(e("kBase * 2"))),
+        global("constant", "int", "kBase", Some(e("5"))),
+        main(vec![
+            declare("int", "n", Some(e("10"))),
+            serde_json::json!({"id": "sw", "type": "control.switch", "v": 1,
+                               "extra": {"caseCount": 2, "hasDefault": false},
+                               "inputs": {"VALUE": e("n"), "CASE0": e("kLimit"), "CASE1": e("kBase")},
+                               "statements": {"DO0": [print(vec![text("limit")])],
+                                              "DO1": [print(vec![text("base")])]}}),
+        ]),
+    ]));
+    assert_clean(&a);
+    let constants = a.constants();
+    let value = |name: &str| constants[&b2c_ir::SymbolId::new(&sym(name)).unwrap()];
+    assert_eq!(value("kLimit").value, b2c_lang::ConstValue::Int(10));
+    assert!(value("kLimit").constant_expression);
+    // Two labels of one value are still told apart (`B2C-E0425`).
+    let a = analyze(&doc(vec![
+        global("constant", "int", "kTen", Some(e("10"))),
+        main(vec![
+            declare("int", "n", Some(e("10"))),
+            serde_json::json!({"id": "sw", "type": "control.switch", "v": 1,
+                               "extra": {"caseCount": 2, "hasDefault": false},
+                               "inputs": {"VALUE": e("n"), "CASE0": e("kTen"), "CASE1": e("10")},
+                               "statements": {"DO0": [], "DO1": []}}),
+        ]),
+    ]));
+    assert_codes(&a, &["B2C-E0425"]);
+    // A global variable is no constant.
+    let a = analyze(&doc(vec![
+        global("variable", "int", "ten", Some(e("10"))),
+        main(vec![
+            serde_json::json!({"id": "sw", "type": "control.switch", "v": 1,
+                                     "extra": {"caseCount": 1, "hasDefault": false},
+                                     "inputs": {"VALUE": e("1"), "CASE0": e("ten")},
+                                     "statements": {"DO0": []}}),
+        ]),
+    ]));
+    assert_codes(&a, &["B2C-E0424"]);
+}
+
+#[test]
+fn a_constant_needs_a_value_and_never_changes() {
+    let a = analyze(&doc(vec![
+        global("constant", "int", "kMax", None),
+        global("constant", "int", "kMin", Some(e("0"))),
+        main(vec![serde_json::json!({"id": "b0", "type": "var.set", "v": 1,
+                                     "fields": {"VAR": {"ref": sym("kMin")}}, "inputs": {"VALUE": e("1")}})]),
+    ]));
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0430 at gl_kMax input VALUE: `kMax` is a constant, so it needs a value: give it one, or \
+             choose 'variable'.",
+            "error B2C-E0308 at b0 field VAR: `kMin` is a global constant, so it can't be changed. Choose \
+             'variable' in its 'global' block if it needs to change.",
+        ]
+    );
+}
+
+#[test]
+fn a_local_or_an_input_named_like_a_global_hides_it() {
+    let a = analyze(&doc(vec![
+        global("variable", "int", "count", Some(e("0"))),
+        global("constant", "int", "kSize", Some(e("3"))),
+        serde_json::json!({"id": "fn_show", "type": "func.define", "v": 1,
+                           "fields": {"NAME": {"sym": sym("show"), "name": "show"}, "RETURNS": "void"},
+                           "extra": {"params": [{"sym": sym("size_input"), "name": "kSize", "type": "int",
+                                                 "mode": "copy"}]},
+                           "statements": {"BODY": []}}),
+        main(vec![
+            serde_json::json!({"id": "b0", "type": "var.declare", "v": 1,
+                               "fields": {"TYPE": "int", "NAME": {"sym": sym("count_local"), "name": "count"}},
+                               "inputs": {"VALUE": e("1")}}),
+        ]),
+    ]));
+    let found = reported(&a);
+    assert_eq!(
+        found,
+        [
+            "warning B2C-W0501 at fn_show field params[0]: `kSize` has the same name as a global constant, so \
+             that global constant can't be used where `kSize` exists. This works, but it is easy to mix them \
+             up, so consider another name.",
+            "warning B2C-W0501 at b0 field NAME: `count` has the same name as a global variable, so that global \
+             variable can't be used where `count` exists. This works, but it is easy to mix them up, so \
+             consider another name.",
+        ],
+        "{found:#?}"
+    );
+    assert_eq!(a.diagnostics[0].related[0].message, "the global constant");
+}
+
+#[test]
+fn a_global_has_a_name_of_its_own() {
+    let a = analyze(&doc(vec![
+        serde_json::json!({"id": "gl_area", "type": "var.global", "v": 1,
+                           "fields": {"KIND": "variable", "TYPE": "int",
+                                      "NAME": {"sym": sym("area_global"), "name": "area"}}}),
+        func("area", "int", &[], vec![ret(Some(e("1")))]),
+        global("variable", "int", "total", Some(e("0"))),
+        serde_json::json!({"id": "gl_total2", "type": "var.global", "v": 1,
+                           "fields": {"KIND": "variable", "TYPE": "int",
+                                      "NAME": {"sym": sym("total2"), "name": "total"}}}),
+        main(vec![]),
+    ]));
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0210 at gl_area field NAME: There is already a function called `area`, and C++ would \
+             not know which of the two the name means. Rename the global or the other one.",
+            "error B2C-E0210 at gl_total2 field NAME: There is already a global called `total`. Rename one of \
+             them.",
+        ]
+    );
+}
+
+#[test]
+fn a_global_set_from_a_function_follows_the_globals_it_reads() {
+    // `int a = next();` with `next` reading `b`: `b` is printed first,
+    // though `a` comes first by name (modules.md §4.1, *initialised*).
+    let a = analyze(&doc(vec![
+        global("variable", "int", "a", Some(e("next()"))),
+        global("variable", "int", "b", Some(e("41"))),
+        func("next", "int", &[], vec![ret(Some(e("b + 1")))]),
+        global("constant", "int", "kZero", Some(e("0"))),
+        main(vec![print(vec![e("a")])]),
+    ]));
+    assert_clean(&a);
+    assert_eq!(declaration_order(&a), ["kZero", "next", "b", "a"]);
+}
+
+#[test]
+fn globals_that_need_each_other_are_a_circle() {
+    let a = analyze(&doc(vec![
+        global("variable", "int", "x", Some(e("y + 1"))),
+        global("variable", "int", "y", Some(e("twice()"))),
+        func("twice", "int", &[], vec![ret(Some(e("x * 2")))]),
+        global("variable", "int", "z", Some(e("z + 1"))),
+        main(vec![]),
+    ]));
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0421 at gl_x: These definitions each need the next one first, in a circle that C++ \
+             cannot put in order: `x` needs `y` needs `x`. Change one of them so that it no longer needs the \
+             next.",
+            "error B2C-E0421 at gl_y: These definitions each need the next one first, in a circle that C++ \
+             cannot put in order: `y` needs `x` needs `y`. Change one of them so that it no longer needs the \
+             next.",
+            "error B2C-E0421 at gl_z: `z` needs its own value to be set first, which C++ cannot do. Change it \
+             so that it no longer needs itself.",
+        ]
+    );
+}
