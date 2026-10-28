@@ -592,7 +592,7 @@ does not change existing jobs.
 
 ### 10.6 Coordination with W3
 
-The coordinator's rows of [w3-modules.md §3.3](w3-modules.md) ("Shared files
+The coordinator's rows of `w3-modules.md` §3.3 (on the coordinating branch) ("Shared files
 and the W4/W5 boundary"), each answered:
 
 1. **`packages/b2c-core-wasm/src/bdm.ts`, `usingNamespaceStd` in the
