@@ -766,6 +766,22 @@ describe('symbol references', () => {
     expect(checked).toEqual(['beta']);
     Blockly.DropDownDiv.hideWithoutAnimation();
   });
+
+  it('call the menu of a struct’s fields or an enum’s values after what it lists', () => {
+    const workspace = renderedWorkspace();
+    fakeSymbols({}, {});
+    for (const [type, name, label] of [
+      ['type.field', 'MEMBER', 'Fields of the struct'],
+      ['type.set_field', 'MEMBER', 'Fields of the struct'],
+      ['type.enum_value', 'VALUE', 'Values of the enum'],
+    ] as const) {
+      const field = renderedBlock(workspace, type).getField(name) as B2cSymbolRefField;
+      field.showEditor();
+      const menu = document.querySelector('.blocklyDropDownDiv .blocklyMenu');
+      expect(menu?.getAttribute('aria-label'), type).toBe(label);
+      Blockly.DropDownDiv.hideWithoutAnimation();
+    }
+  });
 });
 
 describe('type fields', () => {

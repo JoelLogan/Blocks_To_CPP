@@ -193,17 +193,26 @@ export const NO_OWNER_LABELS = Object.freeze({
 /** What a `members` field shows when its type has no members. */
 const NO_MEMBER_LABELS = Object.freeze({ struct: 'no fields yet', enum: 'no values yet' });
 
+/** What the open menu of a `members` field is called, by the class of its variable. */
+const MEMBER_MENU_LABELS = Object.freeze({
+  struct: 'Fields of the struct',
+  enum: 'Values of the enum',
+});
+
 /** A symbol reference field. */
 export class B2cSymbolRefField extends Blockly.FieldDropdown {
   /** Which symbols the menu lists. */
   readonly kinds: SymbolRefKinds;
   private menuLabel: string;
+  /** Whether the menu's accessible name was given ({@link SymbolRefFieldConfig.ariaLabel}). */
+  private readonly labelGiven: boolean;
 
   constructor(value: SymbolRefValue | null = null, config?: SymbolRefFieldConfig) {
     super(Blockly.Field.SKIP_SETUP);
     this.kinds =
       config?.kinds !== undefined && KINDS.includes(config.kinds) ? config.kinds : 'variables';
     this.menuLabel = config?.ariaLabel ?? MENU_LABELS[this.kinds];
+    this.labelGiven = config?.ariaLabel !== undefined;
     this.maxDisplayLength = 40;
     // The generator runs again each time the menu opens, so the list is always current.
     this.setOptions(function (this: Blockly.FieldDropdown): Blockly.MenuOption[] {
@@ -520,10 +529,16 @@ export class B2cSymbolRefField extends Blockly.FieldDropdown {
     return value === null ? '?' : (this.overloadTextOf(value) ?? this.labelFor(value));
   }
 
-  /** Opens the menu (Blockly checks the current reference) and gives it an accessible name. */
+  /**
+   * Opens the menu (Blockly checks the current reference) and gives it an accessible name: a
+   * `members` field's lists a struct's fields or an enum's values, not variables. It is chosen
+   * here, since the field knows its block and name only once it is on one.
+   */
   protected override showEditor_(e?: MouseEvent): void {
     super.showEditor_(e);
-    this.menu_?.getElement()?.setAttribute('aria-label', this.menuLabel);
+    const of = this.labelGiven ? null : this.membersOf();
+    const label = of === null ? this.menuLabel : MEMBER_MENU_LABELS[of.kind];
+    this.menu_?.getElement()?.setAttribute('aria-label', label);
   }
 
   /** Saves `{ref}` (or null) for Blockly's serialisation. */
