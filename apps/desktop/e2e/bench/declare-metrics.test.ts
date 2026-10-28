@@ -1,5 +1,5 @@
 /**
- * The declaration benchmark's metrics (declare-metrics.ts): each round's median, report-only, and
+ * The declaration benchmark's metrics (declare-metrics.ts): each round's median, the refreshes gated, and
  * a round in which the toolbox did not refresh fails instead of giving a sample without that work.
  */
 import { describe, expect, it } from 'vitest';
@@ -18,7 +18,7 @@ function measured(rounds: number, base: number): Declaration[][] {
 }
 
 describe('declareMetrics', () => {
-  it('takes each round’s median of the refreshes and of the longest tasks, ungated', () => {
+  it('takes each round’s median of the refreshes, gated, and of the longest tasks, ungated', () => {
     // Results files need 10 samples (results.ts MIN_SAMPLES).
     const metrics = declareMetrics(measured(10, 80), measured(10, 300));
     const rounds = Array.from({ length: 10 }, (_, round) => round * 100 + 4.5);
@@ -28,8 +28,10 @@ describe('declareMetrics', () => {
     expect(metrics.refresh1000.samples).toEqual(rounds.map((value) => 300 + value));
     expect(metrics.maxTask.name).toBe('webview.declare-variable.max-task');
     expect(metrics.maxTask.samples).toEqual(Array.from({ length: 10 }, () => 44.5));
+    expect(metrics.refresh.gate).toBe(true);
+    expect(metrics.refresh1000.gate).toBe(true);
+    expect(metrics.maxTask.gate).toBe(false);
     for (const metric of [metrics.refresh, metrics.refresh1000, metrics.maxTask]) {
-      expect(metric.gate).toBe(false);
       expect(() => {
         checkMetric(metric);
       }).not.toThrow();

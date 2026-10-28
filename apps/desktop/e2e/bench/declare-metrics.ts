@@ -69,14 +69,15 @@ export function declareMetrics(
   guessing: readonly (readonly Declaration[])[],
   large: readonly (readonly Declaration[])[],
 ): DeclareMetrics {
-  const per = `median of ${String(DECLARATIONS)} declarations per sample; report-only`;
+  const per = `median of ${String(DECLARATIONS)} declarations per sample`;
   const what = 'Toolbox refresh after a new int variable is declared at the end of main';
   return {
     refresh: {
       name: 'webview.declare-variable.toolbox-refresh',
       unit: 'ms',
       better: 'lower',
-      gate: false,
+      // Gated (M3-9, w5-performance.md §6): the toolbox's refresh is a small program's budget.
+      gate: true,
       description: `${what}, guessing game (40 blocks); ${per}`,
       samples: roundMedians(guessing, (declaration) => declaration.refreshMs, 'the guessing game'),
     },
@@ -84,7 +85,7 @@ export function declareMetrics(
       name: 'webview.declare-variable-1000.toolbox-refresh',
       unit: 'ms',
       better: 'lower',
-      gate: false,
+      gate: true,
       description: `${what}, 1,000 blocks; ${per}`,
       samples: roundMedians(large, (declaration) => declaration.refreshMs, '1,000 blocks'),
     },
@@ -93,7 +94,7 @@ export function declareMetrics(
       unit: 'ms',
       better: 'lower',
       gate: false,
-      description: `Longest main-thread task after a new int variable is declared at the end of main, until the page settles, guessing game; ${per}`,
+      description: `Longest main-thread task after a new int variable is declared at the end of main, until the page settles, guessing game; ${per}; report-only`,
       samples: roundMedians(guessing, (declaration) => declaration.longestMs, 'the guessing game'),
     },
   };
