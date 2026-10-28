@@ -46,12 +46,15 @@ app's *Export as C++ project…* does: the generated files without the "edit
 the blocks, not this file" banner in `src/`, a `CMakeLists.txt` (CMake 3.20
 or newer), a `Makefile` (g++ and GNU make) and a `README.md` that says how to
 build it, with the same flags the app uses, and `.b2c-export.json`, which
-names the project and lists the files the export wrote. The folder (and its
-missing parents) is created; it must be missing or empty. `--replace`
-replaces an earlier export of the same project there instead, rewriting or
-removing only the files it lists and keeping every other file; it never
-writes over a file that export did not write. A text define holding `#`, `;`
-or `$`, which CMake and make cannot pass, is refused (`B2C-T1019`).
+names the project and lists the files the export wrote with the SHA-256 of
+each. The folder (and its missing parents) is created; it must be missing or
+empty. `--replace` replaces an earlier export of the same project there
+instead, rewriting or removing only the files it lists whose content is
+still what it wrote, and keeping every other file; it never writes over a
+file that export did not write. A listed file that was changed since (or
+whose content an export before this version did not record) is kept, and
+named on standard error. A text define holding `#`, `;` or `$`, which CMake
+and make cannot pass, is refused (`B2C-T1019`).
 
 ### `b2c build`
 
