@@ -53,6 +53,28 @@ export async function visibleConsoleText(driver: WebDriver): Promise<string> {
 }
 
 /**
+ * Turns the mouse wheel over the console's terminal by `lines` lines (negative: up), in one event
+ * measured in lines (`WheelEvent.DOM_DELTA_LINE`). The event is dispatched on the terminal's
+ * screen, where the pointer's would land, and reaches the console's own wheel handler
+ * (src/panels/console/wheel.ts), which scrolls the scrollback by whole lines.
+ */
+export async function scrollConsoleLines(driver: WebDriver, lines: number): Promise<void> {
+  await driver.executeScript(
+    `const screen = document.querySelector('[data-testid="console-terminal"] .xterm-screen');
+     const box = screen.getBoundingClientRect();
+     screen.dispatchEvent(new WheelEvent('wheel', {
+       deltaY: arguments[0],
+       deltaMode: WheelEvent.DOM_DELTA_LINE,
+       bubbles: true,
+       cancelable: true,
+       clientX: box.left + box.width / 2,
+       clientY: box.top + box.height / 2,
+     }));`,
+    lines,
+  );
+}
+
+/**
  * What screen readers find in the terminal: the text of its accessibility tree (the rows on
  * screen, non-breaking spaces as spaces), or `null` while it has none (the console pauses it
  * during an output flood).

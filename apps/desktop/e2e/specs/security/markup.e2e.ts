@@ -16,7 +16,12 @@ import { describe, expect, it } from 'vitest';
 
 import { type App, launchApp } from '../../support/app';
 import { declareInt, NodeIds } from '../../support/bdm';
-import { showConsole, visibleConsoleText, waitForConsoleState } from '../../support/console';
+import {
+  scrollConsoleLines,
+  showConsole,
+  visibleConsoleText,
+  waitForConsoleState,
+} from '../../support/console';
 import { waitForErrors } from '../../support/editor';
 import { clickTestId, testId, testIdText, textContent } from '../../support/ui';
 import { waitFor } from '../../support/wait';
@@ -113,6 +118,37 @@ async function fieldText(app: App, blockId: string, field: string, input: string
   return shownText(await textContent(app.driver, element));
 }
 
+/**
+ * The terminal's rows on screen once the row holding `text` is among them, as text. A short
+ * window's console shows fewer rows than the output takes: at 800 × 560 the console's header takes
+ * two lines and leaves three rows for the three lines printed and the cursor's, so the first line
+ * is in the scrollback. The view is then turned up to that row with the wheel, as a person would,
+ * and read once xterm.js has drawn it (in its next animation frame). Where no row holds `text`
+ * (Windows' pseudoconsole may repaint a line in parts), the view stays.
+ */
+async function consoleRowsWith(app: App, text: string): Promise<string> {
+  const screen = await app.hook.call('consoleScreen');
+  const row = screen.lines.findIndex((line) => consoleForm(line).includes(consoleForm(text)));
+  if (row < 0 || (row >= screen.viewportY && row < screen.viewportY + screen.rows)) {
+    return visibleConsoleText(app.driver);
+  }
+  await scrollConsoleLines(app.driver, row - screen.viewportY);
+  return waitFor(
+    async () => {
+      const now = await app.hook.call('consoleScreen');
+      if (row < now.viewportY || row >= now.viewportY + now.rows) {
+        return null;
+      }
+      // The rows drawn are the buffer's rows of the view.
+      const shown = await visibleConsoleText(app.driver);
+      const view = now.lines.slice(now.viewportY, now.viewportY + now.rows);
+      const drawn = shown.split('\n');
+      return view.every((line, index) => (drawn[index] ?? '') === line.trimEnd()) ? shown : null;
+    },
+    { timeout: 10_000, message: `the console scrolled to its row ${String(row)} and drawn` },
+  );
+}
+
 describe('E2E security 5: markup in a project is shown as text', () => {
   it('runs no script and shows the text literally in every view', async (context) => {
     const folder = scratchFolder(context);
@@ -187,7 +223,9 @@ describe('E2E security 5: markup in a project is shown as text', () => {
       expect(transcript).toContain(consoleForm(line));
     }
     await showConsole(driver);
-    expect(consoleForm(await visibleConsoleText(driver))).toContain(consoleForm(MARKUP.script));
+    expect(consoleForm(await consoleRowsWith(app, MARKUP.script))).toContain(
+      consoleForm(MARKUP.script),
+    );
     await expectClean(app, 'the program output');
 
     // A variable named with markup: the analyser refuses the name, and Problems quotes it.
