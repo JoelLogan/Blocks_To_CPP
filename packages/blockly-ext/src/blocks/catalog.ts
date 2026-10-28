@@ -24,13 +24,13 @@ export function isCatalogBlockType(type: string): boolean {
  *   a number, character or text type; calls list functions;
  * - text.char takes one printable ASCII character.
  *
- * The reference fields of milestone M3's wave W2 are listed before the catalog has their blocks
- * (docs/plans/m3-contracts/w2.md §2.13), so the packages that add the blocks never edit this
+ * The reference fields of milestone M3's wave W2 were listed before the catalog had their blocks
+ * (docs/plans/m3-contracts/w2.md §2.13), so the packages that added the blocks never edited this
  * table: a block that changes the symbol lists `assignable` ones, a block that only reads it
  * `variables`, and *enum value*'s `ENUM` lists enum definitions (`enums`). A `members` field
  * (`MEMBER`, `VALUE`) lists the members of a user type instead (w2.md §2.3), whatever its kinds;
- * it has `variables` so that every reference field has its kinds. An entry for a block the catalog
- * does not have is never read.
+ * it has `variables` so that every reference field has its kinds. A test checks that every
+ * reference field of the catalog has an entry, and that every entry names a catalog field.
  */
 export const CATALOG_FIELD_OPTIONS: Readonly<
   Record<string, Readonly<Record<string, CatalogFieldOptions>>>

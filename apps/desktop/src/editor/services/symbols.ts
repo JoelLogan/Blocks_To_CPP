@@ -235,8 +235,8 @@ function factsOf(preview: PreviewResult): TypeFactsTs {
 
 /**
  * The blocks that declare names into their own statement lists or bodies, or into the list they
- * are in after themselves, and when they do (`null`: always). W2's are listed before the catalog
- * has them (docs/plans/m3-contracts/w2.md §2.13): *for each* (its item, a map's key and value),
+ * are in after themselves, and when they do (`null`: always). W2's (docs/plans/m3-contracts/w2.md
+ * §2.13): *for each* (its item, a map's key and value),
  * the file loop (its line), *open file* (its file, after it), *try* (each catch part's error), and
  * *when program starts* while it has its arguments (`args`, W2's package C2).
  */

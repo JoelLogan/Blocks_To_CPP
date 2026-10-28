@@ -9,8 +9,8 @@
  * `file` for an opened file, `e` for a caught error, `MyStruct` and `MyEnum` for a new struct and
  * enum, `value` for a global, `args` for *with arguments*, and the row bases `field` (a struct's
  * fields) and `Value` (an enum's values). {@link DEFAULT_NAME_KINDS} says which declaration field of
- * which block takes which kind, also for blocks the catalog does not have yet; a test checks that
- * every catalog block with a `symbol_decl` field has a kind for it.
+ * which block takes which kind; a test checks that every catalog block with a `symbol_decl` field
+ * has a kind for it, and that every entry names a catalog declaration field.
  *
  * Every candidate is a valid identifier (03 §3.6: ASCII, starting with a letter, at most 64
  * characters), and the search is bounded: among `taken.size + 1` distinct candidates at least one is
@@ -88,9 +88,8 @@ export const NAME_SCOPES: Readonly<Record<DefaultNameKind, NameScope>> = Object.
 
 /**
  * The kind of default name of each declaration field, by block type and field (a repeated field by
- * its base name, `NAME` for *try*'s `NAME0`, `NAME1`, …). W2's blocks are listed before the catalog
- * has them (w2.md §2.13), so the packages that add them never edit this table; an entry for a block
- * the catalog does not have is never read.
+ * its base name, `NAME` for *try*'s `NAME0`, `NAME1`, …). W2's blocks were listed before the
+ * catalog had them (w2.md §2.13), so the packages that added them never edited this table.
  */
 export const DEFAULT_NAME_KINDS: Readonly<
   Record<string, Readonly<Record<string, DefaultNameKind>>>

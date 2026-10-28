@@ -81,7 +81,18 @@ describe('the default names of declarations (w2.md §2.13)', () => {
     }
   });
 
-  it('name W2’s declarations before the catalog has them', () => {
+  it('name only declaration fields the catalog has (w2.md §2.13, §5.3)', () => {
+    for (const [id, fields] of Object.entries(DEFAULT_NAME_KINDS)) {
+      const def = BLOCK_DEFS.find((block) => block.id === id);
+      expect(def, id).toBeDefined();
+      for (const name of Object.keys(fields)) {
+        const field = def?.fields.find((candidate) => candidate.name === name);
+        expect(field?.kind, `${id}.${name}`).toBe('symbol_decl');
+      }
+    }
+  });
+
+  it('name W2’s declarations', () => {
     const first = (block: string, field: string): string | null => {
       const kind = defaultNameKind(block, field);
       return kind === undefined ? null : candidateName(kind, 0);

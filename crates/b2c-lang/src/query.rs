@@ -48,7 +48,8 @@ use crate::scope::{NodeId, Trail};
 
 /// The top-level blocks that are definitions, which are never parked
 /// (ADR-0012): the lowering lowers them as items, or skips them as a whole.
-/// W2's definitions are here before they exist (w2.md §2.13).
+/// W2's are among them (w2.md §2.13); a test checks the list against the
+/// catalog.
 const DEFINITION_TYPES: [&str; 6] = [
     "program.main",
     "func.define",
@@ -523,6 +524,19 @@ mod tests {
 
     fn ids(found: &[&SymbolId]) -> Vec<String> {
         found.iter().map(ToString::to_string).collect()
+    }
+
+    /// The definitions are exactly the catalog's top-level blocks (its hat
+    /// and definitions), W2's among them (w2.md §2.13, §5.3).
+    #[test]
+    fn the_definitions_are_the_catalog_s_top_level_blocks() {
+        let top_level: std::collections::BTreeSet<&str> = b2c_catalog::core_catalog()
+            .blocks
+            .values()
+            .filter(|def| def.shape.is_top_level())
+            .map(|def| def.id.as_str())
+            .collect();
+        assert_eq!(top_level, DEFINITION_TYPES.into_iter().collect());
     }
 
     #[test]

@@ -43,6 +43,10 @@ describe('mutatorLabelRegion', () => {
     for (const block of BLOCK_DEFS) {
       expect(mutatorLabelRegion(block) !== null, block.id).toBe(block.id in TEST_MUTATOR_FOR_BLOCK);
     }
+    // The table names catalog blocks only (docs/plans/m3-contracts/w2.md §2.13, §5.3).
+    expect(new Set(Object.keys(TEST_MUTATOR_FOR_BLOCK))).toEqual(
+      new Set(BLOCK_DEFS.filter((block) => mutatorLabelRegion(block) !== null).map((b) => b.id)),
+    );
   });
 });
 

@@ -2,6 +2,7 @@
 import type { BdmDocument, CoreWasm, PreviewResult, SymbolInfo } from '@blocks2cpp/b2c-core-wasm';
 import {
   B2cSymbolRefField,
+  BLOCK_DEFS,
   DEFAULT_EDITOR_SERVICES,
   EXPR_SHADOW_TYPE,
   getEditorServices,
@@ -35,6 +36,7 @@ import {
   MAX_LAST_KNOWN_NAMES,
   SymbolNames,
 } from './index';
+import { isDeclaringBlock } from './symbols';
 
 const realCore = await testCore();
 
@@ -202,6 +204,23 @@ describe('the symbol provider and the type oracle', () => {
     (call.getField('FUNC') as B2cSymbolRefField).setRef({ ref: 's_fn' });
     expect(types.outputTypeOf(call)).toEqual(prim('double'));
     expect(types.outputTypeOf(block('math.number', 'b_other'))).toBeNull();
+  });
+});
+
+describe('the blocks that declare names into lists', () => {
+  /** A block of a type, with every checkbox ticked. */
+  function stub(type: string): Blockly.Block {
+    return { type, getField: () => ({ getValue: () => true }) } as unknown as Blockly.Block;
+  }
+
+  it('are every catalog block with a declaration field but the definitions without a body (w2.md §2.13, §5.3)', () => {
+    for (const def of BLOCK_DEFS) {
+      const declares = def.fields.some((field) => field.kind === 'symbol_decl');
+      // A definition without a body (a struct, an enum, a global) declares its names into the
+      // module only; a function declares its parameters into its body.
+      const expected = declares && (def.shape !== 'definition' || def.statements.length > 0);
+      expect(isDeclaringBlock(stub(def.id)), def.id).toBe(expected);
+    }
   });
 });
 

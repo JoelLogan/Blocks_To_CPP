@@ -45,10 +45,11 @@
 //! The other names W2's blocks declare are locals, recorded by their plain
 //! name as `var.declare`'s are: a *for each* item (a loop variable when it is
 //! read-only, a variable when it is a copy or editable), a map's key and
-//! value and a file's line (loop variables), a caught error and an opened
-//! file (variables). A global (`var.global`) is recorded as a variable by
-//! its plain name too, as the clipboard format has no kind for it: it binds
-//! to the visible global of that name, whose kind reads as a variable.
+//! value and a file's line (loop variables), a caught error, an opened file
+//! and the arguments of *when program starts with arguments* (variables). A
+//! global (`var.global`) is recorded as a variable by its plain name too, as
+//! the clipboard format has no kind for it: it binds to the visible global
+//! of that name, whose kind reads as a variable.
 //!
 //! # What is visible at the paste target
 //!
@@ -251,6 +252,13 @@ pub(crate) fn declarations(document: &Document) -> BTreeMap<SymbolId, Declared> 
             "control.for_range" => {
                 if let Some(decl) = decl("VAR") {
                     record(&decl.sym, &decl.name, RefKind::LoopVariable, None);
+                }
+            }
+            "program.main" => {
+                // *with arguments*' read-only list of text (w2.md §1.9),
+                // recorded as a variable by its plain name, as a constant is.
+                if let Some(decl) = decl("ARGV") {
+                    record(&decl.sym, &decl.name, RefKind::Variable, None);
                 }
             }
             "func.define" => {
@@ -1042,9 +1050,8 @@ mod tests {
         }
     }
 
-    /// W2's declaring blocks (w2.md §2.13) are recorded before the blocks
-    /// exist: their package adds the recording and binding tests of user
-    /// types (C1).
+    /// W2's declaring blocks (w2.md §2.13) are recorded with their kinds and
+    /// owners.
     #[test]
     fn w2_declarations_are_recorded() {
         let value = serde_json::json!({
@@ -1107,6 +1114,56 @@ mod tests {
         // A global binds again as a variable of its name.
         let global = info("t_count", "count", SymbolInfoKind::Global { is_const: false });
         assert_eq!(ref_kind(&global), RefKind::Variable);
+    }
+
+    /// Every declaration of every catalog block is recorded: each
+    /// `symbol_decl` field (a repeated one at its first part) and each row
+    /// of a rows extra (w2.md §2.13, §5.3), so a new declaring block cannot
+    /// be left out of [`declarations`].
+    #[test]
+    fn every_catalog_declaration_is_recorded() {
+        use b2c_catalog::FieldKind;
+        let mut blocks = Vec::new();
+        let mut expected = Vec::new();
+        for (n, def) in b2c_catalog::core_catalog().blocks.values().enumerate() {
+            let mut block = serde_json::json!({"id": format!("b{n}"), "type": def.id,
+                "v": def.version, "x": 0, "y": 100 * n});
+            for field in def
+                .field
+                .iter()
+                .filter(|field| field.kind == FieldKind::SymbolDecl)
+            {
+                let name = if field.repeat.is_some() {
+                    format!("{}0", field.name)
+                } else {
+                    field.name.clone()
+                };
+                let symbol = format!("s{n}_{}", name.to_lowercase());
+                block["fields"][&name] = serde_json::json!({"sym": symbol, "name": "a"});
+                expected.push((def.id.clone(), symbol));
+            }
+            for extra in def.extra.iter().filter(|extra| extra.kind.is_rows()) {
+                let symbol = format!("s{n}_{}", extra.name.to_lowercase());
+                block["extra"][&extra.name] = serde_json::json!([{"sym": symbol, "name": "b"}]);
+                expected.push((def.id.clone(), symbol));
+            }
+            if block.get("fields").is_some() || block.get("extra").is_some() {
+                blocks.push(block);
+            }
+        }
+        assert!(expected.len() >= 15, "{expected:?}");
+        let value = serde_json::json!({
+            "format": "blocks2cpp/project",
+            "formatVersion": 1,
+            "generator": {"app": "0.1.0", "catalog": "1.3.0"},
+            "project": {"id": "p", "name": "P", "language": {"standard": "c++20"}},
+            "modules": [{"id": "m", "name": "main", "workspace": {"blocks": blocks}}]
+        });
+        let document = b2c_model::load(&serde_json::to_vec(&value).unwrap()).unwrap();
+        let declared = declarations(&document);
+        for (block_type, symbol) in expected {
+            assert!(declared.contains_key(&sym(&symbol)), "{block_type}: {symbol}");
+        }
     }
 
     #[test]

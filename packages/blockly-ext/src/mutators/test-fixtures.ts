@@ -21,10 +21,8 @@ import {
 } from './types';
 
 /**
- * The mutator of each catalog block with variable parts (as block registration maps them). The
- * blocks of milestone M3's wave W2 are listed before the catalog has them
- * (docs/plans/m3-contracts/w2.md §2.13); an entry for a block the catalog does not have is never
- * read.
+ * The mutator of each catalog block with variable parts (as block registration maps them), and of
+ * no other: the blocks of milestone M3's wave W2 too (docs/plans/m3-contracts/w2.md §2.13).
  */
 export const TEST_MUTATOR_FOR_BLOCK: Readonly<Record<string, B2cMutatorName>> = {
   'io.print': B2C_MUTATOR_ITEMS,

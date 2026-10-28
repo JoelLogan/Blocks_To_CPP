@@ -26,9 +26,9 @@ export type MutatorName = (typeof MUTATOR_NAME)[keyof typeof MUTATOR_NAME];
 /**
  * The mutator of each catalog block that has repeated or optional parts.
  *
- * The blocks of milestone M3's wave W2 are listed before the catalog has them
- * (docs/plans/m3-contracts/w2.md §2.13), so the packages that add them never edit this table; an
- * entry for a block the catalog does not have is never read. *if*'s mutator also draws *switch*'s
+ * Milestone M3's wave W2 filled in its blocks before they existed (docs/plans/m3-contracts/w2.md
+ * §2.13); since its integration step a test checks that the table names exactly the catalog
+ * blocks with repeated or optional parts. *if*'s mutator also draws *switch*'s
  * cases, *try*'s catch parts (with their repeated fields) and the file blocks' flag-only *if it
  * can't be opened*; the call-arguments mutator draws *new … with*'s parts, named by its struct;
  * the parameter mutator draws a struct's `fields` rows and an enum's `values` rows.

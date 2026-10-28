@@ -192,8 +192,8 @@ pub(crate) fn catch_count(block: &Block) -> usize {
 
 /// The statement lists that the analyser lowers for a block, in order, with
 /// their input names. Lists of other blocks (or other inputs) are not part of
-/// the program. W2's blocks are here before they exist (w2.md §2.13), so
-/// their packages never edit this table.
+/// the program. W2's blocks were here before they existed (w2.md §2.13), so
+/// their packages never edited this table.
 pub(crate) fn statement_lists(block: &Block) -> Vec<(String, &[Block])> {
     let list = |name: &str| (name.to_owned(), statements(block, name));
     let numbered = |base: &'static str, count: usize| (0..count).map(move |i| list(&format!("{base}{i}")));

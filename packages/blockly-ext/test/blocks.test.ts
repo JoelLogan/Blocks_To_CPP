@@ -153,9 +153,9 @@ describe('registerB2cBlocks', () => {
 });
 
 describe('the catalog tables of this package', () => {
-  // Until W2's integration step restores exact equality (docs/plans/m3-contracts/w2.md §2.13,
-  // §5.3), the table may name blocks the catalog does not have yet: every catalog block that needs
-  // a mutator has one, and every catalog block named needs one.
+  // Exactly the catalog blocks that need one: W2's integration step restored the equality
+  // (docs/plans/m3-contracts/w2.md §2.13, §5.3), so an entry for a block the catalog does not have
+  // fails too.
   it('name a mutator for every catalog block with repeated or optional parts, and no other', () => {
     const needsMutator = new Set(
       BLOCK_DEFS.filter(
@@ -168,18 +168,11 @@ describe('the catalog tables of this package', () => {
           ),
       ).map((blockDef) => blockDef.id),
     );
-    for (const id of needsMutator) {
-      expect(MUTATOR_FOR_BLOCK[id], id).toBeDefined();
-    }
-    for (const id of Object.keys(MUTATOR_FOR_BLOCK)) {
-      if (catalogBlock(id) !== undefined) {
-        expect(needsMutator.has(id), id).toBe(true);
-      }
-    }
+    expect(new Set(Object.keys(MUTATOR_FOR_BLOCK))).toEqual(needsMutator);
     expect(new Set(Object.values(MUTATOR_FOR_BLOCK))).toEqual(new Set(Object.values(MUTATOR_NAME)));
   });
 
-  it('name the mutators of W2’s blocks before the catalog has them (w2.md §2.13)', () => {
+  it('name the mutators of W2’s blocks (w2.md §2.13)', () => {
     expect(MUTATOR_FOR_BLOCK['coll.list_of']).toBe(MUTATOR_NAME.items);
     expect(MUTATOR_FOR_BLOCK['file.write']).toBe(MUTATOR_NAME.items);
     for (const id of ['control.switch', 'error.try', 'file.for_each_line', 'file.open']) {
@@ -206,6 +199,19 @@ describe('the catalog tables of this package', () => {
             `${blockDef.id}.${field.name}`,
           ).toBeDefined();
         }
+      }
+    }
+  });
+
+  it('give options only to fields the catalog has (w2.md §2.13, §5.3)', () => {
+    for (const [id, fields] of Object.entries(CATALOG_FIELD_OPTIONS)) {
+      const blockDef = catalogBlock(id);
+      expect(blockDef, id).toBeDefined();
+      for (const name of Object.keys(fields)) {
+        expect(
+          blockDef?.fields.some((field) => field.name === name),
+          `${id}.${name}`,
+        ).toBe(true);
       }
     }
   });
