@@ -24,6 +24,28 @@ import {
 
 const MODES: readonly ThemeMode[] = ['light', 'dark'];
 
+/** A `#rrggbb` colour in OKLab (Björn Ottosson's matrices, from linear sRGB). */
+function oklab(hex: string): [number, number, number] {
+  const [r, g, b] = [1, 3, 5].map((at) => {
+    const c = Number.parseInt(hex.slice(at, at + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+/** The OKLab distance of two colours, times 100 (about 2 is just noticeable side by side). */
+function oklabDistance(a: string, b: string): number {
+  const [x, y] = [oklab(a), oklab(b)];
+  return 100 * Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+}
+
 /** Every colour a block can have, per theme. */
 function blockColours(mode: ThemeMode): [string, string][] {
   return [
@@ -74,6 +96,19 @@ describe('category styles', () => {
 
   it.each(MODES)('are thirteen different colours in the %s theme', (mode) => {
     expect(new Set(CATEGORY_IDS.map((id) => CATEGORY_STYLE[id].colour[mode])).size).toBe(13);
+  });
+
+  it.each(MODES)('keep every two categories at least 6 apart in OKLab in the %s theme', (mode) => {
+    // M2's own closest pair, Logic and Control, is 6.3 apart in the light theme.
+    for (const [index, a] of CATEGORY_IDS.entries()) {
+      for (const b of CATEGORY_IDS.slice(index + 1)) {
+        const distance = oklabDistance(
+          CATEGORY_STYLE[a].colour[mode],
+          CATEGORY_STYLE[b].colour[mode],
+        );
+        expect(distance, `${a} and ${b}`).toBeGreaterThanOrEqual(6);
+      }
+    }
   });
 
   it('keep the colours of milestone M2', () => {

@@ -414,8 +414,11 @@ The analyser implements a **gradual** type system that approximates C++:
 ## 3.7 Block catalog by category
 
 Each category has a colour **and** an icon (so colour is never the only
-cue), and the colours are validated for colour-blind distinguishability and
-contrast in light, dark and high-contrast themes. An icon uses only
+cue), and the colours are checked for contrast (white text and the canvas)
+and for distance (every two categories at least 6 apart in OKLab) in the
+light and dark themes; checking them under simulated colour-blindness, and
+the high-contrast themes, come with the colour-blind-safe palette in M5
+([04](04-user-interface.md)). An icon uses only
 characters that the default sans fonts of Linux and Windows draw (DejaVu
 Sans, and Segoe UI or Segoe UI Symbol), so it never shows as an empty box; a
 test in `b2c-catalog` keeps the icons to an allowlist of such characters.

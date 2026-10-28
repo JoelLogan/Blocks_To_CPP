@@ -454,7 +454,9 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   User Timing span `b2c:keyboard-targets`.
 - The language blocks of M3 (wave W2): block catalog 1.3.0 has 86 blocks in
   13 categories, and all ten M3 acceptance assignments are green, each an
-  example with golden C++ and run data (24 examples in all).
+  example with golden C++ and run data (24 examples in all). Every two
+  category colours are at least 6 apart in OKLab in both themes (Types and
+  Files are darker and less saturated than the other new categories).
 - W2's Collections category: _add_, _item … of_, _set item_, _length
   of_, _is empty_, _list of_, _contains_, _remove item at_, _remove_,
   _clear_, _sort_, _next item of_ and _remove next from_, and in Loops _for
