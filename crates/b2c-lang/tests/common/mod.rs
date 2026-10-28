@@ -315,6 +315,10 @@ pub(crate) const AFTER_M2: &[&str] = &[
     // Package C2: functions and globals.
     "var.global",
     "var.flip",
+    // Package S: the if-time sweep (package D's rows; its file blocks are
+    // under `file.` above).
+    "program.check",
+    "program.use_header",
 ];
 
 /// Whether `block_type` came after M2 ([`AFTER_M2`]).

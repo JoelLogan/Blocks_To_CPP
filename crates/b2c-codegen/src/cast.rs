@@ -866,7 +866,6 @@ pub(crate) enum CStmtKind {
     /// `[[fallthrough]];`
     FallThrough,
     /// `static_assert(cond, "message");` (*check at compile time*).
-    #[cfg_attr(not(test), allow(dead_code, reason = "made for W2's check block"))]
     StaticAssert {
         /// The condition.
         cond: CExpr,

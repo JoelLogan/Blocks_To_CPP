@@ -10,8 +10,12 @@ Toolbox icon: ▶. Back to [all categories](README.md).
 | --- | --- | --- | --- | --- | --- |
 | `program.main` (hat) | `when program starts %ARGS with arguments %ARGV` | `int main(%ARGS %ARGV)` | The program starts here. A project has exactly one of these blocks. Tick with arguments to read what the program was started with, as a read-only list of text whose first item is the program's own name. | `ARGS`: on or off, default off. `ARGV`: the name of the new variable. | `BODY`: blocks. |
 | `program.exit` (statement) | `stop program with exit code %CODE` | `return %CODE / std::exit(%CODE)` | Ends the program. Exit code 0 means success. | — | `CODE`: a whole number; default `0`. |
+| `program.use_header` (definition) | `use header %HEADER` | `#include %HEADER` | Includes a header of the C++ standard library, such as \<cmath\>, in the module's code, wherever the block is. The blocks add the headers they need themselves; this is for a header they don't name. | `HEADER`: a standard header, default `<cmath>`. | — |
+| `program.check` (statement) | `check at compile time %COND message %MESSAGE` | `static_assert(%COND, %MESSAGE);` | Checks a condition when the program is built, not when it runs: if it is false, the program doesn't build and the message says why. The condition may use only numbers, characters, true/false values and constants with fixed values. | `MESSAGE`: text, default `check failed`. | `COND`: a condition; default `true`. |
 
 ## In the toolbox
 
 1. `program.main`
 2. `program.exit`
+3. `program.use_header`
+4. `program.check`

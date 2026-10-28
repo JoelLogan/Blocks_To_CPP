@@ -454,10 +454,12 @@ describe('the toolbox’s buttons, headings and notes', () => {
     const opened = await withToolbox();
     intoToolbox(opened);
     const { keyboard } = opened;
-    expect(walk(keyboard, 'ArrowDown', 13)).toEqual([
+    expect(walk(keyboard, 'ArrowDown', 15)).toEqual([
       // A note of two lines is one stop, read as a whole.
       'note: Your program starts at “when program starts”.',
       'block “stop program with exit code”',
+      'block “use header”',
+      'block “check at compile time”',
       'category “Variables”',
       'button “Make a variable”',
       'block “create int variable value”',
@@ -495,7 +497,7 @@ describe('the toolbox’s buttons, headings and notes', () => {
       },
     });
     intoToolbox(opened);
-    walk(opened.keyboard, 'ArrowDown', 4);
+    walk(opened.keyboard, 'ArrowDown', 6);
     expect(opened.keyboard.announcer.last).toBe('button “Make a variable”');
     expect(nameOf(focused())).toBe('button:Make a variable');
     press('Enter');

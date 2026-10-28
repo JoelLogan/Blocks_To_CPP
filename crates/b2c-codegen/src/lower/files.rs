@@ -22,8 +22,11 @@
 //! so nested loops never shadow one another (`-Wshadow`); user names cannot
 //! start with `b2c`, so it never clashes with one (w2.md §2.12).
 //!
-//! The other nodes of this module come with if-time blocks (w2.md §1.6,
-//! §1.8) that are not in the catalog yet.
+//! *check at compile time* is `static_assert(c, "message");`, and *use
+//! header* adds its header to the module's includes.
+//!
+//! The other nodes of this module come with if-time blocks (w2.md §1.8) that
+//! are not in the catalog yet.
 
 use std::collections::BTreeSet;
 
@@ -61,6 +64,10 @@ impl Lowerer<'_> {
                 body,
                 failed,
             } => self.file_lines(line, path, body, failed.as_ref()),
+            StmtKind::StaticCheck { cond, message } => CStmtKind::StaticAssert {
+                cond: self.expr(cond),
+                message: message.clone(),
+            },
             _ => CStmtKind::Error,
         }
     }

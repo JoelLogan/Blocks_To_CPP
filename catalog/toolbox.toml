@@ -29,6 +29,12 @@ block = "program.main"
 [[category.entry]]
 block = "program.exit"
 
+[[category.entry]]
+block = "program.use_header"
+
+[[category.entry]]
+block = "program.check"
+
 [[category]]
 id = "variables"
 name = "Variables"

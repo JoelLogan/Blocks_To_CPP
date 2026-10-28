@@ -2798,6 +2798,44 @@
       ]
     },
     {
+      "id": "program.check",
+      "version": 1,
+      "category": "program",
+      "shape": "statement",
+      "output": null,
+      "label": {
+        "friendly": "check at compile time %COND message %MESSAGE",
+        "cpp": "static_assert(%COND, %MESSAGE);"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Checks a condition when the program is built, not when it runs: if it is false, the program doesn't build and the message says why. The condition may use only numbers, characters, true/false values and constants with fixed values.",
+      "field": [
+        {
+          "name": "MESSAGE",
+          "kind": "text",
+          "options": [],
+          "types": [],
+          "default": "check failed"
+        }
+      ],
+      "input": [
+        {
+          "name": "COND",
+          "check": "bool",
+          "optional": false,
+          "repeat": null,
+          "default": [
+            {
+              "kw": "true"
+            }
+          ]
+        }
+      ],
+      "statement": [],
+      "extra": []
+    },
+    {
       "id": "program.exit",
       "version": 1,
       "category": "program",
@@ -2876,6 +2914,32 @@
           "field": "ARGV"
         }
       ]
+    },
+    {
+      "id": "program.use_header",
+      "version": 1,
+      "category": "program",
+      "shape": "definition",
+      "output": null,
+      "label": {
+        "friendly": "use header %HEADER",
+        "cpp": "#include %HEADER"
+      },
+      "lowering": "builtin",
+      "headers": [],
+      "help": "Includes a header of the C++ standard library, such as <cmath>, in the module's code, wherever the block is. The blocks add the headers they need themselves; this is for a header they don't name.",
+      "field": [
+        {
+          "name": "HEADER",
+          "kind": "header",
+          "options": [],
+          "types": [],
+          "default": "<cmath>"
+        }
+      ],
+      "input": [],
+      "statement": [],
+      "extra": []
     },
     {
       "id": "text.as_text",
@@ -4301,6 +4365,16 @@
           },
           {
             "block": "program.exit",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "program.use_header",
+            "label": null,
+            "preset": null
+          },
+          {
+            "block": "program.check",
             "label": null,
             "preset": null
           }

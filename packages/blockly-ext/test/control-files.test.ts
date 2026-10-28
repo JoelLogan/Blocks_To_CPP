@@ -4,7 +4,8 @@
  * mutator, its second *case* word joining the copies as *else if* does; *go on into the next case*
  * and *wait*; *do … then repeat*; and
  * *for each line in file*, a block with a flag and no repeated group, whose *if it can't be
- * opened* part comes and goes with ⊕ and ⊖.
+ * opened* part comes and goes with ⊕ and ⊖. Package S's *use header* and *check at compile time*
+ * (§1.6).
  */
 import * as Blockly from 'blockly/core';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -143,6 +144,23 @@ describe('go on into the next case and wait', () => {
     const wait = workspace.newBlock('control.wait');
     expect(inputNames(wait)).toEqual(['SECONDS', 'b2c_row0']);
     expect(labelTexts(wait)).toEqual(['wait', 'seconds']);
+  });
+});
+
+describe('use header and check at compile time', () => {
+  it('are a definition with a header to type and a statement with a condition and a message', () => {
+    const header = workspace.newBlock('program.use_header');
+    expect(labelTexts(header)).toEqual(['use header']);
+    expect(header.getFieldValue('HEADER')).toBe('<cmath>');
+    expect(header.previousConnection).toBeNull();
+    expect(header.nextConnection).toBeNull();
+    expect(header.outputConnection).toBeNull();
+    const check = workspace.newBlock('program.check');
+    expect(labelTexts(check)).toEqual(['check at compile time', 'message']);
+    expect(inputNames(check)).toContain('COND');
+    expect(check.getFieldValue('MESSAGE')).toBe('check failed');
+    expect(check.previousConnection).not.toBeNull();
+    expect(check.nextConnection).not.toBeNull();
   });
 });
 

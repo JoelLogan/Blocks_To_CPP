@@ -705,3 +705,99 @@ fn wait_takes_a_number_of_seconds() {
     let a = run_main(vec![wait(e("\"soon\""))]);
     assert_eq!(codes(&a), ["B2C-E0301"], "{}", render_all(&a));
 }
+
+// --- use header, check at compile time (package S) -------------------------------------
+
+/// *use header [header]*, a definition on the canvas.
+fn use_header(header: &str) -> Value {
+    json!({"id": id(), "type": "program.use_header", "v": 1, "x": 400, "y": 40,
+           "fields": {"HEADER": header}})
+}
+
+/// *check at compile time (cond) message [message]*.
+fn check(cond: Value, message: &str) -> Value {
+    json!({"id": id(), "type": "program.check", "v": 1, "inputs": {"COND": cond},
+           "fields": {"MESSAGE": message}})
+}
+
+/// The headers of the program's *use header* items, in item order.
+fn used_headers(a: &b2c_lang::Analysis) -> Vec<String> {
+    let program = serde_json::to_value(&a.program).expect("serialise");
+    program["modules"][0]["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .filter_map(|item| item["kind"]["use_header"]["header"].as_str().map(str::to_owned))
+        .collect()
+}
+
+#[test]
+fn use_header_is_a_definition_that_names_a_standard_header() {
+    let a = run(vec![use_header("<numeric>"), main(vec![]), use_header("<cmath>")]);
+    assert_clean(&a);
+    assert_eq!(used_headers(&a), ["<numeric>", "<cmath>"]);
+    // Without its field it is the catalog's default; a header the table does
+    // not hold is the catalog's to report (B2C-E0607), so the analyser adds
+    // nothing for it and reports nothing.
+    let mut plain = use_header("<cmath>");
+    plain["fields"] = json!({});
+    let a = run(vec![plain, use_header("<bits/stdc++.h>"), main(vec![])]);
+    assert_clean(&a);
+    assert_eq!(used_headers(&a), ["<cmath>"]);
+}
+
+#[test]
+fn check_at_compile_time_holds_for_a_fixed_condition() {
+    let a = run_main(vec![
+        declare_const("int", "k", e("3")),
+        check(e("k * 2 == 6"), "k is three"),
+        check(e("true"), "say \"why\""),
+    ]);
+    assert_clean(&a);
+    let stmts = main_json(&a);
+    let lowered = &stmts[1]["kind"]["static_check"];
+    assert_eq!(lowered["message"], json!("k is three"), "{stmts}");
+    assert_eq!(lowered["cond"]["ty"], json!("bool"), "{stmts}");
+    assert_eq!(stmts[2]["kind"]["static_check"]["message"], json!("say \"why\""));
+}
+
+#[test]
+fn check_at_compile_time_needs_a_fixed_condition_that_is_true() {
+    let a = run_main(vec![
+        declare("int", "n", Some(e("2"))),
+        check(e("n > 0"), "n is positive"),
+        check(e("1 > 2"), "one is more"),
+    ]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0424 at b0002 COND[0..3]: The condition of 'check at compile time' must be fixed when the \
+             program is built: use numbers, characters, true/false values and constants with fixed values, not \
+             variables or the answers of functions.",
+            "error B2C-E0428 at b0003 COND[0..3]: This check fails when the program is built: its condition is \
+             false. Fix the values it checks, or remove the check.",
+        ]
+    );
+}
+
+#[test]
+fn check_at_compile_time_needs_a_condition_and_a_message_it_can_print() {
+    let mut empty = check(e("true"), "fine");
+    empty["inputs"] = json!({});
+    let a = run_main(vec![empty]);
+    assert_eq!(
+        reported(&a),
+        ["error B2C-E0430 at b0001 input COND: This block needs a condition."]
+    );
+    let a = run_main(vec![check(e("true"), "nul \u{0} inside")]);
+    assert_eq!(
+        reported(&a),
+        [
+            "error B2C-E0312 at b0002 field MESSAGE: This message can't be used: text cannot contain the NUL \
+          character."
+        ]
+    );
+    // A number as the condition is warned about, as in *if*.
+    let a = run_main(vec![check(e("1"), "one")]);
+    assert_eq!(codes(&a), ["B2C-W0519"], "{}", render_all(&a));
+}

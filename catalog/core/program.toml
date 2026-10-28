@@ -41,3 +41,41 @@ help = "Ends the program. Exit code 0 means success."
 name = "CODE"
 check = "integer"
 default = [{ num = "0" }]
+
+# W2's package S (catalog 1.3.0, docs/plans/m3-contracts/w2.md §1.6): the
+# if-time blocks of package D's row. *use header* is a definition whose
+# header joins the module's #include lines once; *check at compile time* is
+# static_assert, its message a text field because static_assert takes a
+# string literal.
+[[block]]
+id = "program.use_header"
+version = 1
+category = "program"
+shape = "definition"
+label = { friendly = "use header %HEADER", cpp = "#include %HEADER" }
+lowering = "builtin"
+help = "Includes a header of the C++ standard library, such as <cmath>, in the module's code, wherever the block is. The blocks add the headers they need themselves; this is for a header they don't name."
+
+[[block.field]]
+name = "HEADER"
+kind = "header"
+default = "<cmath>"
+
+[[block]]
+id = "program.check"
+version = 1
+category = "program"
+shape = "statement"
+label = { friendly = "check at compile time %COND message %MESSAGE", cpp = "static_assert(%COND, %MESSAGE);" }
+lowering = "builtin"
+help = "Checks a condition when the program is built, not when it runs: if it is false, the program doesn't build and the message says why. The condition may use only numbers, characters, true/false values and constants with fixed values."
+
+[[block.field]]
+name = "MESSAGE"
+kind = "text"
+default = "check failed"
+
+[[block.input]]
+name = "COND"
+check = "bool"
+default = [{ kw = "true" }]

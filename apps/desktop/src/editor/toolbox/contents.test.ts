@@ -685,13 +685,18 @@ describe('the variable groups and the menus of blocks in the flyout', () => {
 describe('the Program category', () => {
   it('offers when program starts while the project has none', () => {
     const items = programContents(context({ main: false }));
-    expect(typesOf(items)).toEqual(['program.main', 'program.exit']);
+    expect(typesOf(items)).toEqual([
+      'program.main',
+      'program.exit',
+      'program.use_header',
+      'program.check',
+    ]);
     expect(labelsOf(items)).toEqual([]);
   });
 
   it('says where the program starts once the project has it, and still offers stop program', () => {
     const here = programContents(context());
-    expect(typesOf(here)).toEqual(['program.exit']);
+    expect(typesOf(here)).toEqual(['program.exit', 'program.use_header', 'program.check']);
     expect(labelsOf(here)).toEqual([...PROGRAM_HERE_NOTE]);
     expect(PROGRAM_HERE_NOTE).toEqual(['Your program starts at', '“when program starts”.']);
 
@@ -705,7 +710,7 @@ describe('the Program category', () => {
         ],
       }),
     );
-    expect(typesOf(elsewhere)).toEqual(['program.exit']);
+    expect(typesOf(elsewhere)).toEqual(['program.exit', 'program.use_header', 'program.check']);
     expect(labelsOf(elsewhere)).toEqual(['Your program starts in', 'the module “game”.']);
   });
 });

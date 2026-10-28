@@ -415,8 +415,9 @@ Codes by area:
 ## B2C-E0312 Invalid text or character
 
 * **Severity:** error
-* **Meaning:** a text value contains the NUL character or is longer than
-  64 KiB, or a character value is not exactly one plain ASCII character.
+* **Meaning:** a text value, or the message of `check at compile time`,
+  contains the NUL character or is longer than 64 KiB, or a character value
+  is not exactly one plain ASCII character.
 * **Example:** `character 'é'`, `character 'ab'`.
 * **Message:** "This character can't be used: a character value must be a
   plain ASCII character; use text for 'é'."

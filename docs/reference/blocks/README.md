@@ -10,7 +10,7 @@ Catalog version: 1.3.0.
 
 | Category | Icon | Blocks |
 | --- | --- | --- |
-| [Program](program.md) | ▶ | 2 |
+| [Program](program.md) | ▶ | 4 |
 | [Variables](variables.md) | 𝑥 | 6 |
 | [Math](math.md) | ∑ | 11 |
 | [Logic](logic.md) | ◇ | 4 |
