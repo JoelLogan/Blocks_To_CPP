@@ -266,6 +266,7 @@ export function startSession(
     core: () => host.current(),
     preview: () => useAppStore.getState().analysis.preview,
     workspace,
+    activeModule: () => useAppStore.getState().project?.activeModuleId ?? null,
   });
   const uninstall = installEditorServices({
     symbols: services.symbols,

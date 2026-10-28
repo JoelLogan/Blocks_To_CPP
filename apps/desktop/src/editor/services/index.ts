@@ -40,6 +40,8 @@ export function createSymbolServices(deps: {
   readonly core: () => CoreWasm | null;
   readonly preview: () => PreviewResult | null;
   readonly workspace: Blockly.Workspace;
+  /** The ID of the module the canvas shows, or `null` when none is. */
+  readonly activeModule: () => string | null;
 }): EditorSymbolServices {
   const names = new SymbolNames();
   return {
@@ -49,6 +51,7 @@ export function createSymbolServices(deps: {
       preview: deps.preview,
       names,
       workspace: deps.workspace,
+      activeModule: deps.activeModule,
     }),
     types: createTypeOracle({ preview: deps.preview, core: deps.core, workspace: deps.workspace }),
   };

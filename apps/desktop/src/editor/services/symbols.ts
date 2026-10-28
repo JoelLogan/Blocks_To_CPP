@@ -50,6 +50,8 @@ export interface SymbolServiceDeps {
   readonly names: SymbolNames;
   /** The canvas whose blocks the menus belong to. */
   readonly workspace: Blockly.Workspace;
+  /** The ID of the module the canvas shows, or `null` when none is. */
+  readonly activeModule: () => string | null;
 }
 
 /**
@@ -132,10 +134,17 @@ function namedStructFields(
   return struct?.kind === 'struct' ? struct.fields : null;
 }
 
-/** The structs and enums of the latest preview, which the type fields list (w2.md §2.3). */
-function userTypesOf(deps: Pick<SymbolServiceDeps, 'preview'>): readonly SymbolInfo[] {
+/**
+ * The structs and enums of the module shown, from the latest preview, which the type fields list
+ * (w2.md §2.3). The preview's symbols are the whole program's: another module's types can't be
+ * used yet (`B2C-E0206`), as its functions and globals can't.
+ */
+function userTypesOf(
+  deps: Pick<SymbolServiceDeps, 'preview' | 'activeModule'>,
+): readonly SymbolInfo[] {
+  const module = deps.activeModule();
   return (deps.preview()?.symbols ?? []).filter(
-    (symbol) => symbol.kind === 'struct' || symbol.kind === 'enum',
+    (symbol) => (symbol.kind === 'struct' || symbol.kind === 'enum') && symbol.module === module,
   );
 }
 

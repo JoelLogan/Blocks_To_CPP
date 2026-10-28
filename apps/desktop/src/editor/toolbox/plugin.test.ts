@@ -778,6 +778,7 @@ describe('names in the flyout after a rename', () => {
       core: () => fakeCore(SCOPES),
       preview: () => useAppStore.getState().analysis.preview,
       workspace,
+      activeModule: () => useAppStore.getState().project?.activeModuleId ?? null,
     });
     detachers.push(
       installEditorServices({

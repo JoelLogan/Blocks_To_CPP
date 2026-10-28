@@ -145,6 +145,7 @@ describe('the symbol provider and the type oracle', () => {
       core: () => core,
       preview: () => current,
       workspace: headlessWorkspace(),
+      activeModule: () => 'mod_main',
     });
     expect(services.symbols.symbolsAt('b1', null)).toEqual([]);
     core = { symbolsInScope } as unknown as CoreWasm;
@@ -174,6 +175,7 @@ describe('the symbol provider and the type oracle', () => {
       core: () => trapped,
       preview: () => preview,
       workspace: headlessWorkspace(),
+      activeModule: () => 'mod_main',
     });
     expect(services.symbols.symbolsAt('b1', null)).toEqual([]);
   });
@@ -181,7 +183,12 @@ describe('the symbol provider and the type oracle', () => {
   it('gives the analysed type of a block, or the type of the symbol a reference names', () => {
     let current: PreviewResult | null = null;
     const workspace = headlessWorkspace();
-    const { types } = createSymbolServices({ core: () => null, preview: () => current, workspace });
+    const { types } = createSymbolServices({
+      core: () => null,
+      preview: () => current,
+      workspace,
+      activeModule: () => 'mod_main',
+    });
     const block = (type: string, id: string): Blockly.Block => {
       const created = workspace.newBlock(type, id);
       created.initModel();
@@ -278,6 +285,7 @@ describe('the scope of a block’s menus', () => {
       core: () => core,
       preview: () => analysed,
       workspace,
+      activeModule: () => 'mod_main',
     });
     return { workspace, loose, services, symbolsInScope };
   }
@@ -410,6 +418,7 @@ describe('the parameters of the function a call names', () => {
       core: () => ({ symbolsInScope }) as unknown as CoreWasm,
       preview: () => current,
       workspace,
+      activeModule: () => 'mod_main',
     });
     expect(symbols.functionParams?.('call', 's_greet')).toBeNull();
     current = { ...previewFixture(), symbols: [greet, elsewhere, symbol('s_x', 'x')] };
@@ -421,6 +430,37 @@ describe('the parameters of the function a call names', () => {
     // A call in the toolbox's flyout is labelled by the toolbox.
     expect(symbols.functionParams?.('flyout_call', 's_greet')).toBeNull();
     expect(symbolsInScope).not.toHaveBeenCalled();
+  });
+});
+
+describe('the structs and enums the type fields list', () => {
+  it('are those of the module shown, not every module of the program', () => {
+    let shown: string | null = 'mod_a';
+    const point = symbol('s_point', 'Point', {
+      kind: 'struct',
+      module: 'mod_a',
+      declBlock: 'st_a',
+    });
+    const level = symbol('s_level', 'Level', { kind: 'enum', module: 'mod_a', declBlock: 'en_a' });
+    const student = symbol('s_student', 'Student', {
+      kind: 'struct',
+      module: 'mod_b',
+      declBlock: 'st_b',
+    });
+    const { symbols } = createSymbolServices({
+      core: () => null,
+      preview: () => ({
+        ...previewFixture(),
+        symbols: [point, student, level, symbol('s_x', 'x', { module: 'mod_a' })],
+      }),
+      workspace: headlessWorkspace(),
+      activeModule: () => shown,
+    });
+    expect(symbols.userTypes?.()).toEqual([point, level]);
+    shown = 'mod_b';
+    expect(symbols.userTypes?.()).toEqual([student]);
+    shown = null;
+    expect(symbols.userTypes?.()).toEqual([]);
   });
 });
 
@@ -456,6 +496,7 @@ describe('installing the services', () => {
       core: () => null,
       preview: () => null,
       workspace: headlessWorkspace(),
+      activeModule: () => 'mod_main',
     });
     const alert = vi.fn(() => Promise.resolve());
     const confirm = vi.fn(() => Promise.resolve(true));

@@ -120,6 +120,7 @@ export function attachEditor(workspace: Blockly.WorkspaceSvg, deps: EditorDeps):
     core: () => deps.host.current(),
     preview: () => deps.store.getState().analysis.preview,
     workspace,
+    activeModule: () => deps.store.getState().project?.activeModuleId ?? null,
   });
   const uninstallServices = installEditorServices({
     symbols: services.symbols,
