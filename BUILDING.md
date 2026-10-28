@@ -321,6 +321,12 @@ step 5.
 
 ## Troubleshooting
 
+`pnpm doctor`, run from the repository root, checks this computer against
+this page: each tool's version against the one the repository pins, the
+system libraries, the editor's packages and whether the WebAssembly core is
+built from the current source. It names the command that fixes each
+problem, and changes nothing itself.
+
 ### The WebAssembly core does not build
 
 - **"The WebAssembly core of the editor has not been built"**: the app or
