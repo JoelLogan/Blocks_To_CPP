@@ -1,9 +1,11 @@
 # Next steps: closing M2, then M3
 
 Status: plan, 2026-10-15; updated 2026-10-24 with the owner's decisions,
-and on 2026-10-25: M2 is merged into `main`, M3 has begun at the owner's
-word (Part 2, §3.6), and its wave W1 is done (§3.7). Part 1 is what remains
-of M2, almost all of it the owner's. Part 2 is the plan for M3.
+on 2026-10-25: M2 is merged into `main`, M3 has begun at the owner's word
+(Part 2, §3.6), and its wave W1 is done (§3.7); and on 2026-10-28: wave W2
+is done, the ten assignments are green, and three slices of W3, W4 and W5
+are merged (§3.8). Part 1 is what remains of M2, almost all of it the
+owner's. Part 2 is the plan for M3.
 
 ## 1. Where M2 stands
 
@@ -198,15 +200,18 @@ pushed.
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---- |
 | W0   | Decisions above; ADR-0016 (Worker) and ADRs for the type representation (L14), slot typing (L15) and the header split (L18); the catalog schema extension (L17); the M3-D1 assignments as acceptance tests checked against reference solutions; the Blockly 13 / xterm 6.1 spike. Done 2026-10-25 (§3.6) | — | M    |
 | W1   | Foundations from [the contracts](m3-contracts/types.md): L14, L15, L17 with `headers` (L8), L16, L10, and ADR-0019's IR types (no output change); the catalog snapshot test. Done 2026-10-25 (§3.7) | W0 ADRs | XL   |
-| W2   | Language blocks needed by the assignments: collections, strings, structs, enums, files, errors, random, time, globals, constants, math, conversions, `switch`, `do … while`, overloads, default arguments, M3-8. Contract and packages: [w2.md](m3-contracts/w2.md) | W1                             | XL   |
-| W3   | Projects, build, run: multi-module (L18) in two parts (functions across modules after W1; structs, enums, globals and constants after W2's definition blocks; the per-unit object cache if-time), CMake/Make export, project settings dialog, run options, close-input, S7-5, S7-7, S7-8 | W1; W2 for the second part | L    |
-| W4   | Editor: type picker, Quick Insert, toolbox search, expert mode, quick fixes, _Copy bug report_, feature gating, friendly g++ messages, Appearance (F-1, U14d)                                                                                            | W1, W2 for the blocks it shows | L    |
-| W5   | Performance and platform: starting with the worker CSP spike on both webviews (ADR-0016), the Worker preview (M3-1), M3-5, M3-4, M3-9, M3-6, M3-7, RD-15 (the Blockly 13 upgrade moved after M3: W0's spike was not clean) | W2 (stable `update()`) | L    |
+| W2   | Language blocks needed by the assignments: collections, strings, structs, enums, files, errors, random, time, globals, constants, math, conversions, `switch`, `do … while`, overloads, default arguments, M3-8. Contract and packages: [w2.md](m3-contracts/w2.md). Done 2026-10-28 (§3.8) | W1                             | XL   |
+| W3   | Projects, build, run: multi-module (L18) in two parts (functions across modules after W1; structs, enums, globals and constants after W2's definition blocks; the per-unit object cache if-time), _namespace_ and _use namespace_ (from W2, [w2.md §1.10](m3-contracts/w2.md#110-not-in-w2)), CMake/Make export, project settings dialog, run options, close-input, S7-5, S7-7, S7-8. Export, run options, close-input, the project settings page and S7-5, S7-7, S7-8 merged 2026-10-28 ([w3-export-run.md](m3-contracts/w3-export-run.md)) | W1; W2's integration for the first part, as it shares files with W2 ([w2.md §3.4](m3-contracts/w2.md#34-order)); W2 for the second part | L    |
+| W4   | Editor: type picker, Quick Insert, toolbox search, expert mode, quick fixes, _Copy bug report_, feature gating, friendly g++ messages, Appearance (F-1, U14d); from W2, the ⚙ popover (`constexpr`, `static`), _format … with_ and the unchecked `[]` index from the block's context menu. Appearance, expert mode's settings and the gating service merged 2026-10-28 ([w4-appearance-expert.md](m3-contracts/w4-appearance-expert.md)) | W1, W2 for the blocks it shows | L    |
+| W5   | Performance and platform: starting with the worker CSP spike on both webviews (ADR-0016), the Worker preview (M3-1), M3-5, M3-4, M3-9, M3-6, M3-7, RD-15 (the Blockly 13 upgrade moved after M3: W0's spike was not clean); the toolbox flyout's cost per block (§3.8). The spike and M3-1's first part, behind a flag, merged 2026-10-28 ([w5-worker.md](m3-contracts/w5-worker.md)) | W2 (stable `update()`) | L    |
 | W6   | Close-out: every M3-D1 assignment green, threat-model review, toolchain cells, docs and the getting-started guide, usability protocol for M3, a green nightly and weekly                                                                                 | all                            | M    |
 
-W2 and W3's first part can run in parallel once W1's contracts land; W3's
-second part follows W2's definition blocks; W4 starts with the pieces that
-need no new blocks (expert mode, toolbox search, Appearance).
+W3's first part (functions across modules) starts after W2's integration
+step, not alongside W2 as first planned: it edits the files W2's P0, C1 and
+C2 edited (`SHARED` on _define_, the function pre-pass, the print order),
+and both of W2's agents were busy ([w2.md §3.4](m3-contracts/w2.md#34-order)).
+W3's second part follows it; W4 starts with the pieces that need no new
+blocks (expert mode, toolbox search, Appearance).
 
 ### 3.5 Critical path and risks
 
@@ -334,6 +339,140 @@ about scopes only to confirm a refusal (slots.md §4.3, _Speed_).
   qualified, `::to_string(c)`, so a variable of that name no longer hides
   it): reserve the name or move the generated function into namespace
   `b2c` with W2's enum blocks.
-- **Left for W3:** the enum's `to_string` call is qualified with the global
-  namespace; once types can live in modules' namespaces it takes the
-  enum's namespace.
+- **Left for W3:** W2 moved the joined enum's text function into the
+  support namespace (`b2c::to_text(Color)`, printed right after the enum in
+  the global `::b2c`, so a user function `to_string` no longer clashes,
+  [w2.md §2.11](m3-contracts/w2.md#211-the-to_string-clash)). The overload
+  must stay in the global `b2c` namespace: once an enum lives in a module's
+  namespace, the overload is printed after it with the user namespace
+  closed and reopened, and names the enum by its qualified name
+  (`to_text(geo::Color)`).
+
+### 3.8 W2: done, and what the owner decides
+
+**Done** on 2026-10-28, on `ccr-01f82d9b-v70u20`, from `f508fca`: the
+contract ([w2.md](m3-contracts/w2.md), `cfef598`, after three reviews);
+round R0, the Rust and the editor groundwork (P0-R `04a6db1`, P0-T
+`7865f02`, the four categories `95135af`); round R1, the collection blocks
+(package A, `17731f3`, matrix_sum green) and the text, input/output, math
+and error blocks (package B, `42041a5`; temperature_table and
+input_validation, then grade_average `836d12c`, dice_statistics `12101d3`
+and palindrome `aaf367f`); package T, which keeps the toolbox flyout's
+blocks between showings (`b410c45`); round R2, structs and enums (package
+C1, `565025b`, student_records), switch, _do … then repeat_ and the file
+loop (package D, `a1bd1d7`, word_count) and the switch on an enum
+(`82acd48`, bank_menu `1635bc5`); round R3, default values, overloads,
+globals and constants, _change_'s new operators, _flip_, _with arguments_
+and struct field defaults (package C2, `e52d953`..`c4700b6`) and the
+if-time sweep (package S: _use header_, _check at compile time_ and the
+file blocks _open file_, _read line_, _write_ and _file exists_, `950e0ee`,
+`b4e1347`), with the review of C2 and S (`d8487f0`..`f48de01`); the
+integration step of w2.md §5.3 (`5337b05`..`9a4739d`, with its review
+fixes `33deca8`, `8ca23ca` and `603ce8a`); the E2E tests made to fit an
+800 × 560 window (`e500b1c`..`ae7e761`); and this docs step. The catalog
+has 86 blocks in 13 categories (55 of them W2's) and stays 1.3.0, and
+**all ten assignments are green** (`M3 assignments: 10 of 10 green`), so
+M3's language exit is met for them. The golden C++ of the earlier examples
+is byte-identical. The integration step ran every check of w2.md §5.1, the
+every-g++ forms test on a project with every catalog block (g++ 11 to 14,
+C++17 and C++20, strict, `-Werror`), and the whole Linux E2E suite at the
+default size, 1028 × 749, 1024 × 768 and 800 × 560 (63 files, 246 passed,
+1 skipped, after the small-window fixes); the native benchmark's new
+`preview-language` shape takes 15.4 ms locally, and a local native A/B of
+`pipeline/preview` against `f508fca` gave +1.4 % (gate 10 %). The
+specification describes what W2 built, and w2.md §7.1 records each place
+where the code differs from the contract, with its reason.
+
+**Moved, each with its reason in [w2.md §1.10](m3-contracts/w2.md#110-not-in-w2):**
+_namespace_ and _use namespace_ to W3 (§3.4's row); the ⚙ popover, _format
+… with_ and the unchecked `[]` index to W4 (§3.4's row); _moved_
+parameters, the generic member block, _delete file_, _create folder_, _for
+each file in folder_, a random seed, the clock, the stopwatch and _read
+word_ to M4 ([10 §10.1](../spec/10-roadmap.md#m4-language-breadth-ii));
+the structured binding after M3. _catch anything_ is not planned.
+
+**For the owner to confirm** ([w2.md §6](m3-contracts/w2.md#6-for-the-owner-to-confirm)):
+falling through is the block _go on into the next case_, not a checkbox on
+each case; there is no _catch anything_; the items moved to M4 and after
+M3 above; _namespace_ and _use namespace_ in W3 and the three editor items
+in W4; until W4's type picker the menus offer lists of int, double and
+text, the module's structs and enums and lists of them, while maps and
+lists of lists come from the project file and paste; _join_ and _as text_
+refuse a struct, printable or not (a generated `b2c::to_text` per printable
+struct could come later as a compatible change); and W3's first part
+waited for W2's integration step.
+
+**Still to do for W2:**
+
+- the A/B job on `f508fca..HEAD` (`bench-ab.yml`, base `f508fca`,
+  metrics `preview drag`, both systems), which the coordinator dispatches;
+  `webview.drag-typed-1000.frame-p95-all` is still reported (no A/B metric
+  group runs it), so W3's integration gates it;
+- the visual baselines rebaselined from one CI run: every
+  `chrome-toolbox-*` scene for the new icons (most stay under the 0.5 %
+  threshold, but the baselines would keep the empty boxes), the Program,
+  Variables and Errors scenes and `canvas-guessing-game` for W2's blocks,
+  `chrome-toolbox-files` (no baseline yet), and on Windows every scene
+  with the category column; W4's light console and W3's menu items change
+  the console and menu scenes;
+- Windows E2E and GCC 15 on the next push, then the review of the wave
+  with its lenses and the fixer, as in every M3 wave;
+- the comment of `catalog/toolbox.toml` still says the four categories are
+  empty until their packages fill them; it is corrected with the next
+  catalog change.
+
+**Toolbox cost, for W5** (a first-class item). Showing the continuous
+flyout draws every catalog block: with package B's 47 blocks the app's
+toolbox refresh took 204–216 ms against 145–149 ms with 26 (WebKitGTK,
+debug build), and the happy-dom flyout 1.09 s against 0.40 s; the catalog
+now has 86. Package T keeps unchanged blocks between showings, which took
+the refresh after a new variable from 225 ms to 45 ms on the guessing game
+and from 300 ms to 52 ms at 1,000 blocks, but the first showing still draws
+every block. W5 takes the cost per block on (lazy or per-category
+rendering, or cached block drawings) with a gated toolbox-refresh
+benchmark (`webview.declare-variable.toolbox-refresh` is reported now), and
+checks whether a gated webview metric moved with W2. The desktop tests that
+show the flyout keep `FLYOUT_TEST_TIMEOUT_MS` until then
+([09 §9.2](../spec/09-quality-and-delivery.md#92-testing-strategy)); a test
+helper that injects only some categories would let most of them go back
+(a follow-up from package T).
+
+**W3, W4 and W5 so far.** Merged on 2026-10-28 (`93febef`, `b841a9d`,
+`012c948`), each green in CI but for the visual diff:
+
+- **W3**, export, run options and the runtime items
+  ([w3-export-run.md](m3-contracts/w3-export-run.md)): close-input (the
+  console's _End input_, `Ctrl+D` with pipes), arguments and the working
+  folder in the project, the input file for the app session, the external
+  terminal, export to CMake and Make (`b2c generate --export`, _Export as
+  C++ project…_), the project settings page, and S7-5, S7-7 and S7-8. The
+  IPC contract has 39 commands. **Remaining:** multi-module projects in
+  their two parts (functions across modules first, which can start now;
+  then structs, enums, globals and constants across modules), _namespace_
+  and _use namespace_, the per-unit object cache if time, and the spec
+  sections of w3-export-run.md §10.
+- **W4**, Appearance and expert mode
+  ([w4-appearance-expert.md](m3-contracts/w4-appearance-expert.md)): the
+  Appearance setting with the `[data-theme]` refactor and a console that
+  follows the theme, the _Block labels_ and _Show advanced blocks_
+  settings with one _Expert mode_ switch, and the gating service. W2's
+  package C2 wired the gating service into one place: _change_'s operator
+  menu lists the bitwise forms only with _Show advanced blocks_.
+  **Remaining:** the rest of its "Needs from W2"
+  (w4-appearance-expert.md §6): the C++ label mode in the blocks (§6.1;
+  `CPP_OPTION_LABELS` covers every operator and function menu since the
+  integration step), the toolbox hiding gated entries and categories
+  (§6.2), the other field menus (§6.3) and the catalog's `advanced` and
+  `requires` keys (§6.4), which W2 did not apply; then the type picker,
+  Quick Insert, toolbox search, quick fixes, _Copy bug report_, the friendly
+  g++ messages, the ⚙ popover, _format … with_ and the `[]` index, and the
+  spec sections of its §8.
+- **W5**, the preview worker's spike and M3-1's first part, behind the build
+  flag `B2C_PREVIEW_WORKER` ([w5-worker.md](m3-contracts/w5-worker.md)):
+  clean on both webviews. **Remaining:** its "Needs from W2" (§10): the
+  scope index (`Analysis::scope_index_parts()` in `crates/b2c-lang`, now
+  that W2's symbol kinds and members are in) read by `analysisScope`; then
+  its integration step (the clipboard arguments, the rest of the apply rule
+  and the drag hold, the spans and metrics, the hooks and E2E flows with the
+  worker on, and removing the flag), M3-5, M3-4, M3-9, M3-6, M3-7, RD-15 and
+  the toolbox cost above.

@@ -295,6 +295,9 @@ the tests.
   `text/` module) so the package does not import the app. Dropdown option
   texts go through `optionLabel` the same way (`CPP_OPTION_LABELS` covers
   every option of the operator and function menus; a test keeps it so).
+  W2's integration review added `math.fn`'s functions (`std::floor` …
+  `std::atan`, `603ce8a`), and the test now requires a table for every
+  operator menu and every `FN` menu of the catalog.
 * **The catalog's C++ labels.** A C++ template is laid out only when it names
   every field and value input (`hasFullCppLabel`); otherwise the block keeps
   its Friendly layout, with the options' C++ texts. At `df4b4f5` these

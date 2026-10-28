@@ -411,10 +411,13 @@ becomes the case of a parent without patterns.
 whose type binds that pattern on its own (class and shape: *add … to* lists
 the lists, sets, queues and stacks; *item … of* the lists and maps), without
 looking at the block's inputs, which are checked against the field and not
-the reverse. A `members` field lists the members of its variable's type, and
-nothing while the variable is unbound: left for W2, whose struct blocks
-bring the first `members` field (W1 lists the plain scope there, as M2
-did; the review of W1 found it, finding TD-3). A reference already chosen stays
+the reverse. A `members` field lists the members of its variable's type, in
+row order, whatever its `kinds`, and while the variable is unbound lists
+nothing and shows *choose a struct first* or *choose an enum first* (*no
+fields yet* or *no values yet* for a type without members); a member the
+type lacks stays shown, and the analyser reports `E0207`. Done in W2, whose
+struct blocks brought the first `members` field (`fields/symbol-ref.ts`;
+W1 listed the plain scope there, finding TD-3 of its review). A reference already chosen stays
 shown (`packages/blockly-ext/src/fields/symbol-ref.ts:12-14`). Type fields
 offer the types their pattern allows. M2's `kinds` filters stay for M2's
 blocks.
@@ -628,16 +631,18 @@ green rule): `slots.rs`'s API and its test tables, with a body that answers
   scope accepts text; a candidate is typed in place (dropping into the
   binding input of a two-input block with another value already there); a
   disabled candidate counts as empty and connects; M2's `any`, `number` and
-  `field:` outputs behave as before. Left for W2, which brings the first
+  `field:` outputs behave as before. Done in W2, which brought the first
   place-typed block and the first `members` field: a place-typed block
-  connects where no place type exists and is refused in an `int` place, and
-  `chosenMember` refuses a field of another struct.
+  connects where no place type exists and is refused in an `int` place
+  (package A, `checker/slots.test.ts`), and `chosenMember` refuses a field
+  of another struct (package C1, `checker/structs.test.ts`).
 * Gestures: the keyboard listing treats the moved block as absent from its
   input; a faded block counts in its own input for other candidates and is
   replaced only for its own.
 * Menus: a reference field with a pattern lists only symbols that fit, and
-  keeps a chosen one that no longer does. W2: a `members` field lists the
-  members of the bound type, and nothing while it is unbound.
+  keeps a chosen one that no longer does. W2 (done, package C1): a
+  `members` field lists the members of the bound type, and nothing while
+  it is unbound.
 * Start values: `int` to `double` swaps `0` for `0.0` (M2's test stays);
   `int` to a list removes `0`; a typed value is kept; undo and redo restore
   both changes as one step; a dropped value never changes a sibling's start
@@ -665,8 +670,9 @@ does not offer that place.
 ## 10. Spec sections to change
 
 Sections that ADR-0017 also changes are edited once in W1 for both
-(types.md §10). The W1 rows were applied at the end of W1 (2026-10-25); the
-W2, W4 and W5 rows wait for their work.
+(types.md §10). The W1 rows were applied at the end of W1 (2026-10-25), the
+W2 rows at the end of W2 (2026-10-28, w2.md §5.4); the W4 and W5 rows wait
+for their work.
 
 | Section | Change | Wave |
 | --- | --- | --- |

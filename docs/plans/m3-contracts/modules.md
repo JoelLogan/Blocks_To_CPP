@@ -631,9 +631,9 @@ From the plan of types.md §7:
 | Wave | Items | Needs |
 | --- | --- | --- |
 | W1 (done) | §1: `b2c-ir` types with defaults, `is_device_name` with both callers switched (no behaviour change), the `b2c-ipc` mirrors, `ipc-types` regenerated | — |
-| W2 | the declaration graph (§4.1, §4.2) with `E0420` and `E0421` in `b2c-lang`, filling `source_order`; codegen printing in that order; the `SHARED` field on the new definition blocks (never shown yet) | W1 |
+| W2 (done 2026-10-28) | the declaration graph (§4.1, §4.2) with `E0420` and `E0421` in `b2c-lang`, filling `source_order` (types, globals and function declarations, with the *initialised* edges of globals and of struct and parameter default values, walked once per global rather than by the summary of §4.1); codegen printing in that order; the `SHARED` field on the new definition blocks (never shown yet) | W1 |
 | W3, first part | functions-only multi-module: `SHARED` on `func.define`, visibility and precedence, `E0206`, `E0213`, `E0214` for function signatures, `E0221`, headers and includes for functions, `b2c_support.hpp`, `gen/` pruning, the build's steps and de-duplication, `FileMap::module`, the module tabs, the C++ tab | W1 |
-| W3, second part | structs, enums, globals and constants across modules: the rest of §3.2 and §3.3, `E0214` for fields and constants, `E0422`, `E0423`, the `shapes.b2c` golden; export (§8) | W2's definition blocks and graph |
+| W3, second part | structs, enums, globals and constants across modules: the rest of §3.2 and §3.3, `E0214` for fields and constants, `E0422`, `E0423`, the `shapes.b2c` golden; export (§8); the *namespace* and *use namespace* blocks, moved from W2 ([w2.md §1.10](w2.md#110-not-in-w2)), with a module's namespace (§3.2) and the textbook-style setting | W2's definition blocks and graph |
 | W3, if-time | the object cache (§5.3), `use header of module` (§7.3) | — |
 | W4 | the *Share* quick fixes, the friendly `-Wunused-*` messages; if-time a *Move to module* command that keeps symbol IDs | W3 |
 
@@ -769,7 +769,7 @@ takes these rows).
 | [05 §5.12](../../spec/05-project-format.md#512-clipboard-format) | qualified names of functions in a multi-module project; precedence | W3 |
 | [06 §6.1](../../spec/06-compiler-pipeline.md#61-overview) | the layout is computed in stage ⑤ | W3 |
 | [06 §6.5](../../spec/06-compiler-pipeline.md#65-stage--names-and-scopes) | visibility, precedence, scope query, `SymbolInfo::shared` | W3 |
-| [06 §6.7](../../spec/06-compiler-pipeline.md#67-ordering-and-declarations) | the `initialised` edge and the tie-break (W2); the table, include or forward-declare, the `.cpp` order with the namespace reopened, `E0214`, `E0422`, `E0423`, the invariant, the empty `.cpp`; drop "In M2" (W3) | W2, W3 |
+| [06 §6.7](../../spec/06-compiler-pipeline.md#67-ordering-and-declarations) | the `initialised` edge and the tie-break (W2, applied 2026-10-28); the table, include or forward-declare, the `.cpp` order with the namespace reopened, `E0214`, `E0422`, `E0423`, the invariant, the empty `.cpp`; drop "In M2" (W3) | W2, W3 |
 | [06 §6.9](../../spec/06-compiler-pipeline.md#69-source-maps) | `module`, header messages | W3 |
 | [06 §6.10](../../spec/06-compiler-pipeline.md#610-includes-and-support-helpers) | includes per file (types.md owns the header source, W1) | W3 |
 | [06 §6.11](../../spec/06-compiler-pipeline.md#611-export) | §8: slug, manifest, Replace | W3 |

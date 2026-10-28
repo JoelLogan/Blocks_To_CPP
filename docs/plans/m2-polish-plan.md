@@ -1417,7 +1417,7 @@ The guessing-game exit E2E is re-recorded once, at the end of the must-have part
   - **M3-6 `pnpm doctor`** (U18-7).
   - **M3-7 A weekly job that runs `BUILDING.md`'s Debian block** in Debian 12 and 13 containers (U18-9).
   - **M3-8 Type-specific variable operations,** and the bitwise compound forms with *Show advanced blocks*.
-  - **M3-9 Small-program budgets gated** once the section-level toolbox refresh and a measured baseline exist.
+  - **M3-9 Small-program budgets gated** once the section-level toolbox refresh and a measured baseline exist. (The precondition was met in M3's wave W2: its package T keeps the flyout's unchanged blocks between showings, which does more than a section-level refresh, and the `declare-variable` benchmarks, `declare.bench.e2e.ts`, report the refresh after a declaration; they are gated once they have 5 nightly baselines.)
   - **F-1.**
   - **Every if-time item not done in M2.**
 - **Language foundations, from the language audit:**

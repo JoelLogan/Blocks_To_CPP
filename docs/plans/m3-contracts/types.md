@@ -222,15 +222,15 @@ the rows that change in the spec are marked *changed*.
 | `item (i) of [c]` | `indexable` | `i`: `index(C)`; output `elem(C)` | `c.at(i)` |
 | `set item (i) of [c] to (x)` | `indexable` | `i`: `index(C)`; `x`: `elem(C)`, `assign` | `c.at(i) = x` (vector, deque), `c[k] = x` (map) |
 | `next item of [c]` (*changed*: the queue/stack column of *item of*) | `adaptor` | output `elem(C)` | `c.front()` (queue), `c.top()` (stack, priority queue) |
-| `remove item at (i) from [c]` (*changed*: only vector and deque) | `sequence` | `i`: `index(C)` | `c.erase(c.begin() + i)` |
+| `remove item at (i) from [c]` (*changed*: only vector and deque) | `sequence` | `i`: `index(C)` | `b2c::remove_at(c, i)`, checked like `.at()` (W2, w2.md §2.12) |
 | `remove (x) from [c]` (*changed*: new row, set and map) | `keyed` | `x`: `key(C)` | `c.erase(x)` |
 | `remove next from [c]` (*changed*: new row, queue/stack column of *remove*) | `adaptor` | — | `c.pop()` |
 | `length of [c]` | `collection` | output `int` | `static_cast<int>(c.size())` |
 | `[c] contains (x)` | `searchable` | `x`: `key(C)` | `std::ranges::find(c, x) != c.end()` or `c.contains(x)` (C++20) |
-| `[c] is empty`, `clear [c]` | `collection` | — | `c.empty()`, `c.clear()` (a helper for adaptors) |
+| `[c] is empty`, `clear [c]` | `collection` | — | `c.empty()`, `c.clear()`; `c = {};` for a queue, stack or priority queue (W2) |
 | `sort [c] [ascending ▾]` | `sortable` | — | `std::ranges::sort(c)` |
 | `list of (a) (b) ⊕` (*changed*: no map form in M3) | `listable`, from its place | items: `elem(C)` | `{a, b}` |
-| `for each [x] in (c)` | `iterable` | declares `x`: `elem(C)` | `for (const auto& x : c)` |
+| `for each [x] in (c) [read-only ▾]` (*changed* in W2: the list is a value input, and the modes *copy* and *editable*) | `iterable` | `c` in `any`: `C`; declares `x`: `elem(C)` | `for (const auto& x : c)`, `auto x`, `auto& x` (*editable*: a changeable `sequence` that is not a list of `bool`) |
 | `for each key [k], value [v] in [m]` (*changed*: new row) | none | `m`: `std::map<K, V>`; declares `k`: `K`, `v`: `V` | `for (const auto& [k, v] : m)` (C++17) |
 
 * A map is filled with *set item … of*; a map form of *list of* waits until
@@ -241,7 +241,8 @@ the rows that change in the spec are marked *changed*.
   `dice_statistics` (`tests/assignments/dice_statistics/reference.cpp:40`).
 * `switch`: its operand has `type = "T"` with `where = { T = "switchable" }`;
   each case label is a repeated value part with `type = "T"`, holding a
-  literal or an enumerator (`[Action] :: [Deposit]`). That a label is a
+  literal or an enumerator (`[Action] [Deposit]`), counted by the extra
+  `caseCount`, and the extra flag `hasDefault` adds the default part (W2). That a label is a
   constant, and that no two are equal, the analyser checks with its own rule
   (W2 allocates a code if it needs one).
 * `[Color ▾] :: [Red ▾]`: field `ENUM` (`symbol_ref`, kind enum,
@@ -250,8 +251,9 @@ the rows that change in the spec are marked *changed*.
 * `new [Student] with name: (…) mark: (…)`: type field `TYPE` with
   `type = "S"`, `where = { S = "struct" }`; repeated input `FIELD` with
   `type = "member:TYPE"`; output `S`.
-* `[s] . [mark]`: input `OBJ` with `type = "S"`, `where = { S = "struct" }`;
-  field `MEMBER` (`symbol_ref`, `members = "S"`); output `symbol:MEMBER`.
+* `[mark ▾] of (s)` (*%MEMBER of %OBJ*, W2; it was drawn `[s] . [mark]`):
+  input `OBJ` with `type = "S"`, `where = { S = "struct" }`; field `MEMBER`
+  (`symbol_ref`, `members = "S"`); output `symbol:MEMBER`.
 
 ### 1.6 Operators, requirements and generated operators
 
@@ -298,8 +300,9 @@ the rows that change in the spec are marked *changed*.
   C++17; with only `==` and `<`, `!=`, `>` and `<=` do not compile in C++17,
   and `>` and `<=` not in C++20 either (checked with g++ 11 and 14). A
   printable struct gets a hidden-friend `operator<<`. An enum that is
-  printed or written gets an `operator<<`, and one that is joined a
-  `to_string`: `std::cout << Color::Red` does not compile for an
+  printed or written gets an `operator<<`, and one that is joined or turned
+  into text `b2c::to_text(Color)` (W2, w2.md §2.11; W1 generated a global
+  `to_string`): `std::cout << Color::Red` does not compile for an
   `enum class`.
 
 ### 1.7 Messages
@@ -620,6 +623,17 @@ members = "S"                         # lists the fields of the struct bound to 
   fields, an enum's enumerators (M4 adds methods). `S`'s class must be
   `struct` or `enum`. The field binds nothing.
 * `headers` on a block and on a dropdown's options (§5).
+* **W2's additions** ([w2.md §2.1](w2.md#21-catalog-schema-additions-p0)):
+  the row extras `fields` (rows `{sym, name, type}`, with `types` and
+  `type_class` as `params` has) and `values` (rows `{sym, name}`), each
+  named as its kind; `repeat` on `dropdown`, `checkbox`, `type` and
+  `symbol_decl` fields (parts `NAME0`, `NAME1`, …, each with the field's
+  default); a repeat counted by the rows of a row extra
+  (`repeat = { count = "params" }`); and a type field with `types = []`,
+  whose menu holds only the module's own types and which may be absent
+  from a block. `func.define`'s `RETURNS` gained `type = "R"` with
+  `where = { R = "value" }`, so a function's result takes every type a
+  variable can hold.
 
 ### 4.2 Grammar
 
@@ -648,7 +662,12 @@ pattern = "any"                                  (* the analyser decides; M2 *)
   pattern is at most 128 bytes and 8 levels deep.
 * `param:` names a `symbol_ref` field; `member:` a `type` or `symbol_ref`
   field. Both appear only on a repeated value input; `result` only on a
-  value input.
+  value input. Since W2, `param:` and `member:` may also name the block's
+  own `symbol_decl` field on an input repeated by its `params` (`param:`)
+  or `fields` (`member:`) rows, a row's default value: part *i* takes the
+  type of row *i* as it stands. `field:F` on a repeated `symbol_decl` field
+  names a repeated type field `F` with the same count, and part *i* takes
+  the type chosen in `F`'s part *i* (*try*'s caught errors).
 
 ### 4.3 What a signature means, and what the catalog checks
 
@@ -927,11 +946,12 @@ pub struct ItemHeaders {
 | a comparable struct, C++17 | six hidden friends on `std::tie` | `<tuple>` |
 | a printable struct | a hidden-friend `operator<<` | `<ostream>` |
 | an enum that is printed or written | `operator<<` with each enumerator's name | `<ostream>` |
-| an enum that is joined | `to_string(Color)`, called as `::to_string(c)` (a variable named `to_string` would hide an unqualified call) | `<string>` |
+| an enum that is joined or turned into text | `b2c::to_text(Color)`, an inline function in `namespace b2c` printed right after the enum (W2, w2.md §2.11; W1's global `to_string(Color)` clashed with a user function of that name) | `<string>` |
+| a loop whose body mentions none of its names | `for ([[maybe_unused]] const auto& x : c)` (W2) | — |
 | a helper it calls | as in M2 | the helper's |
 
-**Formats W1 chose where nothing was specified**, to review with W2's
-struct and enum blocks and their `@c++17` snapshots:
+**Formats W1 chose where nothing was specified**, reviewed with W2's
+struct and enum blocks and their `@c++17` snapshots, which keep them all:
 
 * a printable struct prints as `Point{x: 1, y: 2}`, a `bool` field as
   `true` or `false`;
@@ -940,12 +960,12 @@ struct and enum blocks and their `@c++17` snapshots:
 * a C++17 comparison longer than 100 columns wraps before its operator;
 * a comparable struct with no fields gets friends that return a constant,
   with unnamed parameters and no `<tuple>`;
-* a struct's fields are `T name{};` until W2 passes default values;
+* a struct's fields are `T name{};`, and since W2's package C2 a field
+  with a default value is `T name = value;`;
 * `repeat until` inverts `==` and `!=` of library and user types too.
 
 The forms of this table exist in `b2c-codegen` (`lower/forms.rs`,
-`lower/typedefs.rs`) but no W1 block reaches them: the SAST has no node for
-indexing, sizes, *for each*, structs or enums before W2, which calls
+`lower/typedefs.rs`); no W1 block reached them, and W2's blocks call
 `element_at`, `size_of`, `range_for`, `struct_def` and `enum_def`.
 
 Hidden friends are defined in the class, so they are inline and fit in a
@@ -988,7 +1008,7 @@ The same allocation stands in ADR-0017, ADR-0018 and here.
 | `B2C-E0314` | not printable | ADR-0017 | W1 |
 | `B2C-E0315` | no type from its place | ADR-0018 | W1 |
 | `B2C-E0316` | whole-number division or `mod` by a constant zero | L10 (§11.2) | W1 |
-| `B2C-E0420`, `B2C-E0421` | declaration cycles (06 §6.7) | spec | W2 (structs) |
+| `B2C-E0420`, `B2C-E0421` | declaration cycles (06 §6.7) | spec | W2 (structs; globals and default values) |
 | `B2C-E0422` | modules' headers form a cycle | ADR-0019 | W3 |
 | `B2C-E0423` | cross-module initialisation order | ADR-0019 | W3 |
 | `B2C-W0506` | a decimal result that is infinity or NaN (division by a constant zero, a constant calculation too large) | L10 (§11.2) | W1 |
@@ -999,7 +1019,9 @@ The same allocation stands in ADR-0017, ADR-0018 and here.
   ADR-0018: class messages), `E0303` (L16: only text with what is not text
   or a character) and `E0517` (L10: also a constant `int` calculation or
   conversion that does not fit).
-* **Next free:** `E0141`, `E0219`, `E0222`, `E0424`; `W0507` to `W0509`.
+* **Next free:** `E0141`, `E0219`, `E0222`, `E0429`; `W0509`. (W2 took
+  `E0424` to `E0428`, `W0507` and `W0508`, and first emitted `E0402`,
+  `E0420` and `E0421`; w2.md §1.11.)
 * Each code gets its reference entry in `docs/reference/diagnostics/` in the
   pull request that first defines it, which `tools/check-diagnostics-docs.py`
   and `codes.rs:183-201` enforce. So `E0313`, `E0314` and `E0315` land in W1
@@ -1208,8 +1230,9 @@ workspaces and runs the A/B job.
 The wave that changes each section. Sections that ADR-0018 also changes are
 marked *with 0018*: W1 edits them once, for both. The W1 rows were applied
 at the end of W1 (2026-10-25), with 03 §3.7.4's *length of* and *letter of*
-casts and 09 §9.2's catalog snapshot test; the W2 and W4 rows wait for
-their blocks.
+casts and 09 §9.2's catalog snapshot test; the W2 rows at the end of W2
+(2026-10-28, w2.md §5.4), the 03 §3.7.13 row by *use header*; the W4 row
+waits for its type picker.
 
 | Section | Change | Wave |
 | --- | --- | --- |
