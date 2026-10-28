@@ -79,8 +79,8 @@ fn exported_examples_build_with_make() {
         let dir = tempfile::tempdir().unwrap();
         let folder = dir.path().join("export");
         let export = exported(name, &folder);
-        // Each configuration is built in its own folder: `make` and then
-        // `make CONFIG=release` compiles again.
+        // Each configuration builds a program file of its own: `make` and
+        // then `make CONFIG=release` compiles again.
         for config in ["debug", "release"] {
             let output = tool("make")
                 .arg("-C")
@@ -90,10 +90,10 @@ fn exported_examples_build_with_make() {
                 .unwrap();
             run(&output, &format!("make {name} {config}"));
             assert!(
-                String::from_utf8_lossy(&output.stdout).contains(&format!("-o bin/{config}/")),
+                String::from_utf8_lossy(&output.stdout).contains(&format!("-o {}-{config}", export.name)),
                 "make {name} {config} did not compile"
             );
-            check(name, &program(&folder.join("bin").join(config), &export.name));
+            check(name, &program(&folder, &format!("{}-{config}", export.name)));
         }
     }
 }
@@ -173,8 +173,19 @@ fn reserved_program_names_and_cpp26_are_written_for_both_tools() {
         assert!(cmake.contains(&format!("OUTPUT_NAME {module})")), "{cmake}");
         assert!(!cmake.contains(&format!("({module} PRIVATE")), "{cmake}");
         let make = file("Makefile");
-        assert!(make.contains(&format!("PROGRAM := {module}$(EXE)")), "{make}");
+        assert!(make.contains(&format!("PROGRAM := {module}\n")), "{make}");
         assert!(make.contains("$(OUT): $(SOURCES)"), "{make}");
+        // The recipe is the compiler alone, which cmd.exe runs too.
+        let recipe: Vec<&str> = make
+            .split("$(OUT): $(SOURCES) $(HEADERS)\n")
+            .nth(1)
+            .unwrap()
+            .lines()
+            .take_while(|line| line.starts_with('\t'))
+            .collect();
+        assert_eq!(recipe.len(), 1, "{make}");
+        assert!(recipe[0].starts_with("\t$(CXX) "), "{make}");
+        assert!(!make.contains("mkdir"), "{make}");
         if standard == "c++26" {
             assert!(!cmake.contains("CMAKE_CXX_STANDARD"), "{cmake}");
             assert!(cmake.contains("PRIVATE -std=c++2c)"), "{cmake}");
@@ -230,13 +241,62 @@ fn exports_with_reserved_names_build() {
                 &tool("make").arg("-C").arg(&folder).output().unwrap(),
                 &format!("make {module} {standard}"),
             );
-            check("hello_world", &folder.join("bin/debug").join(module));
+            let built = folder.join(format!("{module}-debug"));
+            check("hello_world", &built);
             run(
                 &tool("make").arg("-C").arg(&folder).arg("clean").output().unwrap(),
                 &format!("make clean {module}"),
             );
-            assert!(!folder.join("bin").exists());
+            assert!(!built.exists());
+            assert!(folder.join("Makefile").is_file());
         }
+    }
+}
+
+/// Any SANITIZE or HARDEN but 1 turns its flags off and names a program
+/// file of its own, so the flagged build is never taken for it.
+#[test]
+fn sanitize_and_harden_values_other_than_1_build_a_file_of_their_own() {
+    let export = export::prepare(&changed_example("hello_world", "main", "c++20"), 4, "0.0.0-test").unwrap();
+    let make = export
+        .files
+        .iter()
+        .find(|file| file.path == "Makefile")
+        .map(|file| file.contents.clone())
+        .unwrap();
+    assert!(
+        make.contains("$(if $(filter 1,$(SANITIZE)),,-nosanitize)$(if $(filter 1,$(HARDEN)),,-noharden)"),
+        "{make}"
+    );
+    assert!(make.contains("ifeq ($(SANITIZE),1)") && make.contains("ifeq ($(HARDEN),1)"));
+    if !available("make") {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("export");
+    export::write(&folder, &export, ExportMode::New).unwrap();
+    for (args, out) in [
+        (&["SANITIZE=no"][..], "main-debug-nosanitize"),
+        (&["HARDEN=off"][..], "main-debug-noharden"),
+        (&["SANITIZE=0", "HARDEN=0"][..], "main-debug-nosanitize-noharden"),
+        (&[][..], "main-debug"),
+    ] {
+        let output = tool("make")
+            .arg("-C")
+            .arg(&folder)
+            .arg("-n")
+            .args(args)
+            .output()
+            .unwrap();
+        run(&output, &format!("make -n {args:?}"));
+        let commands = String::from_utf8_lossy(&output.stdout);
+        let line = commands
+            .lines()
+            .find(|line| line.contains(" -o "))
+            .unwrap_or_else(|| panic!("{commands}"));
+        let target = line.split(" -o ").nth(1).unwrap().split(' ').next().unwrap();
+        assert_eq!(target, format!("{out}{}", std::env::consts::EXE_SUFFIX), "{line}");
+        assert_eq!(line.contains("-fsanitize"), !out.contains("nosanitize"), "{line}");
     }
 }
 

@@ -193,7 +193,7 @@ and stay in it.
 <chosen folder>/<project-folder-name>/
 ├── src/                 the generated .cpp/.hpp, without the banner
 ├── CMakeLists.txt       CMake ≥ 3.20 (target b2c_program, OUTPUT_NAME the program)
-├── Makefile             g++ and GNU make; the program in bin/<config>[-nosanitize][-noharden]/
+├── Makefile             g++ and GNU make; the program is <program>-<config>[-nosanitize][-noharden]
 ├── README.md            how to build, what the flags are
 └── .b2c-export.json     { format, formatVersion: 2, projectId, files: [...] }
 ```
@@ -427,8 +427,9 @@ Each is fixed with a test written to fail without the fix (checked by removing t
    (b2c-app). The confirmation's wording is now true. **For the owner:** the
    export manifest gained `projectId` (`formatVersion` 2); it is the
    export's own file, not the project format.
-3. The Makefile builds into `bin/<config>[-nosanitize][-noharden]/`, so
-   changing the configuration builds again; the README says where the
+3. The Makefile builds a program file per choice
+   (`<program>-<config>[-nosanitize][-noharden]`, at first in `bin/`, see
+   the second check below), so changing the configuration builds again; the README says where the
    program is. `exported_examples_build_with_make` runs without `-B` and
    checks that each configuration compiles.
 4. C++26 in CMake: no `CMAKE_CXX_STANDARD 26`; the flag is given per
@@ -437,8 +438,8 @@ Each is fixed with a test written to fail without the fix (checked by removing t
    `-std=c++2c` (GCC 14 and newer; this container's GCC 13 does not, CI's
    g++ decides). `std_flag`'s comment said GCC 13 took `c++2c`; it does not.
 5. Reserved program names: the CMake target is `b2c_program` with
-   `OUTPUT_NAME`; the Makefile's program is under `bin/`, so `clean` no
-   longer collides. Tests for `install`, `clean` and `all` (text), and
+   `OUTPUT_NAME`; the Makefile's program is `<program>-<config>…`, so
+   `clean` no longer collides. Tests for `install`, `clean` and `all` (text), and
    CMake and make builds of `install` and `clean`.
 6. A terminal that ran nothing reported its own status: the status is now
    `stopped` (neutral), with no crash or sanitizer report; the script says
@@ -484,6 +485,27 @@ Each is fixed with a test written to fail without the fix (checked by removing t
 17. A failed input file is logged by its file name and the error's kind
     only; `a_program_reads_its_input_file_with_pipes` captures the log and
     checks that the folder is not in it.
+
+### The coordinator's second check (3 points)
+
+1. The Makefile's `mkdir -p` needed a POSIX shell for every build: the
+   program files now go into the export folder itself
+   (`<program>-debug`, `<program>-release-nosanitize`, …), the recipe is
+   the compiler alone, and `make clean` removes exactly those eight names.
+   The README and the Makefile's header say which shells it supports on
+   Windows (MSYS2 or another `sh.exe`; `mingw32-make` from cmd.exe or
+   PowerShell builds a project without defines, but defines and
+   `make clean` need a POSIX shell). Tests: the recipe is one `$(CXX)`
+   line and no `mkdir` (`reserved_program_names_and_cpp26_are_written_for_both_tools`);
+   the make builds use the new names.
+2. `SANITIZE` and `HARDEN` other than 0 and 1 reused the flagged build's
+   file: the suffixes now come from the same test as the flags (anything
+   but 1 is off). `sanitize_and_harden_values_other_than_1_build_a_file_of_their_own`
+   checks the text and runs `make -n` with `SANITIZE=no`, `HARDEN=off` and
+   both at 0: the target's name and the absence of `-fsanitize` agree.
+3. The doc comments of `ProjectExportDialogRequest` and the export feature
+   say the folder is named after the project; `packages/ipc-types` was
+   regenerated with `B2C_UPDATE_IPC=1`.
 
 ### Not done, and why
 

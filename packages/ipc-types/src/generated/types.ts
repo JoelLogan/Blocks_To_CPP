@@ -600,8 +600,9 @@ handle: Handle, };
 /**
  * The request of `project_export_dialog`: export the document as a C++
  * project (generated sources, `CMakeLists.txt`, `Makefile`,
- * `README.md`) into a folder named after the program, inside a folder
- * the user picks in a native dialog
+ * `README.md`) into a folder named after the project (its name made a
+ * plain file name, else the program's name), inside a folder the user
+ * picks in a native dialog
  * (`docs/spec/06-compiler-pipeline.md` §6.11).
  */
 export type ProjectExportDialogRequest = {

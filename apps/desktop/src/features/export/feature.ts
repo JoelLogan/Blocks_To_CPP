@@ -3,7 +3,8 @@
  * command (*Export as C++ project…* in the ≡ menu) sends the project as it is now, never C++, to
  * `project_export_dialog`. The backend asks for the folder in a native dialog, generates the C++
  * itself and writes `src/`, `CMakeLists.txt`, `Makefile` and `README.md` into a folder named after
- * the program; it asks before it replaces an earlier export. A canvas that does not read back as
+ * the project (its name made a plain file name, else the program's name); it asks before it
+ * replaces an earlier export of the same project. A canvas that does not read back as
  * a project is not exported (as it is not built), and the outcome is said in a dialog.
  */
 import type { Feature, FeatureContext } from '../../app/features';
