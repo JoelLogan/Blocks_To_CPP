@@ -335,6 +335,29 @@ describe('the status bar', () => {
   });
 });
 
+describe('the toolbox', () => {
+  it('keeps room for the category column’s scroll bar, so the canvas never moves with it', () => {
+    // Blockly sizes the column (.blocklyToolbox) to its content and starts the canvas at its right
+    // edge: a classic scroll bar (WebView2's, 15 px) that came and went with the number of
+    // categories moved the whole canvas, as the Windows visual diff saw at 1000 × 700.
+    const own = parseRules(sheet('editor/toolbox/toolbox.css'));
+    expect(declarationsOf(own, '.blocklyToolbox').get('scrollbar-gutter')).toBe('stable');
+    // No other sheet takes it back, or hides the scroll bar (which leaves no gutter).
+    const column = ALL_RULES.filter((rule) =>
+      rule.selectors.some((selector) => /\.blocklyToolbox(?![\w-])/.test(selector)),
+    );
+    for (const rule of column) {
+      const where = rule.selectors.join(', ');
+      if (rule.declarations.has('scrollbar-gutter')) {
+        expect(rule.declarations.get('scrollbar-gutter'), where).toBe('stable');
+      }
+      expect(rule.declarations.get('scrollbar-width'), where).not.toBe('none');
+      expect(rule.declarations.get('overflow-y'), where).not.toBe('visible');
+      expect(rule.declarations.get('overflow'), where).not.toBe('visible');
+    }
+  });
+});
+
 describe('the target sizes', () => {
   /** Controls and the smallest height (and width, for icon buttons) their rules give them. */
   const CONTROLS: readonly [string, 'min-height' | 'min-width'][] = [

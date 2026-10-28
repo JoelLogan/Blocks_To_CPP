@@ -43,3 +43,15 @@
     transition: none;
   }
 }
+
+/*
+ * The category column (Blockly's toolbox element, which scrolls its categories when they do not fit
+ * its height) always keeps room for a vertical scroll bar. Blockly sizes the column to its content
+ * and starts the canvas at its right edge; WebView2 draws a classic scroll bar that takes 15 px of
+ * room, so without the reserved gutter the whole canvas moved 15 px whenever the categories stopped
+ * fitting (at 1000 × 700 with 11 categories or more). Overlay scroll bars (WebKitGTK's) take no
+ * room, and there the gutter is empty.
+ */
+.blocklyToolbox {
+  scrollbar-gutter: stable;
+}
