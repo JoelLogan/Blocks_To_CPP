@@ -26,6 +26,7 @@ import { useAppStore } from '../app/store';
 import { editorMode, installLabelMode, installOptionGate } from './gating';
 import { BLOCKLY_MEDIA_DIR } from './media';
 import { ModuleSwitcher } from './modules/ModuleSwitcher';
+import { QuickInsert, ToolboxSearch } from './quick-insert';
 import { appCoreHost, type CoreHost } from './preview/coreHost';
 import type { PreviewService } from './preview/service';
 import { appWorkerPreviewService } from './preview/worker/spawn';
@@ -288,7 +289,14 @@ export function EditorWorkspace() {
       <ModuleSwitcher />
       <div ref={host} className="blockly-host" />
       {canvas !== null &&
-        createPortal(<CanvasControls workspace={canvas.workspace} />, canvas.host)}
+        createPortal(
+          <>
+            <CanvasControls workspace={canvas.workspace} />
+            <ToolboxSearch workspace={canvas.workspace} />
+            <QuickInsert workspace={canvas.workspace} />
+          </>,
+          canvas.host,
+        )}
     </>
   );
 }

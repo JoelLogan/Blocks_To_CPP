@@ -220,12 +220,21 @@ with the note *Quick Insert reads simple lines only for now*. A line names
 variables by the symbols in scope at the insertion point; a new name in
 `int x = 5` becomes the declaration's name (checked like a typed name).
 
-**Toolbox search**: a search field above the category list (an `<input
-type="search">` in the toolbox's DOM, labelled *Search blocks*). Typing
-filters the flyout to the matching blocks, best first, with a note when
-none match; Escape or an empty field gives the categories back. It uses the
-same entries and scorer, and the flyout shows the entries' own toolbox items
-(presets included). `Ctrl+F` on the canvas or toolbox focuses it.
+**Toolbox search**: `Ctrl+F` on the canvas, or *Search blocks…* in the
+canvas's menu, opens a search field (`<input type="search">`, labelled
+*Search blocks*) over the top of the toolbox. Typing filters the flyout
+live: the toolbox installs one category, *Search results*, with the
+matching blocks, best first, or the note *No block matches.*; Escape gives
+the categories back. Down or Enter goes into the results, where the
+toolbox's own keys add a block. It uses the same entries and scorer, and
+the flyout shows the entries' own toolbox items (presets included), so a
+result is dragged out as from its category.
+
+*Why not a field always above the toolbox:* the toolbox's DOM is Blockly's
+(its focus manager treats focus inside it as focus on the toolbox), and a
+permanent bar above the canvas would move every canvas and toolbox scene.
+The field shows only while searching, over the toolbox's single *Search
+results* row.
 
 *Alternative considered:* one shared popup for both. The spec gives the
 toolbox its own live filter (04 §4.2), and dragging from the flyout must
