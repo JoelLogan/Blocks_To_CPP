@@ -15,6 +15,7 @@ function fakeGlue(overrides: Partial<GlueFunctions> = {}): GlueFunctions {
     canonical: vi.fn(() => '{"ok":false,"diagnostics":[]}'),
     update: vi.fn(() => '{"stage":"load","diagnostics":[],"files":[]}'),
     symbols_in_scope: vi.fn(() => '[]'),
+    scope_index: vi.fn(() => 'null'),
     conversion_table: vi.fn(() => '[{"from":"int","to":"double","conversion":"widening"}]'),
     clipboard_make: vi.fn(() => '{"ok":true,"payload":"{}","diagnostics":[]}'),
     paste_prepare: vi.fn(() => '{"ok":false,"unresolved":[],"diagnostics":[]}'),

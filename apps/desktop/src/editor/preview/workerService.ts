@@ -12,9 +12,10 @@
  * ({@link previewWorkerEnabled}), until the integration step after W2 makes it the default
  * (docs/plans/m3-contracts/w5-worker.md §4).
  */
-import { CoreError, CoreTrap } from '@blocks2cpp/b2c-core-wasm';
+import { CoreError, CoreTrap, ScopeIndex, type UpdateResult } from '@blocks2cpp/b2c-core-wasm';
 import type { CoreWorkerClient } from '@blocks2cpp/b2c-core-wasm/worker';
 
+import { timed } from '../../lib/timing';
 import type { CoreHost } from './coreHost';
 import {
   mainThreadPreviewService,
@@ -26,6 +27,29 @@ import {
 /** Whether this build previews in the worker: `B2C_PREVIEW_WORKER=1` at build time (vite.config.ts). */
 export function previewWorkerEnabled(): boolean {
   return import.meta.env['B2C_PREVIEW_WORKER'] === '1';
+}
+
+/**
+ * The worker's scope index for its preview, or `null` when the document did not load (the index is
+ * then the last loaded document's, which the pipeline does not apply either) or the index cannot
+ * be read, which is logged: the menus then ask the main instance, as before the worker.
+ */
+function scopeOf(
+  json: string | null,
+  result: UpdateResult,
+  log: (message: string) => void,
+): ScopeIndex | null {
+  if (json === null || result.contentHash === null) {
+    return null;
+  }
+  try {
+    return ScopeIndex.parse(json, result);
+  } catch (error: unknown) {
+    log(
+      `The preview worker's scope index could not be read: ${error instanceof Error ? error.message : 'unknown error'}`,
+    );
+    return null;
+  }
 }
 
 /** What {@link workerPreviewService} needs. */
@@ -108,7 +132,9 @@ export function workerPreviewService(options: WorkerPreviewServiceOptions): Work
           ? null
           : {
               result: answer.result,
-              scopeJson: answer.scopeJson,
+              scope: timed('b2c:preview:receive', () =>
+                scopeOf(answer.scopeJson, answer.result, log),
+              ),
               timing: {
                 startedAt: answer.startedAt,
                 updateMs: answer.updateMs,

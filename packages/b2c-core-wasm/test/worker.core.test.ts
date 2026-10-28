@@ -12,7 +12,7 @@ import { MessageChannel, type MessagePort } from 'node:worker_threads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { CoreWasm } from '../src/api';
-import { initCoreFromBytes } from '../src/index';
+import { initCoreFromBytes, ScopeIndex } from '../src/index';
 import {
   createCoreWorkerClient,
   type CoreWorkerClient,
@@ -114,8 +114,12 @@ describe.skipIf(!built && !required)('the preview worker with the real core', ()
     const json = JSON.stringify(loaded.document);
     for (const indentWidth of [2, 4] as const) {
       const answer = await client.update(json, { indentWidth });
-      expect(answer?.result).toEqual(core.update(json, { indentWidth }));
-      expect(answer?.scopeJson).toBeNull();
+      const result = core.update(json, { indentWidth });
+      expect(answer?.result).toEqual(result);
+      // The index the worker's instance kept, for this very document.
+      const index = ScopeIndex.parse(answer?.scopeJson ?? 'null', result);
+      expect(index.symbolsAt('no-such-block', null)).toBeNull();
+      expect(answer?.indexMs).toBeGreaterThanOrEqual(0);
       expect(answer?.updateMs).toBeGreaterThanOrEqual(0);
     }
   });

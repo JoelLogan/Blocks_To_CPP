@@ -124,13 +124,67 @@ describe('the worker preview service', () => {
     }
   });
 
+  it('reads the worker’s scope index for its preview, and logs one it cannot read', async () => {
+    const { client, log, service } = setUp();
+    await service.update('one', OPTIONS);
+    client.start();
+    const preview = { stage: 'generate', contentHash: 'aa', symbols: [] };
+    const index = {
+      v: 1,
+      contentHash: 'aa',
+      modules: ['m'],
+      names: [],
+      trail: [],
+      functions: [[]],
+      parked: [-1],
+      blocks: [['b1', -1, 0]],
+      members: [],
+      created: [],
+    };
+    client.answer = () =>
+      Promise.resolve({
+        result: preview as unknown as UpdateResult,
+        scopeJson: JSON.stringify(index),
+        startedAt: 1,
+        updateMs: 2,
+        indexMs: 3,
+      });
+    const answer = await service.update('two', OPTIONS);
+    expect(answer?.scope?.symbolsAt('b1', null)).toEqual([]);
+    expect(answer?.timing).toEqual({ startedAt: 1, updateMs: 2, indexMs: 3 });
+    expect(log).not.toHaveBeenCalled();
+
+    client.answer = () =>
+      Promise.resolve({
+        result: preview as unknown as UpdateResult,
+        scopeJson: JSON.stringify({ ...index, contentHash: 'bb' }),
+        startedAt: 1,
+        updateMs: 2,
+        indexMs: 3,
+      });
+    expect((await service.update('three', OPTIONS))?.scope).toBeNull();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('scope index could not be read'));
+
+    // A document that did not load has no index to apply.
+    client.answer = () =>
+      Promise.resolve({
+        result: { ...preview, contentHash: null } as unknown as UpdateResult,
+        scopeJson: JSON.stringify(index),
+        startedAt: 1,
+        updateMs: 2,
+        indexMs: 3,
+      });
+    expect((await service.update('four', OPTIONS))?.scope).toBeNull();
+    expect(log).toHaveBeenCalledTimes(1);
+  });
+
   it('runs on the main instance until the worker has started, starting it after the first update', async () => {
     const { core, client, createClient, service } = setUp();
     expect(service.thread()).toBe('main');
     expect(service.client()).toBeNull();
     const first = await service.update('one', OPTIONS);
     expect(first?.result).toMatchObject({ ran: 'main' });
-    expect(first?.scopeJson).toBeNull();
+    expect(first?.scope).toBeNull();
     expect(createClient).toHaveBeenCalledTimes(1);
     expect(service.client()).toBe(client);
     // Still starting: the main instance again, and no second client.
@@ -147,7 +201,7 @@ describe('the worker preview service', () => {
     const answer = await service.update('two', OPTIONS);
     expect(answer).toEqual({
       result: { stage: 'generate', ran: 'worker', json: 'two' },
-      scopeJson: null,
+      scope: null,
       timing: { startedAt: 5, updateMs: 7, indexMs: 0 },
     });
     expect(client.updates).toEqual(['two']);

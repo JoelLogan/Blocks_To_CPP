@@ -68,6 +68,7 @@ pub mod error;
 pub mod facade;
 pub mod options;
 pub mod scope;
+mod scope_index;
 mod session;
 mod tree;
 mod wire;
@@ -86,6 +87,7 @@ pub use facade::{
 };
 pub use options::{IndentWidth, MAX_OPTIONS_BYTES, PreviewOptions};
 pub use scope::{ConversionRow, STATIC_TYPES};
+pub use scope_index::SCOPE_INDEX_VERSION;
 pub use session::{ClipboardMade, Pasted, Session};
 
 thread_local! {
@@ -200,6 +202,15 @@ pub fn update(document_json: &str, options_json: &str) -> String {
 )]
 pub fn symbols_in_scope(block_id: &str, input: Option<String>) -> String {
     with_session(|session| wire::symbols(session.symbols_in_scope(block_id, input.as_deref()).as_deref()))
+}
+
+/// The scope index of the last update whose document loaded
+/// ([`Session::scope_index`]; the format is in `scope_index.rs`), or `null`
+/// before one: what the editor answers the scope query from while the
+/// preview runs in its worker (docs/plans/m3-contracts/worker.md §4).
+#[wasm_bindgen]
+pub fn scope_index() -> String {
+    with_session(|session| session.scope_index().unwrap_or_else(|| String::from("null")))
 }
 
 /// The analyser's conversion rule ([`b2c_lang::conversion`]) for every

@@ -73,6 +73,7 @@ export { MAX_DOCUMENT_BYTES } from './core';
 export { CoreError, type CoreErrorKind, CoreTrap } from './errors';
 export { coreModule, initCore, initCoreFromBytes, resetCore } from './loader';
 export { randomSeedHex, type RandomSource, SEED_BYTES } from './seed';
+export { SCOPE_INDEX_VERSION, ScopeIndex, type ScopeIndexData } from './scopeIndex';
 /**
  * The pipeline's shared shapes, generated from the Rust types into `@blocks2cpp/ipc-types` (the
  * same JSON as `b2c check --format json`). Re-exported so that users of the core need only this

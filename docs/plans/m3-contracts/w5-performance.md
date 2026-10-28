@@ -69,83 +69,105 @@ and another session builds W4's.
 
 ### 2.1 The scope index
 
-**Rust, `b2c-lang`** (`query.rs`, additive; nothing else in the crate):
+**Rust, `b2c-lang`** (`query.rs`, additive; nothing else in the crate, not
+even `lib.rs`: the new types are reached through the method, not named):
 
 ```rust
+/// A position: the trail node there (`None`: no local symbol) and the module index.
+pub struct ScopePoint { pub node: Option<usize>, pub module: usize }
+/// The positions recorded for one block.
+pub struct ScopeBlock<'a> {
+    pub id: &'a BlockId,
+    pub at: Option<ScopePoint>,
+    pub inputs: Vec<(&'a str, ScopePoint)>,
+}
 /// A read-only view of the scope index (worker.md §4), for encoders.
-pub struct ScopeIndexParts<'a> { /* private: &'a ScopeIndex, &'a Analysis */ }
+pub struct ScopeIndexParts<'a> { /* private: &'a Analysis */ }
 
 impl<'a> ScopeIndexParts<'a> {
     /// The trail: (parent, C++ name, symbol), parents always before their nodes.
-    pub fn trail(&self) -> impl Iterator<Item = (Option<usize>, &'a str, Option<&'a SymbolId>)>;
-    /// Each recorded block: its position at the block, then each input's.
-    pub fn blocks(&self) -> impl Iterator<Item = (&'a BlockId, Option<ScopePoint>, impl Iterator<Item = (&'a str, ScopePoint)>)>;
-    /// Each module's functions, `(name, symbol)` in symbol order, by module index.
-    pub fn functions(&self) -> impl Iterator<Item = &'a [(String, SymbolId)]>;
-    /// Each module's parked point, by module index (`None`: the functions alone).
-    pub fn parked(&self) -> impl Iterator<Item = Option<usize>>;
-    /// The members `with_members` adds after a struct or an enum.
-    pub fn members(&self, owner: &SymbolId) -> impl Iterator<Item = &'a SymbolId>;
-    /// The variables `scope_after` never adds (a catch part's error, a *for each* item).
-    pub fn part_variables(&self) -> impl Iterator<Item = &'a SymbolId>;
+    pub fn trail(self) -> impl Iterator<Item = (Option<usize>, &'a str, Option<&'a SymbolId>)>;
+    /// Every recorded block, sorted by ID.
+    pub fn blocks(self) -> impl Iterator<Item = ScopeBlock<'a>>;
+    /// The program's modules, by module index.
+    pub fn modules(self) -> impl Iterator<Item = &'a ModuleId>;
+    /// Each module's functions, `(C++ name, symbol)` in symbol order.
+    pub fn functions(self) -> impl Iterator<Item = &'a [(String, SymbolId)]>;
+    /// Each module's parked point (`None`: the functions alone).
+    pub fn parked(self) -> impl Iterator<Item = Option<usize>>;
+    /// Each struct and enum with the members `with_members` lists after it.
+    pub fn members(self) -> impl Iterator<Item = (&'a SymbolId, Vec<&'a SymbolId>)>;
+    /// The variable each block creates that `scope_after` adds after it.
+    pub fn created(self) -> Vec<(&'a BlockId, &'a SymbolId)>;
 }
-pub struct ScopePoint { pub node: Option<usize>, pub module: usize }
 
 impl Analysis {
     pub fn scope_index_parts(&self) -> ScopeIndexParts<'_>;
 }
 ```
 
-Tests in `query.rs` (as worker.md §8): for documents built in the test, a
-reference lookup over the parts agrees with `scope_at` for every recorded
-block and input name, with `scope_after` and with `parked_scope`; every
-parent is smaller than its node; the parked stacks and the disabled
-definition of ADR-0012 are covered. Two refinements of worker.md §4, both
-because the lookup must equal `scope_at` exactly and not by inference:
+Test in `query.rs`: a reference lookup over the parts agrees with `scope_at`
+for every recorded block and input name, with `parked_scope`, and the
+members and the created variable are those `with_members` and `scope_after`
+use; every parent is smaller than its node. The exhaustive check on real
+documents is in `b2c-core-wasm` (below), whose tests can load them. Three
+refinements of worker.md §4, each because the lookup must equal the
+analyser's answer exactly and not by inference:
 
 * **Members are listed**, not inferred from `owner`: `with_members` adds a
   struct's `fields` (an enum's `values`) whose owner is the struct, in that
   order; a lookup that guessed them from `SymbolInfo.owner` would differ for
   a damaged project whose table has a member the struct does not list.
-* **The part variables are listed**, for `symbolsAfter` (`scope_after` leaves
-  a catch error and a _for each_ item out).
+* **The variable a block creates is listed** (`created`), for
+  `symbolsAfter`: `scope_after` finds it by the symbol's origin block, which
+  `SymbolInfo` does not carry, and leaves out a catch part's error and a
+  _for each_ item.
+* **The modules are listed**, so `parkedScope(moduleId)` finds the module's
+  index as `parked_scope` does (`program.modules`).
 
 **Rust, `b2c-core-wasm`:** `Session::scope_index(&self) -> Option<String>`
-encodes the kept analysis (`wire.rs`, `scope_index`); the export
+encodes the kept analysis (`src/scope_index.rs`); the export
 `scope_index() -> String` returns it or `null`. `EXPECTED_EXPORTS`,
-`EXPORTED_FUNCTIONS` (`scripts/build.mjs`), `src/glue.d.ts`, `src/core.ts`
-(`CoreWasm.scopeIndex()` and `RawCore.scopeIndex()`) change together.
-Format version 1 as worker.md §4, with the two keys above:
+`EXPORTED_FUNCTIONS` (`scripts/build.mjs`), `src/glue.d.ts` and `RawCore`
+(`src/core.ts`, `scopeIndex()`) change together; `CoreWasm` does not (its
+many stand-ins in tests stay valid), since only the worker's host asks.
+Format version 1, as worker.md §4 with the three keys above:
 
 ```ts
 export interface ScopeIndexData {
   readonly v: 1;
   readonly contentHash: string;
+  readonly modules: readonly string[];
   readonly names: readonly string[];
   readonly trail: readonly number[];          // parent, name, symbol per node
   readonly functions: readonly (readonly number[])[];
   readonly parked: readonly number[];
   readonly blocks: readonly (readonly (string | number)[])[];
-  /** Per struct or enum the index can list: [owner, member, member, …], symbol indexes. */
+  /** Per struct or enum with members: [owner, member, …], symbol indexes. */
   readonly members: readonly (readonly number[])[];
-  /** Symbol indexes of the variables `symbolsAfter` never adds. */
-  readonly partVariables: readonly number[];
+  /** Per block that creates a variable `symbolsAfter` adds: [block ID, symbol]. */
+  readonly created: readonly (readonly [string, number])[];
 }
 ```
 
 Symbol indexes are into the update's `symbols` (`Analysis::symbol_infos`,
-sorted by name, then ID); a trail symbol the table does not list is -1, as
-`infos` skips it. The user's name of a symbol (`ScopeIndex.names`, used by
-`infos`) is already the `name` of the update's `SymbolInfo`, so it does not
-cross again.
+sorted by name, then ID), so a lookup's answer is sorted by sorting the
+indexes; a trail symbol the table does not list is -1, as `infos` skips it.
+The user's name of a symbol (`ScopeIndex.names`, used by `infos`) is already
+the `name` of the update's `SymbolInfo`, so it does not cross again.
 
-Tests: `crates/b2c-core-wasm/tests/scope.rs` (`null` before an update and
-after one whose document does not load keeps the old index; for every
-example, every assignment project and the security corpus: version 1, every
-index in range, the update's content hash, and a reference lookup in the test
-equal to `scope_at`, `scope_after`, `parked_scope` for every block, input
-and module); `tests/robustness.rs` (never panics on its corpus); the
-criterion benchmark `native.pipeline.scope-index` (reported).
+Tests: `crates/b2c-core-wasm/tests/scope_index.rs`: `null` before an update,
+and an update whose document does not load keeps the old index; for every
+example (the ten assignments among them), every security project that loads
+and the three generated 1,000-block documents (plain, collections, W2's
+language blocks): version 1, the update's content hash, every parent smaller
+than its node and every index in range, and a reference lookup written in the
+test over the JSON alone equals `scope_at` (every block, with no input, each
+of its inputs and a name it lacks), `scope_after` (every block) and
+`parked_scope` (every module). Dropping the members from the reference lookup
+makes all three fail. `tests/robustness.rs`: the export is JSON (`null` or an
+object) after every generated input. The criterion benchmark
+`native.pipeline.scope-index` (reported).
 
 **TypeScript, `packages/b2c-core-wasm/src/scopeIndex.ts`:** `ScopeIndex` as
 worker.md §4 (`parse`, `symbolsAt`, `symbolsAfter`, `parkedScope`,
@@ -153,13 +175,14 @@ worker.md §4 (`parse`, `symbolsAt`, `symbolsAfter`, `parkedScope`,
 preview's, that every parent is smaller than its node and every index is in
 range; a lookup never throws. Tests: `test/scopeIndex.test.ts` with the real
 core (skipped without a build unless `B2C_REQUIRE_WASM` is set): for every
-example, assignment project, security file and the generated 1,000-block
-documents, every block with `input` null, each of its input names and a name
-it lacks, `symbolsAt` equals `core.symbolsInScope`, `symbolsAfter` and
-`parkedScope` equal the Rust reference (`b2c-core-wasm`'s `scope.rs` test
-writes nothing; the TypeScript side compares with `symbolsInScope` and with
-its own `visibleAt` against `pastePrepare`'s binding, see below); malformed
-indexes are refused.
+example, every security project that loads, and the examples changed by three
+seeded sets of edits (a statement disabled, parked on the canvas or deleted),
+every block with `input` null, each of its input names and a name it lacks:
+`symbolsAt` equals `core.symbolsInScope`; `visibleAt` after each block of the
+guessing game binds a copied reference exactly when the core's `pastePrepare`
+does; malformed indexes (17 kinds) are refused. `symbolsAfter` and
+`parkedScope` are checked against the analyser by the Rust test above, whose
+lookup is the same walk.
 
 `visibleAt` is kept (worker.md §4) for §10.2; until then nothing calls it
 but its test.
@@ -482,33 +505,65 @@ section that is missing fails.
 
 ### 10.1 M3-4, lowering parked stacks (`crates/b2c-lang`)
 
-Proposed, for the coordinator's next change of the lowering (after W3's
-second part, which edits the same functions):
+Proposed for the coordinator's next change of the lowering (after W3's
+second part, which edits the same functions). References are to `8a3d8ec`.
 
-* `scope.rs`: `Scopes::checkpoint(&self) -> ScopesMark` and
-  `Scopes::rollback(&mut self, mark: ScopesMark)`: the scope stack's depth and
-  the trail's head; rolling back pops the scopes opened since and moves the
-  head back, keeping the trail's nodes (positions recorded in the sandbox
+* **Where.** `Lowerer::program` (`lower/mod.rs:430`) meets a parked head in
+  the catch-all arm of its item loop (`:483-486`, `report_parked`) and never
+  visits `head.stack`; `run` (`:64`) then calls
+  `index.record_unlowered(document)` (`:87`), which records every parked
+  block with the module's parked point (`query.rs:176-190`). The sandbox runs
+  in `run`, after `program()` and before `record_unlowered`, so its positions
+  win (`record_block` keeps the first, `query.rs:111`).
+* **`scope.rs`: seeding and a checkpoint.** `Scopes` has no way to make the
+  names of a trail node visible again (`by_name`, `by_sym` are built only by
+  `declare`). Add `Scopes::seed(&mut self, node: Option<NodeId>, key:
+  ListKey)`: `reset()`, push one frame whose `entry` is `node`, set `head` to
+  `node`, and fill `by_name`/`by_sym` by walking the trail from `node`
+  (the first name seen wins, as `ScopeIndex::visible` hides). The sandbox's
+  own frames are then pushed and popped as usual; `reset()` afterwards.
+  Trail nodes made in the sandbox stay in the trail (recorded positions
   point at them).
-* `lower/mod.rs`: `ItemCtx::Parked`, and after every item of a module is
-  lowered, for each parked top-level stack in document order (the blocks
-  `record_unlowered` now records with the parked point): `checkpoint`, enter
-  the module's parked point (the end of its first `main`, or the module's
-  functions), lower the stack's blocks as statements with `ItemCtx::Parked`
-  into a side `Vec<Stmt>` that is dropped, with diagnostics going to a sink
-  that is dropped, then `rollback`. Declarations in the sandbox get symbols
-  in the table with `origin.parked = true`, which `symbol_infos` lists (so
-  the scope query can return them) and codegen and every check that walks
-  the program skip (they are not in any item).
-* `query.rs`: `record_unlowered` then records only the blocks the sandbox
-  did not reach (a stack too damaged to lower, a block nested too deeply).
-  `block_types` adds the sandbox's value blocks.
-* Tests (the M2 polish plan's): a parked `create x` is visible below it in
-  its stack and not to `main` or another stack; `block_types` has the parked
-  reporters; parked code reports no diagnostics and the C++ of every example
-  and golden test is unchanged; a text value no longer snaps into a parked
-  `int` _set_ (an E2E check, the editor's); `scope_index_parts()` carries the
-  sandbox's positions (this branch's reference-lookup test passes unchanged).
+* **`ItemCtx::Parked`** (`mod.rs:180-190`), set through `begin_item`
+  (`:638`). The exhaustive matches decide: `program.exit` (`stmt.rs:136`)
+  counts as not in `main`; a `return` (`stmt.rs:616-655`) and the expected
+  return type (`typed.rs:235-237`) are as in `main` (no value); its
+  diagnostics are dropped anyway (below).
+* **The sandbox**, per module in document order, per parked head (the arm
+  above) and each block stacked under a head or a definition, as one list:
+  `begin_item(ItemCtx::Parked)`; `scopes.seed(index.parked_point(module).node,
+  ListKey::new(head, "#parked"))`; `let saved = std::mem::take(&mut
+  self.diags)` (and `too_deep_reported`); lower the blocks as statements
+  (the same `lower_list` a body uses), recording positions as it does; drop
+  the lowered statements; `self.diags = saved`; `scopes.reset()`.
+* **Symbols.** Parked declarations go through `declare_local` →
+  `insert_symbol` (`mod.rs:1217`) into a side table
+  `Lowerer.parked_symbols: SymbolTable` instead of `self.symbols`
+  (`insert_symbol` takes the table from `ItemCtx`), kept in
+  `Analysis.parked_symbols`. `program.symbols` is unchanged, so codegen, the
+  checks and the build see no difference. `query.rs`'s `infos`,
+  `with_members`, `scope_after` and `ScopeIndexParts::{members, created}`
+  look a symbol up in `program.symbols`, then in `parked_symbols`;
+  `symbol_infos` (the update's `symbols`) lists both, so the scope index's
+  symbol indexes cover them. `slot_types` and `constants` written in the
+  sandbox are dropped with its statements, or kept for `block_types` (next).
+  Parked declarations are `DeclStatus::Detached` today (`collect.rs:176`)
+  and references to them report unavailable (`resolve.rs:253-275`); in the
+  sandbox those reports land in the dropped `Diags`.
+* **`block_types`** (`query.rs:576`): also walks the sandbox's lowered
+  statements, kept in `Analysis.parked_stmts` for that only (codegen never
+  reads `Analysis`, only `program`), through `record_types` (`:614`).
+* **`record_unlowered`** then records only what the sandbox did not reach (a
+  stack too damaged to lower, a block nested too deeply).
+* **Tests** (the M2 polish plan's four, `tests/parked.rs` beside the
+  existing nine): a parked `create x` is visible below it in its stack and
+  not to `main` or another stack; `block_types` has the parked reporters;
+  parked code adds no diagnostic but B2C-W0505 and the C++ of every example,
+  golden test and `parked_stacks_never_change_the_generated_cpp`
+  (`b2c-build/src/frontend.rs:574`) is unchanged; a text value no longer
+  snaps into a parked `int` _set_ (an E2E check, the editor's). This
+  branch's `tests/scope_index.rs` passes unchanged: the sandbox's positions
+  are trail nodes like any other.
 
 ### 10.2 The clipboard arguments (W4's `editor/clipboard/`, this branch's core)
 

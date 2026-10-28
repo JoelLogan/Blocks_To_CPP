@@ -82,8 +82,15 @@ export function serveCoreWorker(scope: WorkerScopeLike, options: ServeOptions = 
         const current = await instance;
         const began = clock.now();
         let updateJson: string;
+        let scopeJson: string;
+        let updateMs: number;
+        let indexMs: number;
         try {
           updateJson = current.raw.update(request.documentJson, request.optionsJson);
+          const indexed = clock.now();
+          updateMs = indexed - began;
+          scopeJson = current.raw.scopeIndex();
+          indexMs = clock.now() - indexed;
         } catch (error: unknown) {
           if (!(error instanceof CoreTrap)) {
             throw error;
@@ -105,17 +112,16 @@ export function serveCoreWorker(scope: WorkerScopeLike, options: ServeOptions = 
           });
           return;
         }
-        const updateMs = clock.now() - began;
         post({
           p: WORKER_PROTOCOL,
           kind: 'updated',
           id: request.id,
           updateJson,
-          // The scope index comes with the core's `scope_index()` export (worker.md §4).
-          scopeJson: null,
+          // `null` before an update has loaded a document (worker.md §4).
+          scopeJson: scopeJson === 'null' ? null : scopeJson,
           startedAt: clock.timeOrigin + began,
           updateMs: Math.max(0, updateMs),
-          indexMs: 0,
+          indexMs: Math.max(0, indexMs),
         });
         return;
       }

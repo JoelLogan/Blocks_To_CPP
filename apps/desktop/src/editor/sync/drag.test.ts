@@ -1292,7 +1292,7 @@ function countingPreviews(): PreviewService & { readonly runs: () => number } {
       runs += 1;
       return Promise.resolve({
         result: wasm.update(json, options),
-        scopeJson: null,
+        scope: null,
         timing: { startedAt: 0, updateMs: 0, indexMs: 0 },
       });
     },

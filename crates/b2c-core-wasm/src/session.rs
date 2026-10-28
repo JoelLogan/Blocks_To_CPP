@@ -122,6 +122,17 @@ impl Session {
         }
     }
 
+    /// The scope index of the kept analysis (`crate::scope_index`), or
+    /// `None` before an update whose document loaded: the same answers as
+    /// [`Self::symbols_in_scope`] for the document on screen, as JSON text.
+    pub fn scope_index(&self) -> Option<String> {
+        let last = self.last.as_ref()?;
+        Some(crate::scope_index::encode(
+            &last.analysis,
+            &b2c_model::hex(&last.content_hash),
+        ))
+    }
+
     /// Whether a preview's analysis is kept.
     pub fn has_preview(&self) -> bool {
         self.last.is_some()

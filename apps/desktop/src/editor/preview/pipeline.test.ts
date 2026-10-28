@@ -12,6 +12,7 @@ import {
   type CoreWasm,
   type Diagnostic,
   type PreviewOptions,
+  type ScopeIndex,
   type UpdateResult,
 } from '@blocks2cpp/b2c-core-wasm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -146,7 +147,7 @@ function manualService(): PreviewService & {
 
 /** An answer of a preview service with `result`. */
 function answerOf(result: UpdateResult): PreviewAnswer {
-  return { result, scopeJson: null, timing: { startedAt: 0, updateMs: 0, indexMs: 0 } };
+  return { result, scope: null, timing: { startedAt: 0, updateMs: 0, indexMs: 0 } };
 }
 
 let docVersion = 0;
@@ -285,6 +286,128 @@ describe('the preview pipeline', () => {
     expect(useAppStore.getState().analysis.seq).toBe(2);
     expect(useAppStore.getState().project?.document.project.name).toBe('Edit 1');
     expect(onPreviewed).toHaveBeenCalledTimes(1);
+    pipeline.dispose();
+  });
+
+  it('applies an older answer while a newer run waits, then the newer one', async () => {
+    openProject();
+    const service = manualService();
+    const onPreviewed = vi.fn();
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      read: readDocument,
+      service,
+      onPreviewed,
+    });
+    const first = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    docVersion = 1;
+    const second = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(service.calls).toHaveLength(2);
+
+    // The older answer comes first (the worker ran it while the newer one waited): applied.
+    const older = updateFixture(service.calls[0]?.json ?? '');
+    service.calls[0]?.resolve(older);
+    await first;
+    expect(useAppStore.getState().analysis.preview).toBe(older);
+    expect(useAppStore.getState().project?.document.project.name).toBe('Edit 0');
+    expect(pipeline.isIdle()).toBe(false);
+
+    // The newer one read against the document before the older commit; that commit was the
+    // pipeline's own, so the newer answer applies too.
+    const newer = updateFixture(service.calls[1]?.json ?? '');
+    service.calls[1]?.resolve(newer);
+    await second;
+    expect(useAppStore.getState().analysis.preview).toBe(newer);
+    expect(useAppStore.getState().analysis.seq).toBe(2);
+    expect(useAppStore.getState().project?.document.project.name).toBe('Edit 1');
+    expect(onPreviewed).toHaveBeenCalledTimes(2);
+    expect(pipeline.isIdle()).toBe(true);
+    expect(service.calls).toHaveLength(2);
+    pipeline.dispose();
+  });
+
+  it('holds an answer while busy, the newest only, and applies it once the drag has ended', async () => {
+    openProject();
+    const service = manualService();
+    let busy = true;
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      read: readDocument,
+      service,
+      isBusy: () => busy,
+    });
+    const first = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    docVersion = 1;
+    const second = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    service.calls[0]?.resolve(updateFixture(service.calls[0].json));
+    await first;
+    const newer = updateFixture(service.calls[1]?.json ?? '');
+    service.calls[1]?.resolve(newer);
+    await second;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useAppStore.getState().analysis.preview).toBeNull();
+    expect(pipeline.isIdle()).toBe(false);
+
+    busy = false;
+    await vi.advanceTimersByTimeAsync(20);
+    expect(useAppStore.getState().analysis.preview).toBe(newer);
+    expect(useAppStore.getState().project?.document.project.name).toBe('Edit 1');
+    expect(pipeline.isIdle()).toBe(true);
+    pipeline.dispose();
+  });
+
+  it('drops a held answer when a new document is shown', async () => {
+    openProject();
+    const service = manualService();
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host: hostOf(stubCore()),
+      read: readDocument,
+      service,
+      isBusy: () => true,
+    });
+    const run = pipeline.runNow();
+    await vi.advanceTimersByTimeAsync(0);
+    service.calls[0]?.resolve(updateFixture(service.calls[0].json));
+    await run;
+    pipeline.invalidate();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useAppStore.getState().analysis.preview).toBeNull();
+    pipeline.dispose();
+  });
+
+  it('gives the host the scope index of the answer it applies, and forgets it on invalidate', async () => {
+    openProject();
+    const host = hostOf(stubCore({ symbolsInScope: () => [] }));
+    const fromIndex = [{ id: 's_x' }] as unknown as ReturnType<CoreWasm['symbolsInScope']>;
+    const symbolsAt = vi.fn(() => fromIndex);
+    const scope = { symbolsAt } as unknown as ScopeIndex;
+    const pipeline = new PreviewPipeline({
+      store: useAppStore,
+      host,
+      read: readDocument,
+      service: {
+        thread: () => 'worker',
+        update: (json) =>
+          Promise.resolve({
+            result: updateFixture(json),
+            scope,
+            timing: { startedAt: 1, updateMs: 2, indexMs: 1 },
+          }),
+        recover: () => Promise.resolve(),
+      },
+    });
+    await pipeline.runNow();
+    expect(host.current()?.symbolsInScope('b1', null)).toBe(fromIndex);
+    expect(symbolsAt).toHaveBeenCalledWith('b1', null);
+    pipeline.invalidate();
+    expect(host.current()?.symbolsInScope('b1', null)).toEqual([]);
     pipeline.dispose();
   });
 
@@ -511,7 +634,7 @@ describe('the preview pipeline', () => {
             ? Promise.reject(new CoreTrap('stopped in the worker'))
             : Promise.resolve({
                 result: updateFixture(json),
-                scopeJson: null,
+                scope: null,
                 timing: { startedAt: 0, updateMs: 1, indexMs: 0 },
               });
         },
