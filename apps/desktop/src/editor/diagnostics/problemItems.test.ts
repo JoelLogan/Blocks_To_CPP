@@ -223,6 +223,28 @@ describe('block paths', () => {
     expect(pathIn(doc, 'n1')).toBe('square › return › n');
   });
 
+  it('name a struct or enum definition by its name, also for the blocks inside it', () => {
+    const records = JSON.parse(studentRecordsText) as BdmDocument;
+    expect(pathIn(records, 'b001')).toBe('struct Student');
+    const bank = JSON.parse(bankMenuText) as BdmDocument;
+    expect(pathIn(bank, 'b001')).toBe('enum Action');
+    const doc = documentWith([
+      {
+        id: 'st1',
+        type: 'type.struct',
+        v: 1,
+        fields: { NAME: { sym: 's_Point', name: 'Point' }, COMPARABLE: false, PRINTABLE: false },
+        extra: { fields: [{ sym: 's_x', name: 'x', type: 'int' }] },
+        inputs: {
+          DEFAULT0: { block: { id: 'g1', type: 'var.get', v: 1, fields: { VAR: { ref: 's_n' } } } },
+        },
+      },
+      { id: 'st2', type: 'type.struct', v: 1, fields: {} },
+    ]);
+    expect(pathIn(doc, 'g1')).toBe('struct Point › missing');
+    expect(pathIn(doc, 'st2')).toBe('struct');
+  });
+
   it('name blocks by their type without a catalog, or when the catalog lacks the type', () => {
     const doc = guessingGame();
     expect(pathIn(doc, 'b009', null)).toBe('when program starts › control.while › control.if');

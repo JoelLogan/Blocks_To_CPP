@@ -2,7 +2,7 @@
  * Block paths for the Problems panel (docs/spec/04-user-interface.md §4.4, M2 decision "Block paths
  * in Problems"): each level from the top-level block down to the diagnostic's block, named by a
  * short label: the program block's label (`when program starts`), the function's name for a
- * definition, and for other blocks the friendly label up to its first placeholder with the current
+ * definition, `struct Student` and `enum Level` for a struct's and an enum's, and for other blocks the friendly label up to its first placeholder with the current
  * dropdown text filled in (`when program starts › repeat until › if`).
  *
  * A label that would be empty because the block's friendly label starts with a placeholder
@@ -319,32 +319,73 @@ function labelFilled(
   return tidy(text);
 }
 
+/** The word before a struct's or an enum's name in its label (`struct Student`). */
+const DEFINITION_WORDS: Readonly<Record<string, string>> = Object.freeze({
+  'type.struct': 'struct',
+  'type.enum': 'enum',
+});
+
+/** A block's label, and whether it already holds the name the block declares. */
+export interface BlockLabel {
+  readonly text: string;
+  /**
+   * The label names the block's own declaration: a function's or a struct's name, or a label that
+   * starts with a placeholder and so is filled in whole. A screen reader adds the declared name to
+   * any other label (`create int variable` and `guess`).
+   */
+  readonly named: boolean;
+}
+
 /**
- * The short label of one block for a block path: `when program starts`, a function's name, or the friendly label
- * up to its first placeholder with dropdown text filled in (`repeat until`). Without a catalog
- * (`catalog` defaults to the one the editor provided), or for a type the catalog does not have, it
- * is the block's type.
+ * The short label of one block for a block path: `when program starts`, a function's name,
+ * `struct Student` or `enum Level` for those definitions (top-level, like a function's), or the
+ * friendly label up to its first placeholder with dropdown text filled in (`repeat until`).
+ * Without a catalog (`catalog` defaults to the one the editor provided), or for a type the catalog
+ * does not have, it is the block's type.
  */
 export function blockLabel(
   block: BdmBlock,
   names: ReadonlyMap<string, string>,
   catalog: PathCatalog | null = pathCatalog(),
 ): string {
+  return blockLabelOf(block, names, catalog).text;
+}
+
+/** {@link blockLabel}, and whether it holds the declared name ({@link BlockLabel}). */
+export function blockLabelOf(
+  block: BdmBlock,
+  names: ReadonlyMap<string, string>,
+  catalog: PathCatalog | null = pathCatalog(),
+): BlockLabel {
   if (block.type === 'program.main') {
     // The program block's label; `main()` with C++ labels (M3).
-    return PROGRAM_LABEL;
+    return { text: PROGRAM_LABEL, named: false };
   }
   if (block.type === 'func.define') {
     const declared = declaration(block.fields?.['NAME']);
-    return declared === null ? 'function' : shown(declared.name, MAX_LABEL_CHARS);
+    return declared === null
+      ? { text: 'function', named: false }
+      : { text: shown(declared.name, MAX_LABEL_CHARS), named: true };
+  }
+  const word = Object.hasOwn(DEFINITION_WORDS, block.type)
+    ? DEFINITION_WORDS[block.type]
+    : undefined;
+  if (word !== undefined) {
+    const declared = declaration(block.fields?.['NAME']);
+    return declared === null
+      ? { text: word, named: false }
+      : { text: shorten(`${word} ${shown(declared.name)}`, MAX_LABEL_CHARS), named: true };
   }
   const def = catalog?.block(block.type);
   if (catalog === null || def === undefined) {
-    return shown(block.type, MAX_LABEL_CHARS);
+    return { text: shown(block.type, MAX_LABEL_CHARS), named: false };
   }
   const prefix = labelPrefix(catalog, def, block, names);
   const label = prefix === '' ? labelFilled(catalog, def, block, names) : prefix;
-  return shorten(label === '' ? def.id : label, MAX_LABEL_CHARS);
+  return {
+    text: shorten(label === '' ? def.id : label, MAX_LABEL_CHARS),
+    named: prefix === '' && label !== '',
+  };
 }
 
 /**

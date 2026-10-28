@@ -334,7 +334,8 @@ deleted, and all of them are replaced by the next build.
 
 **Block paths** in Problems name each level by a short label: the program
 block's label (*when program starts*; `main()` with C++ labels, M3), the
-function's name for a function definition, and for other blocks the friendly
+function's name for a function definition, *struct Student* or *enum Level*
+for a struct's or an enum's definition, and for other blocks the friendly
 label up to its first placeholder, with the current dropdown text filled in
 (*when program starts › repeat until › if*).
 
