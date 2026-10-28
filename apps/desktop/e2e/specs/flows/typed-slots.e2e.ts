@@ -245,9 +245,12 @@ describe('Typed slots', () => {
     loose.add(text);
     await dropOnCanvas(app, NUMBER);
     const number = await newTopBlock(app, 'math.number', loose);
-    const intoCall = (place: string) => place.startsWith('into “') && place.includes('factorial');
+    // The call is named by its label (`factorial …`); the define block, named by its function alone,
+    // takes a number too, in its parameter row's default part (W2's package C2).
+    const intoCall = (place: string) => place.startsWith('into “factorial …”');
     const numberPlaces = await keyboardPlaces(app, number);
     expect(numberPlaces.filter(intoCall), numberPlaces.join(' | ')).toHaveLength(1);
+    expect(numberPlaces, numberPlaces.join(' | ')).toContain('into “factorial”');
     const textPlaces = await keyboardPlaces(app, text);
     expect(textPlaces.filter(intoCall), textPlaces.join(' | ')).toEqual([]);
     // Neither move changed the call.
