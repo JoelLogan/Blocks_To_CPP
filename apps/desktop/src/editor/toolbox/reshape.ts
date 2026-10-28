@@ -237,6 +237,24 @@ export function landingStartValues(block: Blockly.Block): StartValueChange[] {
 }
 
 /**
+ * Gives the empty value input `input` of `block` the value `tokens` (a quick fix's start value,
+ * ../quick-fixes/fixes.ts), returning the event that records it, or `null` when the input holds a
+ * value already or is not there.
+ */
+export function giveStartValue(
+  block: Blockly.Block,
+  input: string,
+  tokens: readonly TokenJson[],
+): StartValueChange | null {
+  const value = startValueOf(block, input);
+  if (value === null || value.tokens.length > 0 || tokens.length === 0) {
+    return null;
+  }
+  setStartValue(block, value.connection, tokens, input);
+  return new StartValueChange(block, [], tokens, input);
+}
+
+/**
  * Replaces the start value of a `var.declare` block after its type changed from `oldType` to
  * `newType` (TYPE values), if the value is still the old type's start value. Returns the event
  * describing the change, or `null` when nothing changed.

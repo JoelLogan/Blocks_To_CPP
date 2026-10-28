@@ -27,6 +27,14 @@ export const MAX_RAW_DISPLAY_CHARS = 64 * 1024;
  */
 const LEARN_MORE_DESCRIPTION = 'Opens the diagnostics reference in your web browser';
 
+/** A row's quick fix, as the panel offers it (docs/plans/m3-contracts/w4-editor-tools.md §2.5). */
+export interface ProblemFix {
+  /** What it does: `Create variable “score”`. */
+  readonly title: string;
+  /** Makes the change (one undo step); whether it did. */
+  apply(): boolean;
+}
+
 /** The props of {@link ProblemsPanel}. */
 export interface ProblemsPanelProps {
   /** The live and build diagnostics, already merged. */
@@ -37,6 +45,15 @@ export interface ProblemsPanelProps {
   onShowRaw: (item: ProblemItem) => void;
   /** The person asked for the diagnostics reference (it opens in the web browser). */
   onLearnMore: () => void;
+  /** The quick fix of a row, or `null` (none by default). */
+  fixOf?: (item: ProblemItem) => ProblemFix | null;
+  /**
+   * Whether a row offers *Copy bug report…* (a generator bug, 07 §7.5.3), shown with its
+   * compiler message; none by default.
+   */
+  reportsBug?: (item: ProblemItem) => boolean;
+  /** The person asked to copy a bug report for a row. */
+  onCopyBugReport?: (item: ProblemItem) => void;
 }
 
 /** The grid's columns: the sortable ones, then the details column. */
@@ -56,10 +73,19 @@ interface CellPosition {
  * the last build in a sortable grid with severity (icon and word), message, module, block path and
  * code. It follows the ARIA grid pattern: one Tab stop, arrow keys between cells, Home and End,
  * Ctrl+Home and Ctrl+End, Page Up and Page Down; Enter or a click activates a row. Compiler, linker
- * and toolchain rows can reveal the original compiler text. *Learn more* opens the diagnostics
- * reference in the web browser, and says so.
+ * and toolchain rows can reveal the original compiler text, and a generator bug's row then offers
+ * *Copy bug report…*. A row with a quick fix offers it in its *Details* cell (*Fix: …*). *Learn
+ * more* opens the diagnostics reference in the web browser, and says so.
  */
-export function ProblemsPanel({ items, onActivate, onShowRaw, onLearnMore }: ProblemsPanelProps) {
+export function ProblemsPanel({
+  items,
+  onActivate,
+  onShowRaw,
+  onLearnMore,
+  fixOf,
+  reportsBug,
+  onCopyBugReport,
+}: ProblemsPanelProps) {
   const [sort, setSort] = useState<ProblemSort>(DEFAULT_PROBLEM_SORT);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [focus, setFocus] = useState<CellPosition>({ row: 1, col: 0 });
@@ -213,6 +239,7 @@ export function ProblemsPanel({ items, onActivate, onShowRaw, onLearnMore }: Pro
                   } as const;
                 };
                 const { diagnostic } = item;
+                const fix = item.stale ? null : (fixOf?.(item) ?? null);
                 return (
                   <div
                     key={item.key}
@@ -236,13 +263,44 @@ export function ProblemsPanel({ items, onActivate, onShowRaw, onLearnMore }: Pro
                           {rawForDisplay(diagnostic.raw ?? '')}
                         </pre>
                       )}
+                      {showRaw && onCopyBugReport !== undefined && reportsBug?.(item) === true && (
+                        <button
+                          type="button"
+                          className="b2c-problems-report"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onCopyBugReport(item);
+                          }}
+                        >
+                          Copy bug report…
+                        </button>
+                      )}
                     </div>
                     <div {...cell(2)}>{visibleInvisibles(item.modulePath)}</div>
                     <div {...cell(3)}>{visibleInvisibles(item.blockPath)}</div>
                     <div {...cell(4)} className="b2c-problems-cell b2c-problems-code">
                       {visibleInvisibles(diagnostic.code)}
                     </div>
-                    {hasRawText(diagnostic) ? (
+                    {fix !== null ? (
+                      <div className="b2c-problems-cell" role="gridcell">
+                        <button
+                          type="button"
+                          className="b2c-problems-fix"
+                          ref={register({ row, col: DETAILS_COLUMN })}
+                          tabIndex={tabIndex({ row, col: DETAILS_COLUMN })}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setFocus({ row, col: DETAILS_COLUMN });
+                            fix.apply();
+                          }}
+                          onKeyDown={(event) => {
+                            onCellKeyDown(event, { row, col: DETAILS_COLUMN });
+                          }}
+                        >
+                          {`Fix: ${fix.title}`}
+                        </button>
+                      </div>
+                    ) : hasRawText(diagnostic) ? (
                       <div className="b2c-problems-cell" role="gridcell">
                         <button
                           type="button"

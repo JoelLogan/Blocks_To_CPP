@@ -3,6 +3,7 @@
  * editor needs to work with mutated blocks.
  */
 export { MutatorButton } from './buttons';
+export { asUndoStep, canEdit } from './events';
 export { MutatorConfigError, MutatorStateError, type MutatorStateProblem } from './errors';
 export {
   configureMutators,
