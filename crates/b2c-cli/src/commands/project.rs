@@ -51,7 +51,10 @@ pub(crate) fn check(path: &Path, format: Format) -> Status {
     }
 }
 
-/// `b2c generate`: write the generated C++ into a folder.
+/// `b2c generate`: write the generated C++ into a folder. Files already
+/// there are replaced only when they have a generated file's name, and
+/// nothing is ever deleted (unlike a build's own `gen/`, which holds exactly
+/// the generated files).
 pub(crate) fn generate(path: &Path, out_dir: &Path) -> Status {
     let bytes = match project_file::read(path) {
         Ok(bytes) => bytes,
@@ -299,6 +302,30 @@ mod tests {
     use b2c_model::Block;
 
     use super::*;
+
+    /// `b2c generate` writes the generated files into a folder the user
+    /// chose and never deletes anything there: not a `.cpp` with another
+    /// module's name, not a file of another kind (w3-modules.md §2.7).
+    #[test]
+    fn generate_never_deletes_files_in_its_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("hello.b2c");
+        std::fs::write(&project, include_bytes!("../../../../examples/hello_world.b2c")).unwrap();
+        let out_dir = dir.path().join("out");
+        std::fs::create_dir(&out_dir).unwrap();
+        for name in ["utils.cpp", "utils.hpp", "notes.txt"] {
+            std::fs::write(out_dir.join(name), "// mine").unwrap();
+        }
+        assert_eq!(generate(&project, &out_dir), Status::Success);
+        assert!(out_dir.join("main.cpp").is_file());
+        for name in ["utils.cpp", "utils.hpp", "notes.txt"] {
+            assert_eq!(
+                std::fs::read_to_string(out_dir.join(name)).unwrap(),
+                "// mine",
+                "{name}"
+            );
+        }
+    }
 
     /// The test-only retired type `test.say`, replaced by `io.print`.
     fn say_to_print(block: &mut Block) -> Result<(), String> {
