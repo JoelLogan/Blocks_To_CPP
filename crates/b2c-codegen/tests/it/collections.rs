@@ -390,6 +390,27 @@ fn a_list_of_true_false_values_sorts_under_both_standards() {
     );
 }
 
+#[test]
+fn an_empty_list_added_to_a_set_of_lists_is_one_item() {
+    // `groups.insert({})` picks `insert(std::initializer_list<…>)`, an
+    // exact match, and inserts nothing.
+    let b = Builder::new();
+    let ints = list(Type::Int);
+    let groups = b.var("groups", lib(LibType::Set, vec![ints.clone()]));
+    let body = vec![
+        b.declare(&groups, None),
+        b.op(&groups, CollectionChange::Add(b.list_of(&ints, Vec::new()))),
+        b.op(
+            &groups,
+            CollectionChange::Add(b.list_of(&ints, vec![b.int("1"), b.int("2")])),
+        ),
+        b.line(vec![b.whole(&groups, ExprKind::Size, Type::Int)]),
+    ];
+    let main = b.main(body);
+    let program = b.program(vec![main]);
+    builds_and_prints(&program, "groups.insert(std::vector<int>{});", "2\n");
+}
+
 /// Every case of slots.md §3.1: each element type (`int`, `double`,
 /// `char`, `bool`) from literals that fit as written, literals that do not,
 /// and variables of each type, in a list, a deque and a set.

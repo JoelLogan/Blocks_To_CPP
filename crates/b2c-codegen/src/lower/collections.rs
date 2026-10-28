@@ -168,7 +168,13 @@ impl Lowerer<'_> {
                     LibType::Queue | LibType::Stack | LibType::PriorityQueue => "push",
                     _ => return CStmtKind::Error,
                 };
-                let value = self.expr(value);
+                // A set's `insert({})` would pick its `initializer_list`
+                // overload and insert nothing: a *list of* names its type.
+                let value = if lib == LibType::Set {
+                    self.typed_list(value)
+                } else {
+                    self.expr(value)
+                };
                 call(method, vec![value])
             }
             CollectionChange::SetItem { index, value } => {
@@ -290,8 +296,9 @@ impl Lowerer<'_> {
     /// the value `std::find` looks for (a function template cannot deduce
     /// its type from a brace list), and an argument of a call to an
     /// overloaded function (`f({1})` would call `f(int)` beside
-    /// `f(std::vector<int>)`, w2.md §2.8). Any other value is lowered as it
-    /// is.
+    /// `f(std::vector<int>)`, w2.md §2.8), and a value added to a set
+    /// (`s.insert({})` would insert an empty `initializer_list`, nothing).
+    /// Any other value is lowered as it is.
     pub(super) fn typed_list(&mut self, value: &Expr) -> CExpr {
         match &value.kind {
             ExprKind::ListOf(items) if value.ty != Type::Error => {
