@@ -590,6 +590,43 @@ In `EditorSession`'s constructor, the pipeline's options gain
 branch's `pnpm test:tools`), if the coordinator wants it in CI; this branch
 does not change existing jobs.
 
+### 10.6 Coordination with W3
+
+The coordinator's rows of [w3-modules.md §3.3](w3-modules.md) ("Shared files
+and the W4/W5 boundary"), each answered:
+
+1. **`packages/b2c-core-wasm/src/bdm.ts`, `usingNamespaceStd` in the
+   analysis options: agree.** This branch does not change `bdm.ts` or the
+   preview options (`PreviewOptions` stays `{ indentWidth }`; the worker
+   protocol posts the options as the core's JSON, `previewOptionsJson`, so a
+   new optional key crosses once `previewOptionsJson` passes it).
+2. **`crates/b2c-core-wasm/src/clipboard.rs`: agree.** This branch does not
+   change `clipboard.rs` (the clipboard arguments are out, §1, §10.2). When
+   they come, `reuse_json` and `visible_json` are read in `session.rs`
+   (`analysis_for`, `paste_prepare`) before `clipboard::rebind`, so W3's
+   precedence, qualified names and kept IDs stay in `clipboard.rs` where they
+   are.
+3. **`facade.rs`, `benches/pipeline/`, `tests/common/mod.rs`: agree.** The
+   only change to `facade.rs` is the source map's serialisation
+   (`#[serde(serialize_with)]` on `Preview::source_map`, §4.1) and the
+   version `version()` reports; the options pass through untouched.
+   `tests/common/mod.rs` is unchanged. The new criterion case
+   `scope-index` runs on the same prepared document as `preview`, whatever
+   its shape, so an 8-module case can be added beside it.
+4. **M3-5's compact source map: agree.** Each compact file keeps the IR's
+   optional `module` (§4.1, tested by the round trip). `shared` is a key of
+   the symbols (`SymbolInfo`), not of the source map; the update's `symbols`
+   are unchanged by this branch.
+5. **The scope index and other modules' shared symbols: agree.** The index
+   names a symbol by its index into the update's `symbols`, so a symbol's
+   module, namespace and `shared` come with its `SymbolInfo` and need no new
+   key. If W3's package F makes other modules' shared symbols visible through
+   `ScopeIndex::visible`'s function lists or a new list per module,
+   `ScopeIndexParts` gains one method for it (callers of the existing
+   methods do not change), `scope_index.rs` one key, and the lookup one step;
+   the Rust and TypeScript lookup tests compare with `scope_at` for every
+   block, so a missing step fails them at once.
+
 ## 11. Proposed corrections to worker.md and w5-worker.md
 
 1. worker.md §4: the format gains `members` and `partVariables` (§2.1); the
