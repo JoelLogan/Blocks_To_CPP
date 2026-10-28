@@ -1019,9 +1019,12 @@ impl<'d> Lowerer<'d> {
     }
 
     /// Reports what the default value of `param` names that C++ would not
-    /// find as the blocks mean it (w2.md §2.8): a call to `function`
-    /// itself, which C++ declares only after its whole first line, inputs
-    /// included.
+    /// find as the blocks mean it (w2.md §2.8): a global or function called
+    /// like an input up to this one, since C++ finds an input by its name
+    /// from the input on, also in default values (g++ lets an input's own
+    /// default name a global of the input's name, which the standard does
+    /// not); and a call to `function` itself, which C++ declares only after
+    /// its whole first line, inputs included.
     fn check_param_default_names(
         &mut self,
         value: &Expr,
@@ -1029,8 +1032,23 @@ impl<'d> Lowerer<'d> {
         sig: &FuncSig,
         param: &ParamSig,
     ) {
-        for (sym, _, location) in self.names_looked_up(value) {
-            if &sym == function {
+        for (sym, called, location) in self.names_looked_up(value) {
+            let name = self.raw_name(&sym);
+            if let Some(input) = sig.params.iter().find(|p| p.row <= param.row && p.name == name) {
+                let (uses, other) = if called {
+                    ("calls the function", "function")
+                } else {
+                    ("uses the global", "global")
+                };
+                let message = format!(
+                    "This {uses} {name}, but {} has an input called {name}, and from that input on C++ finds the \
+                     input by that name, also in default values. Rename the input or the {other}.",
+                    quoted(&sig.name),
+                    name = quoted(&name)
+                );
+                let input = input.sym.clone();
+                self.error_with_decl(codes::NAME_HIDDEN, location, message, &input, "the input");
+            } else if &sym == function {
                 let message = format!(
                     "The default value of {} calls {} itself, but C++ knows {} only after the whole first line of \
                      its definition, inputs included. Use a value, a constant or another function instead.",

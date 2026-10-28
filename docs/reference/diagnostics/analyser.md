@@ -114,7 +114,9 @@ Codes by area:
   them by name. Here the block refers to one symbol, while a newer symbol with
   the same name hides it, so the C++ code would use the newer one. Also
   reported when a call refers to a function that a variable with the same
-  name hides.
+  name hides, and when a default value of a function input names a global,
+  or calls a function, called like that input or an input before it: from
+  an input on, C++ finds the input by its name.
 * **Example:**
 
   ```text
@@ -125,7 +127,10 @@ Codes by area:
 
   In C++, `int x = x + 1;` reads the new, uninitialised `x`.
 * **Message:** "This refers to an outer `x`, but a newer variable also called
-  `x` hides it here, so C++ would use the newer one. Rename one of them."
+  `x` hides it here, so C++ would use the newer one. Rename one of them." /
+  for a default value, "This uses the global `count`, but `f` has an input
+  called `count`, and from that input on C++ finds the input by that name,
+  also in default values. Rename the input or the global."
 * **How to fix:** give one of the two symbols a different name.
 
 ## B2C-E0206 Function of another module

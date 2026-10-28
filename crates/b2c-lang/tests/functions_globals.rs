@@ -488,6 +488,78 @@ fn global(kind: &str, ty: &str, name: &str, value: Option<Value>) -> Value {
     block
 }
 
+/// A definition whose symbol is `sym_<sym>` but whose name is `name`, so a
+/// test can give a global or function the name of an input.
+fn renamed(mut block: Value, name: &str) -> Value {
+    block["fields"]["NAME"]["name"] = serde_json::json!(name);
+    block
+}
+
+#[test]
+fn a_default_cannot_name_a_global_or_function_called_like_an_input_before_it() {
+    let count = || renamed(global("variable", "int", "gcount", Some(e("2"))), "count");
+    let next_id = || renamed(func("gnext", "int", &[], vec![ret(Some(e("7")))]), "next_id");
+    let hides = "warning B2C-W0501 at fn_f field params[0]";
+    // `void f(int count, int n = count)`: C++ reads the input there.
+    let f = func_with_defaults(
+        "f",
+        "void",
+        &[("count", "int", "copy"), ("n", "int", "copy")],
+        vec![None, Some(e("gcount"))],
+        vec![],
+    );
+    let a = analyze(&doc(vec![count(), f, main(vec![])]));
+    let found = reported(&a);
+    assert_eq!(found.len(), 2, "{found:#?}");
+    assert!(found[0].starts_with(hides), "{found:#?}");
+    assert_eq!(
+        found[1],
+        "error B2C-E0205 at fn_f DEFAULT1[0..1]: This uses the global `count`, but `f` has an input \
+         called `count`, and from that input on C++ finds the input by that name, also in default values. Rename \
+         the input or the global."
+    );
+    // `void f(int next_id, int n = next_id())`, at any depth.
+    let f = func_with_defaults(
+        "f",
+        "void",
+        &[("next_id", "int", "copy"), ("n", "int", "copy")],
+        vec![None, Some(e("1 + gnext()"))],
+        vec![],
+    );
+    let a = analyze(&doc(vec![next_id(), f, main(vec![])]));
+    let found = reported(&a);
+    assert_eq!(found.len(), 2, "{found:#?}");
+    assert!(found[0].starts_with(hides), "{found:#?}");
+    assert!(
+        found[1].starts_with("error B2C-E0205 at fn_f DEFAULT1"),
+        "{found:#?}"
+    );
+    assert!(
+        found[1].contains("This calls the function `next_id`, but `f` has an input called `next_id`"),
+        "{found:#?}"
+    );
+    // An input's own default: g++ lets it through, the standard does not.
+    let f = func_with_defaults(
+        "f",
+        "void",
+        &[("count", "int", "copy")],
+        vec![Some(e("gcount"))],
+        vec![],
+    );
+    let a = analyze(&doc(vec![count(), f, main(vec![])]));
+    assert_codes(&a, &["B2C-W0501", "B2C-E0205"]);
+    // An input after the default is not seen there.
+    let f = func_with_defaults(
+        "f",
+        "void",
+        &[("n", "int", "copy"), ("count", "int", "copy")],
+        vec![Some(e("gcount")), Some(e("1"))],
+        vec![],
+    );
+    let a = analyze(&doc(vec![count(), f, main(vec![])]));
+    assert_codes(&a, &["B2C-W0501"]);
+}
+
 /// The global items of the first module, by their symbol: (`init` present,
 /// `constexpr`).
 fn globals_json(a: &b2c_lang::Analysis) -> Vec<(String, bool, bool)> {
