@@ -155,19 +155,48 @@ export async function scrollIntoView(
   throw new Error(`Could not scroll (${String(point.x)}, ${String(point.y)}) into view`);
 }
 
-/** Pans the canvas by `delta` by dragging its empty background. */
-export async function panCanvas(driver: WebDriver, delta: E2ePoint): Promise<void> {
-  const rect = await visibleCanvas(driver);
-  // Start where the drag has room: on the left for a pan to the right, and so on.
-  const found: unknown = await driver.executeScript(
+/**
+ * Where a drag by `delta` may start so that it ends inside `rect` (4 px in from its edges), the whole
+ * pan done: for a pan to the right, no nearer to the right edge than the pan is long, and so on.
+ */
+export function panStartArea(rect: Rect, delta: E2ePoint): Rect {
+  return {
+    left: rect.left + 4 + Math.max(0, -delta.x),
+    top: rect.top + 4 + Math.max(0, -delta.y),
+    right: rect.right - 4 - Math.max(0, delta.x),
+    bottom: rect.bottom - 4 - Math.max(0, delta.y),
+  };
+}
+
+/** Runs {@link EMPTY_POINT} in `area`, searched from the corner the pan `delta` leads away from. */
+async function emptyPoint(driver: WebDriver, area: Rect, delta: E2ePoint): Promise<unknown> {
+  if (area.left > area.right || area.top > area.bottom) {
+    return null;
+  }
+  return driver.executeScript(
     EMPTY_POINT,
-    rect.left + 4,
-    rect.top + 4,
-    rect.right - 4,
-    rect.bottom - 4,
+    area.left,
+    area.top,
+    area.right,
+    area.bottom,
     delta.x >= 0,
     delta.y >= 0,
   );
+}
+
+/**
+ * Pans the canvas by `delta` by dragging its empty background. The drag starts where the whole pan
+ * fits ({@link panStartArea}): blocks along the canvas's top or left can leave an empty spot only
+ * by its far edge, and a drag from there stops at the edge after a pixel or two. Where the area
+ * has no empty spot, the drag starts anywhere on the visible canvas and pans as far as it can.
+ */
+export async function panCanvas(driver: WebDriver, delta: E2ePoint): Promise<void> {
+  const rect = await visibleCanvas(driver);
+  // Start where the drag has room: on the left for a pan to the right, and so on.
+  let found = await emptyPoint(driver, panStartArea(rect, delta), delta);
+  if (!isNumbers(found, 2)) {
+    found = await emptyPoint(driver, panStartArea(rect, { x: 0, y: 0 }), delta);
+  }
   if (!isNumbers(found, 2)) {
     throw new Error('The canvas has no empty spot to drag it by');
   }
