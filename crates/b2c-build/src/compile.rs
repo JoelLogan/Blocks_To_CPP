@@ -29,13 +29,16 @@
 //!    compiler's working directory (`../out/<stem>.o`);
 //! 7. maps every compiler and linker message to the blocks through the source
 //!    map (07 §7.5.3), sorted by translation unit, so the order never
-//!    depends on which compiler finished first;
+//!    depends on which compiler finished first; a place outside every block
+//!    goes to its file's module, and a header's message that several units
+//!    report is kept once;
 //! 8. on success records the manifest atomically and marks the folder as
 //!    used again (so it is the most recently used entry when eviction runs
 //!    after the build; an up-to-date build does the same); on failure or
 //!    cancellation deletes the executable and the objects it was making, by
 //!    their absolute paths.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
@@ -1000,7 +1003,7 @@ fn run_steps(
     if let [single] = steps {
         reporter.progress(BuildStage::Compile, 0, 1);
         let report = run_step(context, single)?;
-        reporter.diagnostics(report.diagnostics);
+        reporter.diagnostics(merge_repeated(report.diagnostics));
         if report.result == StepResult::Succeeded {
             reporter.progress(BuildStage::Compile, 1, 1);
             reporter.progress(BuildStage::Link, 1, 1);
@@ -1019,7 +1022,7 @@ fn run_steps(
     }
     reporter.progress(BuildStage::Link, 0, 1);
     let report = run_step(context, link)?;
-    reporter.diagnostics(report.diagnostics);
+    reporter.diagnostics(merge_repeated(report.diagnostics));
     if report.result == StepResult::Succeeded {
         reporter.progress(BuildStage::Link, 1, 1);
     }
@@ -1028,7 +1031,9 @@ fn run_steps(
 
 /// Compiles the translation units in parallel, at most
 /// `min(available_parallelism, 8)` at once. Progress is reported as each one
-/// finishes; the diagnostics are reported once, in translation-unit order.
+/// finishes; the diagnostics are reported once, in translation-unit order,
+/// with a header's message that several units reported kept once
+/// ([`merge_repeated`]).
 fn run_parallel(
     context: &StepContext<'_>,
     steps: &[Step],
@@ -1092,7 +1097,7 @@ fn run_parallel(
             None => worst = worst.worst(StepResult::Cancelled),
         }
     }
-    reporter.diagnostics(diagnostics);
+    reporter.diagnostics(merge_repeated(diagnostics));
     match first_error {
         Some(error) => Err(error),
         None => Ok(worst),
@@ -1102,7 +1107,87 @@ fn run_parallel(
 /// How one step ended and what it reported.
 struct StepReport {
     result: StepResult,
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Mapped>,
+}
+
+/// A diagnostic made from a compiler message, with the place the message
+/// was about, when it had one.
+struct Mapped {
+    diagnostic: Diagnostic,
+    place: Option<MessagePlace>,
+}
+
+impl Mapped {
+    /// A diagnostic about no place in a file (the compiler run itself).
+    fn unplaced(diagnostic: Diagnostic) -> Self {
+        Self {
+            diagnostic,
+            place: None,
+        }
+    }
+}
+
+/// What makes two compiler messages the same message: every unit that
+/// includes a header reports that header's messages (modules.md §6), each
+/// with the same code, severity, file, line, column and text.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct MessagePlace {
+    code: String,
+    severity: Severity,
+    file: String,
+    line: u32,
+    column: Option<u32>,
+    text: String,
+}
+
+/// The diagnostics of `mapped`, in order, with each message that several
+/// translation units reported (a header's) kept once, from the first unit
+/// (w3-modules.md §2.6). The later copies add their related locations
+/// (each place once, at most [`MAX_RELATED`]) and their raw text, so the
+/// build output still shows what every unit said.
+fn merge_repeated(mapped: Vec<Mapped>) -> Vec<Diagnostic> {
+    let mut kept: Vec<Diagnostic> = Vec::with_capacity(mapped.len());
+    let mut first: HashMap<MessagePlace, usize> = HashMap::new();
+    for Mapped { diagnostic, place } in mapped {
+        let Some(place) = place else {
+            kept.push(diagnostic);
+            continue;
+        };
+        if let Some(earlier) = first.get(&place).and_then(|&index| kept.get_mut(index)) {
+            absorb(earlier, diagnostic);
+        } else {
+            first.insert(place, kept.len());
+            kept.push(diagnostic);
+        }
+    }
+    kept
+}
+
+/// Adds `later`'s related locations and raw text to `earlier`, the same
+/// message from an earlier translation unit.
+fn absorb(earlier: &mut Diagnostic, later: Diagnostic) {
+    for related in later.related {
+        if earlier.related.len() >= MAX_RELATED {
+            break;
+        }
+        if !earlier
+            .related
+            .iter()
+            .any(|existing| existing.location == related.location)
+        {
+            earlier.related.push(related);
+        }
+    }
+    if let Some(raw) = later.raw {
+        earlier.raw = Some(match earlier.raw.take() {
+            Some(mut text) => {
+                text.push('\n');
+                text.push_str(&raw);
+                cap_raw(text)
+            }
+            None => raw,
+        });
+    }
 }
 
 /// Runs one compiler step and maps its messages.
@@ -1180,7 +1265,7 @@ fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<S
             // GCC's own words about the memory it was refused.
             diagnostic.raw = Some(cap_raw(String::from_utf8_lossy(&captured.stderr).into_owned()));
         }
-        mapped.push(diagnostic);
+        mapped.push(Mapped::unplaced(diagnostic));
         return Ok(StepReport {
             result: StepResult::Failed,
             diagnostics: mapped,
@@ -1217,7 +1302,7 @@ fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<S
         )
     };
     diagnostic.raw = Some(cap_raw(String::from_utf8_lossy(&captured.stderr).into_owned()));
-    mapped.push(diagnostic);
+    mapped.push(Mapped::unplaced(diagnostic));
     Ok(StepReport {
         result: if crashed {
             StepResult::Crashed
@@ -1232,7 +1317,7 @@ fn run_step_inner(context: &StepContext<'_>, step: &CompilerCommand) -> Result<S
 /// blocks.
 struct StepRun {
     captured: b2c_process::Captured,
-    mapped: Vec<Diagnostic>,
+    mapped: Vec<Mapped>,
 }
 
 impl StepRun {
@@ -1240,7 +1325,7 @@ impl StepRun {
     fn explained(&self) -> bool {
         self.mapped
             .iter()
-            .any(|diagnostic| diagnostic.severity == Severity::Error)
+            .any(|mapped| mapped.diagnostic.severity == Severity::Error)
     }
 
     /// Whether the run ran into one of its limits (a `C:limit` diagnostic):
@@ -1319,7 +1404,7 @@ fn run_once(context: &StepContext<'_>, step: &CompilerCommand) -> Result<Option<
         gen_dir: context.dir.gen_dir(),
         ide_dir: context.dir.ide_dir(),
     };
-    let mapped = map_messages(&parsed, context.source_map, &dirs);
+    let mapped = map_placed(&parsed, context.source_map, &dirs);
     Ok(Some(StepRun { captured, mapped }))
 }
 
@@ -1330,27 +1415,38 @@ struct MapDirs {
 }
 
 /// Turns g++ and linker messages into diagnostics on the blocks that
-/// produced the code (spec §7.5.3).
+/// produced the code (spec §7.5.3), each with the place it was about.
 ///
 /// Generated code should never fail to compile when the analyser found no
 /// errors, so a compiler error is labelled as a probable bug in Blocks2Cpp,
 /// and so is any message about the IDE init unit.
-fn map_messages(parsed: &ParsedOutput, source_map: &SourceMap, dirs: &MapDirs) -> Vec<Diagnostic> {
-    let mut diagnostics: Vec<Diagnostic> = parsed
+fn map_placed(parsed: &ParsedOutput, source_map: &SourceMap, dirs: &MapDirs) -> Vec<Mapped> {
+    let mut mapped: Vec<Mapped> = parsed
         .messages
         .iter()
         .filter(|message| message.severity != MessageSeverity::Note)
-        .map(|message| map_message(message, source_map, dirs))
+        .map(|message| {
+            let diagnostic = map_message(message, source_map, dirs);
+            let place = message.location.as_ref().map(|position| MessagePlace {
+                code: diagnostic.code.0.clone(),
+                severity: diagnostic.severity,
+                file: position.file.clone(),
+                line: position.line,
+                column: position.column,
+                text: message.message.clone(),
+            });
+            Mapped { diagnostic, place }
+        })
         .collect();
     if parsed.truncated {
-        diagnostics.push(Diagnostic::info(
+        mapped.push(Mapped::unplaced(Diagnostic::info(
             "C:truncated",
             DiagSource::Compiler,
             Location::project(),
             "The compiler reported more messages than can be shown; only the first ones are listed.",
-        ));
+        )));
     }
-    diagnostics
+    mapped
 }
 
 /// Where a compiler position is: on a block, in a generated module (but not
@@ -1367,23 +1463,27 @@ fn locate(position: &SourcePos, source_map: &SourceMap, gen_dir: &Path) -> Optio
         ),
         None => source_map.lookup_line(&file, position.line),
     };
-    match range {
-        Some(range) => Some(
+    if let Some(range) = range {
+        return Some(
             Location::block(Some(range.module.clone()), range.block.clone()).with_part(range.part.clone()),
-        ),
-        // An unmapped place in a generated file (an include, a helper)
-        // belongs to that file's module (06 §6.9).
-        None => source_map
-            .files
-            .iter()
-            .find(|map| map.path == file)
-            .and_then(|map| map.ranges.first())
-            .map(|range| Location {
-                module: Some(range.module.clone()),
-                block: None,
-                part: b2c_ir::Part::Whole,
-            }),
+        );
     }
+    // An unmapped place in a generated file (an include, a helper, or a file
+    // with no ranges at all, such as an empty module's `.cpp`) belongs to
+    // that file's module (06 §6.9, modules.md §6); `b2c_support.hpp`, which
+    // has no module, to the project.
+    let map = source_map.files.iter().find(|map| map.path == file)?;
+    // A source map written before files named their module: the module of
+    // the file's first range.
+    let module = map
+        .module
+        .clone()
+        .or_else(|| map.ranges.first().map(|range| range.module.clone()))?;
+    Some(Location {
+        module: Some(module),
+        block: None,
+        part: b2c_ir::Part::Whole,
+    })
 }
 
 /// Include chains and notes that point into the blocks become related
@@ -1809,6 +1909,14 @@ mod tests {
         assert_eq!(diagnostics[2].severity, Severity::Info);
     }
 
+    /// [`map_placed`]'s diagnostics alone.
+    fn map_messages(parsed: &ParsedOutput, source_map: &SourceMap, dirs: &MapDirs) -> Vec<Diagnostic> {
+        map_placed(parsed, source_map, dirs)
+            .into_iter()
+            .map(|mapped| mapped.diagnostic)
+            .collect()
+    }
+
     /// A place in a generated file outside every block (an include line, a
     /// helper) belongs to that file's module.
     #[test]
@@ -1843,6 +1951,219 @@ mod tests {
             &dirs(),
         );
         assert_eq!(diagnostics[0].primary, Location::project());
+    }
+
+    /// An error at `line` of the generated file `file`, outside every block.
+    fn unmapped_error(file: &str, line: u32) -> CompilerMessage {
+        let mut error = message(MessageOrigin::Compiler, MessageSeverity::Error, Some(1));
+        error.location = Some(at(&gen_dir().join(file), line, Some(1)));
+        error
+    }
+
+    /// A file's own module (`FileMap::module`) takes an unmapped place in
+    /// it, also in a file with no ranges at all (an empty module's `.cpp`, a
+    /// header with only includes); `b2c_support.hpp`, which has no module,
+    /// gives the project (w3-modules.md §2.6).
+    #[test]
+    fn files_without_ranges_belong_to_their_module() {
+        let module = |id: &str| ModuleId::new(id).unwrap();
+        let mut map = source_map();
+        map.files[0].module = Some(module("mod_first"));
+        for (path, owner) in [
+            ("utils.cpp", Some(module("mod_utils"))),
+            ("utils.hpp", Some(module("mod_utils"))),
+            ("b2c_support.hpp", None),
+        ] {
+            map.files.push(FileMap {
+                path: path.to_owned(),
+                module: owner,
+                ranges: Vec::new(),
+            });
+        }
+        let parsed = ParsedOutput {
+            messages: vec![
+                unmapped_error("main.cpp", 2),
+                unmapped_error("utils.cpp", 1),
+                unmapped_error("utils.hpp", 3),
+                unmapped_error("b2c_support.hpp", 9),
+            ],
+            truncated: false,
+        };
+        let primaries: Vec<Location> = map_messages(&parsed, &map, &dirs())
+            .into_iter()
+            .map(|diagnostic| diagnostic.primary)
+            .collect();
+        let in_module = |id: &str| Location {
+            module: Some(module(id)),
+            block: None,
+            part: Part::Whole,
+        };
+        assert_eq!(
+            primaries,
+            [
+                // The file's module, not its first range's.
+                in_module("mod_first"),
+                in_module("mod_utils"),
+                in_module("mod_utils"),
+                Location::project(),
+            ]
+        );
+    }
+
+    /// What g++ 13 writes with `-fdiagnostics-format=sarif-file` for one
+    /// warning (recorded from `int unused = 1;` in a header that two units
+    /// include, with the path moved to `file`).
+    fn recorded_sarif(file: &Path, line: u32, column: u32, rule: &str, text: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [{
+                "tool": {"driver": {
+                    "name": "GNU C++17",
+                    "version": "13.3.0",
+                    "rules": [{"id": rule}]
+                }},
+                "invocations": [{"executionSuccessful": true, "toolExecutionNotifications": []}],
+                "results": [{
+                    "ruleId": rule,
+                    "level": "warning",
+                    "message": {"text": text},
+                    "locations": [{
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": file.to_string_lossy()},
+                            "region": {"startLine": line, "startColumn": column, "endColumn": column + 6},
+                            "contextRegion": {"startLine": line, "snippet": {"text": "    int unused = 1;\n"}}
+                        },
+                        "logicalLocations": [{"name": "twice", "fullyQualifiedName": "twice", "kind": "function"}]
+                    }]
+                }]
+            }]
+        }))
+        .unwrap()
+    }
+
+    /// A header's message reported by two units is kept once, from the
+    /// first, by code, severity, file, line, column and text; the later
+    /// units' raw text is kept with it. A message with another text or at
+    /// another place is kept as it is.
+    #[test]
+    fn a_header_message_reported_by_two_units_is_kept_once() {
+        let module = ModuleId::new("mod_utils").unwrap();
+        let mut map = source_map();
+        map.files.push(FileMap {
+            path: String::from("utils.hpp"),
+            module: Some(module.clone()),
+            ranges: vec![MappedRange {
+                start: Position { line: 4, column: 5 },
+                end: Position { line: 5, column: 20 },
+                module: module.clone(),
+                block: BlockId::new("b_unused").unwrap(),
+                part: Part::Whole,
+            }],
+        });
+        let header = gen_dir().join("utils.hpp");
+        let unused = "unused variable 'unused'";
+        let sarif = |line: u32, text: &str| {
+            b2c_toolchain::diagnostics::parse_sarif(&recorded_sarif(
+                &header,
+                line,
+                9,
+                "-Wunused-variable",
+                text,
+            ))
+            .unwrap()
+        };
+        // Unit 1 reports the header's warning; unit 2 the same and another
+        // text; unit 3 the same and the text at another line.
+        let unit = |extra: Option<(u32, &str)>| {
+            let mut parsed = sarif(4, unused);
+            if let Some((line, text)) = extra {
+                parsed.messages.extend(sarif(line, text).messages);
+            }
+            map_placed(&parsed, &map, &dirs())
+        };
+        let mut all = unit(None);
+        all.extend(unit(Some((4, "unused variable 'other'"))));
+        all.extend(unit(Some((5, unused))));
+        assert_eq!(all.len(), 5);
+        let found = merge_repeated(all);
+        let summary: Vec<(&str, Option<&str>, &str)> = found
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.code.0.as_str(),
+                    diagnostic.primary.block.as_ref().map(BlockId::as_str),
+                    diagnostic.message.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                (
+                    "C:-Wunused-variable",
+                    Some("b_unused"),
+                    "g++ warns: unused variable 'unused'"
+                ),
+                (
+                    "C:-Wunused-variable",
+                    Some("b_unused"),
+                    "g++ warns: unused variable 'other'"
+                ),
+                (
+                    "C:-Wunused-variable",
+                    Some("b_unused"),
+                    "g++ warns: unused variable 'unused'"
+                ),
+            ],
+            "{found:#?}"
+        );
+        // Three units said the first message: its raw text holds all three.
+        let raw = found[0].raw.as_deref().unwrap();
+        assert_eq!(raw.matches(unused).count(), 3, "{raw}");
+        let at_line_5 = found[2].raw.as_deref().unwrap();
+        assert_eq!(at_line_5.matches(unused).count(), 1, "{at_line_5}");
+        assert!(at_line_5.contains(":5:9: "), "{at_line_5}");
+
+        // Messages about no place (the compiler run) are never merged.
+        let run = || {
+            Mapped::unplaced(Diagnostic::error(
+                COMPILER_FAILED,
+                DiagSource::Compiler,
+                Location::project(),
+                "The compiler stopped.",
+            ))
+        };
+        assert_eq!(merge_repeated(vec![run(), run()]).len(), 2);
+    }
+
+    /// Merging keeps each related place once and at most [`MAX_RELATED`] of
+    /// them, and bounds the raw text.
+    #[test]
+    fn merged_messages_stay_bounded() {
+        let related = |block: &str| Related {
+            location: Location::block(
+                Some(ModuleId::new("mod_main").unwrap()),
+                BlockId::new(block).unwrap(),
+            ),
+            message: String::from("Included from here."),
+        };
+        let warning = || Diagnostic::warning("C:-Wx", DiagSource::Compiler, Location::project(), "x");
+        let mut earlier = warning();
+        earlier.related = vec![related("b001")];
+        earlier.raw = Some("a".repeat(MAX_RAW_BYTES - 10));
+        let mut later = earlier.clone();
+        later.related = (1..=40).map(|index| related(&format!("b{index:03}"))).collect();
+        absorb(&mut earlier, later);
+        assert_eq!(earlier.related.len(), MAX_RELATED);
+        assert_eq!(earlier.related[0], related("b001"));
+        assert_eq!(earlier.related[1], related("b002"));
+        assert!(earlier.raw.as_deref().unwrap().ends_with('…'));
+        let mut empty = warning();
+        let mut with_raw = warning();
+        with_raw.raw = Some(String::from("said"));
+        absorb(&mut empty, with_raw);
+        assert_eq!(empty.raw.as_deref(), Some("said"));
     }
 
     /// Include chains and notes that point into blocks become related
