@@ -10,7 +10,7 @@
 //!         …
 //!     }
 //!     std::string line{};
-//!     while (std::getline(b2c_file, line)) {
+//!     while (b2c::read_line(b2c_file, line)) {
 //!         …
 //!     }
 //! }
@@ -33,9 +33,12 @@
 //! }
 //! ```
 //!
-//! *read line from … into* is `std::getline(file, line)` as a condition of
-//! its own (`if`, `while`, `do … while`), where the stream converts to
-//! `bool`, and `static_cast<bool>(std::getline(file, line))` anywhere else;
+//! *read line from … into* is `b2c::read_line(file, line)` (`std::getline`
+//! without a final '\r', so a file saved with Windows line endings reads the
+//! same on every system) as a condition of its own (`if`, `while`, `do …
+//! while`), where the stream it gives back converts to `bool`, and
+//! `static_cast<bool>(b2c::read_line(file, line))` anywhere else; the file
+//! loop reads its lines the same way;
 //! *write … to file* is `file << a << b << '\n';`, its values written as
 //! *print* writes them; *file … exists* is `std::filesystem::exists(path)`.
 //!
@@ -52,6 +55,7 @@ use b2c_ir::types::LibType;
 
 use super::{Lowerer, name_expr};
 use crate::cast::{BinOp, CBlock, CExpr, CStmt, CStmtKind, CType, Init, UnOp};
+use crate::helpers::Helper;
 
 /// The stem of the hidden names of the streams *for each line* opens.
 const STREAM_STEM: &str = "b2c_file";
@@ -110,7 +114,7 @@ impl Lowerer<'_> {
     }
 
     /// A condition of its own (`if`, `while`, `do … while`): *read line from
-    /// … into* is the bare `std::getline(file, line)` there, whose stream
+    /// … into* is the bare `b2c::read_line(file, line)` there, whose stream
     /// converts to `bool`; any other condition is lowered as usual.
     pub(super) fn condition(&mut self, cond: &Expr) -> CExpr {
         if matches!(cond.kind, ExprKind::ReadLine { .. })
@@ -121,7 +125,7 @@ impl Lowerer<'_> {
         self.expr(cond)
     }
 
-    /// `std::getline(file, line)`, or `None` for a stream or line the
+    /// `b2c::read_line(file, line)`, or `None` for a stream or line the
     /// program does not have.
     fn read_line(&mut self, expr: &Expr) -> Option<CExpr> {
         let ExprKind::ReadLine { file, line } = &expr.kind else {
@@ -129,11 +133,15 @@ impl Lowerer<'_> {
         };
         let file = self.variable(file)?.name.clone();
         let line = self.variable(line)?.name.clone();
-        self.include("<string>");
-        Some(CExpr::call_fixed(
-            "std::getline",
-            vec![name_expr(file), name_expr(line)],
-        ))
+        Some(self.read_line_call(file, line))
+    }
+
+    /// `b2c::read_line(stream, line)`: `std::getline` without a final '\r',
+    /// so a file saved with Windows line endings gives the same lines on
+    /// every system (a stream opened in text mode drops it on Windows only).
+    fn read_line_call(&mut self, stream: Ident, line: Ident) -> CExpr {
+        self.use_helper(Helper::ReadLine);
+        CExpr::call_fixed("b2c::read_line", vec![name_expr(stream), name_expr(line)])
     }
 
     /// *open file*: the stream, declared where the block is, then the part
@@ -244,7 +252,7 @@ impl Lowerer<'_> {
             name: line.clone(),
             init: Init::Braces,
         }));
-        let read = CExpr::call_fixed("std::getline", vec![name_expr(stream), name_expr(line)]);
+        let read = self.read_line_call(stream, line);
         let body = self.block(body);
         stmts.push(CStmt::new(CStmtKind::While { cond: read, body }));
         self.scopes.pop();

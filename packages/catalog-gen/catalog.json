@@ -1555,7 +1555,7 @@
       "output": null,
       "label": {
         "friendly": "for each line %LINE in file %PATH %BODY if it can't be opened %FAILED",
-        "cpp": "while (std::getline(file, %LINE)) { … }"
+        "cpp": "while (b2c::read_line(file, %LINE)) { … }"
       },
       "lowering": "builtin",
       "headers": [],
@@ -1711,7 +1711,7 @@
       "output": "bool",
       "label": {
         "friendly": "read line from %FILE into %LINE",
-        "cpp": "std::getline(%FILE, %LINE)"
+        "cpp": "b2c::read_line(%FILE, %LINE)"
       },
       "lowering": "builtin",
       "headers": [],

@@ -753,12 +753,14 @@ aXaXa
 ok
 1 3
 caught
+[one][two][][last] 4
 ";
 
 /// A program that uses every helper W2 adds (w2.md §2.12) and prints
 /// [`HELPERS_OUTPUT`]; `b2c_support.hpp` holds them all.
 const HELPERS_MAIN: &str = r#"#include <deque>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -815,6 +817,14 @@ int main() {
     } catch (const std::out_of_range&) {
         std::cout << (queue.size() == 1 && queue.front() == 5 ? "caught" : "wrong") << '\n';
     }
+    std::istringstream text("one\r\ntwo\n\r\nlast\r");
+    std::string line;
+    int lines = 0;
+    while (b2c::read_line(text, line)) {
+        std::cout << '[' << line << ']';
+        ++lines;
+    }
+    std::cout << ' ' << lines << '\n';
 }
 "#;
 

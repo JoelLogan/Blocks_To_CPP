@@ -7,11 +7,29 @@ description: "file.read_line: printed after the text x (empty) and opening data.
 
 #include <fstream>
 #include <iostream>
+#include <istream>
 #include <string>
+
+// ---- Blocks2Cpp support helpers (only those used) ------------------------
+namespace b2c {
+
+/// Reads the next line of `file` into `line`, without its line break, as
+/// `std::getline` does, and also without the '\r' that a file saved with
+/// Windows line endings ("\r\n") leaves at its end on Linux and macOS.
+/// Gives back the stream, which converts to `false` when no line was left.
+inline std::istream& read_line(std::istream& file, std::string& line) {
+    if (std::getline(file, line) && !line.empty() && line.back() == '\r') {
+        line.pop_back();
+    }
+    return file;
+}
+
+}  // namespace b2c
+// ---- End of Blocks2Cpp support helpers -----------------------------------
 
 int main() {
     std::string x = "";
     std::ifstream file("data.txt");
-    std::cout << (static_cast<bool>(std::getline(file, x)) ? "true" : "false") << '\n';
+    std::cout << (static_cast<bool>(b2c::read_line(file, x)) ? "true" : "false") << '\n';
     return 0;
 }

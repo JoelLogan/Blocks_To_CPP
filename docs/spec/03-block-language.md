@@ -859,8 +859,8 @@ the C++ view and in the class block's `⚙`). Copy/move special members can be
 | Block | Generates |
 | ------- | ----------- |
 | `open file ("scores.txt") for [reading ▾] as [file] ⊕ if it can't be opened { }` | `std::ifstream file("scores.txt");` (*writing* → `std::ofstream`; *adding to the end* → `std::ofstream file("scores.txt", std::ios::app);`), plus, with the part, `if (!file) { … }` |
-| `read line from [file ▾] into [line ▾]` | `std::getline(file, line)`: a predicate, true when a line was read, false at the end of the file |
-| `for each line [line] in file ("data.txt") { } ⊕ if it can't be opened { }` | `{ std::ifstream b2c_file("data.txt"); if (!b2c_file) { … } std::string line{}; while (std::getline(b2c_file, line)) { … } }` |
+| `read line from [file ▾] into [line ▾]` | `b2c::read_line(file, line)` (`std::getline` without a final `'\r'`): a predicate, true when a line was read, false at the end of the file |
+| `for each line [line] in file ("data.txt") { } ⊕ if it can't be opened { }` | `{ std::ifstream b2c_file("data.txt"); if (!b2c_file) { … } std::string line{}; while (b2c::read_line(b2c_file, line)) { … } }` |
 | `write (a) (b) ⊕ to [file ▾] new line ☑` | `file << a << b << '\n';` |
 | `file ("x") exists` / `delete file` / `create folder` / `for each file in folder` | `std::filesystem::exists("x")` (a file or a folder); the other three in M4 |
 
@@ -874,7 +874,10 @@ on files no block opened, so they wait for M4's filesystem pack and its
 threat review.
 
 * **for each line** reads a text file line by line, without the line
-  breaks. Its line is read-only and visible in the body only; the stream has
+  breaks. Both it and *read line* read with `b2c::read_line`, which drops
+  the `'\r'` that a file saved with Windows line endings leaves at the end
+  of each line on Linux and macOS (on Windows the stream drops it), so a
+  file gives the same lines on every system. Its line is read-only and visible in the body only; the stream has
   a hidden name (`b2c_file`, then `b2c_file2` for a loop inside it), and the
   whole loop is a block of its own, so the file closes after it. Without
   the *if it can't be opened* part, nothing runs when the file can't be
@@ -885,9 +888,9 @@ threat review.
   C++ declares it from its name on, also in its own path, so a path that
   reads a variable or global of the stream's name is `B2C-E0205` (it would
   read the new stream), as *create*'s starting value is.
-* **read line** is the bare `std::getline(file, line)` where it is a
+* **read line** is the bare `b2c::read_line(file, line)` where it is a
   condition of its own (*if*, *else if*, *repeat while*, *do … then
-  repeat while*), and `static_cast<bool>(std::getline(file, line))`
+  repeat while*), and `static_cast<bool>(b2c::read_line(file, line))`
   elsewhere (negated by *until*, in a calculation, printed). Its line must
   be a text variable that may change (`B2C-E0308`).
 * **write** writes its values as *print* shows them in the console (`true`
@@ -1007,11 +1010,12 @@ similar.
 (M2), `to_text` for decimal numbers (written as `std::cout` would write
 them now), and `split`, `to_lower`, `to_upper`, `trim`, `replace_all`,
 `starts_with` and `ends_with` (C++17 only; C++20 has the members),
-`random_real` and `remove_at`. `split` keeps empty parts and gives one part
+`random_real`, `remove_at` and `read_line`. `split` keeps empty parts and gives one part
 for each character for an empty separator; `to_lower` and `to_upper` change
 the letters A to Z only; `trim` drops spaces and tabs; `replace_all` with an
 empty old text changes nothing; `remove_at` throws `std::out_of_range` for a
-position the list does not have, as `.at()` does. Each is compiled and run
+position the list does not have, as `.at()` does; `read_line` is
+`std::getline` without a final `'\r'`. Each is compiled and run
 under C++17 and C++20 at the strict warning level. An enum's `to_text` is
 generated with the enum, not a helper ([§3.7.9](#379-types-structs-classes-enums)),
 and `Stopwatch` comes with the stopwatch in M4.

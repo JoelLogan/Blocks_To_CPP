@@ -37,12 +37,14 @@ pub(crate) enum Helper {
     RandomReal,
     /// `b2c::remove_at(items, index)` (*remove item at*).
     RemoveAt,
+    /// `b2c::read_line(file, line)` (*read line*, *for each line in file*).
+    ReadLine,
 }
 
 impl Helper {
     /// Every helper, in emission order.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 13] = [
+    pub(crate) const ALL: [Self; 14] = [
         Self::RandomInt,
         Self::AskLine,
         Self::Ask,
@@ -56,6 +58,7 @@ impl Helper {
         Self::EndsWith,
         Self::RandomReal,
         Self::RemoveAt,
+        Self::ReadLine,
     ];
 
     /// The standard headers the helper's code needs.
@@ -76,6 +79,7 @@ impl Helper {
             Self::ToLower | Self::ToUpper | Self::StartsWith | Self::EndsWith => &["<string>"],
             Self::Trim | Self::ReplaceAll => &["<cstddef>", "<string>"],
             Self::RemoveAt => &["<cstddef>"],
+            Self::ReadLine => &["<istream>", "<string>"],
         }
     }
 
@@ -95,6 +99,7 @@ impl Helper {
             Self::EndsWith => ENDS_WITH,
             Self::RandomReal => RANDOM_REAL,
             Self::RemoveAt => REMOVE_AT,
+            Self::ReadLine => READ_LINE,
         }
     }
 }
@@ -368,6 +373,19 @@ template <typename C>
 void remove_at(C& items, int index) {
 \tstatic_cast<void>(items.at(static_cast<std::size_t>(index)));
 \titems.erase(items.begin() + index);
+}
+";
+
+const READ_LINE: &str = "\
+/// Reads the next line of `file` into `line`, without its line break, as
+/// `std::getline` does, and also without the '\\r' that a file saved with
+/// Windows line endings (\"\\r\\n\") leaves at its end on Linux and macOS.
+/// Gives back the stream, which converts to `false` when no line was left.
+inline std::istream& read_line(std::istream& file, std::string& line) {
+\tif (std::getline(file, line) && !line.empty() && line.back() == '\\r') {
+\t\tline.pop_back();
+\t}
+\treturn file;
 }
 ";
 

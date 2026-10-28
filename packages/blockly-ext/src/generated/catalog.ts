@@ -1559,7 +1559,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     shape: 'statement',
     label: {
       friendly: "for each line %LINE in file %PATH %BODY if it can't be opened %FAILED",
-      cpp: 'while (std::getline(file, %LINE)) { … }',
+      cpp: 'while (b2c::read_line(file, %LINE)) { … }',
     },
     labelParts: [
       { text: 'for each line' },
@@ -1698,7 +1698,7 @@ export const BLOCK_DEFS: readonly BlockDefJson[] = [
     version: 1,
     category: 'files',
     shape: 'predicate',
-    label: { friendly: 'read line from %FILE into %LINE', cpp: 'std::getline(%FILE, %LINE)' },
+    label: { friendly: 'read line from %FILE into %LINE', cpp: 'b2c::read_line(%FILE, %LINE)' },
     labelParts: [{ text: 'read line from' }, { arg: 'FILE' }, { text: 'into' }, { arg: 'LINE' }],
     statementsNotInLabel: [],
     help: 'Reads the next line of a file opened for reading into a text variable, without its line break. True when there was a line to read, false at the end of the file, so it can be the condition of a loop.',

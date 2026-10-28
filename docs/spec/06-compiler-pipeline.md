@@ -597,8 +597,8 @@ construct concrete. For example:
 * `Print` → a chain of `<<` with per-type adjustments (bool, 8-bit integers,
   enums with auto-generated `operator<<`).
 * `ForEachLine` → a block of its own: `std::ifstream` declaration + `if
-  (!stream)` branch + `std::string line{};` + `while (std::getline(stream,
-  line))`. The stream's hidden name (`b2c_file`, `b2c_file2`, …) is made
+  (!stream)` branch + `std::string line{};` + `while (b2c::read_line(stream,
+  line))` (`std::getline` without a final `'\r'`). The stream's hidden name (`b2c_file`, `b2c_file2`, …) is made
   with `Ident::generated` and chosen against the names visible where it is
   declared; user names cannot start with `b2c`, so only an enclosing file
   loop's stream can take a candidate.
@@ -636,7 +636,7 @@ construct concrete. For example:
   `try { … } catch (const std::invalid_argument& e) { … }`, `throw
   std::runtime_error(m);` and `throw;`; `static_assert(c, "message");`; a
   stream as `std::ifstream file("x");` (`std::ofstream file("x",
-  std::ios::app);` for adding), *read line* as the bare `std::getline(f,
+  std::ios::app);` for adding), *read line* as the bare `b2c::read_line(f,
   l)` where it is a condition of its own and `static_cast<bool>(…)`
   elsewhere; *list of* as `{a, b}`, with its type where C++ cannot tell it
   (`std::vector<int>{1, 2}`); `std::max<T>(a, b)`, `std::min<T>` and

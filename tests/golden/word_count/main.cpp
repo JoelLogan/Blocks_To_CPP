@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <istream>
 #include <limits>
 #include <string>
 #include <vector>
@@ -62,6 +63,17 @@ inline std::vector<std::string> split(const std::string& text, const std::string
     }
 }
 
+/// Reads the next line of `file` into `line`, without its line break, as
+/// `std::getline` does, and also without the '\r' that a file saved with
+/// Windows line endings ("\r\n") leaves at its end on Linux and macOS.
+/// Gives back the stream, which converts to `false` when no line was left.
+inline std::istream& read_line(std::istream& file, std::string& line) {
+    if (std::getline(file, line) && !line.empty() && line.back() == '\r') {
+        line.pop_back();
+    }
+    return file;
+}
+
 }  // namespace b2c
 // ---- End of Blocks2Cpp support helpers -----------------------------------
 
@@ -82,7 +94,7 @@ int main() {
             return 1;
         }
         std::string line{};
-        while (std::getline(b2c_file, line)) {
+        while (b2c::read_line(b2c_file, line)) {
             ++lines;
             int length = static_cast<int>(line.size());
             characters += length;

@@ -506,10 +506,13 @@ All notable changes to Blocks2Cpp are recorded here. The format follows
   true/false values is a `bool` of its own (`auto` changed the list); and
   _sort_ on such a list compiles under C++20 (`std::sort` with iterators);
   an empty _list of_ added to a set of lists is added (`insert({})` added
-  nothing).
-- C++ support helpers for text, random decimals and removing items
-  (`split`, `to_lower`, `to_upper`, `trim`, `replace_all`, `starts_with`,
-  `ends_with`, `random_real`, `remove_at`), each compiled and run under
+  nothing); and _for each line_ and _read line_ drop the carriage return
+  that a file saved with Windows line endings leaves at the end of each
+  line on Linux and macOS (new support helper `read_line`).
+- C++ support helpers for text, random decimals, removing items and
+  reading lines (`split`, `to_lower`, `to_upper`, `trim`, `replace_all`,
+  `starts_with`, `ends_with`, `random_real`, `remove_at`, `read_line`),
+  each compiled and run under
   C++17 and C++20 at the strict level.
 - The catalog schema: row extras (`fields`, `values`), repeated fields,
   repeats counted by rows, type fields with no listed types, joining

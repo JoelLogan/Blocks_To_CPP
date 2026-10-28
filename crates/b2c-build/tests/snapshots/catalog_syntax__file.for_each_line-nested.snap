@@ -7,17 +7,35 @@ description: "file.for_each_line: the only step of main, reading names.txt line 
 
 #include <fstream>
 #include <iostream>
+#include <istream>
 #include <string>
+
+// ---- Blocks2Cpp support helpers (only those used) ------------------------
+namespace b2c {
+
+/// Reads the next line of `file` into `line`, without its line break, as
+/// `std::getline` does, and also without the '\r' that a file saved with
+/// Windows line endings ("\r\n") leaves at its end on Linux and macOS.
+/// Gives back the stream, which converts to `false` when no line was left.
+inline std::istream& read_line(std::istream& file, std::string& line) {
+    if (std::getline(file, line) && !line.empty() && line.back() == '\r') {
+        line.pop_back();
+    }
+    return file;
+}
+
+}  // namespace b2c
+// ---- End of Blocks2Cpp support helpers -----------------------------------
 
 int main() {
     {
         std::ifstream b2c_file("names.txt");
         std::string line{};
-        while (std::getline(b2c_file, line)) {
+        while (b2c::read_line(b2c_file, line)) {
             {
                 std::ifstream b2c_file2("words.txt");
                 std::string word{};
-                while (std::getline(b2c_file2, word)) {
+                while (b2c::read_line(b2c_file2, word)) {
                     std::cout << static_cast<int>(word.size()) << '\n';
                 }
             }

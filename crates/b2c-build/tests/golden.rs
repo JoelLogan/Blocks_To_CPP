@@ -169,3 +169,30 @@ fn examples_run_with_the_expected_output() {
         .collect();
     finish(&failures);
 }
+
+#[test]
+fn a_file_saved_with_windows_line_endings_reads_the_same_lines() {
+    // On Linux, `std::getline` splits at '\n' only, so each line of a file
+    // saved with "\r\n" ends in '\r': word_count would count one character
+    // too many per line and miss a wanted word at a line's end.
+    if common::gxx().is_none() {
+        return;
+    }
+    let golden = repo_root().join("tests/golden/word_count");
+    let crlf = tempfile::tempdir().unwrap();
+    for entry in std::fs::read_dir(&golden).unwrap() {
+        let path = entry.unwrap().path();
+        let mut bytes = std::fs::read(&path).unwrap();
+        if path.file_name().is_some_and(|name| name == "poem.txt") {
+            let text = String::from_utf8(bytes).unwrap();
+            assert!(!text.contains('\r'));
+            bytes = text.replace('\n', "\r\n").into_bytes();
+        }
+        std::fs::write(crlf.path().join(path.file_name().unwrap()), bytes).unwrap();
+    }
+    let data = RunData::read(crlf.path()).unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let project = repo_root().join("examples/word_count.b2c");
+    let result = build_project(&project, cache.path()).and_then(|executable| data.check(&executable));
+    assert_eq!(result, Ok(()));
+}

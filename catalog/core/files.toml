@@ -8,8 +8,10 @@ id = "file.for_each_line"
 version = 1
 category = "files"
 shape = "statement"
-label = { friendly = "for each line %LINE in file %PATH %BODY if it can't be opened %FAILED", cpp = "while (std::getline(file, %LINE)) { … }" }
+label = { friendly = "for each line %LINE in file %PATH %BODY if it can't be opened %FAILED", cpp = "while (b2c::read_line(file, %LINE)) { … }" }
 lowering = "builtin"
+# b2c::read_line is a support helper (std::getline without a final '\r'),
+# whose own headers the generator includes with it.
 help = "Reads a text file line by line and runs blocks for each line, without its line break. A path that is not a full path is looked for in the folder the program runs in: the project folder, or its sandbox folder when the run settings choose it or the project is not saved yet. Add the part that runs when the file can't be opened with ⊕; without it, nothing runs when the file can't be opened."
 
 [[block.extra]]
@@ -82,8 +84,9 @@ version = 1
 category = "files"
 shape = "predicate"
 output = "bool"
-label = { friendly = "read line from %FILE into %LINE", cpp = "std::getline(%FILE, %LINE)" }
+label = { friendly = "read line from %FILE into %LINE", cpp = "b2c::read_line(%FILE, %LINE)" }
 lowering = "builtin"
+# b2c::read_line is a support helper, as for file.for_each_line.
 help = "Reads the next line of a file opened for reading into a text variable, without its line break. True when there was a line to read, false at the end of the file, so it can be the condition of a loop."
 
 [[block.field]]
